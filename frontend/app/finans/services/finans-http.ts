@@ -3,12 +3,6 @@
  * Doğrudan :8000 çağrıları oturum çerezini taşımaz (port farkı).
  */
 
-import {
-  ensureCsrfCookie,
-  isSessionExpiredResponse,
-  type FetchOptions,
-} from "@/lib/api";
-
 const STORAGE_KEYS = {
   activeKurum: "3k_active_kurum",
   activeSube: "3k_active_sube",
@@ -170,23 +164,18 @@ function parseFinansErrorPayload(data: unknown): { message: string; fieldErrors:
   return { message, fieldErrors };
 }
 
-function permissionDeniedMessage(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
+function isSessionAuthFailure(status: number, data: unknown): boolean {
+  if (status === 401) return true;
+  if (status !== 403 || !data || typeof data !== "object") return false;
   const obj = data as Record<string, unknown>;
-  if (obj.code !== "permission_denied") return null;
+  if (obj.code === "not_authenticated") return true;
+  const detail = typeof obj.detail === "string" ? obj.detail : "";
   const error = typeof obj.error === "string" ? obj.error : "";
-  if (error.toLowerCase().includes("permission")) {
-    return "Bu işlem için finans düzenleme yetkisi gerekiyor (finans.write veya finans.manage).";
-  }
-  return error || "Bu işlem için yetkiniz yok.";
+  const msg = `${detail} ${error}`.toLowerCase();
+  return msg.includes("giriş bilgileri") || msg.includes("oturum açmanız");
 }
 
-export async function finansRequest<T>(path: string, options: FetchOptions = {}): Promise<T> {
-  const method = (options.method || "GET").toUpperCase();
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-    await ensureCsrfCookie();
-  }
-
+export async function finansRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = path.startsWith("http") ? path : finansApiUrl(path);
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {
@@ -194,7 +183,7 @@ export async function finansRequest<T>(path: string, options: FetchOptions = {})
     ...getContextHeaders(),
     ...(options.headers as Record<string, string> | undefined),
   };
-  if (csrf && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+  if (csrf && options.method && ["POST", "PUT", "PATCH", "DELETE"].includes(options.method.toUpperCase())) {
     headers["X-CSRFToken"] = csrf;
   }
 
@@ -207,15 +196,11 @@ export async function finansRequest<T>(path: string, options: FetchOptions = {})
     data = null;
   }
 
-  if (isSessionExpiredResponse(res.status, data) && typeof window !== "undefined") {
+  if (isSessionAuthFailure(res.status, data) && typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("3k:session-expired"));
   }
 
   if (!res.ok) {
-    const deniedMsg = permissionDeniedMessage(data);
-    if (deniedMsg) {
-      throw new FinansHttpError(deniedMsg);
-    }
     if (data == null) {
       throw new FinansHttpError(
         res.status === 403
@@ -232,7 +217,6 @@ export async function finansRequest<T>(path: string, options: FetchOptions = {})
 
 /** multipart/form-data — dosya yükleme (Content-Type otomatik, boundary korunur) */
 export async function finansFormUpload<T>(path: string, formData: FormData, method = "POST"): Promise<T> {
-  await ensureCsrfCookie();
   const url = path.startsWith("http") ? path : finansApiUrl(path);
   const csrf = getCsrfToken();
   const headers: Record<string, string> = { ...getContextHeaders() };
@@ -250,15 +234,11 @@ export async function finansFormUpload<T>(path: string, formData: FormData, meth
     }
   }
 
-  if (isSessionExpiredResponse(res.status, data) && typeof window !== "undefined") {
+  if (isSessionAuthFailure(res.status, data) && typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("3k:session-expired"));
   }
 
   if (!res.ok) {
-    const deniedMsg = permissionDeniedMessage(data);
-    if (deniedMsg) {
-      throw new FinansHttpError(deniedMsg);
-    }
     const { message, fieldErrors } = parseFinansErrorPayload(data);
     throw new FinansHttpError(message || text || "Dosya yüklenemedi.", fieldErrors);
   }
@@ -296,7 +276,6 @@ export async function finansDownloadPost(
   path: string,
   body: unknown
 ): Promise<{ blob: Blob; filename: string }> {
-  await ensureCsrfCookie();
   const url = path.startsWith("http") ? path : finansApiUrl(path);
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {

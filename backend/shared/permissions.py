@@ -94,7 +94,7 @@ class HasAnyPermission(BasePermission):
 
 
 class FinansModulePermission(BasePermission):
-    """GET → finans.read/write/manage; POST/PUT/PATCH → finans.write/manage; DELETE → finans.delete/manage."""
+    """GET → finans.read/write/manage; yazma → finans.manage."""
 
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
@@ -106,17 +106,7 @@ class FinansModulePermission(BasePermission):
                 'finans.write',
                 'finans.manage',
             )
-        if request.method == 'DELETE':
-            return user_has_any_permission(
-                request.user,
-                'finans.delete',
-                'finans.manage',
-            )
-        return user_has_any_permission(
-            request.user,
-            'finans.write',
-            'finans.manage',
-        )
+        return user_has_permission(request.user, 'finans.manage')
 
 
 class FinansManagePermission(BasePermission):
