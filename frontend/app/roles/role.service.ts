@@ -15,34 +15,17 @@ import {
   ApiResponse,
 } from './role.types';
 import { ROLE_API_ENDPOINTS } from './role.constants';
+import { apiFetch } from '@/lib/api';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-
-/**
- * API isteği yapan yardımcı fonksiyon
- */
 async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
-  
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    credentials: 'include',
-  });
-  
-  const data = await response.json();
-  
-  if (!response.ok) {
-    throw new Error(data.error || 'Bir hata oluştu');
+  const response = await apiFetch<T>(endpoint, options);
+  if (!response.success) {
+    throw new Error(response.error || 'Bir hata oluştu');
   }
-  
-  return data;
+  return response as T;
 }
 
 /**
