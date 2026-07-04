@@ -1,0 +1,285 @@
+/* Finans listeleri — card-modern içinde tablo ince ayarları */
+
+.finans-table-wrap {
+  overflow-x: auto;
+}
+
+.finans-table-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 14px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 12px;
+  background: #fafbfc;
+}
+
+.finans-table-empty svg {
+  color: #cbd5e1;
+}
+
+.finans-table-empty p {
+  margin: 0;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.finans-table-wrap .table-modern {
+  table-layout: fixed;
+  min-width: 960px;
+}
+
+.finans-table-wrap .table-modern th,
+.finans-table-wrap .table-modern td {
+  padding: 14px 16px;
+}
+
+.finans-th-draggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.finans-th-draggable:active {
+  cursor: grabbing;
+}
+
+.finans-th-draggable.is-dragging {
+  opacity: 0.5;
+}
+
+.finans-th-draggable.is-over {
+  background: var(--body-bg, #f8f9fb);
+}
+
+.finans-th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.finans-th-inner--right {
+  justify-content: flex-end;
+  width: 100%;
+}
+
+/* Sütun genişlikleri */
+.finans-table-wrap .table-modern td[data-col="aciklama"] { min-width: 160px; width: 20%; }
+.finans-table-wrap .table-modern td[data-col="cari_hesap"] { min-width: 140px; width: 15%; }
+.finans-table-wrap .table-modern td[data-col="odeme_yontemi"] { min-width: 110px; width: 11%; }
+.finans-table-wrap .table-modern td[data-col="islemler"],
+.finans-table-wrap .table-modern td[data-col="islem"] { width: 140px; white-space: nowrap; }
+.finans-table-wrap .table-modern td[data-col="durum"] { width: 120px; }
+.finans-table-wrap .table-modern td[data-col="vade"],
+.finans-table-wrap .table-modern td[data-col="vade_tarihi"],
+.finans-table-wrap .table-modern td[data-col="tarih"] { width: 105px; white-space: nowrap; }
+.finans-table-wrap .table-modern td[data-col="net_tutar"],
+.finans-table-wrap .table-modern td[data-col="tahsil_edilen"],
+.finans-table-wrap .table-modern td[data-col="kalan"],
+.finans-table-wrap .table-modern td[data-col="odenen"],
+.finans-table-wrap .table-modern td[data-col="tutar"],
+.finans-table-wrap .table-modern td[data-col="bakiye_sonrasi"],
+.finans-table-wrap .table-modern td[data-col="alis"],
+.finans-table-wrap .table-modern td[data-col="bakiye"] { width: 115px; white-space: nowrap; }
+.finans-table-wrap .table-modern td[data-col="odeme_durumu"] { min-width: 140px; width: 14%; }
+.finans-table-wrap .table-modern td[data-col="kategori"] { width: 115px; }
+.finans-table-wrap .table-modern td[data-col="taksit"] { width: 80px; text-align: center; }
+.finans-table-wrap .table-modern td[data-col="olusturan"] { width: 110px; }
+
+.finans-aciklama-cell {
+  display: block;
+  min-height: 1.35em;
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.cell-money {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.cell-money--green { color: #059669; }
+.cell-money--rose { color: #dc2626; }
+
+.finans-table-wrap .row-actions {
+  justify-content: flex-end;
+  opacity: 1;
+}
+
+/* Ödeme ilerleme — sade çubuk */
+.finans-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 130px;
+}
+
+.finans-progress__track {
+  flex: 1;
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.finans-progress__fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary, #0061a6);
+  transition: width 0.3s ease;
+}
+
+.finans-progress__fill--full { background: #059669; }
+.finans-progress__fill--partial { background: #d97706; }
+
+.finans-progress__label {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.finans-row--cancelled {
+  opacity: 0.45;
+}
+
+.finans-row--cancelled td {
+  text-decoration: line-through;
+}
+
+/* Gelir & Gider — kompakt özet kartları */
+.quick-stats--compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.quick-stats--compact.quick-stats--duo {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 480px;
+}
+
+.quick-stats--compact .quick-stat {
+  padding: 10px 12px;
+  gap: 10px;
+  border-radius: 10px;
+  box-shadow: none;
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+
+.quick-stats--compact .quick-stat:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #d1d5db;
+}
+
+.quick-stats--compact .quick-stat-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.quick-stats--compact .quick-stat-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.quick-stats--compact .quick-stat-info h4 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 1px;
+  line-height: 1.2;
+}
+
+.quick-stats--compact .quick-stat-info span {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* Cari hesap hücresi — arka plansız, sade metin */
+.finans-cari-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: default;
+  max-width: 100%;
+}
+
+.finans-cari-cell--link {
+  cursor: pointer;
+}
+
+.finans-cari-cell--link:hover .finans-cari-name {
+  color: var(--primary, #0061a6);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.finans-cari-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color, #111827);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.finans-cari-meta {
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* Çek vade banner — mevcut uyarı stili */
+.finans-cek-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.finans-cek-banner strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.finans-cek-banner p { margin: 0; }
+
+.finans-cek-banner-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.finans-cek-banner-actions button {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: #d97706;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}

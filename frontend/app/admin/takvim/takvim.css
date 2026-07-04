@@ -1,0 +1,807 @@
+/* ═══════════════════════════════════════════════
+   TAKVİM MODÜLÜ — CSS
+   ═══════════════════════════════════════════════ */
+
+/* ── Renk Sistemi ── */
+:root {
+  --tkv-deneme:    #EF4444;
+  --tkv-ders:      #3B82F6;
+  --tkv-gorusme:   #8B5CF6;
+  --tkv-etut:      #10B981;
+  --tkv-toplanti:  #F59E0B;
+  --tkv-tatil:     #6B7280;
+  --tkv-etkinlik:  #EC4899;
+  --tkv-diger:     #06B6D4;
+
+  --tkv-bg:        #f8fafc;
+  --tkv-surface:   #ffffff;
+  --tkv-border:    #e5e7eb;
+  --tkv-text:      #111827;
+  --tkv-text-sec:  #6b7280;
+  --tkv-primary:   #4f46e5;
+  --tkv-primary-h: #4338ca;
+}
+
+/* ═══ LAYOUT ═══ */
+.tkv-root {
+  display: flex;
+  height: calc(100vh - 64px);
+  overflow: hidden;
+  background: var(--tkv-bg);
+}
+
+/* ═══ SOL PANEL ═══ */
+.tkv-sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: var(--tkv-surface);
+  border-right: 1px solid var(--tkv-border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: width 0.25s ease, min-width 0.25s ease, opacity 0.2s;
+}
+.tkv-sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  opacity: 0;
+  border-right: none;
+  overflow: hidden;
+}
+
+.tkv-sidebar-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--tkv-border);
+}
+.tkv-sidebar-section:last-child { border-bottom: none; }
+
+.tkv-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tkv-text-sec);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Mini Takvim ── */
+.tkv-mini-cal {
+  width: 100%;
+}
+.tkv-mini-cal table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.tkv-mini-cal th {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--tkv-text-sec);
+  padding: 4px 0;
+  text-align: center;
+}
+.tkv-mini-cal td {
+  text-align: center;
+  padding: 2px;
+}
+.tkv-mini-cal-day {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--tkv-text);
+  transition: all 0.15s;
+  margin: 0 auto;
+}
+.tkv-mini-cal-day:hover {
+  background: #eff6ff;
+}
+.tkv-mini-cal-day.today {
+  background: var(--tkv-primary);
+  color: #fff;
+  font-weight: 600;
+}
+.tkv-mini-cal-day.selected {
+  background: #dbeafe;
+  color: var(--tkv-primary);
+  font-weight: 600;
+}
+.tkv-mini-cal-day.other-month {
+  color: #d1d5db;
+}
+.tkv-mini-cal-day.has-event::after {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--tkv-primary);
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.tkv-mini-cal-day { position: relative; }
+
+.tkv-mini-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.tkv-mini-nav span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tkv-text);
+}
+.tkv-mini-nav button {
+  background: none;
+  border: 1px solid var(--tkv-border);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--tkv-text-sec);
+  transition: all 0.15s;
+  font-size: 12px;
+}
+.tkv-mini-nav button:hover {
+  background: #f3f4f6;
+  color: var(--tkv-text);
+}
+
+/* ── Filtre Checkbox ── */
+.tkv-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 13px;
+  color: var(--tkv-text);
+}
+.tkv-filter-item:hover {
+  background: #f3f4f6;
+}
+.tkv-filter-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tkv-filter-count {
+  margin-left: auto;
+  font-size: 10px;
+  background: #f3f4f6;
+  color: #9ca3af;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+.tkv-filter-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.tkv-filter-actions button {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--tkv-border);
+  background: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--tkv-text-sec);
+  transition: all 0.15s;
+}
+.tkv-filter-actions button:hover {
+  background: #f3f4f6;
+  color: var(--tkv-text);
+}
+
+/* ── Arama ── */
+.tkv-search {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  border-radius: 8px;
+  border: 1px solid var(--tkv-border);
+  font-size: 13px;
+  outline: none;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E") 10px center no-repeat;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tkv-search:focus {
+  border-color: var(--tkv-primary);
+  box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+}
+.tkv-search::placeholder { color: #9ca3af; }
+
+
+/* ═══ ÜST BAR ═══ */
+.tkv-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--tkv-surface);
+  border-bottom: 1px solid var(--tkv-border);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tkv-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tkv-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tkv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--tkv-border);
+  background: var(--tkv-surface);
+  color: var(--tkv-text);
+  white-space: nowrap;
+}
+.tkv-btn:hover { background: #f3f4f6; }
+.tkv-btn.active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+.tkv-btn-primary {
+  background: var(--tkv-primary);
+  color: #fff;
+  border-color: var(--tkv-primary);
+  font-weight: 600;
+}
+.tkv-btn-primary:hover {
+  background: var(--tkv-primary-h);
+  border-color: var(--tkv-primary-h);
+}
+.tkv-btn-icon {
+  padding: 7px;
+  border-radius: 8px;
+  border: 1px solid var(--tkv-border);
+  background: var(--tkv-surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  color: var(--tkv-text-sec);
+}
+.tkv-btn-icon:hover {
+  background: #f3f4f6;
+  color: var(--tkv-text);
+}
+
+/* Görünüm seçici */
+.tkv-view-group {
+  display: flex;
+  border: 1px solid var(--tkv-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tkv-view-btn {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--tkv-surface);
+  color: var(--tkv-text-sec);
+  border: none;
+  border-right: 1px solid var(--tkv-border);
+  transition: all 0.15s;
+}
+.tkv-view-btn:last-child { border-right: none; }
+.tkv-view-btn:hover { background: #f3f4f6; }
+.tkv-view-btn.active {
+  background: var(--tkv-primary);
+  color: #fff;
+}
+
+/* ═══ ANA TAKVİM ALANI ═══ */
+.tkv-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+.tkv-calendar-wrap {
+  flex: 1;
+  padding: 12px 16px 16px;
+  overflow: auto;
+}
+
+/* ═══ FULLCALENDAR OVERRIDES ═══ */
+.tkv-calendar-wrap .fc {
+  --fc-border-color: #e5e7eb;
+  --fc-today-bg-color: #eff6ff;
+  --fc-neutral-bg-color: #f9fafb;
+  --fc-page-bg-color: transparent;
+  --fc-event-border-color: transparent;
+  font-family: 'Poppins', 'Rubik', sans-serif;
+}
+
+.tkv-calendar-wrap .fc .fc-toolbar {
+  display: none !important;      /* Kendi toolbar'ımızı kullanıyoruz */
+}
+
+.tkv-calendar-wrap .fc .fc-col-header-cell {
+  padding: 10px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tkv-text-sec);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: #f9fafb;
+  border-bottom: 2px solid var(--tkv-border);
+}
+
+.tkv-calendar-wrap .fc .fc-daygrid-day-number {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tkv-text);
+  padding: 6px 8px;
+}
+.tkv-calendar-wrap .fc .fc-day-today .fc-daygrid-day-number {
+  background: var(--tkv-primary);
+  color: #fff;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px;
+}
+
+.tkv-calendar-wrap .fc .fc-daygrid-day-frame {
+  min-height: 100px;
+}
+
+.tkv-calendar-wrap .fc .fc-daygrid-day:hover {
+  background: #fafbff;
+}
+
+/* ── Event Kartları ── */
+.tkv-calendar-wrap .fc .fc-event {
+  border: none !important;
+  border-radius: 6px !important;
+  margin: 1px 2px !important;
+  padding: 0 !important;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.15s;
+}
+.tkv-calendar-wrap .fc .fc-event:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  z-index: 10 !important;
+}
+
+/* Event kart inner */
+.tkv-event-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.3;
+  min-height: 24px;
+  border-left: 3px solid currentColor;
+  background: color-mix(in srgb, currentColor 8%, white);
+  color: inherit;
+}
+.tkv-event-card .ev-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.tkv-event-card .ev-badge {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 15%, white);
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tkv-event-card .ev-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--tkv-text);
+  flex: 1;
+  min-width: 0;
+}
+.tkv-event-card .ev-time {
+  font-size: 10px;
+  color: var(--tkv-text-sec);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tkv-event-card .ev-meta {
+  font-size: 10px;
+  color: var(--tkv-text-sec);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* timeGrid event kartı daha büyük */
+.tkv-calendar-wrap .fc-timegrid-event .tkv-event-card {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 4px 8px;
+}
+
+/* "daha fazla" butonu */
+.tkv-calendar-wrap .fc .fc-daygrid-more-link {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tkv-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.tkv-calendar-wrap .fc .fc-daygrid-more-link:hover {
+  background: #eff6ff;
+}
+
+/* timeGrid slot'lar */
+.tkv-calendar-wrap .fc .fc-timegrid-slot {
+  height: 40px;
+}
+.tkv-calendar-wrap .fc .fc-timegrid-slot-label-cushion {
+  font-size: 11px;
+  color: var(--tkv-text-sec);
+}
+
+/* listView */
+.tkv-calendar-wrap .fc .fc-list-event-title a {
+  color: var(--tkv-text);
+  font-weight: 500;
+}
+.tkv-calendar-wrap .fc .fc-list-day-cushion {
+  background: #f9fafb;
+  font-weight: 600;
+}
+
+/* ═══ HOVER TOOLTIP ═══ */
+.tkv-tooltip {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  background: var(--tkv-surface);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.04);
+  padding: 12px 16px;
+  width: 260px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.tkv-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.tkv-tooltip-color {
+  height: 4px;
+  border-radius: 10px 10px 0 0;
+  margin: -12px -16px 10px -16px;
+}
+.tkv-tooltip-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tkv-text);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tkv-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--tkv-text-sec);
+  line-height: 1.8;
+}
+.tkv-tooltip-row svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+/* ═══ MOBİL ═══ */
+@media (max-width: 768px) {
+  .tkv-sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    z-index: 9990;
+    width: 280px;
+    min-width: 280px;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+  .tkv-sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .tkv-sidebar.collapsed {
+    transform: translateX(-100%);
+  }
+  .tkv-mobile-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9989;
+    background: rgba(0,0,0,0.3);
+  }
+
+  .tkv-topbar {
+    padding: 8px 12px;
+  }
+  .tkv-view-group { display: none; }
+  .tkv-btn span.hide-mobile { display: none; }
+
+  .tkv-calendar-wrap {
+    padding: 8px;
+  }
+  .tkv-calendar-wrap .fc .fc-daygrid-day-frame {
+    min-height: 60px;
+  }
+  .tkv-event-card .ev-time { display: none; }
+  .tkv-event-card .ev-meta { display: none; }
+  .tkv-event-card .ev-title { font-size: 11px; }
+}
+
+@media (max-width: 480px) {
+  .tkv-topbar-right .tkv-btn span { display: none; }
+  .tkv-calendar-wrap .fc .fc-col-header-cell {
+    font-size: 10px;
+    padding: 6px 2px;
+  }
+  .tkv-calendar-wrap .fc .fc-daygrid-day-number {
+    font-size: 11px;
+    padding: 4px;
+  }
+}
+
+/* ═══ DRAG & DROP KALİTE ═══ */
+.tkv-calendar-wrap .fc .fc-event-dragging {
+  opacity: 0.85;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  transform: scale(1.02);
+}
+.tkv-calendar-wrap .fc .fc-highlight {
+  background: rgba(79, 70, 229, 0.08);
+  border: 2px dashed rgba(79, 70, 229, 0.3);
+  border-radius: 4px;
+}
+
+/* ═══ DRAWER ANİMASYON ═══ */
+.tkv-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0,0,0,0.3);
+  animation: tkv-fadeIn 0.2s ease;
+}
+.tkv-drawer {
+  position: fixed;
+  right: 0; top: 0; bottom: 0;
+  width: 480px;
+  max-width: 92vw;
+  background: var(--tkv-surface);
+  box-shadow: -8px 0 30px rgba(0,0,0,0.12);
+  display: flex;
+  flex-direction: column;
+  z-index: 9999;
+  animation: tkv-slideInRight 0.25s ease;
+}
+
+/* ═══ DETAIL POPUP ═══ */
+.tkv-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0,0,0,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: tkv-fadeIn 0.2s ease;
+}
+.tkv-popup {
+  background: var(--tkv-surface);
+  border-radius: 14px;
+  width: 440px;
+  max-width: 94vw;
+  max-height: 85vh;
+  overflow: auto;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.2);
+  animation: tkv-scaleIn 0.2s ease;
+}
+
+@keyframes tkv-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes tkv-slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes tkv-scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ═══ FORM INPUTS ═══ */
+.tkv-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--tkv-border);
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+  color: var(--tkv-text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tkv-input:focus {
+  border-color: var(--tkv-primary);
+  box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+}
+.tkv-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--tkv-text-sec);
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* ═══ CONTEXT BAR (Şube / Eğitim Yılı / Dönem) ═══ */
+
+.tkv-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #f0f4ff 0%, #faf5ff 100%);
+  border-bottom: 1px solid var(--tkv-border);
+  flex-wrap: wrap;
+}
+
+.tkv-ctx-dropdown {
+  position: relative;
+}
+
+.tkv-ctx-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--tkv-border);
+  background: var(--tkv-surface);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--tkv-text);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.tkv-ctx-btn:hover:not(:disabled) {
+  border-color: var(--tkv-primary);
+  box-shadow: 0 2px 8px rgba(79,70,229,0.1);
+}
+.tkv-ctx-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tkv-ctx-icon {
+  font-size: 14px;
+}
+
+.tkv-ctx-label {
+  font-weight: 500;
+  color: var(--tkv-text-sec);
+  font-size: 12px;
+}
+
+.tkv-ctx-value {
+  font-weight: 600;
+  color: var(--tkv-primary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tkv-ctx-chevron {
+  font-size: 8px;
+  color: var(--tkv-text-sec);
+  margin-left: 2px;
+}
+
+.tkv-ctx-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--tkv-surface);
+  border: 1px solid var(--tkv-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 9999;
+  padding: 4px;
+  animation: tkv-scaleIn 0.15s ease;
+}
+
+.tkv-ctx-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--tkv-text);
+  transition: background 0.1s;
+}
+.tkv-ctx-item:hover {
+  background: #f3f4f6;
+}
+.tkv-ctx-item.active {
+  background: #ede9fe;
+  color: var(--tkv-primary);
+  font-weight: 600;
+}
+.tkv-ctx-item.disabled {
+  color: var(--tkv-text-sec);
+  cursor: default;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .tkv-context-bar {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  .tkv-ctx-btn {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .tkv-ctx-value {
+    max-width: 100px;
+  }
+}

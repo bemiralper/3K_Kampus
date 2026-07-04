@@ -1,0 +1,71 @@
+.finans-export-menu {
+  min-width: 220px;
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  padding: 8px 0 4px;
+}
+
+.finans-export-orient {
+  padding: 4px 14px 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.finans-export-orient-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.finans-export-orient-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.finans-export-orient-btns button {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.finans-export-orient-btns button.active {
+  border-color: var(--primary, #0262a7);
+  background: #e8f4ff;
+  color: var(--primary-hover, #01518c);
+}
+
+.finans-export-orient-hint {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.finans-export-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+}
+
+.finans-export-item:hover {
+  background: #f8fafc;
+}

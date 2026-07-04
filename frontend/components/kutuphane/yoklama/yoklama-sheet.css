@@ -1,0 +1,154 @@
+.yok-sheet-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  margin-top: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.yok-sheet-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 10px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.yok-sheet-table th,
+.yok-sheet-table td {
+  border: 1px solid #cbd5e1;
+  padding: 3px 2px;
+  text-align: center;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.yok-sheet-table thead th {
+  background: #f1f5f9;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.yok-sheet-table .yok-col-num {
+  width: 26px;
+  min-width: 26px;
+  max-width: 26px;
+  color: #94a3b8;
+  font-size: 9px;
+}
+
+.yok-sheet-table .yok-col-name {
+  width: 108px;
+  min-width: 108px;
+  max-width: 108px;
+  text-align: left !important;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.yok-sheet-table .yok-col-desk {
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  font-family: ui-monospace, monospace;
+  font-size: 9px;
+}
+
+.yok-sheet-table .yok-col-period {
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
+  padding: 2px 1px !important;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.yok-sheet-table .yok-day-head {
+  background: #e2e8f0 !important;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 4px 2px !important;
+}
+
+.yok-sheet-table .yok-day-head.closed {
+  background: #f1f5f9 !important;
+  color: #94a3b8;
+}
+
+.yok-sheet-table .yok-day-date {
+  display: block;
+  font-size: 7px;
+  font-weight: 500;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+.yok-sheet-table .yok-period-head {
+  font-size: 8px;
+  font-weight: 700;
+  color: #475569;
+  padding: 2px 0 !important;
+}
+
+.yok-sheet-table .yok-period-ders {
+  display: block;
+  font-size: 6px;
+  font-weight: 600;
+  color: #94a3b8;
+  line-height: 1;
+}
+
+.yok-sheet-table .yok-sticky-num {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: inherit;
+  box-shadow: 1px 0 0 #cbd5e1;
+}
+
+.yok-sheet-table .yok-sticky-name {
+  position: sticky;
+  left: 26px;
+  z-index: 3;
+  background: inherit;
+  box-shadow: 1px 0 0 #cbd5e1;
+}
+
+.yok-sheet-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.yok-sheet-table tbody tr:nth-child(even) .yok-sticky-num,
+.yok-sheet-table tbody tr:nth-child(even) .yok-sticky-name {
+  background: #f8fafc;
+}
+
+.yok-sheet-table thead .yok-sticky-num,
+.yok-sheet-table thead .yok-sticky-name {
+  background: #f0f4f8;
+  z-index: 4;
+}
+
+.yok-sheet-check {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.yok-sheet-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  font-size: 7px;
+  font-weight: 800;
+  vertical-align: middle;
+}

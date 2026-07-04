@@ -1,0 +1,502 @@
+.cari-tab-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fafbfc;
+}
+
+.cari-tab-toolbar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.cari-tab-toolbar-search {
+  position: relative;
+  min-width: 220px;
+  flex: 1;
+  max-width: 280px;
+}
+
+.cari-tab-toolbar-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.cari-tab-toolbar-search input,
+.cari-tab-toolbar-select,
+.cari-tab-toolbar-date {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #334155;
+  background: #fff;
+  outline: none;
+}
+
+.cari-tab-toolbar-search input {
+  width: 100%;
+  padding-left: 34px;
+}
+
+.cari-tab-toolbar-search input:focus,
+.cari-tab-toolbar-select:focus,
+.cari-tab-toolbar-date:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.cari-tab-toolbar-clear {
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cari-tab-toolbar-clear:hover {
+  color: #334155;
+  background: #f1f5f9;
+}
+
+.cari-tab-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.cari-col-picker-wrap,
+.cari-export-wrap {
+  position: relative;
+}
+
+/* Küçük buton varyantları — Cari Hesaplar modülünde her yerde ortak kullanılır
+   (CariTabToolbar, CariHesaplarClient, CariDetayClient, CariDosyaPanel).
+   Renkler globals.css'teki --primary tonuyla hizalıdır. */
+.btn-modern.btn-primary-sm {
+  background: linear-gradient(135deg, var(--primary, #0262a7) 0%, var(--primary-hover, #01518c) 100%);
+  color: #fff;
+  padding: 7px 14px;
+  font-size: 12px;
+  border-radius: 8px;
+  box-shadow: 0 3px 10px rgba(0, 82, 167, 0.22);
+}
+
+.btn-modern.btn-outline-sm {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  padding: 7px 14px;
+  font-size: 12px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.btn-modern.btn-outline-sm:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.cari-tab-export-error {
+  font-size: 12px;
+  color: #be123c;
+  max-width: 200px;
+}
+
+.cari-col-picker-menu,
+.cari-export-menu {
+  min-width: 200px;
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  padding: 8px 0;
+}
+
+.cari-col-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.cari-col-picker-item:hover {
+  background: #f8fafc;
+}
+
+.cari-export-orient {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.cari-export-orient button {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cari-export-orient button.active {
+  border-color: #6366f1;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.cari-export-menu > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+}
+
+.cari-export-menu > button:hover {
+  background: #f8fafc;
+}
+
+.finans-table-wrap--modern {
+  border: 1px solid #e2e8f0;
+  border-radius: 0 0 14px 14px;
+  background: #fff;
+}
+
+.table-modern--cari tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.table-modern--cari tbody tr:hover {
+  background: #f1f5f9;
+}
+
+.finans-td-modern {
+  vertical-align: middle;
+}
+
+
+.cari-badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cari-badge--alacak {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.cari-badge--borc {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.cell-money--muted {
+  color: #cbd5e1;
+}
+
+/* Virman modal */
+.virman-modal-summary {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+  border: 1px solid #e2e8f0;
+}
+
+.virman-modal-account {
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.virman-modal-account label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+
+.virman-modal-account select {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  outline: none;
+}
+
+.virman-modal-arrow {
+  font-size: 22px;
+  text-align: center;
+  color: #6366f1;
+}
+
+.virman-modal-tutar-wrap {
+  position: relative;
+  margin-bottom: 14px;
+}
+
+.virman-modal-tutar-wrap input {
+  width: 100%;
+  font-size: 28px;
+  font-weight: 700;
+  text-align: center;
+  padding: 16px 40px;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  color: #0f172a;
+  outline: none;
+}
+
+.virman-modal-tutar-wrap input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+}
+
+.virman-modal-tutar-prefix {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 22px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.virman-modal-section {
+  padding: 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 12px;
+}
+
+.virman-modal-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.cari-list-view-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 16px 0;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fafbfc;
+}
+
+.cari-list-view-tabs button {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cari-list-view-tabs button.active {
+  background: #fff;
+  color: #0f172a;
+  box-shadow: inset 0 -2px 0 #2563eb;
+}
+
+.cari-ekstre-ozet {
+  margin: 16px 16px 0;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.cari-ekstre-ozet--loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.cari-ekstre-ozet__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.cari-ekstre-ozet__header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.cari-ekstre-ozet__hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.cari-ekstre-ozet__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.cari-ekstre-ozet__item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.cari-ekstre-ozet__item--warn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.cari-ekstre-ozet__item--danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.cari-ekstre-ozet__item--muted .cari-ekstre-ozet__value {
+  color: #94a3b8;
+}
+
+.cari-ekstre-ozet__label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.cari-ekstre-ozet__value {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.cari-ekstre-ozet__range {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.cari-bakiye-rapor-summary {
+  margin: 0 16px 12px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.cari-bakiye-rapor-summary__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.cari-bakiye-rapor-summary__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.cari-bakiye-rapor-summary__range {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.cari-bakiye-rapor-summary__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cari-bakiye-rapor-stat {
+  min-width: 110px;
+  padding: 8px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+}
+
+.cari-bakiye-rapor-stat span {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cari-bakiye-rapor-stat strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #1f3c88;
+}
+
+.cari-bakiye-rapor-stat--wide {
+  min-width: 160px;
+}

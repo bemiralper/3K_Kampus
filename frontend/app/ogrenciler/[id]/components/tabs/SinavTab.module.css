@@ -1,0 +1,777 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SinavTab — Öğrenci Sınav Analiz Paneli  (Modern UI v2)
+   Globals.css'deki card-modern, badge-modern, quick-stat, tab-modern
+   sınıflarını temel alır. CSS custom properties kullanır.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Container ─── */
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ─── KPI Kartları ─── */
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 16px;
+}
+
+.kpiCard {
+  background: var(--card-bg, #fff);
+  border-radius: 16px;
+  padding: 22px 20px 18px;
+  border: 1px solid var(--border-color, #dfe6ef);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: transform 0.25s cubic-bezier(.4,0,.2,1), box-shadow 0.25s cubic-bezier(.4,0,.2,1);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.kpiCard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 28px rgba(2, 62, 120, 0.1);
+}
+
+.kpiCard::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 16px 16px 0 0;
+}
+
+.kpiCard.blue::before   { background: linear-gradient(90deg, #0262a7, #3b9be0); }
+.kpiCard.green::before  { background: linear-gradient(90deg, #06d6a0, #34d399); }
+.kpiCard.purple::before { background: linear-gradient(90deg, #7c3aed, #a78bfa); }
+.kpiCard.orange::before { background: linear-gradient(90deg, #ea580c, #fb923c); }
+.kpiCard.teal::before   { background: linear-gradient(90deg, #0d9488, #2dd4bf); }
+.kpiCard.rose::before   { background: linear-gradient(90deg, #e11d48, #fb7185); }
+
+.kpiIconWrap {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  margin-bottom: 2px;
+}
+
+.kpiIconWrap.blue   { background: linear-gradient(135deg, #e8f4ff, #d0e8ff); }
+.kpiIconWrap.green  { background: linear-gradient(135deg, #e6faf4, #ccf5e8); }
+.kpiIconWrap.purple { background: linear-gradient(135deg, #f3e8ff, #e4d0ff); }
+.kpiIconWrap.orange { background: linear-gradient(135deg, #fff4e6, #ffe8cc); }
+.kpiIconWrap.teal   { background: linear-gradient(135deg, #e0faf7, #ccf5f0); }
+.kpiIconWrap.rose   { background: linear-gradient(135deg, #ffe4f1, #ffd0e7); }
+
+.kpiValue {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-color, #1e3352);
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+}
+
+.kpiLabel {
+  font-size: 12px;
+  color: var(--text-muted, #7088a4);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.kpiChange {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  width: fit-content;
+  margin-top: 2px;
+}
+
+.kpiChange.positive {
+  background: linear-gradient(135deg, #e6faf4, #d1fae5);
+  color: #059669;
+}
+
+.kpiChange.negative {
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
+  color: #dc2626;
+}
+
+.kpiSubtext {
+  font-size: 11px;
+  color: var(--text-muted, #7088a4);
+  margin-top: 1px;
+}
+
+/* ─── Sub-Tab Navigation (pill style) ─── */
+.subTabs {
+  display: flex;
+  gap: 0;
+  padding: 4px;
+  background: linear-gradient(135deg, #f0f4f9, #e8eef5);
+  border-radius: 14px;
+  border: 1px solid var(--border-color, #dfe6ef);
+}
+
+.subTab {
+  flex: 1;
+  padding: 11px 20px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted, #7088a4);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(.4,0,.2,1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+}
+
+.subTab:hover {
+  color: var(--text-color, #1e3352);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.subTab.active {
+  background: #fff;
+  color: var(--primary, #0262a7);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(2, 62, 120, 0.1);
+}
+
+.subTabIcon {
+  display: flex;
+  align-items: center;
+}
+
+.subTabCount {
+  background: var(--primary, #0262a7);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  margin-left: 4px;
+}
+
+/* ─── Sınav Tablosu (Modern Table) ─── */
+.tableWrap {
+  background: var(--card-bg, #fff);
+  border-radius: 16px;
+  border: 1px solid var(--border-color, #dfe6ef);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  overflow: hidden;
+}
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border-color, #dfe6ef);
+}
+
+.tableTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-color, #1e3352);
+}
+
+.tableTitle svg {
+  color: var(--primary, #0262a7);
+}
+
+.tableBadge {
+  background: linear-gradient(135deg, #e8f4ff, #d0e8ff);
+  color: var(--primary, #0262a7);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.examTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.examTable thead tr {
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+}
+
+.examTable th {
+  padding: 11px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted, #7088a4);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid var(--border-color, #dfe6ef);
+  white-space: nowrap;
+}
+
+.examTable th.center { text-align: center; }
+
+.examTable td {
+  padding: 13px 14px;
+  font-size: 13.5px;
+  color: var(--text-color, #1e3352);
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.examTable td.center { text-align: center; }
+
+.examTable tbody tr {
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.examTable tbody tr:hover {
+  background: linear-gradient(90deg, #f8fbff, #f0f6ff);
+}
+
+.examTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Expandable row */
+.expandRow {
+  cursor: pointer;
+}
+
+.expandChevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: var(--text-muted, #7088a4);
+  font-size: 10px;
+  transition: all 0.25s cubic-bezier(.4,0,.2,1);
+}
+
+.expandChevron.open {
+  background: linear-gradient(135deg, #e8f4ff, #d0e8ff);
+  color: var(--primary, #0262a7);
+  transform: rotate(90deg);
+}
+
+/* Section detail rows */
+.sectionRow td {
+  background: #fafbfd;
+  font-size: 13px;
+  padding: 9px 14px;
+  color: #4b5e73;
+}
+
+.sectionRow:last-child td {
+  border-bottom: 1px solid #eef2f7;
+}
+
+.sectionName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sectionName.main {
+  font-weight: 600;
+  color: var(--text-color, #1e3352);
+}
+
+.sectionName.sub {
+  font-weight: 400;
+  padding-left: 18px;
+  color: var(--text-muted, #7088a4);
+}
+
+.sectionName.sub::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 1px;
+  background: #cbd5e1;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+/* Net Mini Bar (table içi) */
+.netMiniBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.netMiniTrack {
+  width: 48px;
+  height: 6px;
+  background: #eef2f7;
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.netMiniFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+/* ─── Badge Stili ─── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 11px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+.badgeBlue   { background: linear-gradient(135deg, #e8f4ff, #d0e8ff); color: #0262a7; }
+.badgeGreen  { background: linear-gradient(135deg, #e6faf4, #ccf5e8); color: #059669; }
+.badgePurple { background: linear-gradient(135deg, #f3e8ff, #e4d0ff); color: #7c3aed; }
+.badgeAmber  { background: linear-gradient(135deg, #fff8e1, #ffecb3); color: #d97706; }
+.badgeRed    { background: linear-gradient(135deg, #fef2f2, #fee2e2); color: #dc2626; }
+.badgeTeal   { background: linear-gradient(135deg, #e0faf7, #ccf5f0); color: #0d9488; }
+.badgeGray   { background: linear-gradient(135deg, #f0f4f9, #e8eef5); color: var(--text-muted, #7088a4); }
+
+/* ─── Net Renk Skalası ─── */
+.netHigh { color: #059669; font-weight: 700; }
+.netMid  { color: var(--primary, #0262a7); font-weight: 700; }
+.netLow  { color: #dc2626; font-weight: 700; }
+
+/* ─── Sıralama Badge ─── */
+.rankBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.rankGold   { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #b45309; }
+.rankSilver { background: linear-gradient(135deg, #e8eef5, #d1dae6); color: #475569; }
+.rankBronze { background: linear-gradient(135deg, #ffedd5, #fed7aa); color: #c2410c; }
+.rankNormal { background: linear-gradient(135deg, #f0f4f9, #e8eef5); color: var(--text-muted, #7088a4); }
+
+/* ─── Detay Expand Grid ─── */
+.examDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 14px;
+  padding: 18px 24px;
+  background: linear-gradient(135deg, #fafbfd, #f5f7fa);
+  border-bottom: 1px solid #eef2f7;
+}
+
+.examDetailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.examDetailLabel {
+  font-size: 11px;
+  color: var(--text-muted, #7088a4);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 500;
+}
+
+.examDetailValue {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-color, #1e3352);
+  letter-spacing: -0.3px;
+}
+
+/* ─── Grafik Container ─── */
+.chartCard {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #dfe6ef);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  transition: box-shadow 0.25s;
+}
+
+.chartCard:hover {
+  box-shadow: 0 4px 20px rgba(2, 62, 120, 0.07);
+}
+
+.chartTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-color, #1e3352);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chartTitleIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.chartTitleIcon.blue   { background: linear-gradient(135deg, #e8f4ff, #d0e8ff); }
+.chartTitleIcon.purple { background: linear-gradient(135deg, #f3e8ff, #e4d0ff); }
+.chartTitleIcon.green  { background: linear-gradient(135deg, #e6faf4, #ccf5e8); }
+.chartTitleIcon.orange { background: linear-gradient(135deg, #fff4e6, #ffe8cc); }
+
+.chartGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 960px) {
+  .chartGrid {
+    grid-template-columns: 1fr;
+  }
+  .kpiGrid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+
+/* ─── Performans Segmenti ─── */
+.segmentCard {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 28px;
+  border-radius: 16px;
+  border: 1px solid;
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+
+.segmentCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.06);
+}
+
+.segmentCard.top  { background: linear-gradient(135deg, #f0fdf4, #e6faf4); border-color: #86efac; }
+.segmentCard.mid  { background: linear-gradient(135deg, #eff6ff, #e0eeff); border-color: #93c5fd; }
+.segmentCard.low  { background: linear-gradient(135deg, #fefce8, #fef9c3); border-color: #fde047; }
+.segmentCard.risk { background: linear-gradient(135deg, #fef2f2, #fee2e2); border-color: #fca5a5; }
+
+.segmentIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.segmentCard.top .segmentIcon  { background: linear-gradient(135deg, #dcfce7, #bbf7d0); }
+.segmentCard.mid .segmentIcon  { background: linear-gradient(135deg, #dbeafe, #bfdbfe); }
+.segmentCard.low .segmentIcon  { background: linear-gradient(135deg, #fef3c7, #fde68a); }
+.segmentCard.risk .segmentIcon { background: linear-gradient(135deg, #fecaca, #fca5a5); }
+
+.segmentBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.segmentLabel {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-color, #1e3352);
+}
+
+.segmentDesc {
+  font-size: 13px;
+  color: var(--text-muted, #7088a4);
+  line-height: 1.4;
+}
+
+/* ─── Ders Bazlı Net Barı ─── */
+.sectionBar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0;
+}
+
+.sectionBarLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color, #1e3352);
+  width: 110px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.sectionBarTrack {
+  flex: 1;
+  height: 24px;
+  background: linear-gradient(135deg, #f0f4f9, #e8eef5);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sectionBarFill {
+  height: 100%;
+  border-radius: 12px;
+  transition: width 0.5s cubic-bezier(.4,0,.2,1);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  min-width: 36px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+}
+
+.sectionBarValue {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-color, #1e3352);
+  width: 65px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ─── Ders Güçlü/Zayıf İndikatörü ─── */
+.insightGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subjectInsight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: transform 0.2s;
+}
+
+.subjectInsight:hover {
+  transform: translateX(2px);
+}
+
+.subjectStrong {
+  background: linear-gradient(135deg, #f0fdf4, #e6faf4);
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.subjectWeak {
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.subjectChange {
+  border: 1px solid;
+  border-radius: 12px;
+}
+
+/* ─── Empty State ─── */
+.emptyState {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--text-muted, #7088a4);
+}
+
+.emptyIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f0f4f9, #e8eef5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.emptyState h4 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-color, #1e3352);
+  margin-bottom: 8px;
+}
+
+.emptyState p {
+  font-size: 14px;
+  color: var(--text-muted, #7088a4);
+  line-height: 1.5;
+}
+
+/* ─── Loading State ─── */
+.loadingWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  gap: 16px;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e8eef5;
+  border-top-color: var(--primary, #0262a7);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+.loadingText {
+  font-size: 13px;
+  color: var(--text-muted, #7088a4);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Toast ─── */
+.toast {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 9999;
+  color: #fff;
+  padding: 14px 22px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: slideUp 0.35s cubic-bezier(.4,0,.2,1);
+  backdrop-filter: blur(8px);
+}
+
+.toast.success { background: linear-gradient(135deg, #059669, #10b981); }
+.toast.error   { background: linear-gradient(135deg, #dc2626, #ef4444); }
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* ─── Recharts Tooltip ─── */
+.customTooltip {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #dfe6ef);
+  border-radius: 12px;
+  padding: 14px 18px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
+.tooltipLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color, #1e3352);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.tooltipItem {
+  font-size: 12px;
+  color: #4b5e73;
+  padding: 3px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tooltipDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.8);
+}
+
+.tooltipValue {
+  font-weight: 700;
+  color: var(--text-color, #1e3352);
+  margin-left: auto;
+}
+
+/* ─── Exam Name Cell ─── */
+.examName {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.examNameText {
+  font-weight: 600;
+  color: var(--text-color, #1e3352);
+  font-size: 13.5px;
+}
+
+.examDateMini {
+  font-size: 11px;
+  color: var(--text-muted, #7088a4);
+}
+
+/* ─── Puan Cell ─── */
+.puanCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.puanMain {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-color, #1e3352);
+  letter-spacing: -0.3px;
+}
+
+.puanSub {
+  font-size: 10px;
+  color: var(--text-muted, #7088a4);
+}

@@ -1,0 +1,31 @@
+{
+  "cities": [
+    {
+      "code": "25",
+      "name": "Erzurum",
+      "is_default": true,
+      "districts": [
+        "Aziziye",
+        "Palandöken",
+        "Yakutiye",
+        "Aşkale",
+        "Çat",
+        "Hınıs",
+        "Horasan",
+        "İspir",
+        "Karaçoban",
+        "Karayazı",
+        "Köprüköy",
+        "Narman",
+        "Oltu",
+        "Olur",
+        "Pasinler",
+        "Pazaryolu",
+        "Şenkaya",
+        "Tekman",
+        "Tortum",
+        "Uzundere"
+      ]
+    }
+  ]
+}

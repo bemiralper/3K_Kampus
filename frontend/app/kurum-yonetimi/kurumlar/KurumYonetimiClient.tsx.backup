@@ -1,0 +1,480 @@
+"use client";
+
+import { useState } from "react";
+
+type TabType = "kurumlar" | "subeler" | "egitim_yillari";
+
+type KurumResponse = {
+  kurumlar?: Array<{ 
+    id: number; 
+    ad: string; 
+    kod: string; 
+    aktif_mi: boolean;
+    yetkili_ad_soyad?: string;
+    telefon_sabit?: string;
+    telefon_cep?: string;
+    adres?: string;
+  }>;
+  subeler?: Array<{ 
+    id: number; 
+    ad: string; 
+    kod?: string;
+    telefon?: string;
+    adres?: string;
+    kurum: { ad: string } 
+  }>; 
+  egitim_yillari?: Array<{ 
+    id: number; 
+    baslangic_yil: number; 
+    bitis_yil: number; 
+    aktif_mi: boolean 
+  }>;
+};
+
+interface KurumYonetimiClientProps {
+  initialData: KurumResponse;
+}
+
+export default function KurumYonetimiClient({ initialData }: KurumYonetimiClientProps) {
+  const [activeTab, setActiveTab] = useState<TabType>("kurumlar");
+  const data = initialData;
+
+  const kurumlarCount = data.kurumlar?.length ?? 0;
+  const subelerCount = data.subeler?.length ?? 0;
+  const egitimYillariCount = data.egitim_yillari?.length ?? 0;
+  const aktifYil = data.egitim_yillari?.find(y => y.aktif_mi);
+
+  return (
+    <div className="section">
+      {/* Page Header */}
+      <div className="page-header">
+        <div className="page-header-left">
+          <h2>Kurum Yönetimi</h2>
+          <div className="breadcrumb">
+            <a href="/dashboard">Ana Sayfa</a>
+            <span>/</span>
+            <span>Kurum Ayarları</span>
+            <span>/</span>
+            <span>Kurum Yönetimi</span>
+          </div>
+        </div>
+        <div className="page-header-right">
+          <button className="btn-modern btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Yeni Ekle
+          </button>
+        </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="quick-stats">
+        <div className="quick-stat">
+          <div className="quick-stat-icon blue">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
+            </svg>
+          </div>
+          <div className="quick-stat-info">
+            <h4>{kurumlarCount}</h4>
+            <span>Toplam Kurum</span>
+          </div>
+        </div>
+        <div className="quick-stat">
+          <div className="quick-stat-icon green">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+          </div>
+          <div className="quick-stat-info">
+            <h4>{subelerCount}</h4>
+            <span>Toplam Şube</span>
+          </div>
+        </div>
+        <div className="quick-stat">
+          <div className="quick-stat-icon purple">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </div>
+          <div className="quick-stat-info">
+            <h4>{egitimYillariCount}</h4>
+            <span>Eğitim Yılı</span>
+          </div>
+        </div>
+        <div className="quick-stat">
+          <div className="quick-stat-icon orange">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </div>
+          <div className="quick-stat-info">
+            <h4>{aktifYil ? `${aktifYil.baslangic_yil}-${aktifYil.bitis_yil}` : '-'}</h4>
+            <span>Aktif Yıl</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Modern Tabs - Client-side onClick instead of href */}
+      <div className="tabs-modern">
+        <a 
+          className={`tab-modern ${activeTab === "kurumlar" ? "active" : ""}`} 
+          href="#"
+          onClick={(e) => { e.preventDefault(); setActiveTab("kurumlar"); }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
+          </svg>
+          Kurumlar
+          <span className="tab-count">{kurumlarCount}</span>
+        </a>
+        <a 
+          className={`tab-modern ${activeTab === "subeler" ? "active" : ""}`} 
+          href="#"
+          onClick={(e) => { e.preventDefault(); setActiveTab("subeler"); }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            <polyline points="9 22 9 12 15 12 15 22" />
+          </svg>
+          Şubeler
+          <span className="tab-count">{subelerCount}</span>
+        </a>
+        <a 
+          className={`tab-modern ${activeTab === "egitim_yillari" ? "active" : ""}`} 
+          href="#"
+          onClick={(e) => { e.preventDefault(); setActiveTab("egitim_yillari"); }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          Eğitim Yılları
+          <span className="tab-count">{egitimYillariCount}</span>
+        </a>
+      </div>
+
+      {/* Kurumlar Tab */}
+      {activeTab === "kurumlar" && (
+        <div className="card-modern">
+          <div className="card-modern-header">
+            <h3>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
+              </svg>
+              Kurum Listesi
+            </h3>
+            <div className="card-modern-header-actions">
+              <div className="search-modern">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input type="text" placeholder="Kurum ara..." />
+              </div>
+            </div>
+          </div>
+          <div className="card-modern-body">
+            {(data.kurumlar ?? []).length > 0 ? (
+              <table className="table-modern">
+                <thead>
+                  <tr>
+                    <th>Kurum Bilgisi</th>
+                    <th>Yetkili</th>
+                    <th>İletişim</th>
+                    <th>Durum</th>
+                    <th style={{ width: '100px' }}>İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.kurumlar ?? []).map((kurum) => (
+                    <tr key={kurum.id}>
+                      <td>
+                        <div className="cell-with-icon">
+                          <div className="cell-icon blue">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
+                            </svg>
+                          </div>
+                          <div className="cell-info">
+                            <span className="cell-primary">{kurum.ad}</span>
+                            <span className="cell-secondary">Kod: {kurum.kod}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="cell-info">
+                          <span className="cell-primary">{kurum.yetkili_ad_soyad || '-'}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="cell-info">
+                          <span className="cell-primary">{kurum.telefon_cep || kurum.telefon_sabit || '-'}</span>
+                          <span className="cell-secondary">{kurum.adres ? kurum.adres.substring(0, 30) + '...' : '-'}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`badge-modern ${kurum.aktif_mi ? "success" : "danger"}`}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            {kurum.aktif_mi ? (
+                              <polyline points="20 6 9 17 4 12" />
+                            ) : (
+                              <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+                            )}
+                          </svg>
+                          {kurum.aktif_mi ? "Aktif" : "Pasif"}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button className="row-action-btn" title="Düzenle">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button className="row-action-btn danger" title="Sil">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-state-icon">🏢</div>
+                <h4>Henüz kurum eklenmemiş</h4>
+                <p>İlk kurumunuzu ekleyerek başlayın</p>
+                <button className="btn-modern btn-primary">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Kurum Ekle
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Şubeler Tab */}
+      {activeTab === "subeler" && (
+        <div className="card-modern">
+          <div className="card-modern-header">
+            <h3>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <polyline points="9 22 9 12 15 12 15 22" />
+              </svg>
+              Şube Listesi
+            </h3>
+            <div className="card-modern-header-actions">
+              <div className="search-modern">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input type="text" placeholder="Şube ara..." />
+              </div>
+            </div>
+          </div>
+          <div className="card-modern-body">
+            {(data.subeler ?? []).length > 0 ? (
+              <table className="table-modern">
+                <thead>
+                  <tr>
+                    <th>Şube Bilgisi</th>
+                    <th>Bağlı Kurum</th>
+                    <th>İletişim</th>
+                    <th style={{ width: '100px' }}>İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.subeler ?? []).map((sube) => (
+                    <tr key={sube.id}>
+                      <td>
+                        <div className="cell-with-icon">
+                          <div className="cell-icon green">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                              <polyline points="9 22 9 12 15 12 15 22" />
+                            </svg>
+                          </div>
+                          <div className="cell-info">
+                            <span className="cell-primary">{sube.ad}</span>
+                            <span className="cell-secondary">Kod: {sube.kod || '-'}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="badge-modern primary">{sube.kurum?.ad ?? "-"}</span>
+                      </td>
+                      <td>
+                        <div className="cell-info">
+                          <span className="cell-primary">{sube.telefon || '-'}</span>
+                          <span className="cell-secondary">{sube.adres ? sube.adres.substring(0, 30) + '...' : '-'}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button className="row-action-btn" title="Düzenle">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button className="row-action-btn danger" title="Sil">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-state-icon">🏠</div>
+                <h4>Henüz şube eklenmemiş</h4>
+                <p>İlk şubenizi ekleyerek başlayın</p>
+                <button className="btn-modern btn-primary">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Şube Ekle
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Eğitim Yılları Tab */}
+      {activeTab === "egitim_yillari" && (
+        <div className="card-modern">
+          <div className="card-modern-header">
+            <h3>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              Eğitim Yılları
+            </h3>
+            <div className="card-modern-header-actions">
+              <button className="btn-modern btn-primary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Yeni Yıl Ekle
+              </button>
+            </div>
+          </div>
+          <div className="card-modern-body">
+            {(data.egitim_yillari ?? []).length > 0 ? (
+              <table className="table-modern">
+                <thead>
+                  <tr>
+                    <th>Eğitim Yılı</th>
+                    <th>Dönem</th>
+                    <th>Durum</th>
+                    <th style={{ width: '100px' }}>İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.egitim_yillari ?? []).map((yil) => (
+                    <tr key={yil.id}>
+                      <td>
+                        <div className="cell-with-icon">
+                          <div className={`cell-icon ${yil.aktif_mi ? 'orange' : 'purple'}`}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                              <line x1="16" y1="2" x2="16" y2="6" />
+                              <line x1="8" y1="2" x2="8" y2="6" />
+                              <line x1="3" y1="10" x2="21" y2="10" />
+                            </svg>
+                          </div>
+                          <div className="cell-info">
+                            <span className="cell-primary">{yil.baslangic_yil}-{yil.bitis_yil}</span>
+                            <span className="cell-secondary">Eğitim Öğretim Yılı</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="cell-secondary">
+                          Eylül {yil.baslangic_yil} - Haziran {yil.bitis_yil}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge-modern ${yil.aktif_mi ? "success" : "danger"}`}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            {yil.aktif_mi ? (
+                              <polyline points="20 6 9 17 4 12" />
+                            ) : (
+                              <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+                            )}
+                          </svg>
+                          {yil.aktif_mi ? "Aktif Yıl" : "Pasif"}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button className="row-action-btn" title="Düzenle">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button className="row-action-btn danger" title="Sil">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-state-icon">📅</div>
+                <h4>Henüz eğitim yılı eklenmemiş</h4>
+                <p>İlk eğitim yılınızı ekleyerek başlayın</p>
+                <button className="btn-modern btn-primary">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Eğitim Yılı Ekle
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

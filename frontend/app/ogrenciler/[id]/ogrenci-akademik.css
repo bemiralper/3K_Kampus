@@ -1,0 +1,272 @@
+/* Öğrenci Akademik Tab — timeline kartları */
+
+.akademik-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.akademik-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  gap: 16px;
+}
+
+.akademik-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #0262a7;
+  border-radius: 50%;
+  animation: akademikSpin 0.8s linear infinite;
+}
+
+@keyframes akademikSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.akademik-loading p {
+  color: #64748b;
+  font-size: 14px;
+  margin: 0;
+}
+
+.akademik-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-left: 28px;
+}
+
+.akademik-timeline::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(180deg, #0262a7 0%, #cbd5e1 100%);
+  border-radius: 2px;
+}
+
+.akademik-timeline-item {
+  position: relative;
+  padding-bottom: 24px;
+}
+
+.akademik-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.akademik-timeline-dot {
+  position: absolute;
+  left: -28px;
+  top: 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid #0262a7;
+  box-shadow: 0 0 0 4px rgba(2, 98, 167, 0.12);
+  z-index: 1;
+}
+
+.akademik-timeline-item.is-active .akademik-timeline-dot {
+  background: #0262a7;
+  box-shadow: 0 0 0 4px rgba(2, 98, 167, 0.2);
+}
+
+.akademik-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.akademik-timeline-item.is-active .akademik-card {
+  border-color: rgba(2, 98, 167, 0.35);
+  box-shadow: 0 4px 16px rgba(2, 98, 167, 0.1);
+}
+
+.akademik-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(2, 98, 167, 0.06) 0%, rgba(3, 128, 212, 0.04) 100%);
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+.akademik-card-year {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+}
+
+.akademik-card-year svg {
+  color: #0262a7;
+  flex-shrink: 0;
+}
+
+.akademik-aktif-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.akademik-aktif-badge.pasif {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.akademik-card-body {
+  padding: 18px 20px 20px;
+}
+
+.akademik-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 14px 20px;
+  margin-bottom: 18px;
+}
+
+.akademik-info-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.akademik-info-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #94a3b8);
+}
+
+.akademik-info-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
+}
+
+.akademik-kalemler-section {
+  margin-top: 4px;
+}
+
+.akademik-kalemler-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.akademik-kalem-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.akademik-kalem-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.akademik-kalem-badge--grup_dersi {
+  background: rgba(2, 98, 167, 0.1);
+  color: #0262a7;
+}
+
+.akademik-kalem-badge--ozel_ders {
+  background: rgba(139, 92, 246, 0.1);
+  color: #7c3aed;
+}
+
+.akademik-kalem-badge--deneme {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.akademik-kalem-badge--ek_hizmet,
+.akademik-kalem-badge--ek_hizmet_satisi {
+  background: rgba(34, 197, 94, 0.1);
+  color: #15803d;
+}
+
+.akademik-kalem-badge--paket {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+}
+
+.akademik-kalem-badge-type {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.akademik-ek-hizmetler {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-color, #e2e8f0);
+}
+
+.akademik-ek-hizmet-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.akademik-ek-hizmet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-secondary, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  color: var(--text-primary, #334155);
+}
+
+.akademik-ek-hizmet-chip.inactive {
+  opacity: 0.55;
+}
+
+@media (max-width: 640px) {
+  .akademik-info-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .akademik-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

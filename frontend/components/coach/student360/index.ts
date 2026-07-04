@@ -1,0 +1,9 @@
+export { default as GenelBakisTab } from './GenelBakisTab';
+export { default as OdevlerTab } from './OdevlerTab';
+export { default as SinavlarTab } from './SinavlarTab';
+export { default as GorusmelerTab } from './GorusmelerTab';
+export { default as MesajlarTab } from './MesajlarTab';
+export { default as ProgramTab } from './ProgramTab';
+export { default as KutuphaneTab } from './KutuphaneTab';
+export { default as VeliTab } from './VeliTab';
+export { default as BelgelerTab } from './BelgelerTab';

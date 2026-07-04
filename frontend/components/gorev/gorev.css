@@ -1,0 +1,1042 @@
+/* Görev modülü — paylaşılan stiller */
+
+.gorev-page { max-width: 960px; }
+.gorev-page--admin { max-width: 1200px; }
+
+.gorev-admin-page {
+  padding: 28px 32px 40px;
+  min-height: 100%;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 120px);
+}
+
+.gorev-admin-header {
+  margin-bottom: 24px;
+}
+
+.gorev-admin-header h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.gorev-admin-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 15px;
+}
+
+.gorev-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.gorev-stat {
+  flex: 1;
+  min-width: 100px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.gorev-stat-value {
+  display: block;
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.gorev-stat-label {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.gorev-stat-danger .gorev-stat-value { color: #dc2626; }
+.gorev-stat--success .gorev-stat-value { color: #16a34a; }
+.gorev-stat--primary .gorev-stat-value { color: #2563eb; }
+
+.gorev-stats--admin .gorev-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 18px 22px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.gorev-stat-icon {
+  font-size: 20px;
+  margin-bottom: 8px;
+  opacity: 0.85;
+}
+
+.gorev-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.gorev-tabs { display: flex; gap: 4px; }
+
+.gorev-tab {
+  padding: 8px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.gorev-tab.active {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+.gorev-toolbar-actions { display: flex; gap: 8px; }
+
+.gorev-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+}
+
+.gorev-btn-primary { background: #3b82f6; color: #fff; }
+.gorev-btn-danger { background: #dc2626; color: #fff; }
+.gorev-btn-danger:hover { background: #b91c1c; }
+.gorev-btn-ghost { background: #f1f5f9; color: #334155; }
+
+.gorev-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gorev-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: box-shadow 0.15s;
+}
+
+.gorev-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.gorev-card-late { border-left: 4px solid #dc2626; }
+
+.gorev-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.gorev-card-body { flex: 1; min-width: 0; }
+.gorev-card-body strong { display: block; font-size: 15px; color: #0f172a; }
+.gorev-card-meta { font-size: 13px; color: #64748b; }
+
+.gorev-card-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+
+.gorev-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.gorev-badge-kritik { background: #fef2f2; color: #dc2626; }
+.gorev-badge-yuksek { background: #fff7ed; color: #ea580c; }
+.gorev-badge-normal { background: #eff6ff; color: #2563eb; }
+.gorev-badge-dusuk { background: #f8fafc; color: #64748b; }
+.gorev-badge-durum { background: #f1f5f9; color: #475569; }
+
+.gorev-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .gorev-drawer-backdrop { align-items: center; }
+}
+
+.gorev-drawer {
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+@media (min-width: 640px) {
+  .gorev-drawer { border-radius: 16px; }
+}
+
+.gorev-drawer h3 { margin: 0 0 8px; font-size: 18px; }
+.gorev-drawer-meta { color: #64748b; font-size: 14px; margin-bottom: 16px; }
+
+.gorev-drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.gorev-textarea {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.gorev-loading, .gorev-empty { color: #64748b; padding: 24px; text-align: center; }
+
+.gorev-empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  background: #fff;
+  border: 1px dashed #e2e8f0;
+  border-radius: 16px;
+}
+
+.gorev-empty-icon { font-size: 40px; display: block; margin-bottom: 12px; }
+
+.gorev-skeleton-list { display: flex; flex-direction: column; gap: 10px; }
+
+.gorev-skeleton-row {
+  height: 88px;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: gorev-shimmer 1.2s infinite;
+}
+
+@keyframes gorev-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Admin filtreler */
+.gorev-admin-filters {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.gorev-admin-filters-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+
+@media (max-width: 1024px) {
+  .gorev-admin-filters-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .gorev-admin-filters-row { grid-template-columns: 1fr; }
+  .gorev-admin-page { padding: 16px; }
+}
+
+.gorev-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gorev-filter-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.gorev-filter-field input,
+.gorev-filter-field select {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #f8fafc;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.gorev-filter-field input:focus,
+.gorev-filter-field select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  background: #fff;
+}
+
+.gorev-filter-clear { white-space: nowrap; align-self: end; }
+
+.gorev-admin-result-count {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* Admin kart listesi */
+.gorev-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gorev-admin-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 18px 16px 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  position: relative;
+}
+
+.gorev-admin-card:hover {
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+  border-color: #cbd5e1;
+}
+
+.gorev-admin-card--late {
+  background: #fffbf7;
+  border-color: #fed7aa;
+}
+
+.gorev-admin-card-accent {
+  width: 4px;
+  align-self: stretch;
+  flex-shrink: 0;
+  border-radius: 14px 0 0 14px;
+}
+
+.gorev-admin-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.gorev-admin-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.gorev-admin-card-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gorev-admin-card-meta {
+  display: block;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.gorev-admin-card-assignee {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.gorev-admin-card-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+
+/* Ekran mesajı overlay */
+.gorev-ekran-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: gorev-ekran-fade 0.25s ease;
+}
+
+@keyframes gorev-ekran-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.gorev-ekran-modal {
+  background: #fff;
+  border-radius: 20px;
+  padding: 32px 28px 24px;
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.2);
+  border-top: 4px solid #3b82f6;
+  animation: gorev-ekran-slide 0.3s ease;
+}
+
+@keyframes gorev-ekran-slide {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.gorev-ekran-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  margin: 0 auto 16px;
+  color: #fff;
+}
+
+.gorev-ekran-title {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.gorev-ekran-mesaj {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.gorev-ekran-count {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.gorev-ekran-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.gorev-field-screen {
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.gorev-field-screen span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gorev-field-screen small {
+  font-weight: 400;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Form */
+.gorev-form {
+  max-width: 560px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.gorev-form h2 { margin: 0 0 20px; font-size: 20px; }
+.gorev-form-error { color: #dc2626; margin-bottom: 12px; }
+
+.gorev-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.gorev-field span { font-size: 13px; font-weight: 500; color: #475569; }
+
+.gorev-field input,
+.gorev-field textarea,
+.gorev-field select,
+.gorev-select-block {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.gorev-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.gorev-field-check {
+  flex-direction: row;
+  align-items: center;
+  padding-top: 28px;
+}
+
+.gorev-fieldset {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.gorev-radio-group { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.gorev-radio { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+
+.gorev-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+.gorev-form-hint {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0 0 12px;
+}
+
+/* Admin görev tablosu */
+.gorev-admin-table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.gorev-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.gorev-admin-table th {
+  text-align: left;
+  padding: 12px 16px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gorev-admin-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.gorev-admin-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.gorev-admin-table tbody tr:hover { background: #f8fafc; }
+
+.gorev-admin-row--late { background: #fff7ed; }
+
+.gorev-admin-task-icon { margin-right: 8px; }
+
+.gorev-admin-task-title {
+  font-weight: 600;
+  color: #0f172a;
+  display: block;
+}
+
+.gorev-admin-task-tip {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.gorev-admin-durum {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gorev-admin-durum--done { background: #dcfce7; color: #166534; }
+.gorev-admin-durum--failed { background: #fee2e2; color: #991b1b; }
+.gorev-admin-durum--pending { background: #f1f5f9; color: #475569; }
+.gorev-admin-durum--late { background: #ffedd5; color: #c2410c; }
+.gorev-admin-durum--cancel { background: #f3f4f6; color: #6b7280; }
+
+.gorev-admin-atamalar { margin: 16px 0; }
+
+.gorev-admin-atamalar h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.gorev-admin-atama-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gorev-admin-atama-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.gorev-admin-atama-name { flex: 1; font-weight: 500; }
+
+.gorev-admin-gecikme {
+  font-size: 11px;
+  color: #c2410c;
+  font-weight: 600;
+}
+
+.gorev-admin-notlar {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.gorev-drawer--admin { max-width: 480px; }
+
+/* Personel atama seçici */
+.gorev-personel-picker { position: relative; margin-top: 8px; }
+
+.gorev-personel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.gorev-personel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.gorev-personel-chip-remove {
+  border: none;
+  background: transparent;
+  color: #6366f1;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.gorev-personel-search-wrap { position: relative; }
+
+.gorev-personel-search {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.gorev-personel-search-hint {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.gorev-personel-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.gorev-personel-dropdown-empty {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.gorev-personel-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.gorev-personel-option:hover:not(:disabled) { background: #f8fafc; }
+
+.gorev-personel-option:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.gorev-personel-option-name { font-weight: 500; color: #0f172a; }
+
+.gorev-personel-option-meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.gorev-personel-help {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.gorev-takvim { background: #fff; border-radius: 12px; padding: 16px; border: 1px solid #e2e8f0; }
+
+.gorev-takvim-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.gorev-takvim-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.gorev-takvim-cal { position: relative; min-height: 680px; }
+.gorev-takvim-cal--loading { opacity: 0.55; pointer-events: none; }
+
+.gorev-error { color: #dc2626; margin-bottom: 12px; }
+
+/* FullCalendar — solid renkli chip, başlık öncelikli */
+.gorev-takvim .fc-event {
+  border: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.gorev-takvim .fc-daygrid-event,
+.gorev-takvim .fc-timegrid-event {
+  white-space: nowrap !important;
+  margin-bottom: 2px !important;
+}
+
+.gorev-cal-event {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.3;
+  min-height: 20px;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+  overflow: hidden;
+  color: #fff;
+  font-weight: 600;
+}
+
+.gorev-cal-event--list {
+  background: transparent !important;
+  color: #0f172a;
+  padding: 0;
+  min-height: auto;
+  font-weight: 500;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.gorev-cal-event-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gorev-cal-event-list-meta {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.gorev-takvim .fc .fc-daygrid-more-link {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Drawer header */
+.gorev-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gorev-drawer-tip {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.gorev-drawer-desc {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+.gorev-drawer-late {
+  color: #dc2626;
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+
+.gorev-drawer-note {
+  font-size: 14px;
+  color: #475569;
+  background: #f8fafc;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.gorev-quick-form h3 { margin-top: 0; }
+
+/* Hover tooltip */
+.gorev-cal-tooltip {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  padding: 12px 14px;
+  max-width: 320px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.12s, transform 0.12s;
+}
+
+.gorev-cal-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.gorev-cal-tooltip-bar {
+  height: 4px;
+  border-radius: 10px 10px 0 0;
+  margin: -12px -14px 10px;
+}
+
+.gorev-cal-tooltip-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.gorev-cal-tooltip-row {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.gorev-cal-tooltip-assignees {
+  color: #334155;
+  font-weight: 500;
+  white-space: normal;
+  max-width: 240px;
+}
+
+/* Analitik */
+.gorev-analitik { max-width: 1100px; }
+.gorev-stats-wide { flex-wrap: wrap; }
+.gorev-stats-wide .gorev-stat { min-width: 120px; flex: 1; }
+
+.gorev-analitik-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.gorev-analitik-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .gorev-analitik-grid { grid-template-columns: 1fr; }
+}
+
+.gorev-analitik-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.gorev-analitik-panel h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.gorev-table-wrap { overflow-x: auto; }
+
+.gorev-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.gorev-table th,
+.gorev-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gorev-table th {
+  font-weight: 600;
+  color: #475569;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.gorev-rol-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gorev-rol-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.gorev-rol-list li strong {
+  min-width: 100px;
+  text-transform: capitalize;
+}

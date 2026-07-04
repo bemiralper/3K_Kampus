@@ -1,0 +1,1117 @@
+/* Kurumsal Site Yönetimi — modern admin UI */
+.wam-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 991px) {
+  .wam-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wam-sidebar {
+  background: #fff;
+  border: 1px solid #e8edf3;
+  border-radius: 16px;
+  padding: 0.5rem;
+  position: sticky;
+  top: 1rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.wam-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  padding: 0.75rem 0.875rem 0.5rem;
+}
+
+.wam-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.wam-nav-btn:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.wam-nav-btn.active {
+  background: linear-gradient(135deg, rgba(2, 98, 167, 0.12), rgba(30, 58, 95, 0.08));
+  color: #0262a7;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(2, 98, 167, 0.15);
+}
+
+.wam-nav-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.wam-panel {
+  background: #fff;
+  border: 1px solid #e8edf3;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.wam-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.375rem 1.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
+}
+
+.wam-panel-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.wam-panel-header p {
+  margin: 0.35rem 0 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.wam-panel-body {
+  padding: 1.5rem;
+}
+
+.wam-form-section {
+  margin-bottom: 2rem;
+}
+
+.wam-form-section:last-child {
+  margin-bottom: 0;
+}
+
+.wam-form-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0262a7;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 1rem;
+}
+
+.wam-info-banner {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1.25rem;
+  background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #1e40af;
+}
+
+.wam-info-banner-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.wam-info-banner strong {
+  display: block;
+  font-weight: 600;
+  color: #1e3a8a;
+  margin-bottom: 0.15rem;
+}
+
+.wam-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  animation: wamFadeIn 0.2s ease;
+}
+
+.wam-toast.success {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+}
+
+.wam-toast.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+@keyframes wamFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.wam-image-upload {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 1.125rem;
+  background: #fafbfc;
+}
+
+.wam-image-upload-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.wam-image-upload-head strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.wam-image-size-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0262a7;
+  background: #fff;
+  border: 1px solid #bae6fd;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.wam-image-hint {
+  margin: 0 0 0.875rem;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.wam-image-upload-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.wam-image-preview {
+  width: 160px;
+  height: 96px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid #cbd5e1;
+}
+
+.wam-image-preview.has-image {
+  height: auto;
+  min-height: 96px;
+  max-height: 140px;
+}
+
+.wam-image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wam-image-preview.has-image img {
+  max-height: 140px;
+}
+
+.wam-image-preview-sinav {
+  width: 100%;
+  max-width: 400px;
+  aspect-ratio: 16 / 9;
+  height: auto !important;
+  min-height: unset !important;
+}
+
+.wam-image-preview-sinav.has-image {
+  height: auto !important;
+  max-height: none;
+}
+
+.wam-image-preview-sinav img {
+  object-fit: contain;
+  background: #f1f5f9;
+}
+
+.wam-image-preview-sinav.has-image img {
+  max-height: none;
+  height: 100%;
+}
+
+.wam-image-placeholder {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.wam-image-error {
+  margin: 0.5rem 0 0;
+  font-size: 12px;
+  color: #dc2626;
+}
+
+.wam-cards-grid {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.wam-item-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.125rem;
+  background: #fff;
+  border: 1px solid #e8edf3;
+  border-radius: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.wam-item-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.wam-item-thumb {
+  width: 72px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #f1f5f9;
+}
+
+.wam-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.wam-item-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: #0f172a;
+  margin: 0 0 0.2rem;
+}
+
+.wam-item-meta {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.wam-item-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.wam-edit-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.wam-edit-modal {
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+}
+
+.wam-edit-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.wam-edit-modal-header h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wam-edit-modal-body {
+  padding: 1.5rem;
+}
+
+.wam-edit-modal-footer {
+  display: flex;
+  gap: 0.625rem;
+  padding: 1rem 1.5rem 1.25rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.wam-empty {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  color: #64748b;
+  font-size: 14px;
+  background: #f8fafc;
+  border-radius: 14px;
+  border: 1px dashed #cbd5e1;
+}
+
+.wam-cal-wrap {
+  max-width: 720px;
+}
+
+.wam-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.wam-cal-nav h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wam-cal-day {
+  position: relative;
+  aspect-ratio: 1;
+  min-height: 72px;
+  border: 1px solid #e8edf3;
+  border-radius: 12px;
+  background: #fff;
+  padding: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.wam-cal-day:hover {
+  border-color: #0262a7;
+  box-shadow: 0 2px 8px rgba(2, 98, 167, 0.12);
+}
+
+.wam-cal-day.has-exam {
+  border-color: rgba(2, 98, 167, 0.35);
+  background: rgba(2, 98, 167, 0.04);
+}
+
+.wam-cal-day-num {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-align: right;
+  padding: 2px 4px;
+}
+
+.wam-cal-day-thumb {
+  flex: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.wam-cal-day-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wam-cal-day-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  padding: 2px;
+  border-radius: 4px;
+  color: #fff;
+  margin-top: 2px;
+}
+
+.wam-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.wam-cal-weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 4px 0;
+}
+
+.wam-exam-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  color: #fff;
+}
+
+/* Panel içi form elemanları */
+.wam-panel .form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 0.35rem;
+}
+
+.wam-panel .form-group input,
+.wam-panel .form-group textarea,
+.wam-panel .form-group select {
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  padding: 0.625rem 0.875rem;
+  font-size: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.wam-panel .form-group input:focus,
+.wam-panel .form-group textarea:focus,
+.wam-panel .form-group select:focus {
+  outline: none;
+  border-color: #0262a7;
+  box-shadow: 0 0 0 3px rgba(2, 98, 167, 0.12);
+}
+
+.wam-panel .form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.wam-panel .form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+/* ——— Modern form fields ——— */
+.wam-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.125rem;
+}
+
+@media (max-width: 640px) {
+  .wam-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wam-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.wam-field-full {
+  grid-column: 1 / -1;
+}
+
+.wam-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  letter-spacing: -0.01em;
+}
+
+.wam-field-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.wam-input,
+.wam-textarea,
+.wam-select {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.625rem 0.875rem;
+  font-size: 14px;
+  color: #0f172a;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+
+.wam-textarea {
+  resize: vertical;
+  min-height: 88px;
+  line-height: 1.55;
+}
+
+.wam-input:focus,
+.wam-textarea:focus,
+.wam-select:focus {
+  outline: none;
+  border-color: #0262a7;
+  box-shadow: 0 0 0 3px rgba(2, 98, 167, 0.12);
+}
+
+.wam-input::placeholder,
+.wam-textarea::placeholder {
+  color: #cbd5e1;
+}
+
+.wam-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.25rem;
+}
+
+/* ——— Buttons ——— */
+.wam-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.55rem 1.125rem;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.wam-btn-sm {
+  padding: 0.4rem 0.75rem;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.wam-btn-primary {
+  background: linear-gradient(135deg, #0262a7, #1e3a5f);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(2, 98, 167, 0.3);
+}
+
+.wam-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(2, 98, 167, 0.35);
+}
+
+.wam-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.wam-btn-secondary {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.wam-btn-secondary:hover {
+  background: #e2e8f0;
+}
+
+.wam-btn-ghost {
+  background: transparent;
+  color: #64748b;
+}
+
+.wam-btn-ghost:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.wam-btn-danger {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.wam-btn-danger:hover {
+  background: #fee2e2;
+}
+
+/* ——— Modal ——— */
+.wam-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(6px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: wamFadeIn 0.15s ease;
+}
+
+.wam-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.2);
+  overflow: hidden;
+}
+
+.wam-modal-wide {
+  max-width: 640px;
+}
+
+.wam-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+.wam-modal-header h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.wam-modal-header p {
+  margin: 0.25rem 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.wam-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.wam-modal-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.wam-modal-body {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.wam-modal-footer {
+  display: flex;
+  gap: 0.625rem;
+  padding: 1rem 1.5rem 1.25rem;
+  border-top: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+/* ——— Site settings page ——— */
+.wam-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.wam-settings-card {
+  padding: 1.375rem 1.5rem;
+  background: #fafbfc;
+  border: 1px solid #e8edf3;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.wam-settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e8edf3;
+  margin-bottom: 0.25rem;
+}
+
+.wam-settings-card-head h5 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wam-settings-card-head p {
+  margin: 0.2rem 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.wam-settings-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+/* ——— Exam list (admin calendar) ——— */
+.wam-exam-list-title {
+  margin: 0 0 0.75rem;
+  font-size: 14px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.wam-exam-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 1px solid #e8edf3;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+
+.wam-exam-list-item:hover {
+  border-color: #0262a7;
+  box-shadow: 0 2px 8px rgba(2, 98, 167, 0.1);
+}
+
+.wam-exam-list-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.wam-exam-list-text strong {
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.wam-exam-list-text small {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.wam-exam-list-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.wam-cal-day-more {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.wam-cal-day-title {
+  display: block;
+  font-size: 8px;
+  font-weight: 600;
+  color: #334155;
+  text-align: center;
+  padding: 0 2px 2px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ——— Admin LGS / YKS tabs ——— */
+.wam-sinav-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.wam-sinav-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.9rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.wam-sinav-tab:hover {
+  border-color: #0262a7;
+  color: #0262a7;
+}
+
+.wam-sinav-tab.active {
+  border-color: #0262a7;
+  background: #0262a7;
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(2, 98, 167, 0.25);
+}
+
+.wam-sinav-tab-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.wam-sinav-tab-hint {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.wam-sinav-tab-count {
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  line-height: 1.1rem;
+  text-align: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  padding: 0 0.25rem;
+}
+
+.wam-sinav-tab:not(.active) .wam-sinav-tab-count {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* ——— Gelen mesajlar ——— */
+.wam-mesajlar-body {
+  padding-top: 0.5rem !important;
+}
+
+.wam-mesajlar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.wam-mesaj-card {
+  border: 1px solid #e8edf3;
+  border-radius: 14px;
+  padding: 1.125rem 1.25rem;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.wam-mesaj-card.is-unread {
+  border-color: rgba(2, 98, 167, 0.35);
+  background: linear-gradient(180deg, #f8fbff 0%, #fff 100%);
+  box-shadow: 0 2px 8px rgba(2, 98, 167, 0.06);
+}
+
+.wam-mesaj-card.is-read {
+  opacity: 0.85;
+}
+
+.wam-mesaj-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.wam-mesaj-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0262a7, #1e3a5f);
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wam-mesaj-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.wam-mesaj-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wam-mesaj-phone {
+  font-size: 13px;
+  color: #0262a7;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.wam-mesaj-phone:hover {
+  text-decoration: underline;
+}
+
+.wam-mesaj-date {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.wam-mesaj-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: #0262a7;
+  color: #fff;
+}
+
+.wam-mesaj-text {
+  font-size: 14px;
+  line-height: 1.65;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  padding: 0.75rem 0.875rem;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #f1f5f9;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.wam-mesaj-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+/* ——— Unsaved changes dialog ——— */
+.wam-unsaved-dialog {
+  width: 100%;
+  max-width: 400px;
+  background: #fff;
+  border-radius: 20px;
+  padding: 1.75rem 1.5rem;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.25);
+  text-align: center;
+}
+
+.wam-unsaved-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.wam-unsaved-dialog h4 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wam-unsaved-dialog p {
+  margin: 0 0 1.25rem;
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.wam-unsaved-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}

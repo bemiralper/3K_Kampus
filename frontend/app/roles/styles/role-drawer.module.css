@@ -1,0 +1,566 @@
+/**
+ * Rol Yönetimi Modülü - Drawer Stil Dosyası
+ * 
+ * İzole CSS modülü - diğer modüllerden bağımsız
+ */
+
+/* ============================================
+   DRAWER OVERLAY
+   ============================================ */
+.drawerOverlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   DRAWER
+   ============================================ */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100%;
+  max-width: 600px;
+  height: 100%;
+  background-color: white;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* ============================================
+   DRAWER HEADER
+   ============================================ */
+.drawerHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.drawerTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drawerTitleIcon {
+  width: 24px;
+  height: 24px;
+  color: #6366f1;
+}
+
+.closeButton {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: none;
+  background-color: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.closeButton:hover {
+  background-color: #f1f5f9;
+  color: #334155;
+}
+
+/* ============================================
+   DRAWER BODY
+   ============================================ */
+.drawerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* ============================================
+   FORM ELEMENTS
+   ============================================ */
+.formGroup {
+  margin-bottom: 20px;
+}
+
+.formLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.formRequired {
+  color: #ef4444;
+  margin-left: 2px;
+}
+
+.formInput {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.formInput:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.formInput:disabled {
+  background-color: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.formInput::placeholder {
+  color: #94a3b8;
+}
+
+.formTextarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  min-height: 100px;
+  resize: vertical;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.formTextarea:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.formSelect {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.formSelect:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.formHint {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.formError {
+  font-size: 12px;
+  color: #ef4444;
+  margin-top: 4px;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ============================================
+   CHECKBOX / TOGGLE
+   ============================================ */
+.checkboxGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.checkbox {
+  width: 20px;
+  height: 20px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.checkboxLabel {
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+}
+
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background-color: #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle.active {
+  background-color: #6366f1;
+}
+
+.toggleKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background-color: white;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s;
+}
+
+.toggle.active .toggleKnob {
+  left: 22px;
+}
+
+/* ============================================
+   YETKİ SEÇİCİ
+   ============================================ */
+.permissionsSection {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sectionIcon {
+  width: 20px;
+  height: 20px;
+  color: #6366f1;
+}
+
+.moduleGroup {
+  margin-bottom: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.moduleHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: #f8fafc;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.moduleHeader:hover {
+  background-color: #f1f5f9;
+}
+
+.moduleTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.moduleToggle {
+  width: 20px;
+  height: 20px;
+  color: #64748b;
+  transition: transform 0.2s;
+}
+
+.moduleToggle.expanded {
+  transform: rotate(180deg);
+}
+
+.moduleBody {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.permissionItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background-color: #f8fafc;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.permissionItem:hover {
+  background-color: #f1f5f9;
+}
+
+.permissionItem.selected {
+  background-color: #eef2ff;
+  border: 1px solid #c7d2fe;
+}
+
+.permissionCheckbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #6366f1;
+}
+
+.permissionInfo {
+  flex: 1;
+}
+
+.permissionName {
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.permissionCode {
+  font-size: 11px;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.permissionTypeBadge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.permissionTypeRead {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+.permissionTypeWrite {
+  background-color: #dcfce7;
+  color: #16a34a;
+}
+
+.permissionTypeDelete {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.permissionTypeManage {
+  background-color: #fef3c7;
+  color: #b45309;
+}
+
+.permissionTypeAdmin {
+  background-color: #f3e8ff;
+  color: #7c3aed;
+}
+
+/* ============================================
+   DRAWER FOOTER
+   ============================================ */
+.drawerFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.btnCancel {
+  padding: 10px 20px;
+  background-color: white;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btnCancel:hover {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.btnSubmit {
+  padding: 10px 24px;
+  background-color: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btnSubmit:hover {
+  background-color: #4f46e5;
+}
+
+.btnSubmit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ============================================
+   ALERT / INFO BOX
+   ============================================ */
+.alertInfo {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.alertIcon {
+  width: 20px;
+  height: 20px;
+  color: #3b82f6;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.alertText {
+  font-size: 13px;
+  color: #1e40af;
+  line-height: 1.5;
+}
+
+.alertWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.alertWarning .alertIcon {
+  color: #f59e0b;
+}
+
+.alertWarning .alertText {
+  color: #92400e;
+}
+
+/* ============================================
+   VIEW MODE (READONLY)
+   ============================================ */
+.viewField {
+  margin-bottom: 16px;
+}
+
+.viewLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.viewValue {
+  font-size: 14px;
+  color: #1e293b;
+  padding: 10px 14px;
+  background-color: #f8fafc;
+  border-radius: 6px;
+}
+
+.viewBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 640px) {
+  .drawer {
+    max-width: 100%;
+  }
+  
+  .drawerHeader {
+    padding: 16px 20px;
+  }
+  
+  .drawerBody {
+    padding: 20px;
+  }
+  
+  .drawerFooter {
+    padding: 12px 20px;
+  }
+  
+  .formRow {
+    grid-template-columns: 1fr;
+  }
+}

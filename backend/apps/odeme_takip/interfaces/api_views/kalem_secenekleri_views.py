@@ -1,0 +1,372 @@
+"""
+Kalem Seçenekleri Views
+Sözleşmeye eklenebilecek paket/ek hizmet seçeneklerini listeler.
+
+Integer-Only: Tüm fiyatlar tam sayı (TL).
+"""
+from rest_framework.decorators import api_view, permission_classes
+from apps.odeme_takip.permissions import ODEME_TAKIP_PERMISSIONS
+from rest_framework.response import Response
+
+from apps.odeme_takip.domain.enums import KalemTuru, PaketTuru, SozlesmeDurum
+from apps.ogrenci_kayit.application.services import _apply_grup_alan_filter, _apply_ozel_alan_filter
+from apps.ogrenci_kayit.domain.sinif_seviyesi_rules import sinif_seviyesi_requires_alan
+from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
+
+
+def _serialize_secenek(item, kod=""):
+    """Frontend KalemSecenegi formatına dönüştür."""
+    return {
+        "id": item.id,
+        "ad": item.ad,
+        "kod": kod or getattr(item, "kod", "") or "",
+        "fiyat": item.brut_fiyat,
+        "kdv_orani": item.kdv_orani,
+        "kdv_tutari": item.kdv_tutari,
+        "kdv_dahil_fiyat": item.brut_fiyat,
+        "hizmet_turu": getattr(item, "hizmet_turu", None),
+    }
+
+
+def _classify_kalem_paket_turu(kalem, sozlesme=None):
+    """Sözleşme kaleminin paket alt türünü belirle (grup / özel / deneme)."""
+    from apps.egitim_paketleri.models import Deneme, GrupDersi, OzelDers
+
+    tur = kalem.kalem_turu
+    if tur in (KalemTuru.GRUP_DERSI, PaketTuru.GRUP_DERSI):
+        return PaketTuru.GRUP_DERSI
+    if tur in (KalemTuru.OZEL_DERS, PaketTuru.OZEL_DERS):
+        return PaketTuru.OZEL_DERS
+    if tur in (KalemTuru.DENEME, PaketTuru.DENEME):
+        return PaketTuru.DENEME
+
+    if tur == KalemTuru.PAKET and sozlesme:
+        if sozlesme.paket_id == kalem.kalem_id and sozlesme.paket_turu in (
+            PaketTuru.GRUP_DERSI,
+            PaketTuru.OZEL_DERS,
+            PaketTuru.DENEME,
+        ):
+            return sozlesme.paket_turu
+
+    kid = kalem.kalem_id
+    if GrupDersi.objects.filter(id=kid).exists():
+        return PaketTuru.GRUP_DERSI
+    if OzelDers.objects.filter(id=kid).exists():
+        return PaketTuru.OZEL_DERS
+    if Deneme.objects.filter(id=kid).exists():
+        return PaketTuru.DENEME
+    return None
+
+
+def _deneme_net_tutar(sozlesme, kalem=None):
+    """Sözleşmedeki deneme kaleminin net tutarını bul."""
+    if kalem is not None:
+        return kalem.net_tutar or 0
+    from apps.odeme_takip.domain.models import SozlesmeKalemi
+
+    for k in SozlesmeKalemi.objects.filter(sozlesme=sozlesme):
+        if _classify_kalem_paket_turu(k, sozlesme) == PaketTuru.DENEME:
+            return k.net_tutar or 0
+    if sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.DENEME:
+        paket_kalem = SozlesmeKalemi.objects.filter(
+            sozlesme=sozlesme,
+            kalem_id=sozlesme.paket_id,
+        ).first()
+        if paket_kalem:
+            return paket_kalem.net_tutar or 0
+    return 0
+
+
+def _serialize_mevcut_kalem(kalem):
+    return {
+        "kalem_id": kalem.kalem_id,
+        "kalem_adi": kalem.kalem_adi,
+        "net_tutar": kalem.net_tutar or 0,
+        "ucretsiz": (kalem.net_tutar or 0) == 0,
+    }
+
+
+def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
+    """
+    Tür bazlı sahip olunan paket ID'leri.
+    Grup / özel / deneme ID'leri karıştırılmaz (farklı tablolarda aynı sayısal ID olabilir).
+    """
+    from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi
+
+    haric_grup = set()
+    haric_ozel = set()
+    haric_deneme = set()
+    haric_ek = set()
+    mevcut_grup = None
+    mevcut_deneme = None
+
+    if not ogrenci_id:
+        return haric_grup, haric_ozel, haric_deneme, haric_ek, mevcut_grup, mevcut_deneme
+
+    aktif_durumlar = [SozlesmeDurum.TASLAK, SozlesmeDurum.AKTIF, SozlesmeDurum.DONDURULMUS]
+    sozlesme_qs = Sozlesme.objects.filter(ogrenci_id=ogrenci_id, durum__in=aktif_durumlar)
+    if egitim_yili_id:
+        sozlesme_qs = sozlesme_qs.filter(egitim_yili_id=egitim_yili_id)
+
+    target_sozlesme = None
+    if sozlesme_id:
+        target_sozlesme = sozlesme_qs.filter(id=sozlesme_id).first()
+
+    for sozlesme in sozlesme_qs:
+        is_target = target_sozlesme and sozlesme.id == target_sozlesme.id
+
+        if sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.GRUP_DERSI:
+            haric_grup.add(sozlesme.paket_id)
+            if is_target and mevcut_grup is None:
+                mevcut_grup = {
+                    "kalem_id": sozlesme.paket_id,
+                    "kalem_adi": sozlesme.paket_adi,
+                    "net_tutar": 0,
+                    "ucretsiz": False,
+                    "kaynak": "sozlesme",
+                }
+        elif sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.OZEL_DERS:
+            haric_ozel.add(sozlesme.paket_id)
+        elif sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.DENEME:
+            haric_deneme.add(sozlesme.paket_id)
+            if is_target and mevcut_deneme is None:
+                net = _deneme_net_tutar(sozlesme)
+                mevcut_deneme = {
+                    "kalem_id": sozlesme.paket_id,
+                    "kalem_adi": sozlesme.paket_adi,
+                    "net_tutar": net,
+                    "ucretsiz": net == 0,
+                    "kaynak": "sozlesme",
+                }
+
+        kalemler = SozlesmeKalemi.objects.filter(sozlesme=sozlesme)
+        for k in kalemler:
+            if k.kalem_turu in (KalemTuru.EK_HIZMET, KalemTuru.EK_HIZMET_SATISI):
+                haric_ek.add(k.kalem_id)
+                continue
+
+            kind = _classify_kalem_paket_turu(k, sozlesme)
+            if kind == PaketTuru.GRUP_DERSI:
+                haric_grup.add(k.kalem_id)
+                if is_target:
+                    mevcut_grup = _serialize_mevcut_kalem(k)
+            elif kind == PaketTuru.OZEL_DERS:
+                haric_ozel.add(k.kalem_id)
+            elif kind == PaketTuru.DENEME:
+                haric_deneme.add(k.kalem_id)
+                if is_target:
+                    mevcut_deneme = _serialize_mevcut_kalem(k)
+
+    if egitim_yili_id:
+        from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+        dahil_ids = OgrenciEkHizmet.objects.filter(
+            ogrenci_id=ogrenci_id,
+            aktif_mi=True,
+            dahil_mi=True,
+            egitim_yili_id=egitim_yili_id,
+        ).values_list("ek_hizmet_id", flat=True)
+        haric_ek.update(dahil_ids)
+
+    return haric_grup, haric_ozel, haric_deneme, haric_ek, mevcut_grup, mevcut_deneme
+
+
+def _filter_paket_qs(model, kurum_id, sube_id, egitim_yili_id):
+    qs = model.objects.filter(aktif_mi=True)
+    if kurum_id:
+        qs = qs.filter(kurum_id=kurum_id)
+    if sube_id:
+        qs = qs.filter(sube_id=sube_id)
+    if egitim_yili_id:
+        qs = qs.filter(egitim_yili_id=egitim_yili_id)
+    return qs
+
+
+def _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id):
+    if sinif_seviyesi_id:
+        return qs.filter(sinif_seviyeleri__id=sinif_seviyesi_id).distinct()
+    return qs
+
+
+def _resolve_ogrenci_paket_filtreleri(
+    ogrenci_id,
+    egitim_yili_id,
+    sozlesme_id=None,
+    sinif_seviyesi_param=None,
+    alan_param=None,
+):
+    """Öğrenci kaydından sınıf seviyesi ve alan bilgisini çöz (kayıt sihirbazı ile aynı mantık)."""
+    from apps.ogrenci.domain.models import OgrenciKayit
+    from apps.odeme_takip.domain.models import Sozlesme
+
+    sinif_seviyesi_id = int(sinif_seviyesi_param) if sinif_seviyesi_param else None
+    alan_id = int(alan_param) if alan_param else None
+
+    if sinif_seviyesi_id is not None and alan_param is not None:
+        return sinif_seviyesi_id, alan_id
+
+    kayit = None
+    if sozlesme_id:
+        sozlesme = (
+            Sozlesme.objects.filter(id=sozlesme_id)
+            .select_related("ogrenci_kayit__sinif__sinif_seviyesi", "ogrenci_kayit__sinif__alan")
+            .first()
+        )
+        if sozlesme and sozlesme.ogrenci_kayit_id:
+            kayit = sozlesme.ogrenci_kayit
+
+    if not kayit and ogrenci_id and egitim_yili_id:
+        kayit = (
+            OgrenciKayit.objects.filter(
+                ogrenci_id=ogrenci_id,
+                egitim_yili_id=egitim_yili_id,
+                aktif_mi=True,
+            )
+            .select_related("sinif__sinif_seviyesi", "sinif__alan")
+            .first()
+        )
+
+    if kayit and kayit.sinif:
+        if sinif_seviyesi_id is None:
+            sinif_seviyesi_id = kayit.sinif.sinif_seviyesi_id
+        if alan_param is None and kayit.sinif.sinif_seviyesi:
+            if sinif_seviyesi_requires_alan(kayit.sinif.sinif_seviyesi):
+                alan_id = kayit.sinif.alan_id
+
+    return sinif_seviyesi_id, alan_id
+
+
+def _filtre_meta(sinif_seviyesi_id, alan_id):
+    from apps.egitim_tanimlari.models import Alan, SinifSeviyesi
+
+    meta = {"sinif_seviyesi_id": sinif_seviyesi_id, "alan_id": alan_id}
+    if sinif_seviyesi_id:
+        seviye = SinifSeviyesi.objects.filter(id=sinif_seviyesi_id).first()
+        meta["sinif_seviyesi_ad"] = seviye.ad if seviye else None
+    if alan_id:
+        alan = Alan.objects.filter(id=alan_id).first()
+        meta["alan_ad"] = alan.ad if alan else None
+    return meta
+
+
+@api_view(["GET"])
+@permission_classes(ODEME_TAKIP_PERMISSIONS)
+def kalem_secenekleri(request):
+    """
+    ?tur=grup_dersi|ozel_ders|deneme|ek_hizmet|paket
+    &ogrenci_id=&egitim_yili_id=&kurum_id=&sube_id=&sozlesme_id=
+    &sinif_seviyesi_id=&alan_id=  (opsiyonel; yoksa öğrenci kaydından çözülür)
+    """
+    from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, OzelDers
+
+    tur = request.query_params.get("tur", "")
+    kurum_id = get_secili_kurum_id(request) or request.query_params.get("kurum_id")
+    sube_id = get_secili_sube_id(request) or request.query_params.get("sube_id")
+    egitim_yili_id = get_secili_egitim_yili_id(request) or request.query_params.get("egitim_yili_id")
+    ogrenci_id = request.query_params.get("ogrenci_id")
+    sozlesme_id = request.query_params.get("sozlesme_id")
+
+    sinif_seviyesi_id, alan_id = _resolve_ogrenci_paket_filtreleri(
+        ogrenci_id,
+        egitim_yili_id,
+        sozlesme_id=sozlesme_id,
+        sinif_seviyesi_param=request.query_params.get("sinif_seviyesi_id"),
+        alan_param=request.query_params.get("alan_id"),
+    )
+    filtre = _filtre_meta(sinif_seviyesi_id, alan_id)
+
+    if ogrenci_id and not sinif_seviyesi_id:
+        return Response(
+            {
+                "secenekler": [],
+                "mevcut_grup_dersi": None,
+                "mevcut_deneme": None,
+                "filtre": filtre,
+                "filtre_uyarisi": "Öğrenci kaydı veya sınıf seviyesi bulunamadı.",
+            }
+        )
+
+    haric_grup, haric_ozel, haric_deneme, haric_ek, mevcut_grup, mevcut_deneme = _collect_mevcut_paketler(
+        ogrenci_id, egitim_yili_id, sozlesme_id
+    )
+
+    secenekler = []
+
+    def add_grup():
+        qs = (
+            _filter_paket_qs(GrupDersi, kurum_id, sube_id, egitim_yili_id)
+            .exclude(id__in=haric_grup)
+        )
+        qs = _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id)
+        qs = _apply_grup_alan_filter(qs, alan_id)
+        for p in qs:
+            secenekler.append(_serialize_secenek(p, p.kod))
+
+    def add_ozel():
+        qs = (
+            _filter_paket_qs(OzelDers, kurum_id, sube_id, egitim_yili_id)
+            .exclude(id__in=haric_ozel)
+        )
+        qs = _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id)
+        qs = _apply_ozel_alan_filter(qs, alan_id)
+        for p in qs:
+            secenekler.append(_serialize_secenek(p, p.kod))
+
+    def add_deneme():
+        qs = (
+            _filter_paket_qs(Deneme, kurum_id, sube_id, egitim_yili_id)
+            .exclude(id__in=haric_deneme)
+        )
+        qs = _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id)
+        for p in qs:
+            payload = _serialize_secenek(p, p.kod)
+            payload["deneme_sayisi"] = p.deneme_sayisi
+            secenekler.append(payload)
+
+    def add_ek():
+        qs = (
+            _filter_paket_qs(EkHizmet, kurum_id, sube_id, egitim_yili_id)
+            .exclude(hizmet_turu="deneme")
+            .exclude(id__in=haric_ek)
+        )
+        qs = _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id)
+        for h in qs:
+            secenekler.append(_serialize_secenek(h, h.kod))
+
+    if tur in ("grup_dersi", "grup_dersleri"):
+        add_grup()
+    elif tur in ("ozel_ders", "ozel_dersler"):
+        add_ozel()
+    elif tur in ("deneme", "denemeler"):
+        add_deneme()
+    elif tur == "ek_hizmet":
+        add_ek()
+    elif tur == "paket":
+        add_grup()
+        add_ozel()
+        add_deneme()
+    else:
+        return Response({"secenekler": [], "error": f"Geçersiz tur: {tur}"}, status=400)
+
+    return Response(
+        {
+            "secenekler": secenekler,
+            "mevcut_grup_dersi": mevcut_grup,
+            "mevcut_deneme": mevcut_deneme,
+            "filtre": filtre,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes(ODEME_TAKIP_PERMISSIONS)
+def kalem_turleri(request):
+    """Sözleşmeye eklenebilir kalem türleri."""
+    return Response(
+        [
+            {"value": "grup_dersi", "label": "Grup Dersi", "kalem_turu": "grup_dersi"},
+            {"value": "ozel_ders", "label": "Özel Ders", "kalem_turu": "ozel_ders"},
+            {"value": "deneme", "label": "Deneme Paketi", "kalem_turu": "deneme"},
+            {"value": "ek_hizmet", "label": "Ek Hizmet", "kalem_turu": "ek_hizmet"},
+        ]
+    )

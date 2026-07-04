@@ -1,0 +1,80 @@
+// Şube Tanımları Types
+
+export interface Sube {
+  id: number;
+  ad: string;
+}
+
+export interface EgitimYili {
+  id: number;
+  ad?: string;
+  yil_str?: string;
+  baslangic_yil?: number;
+  bitis_yil?: number;
+  aktif_mi?: boolean;
+}
+
+// Oda Types
+export interface Oda {
+  id: number;
+  ad: string;
+  kapasite: number;
+  oda_turu: string;
+  oda_turu_display: string;
+  aciklama: string;
+  aktif_mi: boolean;
+  sube: Sube;
+  created_at: string | null;
+}
+
+export interface OdaTur {
+  value: string;
+  label: string;
+}
+
+export interface OdaFormData {
+  sube_id: string;
+  ad: string;
+  kapasite: string;
+  oda_turu: string;
+  aciklama: string;
+  aktif_mi: boolean;
+}
+
+// Sınıf Types
+export interface SinifSeviyesi {
+  id: number;
+  ad: string;
+  value?: string;  // Uyumluluk için
+  label?: string;  // Uyumluluk için
+}
+
+export interface Sinif {
+  id: number;
+  ad: string;
+  kod: string;
+  kapasite: number;
+  ogrenci_sayisi: number;
+  mevcutluk: number;
+  doluluk_orani: number;
+  aktif_mi: boolean;
+  egitim_yili: EgitimYili;
+  sube: Sube;
+  oda: { id: number; ad: string } | null;
+  sinif_seviyesi: SinifSeviyesi | null;
+  created_at: string | null;
+}
+
+export interface SinifFormData {
+  sube_id: string;
+  egitim_yili_id: string;
+  ad: string;
+  kod: string;
+  kapasite: string;
+  oda_id: string;
+  sinif_seviyesi_id: string;
+  aktif_mi: boolean;
+}
+
+// Tab Type
+export type TabType = 'odalar' | 'siniflar';

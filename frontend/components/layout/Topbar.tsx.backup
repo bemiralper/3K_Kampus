@@ -1,0 +1,55 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+export default function Topbar() {
+  const [today, setToday] = useState<string>("");
+
+  useEffect(() => {
+    const formatter = new Intl.DateTimeFormat("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    setToday(formatter.format(new Date()));
+  }, []);
+
+  return (
+    <header className="app-topbar">
+      <div className="topbar-left">
+        <button className="icon-button" type="button" onClick={() => window.toggleSidebar?.()}>
+          <span className="icon">☰</span>
+        </button>
+        <div className="topbar-title">
+          <h1>3K Kampüs LMS</h1>
+          <span suppressHydrationWarning>{today}</span>
+        </div>
+        <div className="topbar-search">
+          <span className="search-icon">⌕</span>
+          <input type="search" placeholder="Global ara..." />
+        </div>
+      </div>
+      <div className="topbar-right">
+        <button className="topbar-icon" type="button" aria-label="Bildirimler">
+          🔔
+        </button>
+        <div className="topbar-institution">
+          <span className="topbar-label">Aktif Kurum</span>
+          <button className="topbar-chip" type="button">
+            <span className="status-dot" />
+            3K Kampüs
+            <span className="caret">▾</span>
+          </button>
+        </div>
+        <div className="user-pill">
+          <div className="avatar">A</div>
+          <div className="user-info">
+            <span className="user-name">Admin</span>
+            <span className="user-role">Yönetici</span>
+          </div>
+          <span className="caret">▾</span>
+        </div>
+      </div>
+    </header>
+  );
+}

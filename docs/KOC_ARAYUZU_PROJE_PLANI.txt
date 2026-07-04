@@ -1,0 +1,271 @@
+══════════════════════════════════════════════════════════════
+  🎯 KOÇ ARAYÜZÜ (COACH PORTAL) — MİMARİ VE UX TASARIM PLANI
+  Tarih: 17 Mart 2026
+══════════════════════════════════════════════════════════════
+
+
+1. GENEL YAKLAŞIM: "Coach Portal" — Ayrı Layout, Aynı Codebase
+═══════════════════════════════════════════════════════════════
+
+  /admin/*   → Yönetici arayüzü (mevcut Sidebar + Topbar layout)
+  /coach/*   → Koç arayüzü (yeni mobile-first layout)
+
+  Neden ayrı layout?
+  - Koçun ihtiyaçları yöneticiden farklı → daha az menü, daha çok aksiyon
+  - Mobile-first tasarım → tablet/telefonda rahat kullanılmalı
+  - İleride React Native / Capacitor ile mobil uygulamaya dönüştürülebilir
+  - Aynı Next.js projesinde, aynı API'ler, aynı auth sistemi → kod tekrarı yok
+
+
+2. NAVİGASYON YAPISI: Bottom Tab + Slide Menu
+═══════════════════════════════════════════════
+
+  ┌─────────────────────────────────────────┐
+  │  🏠 Koç Adı        📅 17 Mar   🔔 (3)  │  ← Mini Topbar
+  ├─────────────────────────────────────────┤
+  │                                         │
+  │         ANA İÇERİK ALANI               │
+  │                                         │
+  ├─────────────────────────────────────────┤
+  │  🏠    📋    📝    📊    ☰             │  ← Bottom Navigation
+  │ Anasf  Ödev  Koçluk Ölçme  Daha       │
+  └─────────────────────────────────────────┘
+
+  Bottom Tab (5 Ana Sekme):
+  ──────────────────────────────────────────
+  Tab            İkon   İçerik
+  ──────────────────────────────────────────
+  Ana Sayfa       🏠    Dashboard — günün özeti, görevler, hızlı aksiyonlar
+  Ödevler         📋    Ödev ver, kontrol et, kaynak havuzu
+  Koçluk          🎯    Görüşmeler, hedefler, risk takibi, öğrenci notları
+  Ölçme           📊    Sınav sonuçları, analiz, karne, gelişim grafikleri
+  Daha Fazla      ☰     Takvim, kütüphane, mesajlar, profil, ayarlar
+
+  Not: iOS ve Android'de 5 tab standart. "Daha Fazla" ile genişletilebilir.
+
+
+3. ANA SAYFA (Coach Dashboard) — Günlük Akış
+═══════════════════════════════════════════════
+
+  Koçun her gün açtığında ne yapması gerektiğini 5 saniyede görmesini sağlar.
+
+  ┌──────────────────────────────────────────┐
+  │  Günaydın, Ahmet Hoca 👋                │
+  │  Bugün 3 görüşme, 12 ödev kontrolü var  │
+  ├──────────────────────────────────────────┤
+  │                                          │
+  │  📅 BUGÜNÜN PROGRAMI          Tümünü Gör│
+  │  ┌─────────────────────────────────┐     │
+  │  │ 09:00  Matematik Dersi - 10/A   │     │
+  │  │ 10:30  🎯 Koçluk: Ali Yılmaz   │     │
+  │  │ 13:00  🎯 Koçluk: Ayşe Demir   │     │
+  │  │ 14:00  Matematik Dersi - 11/B   │     │
+  │  └─────────────────────────────────┘     │
+  │                                          │
+  │  ⚡ HIZLI AKSİYONLAR                    │
+  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐   │
+  │  │ 📝   │ │ 🎯   │ │ 📊   │ │ 📋   │   │
+  │  │Ödev  │ │Görüşm│ │Sonuç │ │Kaynak│   │
+  │  │ Ver  │ │ Ekle │ │ Gir  │ │Paylaş│   │
+  │  └──────┘ └──────┘ └──────┘ └──────┘   │
+  │                                          │
+  │  🔴 ACİL DİKKAT (Risk Merkezi)         │
+  │  ┌─────────────────────────────────┐     │
+  │  │ ⚠️ Ali Y. - 3 gündür ödev yok  │     │
+  │  │ 🔻 Zeynep K. - Mat notu düştü  │     │
+  │  │ ❗ Mehmet A. - 2 görüşme kaçık │     │
+  │  └─────────────────────────────────┘     │
+  │                                          │
+  │  📋 BEKLEYEN ÖDEVLER          12 adet   │
+  │  ┌─────────────────────────────────┐     │
+  │  │ Mat Çalışma Kağıdı  │ 8/24 teslim│   │
+  │  │ Fen Deney Raporu    │ 3/24 teslim│   │
+  │  └─────────────────────────────────┘     │
+  │                                          │
+  │  📈 HAFTALIK PERFORMANS ÖZET            │
+  │  ┌─────────────────────────────────┐     │
+  │  │  Görüşme: 8/10  ████████░░     │     │
+  │  │  Ödev:    85%   ████████░░     │     │
+  │  │  Risk:    2↓    ██░░░░░░░░     │     │
+  │  └─────────────────────────────────┘     │
+  └──────────────────────────────────────────┘
+
+  Dashboard Kartları (Widget Mantığı):
+  1. Bugünün Programı — Takvim modülünden çeker, koçluk görüşmeleri vurgulu
+  2. Hızlı Aksiyonlar — 1 dokunuşla en sık yapılan işlemler
+  3. Acil Dikkat — Risk merkezi entegrasyonu, kırmızı/sarı uyarılar
+  4. Bekleyen Ödevler — Kontrol edilmemiş ödevlerin özeti
+  5. Haftalık Performans — Koçun kendi performans metrikleri
+
+
+4. ALT SAYFA DETAYLARI
+═══════════════════════
+
+  4.1 📋 Ödevler Tab'ı
+  ─────────────────────
+  - Segment Control: [Verilmiş] [Kontrol] [Kaynak]
+  - Ödev kartları: İsim, sınıf, son tarih, teslim oranı progress bar
+  - FAB (Floating Action Button): + Yeni Ödev Ver
+  - Ödev detayında: teslim eden öğrenci listesi, kontrol işaretleme
+
+  4.2 🎯 Koçluk Tab'ı
+  ────────────────────
+  - Segment Control: [Öğrenciler] [Görüşmeler] [Hedefler]
+  - Öğrenci kartları: İsim, sınıf, risk rengi (yeşil/sarı/kırmızı), son görüşme tarihi
+  - Öğrenci kartına tıklayınca → Öğrenci Profil Sayfası açılır:
+    * Genel ortalama, hedefler, risk skoru
+    * Alt tablar: Notlar, Hedefler, Ödevler, Sınavlar, Görüşmeler
+    * Hızlı aksiyonlar: Not Ekle, Görüşme Planla
+
+  4.3 📊 Ölçme Tab'ı
+  ────────────────────
+  - Segment Control: [Sonuçlar] [Analiz] [Gelişim]
+  - Son sınav sonuçları, sınıf başarı dağılımı grafiği
+  - Öğrenci bazlı: isim, puan, trend oku (↑/↓), renk kodu
+  - Gelişim grafiği: zaman serisi, öğrenci karşılaştırma
+
+  4.4 ☰ Daha Fazla (Slide-up Menu)
+  ──────────────────────────────────
+  - 📅 Takvim
+  - 📚 Kütüphane / Kaynaklar
+  - 💬 Mesajlar
+  - 📊 Raporlarım
+  - 👤 Profilim
+  - ⚙️ Ayarlar
+  - 🚪 Çıkış Yap
+
+
+5. TEKNİK MİMARİ
+══════════════════
+
+  5.1 Dosya Yapısı:
+  ─────────────────
+  frontend/
+    app/
+      admin/              ← Mevcut yönetici arayüzü
+        layout.tsx        ← Sidebar + Topbar layout
+        ...
+      coach/              ← YENİ: Koç arayüzü
+        layout.tsx        ← BottomNav + MiniTopbar layout (mobile-first)
+        page.tsx          ← Dashboard (Ana sayfa)
+        odevler/
+          page.tsx        ← Ödev listesi + kontrol
+        kocluk/
+          page.tsx        ← Öğrenci listesi
+          [ogrenciId]/
+            page.tsx      ← Öğrenci detay profili
+        olcme/
+          page.tsx        ← Sınav sonuçları, analiz
+        takvim/
+          page.tsx        ← Takvim görünümü
+        profil/
+          page.tsx        ← Koç profili & ayarlar
+    components/
+      coach/              ← YENİ: Koç UI bileşenleri
+        CoachLayout.tsx         ← Bottom nav + topbar
+        BottomNavigation.tsx    ← 5-tab bottom bar
+        MiniTopbar.tsx          ← Hafif üst bar
+        QuickActions.tsx        ← Hızlı aksiyon grid
+        StudentCard.tsx         ← Öğrenci özet kartı
+        RiskAlert.tsx           ← Risk uyarı kartı
+        TaskCard.tsx            ← Görev/ödev kartı
+
+  5.2 Auth & Routing Mantığı:
+  ────────────────────────────
+  Kullanıcı giriş yaptı
+    ├─ Rol: admin/müdür  → /admin/dashboard'a yönlendir
+    ├─ Rol: koç/öğretmen → /coach/ (koç dashboard) yönlendir
+    └─ Rol: öğrenci      → /student/ (ileride)
+
+  Middleware'de:
+    if (user.role === 'KOC' || user.role === 'OGRETMEN') {
+      // coach layout'u kullan
+    }
+
+  5.3 API Katmanı:
+  ─────────────────
+  Yeni endpoint gerekmiyor! Mevcut API'ler koçun ihtiyaçlarını karşılıyor:
+
+    GET /coaching/api/ogrenciler/     → Koçun öğrencileri
+    GET /coaching/api/meetings/       → Görüşmeler
+    GET /coaching/api/goals/          → Hedefler
+    GET /coaching/api/risk/           → Risk merkezi
+    GET /odev/api/...                 → Ödevler
+    GET /olcme/api/...                → Sınav sonuçları
+    GET /academic/api/calendar/       → Takvim
+
+  Sadece birkaç yeni "dashboard summary" endpoint'i eklenecek:
+    GET /coaching/api/dashboard/      → Koç ana sayfa özet verisi
+
+
+6. RESPONSIVE & MOBİL STRATEJİ
+════════════════════════════════
+
+  EKRAN GENİŞLİĞİ          LAYOUT
+  ─────────────────────────────────────
+  < 768px  (telefon)    → Bottom Tab Nav, tek kolon, tam mobil
+  768-1024 (tablet)     → Bottom Tab Nav, 2 kolon grid, geniş kartlar
+  > 1024   (masaüstü)   → Sol sidebar + bottom tab gizli, 3 kolon
+
+  İleride Mobil Uygulama:
+  ─────────────────────────
+  Seçenek 1: Capacitor (Önerilen)
+    - Next.js coach/ sayfalarını Capacitor ile sarmalayın
+    - Push notification, kamera, offline destek ekleyin
+    - Aynı kod → iOS + Android
+
+  Seçenek 2: React Native
+    - Ayrı codebase ama aynı API'ler
+    - Daha native hissiyat ama daha fazla iş
+
+  Seçenek 3: PWA (Progressive Web App)
+    - En hızlı yol, service worker + manifest ekle
+    - Ana ekrana ekle özelliği, offline cache
+    - Mağaza gerektirmez
+
+  Öneri: İlk adımda PWA ile başla. İkinci aşamada Capacitor ile native sarmala.
+
+
+7. UYGULAMA SIRASI (ROADMAP)
+═════════════════════════════
+
+  FAZ 1 — Temel Yapı (1-2 hafta)
+    ├── coach/ layout (BottomNav + MiniTopbar)
+    ├── Coach Dashboard (günlük özet)
+    ├── Auth routing (rol bazlı yönlendirme)
+    └── PWA manifest + service worker
+
+  FAZ 2 — Modül Entegrasyonları (2-3 hafta)
+    ├── Ödev modülü (ver, kontrol, kaynak)
+    ├── Koçluk modülü (öğrenciler, görüşmeler, hedefler)
+    ├── Takvim modülü
+    └── Bildirimler
+
+  FAZ 3 — Ölçme & Analiz (1-2 hafta)
+    ├── Sınav sonuçları görüntüleme
+    ├── Öğrenci gelişim grafikleri
+    └── Risk merkezi entegrasyonu
+
+  FAZ 4 — Mobil Uygulama (2-3 hafta)
+    ├── Capacitor setup
+    ├── Push notification
+    └── App Store / Play Store
+
+
+8. KARAR TABLOSU
+═════════════════
+
+  Karar              Seçim                    Neden
+  ─────────────────────────────────────────────────────────────
+  Layout             Bottom Tab Nav           Mobil standart, parmakla kolay erişim
+  Routing            /coach/* ayrı layout     Admin'den bağımsız UX
+  API                Mevcut API'ler + özet    Kod tekrarı yok
+  Responsive         Mobile-first, breakpoint Tek kod 3 platform
+  Mobil uygulama     PWA → Capacitor          Hızlı başla, sonra native
+  State              Aynı KurumContext        Tutarlı veri akışı
+
+
+══════════════════════════════════════════════════════════════
+  Bu doküman 3K Kampüs LMS projesi için hazırlanmıştır.
+  Tarih: 17 Mart 2026
+══════════════════════════════════════════════════════════════

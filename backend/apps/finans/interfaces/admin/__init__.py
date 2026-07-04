@@ -1,0 +1,2 @@
+from apps.finans.interfaces.admin.payment_method_admin import OdemeYontemiAdmin
+from apps.finans.interfaces.admin.financial_account_admin import MaliHesapAdmin

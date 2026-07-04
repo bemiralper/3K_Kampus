@@ -1,0 +1,347 @@
+.yok-notify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 24px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+  min-height: 280px;
+}
+
+.yok-notify-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.yok-notify-stat-card {
+  border-radius: 12px;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.yok-notify-stat-card h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.yok-notify-stat-card .count {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.yok-notify-stat-card .meta {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.yok-notify-stat-card.absent .count { color: #dc2626; }
+.yok-notify-stat-card.late .count { color: #d97706; }
+.yok-notify-stat-card.exit .count { color: #2563eb; }
+
+.yok-notify-template-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.yok-notify-template-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.yok-notify-template-head strong {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.yok-notify-template-body {
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #475569;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.yok-notify-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 14px;
+}
+
+.yok-notify-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.yok-notify-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.yok-notify-btn.primary { background: #059669; color: #fff; }
+.yok-notify-btn.secondary { background: #eff6ff; color: #1d4ed8; }
+.yok-notify-btn.ghost { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
+
+.yok-drawer-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0 24px;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.yok-drawer-tab {
+  padding: 12px 18px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.yok-drawer-tab.active {
+  color: #1d4ed8;
+  border-bottom-color: #1d4ed8;
+}
+
+.yok-notify-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.yok-notify-chip.sent { background: #dcfce7; color: #166534; }
+.yok-notify-chip.pending { background: #fef3c7; color: #92400e; }
+.yok-notify-chip.none { background: #f1f5f9; color: #94a3b8; }
+
+.yok-notify-info-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #0c4a6e;
+}
+
+.yok-notify-warn-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: 12px;
+  color: #92400e;
+}
+
+.yok-notify-success-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  font-size: 12px;
+  color: #166534;
+}
+
+.yok-notify-recent-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.yok-notify-recent-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+}
+
+.yok-notify-recent-time { color: #64748b; font-size: 11px; }
+.yok-notify-recent-student { font-weight: 600; color: #0f172a; }
+.yok-notify-recent-event { color: #475569; }
+.yok-notify-recent-veli { color: #64748b; font-size: 11px; }
+
+.yok-pending-banner {
+  margin: 0 24px 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.yok-pending-banner p {
+  margin: 0;
+  font-size: 13px;
+  color: #1e40af;
+  font-weight: 500;
+}
+
+.yok-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 10100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.yok-preview-modal {
+  width: min(720px, 100%);
+  max-height: 88vh;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.yok-preview-header {
+  padding: 18px 22px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.yok-preview-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.yok-preview-header p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.yok-preview-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.yok-preview-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 1.2fr;
+  gap: 12px;
+  padding: 12px 22px;
+  border-bottom: 1px solid #f1f5f9;
+  align-items: start;
+}
+
+.yok-preview-row.skipped {
+  opacity: 0.55;
+  background: #fafafa;
+}
+
+.yok-preview-row label {
+  display: flex;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.yok-preview-recipient strong {
+  display: block;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.yok-preview-recipient span {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.yok-preview-message {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #475569;
+  white-space: pre-wrap;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.yok-preview-footer {
+  padding: 14px 22px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  background: #fafafa;
+}
+
+.yok-settings-grid {
+  display: grid;
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.yok-settings-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+}
+
+.yok-settings-card label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.yok-settings-card select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 13px;
+}
