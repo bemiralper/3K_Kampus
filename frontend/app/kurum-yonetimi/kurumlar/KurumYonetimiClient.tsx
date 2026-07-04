@@ -11,8 +11,7 @@ import {
   subeFormToPayload,
   type SubeFormState,
 } from "@/lib/sube-form";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import { resolveApiUrl } from "@/lib/api";
 
 type TabType = "kurumlar" | "subeler" | "egitim_yillari" | "kayit_tanimlari";
 
@@ -150,7 +149,9 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${BACKEND_URL}/kurum-yonetimi/api/legacy/kurumlar/`);
+      const response = await fetch(resolveApiUrl("/kurum-yonetimi/api/legacy/kurumlar/"), {
+        credentials: "include",
+      });
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -169,7 +170,9 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${BACKEND_URL}/kurum-yonetimi/api/kayit-turleri/?include_inactive=1`);
+      const response = await fetch(resolveApiUrl("/kurum-yonetimi/api/kayit-turleri/?include_inactive=1"), {
+        credentials: "include",
+      });
       const result = await response.json();
       if (result.success) {
         setKayitTurleri(result.data || []);
@@ -239,16 +242,16 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     try {
       let endpoint = "";
       if (activeTab === "kurumlar") {
-        endpoint = `${BACKEND_URL}/kurum-yonetimi/api/kurum/${id}/`;
+        endpoint = resolveApiUrl(`/kurum-yonetimi/api/kurum/${id}/`);
       } else if (activeTab === "subeler") {
-        endpoint = `${BACKEND_URL}/kurum-yonetimi/api/sube/${id}/`;
+        endpoint = resolveApiUrl(`/kurum-yonetimi/api/sube/${id}/`);
       } else if (activeTab === "egitim_yillari") {
-        endpoint = `${BACKEND_URL}/kurum-yonetimi/api/egitim-yili/${id}/`;
+        endpoint = resolveApiUrl(`/kurum-yonetimi/api/egitim-yili/${id}/`);
       } else {
-        endpoint = `${BACKEND_URL}/kurum-yonetimi/api/kayit-turleri/${id}/`;
+        endpoint = resolveApiUrl(`/kurum-yonetimi/api/kayit-turleri/${id}/`);
       }
 
-      const response = await fetch(endpoint);
+      const response = await fetch(endpoint, { credentials: "include" });
       const result = await response.json();
       
       if (result.success) {
@@ -317,18 +320,18 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
 
       if (activeTab === "kurumlar") {
         endpoint = drawerMode === "create"
-          ? `${BACKEND_URL}/kurum-yonetimi/api/kurum/`
-          : `${BACKEND_URL}/kurum-yonetimi/api/kurum/${editingId}/`;
+          ? resolveApiUrl("/kurum-yonetimi/api/kurum/")
+          : resolveApiUrl(`/kurum-yonetimi/api/kurum/${editingId}/`);
         payload = { ...kurumForm, ...brandingForm };
       } else if (activeTab === "subeler") {
         endpoint = drawerMode === "create"
-          ? `${BACKEND_URL}/kurum-yonetimi/api/sube/`
-          : `${BACKEND_URL}/kurum-yonetimi/api/sube/${editingId}/`;
+          ? resolveApiUrl("/kurum-yonetimi/api/sube/")
+          : resolveApiUrl(`/kurum-yonetimi/api/sube/${editingId}/`);
         payload = subeFormToPayload(subeForm);
       } else if (activeTab === "egitim_yillari") {
         endpoint = drawerMode === "create"
-          ? `${BACKEND_URL}/kurum-yonetimi/api/egitim-yili/`
-          : `${BACKEND_URL}/kurum-yonetimi/api/egitim-yili/${editingId}/`;
+          ? resolveApiUrl("/kurum-yonetimi/api/egitim-yili/")
+          : resolveApiUrl(`/kurum-yonetimi/api/egitim-yili/${editingId}/`);
         payload = {
           baslangic_yil: parseInt(yilForm.baslangic_yil),
           bitis_yil: parseInt(yilForm.bitis_yil),
@@ -336,8 +339,8 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
         };
       } else {
         endpoint = drawerMode === "create"
-          ? `${BACKEND_URL}/kurum-yonetimi/api/kayit-turleri/`
-          : `${BACKEND_URL}/kurum-yonetimi/api/kayit-turleri/${editingId}/`;
+          ? resolveApiUrl("/kurum-yonetimi/api/kayit-turleri/")
+          : resolveApiUrl(`/kurum-yonetimi/api/kayit-turleri/${editingId}/`);
         payload = {
           label: kayitTuruForm.label.trim(),
           is_active: kayitTuruForm.is_active,
@@ -350,6 +353,7 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
         method: drawerMode === "create" ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        credentials: "include",
       });
 
       const result = await response.json();
@@ -424,16 +428,16 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     try {
       let endpoint = "";
       if (deletingItem.type === "kurumlar") {
-        endpoint = `${BACKEND_URL}/kurum-yonetimi/api/kurum/${deletingItem.id}/`;
+        endpoint = resolveApiUrl(`/kurum-yonetimi/api/kurum/${deletingItem.id}/`);
       } else if (deletingItem.type === "subeler") {
-        endpoint = `${BACKEND_URL}/kurum-yonetimi/api/sube/${deletingItem.id}/`;
+        endpoint = resolveApiUrl(`/kurum-yonetimi/api/sube/${deletingItem.id}/`);
       } else if (deletingItem.type === "egitim_yillari") {
-        endpoint = `${BACKEND_URL}/kurum-yonetimi/api/egitim-yili/${deletingItem.id}/`;
+        endpoint = resolveApiUrl(`/kurum-yonetimi/api/egitim-yili/${deletingItem.id}/`);
       } else {
-        endpoint = `${BACKEND_URL}/kurum-yonetimi/api/kayit-turleri/${deletingItem.id}/`;
+        endpoint = resolveApiUrl(`/kurum-yonetimi/api/kayit-turleri/${deletingItem.id}/`);
       }
 
-      const response = await fetch(endpoint, { method: "DELETE" });
+      const response = await fetch(endpoint, { method: "DELETE", credentials: "include" });
       const result = await response.json();
 
       if (result.success) {
@@ -460,8 +464,9 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch(`${BACKEND_URL}/kurum-yonetimi/api/kayit-turleri/seed/`, {
+      const response = await fetch(resolveApiUrl("/kurum-yonetimi/api/kayit-turleri/seed/"), {
         method: "POST",
+        credentials: "include",
       });
       const result = await response.json();
       if (result.success) {
