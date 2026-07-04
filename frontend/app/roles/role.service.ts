@@ -15,11 +15,11 @@ import {
   ApiResponse,
 } from './role.types';
 import { ROLE_API_ENDPOINTS } from './role.constants';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, type FetchOptions } from '@/lib/api';
 
 async function fetchApi<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: FetchOptions = {}
 ): Promise<T> {
   const response = await apiFetch<T>(endpoint, options);
   if (!response.success) {
