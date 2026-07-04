@@ -11,7 +11,7 @@ import {
   subeFormToPayload,
   type SubeFormState,
 } from "@/lib/sube-form";
-import { resolveApiUrl } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 
 type TabType = "kurumlar" | "subeler" | "egitim_yillari" | "kayit_tanimlari";
 
@@ -148,43 +148,25 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const response = await fetch(resolveApiUrl("/kurum-yonetimi/api/legacy/kurumlar/"), {
-        credentials: "include",
-      });
-      const result = await response.json();
-      if (result.success) {
-        setData(result.data);
-      } else {
-        setError(result.error || "Veri yüklenemedi");
-      }
-    } catch (err) {
-      setError("Veri yüklenirken hata oluştu");
-      console.error(err);
-    } finally {
-      setLoading(false);
+    const result = await apiGet<KurumResponse>("/kurum-yonetimi/api/legacy/kurumlar/");
+    if (result.success && result.data) {
+      setData(result.data);
+    } else {
+      setError(result.error || "Veri yüklenemedi");
     }
+    setLoading(false);
   }, []);
 
   const fetchKayitTurleri = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const response = await fetch(resolveApiUrl("/kurum-yonetimi/api/kayit-turleri/?include_inactive=1"), {
-        credentials: "include",
-      });
-      const result = await response.json();
-      if (result.success) {
-        setKayitTurleri(result.data || []);
-      } else {
-        setError(result.error || "Kayıt türleri yüklenemedi");
-      }
-    } catch (err) {
-      setError("Kayıt türleri yüklenirken hata oluştu");
-      console.error(err);
-    } finally {
-      setLoading(false);
+    const result = await apiGet<KayitTuru[]>("/kurum-yonetimi/api/kayit-turleri/?include_inactive=1");
+    if (result.success) {
+      setKayitTurleri(result.data || []);
+    } else {
+      setError(result.error || "Kayıt türleri yüklenemedi");
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -238,24 +220,22 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
   const handleOpenEdit = async (id: number) => {
     setDrawerMode("edit");
     setEditingId(id);
-    
-    try {
-      let endpoint = "";
-      if (activeTab === "kurumlar") {
-        endpoint = resolveApiUrl(`/kurum-yonetimi/api/kurum/${id}/`);
-      } else if (activeTab === "subeler") {
-        endpoint = resolveApiUrl(`/kurum-yonetimi/api/sube/${id}/`);
-      } else if (activeTab === "egitim_yillari") {
-        endpoint = resolveApiUrl(`/kurum-yonetimi/api/egitim-yili/${id}/`);
-      } else {
-        endpoint = resolveApiUrl(`/kurum-yonetimi/api/kayit-turleri/${id}/`);
-      }
 
-      const response = await fetch(endpoint, { credentials: "include" });
-      const result = await response.json();
-      
-      if (result.success) {
-        const item = result.data;
+    let endpoint = "";
+    if (activeTab === "kurumlar") {
+      endpoint = `/kurum-yonetimi/api/kurum/${id}/`;
+    } else if (activeTab === "subeler") {
+      endpoint = `/kurum-yonetimi/api/sube/${id}/`;
+    } else if (activeTab === "egitim_yillari") {
+      endpoint = `/kurum-yonetimi/api/egitim-yili/${id}/`;
+    } else {
+      endpoint = `/kurum-yonetimi/api/kayit-turleri/${id}/`;
+    }
+
+    const result = await apiGet<Record<string, unknown>>(endpoint);
+
+    if (result.success && result.data) {
+      const item = result.data;
         
         if (activeTab === "kurumlar") {
           setKurumForm({
@@ -300,12 +280,8 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
         }
         
         setShowDrawer(true);
-      } else {
-        setError(result.error || "Veri yüklenemedi");
-      }
-    } catch (err) {
-      setError("Veri yüklenirken hata oluştu");
-      console.error(err);
+    } else {
+      setError(result.error || "Veri yüklenemedi");
     }
   };
 
@@ -314,77 +290,68 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     setSaving(true);
     setError(null);
 
-    try {
-      let endpoint = "";
-      let payload: Record<string, unknown> = {};
+    let endpoint = "";
+    let payload: Record<string, unknown> = {};
 
-      if (activeTab === "kurumlar") {
-        endpoint = drawerMode === "create"
-          ? resolveApiUrl("/kurum-yonetimi/api/kurum/")
-          : resolveApiUrl(`/kurum-yonetimi/api/kurum/${editingId}/`);
-        payload = { ...kurumForm, ...brandingForm };
-      } else if (activeTab === "subeler") {
-        endpoint = drawerMode === "create"
-          ? resolveApiUrl("/kurum-yonetimi/api/sube/")
-          : resolveApiUrl(`/kurum-yonetimi/api/sube/${editingId}/`);
-        payload = subeFormToPayload(subeForm);
-      } else if (activeTab === "egitim_yillari") {
-        endpoint = drawerMode === "create"
-          ? resolveApiUrl("/kurum-yonetimi/api/egitim-yili/")
-          : resolveApiUrl(`/kurum-yonetimi/api/egitim-yili/${editingId}/`);
-        payload = {
-          baslangic_yil: parseInt(yilForm.baslangic_yil),
-          bitis_yil: parseInt(yilForm.bitis_yil),
-          aktif_mi: yilForm.aktif_mi,
-        };
-      } else {
-        endpoint = drawerMode === "create"
-          ? resolveApiUrl("/kurum-yonetimi/api/kayit-turleri/")
-          : resolveApiUrl(`/kurum-yonetimi/api/kayit-turleri/${editingId}/`);
-        payload = {
-          label: kayitTuruForm.label.trim(),
-          is_active: kayitTuruForm.is_active,
-        };
-        if (kayitTuruForm.code.trim()) payload.code = kayitTuruForm.code.trim();
-        if (kayitTuruForm.order.trim()) payload.order = parseInt(kayitTuruForm.order, 10);
-      }
-
-      const response = await fetch(endpoint, {
-        method: drawerMode === "create" ? "POST" : "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        credentials: "include",
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        if (activeTab === "kurumlar" && drawerMode === "create" && result.data?.id) {
-          setEditingId(result.data.id);
-          setDrawerMode("edit");
-          setKurumDrawerTab("marka");
-          await fetchData();
-          await refreshContextData();
-          return;
-        }
-
-        setShowDrawer(false);
-        resetForms();
-        if (activeTab === "kayit_tanimlari") {
-          await fetchKayitTurleri();
-        } else {
-          await fetchData();
-          await refreshContextData();
-        }
-      } else {
-        setError(result.error || "Kayıt başarısız");
-      }
-    } catch (err) {
-      setError("Kayıt sırasında hata oluştu");
-      console.error(err);
-    } finally {
-      setSaving(false);
+    if (activeTab === "kurumlar") {
+      endpoint = drawerMode === "create"
+        ? "/kurum-yonetimi/api/kurum/"
+        : `/kurum-yonetimi/api/kurum/${editingId}/`;
+      payload = { ...kurumForm, ...brandingForm };
+    } else if (activeTab === "subeler") {
+      endpoint = drawerMode === "create"
+        ? "/kurum-yonetimi/api/sube/"
+        : `/kurum-yonetimi/api/sube/${editingId}/`;
+      payload = subeFormToPayload(subeForm);
+    } else if (activeTab === "egitim_yillari") {
+      endpoint = drawerMode === "create"
+        ? "/kurum-yonetimi/api/egitim-yili/"
+        : `/kurum-yonetimi/api/egitim-yili/${editingId}/`;
+      payload = {
+        baslangic_yil: parseInt(yilForm.baslangic_yil),
+        bitis_yil: parseInt(yilForm.bitis_yil),
+        aktif_mi: yilForm.aktif_mi,
+      };
+    } else {
+      endpoint = drawerMode === "create"
+        ? "/kurum-yonetimi/api/kayit-turleri/"
+        : `/kurum-yonetimi/api/kayit-turleri/${editingId}/`;
+      payload = {
+        label: kayitTuruForm.label.trim(),
+        is_active: kayitTuruForm.is_active,
+      };
+      if (kayitTuruForm.code.trim()) payload.code = kayitTuruForm.code.trim();
+      if (kayitTuruForm.order.trim()) payload.order = parseInt(kayitTuruForm.order, 10);
     }
+
+    const result = drawerMode === "create"
+      ? await apiPost<{ id: number; ad?: string }>(endpoint, payload)
+      : await apiPut<{ id: number; ad?: string }>(endpoint, payload);
+
+    if (result.success) {
+      if (activeTab === "kurumlar" && drawerMode === "create" && result.data?.id) {
+        setEditingId(result.data.id);
+        setDrawerMode("edit");
+        setKurumDrawerTab("marka");
+        await fetchData();
+        await refreshContextData();
+        setSaving(false);
+        return;
+      }
+
+      setShowDrawer(false);
+      resetForms();
+      if (activeTab === "kayit_tanimlari") {
+        await fetchKayitTurleri();
+      } else {
+        await fetchData();
+        await refreshContextData();
+      }
+    } else {
+      setError(result.error || "Kayıt başarısız");
+    }
+
+    setSaving(false);
   };
 
   // Delete click handler - check for children first
@@ -421,65 +388,49 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
   // Delete confirm handler
   const handleDelete = async () => {
     if (!deletingItem || deletingItem.hasChildren) return;
-    
+
     setSaving(true);
     setError(null);
 
-    try {
-      let endpoint = "";
-      if (deletingItem.type === "kurumlar") {
-        endpoint = resolveApiUrl(`/kurum-yonetimi/api/kurum/${deletingItem.id}/`);
-      } else if (deletingItem.type === "subeler") {
-        endpoint = resolveApiUrl(`/kurum-yonetimi/api/sube/${deletingItem.id}/`);
-      } else if (deletingItem.type === "egitim_yillari") {
-        endpoint = resolveApiUrl(`/kurum-yonetimi/api/egitim-yili/${deletingItem.id}/`);
-      } else {
-        endpoint = resolveApiUrl(`/kurum-yonetimi/api/kayit-turleri/${deletingItem.id}/`);
-      }
-
-      const response = await fetch(endpoint, { method: "DELETE", credentials: "include" });
-      const result = await response.json();
-
-      if (result.success) {
-        setShowDeleteConfirm(false);
-        setDeletingItem(null);
-        if (deletingItem.type === "kayit_tanimlari") {
-          await fetchKayitTurleri();
-        } else {
-          await fetchData();
-          await refreshContextData();
-        }
-      } else {
-        setError(result.error || "Silme başarısız");
-      }
-    } catch (err) {
-      setError("Silme sırasında hata oluştu");
-      console.error(err);
-    } finally {
-      setSaving(false);
+    let endpoint = "";
+    if (deletingItem.type === "kurumlar") {
+      endpoint = `/kurum-yonetimi/api/kurum/${deletingItem.id}/`;
+    } else if (deletingItem.type === "subeler") {
+      endpoint = `/kurum-yonetimi/api/sube/${deletingItem.id}/`;
+    } else if (deletingItem.type === "egitim_yillari") {
+      endpoint = `/kurum-yonetimi/api/egitim-yili/${deletingItem.id}/`;
+    } else {
+      endpoint = `/kurum-yonetimi/api/kayit-turleri/${deletingItem.id}/`;
     }
+
+    const result = await apiDelete(endpoint);
+
+    if (result.success) {
+      setShowDeleteConfirm(false);
+      setDeletingItem(null);
+      if (deletingItem.type === "kayit_tanimlari") {
+        await fetchKayitTurleri();
+      } else {
+        await fetchData();
+        await refreshContextData();
+      }
+    } else {
+      setError(result.error || "Silme başarısız");
+    }
+
+    setSaving(false);
   };
 
   const handleSeedKayitTurleri = async () => {
     setSaving(true);
     setError(null);
-    try {
-      const response = await fetch(resolveApiUrl("/kurum-yonetimi/api/kayit-turleri/seed/"), {
-        method: "POST",
-        credentials: "include",
-      });
-      const result = await response.json();
-      if (result.success) {
-        setKayitTurleri(result.data || []);
-      } else {
-        setError(result.error || "Varsayılanlar yüklenemedi");
-      }
-    } catch (err) {
-      setError("Varsayılanlar yüklenirken hata oluştu");
-      console.error(err);
-    } finally {
-      setSaving(false);
+    const result = await apiPost<KayitTuru[]>("/kurum-yonetimi/api/kayit-turleri/seed/");
+    if (result.success) {
+      setKayitTurleri(result.data || []);
+    } else {
+      setError(result.error || "Varsayılanlar yüklenemedi");
     }
+    setSaving(false);
   };
 
   // Filter data by search term
