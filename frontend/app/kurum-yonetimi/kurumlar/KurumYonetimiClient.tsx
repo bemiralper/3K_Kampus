@@ -221,68 +221,81 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     setDrawerMode("edit");
     setEditingId(id);
 
-    let endpoint = "";
     if (activeTab === "kurumlar") {
-      endpoint = `/kurum-yonetimi/api/kurum/${id}/`;
-    } else if (activeTab === "subeler") {
-      endpoint = `/kurum-yonetimi/api/sube/${id}/`;
-    } else if (activeTab === "egitim_yillari") {
-      endpoint = `/kurum-yonetimi/api/egitim-yili/${id}/`;
-    } else {
-      endpoint = `/kurum-yonetimi/api/kayit-turleri/${id}/`;
-    }
-
-    const result = await apiGet<Record<string, unknown>>(endpoint);
-
-    if (result.success && result.data) {
+      const result = await apiGet<Kurum>(`/kurum-yonetimi/api/kurum/${id}/`);
+      if (!result.success || !result.data) {
+        setError(result.error || "Veri yüklenemedi");
+        return;
+      }
       const item = result.data;
-        
-        if (activeTab === "kurumlar") {
-          setKurumForm({
-            ad: item.ad || "",
-            kod: item.kod || "",
-            telefon_sabit: item.telefon_sabit || "",
-            telefon_cep: item.telefon_cep || "",
-            yetkili_ad_soyad: item.yetkili_ad_soyad || "",
-            vergi_no: item.vergi_no || "",
-            vergi_dairesi: item.vergi_dairesi || "",
-            adres: item.adres || "",
-            aktif_mi: item.aktif_mi ?? true,
-          });
-          setBrandingForm({
-            gorunen_ad: item.gorunen_ad || "",
-            slogan: item.slogan || DEFAULT_BRANDING.slogan,
-            login_arkaplan_rengi: item.login_arkaplan_rengi || DEFAULT_BRANDING.login_arkaplan_rengi,
-            login_arkaplan_rengi_2: item.login_arkaplan_rengi_2 || DEFAULT_BRANDING.login_arkaplan_rengi_2,
-            tema_rengi: item.tema_rengi || DEFAULT_BRANDING.tema_rengi,
-          });
-          setBrandingPreviews({
-            login_logo_url: item.login_logo_url ?? null,
-            app_logo_url: item.app_logo_url ?? null,
-            favicon_url: item.favicon_url ?? null,
-          });
-          setKurumDrawerTab("bilgiler");
-        } else if (activeTab === "subeler") {
-          setSubeForm(subeFormFromApi(item));
-        } else if (activeTab === "egitim_yillari") {
-          setYilForm({
-            baslangic_yil: item.baslangic_yil?.toString() || "",
-            bitis_yil: item.bitis_yil?.toString() || "",
-            aktif_mi: item.aktif_mi ?? true,
-          });
-        } else {
-          setKayitTuruForm({
-            label: item.label || "",
-            code: item.code || "",
-            order: item.order?.toString() || "",
-            is_active: item.is_active ?? true,
-          });
-        }
-        
-        setShowDrawer(true);
-    } else {
-      setError(result.error || "Veri yüklenemedi");
+      setKurumForm({
+        ad: item.ad || "",
+        kod: item.kod || "",
+        telefon_sabit: item.telefon_sabit || "",
+        telefon_cep: item.telefon_cep || "",
+        yetkili_ad_soyad: item.yetkili_ad_soyad || "",
+        vergi_no: item.vergi_no || "",
+        vergi_dairesi: item.vergi_dairesi || "",
+        adres: item.adres || "",
+        aktif_mi: item.aktif_mi ?? true,
+      });
+      setBrandingForm({
+        gorunen_ad: item.gorunen_ad || "",
+        slogan: item.slogan || DEFAULT_BRANDING.slogan,
+        login_arkaplan_rengi: item.login_arkaplan_rengi || DEFAULT_BRANDING.login_arkaplan_rengi,
+        login_arkaplan_rengi_2: item.login_arkaplan_rengi_2 || DEFAULT_BRANDING.login_arkaplan_rengi_2,
+        tema_rengi: item.tema_rengi || DEFAULT_BRANDING.tema_rengi,
+      });
+      setBrandingPreviews({
+        login_logo_url: item.login_logo_url ?? null,
+        app_logo_url: item.app_logo_url ?? null,
+        favicon_url: item.favicon_url ?? null,
+      });
+      setKurumDrawerTab("bilgiler");
+      setShowDrawer(true);
+      return;
     }
+
+    if (activeTab === "subeler") {
+      const result = await apiGet<Sube>(`/kurum-yonetimi/api/sube/${id}/`);
+      if (!result.success || !result.data) {
+        setError(result.error || "Veri yüklenemedi");
+        return;
+      }
+      setSubeForm(subeFormFromApi(result.data));
+      setShowDrawer(true);
+      return;
+    }
+
+    if (activeTab === "egitim_yillari") {
+      const result = await apiGet<EgitimYili>(`/kurum-yonetimi/api/egitim-yili/${id}/`);
+      if (!result.success || !result.data) {
+        setError(result.error || "Veri yüklenemedi");
+        return;
+      }
+      const item = result.data;
+      setYilForm({
+        baslangic_yil: item.baslangic_yil?.toString() || "",
+        bitis_yil: item.bitis_yil?.toString() || "",
+        aktif_mi: item.aktif_mi ?? true,
+      });
+      setShowDrawer(true);
+      return;
+    }
+
+    const result = await apiGet<KayitTuru>(`/kurum-yonetimi/api/kayit-turleri/${id}/`);
+    if (!result.success || !result.data) {
+      setError(result.error || "Veri yüklenemedi");
+      return;
+    }
+    const item = result.data;
+    setKayitTuruForm({
+      label: item.label || "",
+      code: item.code || "",
+      order: item.order?.toString() || "",
+      is_active: item.is_active ?? true,
+    });
+    setShowDrawer(true);
   };
 
   // Save handler

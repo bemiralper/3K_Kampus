@@ -91,9 +91,13 @@ export async function fetchLandingData(kod = '3K'): Promise<LandingData | null> 
   if (cached && now - cached.ts < LANDING_CACHE_TTL_MS) return cached.data;
 
   const promise = (async () => {
+    const fetchOpts =
+      typeof window === 'undefined'
+        ? { next: { revalidate: 60 } }
+        : { cache: 'no-store' as const };
     const res = await fetchJson<ApiResponse<LandingData>>(
       resolveUrl(`${BASE}/public/${encodeURIComponent(kod)}/`),
-      { cache: 'no-store' },
+      fetchOpts,
     );
     const data = res.data?.data ?? null;
     landingCache.set(kod, { data, ts: Date.now() });
