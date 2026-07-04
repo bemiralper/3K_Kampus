@@ -10,6 +10,19 @@ const API_PREFIXED_PATHS = new Set([
   'legacy', 'ogrenci-kayit', 'communication',
 ]);
 
+/** undici fetch rejects hop-by-hop headers forwarded from the browser/nginx chain */
+const HOP_BY_HOP_HEADERS = new Set([
+  'connection',
+  'upgrade',
+  'keep-alive',
+  'transfer-encoding',
+  'te',
+  'trailer',
+  'proxy-connection',
+  'proxy-authenticate',
+  'proxy-authorization',
+]);
+
 /** PDF, Excel vb. binary yanıtlar text() ile okunursa dosya bozulur (boş sayfa). */
 function isBinaryResponse(contentType: string, disposition: string | null): boolean {
   const ct = contentType.toLowerCase();
@@ -51,13 +64,20 @@ async function proxyRequest(request: NextRequest, path: string) {
     }
   }
 
-  // Forward headers, excluding host
+  // Forward headers — skip host + hop-by-hop (undici: invalid connection header)
   const headers = new Headers();
   request.headers.forEach((value, key) => {
-    if (key.toLowerCase() !== 'host') {
-      headers.set(key, value);
-    }
+    const lower = key.toLowerCase();
+    if (lower === 'host' || HOP_BY_HOP_HEADERS.has(lower)) return;
+    headers.set(key, value);
   });
+
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'http';
+  headers.set('X-Forwarded-Proto', forwardedProto);
+  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  if (forwardedHost) {
+    headers.set('X-Forwarded-Host', forwardedHost);
+  }
 
   // Forward cookies
   const cookies = request.cookies.getAll();
@@ -79,6 +99,7 @@ async function proxyRequest(request: NextRequest, path: string) {
       method: request.method,
       headers,
       body,
+      redirect: 'manual',
     });
 
     // Handle 204 No Content — NextResponse cannot have a body with status 204
