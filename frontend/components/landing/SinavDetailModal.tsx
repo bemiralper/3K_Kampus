@@ -2,7 +2,16 @@
 
 import type { SinavTakvim } from '@/lib/website-api';
 import { resolveMediaUrl } from '@/lib/website-api';
+import { formatDateTRLong } from '@/lib/format-date';
 import { LANDING_COLORS, sinavTurColor } from '@/lib/landing-theme';
+
+function formatSinavSaatAraligi(sinav: SinavTakvim): string | null {
+  const { saat, saat_bitis: bitis } = sinav;
+  if (saat && bitis) return `${saat} – ${bitis}`;
+  if (saat) return saat;
+  if (bitis) return bitis;
+  return null;
+}
 
 type SinavDetailModalProps = {
   sinav: SinavTakvim | null;
@@ -16,12 +25,8 @@ export default function SinavDetailModal({ sinav, onClose }: SinavDetailModalPro
   const isTurkiyeGeneli = sinav.kapsam === 'turkiye_geneli';
   const color = sinavTurColor(sinav.tur);
   const imageUrl = resolveMediaUrl(sinav.gorsel_url);
-  const tarihStr = new Date(sinav.tarih).toLocaleDateString('tr-TR', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const tarihStr = formatDateTRLong(sinav.tarih);
+  const saatStr = formatSinavSaatAraligi(sinav);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-4">
@@ -113,7 +118,7 @@ export default function SinavDetailModal({ sinav, onClose }: SinavDetailModalPro
               </div>
             </div>
 
-            {sinav.saat && (
+            {saatStr && (
               <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#0262a7] shadow-sm">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -121,8 +126,10 @@ export default function SinavDetailModal({ sinav, onClose }: SinavDetailModalPro
                   </svg>
                 </span>
                 <div>
-                  <p className="text-xs font-medium text-slate-400">Saat</p>
-                  <p className="text-sm font-semibold text-slate-800">{sinav.saat}</p>
+                  <p className="text-xs font-medium text-slate-400">
+                    {sinav.saat && sinav.saat_bitis ? 'Saat aralığı' : 'Saat'}
+                  </p>
+                  <p className="text-sm font-semibold text-slate-800">{saatStr}</p>
                 </div>
               </div>
             )}

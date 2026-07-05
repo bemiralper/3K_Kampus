@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { fetchDuyuruDetail } from '@/lib/website-api';
+import { formatDateTR } from '@/lib/format-date';
 import { LANDING_KURUM_KOD } from '@/lib/landing-theme';
 import { notFound } from 'next/navigation';
 
@@ -18,7 +19,7 @@ export default async function DuyuruDetailPage({ params }: Props) {
       </header>
       <article className="mx-auto max-w-3xl px-4 py-10">
         {duyuru.yayin_tarihi && (
-          <time className="text-sm text-slate-400">{new Date(duyuru.yayin_tarihi).toLocaleDateString('tr-TR')}</time>
+          <time className="text-sm text-slate-400">{formatDateTR(duyuru.yayin_tarihi)}</time>
         )}
         <h1 className="mt-2 text-3xl font-bold text-slate-900">{duyuru.baslik}</h1>
         <div

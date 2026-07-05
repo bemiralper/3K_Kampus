@@ -32,8 +32,14 @@ def serialize_site_settings(settings, request):
         'youtube_video_id': settings.youtube_video_id,
         'harita_embed_url': settings.harita_embed_url,
         'footer_copyright': settings.footer_copyright,
+        'footer_marka_metni': settings.footer_marka_metni,
         'seo_baslik': settings.seo_baslik,
         'seo_aciklama': settings.seo_aciklama,
+        'seo_anahtar_kelimeler': settings.seo_anahtar_kelimeler,
+        'seo_canonical_url': settings.seo_canonical_url,
+        'google_site_verification': settings.google_site_verification,
+        'google_analytics_id': settings.google_analytics_id,
+        'seo_robots_index': settings.seo_robots_index,
     }
 
 
@@ -89,11 +95,15 @@ def serialize_sinav(sinav, request):
     saat = sinav.saat
     if saat is not None and hasattr(saat, 'strftime'):
         saat = saat.strftime('%H:%M')
+    saat_bitis = sinav.saat_bitis
+    if saat_bitis is not None and hasattr(saat_bitis, 'strftime'):
+        saat_bitis = saat_bitis.strftime('%H:%M')
     return {
         'id': sinav.id,
         'tur': sinav.tur,
         'tarih': tarih,
         'saat': saat,
+        'saat_bitis': saat_bitis,
         'kapsam': sinav.kapsam,
         'baslik': sinav.baslik,
         'yayin_adi': sinav.yayin_adi or '',

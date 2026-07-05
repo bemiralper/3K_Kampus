@@ -19,6 +19,9 @@ urlpatterns = [
     # Şube JSON API
     path("sube/", views.api_sube_list_create, name="api_sube_list_create"),
     path("sube/<int:pk>/", views.api_sube_detail, name="api_sube_detail"),
+    path("sube/<int:pk>/branding/login-logo/", views.api_sube_branding_login_logo, name="api_sube_branding_login_logo"),
+    path("sube/<int:pk>/branding/app-logo/", views.api_sube_branding_app_logo, name="api_sube_branding_app_logo"),
+    path("sube/<int:pk>/branding/favicon/", views.api_sube_branding_favicon, name="api_sube_branding_favicon"),
     
     # Eğitim Yılı JSON API
     path("egitim-yili/", views.api_egitim_yili_list_create, name="api_egitim_yili_list_create"),

@@ -5,6 +5,7 @@ app_name = 'website_admin_api'
 
 urlpatterns = [
     path('landing/', views.api_admin_landing_data, name='admin_landing'),
+    path('seed-defaults/', views.api_admin_seed_defaults, name='admin_seed_defaults'),
     path('settings/', views.api_admin_settings, name='admin_settings'),
     path('social-links/', views.api_admin_social_links, name='admin_social_links'),
     path('social-links/<int:pk>/', views.api_admin_social_link_detail, name='admin_social_link_detail'),

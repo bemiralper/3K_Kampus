@@ -5,6 +5,24 @@ Production-Grade SaaS Multi-Tenant Architecture
 from django.db import models
 
 
+def _branding_path(instance, filename, prefix: str):
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'png'
+    sid = instance.pk or 'new'
+    return f'sube_branding/{sid}/{prefix}.{ext}'
+
+
+def sube_login_logo_upload_to(instance, filename):
+    return _branding_path(instance, filename, 'login_logo')
+
+
+def sube_app_logo_upload_to(instance, filename):
+    return _branding_path(instance, filename, 'app_logo')
+
+
+def sube_favicon_upload_to(instance, filename):
+    return _branding_path(instance, filename, 'favicon')
+
+
 class Sube(models.Model):
     """
     Branch (Second-level Tenant)
@@ -40,6 +58,34 @@ class Sube(models.Model):
     
     # Durum
     aktif_mi = models.BooleanField('Aktif', default=True)
+
+    # Marka / white-label (giriş sonrası uygulama — kurumsal site kurum markasından gelir)
+    gorunen_ad = models.CharField(
+        'Görünen Ad', max_length=200, blank=True, default='',
+        help_text='Uygulama sidebar ve sekme başlığı (boşsa şube adı, o da yoksa kurum markası)',
+    )
+    slogan = models.CharField('Slogan', max_length=300, blank=True, default='')
+    login_logo = models.ImageField(
+        'Login Logosu', upload_to=sube_login_logo_upload_to,
+        blank=True, null=True,
+    )
+    app_logo = models.ImageField(
+        'Uygulama Logosu', upload_to=sube_app_logo_upload_to,
+        blank=True, null=True,
+    )
+    favicon = models.FileField(
+        'Favicon', upload_to=sube_favicon_upload_to,
+        blank=True, null=True,
+    )
+    login_arkaplan_rengi = models.CharField(
+        'Login Arka Plan Rengi', max_length=7, blank=True, default='',
+    )
+    login_arkaplan_rengi_2 = models.CharField(
+        'Login Arka Plan Rengi 2', max_length=7, blank=True, default='',
+    )
+    tema_rengi = models.CharField(
+        'Tema Rengi', max_length=7, blank=True, default='',
+    )
     
     # Zaman damgaları
     created_at = models.DateTimeField('Oluşturma Tarihi', auto_now_add=True)

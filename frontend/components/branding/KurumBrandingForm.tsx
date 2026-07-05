@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
-import { uploadKurumBrandingFile } from '@/lib/kurum-branding-api';
+import { uploadKurumBrandingFile, uploadSubeBrandingFile } from '@/lib/kurum-branding-api';
 import {
   applyFavicon,
   getAppLogo,
   getFaviconUrl,
   getHeaderLogo,
   getLoginLogo,
+  mergeBranding,
+  resetFaviconCache,
   type KurumBranding,
 } from '@/lib/kurum-branding';
 
@@ -20,8 +22,9 @@ type BrandingFormState = {
 };
 
 type Props = {
-  kurumId: number | null;
-  kurumKod: string;
+  entityKind?: 'kurum' | 'sube';
+  entityId: number | null;
+  kurumKod?: string;
   form: BrandingFormState;
   onChange: (form: BrandingFormState) => void;
   previews: Pick<KurumBranding, 'login_logo_url' | 'app_logo_url' | 'favicon_url'>;
@@ -187,8 +190,9 @@ function ColorSwatch({
 }
 
 export default function KurumBrandingForm({
-  kurumId,
-  kurumKod,
+  entityKind = 'kurum',
+  entityId,
+  kurumKod = '',
   form,
   onChange,
   previews,
@@ -214,11 +218,12 @@ export default function KurumBrandingForm({
   const appLogo = getAppLogo(previewBranding);
   const headerLogo = getHeaderLogo(previewBranding);
   const favicon = getFaviconUrl(previewBranding);
-  const uploadsDisabled = !kurumId;
+  const uploadsDisabled = !entityId;
+  const isPublicSite = entityKind === 'kurum';
 
   const handleUpload = useCallback(async (type: UploadType, file: File) => {
-    if (!kurumId) {
-      setToast({ type: 'info', text: 'Önce kurumu kaydedin, ardından görselleri yükleyin.' });
+    if (!entityId) {
+      setToast({ type: 'info', text: 'Önce kaydı tamamlayın, ardından görselleri yükleyin.' });
       return;
     }
 
@@ -231,7 +236,9 @@ export default function KurumBrandingForm({
     setToast(null);
     setUploading(type);
 
-    const res = await uploadKurumBrandingFile(kurumId, type, file);
+    const res = entityKind === 'sube'
+      ? await uploadSubeBrandingFile(entityId, type, file)
+      : await uploadKurumBrandingFile(entityId, type, file);
     setUploading(null);
 
     if (res.success && res.data) {
@@ -249,7 +256,14 @@ export default function KurumBrandingForm({
         login_arkaplan_rengi_2: res.data.login_arkaplan_rengi_2,
         tema_rengi: res.data.tema_rengi,
       });
-      applyFavicon(res.data, { force: true });
+      resetFaviconCache();
+      const brandingForFavicon = mergeBranding({
+        ...form,
+        ...nextPreviews,
+        gorunen_ad: res.data.gorunen_ad || form.gorunen_ad,
+        slogan: res.data.slogan ?? form.slogan,
+      });
+      applyFavicon(brandingForFavicon, { force: true });
       onAssetsChange?.();
       const labels: Record<UploadType, string> = {
         'login-logo': 'Koyu zemin logosu',
@@ -260,7 +274,7 @@ export default function KurumBrandingForm({
     } else {
       setToast({ type: 'error', text: res.error || 'Yükleme başarısız.' });
     }
-  }, [kurumId, form, onChange, onPreviewsChange, onAssetsChange]);
+  }, [entityId, entityKind, form, onChange, onPreviewsChange, onAssetsChange]);
 
   return (
     <div className="brand-studio">
@@ -283,7 +297,9 @@ export default function KurumBrandingForm({
 
       {uploadsDisabled && (
         <div className="brand-toast brand-toast--info">
-          Kurumu kaydettikten sonra logo ve favicon yükleyebilirsiniz.
+          {isPublicSite
+            ? 'Kurumu kaydettikten sonra anasayfa logolarını yükleyebilirsiniz.'
+            : 'Şubeyi kaydettikten sonra uygulama logolarını yükleyebilirsiniz.'}
         </div>
       )}
       {toast && (
@@ -308,6 +324,11 @@ export default function KurumBrandingForm({
         <div className="brand-panel">
           <div className="brand-panel-block">
             <h4>Kimlik</h4>
+            <p className="brand-panel-desc">
+              {isPublicSite
+                ? 'Anasayfa, giriş ekranı ve kurumsal sitede görünür. Şube bazlı marka ayrı ayarlanır.'
+                : 'Bu şubeye giriş yapıldığında uygulama sidebar ve sekme başlığında kullanılır.'}
+            </p>
             <div className="brand-field-grid">
               <label className="brand-field">
                 <span>Görünen ad</span>
@@ -316,7 +337,7 @@ export default function KurumBrandingForm({
                   className="brand-input"
                   value={form.gorunen_ad}
                   onChange={e => onChange({ ...form, gorunen_ad: e.target.value })}
-                  placeholder="Web ve giriş ekranında görünür"
+                  placeholder={isPublicSite ? 'Anasayfa ve giriş ekranı' : 'Uygulama sidebar ve sekme'}
                 />
               </label>
               <label className="brand-field">
@@ -334,7 +355,11 @@ export default function KurumBrandingForm({
 
           <div className="brand-panel-block">
             <h4>Renk paleti</h4>
-            <p className="brand-panel-desc">Giriş gradyanı ve uygulama vurgu rengi.</p>
+            <p className="brand-panel-desc">
+              {isPublicSite
+                ? 'Anasayfa gradyanı ve vurgu rengi (login olmadan görünen site).'
+                : 'Giriş sonrası uygulama gradyanı ve sidebar vurgu rengi.'}
+            </p>
             <div className="color-swatch-grid">
               <ColorSwatch
                 label="Giriş — başlangıç"
@@ -460,7 +485,7 @@ export default function KurumBrandingForm({
                 </div>
               </div>
             </div>
-            {kurumKod && (
+            {isPublicSite && kurumKod && (
               <a
                 className="brand-external-link"
                 href={`/login?kurum=${encodeURIComponent(kurumKod)}`}
@@ -468,6 +493,17 @@ export default function KurumBrandingForm({
                 rel="noopener noreferrer"
               >
                 Giriş sayfasını aç
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+              </a>
+            )}
+            {isPublicSite && (
+              <a
+                className="brand-external-link"
+                href="/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Anasayfayı önizle
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
               </a>
             )}

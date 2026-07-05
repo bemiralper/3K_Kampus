@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   websiteAdminApi,
+  invalidateLandingCache,
   type SiteSettings,
   type Duyuru,
   type SinavTakvim,
@@ -21,6 +22,7 @@ import SinavCalendarAdmin from '@/components/website-admin/SinavCalendarAdmin';
 import SiteSettingsPanel from '@/components/website-admin/SiteSettingsPanel';
 import ImageUploadField from '@/components/website-admin/ImageUploadField';
 import MesajlarPanel from '@/components/website-admin/MesajlarPanel';
+import { normalizeSiteMapSettings } from '@/lib/map-embed';
 import '@/components/website-admin/website-admin.css';
 
 type Tab =
@@ -65,11 +67,16 @@ export default function WebsiteYonetimiClient() {
   const [hero, setHero] = useState<HeroSlide[]>([]);
   const [yasal, setYasal] = useState<YasalMetin[]>([]);
   const [mesajlar, setMesajlar] = useState<Array<{ id: number; ad_soyad: string; telefon: string; mesaj: string; okundu: boolean; created_at: string }>>([]);
+  const [landingKurum, setLandingKurum] = useState<{ kod: string; ad: string } | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const autoSeedAttempted = useRef(false);
 
   const loadAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
+    const errors: string[] = [];
     try {
-      const [s, d, sn, n, b, y, ss, so, fo, h, ya, m] = await Promise.all([
+      const [landing, s, d, sn, n, b, y, ss, so, fo, h, ya, m] = await Promise.all([
+        websiteAdminApi.getLanding(),
         websiteAdminApi.getSettings(),
         websiteAdminApi.list<Duyuru>('duyurular'),
         websiteAdminApi.list<SinavTakvim>('sinav-takvim'),
@@ -83,7 +90,11 @@ export default function WebsiteYonetimiClient() {
         websiteAdminApi.list<YasalMetin>('yasal-metinler'),
         websiteAdminApi.list<{ id: number; ad_soyad: string; telefon: string; mesaj: string; okundu: boolean; created_at: string }>('iletisim-mesajlari'),
       ]);
+      if (landing.success) {
+        if (landing.kurum_kod) setLandingKurum({ kod: landing.kurum_kod, ad: landing.kurum_ad || landing.kurum_kod });
+      } else if (landing.error) errors.push(landing.error);
       if (s.success && s.data) setSettings(s.data);
+      else if (s.error) errors.push(s.error);
       if (d.success && d.data) setDuyurular(d.data);
       if (sn.success && sn.data) setSinavlar(sn.data);
       if (n.success && n.data) setNeden(n.data);
@@ -95,10 +106,35 @@ export default function WebsiteYonetimiClient() {
       if (h.success && h.data) setHero(h.data);
       if (ya.success && ya.data) setYasal(ya.data);
       if (m.success && m.data) setMesajlar(m.data);
+      else if (m.error) errors.push(m.error);
+
+      const isEmpty =
+        landing.success &&
+        (s.success ? !(s.data?.telefon || '').trim() : true) &&
+        (d.success ? (d.data?.length ?? 0) === 0 : true);
+
+      if (isEmpty && !autoSeedAttempted.current) {
+        autoSeedAttempted.current = true;
+        const seedRes = await websiteAdminApi.seedDefaults(false);
+        if (seedRes.success) {
+          await invalidateLandingCache();
+          return loadAll(true);
+        }
+      }
+
+      if (!silent && errors.length > 0) {
+        setMessage(errors[0]);
+        setMessageType('error');
+      }
     } finally {
       if (!silent) setLoading(false);
     }
   }, []);
+
+  const reloadAfterSave = useCallback(async () => {
+    await invalidateLandingCache();
+    await loadAll(true);
+  }, [loadAll]);
 
   useEffect(() => { loadAll(false); }, [loadAll]);
 
@@ -110,10 +146,38 @@ export default function WebsiteYonetimiClient() {
 
   const saveSettings = async () => {
     setSaving(true);
-    const res = await websiteAdminApi.updateSettings(settings);
+    const payload = {
+      ...settings,
+      ...normalizeSiteMapSettings(settings),
+    };
+    const res = await websiteAdminApi.updateSettings(payload);
     setSaving(false);
-    if (res.success) { flash('Ayarlar kaydedildi'); if (res.data) setSettings(res.data); }
-    else flash(res.error || 'Kayıt hatası', 'error');
+    if (res.success) {
+      await invalidateLandingCache();
+      flash('Ayarlar kaydedildi');
+      if (res.data) setSettings(res.data);
+    } else {
+      flash(res.error || 'Kayıt hatası', 'error');
+    }
+  };
+
+  const seedDefaults = async () => {
+    if (!confirm('Eksik site içerikleri varsayılan metinlerle doldurulsun mu? Mevcut kayıtlar silinmez.')) return;
+    setSeeding(true);
+    const res = await websiteAdminApi.seedDefaults(false);
+    setSeeding(false);
+    if (res.success) {
+      await invalidateLandingCache();
+      flash(res.message || 'Varsayılan içerikler yüklendi');
+      await loadAll(true);
+    } else {
+      flash(res.error || 'Yükleme başarısız', 'error');
+    }
+  };
+
+  const handleCrudMessage = (msg: string, type: 'success' | 'error' = 'success') => {
+    if (type === 'success') void invalidateLandingCache();
+    flash(msg, type);
   };
 
   if (loading) {
@@ -129,9 +193,18 @@ export default function WebsiteYonetimiClient() {
       <div className="page-header">
         <div>
           <h2>Kurumsal Site Yönetimi</h2>
-          <p className="muted">Ana sayfa (landing) içeriklerini buradan yönetin. Görseller için önerilen boyutlar her alanın altında belirtilmiştir.</p>
+          <p className="muted">
+            Anasayfa içerikleri
+            {landingKurum ? ` — ${landingKurum.ad} (${landingKurum.kod})` : ' — 3K'}
+            {' '}kurumuna kaydedilir. Değişiklikler anasayfada görünür.
+          </p>
         </div>
-        <a href="/" target="_blank" rel="noopener noreferrer" className="btn btn-secondary">Siteyi Önizle ↗</a>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button type="button" className="btn btn-secondary" disabled={seeding} onClick={seedDefaults}>
+            {seeding ? 'Yükleniyor…' : 'Varsayılanları Yükle'}
+          </button>
+          <a href="/" target="_blank" rel="noopener noreferrer" className="btn btn-secondary">Siteyi Önizle ↗</a>
+        </div>
       </div>
 
       {message && (
@@ -174,7 +247,7 @@ export default function WebsiteYonetimiClient() {
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  onClick={async () => { await websiteAdminApi.create('hero-slides', {}); loadAll(true); }}
+                  onClick={async () => { await websiteAdminApi.create('hero-slides', {}); await reloadAfterSave(); }}
                 >
                   + Slayt Ekle
                 </button>
@@ -194,14 +267,14 @@ export default function WebsiteYonetimiClient() {
                       currentUrl={slide.gorsel_url}
                       onUpload={async file => {
                         await websiteAdminApi.upload('hero-slides', slide.id, file, 'gorsel');
-                        loadAll(true);
+                        await reloadAfterSave();
                       }}
                     />
                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                       <button
                         type="button"
                         className="btn btn-danger btn-sm"
-                        onClick={async () => { await websiteAdminApi.remove('hero-slides', slide.id); loadAll(true); }}
+                        onClick={async () => { await websiteAdminApi.remove('hero-slides', slide.id); await reloadAfterSave(); }}
                       >
                         Slaytı Sil
                       </button>
@@ -230,8 +303,8 @@ export default function WebsiteYonetimiClient() {
                 urlKey: 'kapak_gorseli_url',
                 guideline: WEBSITE_IMAGE_GUIDELINES.duyuru,
               }}
-              onReload={() => loadAll(true)}
-              onMessage={flash}
+              onReload={reloadAfterSave}
+              onMessage={handleCrudMessage}
             />
           )}
 
@@ -244,7 +317,7 @@ export default function WebsiteYonetimiClient() {
                 </div>
               </div>
               <div className="wam-panel-body">
-                <SinavCalendarAdmin sinavlar={sinavlar} onReload={() => loadAll(true)} onMessage={flash} />
+                <SinavCalendarAdmin sinavlar={sinavlar} onReload={reloadAfterSave} onMessage={handleCrudMessage} />
               </div>
             </div>
           )}
@@ -260,8 +333,8 @@ export default function WebsiteYonetimiClient() {
                 { key: 'baslik', label: 'Başlık' },
                 { key: 'aciklama', label: 'Açıklama', textarea: true },
               ]}
-              onReload={() => loadAll(true)}
-              onMessage={flash}
+              onReload={reloadAfterSave}
+              onMessage={handleCrudMessage}
             />
           )}
 
@@ -272,8 +345,8 @@ export default function WebsiteYonetimiClient() {
               resource="basari-istatistikleri"
               items={basari}
               fields={[{ key: 'etiket', label: 'Etiket' }, { key: 'deger', label: 'Değer' }]}
-              onReload={() => loadAll(true)}
-              onMessage={flash}
+              onReload={reloadAfterSave}
+              onMessage={handleCrudMessage}
             />
           )}
 
@@ -288,8 +361,8 @@ export default function WebsiteYonetimiClient() {
                 { key: 'puan', label: 'Puan (1-5)', type: 'number' },
                 { key: 'yorum', label: 'Yorum', textarea: true },
               ]}
-              onReload={() => loadAll(true)}
-              onMessage={flash}
+              onReload={reloadAfterSave}
+              onMessage={handleCrudMessage}
             />
           )}
 
@@ -302,8 +375,8 @@ export default function WebsiteYonetimiClient() {
                 { key: 'soru', label: 'Soru' },
                 { key: 'cevap', label: 'Cevap', textarea: true },
               ]}
-              onReload={() => loadAll(true)}
-              onMessage={flash}
+              onReload={reloadAfterSave}
+              onMessage={handleCrudMessage}
             />
           )}
 
@@ -316,8 +389,8 @@ export default function WebsiteYonetimiClient() {
                 { key: 'platform', label: 'Platform', select: ['instagram', 'facebook', 'youtube', 'twitter', 'linkedin', 'whatsapp'] },
                 { key: 'url', label: 'URL' },
               ]}
-              onReload={() => loadAll(true)}
-              onMessage={flash}
+              onReload={reloadAfterSave}
+              onMessage={handleCrudMessage}
             />
           )}
 
@@ -331,8 +404,8 @@ export default function WebsiteYonetimiClient() {
                 { key: 'etiket', label: 'Etiket' },
                 { key: 'url', label: 'URL (#duyurular veya /yasal/kvkk)' },
               ]}
-              onReload={() => loadAll(true)}
-              onMessage={flash}
+              onReload={reloadAfterSave}
+              onMessage={handleCrudMessage}
             />
           )}
 
@@ -346,8 +419,8 @@ export default function WebsiteYonetimiClient() {
                 { key: 'baslik', label: 'Başlık' },
                 { key: 'icerik', label: 'İçerik (HTML)', textarea: true },
               ]}
-              onReload={() => loadAll(true)}
-              onMessage={flash}
+              onReload={reloadAfterSave}
+              onMessage={handleCrudMessage}
             />
           )}
 
@@ -356,7 +429,7 @@ export default function WebsiteYonetimiClient() {
               mesajlar={mesajlar}
               onToggleOkundu={async (id, okundu) => {
                 await websiteAdminApi.update('iletisim-mesajlari', id, { okundu });
-                loadAll(true);
+                await loadAll(true);
               }}
             />
           )}

@@ -93,6 +93,7 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
   const pathname = usePathname();
   const columns = ['kurumsal', 'hizli', 'yasal', 'sosyal'] as const;
   const copyright = settings?.footer_copyright || '© 2026 3K Kampüs — Tüm hakları saklıdır.';
+  const markaMetni = settings?.footer_marka_metni || '3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.';
 
   const visibleFooterLinks = footerLinks.filter(l => l.aktif !== false && !shouldHideFooterLink(l));
   const visibleSocial = socialLinks.filter(l => l.aktif !== false && !HIDDEN_SOCIAL.has(l.platform));
@@ -162,9 +163,7 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
         </div>
 
         <div className="footer-bottom">
-          <p className="footer-brand-line">
-            3K Kampüs, <strong>Özgün Sınav Öğretim Eğitim A.Ş.</strong> markasıdır.
-          </p>
+          <p className="footer-brand-line">{markaMetni}</p>
           <p className="footer-copy">{copyright}</p>
         </div>
       </div>

@@ -54,6 +54,14 @@ export interface Sube {
   kurs_muduru?: string;
   kurs_muduru_telefon?: string;
   aktif_mi: boolean;
+  gorunen_ad?: string;
+  slogan?: string;
+  login_logo_url?: string | null;
+  app_logo_url?: string | null;
+  favicon_url?: string | null;
+  login_arkaplan_rengi?: string;
+  login_arkaplan_rengi_2?: string;
+  tema_rengi?: string;
   kurum: { id: number; ad: string };
 }
 
@@ -440,6 +448,10 @@ export function KurumProvider({ children }: { children: ReactNode }) {
     setActiveKurumState(prev => {
       if (!prev) return prev;
       return result.kurumlar.find((k: Kurum) => k.id === prev.id) || prev;
+    });
+    setActiveSubeState(prev => {
+      if (!prev) return prev;
+      return result.subeler.find((s: Sube) => s.id === prev.id) || prev;
     });
   }, [fetchData]);
 

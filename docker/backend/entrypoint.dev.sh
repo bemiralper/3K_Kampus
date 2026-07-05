@@ -28,6 +28,8 @@ done
 echo "[backend-dev] migrate"
 python manage.py migrate --noinput
 
+mkdir -p /app/backend/private/backups
+
 echo "[backend-dev] setup_roles"
 python manage.py setup_roles
 

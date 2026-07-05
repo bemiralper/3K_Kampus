@@ -1,7 +1,8 @@
 """Şube API serialization helpers."""
+from apps.kurum.branding import serialize_sube_branding
 
 
-def serialize_sube(sube, *, include_kurum: bool = True) -> dict:
+def serialize_sube(sube, request=None, *, include_kurum: bool = True) -> dict:
     data = {
         'id': sube.id,
         'kurum_id': sube.kurum_id,
@@ -19,6 +20,7 @@ def serialize_sube(sube, *, include_kurum: bool = True) -> dict:
         'kurs_muduru': sube.kurs_muduru or '',
         'kurs_muduru_telefon': sube.kurs_muduru_telefon or '',
         'aktif_mi': sube.aktif_mi,
+        **serialize_sube_branding(sube, request),
     }
     if include_kurum:
         data['kurum'] = {
@@ -36,6 +38,8 @@ SUBE_WRITABLE_FIELDS = (
     'ad', 'kod', 'resmi_ad', 'web_adresi', 'eposta', 'adres', 'telefon',
     'ticari_unvan', 'vergi_dairesi', 'vergi_no', 'ticaret_sicil_no',
     'kurs_muduru', 'kurs_muduru_telefon', 'aktif_mi',
+    'gorunen_ad', 'slogan',
+    'login_arkaplan_rengi', 'login_arkaplan_rengi_2', 'tema_rengi',
 )
 
 

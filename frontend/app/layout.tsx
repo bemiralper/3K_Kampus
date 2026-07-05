@@ -4,6 +4,7 @@ import type { Viewport } from "next";
 import { AuthProvider } from "@/lib/contexts/AuthContext";
 import AppShellWithAuth from "@/components/layout/AppShellWithAuth";
 import ChunkLoadRecovery from "@/components/ChunkLoadRecovery";
+import PublicGoogleAnalytics from "@/components/landing/PublicGoogleAnalytics";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="tr">
       <body>
+        <PublicGoogleAnalytics />
         <ChunkLoadRecovery />
         <AuthProvider>
           <AppShellWithAuth>{children}</AppShellWithAuth>

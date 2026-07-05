@@ -1,11 +1,14 @@
 """Website views — public + admin CRUD."""
 import json
+from django.db.utils import OperationalError, ProgrammingError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from apps.kurum.domain.models import Kurum
+from apps.kurum.branding import normalize_map_embed_url, build_map_embed_from_address
+from apps.website.seed_defaults import LANDING_KURUM_KOD, seed_website_defaults, ensure_website_defaults, get_or_create_landing_kurum
 from apps.website.models import (
     SiteSettings, SiteSocialLink, SiteFooterLink, HeroSlide, Duyuru,
     SinavTakvim, NedenKart, BasariIstatistik, OgrenciYorumu, SSS,
@@ -29,6 +32,23 @@ def _parse_json(request):
         return json.loads(request.body.decode('utf-8') or '{}')
     except json.JSONDecodeError:
         return None
+
+
+def _schema_migration_error_response(exc: Exception):
+    """Eksik migration durumunda HTML 500 yerine anlaşılır JSON döndür."""
+    if not isinstance(exc, (ProgrammingError, OperationalError)):
+        return None
+    msg = str(exc).lower()
+    if 'column' not in msg and 'relation' not in msg and 'does not exist' not in msg:
+        return None
+    return JsonResponse({
+        'success': False,
+        'error': (
+            'Veritabanı şeması güncel değil. '
+            'Sunucuda migration çalıştırın: python manage.py migrate '
+            '(Docker: docker compose -f docker-compose.dev.yml exec backend python manage.py migrate)'
+        ),
+    }, status=503)
 
 
 def _require_auth(request):
@@ -61,8 +81,11 @@ def api_public_landing(request, kod):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
     kurum = _get_kurum_by_kod(kod)
+    if not kurum and kod.strip().upper() == LANDING_KURUM_KOD:
+        kurum, _ = get_or_create_landing_kurum()
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
+    ensure_website_defaults(kurum)
     return JsonResponse({'success': True, 'data': build_landing_payload(kurum, request)})
 
 
@@ -116,20 +139,26 @@ def api_public_iletisim(request, kod):
 # ── Admin helpers ──
 
 def _admin_kurum(request):
+    """Kurumsal site yönetimi — anasayfanın bağlı olduğu kurum (varsayılan: 3K)."""
     err = _require_auth(request)
     if err:
         return None, err
-    kurum_id = request.GET.get('kurum_id') or request.session.get('active_kurum_id')
-    if kurum_id:
-        kurum = Kurum.objects.filter(pk=kurum_id, aktif_mi=True).first()
-        if kurum:
-            return kurum, None
-    kurum = Kurum.objects.filter(kod__iexact='3K', aktif_mi=True).first()
-    if not kurum:
-        kurum = Kurum.objects.filter(aktif_mi=True).first()
-    if not kurum:
-        return None, JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
+
+    kurum_kod = (request.GET.get('kurum_kod') or LANDING_KURUM_KOD).strip()
+    kurum = Kurum.objects.filter(kod__iexact=kurum_kod).first()
+    if kurum:
+        if not kurum.aktif_mi:
+            kurum.aktif_mi = True
+            kurum.save(update_fields=['aktif_mi'])
+        return kurum, None
+
+    kurum, _ = get_or_create_landing_kurum_from_seed()
     return kurum, None
+
+
+def get_or_create_landing_kurum_from_seed():
+    from apps.website.seed_defaults import get_or_create_landing_kurum
+    return get_or_create_landing_kurum()
 
 
 def _apply_model_update(obj, data, updatable_fields):
@@ -183,37 +212,81 @@ def _generic_detail(request, model, serializer_fn, pk, kurum, updatable_fields):
 
 @csrf_exempt
 def api_admin_landing_data(request):
+    try:
+        kurum, err = _admin_kurum(request)
+        if err:
+            return err
+        if request.method != 'GET':
+            return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+        ensure_website_defaults(kurum)
+        return JsonResponse({
+            'success': True,
+            'data': build_landing_payload(kurum, request),
+            'kurum_id': kurum.id,
+            'kurum_kod': kurum.kod,
+            'kurum_ad': kurum.ad,
+        })
+    except Exception as exc:
+        schema_err = _schema_migration_error_response(exc)
+        if schema_err:
+            return schema_err
+        raise
+
+
+@csrf_exempt
+def api_admin_seed_defaults(request):
     kurum, err = _admin_kurum(request)
     if err:
         return err
-    if request.method != 'GET':
+    if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
-    return JsonResponse({'success': True, 'data': build_landing_payload(kurum, request), 'kurum_id': kurum.id})
+    overwrite = request.GET.get('overwrite') == '1'
+    result = seed_website_defaults(kurum, overwrite_settings=overwrite)
+    return JsonResponse({
+        'success': True,
+        'message': 'Varsayılan site içerikleri yüklendi',
+        'data': build_landing_payload(kurum, request),
+        'seed': result,
+    })
 
 
 @csrf_exempt
 def api_admin_settings(request):
-    kurum, err = _admin_kurum(request)
-    if err:
-        return err
-    settings, _ = SiteSettings.objects.get_or_create(kurum=kurum)
-    if request.method == 'GET':
-        return JsonResponse({'success': True, 'data': serialize_site_settings(settings, request)})
-    if request.method in ('PUT', 'PATCH'):
-        data = _parse_json(request)
-        if data is None:
-            return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
-        for f in [
-            'telefon', 'whatsapp', 'eposta', 'adres', 'calisma_saatleri',
-            'hero_baslik', 'hero_alt_baslik', 'hero_slogan', 'hero_maddeler',
-            'tanitim_baslik', 'tanitim_icerik', 'youtube_video_id',
-            'harita_embed_url', 'footer_copyright', 'seo_baslik', 'seo_aciklama',
-        ]:
-            if f in data:
-                setattr(settings, f, data[f])
-        settings.save()
-        return JsonResponse({'success': True, 'data': serialize_site_settings(settings, request)})
-    return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    try:
+        kurum, err = _admin_kurum(request)
+        if err:
+            return err
+        settings, _ = SiteSettings.objects.get_or_create(kurum=kurum)
+        ensure_website_defaults(kurum)
+        settings.refresh_from_db()
+        if request.method == 'GET':
+            return JsonResponse({'success': True, 'data': serialize_site_settings(settings, request)})
+        if request.method in ('PUT', 'PATCH'):
+            data = _parse_json(request)
+            if data is None:
+                return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+            for f in [
+                'telefon', 'whatsapp', 'eposta', 'adres', 'calisma_saatleri',
+                'hero_baslik', 'hero_alt_baslik', 'hero_slogan', 'hero_maddeler',
+                'tanitim_baslik', 'tanitim_icerik', 'youtube_video_id',
+                'harita_embed_url', 'footer_copyright', 'footer_marka_metni', 'seo_baslik', 'seo_aciklama',
+                'seo_anahtar_kelimeler', 'seo_canonical_url', 'google_site_verification',
+                'google_analytics_id', 'seo_robots_index',
+            ]:
+                if f in data:
+                    setattr(settings, f, data[f])
+            if 'harita_embed_url' in data:
+                settings.harita_embed_url = normalize_map_embed_url(settings.harita_embed_url)
+            elif 'adres' in data and (settings.harita_embed_url or '').strip() == '' and (settings.adres or '').strip():
+                settings.harita_embed_url = build_map_embed_from_address(settings.adres)
+            settings.save()
+            return JsonResponse({'success': True, 'data': serialize_site_settings(settings, request)})
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    except Exception as exc:
+        schema_err = _schema_migration_error_response(exc)
+        if schema_err:
+            return schema_err
+        raise
 
 
 @csrf_exempt
@@ -394,6 +467,7 @@ def api_admin_sinav_takvim(request):
                 tur=data.get('tur', 'LGS'),
                 tarih=SinavTakvim._meta.get_field('tarih').to_python(data['tarih']),
                 saat=SinavTakvim._meta.get_field('saat').to_python(data['saat']) if data.get('saat') else None,
+                saat_bitis=SinavTakvim._meta.get_field('saat_bitis').to_python(data['saat_bitis']) if data.get('saat_bitis') else None,
                 kapsam=data.get('kapsam', 'turkiye_geneli'),
                 baslik=data.get('baslik') or f"{data.get('yayin_adi') or data.get('tur', 'LGS')} Deneme Sınavı",
                 yayin_adi=data.get('yayin_adi', ''),
@@ -415,7 +489,7 @@ def api_admin_sinav_detail(request, pk):
         return err
     return _generic_detail(
         request, SinavTakvim, serialize_sinav, pk, kurum,
-        ['tur', 'tarih', 'saat', 'kapsam', 'baslik', 'yayin_adi', 'aciklama', 'aktif'],
+        ['tur', 'tarih', 'saat', 'saat_bitis', 'kapsam', 'baslik', 'yayin_adi', 'aciklama', 'aktif'],
     )
 
 

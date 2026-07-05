@@ -38,8 +38,14 @@ export type SiteSettings = {
   youtube_video_id?: string;
   harita_embed_url?: string;
   footer_copyright?: string;
+  footer_marka_metni?: string;
   seo_baslik?: string;
   seo_aciklama?: string;
+  seo_anahtar_kelimeler?: string;
+  seo_canonical_url?: string;
+  google_site_verification?: string;
+  google_analytics_id?: string;
+  seo_robots_index?: boolean;
 };
 
 export type SocialLink = { id: number; platform: string; url: string; sira: number; aktif: boolean };
@@ -51,7 +57,8 @@ export type Duyuru = {
   icerik?: string;
 };
 export type SinavTakvim = {
-  id: number; tur: string; tarih: string; saat?: string | null;
+  id: number; tur: string; tarih: string;
+  saat?: string | null; saat_bitis?: string | null;
   kapsam: string; baslik: string; yayin_adi?: string; aciklama: string; gorsel_url?: string | null;
 };
 export type NedenKart = { id: number; ikon: string; baslik: string; aciklama: string; sira: number };
@@ -76,13 +83,25 @@ export type LandingData = {
   yasal_metinler: YasalOzet[];
 };
 
-type ApiResponse<T> = { success: boolean; data?: T; error?: string; message?: string; kurum_id?: number };
+type ApiResponse<T> = { success: boolean; data?: T; error?: string; message?: string; kurum_id?: number; kurum_kod?: string; kurum_ad?: string };
 
 const LANDING_CACHE_TTL_MS = 30_000;
 const landingCache = new Map<
   string,
   { data: LandingData | null; ts: number; promise?: Promise<LandingData | null> }
 >();
+
+/** Admin kaydı sonrası anasayfa önbelleğini temizle */
+export async function invalidateLandingCache(kod = '3K') {
+  landingCache.delete(kod);
+  if (typeof window !== 'undefined') {
+    try {
+      await fetch('/api/revalidate-landing', { method: 'POST' });
+    } catch {
+      /* SSR revalidate isteği başarısız olabilir — client cache yine temizlendi */
+    }
+  }
+}
 
 export async function fetchLandingData(kod = '3K'): Promise<LandingData | null> {
   const now = Date.now();
@@ -172,7 +191,7 @@ export function cleanWebsiteFormPayload(data: Record<string, string | number | b
   const out: Record<string, string | number | boolean | null> = {};
   for (const [key, value] of Object.entries(data)) {
     if (value === '' || value === undefined) {
-      if (key.includes('tarih') || key === 'saat') out[key] = null;
+      if (key.includes('tarih') || key === 'saat' || key === 'saat_bitis') out[key] = null;
       continue;
     }
     out[key] = value;
@@ -182,6 +201,8 @@ export function cleanWebsiteFormPayload(data: Record<string, string | number | b
 
 export const websiteAdminApi = {
   getLanding: () => adminFetch<LandingData>('/landing/'),
+  seedDefaults: (overwrite = false) =>
+    adminFetch<LandingData>(overwrite ? '/seed-defaults/?overwrite=1' : '/seed-defaults/', { method: 'POST' }),
   getSettings: () => adminFetch<SiteSettings>('/settings/'),
   updateSettings: (data: Partial<SiteSettings>) =>
     adminFetch<SiteSettings>('/settings/', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
