@@ -1,10 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import NotificationBell from "@/components/notification/NotificationBell";
 import ContextSelector from "@/components/layout/ContextSelector";
+import UserAccountDropdown from "@/components/profile/UserAccountDropdown";
+import "@/components/profile/profile-portal.css";
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -974,9 +977,7 @@ function QuickActions() {
 
 export default function Topbar({ onMenuClick }: TopbarProps) {
   const { user, logout } = useAuth();
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const userDropdownRef = useRef<HTMLDivElement>(null);
 
   // ⌘K / Ctrl+K global shortcut
   useEffect(() => {
@@ -990,44 +991,8 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Close user dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
-        setShowUserDropdown(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const handleLogout = async () => {
     await logout();
-    setShowUserDropdown(false);
-  };
-
-  const getUserInitials = () => {
-    if (user?.first_name && user?.last_name) {
-      return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
-    }
-    if (user?.username) {
-      return user.username.slice(0, 2).toUpperCase();
-    }
-    return "U";
-  };
-
-  const getUserDisplayName = () => {
-    if (user?.first_name && user?.last_name) {
-      return `${user.first_name} ${user.last_name}`;
-    }
-    return user?.username || "Kullanıcı";
-  };
-
-  const getUserRole = () => {
-    if (user?.is_superuser) return "Süper Admin";
-    if (user?.is_staff) return "Yönetici";
-    return "Kullanıcı";
   };
 
   return (
@@ -1079,59 +1044,11 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
             </svg>
           </button>
 
-          <div className="user-dropdown-wrapper" ref={userDropdownRef}>
-            <button 
-              className="user-dropdown-btn"
-              onClick={() => setShowUserDropdown(!showUserDropdown)}
-            >
-              <div className="avatar">{getUserInitials()}</div>
-              <div className="user-info">
-                <span className="user-name">{getUserDisplayName()}</span>
-                <span className="user-role">{getUserRole()}</span>
-              </div>
-              <span className="dropdown-arrow">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </span>
-            </button>
-
-            {showUserDropdown && (
-              <div className="user-dropdown-menu">
-                <div className="user-dropdown-header">
-                  <div className="avatar-large">{getUserInitials()}</div>
-                  <div className="user-header-info">
-                    <span className="user-header-name">{getUserDisplayName()}</span>
-                    <span className="user-header-email">{user?.email || ""}</span>
-                  </div>
-                </div>
-                <div className="user-dropdown-divider"></div>
-                <button className="user-dropdown-item">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                  </svg>
-                  <span>Profilim</span>
-                </button>
-                <button className="user-dropdown-item">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="3"/>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                  </svg>
-                  <span>Ayarlar</span>
-                </button>
-                <div className="user-dropdown-divider"></div>
-                <button className="user-dropdown-item logout" onClick={handleLogout}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                    <polyline points="16 17 21 12 16 7"/>
-                    <line x1="21" y1="12" x2="9" y2="12"/>
-                  </svg>
-                  <span>Çıkış Yap</span>
-                </button>
-              </div>
-            )}
-          </div>
+          <UserAccountDropdown
+            user={user}
+            profileHref="/admin/profil"
+            onLogout={handleLogout}
+          />
         </div>
 
         <style jsx>{`
@@ -1229,12 +1146,14 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
             position: absolute;
             top: calc(100% + 8px);
             right: 0;
-            min-width: 240px;
+            min-width: 260px;
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            border-radius: 14px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 16px 48px rgba(15, 23, 42, 0.14);
             z-index: 100;
             overflow: hidden;
+            padding-bottom: 4px;
           }
 
           .user-dropdown-header {
@@ -1285,13 +1204,15 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
             align-items: center;
             gap: 10px;
             width: 100%;
-            padding: 12px 16px;
+            padding: 11px 16px;
             background: none;
             border: none;
             font-size: 13px;
             color: #334155;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: background 0.15s;
+            text-decoration: none;
+            box-sizing: border-box;
           }
 
           .user-dropdown-item:hover {

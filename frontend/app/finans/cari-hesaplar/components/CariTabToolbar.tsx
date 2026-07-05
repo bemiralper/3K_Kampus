@@ -66,6 +66,9 @@ export default function CariTabToolbar({
   exportRows,
   exportFilenamePrefix,
   filtersMeta,
+  fallbackExportColumns,
+  allowEmptyRowsExport = false,
+  exportLabel = "Rapor İndir",
 }: {
   filters: CariTabFilterState;
   onChange: (patch: Partial<CariTabFilterState>) => void;
@@ -80,6 +83,11 @@ export default function CariTabToolbar({
   exportRows?: Record<string, unknown>[];
   exportFilenamePrefix?: string;
   filtersMeta?: Record<string, unknown>;
+  /** Tablo boşken export kolonları (ekstre) */
+  fallbackExportColumns?: { key: string; label: string }[];
+  /** Hareket satırı olmasa da özet meta ile export */
+  allowEmptyRowsExport?: boolean;
+  exportLabel?: string;
 }) {
   const colBtnRef = useRef<HTMLButtonElement>(null);
   const exportBtnRef = useRef<HTMLButtonElement>(null);
@@ -96,9 +104,18 @@ export default function CariTabToolbar({
     filters.baslangic ||
     filters.bitis;
 
+  const effectiveExportColumns =
+    columnsApi?.exportColumns?.length ? columnsApi.exportColumns : fallbackExportColumns;
+
+  const canExport =
+    !!cariHesapId &&
+    !!effectiveExportColumns?.length &&
+    ((exportRows?.length ?? 0) > 0 || allowEmptyRowsExport);
+
   const handleExport = useCallback(
     async (format: ExportFormat) => {
-      if (!cariHesapId || !columnsApi || !exportRows?.length) return;
+      if (!cariHesapId || !effectiveExportColumns?.length) return;
+      if (!exportRows?.length && !allowEmptyRowsExport) return;
       setExportOpen(false);
       setExportBusy(true);
       setExportError(null);
@@ -108,8 +125,8 @@ export default function CariTabToolbar({
           format,
           orientation,
           title: exportTitle || "Cari Rapor",
-          columns: columnsApi.exportColumns,
-          rows: exportRows,
+          columns: effectiveExportColumns,
+          rows: exportRows || [],
           filtersMeta,
           filenamePrefix: exportFilenamePrefix,
         });
@@ -121,12 +138,13 @@ export default function CariTabToolbar({
     },
     [
       cariHesapId,
-      columnsApi,
+      effectiveExportColumns,
       exportRows,
       exportTitle,
       exportFilenamePrefix,
       filtersMeta,
       orientation,
+      allowEmptyRowsExport,
     ],
   );
 
@@ -248,12 +266,12 @@ export default function CariTabToolbar({
           </div>
         )}
 
-        {cariHesapId && columnsApi && (exportRows?.length ?? 0) > 0 && (
+        {canExport && (
           <div className="cari-export-wrap">
             <button
               ref={exportBtnRef}
               type="button"
-              className="btn-modern btn-outline-sm"
+              className="btn-modern btn-outline-sm cari-export-btn"
               disabled={exportBusy}
               aria-expanded={exportOpen}
               onClick={() => {
@@ -261,7 +279,7 @@ export default function CariTabToolbar({
                 setExportOpen((v) => !v);
               }}
             >
-              {exportBusy ? "Hazırlanıyor…" : "Rapor İndir"}
+              {exportBusy ? "Hazırlanıyor…" : exportLabel}
             </button>
             <FloatingMenu
               open={exportOpen}

@@ -1,5 +1,6 @@
 """
 Toplu gecikmiş ödeme hatırlatması — önizleme ve kuyruk (Faz 2).
+Aynı öğrencide birden fazla gecikmiş taksit tek mesajda birleştirilir.
 """
 from __future__ import annotations
 
@@ -13,22 +14,82 @@ from apps.communication.application.integration_hooks import (
 )
 from apps.finans.application.overdue_messaging import (
     CATEGORY_ODEME_GECIKME,
-    build_overdue_context,
+    build_consolidated_overdue_context,
     render_overdue_message,
 )
 from apps.odeme_takip.domain.models import Taksit
 
 
 class OverdueReminderService:
-    """Veli bazlı toplu gecikme hatırlatması."""
+    """Öğrenci bazlı birleşik gecikme hatırlatması."""
 
     @classmethod
-    def _veli_totals(cls, taksitler: list[Taksit]) -> dict[int | None, int]:
-        totals: dict[int | None, int] = defaultdict(int)
+    def _group_by_ogrenci(cls, taksitler: list[Taksit]) -> dict[int, list[Taksit]]:
+        groups: dict[int, list[Taksit]] = defaultdict(list)
         for t in taksitler:
-            veli_id = t.sozlesme.veli_id
-            totals[veli_id] += int(t.kalan_tutar or t.tutar or 0)
-        return totals
+            ogrenci_id = t.sozlesme.ogrenci_id or 0
+            groups[ogrenci_id].append(t)
+        return groups
+
+    @classmethod
+    def _veli_options(cls, ogrenci) -> list[dict]:
+        from apps.ogrenci.application.veli_contact import effective_veli_phone
+        from apps.ogrenci.domain.models import OgrenciVeli
+
+        if not ogrenci:
+            return []
+
+        options: list[dict] = []
+        for veli in OgrenciVeli.objects.filter(ogrenci=ogrenci).order_by('-varsayilan', '-id'):
+            phone = effective_veli_phone(veli, ogrenci)
+            options.append({
+                'id': veli.id,
+                'ad': veli.tam_ad,
+                'telefon': phone or None,
+                'varsayilan': bool(veli.varsayilan),
+                'veli_turu': veli.get_veli_turu_display() if hasattr(veli, 'get_veli_turu_display') else '',
+            })
+        return options
+
+    @classmethod
+    def _resolve_veli(cls, ogrenci, taksitler: list[Taksit], veli_id: int | None):
+        from apps.ogrenci.domain.models import OgrenciVeli
+
+        if veli_id and ogrenci:
+            veli = OgrenciVeli.objects.filter(id=veli_id, ogrenci=ogrenci).first()
+            if veli:
+                return veli
+
+        for t in taksitler:
+            if t.sozlesme.veli_id:
+                return t.sozlesme.veli
+
+        options = cls._veli_options(ogrenci)
+        if options:
+            match = next((o for o in options if o.get('varsayilan')), options[0])
+            return OgrenciVeli.objects.filter(id=match['id']).first()
+        return None
+
+    @classmethod
+    def _group_toplam(cls, taksitler: list[Taksit]) -> int:
+        return sum(int(t.kalan_tutar or t.tutar or 0) for t in taksitler)
+
+    @classmethod
+    def _source_id(cls, ogrenci_id: int, taksit_ids: list[int]) -> str:
+        ids = '-'.join(str(i) for i in sorted(taksit_ids))
+        return f'ogrenci-{ogrenci_id}-overdue-{ids}'
+
+    @classmethod
+    def _parse_veli_selections(cls, raw) -> dict[int, int]:
+        if not isinstance(raw, dict):
+            return {}
+        out: dict[int, int] = {}
+        for k, v in raw.items():
+            try:
+                out[int(k)] = int(v)
+            except (TypeError, ValueError):
+                continue
+        return out
 
     @classmethod
     def preview(
@@ -37,32 +98,45 @@ class OverdueReminderService:
         taksit_ids: list[int],
         *,
         template: str | None = None,
+        veli_selections: dict | None = None,
     ) -> dict:
         taksitler = list(
             Taksit.objects.filter(
                 id__in=taksit_ids,
                 sozlesme__kurum_id=kurum_id,
-            ).select_related('sozlesme__ogrenci', 'sozlesme__veli', 'sozlesme__kurum')
+            ).select_related(
+                'sozlesme__ogrenci',
+                'sozlesme__veli',
+                'sozlesme__kurum',
+            )
         )
-        veli_totals = cls._veli_totals(taksitler)
         template_text = (template or '').strip() or None
+        veli_map = cls._parse_veli_selections(veli_selections)
 
         recipients = []
-        for t in sorted(taksitler, key=lambda x: (x.sozlesme.veli_id or 0, x.vade_tarihi)):
-            veli = t.sozlesme.veli
+        for ogrenci_id, group in sorted(
+            cls._group_by_ogrenci(taksitler).items(),
+            key=lambda item: (item[0] or 0),
+        ):
+            ogrenci = group[0].sozlesme.ogrenci if group else None
+            selected_veli_id = veli_map.get(ogrenci_id)
+            veli = cls._resolve_veli(ogrenci, group, selected_veli_id)
             veli_id = veli.id if veli else None
-            toplam_veli = veli_totals.get(veli_id, int(t.kalan_tutar or t.tutar or 0))
-            ctx = build_overdue_context(t, toplam_gecikmis=toplam_veli)
-            if veli:
-                ctx['veli_ad'] = veli.tam_ad
+            toplam = cls._group_toplam(group)
+            tids = sorted(t.id for t in group)
 
+            ctx = build_consolidated_overdue_context(group, veli=veli, toplam_gecikmis=toplam)
             skip_reason = None
+            telefon = None
             if not veli:
                 skip_reason = 'Veli tanımlı değil'
-            elif not (veli.telefon or '').strip():
-                skip_reason = 'Telefon numarası yok'
+            else:
+                from apps.ogrenci.application.veli_contact import effective_veli_phone
+                telefon = (effective_veli_phone(veli, ogrenci) or '').strip() or None
+                if not telefon:
+                    skip_reason = 'Telefon numarası yok'
 
-            source_id = f'taksit-{t.id}'
+            source_id = cls._source_id(ogrenci_id, tids)
             already_24h = False
             if veli_id:
                 already_24h = (
@@ -72,18 +146,24 @@ class OverdueReminderService:
                     )
                 )
 
-            body = render_overdue_message(
-                kurum_id, ctx, template_body=template_text,
-            )
+            body = render_overdue_message(kurum_id, ctx, template_body=template_text)
+            available_veliler = cls._veli_options(ogrenci)
+
             recipients.append({
-                'taksit_id': t.id,
+                'group_key': str(ogrenci_id),
+                'ogrenci_id': ogrenci_id or None,
+                'taksit_ids': tids,
+                'taksit_id': tids[0] if len(tids) == 1 else None,
                 'veli_id': veli_id,
                 'veli_adi': ctx.get('veli_ad') or '—',
                 'ogrenci_adi': ctx.get('ogrenci_ad') or '—',
-                'telefon': (veli.telefon or None) if veli else None,
+                'telefon': telefon,
                 'rendered_body': body,
                 'skip_reason': skip_reason,
                 'already_sent_24h': already_24h,
+                'available_veliler': available_veliler,
+                'taksit_sayisi': len(group),
+                'toplam_gecikmis_tutar': toplam,
             })
 
         sendable = [r for r in recipients if not r['skip_reason'] and not r['already_sent_24h']]
@@ -105,19 +185,28 @@ class OverdueReminderService:
         template: str | None = None,
         force_resend: bool = False,
         sent_by_user_id: int | None = None,
+        veli_selections: dict | None = None,
     ) -> dict:
-        preview = cls.preview(kurum_id, taksit_ids, template=template)
+        preview = cls.preview(
+            kurum_id,
+            taksit_ids,
+            template=template,
+            veli_selections=veli_selections,
+        )
         sent = 0
         skipped = 0
         errors: list[str] = []
         results = []
 
         for item in preview['recipients']:
-            taksit_id = item['taksit_id']
+            taksit_ids_group = item.get('taksit_ids') or []
             veli_adi = item['veli_adi']
+            ogrenci_adi = item.get('ogrenci_adi') or '—'
             base = {
-                'taksit_id': taksit_id,
+                'taksit_ids': taksit_ids_group,
+                'taksit_id': item.get('taksit_id') or (taksit_ids_group[0] if taksit_ids_group else None),
                 'veli_adi': veli_adi,
+                'ogrenci_adi': ogrenci_adi,
             }
 
             if item.get('skip_reason'):
@@ -131,9 +220,11 @@ class OverdueReminderService:
                 results.append({**base, 'status': 'skipped', 'message': msg})
                 continue
 
-            if not force_resend:
-                source_id = f'taksit-{taksit_id}'
-                veli_id = item['veli_id']
+            ogrenci_id = item.get('ogrenci_id') or 0
+            source_id = cls._source_id(ogrenci_id, taksit_ids_group)
+            veli_id = item['veli_id']
+
+            if not force_resend and veli_id:
                 if already_sent(kurum_id, SOURCE_ODEME, source_id, veli_id=veli_id):
                     skipped += 1
                     results.append({**base, 'status': 'skipped', 'message': 'Hatırlatma zaten gönderildi'})
@@ -145,7 +236,7 @@ class OverdueReminderService:
                 item['rendered_body'],
                 CATEGORY_ODEME_GECIKME,
                 SOURCE_ODEME,
-                f'taksit-{taksit_id}',
+                source_id,
                 sent_by_user_id=sent_by_user_id,
             )
             if result and result.success:
@@ -153,7 +244,8 @@ class OverdueReminderService:
                 results.append({**base, 'status': 'sent'})
             else:
                 err = (result.errors[0] if result and result.errors else 'Gönderilemedi')
-                errors.append(f'Taksit {taksit_id}: {err}')
+                label = taksit_ids_group[0] if taksit_ids_group else '?'
+                errors.append(f'Öğrenci {ogrenci_adi} (taksit {label}): {err}')
                 skipped += 1
                 results.append({**base, 'status': 'error', 'message': err})
 

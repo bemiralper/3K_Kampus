@@ -4,14 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { overdueService } from "@/app/finans/services/overdue-api";
 import type { OverduePaymentItem, OverdueReminderRecipient } from "@/app/finans/types/overdue-types";
 
-const TEMPLATE_STORAGE_KEY = "finans_gecikme_sablon_v1";
+const TEMPLATE_STORAGE_KEY = "finans_gecikme_sablon_v2";
 
 const DEFAULT_TEMPLATE = `Sayın {veli_ad},
 
-{ogrenci_ad} için {gecikme_gunu} gündür geciken {kalan_tutar} TL tutarındaki {taksit_no}. taksit ödemeniz bulunmaktadır.
+{ogrenci_ad} için gecikmiş ödemeleriniz:
 
-Sözleşme No: {sozlesme_no}
+{taksit_detay_listesi}
+
 Toplam gecikmiş tutar: {toplam_gecikmis_tutar} TL
+Sözleşme No: {sozlesme_no}
 
 Lütfen en kısa sürede ödemenizi gerçekleştiriniz.
 
@@ -38,6 +40,7 @@ export default function TopluGecikmeMesajModal({
   const [error, setError] = useState("");
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
   const [recipients, setRecipients] = useState<OverdueReminderRecipient[]>([]);
+  const [veliSelections, setVeliSelections] = useState<Record<string, number>>({});
   const [sendResults, setSendResults] = useState<{ sent: number; skipped: number; errors: string[] } | null>(null);
   const [forceResend, setForceResend] = useState(false);
 
@@ -54,14 +57,18 @@ export default function TopluGecikmeMesajModal({
     setLoading(true);
     setError("");
     try {
-      const res = await overdueService.previewReminders({ taksit_ids: taksitIds, template });
+      const res = await overdueService.previewReminders({
+        taksit_ids: taksitIds,
+        template,
+        veli_selections: veliSelections,
+      });
       setRecipients(res.recipients || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Önizleme yüklenemedi");
     } finally {
       setLoading(false);
     }
-  }, [taksitIds, template]);
+  }, [taksitIds, template, veliSelections]);
 
   useEffect(() => {
     if (step === 1 || step === 2) {
@@ -69,19 +76,13 @@ export default function TopluGecikmeMesajModal({
     }
   }, [step, loadPreview]);
 
-  const sendable = recipients.filter((r) => !r.skip_reason && r.telefon);
+  const sendable = recipients.filter((r) => !r.skip_reason && r.telefon && !r.already_sent_24h);
   const skipped = recipients.filter((r) => r.skip_reason || !r.telefon);
   const alreadySent = recipients.filter((r) => r.already_sent_24h);
 
-  const groupedByVeli = useMemo(() => {
-    const map = new Map<string, OverdueReminderRecipient[]>();
-    for (const r of recipients) {
-      const key = r.veli_adi || r.ogrenci_adi;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
-    }
-    return Array.from(map.entries());
-  }, [recipients]);
+  const handleVeliChange = (groupKey: string, veliId: number) => {
+    setVeliSelections((prev) => ({ ...prev, [groupKey]: veliId }));
+  };
 
   const handleSend = async () => {
     setSending(true);
@@ -92,6 +93,7 @@ export default function TopluGecikmeMesajModal({
         taksit_ids: taksitIds,
         template,
         force_resend: forceResend,
+        veli_selections: veliSelections,
       });
       setSendResults({ sent: res.sent, skipped: res.skipped, errors: res.errors || [] });
       setStep(3);
@@ -122,7 +124,6 @@ export default function TopluGecikmeMesajModal({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div style={{ padding: "16px 20px", borderBottom: "1px solid #e2e8f0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
             <div>
@@ -130,7 +131,7 @@ export default function TopluGecikmeMesajModal({
                 Toplu Gecikme Mesajı
               </h3>
               <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>
-                {selectedItems.length} taksit seçili · Adım {step}/3
+                {selectedItems.length} taksit seçili · {recipients.length} birleşik mesaj · Adım {step}/3
                 {kurumAd ? ` · ${kurumAd}` : ""}
               </p>
             </div>
@@ -143,7 +144,6 @@ export default function TopluGecikmeMesajModal({
               ×
             </button>
           </div>
-          {/* Step indicator */}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             {(["Alıcılar", "Şablon", "Sonuç"] as const).map((label, i) => (
               <div
@@ -160,7 +160,6 @@ export default function TopluGecikmeMesajModal({
           </div>
         </div>
 
-        {/* Body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
           {error && (
             <div style={{ padding: 10, background: "#fef2f2", borderRadius: 8, color: "#b91c1c", fontSize: 13, marginBottom: 12 }}>
@@ -172,7 +171,6 @@ export default function TopluGecikmeMesajModal({
             <p style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 24 }}>Yükleniyor…</p>
           )}
 
-          {/* Step 1: Recipients */}
           {step === 1 && !loading && (
             <div>
               <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
@@ -180,18 +178,53 @@ export default function TopluGecikmeMesajModal({
                 <StatPill label="Telefon eksik" value={skipped.filter((r) => !r.telefon).length} color="#dc2626" />
                 <StatPill label="24s içinde gönderildi" value={alreadySent.length} color="#d97706" />
               </div>
-              {groupedByVeli.map(([veli, items]) => (
-                <div key={veli} style={{ padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: "#0f172a" }}>{veli}</div>
-                  {items.map((r) => (
-                    <div key={r.taksit_id} style={{ fontSize: 11, color: r.skip_reason || !r.telefon ? "#dc2626" : "#64748b", marginTop: 4 }}>
-                      {r.ogrenci_adi} · {r.telefon || "Telefon yok"}
-                      {r.skip_reason && ` · ${r.skip_reason}`}
-                      {r.already_sent_24h && " · Son 24 saatte gönderildi"}
+              {recipients.map((r) => {
+                const groupKey = r.group_key || String(r.ogrenci_id || r.taksit_id);
+                const veliOpts = r.available_veliler || [];
+                const multiVeli = veliOpts.length > 1;
+                const selectedVeliId = veliSelections[groupKey] ?? r.veli_id ?? veliOpts[0]?.id;
+                return (
+                  <div key={groupKey} style={{ padding: "12px 0", borderBottom: "1px solid #f1f5f9" }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: "#0f172a" }}>
+                      {r.ogrenci_adi}
+                      {(r.taksit_sayisi || 0) > 1 && (
+                        <span style={{ marginLeft: 8, fontSize: 11, color: "#64748b", fontWeight: 500 }}>
+                          {r.taksit_sayisi} taksit birleştirildi
+                        </span>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ))}
+                    {multiVeli ? (
+                      <label style={{ display: "block", marginTop: 8, fontSize: 12, color: "#475569" }}>
+                        Veli seçin
+                        <select
+                          value={selectedVeliId || ""}
+                          onChange={(e) => handleVeliChange(groupKey, Number(e.target.value))}
+                          style={{
+                            display: "block", width: "100%", marginTop: 4, padding: "6px 8px",
+                            borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12,
+                          }}
+                        >
+                          {veliOpts.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.ad}{v.varsayilan ? " (varsayılan)" : ""}{v.telefon ? ` · ${v.telefon}` : " · telefon yok"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <div style={{ fontSize: 11, color: r.skip_reason || !r.telefon ? "#dc2626" : "#64748b", marginTop: 4 }}>
+                        {r.veli_adi} · {r.telefon || "Telefon yok"}
+                      </div>
+                    )}
+                    {r.skip_reason && (
+                      <div style={{ fontSize: 11, color: "#dc2626", marginTop: 4 }}>{r.skip_reason}</div>
+                    )}
+                    {r.already_sent_24h && (
+                      <div style={{ fontSize: 11, color: "#d97706", marginTop: 4 }}>Son 24 saatte gönderildi</div>
+                    )}
+                  </div>
+                );
+              })}
               {alreadySent.length > 0 && (
                 <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, fontSize: 12, color: "#92400e" }}>
                   <input type="checkbox" checked={forceResend} onChange={(e) => setForceResend(e.target.checked)} />
@@ -201,11 +234,10 @@ export default function TopluGecikmeMesajModal({
             </div>
           )}
 
-          {/* Step 2: Template */}
           {step === 2 && !loading && (
             <div>
               <p style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
-                Değişkenler: {"{veli_ad}"}, {"{ogrenci_ad}"}, {"{sozlesme_no}"}, {"{taksit_no}"}, {"{vade_tarihi}"}, {"{kalan_tutar}"}, {"{gecikme_gunu}"}, {"{toplam_gecikmis_tutar}"}, {"{kurum_ad}"}
+                Değişkenler: {"{veli_ad}"}, {"{ogrenci_ad}"}, {"{sozlesme_no}"}, {"{taksit_detay_listesi}"}, {"{taksit_sayisi}"}, {"{toplam_gecikmis_tutar}"}, {"{max_gecikme_gunu}"}, {"{kurum_ad}"}
               </p>
               <textarea
                 value={template}
@@ -228,7 +260,6 @@ export default function TopluGecikmeMesajModal({
             </div>
           )}
 
-          {/* Step 3: Results */}
           {step === 3 && sendResults && (
             <div>
               <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
@@ -250,7 +281,6 @@ export default function TopluGecikmeMesajModal({
           )}
         </div>
 
-        {/* Footer */}
         <div style={{ padding: "14px 20px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "flex-end", gap: 8 }}>
           {step === 3 ? (
             <button
@@ -291,7 +321,7 @@ export default function TopluGecikmeMesajModal({
                     color: "#fff", fontWeight: 600, cursor: sendable.length === 0 ? "not-allowed" : "pointer",
                   }}
                 >
-                  Devam ({sendable.length} alıcı)
+                  Devam ({sendable.length} mesaj)
                 </button>
               ) : (
                 <button
@@ -304,7 +334,7 @@ export default function TopluGecikmeMesajModal({
                     color: "#fff", fontWeight: 600, cursor: sending ? "wait" : "pointer",
                   }}
                 >
-                  {sending ? "Gönderiliyor…" : `${sendable.length} kişiye gönder`}
+                  {sending ? "Gönderiliyor…" : `${sendable.length} mesaj gönder`}
                 </button>
               )}
             </>

@@ -22,8 +22,14 @@ export const TEMPLATE_VARIABLES = [
   { key: "cikis_saati", label: "Çıkış saati", token: "{{cikis_saati}}", group: "yoklama" },
   { key: "salon_ad", label: "Salon adı", token: "{{salon_ad}}", group: "yoklama" },
   { key: "ders_no", label: "Ders no", token: "{{ders_no}}", group: "yoklama" },
-  { key: "taksit_tutar", label: "Taksit tutarı", token: "{{taksit_tutar}}", group: "odeme" },
-  { key: "vade_tarihi", label: "Vade tarihi", token: "{{vade_tarihi}}", group: "odeme" },
+  { key: "taksit_tutar", label: "Taksit tutarı", token: "{{taksit_tutar}}", group: "finans" },
+  { key: "vade_tarihi", label: "Vade tarihi", token: "{{vade_tarihi}}", group: "finans" },
+  { key: "taksit_no", label: "Taksit no", token: "{{taksit_no}}", group: "finans" },
+  { key: "kalan_tutar", label: "Kalan tutar", token: "{{kalan_tutar}}", group: "finans" },
+  { key: "toplam_gecikmis_tutar", label: "Toplam gecikmiş tutar", token: "{{toplam_gecikmis_tutar}}", group: "finans" },
+  { key: "taksit_detay_listesi", label: "Gecikmiş taksit listesi", token: "{{taksit_detay_listesi}}", group: "finans" },
+  { key: "sozlesme_no", label: "Sözleşme no", token: "{{sozlesme_no}}", group: "finans" },
+  { key: "gecikme_gunu", label: "Gecikme günü", token: "{{gecikme_gunu}}", group: "finans" },
   { key: "hafta_no", label: "Hafta numarası", token: "{{hafta_no}}", group: "odev" },
   { key: "hafta", label: "Hafta (örn. 4. Hafta)", token: "{{hafta}}", group: "odev" },
   { key: "odev_baslik", label: "Ödev başlığı", token: "{{odev_baslik}}", group: "odev" },
@@ -32,9 +38,10 @@ export const TEMPLATE_VARIABLES = [
 ] as const;
 
 export const TEMPLATE_VARIABLE_GROUP_LABELS: Record<string, string> = {
-  genel: "Genel",
+  genel: "Genel / Veli",
   yoklama: "Yoklama",
-  odeme: "Ödeme",
+  finans: "Finans & Taksit",
+  odeme: "Finans & Taksit",
   odev: "Haftalık ödev",
 };
 

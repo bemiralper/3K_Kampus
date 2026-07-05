@@ -32,6 +32,8 @@ def serialize_site_settings(settings, request):
         'youtube_video_id': settings.youtube_video_id,
         'harita_embed_url': settings.harita_embed_url,
         'footer_copyright': settings.footer_copyright,
+        'footer_baslik': settings.footer_baslik,
+        'footer_aciklama': settings.footer_aciklama,
         'footer_marka_metni': settings.footer_marka_metni,
         'seo_baslik': settings.seo_baslik,
         'seo_aciklama': settings.seo_aciklama,

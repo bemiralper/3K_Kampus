@@ -602,6 +602,28 @@
   margin: 0;
 }
 
+.submenu-item.is-dragging {
+  opacity: 0.45;
+}
+
+.submenu-item.drag-over-before::before,
+.submenu-item.drag-over-after::after {
+  content: "";
+  display: block;
+  height: 2px;
+  margin: 2px 12px 2px 44px;
+  border-radius: 2px;
+  background: var(--sidebar-accent, #0262a7);
+}
+
+.submenu-item.drag-over-before::before {
+  margin-bottom: 4px;
+}
+
+.submenu-item.drag-over-after::after {
+  margin-top: 4px;
+}
+
 .submenu-link {
   display: flex;
   align-items: center;

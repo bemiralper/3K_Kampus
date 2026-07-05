@@ -93,6 +93,9 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
   const pathname = usePathname();
   const columns = ['kurumsal', 'hizli', 'yasal', 'sosyal'] as const;
   const copyright = settings?.footer_copyright || '© 2026 3K Kampüs — Tüm hakları saklıdır.';
+  const brandTitle = settings?.footer_baslik?.trim() || brandName || '3K Kampüs';
+  const brandDesc = settings?.footer_aciklama?.trim()
+    || 'LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz.';
   const markaMetni = settings?.footer_marka_metni || '3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.';
 
   const visibleFooterLinks = footerLinks.filter(l => l.aktif !== false && !shouldHideFooterLink(l));
@@ -104,9 +107,9 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
       <div className="mx-auto max-w-7xl px-4 py-14 lg:px-8 lg:py-16">
         <div className="footer-top">
           <div className="footer-brand-block">
-            <h3 className="footer-brand-title">{brandName || '3K Kampüs'}</h3>
+            <h3 className="footer-brand-title">{brandTitle}</h3>
             <p className="footer-brand-desc">
-              LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz.
+              {brandDesc}
             </p>
             {settings?.telefon && (
               <a href={`tel:${phoneDigits(settings.telefon)}`} className="footer-contact-chip">

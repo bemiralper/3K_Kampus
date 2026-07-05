@@ -51,3 +51,14 @@ export const DEFAULT_CARI_EKSTRE_COLUMN_ORDER: CariEkstreColumnId[] = [
 ];
 
 export const CARI_EKSTRE_COLUMN_STORAGE_KEY = "3k_cari_ekstre_column_order_v2";
+
+/** Tablo render edilmeden export için sabit kolon listesi */
+export function buildEkstreExportColumns(
+  hesapTuru: CariHesapTuru,
+): { key: string; label: string }[] {
+  const cols = buildEkstreColumns(hesapTuru);
+  return DEFAULT_CARI_EKSTRE_COLUMN_ORDER.map((id) => ({
+    key: cols[id].exportKey || id,
+    label: cols[id].label,
+  }));
+}

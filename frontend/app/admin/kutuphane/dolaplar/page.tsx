@@ -8,6 +8,8 @@ import {
 } from '@/lib/kutuphane-api';
 import { searchKutuphaneStudents } from '@/lib/kutuphane-student-search';
 import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
+import { useKurum } from '@/lib/contexts/KurumContext';
+import { buildLockerStudentListPrintHtml, openKutuphanePrintWindow } from '@/lib/kutuphane-list-print';
 import KutuphaneConfirmModal from '@/components/kutuphane/KutuphaneConfirmModal';
 import KutuphaneToast from '@/components/kutuphane/KutuphaneToast';
 
@@ -64,6 +66,7 @@ function SummaryCard({ icon, label, value, gradient, active, onClick, subtitle }
 
 export default function DolaplarPage() {
   const { href, isCoachMode } = useKutuphanePath();
+  const { activeKurum, activeSube } = useKurum();
   const [activeTab, setActiveTab] = useState<'dolaplar' | 'atamalar'>('dolaplar');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [lockers, setLockers] = useState<Locker[]>([]);
@@ -108,6 +111,7 @@ export default function DolaplarPage() {
     assignmentId: null,
   });
   const [keyConfirmed, setKeyConfirmed] = useState(false);
+  const [printingPdf, setPrintingPdf] = useState(false);
 
   /* ─── DATA ─── */
   const loadData = useCallback(async () => {
@@ -327,6 +331,75 @@ export default function DolaplarPage() {
     setFilterStatus(filterStatus === status ? 'all' : status);
   };
 
+  const handlePrintPdf = async () => {
+    setPrintingPdf(true);
+    try {
+      let rows: {
+        no: string;
+        ogrenci: string;
+        atamaTipi?: string;
+        anahtar?: string;
+        baslangic?: string;
+        durum?: string;
+      }[] = [];
+
+      if (activeTab === 'atamalar') {
+        rows = assignments.map((a) => ({
+          no: a.dolap_no || '-',
+          ogrenci: a.ogrenci_adi || `#${a.ogrenci_id}`,
+          atamaTipi: ATAMA_TIPI_LABELS[a.atama_tipi] || a.atama_tipi,
+          anahtar: a.anahtar_verildi ? 'Verildi' : 'Verilmedi',
+          baslangic: new Date(a.baslangic_tarihi).toLocaleDateString('tr-TR'),
+          durum: STATUS_LABELS[a.durum] || a.durum,
+        }));
+      } else {
+        const assignedLockers = lockers.filter(
+          (l) => l.durum === 'ASSIGNED' || (l.atanan_ogrenci && l.atanan_ogrenci.trim()),
+        );
+        if (assignedLockers.length > 0) {
+          rows = assignedLockers.map((l) => ({
+            no: l.dolap_no,
+            ogrenci: l.atanan_ogrenci || '',
+            durum: STATUS_LABELS[l.durum] || l.durum,
+          }));
+        } else {
+          const res = await fetchLockerAssignments({ durum: 'ACTIVE' });
+          const list = res.success && res.data && Array.isArray(res.data) ? res.data : [];
+          rows = list.map((a) => ({
+            no: a.dolap_no || '-',
+            ogrenci: a.ogrenci_adi || `#${a.ogrenci_id}`,
+            atamaTipi: ATAMA_TIPI_LABELS[a.atama_tipi] || a.atama_tipi,
+            anahtar: a.anahtar_verildi ? 'Verildi' : 'Verilmedi',
+            baslangic: new Date(a.baslangic_tarihi).toLocaleDateString('tr-TR'),
+            durum: STATUS_LABELS[a.durum] || a.durum,
+          }));
+        }
+      }
+
+      if (rows.length === 0) {
+        alert('PDF listesi için atanmış öğrenci bulunamadı.');
+        return;
+      }
+
+      const html = buildLockerStudentListPrintHtml({
+        meta: {
+          title: activeTab === 'dolaplar' ? 'Dolap Öğrenci Listesi' : 'Dolap Atama Listesi',
+          subeAdi: activeSube?.ad,
+          kurumBranding: activeKurum,
+        },
+        rows,
+      });
+      const opened = openKutuphanePrintWindow(html);
+      if (!opened) {
+        alert('Yazdırma penceresi açıldı. Pop-up engellendi ise yeni sekmeden yazdırın veya PDF olarak kaydedin.');
+      }
+    } catch {
+      alert('PDF listesi oluşturulurken hata oluştu.');
+    } finally {
+      setPrintingPdf(false);
+    }
+  };
+
   return (
     <div style={{ padding: 0 }}>
       <style>{`
@@ -542,6 +615,17 @@ export default function DolaplarPage() {
         )}
 
         <button className="filter-refresh" onClick={() => loadData()} disabled={loading}>🔄 Yenile</button>
+        <button
+          onClick={() => void handlePrintPdf()}
+          disabled={loading || printingPdf}
+          style={{
+            padding: '8px 14px', borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4',
+            color: '#059669', fontSize: 13, fontWeight: 600, cursor: printingPdf ? 'wait' : 'pointer',
+            opacity: loading || printingPdf ? 0.6 : 1,
+          }}
+        >
+          {printingPdf ? '⏳ Hazırlanıyor...' : '📄 PDF Listesi'}
+        </button>
         <div className="filter-count">
           {activeTab === 'dolaplar' ? `${filteredLockers.length} dolap` : `${assignments.length} atama`}
         </div>

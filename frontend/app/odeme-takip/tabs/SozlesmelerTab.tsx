@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   buildEqualTaksitRows,
   addMonths,
   clampTaksitSayisi,
   rowsMatchEqualPlan,
+  taksitRowsEqual,
   type ManuelTaksitRow,
 } from "../utils/taksitPlan";
 import Link from "next/link";
@@ -1106,23 +1107,20 @@ function OdemePlaniSubTab({
     return cekYontemleri.length === 1 ? cekYontemleri[0].id : "";
   }, [isCekSenetSozlesme, odemeYontemleri]);
 
-  const taksitPlanOptions = useMemo(
-    () => ({
-      preserveFrom: manuelRows,
-      defaultOdemeYontemiId: defaultCekYontemId,
-    }),
-    [manuelRows, defaultCekYontemId],
-  );
+  const manuelRowsRef = useRef(manuelRows);
+  manuelRowsRef.current = manuelRows;
 
   const rebuildEqualPlan = useCallback(
     (count: number) => {
       if (hedefTutar <= 0 || !ilkOdeme) return;
       const safeCount = clampTaksitSayisi(count);
-      setManuelRows(
-        buildEqualTaksitRows(hedefTutar, effectivePesinat, safeCount, ilkOdeme, periyot, taksitPlanOptions),
-      );
+      const newRows = buildEqualTaksitRows(hedefTutar, effectivePesinat, safeCount, ilkOdeme, periyot, {
+        preserveFrom: manuelRowsRef.current,
+        defaultOdemeYontemiId: defaultCekYontemId,
+      });
+      setManuelRows((prev) => (taksitRowsEqual(prev, newRows) ? prev : newRows));
     },
-    [hedefTutar, effectivePesinat, ilkOdeme, periyot, taksitPlanOptions],
+    [hedefTutar, effectivePesinat, ilkOdeme, periyot, defaultCekYontemId],
   );
 
   const applyTaksitSayisi = useCallback(
@@ -1136,9 +1134,9 @@ function OdemePlaniSubTab({
   );
 
   useEffect(() => {
-    if (taksitPlanDirty || hedefTutar <= 0 || !ilkOdeme) return;
+    if (!showCreator || taksitPlanDirty || hedefTutar <= 0 || !ilkOdeme) return;
     rebuildEqualPlan(taksitSayisiInt);
-  }, [hedefTutar, effectivePesinat, taksitSayisiInt, ilkOdeme, periyot, taksitPlanDirty, rebuildEqualPlan]);
+  }, [showCreator, taksitPlanDirty, hedefTutar, effectivePesinat, taksitSayisiInt, ilkOdeme, periyot, rebuildEqualPlan]);
 
   const handleManuelDateChange = (index: number, value: string) => {
     setTaksitPlanDirty(true);
@@ -1567,7 +1565,18 @@ function OdemePlaniSubTab({
                               onClick={() => onTahsilatStart({
                                 sozlesme_id: String(s.id),
                                 taksit_id: String(t.id),
-                                odeme_yontemi_id: "",
+                                odeme_yontemi_id: t.odeme_yontemi_id
+                                  ? String(t.odeme_yontemi_id)
+                                  : s.odeme_yontemi_id
+                                    ? String(s.odeme_yontemi_id)
+                                    : s.odeme_yontemi?.id
+                                      ? String(s.odeme_yontemi.id)
+                                      : "",
+                                mali_hesap_id: s.mali_hesap_id
+                                  ? String(s.mali_hesap_id)
+                                  : s.mali_hesap?.id
+                                    ? String(s.mali_hesap.id)
+                                    : "",
                                 tutar: String(t.kalan_tutar),
                                 tahsilat_tarihi: new Date().toISOString().slice(0, 10),
                                 referans_no: "",

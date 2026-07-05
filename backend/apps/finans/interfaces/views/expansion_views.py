@@ -533,10 +533,12 @@ class OverdueReminderPreviewView(FinansAPIView):
             return Response({'error': 'taksit_ids listesi zorunlu'}, status=400)
 
         template = request.data.get('template') or ''
+        veli_selections = request.data.get('veli_selections') or {}
         result = OverdueReminderService.preview(
             kurum_id,
             [int(x) for x in taksit_ids],
             template=template,
+            veli_selections=veli_selections,
         )
         return Response(result)
 
@@ -562,12 +564,14 @@ class OverdueReminderSendView(FinansAPIView):
 
         force_resend = bool(request.data.get('force_resend', False))
         template = request.data.get('template') or ''
+        veli_selections = request.data.get('veli_selections') or {}
         result = OverdueReminderService.send_bulk(
             kurum_id,
             [int(x) for x in taksit_ids],
             template=template,
             force_resend=force_resend,
             sent_by_user_id=request.user.id if request.user.is_authenticated else None,
+            veli_selections=veli_selections,
         )
         return Response(result)
 

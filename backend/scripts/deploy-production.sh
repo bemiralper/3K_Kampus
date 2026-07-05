@@ -104,8 +104,23 @@ log "DJANGO_ENV=$DJANGO_ENV"
 
 cd "$APP_ROOT"
 
+ROLLBACK_FILE="${LMS_ROLLBACK_FILE:-/var/lib/3k/last-deploy-sha}"
+PRE_DEPLOY_SHA=""
+PRE_DEPLOY_TAG=""
+
 if [[ "$SKIP_GIT" != true ]]; then
   if [[ -d .git ]]; then
+    PRE_DEPLOY_SHA="$(git rev-parse HEAD)"
+    PRE_DEPLOY_TAG="deploy-backup-$(date +%Y%m%d-%H%M%S)"
+    log "Geri alma noktası: $PRE_DEPLOY_TAG ($PRE_DEPLOY_SHA)"
+    git tag "$PRE_DEPLOY_TAG" "$PRE_DEPLOY_SHA" 2>/dev/null || log "Uyarı: etiket oluşturulamadı (yetki?)"
+    mkdir -p "$(dirname "$ROLLBACK_FILE")" 2>/dev/null || true
+    if { echo "$PRE_DEPLOY_SHA"; echo "$PRE_DEPLOY_TAG"; } > "$ROLLBACK_FILE" 2>/dev/null; then
+      log "Rollback kaydı: $ROLLBACK_FILE"
+    elif { echo "$PRE_DEPLOY_SHA"; echo "$PRE_DEPLOY_TAG"; } > "$APP_ROOT/.last-deploy-sha" 2>/dev/null; then
+      ROLLBACK_FILE="$APP_ROOT/.last-deploy-sha"
+      log "Rollback kaydı: $ROLLBACK_FILE"
+    fi
     log "Git: fetch + checkout $GIT_BRANCH + pull"
     git fetch origin
     git checkout "$GIT_BRANCH"
@@ -177,3 +192,7 @@ else
 fi
 
 log "Deploy tamamlandı."
+if [[ -n "${PRE_DEPLOY_SHA:-}" ]]; then
+  log "Geri alma: git checkout $PRE_DEPLOY_SHA && ./backend/scripts/deploy-production.sh --no-git"
+  log "veya etiket: git checkout $PRE_DEPLOY_TAG"
+fi

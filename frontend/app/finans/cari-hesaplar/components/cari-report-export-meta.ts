@@ -1,4 +1,14 @@
-import type { CariHesapCariOzet, CariHesapRaporItem } from "../../types/cari-hesap-types";
+import type {
+  CariHareket,
+  CariHesapCariOzet,
+  CariHesapRaporItem,
+} from "../../types/cari-hesap-types";
+
+const fmtMoney = (v: number) =>
+  Number(v || 0).toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }) + " TL";
 
 export function formatReportDateRange(baslangic?: string, bitis?: string): string {
   const fmt = (d?: string) => {
@@ -59,4 +69,31 @@ export function defaultRaporBaslangic(): string {
 
 export function defaultRaporBitis(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Filtrelenmiş ekstre hareketlerinin dönem toplamları */
+export function computeEkstrePeriodTotals(hareketler: CariHareket[]) {
+  let toplamBorc = 0;
+  let toplamAlacak = 0;
+  for (const h of hareketler) {
+    const tutar = Number(h.tutar || 0);
+    if (h.yon === "alacak") toplamAlacak += tutar;
+    else toplamBorc += tutar;
+  }
+  return {
+    toplam_borc: toplamBorc,
+    toplam_alacak: toplamAlacak,
+    net_hareket: toplamBorc - toplamAlacak,
+    hareket_sayisi: hareketler.length,
+  };
+}
+
+export function ekstrePeriodExportMeta(hareketler: CariHareket[]) {
+  const t = computeEkstrePeriodTotals(hareketler);
+  return {
+    donem_toplam_borc: fmtMoney(t.toplam_borc),
+    donem_toplam_alacak: fmtMoney(t.toplam_alacak),
+    donem_net_hareket: fmtMoney(t.net_hareket),
+    filtrelenmis_hareket_sayisi: String(t.hareket_sayisi),
+  };
 }

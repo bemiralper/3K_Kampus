@@ -453,6 +453,74 @@
 }
 
 @media (max-width: 991px) {
+  .muhasebe-main {
+    padding: 12px 12px calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .muhasebe-topbar {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .muhasebe-topbar-title {
+    font-size: 15px;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: min(42vw, 180px);
+  }
+
+  .muhasebe-topbar-user-name {
+    display: none;
+  }
+
+  .muhasebe-nav-bottom {
+    display: block;
+  }
+
+  .muhasebe-nav-bottom .muhasebe-nav-label {
+    font-size: 10px;
+    line-height: 1.1;
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .muhasebe-sidebar .muhasebe-nav-link {
+    padding: 11px 14px;
+    font-size: 14px;
+  }
+
+  .muhasebe-sidebar .muhasebe-nav-sublink {
+    padding: 10px 14px 10px 28px;
+    font-size: 13px;
+  }
+
+  .muhasebe-topbar-dropdown {
+    right: 8px;
+    left: auto;
+    min-width: min(280px, calc(100vw - 24px));
+  }
+
+  .muhasebe-topbar-dropdown-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    text-decoration: none;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .muhasebe-topbar-dropdown-item:hover {
+    background: #f1f5f9;
+  }
+
   .muhasebe-sidebar {
     display: flex;
     flex-direction: column;
@@ -607,4 +675,40 @@
   .muhasebe-nav-submenu-tooltip .muhasebe-nav-sublink {
     border-radius: 0;
   }
+}
+
+.muhasebe-sidebar-hint {
+  margin: 0 0 8px;
+  padding: 0 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(226, 232, 240, 0.65);
+  text-align: center;
+}
+
+.muhasebe-nav-item.is-dragging,
+.muhasebe-nav-subitem.is-dragging {
+  opacity: 0.45;
+}
+
+.muhasebe-nav-item.drag-over-before::before,
+.muhasebe-nav-item.drag-over-after::after,
+.muhasebe-nav-subitem.drag-over-before::before,
+.muhasebe-nav-subitem.drag-over-after::after {
+  content: "";
+  display: block;
+  height: 2px;
+  margin: 2px 10px;
+  border-radius: 2px;
+  background: rgba(96, 165, 250, 0.9);
+}
+
+.muhasebe-nav-item.drag-over-before::before,
+.muhasebe-nav-subitem.drag-over-before::before {
+  margin-bottom: 4px;
+}
+
+.muhasebe-nav-item.drag-over-after::after,
+.muhasebe-nav-subitem.drag-over-after::after {
+  margin-top: 4px;
 }

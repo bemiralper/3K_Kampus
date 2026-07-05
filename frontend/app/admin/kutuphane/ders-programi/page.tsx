@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  fetchSubeler, fetchDersProgramlari, createDersProgrami,
+  fetchDersProgramlari, createDersProgrami,
   updateDersProgrami,
-  type SubeDersProgrami, type SubeInfo, type PeriyotDersler,
+  type SubeDersProgrami, type PeriyotDersler,
   type GunAktiflik, type DersSaati, type MolaTanimi, type SessionCode
 } from '@/lib/kutuphane-api';
 import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
+import { useKurum } from '@/lib/contexts/KurumContext';
+import { buildDersProgramiPrintHtml, openKutuphanePrintWindow } from '@/lib/kutuphane-list-print';
 
 const DAYS = [
   { key: '0', label: 'Pazartesi', short: 'Pzt' },
@@ -160,8 +162,8 @@ function PeriyotEditor({ periodLabel, data, onChange, gradient, lightBg }: {
 // ══════════════════════════════════════════════
 export default function DersProgramiPage() {
   const { href, isCoachMode } = useKutuphanePath();
-  const [subeler, setSubeler] = useState<SubeInfo[]>([]);
-  const [selectedSube, setSelectedSube] = useState<number | null>(null);
+  const { activeSube, activeKurum } = useKurum();
+  const selectedSube = activeSube?.id ?? null;
   const [program, setProgram] = useState<SubeDersProgrami | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -176,11 +178,22 @@ export default function DersProgramiPage() {
     setToast({ type, msg }); setTimeout(() => setToast(null), 4000);
   };
 
-  const loadSubeler = useCallback(async () => {
-    try { const r = await fetchSubeler(); if (r.data) setSubeler(r.data as SubeInfo[]); } catch {}
-    setLoading(false);
-  }, []);
-  useEffect(() => { loadSubeler(); }, [loadSubeler]);
+  const handlePrintPdf = () => {
+    if (!selectedSube) return;
+    const html = buildDersProgramiPrintHtml({
+      meta: {
+        title: 'Ders Programı Şablonu',
+        subtitle: programAd,
+        subeAdi: activeSube?.ad,
+        kurumBranding: activeKurum,
+        orientation: 'landscape',
+      },
+      programAd,
+      dersSaatleri,
+      gunAktiflik,
+    });
+    openKutuphanePrintWindow(html);
+  };
 
   const loadProgram = useCallback(async (subeId: number) => {
     setLoading(true);
@@ -208,7 +221,10 @@ export default function DersProgramiPage() {
     setLoading(false);
   }, [isCoachMode]);
 
-  useEffect(() => { if (selectedSube) loadProgram(selectedSube); }, [selectedSube, loadProgram]);
+  useEffect(() => {
+    if (selectedSube) loadProgram(selectedSube);
+    else setLoading(false);
+  }, [selectedSube, loadProgram]);
 
   const handleSave = async () => {
     if (!selectedSube) return;
@@ -220,7 +236,7 @@ export default function DersProgramiPage() {
         if (r.data) { setProgram(r.data as SubeDersProgrami); showToast('success', 'Program güncellendi'); }
       } else {
         const r = await createDersProgrami(payload);
-        if (r.data) { setProgram(r.data as SubeDersProgrami); showToast('success', 'Program oluşturuldu'); loadSubeler(); }
+        if (r.data) { setProgram(r.data as SubeDersProgrami); showToast('success', 'Program oluşturuldu'); }
       }
       setEditMode(false);
     } catch (err: any) { showToast('error', err.message || 'Kaydetme başarısız'); }
@@ -328,35 +344,24 @@ export default function DersProgramiPage() {
       {/* KPI Cards */}
       <div className="dp-kpi-grid">
         {[
-          { icon: '📚', label: 'Toplam Şube', value: subeler.length, g: 'linear-gradient(135deg, #6366f1, #4f46e5)' },
+          { icon: '🏫', label: 'Şube', value: activeSube?.ad || '—', g: 'linear-gradient(135deg, #6366f1, #4f46e5)' },
           { icon: '📅', label: 'Aktif Periyot', value: totalPeriods, g: 'linear-gradient(135deg, #3b82f6, #2563eb)' },
           { icon: '📝', label: 'Toplam Ders', value: totalDers, g: 'linear-gradient(135deg, #22c55e, #16a34a)' },
         ].map((k, i) => (
           <div key={k.label} className="dp-kpi-card" style={{ animationDelay: `${i * 0.08}s` }}>
             <div className="dp-kpi-icon" style={{ background: k.g }}>{k.icon}</div>
-            <div><div className="dp-kpi-value">{k.value}</div><div className="dp-kpi-label">{k.label}</div></div>
+            <div><div className="dp-kpi-value" style={k.label === 'Şube' ? { fontSize: 18 } : undefined}>{k.value}</div><div className="dp-kpi-label">{k.label}</div></div>
           </div>
         ))}
       </div>
 
-      {/* Şube Seçimi */}
-      <div className="dp-section">
-        <div className="dp-section-header">
-          <div className="dp-section-title">📚 Şube Seçimi</div>
-          <span style={{ fontSize: 12, color: '#6b7280' }}>{subeler.filter(s => s.program_var).length}/{subeler.length} tanımlı</span>
-        </div>
-        <div className="dp-section-body">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            {subeler.map(s => (
-              <button key={s.id} onClick={() => setSelectedSube(s.id)}
-                className={`dp-sube-btn ${selectedSube === s.id ? 'active' : s.program_var ? 'has-program' : ''}`}>
-                {s.ad}{s.program_var && selectedSube !== s.id && <span style={{ marginLeft: 6 }}>✓</span>}
-              </button>
-            ))}
-            {subeler.length === 0 && !loading && <div style={{ padding: 20, color: '#9ca3af', fontSize: 14 }}>Henüz şube tanımlanmamış</div>}
+      {!selectedSube && !loading && (
+        <div className="dp-section">
+          <div className="dp-section-body" style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>
+            Aktif şube seçilmedi. Üst menüden şube seçin.
           </div>
         </div>
-      </div>
+      )}
 
       {loading && <div style={{ textAlign: 'center', padding: 48, color: '#9ca3af' }}><div style={{ fontSize: 36, marginBottom: 12 }}>⏳</div>Yükleniyor...</div>}
 
@@ -377,6 +382,11 @@ export default function DersProgramiPage() {
                 </span>
               </div>
               {!editMode && !isCoachMode && <button onClick={() => setEditMode(true)} className="dp-btn-primary">✏️ Düzenle</button>}
+              {!editMode && program && (
+                <button onClick={handlePrintPdf} className="dp-btn-secondary" style={{ marginLeft: 8 }}>
+                  📄 PDF İndir
+                </button>
+              )}
             </div>
           </div>
 

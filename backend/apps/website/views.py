@@ -279,7 +279,8 @@ def api_admin_settings(request):
                 'telefon', 'whatsapp', 'eposta', 'adres', 'calisma_saatleri',
                 'hero_baslik', 'hero_alt_baslik', 'hero_slogan', 'hero_maddeler',
                 'tanitim_baslik', 'tanitim_icerik', 'youtube_video_id',
-                'harita_embed_url', 'footer_copyright', 'footer_marka_metni', 'seo_baslik', 'seo_aciklama',
+                'harita_embed_url', 'footer_copyright', 'footer_baslik', 'footer_aciklama',
+                'footer_marka_metni', 'seo_baslik', 'seo_aciklama',
                 'seo_anahtar_kelimeler', 'seo_canonical_url', 'google_site_verification',
                 'google_analytics_id', 'seo_robots_index',
             ]:

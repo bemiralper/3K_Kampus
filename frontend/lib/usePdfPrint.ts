@@ -74,6 +74,14 @@ export function usePdfPrint(options: PdfPrintOptions = {}) {
       scrollEl.style.overflow = "visible";
     });
 
+    // PDF/print dışı aksiyonları geçici gizle (WhatsApp hatırlatma vb.)
+    const hideEls = el.querySelectorAll<HTMLElement>(".pdf-export-hide");
+    const hideOrigDisplay: string[] = [];
+    hideEls.forEach((node) => {
+      hideOrigDisplay.push(node.style.display);
+      node.style.display = "none";
+    });
+
     // html2canvas ile yüksek kalitede render
     const canvas = await html2canvas(el, {
       scale,
@@ -85,12 +93,15 @@ export function usePdfPrint(options: PdfPrintOptions = {}) {
       windowHeight: el.scrollHeight,
     });
 
-    // Scroll'ları geri al
+    // Scroll'ları ve gizlenen aksiyonları geri al
     scrollEls.forEach((scrollEl, i) => {
       scrollEl.style.maxHeight = origStyles[i].maxHeight;
       scrollEl.style.overflowY = origStyles[i].overflowY;
       scrollEl.style.overflow = origStyles[i].overflow;
       scrollEl.style.border = origStyles[i].border;
+    });
+    hideEls.forEach((node, i) => {
+      node.style.display = hideOrigDisplay[i] || "";
     });
 
     const imgData = canvas.toDataURL("image/png");

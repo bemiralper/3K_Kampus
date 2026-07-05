@@ -67,6 +67,10 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
             'deneme analizleri ve veli bilgilendirme sistemleriyle uçtan uca destek sunar.'
         )
         settings.footer_copyright = '© 2026 3K Kampüs'
+        settings.footer_baslik = '3K Kampüs'
+        settings.footer_aciklama = (
+            'LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz.'
+        )
         settings.footer_marka_metni = '3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.'
         settings.seo_baslik = '3K Kampüs — LGS & YKS Eğitim Merkezi'
         settings.seo_aciklama = '3K Kampüs ile akademik takip, bireysel koçluk ve deneme analizleri.'

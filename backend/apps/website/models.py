@@ -43,6 +43,14 @@ class SiteSettings(models.Model):
     footer_copyright = models.CharField(
         'Footer Telif', max_length=200, blank=True, default='© 2026 3K Kampüs',
     )
+    footer_baslik = models.CharField(
+        'Footer Marka Başlığı', max_length=200, blank=True, default='3K Kampüs',
+    )
+    footer_aciklama = models.TextField(
+        'Footer Marka Açıklaması',
+        blank=True,
+        default='LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz.',
+    )
     footer_marka_metni = models.CharField(
         'Footer Marka Bildirimi',
         max_length=300,

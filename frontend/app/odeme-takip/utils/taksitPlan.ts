@@ -4,6 +4,16 @@ export interface ManuelTaksitRow {
   odeme_yontemi_id?: number | "";
 }
 
+export function taksitRowsEqual(a: ManuelTaksitRow[], b: ManuelTaksitRow[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every(
+    (row, i) =>
+      row.tutar === b[i].tutar
+      && row.vade_tarihi === b[i].vade_tarihi
+      && (row.odeme_yontemi_id ?? "") === (b[i].odeme_yontemi_id ?? ""),
+  );
+}
+
 export function clampTaksitSayisi(count: number, max = 48): number {
   return Math.max(1, Math.min(max, count));
 }

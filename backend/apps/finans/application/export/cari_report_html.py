@@ -62,6 +62,7 @@ def _date_range_label(meta: dict[str, Any]) -> str:
 
 def _filter_rows(meta: dict[str, Any]) -> list[tuple[str, str]]:
     """Görüntülenecek filtre satırları (sıralı)."""
+    report_kind = meta.get("report_kind") or "cari_bakiye"
     mapping = [
         ("cari_turu", meta.get("cari_turu") or meta.get("hesap_turu_label") or "Tümü"),
         ("sube", meta.get("sube_ad") or meta.get("sube") or "Tümü"),
@@ -74,7 +75,18 @@ def _filter_rows(meta: dict[str, Any]) -> list[tuple[str, str]]:
         "durum": "Durum",
         "para_birimi": "Para Birimi",
     }
-    return [(labels[k], _esc(v)) for k, v in mapping]
+    rows = [(labels[k], _esc(v)) for k, v in mapping]
+
+    if report_kind == "cari_ekstre":
+        extra = [
+            ("Cari", meta.get("cari_unvan") or "—"),
+            ("Arama", meta.get("arama_filtresi") or "Tümü"),
+            ("Kategori", meta.get("kategori_filtresi") or "Tümü"),
+            ("Ödeme Yöntemi", meta.get("odeme_yontemi_filtresi") or "Tümü"),
+            ("Hareket Sayısı", meta.get("filtrelenmis_hareket_sayisi") or "0"),
+        ]
+        rows = extra + rows
+    return rows
 
 
 def _stat_boxes(totals: dict[str, Any]) -> str:
@@ -95,21 +107,53 @@ def _stat_boxes(totals: dict[str, Any]) -> str:
     return f'<div class="stat-box-grid">{blocks}</div>'
 
 
-def _genel_toplam_table(totals: dict[str, Any]) -> str:
-    rows = [
-        ("Toplam Cari Sayısı", _format_cell(totals.get("toplam_cari") or totals.get("kayit_sayisi") or 0)),
-        ("Toplam Borç", _fmt_tl(totals.get("toplam_borc"))),
-        ("Toplam Alacak", _fmt_tl(totals.get("toplam_alacak"))),
-        ("Net Bakiye", _fmt_tl(totals.get("net_bakiye"))),
-    ]
+def _genel_toplam_table(
+    totals: dict[str, Any],
+    *,
+    report_kind: str = "cari_bakiye",
+    meta: dict[str, Any] | None = None,
+) -> str:
+    if report_kind == "cari_ekstre":
+        rows = [
+            ("Toplam Borç (Cari)", _fmt_tl(totals.get("toplam_borc"))),
+            ("Toplam Alacak (Cari)", _fmt_tl(totals.get("toplam_alacak"))),
+            ("Net Bakiye", _fmt_tl(totals.get("net_bakiye"))),
+        ]
+        title = "Cari Bakiye Özeti"
+    else:
+        rows = [
+            ("Toplam Cari Sayısı", _format_cell(totals.get("toplam_cari") or totals.get("kayit_sayisi") or 0)),
+            ("Toplam Borç", _fmt_tl(totals.get("toplam_borc"))),
+            ("Toplam Alacak", _fmt_tl(totals.get("toplam_alacak"))),
+            ("Net Bakiye", _fmt_tl(totals.get("net_bakiye"))),
+        ]
+        title = "Genel Toplam"
+
     tbody = "".join(
         f"<tr><td>{_esc(lbl)}</td><td class=\"num\">{val}</td></tr>" for lbl, val in rows
     )
-    return (
-        '<div class="section-title">Genel Toplam</div>'
+    html_out = (
+        f'<div class="section-title">{_esc(title)}</div>'
         '<table class="totals-table"><thead><tr><th>Açıklama</th><th>Tutar</th></tr></thead>'
         f"<tbody>{tbody}</tbody></table>"
     )
+
+    if report_kind == "cari_ekstre" and meta:
+        donem_rows = [
+            ("Dönem Toplam Borç", _esc(meta.get("donem_toplam_borc") or "—")),
+            ("Dönem Toplam Alacak", _esc(meta.get("donem_toplam_alacak") or "—")),
+            ("Dönem Net Hareket", _esc(meta.get("donem_net_hareket") or "—")),
+            ("Filtrelenmiş Hareket Sayısı", _esc(meta.get("filtrelenmis_hareket_sayisi") or "0")),
+        ]
+        dtbody = "".join(
+            f"<tr><td>{_esc(lbl)}</td><td class=\"num\">{val}</td></tr>" for lbl, val in donem_rows
+        )
+        html_out += (
+            '<div class="section-title">Seçili Dönem / Filtre Hareket Toplamları</div>'
+            '<table class="totals-table"><thead><tr><th>Açıklama</th><th>Tutar</th></tr></thead>'
+            f"<tbody>{dtbody}</tbody></table>"
+        )
+    return html_out
 
 
 def _ozet_kv_table(meta: dict[str, Any]) -> str:
@@ -119,6 +163,9 @@ def _ozet_kv_table(meta: dict[str, Any]) -> str:
         "report_totals", "raporu_olusturan", "tarih_araligi", "baslangic", "bitis",
         "cari_unvan", "cari_turu", "hesap_turu_label", "durum", "para_birimi",
         "hesap_turu", "arama", "kayit_sayisi",
+        "arama_filtresi", "kategori_filtresi", "odeme_yontemi_filtresi",
+        "donem_toplam_borc", "donem_toplam_alacak", "donem_net_hareket",
+        "filtrelenmis_hareket_sayisi", "rapor_adi",
     }
     rows = ""
     for key, val in meta.items():
@@ -194,8 +241,9 @@ def build_cari_report_html(
             f"(PDF'de ilk 500 satır gösterilir)</p>"
         )
 
+    detail_title = "Ekstre Hareketleri" if report_kind == "cari_ekstre" else "Detay Listesi"
     stat_html = _stat_boxes(totals) if report_kind == "cari_bakiye" else ""
-    genel_toplam = _genel_toplam_table(totals)
+    genel_toplam = _genel_toplam_table(totals, report_kind=report_kind, meta=meta)
     ozet_table = _ozet_kv_table(meta) if report_kind in ("cari_ozet", "cari_ekstre") else ""
 
     return f"""<!DOCTYPE html>
@@ -343,7 +391,7 @@ def build_cari_report_html(
   <div class="content-layout">
     <div class="content-main">
       {genel_toplam}
-      <div class="section-title">Detay Listesi</div>
+      <div class="section-title">{_esc(detail_title)}</div>
       <table class="data-table">
         <thead><tr>{thead}</tr></thead>
         <tbody>{tbody or '<tr><td colspan="' + str(len(labels)) + '">Kayıt bulunamadı</td></tr>'}</tbody>

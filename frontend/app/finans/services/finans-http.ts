@@ -289,6 +289,17 @@ export async function finansDownload(path: string): Promise<{ blob: Blob; filena
   const match = disposition.match(/filename[^;=\n]*=(['"]?)([^'"\n;]*)\1/);
   const filename = match?.[2] || "export";
   const blob = await res.blob();
+
+  if (path.includes("format=pdf") || filename.toLowerCase().endsWith(".pdf")) {
+    const header = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+    const isPdf = header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+    if (!isPdf) {
+      throw new Error(
+        "PDF oluşturulamadı. Sunucuda Chromium/Playwright kurulumunu kontrol edin veya oturumunuzun açık olduğundan emin olun.",
+      );
+    }
+  }
+
   return { blob, filename };
 }
 
@@ -326,5 +337,19 @@ export async function finansDownloadPost(
   const match = disposition.match(/filename[^;=\n]*=(['"]?)([^'"\n;]*)\1/);
   const filename = match?.[2] || "export";
   const blob = await res.blob();
+
+  if (
+    (typeof body === "object" && body && (body as { format?: string }).format === "pdf") ||
+    filename.toLowerCase().endsWith(".pdf")
+  ) {
+    const header = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+    const isPdf = header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+    if (!isPdf) {
+      throw new Error(
+        "PDF oluşturulamadı. Sunucuda Chromium/Playwright kurulumunu kontrol edin veya oturumunuzun açık olduğundan emin olun.",
+      );
+    }
+  }
+
   return { blob, filename };
 }

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { fetchKontrolBadge } from "@/lib/resources-api";
 import KurumLogo from "@/components/branding/KurumLogo";
+import { useSubmenuOrderMap } from "@/hooks/useMenuOrder";
 
 // İkon tanımları
 const icons = {
@@ -310,7 +311,10 @@ const navItems: MenuItem[] = [
       { label: "Toplu Gönderim", href: "/admin/iletisim/toplu-gonder" },
       { label: "Mesajlar", href: "/admin/iletisim/mesajlar" },
       { label: "Kampanyalar", href: "/admin/iletisim/kampanyalar" },
-      { label: "Şablonlar", href: "/admin/iletisim/sablonlar" },
+      { label: "Mesaj Şablonları", href: "/admin/iletisim/sablonlar" },
+      { label: "Finans Şablonları", href: "/admin/iletisim/sablonlar?category=odeme_gecikme" },
+      { label: "Veli / Genel Şablonlar", href: "/admin/iletisim/sablonlar?category=genel" },
+      { label: "Ödev Şablonları", href: "/admin/iletisim/sablonlar?category=haftalik_odev" },
       { label: "WhatsApp Ayarları", href: "/admin/iletisim/ayarlar" },
     ],
   },
@@ -422,10 +426,25 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const { pinnedIds, togglePin } = usePinnedItems();
   const { reorder, getOrdered } = useMenuOrder(navItems);
 
+  const submenuParents = useMemo(
+    () =>
+      navItems
+        .filter((i) => i.children?.length)
+        .map((i) => ({ id: i.id, childIds: i.children!.map((c) => c.href) })),
+    [],
+  );
+  const { reorderSubmenu, getOrderedChildren } = useSubmenuOrderMap(
+    "sidebar-submenu-order",
+    submenuParents,
+  );
+
   // Drag & Drop state
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dragPosition, setDragPosition] = useState<"before" | "after">("after");
+  const [subDrag, setSubDrag] = useState<{ parentId: string; href: string } | null>(null);
+  const [subDragOver, setSubDragOver] = useState<{ parentId: string; href: string } | null>(null);
+  const [subDragPosition, setSubDragPosition] = useState<"before" | "after">("after");
   const [kontrolBadgeCount, setKontrolBadgeCount] = useState(0);
 
   const loadKontrolBadge = useCallback(async () => {
@@ -617,31 +636,65 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
   const renderSubmenuItems = (item: MenuItem) => {
     if (!item.children) return null;
-    const hasGroups = item.children.some((c) => c.group);
+    const orderedChildren = getOrderedChildren(item.id, item.children);
+    const hasGroups = orderedChildren.some((c) => c.group);
 
-    if (!hasGroups) {
-      return item.children.map((child, childIdx) => {
-        const badge = getChildBadge(child);
-        return (
-        <li className="submenu-item" key={childIdx}>
+    const renderSubLink = (child: SubMenuItem) => {
+      const badge = getChildBadge(child);
+      const isSubOver =
+        subDragOver?.parentId === item.id &&
+        subDragOver.href === child.href &&
+        subDrag?.href !== child.href;
+      return (
+        <li
+          className={`submenu-item${isSubOver ? ` drag-over-${subDragPosition}` : ""}${subDrag?.parentId === item.id && subDrag.href === child.href ? " is-dragging" : ""}`}
+          key={child.href}
+          draggable={isOpen && !searchQuery}
+          onDragStart={(e) => {
+            e.stopPropagation();
+            setSubDrag({ parentId: item.id, href: child.href });
+            e.dataTransfer.effectAllowed = "move";
+          }}
+          onDragEnd={() => {
+            if (
+              subDrag &&
+              subDragOver &&
+              subDrag.parentId === subDragOver.parentId &&
+              subDrag.href !== subDragOver.href
+            ) {
+              reorderSubmenu(subDrag.parentId, subDrag.href, subDragOver.href, subDragPosition);
+            }
+            setSubDrag(null);
+            setSubDragOver(null);
+          }}
+          onDragOver={(e) => {
+            if (!isOpen || !subDrag || subDrag.parentId !== item.id || subDrag.href === child.href) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setSubDragPosition(e.clientY < rect.top + rect.height / 2 ? "before" : "after");
+            setSubDragOver({ parentId: item.id, href: child.href });
+          }}
+        >
           <Link
             href={child.href}
             className={`submenu-link ${isSubmenuActive(child.href) ? "active" : ""}`}
           >
             <span className="submenu-dot" />
             <span className="submenu-label">{child.label}</span>
-            {badge && badge > 0 && (
-              <span className="submenu-badge">{badge}</span>
-            )}
+            {badge && badge > 0 && <span className="submenu-badge">{badge}</span>}
           </Link>
         </li>
-        );
-      });
+      );
+    };
+
+    if (!hasGroups) {
+      return orderedChildren.map(renderSubLink);
     }
 
-    // Grouped submenu
+    // Grouped submenu — sıralı children'ı grupla
     const groups: Record<string, SubMenuItem[]> = {};
-    item.children.forEach((child) => {
+    orderedChildren.forEach((child) => {
       const g = child.group || "Diğer";
       if (!groups[g]) groups[g] = [];
       groups[g].push(child);
@@ -650,23 +703,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
     return Object.entries(groups).map(([groupName, children]) => (
       <li key={groupName} className="submenu-group">
         <div className="submenu-group-title">{groupName}</div>
-        {children.map((child, childIdx) => {
-          const badge = getChildBadge(child);
-          return (
-          <li className="submenu-item" key={childIdx}>
-            <Link
-              href={child.href}
-              className={`submenu-link ${isSubmenuActive(child.href) ? "active" : ""}`}
-            >
-              <span className="submenu-dot" />
-              <span className="submenu-label">{child.label}</span>
-              {badge && badge > 0 && (
-                <span className="submenu-badge">{badge}</span>
-              )}
-            </Link>
-          </li>
-          );
-        })}
+        {children.map(renderSubLink)}
       </li>
     ));
   };

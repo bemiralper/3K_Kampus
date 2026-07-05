@@ -470,7 +470,7 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
                 <th style={{ ...thCell, textAlign: "right" }}>Ödenen</th>
                 <th style={{ ...thCell, textAlign: "right" }}>Kalan</th>
                 <th style={{ ...thCell, textAlign: "center" }}>Durum</th>
-                <th style={{ ...thCell, textAlign: "center" }}>İşlem</th>
+                <th className="pdf-export-hide" style={{ ...thCell, textAlign: "center" }}>İşlem</th>
               </tr>
             </thead>
             <tbody>
@@ -496,10 +496,11 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
                       {taksitDurumLabel[t.durum] || t.durum}
                     </span>
                   </td>
-                  <td style={{ ...tdCell, textAlign: "center" }}>
+                  <td className="pdf-export-hide" style={{ ...tdCell, textAlign: "center" }}>
                     {canRemind(t.durum) && t.kalan_tutar > 0 ? (
                       <button
                         type="button"
+                        className="pdf-export-hide"
                         onClick={() => handleWhatsAppReminder(t.id)}
                         disabled={reminderBusy === t.id}
                         style={{

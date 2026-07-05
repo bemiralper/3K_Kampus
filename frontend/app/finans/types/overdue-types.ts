@@ -111,7 +111,10 @@ export interface OverduePaymentDetail extends OverduePaymentItem {
 }
 
 export interface OverdueReminderRecipient {
-  taksit_id: number;
+  group_key?: string;
+  ogrenci_id?: number | null;
+  taksit_ids?: number[];
+  taksit_id?: number | null;
   veli_id?: number | null;
   veli_adi: string;
   ogrenci_adi: string;
@@ -119,11 +122,23 @@ export interface OverdueReminderRecipient {
   rendered_body: string;
   skip_reason?: string | null;
   already_sent_24h?: boolean;
+  available_veliler?: OverdueVeliOption[];
+  taksit_sayisi?: number;
+  toplam_gecikmis_tutar?: number;
+}
+
+export interface OverdueVeliOption {
+  id: number;
+  ad: string;
+  telefon: string | null;
+  varsayilan?: boolean;
+  veli_turu?: string;
 }
 
 export interface OverdueReminderPreviewRequest {
   taksit_ids: number[];
   template?: string;
+  veli_selections?: Record<string, number>;
 }
 
 export interface OverdueReminderPreviewResponse {
@@ -137,6 +152,7 @@ export interface OverdueReminderSendRequest {
   taksit_ids: number[];
   template: string;
   force_resend?: boolean;
+  veli_selections?: Record<string, number>;
 }
 
 export interface OverdueReminderSendResult {

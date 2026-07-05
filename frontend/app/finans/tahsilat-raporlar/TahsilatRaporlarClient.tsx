@@ -24,13 +24,22 @@ function TahsilatRaporlarInner() {
   const { href: odemeHref } = useOdemePath();
 
   const rawTab = searchParams.get("tab");
+  const reportItems = isMuhasebeMode
+    ? FINANS_REPORT_ITEMS.filter((t) => t.tab !== "mali-analiz")
+    : FINANS_REPORT_ITEMS;
   const tab = resolveFinansReportTab(rawTab);
+  const activeTab =
+    isMuhasebeMode && tab === "mali-analiz" ? ("virman" as FinansReportTab) : tab;
 
   useEffect(() => {
     if (rawTab === "raporlar") {
-      router.replace(tahsilatTabHref("mali-analiz"));
+      router.replace(tahsilatTabHref(isMuhasebeMode ? "virman" : "mali-analiz"));
+      return;
     }
-  }, [rawTab, router, tahsilatTabHref]);
+    if (isMuhasebeMode && rawTab === "mali-analiz") {
+      router.replace(tahsilatTabHref("virman"));
+    }
+  }, [rawTab, router, tahsilatTabHref, isMuhasebeMode]);
 
   const setTab = useCallback(
     (next: FinansReportTab) => {
@@ -72,11 +81,11 @@ function TahsilatRaporlarInner() {
       </div>
 
       <div className="tabs-modern mb-5">
-        {FINANS_REPORT_ITEMS.map((t) => (
+        {reportItems.map((t) => (
           <a
             key={t.tab}
             href="#"
-            className={`tab-modern ${tab === t.tab ? "active" : ""}`}
+            className={`tab-modern ${activeTab === t.tab ? "active" : ""}`}
             onClick={(e) => {
               e.preventDefault();
               setTab(t.tab);
@@ -88,12 +97,12 @@ function TahsilatRaporlarInner() {
       </div>
 
       <div>
-        {tab === "virman" && <VirmanClient embedded />}
-        {tab === "gun-sonu" && <GunSonuClient embedded />}
-        {tab === "gecikmis" && <GecikmisOdemelerClient embedded />}
-        {tab === "vadesi-gelenler" && <VadesiGelenlerClient embedded />}
-        {tab === "donem" && <DonemTahsilatClient embedded />}
-        {tab === "mali-analiz" && <RaporlamaClient embedded />}
+        {activeTab === "virman" && <VirmanClient embedded />}
+        {activeTab === "gun-sonu" && <GunSonuClient embedded />}
+        {activeTab === "gecikmis" && <GecikmisOdemelerClient embedded />}
+        {activeTab === "vadesi-gelenler" && <VadesiGelenlerClient embedded />}
+        {activeTab === "donem" && <DonemTahsilatClient embedded />}
+        {!isMuhasebeMode && activeTab === "mali-analiz" && <RaporlamaClient embedded />}
       </div>
     </div>
   );

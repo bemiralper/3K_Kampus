@@ -6,6 +6,7 @@ import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
 import { useOgrenciPath } from "@/components/ogrenci/OgrenciPathProvider";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { financialAccountService } from "@/app/finans/services/finans-api";
+import { odemeTakipBridge } from "@/app/finans/services/odeme-takip-bridge";
 import "./odeme-takip.css";
 
 import { Sozlesme, TahsilatItem, OdemeYontemi, IndirimTuru, DashboardOzet, TabType, TahsilatFormData, Taksit, OgrenciRiskSkoru } from "./types";
@@ -73,6 +74,8 @@ export default function OdemeTakipClient() {
 
   // Parametrik
   const [odemeYontemleri, setOdemeYontemleri] = useState<OdemeYontemi[]>([]);
+  /** Tahsilat drawer — mali hesaba göre API'den yenilenir (plan-canonical filtre hatasını önler). */
+  const [tahsilatOdemeYontemleri, setTahsilatOdemeYontemleri] = useState<OdemeYontemi[]>([]);
   const [indirimTurleri, setIndirimTurleri] = useState<IndirimTuru[]>([]);
   const [maliHesaplar, setMaliHesaplar] = useState<{ id: number; ad: string; tip: string }[]>([]);
 
@@ -243,6 +246,27 @@ export default function OdemeTakipClient() {
   }, [activeKurum?.id, activeSube?.id]);
 
   useEffect(() => {
+    if (!showTahsilatDrawer) return;
+    const maliId = tahsilatForm.mali_hesap_id ? Number(tahsilatForm.mali_hesap_id) : null;
+    odemeTakipBridge
+      .odemeSekilleri(maliId)
+      .then((list) => {
+        setTahsilatOdemeYontemleri(Array.isArray(list) ? list : []);
+      })
+      .catch(() => setTahsilatOdemeYontemleri([]));
+  }, [showTahsilatDrawer, tahsilatForm.mali_hesap_id]);
+
+  useEffect(() => {
+    if (!showTahsilatDrawer || !tahsilatForm.odeme_yontemi_id) return;
+    const exists = tahsilatOdemeYontemleri.some(
+      (o) => String(o.id) === String(tahsilatForm.odeme_yontemi_id),
+    );
+    if (!exists) {
+      setTahsilatForm((prev) => ({ ...prev, odeme_yontemi_id: "" }));
+    }
+  }, [showTahsilatDrawer, tahsilatForm.odeme_yontemi_id, tahsilatOdemeYontemleri]);
+
+  useEffect(() => {
     if (activeTab === "tahsilatlar") fetchTahsilatlar();
     if (activeTab === "raporlar") { fetchDashboard(); fetchVadesiGecenler(); fetchRiskSkorlari(); }
   }, [activeTab, fetchTahsilatlar, fetchDashboard, fetchVadesiGecenler, fetchRiskSkorlari]);
@@ -301,14 +325,31 @@ export default function OdemeTakipClient() {
   };
 
   const handleTahsilatStart = (form: TahsilatFormData) => {
-    setTahsilatForm(form);
+    const sozlesme = selectedSozlesme?.id === Number(form.sozlesme_id)
+      ? selectedSozlesme
+      : sozlesmeler.find((s) => s.id === Number(form.sozlesme_id));
+    const taksit = sozlesme?.taksitler?.find((t) => t.id === Number(form.taksit_id));
+    const defaultMali =
+      form.mali_hesap_id ||
+      (sozlesme?.mali_hesap_id ? String(sozlesme.mali_hesap_id) : "") ||
+      (sozlesme?.mali_hesap?.id ? String(sozlesme.mali_hesap.id) : "");
+    const defaultYontem =
+      form.odeme_yontemi_id ||
+      (taksit?.odeme_yontemi_id ? String(taksit.odeme_yontemi_id) : "") ||
+      (sozlesme?.odeme_yontemi_id ? String(sozlesme.odeme_yontemi_id) : "") ||
+      (sozlesme?.odeme_yontemi?.id ? String(sozlesme.odeme_yontemi.id) : "");
+    setTahsilatForm({
+      ...form,
+      mali_hesap_id: defaultMali,
+      odeme_yontemi_id: defaultYontem,
+    });
     setShowTahsilatDrawer(true);
   };
 
   const handleTahsilatCreate = async () => {
     setSaving(true);
     try {
-      const selectedYontem = odemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
+      const selectedYontem = tahsilatOdemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
       const isCekSenet = selectedYontem?.tip === "cek" || selectedYontem?.tip === "senet";
       const masraf = buildIslemMasrafiPayload({
         kesinti_turu: (tahsilatForm.kesinti_turu || "") as "" | import("@/app/finans/types/islem-masrafi-types").KesintiTuru,
@@ -562,9 +603,8 @@ export default function OdemeTakipClient() {
                     onChange={(e) => setTahsilatForm({ ...tahsilatForm, odeme_yontemi_id: e.target.value })}
                   >
                     <option value="">Seçin</option>
-                    {odemeYontemleri
-                      .filter(o => o.aktif_mi)
-                      .filter(o => !tahsilatForm.mali_hesap_id || String(o.mali_hesap_id) === String(tahsilatForm.mali_hesap_id))
+                    {tahsilatOdemeYontemleri
+                      .filter((o) => o.aktif_mi !== false)
                       .map((o) => (
                         <option key={o.id} value={o.id}>{o.ad}</option>
                       ))}
@@ -572,7 +612,7 @@ export default function OdemeTakipClient() {
                 </div>
 
                 {(() => {
-                  const sel = odemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
+                  const sel = tahsilatOdemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
                   const isCekSenet = sel?.tip === "cek" || sel?.tip === "senet";
                   if (!isCekSenet) return null;
                   return (
@@ -654,7 +694,7 @@ export default function OdemeTakipClient() {
                 </div>
 
                 {(() => {
-                  const sel = odemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
+                  const sel = tahsilatOdemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
                   const hesap = maliHesaplar.find((m) => String(m.id) === tahsilatForm.mali_hesap_id);
                   const visible = islemMasrafiGoster(sel?.tip, hesap?.tip);
                   return (

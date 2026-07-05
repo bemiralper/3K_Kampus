@@ -1,7 +1,17 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useKurum } from "@/lib/contexts/KurumContext";
+import { useAuth } from "@/lib/contexts/AuthContext";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
+import FinansRowsExportMenu from "@/components/finans/FinansRowsExportMenu";
+import {
+  buildGecikenExportRows,
+  buildSonOdemeExportRows,
+  buildYaklasanExportRows,
+  GECIKEN_EXPORT_COLUMNS,
+  SON_ODEME_EXPORT_COLUMNS,
+  YAKLASAN_EXPORT_COLUMNS,
+} from "./borc-odeme-export";
 import { giderKaydiService, giderOdemeService } from "../services/gider-kaydi-api";
 import { FinansHttpError } from "../services/finans-http";
 import { paymentMethodService, financialAccountService } from "../services/finans-api";
@@ -25,6 +35,7 @@ const selectCls = "w-full px-3.5 py-2.5 bg-gray-50/80 border border-gray-200 rou
 export default function BorcOdemeClient({ embedded }: BorcOdemeClientProps = {}) {
   const { homeHref, portalHomeHref } = useFinansPath();
   const { activeKurum, activeSube } = useKurum();
+  const { user } = useAuth();
   const kurumId = activeKurum?.id;
 
   const [tab, setTab] = useState<"geciken" | "yaklasan" | "odemeler">("geciken");
@@ -81,6 +92,19 @@ export default function BorcOdemeClient({ embedded }: BorcOdemeClientProps = {})
     setOdemeDrawer({ open: false, taksit: null });
     fetchAll();
   };
+
+  const exportFiltersBase = useMemo(
+    () => ({
+      kurum_id: kurumId,
+      sube_id: activeSube?.id,
+      raporu_olusturan: user
+        ? `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.username
+        : undefined,
+      report_kind: "borc_odeme_takip",
+      para_birimi: "TL",
+    }),
+    [kurumId, activeSube?.id, user],
+  );
 
   if (!kurumId) {
     return (
@@ -232,9 +256,26 @@ export default function BorcOdemeClient({ embedded }: BorcOdemeClientProps = {})
         </div>
       ) : (
         <>
-          {tab === "geciken" && <GecikenTaksitlerTab taksitler={gecikenTaksitler} onOdemeYap={handleOdemeYap} />}
-          {tab === "yaklasan" && <YaklasanVadelerTab taksitler={yaklasanVadeler} onOdemeYap={handleOdemeYap} />}
-          {tab === "odemeler" && <SonOdemelerTab odemeler={sonOdemeler} />}
+          {tab === "geciken" && (
+            <GecikenTaksitlerTab
+              taksitler={gecikenTaksitler}
+              onOdemeYap={handleOdemeYap}
+              exportFiltersMeta={{ ...exportFiltersBase, rapor_adi: "Geciken Taksitler" }}
+            />
+          )}
+          {tab === "yaklasan" && (
+            <YaklasanVadelerTab
+              taksitler={yaklasanVadeler}
+              onOdemeYap={handleOdemeYap}
+              exportFiltersMeta={{ ...exportFiltersBase, rapor_adi: "Yaklaşan Vadeler" }}
+            />
+          )}
+          {tab === "odemeler" && (
+            <SonOdemelerTab
+              odemeler={sonOdemeler}
+              exportFiltersMeta={{ ...exportFiltersBase, rapor_adi: "Son Ödemeler" }}
+            />
+          )}
         </>
       )}
       </div>
@@ -275,8 +316,17 @@ function odenebilirTaksitler(items: GiderTaksit[]): GiderTaksit[] {
 }
 
 /* ═══ Geciken Taksitler Tab ═══ */
-function GecikenTaksitlerTab({ taksitler, onOdemeYap }: { taksitler: GiderTaksit[]; onOdemeYap: (t: GiderTaksit) => void }) {
+function GecikenTaksitlerTab({
+  taksitler,
+  onOdemeYap,
+  exportFiltersMeta,
+}: {
+  taksitler: GiderTaksit[];
+  onOdemeYap: (t: GiderTaksit) => void;
+  exportFiltersMeta: Record<string, unknown>;
+}) {
   const rows = odenebilirTaksitler(taksitler);
+  const exportRows = buildGecikenExportRows(taksitler);
   if (rows.length === 0) {
     return (
       <div className="card-modern">
@@ -302,6 +352,13 @@ function GecikenTaksitlerTab({ taksitler, onOdemeYap }: { taksitler: GiderTaksit
         </h3>
         <div className="card-modern-header-actions">
           <span className="badge-modern danger">Toplam: {fmt(rows.reduce((a, t) => a + Number(t.kalan_tutar), 0))}</span>
+          <FinansRowsExportMenu
+            title="Geciken Taksitler"
+            columns={[...GECIKEN_EXPORT_COLUMNS]}
+            rows={exportRows}
+            filtersMeta={exportFiltersMeta}
+            filenamePrefix="geciken-taksitler"
+          />
         </div>
       </div>
       <div className="card-modern-body">
@@ -376,8 +433,17 @@ function GecikenTaksitlerTab({ taksitler, onOdemeYap }: { taksitler: GiderTaksit
 }
 
 /* ═══ Yaklaşan Vadeler Tab ═══ */
-function YaklasanVadelerTab({ taksitler, onOdemeYap }: { taksitler: GiderTaksit[]; onOdemeYap: (t: GiderTaksit) => void }) {
+function YaklasanVadelerTab({
+  taksitler,
+  onOdemeYap,
+  exportFiltersMeta,
+}: {
+  taksitler: GiderTaksit[];
+  onOdemeYap: (t: GiderTaksit) => void;
+  exportFiltersMeta: Record<string, unknown>;
+}) {
   const rows = odenebilirTaksitler(taksitler);
+  const exportRows = buildYaklasanExportRows(taksitler);
   if (rows.length === 0) {
     return (
       <div className="card-modern">
@@ -403,6 +469,13 @@ function YaklasanVadelerTab({ taksitler, onOdemeYap }: { taksitler: GiderTaksit[
         </h3>
         <div className="card-modern-header-actions">
           <span className="badge-modern warning">Toplam: {fmt(rows.reduce((a, t) => a + Number(t.kalan_tutar), 0))}</span>
+          <FinansRowsExportMenu
+            title="Yaklaşan Vadeler"
+            columns={[...YAKLASAN_EXPORT_COLUMNS]}
+            rows={exportRows}
+            filtersMeta={exportFiltersMeta}
+            filenamePrefix="yaklasan-vadeler"
+          />
         </div>
       </div>
       <div className="card-modern-body">
@@ -473,7 +546,14 @@ function YaklasanVadelerTab({ taksitler, onOdemeYap }: { taksitler: GiderTaksit[
 }
 
 /* ═══ Son Ödemeler Tab ═══ */
-function SonOdemelerTab({ odemeler }: { odemeler: GiderOdeme[] }) {
+function SonOdemelerTab({
+  odemeler,
+  exportFiltersMeta,
+}: {
+  odemeler: GiderOdeme[];
+  exportFiltersMeta: Record<string, unknown>;
+}) {
+  const exportRows = buildSonOdemeExportRows(odemeler);
   if (odemeler.length === 0) {
     return (
       <div className="card-modern">
@@ -497,6 +577,13 @@ function SonOdemelerTab({ odemeler }: { odemeler: GiderOdeme[] }) {
         </h3>
         <div className="card-modern-header-actions">
           <span className="badge-modern success">Toplam: {fmt(odemeler.reduce((a, o) => a + Number(o.tutar), 0))}</span>
+          <FinansRowsExportMenu
+            title="Son Ödemeler"
+            columns={[...SON_ODEME_EXPORT_COLUMNS]}
+            rows={exportRows}
+            filtersMeta={exportFiltersMeta}
+            filenamePrefix="son-odemeler"
+          />
         </div>
       </div>
       <div className="card-modern-body">

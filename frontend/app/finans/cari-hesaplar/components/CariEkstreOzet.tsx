@@ -120,13 +120,13 @@ export default function CariEkstreOzet({
     <div className="cari-ekstre-ozet">
       <div className="cari-ekstre-ozet__header">
         <div>
-          <h4>Cari Özet Raporu</h4>
+          <h4>Cari Ekstre Raporu</h4>
           {tarihAraligi && (
             <span className="cari-ekstre-ozet__range">Tarih Aralığı: {tarihAraligi}</span>
           )}
         </div>
         <span className="cari-ekstre-ozet__hint">
-          Ekstre hareketlerinin üstünde cari bakiye ve vade durumu
+          Alacak/borç özeti — alttaki &quot;Ekstre Raporu&quot; ile PDF indirebilirsiniz
         </span>
       </div>
       <div className="cari-ekstre-ozet__grid">

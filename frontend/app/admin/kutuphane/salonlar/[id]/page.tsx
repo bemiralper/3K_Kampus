@@ -41,6 +41,7 @@ import {
   weeklyTableMinWidth,
   type WeekDayBlock,
 } from '@/lib/yoklama-sheet-print';
+import { buildSeatStudentListPrintHtml, openKutuphanePrintWindow } from '@/lib/kutuphane-list-print';
 import '@/components/kutuphane/yoklama/yoklama-sheet.css';
 
 /* ════════════════════════════════════════════════════════════
@@ -186,6 +187,7 @@ const tdStyle: React.CSSProperties = {
    ════════════════════════════════════════════════════════════ */
 export default function SalonDetayPage() {
   const { href, isCoachMode } = useKutuphanePath();
+  const { activeKurum } = useKurum();
   const params = useParams();
   const router = useRouter();
   const libraryId = params.id as string;
@@ -481,6 +483,9 @@ export default function SalonDetayPage() {
           {activeTab === 'masalar' && (
             <MasalarTab
               seats={seats}
+              salonAdi={library.ad}
+              subeAdi={library.sube_adi}
+              kurumBranding={activeKurum}
               showBulkForm={showBulkSeatForm}
               onToggleBulkForm={() => setShowBulkSeatForm(p => !p)}
               onBulkCreate={handleBulkCreateSeats}
@@ -496,7 +501,15 @@ export default function SalonDetayPage() {
               librarySubeAdi={library.sube_adi}
             />
           )}
-          {activeTab === 'atamalar' && <AtamalarTab seatAssignments={seatAssignments} onEnd={handleEndSeatAssignment} />}
+          {activeTab === 'atamalar' && (
+            <AtamalarTab
+              seatAssignments={seatAssignments}
+              salonAdi={library.ad}
+              subeAdi={library.sube_adi}
+              kurumBranding={activeKurum}
+              onEnd={handleEndSeatAssignment}
+            />
+          )}
           {activeTab === 'loglar' && <LoglarTab logs={auditLogs} />}
         </>
       )}
@@ -633,8 +646,11 @@ const saveBtnStyle: React.CSSProperties = {
 /* ════════════════════════════════════════════════════════════
    TAB: MASALAR
    ════════════════════════════════════════════════════════════ */
-function MasalarTab({ seats, showBulkForm, onToggleBulkForm, onBulkCreate, onStatusChange, readOnly = false }: {
+function MasalarTab({ seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onToggleBulkForm, onBulkCreate, onStatusChange, readOnly = false }: {
   seats: Seat[];
+  salonAdi: string;
+  subeAdi?: string;
+  kurumBranding?: import('@/lib/contexts/KurumContext').Kurum | null;
   showBulkForm: boolean;
   onToggleBulkForm: () => void;
   onBulkCreate: (e: React.FormEvent<HTMLFormElement>) => void;
@@ -656,6 +672,28 @@ function MasalarTab({ seats, showBulkForm, onToggleBulkForm, onBulkCreate, onSta
     });
     return s;
   }, [seats]);
+
+  const handlePrintList = () => {
+    const rows = seats
+      .filter((seat) => seat.atanan_ogrenci)
+      .map((seat) => ({
+        no: seat.masa_no || seat.id,
+        ogrenci: seat.atanan_ogrenci || '',
+        tip: seat.masa_tipi,
+        durum: SEAT_STATUS_LABELS[seat.durum] || seat.durum,
+      }));
+    const html = buildSeatStudentListPrintHtml({
+      meta: {
+        title: 'Masa Öğrenci Listesi',
+        subtitle: salonAdi,
+        subeAdi,
+        kurumBranding,
+      },
+      rows,
+      salonAdi,
+    });
+    openKutuphanePrintWindow(html);
+  };
 
   return (
     <div>
@@ -681,6 +719,12 @@ function MasalarTab({ seats, showBulkForm, onToggleBulkForm, onBulkCreate, onSta
             </select>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={handlePrintList} style={{
+              padding: '6px 14px', backgroundColor: '#f0fdf4', color: '#059669',
+              borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+            }}>
+              📄 PDF Listesi
+            </button>
             <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
               {(['grid', 'table'] as const).map(m => (
                 <button key={m} onClick={() => setViewMode(m)} style={{
@@ -1996,21 +2040,53 @@ function YoklamaTab({
 /* ════════════════════════════════════════════════════════════
    TAB: ATAMALAR
    ════════════════════════════════════════════════════════════ */
-function AtamalarTab({ seatAssignments, onEnd }: {
+function AtamalarTab({ seatAssignments, salonAdi, subeAdi, kurumBranding, onEnd }: {
   seatAssignments: SeatAssignment[];
+  salonAdi: string;
+  subeAdi?: string;
+  kurumBranding?: import('@/lib/contexts/KurumContext').Kurum | null;
   onEnd: (id: string) => void;
 }) {
   const { href } = useKutuphanePath();
   const activeAssignments = seatAssignments.filter(a => a.durum === 'ACTIVE');
   const pastAssignments = seatAssignments.filter(a => a.durum !== 'ACTIVE');
 
+  const handlePrintList = () => {
+    const rows = seatAssignments.map((a) => ({
+      no: a.masa_no || a.masa_id,
+      ogrenci: a.ogrenci_adi || `#${a.ogrenci_id}`,
+      tip: a.atama_tipi,
+      baslangic: new Date(a.baslangic_tarihi).toLocaleDateString('tr-TR'),
+      durum: ASSIGNMENT_STATUS_LABELS[a.durum] || a.durum,
+    }));
+    const html = buildSeatStudentListPrintHtml({
+      meta: {
+        title: 'Masa Atama Listesi',
+        subtitle: salonAdi,
+        subeAdi,
+        kurumBranding,
+      },
+      rows,
+      salonAdi,
+    });
+    openKutuphanePrintWindow(html);
+  };
+
   return (
     <div>
       <Card style={{ padding: '16px 20px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
-          <span style={{ fontWeight: 600, color: '#374151' }}>{seatAssignments.length} toplam atama</span>
-          <span style={{ color: '#059669' }}>● {activeAssignments.length} aktif</span>
-          <span style={{ color: '#6b7280' }}>● {pastAssignments.length} geçmiş</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
+            <span style={{ fontWeight: 600, color: '#374151' }}>{seatAssignments.length} toplam atama</span>
+            <span style={{ color: '#059669' }}>● {activeAssignments.length} aktif</span>
+            <span style={{ color: '#6b7280' }}>● {pastAssignments.length} geçmiş</span>
+          </div>
+          <button onClick={handlePrintList} style={{
+            padding: '6px 14px', backgroundColor: '#f0fdf4', color: '#059669',
+            borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+          }}>
+            📄 PDF Listesi
+          </button>
         </div>
       </Card>
 

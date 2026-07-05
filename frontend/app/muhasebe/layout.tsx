@@ -23,6 +23,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/muhasebe/personel/gorevlendirmeler": "Görevlendirmeler",
   "/muhasebe/gorevler": "Görevler",
   "/muhasebe/takvim": "Takvim",
+  "/muhasebe/profil": "Profilim",
 };
 
 function resolvePageTitle(pathname: string): string {

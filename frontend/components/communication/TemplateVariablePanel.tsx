@@ -19,8 +19,10 @@ export default function TemplateVariablePanel({
     new Set(TEMPLATE_VARIABLES.map((v) => v.group || "genel")),
   );
   const orderedGroups = category === "haftalik_odev"
-    ? ["odev", "genel", "yoklama", "odeme"].filter((g) => groups.includes(g))
-    : ["genel", "odev", "yoklama", "odeme"].filter((g) => groups.includes(g));
+    ? ["odev", "genel", "yoklama", "finans", "odeme"].filter((g) => groups.includes(g))
+    : category === "odeme_gecikme"
+      ? ["finans", "odeme", "genel", "yoklama", "odev"].filter((g) => groups.includes(g))
+      : ["genel", "finans", "odeme", "odev", "yoklama"].filter((g) => groups.includes(g));
 
   return (
     <div className="comm-sablon-var-panel">

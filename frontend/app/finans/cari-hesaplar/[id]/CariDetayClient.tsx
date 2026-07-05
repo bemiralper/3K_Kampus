@@ -35,6 +35,7 @@ import {
   computeRaporTotalsFromOzet,
   defaultRaporBaslangic,
   defaultRaporBitis,
+  ekstrePeriodExportMeta,
   formatReportDateRange,
 } from "../components/cari-report-export-meta";
 import CariQuickStats from "../components/CariQuickStats";
@@ -55,6 +56,7 @@ import {
   resolveFilterLabel,
 } from "../components/cari-tab-filters";
 import { buildEkstreExportRows } from "../components/CariEkstreList";
+import { buildEkstreExportColumns } from "../components/cari-ekstre-table-columns";
 import { buildGiderExportRows } from "../components/CariGiderTable";
 import { buildGelirExportRows } from "../components/CariGelirTable";
 import { buildOdemeExportRows } from "../components/CariOdemeTable";
@@ -381,12 +383,20 @@ export default function CariDetayClient({
     const tarihAraligi = formatReportDateRange(baslangic, bitis);
     const hesapTuruLabel =
       HESAP_TURLERI.find((t) => t.value === hesap?.hesap_turu)?.label || "Tümü";
+    const kategoriAd = resolveFilterLabel(
+      [...gelirKategoriOptions, ...giderKategoriOptions],
+      tabFilters.kategoriId,
+    );
+    const odemeAd = resolveFilterLabel(odemeYontemleriList, tabFilters.odemeYontemiId);
 
     const base: Record<string, unknown> = {
       kurum_id: kurumId,
       sube_id: activeSube?.id,
       cari_unvan: hesap?.gorunen_ad || hesap?.unvan || "",
       arama: tabFilters.arama || undefined,
+      arama_filtresi: tabFilters.arama || "Tümü",
+      kategori_filtresi: kategoriAd || "Tümü",
+      odeme_yontemi_filtresi: odemeAd || "Tümü",
       baslangic,
       bitis,
       tarih_araligi: tarihAraligi,
@@ -396,18 +406,40 @@ export default function CariDetayClient({
       para_birimi: "TL",
     };
 
-    if (activeTab === "ekstre" && cariOzet) {
+    if (activeTab === "ekstre") {
+      const periodMeta = ekstrePeriodExportMeta(filteredHareketler);
+      const ozetMeta = cariOzet ? cariEkstreOzetExportMeta(cariOzet) : {};
       return {
         ...base,
-        ...cariEkstreOzetExportMeta(cariOzet),
+        ...ozetMeta,
+        ...periodMeta,
         report_kind: "cari_ekstre",
-        rapor_adi: "Cari Özet Raporu",
-        report_totals: computeRaporTotalsFromOzet(cariOzet),
+        rapor_adi: "Cari Ekstre Raporu",
+        report_totals: cariOzet
+          ? {
+              ...computeRaporTotalsFromOzet(cariOzet),
+              donem_toplam_borc: periodMeta.donem_toplam_borc,
+              donem_toplam_alacak: periodMeta.donem_toplam_alacak,
+              donem_hareket_sayisi: periodMeta.filtrelenmis_hareket_sayisi,
+            }
+          : undefined,
       };
     }
 
     return base;
-  }, [kurumId, activeSube?.id, hesap, tabFilters, activeTab, cariOzet, user]);
+  }, [
+    kurumId,
+    activeSube?.id,
+    hesap,
+    tabFilters,
+    activeTab,
+    cariOzet,
+    user,
+    filteredHareketler,
+    gelirKategoriOptions,
+    giderKategoriOptions,
+    odemeYontemleriList,
+  ]);
 
   const exportRowsForTab = useMemo(() => {
     if (activeTab === "ekstre") return buildEkstreExportRows(filteredHareketler);
@@ -419,7 +451,7 @@ export default function CariDetayClient({
 
   const exportTitleForTab =
     activeTab === "ekstre"
-      ? `Cari Özet Raporu — ${hesap?.gorunen_ad || ""}`
+      ? `Cari Ekstre Raporu — ${hesap?.gorunen_ad || ""}`
       : activeTab === "giderler"
         ? `Gider Kayıtları — ${hesap?.gorunen_ad || ""}`
         : activeTab === "gelirler"
@@ -427,6 +459,11 @@ export default function CariDetayClient({
           : activeTab === "odemeler"
             ? `Ödeme Kayıtları — ${hesap?.gorunen_ad || ""}`
             : "Cari Rapor";
+
+  const ekstreFallbackColumns = useMemo(
+    () => (hesap ? buildEkstreExportColumns(hesap.hesap_turu) : []),
+    [hesap?.hesap_turu],
+  );
 
   const tabToolbarProps = {
     filters: tabFilters,
@@ -438,6 +475,13 @@ export default function CariDetayClient({
     exportFilenamePrefix: `cari-${activeTab}-${cariHesapId}`,
     filtersMeta: exportFiltersMeta,
     odemeYontemleri: odemeYontemleriList,
+    ...(activeTab === "ekstre"
+      ? {
+          fallbackExportColumns: ekstreFallbackColumns,
+          allowEmptyRowsExport: !!cariOzet || hareketler.length > 0,
+          exportLabel: "Ekstre Raporu (PDF/Excel)",
+        }
+      : {}),
   };
 
   useEffect(() => {
@@ -1700,12 +1744,10 @@ export default function CariDetayClient({
                 tarihBaslangic={tabFilters.baslangic || defaultRaporBaslangic()}
                 tarihBitis={tabFilters.bitis || defaultRaporBitis()}
               />
-              {(hareketler.length > 0 || cariOzet || tabFilters.arama || tabFilters.baslangic || tabFilters.bitis) && (
-                <CariTabToolbar
-                  {...tabToolbarProps}
-                  kategoriler={[...gelirKategoriOptions, ...giderKategoriOptions]}
-                />
-              )}
+              <CariTabToolbar
+                {...tabToolbarProps}
+                kategoriler={[...gelirKategoriOptions, ...giderKategoriOptions]}
+              />
               {hareketLoading ? (
                 <div style={{ textAlign: "center", padding: 48 }}>
                   <div className="loading-spinner"></div>
@@ -1719,38 +1761,16 @@ export default function CariDetayClient({
                     Hareketler yükleniyor...
                   </p>
                 </div>
-              ) : filteredHareketler.length === 0 ? (
-                <div className="empty-state-modern">
-                  <div className="empty-icon">
-                    <svg
-                      width="48"
-                      height="48"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    >
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <path d="M14 2v6h6" />
-                    </svg>
-                  </div>
-                  <h4>{hareketler.length === 0 ? "Henüz Cari Hareket Yok" : "Filtreye Uygun Hareket Yok"}</h4>
-                  <p>
-                    {hareketler.length === 0
-                      ? islemYetki.satim && !islemYetki.alim
-                        ? "Bu müşteri carisine gelir kaydı ekleyerek başlayın."
-                        : islemYetki.alim && !islemYetki.satim
-                          ? "Gider ekleyerek veya ödeme yaparak başlayın."
-                          : "Gelir veya gider kaydı ekleyerek başlayın."
-                      : "Farklı filtre deneyin veya filtreleri temizleyin."}
-                  </p>
-                </div>
               ) : (
                 <CariEkstreList
                   hareketler={filteredHareketler}
                   hesapTuru={hesap.hesap_turu}
                   onColumnsReady={(api) => setColumnsApi(toCariTableColumnsApi(api))}
-                  emptyMessage="Filtreye uygun hareket bulunamadı"
+                  emptyMessage={
+                    hareketler.length === 0
+                      ? "Henüz cari hareket yok"
+                      : "Filtreye uygun hareket bulunamadı"
+                  }
                 />
               )}
             </>

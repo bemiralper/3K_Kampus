@@ -38,6 +38,8 @@ export type SiteSettings = {
   youtube_video_id?: string;
   harita_embed_url?: string;
   footer_copyright?: string;
+  footer_baslik?: string;
+  footer_aciklama?: string;
   footer_marka_metni?: string;
   seo_baslik?: string;
   seo_aciklama?: string;

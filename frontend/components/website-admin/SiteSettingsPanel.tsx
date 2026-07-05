@@ -171,6 +171,23 @@ export default function SiteSettingsPanel({ settings, onChange, onSave, saving }
             <WamInput label="Footer Telif Metni" value={settings.footer_copyright || ''} onChange={e => set('footer_copyright', e.target.value)} />
           </div>
           <WamInput
+            label="Footer Marka Başlığı"
+            hint="Footer sol üstteki büyük başlık (kurum görünen adından bağımsız düzenlenebilir)"
+            full
+            value={settings.footer_baslik || ''}
+            onChange={e => set('footer_baslik', e.target.value)}
+            placeholder="3K Kampüs"
+          />
+          <WamTextarea
+            label="Footer Marka Açıklaması"
+            hint="Başlığın altındaki kısa tanıtım metni"
+            full
+            value={settings.footer_aciklama || ''}
+            onChange={e => set('footer_aciklama', e.target.value)}
+            rows={3}
+            placeholder="LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz."
+          />
+          <WamInput
             label="Footer Marka Bildirimi"
             hint="Anasayfa footer altında görünen marka / ticari unvan metni"
             full

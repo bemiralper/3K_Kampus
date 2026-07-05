@@ -283,8 +283,10 @@ class FinansExpansionTest(TestCase):
         recipient = response.data['recipients'][0]
         self.assertIn('rendered_body', recipient)
         self.assertEqual(recipient['veli_id'], self.veli.id)
-        self.assertEqual(recipient['taksit_id'], self.overdue_taksit.id)
+        self.assertIn('taksit_ids', recipient)
+        self.assertIn(self.overdue_taksit.id, recipient['taksit_ids'])
         self.assertIn('already_sent_24h', recipient)
+        self.assertIn('available_veliler', recipient)
 
     def test_build_overdue_context_variables(self):
         ctx = build_overdue_context(self.overdue_taksit, toplam_gecikmis=5000)

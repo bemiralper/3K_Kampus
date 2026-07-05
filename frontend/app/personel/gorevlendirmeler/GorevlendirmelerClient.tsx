@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { usePersonelPath } from "@/components/personel/PersonelPathProvider";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
@@ -426,7 +427,13 @@ export default function GorevlendirmelerClient() {
                     {assignmentIcon}
                   </div>
                   <div className="gv-cell-info">
-                    <span className="gv-cell-primary">{item.personel_ad}</span>
+                    <Link
+                      href={`${personelHomeHref}/${item.personel_id}`}
+                      className="gv-cell-primary"
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      {item.personel_ad}
+                    </Link>
                     <span className="gv-cell-secondary">{item.gorev_sube_ad || "-"}</span>
                   </div>
                 </div>

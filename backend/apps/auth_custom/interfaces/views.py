@@ -12,6 +12,8 @@ import json
 
 from shared.permissions import user_permission_codes
 
+User = get_user_model()
+
 
 def _resolve_login_username(raw: str) -> str:
     """
@@ -174,23 +176,80 @@ def _build_user_data(user):
 
 
 @ensure_csrf_cookie
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "PATCH"])
 def me_api(request):
     """
-    Get current user info — rol, personel, koç bilgisi dahil
+    Get / update current user info — rol, personel, koç bilgisi dahil.
+    PATCH: username, email, first_name, last_name (+ personel telefon alanları).
     """
-    if request.user.is_authenticated:
-        return JsonResponse({
-            'success': True,
-            'authenticated': True,
-            'user': _build_user_data(request.user),
-        })
-    else:
+    if not request.user.is_authenticated:
         return JsonResponse({
             'success': True,
             'authenticated': False,
             'user': None
         })
+
+    if request.method == 'PATCH':
+        return _update_profile(request)
+
+    return JsonResponse({
+        'success': True,
+        'authenticated': True,
+        'user': _build_user_data(request.user),
+    })
+
+
+def _update_profile(request):
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı'}, status=400)
+
+    user = request.user
+    update_user_fields = []
+
+    username = (data.get('username') or '').strip()
+    if username and username != user.username:
+        if User.objects.filter(username=username).exclude(pk=user.pk).exists():
+            return JsonResponse({'success': False, 'error': 'Bu kullanıcı adı zaten kullanılıyor.'}, status=400)
+        user.username = username
+        update_user_fields.append('username')
+
+    if 'email' in data:
+        user.email = (data.get('email') or '').strip()
+        update_user_fields.append('email')
+    if 'first_name' in data:
+        user.first_name = (data.get('first_name') or '').strip()
+        update_user_fields.append('first_name')
+    if 'last_name' in data:
+        user.last_name = (data.get('last_name') or '').strip()
+        update_user_fields.append('last_name')
+
+    if update_user_fields:
+        user.save(update_fields=update_user_fields)
+
+    personel_fields = {}
+    for field in ('telefon', 'cep_telefon'):
+        if field in data:
+            personel_fields[field] = (data.get(field) or '').strip()
+    if 'personel_email' in data:
+        personel_fields['email'] = (data.get('personel_email') or '').strip()
+
+    if personel_fields:
+        try:
+            personel = user.personel
+            if personel:
+                for k, v in personel_fields.items():
+                    setattr(personel, k, v)
+                personel.save(update_fields=list(personel_fields.keys()))
+        except Exception:
+            pass
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Profil güncellendi.',
+        'user': _build_user_data(user),
+    })
 
 
 @csrf_exempt
