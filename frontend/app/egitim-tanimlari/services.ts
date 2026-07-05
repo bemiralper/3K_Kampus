@@ -74,23 +74,25 @@ export async function createOda(formData: OdaFormData) {
     throw new Error('Oda adı zorunludur');
   }
 
-  const subeId = formData.sube_id ? Number(formData.sube_id) : undefined;
-  if (!Number.isFinite(subeId) || subeId <= 0) {
-    throw new Error('Geçerli bir şube seçin');
+  const payload: Record<string, unknown> = {
+    ad: formData.ad.trim(),
+    kapasite: parseInt(formData.kapasite, 10) || 30,
+    oda_turu: formData.oda_turu,
+    aciklama: formData.aciklama,
+    aktif_mi: formData.aktif_mi,
+  };
+  if (formData.sube_id) {
+    const subeId = Number(formData.sube_id);
+    if (Number.isFinite(subeId) && subeId > 0) {
+      payload.sube_id = subeId;
+    }
   }
 
   const res = await fetch(`${API_BASE}/odalar/api/create/`, {
     method: 'POST',
     headers: getContextHeaders(),
     credentials: 'include',
-    body: JSON.stringify({
-      ...(subeId ? { sube_id: subeId } : {}),
-      ad: formData.ad.trim(),
-      kapasite: parseInt(formData.kapasite, 10) || 30,
-      oda_turu: formData.oda_turu,
-      aciklama: formData.aciklama,
-      aktif_mi: formData.aktif_mi,
-    }),
+    body: JSON.stringify(payload),
   });
 
   return parseJsonResponse(res, 'Oda oluşturulamadı');
