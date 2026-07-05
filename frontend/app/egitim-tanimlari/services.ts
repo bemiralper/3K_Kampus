@@ -70,14 +70,11 @@ export async function getOdaTurleri(): Promise<OdaTur[]> {
 }
 
 export async function createOda(formData: OdaFormData) {
-  if (!formData.sube_id) {
-    throw new Error('Şube seçimi zorunludur. Önce kurum modülünden şube tanımlayın.');
-  }
   if (!formData.ad?.trim()) {
     throw new Error('Oda adı zorunludur');
   }
 
-  const subeId = Number(formData.sube_id);
+  const subeId = formData.sube_id ? Number(formData.sube_id) : undefined;
   if (!Number.isFinite(subeId) || subeId <= 0) {
     throw new Error('Geçerli bir şube seçin');
   }
@@ -87,7 +84,7 @@ export async function createOda(formData: OdaFormData) {
     headers: getContextHeaders(),
     credentials: 'include',
     body: JSON.stringify({
-      sube_id: subeId,
+      ...(subeId ? { sube_id: subeId } : {}),
       ad: formData.ad.trim(),
       kapasite: parseInt(formData.kapasite, 10) || 30,
       oda_turu: formData.oda_turu,

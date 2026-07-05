@@ -8,7 +8,12 @@ from django.views.decorators.http import require_http_methods
 
 from apps.kurum.domain.models import Kurum
 from apps.kurum.branding import normalize_map_embed_url, build_map_embed_from_address
-from apps.website.seed_defaults import LANDING_KURUM_KOD, seed_website_defaults, ensure_website_defaults, get_or_create_landing_kurum
+from apps.website.seed_defaults import (
+    LANDING_KURUM_KOD,
+    seed_website_defaults,
+    ensure_website_defaults,
+    resolve_landing_kurum,
+)
 from apps.website.models import (
     SiteSettings, SiteSocialLink, SiteFooterLink, HeroSlide, Duyuru,
     SinavTakvim, NedenKart, BasariIstatistik, OgrenciYorumu, SSS,
@@ -80,9 +85,7 @@ def _upload_image(request, instance, field_name, file_key, max_mb=5):
 def api_public_landing(request, kod):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
-    kurum = _get_kurum_by_kod(kod)
-    if not kurum and kod.strip().upper() == LANDING_KURUM_KOD:
-        kurum, _ = get_or_create_landing_kurum()
+    kurum = _get_kurum_by_kod(kod) or resolve_landing_kurum(kod)
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
     ensure_website_defaults(kurum)
@@ -139,26 +142,33 @@ def api_public_iletisim(request, kod):
 # ── Admin helpers ──
 
 def _admin_kurum(request):
-    """Kurumsal site yönetimi — anasayfanın bağlı olduğu kurum (varsayılan: 3K)."""
+    """Kurumsal site yönetimi — oturumdaki veya mevcut kurum; otomatik oluşturma yok."""
     err = _require_auth(request)
     if err:
         return None, err
 
-    kurum_kod = (request.GET.get('kurum_kod') or LANDING_KURUM_KOD).strip()
-    kurum = Kurum.objects.filter(kod__iexact=kurum_kod).first()
+    from shared.context import get_secili_kurum_id
+
+    kurum_id = get_secili_kurum_id(request)
+    if kurum_id:
+        kurum = Kurum.objects.filter(id=kurum_id, aktif_mi=True).first()
+        if kurum:
+            return kurum, None
+
+    kurum_kod = (request.GET.get('kurum_kod') or '').strip()
+    if kurum_kod:
+        kurum = _get_kurum_by_kod(kurum_kod)
+        if kurum:
+            return kurum, None
+
+    kurum = resolve_landing_kurum(LANDING_KURUM_KOD)
     if kurum:
-        if not kurum.aktif_mi:
-            kurum.aktif_mi = True
-            kurum.save(update_fields=['aktif_mi'])
         return kurum, None
 
-    kurum, _ = get_or_create_landing_kurum_from_seed()
-    return kurum, None
-
-
-def get_or_create_landing_kurum_from_seed():
-    from apps.website.seed_defaults import get_or_create_landing_kurum
-    return get_or_create_landing_kurum()
+    return None, JsonResponse({
+        'success': False,
+        'error': 'Kurum bulunamadı. Önce Kurum Yönetimi üzerinden kurum tanımlayın.',
+    }, status=404)
 
 
 def _apply_model_update(obj, data, updatable_fields):

@@ -447,11 +447,23 @@ export function KurumProvider({ children }: { children: ReactNode }) {
     if (!result) return;
     setActiveKurumState(prev => {
       if (!prev) return prev;
-      return result.kurumlar.find((k: Kurum) => k.id === prev.id) || prev;
+      const match = result.kurumlar.find((k: Kurum) => k.id === prev.id);
+      if (match) return match;
+      const fallback =
+        result.kurumlar.find((k: Kurum) => k.aktif_mi) || result.kurumlar[0] || null;
+      if (fallback) {
+        localStorage.setItem(STORAGE_KEYS.activeKurum, fallback.id.toString());
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.activeKurum);
+      }
+      return fallback;
     });
     setActiveSubeState(prev => {
       if (!prev) return prev;
-      return result.subeler.find((s: Sube) => s.id === prev.id) || prev;
+      const match = result.subeler.find((s: Sube) => s.id === prev.id);
+      if (match) return match;
+      localStorage.removeItem(STORAGE_KEYS.activeSube);
+      return null;
     });
   }, [fetchData]);
 

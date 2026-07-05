@@ -36,6 +36,26 @@ def _kurum_save_error_response(exc: Exception, data: dict | None = None) -> Json
     return JsonResponse({'success': False, 'error': 'Bu kayıt zaten mevcut (benzersiz alan çakışması).'}, status=400)
 
 
+def _resolve_kurum_id_for_sube(data: dict) -> tuple[int | None, JsonResponse | None]:
+    """Şube kaydı için kurum_id doğrula; yoksa Türkçe hata döndür."""
+    raw = data.get('kurum_id')
+    if raw in (None, ''):
+        return None, JsonResponse({'success': False, 'error': 'Kurum seçimi zorunludur.'}, status=400)
+    try:
+        kurum_id = int(raw)
+    except (TypeError, ValueError):
+        return None, JsonResponse({'success': False, 'error': 'Geçersiz kurum seçimi.'}, status=400)
+    if not Kurum.objects.filter(pk=kurum_id).exists():
+        return None, JsonResponse({
+            'success': False,
+            'error': (
+                f'Seçilen kurum (ID {kurum_id}) bulunamadı. '
+                'Sayfayı yenileyip geçerli bir kurum seçin.'
+            ),
+        }, status=400)
+    return kurum_id, None
+
+
 @login_required
 def kurum_tanimlar(request):
     """Kurum tanımları ana sayfa"""
@@ -323,8 +343,11 @@ def api_sube_list_create(request):
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
+            kurum_id, err = _resolve_kurum_id_for_sube(data)
+            if err:
+                return err
             sube = Sube.objects.create(
-                kurum_id=data.get('kurum_id'),
+                kurum_id=kurum_id,
                 ad=data.get('ad'),
                 kod=data.get('kod') or None,
             )
@@ -351,6 +374,10 @@ def api_sube_detail(request, pk):
     elif request.method == 'PUT':
         try:
             data = json.loads(request.body)
+            if 'kurum_id' in data:
+                kurum_id, err = _resolve_kurum_id_for_sube(data)
+                if err:
+                    return err
             apply_sube_fields(sube, data)
             sube.save()
             return JsonResponse({

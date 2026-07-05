@@ -227,8 +227,16 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
   // Open drawer for create
   const handleOpenCreate = () => {
     resetForms();
-    if (activeTab === "subeler" && activeKurum) {
-      setSubeForm({ ...DEFAULT_SUBE_FORM, kurum_id: String(activeKurum.id) });
+    if (activeTab === "subeler") {
+      const kurumlar = data.kurumlar || [];
+      const matchedKurum =
+        activeKurum && kurumlar.some((k) => k.id === activeKurum.id)
+          ? activeKurum
+          : kurumlar[0] ?? null;
+      setSubeForm({
+        ...DEFAULT_SUBE_FORM,
+        kurum_id: matchedKurum ? String(matchedKurum.id) : "",
+      });
     }
     setDrawerMode("create");
     setShowDrawer(true);
@@ -534,18 +542,10 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
   const kurumlarCount = data.kurumlar?.length ?? 0;
   const subelerCount = subelerForActiveKurum.length;
 
-  const kurumOptions = useMemo(() => {
-    const list = [...(data.kurumlar || [])];
-    if (activeKurum && !list.some((k) => k.id === activeKurum.id)) {
-      list.unshift({
-        id: activeKurum.id,
-        ad: activeKurum.ad,
-        kod: activeKurum.kod,
-        aktif_mi: activeKurum.aktif_mi,
-      });
-    }
-    return list;
-  }, [data.kurumlar, activeKurum]);
+  const kurumOptions = useMemo(
+    () => (data.kurumlar || []).map((k) => ({ id: k.id, ad: k.ad })),
+    [data.kurumlar],
+  );
   const egitimYillariCount = data.egitim_yillari?.length ?? 0;
   const kayitTurleriCount = kayitTurleri.filter((item) => item.is_active).length;
   const aktifYil = data.egitim_yillari?.find(y => y.aktif_mi);

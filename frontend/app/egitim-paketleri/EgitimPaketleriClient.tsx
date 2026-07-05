@@ -3,10 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { getContextHeaders, resolveApiUrl } from "@/lib/api";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-
 function paketFetch(path: string, init?: RequestInit) {
-  const url = path.startsWith("http") ? path : resolveApiUrl(path.replace(BACKEND_URL, ""));
+  const url = resolveApiUrl(path.startsWith("/") ? path : `/${path}`);
   return fetch(url, {
     credentials: "include",
     ...init,
@@ -236,7 +234,7 @@ export default function EgitimPaketleriClient() {
   // Fetch data functions
   const fetchGrupDersleri = useCallback(async () => {
     try {
-      const res = await paketFetch(`${BACKEND_URL}/egitim-paketleri/api/grup-dersleri/`, {
+      const res = await paketFetch(`/egitim-paketleri/api/grup-dersleri/`, {
         credentials: 'include',
       });
       const data = await res.json();
@@ -250,7 +248,7 @@ export default function EgitimPaketleriClient() {
 
   const fetchOzelDersler = useCallback(async () => {
     try {
-      const res = await paketFetch(`${BACKEND_URL}/egitim-paketleri/api/ozel-dersler/`, {
+      const res = await paketFetch(`/egitim-paketleri/api/ozel-dersler/`, {
         credentials: 'include',
       });
       const data = await res.json();
@@ -264,7 +262,7 @@ export default function EgitimPaketleriClient() {
 
   const fetchDenemeler = useCallback(async () => {
     try {
-      const res = await paketFetch(`${BACKEND_URL}/egitim-paketleri/api/denemeler/`, {
+      const res = await paketFetch(`/egitim-paketleri/api/denemeler/`, {
         credentials: 'include',
       });
       const data = await res.json();
@@ -278,7 +276,7 @@ export default function EgitimPaketleriClient() {
 
   const fetchEkHizmetler = useCallback(async () => {
     try {
-      const res = await paketFetch(`${BACKEND_URL}/egitim-paketleri/api/ek-hizmetler/`, {
+      const res = await paketFetch(`/egitim-paketleri/api/ek-hizmetler/`, {
         credentials: 'include',
       });
       const data = await res.json();
@@ -292,15 +290,18 @@ export default function EgitimPaketleriClient() {
 
   const fetchReferansVeriler = useCallback(async () => {
     try {
-      const res = await paketFetch(`${BACKEND_URL}/egitim-paketleri/api/referans-veriler/`, {
+      const res = await paketFetch(`/egitim-paketleri/api/referans-veriler/`, {
         credentials: 'include',
       });
       const data = await res.json();
       if (data.success) {
         setReferansVeriler(data.data);
+      } else {
+        setError(data.error || "Referans veriler (sınıf seviyesi, alan) yüklenemedi.");
       }
     } catch (err) {
       console.error("Referans veriler yüklenemedi:", err);
+      setError("Referans veriler yüklenemedi. Üst menüden şube seçili olduğundan emin olun.");
     }
   }, []);
 
@@ -361,13 +362,13 @@ export default function EgitimPaketleriClient() {
 
     let endpoint = "";
     if (activeTab === "grup_dersleri") {
-      endpoint = `${BACKEND_URL}/egitim-paketleri/api/grup-dersleri/${id}/`;
+      endpoint = `/egitim-paketleri/api/grup-dersleri/${id}/`;
     } else if (activeTab === "ozel_dersler") {
-      endpoint = `${BACKEND_URL}/egitim-paketleri/api/ozel-dersler/${id}/`;
+      endpoint = `/egitim-paketleri/api/ozel-dersler/${id}/`;
     } else if (activeTab === "ek_hizmetler") {
-      endpoint = `${BACKEND_URL}/egitim-paketleri/api/ek-hizmetler/${id}/`;
+      endpoint = `/egitim-paketleri/api/ek-hizmetler/${id}/`;
     } else {
-      endpoint = `${BACKEND_URL}/egitim-paketleri/api/denemeler/${id}/`;
+      endpoint = `/egitim-paketleri/api/denemeler/${id}/`;
     }
 
     try {
@@ -427,8 +428,8 @@ export default function EgitimPaketleriClient() {
 
       if (activeTab === "grup_dersleri") {
         endpoint = drawerMode === "create"
-          ? `${BACKEND_URL}/egitim-paketleri/api/grup-dersleri/`
-          : `${BACKEND_URL}/egitim-paketleri/api/grup-dersleri/${editingId}/`;
+          ? `/egitim-paketleri/api/grup-dersleri/`
+          : `/egitim-paketleri/api/grup-dersleri/${editingId}/`;
         payload = {
           ...payload,
           sinif_seviyeleri_ids: formData.sinif_seviyeleri_ids,
@@ -439,8 +440,8 @@ export default function EgitimPaketleriClient() {
         };
       } else if (activeTab === "ozel_dersler") {
         endpoint = drawerMode === "create"
-          ? `${BACKEND_URL}/egitim-paketleri/api/ozel-dersler/`
-          : `${BACKEND_URL}/egitim-paketleri/api/ozel-dersler/${editingId}/`;
+          ? `/egitim-paketleri/api/ozel-dersler/`
+          : `/egitim-paketleri/api/ozel-dersler/${editingId}/`;
         payload = {
           ...payload,
           sinif_seviyeleri_ids: formData.sinif_seviyeleri_ids,
@@ -449,8 +450,8 @@ export default function EgitimPaketleriClient() {
         };
       } else if (activeTab === "ek_hizmetler") {
         endpoint = drawerMode === "create"
-          ? `${BACKEND_URL}/egitim-paketleri/api/ek-hizmetler/`
-          : `${BACKEND_URL}/egitim-paketleri/api/ek-hizmetler/${editingId}/`;
+          ? `/egitim-paketleri/api/ek-hizmetler/`
+          : `/egitim-paketleri/api/ek-hizmetler/${editingId}/`;
         payload = {
           ...payload,
           hizmet_turu: formData.hizmet_turu,
@@ -461,8 +462,8 @@ export default function EgitimPaketleriClient() {
         };
       } else {
         endpoint = drawerMode === "create"
-          ? `${BACKEND_URL}/egitim-paketleri/api/denemeler/`
-          : `${BACKEND_URL}/egitim-paketleri/api/denemeler/${editingId}/`;
+          ? `/egitim-paketleri/api/denemeler/`
+          : `/egitim-paketleri/api/denemeler/${editingId}/`;
         payload = {
           ...payload,
           deneme_sayisi: parseInt(formData.deneme_sayisi) || 1,
@@ -526,13 +527,13 @@ export default function EgitimPaketleriClient() {
     try {
       let endpoint = "";
       if (activeTab === "grup_dersleri") {
-        endpoint = `${BACKEND_URL}/egitim-paketleri/api/grup-dersleri/${deletingId}/`;
+        endpoint = `/egitim-paketleri/api/grup-dersleri/${deletingId}/`;
       } else if (activeTab === "ozel_dersler") {
-        endpoint = `${BACKEND_URL}/egitim-paketleri/api/ozel-dersler/${deletingId}/`;
+        endpoint = `/egitim-paketleri/api/ozel-dersler/${deletingId}/`;
       } else if (activeTab === "ek_hizmetler") {
-        endpoint = `${BACKEND_URL}/egitim-paketleri/api/ek-hizmetler/${deletingId}/`;
+        endpoint = `/egitim-paketleri/api/ek-hizmetler/${deletingId}/`;
       } else {
-        endpoint = `${BACKEND_URL}/egitim-paketleri/api/denemeler/${deletingId}/`;
+        endpoint = `/egitim-paketleri/api/denemeler/${deletingId}/`;
       }
 
       const res = await paketFetch(endpoint, { method: "DELETE", credentials: 'include' });
@@ -601,7 +602,7 @@ export default function EgitimPaketleriClient() {
     const timeout = setTimeout(async () => {
       try {
         const res = await paketFetch(
-          `${BACKEND_URL}/egitim-paketleri/api/ek-hizmet-satis/ogrenci-ara/?q=${encodeURIComponent(q)}`,
+          `/egitim-paketleri/api/ek-hizmet-satis/ogrenci-ara/?q=${encodeURIComponent(q)}`,
           { credentials: 'include' }
         );
         const data = await res.json();
@@ -648,7 +649,7 @@ export default function EgitimPaketleriClient() {
     setSatisLoading(true);
 
     try {
-      const res = await paketFetch(`${BACKEND_URL}/egitim-paketleri/api/ek-hizmet-satis/`, {
+      const res = await paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',
@@ -679,7 +680,7 @@ export default function EgitimPaketleriClient() {
     setSatisLoading(true);
 
     try {
-      const res = await paketFetch(`${BACKEND_URL}/egitim-paketleri/api/ek-hizmet-satis/`, {
+      const res = await paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: 'include',
@@ -709,7 +710,7 @@ export default function EgitimPaketleriClient() {
     setSatisLoading(true);
 
     try {
-      const res = await paketFetch(`${BACKEND_URL}/egitim-paketleri/api/ek-hizmet-satis/${kayitId}/iptal/`, {
+      const res = await paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/${kayitId}/iptal/`, {
         method: "DELETE",
         credentials: 'include',
       });

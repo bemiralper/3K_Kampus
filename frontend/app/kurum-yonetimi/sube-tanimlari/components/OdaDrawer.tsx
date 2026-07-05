@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Oda, OdaFormData, OdaTur, Sube } from '../types';
+import { Oda, OdaFormData, OdaTur } from '../types';
 import { getOdaTurleri, createOda, updateOda } from '../services';
 
 interface OdaDrawerProps {
@@ -9,10 +9,10 @@ interface OdaDrawerProps {
   onClose: () => void;
   onSuccess: () => void;
   editingOda: Oda | null;
-  subeler: Sube[];
+  activeSube: { id: number; ad: string } | null;
 }
 
-export default function OdaDrawer({ isOpen, onClose, onSuccess, editingOda, subeler }: OdaDrawerProps) {
+export default function OdaDrawer({ isOpen, onClose, onSuccess, editingOda, activeSube }: OdaDrawerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -45,7 +45,7 @@ export default function OdaDrawer({ isOpen, onClose, onSuccess, editingOda, sube
       });
     } else {
       setFormData({
-        sube_id: subeler.length > 0 ? subeler[0].id.toString() : '',
+        sube_id: activeSube ? String(activeSube.id) : '',
         ad: '',
         kapasite: '5',
         oda_turu: 'derslik',
@@ -55,7 +55,7 @@ export default function OdaDrawer({ isOpen, onClose, onSuccess, editingOda, sube
     }
     setError(null);
     setSuccess(null);
-  }, [editingOda, isOpen, subeler]);
+  }, [editingOda, isOpen, activeSube]);
 
   // ESC tuşu
   useEffect(() => {
@@ -75,6 +75,9 @@ export default function OdaDrawer({ isOpen, onClose, onSuccess, editingOda, sube
     setLoading(true);
 
     try {
+      if (!editingOda && !activeSube) {
+        throw new Error('Aktif şube seçili değil. Üst menüden şube seçin.');
+      }
       if (editingOda) {
         await updateOda(editingOda.id, formData);
         setSuccess('Oda başarıyla güncellendi!');
@@ -248,41 +251,33 @@ export default function OdaDrawer({ isOpen, onClose, onSuccess, editingOda, sube
               </div>
             )}
 
-            {/* Şube */}
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ 
-                display: 'block', 
-                fontSize: '0.875rem', 
-                fontWeight: 500, 
-                color: '#374151',
-                marginBottom: '8px',
+            {!activeSube && !editingOda && (
+              <div style={{
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: '#fffbeb',
+                border: '1px solid #fcd34d',
+                color: '#92400e',
+                fontSize: '0.875rem',
+                marginBottom: '20px',
               }}>
-                Şube <span style={{ color: '#ef4444' }}>*</span>
-              </label>
-              <select
-                value={formData.sube_id}
-                onChange={(e) => setFormData({ ...formData, sube_id: e.target.value })}
-                required
-                disabled={!!editingOda}
-                style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  borderRadius: '10px',
-                  border: '1px solid #e2e8f0',
-                  fontSize: '0.9375rem',
-                  color: '#1e293b',
-                  background: editingOda ? '#f8fafc' : '#fff',
-                  cursor: editingOda ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s',
-                  outline: 'none',
-                }}
-              >
-                <option value="">Şube Seçin</option>
-                {subeler.map((sube) => (
-                  <option key={sube.id} value={sube.id}>{sube.ad}</option>
-                ))}
-              </select>
-            </div>
+                Aktif şube seçili değil. Üst menüden şube seçin.
+              </div>
+            )}
+
+            {activeSube && (
+              <div style={{
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                color: '#166534',
+                fontSize: '0.875rem',
+                marginBottom: '20px',
+              }}>
+                Şube: <strong>{activeSube.ad}</strong> (aktif bağlam)
+              </div>
+            )}
 
             {/* Oda Adı */}
             <div style={{ marginBottom: '20px' }}>

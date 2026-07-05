@@ -5,15 +5,23 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { getDefaultHomePath, isCoachOnlyUser, isMuhasebeOnlyUser } from "@/lib/auth-routes";
+import { getContextGate } from "@/lib/post-login-routing";
 import AppShell from "@/components/layout/AppShell";
 
 // Routes that don't require authentication
 const PUBLIC_ROUTE_PREFIXES = ["/login", "/yasal", "/duyurular", "/3k-sistemi", "/hakkimizda"];
+const CONTEXT_PICKER_ROUTES = ["/kurum-sec", "/sube-sec"];
 const PRINT_ROUTES = ["/print"];
 
 function isPublicPath(pathname: string): boolean {
   if (pathname === "/") return true;
   return PUBLIC_ROUTE_PREFIXES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+}
+
+function isContextPickerPath(pathname: string): boolean {
+  return CONTEXT_PICKER_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
 }
@@ -53,6 +61,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
   const hasRedirectedRef = useRef(false);
 
   const isPublicRoute = isPublicPath(pathname);
+  const isContextPickerRoute = isContextPickerPath(pathname);
   const isPrintRoute = PRINT_ROUTES.some(route => pathname.startsWith(route));
   const isCoachRoute = pathname.startsWith("/coach");
   const isMuhasebeRoute = pathname.startsWith("/muhasebe");
@@ -98,11 +107,12 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       return;
     }
 
-    // Rol bazlı portal kullanıcıları admin kabuğuna düşmesin
+    // Portal-only user on admin route
     if (
       isAuthenticated &&
       !isPortalRoute &&
       !isPublicRoute &&
+      !isContextPickerRoute &&
       (isCoachOnlyUser(user) || isMuhasebeOnlyUser(user))
     ) {
       const home = getDefaultHomePath(user);
@@ -110,7 +120,28 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       hasRedirectedRef.current = true;
       router.replace(home);
     }
-  }, [isAuthenticated, isLoading, isPortalRoute, isPublicRoute, isPrintRoute, pathname, router, user]);
+
+    // Kurum/şube seçimi tamamlanmadan uygulamaya geçilmesin
+    if (
+      isAuthenticated &&
+      !isPortalRoute &&
+      !isPublicRoute &&
+      !isContextPickerRoute &&
+      !isPrintRoute
+    ) {
+      const gate = getContextGate();
+      if (gate === "kurum") {
+        hasRedirectedRef.current = true;
+        router.replace("/kurum-sec");
+        return;
+      }
+      if (gate === "sube") {
+        hasRedirectedRef.current = true;
+        router.replace("/sube-sec");
+        return;
+      }
+    }
+  }, [isAuthenticated, isLoading, isPortalRoute, isPublicRoute, isContextPickerRoute, isPrintRoute, pathname, router, user]);
 
   // Public sayfalar (landing vb.) auth kontrolü beklenmeden gösterilir
   if (isLoading && !isPrintRoute && !isPublicRoute) {
@@ -119,6 +150,14 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
 
   // Print route: AppShell ve auth olmadan sadece içerik
   if (isPrintRoute) {
+    return <>{children}</>;
+  }
+
+  // Kurum/şube seçim ekranları — sidebar olmadan tam sayfa
+  if (isContextPickerRoute) {
+    if (isLoading || !isAuthenticated) {
+      return <AuthLoadingSpinner />;
+    }
     return <>{children}</>;
   }
 
