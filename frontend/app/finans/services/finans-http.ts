@@ -3,6 +3,12 @@
  * Doğrudan :8000 çağrıları oturum çerezini taşımaz (port farkı).
  */
 
+import {
+  ensureCsrfCookie,
+  isSessionExpiredResponse,
+  type FetchOptions,
+} from "@/lib/api";
+
 const STORAGE_KEYS = {
   activeKurum: "3k_active_kurum",
   activeSube: "3k_active_sube",
@@ -50,7 +56,7 @@ export function getCsrfToken(): string | null {
   const cookies = document.cookie.split(";");
   for (const cookie of cookies) {
     const [name, value] = cookie.trim().split("=");
-    if (name === "lms_csrftoken") return value;
+    if (name === "lms_csrftoken" || name === "csrftoken") return value;
   }
   return null;
 }
@@ -164,18 +170,23 @@ function parseFinansErrorPayload(data: unknown): { message: string; fieldErrors:
   return { message, fieldErrors };
 }
 
-function isSessionAuthFailure(status: number, data: unknown): boolean {
-  if (status === 401) return true;
-  if (status !== 403 || !data || typeof data !== "object") return false;
+function permissionDeniedMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
   const obj = data as Record<string, unknown>;
-  if (obj.code === "not_authenticated") return true;
-  const detail = typeof obj.detail === "string" ? obj.detail : "";
+  if (obj.code !== "permission_denied") return null;
   const error = typeof obj.error === "string" ? obj.error : "";
-  const msg = `${detail} ${error}`.toLowerCase();
-  return msg.includes("giriş bilgileri") || msg.includes("oturum açmanız");
+  if (error.toLowerCase().includes("permission")) {
+    return "Bu işlem için finans düzenleme yetkisi gerekiyor (finans.write veya finans.manage).";
+  }
+  return error || "Bu işlem için yetkiniz yok.";
 }
 
-export async function finansRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function finansRequest<T>(path: string, options: FetchOptions = {}): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    await ensureCsrfCookie();
+  }
+
   const url = path.startsWith("http") ? path : finansApiUrl(path);
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {
@@ -183,7 +194,7 @@ export async function finansRequest<T>(path: string, options: RequestInit = {}):
     ...getContextHeaders(),
     ...(options.headers as Record<string, string> | undefined),
   };
-  if (csrf && options.method && ["POST", "PUT", "PATCH", "DELETE"].includes(options.method.toUpperCase())) {
+  if (csrf && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     headers["X-CSRFToken"] = csrf;
   }
 
@@ -196,11 +207,15 @@ export async function finansRequest<T>(path: string, options: RequestInit = {}):
     data = null;
   }
 
-  if (isSessionAuthFailure(res.status, data) && typeof window !== "undefined") {
+  if (isSessionExpiredResponse(res.status, data) && typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("3k:session-expired"));
   }
 
   if (!res.ok) {
+    const deniedMsg = permissionDeniedMessage(data);
+    if (deniedMsg) {
+      throw new FinansHttpError(deniedMsg);
+    }
     if (data == null) {
       throw new FinansHttpError(
         res.status === 403
@@ -217,6 +232,7 @@ export async function finansRequest<T>(path: string, options: RequestInit = {}):
 
 /** multipart/form-data — dosya yükleme (Content-Type otomatik, boundary korunur) */
 export async function finansFormUpload<T>(path: string, formData: FormData, method = "POST"): Promise<T> {
+  await ensureCsrfCookie();
   const url = path.startsWith("http") ? path : finansApiUrl(path);
   const csrf = getCsrfToken();
   const headers: Record<string, string> = { ...getContextHeaders() };
@@ -234,11 +250,15 @@ export async function finansFormUpload<T>(path: string, formData: FormData, meth
     }
   }
 
-  if (isSessionAuthFailure(res.status, data) && typeof window !== "undefined") {
+  if (isSessionExpiredResponse(res.status, data) && typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("3k:session-expired"));
   }
 
   if (!res.ok) {
+    const deniedMsg = permissionDeniedMessage(data);
+    if (deniedMsg) {
+      throw new FinansHttpError(deniedMsg);
+    }
     const { message, fieldErrors } = parseFinansErrorPayload(data);
     throw new FinansHttpError(message || text || "Dosya yüklenemedi.", fieldErrors);
   }
@@ -276,6 +296,7 @@ export async function finansDownloadPost(
   path: string,
   body: unknown
 ): Promise<{ blob: Blob; filename: string }> {
+  await ensureCsrfCookie();
   const url = path.startsWith("http") ? path : finansApiUrl(path);
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {

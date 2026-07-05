@@ -240,6 +240,10 @@ SESSION_SAVE_EVERY_REQUEST = True  # Refresh session on every request
 SESSION_COOKIE_NAME = 'lms_sessionid'
 SESSION_IDLE_TIMEOUT_SECONDS = int(os.environ.get('SESSION_IDLE_TIMEOUT_SECONDS', '900'))  # 15 dk
 
+# CSRF — frontend JS reads this cookie for X-CSRFToken (must match getCsrfToken in frontend)
+CSRF_COOKIE_NAME = 'lms_csrftoken'
+CSRF_COOKIE_HTTPONLY = False
+
 # Multi-tenant configuration
 TENANT_SESSION_KEYS = {
     'kurum': 'active_kurum_id',
