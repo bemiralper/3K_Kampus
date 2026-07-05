@@ -1,0 +1,39 @@
+# Git & IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.md
+!docs/deployment/docker.md
+
+# Python
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+backend/venv
+venv
+.env
+.env.*
+!.env.docker.example
+!.env.production.docker.example
+
+# Node / Next.js
+frontend/node_modules
+frontend/.next
+frontend/out
+npm-debug.log*
+
+# Native local data (Docker uses named volumes)
+backend/media/*
+!backend/media/.gitkeep
+backend/staticfiles
+backend/private
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Legacy root Django (not used)
+core/
+manage.py

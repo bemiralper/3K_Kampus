@@ -159,15 +159,50 @@ export type FetchOptions = Omit<RequestInit, "headers"> & {
 
 function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
-  
+
   const cookies = document.cookie.split(";");
   for (const cookie of cookies) {
     const [name, value] = cookie.trim().split("=");
-    if (name === "lms_csrftoken") {
+    if (name === "lms_csrftoken" || name === "csrftoken") {
       return value;
     }
   }
   return null;
+}
+
+/** Oturum/CSRF kaynaklı yanıt mı — yetki reddi (403 permission_denied) sayılmaz. */
+export function isSessionExpiredResponse(status: number, data: unknown): boolean {
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    const code = typeof obj.code === "string" ? obj.code : "";
+    if (code === "not_authenticated" || code === "session_idle_timeout") {
+      return true;
+    }
+    if (code === "permission_denied") {
+      return false;
+    }
+    const error = typeof obj.error === "string" ? obj.error.toLowerCase() : "";
+    const detail = typeof obj.detail === "string" ? obj.detail.toLowerCase() : "";
+    const msg = `${error} ${detail}`;
+    if (msg.includes("oturum açmanız") || msg.includes("oturum süresi")) {
+      return true;
+    }
+    if (status === 403 && code === "not_authenticated") {
+      return true;
+    }
+    return false;
+  }
+  return status === 401;
+}
+
+/** POST/PUT/PATCH/DELETE öncesi CSRF çerezi yoksa /auth/api/me/ ile alınır. */
+export async function ensureCsrfCookie(): Promise<void> {
+  if (typeof document === "undefined") return;
+  if (getCsrfToken()) return;
+  await fetch(resolveApiUrl("/auth/api/me/"), {
+    credentials: "include",
+    headers: { "Cache-Control": "no-cache" },
+  });
 }
 
 export function notifySessionExpired() {
@@ -212,7 +247,14 @@ export async function apiFetch<T = unknown>(
     });
 
     if (response.status === 401) {
-      notifySessionExpired();
+      try {
+        const errData = await response.clone().json();
+        if (isSessionExpiredResponse(response.status, errData)) {
+          notifySessionExpired();
+        }
+      } catch {
+        notifySessionExpired();
+      }
     }
     
     if (response.status === 204) {

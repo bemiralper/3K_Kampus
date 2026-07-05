@@ -181,13 +181,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ username: trimmedUsername, password: trimmedPassword }),
       });
 
-      const data = await response.json();
+      let data: { success?: boolean; error?: string; user?: User } = {};
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error("Login JSON parse failed:", parseError);
+          return {
+            success: false,
+            error: response.ok ? "Giris basarisiz" : `Sunucu yaniti okunamadi (${response.status})`,
+          };
+        }
+      } else if (!response.ok) {
+        return { success: false, error: `Sunucu hatasi (${response.status})` };
+      }
 
-      if (response.ok && data.success) {
+      if (response.ok && data.success && data.user) {
         setUser(data.user);
         writeCachedUser(data.user);
         touchActivity();
-        return { success: true, user: data.user as User };
+        return { success: true, user: data.user };
       } else {
         return { success: false, error: data.error || "Giris basarisiz" };
       }
