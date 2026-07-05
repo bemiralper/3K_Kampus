@@ -572,6 +572,20 @@
   line-height: 1.45;
 }
 
+.wam-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-size: 14px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.wam-checkbox-row input {
+  margin-top: 0.15rem;
+}
+
 .wam-input,
 .wam-textarea,
 .wam-select {

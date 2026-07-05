@@ -69,6 +69,18 @@ done
 
 log() { printf '[deploy] %s\n' "$*"; }
 
+# systemd EnvironmentFile gibi: set -a ile tüm değişkenleri export et
+LMS_ENV_FILE="${LMS_ENV_FILE:-/etc/lms/env}"
+if [[ -f "$LMS_ENV_FILE" ]]; then
+  log "Ortam dosyası yükleniyor: $LMS_ENV_FILE"
+  set -a
+  # shellcheck disable=SC1090
+  source "$LMS_ENV_FILE"
+  set +a
+elif [[ -z "${ALLOWED_HOSTS:-}" ]]; then
+  log "Uyarı: $LMS_ENV_FILE yok — ALLOWED_HOSTS vb. export edilmiş olmalı"
+fi
+
 log "APP_ROOT=$APP_ROOT"
 log "BACKEND=$BACKEND_DIR"
 log "PYTHON=$PYTHON"

@@ -30,6 +30,8 @@ fi
 echo "[backend-prod] migrate"
 python manage.py migrate --noinput
 
+mkdir -p /app/backend/private/backups
+
 echo "[backend-prod] collectstatic"
 python manage.py collectstatic --noinput
 

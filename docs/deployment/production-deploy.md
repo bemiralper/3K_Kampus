@@ -24,12 +24,11 @@ export LMS_APP_ROOT=/var/www/lms
 export LMS_BACKEND_SERVICE=lms-backend    # systemd unit adınız
 export LMS_FRONTEND_SERVICE=lms-frontend  # veya LMS_PM2_APP=lms-frontend
 
-# Ortam değişkenleri yüklü olsun (SECRET_KEY, DB_*, WHATSAPP_* …)
-source /etc/lms/env   # örnek
-
 cd "$LMS_APP_ROOT"
 ./backend/scripts/deploy-production.sh
 ```
+
+Script `/etc/lms/env` dosyasını otomatik yükler (`set -a` + `source`). Manuel yükleme gerekmez; farklı dosya için `LMS_ENV_FILE=/path/to/env` kullanın.
 
 Script sırasıyla:
 

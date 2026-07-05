@@ -3,6 +3,7 @@
 import type { SiteSettings } from '@/lib/website-api';
 import { WamInput, WamTextarea } from './WamField';
 import { formatPhoneInput } from '@/lib/phone-format';
+import { parseMapEmbedUrl, buildMapEmbedFromAddress } from '@/lib/map-embed';
 
 type SiteSettingsPanelProps = {
   settings: SiteSettings;
@@ -51,10 +52,18 @@ export default function SiteSettingsPanel({ settings, onChange, onSave, saving }
           <WamTextarea label="Çalışma Saatleri" full value={settings.calisma_saatleri || ''} onChange={e => set('calisma_saatleri', e.target.value)} rows={2} placeholder="Pzt–Cum 09:00–18:00" />
           <WamTextarea
             label="Google Harita Embed URL"
-            hint="Google Maps → Paylaş → Harita Yerleştir → iframe src değerini yapıştırın"
+            hint="Google Maps → Paylaş → Harita Yerleştir → iframe src veya tam iframe HTML yapıştırın. Boş bırakırsanız adres kaydedilince otomatik üretilir."
             full
             value={settings.harita_embed_url || ''}
             onChange={e => set('harita_embed_url', e.target.value)}
+            onBlur={() => {
+              const parsed = parseMapEmbedUrl(settings.harita_embed_url);
+              if (parsed !== (settings.harita_embed_url || '')) {
+                set('harita_embed_url', parsed);
+              } else if (!parsed && settings.adres?.trim()) {
+                set('harita_embed_url', buildMapEmbedFromAddress(settings.adres));
+              }
+            }}
             rows={2}
           />
         </section>
@@ -98,15 +107,77 @@ export default function SiteSettingsPanel({ settings, onChange, onSave, saving }
           <div className="wam-settings-card-head">
             <span className="wam-settings-icon">🔍</span>
             <div>
-              <h5>SEO & Footer</h5>
-              <p>Tarayıcı sekmesi ve arama motoru bilgileri</p>
+              <h5>SEO & Google</h5>
+              <p>Arama motorları, Open Graph ve Google Search Console doğrulama</p>
             </div>
           </div>
           <div className="wam-form-grid">
             <WamInput label="SEO Başlık" value={settings.seo_baslik || ''} onChange={e => set('seo_baslik', e.target.value)} />
-            <WamInput label="Footer Telif Metni" value={settings.footer_copyright || ''} onChange={e => set('footer_copyright', e.target.value)} />
+            <WamInput
+              label="Canonical URL"
+              hint="Boş bırakılırsa anasayfa adresi kullanılır"
+              value={settings.seo_canonical_url || ''}
+              onChange={e => set('seo_canonical_url', e.target.value)}
+              placeholder="https://www.3kkampus.com"
+            />
           </div>
           <WamTextarea label="SEO Açıklama" full value={settings.seo_aciklama || ''} onChange={e => set('seo_aciklama', e.target.value)} rows={2} />
+          <WamInput
+            label="Anahtar Kelimeler"
+            hint="Virgülle ayırın"
+            full
+            value={settings.seo_anahtar_kelimeler || ''}
+            onChange={e => set('seo_anahtar_kelimeler', e.target.value)}
+            placeholder="LGS, YKS, eğitim merkezi, deneme sınavı"
+          />
+          <WamInput
+            label="Google Site Verification"
+            hint="Search Console meta etiketindeki content değeri"
+            full
+            value={settings.google_site_verification || ''}
+            onChange={e => set('google_site_verification', e.target.value)}
+            placeholder="google-site-verification content"
+          />
+          <WamInput
+            label="Google Analytics (gtag.js)"
+            hint="Google'ın verdiği kodda id= sonrasındaki değer — örn. G-3NWSLBGCK8. Tam script yapıştırmayın."
+            full
+            value={settings.google_analytics_id || ''}
+            onChange={e => set('google_analytics_id', e.target.value.replace(/\s/g, ''))}
+            placeholder="G-3NWSLBGCK8"
+          />
+          <label className="wam-checkbox-row">
+            <input
+              type="checkbox"
+              checked={settings.seo_robots_index !== false}
+              onChange={e => onChange({ ...settings, seo_robots_index: e.target.checked })}
+            />
+            <span>Arama motorlarında indekslemeye izin ver (robots: index)</span>
+          </label>
+          <p className="wam-field-hint" style={{ marginTop: '0.75rem' }}>
+            Otomatik dosyalar: <code>/sitemap.xml</code> ve <code>/robots.txt</code> — kayıt sonrası Google Search Console&apos;a sitemap ekleyin.
+          </p>
+        </section>
+
+        <section className="wam-settings-card">
+          <div className="wam-settings-card-head">
+            <span className="wam-settings-icon">©</span>
+            <div>
+              <h5>Footer</h5>
+              <p>Alt bilgi telif ve marka bildirimi</p>
+            </div>
+          </div>
+          <div className="wam-form-grid">
+            <WamInput label="Footer Telif Metni" value={settings.footer_copyright || ''} onChange={e => set('footer_copyright', e.target.value)} />
+          </div>
+          <WamInput
+            label="Footer Marka Bildirimi"
+            hint="Anasayfa footer altında görünen marka / ticari unvan metni"
+            full
+            value={settings.footer_marka_metni || ''}
+            onChange={e => set('footer_marka_metni', e.target.value)}
+            placeholder="3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır."
+          />
         </section>
       </div>
     </div>

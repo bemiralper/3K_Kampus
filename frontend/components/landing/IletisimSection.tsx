@@ -6,6 +6,8 @@ import { submitIletisimForm } from '@/lib/website-api';
 import { formatPhoneDisplay, formatPhoneInput, phoneDigits } from '@/lib/phone-format';
 import { LANDING_COLORS, LANDING_KURUM_KOD } from '@/lib/landing-theme';
 
+import { parseMapEmbedUrl } from '@/lib/map-embed';
+
 type IletisimSectionProps = {
   settings: SiteSettings | null;
 };
@@ -55,6 +57,7 @@ function ContactCard({
 }
 
 export default function IletisimSection({ settings }: IletisimSectionProps) {
+  const mapSrc = parseMapEmbedUrl(settings?.harita_embed_url);
   const [form, setForm] = useState<FormState>({ ad_soyad: '', telefon: '', mesaj: '' });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -163,9 +166,9 @@ export default function IletisimSection({ settings }: IletisimSectionProps) {
               </div>
             )}
 
-            {settings?.harita_embed_url && (
+            {mapSrc && (
               <div className="iletisim-map">
-                <iframe src={settings.harita_embed_url} title="3K Kampüs konum" loading="lazy" />
+                <iframe src={mapSrc} title="Konum haritası" loading="lazy" />
               </div>
             )}
           </div>

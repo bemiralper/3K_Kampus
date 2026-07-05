@@ -119,9 +119,10 @@ export default function LandingHeader({ branding, onLoginClick }: LandingHeaderP
             </button>
             <button
               type="button"
-              className="landing-menu-btn lg:hidden"
+              className="landing-header-menu-btn lg:hidden"
               onClick={() => setMobileOpen(true)}
               aria-label="Menüyü aç"
+              aria-expanded={mobileOpen}
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M3 12h18M3 6h18M3 18h18" />
@@ -188,15 +189,22 @@ export default function LandingHeader({ branding, onLoginClick }: LandingHeaderP
           transform: translateY(-1px);
           box-shadow: 0 4px 14px rgba(2, 98, 167, 0.4);
         }
-        .landing-menu-btn {
+        .landing-header-menu-btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          padding: 0.5rem;
+          width: 2.5rem;
+          height: 2.5rem;
+          padding: 0;
           border: none;
-          background: transparent !important;
+          border-radius: 0.625rem;
+          background: #f1f5f9 !important;
           color: ${LANDING_COLORS.navy};
           cursor: pointer;
+          flex-shrink: 0;
+        }
+        .landing-header-menu-btn:active {
+          background: #e2e8f0 !important;
         }
       `}</style>
 

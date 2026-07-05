@@ -39,6 +39,14 @@ interface Kurum {
 
 interface Sube extends SubeFormState {
   id: number;
+  gorunen_ad?: string;
+  slogan?: string;
+  login_logo_url?: string | null;
+  app_logo_url?: string | null;
+  favicon_url?: string | null;
+  login_arkaplan_rengi?: string;
+  login_arkaplan_rengi_2?: string;
+  tema_rengi?: string;
   kurum?: { id: number; ad: string };
   created_at?: string;
   updated_at?: string;
@@ -88,6 +96,7 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [kurumDrawerTab, setKurumDrawerTab] = useState<"bilgiler" | "marka">("bilgiler");
+  const [subeDrawerTab, setSubeDrawerTab] = useState<"bilgiler" | "marka">("bilgiler");
   
   const defaultBrandingForm = (): BrandingFormState => ({
     gorunen_ad: "",
@@ -99,6 +108,12 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
 
   const [brandingForm, setBrandingForm] = useState<BrandingFormState>(defaultBrandingForm);
   const [brandingPreviews, setBrandingPreviews] = useState({
+    login_logo_url: null as string | null,
+    app_logo_url: null as string | null,
+    favicon_url: null as string | null,
+  });
+  const [subeBrandingForm, setSubeBrandingForm] = useState<BrandingFormState>(defaultBrandingForm);
+  const [subeBrandingPreviews, setSubeBrandingPreviews] = useState({
     login_logo_url: null as string | null,
     app_logo_url: null as string | null,
     favicon_url: null as string | null,
@@ -201,8 +216,11 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
       is_active: true,
     });
     setKurumDrawerTab("bilgiler");
+    setSubeDrawerTab("bilgiler");
     setBrandingForm(defaultBrandingForm());
     setBrandingPreviews({ login_logo_url: null, app_logo_url: null, favicon_url: null });
+    setSubeBrandingForm(defaultBrandingForm());
+    setSubeBrandingPreviews({ login_logo_url: null, app_logo_url: null, favicon_url: null });
     setEditingId(null);
   };
 
@@ -263,6 +281,19 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
         return;
       }
       setSubeForm(subeFormFromApi(result.data));
+      setSubeBrandingForm({
+        gorunen_ad: result.data.gorunen_ad || "",
+        slogan: result.data.slogan || DEFAULT_BRANDING.slogan,
+        login_arkaplan_rengi: result.data.login_arkaplan_rengi || DEFAULT_BRANDING.login_arkaplan_rengi,
+        login_arkaplan_rengi_2: result.data.login_arkaplan_rengi_2 || DEFAULT_BRANDING.login_arkaplan_rengi_2,
+        tema_rengi: result.data.tema_rengi || DEFAULT_BRANDING.tema_rengi,
+      });
+      setSubeBrandingPreviews({
+        login_logo_url: result.data.login_logo_url ?? null,
+        app_logo_url: result.data.app_logo_url ?? null,
+        favicon_url: result.data.favicon_url ?? null,
+      });
+      setSubeDrawerTab("bilgiler");
       setShowDrawer(true);
       return;
     }
@@ -315,7 +346,7 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
       endpoint = drawerMode === "create"
         ? "/kurum-yonetimi/api/sube/"
         : `/kurum-yonetimi/api/sube/${editingId}/`;
-      payload = subeFormToPayload(subeForm);
+      payload = { ...subeFormToPayload(subeForm), ...subeBrandingForm };
     } else if (activeTab === "egitim_yillari") {
       endpoint = drawerMode === "create"
         ? "/kurum-yonetimi/api/egitim-yili/"
@@ -346,6 +377,16 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
         setEditingId(result.data.id);
         setDrawerMode("edit");
         setKurumDrawerTab("marka");
+        await fetchData();
+        await refreshContextData();
+        setSaving(false);
+        return;
+      }
+
+      if (activeTab === "subeler" && drawerMode === "create" && result.data?.id) {
+        setEditingId(result.data.id);
+        setDrawerMode("edit");
+        setSubeDrawerTab("marka");
         await fetchData();
         await refreshContextData();
         setSaving(false);
@@ -446,7 +487,12 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     setSaving(false);
   };
 
-  // Filter data by search term
+  // Filter data by search term — şubeler yalnızca seçili kuruma ait
+  const subelerForActiveKurum = useMemo(() => {
+    if (!activeKurum) return [];
+    return (data.subeler || []).filter((item) => item.kurum?.id === activeKurum.id);
+  }, [data.subeler, activeKurum]);
+
   const filterKurumlar = () => {
     if (!searchTerm) return data.kurumlar || [];
     const term = searchTerm.toLowerCase();
@@ -456,9 +502,9 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
   };
 
   const filterSubeler = () => {
-    if (!searchTerm) return data.subeler || [];
+    if (!searchTerm) return subelerForActiveKurum;
     const term = searchTerm.toLowerCase();
-    return (data.subeler || []).filter(
+    return subelerForActiveKurum.filter(
       item =>
         item.ad.toLowerCase().includes(term) ||
         (item.kod || "").toLowerCase().includes(term) ||
@@ -486,7 +532,7 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
 
   // Stats
   const kurumlarCount = data.kurumlar?.length ?? 0;
-  const subelerCount = data.subeler?.length ?? 0;
+  const subelerCount = subelerForActiveKurum.length;
 
   const kurumOptions = useMemo(() => {
     const list = [...(data.kurumlar || [])];
@@ -804,6 +850,11 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
                 <polyline points="9 22 9 12 15 12 15 22" />
               </svg>
               Şube Listesi
+              {activeKurum ? (
+                <span className="badge-modern primary" style={{ marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+                  {activeKurum.ad}
+                </span>
+              ) : null}
             </h3>
             <div className="card-modern-header-actions">
               <div className="search-modern">
@@ -905,15 +956,24 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
             ) : (
               <div className="empty-state">
                 <div className="empty-state-icon">🏠</div>
-                <h4>Henüz şube eklenmemiş</h4>
-                <p>İlk şubenizi ekleyerek başlayın</p>
-                <button className="btn-modern btn-primary" onClick={handleOpenCreate}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  Şube Ekle
-                </button>
+                {!activeKurum ? (
+                  <>
+                    <h4>Kurum seçin</h4>
+                    <p>Şubeleri görmek için üst menüden bir kurum seçin.</p>
+                  </>
+                ) : (
+                  <>
+                    <h4>{activeKurum.ad} için henüz şube yok</h4>
+                    <p>Seçili kuruma bağlı ilk şubeyi ekleyerek başlayın</p>
+                    <button className="btn-modern btn-primary" onClick={handleOpenCreate}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      Şube Ekle
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1178,6 +1238,8 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
           <div className={`drawer${
             activeTab === "kurumlar" && kurumDrawerTab === "marka"
               ? " drawer--brand"
+              : activeTab === "subeler" && subeDrawerTab === "marka"
+                ? " drawer--brand drawer--sube"
               : activeTab === "subeler"
                 ? " drawer--sube"
                 : ""
@@ -1206,7 +1268,25 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
                     className={`drawer-segment-btn${kurumDrawerTab === "marka" ? " active" : ""}`}
                     onClick={() => setKurumDrawerTab("marka")}
                   >
-                    Marka / Görünüm
+                    Marka (Anasayfa)
+                  </button>
+                </div>
+              )}
+              {activeTab === "subeler" && (
+                <div className="drawer-segment">
+                  <button
+                    type="button"
+                    className={`drawer-segment-btn${subeDrawerTab === "bilgiler" ? " active" : ""}`}
+                    onClick={() => setSubeDrawerTab("bilgiler")}
+                  >
+                    Bilgiler
+                  </button>
+                  <button
+                    type="button"
+                    className={`drawer-segment-btn${subeDrawerTab === "marka" ? " active" : ""}`}
+                    onClick={() => setSubeDrawerTab("marka")}
+                  >
+                    Marka / Uygulama
                   </button>
                 </div>
               )}
@@ -1313,7 +1393,8 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
 
                 {activeTab === "kurumlar" && kurumDrawerTab === "marka" && (
                   <KurumBrandingForm
-                    kurumId={editingId}
+                    entityKind="kurum"
+                    entityId={editingId}
                     kurumKod={kurumForm.kod}
                     form={brandingForm}
                     onChange={setBrandingForm}
@@ -1324,11 +1405,23 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
                 )}
 
                 {/* Şube Form */}
-                {activeTab === "subeler" && (
+                {activeTab === "subeler" && subeDrawerTab === "bilgiler" && (
                   <SubeDrawerForm
                     form={subeForm}
                     onChange={setSubeForm}
                     kurumOptions={kurumOptions}
+                  />
+                )}
+
+                {activeTab === "subeler" && subeDrawerTab === "marka" && (
+                  <KurumBrandingForm
+                    entityKind="sube"
+                    entityId={editingId}
+                    form={subeBrandingForm}
+                    onChange={setSubeBrandingForm}
+                    previews={subeBrandingPreviews}
+                    onPreviewsChange={setSubeBrandingPreviews}
+                    onAssetsChange={refreshContextData}
                   />
                 )}
 

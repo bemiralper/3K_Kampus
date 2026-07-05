@@ -43,8 +43,22 @@ class SiteSettings(models.Model):
     footer_copyright = models.CharField(
         'Footer Telif', max_length=200, blank=True, default='© 2026 3K Kampüs',
     )
+    footer_marka_metni = models.CharField(
+        'Footer Marka Bildirimi',
+        max_length=300,
+        blank=True,
+        default='3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.',
+    )
     seo_baslik = models.CharField('SEO Başlık', max_length=200, blank=True, default='')
     seo_aciklama = models.CharField('SEO Açıklama', max_length=400, blank=True, default='')
+    seo_anahtar_kelimeler = models.CharField('SEO Anahtar Kelimeler', max_length=500, blank=True, default='')
+    seo_canonical_url = models.URLField('Canonical URL', max_length=500, blank=True, default='')
+    google_site_verification = models.CharField('Google Site Verification', max_length=120, blank=True, default='')
+    google_analytics_id = models.CharField(
+        'Google Analytics Ölçüm Kimliği', max_length=32, blank=True, default='',
+        help_text='Örn. G-3NWSLBGCK8 (gtag.js)',
+    )
+    seo_robots_index = models.BooleanField('Arama Motorlarında İndeksle', default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -165,7 +179,8 @@ class SinavTakvim(models.Model):
     kurum = models.ForeignKey('kurum.Kurum', on_delete=models.CASCADE, related_name='sinav_takvim')
     tur = models.CharField('Tür', max_length=10, choices=TUR_CHOICES)
     tarih = models.DateField('Tarih')
-    saat = models.TimeField('Saat', null=True, blank=True)
+    saat = models.TimeField('Başlangıç Saati', null=True, blank=True)
+    saat_bitis = models.TimeField('Bitiş Saati', null=True, blank=True)
     kapsam = models.CharField('Kapsam', max_length=20, choices=KAPSAM_CHOICES, default='turkiye_geneli')
     baslik = models.CharField('Başlık', max_length=200)
     yayin_adi = models.CharField('Yayın / Kurum Adı', max_length=120, blank=True, default='')

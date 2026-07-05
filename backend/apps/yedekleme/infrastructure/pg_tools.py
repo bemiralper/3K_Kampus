@@ -3,11 +3,13 @@ import os
 
 
 def pg_dump_binary() -> str:
-    return os.environ.get('PG_DUMP', 'pg_dump')
+    path = os.environ.get('PG_DUMP') or shutil.which('pg_dump') or 'pg_dump'
+    return path
 
 
 def pg_restore_binary() -> str:
-    return os.environ.get('PG_RESTORE', 'pg_restore')
+    path = os.environ.get('PG_RESTORE') or shutil.which('pg_restore') or 'pg_restore'
+    return path
 
 
 def pg_env(db: dict) -> dict:

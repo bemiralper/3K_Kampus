@@ -23,6 +23,7 @@ type FormState = {
   tur: string;
   tarih: string;
   saat: string;
+  saat_bitis: string;
   kapsam: string;
   baslik: string;
   yayin_adi: string;
@@ -33,6 +34,7 @@ const EMPTY_FORM: FormState = {
   tur: 'LGS',
   tarih: '',
   saat: '',
+  saat_bitis: '',
   kapsam: 'turkiye_geneli',
   baslik: '',
   yayin_adi: '',
@@ -53,6 +55,7 @@ function examToForm(exam: SinavTakvim): FormState {
     tur: exam.tur,
     tarih: exam.tarih,
     saat: exam.saat || '',
+    saat_bitis: exam.saat_bitis || '',
     kapsam: exam.kapsam,
     baslik: exam.baslik,
     yayin_adi: exam.yayin_adi || '',
@@ -397,7 +400,11 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
       <WamModal
         open={modalOpen}
         title={editId === 0 ? `Yeni ${tab === 'lgs' ? 'LGS' : 'YKS'} Sınavı` : 'Sınavı Düzenle'}
-        subtitle={form.tarih ? `${form.tarih}${form.saat ? ` · ${form.saat}` : ''}` : undefined}
+        subtitle={
+          form.tarih
+            ? `${form.tarih}${form.saat ? ` · ${form.saat}${form.saat_bitis ? `–${form.saat_bitis}` : ''}` : ''}`
+            : undefined
+        }
         onClose={requestClose}
         wide
         footer={(
@@ -420,7 +427,8 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
             options={turOptions}
           />
           <WamInput label="Tarih" type="date" value={form.tarih} onChange={e => setForm(f => ({ ...f, tarih: e.target.value }))} />
-          <WamInput label="Saat" type="time" value={form.saat} onChange={e => setForm(f => ({ ...f, saat: e.target.value }))} />
+          <WamInput label="Başlangıç Saati" type="time" value={form.saat} onChange={e => setForm(f => ({ ...f, saat: e.target.value }))} />
+          <WamInput label="Bitiş Saati" type="time" value={form.saat_bitis} onChange={e => setForm(f => ({ ...f, saat_bitis: e.target.value }))} />
           <WamSelect
             label="Kapsam"
             value={form.kapsam}

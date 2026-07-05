@@ -28,6 +28,7 @@ import IletisimSection from './IletisimSection';
 import LandingFooter from './LandingFooter';
 import LandingRevealSection from './LandingRevealSection';
 import LoginModal from '@/components/login/LoginModal';
+import LandingJsonLd from '@/components/landing/LandingJsonLd';
 
 function LandingPageInner({ initialData }: { initialData: LandingData | null }) {
   const searchParams = useSearchParams();
@@ -73,6 +74,7 @@ function LandingPageInner({ initialData }: { initialData: LandingData | null }) 
   }, [initialData]);
 
   const b = mergeBranding(data?.kurum ? { ...branding, ...data.kurum } : branding);
+  const pageTitle = data?.settings?.seo_baslik || b.gorunen_ad || SITE_TAB_TITLE;
 
   if (isAuthenticated) {
     return (
@@ -86,7 +88,8 @@ function LandingPageInner({ initialData }: { initialData: LandingData | null }) 
 
   return (
     <>
-      <KurumBrandingHead branding={b} documentTitle={SITE_TAB_TITLE} />
+      <LandingJsonLd data={data} />
+      <KurumBrandingHead branding={b} documentTitle={pageTitle} manageFavicon={false} />
       <div className="min-h-screen bg-white">
         <TopBar settings={settings} socialLinks={data?.social_links ?? []} />
         <TopBarMobile settings={settings} />

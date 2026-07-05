@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import type { Duyuru } from '@/lib/website-api';
+import { formatDateTR } from '@/lib/format-date';
 import { LANDING_COLORS } from '@/lib/landing-theme';
 
 type DuyurularSectionProps = {
@@ -25,7 +26,7 @@ export default function DuyurularSection({ duyurular }: DuyurularSectionProps) {
             {items.map(d => (
               <article key={d.id} className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#0262a7]/20 hover:shadow-md">
                 {d.yayin_tarihi && (
-                  <time className="text-xs font-medium text-slate-400">{new Date(d.yayin_tarihi).toLocaleDateString('tr-TR')}</time>
+                  <time className="text-xs font-medium text-slate-400">{formatDateTR(d.yayin_tarihi)}</time>
                 )}
                 <h3 className="mt-2 font-semibold text-slate-900 group-hover:text-[#0262a7]">{d.baslik}</h3>
                 <p className="mt-2 line-clamp-3 flex-1 text-sm leading-relaxed text-slate-500">{d.ozet}</p>

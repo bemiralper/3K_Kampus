@@ -2,15 +2,38 @@
 Kurum Views
 """
 import json
+from django.db import IntegrityError
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from apps.kurum.domain.models import Kurum
-from apps.kurum.branding import serialize_kurum_branding, apply_branding_fields
+from apps.kurum.branding import serialize_kurum_branding, serialize_sube_branding, apply_branding_fields
 from apps.sube.domain.models import Sube
 from apps.sube.serialize import serialize_sube, apply_sube_fields
 from apps.egitim_yili.domain.models import EgitimYili
+
+
+def _kurum_save_error_response(exc: Exception, data: dict | None = None) -> JsonResponse | None:
+    """IntegrityError veya benzeri benzersiz kod hatası → Türkçe mesaj."""
+    msg = str(exc)
+    is_kod_conflict = isinstance(exc, IntegrityError) or (
+        'unique constraint' in msg.lower() and '(kod)' in msg.lower()
+    )
+    if not is_kod_conflict:
+        return None
+    kod = (data or {}).get('kod', '')
+    if 'kurum_kod' in msg or 'unique_kurum' in msg.lower() or '(kod)' in msg:
+        if kod:
+            return JsonResponse({
+                'success': False,
+                'error': f'"{kod}" kurum kodu zaten kullanılıyor. Farklı bir kod girin.',
+            }, status=400)
+        return JsonResponse({
+            'success': False,
+            'error': 'Bu kurum kodu zaten kullanılıyor. Farklı bir kod girin.',
+        }, status=400)
+    return JsonResponse({'success': False, 'error': 'Bu kayıt zaten mevcut (benzersiz alan çakışması).'}, status=400)
 
 
 @login_required
@@ -188,7 +211,15 @@ def api_kurum_list_create(request):
                 'success': True,
                 'data': {'id': kurum.id, 'ad': kurum.ad}
             })
+        except IntegrityError as e:
+            resp = _kurum_save_error_response(e, data)
+            if resp:
+                return resp
+            raise
         except Exception as e:
+            resp = _kurum_save_error_response(e, data)
+            if resp:
+                return resp
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
     
     return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
@@ -233,7 +264,15 @@ def api_kurum_detail(request, pk):
                 'success': True,
                 'data': {'id': kurum.id, 'ad': kurum.ad}
             })
+        except IntegrityError as e:
+            resp = _kurum_save_error_response(e, data)
+            if resp:
+                return resp
+            raise
         except Exception as e:
+            resp = _kurum_save_error_response(e, data)
+            if resp:
+                return resp
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
     
     elif request.method == 'DELETE':
@@ -307,7 +346,7 @@ def api_sube_detail(request, pk):
     sube = get_object_or_404(Sube, pk=pk)
     
     if request.method == 'GET':
-        return JsonResponse({'success': True, 'data': serialize_sube(sube)})
+        return JsonResponse({'success': True, 'data': serialize_sube(sube, request)})
     
     elif request.method == 'PUT':
         try:
@@ -316,7 +355,7 @@ def api_sube_detail(request, pk):
             sube.save()
             return JsonResponse({
                 'success': True,
-                'data': {'id': sube.id, 'ad': sube.ad}
+                'data': serialize_sube(sube, request),
             })
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
@@ -476,7 +515,7 @@ def legacy_kurum_tanimlar_api(request):
             ],
             'subeler': [
                 {
-                    **serialize_sube(sube),
+                    **serialize_sube(sube, request),
                     'created_at': sube.created_at.isoformat() if sube.created_at else '',
                     'updated_at': sube.updated_at.isoformat() if sube.updated_at else '',
                 }
@@ -726,7 +765,7 @@ def api_kurum_branding_public(request, kod):
     })
 
 
-def _upload_kurum_branding_file(request, kurum, field_name, file_key, allowed_types, max_mb=5):
+def _upload_branding_file(request, entity, field_name, file_key, serializer_fn, allowed_types, max_mb=5):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
@@ -758,12 +797,12 @@ def _upload_kurum_branding_file(request, kurum, field_name, file_key, allowed_ty
             return JsonResponse({'success': False, 'error': 'Geçersiz dosya tipi'}, status=400)
 
     try:
-        old = getattr(kurum, field_name)
+        old = getattr(entity, field_name)
         if old:
             old.delete(save=False)
-        setattr(kurum, field_name, uploaded)
-        kurum.save(update_fields=[field_name, 'updated_at'])
-        branding = serialize_kurum_branding(kurum, request)
+        setattr(entity, field_name, uploaded)
+        entity.save(update_fields=[field_name, 'updated_at'])
+        branding = serializer_fn(entity, request)
         return JsonResponse({
             'success': True,
             'message': 'Dosya yüklendi',
@@ -771,6 +810,18 @@ def _upload_kurum_branding_file(request, kurum, field_name, file_key, allowed_ty
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+def _upload_kurum_branding_file(request, kurum, field_name, file_key, allowed_types, max_mb=5):
+    return _upload_branding_file(
+        request, kurum, field_name, file_key, serialize_kurum_branding, allowed_types, max_mb,
+    )
+
+
+def _upload_sube_branding_file(request, sube, field_name, file_key, allowed_types, max_mb=5):
+    return _upload_branding_file(
+        request, sube, field_name, file_key, serialize_sube_branding, allowed_types, max_mb,
+    )
 
 
 @csrf_exempt
@@ -796,6 +847,37 @@ def api_kurum_branding_favicon(request, pk):
     kurum = get_object_or_404(Kurum, pk=pk)
     return _upload_kurum_branding_file(
         request, kurum, 'favicon', 'favicon',
+        allowed_types={
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/x-icon',
+            'image/vnd.microsoft.icon', 'image/svg+xml', 'application/octet-stream',
+        },
+        max_mb=2,
+    )
+
+
+@csrf_exempt
+def api_sube_branding_login_logo(request, pk):
+    sube = get_object_or_404(Sube, pk=pk)
+    return _upload_sube_branding_file(
+        request, sube, 'login_logo', 'login_logo',
+        allowed_types={'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'},
+    )
+
+
+@csrf_exempt
+def api_sube_branding_app_logo(request, pk):
+    sube = get_object_or_404(Sube, pk=pk)
+    return _upload_sube_branding_file(
+        request, sube, 'app_logo', 'app_logo',
+        allowed_types={'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'},
+    )
+
+
+@csrf_exempt
+def api_sube_branding_favicon(request, pk):
+    sube = get_object_or_404(Sube, pk=pk)
+    return _upload_sube_branding_file(
+        request, sube, 'favicon', 'favicon',
         allowed_types={
             'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/x-icon',
             'image/vnd.microsoft.icon', 'image/svg+xml', 'application/octet-stream',

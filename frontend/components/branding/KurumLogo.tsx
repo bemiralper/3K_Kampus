@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import {
-  brandingFromKurum,
+  brandingFromContext,
+  brandingFaviconKey,
   getAppLogo,
   getLoginLogo,
   applyFavicon,
-  DEFAULT_BRANDING,
   applyKurumTheme,
+  resetFaviconCache,
 } from '@/lib/kurum-branding';
 
 type Props = {
@@ -29,10 +30,8 @@ export default function KurumLogo({
   className = '',
   textClassName = 'logo-text',
 }: Props) {
-  const { activeKurum } = useKurum();
-  const branding = activeKurum
-    ? brandingFromKurum(activeKurum)
-    : DEFAULT_BRANDING;
+  const { activeKurum, activeSube } = useKurum();
+  const branding = brandingFromContext(activeKurum, activeSube);
   const src = variant === 'login' ? getLoginLogo(branding) : getAppLogo(branding);
   const name = branding.gorunen_ad;
 
@@ -54,14 +53,20 @@ export default function KurumLogo({
 
 /** Aktif kurum teması + favicon — AppShell / portal layout'larda */
 export function ActiveKurumBranding() {
-  const { activeKurum } = useKurum();
+  const { activeKurum, activeSube } = useKurum();
+  const branding = useMemo(
+    () => (activeKurum ? brandingFromContext(activeKurum, activeSube) : null),
+    [activeKurum, activeSube],
+  );
+  const faviconKey = branding ? brandingFaviconKey(branding) : '';
 
   useEffect(() => {
-    if (!activeKurum) return;
-    const b = brandingFromKurum(activeKurum);
-    applyKurumTheme(b);
-    applyFavicon(b);
-  }, [activeKurum?.id, activeKurum?.favicon_url, activeKurum?.tema_rengi]);
+    if (!branding) return;
+    applyKurumTheme(branding);
+    document.title = `${branding.gorunen_ad} — 3K Kampüs`;
+    resetFaviconCache();
+    applyFavicon(branding, { force: true });
+  }, [branding, faviconKey]);
 
   return null;
 }
