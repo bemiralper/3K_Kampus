@@ -13,8 +13,10 @@ import {
   getSinifSeviyeleri
 } from './services';
 import { OdaDrawer, SinifDrawer, OdaTable, SinifTable } from './components';
+import { useKurum } from '@/lib/contexts/KurumContext';
 
 export default function SubeTanimlariPage() {
+  const { activeSube } = useKurum();
   const [mounted, setMounted] = useState(false);
   
   // State
@@ -537,7 +539,7 @@ export default function SubeTanimlariPage() {
         }}
         onSuccess={() => fetchOdalar()}
         editingOda={editingOda}
-        subeler={subeler}
+        activeSube={activeSube ? { id: activeSube.id, ad: activeSube.ad } : null}
       />
 
       <SinifDrawer

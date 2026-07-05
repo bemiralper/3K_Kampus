@@ -10,7 +10,7 @@ import json
 from apps.oda.domain.models import Oda, OdaTuru
 from apps.sube.domain.models import Sube
 from shared.api_helpers import require_api_login
-from shared.context import get_secili_kurum_id
+from shared.context import get_secili_kurum_id, require_mandatory_sube_id
 
 
 def get_kurum_id(request):
@@ -118,15 +118,18 @@ def oda_create_api(request):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Geçersiz JSON'}, status=400)
     
-    # Zorunlu alanlar
-    sube_id = data.get('sube_id')
-    ad = data.get('ad', '').strip()
-    
+    # Zorunlu alanlar — şube aktif bağlamdan alınır
+    sube_id = require_mandatory_sube_id(request, kurum_id=kurum_id)
     if not sube_id:
-        return JsonResponse({'error': 'Şube seçimi zorunludur'}, status=400)
+        return JsonResponse({
+            'error': 'Aktif şube bağlamı zorunludur. Üst menüden şube seçin.',
+        }, status=400)
+
+    ad = data.get('ad', '').strip()
+
     if not ad:
         return JsonResponse({'error': 'Oda adı zorunludur'}, status=400)
-    
+
     # Şube kontrolü
     try:
         sube = Sube.objects.get(id=sube_id, kurum_id=kurum_id)

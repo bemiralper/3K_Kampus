@@ -18,7 +18,7 @@ interface OdalarSiniflarSectionProps {
 }
 
 export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSectionProps) {
-  const { activeSube, subeler } = useKurum();
+  const { activeSube } = useKurum();
   
   // State
   const [odalar, setOdalar] = useState<Oda[]>([]);
@@ -263,7 +263,7 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
         onClose={() => { setShowOdaDrawer(false); setEditingOda(null); }}
         onSuccess={() => { fetchOdalar(); setShowOdaDrawer(false); setEditingOda(null); }}
         editingOda={editingOda}
-        subeler={subeler}
+        activeSube={activeSube ? { id: activeSube.id, ad: activeSube.ad } : null}
       />
       
       <SinifDrawer 

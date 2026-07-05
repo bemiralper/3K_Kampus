@@ -77,8 +77,24 @@ if [[ -f "$LMS_ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$LMS_ENV_FILE"
   set +a
-elif [[ -z "${ALLOWED_HOSTS:-}" ]]; then
-  log "Uyarı: $LMS_ENV_FILE yok — ALLOWED_HOSTS vb. export edilmiş olmalı"
+else
+  log "Uyarı: $LMS_ENV_FILE bulunamadı"
+fi
+
+if [[ -z "${ALLOWED_HOSTS:-}" ]]; then
+  cat >&2 <<EOF
+[deploy] HATA: ALLOWED_HOSTS tanımlı değil.
+
+Deploy öncesi ortam dosyasını yükleyin:
+  set -a && source /etc/lms/env && set +a
+
+Dosyada örnek satır:
+  ALLOWED_HOSTS=app.3kkampus.com,127.0.0.1,localhost
+
+Sonra tekrar:
+  ./backend/scripts/deploy-production.sh --no-git
+EOF
+  exit 1
 fi
 
 log "APP_ROOT=$APP_ROOT"

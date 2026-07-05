@@ -7,6 +7,7 @@ import { personelAccessService, type MyKurumItem } from "@/lib/personel-access-a
 import {
   resolvePostKurumRedirect,
   STORAGE_KURUM,
+  setContextGate,
 } from "@/lib/post-login-routing";
 import { setActiveContext } from "@/lib/api";
 
@@ -41,6 +42,9 @@ export default function KurumSecPage() {
           return;
         }
         setKurumlar(res.kurumlar);
+        if (res.needs_kurum_picker && res.kurumlar.length > 1) {
+          setContextGate("kurum");
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Kurum listesi yüklenemedi"))
       .finally(() => setLoading(false));

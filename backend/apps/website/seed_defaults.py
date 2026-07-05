@@ -10,7 +10,18 @@ from apps.website.models import (
 LANDING_KURUM_KOD = '3K'
 
 
+def resolve_landing_kurum(kod: str | None = None) -> Kurum | None:
+    """Mevcut kurumu bul — istek sırasında otomatik kurum oluşturma."""
+    lookup = (kod or LANDING_KURUM_KOD or '').strip()
+    if lookup:
+        kurum = Kurum.objects.filter(kod__iexact=lookup, aktif_mi=True).first()
+        if kurum:
+            return kurum
+    return Kurum.objects.filter(aktif_mi=True).order_by('id').first()
+
+
 def get_or_create_landing_kurum() -> tuple[Kurum, bool]:
+    """Yalnızca seed komutu için — canlı isteklerde kullanılmaz."""
     kurum, created = Kurum.objects.get_or_create(
         kod=LANDING_KURUM_KOD,
         defaults={
@@ -211,8 +222,8 @@ def landing_content_is_empty(kurum: Kurum) -> bool:
 def ensure_website_defaults(kurum: Kurum | None = None) -> dict | None:
     """Eksik site içeriklerini otomatik doldurur (idempotent)."""
     if kurum is None:
-        kurum, _ = get_or_create_landing_kurum()
-    if not landing_content_is_empty(kurum):
+        kurum = resolve_landing_kurum()
+    if kurum is None or not landing_content_is_empty(kurum):
         return None
     settings = SiteSettings.objects.filter(kurum=kurum).first()
     overwrite = settings is None or not (settings.telefon or '').strip()

@@ -19,6 +19,28 @@ import { personelAccessService } from "@/lib/personel-access-api";
 
 export const STORAGE_KURUM = "3k_active_kurum";
 export const STORAGE_SUBE = "3k_active_sube";
+export const STORAGE_CONTEXT_GATE = "3k_context_gate";
+
+export type ContextGate = "kurum" | "sube";
+
+export function setContextGate(gate: ContextGate | null): void {
+  if (typeof window === "undefined") return;
+  if (gate) {
+    sessionStorage.setItem(STORAGE_CONTEXT_GATE, gate);
+  } else {
+    sessionStorage.removeItem(STORAGE_CONTEXT_GATE);
+  }
+}
+
+export function getContextGate(): ContextGate | null {
+  if (typeof window === "undefined") return null;
+  const raw = sessionStorage.getItem(STORAGE_CONTEXT_GATE);
+  return raw === "kurum" || raw === "sube" ? raw : null;
+}
+
+export function clearContextGate(): void {
+  setContextGate(null);
+}
 
 async function persistSingleSube(
   sube: { id: number; kurum_id: number },
@@ -44,6 +66,8 @@ export async function resolvePostLoginRedirect(user: User | null): Promise<strin
     const kurumRes = await personelAccessService.myKurumlar();
 
     if (kurumRes.needs_kurum_picker && kurumRes.kurumlar.length > 1) {
+      localStorage.removeItem(STORAGE_SUBE);
+      setContextGate("kurum");
       return "/kurum-sec";
     }
 
@@ -66,6 +90,8 @@ export async function resolvePostLoginRedirect(user: User | null): Promise<strin
       subeRes.requires_login_sube_selection || subeRes.needs_sube_picker;
 
     if (mustSelectSube && subeRes.subeler.length > 1) {
+      localStorage.removeItem(STORAGE_SUBE);
+      setContextGate("sube");
       return "/sube-sec";
     }
 
@@ -73,6 +99,7 @@ export async function resolvePostLoginRedirect(user: User | null): Promise<strin
       await persistSingleSube(subeRes.subeler[0]);
     }
 
+    clearContextGate();
     return getDefaultHomePath(user);
   } catch {
     return getDefaultHomePath(user);
@@ -95,6 +122,8 @@ export async function resolvePostKurumRedirect(
       subeRes.requires_login_sube_selection || subeRes.needs_sube_picker;
 
     if (mustSelectSube && subeRes.subeler.length > 1) {
+      localStorage.removeItem(STORAGE_SUBE);
+      setContextGate("sube");
       return "/sube-sec";
     }
 
@@ -102,6 +131,7 @@ export async function resolvePostKurumRedirect(
       await persistSingleSube(subeRes.subeler[0]);
     }
 
+    clearContextGate();
     return getDefaultHomePath(user);
   } catch {
     return getDefaultHomePath(user);

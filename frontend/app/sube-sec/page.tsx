@@ -6,7 +6,12 @@ import { useAuth } from "@/lib/contexts/AuthContext";
 import { getDefaultHomePath } from "@/lib/auth-routes";
 import { personelAccessService, type MySubeItem } from "@/lib/personel-access-api";
 import { setActiveContext } from "@/lib/api";
-import { STORAGE_KURUM, STORAGE_SUBE } from "@/lib/post-login-routing";
+import {
+  STORAGE_KURUM,
+  STORAGE_SUBE,
+  clearContextGate,
+  setContextGate,
+} from "@/lib/post-login-routing";
 
 function readStoredKurumId(): number | undefined {
   if (typeof window === "undefined") return undefined;
@@ -52,6 +57,7 @@ export default function SubeSecPage() {
           localStorage.setItem(STORAGE_SUBE, String(s.id));
           localStorage.setItem(STORAGE_KURUM, String(s.kurum_id));
           setActiveContext(s.kurum_id, s.id, null).finally(() => {
+            clearContextGate();
             router.replace(getDefaultHomePath(user));
           });
           return;
@@ -59,7 +65,12 @@ export default function SubeSecPage() {
 
         if (mustSelectSube && res.subeler.length === 0) {
           setSubeler([]);
+          setContextGate("sube");
           return;
+        }
+
+        if (mustSelectSube && res.subeler.length > 1) {
+          setContextGate("sube");
         }
 
         setSubeler(res.subeler);
@@ -75,6 +86,7 @@ export default function SubeSecPage() {
       localStorage.setItem(STORAGE_SUBE, String(sube.id));
       localStorage.setItem(STORAGE_KURUM, String(sube.kurum_id));
       await setActiveContext(sube.kurum_id, sube.id, null);
+      clearContextGate();
       router.replace(getDefaultHomePath(user));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Şube seçilemedi");

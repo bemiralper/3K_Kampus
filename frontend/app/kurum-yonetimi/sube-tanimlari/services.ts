@@ -68,18 +68,22 @@ export async function getOdaTurleri(): Promise<OdaTur[]> {
 }
 
 export async function createOda(formData: OdaFormData) {
+  const payload: Record<string, unknown> = {
+    ad: formData.ad,
+    kapasite: parseInt(formData.kapasite),
+    oda_turu: formData.oda_turu,
+    aciklama: formData.aciklama,
+    aktif_mi: formData.aktif_mi,
+  };
+  if (formData.sube_id) {
+    payload.sube_id = parseInt(formData.sube_id, 10);
+  }
+
   const res = await fetch(`${API_BASE}/odalar/api/create/`, {
     method: 'POST',
     headers: getContextHeaders(),
     credentials: 'include',
-    body: JSON.stringify({
-      sube_id: parseInt(formData.sube_id),
-      ad: formData.ad,
-      kapasite: parseInt(formData.kapasite),
-      oda_turu: formData.oda_turu,
-      aciklama: formData.aciklama,
-      aktif_mi: formData.aktif_mi,
-    }),
+    body: JSON.stringify(payload),
   });
   
   const data = await res.json();
