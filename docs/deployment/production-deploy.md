@@ -9,6 +9,8 @@ Demo DB'de geliştirdikten sonra canlıya **yalnızca kod ve migration** alını
 
 Demo workflow: [demo-database.md](./demo-database.md)
 
+**Docker (opsiyonel):** [docker.md](./docker.md) — native/systemd deploy ile paralel.
+
 **İlk kurulum (sıfırdan sunucu):** [server-setup-plan.md](./server-setup-plan.md)
 
 ---

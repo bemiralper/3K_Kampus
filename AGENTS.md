@@ -29,6 +29,12 @@ There are two Django entrypoints in the tree. Only one is current:
 - **Frontend** (port 3000), from `frontend/`: `npm run dev`
   The frontend proxies API calls same-origin via `app/api/[...path]/route.ts` to `http://localhost:8000`.
 
+### Docker (optional — native workflow unchanged)
+- Dev: `cp .env.docker.example .env.docker` then `./scripts/docker-dev.sh` (see [docs/deployment/docker.md](docs/deployment/docker.md))
+- Prod: `cp .env.production.docker.example .env.production.docker` then `./scripts/docker-prod-deploy.sh`
+- Compose files: `docker-compose.dev.yml`, `docker-compose.prod.yml` — ports 5433/3000/8000 (dev); prod HTTP default 8080
+- Docker DB data is separate from Homebrew `lms_db`; systemd/Hetzner deploy (`deploy-production.sh`) is unaffected until you switch
+
 ### Non-obvious gotchas
 - **Browser login over http:** `development.py` uses `SESSION_COOKIE_SAMESITE='Lax'` and
   `CSRF_COOKIE_SAMESITE='Lax'` so cookies work on plain `http://localhost`. Do not set

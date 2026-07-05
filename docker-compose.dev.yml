@@ -1,0 +1,96 @@
+# 3K Kampüs LMS — Docker development
+# Native kurulumu bozmaz; port çakışması varsa native servisleri durdurun (3000, 8000, 5433).
+
+name: lms-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-lms_db}
+      POSTGRES_USER: ${DB_USER:-lms}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-lms}
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    ports:
+      # Mac Homebrew PG (5432) ile çakışmayı önler
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+      target: dev
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: db
+      DJANGO_ENV: development
+    volumes:
+      - ./backend:/app/backend
+      - media_dev:/app/backend/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+      target: dev
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      NEXT_PUBLIC_BACKEND_URL: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  # Opsiyonel: Celery + Redis — docker compose --profile workers up
+  redis:
+    profiles: ["workers"]
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  celery-worker:
+    profiles: ["workers"]
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+      target: dev
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      DB_HOST: db
+      DJANGO_ENV: development
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./backend:/app/backend
+    command: ["celery", "-A", "config", "worker", "-l", "info"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  pgdata_dev:
+  media_dev:
+  frontend_node_modules:

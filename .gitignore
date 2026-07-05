@@ -38,6 +38,8 @@ Thumbs.db
 .env
 .env.local
 .env.production
+.env.docker
+.env.production.docker
 
 # Node / Next.js
 node_modules/
@@ -46,6 +48,7 @@ out/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/tsconfig.tsbuildinfo
 
 # Sınav veri dosyaları (büyük dosyalar)
 AYT Deneme Sınavları/
