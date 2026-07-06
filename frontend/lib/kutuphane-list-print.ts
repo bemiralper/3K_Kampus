@@ -1,5 +1,12 @@
 import { brandingFromKurum, getAppLogo, DEFAULT_BRANDING } from './kurum-branding';
-import type { GunAktiflik, PeriyotDersler, SessionCode } from './kutuphane-api';
+import type { DaySchedule, GunAktiflik, PeriyotDersler, DaySessionCode } from './kutuphane-api';
+import {
+  DAY_DEFS,
+  PERIOD_DEFS,
+  deriveGunAktiflik,
+  normalizeGunlukDersSaatleri,
+  type GunlukDersSaatleri,
+} from './ders-programi-utils';
 
 type KurumBrandingInput = Parameters<typeof brandingFromKurum>[0];
 
@@ -28,21 +35,12 @@ export type LockerStudentRow = {
   durum?: string;
 };
 
-const DAYS = [
-  { key: '0', short: 'Pzt', label: 'Pazartesi' },
-  { key: '1', short: 'Sal', label: 'Salı' },
-  { key: '2', short: 'Çar', label: 'Çarşamba' },
-  { key: '3', short: 'Per', label: 'Perşembe' },
-  { key: '4', short: 'Cum', label: 'Cuma' },
-  { key: '5', short: 'Cmt', label: 'Cumartesi' },
-  { key: '6', short: 'Paz', label: 'Pazar' },
-];
-
-const PERIODS: { code: SessionCode; label: string; color: string }[] = [
-  { code: 'MORNING', label: 'Sabah', color: '#d97706' },
-  { code: 'AFTERNOON', label: 'Öğle', color: '#2563eb' },
-  { code: 'EVENING', label: 'Akşam', color: '#4f46e5' },
-];
+const DAYS = DAY_DEFS.map((d) => ({ key: d.key, short: d.short, label: d.label }));
+const PERIODS: { code: DaySessionCode; label: string; color: string }[] = PERIOD_DEFS.map((p) => ({
+  code: p.code,
+  label: p.label,
+  color: p.code === 'MORNING' ? '#d97706' : p.code === 'AFTERNOON' ? '#2563eb' : '#4f46e5',
+}));
 
 function escapeHtml(s: string): string {
   return s
@@ -63,8 +61,10 @@ function printShell(options: {
   meta: KutuphanePrintMeta;
   bodyContent: string;
   extraStyles?: string;
+  /** Tek A4 yatay sayfaya sığdır (ders programı vb.) */
+  singlePage?: boolean;
 }): string {
-  const { meta, bodyContent, extraStyles = '' } = options;
+  const { meta, bodyContent, extraStyles = '', singlePage = false } = options;
   const branding = meta.kurumBranding;
   const theme = branding?.tema_rengi || '#0262a7';
   const kurumAd = branding?.gorunen_ad || branding?.ad || '3K Kampüs';
@@ -72,6 +72,23 @@ function printShell(options: {
   const logo = logoSrc(branding, origin);
   const orient = meta.orientation || 'landscape';
   const printedAt = new Date().toLocaleString('tr-TR');
+  const bodyClass = singlePage ? ' class="single-page-print"' : '';
+
+  const singlePageStyles = singlePage ? `
+  body.single-page-print { padding: 3mm 4mm 2mm; font-size: 9px; height: auto; }
+  body.single-page-print .brand-header { gap: 8px; padding-bottom: 4px; margin-bottom: 5px; border-bottom-width: 2px; }
+  body.single-page-print .brand-header img { width: 34px; height: 34px; }
+  body.single-page-print .brand-text h1 { font-size: 14px; }
+  body.single-page-print .brand-text .kurum { font-size: 10px; }
+  body.single-page-print .brand-text .meta-line { font-size: 8px; margin-top: 2px; }
+  body.single-page-print .footer { margin-top: 3px; font-size: 7px; }
+  body.single-page-print .section { margin-bottom: 0; }
+  body.single-page-print .section-title { display: none; }
+  @media print {
+    body.single-page-print { padding: 0; height: 100%; overflow: hidden; }
+    body.single-page-print .print-main { page-break-inside: avoid; break-inside: avoid; }
+    @page { size: A4 landscape; margin: 3mm; }
+  }` : '';
 
   return `<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"/>
 <title>${escapeHtml(meta.title)}</title>
@@ -96,14 +113,15 @@ function printShell(options: {
   td.left { text-align: left; }
   tr:nth-child(even) td { background: #fafbfc; }
   .footer { margin-top: 10px; font-size: 8px; color: #94a3b8; text-align: right; }
+  ${singlePageStyles}
   ${extraStyles}
   @media print {
-    body { padding: 5mm; }
-    @page { size: ${orient}; margin: 5mm; }
+    body { padding: ${singlePage ? '0' : '5mm'}; }
+    @page { size: ${singlePage ? 'A4 landscape' : orient}; margin: ${singlePage ? '3mm' : '5mm'}; }
     thead { display: table-header-group; }
     tr { page-break-inside: avoid; }
   }
-</style></head><body>
+</style></head><body${bodyClass}>
   <div class="brand-header">
     <img src="${logo}" alt="${escapeHtml(kurumAd)}" onerror="this.style.display='none'"/>
     <div class="brand-text">
@@ -120,80 +138,127 @@ function printShell(options: {
 export function buildDersProgramiPrintHtml(options: {
   meta: KutuphanePrintMeta;
   programAd: string;
-  dersSaatleri: Record<string, PeriyotDersler>;
-  gunAktiflik: Record<string, GunAktiflik>;
+  dersSaatleri: Record<string, PeriyotDersler> | GunlukDersSaatleri;
+  gunAktiflik?: Record<string, GunAktiflik>;
 }): string {
-  const { meta, programAd, dersSaatleri, gunAktiflik } = options;
+  const { meta, programAd } = options;
+  const gunluk = normalizeGunlukDersSaatleri(
+    options.dersSaatleri as Record<string, unknown>,
+    options.gunAktiflik,
+  );
+  const gunAktiflik = options.gunAktiflik || deriveGunAktiflik(gunluk);
 
-  const weekMatrixHead = DAYS.map((d) => `<th>${d.short}</th>`).join('');
-  const weekMatrixBody = PERIODS.map((p) => {
-    const cells = DAYS.map((d) => {
-      const day = gunAktiflik[d.key];
-      const active = day?.aktif && day.periyotlar.includes(p.code);
-      return `<td class="${active ? 'active-cell' : 'inactive-cell'}">${active ? '✓' : '—'}</td>`;
-    }).join('');
-    return `<tr><td class="left period-label" style="color:${p.color}">${escapeHtml(p.label)}</td>${cells}</tr>`;
+  const dayColumns = DAYS.map((d) => {
+    const dayInfo = gunAktiflik[d.key];
+    if (!dayInfo?.aktif) {
+      return `<td class="day-cell closed"><div class="day-closed">Kapalı</div></td>`;
+    }
+
+    const daySchedule = gunluk[d.key];
+    const sessionBlocks = PERIODS.map((p) => {
+      const pd = daySchedule?.[p.code];
+      if (!pd?.dersler?.length) return '';
+      const lines = pd.dersler.map((ders: { ders_no: number; baslangic: string; bitis: string }) => {
+        const start = (ders.baslangic || '').slice(0, 5);
+        const end = (ders.bitis || '').slice(0, 5);
+        return `<div class="period-line">
+          <span class="etut-label">${ders.ders_no}. Etüt</span>
+          <span class="period-time">${escapeHtml(start)} – ${escapeHtml(end)}</span>
+        </div>`;
+      }).join('');
+      const icon = p.code === 'MORNING' ? '☀' : p.code === 'AFTERNOON' ? '🌤' : '🌙';
+      return `<div class="session-block">
+        <div class="session-title" style="color:${p.color}">${icon} ${escapeHtml(p.label)}</div>
+        ${lines}
+      </div>`;
+    }).filter(Boolean).join('');
+
+    if (!sessionBlocks) {
+      return `<td class="day-cell closed"><div class="day-closed">Kapalı</div></td>`;
+    }
+
+    return `<td class="day-cell">${sessionBlocks}</td>`;
   }).join('');
 
-  const periodSections = PERIODS.map((p) => {
-    const pd = dersSaatleri[p.code];
-    if (!pd?.dersler?.length) return '';
-    const rows = pd.dersler.map((ders, idx) => {
-      const mola = idx < pd.dersler.length - 1 && pd.molalar[idx]
-        ? `${pd.molalar[idx].sure_dk} dk`
-        : '—';
-      const start = ders.baslangic?.slice(0, 5) || '';
-      const end = ders.bitis?.slice(0, 5) || '';
-      return `<tr>
-        <td><strong>${ders.ders_no}</strong></td>
-        <td class="left time-cell">${escapeHtml(start)} – ${escapeHtml(end)}</td>
-        <td>${pd.ders_suresi_dk} dk</td>
-        <td>${mola}</td>
-      </tr>`;
-    }).join('');
-
-    return `<div class="section period-block">
-      <div class="section-title" style="color:${p.color}">${escapeHtml(p.label)} Periyodu · ${pd.dersler.length} ders · ${pd.ders_suresi_dk} dk</div>
-      <table class="period-table">
-        <thead><tr><th>#</th><th class="left">Ders Saati</th><th>Süre</th><th>Mola</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-  }).join('');
+  const weekHoursTable = `
+    <table class="week-hours-table">
+      <thead><tr>${DAYS.map((d) => `<th>${escapeHtml(d.short)}<span class="day-full">${escapeHtml(d.label)}</span></th>`).join('')}</tr></thead>
+      <tbody><tr>${dayColumns}</tr></tbody>
+    </table>`;
 
   const activeDayCount = DAYS.filter((d) => gunAktiflik[d.key]?.aktif).length;
   const totalPeriods = Object.values(gunAktiflik).reduce(
     (s, g) => s + (g.aktif ? g.periyotlar.length : 0),
     0,
   );
+  const totalDers = Object.values(gunluk).reduce(
+    (s, day) => s + PERIODS.reduce((ps, p) => ps + (day[p.code]?.dersler?.length || 0), 0),
+    0,
+  );
 
   const bodyContent = `
-  <div class="meta-grid">
-    <div class="meta-card"><div class="label">Program</div><div class="value">${escapeHtml(programAd)}</div></div>
-    <div class="meta-card"><div class="label">Aktif Gün</div><div class="value">${activeDayCount} / 7</div></div>
-    <div class="meta-card"><div class="label">Haftalık Periyot</div><div class="value">${totalPeriods}</div></div>
-  </div>
-  <div class="section">
-    <div class="section-title">Haftalık Aktiflik Matrisi</div>
-    <table class="week-matrix">
-      <thead><tr><th class="left">Periyot</th>${weekMatrixHead}</tr></thead>
-      <tbody>${weekMatrixBody}</tbody>
-    </table>
-  </div>
-  <div class="periods-row">${periodSections}</div>`;
+  <div class="print-main">
+    <div class="dp-stats-bar">
+      <span><strong>Program:</strong> ${escapeHtml(programAd)}</span>
+      <span class="dp-stats-sep">·</span>
+      <span><strong>Aktif gün:</strong> ${activeDayCount}/7</span>
+      <span class="dp-stats-sep">·</span>
+      <span><strong>Toplam etüt:</strong> ${totalDers}</span>
+      <span class="dp-stats-sep">·</span>
+      <span><strong>Oturum:</strong> ${totalPeriods}</span>
+    </div>
+    ${weekHoursTable}
+  </div>`;
 
   return printShell({
     meta: { ...meta, orientation: 'landscape' },
+    singlePage: true,
     bodyContent,
     extraStyles: `
-      .week-matrix .active-cell { background: #ecfdf5; color: #059669; font-weight: 800; font-size: 12px; }
-      .week-matrix .inactive-cell { background: #f8fafc; color: #cbd5e1; }
-      .week-matrix .period-label { font-weight: 700; background: #fff !important; }
-      .periods-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-      .period-block { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; background: #fafbfc; }
-      .period-table th, .period-table td { font-size: 9px; padding: 5px 6px; }
-      .time-cell { font-family: ui-monospace, monospace; font-weight: 700; color: #1e293b; }
-      @media print { .periods-row { grid-template-columns: repeat(3, 1fr); } }
+      .dp-stats-bar {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+        font-size: 10px; color: #475569; margin-bottom: 6px; padding: 5px 8px;
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+      }
+      .dp-stats-bar strong { color: #0f172a; font-weight: 700; }
+      .dp-stats-sep { color: #cbd5e1; }
+      .week-hours-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+      .week-hours-table th {
+        font-size: 12px; font-weight: 800; padding: 5px 4px; vertical-align: bottom;
+        line-height: 1.2; color: #0f172a; background: #f1f5f9; border: 1px solid #cbd5e1;
+      }
+      .week-hours-table th .day-full {
+        display: block; font-size: 8px; font-weight: 600; color: #64748b; margin-top: 1px;
+      }
+      .week-hours-table td.day-cell {
+        vertical-align: top; width: 14.28%; padding: 5px 4px;
+        border: 1px solid #cbd5e1; background: #fff;
+      }
+      .week-hours-table td.day-cell.closed { background: #f8fafc; }
+      .session-block { margin-bottom: 5px; padding-bottom: 4px; border-bottom: 1px dashed #e2e8f0; }
+      .session-block:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+      .session-title { font-size: 10px; font-weight: 800; margin-bottom: 3px; white-space: nowrap; }
+      .period-line {
+        display: flex; flex-direction: column; gap: 1px;
+        margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #f1f5f9;
+      }
+      .period-line:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+      .etut-label { font-size: 10px; font-weight: 800; color: #334155; line-height: 1.2; }
+      .period-time {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; font-weight: 700; line-height: 1.25; color: #0f172a;
+      }
+      .day-closed { font-size: 10px; font-weight: 600; color: #94a3b8; font-style: italic; text-align: center; padding: 8px 2px; }
+      @media print {
+        .print-main { page-break-inside: avoid; break-inside: avoid; }
+        .week-hours-table { page-break-inside: avoid; break-inside: avoid; }
+        .week-hours-table tbody tr { page-break-inside: avoid; break-inside: avoid; }
+        .week-hours-table td.day-cell { padding: 4px 3px; }
+        .session-block { margin-bottom: 4px; padding-bottom: 3px; }
+        .period-time { font-size: 10.5px; }
+        .etut-label { font-size: 9.5px; }
+        .session-title { font-size: 9.5px; margin-bottom: 2px; }
+      }
     `,
   });
 }
@@ -218,10 +283,14 @@ export function buildSeatStudentListPrintHtml(options: {
       </tr>`).join('');
 
   const bodyContent = `
+  <div class="salon-banner">
+    <div class="salon-label">Salon</div>
+    <div class="salon-name">${escapeHtml(salonAdi)}</div>
+  </div>
   <div class="meta-grid">
-    <div class="meta-card"><div class="label">Salon</div><div class="value">${escapeHtml(salonAdi)}</div></div>
     <div class="meta-card"><div class="label">Atanan Öğrenci</div><div class="value">${sorted.length}</div></div>
-    <div class="meta-card"><div class="label">Liste Türü</div><div class="value">Masa Öğrenci Listesi</div></div>
+    <div class="meta-card"><div class="label">Liste Türü</div><div class="value">Oturma Planı</div></div>
+    <div class="meta-card"><div class="label">Tarih</div><div class="value">${new Date().toLocaleDateString('tr-TR')}</div></div>
   </div>
   <div class="section">
     <table>
@@ -241,6 +310,9 @@ export function buildSeatStudentListPrintHtml(options: {
     meta,
     bodyContent,
     extraStyles: `
+      .salon-banner { margin-bottom: 14px; padding: 10px 14px; background: linear-gradient(180deg, #f8fafc, #fff); border: 1px solid #e2e8f0; border-radius: 10px; }
+      .salon-label { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+      .salon-name { font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 4px; letter-spacing: -0.02em; }
       .name-col { font-weight: 600; }
       .empty-row { text-align: center; color: #94a3b8; padding: 20px !important; }
     `,

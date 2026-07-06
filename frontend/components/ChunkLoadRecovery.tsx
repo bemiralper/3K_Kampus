@@ -18,17 +18,24 @@ export default function ChunkLoadRecovery() {
       window.location.reload();
     };
 
-    const isRecoverableLoadError = (msg: string) =>
-      msg.includes("ChunkLoadError") ||
-      msg.includes("Loading chunk") ||
-      msg.includes("Cannot find module") ||
-      msg.includes("Failed to fetch dynamically imported module") ||
-      msg.includes("originalFactory.call") ||
-      msg.includes("parallelRoutes.get");
+    const isRecoverableLoadError = (msg: string, stack = "") => {
+      const combined = `${msg} ${stack}`;
+      return (
+        combined.includes("ChunkLoadError") ||
+        combined.includes("Loading chunk") ||
+        combined.includes("Cannot find module") ||
+        combined.includes("Failed to fetch dynamically imported module") ||
+        combined.includes("originalFactory.call") ||
+        combined.includes("parallelRoutes") ||
+        combined.includes("newCache") ||
+        (combined.includes("null is not an object") && combined.includes("evaluating"))
+      );
+    };
 
     const onError = (event: ErrorEvent) => {
       const msg = event.message || "";
-      if (!isRecoverableLoadError(msg)) return;
+      const stack = event.error instanceof Error ? event.error.stack || "" : "";
+      if (!isRecoverableLoadError(msg, stack)) return;
       reloadOnce();
     };
 
@@ -40,7 +47,8 @@ export default function ChunkLoadRecovery() {
           : reason instanceof Error
             ? reason.message
             : "";
-      if (!isRecoverableLoadError(msg)) return;
+      const stack = reason instanceof Error ? reason.stack || "" : "";
+      if (!isRecoverableLoadError(msg, stack)) return;
       reloadOnce();
     };
 

@@ -9,7 +9,8 @@ export default function Error({
 }) {
   const isRouterCacheError =
     error.message?.includes("parallelRoutes") ||
-    error.message?.includes("parallelRoutes.get");
+    error.message?.includes("newCache") ||
+    (error.message?.includes("null is not an object") && error.message?.includes("evaluating"));
 
   const onRetry = () => {
     if (isRouterCacheError) {

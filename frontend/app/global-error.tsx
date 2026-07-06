@@ -7,6 +7,24 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const isRouterCacheError =
+    error.message?.includes("parallelRoutes") ||
+    error.message?.includes("newCache") ||
+    (error.message?.includes("null is not an object") && error.message?.includes("evaluating"));
+
+  const onRetry = () => {
+    if (isRouterCacheError) {
+      try {
+        sessionStorage.removeItem("lms_chunk_reload");
+      } catch {
+        /* ignore */
+      }
+      window.location.reload();
+      return;
+    }
+    reset();
+  };
+
   return (
     <html lang="tr">
       <body>
@@ -24,11 +42,13 @@ export default function GlobalError({
         >
           <h2 style={{ fontSize: "1.125rem", fontWeight: 600 }}>Bir hata oluştu</h2>
           <p style={{ fontSize: "0.875rem", color: "#666", textAlign: "center" }}>
-            {error.message || "Uygulama yüklenirken bir sorun oluştu."}
+            {isRouterCacheError
+              ? "Sayfa önbelleği güncellenemedi. Tam yenileme yapılıyor…"
+              : error.message || "Uygulama yüklenirken bir sorun oluştu."}
           </p>
           <button
             type="button"
-            onClick={() => reset()}
+            onClick={onRetry}
             style={{
               padding: "0.5rem 1rem",
               fontSize: "0.875rem",

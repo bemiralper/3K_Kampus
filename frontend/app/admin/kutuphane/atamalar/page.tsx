@@ -440,22 +440,22 @@ export default function AtamalarPage() {
         .resource-owner { font-size: 10px; color: #ef4444; margin-top: 3px; font-weight: 500; }
 
         /* ─── Stat Cards ─── */
-        .stat-cards-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 24px; }
+        .stat-cards-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px; }
         @media (max-width: 1280px) { .stat-cards-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 768px) { .stat-cards-grid { grid-template-columns: repeat(2, 1fr); } }
 
-        .stat-card { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: 16px; border: 2px solid transparent; background: #fff; cursor: pointer; transition: all 0.25s cubic-bezier(0.4,0,0.2,1); position: relative; overflow: hidden; text-align: left; width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06); }
-        .stat-card:hover { box-shadow: 0 6px 16px rgba(0,0,0,0.08); transform: translateY(-2px); }
-        .stat-card.active { border-color: currentColor; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-        .stat-card-deco { position: absolute; top: -20px; right: -20px; width: 80px; height: 80px; border-radius: 50%; pointer-events: none; }
-        .stat-card-icon { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .stat-card { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid transparent; background: #fff; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; text-align: left; width: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+        .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); transform: translateY(-1px); }
+        .stat-card.active { border-color: currentColor; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
+        .stat-card-deco { position: absolute; top: -16px; right: -16px; width: 56px; height: 56px; border-radius: 50%; pointer-events: none; }
+        .stat-card-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
         .stat-card-body { flex: 1; min-width: 0; position: relative; z-index: 1; }
-        .stat-card-value { font-size: 26px; font-weight: 800; line-height: 1.1; color: #111827; }
+        .stat-card-value { font-size: 20px; font-weight: 800; line-height: 1.1; color: #111827; }
         .stat-card.active .stat-card-value { color: inherit; }
-        .stat-card-label { font-size: 12px; font-weight: 600; color: #6b7280; margin-top: 2px; }
+        .stat-card-label { font-size: 11px; font-weight: 600; color: #6b7280; margin-top: 1px; }
         .stat-card.active .stat-card-label { color: inherit; }
-        .stat-card-sub { font-size: 11px; color: #9ca3af; margin-top: 1px; }
-        .stat-card-check { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; font-weight: 700; flex-shrink: 0; }
+        .stat-card-sub { font-size: 10px; color: #9ca3af; margin-top: 1px; }
+        .stat-card-check { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; font-weight: 700; flex-shrink: 0; }
 
         /* ─── Filter Bar ─── */
         .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; padding: 14px 18px; background: #fff; border-radius: 14px; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
@@ -557,10 +557,10 @@ export default function AtamalarPage() {
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
           </div>
           <div className="hero-text">
-            <h1>Kaynak Atamaları</h1>
+            <h1>Öğrenci Atamaları</h1>
             <div className="hero-breadcrumb">
               <a href="/dashboard">Ana Sayfa</a><span>/</span>
-              <a href={href()}>Kütüphane</a><span>/</span><span>Atamalar</span>
+              <a href={href()}>Kütüphane</a><span>/</span><span>Öğrenci Atamaları</span>
             </div>
           </div>
         </div>

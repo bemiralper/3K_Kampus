@@ -1,36 +1,49 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
-const STORAGE_KEY = "muhasebe-sidebar-open";
-
-function readInitialOpen(): boolean {
-  if (typeof window === "undefined") return true;
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved === "false") return false;
-  if (saved === "true") return true;
-  return window.innerWidth >= 992;
-}
+const DESKTOP_STORAGE_KEY = "muhasebe-sidebar-expanded";
 
 export function useMuhasebeSidebarCollapse() {
-  const [isOpen, setIsOpen] = useState(true);
+  const isDesktop = useMediaQuery("(min-width: 992px)");
+  const [desktopExpanded, setDesktopExpanded] = useState(true);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   useEffect(() => {
-    setIsOpen(readInitialOpen());
+    const saved = localStorage.getItem(DESKTOP_STORAGE_KEY);
+    if (saved === "false") setDesktopExpanded(false);
+    else if (saved === "true") setDesktopExpanded(true);
   }, []);
 
+  useEffect(() => {
+    if (isDesktop) setMobileDrawerOpen(false);
+  }, [isDesktop]);
+
+  /** Geniş menü: masaüstünde expanded, mobilde çekmece açık */
+  const isSidebarWide = isDesktop ? desktopExpanded : mobileDrawerOpen;
+
   const toggle = () => {
-    setIsOpen((prev) => {
-      const next = !prev;
-      localStorage.setItem(STORAGE_KEY, String(next));
-      return next;
-    });
+    if (isDesktop) {
+      setDesktopExpanded((prev) => {
+        const next = !prev;
+        localStorage.setItem(DESKTOP_STORAGE_KEY, String(next));
+        return next;
+      });
+      return;
+    }
+    setMobileDrawerOpen((prev) => !prev);
   };
 
-  const setOpen = (open: boolean) => {
-    setIsOpen(open);
-    localStorage.setItem(STORAGE_KEY, String(open));
-  };
+  const closeMobileDrawer = () => setMobileDrawerOpen(false);
 
-  return { isOpen, toggle, setOpen };
+  return {
+    isSidebarWide,
+    isDesktop,
+    mobileDrawerOpen,
+    desktopExpanded,
+    toggle,
+    closeMobileDrawer,
+    setMobileDrawerOpen,
+  };
 }

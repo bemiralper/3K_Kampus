@@ -656,8 +656,9 @@ class AttendanceService:
         if not program:
             raise ValueError(f"Şube #{sube_id} için aktif ders programı bulunamadı")
 
-        period_data = program.ders_saatleri.get(periyot_kodu, {})
-        ders_sayisi = period_data.get('ders_sayisi', 0)
+        gun = tarih.weekday()
+        period_data = program.get_ders_saatleri_for_period(periyot_kodu, gun)
+        ders_sayisi = period_data.get('ders_sayisi', len(period_data.get('dersler', [])))
 
         if ders_sayisi == 0:
             raise ValueError(f"Bu periyot ({periyot_kodu}) için ders tanımı bulunamadı")
@@ -1041,7 +1042,23 @@ class SubeDersProgramiService:
 
     def _validate_program(self, data: dict, is_update: bool = False):
         """Ders programı validasyonu"""
+        from apps.kutuphane.ders_programi_utils import (
+            derive_gun_bazli_aktiflik,
+            is_v2_ders_saatleri,
+            normalize_ders_saatleri,
+            validate_gunluk_ders_saatleri,
+        )
+
         ders_saatleri = data.get('ders_saatleri', {})
+        gun_bazli = data.get('gun_bazli_aktiflik')
+
+        if is_v2_ders_saatleri(ders_saatleri) or not ders_saatleri:
+            gunluk = normalize_ders_saatleri(ders_saatleri, gun_bazli)
+            if not is_update:
+                validate_gunluk_ders_saatleri(gunluk)
+            data['ders_saatleri'] = gunluk
+            data['gun_bazli_aktiflik'] = derive_gun_bazli_aktiflik(gunluk)
+            return
 
         if not is_update and not ders_saatleri:
             raise ValueError("En az bir periyot tanımlanmalıdır")
@@ -1061,7 +1078,6 @@ class SubeDersProgramiService:
                     f"ders tanımı sayısı ({len(dersler)}) uyuşmuyor"
                 )
 
-            # Ders saatleri sıralama kontrolü
             for i, ders in enumerate(dersler):
                 if not ders.get('baslangic') or not ders.get('bitis'):
                     raise ValueError(f"{period_code}: {i+1}. ders için saat tanımı eksik")
@@ -1072,10 +1088,10 @@ class SubeDersProgramiService:
                         f"başlangıçtan sonra olmalıdır"
                     )
 
-        gun_bazli = data.get('gun_bazli_aktiflik', {})
-        for gun_str, gun_info in gun_bazli.items():
-            if not gun_str.isdigit() or int(gun_str) not in range(7):
-                raise ValueError(f"Geçersiz gün: {gun_str} (0-6 arası olmalı)")
+        if gun_bazli:
+            for gun_str, gun_info in gun_bazli.items():
+                if not gun_str.isdigit() or int(gun_str) not in range(7):
+                    raise ValueError(f"Geçersiz gün: {gun_str} (0-6 arası olmalı)")
 
 
 class OgrenciIzinService:

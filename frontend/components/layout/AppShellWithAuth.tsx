@@ -1,12 +1,21 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { getDefaultHomePath, isCoachOnlyUser, isMuhasebeOnlyUser } from "@/lib/auth-routes";
 import { getContextGate } from "@/lib/post-login-routing";
 import AppShell from "@/components/layout/AppShell";
+
+/** router.replace yerine — Next.js 14 parallelRoutes.get önbellek hatasını önler */
+function hardReplace(path: string) {
+  if (typeof window === "undefined") return;
+  const target = path.startsWith("/") ? path : `/${path}`;
+  const current = `${window.location.pathname}${window.location.search}`;
+  if (current === target) return;
+  window.location.replace(target);
+}
 
 // Routes that don't require authentication
 const PUBLIC_ROUTE_PREFIXES = ["/login", "/yasal", "/duyurular", "/3k-sistemi", "/hakkimizda"];
@@ -56,7 +65,6 @@ function AuthLoadingSpinner() {
 
 export default function AppShellWithAuth({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { user, isAuthenticated, isLoading } = useAuth();
   const hasRedirectedRef = useRef(false);
 
@@ -95,7 +103,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       const home = getDefaultHomePath(user);
       console.log("[AppShell] Authenticated user on public route, redirecting to", home);
       hasRedirectedRef.current = true;
-      router.replace(home);
+      hardReplace(home);
       return;
     }
 
@@ -103,7 +111,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
     if (!isPublicRoute && !isAuthenticated) {
       console.log("[AppShell] Not authenticated on protected route, redirecting to landing");
       hasRedirectedRef.current = true;
-      router.replace(isPortalRoute ? "/?giris=1" : "/");
+      hardReplace(isPortalRoute ? "/?giris=1" : "/");
       return;
     }
 
@@ -118,7 +126,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       const home = getDefaultHomePath(user);
       console.log("[AppShell] Portal-only user on admin route, redirecting to", home);
       hasRedirectedRef.current = true;
-      router.replace(home);
+      hardReplace(home);
     }
 
     // Kurum/şube seçimi tamamlanmadan uygulamaya geçilmesin
@@ -132,16 +140,16 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       const gate = getContextGate();
       if (gate === "kurum") {
         hasRedirectedRef.current = true;
-        router.replace("/kurum-sec");
+        hardReplace("/kurum-sec");
         return;
       }
       if (gate === "sube") {
         hasRedirectedRef.current = true;
-        router.replace("/sube-sec");
+        hardReplace("/sube-sec");
         return;
       }
     }
-  }, [isAuthenticated, isLoading, isPortalRoute, isPublicRoute, isContextPickerRoute, isPrintRoute, pathname, router, user]);
+  }, [isAuthenticated, isLoading, isPortalRoute, isPublicRoute, isContextPickerRoute, isPrintRoute, pathname, user]);
 
   // Public sayfalar (landing vb.) auth kontrolü beklenmeden gösterilir
   if (isLoading && !isPrintRoute && !isPublicRoute) {

@@ -156,6 +156,7 @@ Nginx, SSL ve WhatsApp cron: [whatsapp-production-setup.md](./whatsapp-productio
 | migrate SSL hatası | `DB_HOST` cloud DB ise `sslmode=require` production'da açık |
 | collectstatic izin hatası | `staticfiles/` dizinine www-data yazma izni |
 | frontend build OOM | Sunucuda swap artırın veya lokal build + rsync |
+| nginx 502 / `EACCES` `.next/server/...` | Deploy root ile yapıldı; `sudo chown -R lms:www-data /var/www/lms/frontend/.next` sonra `systemctl restart lms-frontend` |
 | Servis restart yok | `LMS_BACKEND_SERVICE` / `LMS_PM2_APP` export edin |
 
 Yedekleme deploy öncesi: [backup-restore.md](./backup-restore.md)

@@ -684,7 +684,7 @@ function MasalarTab({ seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onT
       }));
     const html = buildSeatStudentListPrintHtml({
       meta: {
-        title: 'Masa Öğrenci Listesi',
+        title: 'Oturma Planı',
         subtitle: salonAdi,
         subeAdi,
         kurumBranding,
@@ -2061,7 +2061,7 @@ function AtamalarTab({ seatAssignments, salonAdi, subeAdi, kurumBranding, onEnd 
     }));
     const html = buildSeatStudentListPrintHtml({
       meta: {
-        title: 'Masa Atama Listesi',
+        title: 'Oturma Planı',
         subtitle: salonAdi,
         subeAdi,
         kurumBranding,

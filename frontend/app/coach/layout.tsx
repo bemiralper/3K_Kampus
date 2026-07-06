@@ -38,7 +38,7 @@ function resolvePageTitle(pathname: string): string {
   if (pathname.startsWith("/coach/odev/kaynak-havuzu")) return "Kaynak Havuzu";
   if (pathname.startsWith("/coach/odev/kaynaklar")) return "Kaynak Kütüphanesi";
   if (pathname.startsWith("/coach/kutuphane/")) {
-    if (pathname.includes("/atamalar")) return "Kütüphane · Atamalar";
+    if (pathname.includes("/atamalar")) return "Kütüphane · Öğrenci Atamaları";
     if (pathname.includes("/salonlar")) return "Kütüphane · Salonlar";
     if (pathname.includes("/dolaplar")) return "Kütüphane · Dolaplar";
     if (pathname.includes("/izinler")) return "Kütüphane · İzinler";

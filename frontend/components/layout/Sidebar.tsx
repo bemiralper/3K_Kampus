@@ -263,7 +263,7 @@ const navItems: MenuItem[] = [
       { label: "Dashboard", href: "/admin/kutuphane" },
       { label: "Salonlar", href: "/admin/kutuphane/salonlar" },
       { label: "Dolaplar", href: "/admin/kutuphane/dolaplar" },
-      { label: "Atamalar", href: "/admin/kutuphane/atamalar" },
+      { label: "Öğrenci Atamaları", href: "/admin/kutuphane/atamalar" },
       { label: "Ders Programı", href: "/admin/kutuphane/ders-programi" },
       { label: "İzinler", href: "/admin/kutuphane/izinler" },
       { label: "Analitik", href: "/admin/kutuphane/analitik" },

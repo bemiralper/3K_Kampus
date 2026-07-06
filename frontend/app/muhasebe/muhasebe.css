@@ -327,7 +327,7 @@
 }
 
 .muhasebe-nav-submenu.is-open {
-  max-height: 240px;
+  max-height: 320px;
   opacity: 1;
 }
 
@@ -545,13 +545,20 @@
   .muhasebe-sidebar-backdrop {
     display: block;
     position: fixed;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: min(280px, 88vw);
     z-index: 210;
     border: none;
     padding: 0;
     background: rgba(15, 23, 42, 0.45);
     backdrop-filter: blur(2px);
     cursor: pointer;
+  }
+
+  .muhasebe-sidebar {
+    z-index: 230;
   }
 
   .muhasebe-sidebar-header {
@@ -620,6 +627,13 @@
     padding: 10px 8px;
   }
 
+  /* Daraltılmış menüde alt menü (flyout) sidebar dışına taşar; overflow-y: auto
+     tarayıcıda overflow-x'i de auto yaptığından taşan flyout kırpılıp görünmez
+     oluyordu. Daraltılmış modda dikey scroll'a ihtiyaç olmadığından kapatıyoruz. */
+  .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-nav-sidebar {
+    overflow: visible;
+  }
+
   .muhasebe-nav-bottom {
     display: none;
   }
@@ -659,7 +673,8 @@
     display: none;
   }
 
-  .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-nav-group:hover .muhasebe-nav-submenu-tooltip {
+  .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-nav-group:hover .muhasebe-nav-submenu-tooltip,
+  .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-nav-group.is-open .muhasebe-nav-submenu-tooltip {
     display: block;
     position: absolute;
     left: calc(100% + 8px);
@@ -678,17 +693,12 @@
 }
 
 .muhasebe-sidebar-hint {
-  margin: 0 0 8px;
-  padding: 0 12px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: rgba(226, 232, 240, 0.65);
-  text-align: center;
+  display: none;
 }
 
 .muhasebe-nav-item.is-dragging,
 .muhasebe-nav-subitem.is-dragging {
-  opacity: 0.45;
+  opacity: 1;
 }
 
 .muhasebe-nav-item.drag-over-before::before,

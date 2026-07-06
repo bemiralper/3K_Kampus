@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import {
   MUHASEBE_NAV_ITEMS,
   type MuhasebeNavItemDef,
@@ -20,7 +21,7 @@ export function useMuhasebeMenuOrder() {
 
   const { reorderSubmenu, getOrderedChildren } = useSubmenuOrderMap(SUB_STORAGE, submenuParents);
 
-  const getOrderedItems = (): MuhasebeNavItemDef[] => {
+  const getOrderedItems = useCallback((): MuhasebeNavItemDef[] => {
     const ordered = getOrdered(MUHASEBE_NAV_ITEMS);
     return ordered.map((item) => {
       if (!item.children?.length) return item;
@@ -29,7 +30,7 @@ export function useMuhasebeMenuOrder() {
         children: getOrderedChildren(item.id, item.children),
       };
     });
-  };
+  }, [getOrdered, getOrderedChildren]);
 
   return { reorder, reorderSubmenu, getOrderedItems };
 }

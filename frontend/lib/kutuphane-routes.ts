@@ -5,7 +5,7 @@ export const KUTUPHANE_NAV_ITEMS = [
   { segment: '', label: 'Dashboard', icon: '📊' },
   { segment: 'salonlar', label: 'Salonlar', icon: '🏛️' },
   { segment: 'dolaplar', label: 'Dolaplar', icon: '🗄️' },
-  { segment: 'atamalar', label: 'Atamalar', icon: '👤' },
+  { segment: 'atamalar', label: 'Öğrenci Atamaları', icon: '👤' },
   { segment: 'ders-programi', label: 'Ders Programı', icon: '📅' },
   { segment: 'izinler', label: 'İzinler', icon: '📝' },
   { segment: 'analitik', label: 'Analitik', icon: '📈' },

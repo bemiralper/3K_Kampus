@@ -316,9 +316,21 @@ class SubeDersProgrami(models.Model):
     def __str__(self):
         return f"Ders Programı: Şube #{self.sube_id} - {self.ad}"
 
-    def get_ders_saatleri_for_period(self, period_code: str) -> dict:
-        """Belirli bir periyodun ders saatlerini döndürür"""
+    def get_ders_saatleri_for_period(self, period_code: str, gun: int | None = None) -> dict:
+        """Belirli gün ve periyodun ders saatlerini döndürür (gun: 0=Pzt)."""
+        from apps.kutuphane.ders_programi_utils import (
+            get_period_for_day,
+            is_v2_ders_saatleri,
+            normalize_ders_saatleri,
+        )
+        if gun is not None and is_v2_ders_saatleri(self.ders_saatleri):
+            gunluk = normalize_ders_saatleri(self.ders_saatleri, self.gun_bazli_aktiflik)
+            return get_period_for_day(gunluk, gun, period_code)
         return self.ders_saatleri.get(period_code, {})
+
+    def get_gunluk_ders_saatleri(self) -> dict:
+        from apps.kutuphane.ders_programi_utils import normalize_ders_saatleri
+        return normalize_ders_saatleri(self.ders_saatleri, self.gun_bazli_aktiflik)
 
     def get_aktif_periyotlar(self, gun: int) -> list:
         """Belirli bir günün aktif periyotlarını döndürür"""
@@ -328,10 +340,10 @@ class SubeDersProgrami(models.Model):
             return []
         return gun_info.get('periyotlar', [])
 
-    def get_ders_count_for_period(self, period_code: str) -> int:
+    def get_ders_count_for_period(self, period_code: str, gun: int | None = None) -> int:
         """Periyottaki ders sayısını döndürür"""
-        period_data = self.ders_saatleri.get(period_code, {})
-        return period_data.get('ders_sayisi', 0)
+        period_data = self.get_ders_saatleri_for_period(period_code, gun)
+        return period_data.get('ders_sayisi', len(period_data.get('dersler', [])))
 
 
 class OgrenciIzin(models.Model):

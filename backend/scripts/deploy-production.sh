@@ -69,8 +69,33 @@ done
 
 log() { printf '[deploy] %s\n' "$*"; }
 
+# systemd User=lms ile çalışır; root olarak npm build .next'i root sahipli bırakır → EACCES
+run_as_app_user() {
+  if [[ "$(id -u)" -eq 0 ]] && id "$LMS_RUN_USER" &>/dev/null 2>&1; then
+    sudo -u "$LMS_RUN_USER" "$@"
+  else
+    "$@"
+  fi
+}
+
+fix_frontend_tree_permissions() {
+  [[ -d "$FRONTEND_DIR" ]] || return 0
+  if [[ "$(id -u)" -ne 0 ]]; then
+    return 0
+  fi
+  if ! id "$LMS_RUN_USER" &>/dev/null 2>&1; then
+    log "Uyarı: $LMS_RUN_USER yok — frontend sahipliği düzeltilmedi"
+    return 0
+  fi
+  log "frontend sahipliği: ${LMS_RUN_USER}:${LMS_RUN_GROUP} (.next, node_modules)"
+  chown -R "$LMS_RUN_USER:$LMS_RUN_GROUP" "$FRONTEND_DIR/.next" 2>/dev/null || true
+  chown -R "$LMS_RUN_USER:$LMS_RUN_GROUP" "$FRONTEND_DIR/node_modules" 2>/dev/null || true
+}
+
 # systemd EnvironmentFile gibi: set -a ile tüm değişkenleri export et
 LMS_ENV_FILE="${LMS_ENV_FILE:-/etc/lms/env}"
+LMS_RUN_USER="${LMS_RUN_USER:-lms}"
+LMS_RUN_GROUP="${LMS_RUN_GROUP:-www-data}"
 if [[ -f "$LMS_ENV_FILE" ]]; then
   log "Ortam dosyası yükleniyor: $LMS_ENV_FILE"
   set -a
@@ -155,14 +180,28 @@ log "setup_roles (izin seed — idempotent)"
 "$PYTHON" manage.py setup_roles
 
 if [[ "$SKIP_FRONTEND" != true && -d "$FRONTEND_DIR" ]]; then
-  log "frontend build: $FRONTEND_DIR"
+  log "frontend build: $FRONTEND_DIR (user: ${LMS_RUN_USER})"
   cd "$FRONTEND_DIR"
   if [[ -f package-lock.json ]]; then
-    npm ci
+    run_as_app_user npm ci
   else
-    npm install
+    run_as_app_user npm install
   fi
-  npm run build
+  log "frontend: eski .next siliniyor (bozuk/karma build önlemi)"
+  run_as_app_user rm -rf .next
+  run_as_app_user npm run build
+  webpack_file="$(run_as_app_user bash -c 'ls -1 .next/static/chunks/webpack-*.js 2>/dev/null | head -1')"
+  if [[ -z "$webpack_file" || ! -f "$webpack_file" ]]; then
+    echo "[deploy] HATA: webpack chunk oluşmadı — build eksik/bozuk." >&2
+    exit 1
+  fi
+  build_id="$(run_as_app_user cat .next/BUILD_ID)"
+  if [[ ! -f ".next/static/${build_id}/_buildManifest.js" ]]; then
+    echo "[deploy] HATA: _buildManifest.js yok (BUILD_ID=${build_id})." >&2
+    exit 1
+  fi
+  log "frontend build OK: $(basename "$webpack_file"), BUILD_ID=${build_id}"
+  fix_frontend_tree_permissions
 else
   log "frontend build atlandı"
 fi

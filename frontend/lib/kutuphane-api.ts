@@ -710,13 +710,25 @@ export interface GunAktiflik {
   periyotlar: SessionCode[];
 }
 
+/** v2 günlük program — Sabah/Öğle/Akşam oturumları */
+export type DaySchedule = {
+  MORNING: PeriyotDersler;
+  AFTERNOON: PeriyotDersler;
+  EVENING: PeriyotDersler;
+};
+
+export type DaySessionCode = keyof DaySchedule;
+
+/** v2: gün anahtarı (0–6) → oturum → periyot listesi */
+export type GunlukDersSaatleriApi = Record<string, DaySchedule>;
+
 export interface SubeDersProgrami {
   id: string;
   sube_id: number;
   sube_adi?: string;
   kurum_id: number;
   ad: string;
-  ders_saatleri: Record<SessionCode, PeriyotDersler>;
+  ders_saatleri: Record<SessionCode, PeriyotDersler> | GunlukDersSaatleriApi;
   gun_bazli_aktiflik: Record<string, GunAktiflik>;
   aktif_mi: boolean;
   created_at: string;
@@ -744,7 +756,7 @@ export async function fetchDersProgrami(id: string): Promise<ApiResponse<SubeDer
 export async function createDersProgrami(data: {
   sube_id: number;
   ad?: string;
-  ders_saatleri: Record<string, PeriyotDersler>;
+  ders_saatleri: Record<string, PeriyotDersler> | GunlukDersSaatleriApi;
   gun_bazli_aktiflik: Record<string, GunAktiflik>;
   aktif_mi?: boolean;
 }): Promise<ApiResponse<SubeDersProgrami>> {
@@ -753,7 +765,7 @@ export async function createDersProgrami(data: {
 
 export async function updateDersProgrami(id: string, data: Partial<{
   ad: string;
-  ders_saatleri: Record<string, PeriyotDersler>;
+  ders_saatleri: Record<string, PeriyotDersler> | GunlukDersSaatleriApi;
   gun_bazli_aktiflik: Record<string, GunAktiflik>;
   aktif_mi: boolean;
 }>): Promise<ApiResponse<SubeDersProgrami>> {

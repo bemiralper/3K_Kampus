@@ -82,7 +82,15 @@ export default function GorevEkranMesajiOverlay() {
   if (!current) return null;
 
   return (
-    <div className="gorev-ekran-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="gorev-ekran-title">
+    <div
+      className="gorev-ekran-backdrop"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="gorev-ekran-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) void dismiss(false);
+      }}
+    >
       <div className="gorev-ekran-modal" style={{ borderTopColor: current.renk || '#3b82f6' }}>
         <div className="gorev-ekran-icon" style={{ background: current.renk || '#3b82f6' }}>
           {current.ikon || '📋'}

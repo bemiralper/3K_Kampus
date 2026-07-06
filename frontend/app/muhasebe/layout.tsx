@@ -48,9 +48,24 @@ export default function MuhasebeLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const { isOpen: sidebarOpen, toggle: toggleSidebar } = useMuhasebeSidebarCollapse();
+  const {
+    isSidebarWide,
+    isDesktop,
+    mobileDrawerOpen,
+    toggle: toggleSidebar,
+    closeMobileDrawer,
+  } = useMuhasebeSidebarCollapse();
 
   const pageTitle = useMemo(() => resolvePageTitle(pathname), [pathname]);
+
+  useEffect(() => {
+    if (!mobileDrawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMobileDrawer();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileDrawerOpen, closeMobileDrawer]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -82,38 +97,43 @@ export default function MuhasebeLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  const shellClass = isSidebarWide ? " muhasebe-sidebar-open" : " muhasebe-shell-collapsed";
+
   return (
     <KurumProvider>
-      <div className={`muhasebe-shell${sidebarOpen ? " muhasebe-sidebar-open" : " muhasebe-shell-collapsed"}`}>
-        {sidebarOpen && (
+      <div className={`muhasebe-shell${shellClass}`}>
+        <Suspense fallback={null}>
+          <MuhasebeSidebar
+            isOpen={isSidebarWide}
+            isDesktop={isDesktop}
+            mobileDrawerOpen={mobileDrawerOpen}
+            onToggle={toggleSidebar}
+            onCloseMobile={closeMobileDrawer}
+            onLogout={handleLogout}
+          />
+        </Suspense>
+
+        {!isDesktop && mobileDrawerOpen && (
           <button
             type="button"
             className="muhasebe-sidebar-backdrop"
             aria-label="Menüyü kapat"
-            onClick={toggleSidebar}
+            onClick={closeMobileDrawer}
           />
         )}
-
-        <Suspense fallback={null}>
-          <MuhasebeSidebar
-            isOpen={sidebarOpen}
-            onToggle={toggleSidebar}
-            onLogout={handleLogout}
-          />
-        </Suspense>
 
         <div className="muhasebe-main">
           <MuhasebeTopbar
             title={pageTitle}
             user={user}
-            sidebarOpen={sidebarOpen}
+            sidebarOpen={isSidebarWide}
             onToggleSidebar={toggleSidebar}
             onLogout={handleLogout}
           />
           <main className="muhasebe-content">{children}</main>
         </div>
 
-        <MuhasebeBottomNav onMenuClick={toggleSidebar} menuOpen={sidebarOpen} />
+        <MuhasebeBottomNav onMenuClick={toggleSidebar} menuOpen={mobileDrawerOpen} />
       </div>
       <ActiveKurumBranding />
       <GorevEkranMesajiOverlay />

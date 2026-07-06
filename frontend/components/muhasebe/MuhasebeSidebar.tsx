@@ -3,7 +3,7 @@
 import Link from "next/link";
 import KurumLogo from "@/components/branding/KurumLogo";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect, type DragEvent } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   MUHASEBE_NAV_ITEMS,
   isMuhasebeNavActive,
@@ -15,7 +15,10 @@ import { useMuhasebeMenuOrder } from "@/hooks/useMuhasebeMenuOrder";
 
 type MuhasebeSidebarProps = {
   isOpen: boolean;
+  isDesktop: boolean;
+  mobileDrawerOpen: boolean;
   onToggle: () => void;
+  onCloseMobile: () => void;
   onLogout: () => void;
 };
 
@@ -29,35 +32,41 @@ function NavChevron({ expanded }: { expanded: boolean }) {
   );
 }
 
-export default function MuhasebeSidebar({ isOpen, onToggle, onLogout }: MuhasebeSidebarProps) {
+export default function MuhasebeSidebar({
+  isOpen,
+  isDesktop,
+  mobileDrawerOpen,
+  onToggle,
+  onCloseMobile,
+  onLogout,
+}: MuhasebeSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { reorder, reorderSubmenu, getOrderedItems } = useMuhasebeMenuOrder();
+  const { getOrderedItems } = useMuhasebeMenuOrder();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dragPosition, setDragPosition] = useState<"before" | "after">("after");
-  const [subDrag, setSubDrag] = useState<{ parentId: string; childId: string } | null>(null);
-  const [subDragOver, setSubDragOver] = useState<{ parentId: string; childId: string } | null>(null);
-  const [subDragPosition, setSubDragPosition] = useState<"before" | "after">("after");
 
-  const navItems = getOrderedItems();
+  const navItems = useMemo(() => getOrderedItems(), [getOrderedItems]);
 
+  // Yalnızca rota veya sidebar genişliği değişince senkronize et.
+  // navItems her render'da yeni dizi olduğu için dependency'ye eklenmez —
+  // aksi halde geniş menüde sonsuz re-render döngüsü oluşur ve tıklamalar kilitlenir.
   useEffect(() => {
-    if (isOpen) {
-      const activeParent = navItems.find(
-        (item) => item.children?.length && isMuhasebeNavActive(pathname, item),
-      );
-      setExpandedMenus(activeParent ? [activeParent.id] : []);
+    if (!isOpen) {
+      setExpandedMenus([]);
+      return;
     }
-  }, [isOpen, pathname, navItems]);
+    const activeParent = MUHASEBE_NAV_ITEMS.find(
+      (item) => item.children?.length && isMuhasebeNavActive(pathname, item),
+    );
+    setExpandedMenus(activeParent ? [activeParent.id] : []);
+  }, [isOpen, pathname]);
 
   const toggleSubmenu = (id: string) => {
     setExpandedMenus((prev) => (prev.includes(id) ? [] : [id]));
   };
 
   const closeMobileIfNeeded = () => {
-    if (window.matchMedia("(max-width: 991px)").matches) onToggle();
+    if (!isDesktop && mobileDrawerOpen) onCloseMobile();
   };
 
   const handleNavLinkClick = (
@@ -76,73 +85,10 @@ export default function MuhasebeSidebar({ isOpen, onToggle, onLogout }: Muhasebe
     closeMobileIfNeeded();
   };
 
-  const handleMainDragStart = (e: DragEvent, id: string) => {
-    if (!isOpen) return;
-    setDragId(id);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleMainDragEnd = () => {
-    if (dragId && dragOverId && dragId !== dragOverId) {
-      reorder(dragId, dragOverId, dragPosition);
-    }
-    setDragId(null);
-    setDragOverId(null);
-  };
-
-  const handleMainDragOver = (e: DragEvent, id: string) => {
-    if (!isOpen || !dragId || dragId === id) return;
-    e.preventDefault();
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setDragPosition(e.clientY < rect.top + rect.height / 2 ? "before" : "after");
-    setDragOverId(id);
-  };
-
-  const handleSubDragStart = (e: DragEvent, parentId: string, childId: string) => {
-    if (!isOpen) return;
-    e.stopPropagation();
-    setSubDrag({ parentId, childId });
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleSubDragEnd = () => {
-    if (
-      subDrag &&
-      subDragOver &&
-      subDrag.parentId === subDragOver.parentId &&
-      subDrag.childId !== subDragOver.childId
-    ) {
-      reorderSubmenu(subDrag.parentId, subDrag.childId, subDragOver.childId, subDragPosition);
-    }
-    setSubDrag(null);
-    setSubDragOver(null);
-  };
-
-  const handleSubDragOver = (e: DragEvent, parentId: string, childId: string) => {
-    if (!isOpen || !subDrag || subDrag.parentId !== parentId || subDrag.childId === childId) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setSubDragPosition(e.clientY < rect.top + rect.height / 2 ? "before" : "after");
-    setSubDragOver({ parentId, childId });
-  };
-
-  const renderSubmenuLink = (parentId: string, child: MuhasebeNavChildDef) => {
+  const renderSubmenuLink = (child: MuhasebeNavChildDef) => {
     const childActive = isMuhasebeNavChildActive(pathname, child);
-    const isSubOver =
-      subDragOver?.parentId === parentId &&
-      subDragOver.childId === child.id &&
-      subDrag?.childId !== child.id;
-
     return (
-      <li
-        key={child.id}
-        className={`muhasebe-nav-subitem${isSubOver ? ` drag-over-${subDragPosition}` : ""}${subDrag?.childId === child.id ? " is-dragging" : ""}`}
-        draggable={isOpen}
-        onDragStart={(e) => handleSubDragStart(e, parentId, child.id)}
-        onDragEnd={handleSubDragEnd}
-        onDragOver={(e) => handleSubDragOver(e, parentId, child.id)}
-      >
+      <li key={child.id} className="muhasebe-nav-subitem">
         <Link
           href={child.href}
           className={`muhasebe-nav-sublink${childActive ? " is-active" : ""}`}
@@ -159,22 +105,17 @@ export default function MuhasebeSidebar({ isOpen, onToggle, onLogout }: Muhasebe
     const hasChildren = !!item.children?.length;
     const active = isMuhasebeNavActive(pathname, item);
     const isExpanded = expandedMenus.includes(item.id);
-    const isDragOver = dragOverId === item.id && dragId !== item.id;
 
     if (hasChildren) {
       return (
         <li
           key={item.id}
-          className={`muhasebe-nav-item muhasebe-nav-group${isDragOver ? ` drag-over-${dragPosition}` : ""}${dragId === item.id ? " is-dragging" : ""}`}
-          draggable={isOpen}
-          onDragStart={(e) => handleMainDragStart(e, item.id)}
-          onDragEnd={handleMainDragEnd}
-          onDragOver={(e) => handleMainDragOver(e, item.id)}
+          className={`muhasebe-nav-item muhasebe-nav-group${isExpanded ? " is-open" : ""}`}
         >
           <button
             type="button"
             className={`muhasebe-nav-link muhasebe-nav-group-toggle${active ? " is-active" : ""}`}
-            onClick={() => isOpen && toggleSubmenu(item.id)}
+            onClick={() => toggleSubmenu(item.id)}
             aria-expanded={isExpanded}
             title={!isOpen ? item.label : undefined}
           >
@@ -187,9 +128,9 @@ export default function MuhasebeSidebar({ isOpen, onToggle, onLogout }: Muhasebe
               </>
             )}
           </button>
-          {isOpen && (
-            <ul className={`muhasebe-nav-submenu${isExpanded ? " is-open" : ""}`}>
-              {item.children!.map((child) => renderSubmenuLink(item.id, child))}
+          {isOpen && isExpanded && (
+            <ul className="muhasebe-nav-submenu is-open">
+              {item.children!.map(renderSubmenuLink)}
             </ul>
           )}
           {!isOpen && (
@@ -218,14 +159,7 @@ export default function MuhasebeSidebar({ isOpen, onToggle, onLogout }: Muhasebe
     }
 
     return (
-      <li
-        key={item.id}
-        className={`muhasebe-nav-item${isDragOver ? ` drag-over-${dragPosition}` : ""}${dragId === item.id ? " is-dragging" : ""}`}
-        draggable={isOpen}
-        onDragStart={(e) => handleMainDragStart(e, item.id)}
-        onDragEnd={handleMainDragEnd}
-        onDragOver={(e) => handleMainDragOver(e, item.id)}
-      >
+      <li key={item.id} className="muhasebe-nav-item">
         <Link
           href={item.href}
           className={`muhasebe-nav-link${active ? " is-active" : ""}`}
@@ -246,7 +180,7 @@ export default function MuhasebeSidebar({ isOpen, onToggle, onLogout }: Muhasebe
     <aside
       className={`muhasebe-sidebar${isOpen ? " is-open" : " is-collapsed"}`}
       id="muhasebe-sidebar"
-      aria-hidden={!isOpen}
+      aria-hidden={!isDesktop && !mobileDrawerOpen}
     >
       <div className="muhasebe-sidebar-header">
         <div className="muhasebe-logo-container">
@@ -273,9 +207,6 @@ export default function MuhasebeSidebar({ isOpen, onToggle, onLogout }: Muhasebe
       </nav>
 
       <div className="muhasebe-sidebar-footer">
-        {isOpen && (
-          <p className="muhasebe-sidebar-hint">Menü sırasını sürükleyerek değiştirebilirsiniz.</p>
-        )}
         <button type="button" className="muhasebe-logout-btn" onClick={onLogout} title="Çıkış Yap">
           {isOpen ? "Çıkış Yap" : "⎋"}
         </button>

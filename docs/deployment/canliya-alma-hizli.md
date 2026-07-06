@@ -71,6 +71,20 @@ Güncel `deploy-production.sh` `/etc/lms/env` dosyasını kendisi yükler.
 2. Giriş yapılabiliyor mu
 3. Değiştirdiğiniz modül çalışıyor mu
 
+**Beyaz sayfa / dönen spinner:** tarayıcı JS yükleyemiyordur. Sunucuda:
+
+```bash
+WEBPACK=$(basename /var/www/lms/frontend/.next/static/chunks/webpack-*.js)
+curl -sI "http://127.0.0.1:3000/_next/static/chunks/$WEBPACK" | head -1
+# HTTP/1.1 200 OK olmalı — 400 ise .next bozuk, temiz build:
+cd /var/www/lms/frontend
+sudo systemctl stop lms-frontend
+sudo -u lms rm -rf .next
+sudo -u lms npm run build
+sudo chown -R lms:www-data .next node_modules
+sudo systemctl start lms-frontend
+```
+
 Servis durumu:
 
 ```bash
