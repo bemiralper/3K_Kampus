@@ -138,6 +138,8 @@ ROLES_DATA = [
         'permissions': [
             'finans.manage', 'ogrenci.read', 'ogrenci.write',
             'personel.read', 'personel.write',
+            'egitim_tanimlari.read', 'egitim_tanimlari.write',
+            'egitim_paketleri.read', 'egitim_paketleri.write',
             'communication.read', 'communication.write',
             'rapor.read', 'rapor.export',
             'gorev.read', 'gorev.write',

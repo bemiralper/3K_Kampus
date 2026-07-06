@@ -101,12 +101,12 @@ export function buildEqualTaksitRows(
   }
 
   const base = Math.floor(kalan / installmentCount / 100) * 100;
-  const firstAmount = kalan - base * (installmentCount - 1);
+  const lastAmount = kalan - base * (installmentCount - 1);
   const startDate = pesinat > 0 ? addMonths(ilkOdemeTarihi, pm) : ilkOdemeTarihi;
 
   for (let i = 0; i < installmentCount; i++) {
     rows.push({
-      tutar: String(i === 0 ? firstAmount : base),
+      tutar: String(i === installmentCount - 1 ? lastAmount : base),
       vade_tarihi: addMonths(startDate, i * pm),
       odeme_yontemi_id: resolveRowOdemeYontemi(rows.length, options),
     });
@@ -139,11 +139,11 @@ export function redistributeTaksitAmounts(
 
   const kalan = Math.max(0, hedefTutar - pesinat);
   const base = Math.floor(kalan / installmentRows.length / 100) * 100;
-  const firstAmount = kalan - base * (installmentRows.length - 1);
+  const lastAmount = kalan - base * (installmentRows.length - 1);
 
   const redistributed = installmentRows.map((row, i) => ({
     ...row,
-    tutar: String(i === 0 ? firstAmount : base),
+    tutar: String(i === installmentRows.length - 1 ? lastAmount : base),
   }));
 
   if (pesinatRowCount > 0) {
@@ -178,4 +178,37 @@ export function rowsMatchEqualPlan(
 export function defaultEgitimYiliBitis(bitisYil?: number | null): string {
   const year = bitisYil || new Date().getFullYear();
   return `${year}-06-30`;
+}
+
+/** Düzenlenen taksit tutarı sonraki taksitlere yansır; son taksit kalan bakiyeyi alır. */
+export function spreadTaksitAmountsFromIndex(
+  rows: ManuelTaksitRow[],
+  editIndex: number,
+  hedefTutar: number,
+): ManuelTaksitRow[] {
+  const result = rows.map((row) => ({ ...row }));
+  const trailingCount = result.length - editIndex - 1;
+  if (trailingCount <= 0) return result;
+
+  const editedAmount = Math.max(0, parseFloat(result[editIndex].tutar) || 0);
+
+  if (trailingCount === 1) {
+    let ustToplam = 0;
+    for (let i = 0; i < result.length - 1; i++) {
+      ustToplam += parseFloat(result[i].tutar) || 0;
+    }
+    result[result.length - 1].tutar = String(Math.max(0, Math.round(hedefTutar - ustToplam)));
+    return result;
+  }
+
+  for (let i = editIndex + 1; i < result.length - 1; i++) {
+    result[i].tutar = String(editedAmount);
+  }
+
+  let totalBeforeLast = 0;
+  for (let i = 0; i < result.length - 1; i++) {
+    totalBeforeLast += parseFloat(result[i].tutar) || 0;
+  }
+  result[result.length - 1].tutar = String(Math.max(0, Math.round(hedefTutar - totalBeforeLast)));
+  return result;
 }

@@ -216,7 +216,7 @@ function SummaryCard({ icon, label, value, gradient, active, onClick, subtitle }
    MAIN PAGE
    ═══════════════════════════════════════════════════════════════════ */
 export default function AtamalarPage() {
-  const { href, isCoachMode } = useKutuphanePath();
+  const { href, isCoachMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -559,7 +559,7 @@ export default function AtamalarPage() {
           <div className="hero-text">
             <h1>Öğrenci Atamaları</h1>
             <div className="hero-breadcrumb">
-              <a href="/dashboard">Ana Sayfa</a><span>/</span>
+              <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span>
               <a href={href()}>Kütüphane</a><span>/</span><span>Öğrenci Atamaları</span>
             </div>
           </div>

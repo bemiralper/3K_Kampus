@@ -10,6 +10,7 @@
  */
 
 import type { jsPDF } from "jspdf";
+import { downloadJsPdf } from "@/lib/download-file";
 
 /* ─────────────────── Tipler ─────────────────── */
 
@@ -640,7 +641,7 @@ export async function generateMakbuzPdf(
   const fileName = `makbuz-${data.makbuz_no || data.tahsilat_id}`;
 
   if (mode === "download") {
-    doc.save(`${fileName}.pdf`);
+    await downloadJsPdf(doc, `${fileName}.pdf`);
   } else {
     const blob = doc.output("blob");
     const url = URL.createObjectURL(blob);

@@ -16,7 +16,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; border: string;
 };
 
 export default function KutuphaneDashboardPage() {
-  const { href, isCoachMode } = useKutuphanePath();
+  const { href, isCoachMode, isMuhasebeMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const { activeKurum, loading: kurumLoading } = useKurum();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,13 +101,13 @@ export default function KutuphaneDashboardPage() {
             </svg>
           </div>
           <div className="hero-text">
-            <h1>{isCoachMode ? 'Kütüphane' : 'Kütüphane Yönetimi'}</h1>
+            <h1>{isCoachMode || isMuhasebeMode ? 'Kütüphane' : 'Kütüphane Yönetimi'}</h1>
             <div className="hero-breadcrumb">
               {isCoachMode ? (
                 <span>Koç Portalı / Kütüphane</span>
               ) : (
                 <>
-                  <a href="/dashboard">Ana Sayfa</a><span>/</span><span>Kütüphane</span>
+                  <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span><span>Kütüphane</span>
                 </>
               )}
             </div>

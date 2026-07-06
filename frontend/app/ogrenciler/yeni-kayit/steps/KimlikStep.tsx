@@ -1,9 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import DatePicker from "react-datepicker";
+import DatePicker, { registerLocale } from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { tr } from "date-fns/locale";
+import { dateToIsoLocal, isoToLocalDate } from "@/lib/date-utils";
+
+registerLocale("tr", tr);
 import {
   LookupOption,
   MetadataResponse,
@@ -250,13 +253,13 @@ export default function KimlikStep({
         <div className="wizard-field">
           <label className="wizard-label required">Doğum Tarihi</label>
           <DatePicker
-            selected={data.student.dogum_tarihi ? new Date(data.student.dogum_tarihi) : null}
+            selected={isoToLocalDate(data.student.dogum_tarihi || "")}
             onChange={(date: Date | null) =>
               onChange({
                 ...data,
                 student: {
                   ...data.student,
-                  dogum_tarihi: date ? date.toISOString().split("T")[0] : "",
+                  dogum_tarihi: date ? dateToIsoLocal(date) : "",
                 },
               })
             }
@@ -267,8 +270,10 @@ export default function KimlikStep({
             showYearDropdown
             dropdownMode="select"
             placeholderText="GG.AA.YYYY"
+            calendarStartDay={1}
             className={`wizard-input ${errors.dogum_tarihi ? 'error' : ''} ${isReadOnly ? 'readonly-field' : ''}`}
             readOnly={isReadOnly}
+            disabled={isReadOnly}
           />
           {errors.dogum_tarihi && <span className="wizard-error">{errors.dogum_tarihi}</span>}
         </div>

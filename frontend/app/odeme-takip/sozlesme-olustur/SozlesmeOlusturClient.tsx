@@ -6,6 +6,8 @@ import { useUnsavedChangesGuard } from "@/lib/hooks/useUnsavedChangesGuard";
 import UnsavedChangesModal from "@/components/UnsavedChangesModal";
 import { apiGet } from "@/lib/api";
 import { useKurum } from "@/lib/contexts/KurumContext";
+import SozlesmeNotlarEditor from "../components/SozlesmeNotlarEditor";
+import { SozlesmeNot, parseNotlarJson, serializeNotlarForApi } from "@/lib/sozlesme-notlar";
 import { API_BASE, formatCurrency, formatDate, postHeaders, apiHeaders, taksitPeriyoduLabel, odemeTuruTaksitPlaniMi } from "../helpers";
 import {
   addMonths,
@@ -13,6 +15,7 @@ import {
   clampTaksitSayisi,
   defaultEgitimYiliBitis,
   rowsMatchEqualPlan,
+  spreadTaksitAmountsFromIndex,
   type ManuelTaksitRow,
 } from "../utils/taksitPlan";
 import type { Veli } from "../types";
@@ -278,7 +281,7 @@ export default function SozlesmeOlusturClient() {
     return `${year}-06-30`;
   });
   const [selectedOdemeYontemiId, setSelectedOdemeYontemiId] = useState<number | "">("");
-  const [notlar, setNotlar] = useState("");
+  const [notlarJson, setNotlarJson] = useState<SozlesmeNot[]>([]);
 
   // ─── Taksit Planı (eşit başlangıç + düzenlenebilir) ────────
   const [pesinatTutar, setPesinatTutar] = useState("");
@@ -386,7 +389,7 @@ export default function SozlesmeOlusturClient() {
         baslangicTarihi,
         bitisTarihi,
         selectedOdemeYontemiId,
-        notlar,
+        notlarJson,
         pesinatTutar,
         manuelRows,
         taksitPlanDirty,
@@ -403,7 +406,7 @@ export default function SozlesmeOlusturClient() {
       baslangicTarihi,
       bitisTarihi,
       selectedOdemeYontemiId,
-      notlar,
+      notlarJson,
       pesinatTutar,
       manuelRows,
       taksitPlanDirty,
@@ -666,7 +669,7 @@ export default function SozlesmeOlusturClient() {
         if (sz.ilk_odeme_tarihi) setIlkOdemeTarihi(sz.ilk_odeme_tarihi);
         if (sz.baslangic_tarihi) setBaslangicTarihi(sz.baslangic_tarihi);
         if (sz.bitis_tarihi) setBitisTarihi(sz.bitis_tarihi);
-        setNotlar(sz.notlar || "");
+        setNotlarJson(parseNotlarJson(sz.notlar_json, sz.notlar));
         if (sz.odeme_yontemi_id) setSelectedOdemeYontemiId(sz.odeme_yontemi_id);
         if (sz.veli_id) setSelectedVeliId(sz.veli_id);
 
@@ -1003,20 +1006,7 @@ export default function SozlesmeOlusturClient() {
     setTaksitPlanDirty(true);
     const rows = [...manuelRows];
     rows[index].tutar = value;
-    let ustToplam = 0;
-    for (let i = 0; i <= index; i++) ustToplam += parseFloat(rows[i].tutar) || 0;
-    const altSatirSayisi = rows.length - index - 1;
-    if (altSatirSayisi > 0) {
-      const kalanBakiye = hedefTutar - ustToplam;
-      const herBirine = Math.max(0, kalanBakiye / altSatirSayisi);
-      const yuvarlanmis = Math.floor(herBirine);
-      for (let i = index + 1; i < rows.length; i++) {
-        rows[i].tutar = i === rows.length - 1
-          ? String(Math.round(hedefTutar - ustToplam - yuvarlanmis * (altSatirSayisi - 1)))
-          : String(yuvarlanmis);
-      }
-    }
-    setManuelRows(rows);
+    setManuelRows(spreadTaksitAmountsFromIndex(rows, index, hedefTutar));
   };
 
   const manuelToplam = manuelRows.reduce((s, r) => s + (parseFloat(r.tutar) || 0), 0);
@@ -1144,7 +1134,7 @@ export default function SozlesmeOlusturClient() {
       taksit_odeme_yontemleri: isCekSenetMode && isTaksitMode
         ? buildTaksitOdemeYontemleri(cekSenetRowsForSubmit)
         : undefined,
-      notlar,
+      ...serializeNotlarForApi(notlarJson),
       // Yeni alanlar
       veli_id: selectedVeliId || null,
       odeme_yontemi_id: isCekSenetMode ? null : selectedOdemeYontemiId || null,
@@ -1187,7 +1177,12 @@ export default function SozlesmeOlusturClient() {
         return;
       }
       markClean();
-      router.push(basePath);
+      const savedId = isEditMode ? Number(editId) : Number(data.id);
+      if (savedId) {
+        router.push(`${basePath}?sozlesme=${savedId}`);
+      } else {
+        router.push(basePath);
+      }
     } catch (e: any) {
       setError(e.message || "Bir hata oluştu");
     }
@@ -1995,9 +1990,7 @@ export default function SozlesmeOlusturClient() {
 
               <div style={{ gridColumn: "1 / -1" }}>
                 <label style={labelStyle}>Notlar</label>
-                <textarea value={notlar} onChange={e => setNotlar(e.target.value)}
-                  rows={2} placeholder="Sözleşme ile ilgili notlar..."
-                  style={{ ...inputStyle, resize: "vertical" }} />
+                <SozlesmeNotlarEditor notes={notlarJson} onChange={setNotlarJson} />
               </div>
             </div>
           </div>
@@ -2299,7 +2292,9 @@ export default function SozlesmeOlusturClient() {
               padding: "10px 32px", borderRadius: 8, border: "none", cursor: submitting ? "not-allowed" : "pointer",
               background: submitting ? "#93c5fd" : "#059669", color: "#fff", fontSize: 15, fontWeight: 700,
             }}>
-            {submitting ? (isEditMode ? "Güncelleniyor..." : "Oluşturuluyor...") : (isEditMode ? "✓ Sözleşmeyi Güncelle" : "✓ Sözleşmeyi Oluştur")}
+            {submitting
+              ? (isEditMode ? "Kaydediliyor..." : "Oluşturuluyor...")
+              : (isEditMode ? "✓ Değişiklikleri Kaydet" : "✓ Sözleşmeyi Oluştur")}
           </button>
         )}
       </div>

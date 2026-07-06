@@ -10,6 +10,7 @@ import {
   getContextHeadersFromStorage,
   type OgrenciListFilters,
 } from '../lib/ogrenci-list-utils';
+import { downloadBlob } from '@/lib/download-file';
 import { exportOgrenciListPdf, type PdfOrientation } from '../lib/ogrenciListPdfExport';
 
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
@@ -171,12 +172,7 @@ export default function OgrenciExportModal({
         });
         if (!res.ok) throw new Error('CSV dışa aktarma başarısız');
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'ogrenciler.csv';
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadBlob(blob, 'ogrenciler.csv');
       } else {
         const { rows } = await fetchExportRows(filters, selectedKeys, selectedIdList);
 

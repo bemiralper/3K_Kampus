@@ -36,6 +36,8 @@ const nextConfig = {
     return [
       { source: '/kurumumuz', destination: '/3k-sistemi', permanent: true },
       { source: '/kurumumuz/:path*', destination: '/3k-sistemi/:path*', permanent: true },
+      { source: '/admin/kutuphane', destination: '/muhasebe/kutuphane', permanent: false },
+      { source: '/admin/kutuphane/:path*', destination: '/muhasebe/kutuphane/:path*', permanent: false },
     ];
   },
   images: {

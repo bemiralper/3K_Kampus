@@ -172,6 +172,16 @@ class OgrenciKayit(models.Model):
         related_name='kayitlar',
         verbose_name='Sınıf'
     )
+
+    # Sınıf seviyesi (sinif atanmamış olsa bile kayıt sırasında seçilen seviye)
+    sinif_seviyesi = models.ForeignKey(
+        'egitim_tanimlari.SinifSeviyesi',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ogrenci_kayitlari',
+        verbose_name='Sınıf Seviyesi',
+    )
     
     # Eğitim Yılı (ZORUNLU - Tenant isolation için)
     egitim_yili = models.ForeignKey(

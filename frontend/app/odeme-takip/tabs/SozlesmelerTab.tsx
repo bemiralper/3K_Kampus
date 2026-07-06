@@ -6,6 +6,7 @@ import {
   addMonths,
   clampTaksitSayisi,
   rowsMatchEqualPlan,
+  spreadTaksitAmountsFromIndex,
   taksitRowsEqual,
   type ManuelTaksitRow,
 } from "../utils/taksitPlan";
@@ -22,6 +23,7 @@ import {
 } from "../helpers";
 import Pagination, { paginateList } from "../components/Pagination";
 import { extractApiError } from "@/lib/api";
+import { parseNotlarJson } from "@/lib/sozlesme-notlar";
 import { buildTaksitOdemeYontemleri, isCekSenetYontem as isCekSenetYontemTip } from "@/lib/finans/paymentMethodUtils";
 
 // ─── Props ──────────────────────────────────────────────────
@@ -35,6 +37,7 @@ interface Props {
   onSelectSozlesme: (id: number) => void;
   onCloseDetail: () => void;
   onStatusChange: (sozlesmeId: number, yeniDurum: string) => void;
+  onStatusRevert?: (sozlesmeId: number) => void;
   onTahsilatStart: (form: TahsilatFormData) => void;
   onTahsilatCancel: (tahsilatId: number) => void;
   onDelete: (sozlesmeId: number) => void;
@@ -70,7 +73,7 @@ function DurumBadgeModern({ durum, map }: { durum: string; map: Record<string, {
 
 export default function SozlesmelerTab({
   sozlesmeler, selectedSozlesme, searchTerm, odemeYontemleri,
-  setSearchTerm, onSelectSozlesme, onCloseDetail, onStatusChange,
+  setSearchTerm, onSelectSozlesme, onCloseDetail, onStatusChange, onStatusRevert,
   onTahsilatStart, onTahsilatCancel, onDelete, onMakbuz, onOdemePlani, onSozlesmeBelgesi, onFesihBelgesi, onEdit, onKalemChanged,
   onWhatsAppPlan, onWhatsAppSozlesme, onWhatsAppMakbuz,
 }: Props) {
@@ -581,8 +584,17 @@ export default function SozlesmelerTab({
       {/* Geçmiş */}
       {s.gecmis && s.gecmis.length > 0 && (
         <div className="card-modern" style={{ marginTop: 20 }}>
-          <div className="card-modern-header">
+          <div className="card-modern-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h3>📜 İşlem Geçmişi</h3>
+            {onStatusRevert && s.gecmis.some((g) => g.islem_turu === "durum_degisikligi") && (
+              <button
+                type="button"
+                className="btn-modern btn-secondary small"
+                onClick={() => onStatusRevert(s.id)}
+              >
+                Son Durumu Geri Al
+              </button>
+            )}
           </div>
           <div className="card-modern-body" style={{ padding: "12px 16px" }}>
             <div style={{
@@ -939,10 +951,27 @@ function GenelSubTab({ sozlesme: s }: { sozlesme: Sozlesme }) {
           {s.yetkili_personel && <InfoRow label="Yetkili Personel" value={s.yetkili_personel} />}
         </div>
 
-        {s.notlar && (
+        {(s.notlar || (s.notlar_json && s.notlar_json.length > 0)) && (
           <div className="odeme-preview" style={{ marginTop: 16 }}>
             <div className="odeme-preview-title">📝 Notlar</div>
-            <div style={{ fontSize: 13, color: "var(--text-color)", whiteSpace: "pre-wrap" }}>{s.notlar}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {parseNotlarJson(s.notlar_json, s.notlar).map((note) => (
+                <div
+                  key={note.id}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    background: note.veli_ile_paylas ? "#f0fdf4" : "#f8fafc",
+                    border: `1px solid ${note.veli_ile_paylas ? "#bbf7d0" : "#e2e8f0"}`,
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>
+                    {note.veli_ile_paylas ? "Veli ile paylaşılan" : "Kurum içi"}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-color)", whiteSpace: "pre-wrap" }}>{note.text}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -1152,20 +1181,7 @@ function OdemePlaniSubTab({
     setTaksitPlanDirty(true);
     const rows = [...manuelRows];
     rows[index].tutar = value;
-    let ustToplam = 0;
-    for (let i = 0; i <= index; i++) ustToplam += parseFloat(rows[i].tutar) || 0;
-    const altSatirSayisi = rows.length - index - 1;
-    if (altSatirSayisi > 0) {
-      const kalanBakiye = hedefTutar - ustToplam;
-      const herBirine = Math.max(0, kalanBakiye / altSatirSayisi);
-      const yuvarlanmis = Math.floor(herBirine);
-      for (let i = index + 1; i < rows.length; i++) {
-        rows[i].tutar = i === rows.length - 1
-          ? String(Math.round(hedefTutar - ustToplam - yuvarlanmis * (altSatirSayisi - 1)))
-          : String(yuvarlanmis);
-      }
-    }
-    setManuelRows(rows);
+    setManuelRows(spreadTaksitAmountsFromIndex(rows, index, hedefTutar));
   };
 
   const manuelToplam = manuelRows.reduce((sum, r) => sum + (parseFloat(r.tutar) || 0), 0);

@@ -24,6 +24,9 @@ const PAGE_TITLES: Record<string, string> = {
   "/muhasebe/gorevler": "Görevler",
   "/muhasebe/takvim": "Takvim",
   "/muhasebe/profil": "Profilim",
+  "/muhasebe/kurum/egitim-tanimlari": "Eğitim Tanımları",
+  "/muhasebe/kurum/egitim-paketleri": "Eğitim Paketleri",
+  "/muhasebe/kutuphane": "Kütüphane",
 };
 
 function resolvePageTitle(pathname: string): string {
@@ -39,6 +42,20 @@ function resolvePageTitle(pathname: string): string {
     return "Finans";
   }
   if (pathname.startsWith("/muhasebe/odeme-takip/")) return "Sözleşme/Tahsilat";
+  if (pathname.startsWith("/muhasebe/kurum/")) {
+    if (pathname.includes("egitim-paketleri")) return "Eğitim Paketleri";
+    if (pathname.includes("egitim-tanimlari")) return "Eğitim Tanımları";
+    return "Kurum";
+  }
+  if (pathname.startsWith("/muhasebe/kutuphane/")) {
+    if (pathname.includes("salonlar")) return "Kütüphane · Salonlar";
+    if (pathname.includes("dolaplar")) return "Kütüphane · Dolaplar";
+    if (pathname.includes("atamalar")) return "Kütüphane · Atamalar";
+    if (pathname.includes("ders-programi")) return "Kütüphane · Ders Programı";
+    if (pathname.includes("izinler")) return "Kütüphane · İzinler";
+    if (pathname.includes("analitik")) return "Kütüphane · Analitik";
+    return "Kütüphane";
+  }
   const sorted = Object.keys(PAGE_TITLES).sort((a, b) => b.length - a.length);
   const match = sorted.find((p) => pathname.startsWith(p));
   return match ? PAGE_TITLES[match] : "Muhasebe Portalı";

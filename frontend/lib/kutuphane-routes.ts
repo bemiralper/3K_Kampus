@@ -1,4 +1,5 @@
 export const ADMIN_KUTUPHANE_BASE = '/admin/kutuphane';
+export const MUHASEBE_KUTUPHANE_BASE = '/muhasebe/kutuphane';
 export const COACH_KUTUPHANE_BASE = '/coach/kutuphane';
 
 export const KUTUPHANE_NAV_ITEMS = [
@@ -12,6 +13,9 @@ export const KUTUPHANE_NAV_ITEMS = [
 ] as const;
 
 export function getKutuphaneBasePath(pathname?: string | null): string {
+  if (pathname?.startsWith(MUHASEBE_KUTUPHANE_BASE)) {
+    return MUHASEBE_KUTUPHANE_BASE;
+  }
   if (pathname?.startsWith(COACH_KUTUPHANE_BASE)) {
     return COACH_KUTUPHANE_BASE;
   }
@@ -25,4 +29,8 @@ export function kutuphaneHref(basePath: string, segment?: string): string {
 
 export function isCoachKutuphanePath(pathname?: string | null): boolean {
   return Boolean(pathname?.startsWith(COACH_KUTUPHANE_BASE));
+}
+
+export function isMuhasebeKutuphanePath(pathname?: string | null): boolean {
+  return Boolean(pathname?.startsWith(MUHASEBE_KUTUPHANE_BASE));
 }

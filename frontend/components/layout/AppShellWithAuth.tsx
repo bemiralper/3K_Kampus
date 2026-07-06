@@ -81,8 +81,6 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
   }, [pathname]);
 
   useEffect(() => {
-    console.log("[AppShell] State - isLoading:", isLoading, "isAuthenticated:", isAuthenticated, "path:", pathname);
-    
     // Wait for auth check to complete
     if (isLoading) {
       return;
@@ -101,7 +99,6 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
     // If on public route and authenticated, redirect to role home
     if (isPublicRoute && isAuthenticated) {
       const home = getDefaultHomePath(user);
-      console.log("[AppShell] Authenticated user on public route, redirecting to", home);
       hasRedirectedRef.current = true;
       hardReplace(home);
       return;
@@ -109,7 +106,6 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
 
     // If on protected route and not authenticated, redirect to landing
     if (!isPublicRoute && !isAuthenticated) {
-      console.log("[AppShell] Not authenticated on protected route, redirecting to landing");
       hasRedirectedRef.current = true;
       hardReplace(isPortalRoute ? "/?giris=1" : "/");
       return;
@@ -124,7 +120,6 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       (isCoachOnlyUser(user) || isMuhasebeOnlyUser(user))
     ) {
       const home = getDefaultHomePath(user);
-      console.log("[AppShell] Portal-only user on admin route, redirecting to", home);
       hasRedirectedRef.current = true;
       hardReplace(home);
     }

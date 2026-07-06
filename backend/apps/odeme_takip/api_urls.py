@@ -10,6 +10,7 @@ from .interfaces.api_views.sozlesme_views import (
     sozlesme_update,
     sozlesme_delete,
     sozlesme_status_change,
+    sozlesme_status_revert,
     sozlesme_indirim_add,
     sozlesme_kalem_ekle,
     sozlesme_kalem_cikar,
@@ -67,6 +68,7 @@ urlpatterns = [
     path('sozlesmeler/<int:pk>/update/', sozlesme_update, name='sozlesme-update'),
     path('sozlesmeler/<int:pk>/delete/', sozlesme_delete, name='sozlesme-delete'),
     path('sozlesmeler/<int:pk>/status/', sozlesme_status_change, name='sozlesme-status'),
+    path('sozlesmeler/<int:pk>/status/revert/', sozlesme_status_revert, name='sozlesme-status-revert'),
 
     path('sozlesmeler/<int:pk>/notify-preview/', sozlesme_notify_preview, name='sozlesme-notify-preview'),
     path('sozlesmeler/<int:pk>/notify-send/', sozlesme_notify_send, name='sozlesme-notify-send'),

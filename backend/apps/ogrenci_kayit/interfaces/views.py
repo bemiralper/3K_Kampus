@@ -524,6 +524,7 @@ class DirectRegistrationView(APIView):
                 kayit = OgrenciKayit.objects.create(
                     ogrenci=ogrenci,
                     sinif=sinif,
+                    sinif_seviyesi=sinif_seviyesi,
                     egitim_yili=egitim_yili,
                     kurum_id=kurum_id,
                     sube_id=sube_id,

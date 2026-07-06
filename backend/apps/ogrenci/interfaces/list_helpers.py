@@ -22,6 +22,8 @@ SORT_MAP = {
     'name_desc': ('-ogrenci__ad', '-ogrenci__soyad'),
     'kayit_tarihi_desc': ('-kayit_tarihi', '-id'),
     'kayit_tarihi_asc': ('kayit_tarihi', 'id'),
+    'created_at_desc': ('-created_at', '-id'),
+    'created_at_asc': ('created_at', 'id'),
 }
 
 FILTER_KALEM_TURLERI = [
@@ -290,7 +292,7 @@ def parse_list_params(request):
         'sube_id': int(p['sube_id']) if p.get('sube_id') else None,
         'kayit_tarihi_bas': parse_date_param(p.get('kayit_tarihi_bas')),
         'kayit_tarihi_bit': parse_date_param(p.get('kayit_tarihi_bit')),
-        'sort': p.get('sort', 'kayit_tarihi_desc') if p.get('sort') in SORT_MAP else 'kayit_tarihi_desc',
+        'sort': p.get('sort', 'created_at_desc') if p.get('sort') in SORT_MAP else 'created_at_desc',
         'page': page,
         'page_size': page_size,
     }
@@ -421,7 +423,7 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
         elif params['durum'] == 'pasif':
             qs = qs.filter(aktif_mi=False)
 
-    order = SORT_MAP.get(params['sort'], SORT_MAP['kayit_tarihi_desc'])
+    order = SORT_MAP.get(params['sort'], SORT_MAP['created_at_desc'])
     qs = qs.order_by(*order)
 
     return qs, use_all_years

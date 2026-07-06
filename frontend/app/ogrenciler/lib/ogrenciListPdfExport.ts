@@ -3,6 +3,7 @@
  */
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { downloadJsPdf } from '@/lib/download-file';
 import { EXPORT_COLUMNS } from './ogrenci-list-utils';
 
 export type PdfOrientation = 'portrait' | 'landscape';
@@ -262,5 +263,5 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
   });
 
   addFooter(doc, brandLine);
-  doc.save('ogrenciler.pdf');
+  await downloadJsPdf(doc, 'ogrenciler.pdf');
 }

@@ -56,6 +56,7 @@ export default function KurumSecPage() {
     try {
       localStorage.setItem(STORAGE_KURUM, String(kurum.id));
       await setActiveContext(kurum.id, null, null);
+      window.dispatchEvent(new Event("3k:context-updated"));
       const next = await resolvePostKurumRedirect(user, kurum.id);
       router.replace(next);
     } catch (e) {

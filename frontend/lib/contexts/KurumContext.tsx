@@ -102,6 +102,10 @@ interface KurumContextData {
   globalSubeAccess: boolean;
   /** Header kurum sekmesi — my-kurumlar API ile filtrelenmiş */
   filteredKurumlar: Kurum[];
+  /** İlk yükleme tamamlandı mı */
+  initialized: boolean;
+  /** localStorage'dan bağlamı yeniden oku (sayfa yenilemeden) */
+  applyStoredContext: () => void;
 }
 
 const KurumContext = createContext<KurumContextData | undefined>(undefined);
@@ -467,6 +471,32 @@ export function KurumProvider({ children }: { children: ReactNode }) {
     });
   }, [fetchData]);
 
+  /** localStorage'daki kurum/şube/yıl seçimini state'e uygula (giriş sonrası geçiş için) */
+  const applyStoredContext = useCallback(() => {
+    const storedKurumId = localStorage.getItem(STORAGE_KEYS.activeKurum);
+    const storedSubeId = localStorage.getItem(STORAGE_KEYS.activeSube);
+    const storedYilId = localStorage.getItem(STORAGE_KEYS.activeEgitimYili);
+
+    if (storedKurumId) {
+      const kurum = kurumlar.find((k) => k.id === parseInt(storedKurumId, 10));
+      if (kurum) setActiveKurumState(kurum);
+    }
+    if (storedSubeId) {
+      const sube = subeler.find((s) => s.id === parseInt(storedSubeId, 10));
+      if (sube) setActiveSubeState(sube);
+    }
+    if (storedYilId) {
+      const yil = egitimYillari.find((y) => y.id === parseInt(storedYilId, 10));
+      if (yil) setActiveEgitimYiliState(yil);
+    }
+  }, [kurumlar, subeler, egitimYillari]);
+
+  useEffect(() => {
+    const handler = () => applyStoredContext();
+    window.addEventListener("3k:context-updated", handler);
+    return () => window.removeEventListener("3k:context-updated", handler);
+  }, [applyStoredContext]);
+
   const value: KurumContextData = {
     kurumlar,
     subeler,
@@ -485,6 +515,8 @@ export function KurumProvider({ children }: { children: ReactNode }) {
     filteredKurumlar,
     allowedSubeIds,
     globalSubeAccess,
+    initialized,
+    applyStoredContext,
   };
 
   return (

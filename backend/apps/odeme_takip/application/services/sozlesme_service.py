@@ -10,8 +10,9 @@ from django.utils import timezone
 from apps.egitim_paketleri.models import hesapla_kdv
 from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi, SozlesmeGecmisi
 from apps.odeme_takip.domain.enums import (
-    SozlesmeDurum, GecmisIslemTuru, KalemTuru, OnayDurum, PaketTuru,
+    SozlesmeDurum, GecmisIslemTuru, KalemTuru, OnayDurum, PaketTuru, TaksitDurum,
 )
+from apps.odeme_takip.domain.notlar_utils import normalize_notlar_json, notlar_to_legacy_text
 from apps.odeme_takip.infrastructure.repositories.sozlesme_repository import (
     SozlesmeRepository, SozlesmeKalemiRepository,
     SozlesmeIndirimiRepository, SozlesmeGecmisiRepository,
@@ -28,6 +29,16 @@ class SozlesmeService:
         self.indirim_repo = SozlesmeIndirimiRepository()
         self.gecmis_repo = SozlesmeGecmisiRepository()
         self.taksit_service = TaksitService()
+
+    @staticmethod
+    def _resolve_notlar(data):
+        if 'notlar_json' in data:
+            notes = normalize_notlar_json(data.get('notlar_json'))
+        elif data.get('notlar'):
+            notes = normalize_notlar_json(data.get('notlar'))
+        else:
+            notes = []
+        return notes, notlar_to_legacy_text(notes)
 
     def _kalem_fiyat_from_payload(self, payload):
         """API payload'dan kalem fiyat alanlarını hesapla."""
@@ -263,6 +274,8 @@ class SozlesmeService:
 
         net_tutar = toplam_brut - toplam_indirim
 
+        notlar_json, notlar_text = self._resolve_notlar(data)
+
         sozlesme = self.repo.create({
             'sozlesme_no': sozlesme_no,
             'ogrenci_id': data['ogrenci_id'],
@@ -289,7 +302,8 @@ class SozlesmeService:
             'ilk_odeme_tarihi': data.get('ilk_odeme_tarihi'),
             'taksit_periyodu': data.get('taksit_periyodu', 'aylik'),
             'durum': SozlesmeDurum.TASLAK,
-            'notlar': data.get('notlar', ''),
+            'notlar': notlar_text,
+            'notlar_json': notlar_json,
             'olusturan': user,
             'muacceliyet_durumu': data.get('muacceliyet_durumu', False),
             'cayma_suresi': data.get('cayma_suresi', 14),
@@ -376,10 +390,15 @@ class SozlesmeService:
         update_fields = {}
         for field in ['baslangic_tarihi', 'bitis_tarihi', 'paket_turu', 'paket_id',
                        'paket_adi', 'odeme_turu', 'taksit_sayisi', 'ilk_odeme_tarihi',
-                       'taksit_periyodu', 'notlar', 'muacceliyet_durumu', 'cayma_suresi',
+                       'taksit_periyodu', 'muacceliyet_durumu', 'cayma_suresi',
                        'egitim_turu', 'veli_id', 'odeme_yontemi_id', 'mali_hesap_id']:
             if field in data:
                 update_fields[field] = data[field]
+
+        if 'notlar_json' in data or 'notlar' in data:
+            notlar_json, notlar_text = self._resolve_notlar(data)
+            update_fields['notlar_json'] = notlar_json
+            update_fields['notlar'] = notlar_text
 
         # ─── Kalemler güncelleme ─────────────
         kalemler_raw = data.get('kalemler')
@@ -521,6 +540,18 @@ class SozlesmeService:
                          f'İzin verilen geçişler: {", ".join(izinli) if izinli else "Yok"}'
             }
 
+        if new_status == SozlesmeDurum.TAMAMLANDI:
+            from apps.odeme_takip.domain.models import Taksit
+            unpaid = Taksit.objects.filter(sozlesme=sozlesme).exclude(
+                durum__in=[TaksitDurum.ODENDI, TaksitDurum.IPTAL]
+            ).exists()
+            if unpaid:
+                return None, {
+                    'error': 'Ödeme planı tamamlanmadan sözleşme "Tamamlandı" durumuna alınamaz. '
+                             'Lütfen önce tüm taksitlerin ödendiğinden emin olun.',
+                    'code': 'ODEME_PLANI_TAMAMLANMADI',
+                }
+
         sozlesme.durum = new_status
         sozlesme.save(update_fields=['durum', 'updated_at'])
 
@@ -530,6 +561,48 @@ class SozlesmeService:
             'eski_deger': {'durum': eski_durum},
             'yeni_deger': {'durum': new_status},
             'aciklama': aciklama or f'Durum değişikliği: {eski_durum} → {new_status}',
+            'islem_yapan': user,
+        })
+
+        return sozlesme, None
+
+    def revert_last_status(self, id, user=None, aciklama=''):
+        """Son durum değişikliğini geri al (yönetici)."""
+        if not user or not (getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False)):
+            return None, {'error': 'Durum geri alma için yönetici yetkisi gerekir'}
+
+        sozlesme = self.repo.get_by_id(id)
+        if not sozlesme:
+            return None, {'error': 'Sözleşme bulunamadı'}
+
+        last_change = self.gecmis_repo.get_by_sozlesme(id).filter(
+            islem_turu=GecmisIslemTuru.DURUM_DEGISIKLIGI,
+        ).first()
+
+        if not last_change:
+            return None, {'error': 'Geri alınacak durum değişikliği bulunamadı'}
+
+        eski_durum = (last_change.eski_deger or {}).get('durum')
+        yeni_durum = (last_change.yeni_deger or {}).get('durum')
+
+        if not eski_durum:
+            return None, {'error': 'Önceki durum kaydı bulunamadı'}
+
+        if sozlesme.durum != yeni_durum:
+            return None, {
+                'error': 'Sözleşme durumu son değişiklikten sonra güncellenmiş. Geri alma uygulanamaz.',
+            }
+
+        onceki = sozlesme.durum
+        sozlesme.durum = eski_durum
+        sozlesme.save(update_fields=['durum', 'updated_at'])
+
+        self.gecmis_repo.create({
+            'sozlesme': sozlesme,
+            'islem_turu': GecmisIslemTuru.DURUM_DEGISIKLIGI,
+            'eski_deger': {'durum': onceki},
+            'yeni_deger': {'durum': eski_durum},
+            'aciklama': aciklama or f'Durum geri alındı: {onceki} → {eski_durum}',
             'islem_yapan': user,
         })
 

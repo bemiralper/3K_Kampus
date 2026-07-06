@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 
 export type StatusFilter = 'all' | 'aktif' | 'pasif';
-export type SortOption = 'name_asc' | 'name_desc';
+export type SortOption = 'name_asc' | 'name_desc' | 'kayit_tarihi_desc' | 'kayit_tarihi_asc' | 'created_at_desc';
 
 interface OgrenciListToolbarProps {
   title: string;
@@ -195,6 +195,9 @@ export default function OgrenciListToolbar({
             onChange={(e) => onSortChange(e.target.value as SortOption)}
             aria-label="Sıralama"
           >
+            <option value="created_at_desc">En Yeni Kayıt</option>
+            <option value="kayit_tarihi_desc">Kayıt Tarihi (Yeni → Eski)</option>
+            <option value="kayit_tarihi_asc">Kayıt Tarihi (Eski → Yeni)</option>
             <option value="name_asc">Ad (A → Z)</option>
             <option value="name_desc">Ad (Z → A)</option>
           </select>

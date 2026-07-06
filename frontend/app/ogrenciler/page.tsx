@@ -86,7 +86,7 @@ export default function OgrenciListesiPage() {
   const { listHref, href, portalHomeHref } = useOgrenciPath();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { activeKurum, activeSube, activeEgitimYili, loading: contextLoading } = useKurum();
+  const { activeKurum, activeSube, activeEgitimYili, loading: contextLoading, initialized, applyStoredContext } = useKurum();
 
   const [filters, setFilters] = useState<OgrenciListFilters>(() =>
     parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString()))
@@ -136,7 +136,23 @@ export default function OgrenciListesiPage() {
 
   const statusFilter: StatusFilter = filters.durum || "all";
   const sortBy: SortOption =
-    filters.sort === "name_desc" ? "name_desc" : "name_asc";
+    filters.sort === "name_desc"
+      ? "name_desc"
+      : filters.sort === "name_asc"
+        ? "name_asc"
+        : filters.sort === "kayit_tarihi_asc"
+          ? "kayit_tarihi_asc"
+          : filters.sort === "created_at_desc" || filters.sort === "kayit_tarihi_desc" || !filters.sort
+            ? "created_at_desc"
+            : "created_at_desc";
+  const apiSort =
+    sortBy === "name_desc"
+      ? "name_desc"
+      : sortBy === "name_asc"
+        ? "name_asc"
+        : sortBy === "kayit_tarihi_asc"
+          ? "kayit_tarihi_asc"
+          : "created_at_desc";
   const searchQuery = filters.q || "";
 
   const syncUrl = useCallback(
@@ -166,7 +182,7 @@ export default function OgrenciListesiPage() {
     try {
       const query = buildListApiQuery({
         ...filters,
-        sort: sortBy === "name_desc" ? "name_desc" : "name_asc",
+        sort: apiSort,
       });
       const response = await apiGet<OgrenciResponse>(`/ogrenciler/api/list/${query}`);
 
@@ -187,17 +203,34 @@ export default function OgrenciListesiPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters, sortBy, activeKurum?.id, activeSube?.id, activeEgitimYili?.id]);
+  }, [filters, apiSort, activeKurum?.id, activeSube?.id, activeEgitimYili?.id]);
 
   useEffect(() => {
-    if (contextLoading) return;
+    if (!initialized) return;
+    applyStoredContext();
+  }, [initialized, applyStoredContext]);
+
+  useEffect(() => {
+    if (contextLoading || !initialized) return;
+
+    const hasStoredContext =
+      typeof window !== "undefined" &&
+      localStorage.getItem("3k_active_kurum") &&
+      localStorage.getItem("3k_active_sube");
+
     if (!activeKurum || !activeSube) {
+      if (hasStoredContext) {
+        applyStoredContext();
+        return;
+      }
       setLoading(false);
       setError("Lütfen önce kurum ve şube seçin");
       return;
     }
+
+    setError(null);
     fetchOgrenciler();
-  }, [contextLoading, activeKurum?.id, activeSube?.id, activeEgitimYili?.id, fetchOgrenciler]);
+  }, [contextLoading, initialized, activeKurum?.id, activeSube?.id, activeEgitimYili?.id, fetchOgrenciler, applyStoredContext]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -250,7 +283,7 @@ export default function OgrenciListesiPage() {
       paket_turu: "",
       kayit_tarihi_bas: "",
       kayit_tarihi_bit: "",
-      sort: "kayit_tarihi_desc",
+      sort: "created_at_desc",
       page: 1,
       page_size: filters.page_size || 25,
     };
@@ -421,7 +454,7 @@ export default function OgrenciListesiPage() {
   const hasActiveFilters =
     Boolean(searchInput.trim()) ||
     statusFilter !== "all" ||
-    sortBy !== "name_asc" ||
+    sortBy !== "created_at_desc" ||
     advancedFilterCount > 0;
 
   const toggleSelect = (id: number) => {
@@ -645,7 +678,7 @@ export default function OgrenciListesiPage() {
           sortBy={sortBy}
           onSortChange={(s) =>
             updateFilters({
-              sort: s === "name_desc" ? "name_desc" : "name_asc",
+              sort: s,
               page: 1,
             })
           }

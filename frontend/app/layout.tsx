@@ -1,10 +1,23 @@
 import "./globals.css";
 import type { ReactNode } from "react";
-import type { Viewport } from "next";
+import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/lib/contexts/AuthContext";
 import AppShellWithAuth from "@/components/layout/AppShellWithAuth";
 import ChunkLoadRecovery from "@/components/ChunkLoadRecovery";
 import PublicGoogleAnalytics from "@/components/landing/PublicGoogleAnalytics";
+
+/**
+ * Meta Business domain verification (https://3kkampus.com/)
+ *
+ * Doğrulama tamamlandıktan sonra kaldırmak için:
+ * 1) Bu sabiti `null` yapın veya silin, ya da
+ * 2) Production env'de `NEXT_PUBLIC_FACEBOOK_DOMAIN_VERIFICATION=off` set edip redeploy edin.
+ */
+const FACEBOOK_DOMAIN_VERIFICATION: string | null =
+  process.env.NEXT_PUBLIC_FACEBOOK_DOMAIN_VERIFICATION === "off"
+    ? null
+    : process.env.NEXT_PUBLIC_FACEBOOK_DOMAIN_VERIFICATION?.trim() ||
+      "rzjoujm3azogd4hc17sr0l3x3s2ofo";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -12,9 +25,16 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export const metadata = {
-  title: '3K Kampüs',
-  description: '3K Kampüs Eğitim Yönetim Sistemi',
+export const metadata: Metadata = {
+  title: "3K Kampüs",
+  description: "3K Kampüs Eğitim Yönetim Sistemi",
+  ...(FACEBOOK_DOMAIN_VERIFICATION
+    ? {
+        other: {
+          "facebook-domain-verification": FACEBOOK_DOMAIN_VERIFICATION,
+        },
+      }
+    : {}),
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

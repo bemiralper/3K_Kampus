@@ -65,7 +65,7 @@ function SummaryCard({ icon, label, value, gradient, active, onClick, subtitle }
 }
 
 export default function DolaplarPage() {
-  const { href, isCoachMode } = useKutuphanePath();
+  const { href, isCoachMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const { activeKurum, activeSube } = useKurum();
   const [activeTab, setActiveTab] = useState<'dolaplar' | 'atamalar'>('dolaplar');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -516,7 +516,7 @@ export default function DolaplarPage() {
           <div className="hero-text">
             <h1>Dolaplar</h1>
             <div className="hero-breadcrumb">
-              <a href="/dashboard">Ana Sayfa</a><span>/</span>
+              <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span>
               <a href={href()}>Kütüphane</a><span>/</span><span>Dolaplar</span>
             </div>
           </div>

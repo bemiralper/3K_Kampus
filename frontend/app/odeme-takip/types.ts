@@ -50,6 +50,7 @@ export interface Sozlesme {
   ilk_odeme_tarihi?: string | null;
   taksit_periyodu?: string;
   notlar?: string;
+  notlar_json?: { id: string; text: string; veli_ile_paylas: boolean }[];
   ogrenci_kayit_id?: number | null;
   egitim_yili_id?: number | null;
   kurum_id?: number | null;

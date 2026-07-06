@@ -15,7 +15,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; border: string;
 };
 
 export default function SalonlarListPage() {
-  const { href, isCoachMode } = useKutuphanePath();
+  const { href, isCoachMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +110,7 @@ export default function SalonlarListPage() {
           <div className="hero-text">
             <h1>Kütüphane Salonları</h1>
             <div className="hero-breadcrumb">
-              <a href={isCoachMode ? href() : '/dashboard'}>{isCoachMode ? 'Koç Portalı' : 'Ana Sayfa'}</a><span>/</span>
+              <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span>
               <a href={href()}>Kütüphane</a><span>/</span><span>Salonlar</span>
             </div>
           </div>

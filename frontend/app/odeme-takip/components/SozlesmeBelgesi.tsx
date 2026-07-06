@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { API_BASE } from "../helpers";
+import { notlarForPdf, parseNotlarJson } from "@/lib/sozlesme-notlar";
 
 /* ── Kurum ana rengi ── */
 const KURUM_COLOR = "#0262a7";
@@ -65,6 +66,7 @@ interface SozlesmeData {
   ilk_odeme_tarihi: string | null;
   durum: string;
   notlar: string;
+  notlar_json?: { id: string; text: string; veli_ile_paylas: boolean }[];
   kurum?: {
     ad: string;
     adres: string;
@@ -432,6 +434,7 @@ export default function SozlesmeBelgesi({
   const taksitler = data.taksitler || [];
   const kalemler = data.kalemler || [];
   const bugununTarihi = formatDate(new Date().toISOString());
+  const pdfNotlar = notlarForPdf(parseNotlarJson(data.notlar_json, data.notlar));
 
   // Eğitim yılı: API'den veya başlangıç tarihinden
   const baslangicYil = data.baslangic_tarihi ? new Date(data.baslangic_tarihi).getFullYear() : new Date().getFullYear();
@@ -941,14 +944,15 @@ export default function SozlesmeBelgesi({
           </div>
 
           {/* ═══ NOTLAR ═══ */}
-          {data.notlar && (
+          {pdfNotlar && (
             <div style={{ marginBottom: 14 }}>
               <SectionTitle icon="📌" title="Özel Notlar" />
               <div style={{
                 background: "#fffbeb", borderRadius: 8, padding: "8px 14px",
                 border: "1px solid #fde68a", fontSize: 10, color: "#92400e", lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
               }}>
-                {data.notlar}
+                {pdfNotlar}
               </div>
             </div>
           )}

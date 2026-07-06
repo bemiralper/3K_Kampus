@@ -85,9 +85,13 @@ class PhoneChangeSync:
         new_phone = (veli.telefon or '').strip()
 
         if veli.varsayilan:
-            ogrenci.veli_telefon = new_phone
+            update_fields = ['veli_ad_soyad', 'updated_at']
             ogrenci.veli_ad_soyad = f'{veli.ad} {veli.soyad}'.strip()
-            ogrenci.save(update_fields=['veli_telefon', 'veli_ad_soyad', 'updated_at'])
+            # Boş veli telefonu legacy ogrenci.veli_telefon alanını silmemeli
+            if new_phone:
+                ogrenci.veli_telefon = new_phone
+                update_fields.insert(0, 'veli_telefon')
+            ogrenci.save(update_fields=update_fields)
 
         conversations = Conversation.objects.filter(kurum_id=kurum_id, veli_id=veli.id)
         if new_phone:

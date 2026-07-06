@@ -145,6 +145,7 @@ class Sozlesme(models.Model):
 
     # Notlar
     notlar = models.TextField('Notlar', blank=True)
+    notlar_json = models.JSONField('Notlar (yapılandırılmış)', default=list, blank=True)
 
     # ═══ EK DETAYLAR ═══
     muacceliyet_durumu = models.BooleanField('Muacceliyet Durumu', default=False, help_text='Tüm borç vadesi gelmeden muaccel olabilir mi?')

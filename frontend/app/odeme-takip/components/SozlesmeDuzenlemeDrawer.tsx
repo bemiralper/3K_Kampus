@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Sozlesme } from "../types";
 import { formatCurrency, formatDate, API_BASE, postHeaders, odemeTuruLabel, taksitPeriyoduLabel, egitimTuruLabel, gecmisIslemTuruText, islemYapanText } from "../helpers";
+import SozlesmeNotlarEditor from "./SozlesmeNotlarEditor";
+import { SozlesmeNot, parseNotlarJson, serializeNotlarForApi } from "@/lib/sozlesme-notlar";
 
 // ─── Stiller ──────────────────────────────────────────────────
 
@@ -21,7 +23,6 @@ interface FormData {
   taksit_sayisi: string;
   ilk_odeme_tarihi: string;
   taksit_periyodu: string;
-  notlar: string;
   muacceliyet_durumu: boolean;
   cayma_suresi: string;
   egitim_turu: string;
@@ -32,6 +33,8 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
   const [sozlesme, setSozlesme] = useState<Sozlesme | null>(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [notlarJson, setNotlarJson] = useState<SozlesmeNot[]>([]);
+  const [notlarChanged, setNotlarChanged] = useState(false);
 
   const [form, setForm] = useState<FormData>({
     baslangic_tarihi: "",
@@ -40,7 +43,6 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
     taksit_sayisi: "",
     ilk_odeme_tarihi: "",
     taksit_periyodu: "",
-    notlar: "",
     muacceliyet_durumu: false,
     cayma_suresi: "",
     egitim_turu: "",
@@ -63,11 +65,12 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
         taksit_sayisi: String(data.taksit_sayisi || ""),
         ilk_odeme_tarihi: data.ilk_odeme_tarihi || "",
         taksit_periyodu: data.taksit_periyodu || "",
-        notlar: data.notlar || "",
         muacceliyet_durumu: data.muacceliyet_durumu || false,
         cayma_suresi: String(data.cayma_suresi || ""),
         egitim_turu: data.egitim_turu || "",
       });
+      setNotlarJson(parseNotlarJson(data.notlar_json, data.notlar));
+      setNotlarChanged(false);
     } catch { setErrors(["Sözleşme bilgileri yüklenemedi"]); }
     setLoading(false);
   }, [sozlesmeId]);
@@ -94,7 +97,7 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
 
   // Kaydet
   const handleSave = async () => {
-    if (changedFields.size === 0) {
+    if (changedFields.size === 0 && !notlarChanged) {
       onClose();
       return;
     }
@@ -114,6 +117,10 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
         payload[field] = value;
       }
     });
+
+    if (notlarChanged) {
+      Object.assign(payload, serializeNotlarForApi(notlarJson));
+    }
 
     try {
       const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/update/`, {
@@ -315,12 +322,12 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
                   </div>
                   <div>
                     <label style={labelStyle}>Notlar</label>
-                    <textarea
-                      value={form.notlar}
-                      onChange={e => handleFieldChange("notlar", e.target.value)}
-                      rows={3}
-                      style={{ ...inputStyle, resize: "vertical" }}
-                      placeholder="Sözleşme ile ilgili notlar..."
+                    <SozlesmeNotlarEditor
+                      notes={notlarJson}
+                      onChange={(notes) => {
+                        setNotlarJson(notes);
+                        setNotlarChanged(true);
+                      }}
                     />
                   </div>
                 </div>

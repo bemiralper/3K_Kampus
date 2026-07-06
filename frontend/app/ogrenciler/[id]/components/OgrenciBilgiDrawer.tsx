@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import DatePicker, { registerLocale } from "react-datepicker";
+import { tr } from "date-fns/locale";
+import "react-datepicker/dist/react-datepicker.css";
+import { dateToIsoLocal, isoToLocalDate } from "@/lib/date-utils";
 import { OgrenciDetay } from "../types";
+
+registerLocale("tr", tr);
 
 interface OgrenciBilgiDrawerProps {
   isOpen: boolean;
@@ -35,7 +41,11 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
     adres: '',
     kayit_turu: '',
     aktif_mi: true,
+    sinif_seviyesi_id: '' as number | '',
+    sinif_id: '' as number | '',
   });
+  const [sinifSeviyeleri, setSinifSeviyeleri] = useState<{ id: number; ad: string }[]>([]);
+  const [siniflar, setSiniflar] = useState<{ id: number; ad: string; sinif_seviyesi_id: number | null }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -100,6 +110,15 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
           }
         })
         .catch(err => console.error('Cinsiyet seçenekleri yüklenemedi:', err));
+
+      fetch('/api/ogrenciler/api/filter-options/', { credentials: 'include' })
+        .then(res => res.json())
+        .then(result => {
+          const payload = result.data || result;
+          setSinifSeviyeleri(payload.sinif_seviyeleri || []);
+          setSiniflar(payload.siniflar || []);
+        })
+        .catch(err => console.error('Sınıf seçenekleri yüklenemedi:', err));
     }
   }, [isOpen]);
 
@@ -117,6 +136,8 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
         adres: data.adres || '',
         kayit_turu: data.kayit_turu || 'asil',
         aktif_mi: data.aktif_mi,
+        sinif_seviyesi_id: data.sinif_seviyesi?.id ?? '',
+        sinif_id: data.sinif?.id ?? '',
       });
       setError('');
       setSuccess('');
@@ -150,7 +171,11 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          sinif_seviyesi_id: formData.sinif_seviyesi_id || null,
+          sinif_id: formData.sinif_id || null,
+        }),
       });
 
       const result = await response.json();
@@ -170,6 +195,18 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
           cinsiyet_display: cinsiyetMap[formData.cinsiyet] || data.cinsiyet_display,
           kayit_turu_display: kayitTuruMap[formData.kayit_turu] || data.kayit_turu_display,
           dogum_tarihi_iso: formData.dogum_tarihi,
+          sinif_seviyesi: formData.sinif_seviyesi_id
+            ? {
+                id: Number(formData.sinif_seviyesi_id),
+                ad: sinifSeviyeleri.find((s) => s.id === Number(formData.sinif_seviyesi_id))?.ad || data.sinif_seviyesi?.ad || '',
+              }
+            : data.sinif_seviyesi,
+          sinif: formData.sinif_id
+            ? {
+                id: Number(formData.sinif_id),
+                ad: siniflar.find((s) => s.id === Number(formData.sinif_id))?.ad || data.sinif?.ad || '',
+              }
+            : data.sinif,
         };
         setTimeout(() => {
           onSuccess(updatedData);
@@ -488,27 +525,21 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
                       Doğum Tarihi
                     </label>
-                    <input
-                      type="date"
-                      value={formData.dogum_tarihi}
-                      onChange={(e) => setFormData({ ...formData, dogum_tarihi: e.target.value })}
-                      style={{
-                        width: '100%',
-                        padding: '12px 16px',
-                        borderRadius: '10px',
-                        border: '1px solid #e2e8f0',
-                        fontSize: '14px',
-                        transition: 'all 0.2s',
-                        outline: 'none',
-                      }}
-                      onFocus={(e) => {
-                        e.target.style.borderColor = '#3b82f6';
-                        e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-                      }}
-                      onBlur={(e) => {
-                        e.target.style.borderColor = '#e2e8f0';
-                        e.target.style.boxShadow = 'none';
-                      }}
+                    <DatePicker
+                      selected={isoToLocalDate(formData.dogum_tarihi)}
+                      onChange={(date: Date | null) =>
+                        setFormData({ ...formData, dogum_tarihi: date ? dateToIsoLocal(date) : '' })
+                      }
+                      locale="tr"
+                      dateFormat="dd.MM.yyyy"
+                      maxDate={new Date()}
+                      showMonthDropdown
+                      showYearDropdown
+                      dropdownMode="select"
+                      calendarStartDay={1}
+                      placeholderText="GG.AA.YYYY"
+                      className="wizard-input"
+                      wrapperClassName="w-full"
                     />
                   </div>
                   <div className="form-field" style={{ gridColumn: '1 / -1' }}>
@@ -751,6 +782,63 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
                   </div>
 
                   <div className="form-field">
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
+                      Sınıf Seviyesi
+                    </label>
+                    <select
+                      value={formData.sinif_seviyesi_id}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : '';
+                        setFormData({ ...formData, sinif_seviyesi_id: val, sinif_id: '' });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        fontSize: '14px',
+                        background: 'white',
+                      }}
+                    >
+                      <option value="">Seçiniz...</option>
+                      {sinifSeviyeleri.map((seviye) => (
+                        <option key={seviye.id} value={seviye.id}>{seviye.ad}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-field">
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
+                      Sınıf
+                    </label>
+                    <select
+                      value={formData.sinif_id}
+                      disabled={!formData.sinif_seviyesi_id}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          sinif_id: e.target.value ? Number(e.target.value) : '',
+                        })
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        fontSize: '14px',
+                        background: 'white',
+                      }}
+                    >
+                      <option value="">Seçiniz...</option>
+                      {siniflar
+                        .filter((s) => !formData.sinif_seviyesi_id || s.sinif_seviyesi_id === Number(formData.sinif_seviyesi_id))
+                        .map((sinif) => (
+                          <option key={sinif.id} value={sinif.id}>{sinif.ad}</option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="form-field">
                     <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
                       Durum
                     </label>
@@ -834,7 +922,7 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
                           Bilgilendirme
                         </div>
                         <div style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5 }}>
-                          Sınıf ve şube değişikliği için &quot;Akademik&quot; sekmesinden yıllık kayıt düzenleme yapabilirsiniz.
+                          Sınıf ve seviye bilgileri bu ekrandan güncellenebilir. Değişiklikler aktif eğitim yılı kaydına uygulanır.
                         </div>
                       </div>
                     </div>

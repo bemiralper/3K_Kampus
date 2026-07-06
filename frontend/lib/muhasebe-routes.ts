@@ -11,6 +11,7 @@ export const ADMIN_PERSONEL_BASE = '/personel';
 export const MUHASEBE_PERSONEL_BASE = '/muhasebe/personel';
 
 export const MUHASEBE_PORTAL_BASE = '/muhasebe';
+export const MUHASEBE_KURUM_BASE = '/muhasebe/kurum';
 
 export function getFinansBasePath(pathname?: string | null): string {
   if (pathname?.startsWith(MUHASEBE_FINANS_BASE)) return MUHASEBE_FINANS_BASE;

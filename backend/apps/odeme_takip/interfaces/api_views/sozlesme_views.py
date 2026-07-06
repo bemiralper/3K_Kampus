@@ -14,6 +14,7 @@ from apps.odeme_takip.application.services.sozlesme_service import SozlesmeServi
 from apps.odeme_takip.application.services.taksit_service import TaksitService
 from apps.odeme_takip.application.services.tahsilat_service import TahsilatService
 from apps.odeme_takip.application.services.indirim_service import IndirimService
+from apps.odeme_takip.domain.notlar_utils import serialize_notlar
 from apps.odeme_takip.infrastructure.repositories.sozlesme_repository import ParametrikRepository
 
 from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
@@ -93,7 +94,9 @@ def _serialize_sozlesme(s, detail=False):
         data['bitis_tarihi'] = str(s.bitis_tarihi) if s.bitis_tarihi else None
         data['ilk_odeme_tarihi'] = str(s.ilk_odeme_tarihi) if s.ilk_odeme_tarihi else None
         data['taksit_periyodu'] = s.taksit_periyodu
-        data['notlar'] = s.notlar or ''
+        notlar_data = serialize_notlar(s)
+        data['notlar'] = notlar_data['notlar']
+        data['notlar_json'] = notlar_data['notlar_json']
         data['ogrenci_kayit_id'] = s.ogrenci_kayit_id
         data['egitim_yili_id'] = s.egitim_yili_id
         data['kurum_id'] = s.kurum_id
@@ -374,6 +377,22 @@ def sozlesme_status_change(request, pk):
     if errors:
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
     return Response(_serialize_sozlesme(sozlesme))
+
+
+@api_view(['POST'])
+@permission_classes(ODEME_TAKIP_PERMISSIONS)
+def sozlesme_status_revert(request, pk):
+    """Son durum değişikliğini geri al (yönetici)."""
+    service = SozlesmeService()
+    aciklama = request.data.get('aciklama', '')
+    sozlesme, errors = service.revert_last_status(
+        pk,
+        user=request.user if request.user.is_authenticated else None,
+        aciklama=aciklama,
+    )
+    if errors:
+        return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+    return Response(_serialize_sozlesme(sozlesme, detail=True))
 
 
 # ─── İndirim ─────────────────────────────────────────────────────

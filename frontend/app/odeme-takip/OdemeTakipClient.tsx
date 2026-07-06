@@ -14,6 +14,7 @@ import IslemMasrafiFields from "@/components/finans/IslemMasrafiFields";
 import { EMPTY_ISLEM_MASRAFI, buildIslemMasrafiPayload } from "@/app/finans/types/islem-masrafi-types";
 import { islemMasrafiGoster } from "@/app/finans/utils/islem-masrafi-eligibility";
 import { API_BASE, formatCurrency, durumLabel, postHeaders, apiHeaders } from "./helpers";
+import { STATUS_CONFIRM_MESSAGES } from "@/lib/sozlesme-notlar";
 
 import SozlesmelerTab from "./tabs/SozlesmelerTab";
 import TahsilatlarTab from "./tabs/TahsilatlarTab";
@@ -94,6 +95,7 @@ export default function OdemeTakipClient() {
   const [statusSozlesmeId, setStatusSozlesmeId] = useState<number | null>(null);
   const [statusYeniDurum, setStatusYeniDurum] = useState("");
   const [statusAciklama, setStatusAciklama] = useState("");
+  const [statusConfirmAck, setStatusConfirmAck] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteSozlesmeId, setDeleteSozlesmeId] = useState<number | null>(null);
   const [makbuzTahsilatId, setMakbuzTahsilatId] = useState<number | null>(null);
@@ -287,6 +289,8 @@ export default function OdemeTakipClient() {
     }
     setStatusSozlesmeId(sozlesmeId);
     setStatusYeniDurum(yeniDurum);
+    setStatusAciklama("");
+    setStatusConfirmAck(false);
     setShowStatusModal(true);
   };
 
@@ -316,9 +320,31 @@ export default function OdemeTakipClient() {
         if (selectedSozlesme?.id === statusSozlesmeId) await fetchSozlesmeDetail(statusSozlesmeId);
         setShowStatusModal(false);
         setStatusAciklama("");
+        setStatusConfirmAck(false);
       } else {
         const err = await res.json();
         alert(err.error || "Hata oluştu");
+      }
+    } catch { alert("Bağlantı hatası"); }
+    setSaving(false);
+  };
+
+  const handleStatusRevert = async (sozlesmeId: number) => {
+    if (!window.confirm("Son durum değişikliğini geri almak istediğinize emin misiniz?")) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/status/revert/`, {
+        method: "POST",
+        headers: postHeaders(),
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        await fetchSozlesmeler();
+        if (selectedSozlesme?.id === sozlesmeId) await fetchSozlesmeDetail(sozlesmeId);
+      } else {
+        const err = await res.json();
+        alert(err.error || "Geri alma başarısız");
       }
     } catch { alert("Bağlantı hatası"); }
     setSaving(false);
@@ -536,6 +562,7 @@ export default function OdemeTakipClient() {
           onSelectSozlesme={openSozlesmeDetail}
           onCloseDetail={closeSozlesmeDetail}
           onStatusChange={handleStatusChangeOpen}
+          onStatusRevert={handleStatusRevert}
           onTahsilatStart={handleTahsilatStart}
           onTahsilatCancel={handleTahsilatCancelOpen}
           onDelete={handleDeleteOpen}
@@ -790,8 +817,25 @@ export default function OdemeTakipClient() {
           <div className="odeme-modal-overlay" onClick={() => setShowStatusModal(false)} />
           <div className="odeme-modal odeme-modal-sm">
             <h3>
-              Statü Değişikliği: <span style={{ color: durumLabel[statusYeniDurum]?.color || "inherit" }}>{durumLabel[statusYeniDurum]?.label || statusYeniDurum}</span>
+              {STATUS_CONFIRM_MESSAGES[statusYeniDurum]?.title || "Statü Değişikliği"}
             </h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 16 }}>
+              {STATUS_CONFIRM_MESSAGES[statusYeniDurum]?.body || (
+                <>
+                  Sözleşmeyi <strong>{durumLabel[statusYeniDurum]?.label || statusYeniDurum}</strong> durumuna almak üzeresiniz.
+                  Devam etmek istiyor musunuz?
+                </>
+              )}
+            </p>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, marginBottom: 12, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={statusConfirmAck}
+                onChange={(e) => setStatusConfirmAck(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <span>Bu işlemin sonuçlarını anladım ve devam etmek istiyorum.</span>
+            </label>
             <textarea
               className="odeme-form-control"
               value={statusAciklama}
@@ -806,7 +850,7 @@ export default function OdemeTakipClient() {
                 className="btn-modern"
                 style={{ flex: 1, background: durumLabel[statusYeniDurum]?.color || "#2563eb", color: "#fff" }}
                 onClick={handleStatusChange}
-                disabled={saving}
+                disabled={saving || !statusConfirmAck}
               >{saving ? "İşleniyor..." : "Onayla"}</button>
             </div>
           </div>

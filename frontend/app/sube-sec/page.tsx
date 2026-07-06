@@ -58,6 +58,7 @@ export default function SubeSecPage() {
           localStorage.setItem(STORAGE_KURUM, String(s.kurum_id));
           setActiveContext(s.kurum_id, s.id, null).finally(() => {
             clearContextGate();
+            window.dispatchEvent(new Event("3k:context-updated"));
             router.replace(getDefaultHomePath(user));
           });
           return;
@@ -87,6 +88,7 @@ export default function SubeSecPage() {
       localStorage.setItem(STORAGE_KURUM, String(sube.kurum_id));
       await setActiveContext(sube.kurum_id, sube.id, null);
       clearContextGate();
+      window.dispatchEvent(new Event("3k:context-updated"));
       router.replace(getDefaultHomePath(user));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Şube seçilemedi");

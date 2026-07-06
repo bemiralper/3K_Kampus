@@ -159,7 +159,7 @@ export function parseFiltersFromSearchParams(params: URLSearchParams): OgrenciLi
     paket_turu: params.get('paket_turu') || '',
     kayit_tarihi_bas: params.get('kayit_tarihi_bas') || '',
     kayit_tarihi_bit: params.get('kayit_tarihi_bit') || '',
-    sort: params.get('sort') || 'kayit_tarihi_desc',
+    sort: params.get('sort') || 'created_at_desc',
     page: parseInt(params.get('page') || '1', 10) || 1,
     page_size: parseInt(params.get('page_size') || '25', 10) || 25,
   };

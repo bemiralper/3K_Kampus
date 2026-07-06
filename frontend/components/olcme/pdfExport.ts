@@ -10,6 +10,7 @@
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { downloadJsPdf } from '@/lib/download-file';
 import type { RankingItem, StudentAnalysis, RankingSectionInfo } from './types';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -748,7 +749,8 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   }
 
   addPdfFooter(doc);
-  doc.save(`${examName}_Siralama_${alanFilter || 'Tumu'}_${new Date().toISOString().slice(0, 10)}.pdf`.replace(/\s+/g, '_'));
+  const filename = `${examName}_Siralama_${alanFilter || 'Tumu'}_${new Date().toISOString().slice(0, 10)}.pdf`.replace(/\s+/g, '_');
+  await downloadJsPdf(doc, filename);
 }
 
 
@@ -993,5 +995,6 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
   });
 
   addPdfFooter(doc);
-  doc.save(`${examName}_Ogrenciler_${alanFilter || 'Tumu'}_${new Date().toISOString().slice(0, 10)}.pdf`.replace(/\s+/g, '_'));
+  const filename = `${examName}_Ogrenciler_${alanFilter || 'Tumu'}_${new Date().toISOString().slice(0, 10)}.pdf`.replace(/\s+/g, '_');
+  await downloadJsPdf(doc, filename);
 }

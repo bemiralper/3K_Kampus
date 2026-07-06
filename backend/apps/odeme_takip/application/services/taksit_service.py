@@ -75,13 +75,12 @@ class TaksitService:
         # Kalan tutarı eşit taksitlere böl (1000'e yuvarlama — frontend önizleme ile uyumlu)
         if taksit_sayisi <= 0:
             taksit_sayisi = 1
-        # Taksit tutarını 1000'in katına yuvarla (aşağı)
+        # Taksit tutarını 1000'in katına yuvarla (aşağı); son taksit kalan farkı alır
         taksit_tutar = (net // taksit_sayisi // 1000) * 1000
-        # İlk taksit farkı alır: net - (taksit_tutar × (n-1))
-        ilk_taksit_tutar = net - taksit_tutar * (taksit_sayisi - 1)
+        son_taksit_tutar = net - taksit_tutar * (taksit_sayisi - 1)
 
         for i in range(taksit_sayisi):
-            tutar = ilk_taksit_tutar if i == 0 else taksit_tutar
+            tutar = son_taksit_tutar if i == taksit_sayisi - 1 else taksit_tutar
 
             vade = self._hesapla_vade(ilk_odeme_tarihi, i, periyot, has_pesinat=(pesinat > 0))
 
@@ -187,12 +186,12 @@ class TaksitService:
             sozlesme=sozlesme
         ).order_by('-taksit_no').values_list('taksit_no', flat=True).first() or 0
 
-        # 1000'e yuvarlama — frontend önizleme ile uyumlu
+        # 1000'e yuvarlama — frontend önizleme ile uyumlu; son taksit kalan farkı alır
         taksit_tutar = (kalan_borc // taksit_sayisi // 1000) * 1000
-        ilk_taksit_tutar = kalan_borc - taksit_tutar * (taksit_sayisi - 1)
+        son_taksit_tutar = kalan_borc - taksit_tutar * (taksit_sayisi - 1)
 
         for i in range(taksit_sayisi):
-            tutar = ilk_taksit_tutar if i == 0 else taksit_tutar
+            tutar = son_taksit_tutar if i == taksit_sayisi - 1 else taksit_tutar
 
             vade = self._hesapla_vade(ilk_odeme_tarihi, i, periyot)
 

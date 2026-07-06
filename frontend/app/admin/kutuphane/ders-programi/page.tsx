@@ -133,7 +133,7 @@ function WeekScheduleBoard({
 }
 
 export default function DersProgramiPage() {
-  const { href, isCoachMode } = useKutuphanePath();
+  const { href, isCoachMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const { activeSube, activeKurum } = useKurum();
   const selectedSube = activeSube?.id ?? null;
 
@@ -332,7 +332,7 @@ export default function DersProgramiPage() {
           <div className="hero-text">
             <h1>Ders Programı Yönetimi</h1>
             <div className="hero-breadcrumb">
-              <a href={isCoachMode ? href() : '/dashboard'}>{isCoachMode ? 'Koç Portalı' : 'Ana Sayfa'}</a><span>/</span>
+              <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span>
               <a href={href()}>Kütüphane</a><span>/</span><span>Ders Programı</span>
             </div>
           </div>

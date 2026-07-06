@@ -579,6 +579,28 @@ def ogrenci_api(request, pk):
         if errors:
             return JsonResponse({'success': False, 'errors': errors}, status=400)
 
+        # Yıllık kayıt — sınıf / seviye güncellemesi
+        kayit_updates = {}
+        if 'sinif_id' in data:
+            sinif_val = data.get('sinif_id')
+            kayit_updates['sinif_id'] = int(sinif_val) if sinif_val not in (None, '', 0) else None
+        if 'sinif_seviyesi_id' in data:
+            seviye_val = data.get('sinif_seviyesi_id')
+            kayit_updates['sinif_seviyesi_id'] = int(seviye_val) if seviye_val not in (None, '', 0) else None
+
+        if kayit_updates:
+            aktif_kayit = OgrenciKayit.objects.filter(
+                ogrenci_id=pk, aktif_mi=True,
+            ).order_by('-egitim_yili__baslangic_yil', '-created_at').first()
+            if aktif_kayit:
+                if 'sinif_id' in kayit_updates:
+                    aktif_kayit.sinif_id = kayit_updates['sinif_id']
+                if 'sinif_seviyesi_id' in kayit_updates:
+                    aktif_kayit.sinif_seviyesi_id = kayit_updates['sinif_seviyesi_id']
+                aktif_kayit.save(update_fields=[
+                    f for f in ('sinif_id', 'sinif_seviyesi_id') if f in kayit_updates
+                ])
+
         return JsonResponse({
             'success': True,
             'message': f'{updated_ogrenci.tam_ad} başarıyla güncellendi',
@@ -595,11 +617,13 @@ def ogrenci_api(request, pk):
     def format_date(value, format_str='%d.%m.%Y'):
         return value.strftime(format_str) if value else ''
     
-    # Aktif kayıt bilgisini al (en son kayıt)
+    # Aktif kayıt bilgisini al (en güncel yıl kaydı)
     aktif_kayit = OgrenciKayit.objects.filter(
         ogrenci=ogrenci,
-        aktif_mi=True
-    ).select_related('sinif', 'sinif__sinif_seviyesi', 'egitim_yili').first()
+        aktif_mi=True,
+    ).select_related(
+        'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili'
+    ).order_by('-egitim_yili__baslangic_yil', '-created_at').first()
     
     # Sınıf ve eğitim yılı bilgileri
     sinif_bilgi = None
@@ -616,12 +640,15 @@ def ogrenci_api(request, pk):
                 'id': aktif_kayit.sinif.id,
                 'ad': aktif_kayit.sinif.ad,
             }
-            if aktif_kayit.sinif.sinif_seviyesi:
-                sinif_seviyesi_bilgi = {
-                    'id': aktif_kayit.sinif.sinif_seviyesi.id,
-                    'ad': aktif_kayit.sinif.sinif_seviyesi.ad,
-                    'seviye': aktif_kayit.sinif.sinif_seviyesi.seviye if hasattr(aktif_kayit.sinif.sinif_seviyesi, 'seviye') else None,
-                }
+        seviye_obj = aktif_kayit.sinif_seviyesi or (
+            aktif_kayit.sinif.sinif_seviyesi if aktif_kayit.sinif else None
+        )
+        if seviye_obj:
+            sinif_seviyesi_bilgi = {
+                'id': seviye_obj.id,
+                'ad': seviye_obj.ad,
+                'seviye': seviye_obj.seviye if hasattr(seviye_obj, 'seviye') else None,
+            }
         if aktif_kayit.egitim_yili:
             egitim_yili_bilgi = {
                 'id': aktif_kayit.egitim_yili.id,

@@ -84,3 +84,13 @@ class PhoneChangeSyncTest(TestCase):
 
         self.veli_conv.refresh_from_db()
         self.assertEqual(self.veli_conv.contact_phone, '+905305556644')
+
+    def test_empty_veli_phone_does_not_clear_legacy_ogrenci_field(self):
+        self.ogrenci.veli_telefon = '0532 999 88 77'
+        self.ogrenci.save(update_fields=['veli_telefon'])
+
+        self.veli.telefon = ''
+        self.veli.save()
+
+        self.ogrenci.refresh_from_db()
+        self.assertEqual(self.ogrenci.veli_telefon, '0532 999 88 77')

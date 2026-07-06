@@ -55,7 +55,7 @@ async function searchOgrenciApi(q: string, coachMode: boolean): Promise<OgrenciO
 }
 
 export default function IzinlerPage() {
-  const { href, isCoachMode } = useKutuphanePath();
+  const { href, isCoachMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const [izinler, setIzinler] = useState<OgrenciIzin[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -512,7 +512,7 @@ export default function IzinlerPage() {
           <div className="hero-text">
             <h1>Öğrenci İzin Yönetimi</h1>
             <div className="hero-breadcrumb">
-              <a href={isCoachMode ? href() : '/dashboard'}>{isCoachMode ? 'Koç Portalı' : 'Ana Sayfa'}</a><span>/</span><a href={href()}>Kütüphane</a><span>/</span><span>İzinler</span>
+              <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span><a href={href()}>Kütüphane</a><span>/</span><span>İzinler</span>
             </div>
           </div>
         </div>

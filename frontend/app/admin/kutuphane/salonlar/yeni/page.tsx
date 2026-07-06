@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createLibrary, type WorkingHour } from '@/lib/kutuphane-api';
+import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
 
 const DAYS = [
   { key: 'pazartesi', label: 'Pazartesi' },
@@ -27,6 +28,7 @@ const DEFAULT_HOURS: Record<string, WorkingHour> = {
 
 export default function YeniSalonPage() {
   const router = useRouter();
+  const { href, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,7 +100,7 @@ export default function YeniSalonPage() {
     try {
       const res = await createLibrary(form);
       if (res.success && res.data) {
-        router.push(`/admin/kutuphane/salonlar/${res.data.id}`);
+        router.push(href(`salonlar/${res.data.id}`));
       } else {
         setError(res.error || 'Kayıt başarısız');
       }
@@ -123,11 +125,11 @@ export default function YeniSalonPage() {
           <div className="hero-text">
             <h1>Yeni Salon Oluştur</h1>
             <div className="hero-breadcrumb">
-              <a href="/dashboard">Ana Sayfa</a>
+              <a href={portalHomeHref}>{portalHomeLabel}</a>
               <span>/</span>
-              <a href="/admin/kutuphane">Kütüphane</a>
+              <a href={href()}>Kütüphane</a>
               <span>/</span>
-              <a href="/admin/kutuphane/salonlar">Salonlar</a>
+              <a href={href('salonlar')}>Salonlar</a>
               <span>/</span>
               <span>Yeni</span>
             </div>
@@ -307,7 +309,7 @@ export default function YeniSalonPage() {
 
         {/* Actions */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-          <Link href="/admin/kutuphane/salonlar" style={{
+          <Link href={href('salonlar')} style={{
             padding: '10px 20px', backgroundColor: '#f3f4f6', color: '#374151',
             borderRadius: '8px', textDecoration: 'none', fontSize: '14px', fontWeight: 500,
           }}>

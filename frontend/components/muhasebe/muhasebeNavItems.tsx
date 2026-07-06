@@ -1,7 +1,13 @@
 import type { ReactNode } from "react";
-import { isTahsilatRaporlarFinansPath } from "@/lib/muhasebe-routes";
+import { isTahsilatRaporlarFinansPath, MUHASEBE_KURUM_BASE } from "@/lib/muhasebe-routes";
+import {
+  KUTUPHANE_NAV_ITEMS,
+  MUHASEBE_KUTUPHANE_BASE,
+  kutuphaneHref,
+} from "@/lib/kutuphane-routes";
 
 export const MUHASEBE_FINANS_BASE = "/muhasebe/finans";
+export { MUHASEBE_KURUM_BASE };
 
 export type MuhasebeNavChildDef = {
   id: string;
@@ -63,6 +69,43 @@ export const MUHASEBE_FINANS_CHILDREN: MuhasebeNavChildDef[] = [
     matchPrefix: `${MUHASEBE_FINANS_BASE}/tanimlar`,
   },
 ];
+
+const KURUM_ICON = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+  </svg>
+);
+
+const KUTUPHANE_ICON = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+  </svg>
+);
+
+export const MUHASEBE_KURUM_CHILDREN: MuhasebeNavChildDef[] = [
+  {
+    id: "egitim-tanimlari",
+    href: `${MUHASEBE_KURUM_BASE}/egitim-tanimlari`,
+    label: "Eğitim Tanımları",
+    matchPrefix: `${MUHASEBE_KURUM_BASE}/egitim-tanimlari`,
+  },
+  {
+    id: "egitim-paketleri",
+    href: `${MUHASEBE_KURUM_BASE}/egitim-paketleri`,
+    label: "Eğitim Paketleri",
+    matchPrefix: `${MUHASEBE_KURUM_BASE}/egitim-paketleri`,
+  },
+];
+
+export const MUHASEBE_KUTUPHANE_CHILDREN: MuhasebeNavChildDef[] = KUTUPHANE_NAV_ITEMS.map((item) => {
+  const href = kutuphaneHref(MUHASEBE_KUTUPHANE_BASE, item.segment);
+  return {
+    id: `kutuphane-${item.segment || "dashboard"}`,
+    href,
+    label: item.label,
+    matchPrefix: href,
+  };
+});
 
 export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
   {
@@ -140,6 +183,22 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
     children: MUHASEBE_FINANS_CHILDREN,
   },
   {
+    id: "kurum",
+    href: `${MUHASEBE_KURUM_BASE}/egitim-tanimlari`,
+    label: "Kurum",
+    matchPrefix: MUHASEBE_KURUM_BASE,
+    icon: KURUM_ICON,
+    children: MUHASEBE_KURUM_CHILDREN,
+  },
+  {
+    id: "kutuphane",
+    href: MUHASEBE_KUTUPHANE_BASE,
+    label: "Kütüphane",
+    matchPrefix: MUHASEBE_KUTUPHANE_BASE,
+    icon: KUTUPHANE_ICON,
+    children: MUHASEBE_KUTUPHANE_CHILDREN,
+  },
+  {
     id: "personel",
     href: "/muhasebe/personel",
     label: "Personel",
@@ -168,6 +227,9 @@ export function isMuhasebeNavChildActive(pathname: string, child: MuhasebeNavChi
   if (prefix === MUHASEBE_FINANS_BASE) {
     return pathname === MUHASEBE_FINANS_BASE || pathname === `${MUHASEBE_FINANS_BASE}/`;
   }
+  if (prefix === MUHASEBE_KUTUPHANE_BASE) {
+    return pathname === MUHASEBE_KUTUPHANE_BASE || pathname === `${MUHASEBE_KUTUPHANE_BASE}/`;
+  }
   if (child.id === "tahsilat-raporlar") {
     return isTahsilatRaporlarFinansPath(pathname, MUHASEBE_FINANS_BASE);
   }
@@ -188,6 +250,12 @@ export function isMuhasebeNavActive(pathname: string, item: MuhasebeNavItemDef):
   }
   if (prefix === "/muhasebe/personel/gorevlendirmeler") {
     return pathname.startsWith("/muhasebe/personel/gorevlendirmeler");
+  }
+  if (prefix === MUHASEBE_KURUM_BASE) {
+    return pathname.startsWith(MUHASEBE_KURUM_BASE);
+  }
+  if (prefix === MUHASEBE_KUTUPHANE_BASE) {
+    return pathname.startsWith(MUHASEBE_KUTUPHANE_BASE);
   }
   return pathname.startsWith(prefix);
 }
