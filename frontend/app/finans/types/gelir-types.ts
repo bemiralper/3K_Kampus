@@ -19,6 +19,7 @@ export interface GelirKaydiListItem {
   tahsilat_yuzdesi: number;
   durum: string;
   durum_display: string;
+  duzenlenebilir_mi: boolean;
   odeme_yontemi_id?: number | null;
   odeme_yontemi_adi?: string | null;
   odeme_yontemi_tip?: string | null;

@@ -1238,7 +1238,7 @@ export function GiderEditModal({
         ]);
         setCariHesaplar(cariRes.filter((c) => cariTabGorunur("giderler", c.hesap_turu)));
         setFlatKategoriler(flattenTree(kategoriRes.kategoriler || []));
-        setMaliHesaplar(maliRes);
+        setMaliHesaplar(maliRes.mali_hesaplar || []);
       } catch (e: any) {
         onError(e.message || "Form verileri yüklenemedi.");
       }
@@ -1246,11 +1246,7 @@ export function GiderEditModal({
     load();
   }, [effectiveSubeId, kurumId, onError]);
 
-  const { odemeYontemleri } = useOdemeYontemleriForMaliHesap({
-    kurumId,
-    subeId: effectiveSubeId,
-    maliHesapId: form.mali_hesap_id,
-  });
+  const odemeYontemleri = useOdemeYontemleriForMaliHesap(kurumId, form.mali_hesap_id, effectiveSubeId);
 
   const netTutarGirilen = Number(form.brut_tutar) || 0;
   const kdvOrani = form.kdv_orani ?? 20;

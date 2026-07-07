@@ -47,6 +47,7 @@ export interface GiderKaydiListItem {
   taksit_sayisi: number;
   durum: string;
   durum_display: string;
+  duzenlenebilir_mi: boolean;
   tekrar_mi: boolean;
   olusturan_adi: string | null;
   odeme_yontemi_id?: number | null;
