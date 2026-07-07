@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from apps.odeme_takip.application.services.taksit_service import TaksitService
 from apps.odeme_takip.application.services.sozlesme_service import SozlesmeService
+from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
 
 
 def _serialize_taksit(t):
@@ -143,8 +144,8 @@ def taksit_plani_olustur(request, sozlesme_id):
 def vadesi_gecenler(request):
     """Vadesi geçmiş taksitler"""
     service = TaksitService()
-    kurum_id = request.GET.get('kurum_id')
-    sube_id = request.GET.get('sube_id')
+    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
+    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
     taksitler = service.get_vadesi_gecenler(kurum_id, sube_id)
     result = []
     for t in taksitler:
@@ -178,9 +179,9 @@ def vadesi_gelecekler(request):
     - ay: bugünden itibaren 30 gün
     """
     service = TaksitService()
-    kurum_id = request.GET.get('kurum_id')
-    sube_id = request.GET.get('sube_id')
-    egitim_yili_id = request.GET.get('egitim_yili_id')
+    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
+    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
+    egitim_yili_id = get_secili_egitim_yili_id(request) or request.GET.get('egitim_yili_id')
     donem = request.GET.get('donem', 'hafta')
     arama = request.GET.get('arama', '')
 

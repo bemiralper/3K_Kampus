@@ -30,12 +30,14 @@ export default function GiderKayitTable({
   items,
   onCariHesapClick,
   onDetail,
+  onEdit,
   onIptal,
   onSil,
 }: {
   items: GiderKaydiListItem[];
   onCariHesapClick?: (cariHesapId: number) => void;
   onDetail: (id: number) => void;
+  onEdit?: (id: number) => void;
   onIptal: (id: number) => void;
   onSil: (id: number) => void;
 }) {
@@ -95,6 +97,11 @@ export default function GiderKayitTable({
             <button onClick={() => onDetail(g.id)} className="row-action-btn" title="Detay Görüntüle">
               <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
             </button>
+            {g.duzenlenebilir_mi && onEdit && (
+              <button onClick={() => onEdit(g.id)} className="row-action-btn" title="Düzenle">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+              </button>
+            )}
             {!["odendi", "iptal"].includes(g.durum) && (
               <button onClick={() => onIptal(g.id)} className="row-action-btn danger" title="İptal Et">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" /></svg>

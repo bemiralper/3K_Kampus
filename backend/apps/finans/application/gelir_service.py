@@ -90,8 +90,9 @@ class GelirService:
 
         return gelir, None
 
+    @transaction.atomic
     def update(self, gelir_id: int, data: dict):
-        """Gelir kaydını günceller (sadece düzenlenebilir durumlarda)."""
+        """Gelir kaydını günceller (taslak veya tahsilatsız onaylı)."""
         gelir = self.gelir_repo.get_by_id(gelir_id)
         if not gelir:
             return None, {'genel': 'Gelir kaydı bulunamadı.'}
@@ -109,6 +110,11 @@ class GelirService:
         if errors:
             return None, errors
 
+        old_net = gelir.net_tutar
+        old_cari_id = gelir.cari_hesap_id
+        old_fatura_tarihi = gelir.fatura_tarihi
+        old_durum = gelir.durum
+
         # Brüt tutar değiştiyse KDV'yi yeniden hesapla
         if 'brut_tutar' in data or 'kdv_orani' in data:
             brut = data.get('brut_tutar', gelir.brut_tutar)
@@ -117,6 +123,44 @@ class GelirService:
             data['net_tutar'] = brut + data['kdv_tutar']
 
         gelir = self.gelir_repo.update(gelir, data)
+
+        if old_durum == GelirDurum.ONAYLANDI and gelir.tahsil_edilen == Decimal('0'):
+            cari_changed = gelir.cari_hesap_id != old_cari_id
+            amount_changed = gelir.net_tutar != old_net
+            date_changed = gelir.fatura_tarihi != old_fatura_tarihi
+            if cari_changed or amount_changed or date_changed:
+                islem_yapan = data.get('islem_yapan')
+                self.cari_hareket_service.hareket_olustur(
+                    cari_hesap_id=old_cari_id,
+                    kurum_id=gelir.kurum_id,
+                    tutar=old_net,
+                    yon=CariHareketYonu.ALACAK,
+                    islem_turu=CariHareketTuru.IADE,
+                    islem_tarihi=old_fatura_tarihi,
+                    sube_id=gelir.sube_id,
+                    egitim_yili_id=gelir.egitim_yili_id,
+                    kaynak_tip='GelirKaydi',
+                    kaynak_id=gelir.pk,
+                    aciklama=f'Gelir düzeltme (ters): {gelir.fatura_no or "Belgesiz"}',
+                    belge_no=gelir.fatura_no,
+                    islem_yapan=islem_yapan,
+                )
+                self.cari_hareket_service.hareket_olustur(
+                    cari_hesap_id=gelir.cari_hesap_id,
+                    kurum_id=gelir.kurum_id,
+                    tutar=gelir.net_tutar,
+                    yon=CariHareketYonu.BORC,
+                    islem_turu=CariHareketTuru.SATIS,
+                    islem_tarihi=gelir.fatura_tarihi,
+                    sube_id=gelir.sube_id,
+                    egitim_yili_id=gelir.egitim_yili_id,
+                    kaynak_tip='GelirKaydi',
+                    kaynak_id=gelir.pk,
+                    aciklama=f'Gelir düzeltme: {gelir.fatura_no or "Belgesiz"} — {gelir.net_tutar} ₺',
+                    belge_no=gelir.fatura_no,
+                    islem_yapan=islem_yapan,
+                )
+
         return gelir, None
 
     @transaction.atomic

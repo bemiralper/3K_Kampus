@@ -5,6 +5,20 @@ import uuid
 from typing import Any
 
 
+def _parse_bool(value: Any, default: bool = False) -> bool:
+    if value is True or value == 1:
+        return True
+    if value is False or value == 0 or value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ('true', '1', 'yes', 'evet'):
+            return True
+        if normalized in ('false', '0', 'no', 'hayir', ''):
+            return False
+    return bool(value)
+
+
 def _clean_note_item(item: dict[str, Any]) -> dict[str, Any] | None:
     text = str(item.get('text') or '').strip()
     if not text:
@@ -13,7 +27,7 @@ def _clean_note_item(item: dict[str, Any]) -> dict[str, Any] | None:
     return {
         'id': note_id,
         'text': text,
-        'veli_ile_paylas': bool(item.get('veli_ile_paylas', False)),
+        'veli_ile_paylas': _parse_bool(item.get('veli_ile_paylas'), default=False),
     }
 
 
@@ -47,16 +61,16 @@ def notlar_json_from_legacy_text(text: str) -> list[dict[str, Any]]:
 
 def get_notlar_json(sozlesme) -> list[dict[str, Any]]:
     """Modelden yapılandırılmış not listesi."""
-    raw = getattr(sozlesme, 'notlar_json', None) or []
-    if raw:
+    raw = getattr(sozlesme, 'notlar_json', None)
+    if isinstance(raw, list):
         return normalize_notlar_json(raw)
     return notlar_json_from_legacy_text(getattr(sozlesme, 'notlar', '') or '')
 
 
 def notlar_to_legacy_text(notlar_json: list[dict[str, Any]]) -> str:
-    """Geriye dönük uyumluluk — düz metin alanı."""
+    """Geriye dönük uyumluluk — yalnızca veli ile paylaşılan notlar."""
     return '\n\n'.join(
-        n['text'] for n in notlar_json if n.get('text')
+        n['text'] for n in notlar_json if n.get('text') and n.get('veli_ile_paylas')
     )
 
 

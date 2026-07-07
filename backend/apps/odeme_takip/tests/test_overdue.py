@@ -83,6 +83,55 @@ class OverdueLogicTest(TestCase):
         result = service.get_vadesi_gecenler(kurum_id=self.kurum.id)
         self.assertEqual(result.count(), 1)
 
+    def test_overdue_scoped_by_sube(self):
+        sube_b = Sube.objects.create(kurum=self.kurum, ad='Şube B', kod='OVD-B')
+        ogrenci_b = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=sube_b,
+            ad='Ayşe',
+            soyad='Test',
+            aktif_mi=True,
+        )
+        sozlesme_b = Sozlesme.objects.create(
+            sozlesme_no='SZ-OVD-B-001',
+            ogrenci=ogrenci_b,
+            egitim_yili=self.ey,
+            kurum=self.kurum,
+            sube=sube_b,
+            baslangic_tarihi=timezone.localdate(),
+            bitis_tarihi=timezone.localdate() + timedelta(days=365),
+            brut_tutar=5000,
+            net_tutar=5000,
+            durum=SozlesmeDurum.AKTIF,
+        )
+        Taksit.objects.create(
+            sozlesme=self.sozlesme,
+            taksit_no=1,
+            vade_tarihi=timezone.localdate() - timedelta(days=2),
+            tutar=1000,
+            kalan_tutar=1000,
+            durum=TaksitDurum.BEKLEMEDE,
+        )
+        Taksit.objects.create(
+            sozlesme=sozlesme_b,
+            taksit_no=1,
+            vade_tarihi=timezone.localdate() - timedelta(days=2),
+            tutar=2000,
+            kalan_tutar=2000,
+            durum=TaksitDurum.BEKLEMEDE,
+        )
+
+        all_qs = get_overdue_taksit_queryset(kurum_id=self.kurum.id)
+        self.assertEqual(all_qs.count(), 2)
+
+        sube_a_qs = get_overdue_taksit_queryset(kurum_id=self.kurum.id, sube_id=self.sube.id)
+        self.assertEqual(sube_a_qs.count(), 1)
+        self.assertEqual(sube_a_qs.first().sozlesme.sube_id, self.sube.id)
+
+        sube_b_qs = get_overdue_taksit_queryset(kurum_id=self.kurum.id, sube_id=sube_b.id)
+        self.assertEqual(sube_b_qs.count(), 1)
+        self.assertEqual(sube_b_qs.first().sozlesme.sube_id, sube_b.id)
+
     def test_min_gecikme_gun_filter(self):
         Taksit.objects.create(
             sozlesme=self.sozlesme,

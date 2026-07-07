@@ -10,13 +10,14 @@ import { formatOdemeYontemiLabel } from "@/components/finans/odeme-yontemi-label
 import FinansCekVadeBanner from "@/components/finans/FinansCekVadeBanner";
 import { FAmountHero, FField, FInput, FReviewRow, FSection, FSelect, FSummaryCard, FTextarea } from "@/components/finans/FinansFields";
 import FinansWizardDrawer, { type FinansWizardStep } from "@/components/finans/FinansWizardDrawer";
+import FinansFormDrawer, { FinansDrawerButton } from "@/components/finans/FinansFormDrawer";
 import { GiderTaksitCards, GiderPlannedTaksitCards, GiderOdemeCards } from "@/components/finans/GiderTaksitCards";
 import { giderKaydiService, giderOdemeService } from "../services/gider-kaydi-api";
 import { cariHesapService } from "../services/cari-hesap-api";
 import { paymentMethodService, financialAccountService } from "../services/finans-api";
 import { giderKategoriService } from "../services/gider-api";
 import {
-  GiderKaydiListItem, GiderKaydiDetail, GiderKaydiCreatePayload,
+  GiderKaydiListItem, GiderKaydiDetail, GiderKaydiCreatePayload, GiderKaydiUpdatePayload,
   GiderTaksit, GiderOdeme, GiderOdemeCreatePayload, GiderOzet,
   GIDER_DURUMLARI, KDV_ORANLARI, TaksitPlaniItem,
 } from "../types/gider-types";
@@ -58,6 +59,7 @@ export default function GiderlerClient({ embedded, onCariHesapClick, onDataChang
   // Modals
   const [showForm, setShowForm] = useState(false);
   const [detailItem, setDetailItem] = useState<GiderKaydiDetail | null>(null);
+  const [editItem, setEditItem] = useState<GiderKaydiDetail | null>(null);
 
   // Mesajlar
   const [error, setError] = useState("");
@@ -123,6 +125,20 @@ export default function GiderlerClient({ embedded, onCariHesapClick, onDataChang
       const data = await giderKaydiService.get(id);
       setDetailItem(data);
     } catch (e: any) { setError(e.message); }
+  };
+
+  const openEditForm = async (id: number) => {
+    try {
+      const data = await giderKaydiService.get(id);
+      if (!data.duzenlenebilir_mi) {
+        setError("Bu gider kaydı düzenlenemez.");
+        return;
+      }
+      setDetailItem(null);
+      setEditItem(data);
+    } catch (e: any) {
+      setError(e.message || "Gider kaydı bilgisi alınamadı.");
+    }
   };
 
   if (!kurumId) {
@@ -291,6 +307,7 @@ export default function GiderlerClient({ embedded, onCariHesapClick, onDataChang
               items={giderler}
               onCariHesapClick={onCariHesapClick}
               onDetail={handleDetail}
+              onEdit={openEditForm}
               onIptal={handleIptal}
               onSil={handleSil}
             />
@@ -308,6 +325,22 @@ export default function GiderlerClient({ embedded, onCariHesapClick, onDataChang
         />
       )}
 
+      {editItem && kurumId && (
+        <GiderEditModal
+          data={editItem}
+          kurumId={kurumId}
+          subeId={activeSube?.id}
+          onClose={() => setEditItem(null)}
+          onSuccess={(msg) => {
+            setSuccess(msg);
+            setEditItem(null);
+            fetchList();
+            onDataChange?.();
+          }}
+          onError={(msg) => setError(msg)}
+        />
+      )}
+
       {/* Detay — Slide-over */}
       {detailItem && (
         <>
@@ -317,6 +350,7 @@ export default function GiderlerClient({ embedded, onCariHesapClick, onDataChang
               data={detailItem}
               kurumId={kurumId}
               onClose={() => setDetailItem(null)}
+              onEdit={() => openEditForm(detailItem.id)}
               onAction={(msg) => { setSuccess(msg); setDetailItem(null); fetchList(); onDataChange?.(); }}
               onError={(msg) => setError(msg)}
             />
@@ -1144,13 +1178,259 @@ export function GiderFormModal({
   );
 }
 
+// ═══ Gider Düzenleme Modal ═════════════════════════════════════
+export function GiderEditModal({
+  data,
+  kurumId,
+  subeId,
+  onClose,
+  onSuccess,
+  onError,
+}: {
+  data: GiderKaydiDetail;
+  kurumId: number;
+  subeId?: number;
+  onClose: () => void;
+  onSuccess: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const { activeSube } = useKurum();
+  const effectiveSubeId = subeId ?? activeSube?.id;
+  const [saving, setSaving] = useState(false);
+  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [cariHesaplar, setCariHesaplar] = useState<CariHesapDropdownItem[]>([]);
+  const [flatKategoriler, setFlatKategoriler] = useState<{ id: number; label: string }[]>([]);
+  const [maliHesaplar, setMaliHesaplar] = useState<{ id: number; ad: string }[]>([]);
+  const [form, setForm] = useState<GiderKaydiUpdatePayload>({
+    cari_hesap_id: data.cari_hesap_id,
+    gider_kategorisi_id: data.gider_kategorisi_id,
+    sube_id: data.sube_id,
+    mali_hesap_id: data.mali_hesap_id,
+    odeme_yontemi_id: data.odeme_yontemi_id,
+    fatura_no: data.fatura_no || "",
+    fatura_tarihi: data.fatura_tarihi,
+    vade_tarihi: data.vade_tarihi,
+    aciklama: data.aciklama || "",
+    brut_tutar: Number(data.net_tutar),
+    kdv_orani: data.kdv_orani,
+    taksit_sayisi: data.taksit_sayisi,
+  });
+
+  useEffect(() => {
+    if (!effectiveSubeId) return;
+    const load = async () => {
+      try {
+        const flattenTree = (tree: any[]) => {
+          const flat: { id: number; label: string }[] = [];
+          tree.forEach((ana: any) => {
+            flat.push({ id: ana.id, label: ana.ad });
+            (ana.alt_kategoriler || []).forEach((alt: any) => {
+              flat.push({ id: alt.id, label: `${ana.ad} › ${alt.ad}` });
+            });
+          });
+          return flat;
+        };
+        const [cariRes, kategoriRes, maliRes] = await Promise.all([
+          cariHesapService.dropdown({ kurum_id: String(kurumId), sube_id: String(effectiveSubeId) }),
+          giderKategoriService.tree(kurumId, effectiveSubeId),
+          financialAccountService.dropdownByKurum(kurumId, effectiveSubeId),
+        ]);
+        setCariHesaplar(cariRes.filter((c) => cariTabGorunur("giderler", c.hesap_turu)));
+        setFlatKategoriler(flattenTree(kategoriRes.kategoriler || []));
+        setMaliHesaplar(maliRes);
+      } catch (e: any) {
+        onError(e.message || "Form verileri yüklenemedi.");
+      }
+    };
+    load();
+  }, [effectiveSubeId, kurumId, onError]);
+
+  const { odemeYontemleri } = useOdemeYontemleriForMaliHesap({
+    kurumId,
+    subeId: effectiveSubeId,
+    maliHesapId: form.mali_hesap_id,
+  });
+
+  const netTutarGirilen = Number(form.brut_tutar) || 0;
+  const kdvOrani = form.kdv_orani ?? 20;
+  const brutTutar = kdvOrani > 0
+    ? Math.round((netTutarGirilen / (1 + kdvOrani / 100)) * 100) / 100
+    : netTutarGirilen;
+  const kdvTutar = Math.round((netTutarGirilen - brutTutar) * 100) / 100;
+
+  const set = <K extends keyof GiderKaydiUpdatePayload>(key: K, value: GiderKaydiUpdatePayload[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const errs: Record<string, string> = {};
+    if (!form.cari_hesap_id) errs.cari_hesap_id = "Cari hesap seçiniz";
+    if (!form.gider_kategorisi_id) errs.gider_kategorisi_id = "Kategori seçiniz";
+    if (!form.fatura_tarihi) errs.fatura_tarihi = "Fatura tarihi zorunludur";
+    if (!form.vade_tarihi) errs.vade_tarihi = "Vade tarihi zorunludur";
+    if (!form.brut_tutar || Number(form.brut_tutar) <= 0) errs.brut_tutar = "Net tutar sıfırdan büyük olmalıdır";
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      setGeneralError("Lütfen zorunlu alanları doldurun.");
+      return;
+    }
+
+    setSaving(true);
+    setGeneralError(null);
+    setFieldErrors({});
+    try {
+      await giderKaydiService.update(data.id, { ...form, brut_tutar: brutTutar });
+      onSuccess("Gider kaydı güncellendi.");
+    } catch (err: unknown) {
+      if (err instanceof FinansHttpError) {
+        if (Object.keys(err.fieldErrors).length) setFieldErrors(err.fieldErrors);
+        setGeneralError(err.message);
+      } else {
+        setGeneralError(err instanceof Error ? err.message : "Kayıt güncellenemedi.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <FinansFormDrawer
+      open
+      onClose={onClose}
+      title="Gider Kaydını Düzenle"
+      subtitle={data.fatura_no || data.cari_hesap_adi}
+      variant="gider"
+      wide
+      error={generalError}
+      formId="gider-edit-form"
+      onSubmit={handleSubmit}
+      footer={(
+        <>
+          <FinansDrawerButton type="button" variant="ghost" onClick={onClose}>İptal</FinansDrawerButton>
+          <FinansDrawerButton type="submit" tone="rose" form="gider-edit-form" disabled={saving}>
+            {saving ? "Kaydediliyor…" : "Kaydet"}
+          </FinansDrawerButton>
+        </>
+      )}
+    >
+      <FSection title="Kayıt Bilgileri">
+        <div className="fd-row-2">
+          <FField label="Cari Hesap" required error={fieldErrors.cari_hesap_id}>
+            <FSelect
+              value={form.cari_hesap_id || ""}
+              onChange={(e) => set("cari_hesap_id", Number(e.target.value))}
+            >
+              <option value="">Seçiniz</option>
+              {cariHesaplar.map((c) => (
+                <option key={c.id} value={c.id}>{c.gorunen_ad}</option>
+              ))}
+            </FSelect>
+          </FField>
+          <FField label="Kategori" required error={fieldErrors.gider_kategorisi_id}>
+            <FSelect
+              value={form.gider_kategorisi_id || ""}
+              onChange={(e) => set("gider_kategorisi_id", Number(e.target.value))}
+            >
+              <option value="">Seçiniz</option>
+              {flatKategoriler.map((k) => (
+                <option key={k.id} value={k.id}>{k.label}</option>
+              ))}
+            </FSelect>
+          </FField>
+        </div>
+        <div className="fd-row-2">
+          <FField label="Mali Hesap">
+            <FSelect
+              value={form.mali_hesap_id || ""}
+              onChange={(e) => {
+                const next = e.target.value ? Number(e.target.value) : null;
+                setForm((prev) => ({ ...prev, mali_hesap_id: next, odeme_yontemi_id: null }));
+              }}
+            >
+              <option value="">Seçiniz</option>
+              {maliHesaplar.map((m) => (
+                <option key={m.id} value={m.id}>{m.ad}</option>
+              ))}
+            </FSelect>
+          </FField>
+          <FField label="Ödeme Yöntemi">
+            <FSelect
+              value={form.odeme_yontemi_id || ""}
+              onChange={(e) => set("odeme_yontemi_id", e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Seçiniz</option>
+              {odemeYontemleri.map((o) => (
+                <option key={o.id} value={o.id}>{formatOdemeYontemiLabel(o)}</option>
+              ))}
+            </FSelect>
+          </FField>
+        </div>
+        <FAmountHero
+          variant="gider"
+          label="Net Tutar (KDV Dahil)"
+          value={form.brut_tutar || ""}
+          onChange={(v) => set("brut_tutar", v)}
+          error={fieldErrors.brut_tutar}
+        />
+        {netTutarGirilen > 0 && (
+          <div className="fd-calc-strip">
+            <div className="fd-calc-items">
+              <div>
+                <div className="fd-calc-item-label">Brüt</div>
+                <div className="fd-calc-item-value">{brutTutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺</div>
+              </div>
+              <div>
+                <div className="fd-calc-item-label">KDV %{kdvOrani}</div>
+                <div className="fd-calc-item-value">{kdvTutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺</div>
+              </div>
+            </div>
+          </div>
+        )}
+        <FField label="KDV Oranı">
+          <FSelect value={form.kdv_orani ?? 20} onChange={(e) => set("kdv_orani", Number(e.target.value))}>
+            {KDV_ORANLARI.map((k) => (
+              <option key={k.value} value={k.value}>{k.label}</option>
+            ))}
+          </FSelect>
+        </FField>
+        <div className="fd-row-3">
+          <FField label="Fatura No">
+            <FInput value={form.fatura_no || ""} onChange={(e) => set("fatura_no", e.target.value)} />
+          </FField>
+          <FField label="Fatura Tarihi" required error={fieldErrors.fatura_tarihi}>
+            <FInput type="date" value={form.fatura_tarihi || ""} onChange={(e) => set("fatura_tarihi", e.target.value)} />
+          </FField>
+          <FField label="Vade Tarihi" required error={fieldErrors.vade_tarihi}>
+            <FInput type="date" value={form.vade_tarihi || ""} onChange={(e) => set("vade_tarihi", e.target.value)} />
+          </FField>
+        </div>
+        <FField label="Taksit Sayısı">
+          <FInput
+            type="number"
+            min={1}
+            max={60}
+            value={form.taksit_sayisi || 1}
+            onChange={(e) => set("taksit_sayisi", Number(e.target.value))}
+          />
+        </FField>
+        <FField label="Açıklama">
+          <FTextarea rows={2} value={form.aciklama || ""} onChange={(e) => set("aciklama", e.target.value)} />
+        </FField>
+      </FSection>
+    </FinansFormDrawer>
+  );
+}
+
 // ═══ Gider Detay Modal ═════════════════════════════════════════
 export function GiderDetailModal({
-  data, kurumId, onClose, onAction, onError,
+  data, kurumId, onClose, onEdit, onAction, onError,
 }: {
   data: GiderKaydiDetail;
   kurumId: number;
   onClose: () => void;
+  onEdit?: () => void;
   onAction: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -1192,6 +1472,11 @@ export function GiderDetailModal({
             {badge && <span className={`fd-chip fd-chip--neutral ${badge.color}`}>{badge.label}</span>}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {data.duzenlenebilir_mi && onEdit && (
+              <button type="button" onClick={onEdit} className="fd-chip fd-chip--emerald" style={{ cursor: "pointer", border: "none" }}>
+                Düzenle
+              </button>
+            )}
             {data.iptal_edilebilir_mi && (
               <button type="button" onClick={handleIptal} className="fd-chip fd-chip--rose" style={{ cursor: "pointer", border: "none" }}>
                 İptal Et

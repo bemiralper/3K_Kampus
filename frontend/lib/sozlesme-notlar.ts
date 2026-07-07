@@ -14,8 +14,19 @@ export function createEmptyNote(): SozlesmeNot {
   };
 }
 
+function parseVeliIlePaylas(value: unknown): boolean {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0 || value == null) return false;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === '') return false;
+  }
+  return Boolean(value);
+}
+
 export function parseNotlarJson(raw: unknown, legacyText?: string): SozlesmeNot[] {
-  if (Array.isArray(raw) && raw.length > 0) {
+  if (Array.isArray(raw)) {
     return raw
       .map((item, idx) => {
         if (!item || typeof item !== 'object') return null;
@@ -25,7 +36,7 @@ export function parseNotlarJson(raw: unknown, legacyText?: string): SozlesmeNot[
         return {
           id: String(rec.id ?? `note-${idx + 1}`),
           text,
-          veli_ile_paylas: Boolean(rec.veli_ile_paylas),
+          veli_ile_paylas: parseVeliIlePaylas(rec.veli_ile_paylas),
         };
       })
       .filter(Boolean) as SozlesmeNot[];
@@ -36,7 +47,11 @@ export function parseNotlarJson(raw: unknown, legacyText?: string): SozlesmeNot[
 }
 
 export function notlarToLegacyText(notes: SozlesmeNot[]): string {
-  return notes.map((n) => n.text).filter(Boolean).join('\n\n');
+  return notes
+    .filter((n) => n.veli_ile_paylas)
+    .map((n) => n.text)
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export function notlarForPdf(notes: SozlesmeNot[]): string {

@@ -113,9 +113,10 @@ class GiderService:
 
         return gider, None
 
+    @transaction.atomic
     def update(self, gider_id: int, data: dict):
         """
-        Gider kaydını günceller (sadece düzenlenebilir durumlarda).
+        Gider kaydını günceller (taslak veya ödemesiz onaylı).
         Returns: (GiderKaydi, None) veya (None, error_dict)
         """
         gider = self.gider_repo.get_by_id(gider_id)
@@ -129,6 +130,15 @@ class GiderService:
         if errors:
             return None, errors
 
+        old_net = gider.net_tutar
+        old_cari_id = gider.cari_hesap_id
+        old_fatura_tarihi = gider.fatura_tarihi
+        old_durum = gider.durum
+        old_taksit_sayisi = gider.taksit_sayisi
+        old_vade = gider.vade_tarihi
+
+        taksit_plani = data.pop('taksit_plani', None)
+
         # Brüt tutar değiştiyse KDV'yi yeniden hesapla
         if 'brut_tutar' in data or 'kdv_orani' in data:
             brut = data.get('brut_tutar', gider.brut_tutar)
@@ -137,6 +147,57 @@ class GiderService:
             data['net_tutar'] = brut + data['kdv_tutar']
 
         gider = self.gider_repo.update(gider, data)
+
+        if old_durum == GiderDurum.ONAYLANDI and gider.odenen_toplam == Decimal('0'):
+            cari_changed = gider.cari_hesap_id != old_cari_id
+            amount_changed = gider.net_tutar != old_net
+            date_changed = gider.fatura_tarihi != old_fatura_tarihi
+            taksit_structure_changed = (
+                gider.taksit_sayisi != old_taksit_sayisi
+                or gider.vade_tarihi != old_vade
+                or taksit_plani is not None
+            )
+
+            if cari_changed or amount_changed or date_changed:
+                islem_yapan = data.get('islem_yapan')
+                self.cari_hareket_service.hareket_olustur(
+                    cari_hesap_id=old_cari_id,
+                    kurum_id=gider.kurum_id,
+                    tutar=old_net,
+                    yon=CariHareketYonu.BORC,
+                    islem_turu=CariHareketTuru.IADE,
+                    islem_tarihi=old_fatura_tarihi,
+                    sube_id=gider.sube_id,
+                    egitim_yili_id=gider.egitim_yili_id,
+                    kaynak_tip='GiderKaydi',
+                    kaynak_id=gider.pk,
+                    aciklama=f'Gider düzeltme (ters): {gider.fatura_no or "Belgesiz"}',
+                    belge_no=gider.fatura_no,
+                    islem_yapan=islem_yapan,
+                )
+                self.cari_hareket_service.hareket_olustur(
+                    cari_hesap_id=gider.cari_hesap_id,
+                    kurum_id=gider.kurum_id,
+                    tutar=gider.net_tutar,
+                    yon=CariHareketYonu.ALACAK,
+                    islem_turu=CariHareketTuru.ALIS,
+                    islem_tarihi=gider.fatura_tarihi,
+                    sube_id=gider.sube_id,
+                    egitim_yili_id=gider.egitim_yili_id,
+                    kaynak_tip='GiderKaydi',
+                    kaynak_id=gider.pk,
+                    aciklama=f'Gider düzeltme: {gider.fatura_no or "Belgesiz"} — {gider.net_tutar} ₺',
+                    belge_no=gider.fatura_no,
+                    islem_yapan=islem_yapan,
+                )
+
+            if amount_changed or taksit_structure_changed:
+                gider.taksitler.all().delete()
+                plan = taksit_plani or getattr(gider, 'taksit_plani_json', None)
+                self.taksit_repo.toplu_olustur(gider, taksit_plani=plan)
+                from apps.finans.application.cek_senet.cek_senet_service import CekSenetService
+                CekSenetService().sync_gider_plan(gider)
+
         return gider, None
 
     @transaction.atomic

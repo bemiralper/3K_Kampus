@@ -155,7 +155,11 @@ class GelirKaydi(models.Model):
 
     @property
     def duzenlenebilir_mi(self):
-        return self.durum in [GelirDurum.TASLAK]
+        if self.durum == GelirDurum.TASLAK:
+            return True
+        if self.durum == GelirDurum.ONAYLANDI and self.tahsil_edilen == Decimal('0'):
+            return True
+        return False
 
     @property
     def iptal_edilebilir_mi(self):

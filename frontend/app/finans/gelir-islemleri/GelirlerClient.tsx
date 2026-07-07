@@ -229,7 +229,7 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
         fatura_tarihi: detail.fatura_tarihi,
         vade_tarihi: detail.vade_tarihi,
         aciklama: detail.aciklama || "",
-        brut_tutar: detail.brut_tutar,
+        brut_tutar: Number(detail.net_tutar),
         kdv_orani: detail.kdv_orani,
       });
       setFormErrors({});

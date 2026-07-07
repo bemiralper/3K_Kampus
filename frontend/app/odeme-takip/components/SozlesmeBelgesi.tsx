@@ -434,7 +434,10 @@ export default function SozlesmeBelgesi({
   const taksitler = data.taksitler || [];
   const kalemler = data.kalemler || [];
   const bugununTarihi = formatDate(new Date().toISOString());
-  const pdfNotlar = notlarForPdf(parseNotlarJson(data.notlar_json, data.notlar));
+  const structuredNotes = data.notlar_json && data.notlar_json.length > 0
+    ? parseNotlarJson(data.notlar_json)
+    : parseNotlarJson(undefined, data.notlar);
+  const pdfNotlar = notlarForPdf(structuredNotes);
 
   // Eğitim yılı: API'den veya başlangıç tarihinden
   const baslangicYil = data.baslangic_tarihi ? new Date(data.baslangic_tarihi).getFullYear() : new Date().getFullYear();

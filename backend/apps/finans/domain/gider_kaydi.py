@@ -290,7 +290,11 @@ class GiderKaydi(models.Model):
     @property
     def duzenlenebilir_mi(self):
         """Bu gider düzenlenebilir mi?"""
-        return self.durum in GiderDurum.DUZENLENEBILIR
+        if self.durum == GiderDurum.TASLAK:
+            return True
+        if self.durum == GiderDurum.ONAYLANDI and self.odenen_toplam == Decimal('0'):
+            return True
+        return False
 
     def kdv_hesapla(self):
         """Brüt tutar ve KDV oranından otomatik hesaplama yapar."""

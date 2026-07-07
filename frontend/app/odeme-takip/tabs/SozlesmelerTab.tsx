@@ -951,11 +951,14 @@ function GenelSubTab({ sozlesme: s }: { sozlesme: Sozlesme }) {
           {s.yetkili_personel && <InfoRow label="Yetkili Personel" value={s.yetkili_personel} />}
         </div>
 
-        {(s.notlar || (s.notlar_json && s.notlar_json.length > 0)) && (
+        {(s.notlar_json && s.notlar_json.length > 0) || s.notlar ? (
           <div className="odeme-preview" style={{ marginTop: 16 }}>
             <div className="odeme-preview-title">📝 Notlar</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {parseNotlarJson(s.notlar_json, s.notlar).map((note) => (
+              {(s.notlar_json && s.notlar_json.length > 0
+                ? parseNotlarJson(s.notlar_json)
+                : parseNotlarJson(undefined, s.notlar)
+              ).map((note) => (
                 <div
                   key={note.id}
                   style={{
@@ -973,7 +976,7 @@ function GenelSubTab({ sozlesme: s }: { sozlesme: Sozlesme }) {
               ))}
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* İndirimler */}

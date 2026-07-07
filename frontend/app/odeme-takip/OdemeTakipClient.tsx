@@ -271,7 +271,7 @@ export default function OdemeTakipClient() {
   useEffect(() => {
     if (activeTab === "tahsilatlar") fetchTahsilatlar();
     if (activeTab === "raporlar") { fetchDashboard(); fetchVadesiGecenler(); fetchRiskSkorlari(); }
-  }, [activeTab, fetchTahsilatlar, fetchDashboard, fetchVadesiGecenler, fetchRiskSkorlari]);
+  }, [activeTab, activeSube?.id, activeEgitimYili?.id, fetchTahsilatlar, fetchDashboard, fetchVadesiGecenler, fetchRiskSkorlari]);
 
   // ─── Actions ────────────────────────────────────────────────
 
