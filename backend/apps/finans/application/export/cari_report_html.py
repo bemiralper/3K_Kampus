@@ -115,11 +115,12 @@ def _genel_toplam_table(
 ) -> str:
     if report_kind == "cari_ekstre":
         rows = [
-            ("Toplam Borç (Cari)", _fmt_tl(totals.get("toplam_borc"))),
-            ("Toplam Alacak (Cari)", _fmt_tl(totals.get("toplam_alacak"))),
-            ("Net Bakiye", _fmt_tl(totals.get("net_bakiye"))),
+            ("Devreden Bakiye", _fmt_tl(totals.get("devreden_bakiye"))),
+            ("Dönem Toplam Borç", _fmt_tl(totals.get("toplam_borc"))),
+            ("Dönem Toplam Alacak", _fmt_tl(totals.get("toplam_alacak"))),
+            ("Kapanış Bakiye", _fmt_tl(totals.get("kapanis_bakiye") or totals.get("net_bakiye"))),
         ]
-        title = "Cari Bakiye Özeti"
+        title = "Ekstre Bakiye Özeti"
     else:
         rows = [
             ("Toplam Cari Sayısı", _format_cell(totals.get("toplam_cari") or totals.get("kayit_sayisi") or 0)),
@@ -140,9 +141,11 @@ def _genel_toplam_table(
 
     if report_kind == "cari_ekstre" and meta:
         donem_rows = [
+            ("Devreden Bakiye", _esc(meta.get("devreden_bakiye") or "—")),
             ("Dönem Toplam Borç", _esc(meta.get("donem_toplam_borc") or "—")),
             ("Dönem Toplam Alacak", _esc(meta.get("donem_toplam_alacak") or "—")),
             ("Dönem Net Hareket", _esc(meta.get("donem_net_hareket") or "—")),
+            ("Kapanış Bakiye", _esc(meta.get("kapanis_bakiye") or "—")),
             ("Filtrelenmiş Hareket Sayısı", _esc(meta.get("filtrelenmis_hareket_sayisi") or "0")),
         ]
         dtbody = "".join(
@@ -165,6 +168,7 @@ def _ozet_kv_table(meta: dict[str, Any]) -> str:
         "hesap_turu", "arama", "kayit_sayisi",
         "arama_filtresi", "kategori_filtresi", "odeme_yontemi_filtresi",
         "donem_toplam_borc", "donem_toplam_alacak", "donem_net_hareket",
+        "devreden_bakiye", "kapanis_bakiye",
         "filtrelenmis_hareket_sayisi", "rapor_adi",
     }
     rows = ""

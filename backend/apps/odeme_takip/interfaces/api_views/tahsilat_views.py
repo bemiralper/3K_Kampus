@@ -11,9 +11,13 @@ from apps.odeme_takip.permissions import (
 from rest_framework.response import Response
 
 from apps.odeme_takip.application.services.tahsilat_service import TahsilatService
+from apps.odeme_takip.application.services.sozlesme_service import SozlesmeService
 from apps.odeme_takip.interfaces.api_views.sozlesme_views import _serialize_tahsilat
-
-from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
+from apps.odeme_takip.interfaces.sube_context import (
+    assert_sozlesme_record_access,
+    assert_tahsilat_record_access,
+    resolve_mandatory_odeme_context,
+)
 
 
 @api_view(['GET'])
@@ -21,11 +25,10 @@ from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_e
 def tahsilat_list(request):
     """Tüm tahsilatlar — filtreleme: ogrenci_adi, sozlesme_no, tarih aralığı, durum, tür"""
     service = TahsilatService()
-    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
-    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
-    egitim_yili_id = get_secili_egitim_yili_id(request) or request.GET.get('egitim_yili_id')
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
 
-    # Gelişmiş filtreler
     filters = {}
     for key in ['ogrenci_adi', 'sozlesme_no', 'tarih_baslangic', 'tarih_bitis',
                 'durum', 'tahsilat_turu', 'odeme_yontemi_id']:
@@ -41,6 +44,13 @@ def tahsilat_list(request):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def tahsilat_create(request):
     """Tahsilat kaydet — fazla ödeme otomatik sonraki taksitlere dağıtılır"""
+    sozlesme_id = request.data.get('sozlesme_id')
+    if sozlesme_id:
+        sozlesme = SozlesmeService().get_by_id(sozlesme_id)
+        err = assert_sozlesme_record_access(request, sozlesme)
+        if err:
+            return err
+
     service = TahsilatService()
     tahsilat, errors = service.create(
         request.data,
@@ -57,6 +67,17 @@ def tahsilat_create(request):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def tahsilat_cancel(request, pk):
     """Tahsilat iptal et"""
+    from apps.odeme_takip.domain.models import Tahsilat
+
+    try:
+        th = Tahsilat.objects.select_related('sozlesme').get(pk=pk)
+    except Tahsilat.DoesNotExist:
+        return Response({'error': 'Tahsilat bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    err = assert_tahsilat_record_access(request, th)
+    if err:
+        return err
+
     service = TahsilatService()
     neden = request.data.get('neden', '')
     tahsilat, errors = service.cancel(
@@ -76,6 +97,13 @@ def tahsilat_iade(request):
     body: { sozlesme_id, tutar, tahsilat_tarihi, aciklama,
             kaynak_tahsilat_id?, odeme_yontemi_id?, mali_hesap_id? }
     """
+    sozlesme_id = request.data.get('sozlesme_id')
+    if sozlesme_id:
+        sozlesme = SozlesmeService().get_by_id(sozlesme_id)
+        err = assert_sozlesme_record_access(request, sozlesme)
+        if err:
+            return err
+
     service = TahsilatService()
     iade, errors = service.iade_yap(
         request.data,
@@ -106,6 +134,10 @@ def tahsilat_makbuz(request, pk):
         payload = request._odeme_print_payload
         if not th.sozlesme or th.sozlesme.kurum_id != payload['kurum_id']:
             return Response({'error': 'Tahsilat bulunamadı'}, status=status.HTTP_404_NOT_FOUND)
+    else:
+        err = assert_tahsilat_record_access(request, th)
+        if err:
+            return err
 
     sz = th.sozlesme
     kurum = sz.kurum if sz else None
@@ -240,6 +272,11 @@ def tahsilat_mahsup(request):
             {'error': 'sozlesme_id, emanet_id ve taksit_id zorunlu'},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    sozlesme = SozlesmeService().get_by_id(sozlesme_id)
+    err = assert_sozlesme_record_access(request, sozlesme)
+    if err:
+        return err
 
     mahsup, errors = service.apply_advance(
         sozlesme_id, emanet_id, taksit_id,

@@ -38,8 +38,8 @@ export default function FinansRowsExportMenu({
       setOpen(false);
       setBusy(true);
       setError(null);
-      try {
-        await exportCariRaporList({
+      const ok = await exportCariRaporList(
+        {
           format,
           orientation,
           title,
@@ -47,12 +47,13 @@ export default function FinansRowsExportMenu({
           rows,
           filtersMeta,
           filenamePrefix,
-        });
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Rapor indirilemedi.");
-      } finally {
-        setBusy(false);
-      }
+        },
+        {
+          onError: (message) => setError(message),
+        },
+      );
+      setBusy(false);
+      if (!ok) return;
     },
     [columns, filenamePrefix, filtersMeta, orientation, rows, title],
   );

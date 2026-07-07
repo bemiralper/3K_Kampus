@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import { raporService } from "../services/rapor-api";
+import { downloadJsPdf } from "@/lib/download-file";
 import type {
   RaporTab,
   GelirGiderRapor,
@@ -312,6 +313,7 @@ export default function RaporlamaClient({ embedded = false }: { embedded?: boole
   const [tahsilat, setTahsilat] = useState<TahsilatAnaliz | null>(null);
   const [yaslandirma, setYaslandirma] = useState<BorcYaslandirma | null>(null);
   const [donem, setDonem] = useState<DonemRapor | null>(null);
+  const [exportPdfBusy, setExportPdfBusy] = useState(false);
 
   const raporRef = useRef<HTMLDivElement>(null);
 
@@ -343,27 +345,38 @@ export default function RaporlamaClient({ embedded = false }: { embedded?: boole
 
   /* ── PDF ────────────────────────────────────────────────────── */
   const exportPdf = async () => {
-    if (!raporRef.current) return;
-    const { default: jsPDF } = await import("jspdf");
-    const { default: html2canvas } = await import("html2canvas");
+    if (!raporRef.current || exportPdfBusy) return;
+    setExportPdfBusy(true);
+    setError(null);
     const btns = raporRef.current.querySelectorAll("[data-no-print]");
     btns.forEach((b) => ((b as HTMLElement).style.display = "none"));
-    const canvas = await html2canvas(raporRef.current, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      logging: false,
-    });
-    btns.forEach((b) => ((b as HTMLElement).style.display = ""));
-    const img = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({
-      orientation: canvas.width > canvas.height ? "landscape" : "portrait",
-      unit: "px",
-      format: [canvas.width, canvas.height],
-    });
-    pdf.addImage(img, "PNG", 0, 0, canvas.width, canvas.height);
-    const label = TABS.find((t) => t.key === tab)?.label || "Rapor";
-    pdf.save(`Finans_${label.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const { default: html2canvas } = await import("html2canvas");
+      const canvas = await html2canvas(raporRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+      const img = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? "landscape" : "portrait",
+        unit: "px",
+        format: [canvas.width, canvas.height],
+      });
+      pdf.addImage(img, "PNG", 0, 0, canvas.width, canvas.height);
+      const label = TABS.find((t) => t.key === tab)?.label || "Rapor";
+      await downloadJsPdf(
+        pdf,
+        `Finans_${label.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.pdf`,
+      );
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "PDF oluşturulamadı.");
+    } finally {
+      btns.forEach((b) => ((b as HTMLElement).style.display = ""));
+      setExportPdfBusy(false);
+    }
   };
 
   /* ── No kurum ──────────────────────────────────────────────── */
@@ -401,7 +414,7 @@ export default function RaporlamaClient({ embedded = false }: { embedded?: boole
           </div>
         </div>
         <div className="hero-actions">
-          <button data-no-print onClick={exportPdf} disabled={loading} className="btn-hero">
+          <button data-no-print onClick={exportPdf} disabled={loading || exportPdfBusy} className="btn-hero">
             <span className="btn-hero-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -417,7 +430,7 @@ export default function RaporlamaClient({ embedded = false }: { embedded?: boole
 
       {embedded && (
         <div className="flex justify-end mb-3">
-          <button data-no-print onClick={exportPdf} disabled={loading} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-60">
+          <button data-no-print onClick={exportPdf} disabled={loading || exportPdfBusy} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-60">
             PDF İndir
           </button>
         </div>

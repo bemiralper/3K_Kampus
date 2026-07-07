@@ -10,8 +10,11 @@ from apps.odeme_takip.permissions import ODEME_TAKIP_PERMISSIONS
 from rest_framework.response import Response
 
 from apps.odeme_takip.application.services.taksit_service import TaksitService
-from apps.odeme_takip.application.services.sozlesme_service import SozlesmeService
-from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
+from apps.odeme_takip.interfaces.sube_context import (
+    assert_taksit_record_access,
+    gate_sozlesme_pk,
+    resolve_mandatory_odeme_context,
+)
 
 
 def _serialize_taksit(t):
@@ -31,6 +34,9 @@ def _serialize_taksit(t):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def taksit_list(request, sozlesme_id):
     """Sözleşmeye ait taksitler"""
+    _, err = gate_sozlesme_pk(request, sozlesme_id)
+    if err:
+        return err
     service = TaksitService()
     taksitler = service.get_by_sozlesme(sozlesme_id)
     return Response([_serialize_taksit(t) for t in taksitler])
@@ -40,6 +46,9 @@ def taksit_list(request, sozlesme_id):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def taksit_update(request, pk):
     """Taksit güncelle (vade tarihi / tutar)"""
+    err = assert_taksit_record_access(request, pk)
+    if err:
+        return err
     service = TaksitService()
     taksit, errors = service.update_taksit(pk, request.data)
     if errors:
@@ -62,10 +71,9 @@ def taksit_plani_olustur(request, sozlesme_id):
         yuzdeler: [30, 20, 25, 25],   # yuzde
     }
     """
-    sozlesme_service = SozlesmeService()
-    sozlesme = sozlesme_service.get_by_id(sozlesme_id)
-    if not sozlesme:
-        return Response({'error': 'Sözleşme bulunamadı'}, status=status.HTTP_404_NOT_FOUND)
+    sozlesme, err = gate_sozlesme_pk(request, sozlesme_id)
+    if err:
+        return err
 
     from apps.odeme_takip.domain.enums import SozlesmeDurum
     if sozlesme.durum not in [SozlesmeDurum.TASLAK, SozlesmeDurum.AKTIF]:
@@ -144,8 +152,9 @@ def taksit_plani_olustur(request, sozlesme_id):
 def vadesi_gecenler(request):
     """Vadesi geçmiş taksitler"""
     service = TaksitService()
-    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
-    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
     taksitler = service.get_vadesi_gecenler(kurum_id, sube_id)
     result = []
     for t in taksitler:
@@ -179,9 +188,9 @@ def vadesi_gelecekler(request):
     - ay: bugünden itibaren 30 gün
     """
     service = TaksitService()
-    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
-    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
-    egitim_yili_id = get_secili_egitim_yili_id(request) or request.GET.get('egitim_yili_id')
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
     donem = request.GET.get('donem', 'hafta')
     arama = request.GET.get('arama', '')
 

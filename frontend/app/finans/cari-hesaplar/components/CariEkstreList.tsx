@@ -11,13 +11,13 @@ import {
   CariEkstreColumnId,
   DEFAULT_CARI_EKSTRE_COLUMN_ORDER,
 } from "./cari-ekstre-table-columns";
+import {
+  fmtEkstreMoney,
+  formatEkstreBakiye,
+  getHareketBakiyeSonrasi,
+} from "./cari-ekstre-balance";
 
-function fmt(v: number | string | null | undefined) {
-  return Number(v || 0).toLocaleString("tr-TR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+export { buildEkstreExportRows } from "./cari-ekstre-balance";
 
 function fmtTarih(d: string | null | undefined) {
   if (!d) return "—";
@@ -43,7 +43,7 @@ export default function CariEkstreList({
 
   const renderCell = (colId: CariEkstreColumnId, h: CariHareket) => {
     const isAlacak = h.yon === "alacak";
-    const bakiyeSonrasi = (h.borc_sonrasi ?? 0) - (h.alacak_sonrasi ?? 0);
+    const bakiyeSonrasi = getHareketBakiyeSonrasi(h);
 
     switch (colId) {
       case "tarih":
@@ -65,13 +65,13 @@ export default function CariEkstreList({
       case "alacak":
         return (
           <span className={`cell-money ${isAlacak ? "cell-money--green" : "cell-money--muted"}`}>
-            {isAlacak ? `${fmt(h.tutar)} ₺` : "—"}
+            {isAlacak ? `${fmtEkstreMoney(h.tutar)} ₺` : "—"}
           </span>
         );
       case "borc":
         return (
           <span className={`cell-money ${!isAlacak ? "cell-money--rose" : "cell-money--muted"}`}>
-            {!isAlacak ? `${fmt(h.tutar)} ₺` : "—"}
+            {!isAlacak ? `${fmtEkstreMoney(h.tutar)} ₺` : "—"}
           </span>
         );
       case "bakiye":
@@ -79,13 +79,13 @@ export default function CariEkstreList({
           <span
             className={`cell-money ${
               bakiyeSonrasi > 0.01
-                ? "cell-money--green"
+                ? "cell-money--rose"
                 : bakiyeSonrasi < -0.01
-                  ? "cell-money--rose"
+                  ? "cell-money--green"
                   : ""
             }`}
           >
-            {fmt(Math.abs(bakiyeSonrasi))} ₺
+            {formatEkstreBakiye(bakiyeSonrasi)}
           </span>
         );
       default:
@@ -105,22 +105,4 @@ export default function CariEkstreList({
       onColumnsReady={onColumnsReady}
     />
   );
-}
-
-export function buildEkstreExportRows(hareketler: CariHareket[]) {
-  return hareketler.map((h) => {
-    const isAlacak = h.yon === "alacak";
-    const bakiye = (h.borc_sonrasi ?? 0) - (h.alacak_sonrasi ?? 0);
-    return {
-      tarih: fmtTarih(h.islem_tarihi),
-      islem: h.islem_turu_display || h.islem_turu,
-      aciklama: h.aciklama || h.belge_no || "",
-      kategori: h.kategori_adi || "",
-      odeme_yontemi: h.odeme_yontemi_adi || "",
-      islem_yapan: h.islem_yapan_adi || "",
-      alacak: isAlacak ? fmt(h.tutar) : "",
-      borc: !isAlacak ? fmt(h.tutar) : "",
-      bakiye: fmt(Math.abs(bakiye)),
-    };
-  });
 }

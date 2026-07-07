@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from apps.odeme_takip.application.services.fesih_service import FesihService
 from apps.odeme_takip.domain.enums import FesihNedeni
+from apps.odeme_takip.interfaces.sube_context import gate_sozlesme_pk
 
 
 fesih_service = FesihService()
@@ -25,6 +26,10 @@ def fesih_hesapla(request, pk):
         ceza_orani: 10,
     }
     """
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
+
     data = request.data
     result, error = fesih_service.hesapla_onizleme(
         sozlesme_id=pk,
@@ -52,6 +57,10 @@ def fesih_onayla(request, pk):
         ceza_orani: 10,
     }
     """
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
+
     data = request.data
     user = request.user if request.user.is_authenticated else None
 
@@ -77,6 +86,10 @@ def fesih_detay(request, pk):
     """
     Sözleşmeye ait fesih detayını getirir.
     """
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
+
     fesih = fesih_service.get_fesih_detay(sozlesme_id=pk)
 
     if not fesih:

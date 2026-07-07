@@ -3,6 +3,11 @@ import type {
   CariHesapCariOzet,
   CariHesapRaporItem,
 } from "../../types/cari-hesap-types";
+import {
+  computeDevredenBakiye,
+  computeKapanisBakiye,
+  fmtEkstreMoney,
+} from "./cari-ekstre-balance";
 
 const fmtMoney = (v: number) =>
   Number(v || 0).toLocaleString("tr-TR", {
@@ -90,10 +95,14 @@ export function computeEkstrePeriodTotals(hareketler: CariHareket[]) {
 
 export function ekstrePeriodExportMeta(hareketler: CariHareket[]) {
   const t = computeEkstrePeriodTotals(hareketler);
+  const devreden = computeDevredenBakiye(hareketler);
+  const kapanis = computeKapanisBakiye(hareketler);
   return {
     donem_toplam_borc: fmtMoney(t.toplam_borc),
     donem_toplam_alacak: fmtMoney(t.toplam_alacak),
     donem_net_hareket: fmtMoney(t.net_hareket),
+    devreden_bakiye: `${fmtEkstreMoney(devreden)} TL`,
+    kapanis_bakiye: `${fmtEkstreMoney(kapanis)} TL`,
     filtrelenmis_hareket_sayisi: String(t.hareket_sayisi),
   };
 }

@@ -5,7 +5,7 @@ import { TahsilatItem, TahsilatFiltre, OdemeYontemi } from "../types";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import {
   formatCurrency, formatDate, tahsilatTuruLabel, tahsilatDurumLabel,
-  DurumBadge, API_BASE,
+  DurumBadge, API_BASE, apiHeaders,
 } from "../helpers";
 import Pagination, { paginateList } from "../components/Pagination";
 
@@ -26,7 +26,7 @@ interface Props {
 }
 
 export default function TahsilatlarTab({ tahsilatlar: initialTahsilatlar, onTahsilatCancel, onMakbuz }: Props) {
-  const { activeKurum } = useKurum();
+  const { activeKurum, activeSube } = useKurum();
   const kurumId = activeKurum?.id;
   const [tahsilatlar, setTahsilatlar] = useState<TahsilatItem[]>(initialTahsilatlar);
   const [showFilters, setShowFilters] = useState(false);
@@ -35,13 +35,13 @@ export default function TahsilatlarTab({ tahsilatlar: initialTahsilatlar, onTahs
   const [odemeYontemleri, setOdemeYontemleri] = useState<OdemeYontemi[]>([]);
 
   useEffect(() => {
-    if (!kurumId) return;
+    if (!kurumId || !activeSube?.id) return;
     const url = `${API_BASE.replace("/odeme-takip/api", "/finans/api")}/odeme-yontemleri/dropdown/?kurum_id=${kurumId}`;
-    fetch(url, { credentials: "include" })
+    fetch(url, { credentials: "include", headers: apiHeaders() })
       .then((r) => r.json())
       .then((data) => setOdemeYontemleri(data?.odeme_yontemleri || []))
       .catch(() => setOdemeYontemleri([]));
-  }, [kurumId]);
+  }, [kurumId, activeSube?.id]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -60,7 +60,10 @@ export default function TahsilatlarTab({ tahsilatlar: initialTahsilatlar, onTahs
       Object.entries(filters).forEach(([key, val]) => {
         if (val) params.append(key, val);
       });
-      const res = await fetch(`${API_BASE}/tahsilatlar/?${params.toString()}`, { credentials: "include" });
+      const res = await fetch(`${API_BASE}/tahsilatlar/?${params.toString()}`, {
+        credentials: "include",
+        headers: apiHeaders(),
+      });
       const data = await res.json();
       setTahsilatlar(Array.isArray(data) ? data : []);
       setCurrentPage(1);

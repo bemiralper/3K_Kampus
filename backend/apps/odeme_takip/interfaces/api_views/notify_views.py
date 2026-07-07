@@ -8,6 +8,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from apps.odeme_takip.application.notification_service import OdemeNotificationService
+from apps.odeme_takip.interfaces.sube_context import (
+    assert_tahsilat_record_access,
+    gate_sozlesme_pk,
+)
 from apps.odeme_takip.permissions import ODEME_TAKIP_PERMISSIONS
 
 from shared.context import get_secili_kurum_id
@@ -62,6 +66,10 @@ def sozlesme_notify_preview(request, pk):
     if not kurum_id:
         return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
 
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
+
     try:
         preview = OdemeNotificationService().preview_sozlesme(int(kurum_id), int(pk), notify_type)
     except ValueError as exc:
@@ -78,6 +86,10 @@ def sozlesme_notify_send(request, pk):
     kurum_id = get_secili_kurum_id(request) or data.get('kurum_id')
     if not kurum_id:
         return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
+
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
 
     veli_ids = _parse_veli_ids(data)
     include_student = data.get('include_student') in (True, 'true', '1', 1)
@@ -106,6 +118,17 @@ def tahsilat_notify_preview(request, pk):
     if not kurum_id:
         return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
 
+    from apps.odeme_takip.domain.models import Tahsilat
+
+    try:
+        tahsilat = Tahsilat.objects.select_related('sozlesme').get(pk=pk)
+    except Tahsilat.DoesNotExist:
+        return Response({'success': False, 'error': 'Tahsilat bulunamadı.'}, status=404)
+
+    err = assert_tahsilat_record_access(request, tahsilat)
+    if err:
+        return err
+
     try:
         preview = OdemeNotificationService().preview_tahsilat(int(kurum_id), int(pk))
     except ValueError as exc:
@@ -121,6 +144,17 @@ def tahsilat_notify_send(request, pk):
     kurum_id = get_secili_kurum_id(request) or data.get('kurum_id')
     if not kurum_id:
         return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
+
+    from apps.odeme_takip.domain.models import Tahsilat
+
+    try:
+        tahsilat = Tahsilat.objects.select_related('sozlesme').get(pk=pk)
+    except Tahsilat.DoesNotExist:
+        return Response({'success': False, 'error': 'Tahsilat bulunamadı.'}, status=404)
+
+    err = assert_tahsilat_record_access(request, tahsilat)
+    if err:
+        return err
 
     veli_ids = _parse_veli_ids(data)
     include_student = data.get('include_student') in (True, 'true', '1', 1)

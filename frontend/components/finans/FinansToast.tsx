@@ -76,7 +76,7 @@ export default function FinansToast({
     >
       <span style={{ flexShrink: 0, fontSize: 16 }}>{s.icon}</span>
       <span style={{ flex: 1, minWidth: 0 }}>{message}</span>
-      {type !== "loading" && (
+      {type !== "loading" ? (
         <button
           type="button"
           onClick={onClose}
@@ -84,6 +84,15 @@ export default function FinansToast({
           style={{ flexShrink: 0, background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "inherit", opacity: 0.7 }}
         >
           ✕
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="İptal"
+          style={{ flexShrink: 0, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "inherit", opacity: 0.85, fontWeight: 600 }}
+        >
+          İptal
         </button>
       )}
     </div>,

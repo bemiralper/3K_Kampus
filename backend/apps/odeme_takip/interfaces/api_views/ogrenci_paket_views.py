@@ -7,7 +7,8 @@ from rest_framework.decorators import api_view, permission_classes
 from apps.odeme_takip.permissions import ODEME_TAKIP_PERMISSIONS
 from rest_framework.response import Response
 
-from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
+from shared.context import get_secili_egitim_yili_id
+from apps.odeme_takip.interfaces.sube_context import resolve_mandatory_odeme_context
 
 
 @api_view(['GET'])
@@ -31,6 +32,12 @@ def ogrenci_paketleri(request, ogrenci_id):
         ogrenci = Ogrenci.objects.get(id=ogrenci_id)
     except Ogrenci.DoesNotExist:
         return Response({'error': 'Öğrenci bulunamadı'}, status=404)
+
+    _, finans_sube_id, _, sube_err = resolve_mandatory_odeme_context(
+        request, kurum_id=ogrenci.kurum_id,
+    )
+    if sube_err:
+        return sube_err
 
     # OgrenciKayit — bu eğitim yılı için aktif kayıt
     from apps.ogrenci.domain.models import OgrenciKayit
@@ -147,7 +154,6 @@ def ogrenci_paketleri(request, ogrenci_id):
     # Finans: Ödeme Yöntemleri — aktif şube bağlamındaki mali hesaplara göre
     odeme_yontemleri_list = []
     mali_hesaplar_list = []
-    finans_sube_id = get_secili_sube_id(request, kayit.kurum_id) or kayit.sube_id
     finans_sube_adi = ''
     if finans_sube_id:
         try:
