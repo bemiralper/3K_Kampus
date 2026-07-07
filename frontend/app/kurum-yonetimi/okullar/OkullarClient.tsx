@@ -11,6 +11,7 @@ import {
   type OkulFormData,
   type OkulRecord,
 } from "@/lib/okul-api";
+import TopluOkulEkleModal from "@/components/okul/TopluOkulEkleModal";
 
 const EMPTY_FORM: OkulFormData = {
   ad: "",
@@ -42,6 +43,7 @@ export default function OkullarClient() {
   const [form, setForm] = useState<OkulFormData>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -161,9 +163,14 @@ export default function OkullarClient() {
             {activeSube ? ` — ${activeSube.ad}` : ""}
           </p>
         </div>
-        <button type="button" className="wizard-btn primary" onClick={openCreate}>
-          Yeni Okul
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" className="wizard-btn secondary" onClick={() => setBulkOpen(true)}>
+            Toplu Okul Ekle
+          </button>
+          <button type="button" className="wizard-btn primary" onClick={openCreate}>
+            Yeni Okul
+          </button>
+        </div>
       </div>
 
       <div
@@ -373,6 +380,14 @@ export default function OkullarClient() {
           </div>
         </div>
       )}
+      <TopluOkulEkleModal
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onComplete={() => {
+          setPage(1);
+          loadData();
+        }}
+      />
     </div>
   );
 }
