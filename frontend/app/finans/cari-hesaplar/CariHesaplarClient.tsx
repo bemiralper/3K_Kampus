@@ -17,11 +17,12 @@ import CariBakiyeRaporTable, { buildCariRaporExportRows } from "./components/Car
 import type { CariTableColumnId } from "./components/cari-table-columns";
 import type { CariRaporColumnId } from "./components/cari-rapor-table-columns";
 import {
-  computeRaporTotalsFromList,
   defaultRaporBaslangic,
   defaultRaporBitis,
   formatReportDateRange,
 } from "./components/cari-report-export-meta";
+import { computeListTotalsFromItems, computeRaporTotalsExtended } from "./components/cari-list-totals";
+import CariListSummary from "./components/CariListSummary";
 import { exportCariRaporList } from "./components/cari-tab-export";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { formatUserDisplayName } from "@/lib/format-user";
@@ -68,7 +69,9 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
   const [raporSatirlari, setRaporSatirlari] = useState<CariHesapRaporItem[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("liste");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [arama, setArama] = useState("");
+  const [debouncedArama, setDebouncedArama] = useState("");
   const [turFiltre, setTurFiltre] = useState("");
   const [raporBaslangic, setRaporBaslangic] = useState(() => defaultRaporBaslangic());
   const [raporBitis, setRaporBitis] = useState(() => defaultRaporBitis());
@@ -84,6 +87,7 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [rowBusyId, setRowBusyId] = useState<number | null>(null);
   const [orientation, setOrientation] = useState<ExportOrientation>("landscape");
   const colBtnRef = useRef<HTMLButtonElement>(null);
   const exportBtnRef = useRef<HTMLButtonElement>(null);
@@ -93,13 +97,18 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
     setTimeout(() => setToast(null), 3500);
   }, []);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedArama(arama.trim()), 350);
+    return () => clearTimeout(t);
+  }, [arama]);
+
   const listParams = useCallback((): Record<string, string> => {
     const params: Record<string, string> = { kurum_id: String(kurumId) };
     if (activeSube?.id) params.sube_id = String(activeSube.id);
-    if (arama) params.arama = arama;
+    if (debouncedArama) params.arama = debouncedArama;
     if (turFiltre) params.hesap_turu = turFiltre;
     return params;
-  }, [kurumId, activeSube, arama, turFiltre]);
+  }, [kurumId, activeSube, debouncedArama, turFiltre]);
 
   const raporParams = useCallback((): Record<string, string> => {
     const params = listParams();
@@ -108,33 +117,38 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
     return params;
   }, [listParams, raporBaslangic, raporBitis]);
 
-  const fetchList = useCallback(async () => {
+  const fetchList = useCallback(async (opts?: { silent?: boolean }) => {
     if (!kurumId) return;
-    setLoading(true);
+    if (opts?.silent) setRefreshing(true);
+    else setLoading(true);
     try {
       setHesaplar(await cariHesapService.list(listParams()));
     } catch (e: any) {
       showToast(e.message, "error");
     } finally {
-      setLoading(false);
+      if (opts?.silent) setRefreshing(false);
+      else setLoading(false);
     }
   }, [kurumId, listParams, showToast]);
 
-  const fetchRapor = useCallback(async () => {
+  const fetchRapor = useCallback(async (opts?: { silent?: boolean }) => {
     if (!kurumId) return;
-    setLoading(true);
+    if (opts?.silent) setRefreshing(true);
+    else setLoading(true);
     try {
       setRaporSatirlari(await cariHesapService.raporList(raporParams()));
     } catch (e: any) {
       showToast(e.message, "error");
     } finally {
-      setLoading(false);
+      if (opts?.silent) setRefreshing(false);
+      else setLoading(false);
     }
   }, [kurumId, raporParams, showToast]);
 
   useEffect(() => {
-    if (viewMode === "liste") fetchList();
-    else fetchRapor();
+    if (viewMode === "liste") fetchList({ silent: hesaplar.length > 0 });
+    else fetchRapor({ silent: raporSatirlari.length > 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- silent refresh when filters change
   }, [viewMode, fetchList, fetchRapor]);
 
   const openCreate = () => { setActiveData(null); setDrawerMode("create"); };
@@ -156,27 +170,36 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
 
   const handleDelete = async (id: number, unvan: string) => {
     if (!confirm(`"${unvan}" silinsin mi?`)) return;
+    setRowBusyId(id);
     try {
       await cariHesapService.delete(id);
       showToast("Cari hesap silindi.");
       refreshCurrent();
     } catch (e: any) {
       showToast(e.message, "error");
+    } finally {
+      setRowBusyId(null);
     }
   };
 
   const handleToggle = async (id: number) => {
+    setRowBusyId(id);
     try {
       const res = await cariHesapService.toggle(id);
       showToast(res.detail);
       refreshCurrent();
     } catch (e: any) {
       showToast(e.message, "error");
+    } finally {
+      setRowBusyId(null);
     }
   };
 
   const aktifSayi = hesaplar.filter((h) => h.aktif_mi).length;
-  const toplamBakiye = hesaplar.reduce((s, h) => s + Number(h.bakiye), 0);
+  const listeTotals = useMemo(() => computeListTotalsFromItems(hesaplar), [hesaplar]);
+  const displayStats = viewMode === "rapor"
+    ? computeRaporTotalsExtended(raporSatirlari)
+    : listeTotals;
 
   const raporExportRows = useMemo(
     () => buildCariRaporExportRows(raporSatirlari),
@@ -184,7 +207,7 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
   );
 
   const raporTotals = useMemo(
-    () => computeRaporTotalsFromList(raporSatirlari),
+    () => computeRaporTotalsExtended(raporSatirlari),
     [raporSatirlari],
   );
 
@@ -246,9 +269,11 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
   );
 
   const refreshCurrent = () => {
-    if (viewMode === "liste") fetchList();
-    else fetchRapor();
+    if (viewMode === "liste") fetchList({ silent: true });
+    else fetchRapor({ silent: true });
   };
+
+  const activeListCount = viewMode === "rapor" ? raporSatirlari.length : hesaplar.length;
 
   if (!kurumId) {
     return (
@@ -272,7 +297,7 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
             <h3>Cari Hesaplar</h3>
             <div className="card-modern-header-actions">
               <span className="text-[12px] text-gray-500 mr-2">
-                {hesaplar.length} kayıt{aktifSayi > 0 && ` · ${aktifSayi} aktif`}
+                {activeListCount} kayıt{viewMode === "liste" && aktifSayi > 0 && ` · ${aktifSayi} aktif`}
               </span>
               <button onClick={openCreate} className="btn-hero">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -317,14 +342,14 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
             </div>
 
             {/* Quick Stats */}
-            {!loading && hesaplar.length > 0 && (
+            {!loading && displayStats.toplam_cari > 0 && (
               <div className="quick-stats" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
                 <div className="quick-stat">
                   <div className="quick-stat-icon blue">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                   </div>
                   <div className="quick-stat-info">
-                    <h4>{hesaplar.length}</h4>
+                    <h4>{displayStats.toplam_cari}</h4>
                     <span>Toplam Hesap</span>
                   </div>
                 </div>
@@ -333,7 +358,9 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                   </div>
                   <div className="quick-stat-info">
-                    <h4>{hesaplar.filter((h) => h.hesap_turu === "musteri").length}</h4>
+                    <h4>{viewMode === "rapor"
+                      ? raporSatirlari.filter((h) => h.hesap_turu === "musteri").length
+                      : hesaplar.filter((h) => h.hesap_turu === "musteri").length}</h4>
                     <span>Müşteri</span>
                   </div>
                 </div>
@@ -342,17 +369,19 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16" /><path d="M3 21h18" /></svg>
                   </div>
                   <div className="quick-stat-info">
-                    <h4>{hesaplar.filter((h) => h.hesap_turu === "tedarikci").length}</h4>
+                    <h4>{viewMode === "rapor"
+                      ? raporSatirlari.filter((h) => h.hesap_turu === "tedarikci").length
+                      : hesaplar.filter((h) => h.hesap_turu === "tedarikci").length}</h4>
                     <span>Tedarikçi</span>
                   </div>
                 </div>
                 <div className="quick-stat">
-                  <div className={`quick-stat-icon ${toplamBakiye > 0 ? "red" : "green"}`}>
+                  <div className={`quick-stat-icon ${displayStats.net_bakiye > 0 ? "red" : "green"}`}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
                   </div>
                   <div className="quick-stat-info">
-                    <h4>{toplamBakiye.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺</h4>
-                    <span>Toplam Bakiye</span>
+                    <h4>{displayStats.net_bakiye.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺</h4>
+                    <span>Net Bakiye</span>
                   </div>
                 </div>
               </div>
@@ -406,10 +435,13 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
                 <button
                   type="button"
                   className="cari-tab-toolbar-clear"
-                  onClick={() => { setArama(""); setTurFiltre(""); }}
+                  onClick={() => { setArama(""); setDebouncedArama(""); setTurFiltre(""); }}
                 >
                   Filtreleri Temizle
                 </button>
+              )}
+              {refreshing && (
+                <span className="text-[12px] text-gray-400 self-center">Güncelleniyor…</span>
               )}
               {viewMode === "rapor" && (
                 <>
@@ -515,7 +547,7 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
             )}
           </div>
           <div className="card-modern-body">
-            {loading ? (
+            {loading && (viewMode === "liste" ? hesaplar.length === 0 : raporSatirlari.length === 0) ? (
               <div className="empty-state">
                 <div className="empty-state-icon"><Spin /></div>
                 <h4>Yükleniyor...</h4>
@@ -528,14 +560,26 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
                   <p>Yeni bir cari hesap ekleyerek başlayın.</p>
                 </div>
               ) : (
-                <CariHesapTable
-                  hesaplar={hesaplar}
-                  href={href}
-                  onEdit={openEdit}
-                  onToggle={handleToggle}
-                  onDelete={handleDelete}
-                  onColumnsReady={setColumnsApi}
-                />
+                <>
+                  <CariListSummary
+                    totals={listeTotals}
+                    title="Hesap Listesi Özeti"
+                    subtitle={
+                      debouncedArama || turFiltre
+                        ? `Filtrelenmiş ${listeTotals.toplam_cari} kayıt`
+                        : `${listeTotals.toplam_cari} kayıt`
+                    }
+                  />
+                  <CariHesapTable
+                    hesaplar={hesaplar}
+                    href={href}
+                    onEdit={openEdit}
+                    onToggle={handleToggle}
+                    onDelete={handleDelete}
+                    onColumnsReady={setColumnsApi}
+                    rowBusyId={rowBusyId}
+                  />
+                </>
               )
             ) : raporSatirlari.length === 0 ? (
               <div className="empty-state">
@@ -545,42 +589,11 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
               </div>
             ) : (
               <>
-                <div className="cari-bakiye-rapor-summary">
-                  <div className="cari-bakiye-rapor-summary__meta">
-                    <span className="cari-bakiye-rapor-summary__title">Cari Hesap Bakiye Raporu</span>
-                    <span className="cari-bakiye-rapor-summary__range">
-                      Tarih Aralığı: {formatReportDateRange(raporBaslangic, raporBitis)}
-                    </span>
-                  </div>
-                  <div className="cari-bakiye-rapor-summary__stats">
-                    <div className="cari-bakiye-rapor-stat">
-                      <span>Toplam Cari</span>
-                      <strong>{raporTotals.toplam_cari}</strong>
-                    </div>
-                    <div className="cari-bakiye-rapor-stat">
-                      <span>Borçlu Cari</span>
-                      <strong>{raporTotals.borclu_cari}</strong>
-                    </div>
-                    <div className="cari-bakiye-rapor-stat">
-                      <span>Alacaklı Cari</span>
-                      <strong>{raporTotals.alacakli_cari}</strong>
-                    </div>
-                    <div className="cari-bakiye-rapor-stat">
-                      <span>Bakiyesi Sıfır</span>
-                      <strong>{raporTotals.sifir_bakiye_cari}</strong>
-                    </div>
-                    <div className="cari-bakiye-rapor-stat cari-bakiye-rapor-stat--wide">
-                      <span>Net Bakiye</span>
-                      <strong>
-                        {raporTotals.net_bakiye.toLocaleString("tr-TR", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        ₺
-                      </strong>
-                    </div>
-                  </div>
-                </div>
+                <CariListSummary
+                  totals={raporTotals}
+                  title="Cari Hesap Bakiye Raporu"
+                  subtitle={`Tarih Aralığı: ${formatReportDateRange(raporBaslangic, raporBitis)} · Filtrelenmiş ${raporTotals.toplam_cari} kayıt`}
+                />
                 <CariBakiyeRaporTable
                   items={raporSatirlari}
                   href={href}

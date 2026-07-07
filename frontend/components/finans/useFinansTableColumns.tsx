@@ -15,7 +15,8 @@ import { TableGripIcon } from "./useReorderableColumns";
 export function useFinansTableColumns<T extends string>(
   storageKey: string,
   defaultOrder: readonly T[],
-  columns: Record<T, ColumnMeta>
+  columns: Record<T, ColumnMeta>,
+  normalizeStoredOrder?: (raw: string[]) => T[],
 ) {
   const [columnOrder, setColumnOrder] = useState<T[]>([...defaultOrder]);
   const [visibleColumns, setVisibleColumns] = useState<T[]>([...defaultOrder]);
@@ -23,9 +24,33 @@ export function useFinansTableColumns<T extends string>(
   const [overCol, setOverCol] = useState<T | null>(null);
 
   useEffect(() => {
-    setColumnOrder(loadColumnOrder(storageKey, defaultOrder, columns));
+    if (typeof window === "undefined") {
+      setColumnOrder([...defaultOrder]);
+      setVisibleColumns([...defaultOrder]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(storageKey);
+      let order: T[];
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && normalizeStoredOrder) {
+          order = normalizeStoredOrder(parsed.filter((id) => typeof id === "string"));
+        } else {
+          order = loadColumnOrder(storageKey, defaultOrder, columns);
+        }
+      } else {
+        order = [...defaultOrder];
+      }
+      if (normalizeStoredOrder && raw) {
+        saveColumnOrder(storageKey, order);
+      }
+      setColumnOrder(order.length ? order : [...defaultOrder]);
+    } catch {
+      setColumnOrder([...defaultOrder]);
+    }
     setVisibleColumns(loadVisibleColumns(storageKey, defaultOrder, columns));
-  }, [storageKey, defaultOrder, columns]);
+  }, [storageKey, defaultOrder, columns, normalizeStoredOrder]);
 
   const displayOrder = useMemo(
     () => columnOrder.filter((id) => visibleColumns.includes(id)),

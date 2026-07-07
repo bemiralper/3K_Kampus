@@ -43,7 +43,7 @@ class CariHareketService:
         
         Returns: CariHareket
         """
-        hesap = self.hesap_repo.get_by_id(cari_hesap_id)
+        hesap = self.hesap_repo.get_by_id(cari_hesap_id, for_update=True)
         if not hesap:
             raise ValueError(f'Cari hesap bulunamadı: {cari_hesap_id}')
 

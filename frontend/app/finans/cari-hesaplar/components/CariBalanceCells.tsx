@@ -11,7 +11,7 @@ export function CariTutarCell({
   kind,
   amount,
 }: {
-  kind: "odenen" | "alis";
+  kind: "borc" | "alacak" | "odenen" | "alis";
   amount: number;
 }) {
   const meta = CARI_TUTAR_META[kind];
