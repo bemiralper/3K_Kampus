@@ -165,6 +165,7 @@ const navItems: MenuItem[] = [
     icon: icons.settings,
     children: [
       { label: "Kurum Yönetimi", href: "/kurum-yonetimi/kurumlar" },
+      { label: "Kimlik Çakışmaları", href: "/kurum-yonetimi/kimlik-cakismalari" },
       { label: "Eğitim Tanımları", href: "/egitim-tanimlari" },
       { label: "Eğitim Paketleri", href: "/egitim-paketleri" },
     ],

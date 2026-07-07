@@ -18,6 +18,7 @@ const breadcrumbMap: Record<string, string> = {
   dashboard: "Dashboard",
   "kurum-yonetimi": "Kurum Yönetimi",
   kurumlar: "Kurumlar",
+  "kimlik-cakismalari": "Kimlik Çakışmaları",
   "egitim-tanimlari": "Eğitim Tanımları",
   "egitim-paketleri": "Eğitim Paketleri",
   "akademik-planlama": "Akademik Planlama",
@@ -76,6 +77,7 @@ const quickActions = [
 const allMenuItems = [
   { label: "Dashboard", href: "/dashboard", section: "Genel" },
   { label: "Kurum Yönetimi", href: "/kurum-yonetimi/kurumlar", section: "Kurum" },
+  { label: "Kimlik Çakışmaları", href: "/kurum-yonetimi/kimlik-cakismalari", section: "Kurum" },
   { label: "Eğitim Tanımları", href: "/egitim-tanimlari", section: "Kurum" },
   { label: "Eğitim Paketleri", href: "/egitim-paketleri", section: "Kurum" },
   { label: "Ders Saatleri", href: "/akademik-planlama/ders-saatleri", section: "Akademik" },
