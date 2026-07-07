@@ -95,6 +95,12 @@ export const MUHASEBE_KURUM_CHILDREN: MuhasebeNavChildDef[] = [
     label: "Eğitim Paketleri",
     matchPrefix: `${MUHASEBE_KURUM_BASE}/egitim-paketleri`,
   },
+  {
+    id: "kimlik-cakismalari",
+    href: `${MUHASEBE_KURUM_BASE}/kimlik-cakismalari`,
+    label: "Kimlik Çakışmaları",
+    matchPrefix: `${MUHASEBE_KURUM_BASE}/kimlik-cakismalari`,
+  },
 ];
 
 export const MUHASEBE_KUTUPHANE_CHILDREN: MuhasebeNavChildDef[] = KUTUPHANE_NAV_ITEMS.map((item) => {

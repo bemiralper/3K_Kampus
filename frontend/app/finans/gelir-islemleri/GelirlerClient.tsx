@@ -12,6 +12,7 @@ import { FinansHttpError } from "../services/finans-http";
 import { gelirKaydiService, gelirTahsilatService, GelirTahsilatItem, gelirKategoriService } from "../services/gelir-api";
 import { cariHesapService } from "../services/cari-hesap-api";
 import { paymentMethodService, financialAccountService } from "../services/finans-api";
+import { useOdemeYontemleriForMaliHesap } from "../hooks/useOdemeYontemleriForMaliHesap";
 import {
   GelirKaydiListItem, GelirKaydiDetail,
   GelirKaydiCreatePayload, GelirOzet,
@@ -121,10 +122,16 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
   const [tahsilatSaving, setTahsilatSaving] = useState(false);
 
   // Dropdown: Ödeme yöntemleri & Mali hesaplar
-  const [odemeYontemleri, setOdemeYontemleri] = useState<
-    { id: number; ad: string; tip: string; mali_hesap_id: number }[]
+  const [planOdemeYontemleri, setPlanOdemeYontemleri] = useState<
+    { id: number; ad: string; tip: string; mali_hesap_id: number | null }[]
   >([]);
   const [maliHesaplar, setMaliHesaplar] = useState<{ id: number; ad: string; tip?: string }[]>([]);
+  const gelirHesapOdemeYontemleri = useOdemeYontemleriForMaliHesap(kurumId, form.mali_hesap_id, activeSube?.id);
+  const tahsilatHesapOdemeYontemleri = useOdemeYontemleriForMaliHesap(
+    kurumId,
+    tahsilatForm.mali_hesap_id,
+    activeSube?.id,
+  );
 
   /* ─── Fetch ───────────────────────────────────── */
   const fetchList = useCallback(async () => {
@@ -169,7 +176,7 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
       .catch(() => {});
     paymentMethodService
       .dropdown(kurumId, undefined, activeSube?.id)
-      .then((r) => setOdemeYontemleri(r.odeme_yontemleri || []))
+      .then((r) => setPlanOdemeYontemleri(r.odeme_yontemleri || []))
       .catch(() => {});
     financialAccountService
       .dropdownByKurum(kurumId, activeSube?.id)
@@ -602,7 +609,7 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
             onDetail={handleOpenDetail}
             onTahsilat={(id, kalan) => {
               const g = filteredGelirler.find((x) => x.id === id);
-              const oy = odemeYontemleri.find((o) => o.id === g?.odeme_yontemi_id);
+              const oy = planOdemeYontemleri.find((o) => o.id === g?.odeme_yontemi_id);
               openTahsilatDrawer(id, kalan, {
                 mali_hesap_id: oy?.mali_hesap_id,
                 odeme_yontemi_id: g?.odeme_yontemi_id,
@@ -632,7 +639,7 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
         kdvTutar={kdvTutar}
         kdvOrani={kdvOraniGelir}
         fmtTutar={fmtTutar}
-        odemeYontemleri={odemeYontemleri}
+        odemeYontemleri={gelirHesapOdemeYontemleri}
       />
 
       {/* ═══ Detay Drawer ═══ */}
@@ -807,7 +814,7 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
         generalError={tahsilatGeneralError}
         saving={tahsilatSaving}
         onSubmit={handleTahsilatSubmit}
-        odemeYontemleri={odemeYontemleri}
+        odemeYontemleri={tahsilatHesapOdemeYontemleri}
         maliHesaplar={maliHesaplar}
       />
 

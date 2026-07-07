@@ -26,6 +26,7 @@ import GiderKayitTable from "@/components/finans/GiderKayitTable";
 import { isCekSenetTip } from "@/lib/finans/paymentMethodUtils";
 import { EMPTY_ISLEM_MASRAFI, buildIslemMasrafiPayload, type IslemMasrafiFormState } from "../types/islem-masrafi-types";
 import { islemMasrafiGoster } from "../utils/islem-masrafi-eligibility";
+import { useOdemeYontemleriForMaliHesap } from "../hooks/useOdemeYontemleriForMaliHesap";
 
 /* ═══════════════════════════════════════════════════════════════
    Gider Yönetimi — Kayıt Listesi + CRUD + Onay Workflow
@@ -452,9 +453,7 @@ export function GiderFormModal({
   const [kategoriTree, setKategoriTree] = useState<any[]>([]);
   const [odemeYontemleri, setOdemeYontemleri] = useState<{ id: number; ad: string; mali_hesap_id?: number | null; tip?: string }[]>([]);
   const [maliHesaplar, setMaliHesaplar] = useState<{ id: number; ad: string; tip?: string }[]>([]);
-  const filtreliOdemeYontemleri = form.mali_hesap_id
-    ? odemeYontemleri.filter(o => o.mali_hesap_id === form.mali_hesap_id)
-    : [];
+  const hesapOdemeYontemleri = useOdemeYontemleriForMaliHesap(kurumId, form.mali_hesap_id, effectiveSubeId);
   const cekSenetPlanYontemVar = odemeYontemleri.some((o) => isCekSenetTip(o.tip));
 
   // Flat kategori listesi (tree → flat)
@@ -728,7 +727,7 @@ export function GiderFormModal({
   const seciliCariHesap = giderCariHesaplar.find(t => t.id === form.cari_hesap_id)
     ?? cariHesaplar.find(t => t.id === form.cari_hesap_id);
   const cariHesapKategoriIds = seciliCariHesap?.gider_kategorileri ?? [];
-  const selectedYontem = odemeYontemleri.find(o => o.id === form.odeme_yontemi_id);
+  const selectedYontem = hesapOdemeYontemleri.find(o => o.id === form.odeme_yontemi_id);
   const selectedHesap = maliHesaplar.find(m => m.id === form.mali_hesap_id);
   const masrafVisible = odemeSimdi && !planliOdeme && islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
   const lockedKategoriOptions = useMemo(
@@ -1017,7 +1016,7 @@ export function GiderFormModal({
                   }}
                 >
                   <option value="">{form.mali_hesap_id ? "Seçiniz" : "Önce mali hesap seçin"}</option>
-                  {filtreliOdemeYontemleri.map(o => (
+                  {hesapOdemeYontemleri.map(o => (
                     <option key={o.id} value={o.id}>
                       {formatOdemeYontemiLabel(o, { hideMaliHesap: true })}
                     </option>
@@ -1403,27 +1402,21 @@ function OdemeFormInline({
     ...EMPTY_ISLEM_MASRAFI,
   });
   const [saving, setSaving] = useState(false);
-  const [odemeYontemleri, setOdemeYontemleri] = useState<{ id: number; ad: string; mali_hesap_id: number; tip?: string }[]>([]);
   const [maliHesaplar, setMaliHesaplar] = useState<{ id: number; ad: string; tip?: string }[]>([]);
-  const filtreliOdemeYontemleri = form.mali_hesap_id
-    ? odemeYontemleri.filter(o => o.mali_hesap_id === form.mali_hesap_id)
-    : [];
+  const hesapOdemeYontemleri = useOdemeYontemleriForMaliHesap(kurumId, form.mali_hesap_id || null, activeSube?.id);
 
   useEffect(() => {
-    Promise.all([
-      paymentMethodService.dropdown(kurumId, undefined, activeSube?.id),
-      financialAccountService.dropdownByKurum(kurumId, activeSube?.id),
-    ]).then(([oy, mh]) => {
-      setOdemeYontemleri(oy.odeme_yontemleri || []);
-      setMaliHesaplar(mh.mali_hesaplar || []);
-      const maliId = defaultMaliHesapId || mh.mali_hesaplar?.[0]?.id || 0;
-      const yontemId = defaultOdemeYontemiId || 0;
-      setForm((f) => ({
-        ...f,
-        mali_hesap_id: maliId,
-        odeme_yontemi_id: yontemId,
-      }));
-    }).catch(e => onError(e.message));
+    financialAccountService.dropdownByKurum(kurumId, activeSube?.id)
+      .then((mh) => {
+        setMaliHesaplar(mh.mali_hesaplar || []);
+        const maliId = defaultMaliHesapId || mh.mali_hesaplar?.[0]?.id || 0;
+        const yontemId = defaultOdemeYontemiId || 0;
+        setForm((f) => ({
+          ...f,
+          mali_hesap_id: maliId,
+          odeme_yontemi_id: yontemId,
+        }));
+      }).catch(e => onError(e.message));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kurumId, activeSube?.id]);
 
@@ -1467,7 +1460,7 @@ function OdemeFormInline({
   const seciliTaksit = form.gider_taksit_id ? taksitler.find(x => x.id === form.gider_taksit_id) : null;
   const maxTutar = seciliTaksit ? Number(seciliTaksit.kalan_tutar) : undefined;
   const isKismiOdeme = maxTutar !== undefined && form.tutar > 0 && form.tutar < maxTutar;
-  const selectedYontem = odemeYontemleri.find(o => o.id === form.odeme_yontemi_id);
+  const selectedYontem = hesapOdemeYontemleri.find(o => o.id === form.odeme_yontemi_id);
   const selectedHesap = maliHesaplar.find(m => m.id === form.mali_hesap_id);
   const masrafVisible = islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
 
@@ -1539,7 +1532,7 @@ function OdemeFormInline({
           <select required disabled={!form.mali_hesap_id} value={form.odeme_yontemi_id || ""} onChange={e => setForm(f => ({ ...f, odeme_yontemi_id: Number(e.target.value), ...EMPTY_ISLEM_MASRAFI }))}
             className={`${selectCls} bg-white`}>
             <option value="">{form.mali_hesap_id ? "Seçiniz" : "Önce mali hesap seçin"}</option>
-            {filtreliOdemeYontemleri.map(o => (
+            {hesapOdemeYontemleri.map(o => (
               <option key={o.id} value={o.id}>
                 {formatOdemeYontemiLabel(o, { hideMaliHesap: true })}
               </option>

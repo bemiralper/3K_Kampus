@@ -63,7 +63,7 @@ export type GelirKaydiDrawerProps = {
   kategoriler: { id: number; label: string }[];
   onCariHesapChange: (cariHesapId: number) => void;
   maliHesaplar: { id: number; ad: string }[];
-  odemeYontemleri: { id: number; ad: string; tip: string; mali_hesap_id: number }[];
+  odemeYontemleri: { id: number; ad: string; tip?: string; mali_hesap_id?: number | null }[];
   brutTutar: number;
   kdvTutar: number;
   kdvOrani: number;
@@ -103,9 +103,7 @@ export default function GelirKaydiDrawer({
     });
   };
 
-  const filtreliOdemeYontemleri = form.mali_hesap_id
-    ? odemeYontemleri.filter((o) => o.mali_hesap_id === form.mali_hesap_id)
-    : [];
+  const filtreliOdemeYontemleri = odemeYontemleri;
 
   const validateTaraf = () => {
     const e: Record<string, string> = {};

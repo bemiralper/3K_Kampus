@@ -9,6 +9,7 @@ import { cariHesapService } from "../../services/cari-hesap-api";
 import { giderKaydiService, giderOdemeService } from "../../services/gider-kaydi-api";
 import { gelirKaydiService, gelirTahsilatService, GelirTahsilatItem, gelirKategoriService } from "../../services/gelir-api";
 import { paymentMethodService, financialAccountService } from "../../services/finans-api";
+import { useOdemeYontemleriForMaliHesap } from "../../hooks/useOdemeYontemleriForMaliHesap";
 
 import {
   CariHesap,
@@ -2814,9 +2815,6 @@ function OdemeYapDrawer({
   const { activeSube } = useKurum();
   const [saving, setSaving] = useState(false);
   const [bakiyedenMahsup, setBakiyedenMahsup] = useState(false);
-  const [odemeYontemleri, setOdemeYontemleri] = useState<
-    { id: number; ad: string; mali_hesap_id: number; tip?: string }[]
-  >([]);
   const [maliHesaplar, setMaliHesaplar] = useState<
     { id: number; ad: string; tip?: string }[]
   >([]);
@@ -2829,23 +2827,18 @@ function OdemeYapDrawer({
     aciklama: "",
     ...EMPTY_ISLEM_MASRAFI,
   });
+  const hesapOdemeYontemleri = useOdemeYontemleriForMaliHesap(
+    kurumId,
+    form.mali_hesap_id || null,
+    activeSube?.id,
+  );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const filtreliOdemeYontemleri = form.mali_hesap_id
-    ? odemeYontemleri.filter((o) => o.mali_hesap_id === form.mali_hesap_id)
-    : [];
 
   // Bakiye pozitif ise mahsup edilebilir (alacaklıyız = önceki ödemelerimiz var)
   const mahsupYapilabilir = cariBakiye > 0;
 
   useEffect(() => {
     if (kurumId) {
-      paymentMethodService
-        .dropdown(kurumId)
-        .then((r) => {
-          const l = r.odeme_yontemleri || [];
-          setOdemeYontemleri(l);
-        })
-        .catch(() => {});
       financialAccountService
         .dropdownByKurum(kurumId, activeSube?.id)
         .then((r) => {
@@ -2923,7 +2916,7 @@ function OdemeYapDrawer({
   };
 
   const odenmemisTaksitler = taksitler.filter((t) => t.kalan_tutar > 0);
-  const selectedYontem = odemeYontemleri.find((o) => o.id === form.odeme_yontemi_id);
+  const selectedYontem = hesapOdemeYontemleri.find((o) => o.id === form.odeme_yontemi_id);
   const selectedHesap = maliHesaplar.find((m) => m.id === form.mali_hesap_id);
   const masrafVisible = !bakiyedenMahsup && islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
 
@@ -3147,7 +3140,7 @@ function OdemeYapDrawer({
                 }
               >
                 <option value={0}>{form.mali_hesap_id ? "Seçiniz" : "Önce mali hesap seçin"}</option>
-                {filtreliOdemeYontemleri.map((o) => (
+                {hesapOdemeYontemleri.map((o) => (
                   <option key={o.id} value={o.id}>
                     {formatOdemeYontemiLabel(o, { hideMaliHesap: true })}
                   </option>
@@ -3272,9 +3265,6 @@ function SerbestOdemeDrawer({
 }) {
   const { activeSube } = useKurum();
   const [saving, setSaving] = useState(false);
-  const [odemeYontemleri, setOdemeYontemleri] = useState<
-    { id: number; ad: string; mali_hesap_id: number; tip?: string }[]
-  >([]);
   const [maliHesaplar, setMaliHesaplar] = useState<
     { id: number; ad: string; tip?: string }[]
   >([]);
@@ -3286,23 +3276,18 @@ function SerbestOdemeDrawer({
     aciklama: "",
     ...EMPTY_ISLEM_MASRAFI,
   });
+  const hesapOdemeYontemleri = useOdemeYontemleriForMaliHesap(
+    kurumId,
+    form.mali_hesap_id || null,
+    activeSube?.id,
+  );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const filtreliOdemeYontemleri = form.mali_hesap_id
-    ? odemeYontemleri.filter((o) => o.mali_hesap_id === form.mali_hesap_id)
-    : [];
-  const selectedYontem = odemeYontemleri.find((o) => o.id === form.odeme_yontemi_id);
+  const selectedYontem = hesapOdemeYontemleri.find((o) => o.id === form.odeme_yontemi_id);
   const selectedHesap = maliHesaplar.find((m) => m.id === form.mali_hesap_id);
   const masrafVisible = islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
 
   useEffect(() => {
     if (kurumId) {
-      paymentMethodService
-        .dropdown(kurumId)
-        .then((r) => {
-          const l = r.odeme_yontemleri || [];
-          setOdemeYontemleri(l);
-        })
-        .catch(() => {});
       financialAccountService
         .dropdownByKurum(kurumId, activeSube?.id)
         .then((r) => {
@@ -3502,7 +3487,7 @@ function SerbestOdemeDrawer({
             }
           >
             <option value={0}>{form.mali_hesap_id ? "Seçiniz (opsiyonel)" : "Önce mali hesap seçin"}</option>
-            {filtreliOdemeYontemleri.map((o) => (
+            {hesapOdemeYontemleri.map((o) => (
               <option key={o.id} value={o.id}>
                 {formatOdemeYontemiLabel(o, { hideMaliHesap: true })}
               </option>

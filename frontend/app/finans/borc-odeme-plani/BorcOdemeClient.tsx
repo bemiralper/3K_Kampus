@@ -14,7 +14,8 @@ import {
 } from "./borc-odeme-export";
 import { giderKaydiService, giderOdemeService } from "../services/gider-kaydi-api";
 import { FinansHttpError } from "../services/finans-http";
-import { paymentMethodService, financialAccountService } from "../services/finans-api";
+import { financialAccountService } from "../services/finans-api";
+import { useOdemeYontemleriForMaliHesap } from "../hooks/useOdemeYontemleriForMaliHesap";
 import IslemMasrafiFields from "@/components/finans/IslemMasrafiFields";
 import { EMPTY_ISLEM_MASRAFI, buildIslemMasrafiPayload } from "../types/islem-masrafi-types";
 import { islemMasrafiGoster } from "../utils/islem-masrafi-eligibility";
@@ -670,11 +671,12 @@ function OdemeDrawer({
   const [masrafForm, setMasrafForm] = useState({ ...EMPTY_ISLEM_MASRAFI });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [yontemler, setYontemler] = useState<{ id: number; ad: string; tip: string; mali_hesap_id: number }[]>([]);
   const [hesaplar, setHesaplar] = useState<{ id: number; ad: string; tip: string; sube_ad?: string }[]>([]);
-  const filtreliYontemler = hesapId
-    ? yontemler.filter((y) => y.mali_hesap_id === Number(hesapId))
-    : [];
+  const hesapOdemeYontemleri = useOdemeYontemleriForMaliHesap(
+    kurumId,
+    hesapId ? Number(hesapId) : null,
+    activeSube?.id,
+  );
 
   // Taksit değişince formu sıfırla
   useEffect(() => {
@@ -692,11 +694,10 @@ function OdemeDrawer({
   // Dropdown verileri
   useEffect(() => {
     if (!kurumId || !open) return;
-    paymentMethodService.dropdown(kurumId, undefined, activeSube?.id).then((r) => setYontemler(r.odeme_yontemleri || [])).catch(() => {});
     financialAccountService.dropdownByKurum(kurumId, activeSube?.id).then((r) => setHesaplar(r.mali_hesaplar || [])).catch(() => {});
   }, [kurumId, open, activeSube?.id]);
 
-  const selectedYontem = yontemler.find((y) => String(y.id) === yontemId);
+  const selectedYontem = hesapOdemeYontemleri.find((y) => String(y.id) === yontemId);
   const selectedHesap = hesaplar.find((h) => String(h.id) === hesapId);
   const masrafVisible = islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
 
@@ -851,7 +852,7 @@ function OdemeDrawer({
             <label className="block text-sm font-semibold text-gray-700 mb-2">Ödeme Yöntemi *</label>
             <select value={yontemId} onChange={(e) => setYontemId(e.target.value)} className={selectCls} disabled={!hesapId}>
               <option value="">{hesapId ? "Seçiniz..." : "Önce mali hesap seçin"}</option>
-              {filtreliYontemler.map((y) => (
+              {hesapOdemeYontemleri.map((y) => (
                 <option key={y.id} value={y.id}>{y.ad}</option>
               ))}
             </select>

@@ -26,6 +26,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/muhasebe/profil": "Profilim",
   "/muhasebe/kurum/egitim-tanimlari": "Eğitim Tanımları",
   "/muhasebe/kurum/egitim-paketleri": "Eğitim Paketleri",
+  "/muhasebe/kurum/kimlik-cakismalari": "Kimlik Çakışmaları",
   "/muhasebe/kutuphane": "Kütüphane",
 };
 
@@ -43,6 +44,7 @@ function resolvePageTitle(pathname: string): string {
   }
   if (pathname.startsWith("/muhasebe/odeme-takip/")) return "Sözleşme/Tahsilat";
   if (pathname.startsWith("/muhasebe/kurum/")) {
+    if (pathname.includes("kimlik-cakismalari")) return "Kimlik Çakışmaları";
     if (pathname.includes("egitim-paketleri")) return "Eğitim Paketleri";
     if (pathname.includes("egitim-tanimlari")) return "Eğitim Tanımları";
     return "Kurum";

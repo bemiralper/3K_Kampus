@@ -24,7 +24,7 @@ export type TahsilatDrawerProps = {
   generalError: string | null;
   saving: boolean;
   onSubmit: () => void;
-  odemeYontemleri: { id: number; ad: string; mali_hesap_id: number; tip?: string }[];
+  odemeYontemleri: { id: number; ad: string; mali_hesap_id?: number | null; tip?: string }[];
   maliHesaplar: { id: number; ad: string; tip?: string }[];
 };
 
@@ -42,10 +42,6 @@ export default function TahsilatDrawer({
   odemeYontemleri,
   maliHesaplar,
 }: TahsilatDrawerProps) {
-  const filtreliOdemeYontemleri = form.mali_hesap_id
-    ? odemeYontemleri.filter((o) => o.mali_hesap_id === form.mali_hesap_id)
-    : [];
-
   const selectedYontem = odemeYontemleri.find((o) => o.id === form.odeme_yontemi_id);
   const selectedHesap = maliHesaplar.find((m) => m.id === form.mali_hesap_id);
   const masrafVisible = islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
@@ -113,7 +109,7 @@ export default function TahsilatDrawer({
             }
           >
             <option value="">{form.mali_hesap_id ? "Seçiniz" : "Önce mali hesap seçin"}</option>
-            {filtreliOdemeYontemleri.map((o) => (
+            {odemeYontemleri.map((o) => (
               <option key={o.id} value={o.id}>
                 {formatOdemeYontemiLabel(o, { hideMaliHesap: true })}
               </option>
