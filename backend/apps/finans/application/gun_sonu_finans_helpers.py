@@ -432,6 +432,7 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
     """
     from apps.finans.constants.cari_types import CariHareketTuru
     from apps.finans.domain.cari_hareket import CariHareket
+    from apps.odeme_takip.domain.models import Tahsilat
 
     toplam = 0
 

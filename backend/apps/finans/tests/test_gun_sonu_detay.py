@@ -60,6 +60,14 @@ class GunSonuDateHelpersTest(SimpleTestCase):
         self.assertIn('updated_at__lte', sql)
         self.assertNotIn('updated_at__date', sql)
 
+    def test_bugun_alinan_toplam_imports_tahsilat(self):
+        """Regression: NameError on Tahsilat crashed detay rapor (HTTP 500)."""
+        import inspect
+        from apps.finans.application import gun_sonu_finans_helpers as helpers
+
+        src = inspect.getsource(helpers.bugun_alinan_toplam)
+        self.assertIn('from apps.odeme_takip.domain.models import Tahsilat', src)
+
 
 class BankaLabelTest(SimpleTestCase):
     def test_banka_label_from_banka_field(self):
