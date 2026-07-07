@@ -275,9 +275,9 @@ export const BAKIYE_DURUMU_META = {
 /** Liste/detay sütun tutarları */
 export const CARI_TUTAR_META = {
   borc: {
-    label: 'Borç',
-    short: 'B',
-    hint: 'Borç yönlü hareketler toplamı (satış, ödeme vb.)',
+    label: 'Verecek',
+    short: 'V',
+    hint: 'Ödenecek açık tutar (net bakiye negatif)',
     color: '#dc2626',
     bg: '#fff1f2',
     border: '#fecdd3',
@@ -285,7 +285,7 @@ export const CARI_TUTAR_META = {
   alacak: {
     label: 'Alacak',
     short: 'A',
-    hint: 'Alacak yönlü hareketler toplamı (tahsilat, alış vb.)',
+    hint: 'Tahsil edilecek açık tutar (net bakiye pozitif)',
     color: '#059669',
     bg: '#ecfdf5',
     border: '#a7f3d0',

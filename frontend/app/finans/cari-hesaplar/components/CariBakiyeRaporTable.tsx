@@ -5,6 +5,7 @@ import FinansDataTable from "@/components/finans/FinansDataTable";
 import type { CariHesapRaporItem } from "../../types/cari-hesap-types";
 import { HESAP_TURLERI } from "../../types/cari-hesap-types";
 import { CariBakiyeCell } from "./CariBalanceCells";
+import { cariRowAcikAlacak, cariRowAcikVerecek } from "./cari-open-balance";
 import {
   CARI_RAPOR_COLUMN_STORAGE_KEY,
   CARI_RAPOR_TABLE_COLUMNS,
@@ -79,9 +80,9 @@ export default function CariBakiyeRaporTable({
           </span>
         );
       case "borc":
-        return moneyCell(Number(row.toplam_borc));
+        return moneyCell(cariRowAcikVerecek(row));
       case "alacak":
-        return moneyCell(Number(row.toplam_alacak));
+        return moneyCell(cariRowAcikAlacak(row));
       case "bakiye":
         return <CariBakiyeCell bakiye={Number(row.bakiye)} bakiyeDurumu={row.bakiye_durumu} />;
       case "vadesi_gelen":
@@ -119,8 +120,8 @@ export function buildCariRaporExportRows(items: CariHesapRaporItem[]) {
     hesap_kodu: r.hesap_kodu || "",
     cari_adi: r.gorunen_ad || r.unvan,
     tur: r.hesap_turu_display,
-    borc: fmtExportMoney(r.toplam_borc),
-    alacak: fmtExportMoney(r.toplam_alacak),
+    borc: fmtExportMoney(cariRowAcikVerecek(r)),
+    alacak: fmtExportMoney(cariRowAcikAlacak(r)),
     bakiye: fmtExportMoney(r.bakiye),
     vadesi_gelen: fmtExportMoney(r.vadesi_gelen),
     vadesi_gecmis: fmtExportMoney(r.vadesi_gecmis),

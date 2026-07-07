@@ -276,6 +276,7 @@ class CariListeToplamTest(CariHesaplamaTestBase):
             {
                 'toplam_borc': float(musteri.toplam_borc),
                 'toplam_alacak': float(musteri.toplam_alacak),
+                'bakiye': float(musteri.bakiye),
                 'bakiye_durumu': musteri.bakiye_durumu,
                 'toplam_satis': 1000,
                 'toplam_alis': 0,
@@ -287,10 +288,12 @@ class CariListeToplamTest(CariHesaplamaTestBase):
         ]
         ozet = aggregate_list_totals(rows)
         self.assertEqual(ozet['toplam_cari'], 1)
-        self.assertEqual(ozet['toplam_borc'], 1000.0)
+        self.assertEqual(ozet['toplam_borc'], 0.0)
+        self.assertEqual(ozet['toplam_alacak'], 1000.0)
+        self.assertEqual(ozet['net_bakiye'], 1000.0)
         self.assertEqual(ozet['toplam_satis'], 1000.0)
         self.assertEqual(ozet['toplam_alis'], 0.0)
-        self.assertNotEqual(ozet['toplam_borc'], float(tedarikci.toplam_borc))
+        self.assertEqual(ozet['alacakli_cari'], 1)
 
 
 class GunSonuCariUyumTest(CariHesaplamaTestBase):

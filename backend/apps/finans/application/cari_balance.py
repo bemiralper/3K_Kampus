@@ -57,10 +57,30 @@ def bakiye_durumu_from_net(bakiye: float) -> str:
     return 'dengede'
 
 
+def acik_verecek(bakiye: float) -> float:
+    """Ödenecek açık tutar (net bakiye negatif)."""
+    return abs(float(bakiye)) if float(bakiye) < 0 else 0.0
+
+
+def acik_alacak(bakiye: float) -> float:
+    """Tahsil edilecek açık tutar (net bakiye pozitif)."""
+    b = float(bakiye)
+    return b if b > 0 else 0.0
+
+
+def row_bakiye(row: dict) -> float:
+    if row.get('bakiye') is not None:
+        return float(row['bakiye'])
+    return net_bakiye(
+        float(row.get('toplam_borc') or 0),
+        float(row.get('toplam_alacak') or 0),
+    )
+
+
 def aggregate_list_totals(items: list[dict]) -> dict:
     """
     Filtrelenmiş cari listesi/rapor satırlarından özet toplamlar.
-    Her satırda toplam_borc, toplam_alacak ve isteğe bağlı işlem türü alanları beklenir.
+    Borç/alacak özetleri açık bakiye (ödenecek / tahsil edilecek) olarak hesaplanır.
     """
     totals = {
         'toplam_cari': len(items),
@@ -78,10 +98,10 @@ def aggregate_list_totals(items: list[dict]) -> dict:
         'sifir_bakiye_cari': 0,
     }
     for row in items:
-        borc = float(row.get('toplam_borc') or 0)
-        alacak = float(row.get('toplam_alacak') or 0)
-        totals['toplam_borc'] += borc
-        totals['toplam_alacak'] += alacak
+        bakiye = row_bakiye(row)
+        totals['toplam_borc'] += acik_verecek(bakiye)
+        totals['toplam_alacak'] += acik_alacak(bakiye)
+        totals['net_bakiye'] += bakiye
         totals['toplam_satis'] += float(row.get('toplam_satis') or 0)
         totals['toplam_alis'] += float(row.get('toplam_alis') or 0)
         totals['toplam_tahsilat'] += float(row.get('toplam_tahsilat') or 0)
@@ -95,5 +115,4 @@ def aggregate_list_totals(items: list[dict]) -> dict:
             totals['alacakli_cari'] += 1
         else:
             totals['sifir_bakiye_cari'] += 1
-    totals['net_bakiye'] = totals['toplam_borc'] - totals['toplam_alacak']
     return totals

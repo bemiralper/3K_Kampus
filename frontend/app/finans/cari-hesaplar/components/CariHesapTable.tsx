@@ -7,6 +7,7 @@ import {
   HESAP_TURLERI,
 } from "../../types/cari-hesap-types";
 import { CariBakiyeCell, CariTutarCell } from "./CariBalanceCells";
+import { cariRowAcikAlacak, cariRowAcikVerecek } from "./cari-open-balance";
 import {
   CARI_TABLE_COLUMNS,
   CARI_TABLE_COLUMN_STORAGE_KEY,
@@ -79,9 +80,9 @@ export default function CariHesapTable({
       case "yetkili":
         return h.yetkili_kisi ? <span className="cell-secondary">{h.yetkili_kisi}</span> : <span className="cell-secondary">—</span>;
       case "borc":
-        return <CariTutarCell kind="borc" amount={Number(h.toplam_borc)} />;
+        return <CariTutarCell kind="borc" amount={cariRowAcikVerecek(h)} />;
       case "alacak":
-        return <CariTutarCell kind="alacak" amount={Number(h.toplam_alacak)} />;
+        return <CariTutarCell kind="alacak" amount={cariRowAcikAlacak(h)} />;
       case "bakiye":
         return <CariBakiyeCell bakiye={bakiye} bakiyeDurumu={h.bakiye_durumu} />;
       case "son_islem":
@@ -154,8 +155,8 @@ export function buildCariHesapExportRows(items: CariHesapListItem[]) {
     tur: h.hesap_turu_display,
     telefon: h.telefon || "",
     yetkili: h.yetkili_kisi || "",
-    borc: Number(h.toplam_borc || 0).toFixed(2),
-    alacak: Number(h.toplam_alacak || 0).toFixed(2),
+    borc: cariRowAcikVerecek(h).toFixed(2),
+    alacak: cariRowAcikAlacak(h).toFixed(2),
     bakiye: Number(h.bakiye || 0).toFixed(2),
     satis: Number(h.toplam_satis || 0).toFixed(2),
     alis: Number(h.toplam_alis || 0).toFixed(2),

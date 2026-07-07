@@ -17,7 +17,7 @@ export const CARI_TABLE_COLUMNS: Record<CariTableColumnId, ColumnMeta> = {
   tur: { label: "Tür" },
   telefon: { label: "Telefon" },
   yetkili: { label: "Yetkili Kişi", hideable: true },
-  borc: { label: "Borç", align: "right" },
+  borc: { label: "Verecek", align: "right" },
   alacak: { label: "Alacak", align: "right" },
   bakiye: { label: "Net Bakiye", align: "right" },
   son_islem: { label: "Son İşlem", hideable: true, width: "110px" },
