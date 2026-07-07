@@ -176,9 +176,7 @@ export default function CariDetayClient({
   const [gelirTahsilatGeneralError, setGelirTahsilatGeneralError] = useState<string | null>(null);
   const [gelirTahsilatSaving, setGelirTahsilatSaving] = useState(false);
 
-  // ödemeler
-  const [odemeler, setOdemeler] = useState<CariHareket[]>([]);
-  const [odemeLoading, setOdemeLoading] = useState(false);
+  // ödemeler — hareketler listesinden türetilir (ayrı API çağrısı yok)
 
   // dosyalar
   const [dosyalar, setDosyalar] = useState<CariDosya[]>([]);
@@ -302,19 +300,17 @@ export default function CariDetayClient({
   }, [kurumId, cariHesapId, activeSube?.id]);
 
   const loadOdemeler = useCallback(async () => {
-    setOdemeLoading(true);
-    try {
-      setOdemeler(
-        await cariHesapService.hareketler(cariHesapId, {
-          islem_turu: "odeme,mahsup,iade",
-        })
-      );
-    } catch {
-      /* silent */
-    } finally {
-      setOdemeLoading(false);
-    }
-  }, [cariHesapId]);
+    await loadHareketler();
+  }, [loadHareketler]);
+
+  const odemeler = useMemo(
+    () =>
+      hareketler.filter((h) =>
+        h.islem_turu === "odeme" || h.islem_turu === "mahsup" || h.islem_turu === "iade"
+      ),
+    [hareketler],
+  );
+  const odemeLoading = hareketLoading;
 
   const loadDosyalar = useCallback(async () => {
     setDosyaLoading(true);
@@ -502,10 +498,10 @@ export default function CariDetayClient({
   };
 
   useEffect(() => {
-    if (activeTab === "ekstre") {
+    if (activeTab === "ekstre" || activeTab === "odemeler") {
       loadHareketler();
-      loadCariOzet();
     }
+    if (activeTab === "ekstre") loadCariOzet();
   }, [activeTab, loadHareketler, loadCariOzet]);
   useEffect(() => {
     if (activeTab === "giderler") loadGiderler();
@@ -513,9 +509,6 @@ export default function CariDetayClient({
   useEffect(() => {
     if (activeTab === "gelirler") loadGelirler();
   }, [activeTab, loadGelirler]);
-  useEffect(() => {
-    if (activeTab === "odemeler") loadOdemeler();
-  }, [activeTab, loadOdemeler]);
   useEffect(() => {
     if (activeTab === "dosyalar") loadDosyalar();
   }, [activeTab, loadDosyalar]);
@@ -627,6 +620,7 @@ export default function CariDetayClient({
       loadGiderler();
       loadHesap();
       loadHareketler();
+      loadCariOzet();
     } catch (e: any) {
       showToast(e.message, "err");
     }
@@ -736,15 +730,14 @@ export default function CariDetayClient({
     }
   };
 
-  const reloadAll = () => {
+  const reloadAll = useCallback(() => {
     loadHesap();
-    loadGiderler();
-    loadOdemeler();
-    loadHareketler();
     loadCariOzet();
-    loadDosyalar();
+    loadHareketler();
+    loadGiderler();
     loadGelirler();
-  };
+    loadDosyalar();
+  }, [loadHesap, loadCariOzet, loadHareketler, loadGiderler, loadGelirler, loadDosyalar]);
 
   const openGelirDrawer = () => {
     setGelirForm({

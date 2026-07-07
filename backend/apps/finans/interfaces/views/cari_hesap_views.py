@@ -78,7 +78,16 @@ class CariHesapListCreateView(APIView):
         else:
             hesaplar = selector.list_by_kurum(kurum_id, sube_id=sube_id, hesap_turu=hesap_turu)
 
-        serializer = CariHesapListSerializer(hesaplar, many=True)
+        hesap_list = list(hesaplar)
+        hesap_ids = [h.pk for h in hesap_list]
+        serializer = CariHesapListSerializer(
+            hesap_list,
+            many=True,
+            context={
+                'islem_totals': selector._islem_totals_map(hesap_ids),
+                'son_hareket_map': selector._son_hareket_map(hesap_ids),
+            },
+        )
         return Response(serializer.data)
 
     def post(self, request):

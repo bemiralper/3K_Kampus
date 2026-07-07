@@ -12,8 +12,15 @@ import {
   CARI_TABLE_COLUMN_STORAGE_KEY,
   CariTableColumnId,
   DEFAULT_CARI_COLUMN_ORDER,
+  migrateCariColumnOrder,
 } from "./cari-table-columns";
 import "@/components/finans/finans-list.css";
+
+function formatSonIslem(iso?: string | null) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return y && m && d ? `${d}.${m}.${y}` : iso;
+}
 
 export default function CariHesapTable({
   hesaplar,
@@ -22,6 +29,7 @@ export default function CariHesapTable({
   onToggle,
   onDelete,
   onColumnsReady,
+  rowBusyId,
 }: {
   hesaplar: CariHesapListItem[];
   href: (path: string) => string;
@@ -31,14 +39,15 @@ export default function CariHesapTable({
   onColumnsReady?: Parameters<
     typeof FinansDataTable<CariTableColumnId, CariHesapListItem>
   >[0]["onColumnsReady"];
+  rowBusyId?: number | null;
 }) {
   const avatarColors = ["blue", "green", "purple", "orange", "pink", "teal"];
 
   const renderCell = (colId: CariTableColumnId, h: CariHesapListItem) => {
     const bakiye = Number(h.bakiye);
-    const index = hesaplar.indexOf(h);
-    const avatarColor = avatarColors[index % avatarColors.length];
+    const avatarColor = avatarColors[h.id % avatarColors.length];
     const hesapTuruMeta = HESAP_TURLERI.find((t) => t.value === h.hesap_turu);
+    const busy = rowBusyId === h.id;
 
     switch (colId) {
       case "hesap":
@@ -51,8 +60,10 @@ export default function CariHesapTable({
               <Link href={href(`cari-hesaplar/${h.id}`)} className="cell-primary cell-link">
                 {h.gorunen_ad}
               </Link>
-              {h.kisa_ad && h.kisa_ad !== h.unvan && (
-                <span className="cell-secondary">{h.unvan}</span>
+              {(h.hesap_kodu || (h.kisa_ad && h.kisa_ad !== h.unvan)) && (
+                <span className="cell-secondary">
+                  {[h.hesap_kodu, h.kisa_ad !== h.unvan ? h.kisa_ad : ""].filter(Boolean).join(" · ")}
+                </span>
               )}
             </div>
           </div>
@@ -65,12 +76,16 @@ export default function CariHesapTable({
         );
       case "telefon":
         return h.telefon ? <span className="cell-secondary">{h.telefon}</span> : <span className="cell-secondary">—</span>;
-      case "odenen":
-        return <CariTutarCell kind="odenen" amount={Number(h.toplam_borc)} />;
-      case "alis":
-        return <CariTutarCell kind="alis" amount={Number(h.toplam_alacak)} />;
+      case "yetkili":
+        return h.yetkili_kisi ? <span className="cell-secondary">{h.yetkili_kisi}</span> : <span className="cell-secondary">—</span>;
+      case "borc":
+        return <CariTutarCell kind="borc" amount={Number(h.toplam_borc)} />;
+      case "alacak":
+        return <CariTutarCell kind="alacak" amount={Number(h.toplam_alacak)} />;
       case "bakiye":
         return <CariBakiyeCell bakiye={bakiye} bakiyeDurumu={h.bakiye_durumu} />;
+      case "son_islem":
+        return <span className="cell-secondary">{formatSonIslem(h.son_islem_tarihi)}</span>;
       case "durum":
         return (
           <span className={`badge-modern ${h.aktif_mi ? "success" : "danger"}`}>
@@ -96,17 +111,17 @@ export default function CariHesapTable({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>
             </Link>
-            <button type="button" onClick={() => onEdit(h.id)} className="row-action-btn" title="Düzenle">
+            <button type="button" onClick={() => onEdit(h.id)} className="row-action-btn" title="Düzenle" disabled={busy}>
               <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
             </button>
-            <button type="button" onClick={() => onToggle(h.id)} className="row-action-btn" title={h.aktif_mi ? "Pasif Yap" : "Aktif Yap"}>
+            <button type="button" onClick={() => onToggle(h.id)} className="row-action-btn" title={h.aktif_mi ? "Pasif Yap" : "Aktif Yap"} disabled={busy}>
               <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
               </svg>
             </button>
-            <button type="button" onClick={() => onDelete(h.id, h.unvan)} className="row-action-btn danger" title="Sil">
+            <button type="button" onClick={() => onDelete(h.id, h.unvan)} className="row-action-btn danger" title="Sil" disabled={busy}>
               <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
@@ -128,6 +143,7 @@ export default function CariHesapTable({
       rowKey={(h) => h.id}
       renderCell={renderCell}
       onColumnsReady={onColumnsReady}
+      normalizeStoredOrder={migrateCariColumnOrder}
     />
   );
 }
@@ -137,9 +153,14 @@ export function buildCariHesapExportRows(items: CariHesapListItem[]) {
     hesap: h.gorunen_ad || h.unvan,
     tur: h.hesap_turu_display,
     telefon: h.telefon || "",
-    odenen: Number(h.toplam_borc || 0).toFixed(2),
-    alis: Number(h.toplam_alacak || 0).toFixed(2),
+    yetkili: h.yetkili_kisi || "",
+    borc: Number(h.toplam_borc || 0).toFixed(2),
+    alacak: Number(h.toplam_alacak || 0).toFixed(2),
     bakiye: Number(h.bakiye || 0).toFixed(2),
+    satis: Number(h.toplam_satis || 0).toFixed(2),
+    alis: Number(h.toplam_alis || 0).toFixed(2),
+    tahsilat: Number(h.toplam_tahsilat || 0).toFixed(2),
+    odeme: Number(h.toplam_odeme || 0).toFixed(2),
     durum: h.aktif_mi ? "Aktif" : "Pasif",
   }));
 }

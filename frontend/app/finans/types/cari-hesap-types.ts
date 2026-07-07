@@ -54,10 +54,20 @@ export interface CariHesapListItem {
   vergi_no: string;
   telefon: string;
   email: string;
+  yetkili_kisi?: string;
+  il?: string;
+  ilce?: string;
   toplam_borc: number;
   toplam_alacak: number;
   bakiye: number;
   bakiye_durumu: string;
+  toplam_satis?: number;
+  toplam_alis?: number;
+  toplam_tahsilat?: number;
+  toplam_odeme?: number;
+  toplam_iade?: number;
+  toplam_mahsup?: number;
+  son_islem_tarihi?: string | null;
   aktif_mi: boolean;
   created_at: string;
 }
@@ -75,6 +85,12 @@ export interface CariHesapRaporItem {
   toplam_alacak: number;
   bakiye: number;
   bakiye_durumu: string;
+  toplam_satis?: number;
+  toplam_alis?: number;
+  toplam_tahsilat?: number;
+  toplam_odeme?: number;
+  toplam_iade?: number;
+  toplam_mahsup?: number;
   vadesi_gelen: number;
   vadesi_gecmis: number;
   gelecek_vadeli: number;
@@ -258,20 +274,38 @@ export const BAKIYE_DURUMU_META = {
 
 /** Liste/detay sütun tutarları */
 export const CARI_TUTAR_META = {
-  odenen: {
-    label: 'Ödenen',
-    short: 'Ö',
-    hint: 'Yapılan ödemeler',
+  borc: {
+    label: 'Borç',
+    short: 'B',
+    hint: 'Borç yönlü hareketler toplamı (satış, ödeme vb.)',
+    color: '#dc2626',
+    bg: '#fff1f2',
+    border: '#fecdd3',
+  },
+  alacak: {
+    label: 'Alacak',
+    short: 'A',
+    hint: 'Alacak yönlü hareketler toplamı (tahsilat, alış vb.)',
     color: '#059669',
     bg: '#ecfdf5',
     border: '#a7f3d0',
   },
-  alis: {
-    label: 'Alış',
-    short: 'A',
-    hint: 'Toplam alış / hizmet',
+  /** @deprecated Eski sütun adı — borc kullanın */
+  odenen: {
+    label: 'Borç',
+    short: 'B',
+    hint: 'Borç yönlü hareketler toplamı',
     color: '#dc2626',
     bg: '#fff1f2',
     border: '#fecdd3',
+  },
+  /** @deprecated Eski sütun adı — alacak kullanın */
+  alis: {
+    label: 'Alacak',
+    short: 'A',
+    hint: 'Alacak yönlü hareketler toplamı',
+    color: '#059669',
+    bg: '#ecfdf5',
+    border: '#a7f3d0',
   },
 } as const;

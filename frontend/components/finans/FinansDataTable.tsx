@@ -23,6 +23,7 @@ type FinansDataTableProps<T extends string, Row> = {
     columnOrder: T[];
     columns: Record<T, ColumnMeta>;
   }) => void;
+  normalizeStoredOrder?: (raw: string[]) => T[];
 };
 
 export default function FinansDataTable<T extends string, Row>({
@@ -34,8 +35,9 @@ export default function FinansDataTable<T extends string, Row>({
   renderCell,
   emptyMessage = "Kayıt bulunamadı",
   onColumnsReady,
+  normalizeStoredOrder,
 }: FinansDataTableProps<T, Row>) {
-  const tableCols = useFinansTableColumns(storageKey, defaultOrder, columns);
+  const tableCols = useFinansTableColumns(storageKey, defaultOrder, columns, normalizeStoredOrder);
   const { displayOrder, renderHeader } = tableCols;
 
   React.useEffect(() => {

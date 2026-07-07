@@ -8,11 +8,18 @@ from apps.finans.constants.cari_types import CariHesapTuru
 
 
 class CariHesapListSerializer(serializers.ModelSerializer):
-    """Liste görünümü — minimal alanlar."""
+    """Liste görünümü — minimal alanlar + işlem türü kırılımı."""
     hesap_turu_display = serializers.CharField(read_only=True)
     bakiye = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
     bakiye_durumu = serializers.CharField(read_only=True)
     gorunen_ad = serializers.CharField(read_only=True)
+    toplam_satis = serializers.SerializerMethodField()
+    toplam_alis = serializers.SerializerMethodField()
+    toplam_tahsilat = serializers.SerializerMethodField()
+    toplam_odeme = serializers.SerializerMethodField()
+    toplam_iade = serializers.SerializerMethodField()
+    toplam_mahsup = serializers.SerializerMethodField()
+    son_islem_tarihi = serializers.SerializerMethodField()
 
     class Meta:
         model = CariHesap
@@ -20,9 +27,38 @@ class CariHesapListSerializer(serializers.ModelSerializer):
             'id', 'unvan', 'kisa_ad', 'gorunen_ad',
             'hesap_turu', 'hesap_turu_display', 'hesap_kodu',
             'vergi_no', 'telefon', 'email',
+            'yetkili_kisi', 'il', 'ilce',
             'toplam_borc', 'toplam_alacak', 'bakiye', 'bakiye_durumu',
+            'toplam_satis', 'toplam_alis', 'toplam_tahsilat', 'toplam_odeme',
+            'toplam_iade', 'toplam_mahsup',
+            'son_islem_tarihi',
             'aktif_mi', 'created_at',
         ]
+
+    def _islem(self, obj):
+        return self.context.get('islem_totals', {}).get(obj.pk, {})
+
+    def get_toplam_satis(self, obj):
+        return self._islem(obj).get('satis', 0)
+
+    def get_toplam_alis(self, obj):
+        return self._islem(obj).get('alis', 0)
+
+    def get_toplam_tahsilat(self, obj):
+        return self._islem(obj).get('tahsilat', 0)
+
+    def get_toplam_odeme(self, obj):
+        return self._islem(obj).get('odeme', 0)
+
+    def get_toplam_iade(self, obj):
+        return self._islem(obj).get('iade', 0)
+
+    def get_toplam_mahsup(self, obj):
+        return self._islem(obj).get('mahsup', 0)
+
+    def get_son_islem_tarihi(self, obj):
+        son = self.context.get('son_hareket_map', {}).get(obj.pk)
+        return son.islem_tarihi.isoformat() if son else None
 
 
 class CariHesapDetailSerializer(serializers.ModelSerializer):

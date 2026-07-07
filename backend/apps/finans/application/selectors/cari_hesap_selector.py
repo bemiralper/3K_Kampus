@@ -4,7 +4,12 @@ Cari Hesap Selector — Sadece okuma amaçlı sorgular
 from django.db.models import F, Sum
 from django.utils import timezone
 
-from apps.finans.constants.cari_types import CariHareketYonu
+from apps.finans.application.cari_balance import (
+    bakiye_durumu_from_net,
+    empty_islem_totals,
+    net_bakiye,
+)
+from apps.finans.constants.cari_types import CariHareketTuru, CariHareketYonu
 from apps.finans.constants.gider_types import GiderDurum, GiderTaksitDurum
 from apps.finans.domain.cari_hareket import CariHareket
 from apps.finans.domain.gelir_kaydi import GelirKaydi
@@ -110,20 +115,36 @@ class CariHesapSelector:
             result[hid] = (borc, alacak)
         return result
 
-    def _son_hareket_map(self, hesap_ids):
-        """Her cari için son hareket."""
+    def _islem_totals_map(self, hesap_ids):
+        """Cari hesap başına işlem türü toplamları (tek sorgu)."""
         if not hesap_ids:
             return {}
-        result = {}
+        rows = (
+            CariHareket.objects.filter(cari_hesap_id__in=hesap_ids)
+            .values('cari_hesap_id', 'islem_turu')
+            .annotate(t=Sum('tutar'))
+        )
+        result: dict[int, dict[str, float]] = {}
+        for r in rows:
+            hid = r['cari_hesap_id']
+            if hid not in result:
+                result[hid] = empty_islem_totals()
+            tur = r['islem_turu']
+            if tur in result[hid]:
+                result[hid][tur] = float(r['t'] or 0)
+        return result
+
+    def _son_hareket_map(self, hesap_ids):
+        """Her cari için son hareket (PostgreSQL DISTINCT ON)."""
+        if not hesap_ids:
+            return {}
         qs = (
             CariHareket.objects.filter(cari_hesap_id__in=hesap_ids)
             .select_related('islem_yapan')
             .order_by('cari_hesap_id', '-islem_tarihi', '-created_at')
+            .distinct('cari_hesap_id')
         )
-        for h in qs:
-            if h.cari_hesap_id not in result:
-                result[h.cari_hesap_id] = h
-        return result
+        return {h.cari_hesap_id: h for h in qs}
 
     def cari_ozet(self, hesap_id):
         """Cari hesabın borç/alacak ve vade özeti."""
@@ -220,6 +241,7 @@ class CariHesapSelector:
             gvge_tahsilat,
         ) = self._vade_aging_maps(hesap_ids, today)
         son_map = self._son_hareket_map(hesap_ids)
+        islem_totals_map = self._islem_totals_map(hesap_ids)
 
         donem_secili = bool(baslangic or bitis)
         hareket_totals = (
@@ -248,13 +270,9 @@ class CariHesapSelector:
                 borc, alacak = hareket_totals.get(hid, (0.0, 0.0))
             else:
                 borc, alacak = float(hesap.toplam_borc), float(hesap.toplam_alacak)
-            bakiye = borc - alacak
-            if bakiye > 0:
-                bakiye_durumu = 'alacakli'
-            elif bakiye < 0:
-                bakiye_durumu = 'borclu'
-            else:
-                bakiye_durumu = 'dengede'
+            bakiye = net_bakiye(borc, alacak)
+            bakiye_durumu = bakiye_durumu_from_net(bakiye)
+            islem = islem_totals_map.get(hid, empty_islem_totals())
 
             rows.append({
                 'id': hid,
@@ -268,6 +286,12 @@ class CariHesapSelector:
                 'toplam_alacak': alacak,
                 'bakiye': bakiye,
                 'bakiye_durumu': bakiye_durumu,
+                'toplam_satis': islem[CariHareketTuru.SATIS],
+                'toplam_alis': islem[CariHareketTuru.ALIS],
+                'toplam_tahsilat': islem[CariHareketTuru.TAHSILAT],
+                'toplam_odeme': islem[CariHareketTuru.ODEME],
+                'toplam_iade': islem[CariHareketTuru.IADE],
+                'toplam_mahsup': islem[CariHareketTuru.MAHSUP],
                 'vadesi_gelen': vgo + vgt,
                 'vadesi_gecmis': vgc + vgct,
                 'gelecek_vadeli': gvge + gvget,

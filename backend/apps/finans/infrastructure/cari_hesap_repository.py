@@ -11,10 +11,13 @@ class CariHesapRepository:
     """CariHesap entity için CRUD operasyonları."""
 
     @staticmethod
-    def get_by_id(hesap_id):
+    def get_by_id(hesap_id, for_update=False):
         """Aktif (silinmemiş) cari hesabı ID ile getirir."""
         try:
-            return CariHesap.objects.get(pk=hesap_id)
+            qs = CariHesap.objects.filter(pk=hesap_id)
+            if for_update:
+                qs = qs.select_for_update()
+            return qs.get()
         except CariHesap.DoesNotExist:
             return None
 
