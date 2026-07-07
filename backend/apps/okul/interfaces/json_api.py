@@ -1,10 +1,11 @@
 """Okul JSON API — şube kapsamlı CRUD."""
 import json
 
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.ogrenci.interfaces.list_helpers import paginate_queryset
+from apps.okul.application.bulk_import import BulkOkulImportService, build_excel_template
 from apps.okul.application.service import OkulService
 from apps.okul.interfaces.sube_context import (
     assert_okul_record_access,
@@ -173,3 +174,76 @@ def okul_delete_info_api(request, okul_id):
 
     info = service.delete_info(okul_id, ctx['sube_id'])
     return JsonResponse({'success': True, 'data': info})
+
+
+@csrf_exempt
+def okul_bulk_template_api(request):
+    ctx, err = mandatory_okul_context(request)
+    if err:
+        return err
+
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    content = build_excel_template()
+    response = HttpResponse(
+        content,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="okul_sablonu.xlsx"'
+    return response
+
+
+@csrf_exempt
+def okul_bulk_excel_api(request):
+    ctx, err = mandatory_okul_context(request)
+    if err:
+        return err
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    upload = request.FILES.get('file')
+    if not upload:
+        return JsonResponse({'success': False, 'error': 'Excel dosyası gerekli.'}, status=400)
+
+    if not upload.name.lower().endswith(('.xlsx', '.xlsm')):
+        return JsonResponse({'success': False, 'error': 'Yalnızca .xlsx dosyası desteklenir.'}, status=400)
+
+    try:
+        service = BulkOkulImportService()
+        result = service.import_excel(upload, kurum_id=ctx['kurum_id'], sube_id=ctx['sube_id'])
+        return JsonResponse({'success': True, 'data': result.to_dict()})
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': f'Excel okunamadı: {exc}'}, status=400)
+
+
+@csrf_exempt
+def okul_bulk_list_api(request):
+    """Hızlı liste girişi — her satır bir okul adı veya satır nesnesi."""
+    ctx, err = mandatory_okul_context(request)
+    if err:
+        return err
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
+
+    service = BulkOkulImportService()
+
+    if 'rows' in data:
+        rows = data.get('rows') or []
+        if not isinstance(rows, list):
+            return JsonResponse({'success': False, 'error': 'rows listesi bekleniyor.'}, status=400)
+        result = service.import_rows(rows, kurum_id=ctx['kurum_id'], sube_id=ctx['sube_id'])
+    else:
+        adlar = data.get('adlar') or data.get('satirlar') or []
+        if not isinstance(adlar, list):
+            return JsonResponse({'success': False, 'error': 'adlar listesi bekleniyor.'}, status=400)
+        result = service.import_ad_list(adlar, kurum_id=ctx['kurum_id'], sube_id=ctx['sube_id'])
+
+    return JsonResponse({'success': True, 'data': result.to_dict()})

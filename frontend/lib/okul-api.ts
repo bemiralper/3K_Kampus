@@ -1,5 +1,5 @@
 /** Okul API — şube kapsamlı referans veri. */
-import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPostForm, apiPut } from "@/lib/api";
 
 export type OkulRecord = {
   id: number;
@@ -32,6 +32,21 @@ export type OkulAutocompleteItem = {
   id: number;
   ad: string;
   okul_turu: string;
+};
+
+export type OkulBulkImportError = {
+  satir: number;
+  ad: string;
+  neden: string;
+};
+
+export type OkulBulkImportResult = {
+  toplam_satir: number;
+  eklenen: number;
+  guncellenen: number;
+  atlanan: number;
+  hatali: number;
+  hatalar: OkulBulkImportError[];
 };
 
 export type OkulFormData = {
@@ -77,8 +92,11 @@ const DEFAULT_PAGINATION: OkulPagination = {
 
 export async function fetchOkullar(params: OkulListParams = {}): Promise<OkulListResponse> {
   const res = await apiGet<OkulRecord[]>(`${BASE}${buildQuery(params)}`);
+  if (!res.success) {
+    throw new Error(res.error || "Okul listesi alınamadı.");
+  }
   return {
-    success: Boolean(res.success),
+    success: true,
     data: (res.data as OkulRecord[] | undefined) || [],
     pagination: (res.pagination as OkulPagination | undefined) || DEFAULT_PAGINATION,
   };
@@ -117,4 +135,31 @@ export async function fetchOkulDeleteInfo(id: number): Promise<{
   );
   if (!res.data) throw new Error(res.error || "Silme bilgisi alınamadı.");
   return res.data;
+}
+
+export async function downloadOkulTemplate(): Promise<Blob> {
+  const { getContextHeaders, ensureCsrfCookie, resolveApiUrl } = await import("@/lib/api");
+  await ensureCsrfCookie();
+  const res = await fetch(resolveApiUrl(`${BASE}/toplu/sablon/`), {
+    credentials: "include",
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) throw new Error("Şablon indirilemedi.");
+  return res.blob();
+}
+
+export async function bulkImportOkulExcel(file: File): Promise<OkulBulkImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await apiPostForm<OkulBulkImportResult>(`${BASE}/toplu/excel/`, formData);
+  if (!res.success || !res.data) {
+    throw new Error(res.error || "Excel içe aktarma başarısız.");
+  }
+  return res.data as OkulBulkImportResult;
+}
+
+export async function bulkImportOkulList(adlar: string[]): Promise<OkulBulkImportResult> {
+  const res = await apiPost<OkulBulkImportResult>(`${BASE}/toplu/`, { adlar });
+  if (!res.data) throw new Error(res.error || "Toplu ekleme başarısız.");
+  return res.data as OkulBulkImportResult;
 }
