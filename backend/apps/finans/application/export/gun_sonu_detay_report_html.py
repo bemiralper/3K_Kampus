@@ -55,40 +55,64 @@ def build_gun_sonu_detay_html(report: dict, *, orientation: str = 'landscape') -
         if logo else f'<div class="logo-fallback">{logo_fallback}</div>'
     )
 
-    # ── Section builders ──
+    # ── Yönetici özeti ──
+    yo = detay.get('yonetici_ozeti') or {}
+    uyarilar = detay.get('uyarilar') or []
+    uyari_html = ''.join(
+        f'<p class="alert alert-{_esc(u.get("seviye", "bilgi"))}">{_esc(u.get("mesaj", ""))}</p>'
+        for u in uyarilar
+    ) if uyarilar else ''
+    yo_cards = ''
+    if yo:
+        yo_items = [
+            ('Yeni Öğrenci', yo.get('yeni_ogrenci', 0)),
+            ('Yeni Sözleşme', yo.get('yeni_sozlesme', 0)),
+            ('Tahsilat', _fmt_tl(yo.get('tahsilat'))),
+            ('Gelir', _fmt_tl(yo.get('gelir'))),
+            ('Gider', _fmt_tl(yo.get('gider'))),
+            ('İade', _fmt_tl(yo.get('iade'))),
+            ('İptal', yo.get('iptal', 0)),
+            ('Bekleyen Tahsilat', _fmt_tl(yo.get('bekleyen_tahsilatlar'))),
+        ]
+        yo_cards = '<div class="summary-row">' + ''.join(
+            f'<div class="chip"><span>{_esc(l)}</span><strong>{_esc(str(v))}</strong></div>'
+            for l, v in yo_items
+        ) + '</div>'
+
     tahsilat_rows = [
-        [r['saat'], r['makbuz'], r['ogrenci'], r['veli'], r['odeme_turu'], _fmt_tl(r['tutar']), r['personel']]
+        [r['saat'], r.get('sozlesme_no', ''), r['makbuz'], r['ogrenci'], r['veli'],
+         r.get('taksit_no', ''), r.get('odeme_donemi', ''), r['odeme_turu'], _fmt_tl(r['tutar']), r['personel'], r.get('aciklama', '')]
         for r in detay.get('tahsilat_listesi') or []
     ]
     sec1 = _section('1. Tahsilat Listesi', _table(
-        ['Saat', 'Makbuz', 'Öğrenci', 'Veli', 'Ödeme Türü', 'Tutar', 'Alan Personel'],
-        tahsilat_rows, right_cols={5},
+        ['Saat', 'Sözleşme', 'Makbuz', 'Öğrenci', 'Veli', 'Taksit', 'Dönem', 'Ödeme', 'Tutar', 'Personel', 'Açıklama'],
+        tahsilat_rows, right_cols={8},
     ))
 
     gelir_rows = [
-        [r['saat'], r['gelir_kodu'], r['kategori'], r['aciklama'], _fmt_tl(r['tutar']), r['personel']]
+        [r['saat'], r['gelir_kodu'], r['kategori'], r.get('kasa', ''), r.get('odeme_turu', ''), r.get('belge_no', ''), r['aciklama'], _fmt_tl(r['tutar']), r['personel']]
         for r in detay.get('gelir_hareketleri') or []
     ]
     sec2 = _section('2. Gelir Hareketleri', _table(
-        ['Saat', 'Gelir Kodu', 'Kategori', 'Açıklama', 'Tutar', 'Personel'],
-        gelir_rows, right_cols={4},
+        ['Saat', 'Kod', 'Kategori', 'Kasa', 'Ödeme', 'Belge', 'Açıklama', 'Tutar', 'Personel'],
+        gelir_rows, right_cols={7},
     ))
 
     gider_rows = [
-        [r['saat'], r['gider_kodu'], r['kategori'], r['aciklama'], _fmt_tl(r['tutar']), r['personel']]
+        [r['saat'], r['gider_kodu'], r['kategori'], r.get('cari', ''), r.get('odeme_turu', ''), r.get('kasa', ''), r['aciklama'], r.get('onaylayan', ''), _fmt_tl(r['tutar']), r['personel']]
         for r in detay.get('gider_hareketleri') or []
     ]
     sec3 = _section('3. Gider Hareketleri', _table(
-        ['Saat', 'Gider Kodu', 'Kategori', 'Açıklama', 'Tutar', 'Personel'],
-        gider_rows, right_cols={4},
+        ['Saat', 'Kod', 'Kategori', 'Cari', 'Ödeme', 'Kasa', 'Açıklama', 'Onaylayan', 'Tutar', 'Personel'],
+        gider_rows, right_cols={8},
     ))
 
     cari_rows = [
         [r['cari'], _fmt_tl(r['borc']), _fmt_tl(r['alacak']), _fmt_tl(r['bakiye'])]
         for r in detay.get('cari_hareketleri') or []
     ]
-    sec4 = _section('4. Cari Hareketleri', _table(
-        ['Cari', 'Borç', 'Alacak', 'Bakiye'], cari_rows, right_cols={1, 2, 3},
+    sec4 = _section('4. Cari Hareketleri (Bugün)', _table(
+        ['Cari', 'Borç', 'Alacak', 'Gün Sonu Bakiyesi'], cari_rows, right_cols={1, 2, 3},
     ))
 
     iptal_rows = [
@@ -144,38 +168,45 @@ def build_gun_sonu_detay_html(report: dict, *, orientation: str = 'landscape') -
 
     kasa = detay.get('kasa_ozeti') or {}
     kasa_rows = [
-        ['Açılış Kasa', _fmt_tl(kasa.get('acilis_kasa'))],
-        ['Günlük Giriş', _fmt_tl(kasa.get('gunluk_giris'))],
-        ['Günlük Çıkış', _fmt_tl(kasa.get('gunluk_cikis'))],
+        ['Açılış Kasası', _fmt_tl(kasa.get('acilis_kasa'))],
+        ['Nakit Tahsilatlar', _fmt_tl(kasa.get('nakit_tahsilatlar'))],
+        ['Nakit Gelirler', _fmt_tl(kasa.get('nakit_gelirler'))],
+        ['Nakit Giderler', _fmt_tl(kasa.get('nakit_giderler'))],
+        ['Kasaya Para Girişi', _fmt_tl(kasa.get('kasaya_para_girisi'))],
+        ['Kasadan Para Çıkışı', _fmt_tl(kasa.get('kasadan_para_cikisi'))],
+        ['Bankaya Aktarım', _fmt_tl(kasa.get('bankaya_aktarim'))],
+        ['Bankadan Kasaya Aktarım', _fmt_tl(kasa.get('bankadan_kasaya_aktarim'))],
         ['Beklenen Kasa', _fmt_tl(kasa.get('beklenen_kasa'))],
         ['Sayılan Kasa', '—' if kasa.get('sayilan_kasa') is None else _fmt_tl(kasa['sayilan_kasa'])],
         ['Kasa Farkı', _fmt_tl(kasa.get('kasa_farki'))],
     ]
+    kasa_note = ''
+    if kasa.get('kasa_farki') and kasa.get('sayim_yapildi'):
+        kasa_note = f'<p class="alert alert-kritik">Kasa farkı: {_fmt_tl(kasa.get("kasa_farki"))}</p>'
     sec11 = _section(
         '11. Kasa Özeti',
-        _table(['Kalem', 'Tutar'], kasa_rows, right_cols={1})
+        kasa_note + _table(['Kalem', 'Tutar'], kasa_rows, right_cols={1})
         + (f'<p class="note">{_esc(kasa.get("not", ""))}</p>' if kasa.get('not') else ''),
     )
 
     sistem = detay.get('sistem') or {}
-    filtreler = sistem.get('filtreler') or {}
     sys_rows = [
         ['Oluşturma Tarihi', sistem.get('olusturma_tarihi', '')],
         ['Raporu Oluşturan', sistem.get('raporu_olusturan', '')],
         ['Şube', sistem.get('sube', '')],
         ['Tarih', sistem.get('tarih', '')],
-        ['Kurum ID', filtreler.get('kurum_id', '')],
-        ['Şube ID', filtreler.get('sube_id') or 'Tümü'],
     ]
-    sec12 = _section('12. Sistem Bilgileri', _table(['Alan', 'Değer'], sys_rows))
+    sec12 = _section('12. Rapor Bilgileri', _table(['Alan', 'Değer'], sys_rows))
 
     ozet_cards = f"""
     <div class="summary-row">
       <div class="chip"><span>Toplam Tahsilat</span><strong>{_fmt_tl(ozet.get('toplam_tahsilat'))}</strong></div>
       <div class="chip"><span>Toplam Gelir</span><strong>{_fmt_tl(ozet.get('toplam_gelir'))}</strong></div>
       <div class="chip"><span>Toplam Gider</span><strong>{_fmt_tl(ozet.get('toplam_gider'))}</strong></div>
-      <div class="chip"><span>Net Nakit</span><strong>{_fmt_tl(ozet.get('net_nakit_girisi'))}</strong></div>
+      <div class="chip"><span>Net Nakit (Kasa)</span><strong>{_fmt_tl(ozet.get('net_nakit_girisi'))}</strong></div>
     </div>
+    {uyari_html}
+    {yo_cards}
     """
 
     return f"""<!DOCTYPE html>
@@ -232,6 +263,10 @@ def build_gun_sonu_detay_html(report: dict, *, orientation: str = 'landscape') -
     .chip span {{ display: block; font-size: 7px; color: #64748b; text-transform: uppercase; }}
     .chip strong {{ font-size: 12px; color: {BRAND_PRIMARY}; }}
     .note, .muted {{ font-size: 8px; color: #64748b; font-style: italic; }}
+    .alert {{ font-size: 8px; padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; }}
+    .alert-kritik {{ background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }}
+    .alert-uyari {{ background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }}
+    .alert-bilgi {{ background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }}
     .footer {{
       margin-top: 16px; padding-top: 8px; border-top: 1px solid #e2e8f0;
       font-size: 7px; color: #94a3b8; display: flex; justify-content: space-between;

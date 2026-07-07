@@ -134,12 +134,15 @@ export interface GunSonuOzetRapor {
   meta: GunSonuOzetRaporMeta;
   gunluk_ozet: {
     toplam_tahsilat: number;
+    toplam_alinan?: number;
     toplam_iade: number;
     toplam_gelir: number;
     toplam_gider: number;
     net_nakit_girisi: number;
+    net_gunluk_finansal_sonuc?: number;
   };
   tahsilat_dagilimi: { tip: string; label: string; tutar: number; adet: number | null }[];
+  tahsilat_ozeti?: { tip: string; label: string; tutar: number; adet: number; yuzde?: number; is_total?: boolean }[];
   islem_sayilari: {
     tahsilat: number;
     gelir_kaydi: number;
@@ -160,58 +163,154 @@ export interface GunSonuDetayRapor {
     tarih: string;
     hazirlayan: string;
   };
+  yonetici_ozeti?: {
+    yeni_ogrenci: number;
+    yeni_sozlesme: number;
+    tahsilat: number;
+    gelir: number;
+    gider: number;
+    iade: number;
+    iptal: number;
+    gecikmeye_dusen_yeni_taksit: number;
+    bekleyen_tahsilatlar: number;
+    kesilen_fatura: number;
+  };
+  uyarilar?: { seviye: string; mesaj: string }[];
   ozet: GunSonuOzetRapor["gunluk_ozet"];
+  gunluk_finans_ozeti?: {
+    toplam_sozlesme_tutari: number;
+    gunluk_tahsilat: number;
+    gunluk_gelir: number;
+    gunluk_gider: number;
+    gunluk_iade: number;
+    gunluk_iskonto: number;
+    bekleyen_tahsilatlar: number;
+    net_gunluk_finansal_sonuc: number;
+  };
+  tahsilat_ozeti?: { tip: string; label: string; tutar: number; adet: number; yuzde?: number; is_total?: boolean }[];
   tahsilat_listesi: {
     saat: string;
+    sozlesme_no?: string;
     makbuz: string;
     ogrenci: string;
     veli: string;
+    taksit_no?: string | number;
+    odeme_donemi?: string;
     odeme_turu: string;
     tutar: number;
     personel: string;
-    sozlesme_no?: string;
+    aciklama?: string;
   }[];
   gelir_hareketleri: {
     saat: string;
     gelir_kodu: string;
     kategori: string;
     aciklama: string;
+    kasa?: string;
+    odeme_turu?: string;
+    belge_no?: string;
     tutar: number;
     personel: string;
-    odeme_turu?: string;
   }[];
   gider_hareketleri: {
     saat: string;
     gider_kodu: string;
     kategori: string;
+    cari?: string;
+    odeme_turu?: string;
+    kasa?: string;
     aciklama: string;
+    onaylayan?: string;
     tutar: number;
     personel: string;
   }[];
   cari_hareketleri: { cari: string; borc: number; alacak: number; bakiye: number }[];
+  ogrenci_hareketleri?: {
+    yeni_on_kayit: { ogrenci: string; tarih: string; giris_turu?: string }[];
+    yeni_kesin_kayit: { ogrenci: string; tarih: string; giris_turu?: string }[];
+    kayit_iptalleri: { ogrenci: string; tarih: string; aciklama: string }[];
+    nakil_islemleri: { ogrenci: string; tarih: string; aciklama: string }[];
+    ayrilan_ogrenciler: { ogrenci: string; tarih: string; aciklama: string }[];
+    ozet: Record<string, number>;
+  };
   iptal_islemleri: {
     saat: string;
     islem_no: string;
+    islem_turu?: string;
+    eski_tutar?: number;
+    yeni_durum?: string;
     tur: string;
     sebep: string;
     kullanici: string;
     tutar?: number;
   }[];
-  iade_islemleri: { saat: string; ogrenci: string; tutar: number; aciklama: string }[];
+  iade_islemleri: {
+    saat: string;
+    ogrenci: string;
+    iade_nedeni?: string;
+    tutar: number;
+    iade_tarihi?: string;
+    onaylayan?: string;
+    kullanici?: string;
+    aciklama: string;
+  }[];
   odeme_turu_dagilimi: {
-    ozet: { tip: string; label: string; tutar: number; adet: number | null }[];
+    ozet: { tip: string; label: string; tutar: number; adet: number | null; yuzde?: number }[];
     detay: { kaynak: string; saat: string; odeme_turu: string; tutar: number; aciklama: string }[];
   };
   kategori_gelirler: { kategori: string; tutar: number; is_total?: boolean }[];
   kategori_giderler: { kategori: string; tutar: number; is_total?: boolean }[];
+  personel_performans?: {
+    personel: string;
+    tahsilat_sayisi: number;
+    tahsilat_tutari: number;
+    gelir_sayisi: number;
+    gider_sayisi: number;
+    iade_sayisi: number;
+    iptal_sayisi: number;
+    toplam_islem: number;
+  }[];
   kullanici_islem_detayi: {
     personel: string;
     islemler: { saat: string; tur: string; aciklama: string; tutar: number }[];
     toplam: number;
     adet: number;
   }[];
+  kasa_hareketleri?: {
+    saat: string;
+    kasa: string;
+    yon: string;
+    kaynak: string;
+    tutar: number;
+    aciklama: string;
+    personel: string;
+  }[];
+  banka_hareketleri?: {
+    havale: number;
+    eft: number;
+    banka_girisleri: number;
+    banka_cikislari: number;
+    banka_bazli_toplamlar: { banka: string; giris: number; cikis: number; net: number }[];
+    detay: { saat: string; banka: string; yon: string; tur: string; tutar: number; aciklama: string }[];
+  };
+  pos_hareketleri?: {
+    pos_cihazi: string;
+    banka: string;
+    kart_turu: string;
+    tutar: number;
+    islem_sayisi: number;
+  }[];
   kasa_ozeti: {
     acilis_kasa: number;
+    nakit_tahsilatlar?: number;
+    nakit_gelirler?: number;
+    nakit_giderler?: number;
+    nakit_iadeler?: number;
+    kasaya_para_girisi?: number;
+    kasadan_para_cikisi?: number;
+    bankaya_aktarim?: number;
+    bankadan_kasaya_aktarim?: number;
+    kasa_virmanlari?: number;
     gunluk_giris: number;
     gunluk_cikis: number;
     beklenen_kasa: number;
@@ -220,12 +319,17 @@ export interface GunSonuDetayRapor {
     sayim_yapildi?: boolean;
     not?: string;
   };
+  grafikler?: {
+    odeme_turu_dagilimi: { label: string; tutar: number }[];
+    gelir_dagilimi: { label: string; tutar: number }[];
+    gider_dagilimi: { label: string; tutar: number }[];
+    saatlik_tahsilat: { saat: string; tutar: number }[];
+  };
   sistem: {
-    olusturma_tarihi: string;
+    olusturulma_tarihi: string;
     raporu_olusturan: string;
     sube: string;
     tarih: string;
-    filtreler: Record<string, unknown>;
   };
   notlar: string;
   islem_sayilari?: GunSonuOzetRapor["islem_sayilari"];

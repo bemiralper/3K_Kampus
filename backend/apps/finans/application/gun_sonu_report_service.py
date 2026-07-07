@@ -9,6 +9,16 @@ from datetime import date, datetime
 from django.db.models import Count, Sum
 from django.utils import timezone
 
+from apps.finans.application.gun_sonu_finans_helpers import (
+    RAPOR_ODEME_KOVASI,
+    RAPOR_ODEME_LABELS,
+    bugun_alinan_toplam,
+    bugun_islem_q,
+    gun_local_datetime_q,
+    kova_listesi_with_yuzde,
+    net_nakit_degisim,
+    odeme_kirilimi_topla,
+)
 from apps.finans.application.gun_sonu_service import GunSonuService
 from apps.finans.constants.cari_types import GelirDurum
 from apps.finans.constants.gider_types import GiderDurum, OdemeDurum
@@ -44,14 +54,8 @@ def _fmt_tl(amount: int | float) -> str:
 class GunSonuReportService:
     """Gün sonu özet raporu veri katmanı."""
 
-    RAPOR_TAHSILAT_BUCKETS = ('nakit', 'kredi_karti', 'havale', 'online')
-
-    RAPOR_BUCKET_LABELS = {
-        'nakit': 'Nakit',
-        'kredi_karti': 'Kredi Kartı',
-        'havale': 'Havale/EFT',
-        'online': 'Online Ödeme',
-    }
+    RAPOR_TAHSILAT_BUCKETS = RAPOR_ODEME_KOVASI
+    RAPOR_BUCKET_LABELS = RAPOR_ODEME_LABELS
 
     def __init__(self):
         self._gun_sonu = GunSonuService()
@@ -66,9 +70,11 @@ class GunSonuReportService:
         notlar: str = '',
         kurum_ad: str | None = None,
         sube_ad: str | None = None,
+        base: dict | None = None,
     ) -> dict:
         gun = gun or date.today()
-        base = self._gun_sonu.ozet(kurum_id, gun, sube_id)
+        if base is None:
+            base = self._gun_sonu.ozet(kurum_id, gun, sube_id)
 
         sozlesme_tahsilat, sozlesme_adet = self._sozlesme_tahsilat(kurum_id, gun, sube_id)
         gelir_tahsilat, gelir_tahsilat_adet = self._gelir_tahsilat(kurum_id, gun, sube_id)
@@ -79,9 +85,12 @@ class GunSonuReportService:
         toplam_gelir = gelir_tahsilat
         toplam_gider = gider_odeme
         toplam_iade = iade_toplam
-        net_nakit_girisi = toplam_tahsilat + toplam_gelir - toplam_gider - toplam_iade
+        net_nakit_girisi = net_nakit_degisim(kurum_id, gun, sube_id)
+        net_gunluk_finansal = toplam_tahsilat + toplam_gelir - toplam_gider - toplam_iade
 
-        tahsilat_dagilimi = self._tahsilat_dagilimi_rapor(base['tahsilatlar']['kirilim'])
+        odeme_kova = odeme_kirilimi_topla(kurum_id, gun, sube_id)
+        tahsilat_dagilimi = kova_listesi_with_yuzde(odeme_kova)
+        tahsilat_dagilimi_rapor = self._tahsilat_dagilimi_rapor(tahsilat_dagilimi)
         islem_sayilari = self._islem_sayilari(kurum_id, gun, sube_id, {
             'tahsilat': sozlesme_adet + gelir_tahsilat_adet,
             'iade': iade_adet,
@@ -111,12 +120,15 @@ class GunSonuReportService:
                 'meta': meta,
                 'gunluk_ozet': {
                     'toplam_tahsilat': toplam_tahsilat,
+                    'toplam_alinan': bugun_alinan_toplam(kurum_id, gun, sube_id),
                     'toplam_iade': toplam_iade,
                     'toplam_gelir': toplam_gelir,
                     'toplam_gider': toplam_gider,
                     'net_nakit_girisi': net_nakit_girisi,
+                    'net_gunluk_finansal_sonuc': net_gunluk_finansal,
                 },
-                'tahsilat_dagilimi': tahsilat_dagilimi,
+                'tahsilat_dagilimi': tahsilat_dagilimi_rapor,
+                'tahsilat_ozeti': tahsilat_dagilimi,
                 'islem_sayilari': islem_sayilari,
                 'kullanici_ozeti': kullanici_ozeti,
                 'notlar': (notlar or '').strip(),
@@ -168,9 +180,10 @@ class GunSonuReportService:
 
         qs = Tahsilat.objects.filter(
             sozlesme__kurum_id=kurum_id,
-            tahsilat_tarihi=gun,
             durum=TahsilatDurum.AKTIF,
-        ).exclude(tahsilat_turu=TahsilatTuru.IADE)
+        ).exclude(tahsilat_turu=TahsilatTuru.IADE).filter(
+            bugun_islem_q('tahsilat_tarihi', gun),
+        )
         if sube_id:
             qs = qs.filter(sozlesme__sube_id=sube_id)
         agg = qs.aggregate(toplam=Sum('tutar'), adet=Count('id'))
@@ -179,9 +192,8 @@ class GunSonuReportService:
     def _gelir_tahsilat(self, kurum_id, gun, sube_id):
         qs = GelirTahsilat.objects.filter(
             gelir_kaydi__kurum_id=kurum_id,
-            tahsilat_tarihi=gun,
             durum=OdemeDurum.TAMAMLANDI,
-        )
+        ).filter(bugun_islem_q('tahsilat_tarihi', gun))
         if sube_id:
             qs = qs.filter(gelir_kaydi__sube_id=sube_id)
         agg = qs.aggregate(toplam=Sum('tutar'), adet=Count('id'))
@@ -213,20 +225,25 @@ class GunSonuReportService:
         return int(agg['toplam'] or 0), agg['adet'] or 0
 
     def _tahsilat_dagilimi_rapor(self, kirilim: list[dict]) -> list[dict]:
-        bucket_map = {k['tip']: k for k in kirilim}
+        """Özet rapor B bölümü — geriye dönük uyumlu format."""
         rows = []
-        toplam = 0
-        for tip in self.RAPOR_TAHSILAT_BUCKETS:
-            row = bucket_map.get(tip, {'toplam': 0, 'adet': 0})
-            tutar = int(row.get('toplam') or 0)
-            toplam += tutar
-            rows.append({
-                'tip': tip,
-                'label': self.RAPOR_BUCKET_LABELS[tip],
-                'tutar': tutar,
-                'adet': int(row.get('adet') or 0),
-            })
-        rows.append({'tip': 'toplam', 'label': 'Toplam', 'tutar': toplam, 'adet': None})
+        for row in kirilim:
+            if row.get('is_total'):
+                rows.append({
+                    'tip': 'toplam',
+                    'label': 'Toplam',
+                    'tutar': row['tutar'],
+                    'adet': None,
+                })
+            else:
+                rows.append({
+                    'tip': row['tip'],
+                    'label': row['label'],
+                    'tutar': row['tutar'],
+                    'adet': row.get('adet'),
+                })
+        if not rows:
+            rows.append({'tip': 'toplam', 'label': 'Toplam', 'tutar': 0, 'adet': None})
         return rows
 
     def _islem_sayilari(self, kurum_id, gun, sube_id, partial: dict) -> dict:
@@ -255,29 +272,40 @@ class GunSonuReportService:
 
         t_qs = Tahsilat.objects.filter(
             sozlesme__kurum_id=kurum_id,
-            iptal_tarihi__date=gun,
             durum=TahsilatDurum.IPTAL_EDILDI,
-        )
+        ).filter(gun_local_datetime_q('iptal_tarihi', gun))
         if sube_id:
             t_qs = t_qs.filter(sozlesme__sube_id=sube_id)
+
+        gt_qs = GelirTahsilat.objects.filter(
+            gelir_kaydi__kurum_id=kurum_id,
+            durum=OdemeDurum.IPTAL,
+        ).filter(gun_local_datetime_q('updated_at', gun))
+        if sube_id:
+            gt_qs = gt_qs.filter(gelir_kaydi__sube_id=sube_id)
+
+        go_qs = GiderOdeme.objects.filter(
+            gider_kaydi__kurum_id=kurum_id,
+            durum=OdemeDurum.IPTAL,
+        ).filter(gun_local_datetime_q('updated_at', gun))
+        if sube_id:
+            go_qs = go_qs.filter(gider_kaydi__sube_id=sube_id)
 
         gk_qs = GelirKaydi.objects.filter(
             kurum_id=kurum_id,
             durum=GelirDurum.IPTAL,
-            updated_at__date=gun,
-        )
+        ).filter(gun_local_datetime_q('updated_at', gun))
         if sube_id:
             gk_qs = gk_qs.filter(sube_id=sube_id)
 
         gd_qs = GiderKaydi.objects.filter(
             kurum_id=kurum_id,
             durum=GiderDurum.IPTAL,
-            updated_at__date=gun,
-        )
+        ).filter(gun_local_datetime_q('updated_at', gun))
         if sube_id:
             gd_qs = gd_qs.filter(sube_id=sube_id)
 
-        return t_qs.count() + gk_qs.count() + gd_qs.count()
+        return t_qs.count() + gt_qs.count() + go_qs.count() + gk_qs.count() + gd_qs.count()
 
     def _kullanici_ozeti(self, kurum_id, gun, sube_id) -> list[dict]:
         from apps.odeme_takip.domain.models import Tahsilat
@@ -286,9 +314,10 @@ class GunSonuReportService:
 
         t_qs = Tahsilat.objects.filter(
             sozlesme__kurum_id=kurum_id,
-            tahsilat_tarihi=gun,
             durum=TahsilatDurum.AKTIF,
-        ).exclude(tahsilat_turu=TahsilatTuru.IADE).select_related('islem_yapan')
+        ).exclude(tahsilat_turu=TahsilatTuru.IADE).filter(
+            bugun_islem_q('tahsilat_tarihi', gun),
+        ).select_related('islem_yapan')
         if sube_id:
             t_qs = t_qs.filter(sozlesme__sube_id=sube_id)
         for row in t_qs.values('islem_yapan_id').annotate(toplam=Sum('tutar')):
@@ -298,9 +327,8 @@ class GunSonuReportService:
 
         gt_qs = GelirTahsilat.objects.filter(
             gelir_kaydi__kurum_id=kurum_id,
-            tahsilat_tarihi=gun,
             durum=OdemeDurum.TAMAMLANDI,
-        ).select_related('islem_yapan')
+        ).filter(bugun_islem_q('tahsilat_tarihi', gun)).select_related('islem_yapan')
         if sube_id:
             gt_qs = gt_qs.filter(gelir_kaydi__sube_id=sube_id)
         for row in gt_qs.values('islem_yapan_id').annotate(toplam=Sum('tutar')):
