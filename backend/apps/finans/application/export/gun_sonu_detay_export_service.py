@@ -71,9 +71,10 @@ class GunSonuDetayExportService:
         write_section('Özet', ['Kalem', 'Tutar'], cls._ozet_rows(detay))
         write_section(
             'Tahsilatlar',
-            ['Saat', 'Makbuz', 'Öğrenci', 'Veli', 'Ödeme Türü', 'Tutar', 'Personel'],
+            ['Saat', 'Sözleşme No', 'Makbuz', 'Öğrenci', 'Veli', 'Taksit', 'Dönem', 'Ödeme Türü', 'Tutar', 'Personel', 'Açıklama'],
             [
-                [r['saat'], r['makbuz'], r['ogrenci'], r['veli'], r['odeme_turu'], r['tutar'], r['personel']]
+                [r['saat'], r.get('sozlesme_no', ''), r['makbuz'], r['ogrenci'], r['veli'],
+                 r.get('taksit_no', ''), r.get('odeme_donemi', ''), r['odeme_turu'], r['tutar'], r['personel'], r.get('aciklama', '')]
                 for r in detay.get('tahsilat_listesi') or []
             ],
         )
@@ -187,10 +188,11 @@ class GunSonuDetayExportService:
         write_sheet('Özet', ['Kalem', 'Tutar (TL)'], cls._ozet_rows(detay), money_cols={2})
         write_sheet(
             'Tahsilatlar',
-            ['Saat', 'Makbuz', 'Öğrenci', 'Veli', 'Ödeme Türü', 'Tutar', 'Personel'],
-            [[r['saat'], r['makbuz'], r['ogrenci'], r['veli'], r['odeme_turu'], r['tutar'], r['personel']]
+            ['Saat', 'Sözleşme', 'Makbuz', 'Öğrenci', 'Veli', 'Taksit', 'Dönem', 'Ödeme', 'Tutar', 'Personel'],
+            [[r['saat'], r.get('sozlesme_no', ''), r['makbuz'], r['ogrenci'], r['veli'],
+              r.get('taksit_no', ''), r.get('odeme_donemi', ''), r['odeme_turu'], r['tutar'], r['personel']]
              for r in detay.get('tahsilat_listesi') or []],
-            money_cols={6},
+            money_cols={9},
         )
         write_sheet(
             'Gelirler',
@@ -250,6 +252,40 @@ class GunSonuDetayExportService:
 
         write_sheet('Kasa Özeti', ['Kalem', 'Tutar'], cls._kasa_rows(detay.get('kasa_ozeti') or {}), money_cols={2})
 
+        write_sheet(
+            'Kasa Hareketleri',
+            ['Saat', 'Kasa', 'Yön', 'Kaynak', 'Tutar', 'Açıklama', 'Personel'],
+            [[r['saat'], r['kasa'], r['yon'], r['kaynak'], r['tutar'], r.get('aciklama', ''), r['personel']]
+             for r in detay.get('kasa_hareketleri') or []],
+            money_cols={5},
+        )
+
+        banka = detay.get('banka_hareketleri') or {}
+        write_sheet(
+            'Banka Hareketleri',
+            ['Saat', 'Banka', 'Yön', 'Tür', 'Tutar', 'Açıklama'],
+            [[r['saat'], r['banka'], r['yon'], r['tur'], r['tutar'], r.get('aciklama', '')]
+             for r in banka.get('detay') or []],
+            money_cols={5},
+        )
+
+        write_sheet(
+            'POS Hareketleri',
+            ['POS Cihazı', 'Banka', 'Kart Türü', 'Tutar', 'İşlem Sayısı'],
+            [[r['pos_cihazi'], r['banka'], r['kart_turu'], r['tutar'], r['islem_sayisi']]
+             for r in detay.get('pos_hareketleri') or []],
+            money_cols={4},
+        )
+
+        write_sheet(
+            'Personel Performans',
+            ['Personel', 'Tahsilat Adet', 'Tahsilat Tutarı', 'Gelir', 'Gider', 'İade', 'İptal', 'Toplam İşlem'],
+            [[r['personel'], r['tahsilat_sayisi'], r['tahsilat_tutari'], r['gelir_sayisi'],
+              r['gider_sayisi'], r['iade_sayisi'], r['iptal_sayisi'], r['toplam_islem']]
+             for r in detay.get('personel_performans') or []],
+            money_cols={3},
+        )
+
         buf = io.BytesIO()
         wb.save(buf)
         response = HttpResponse(
@@ -262,20 +298,30 @@ class GunSonuDetayExportService:
     @staticmethod
     def _ozet_rows(detay: dict) -> list[list]:
         ozet = detay.get('ozet') or {}
-        return [
-            ['Toplam Tahsilat', ozet.get('toplam_tahsilat', 0)],
+        finans = detay.get('gunluk_finans_ozeti') or {}
+        rows = [
+            ['Toplam Tahsilat (Sözleşme)', ozet.get('toplam_tahsilat', 0)],
+            ['Toplam Alınan (Dashboard uyumlu)', ozet.get('toplam_alinan', 0)],
             ['Toplam Gelir', ozet.get('toplam_gelir', 0)],
             ['Toplam Gider', ozet.get('toplam_gider', 0)],
             ['Toplam İade', ozet.get('toplam_iade', 0)],
-            ['Net Nakit Girişi', ozet.get('net_nakit_girisi', 0)],
+            ['Net Nakit (Kasa)', ozet.get('net_nakit_girisi', 0)],
         ]
+        if finans:
+            rows.append(['Net Günlük Finansal Sonuç', finans.get('net_gunluk_finansal_sonuc', 0)])
+        return rows
 
     @staticmethod
     def _kasa_rows(kasa: dict) -> list[list]:
         return [
-            ['Açılış Kasa', kasa.get('acilis_kasa', 0)],
-            ['Günlük Giriş', kasa.get('gunluk_giris', 0)],
-            ['Günlük Çıkış', kasa.get('gunluk_cikis', 0)],
+            ['Açılış Kasası', kasa.get('acilis_kasa', 0)],
+            ['Nakit Tahsilatlar', kasa.get('nakit_tahsilatlar', 0)],
+            ['Nakit Gelirler', kasa.get('nakit_gelirler', 0)],
+            ['Nakit Giderler', kasa.get('nakit_giderler', 0)],
+            ['Kasaya Para Girişi', kasa.get('kasaya_para_girisi', 0)],
+            ['Kasadan Para Çıkışı', kasa.get('kasadan_para_cikisi', 0)],
+            ['Bankaya Aktarım', kasa.get('bankaya_aktarim', 0)],
+            ['Bankadan Kasaya Aktarım', kasa.get('bankadan_kasaya_aktarim', 0)],
             ['Beklenen Kasa', kasa.get('beklenen_kasa', 0)],
             ['Sayılan Kasa', kasa.get('sayilan_kasa') if kasa.get('sayilan_kasa') is not None else ''],
             ['Kasa Farkı', kasa.get('kasa_farki', 0)],

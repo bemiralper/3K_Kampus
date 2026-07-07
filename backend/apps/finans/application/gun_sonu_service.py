@@ -18,6 +18,7 @@ from apps.finans.constants.account_types import MaliHesapTipi
 from apps.finans.domain.financial_account import MaliHesap
 from apps.finans.domain.gelir_tahsilat import GelirTahsilat
 from apps.finans.domain.gider_odeme import GiderOdeme
+from apps.finans.application.gun_sonu_finans_helpers import bugun_islem_q
 from apps.finans.infrastructure.bakiye_hareketi_repository import BakiyeHareketiRepository
 
 
@@ -65,25 +66,12 @@ class GunSonuService:
 
     def _tip_bucket(self, tip):
         """OdemeYontemiTipi → Gün Sonu ekranındaki kova adı."""
-        mapping = {
-            OdemeYontemiTipi.NAKIT: 'nakit',
-            OdemeYontemiTipi.POS: 'kredi_karti',
-            OdemeYontemiTipi.HAVALE_EFT: 'havale',
-            OdemeYontemiTipi.ONLINE: 'online',
-            OdemeYontemiTipi.CEK: 'cek_senet',
-            OdemeYontemiTipi.SENET: 'cek_senet',
-        }
-        return mapping.get(tip, 'diger')
+        from apps.finans.application.gun_sonu_finans_helpers import odeme_tip_to_bucket
+        return odeme_tip_to_bucket(tip)
 
     def _bucket_labels(self):
-        return {
-            'nakit': 'Nakit',
-            'kredi_karti': 'Kredi Kartı / POS',
-            'havale': 'Havale / EFT',
-            'online': 'Online Ödeme',
-            'cek_senet': 'Çek / Senet',
-            'diger': 'Diğer',
-        }
+        from apps.finans.application.gun_sonu_finans_helpers import RAPOR_ODEME_LABELS
+        return dict(RAPOR_ODEME_LABELS)
 
     def _tahsilat_kirilimi(self, kurum_id, gun, sube_id=None):
         from apps.odeme_takip.domain.models import Tahsilat
@@ -94,9 +82,10 @@ class GunSonuService:
         # Öğrenci/veli sözleşme tahsilatları
         qs = Tahsilat.objects.filter(
             sozlesme__kurum_id=kurum_id,
-            tahsilat_tarihi=gun,
             durum=TahsilatDurum.AKTIF,
-        ).exclude(tahsilat_turu=TahsilatTuru.IADE)
+        ).exclude(tahsilat_turu=TahsilatTuru.IADE).filter(
+            bugun_islem_q('tahsilat_tarihi', gun),
+        )
         if sube_id:
             qs = qs.filter(sozlesme__sube_id=sube_id)
         for row in qs.values('odeme_yontemi__tip').annotate(toplam=Sum('tutar'), adet=Count('id')):
@@ -108,9 +97,8 @@ class GunSonuService:
         # Diğer gelir tahsilatları
         gqs = GelirTahsilat.objects.filter(
             gelir_kaydi__kurum_id=kurum_id,
-            tahsilat_tarihi=gun,
             durum=OdemeDurum.TAMAMLANDI,
-        )
+        ).filter(bugun_islem_q('tahsilat_tarihi', gun))
         if sube_id:
             gqs = gqs.filter(gelir_kaydi__sube_id=sube_id)
         for row in gqs.values('odeme_yontemi__tip').annotate(toplam=Sum('tutar'), adet=Count('id')):

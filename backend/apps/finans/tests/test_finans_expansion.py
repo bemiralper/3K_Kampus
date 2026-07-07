@@ -689,14 +689,19 @@ class FinansExpansionTest(TestCase):
         self.assertIn('detay_rapor', response.data)
         detay = response.data['detay_rapor']
         for key in (
-            'kapak', 'tahsilat_listesi', 'gelir_hareketleri', 'gider_hareketleri',
-            'cari_hareketleri', 'iptal_islemleri', 'iade_islemleri',
+            'kapak', 'yonetici_ozeti', 'uyarilar', 'gunluk_finans_ozeti', 'tahsilat_ozeti',
+            'tahsilat_listesi', 'gelir_hareketleri', 'gider_hareketleri',
+            'cari_hareketleri', 'ogrenci_hareketleri', 'iptal_islemleri', 'iade_islemleri',
             'odeme_turu_dagilimi', 'kategori_gelirler', 'kategori_giderler',
-            'kullanici_islem_detayi', 'kasa_ozeti', 'sistem',
+            'personel_performans', 'kullanici_islem_detayi', 'kasa_hareketleri',
+            'banka_hareketleri', 'pos_hareketleri', 'kasa_ozeti', 'grafikler', 'sistem',
         ):
             self.assertIn(key, detay)
         self.assertEqual(len(detay['tahsilat_listesi']), 1)
         self.assertEqual(detay['tahsilat_listesi'][0]['tutar'], 1500)
+        self.assertIn('sozlesme_no', detay['tahsilat_listesi'][0])
+        self.assertIn('nakit_tahsilatlar', detay['kasa_ozeti'])
+        self.assertNotIn('filtreler', detay['sistem'])
 
     def test_gun_sonu_detay_xlsx_export(self):
         try:

@@ -27,6 +27,7 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
   const [detay, setDetay] = useState<GunSonuDetayRapor | null>(null);
   const [loading, setLoading] = useState(true);
   const [detayLoading, setDetayLoading] = useState(false);
+  const [detayError, setDetayError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [whatsappOpen, setWhatsappOpen] = useState(false);
 
@@ -54,9 +55,15 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    setDetay(null);
+    setDetayError(null);
+  }, [gun, activeSube?.id]);
+
   const loadDetay = useCallback(async () => {
     if (!activeKurum?.id) return;
     setDetayLoading(true);
+    setDetayError(null);
     try {
       const data = await gunSonuService.detayRapor({
         kurum_id: activeKurum.id,
@@ -64,9 +71,13 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
         sube_id: activeSube?.id,
         notlar: notlarRef.current,
       });
+      if (!data?.detay_rapor) {
+        throw new Error("Detay rapor verisi alınamadı");
+      }
       setDetay(data.detay_rapor);
-    } catch {
+    } catch (e) {
       setDetay(null);
+      setDetayError(e instanceof Error ? e.message : "Detay rapor yüklenemedi");
     } finally {
       setDetayLoading(false);
     }
@@ -197,7 +208,12 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
         ) : detay ? (
           <GunSonuDetayView detay={detay} />
         ) : (
-          <div className="py-16 text-center text-sm text-gray-500">Detay rapor yüklenemedi.</div>
+          <div className="py-16 text-center">
+            <p className="text-sm font-semibold text-red-600 mb-2">{detayError || "Detay rapor yüklenemedi."}</p>
+            <button type="button" onClick={loadDetay} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">
+              Tekrar Dene
+            </button>
+          </div>
         )
       ) : ozet ? (
         <CanliOzetView ozet={ozet} />
