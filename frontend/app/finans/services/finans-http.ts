@@ -266,14 +266,17 @@ export async function finansFormUpload<T>(path: string, formData: FormData, meth
   return data as T;
 }
 
-export async function finansDownload(path: string): Promise<{ blob: Blob; filename: string }> {
+export async function finansDownload(
+  path: string,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; filename: string }> {
   const url = path.startsWith("http") ? path : finansApiUrl(path);
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {
     ...getContextHeaders(),
   };
 
-  const res = await fetch(url, { method: "GET", headers, credentials: "include" });
+  const res = await fetch(url, { method: "GET", headers, credentials: "include", signal });
   if (!res.ok) {
     let errMsg = "Dışa aktarma başarısız.";
     try {
@@ -305,7 +308,8 @@ export async function finansDownload(path: string): Promise<{ blob: Blob; filena
 
 export async function finansDownloadPost(
   path: string,
-  body: unknown
+  body: unknown,
+  signal?: AbortSignal,
 ): Promise<{ blob: Blob; filename: string }> {
   await ensureCsrfCookie();
   const url = path.startsWith("http") ? path : finansApiUrl(path);
@@ -321,6 +325,7 @@ export async function finansDownloadPost(
     headers,
     credentials: "include",
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     let errMsg = "Dışa aktarma başarısız.";

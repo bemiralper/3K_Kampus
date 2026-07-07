@@ -200,8 +200,8 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
       setExportOpen(false);
       setExportBusy(true);
       setExportError(null);
-      try {
-        await exportCariRaporList({
+      const ok = await exportCariRaporList(
+        {
           format,
           orientation,
           title: "Cari Hesap Bakiye Raporu",
@@ -223,12 +223,13 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
             report_totals: raporTotals,
           },
           filenamePrefix: "cari-bakiye-raporu",
-        });
-      } catch (err: unknown) {
-        setExportError(err instanceof Error ? err.message : "Rapor indirilemedi.");
-      } finally {
-        setExportBusy(false);
-      }
+        },
+        {
+          onError: (message) => setExportError(message),
+        },
+      );
+      setExportBusy(false);
+      if (!ok) return;
     },
     [
       raporColumnsApi,

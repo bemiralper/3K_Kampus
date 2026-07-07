@@ -44,7 +44,7 @@ export function buildCariEkstreOzetFields(ozet: CariHesapCariOzet): OzetField[] 
     { key: "cari_adi", label: "Cari Adı", value: ozet.gorunen_ad || ozet.unvan },
     { key: "borc", label: labels.borc, value: `${fmt(ozet.toplam_borc)} ₺` },
     { key: "alacak", label: labels.alacak, value: `${fmt(ozet.toplam_alacak)} ₺` },
-    { key: "bakiye", label: "Bakiye", value: `${fmt(Math.abs(ozet.bakiye))} ₺` },
+    { key: "bakiye", label: "Bakiye", value: `${fmt(Math.abs(ozet.bakiye))} ₺${Math.abs(ozet.bakiye) >= 0.005 ? (ozet.bakiye > 0 ? " (B)" : " (A)") : ""}` },
     {
       key: "vadesi_gelen",
       label: "Vadesi Gelen",

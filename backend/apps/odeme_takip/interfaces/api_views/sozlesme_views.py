@@ -17,7 +17,14 @@ from apps.odeme_takip.application.services.indirim_service import IndirimService
 from apps.odeme_takip.domain.notlar_utils import serialize_notlar
 from apps.odeme_takip.infrastructure.repositories.sozlesme_repository import ParametrikRepository
 
-from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
+from shared.context import get_secili_kurum_id, get_secili_egitim_yili_id
+from apps.odeme_takip.interfaces.sube_context import (
+    assert_indirim_record_access,
+    assert_kalem_record_access,
+    assert_sozlesme_record_access,
+    gate_sozlesme_pk,
+    resolve_mandatory_odeme_context,
+)
 
 
 def _user_display_name(user) -> str | None:
@@ -223,9 +230,9 @@ def _serialize_gecmis(g):
 def sozlesme_list(request):
     """Sözleşme listesi — filtreleme: kurum, sube, egitim_yili, durum, ogrenci_id"""
     service = SozlesmeService()
-    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
-    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
-    egitim_yili_id = get_secili_egitim_yili_id(request) or request.GET.get('egitim_yili_id')
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
     durum = request.GET.get('durum')
     ogrenci_id = request.GET.get('ogrenci_id')
 
@@ -238,10 +245,13 @@ def sozlesme_list(request):
 def sozlesme_create(request):
     """Yeni sözleşme oluştur"""
     service = SozlesmeService()
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
     data = request.data.copy()
-    data['kurum_id'] = data.get('kurum_id') or get_secili_kurum_id(request)
-    data['sube_id'] = data.get('sube_id') or get_secili_sube_id(request)
-    data['egitim_yili_id'] = data.get('egitim_yili_id') or get_secili_egitim_yili_id(request)
+    data['kurum_id'] = data.get('kurum_id') or kurum_id
+    data['sube_id'] = sube_id
+    data['egitim_yili_id'] = data.get('egitim_yili_id') or egitim_yili_id
 
     sozlesme, errors = service.create(data, user=request.user if request.user.is_authenticated else None)
     if errors:
@@ -253,6 +263,9 @@ def sozlesme_create(request):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def sozlesme_delete(request, pk):
     """Sözleşme sil (sadece taslak)"""
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
     service = SozlesmeService()
     result, errors = service.delete(pk, user=request.user if request.user.is_authenticated else None)
     if errors:
@@ -277,6 +290,10 @@ def sozlesme_detail(request, pk):
         payload = request._odeme_print_payload
         if sozlesme.kurum_id != payload['kurum_id']:
             return Response({'error': 'Sözleşme bulunamadı'}, status=status.HTTP_404_NOT_FOUND)
+    else:
+        err = assert_sozlesme_record_access(request, sozlesme)
+        if err:
+            return err
 
     data = _serialize_sozlesme(sozlesme, detail=True)
 
@@ -352,6 +369,9 @@ def sozlesme_detail(request, pk):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def sozlesme_update(request, pk):
     """Sözleşme güncelle (taslak veya aktif)"""
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
     service = SozlesmeService()
     sozlesme, errors = service.update(pk, request.data, user=request.user if request.user.is_authenticated else None)
     if errors:
@@ -363,6 +383,9 @@ def sozlesme_update(request, pk):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def sozlesme_status_change(request, pk):
     """Sözleşme statü değişikliği — body: { yeni_durum, aciklama }"""
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
     service = SozlesmeService()
     yeni_durum = request.data.get('yeni_durum')
     aciklama = request.data.get('aciklama', '')
@@ -383,6 +406,9 @@ def sozlesme_status_change(request, pk):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def sozlesme_status_revert(request, pk):
     """Son durum değişikliğini geri al (yönetici)."""
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
     service = SozlesmeService()
     aciklama = request.data.get('aciklama', '')
     sozlesme, errors = service.revert_last_status(
@@ -401,6 +427,9 @@ def sozlesme_status_revert(request, pk):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def sozlesme_indirim_add(request, pk):
     """Sözleşmeye indirim ekle"""
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
     service = IndirimService()
     indirim, errors = service.add_discount(
         pk, request.data,
@@ -415,6 +444,9 @@ def sozlesme_indirim_add(request, pk):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def indirim_approve(request, pk):
     """İndirim onayla"""
+    err = assert_indirim_record_access(request, pk)
+    if err:
+        return err
     service = IndirimService()
     indirim, errors = service.approve(pk, user=request.user if request.user.is_authenticated else None)
     if errors:
@@ -426,6 +458,9 @@ def indirim_approve(request, pk):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def indirim_reject(request, pk):
     """İndirim reddet"""
+    err = assert_indirim_record_access(request, pk)
+    if err:
+        return err
     service = IndirimService()
     neden = request.data.get('neden', '')
     indirim, errors = service.reject(pk, neden, user=request.user if request.user.is_authenticated else None)
@@ -446,9 +481,10 @@ def odeme_sekilleri(request):
     döner (önce Mali Hesap seç, sonra Ödeme Yöntemi cascade akışı).
     """
     repo = ParametrikRepository()
-    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
+    kurum_id, sube_id, _, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
     mali_hesap_id = request.GET.get('mali_hesap_id')
-    sube_id = get_secili_sube_id(request, kurum_id) or request.GET.get('sube_id')
     if mali_hesap_id:
         items = repo.get_odeme_yontemleri(
             kurum_id, mali_hesap_id=mali_hesap_id, sube_id=sube_id,
@@ -478,6 +514,9 @@ def sozlesme_kalem_ekle(request, pk):
         indirim_orani: 0,
     }
     """
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
     service = SozlesmeService()
     user = request.user if request.user.is_authenticated else None
     kalem, error = service.kalem_ekle(pk, request.data, user)
@@ -495,6 +534,9 @@ def sozlesme_kalem_ekle(request, pk):
 @permission_classes(ODEME_TAKIP_PERMISSIONS)
 def sozlesme_kalem_cikar(request, pk):
     """Sözleşmeden kalem çıkar"""
+    err = assert_kalem_record_access(request, pk)
+    if err:
+        return err
     service = SozlesmeService()
     user = request.user if request.user.is_authenticated else None
     result, error = service.kalem_cikar(pk, user)
@@ -510,8 +552,9 @@ def sozlesme_kalem_cikar(request, pk):
 def indirim_turleri(request):
     """İndirim türleri listesi"""
     repo = ParametrikRepository()
-    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
-    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
+    kurum_id, sube_id, _, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
     items = repo.get_indirim_turleri(kurum_id, sube_id)
     return Response([
         {

@@ -159,6 +159,34 @@ export default function OdemeTakipClient() {
   }, [router, basePath]);
 
   const sozlesmeParam = searchParams.get("sozlesme");
+
+  // Şube değişince önceki şubenin tüm verilerini temizle
+  useEffect(() => {
+    if (!activeSube?.id) return;
+    setSelectedSozlesme(null);
+    setSozlesmeler([]);
+    setTahsilatlar([]);
+    setVadesiGecenler([]);
+    setDashboard(null);
+    setRiskSkorlari([]);
+    setSearchTerm("");
+    setShowTahsilatDrawer(false);
+    setShowIptalModal(false);
+    setShowStatusModal(false);
+    setShowDeleteModal(false);
+    setMakbuzTahsilatId(null);
+    setOdemePlaniSozlesmeId(null);
+    setSozlesmeBelgesiId(null);
+    setFesihModalSozlesme(null);
+    setFesihBelgesiSozlesmeId(null);
+    setDagitimSonuc(null);
+    setNotifyState(null);
+    if (sozlesmeParam) {
+      router.push(basePath, { scroll: false });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnızca şube değişiminde sıfırla
+  }, [activeSube?.id]);
+
   useEffect(() => {
     const parsed = sozlesmeParam ? Number.parseInt(sozlesmeParam, 10) : NaN;
     if (sozlesmeParam && !Number.isNaN(parsed)) {
@@ -270,8 +298,20 @@ export default function OdemeTakipClient() {
 
   useEffect(() => {
     if (activeTab === "tahsilatlar") fetchTahsilatlar();
-    if (activeTab === "raporlar") { fetchDashboard(); fetchVadesiGecenler(); fetchRiskSkorlari(); }
+    if (activeTab === "raporlar") {
+      fetchDashboard();
+      fetchVadesiGecenler();
+      fetchRiskSkorlari();
+    }
   }, [activeTab, activeSube?.id, activeEgitimYili?.id, fetchTahsilatlar, fetchDashboard, fetchVadesiGecenler, fetchRiskSkorlari]);
+
+  useEffect(() => {
+    if (!activeSube?.id) return;
+    fetchTahsilatlar();
+    fetchDashboard();
+    fetchVadesiGecenler();
+    fetchRiskSkorlari();
+  }, [activeSube?.id, activeEgitimYili?.id, fetchTahsilatlar, fetchDashboard, fetchVadesiGecenler, fetchRiskSkorlari]);
 
   // ─── Actions ────────────────────────────────────────────────
 

@@ -22,7 +22,8 @@ from apps.odeme_takip.domain.enums import (
     SozlesmeDurum, TahsilatDurum, TahsilatTuru, TaksitDurum,
 )
 
-from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
+from shared.context import get_secili_egitim_yili_id
+from apps.odeme_takip.interfaces.sube_context import resolve_mandatory_odeme_context
 
 
 @api_view(['GET'])
@@ -37,9 +38,9 @@ def dashboard_ozet(request):
     sozlesme_service = SozlesmeService()
     taksit_service = TaksitService()
 
-    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
-    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
-    egitim_yili_id = get_secili_egitim_yili_id(request) or request.GET.get('egitim_yili_id')
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
 
     ozet_raw = sozlesme_service.get_ozet(kurum_id, sube_id, egitim_yili_id)
 
@@ -113,9 +114,9 @@ def ogrenci_risk_skorlari(request):
     - Kısmi ödeme oranı
     - Risk skoru (0-100, yüksek=iyi ödeme davranışı / düşük risk)
     """
-    kurum_id = get_secili_kurum_id(request) or request.GET.get('kurum_id')
-    sube_id = get_secili_sube_id(request) or request.GET.get('sube_id')
-    egitim_yili_id = get_secili_egitim_yili_id(request) or request.GET.get('egitim_yili_id')
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
 
     base_qs = Sozlesme.objects.filter(
         kurum_id=kurum_id, sube_id=sube_id, egitim_yili_id=egitim_yili_id,

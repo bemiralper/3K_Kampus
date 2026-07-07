@@ -3,6 +3,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { ExportFormat, ExportOrientation } from "@/components/finans/ExportDropdown";
 import { formatOdemeYontemiLabel } from "@/components/finans/odeme-yontemi-label";
+import FinansToast, { type FinansToastType } from "@/components/finans/FinansToast";
 import FloatingMenu from "@/components/finans/FloatingMenu";
 import { exportCariTabReport } from "./cari-tab-export";
 import "./cari-tab-toolbar.css";
@@ -96,6 +97,7 @@ export default function CariTabToolbar({
   const [orientation, setOrientation] = useState<ExportOrientation>("landscape");
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportToast, setExportToast] = useState<{ message: string; type: FinansToastType } | null>(null);
 
   const hasActiveFilter =
     filters.arama ||
@@ -119,8 +121,9 @@ export default function CariTabToolbar({
       setExportOpen(false);
       setExportBusy(true);
       setExportError(null);
-      try {
-        await exportCariTabReport({
+      setExportToast({ message: `${format.toUpperCase()} hazırlanıyor…`, type: "loading" });
+      const ok = await exportCariTabReport(
+        {
           cariHesapId,
           format,
           orientation,
@@ -129,11 +132,17 @@ export default function CariTabToolbar({
           rows: exportRows || [],
           filtersMeta,
           filenamePrefix: exportFilenamePrefix,
-        });
-      } catch (err: unknown) {
-        setExportError(err instanceof Error ? err.message : "Rapor indirilemedi.");
-      } finally {
-        setExportBusy(false);
+        },
+        {
+          onError: (message) => {
+            setExportError(message);
+            setExportToast({ message, type: "error" });
+          },
+        },
+      );
+      setExportBusy(false);
+      if (ok) {
+        setExportToast({ message: `${format.toUpperCase()} indirildi.`, type: "success" });
       }
     },
     [
@@ -312,6 +321,14 @@ export default function CariTabToolbar({
           </div>
         )}
       </div>
+
+      {exportToast && (
+        <FinansToast
+          message={exportToast.message}
+          type={exportToast.type}
+          onClose={() => setExportToast(null)}
+        />
+      )}
     </div>
   );
 }

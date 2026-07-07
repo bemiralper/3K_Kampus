@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { finansApiUrl, finansDownload } from "@/app/finans/services/finans-http";
+import { runFinansExport, triggerFileDownload } from "@/lib/finans-export";
 import FinansToast, { type FinansToastType } from "./FinansToast";
 import FloatingMenu from "./FloatingMenu";
 import "./export-dropdown.css";
@@ -50,11 +51,14 @@ export default function ExportDropdown({
   const [open, setOpen] = useState(false);
   const [orientation, setOrientation] = useState<ExportOrientation>("landscape");
   const [toast, setToast] = useState<{ message: string; type: FinansToastType } | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setOrientation(loadStoredOrientation());
   }, []);
+
+  const clearToast = useCallback(() => setToast(null), []);
 
   const handleOrientationChange = (next: ExportOrientation) => {
     setOrientation(next);
@@ -63,28 +67,27 @@ export default function ExportDropdown({
 
   const handleExport = useCallback(async (format: ExportFormat) => {
     setOpen(false);
+    setExportBusy(true);
     setToast({ message: `${FORMAT_LABELS[format]} hazırlanıyor…`, type: "loading" });
-    try {
-      const path = buildPath(format, orientation);
-      const { blob, filename } = await finansDownload(path);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const ext = format === "xlsx" ? "xlsx" : format;
-      const fallbackName = blob.type.includes("zip")
-        ? `${filenamePrefix}.zip`
-        : `${filenamePrefix}.${ext}`;
-      a.download = filename || fallbackName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+    const ok = await runFinansExport(
+      async (signal) => {
+        const path = buildPath(format, orientation);
+        const { blob, filename } = await finansDownload(path, signal);
+        const ext = format === "xlsx" ? "xlsx" : format;
+        const fallbackName = blob.type.includes("zip")
+          ? `${filenamePrefix}.zip`
+          : `${filenamePrefix}.${ext}`;
+        triggerFileDownload(blob, filename || fallbackName);
+      },
+      {
+        onError: (message) => {
+          setToast({ message, type: "error" });
+        },
+      },
+    );
+    setExportBusy(false);
+    if (ok !== null) {
       setToast({ message: `${FORMAT_LABELS[format]} indirildi.`, type: "success" });
-    } catch (e) {
-      setToast({
-        message: e instanceof Error ? e.message : "Dışa aktarma başarısız.",
-        type: "error",
-      });
     }
   }, [buildPath, filenamePrefix, orientation]);
 
@@ -93,10 +96,10 @@ export default function ExportDropdown({
       <button
         ref={btnRef}
         type="button"
-        disabled={disabled}
+        disabled={disabled || exportBusy}
         onClick={() => setOpen((v) => !v)}
         className="btn-hero"
-        style={{ opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
+        style={{ opacity: disabled || exportBusy ? 0.6 : 1, cursor: disabled || exportBusy ? "not-allowed" : "pointer" }}
         aria-expanded={open}
       >
         <span className="btn-hero-icon">
@@ -106,7 +109,7 @@ export default function ExportDropdown({
             <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
         </span>
-        <span>{label}</span>
+        <span>{exportBusy ? "Hazırlanıyor…" : label}</span>
       </button>
 
       <FloatingMenu
@@ -150,7 +153,7 @@ export default function ExportDropdown({
         <FinansToast
           message={toast.message}
           type={toast.type}
-          onClose={() => setToast(null)}
+          onClose={clearToast}
         />
       )}
     </>

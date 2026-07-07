@@ -33,12 +33,16 @@ import CariEkstreOzet, { cariEkstreOzetExportMeta } from "../components/CariEkst
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { formatUserDisplayName } from "@/lib/format-user";
 import {
-  computeRaporTotalsFromOzet,
   defaultRaporBaslangic,
   defaultRaporBitis,
   ekstrePeriodExportMeta,
+  computeEkstrePeriodTotals,
   formatReportDateRange,
 } from "../components/cari-report-export-meta";
+import {
+  computeDevredenBakiye,
+  computeKapanisBakiye,
+} from "../components/cari-ekstre-balance";
 import CariQuickStats from "../components/CariQuickStats";
 import CariGelirTable from "../components/CariGelirTable";
 import CariGiderTable from "../components/CariGiderTable";
@@ -410,20 +414,32 @@ export default function CariDetayClient({
     if (activeTab === "ekstre") {
       const periodMeta = ekstrePeriodExportMeta(filteredHareketler);
       const ozetMeta = cariOzet ? cariEkstreOzetExportMeta(cariOzet) : {};
+      const periodTotals = computeEkstrePeriodTotals(filteredHareketler);
+      const devreden = computeDevredenBakiye(filteredHareketler);
+      const kapanis = computeKapanisBakiye(filteredHareketler);
       return {
         ...base,
         ...ozetMeta,
         ...periodMeta,
         report_kind: "cari_ekstre",
         rapor_adi: "Cari Ekstre Raporu",
-        report_totals: cariOzet
-          ? {
-              ...computeRaporTotalsFromOzet(cariOzet),
-              donem_toplam_borc: periodMeta.donem_toplam_borc,
-              donem_toplam_alacak: periodMeta.donem_toplam_alacak,
-              donem_hareket_sayisi: periodMeta.filtrelenmis_hareket_sayisi,
-            }
-          : undefined,
+        report_totals: {
+          toplam_borc: periodTotals.toplam_borc,
+          toplam_alacak: periodTotals.toplam_alacak,
+          net_bakiye: kapanis,
+          devreden_bakiye: devreden,
+          kapanis_bakiye: kapanis,
+          donem_toplam_borc: periodTotals.toplam_borc,
+          donem_toplam_alacak: periodTotals.toplam_alacak,
+          donem_hareket_sayisi: periodTotals.hareket_sayisi,
+          ...(cariOzet
+            ? {
+                cari_toplam_borc: cariOzet.toplam_borc,
+                cari_toplam_alacak: cariOzet.toplam_alacak,
+                cari_net_bakiye: cariOzet.bakiye,
+              }
+            : {}),
+        },
       };
     }
 

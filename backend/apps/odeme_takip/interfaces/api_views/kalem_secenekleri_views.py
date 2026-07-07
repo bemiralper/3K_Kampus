@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from apps.odeme_takip.domain.enums import KalemTuru, PaketTuru, SozlesmeDurum
 from apps.ogrenci_kayit.application.services import _apply_grup_alan_filter, _apply_ozel_alan_filter
 from apps.ogrenci_kayit.domain.sinif_seviyesi_rules import sinif_seviyesi_requires_alan
-from shared.context import get_secili_kurum_id, get_secili_sube_id, get_secili_egitim_yili_id
+from apps.odeme_takip.interfaces.sube_context import resolve_mandatory_odeme_context
 
 
 def _serialize_secenek(item, kod=""):
@@ -260,9 +260,9 @@ def kalem_secenekleri(request):
     from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, OzelDers
 
     tur = request.query_params.get("tur", "")
-    kurum_id = get_secili_kurum_id(request) or request.query_params.get("kurum_id")
-    sube_id = get_secili_sube_id(request) or request.query_params.get("sube_id")
-    egitim_yili_id = get_secili_egitim_yili_id(request) or request.query_params.get("egitim_yili_id")
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
     ogrenci_id = request.query_params.get("ogrenci_id")
     sozlesme_id = request.query_params.get("sozlesme_id")
 

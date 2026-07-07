@@ -65,6 +65,12 @@ class GiderKaydiListCreateView(APIView):
         if not kurum_id:
             return Response({'error': 'kurum_id zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        from apps.finans.interfaces.views.sube_context import resolve_mandatory_finans_sube
+
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
+        if err:
+            return err
+
         serializer = GiderKaydiCreateSerializer(data=request.data)
         if not serializer.is_valid():
             logger.error("GiderKaydi serializer hataları: %s", serializer.errors)
@@ -72,6 +78,7 @@ class GiderKaydiListCreateView(APIView):
 
         data = serializer.validated_data
         data['kurum_id'] = kurum_id
+        data['sube_id'] = sube_id
         data['olusturan'] = request.user if request.user.is_authenticated else None
 
         service = GiderService()
