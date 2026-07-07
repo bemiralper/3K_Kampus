@@ -8,7 +8,9 @@
     "build": "next build",
     "build:clean": "rm -rf .next node_modules/.cache && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",
@@ -31,6 +33,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "20.11.17",
     "@types/react": "18.3.3",
     "@types/react-datepicker": "^7.0.0",

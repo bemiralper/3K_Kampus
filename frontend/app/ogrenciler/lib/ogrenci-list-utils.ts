@@ -13,8 +13,8 @@ export type OgrenciListFilters = {
   all_years?: boolean;
   sinif_seviyesi_ids?: number[];
   sinif_ids?: number[];
-  sube_id?: number | '';
   kalemler?: KalemFilter[];
+  kayit_turu?: string;
   giris_turu?: string;
   cinsiyet?: string;
   paket_id?: number | '';
@@ -151,8 +151,8 @@ export function parseFiltersFromSearchParams(params: URLSearchParams): OgrenciLi
     all_years: params.get('all_years') === '1',
     sinif_seviyesi_ids: sinifSeviyesiIds,
     sinif_ids: sinifIds,
-    sube_id: num('sube_id'),
     kalemler,
+    kayit_turu: params.get('kayit_turu') || '',
     giris_turu: params.get('giris_turu') || '',
     cinsiyet: params.get('cinsiyet') || '',
     paket_id: num('paket_id'),
@@ -176,10 +176,10 @@ export function filtersToSearchParams(filters: OgrenciListFilters): URLSearchPar
   if (filters.sinif_ids && filters.sinif_ids.length > 0) {
     p.set('sinif_ids', serializeIntListParam(filters.sinif_ids));
   }
-  if (filters.sube_id) p.set('sube_id', String(filters.sube_id));
   if (filters.kalemler && filters.kalemler.length > 0) {
     p.set('kalemler', serializeKalemlerParam(filters.kalemler));
   }
+  if (filters.kayit_turu) p.set('kayit_turu', filters.kayit_turu);
   if (filters.giris_turu) p.set('giris_turu', filters.giris_turu);
   if (filters.cinsiyet) p.set('cinsiyet', filters.cinsiyet);
   if (filters.paket_id) p.set('paket_id', String(filters.paket_id));

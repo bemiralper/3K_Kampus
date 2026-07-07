@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'apps.egitim_yili',
     'apps.egitim_tanimlari',
     'apps.egitim_paketleri',
+    'apps.kimlik',  # Kimlik birleştirme (Kisi) — ogrenci/personel'den önce
     'apps.ogrenci',
     'apps.ogrenci_kayit',  # Yeni wizard sistemi
     'apps.oda',  # Fiziksel mekan yönetimi

@@ -8,7 +8,6 @@ import { kalemKey } from '../lib/ogrenci-list-utils';
 type FilterOption = { value: string; label: string };
 type SinifSeviyesiOption = { id: number; ad: string; kod: string };
 type SinifOption = { id: number; ad: string; sinif_seviyesi_id: number | null };
-type SubeOption = { id: number; ad: string };
 type KalemGrup = {
   tur: string;
   label: string;
@@ -40,7 +39,7 @@ function countActiveFilters(local: OgrenciListFilters): number {
   n += local.kalemler?.length || 0;
   n += local.sinif_seviyesi_ids?.length || 0;
   n += local.sinif_ids?.length || 0;
-  if (local.sube_id) n += 1;
+  if (local.kayit_turu) n += 1;
   if (local.giris_turu) n += 1;
   if (local.cinsiyet) n += 1;
   if (local.kayit_tarihi_bas) n += 1;
@@ -59,10 +58,10 @@ export default function OgrenciFilterDrawer({
   const [local, setLocal] = useState<OgrenciListFilters>(filters);
   const [sinifSeviyeleri, setSinifSeviyeleri] = useState<SinifSeviyesiOption[]>([]);
   const [girisTuru, setGirisTuru] = useState<FilterOption[]>([]);
+  const [kayitTurleri, setKayitTurleri] = useState<FilterOption[]>([]);
   const [cinsiyetOpts, setCinsiyetOpts] = useState<FilterOption[]>([]);
   const [kalemGruplari, setKalemGruplari] = useState<KalemGrup[]>([]);
   const [siniflar, setSiniflar] = useState<SinifOption[]>([]);
-  const [subeler, setSubeler] = useState<SubeOption[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -77,26 +76,26 @@ export default function OgrenciFilterDrawer({
     apiGet<{
       sinif_seviyeleri?: SinifSeviyesiOption[];
       giris_turu?: FilterOption[];
+      kayit_turleri?: FilterOption[];
       cinsiyet?: FilterOption[];
       kalem_gruplari?: KalemGrup[];
       siniflar?: SinifOption[];
-      subeler?: SubeOption[];
     }>('/ogrenciler/api/filter-options/').then((res) => {
       const data = res.data || res;
       const d = data as {
         sinif_seviyeleri?: SinifSeviyesiOption[];
         giris_turu?: FilterOption[];
+        kayit_turleri?: FilterOption[];
         cinsiyet?: FilterOption[];
         kalem_gruplari?: KalemGrup[];
         siniflar?: SinifOption[];
-        subeler?: SubeOption[];
       };
       setSinifSeviyeleri(d.sinif_seviyeleri || []);
       setGirisTuru(d.giris_turu || []);
+      setKayitTurleri(d.kayit_turleri || []);
       setCinsiyetOpts(d.cinsiyet || []);
       setKalemGruplari(d.kalem_gruplari || []);
       setSiniflar(d.siniflar || []);
-      setSubeler(d.subeler || []);
     });
   }, [open]);
 
@@ -355,26 +354,6 @@ export default function OgrenciFilterDrawer({
                   })
                 )}
               </div>
-
-              <div className="ogrenci-filter-block">
-                <div className="ogrenci-filter-block-title">Şube</div>
-                <div className="ogrenci-filter-select-wrap">
-                  <select
-                    className="ogrenci-filter-select"
-                    value={local.sube_id || ''}
-                    onChange={(e) =>
-                      update({
-                        sube_id: e.target.value ? parseInt(e.target.value, 10) : '',
-                      })
-                    }
-                  >
-                    <option value="">Varsayılan (üst bar)</option>
-                    {subeler.map((s) => (
-                      <option key={s.id} value={s.id}>{s.ad}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
             </section>
           </div>
 
@@ -384,6 +363,29 @@ export default function OgrenciFilterDrawer({
             </div>
 
             <div className="ogrenci-filter-demographic-layout">
+              <div className="ogrenci-filter-block">
+                <div className="ogrenci-filter-block-title">Kayıt Türü</div>
+                <div className="ogrenci-filter-option-row">
+                  <button
+                    type="button"
+                    className={`ogrenci-filter-option-btn${!local.kayit_turu ? ' active' : ''}`}
+                    onClick={() => update({ kayit_turu: '' })}
+                  >
+                    Tümü
+                  </button>
+                  {kayitTurleri.map((k) => (
+                    <button
+                      key={k.value}
+                      type="button"
+                      className={`ogrenci-filter-option-btn${local.kayit_turu === k.value ? ' active' : ''}`}
+                      onClick={() => update({ kayit_turu: k.value })}
+                    >
+                      {k.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="ogrenci-filter-block">
                 <div className="ogrenci-filter-block-title">Giriş Türü</div>
                 <div className="ogrenci-filter-option-row">

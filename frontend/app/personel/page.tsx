@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { usePersonelPath } from "@/components/personel/PersonelPathProvider";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { useKurum } from "@/lib/contexts/KurumContext";
 import { resolveMediaUrl } from "@/lib/resolve-media-url";
+import KisiBulunduModal from "@/components/kimlik/KisiBulunduModal";
+import { pickPersonelRol } from "@/lib/kimlik-api";
+import { useKimlikLookup } from "@/hooks/useKimlikLookup";
+import {
+  kimlikFieldClass,
+  tcReadonlyClass,
+} from "@/lib/kimlik-form-utils";
 
 // Tip tanımları
 type PersonelData = {
@@ -50,9 +58,20 @@ const formatPhoneNumber = (phone: string): string => {
 // Form step tipi
 type FormStep = 'personal' | 'contact' | 'emergency' | 'settings';
 
+const KIMLIK_REUSE_MSG =
+  "Bu kişi kurumda zaten personel olarak kayıtlı. Devam etmek için «Mevcut Personeli Kullan» seçeneğini kullanın.";
+
+const PERSONEL_FORM_STEPS: { key: FormStep; label: string; icon: string }[] = [
+  { key: 'personal', label: 'Kişisel', icon: 'user' },
+  { key: 'contact', label: 'İletişim', icon: 'phone' },
+  { key: 'emergency', label: 'Acil Durum', icon: 'alert' },
+  { key: 'settings', label: 'Ayarlar', icon: 'settings' },
+];
+
 export default function PersonelListesiPage() {
   const { href } = usePersonelPath();
   const router = useRouter();
+  const { activeSube, activeEgitimYili } = useKurum();
   const [mounted, setMounted] = useState(false);
   const [personeller, setPersoneller] = useState<PersonelData[]>([]);
   const [filteredPersoneller, setFilteredPersoneller] = useState<PersonelData[]>([]);
@@ -104,13 +123,53 @@ export default function PersonelListesiPage() {
   const [deletingPersonel, setDeletingPersonel] = useState<PersonelData | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Steps configuration
-  const steps: { key: FormStep; label: string; icon: string }[] = [
-    { key: 'personal', label: 'Kişisel', icon: 'user' },
-    { key: 'contact', label: 'İletişim', icon: 'phone' },
-    { key: 'emergency', label: 'Acil Durum', icon: 'alert' },
-    { key: 'settings', label: 'Ayarlar', icon: 'settings' },
-  ];
+  const [kimlikLink, setKimlikLink] = useState<{ kisi_id?: number; use_existing_personel_id?: number }>({});
+  const [existingPersonelHasAccount, setExistingPersonelHasAccount] = useState(false);
+  const [tcLocked, setTcLocked] = useState(false);
+  const kimlikDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  const kimlik = useKimlikLookup({
+    context: "personel",
+    enabled: !editingPersonel,
+    excludeKisiId: kimlikLink.kisi_id,
+  });
+
+  const pendingKimlikReuse = useMemo(
+    () =>
+      !editingPersonel &&
+      Boolean(
+        kimlik.result?.found &&
+          pickPersonelRol(kimlik.result.roller) &&
+          !kimlikLink.use_existing_personel_id,
+      ),
+    [editingPersonel, kimlik.result, kimlikLink.use_existing_personel_id],
+  );
+
+  const guardKimlikReuse = useCallback((): boolean => {
+    if (!pendingKimlikReuse) return false;
+    setFormError(KIMLIK_REUSE_MSG);
+    kimlik.setShowModal(true);
+    return true;
+  }, [pendingKimlikReuse, kimlik]);
+
+  const trySetActiveStep = useCallback(
+    (step: FormStep) => {
+      if (step !== "personal" && guardKimlikReuse()) return;
+      setActiveStep(step);
+    },
+    [guardKimlikReuse],
+  );
+
+  const tryAdvanceStep = useCallback(() => {
+    if (guardKimlikReuse()) return;
+    const currentIndex = PERSONEL_FORM_STEPS.findIndex((s) => s.key === activeStep);
+    if (currentIndex < PERSONEL_FORM_STEPS.length - 1) {
+      setActiveStep(PERSONEL_FORM_STEPS[currentIndex + 1].key);
+    }
+  }, [activeStep, guardKimlikReuse]);
+
+  // Steps configuration (alias)
+  const steps = PERSONEL_FORM_STEPS;
 
   // Veri çekme
   const fetchPersoneller = useCallback(async () => {
@@ -194,6 +253,10 @@ export default function PersonelListesiPage() {
 
   // Drawer açma
   const openDrawer = (personel?: PersonelData) => {
+    kimlik.resetKimlik();
+    setKimlikLink({});
+    setExistingPersonelHasAccount(false);
+    setTcLocked(false);
     if (personel) {
       setEditingPersonel(personel);
       setFormData({
@@ -327,16 +390,75 @@ export default function PersonelListesiPage() {
   };
 
   // Form gönderme
+  const applyKimlikToForm = () => {
+    if (!kimlik.result) return;
+    const ortak = kimlik.result.ortak_alanlar || {};
+    const personelRol = pickPersonelRol(kimlik.result.roller);
+    const filledFields = ["ad", "soyad", "tc_kimlik_no", "telefon", "cep_telefon", "email", "adres", "dogum_tarihi"];
+    setFormData((prev) => ({
+      ...prev,
+      ad: ortak.ad || personelRol?.ad || prev.ad,
+      soyad: ortak.soyad || personelRol?.soyad || prev.soyad,
+      tc_kimlik_no: ortak.tc_kimlik_no || prev.tc_kimlik_no,
+      telefon: ortak.telefon || prev.telefon,
+      cep_telefon: ortak.telefon || prev.cep_telefon,
+      dogum_tarihi: ortak.dogum_tarihi || prev.dogum_tarihi,
+      cinsiyet: ortak.cinsiyet || prev.cinsiyet,
+      email: ortak.email || prev.email,
+      adres: ortak.adres || prev.adres,
+      il: ortak.il || prev.il,
+      ilce: ortak.ilce || prev.ilce,
+    }));
+    setKimlikLink({
+      kisi_id: kimlik.result.kisi?.id,
+      use_existing_personel_id: personelRol?.id,
+    });
+    setExistingPersonelHasAccount(Boolean(personelRol?.has_user_account));
+    setTcLocked(true);
+    kimlik.setPhoneError("");
+    kimlik.markHighlighted(filledFields);
+    kimlik.dismissModal();
+    setFormError("");
+  };
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (kimlik.isBlocked) {
+      setFormError(kimlik.result?.engellenen_mesaj || "Bu kayıt tamamlanamaz. Lütfen bilgileri kontrol edin.");
+      kimlik.setShowModal(true);
+      return;
+    }
+    if (!editingPersonel && kimlik.result?.found && !kimlikLink.use_existing_personel_id) {
+      const existingPersonel = pickPersonelRol(kimlik.result.roller);
+      if (existingPersonel) {
+        kimlik.setShowModal(true);
+        setFormError(KIMLIK_REUSE_MSG);
+        return;
+      }
+    }
+    if (!editingPersonel && kimlikLink.use_existing_personel_id && !activeEgitimYili?.id) {
+      setFormError("Personeli bu şubede listelemek için üst menüden eğitim yılı seçin.");
+      return;
+    }
     setFormLoading(true);
     setFormError('');
     setFormSuccess('');
 
     try {
+      const payload: Record<string, unknown> = { ...formData };
+      if (!editingPersonel && kimlikLink.use_existing_personel_id) {
+        payload.use_existing_personel_id = kimlikLink.use_existing_personel_id;
+        payload.create_gorevlendirme = true;
+        payload.egitim_yili_id = activeEgitimYili?.id;
+        payload.gorev_sube_id = activeSube?.id;
+      }
+      if (!editingPersonel && kimlikLink.kisi_id) {
+        payload.kisi_id = kimlikLink.kisi_id;
+      }
+
       const result = editingPersonel
         ? await apiPut(`/personel/api/${editingPersonel.id}/update/`, formData)
-        : await apiPost(`/personel/api/create/`, formData);
+        : await apiPost(`/personel/api/create/`, payload);
 
       if (result.success) {
         const personelId = editingPersonel
@@ -347,13 +469,34 @@ export default function PersonelListesiPage() {
           await uploadPhoto(personelId);
         }
 
-        setFormSuccess(editingPersonel ? "Personel güncellendi!" : "Personel oluşturuldu!");
+        setFormSuccess(
+          (result as { reused?: boolean; message?: string }).reused
+            ? (result.message as string) || "Mevcut personel bu şubeye bağlandı."
+            : editingPersonel
+              ? "Personel güncellendi!"
+              : "Personel oluşturuldu!",
+        );
         fetchPersoneller();
         setTimeout(() => {
           setShowDrawer(false);
         }, 1500);
       } else {
-        setFormError(result.error || "Bir hata oluştu");
+        const conflictCode = (result as { code?: string }).code;
+        if (
+          !editingPersonel &&
+          (conflictCode === "duplicate_personel_tc" ||
+            conflictCode === "duplicate_tc" ||
+            conflictCode === "duplicate_telefon" ||
+            conflictCode === "phone_tc_mismatch")
+        ) {
+          await kimlik.openConflictLookup(formData.tc_kimlik_no, formData.cep_telefon || formData.telefon);
+          setFormError(
+            result.error ||
+              "Bu kişi sistemde kayıtlı. Açılan pencereden «Mevcut Personeli Kullan» seçeneğini kullanın.",
+          );
+        } else {
+          setFormError(result.error || "Bir hata oluştu");
+        }
       }
     } catch {
       setFormError('İşlem sırasında bir hata oluştu');
@@ -841,9 +984,10 @@ export default function PersonelListesiPage() {
           {steps.map((step, index) => (
             <button
               key={step.key}
-              className={`step-btn ${activeStep === step.key ? 'active' : ''}`}
-              onClick={() => setActiveStep(step.key)}
+              className={`step-btn ${activeStep === step.key ? 'active' : ''}${pendingKimlikReuse && step.key !== 'personal' ? ' step-btn-locked' : ''}`}
+              onClick={() => trySetActiveStep(step.key)}
               type="button"
+              disabled={pendingKimlikReuse && step.key !== 'personal'}
             >
               <span className="step-number">{index + 1}</span>
               <span className="step-icon">{getStepIcon(step.icon)}</span>
@@ -851,6 +995,13 @@ export default function PersonelListesiPage() {
             </button>
           ))}
         </div>
+
+        {pendingKimlikReuse && (
+          <div className="kimlik-reuse-banner" role="alert">
+            <strong>Mevcut personel bulundu.</strong>{" "}
+            Formu tamamlamak için «Mevcut Personeli Kullan» seçeneğini onaylayın veya TC numarasını değiştirin.
+          </div>
+        )}
 
         <form onSubmit={handleFormSubmit}>
           <div className="drawer-body">
@@ -953,7 +1104,7 @@ export default function PersonelListesiPage() {
                   </label>
                   <input
                     type="text"
-                    className="field-input"
+                    className={kimlikFieldClass("field-input", "ad", kimlik.highlightedFields)}
                     value={formData.ad}
                     onChange={(e) => setFormData({ ...formData, ad: e.target.value })}
                     placeholder="Personelin adı"
@@ -967,7 +1118,7 @@ export default function PersonelListesiPage() {
                   </label>
                   <input
                     type="text"
-                    className="field-input"
+                    className={kimlikFieldClass("field-input", "soyad", kimlik.highlightedFields)}
                     value={formData.soyad}
                     onChange={(e) => setFormData({ ...formData, soyad: e.target.value })}
                     placeholder="Personelin soyadı"
@@ -980,12 +1131,46 @@ export default function PersonelListesiPage() {
                   </label>
                   <input
                     type="text"
-                    className="field-input"
+                    className={`${kimlikFieldClass("field-input", "tc_kimlik_no", kimlik.highlightedFields)}${tcReadonlyClass(tcLocked && !editingPersonel)}`}
                     value={formData.tc_kimlik_no}
-                    onChange={(e) => setFormData({ ...formData, tc_kimlik_no: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                    readOnly={tcLocked && !editingPersonel}
+                    onChange={(e) => {
+                      if (tcLocked && !editingPersonel) return;
+                      const cleaned = e.target.value.replace(/\D/g, '').slice(0, 11);
+                      setFormData({ ...formData, tc_kimlik_no: cleaned });
+                      setKimlikLink({});
+                      setExistingPersonelHasAccount(false);
+                      setTcLocked(false);
+                      if (kimlikDebounceRef.current) clearTimeout(kimlikDebounceRef.current);
+                      if (cleaned.length === 11 && !editingPersonel) {
+                        kimlikDebounceRef.current = setTimeout(
+                          () => kimlik.checkTc(cleaned, formData.cep_telefon || formData.telefon),
+                          350,
+                        );
+                      }
+                    }}
+                    onBlur={() => {
+                      if (formData.tc_kimlik_no.length === 11 && !editingPersonel && !tcLocked) {
+                        void kimlik.runResolve({
+                          tc: formData.tc_kimlik_no,
+                          telefon: formData.cep_telefon || formData.telefon,
+                        });
+                      }
+                    }}
                     placeholder="11 haneli TC Kimlik No"
                     maxLength={11}
                   />
+                  {tcLocked && !editingPersonel && (
+                    <span className="kimlik-tc-hint">
+                      TC Kimlik Numarası sistemde tekil kimlik olarak kullanıldığı için değiştirilemez.
+                    </span>
+                  )}
+                  {kimlik.lookupError && (
+                    <span className="kimlik-phone-error">{kimlik.lookupError}</span>
+                  )}
+                  {kimlik.checking && (
+                    <span className="text-xs text-slate-500">Kimlik kontrol ediliyor…</span>
+                  )}
                 </div>
                 <div className="form-field">
                   <label className="field-label">
@@ -1047,12 +1232,21 @@ export default function PersonelListesiPage() {
                     </svg>
                     <input
                       type="tel"
-                      className="field-input"
+                      className={kimlikFieldClass("field-input", "cep_telefon", kimlik.highlightedFields)}
                       value={formData.cep_telefon}
-                      onChange={(e) => setFormData({ ...formData, cep_telefon: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, cep_telefon: e.target.value });
+                        if (!editingPersonel) kimlik.checkPhone(e.target.value);
+                      }}
+                      onBlur={() => {
+                        if (!editingPersonel) kimlik.checkPhone(formData.cep_telefon);
+                      }}
                       placeholder="05XX XXX XX XX"
                     />
                   </div>
+                  {kimlik.phoneError && (
+                    <span className="kimlik-phone-error">{kimlik.phoneError}</span>
+                  )}
                 </div>
                 <div className="form-field">
                   <label className="field-label">
@@ -1082,7 +1276,7 @@ export default function PersonelListesiPage() {
                     </svg>
                     <input
                       type="email"
-                      className="field-input"
+                      className={kimlikFieldClass("field-input", "email", kimlik.highlightedFields)}
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       placeholder="ornek@email.com"
@@ -1094,7 +1288,7 @@ export default function PersonelListesiPage() {
                     <span className="label-text">Adres</span>
                   </label>
                   <textarea
-                    className="field-textarea"
+                    className={kimlikFieldClass("field-textarea", "adres", kimlik.highlightedFields)}
                     value={formData.adres}
                     onChange={(e) => setFormData({ ...formData, adres: e.target.value })}
                     placeholder="Açık adres"
@@ -1200,7 +1394,15 @@ export default function PersonelListesiPage() {
                     </label>
                   </div>
                 </div>
-                {!editingPersonel && formData.email && (
+                {!editingPersonel && kimlikLink.use_existing_personel_id && existingPersonelHasAccount && (
+                  <div className="form-field full-width">
+                    <div className="kimlik-reuse-banner kimlik-reuse-banner--info">
+                      Bu personelin kurum genelinde aktif bir giriş hesabı var. Şube görevlendirmesi mevcut
+                      kullanıcı adı ve şifreyi değiştirmez.
+                    </div>
+                  </div>
+                )}
+                {!editingPersonel && formData.email && !kimlikLink.use_existing_personel_id && (
                   <div className="form-field full-width">
                     <div className="toggle-option">
                       <div className="toggle-info">
@@ -1246,10 +1448,8 @@ export default function PersonelListesiPage() {
                 <button 
                   type="button" 
                   className="btn-next"
-                  onClick={() => {
-                    const currentIndex = steps.findIndex(s => s.key === activeStep);
-                    if (currentIndex < steps.length - 1) setActiveStep(steps[currentIndex + 1].key);
-                  }}
+                  disabled={pendingKimlikReuse}
+                  onClick={tryAdvanceStep}
                 >
                   İleri
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1835,6 +2035,29 @@ export default function PersonelListesiPage() {
 
         .step-btn:hover { background: #f1f5f9; }
         .step-btn.active { background: rgba(0, 97, 166, 0.05); border-color: #0061a6; }
+        .step-btn:disabled,
+        .step-btn.step-btn-locked {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
+        .kimlik-reuse-banner {
+          margin: 0;
+          padding: 12px 24px;
+          background: #fff7ed;
+          border-bottom: 1px solid #fed7aa;
+          color: #9a3412;
+          font-size: 14px;
+          line-height: 1.5;
+        }
+
+        .kimlik-reuse-banner--info {
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+          border-radius: 10px;
+          color: #1e40af;
+          padding: 12px 14px;
+        }
 
         .step-number {
           position: absolute;
@@ -2563,6 +2786,20 @@ export default function PersonelListesiPage() {
           </div>
         </div>
       )}
+      <KisiBulunduModal
+        open={kimlik.showModal}
+        result={kimlik.result}
+        context="personel"
+        loading={kimlik.checking}
+        applyDisabled={kimlik.applyDisabled}
+        onApply={applyKimlikToForm}
+        onCancel={() => {
+          kimlik.dismissModal();
+          if (pendingKimlikReuse) {
+            setFormError(KIMLIK_REUSE_MSG);
+          }
+        }}
+      />
     </div>
   );
 }

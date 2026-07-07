@@ -17,6 +17,8 @@ from apps.personel.application.services import (
     assign_user_role_for_personel,
     resolve_system_role_for_personel,
 )
+from apps.personel.domain.user_account import resolve_personel_user
+from apps.kimlik.exceptions import KimlikConflictError
 from apps.personel.domain.models import Personel
 from apps.egitim_yili.domain.models import EgitimYili
 from shared.permissions import require_module_permission
@@ -141,10 +143,10 @@ def personel_list_api(request):
     toplam_personel = service.get_count(**sube_kw, aktif_only=False)
     aktif_personel = service.get_count(**sube_kw, aktif_only=True)
 
-    return JsonResponse({
-        'success': True,
-        'personeller': [
-            {
+    personel_rows = []
+    for p in personeller:
+        linked_user = resolve_personel_user(p)
+        personel_rows.append({
                 'id': p.id,
                 'tc_kimlik_no': p.tc_kimlik_no or '',
                 'ad': p.ad,
@@ -163,9 +165,9 @@ def personel_list_api(request):
                 'acil_durum_telefon': p.acil_durum_telefon or '',
                 'aktif_mi': p.aktif_mi,
                 'aktif_display': 'Aktif' if p.aktif_mi else 'Pasif',
-                'has_user_account': p.has_user_account,
-                'user_id': p.user_id,
-                'user_email': p.user.email if p.user else '',
+                'has_user_account': linked_user is not None,
+                'user_id': linked_user.id if linked_user else None,
+                'user_email': linked_user.email if linked_user else '',
                 'kurum_id': p.kurum_id,
                 'kurum_ad': p.kurum.ad if p.kurum else '',
                 'sube_id': p.sube_id,
@@ -173,9 +175,11 @@ def personel_list_api(request):
                 'notlar': p.notlar or '',
                 'fotograf': p.fotograf.url if p.fotograf else '',
                 'created_at': format_date(p.created_at),
-            }
-            for p in personeller
-        ],
+        })
+
+    return JsonResponse({
+        'success': True,
+        'personeller': personel_rows,
         'toplam_personel': toplam_personel,
         'aktif_personel': aktif_personel,
     })
@@ -274,17 +278,65 @@ def personel_create_api(request):
     service = PersonelService()
     
     try:
+        use_existing_id = data.get('use_existing_personel_id')
+        if use_existing_id:
+            gorevlendirme_data = None
+            if data.get('create_gorevlendirme'):
+                egitim_yili_id = data.get('egitim_yili_id') or ctx.get('egitim_yili_id')
+                gorev_sube_id = data.get('gorev_sube_id') or ctx['sube_id']
+                if not egitim_yili_id:
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'Personeli bu şubede göstermek için üst menüden eğitim yılı seçin.',
+                    }, status=400)
+                if egitim_yili_id and gorev_sube_id:
+                    gorevlendirme_data = {
+                        'egitim_yili_id': egitim_yili_id,
+                        'gorev_sube_id': gorev_sube_id,
+                        'rol_id': data.get('rol_id'),
+                        'brans_id': data.get('brans_id'),
+                        'aktif_mi': data.get('aktif_mi', True),
+                    }
+            result = service.reuse_existing_for_sube(
+                int(use_existing_id),
+                ctx['kurum_id'],
+                ctx['sube_id'],
+                gorevlendirme_data=gorevlendirme_data,
+            )
+            personel = result['personel']
+            msg = 'Mevcut personel kullanıldı'
+            if result['created_gorevlendirme']:
+                msg = 'Mevcut personel için yeni şube görevlendirmesi oluşturuldu'
+            return JsonResponse({
+                'success': True,
+                'message': msg,
+                'reused': True,
+                'personel': {
+                    'id': personel.id,
+                    'tam_ad': personel.tam_ad,
+                },
+                'gorevlendirme_id': result['gorevlendirme'].id if result['gorevlendirme'] else None,
+            })
+
         create_user_account = data.get('create_user_account', False)
-        personel = service.create(personel_data, create_user_account=create_user_account)
+        kisi_id = data.get('kisi_id')
+        personel = service.create(
+            personel_data,
+            create_user_account=create_user_account,
+            kisi_id=int(kisi_id) if kisi_id else None,
+        )
         
-        return JsonResponse({
+        response = {
             'success': True,
             'message': 'Personel başarıyla oluşturuldu',
             'personel': {
                 'id': personel.id,
                 'tam_ad': personel.tam_ad,
-            }
-        })
+            },
+        }
+        return JsonResponse(response)
+    except KimlikConflictError as e:
+        return JsonResponse(e.as_dict(), status=409)
     except ValueError as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
     except Exception as e:
@@ -1098,11 +1150,15 @@ def personel_full_detail_api(request, pk):
     def format_datetime(value):
         return value.strftime('%d.%m.%Y %H:%M') if value else None
     
-    # Kullanıcı hesap bilgileri
+    # Kullanıcı hesap bilgileri (kurum genelinde — FK eksikse eş kayıt / username ile bul)
+    from apps.personel.domain.user_account import personel_user_account_meta
+
+    account_meta = personel_user_account_meta(personel, heal_link=True)
+    linked_user = account_meta['user']
     user_data = None
     must_change_password = True
-    if personel.user:
-        user = personel.user
+    if linked_user:
+        user = linked_user
         user_data = {
             'id': user.id,
             'username': user.username,
@@ -1244,8 +1300,11 @@ def personel_full_detail_api(request, pk):
             'created_at': format_datetime(personel.created_at),
             'updated_at': format_datetime(personel.updated_at),
             # Kullanıcı hesap bilgileri
-            'has_user_account': personel.has_user_account,
+            'has_user_account': account_meta['has_user_account'],
             'user': user_data,
+            'user_ana_sube_ad': personel.sube.ad if personel.sube else None,
+            'user_account_shared': account_meta['user_account_shared'],
+            'user_account_owner_sube_ad': account_meta['user_account_owner_sube_ad'],
             'must_change_password': must_change_password,
         },
         'gorevlendirmeler': gorevlendirme_list,

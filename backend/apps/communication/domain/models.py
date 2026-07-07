@@ -94,6 +94,14 @@ class ContactIdentity(models.Model):
         on_delete=models.SET_NULL,
         related_name='contact_identities',
     )
+    kisi = models.ForeignKey(
+        'kimlik.Kisi',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='contact_identities',
+        verbose_name='Merkezi Kişi',
+    )
     is_primary = models.BooleanField(default=True, verbose_name='Birincil')
     verified_at = models.DateTimeField(null=True, blank=True, verbose_name='Doğrulama Zamanı')
     label = models.CharField(max_length=120, blank=True, default='', verbose_name='Etiket')

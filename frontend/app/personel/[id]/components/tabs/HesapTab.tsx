@@ -11,6 +11,8 @@ interface HesapTabProps {
 }
 
 export default function HesapTab({ data, onRefresh }: HesapTabProps) {
+  const hasAccount = Boolean(data.has_user_account || data.user?.username);
+  const isSharedAccount = Boolean(data.user_account_shared);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showCredentials, setShowCredentials] = useState(false);
@@ -162,7 +164,7 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
       <div className="hesap-section">
         <h3>Hesap Durumu</h3>
         
-        {data.has_user_account ? (
+        {hasAccount ? (
           <div className="hesap-status-card aktif">
             <div className="status-icon">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -172,7 +174,22 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
             </div>
             <div className="status-info">
               <h4>Hesap Aktif</h4>
-              <p>Bu personelin sisteme giriş yapabileceği bir kullanıcı hesabı mevcut.</p>
+              <p>
+                Bu personelin sisteme giriş yapabileceği bir kullanıcı hesabı mevcut.
+                {isSharedAccount && data.user_account_owner_sube_ad && (
+                  <span className="hesap-kurum-note">
+                    {" "}
+                    Hesap {data.user_account_owner_sube_ad} şubesindeki ana personel kaydına bağlıdır;
+                    tüm şubelerde aynı kullanıcı adı ve şifre geçerlidir.
+                  </span>
+                )}
+                {!isSharedAccount && data.user_ana_sube_ad && (
+                  <span className="hesap-kurum-note">
+                    {" "}
+                    Giriş hesabı kurum genelindedir; ana personel kaydı {data.user_ana_sube_ad} şubesindedir.
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         ) : (
@@ -192,7 +209,7 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
       </div>
 
       {/* Hesap Detayları */}
-      {data.has_user_account && data.user && (
+      {hasAccount && data.user && (
         <div className="hesap-section">
           <h3>Hesap Detayları</h3>
           <div className="hesap-details-grid">
@@ -232,7 +249,7 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
       <div className="hesap-section">
         <h3>İşlemler</h3>
         <div className="hesap-actions">
-          {!data.has_user_account ? (
+          {!hasAccount ? (
             <button 
               className="btn-modern btn-primary"
               onClick={handleCreateUser}

@@ -161,10 +161,14 @@ export function useUnsavedChangesGuard({
     return () => document.removeEventListener("click", handleClick, true);
   }, [active, pathname]);
 
+  const prevIsDirtyRef = useRef(isDirty);
   useEffect(() => {
-    if (isDirty) {
+    // Re-enable guard only when the form becomes dirty again after a clean state.
+    // Do not reset bypass while still dirty (e.g. markClean() before snapshot update).
+    if (!prevIsDirtyRef.current && isDirty) {
       bypassRef.current = false;
     }
+    prevIsDirtyRef.current = isDirty;
   }, [isDirty]);
 
   const leaveDialogProps: LeaveDialogProps = {

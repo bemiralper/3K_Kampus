@@ -20,6 +20,8 @@ import {
 } from "./types";
 import { validateTcKimlik, hasWizardUserInput } from "./utils";
 import { apiFetch } from "@/lib/api";
+import { isKimlikConflictCode, useKimlikLookup } from "@/hooks/useKimlikLookup";
+import type { KimlikResolveResponse } from "@/lib/kimlik-api";
 import KimlikStep from "./steps/KimlikStep";
 import KurumsalStep from "./steps/KurumsalStep";
 import AdresStep from "./steps/AdresStep";
@@ -162,6 +164,7 @@ export default function OgrenciKayitClient() {
   const [renewalState, setRenewalState] = useState<RenewalState>({
     isRenewal: false,
   });
+  const [kimlikConflictNonce, setKimlikConflictNonce] = useState(0);
   const isDirty = useMemo(() => hasWizardUserInput(data), [data]);
 
   const { leaveDialogProps, markClean, requestNavigation } = useUnsavedChangesGuard({
@@ -425,6 +428,8 @@ export default function OgrenciKayitClient() {
         student: {
           ...prev.student,
           tc_kimlik_no: ogr.tc_kimlik_no,
+          kisi_id: ogr.kisi_id ?? undefined,
+          tc_locked: true,
           ad: ogr.ad,
           soyad: ogr.soyad,
           dogum_tarihi: ogr.dogum_tarihi || "",
@@ -444,7 +449,9 @@ export default function OgrenciKayitClient() {
 
       setRenewalState({
         isRenewal: true,
+        tcLocked: true,
         existingOgrenciId: ogr.id,
+        existingKisiId: ogr.kisi_id ?? undefined,
         previousEnrollment: tcResult.son_kayit,
         suggestedSeviye: tcResult.sonraki_seviye,
         existingVeliler: tcResult.veliler,
@@ -471,6 +478,21 @@ export default function OgrenciKayitClient() {
       }));
     }
   }, [metadata, fetchStudentNumber, fetchDistricts]);
+
+  const handleUseExistingStudent = useCallback(
+    (tcResult: TcCheckResponse, kimlikResult: KimlikResolveResponse | null) => {
+      handleRenewalDecision("renew", tcResult);
+      const kisiId = kimlikResult?.kisi?.id || tcResult.ogrenci?.kisi_id;
+      if (kisiId) {
+        setData((prev) => ({
+          ...prev,
+          student: { ...prev.student, kisi_id: kisiId, tc_locked: true },
+        }));
+        setRenewalState((prev) => ({ ...prev, existingKisiId: kisiId, tcLocked: true }));
+      }
+    },
+    [handleRenewalDecision],
+  );
 
   // Validasyon
   const validateStep = (step: number): boolean => {
@@ -610,6 +632,15 @@ export default function OgrenciKayitClient() {
       });
 
       if (!result.success || !result.data) {
+        const code = (result as { code?: string }).code;
+        if (isKimlikConflictCode(code)) {
+          setKimlikConflictNonce((n) => n + 1);
+          setCurrentStep(0);
+          setErrors({
+            submit: result.error || "Kimlik çakışması tespit edildi. Lütfen mevcut kişiyi kullanın.",
+          });
+          return;
+        }
         throw new Error(result.error || "Kayıt başarısız");
       }
 
@@ -712,7 +743,9 @@ export default function OgrenciKayitClient() {
             errors={errors}
             onChange={handleDataChange}
             renewalState={renewalState}
+            conflictNonce={kimlikConflictNonce}
             onRenewalDecision={handleRenewalDecision}
+            onUseExistingStudent={handleUseExistingStudent}
           />
         )}
         {currentStep === 1 && (

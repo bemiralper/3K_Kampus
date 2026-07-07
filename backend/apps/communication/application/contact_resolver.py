@@ -12,6 +12,7 @@ from django.db.models import Q
 from apps.communication.domain.enums import RecipientType
 from apps.communication.domain.models import ContactIdentity
 from apps.communication.infrastructure.repository import ContactIdentityRepository
+from apps.kimlik.application.kisi_service import KisiService
 
 
 @dataclass
@@ -101,6 +102,11 @@ class ContactResolver:
         match = cls._lookup_entities(kurum_id, e164)
         if match:
             ogrenci_id, veli_id, personel_id, contact_type, display_name = cls._apply_entity_match(match)
+            kisi_id = KisiService.resolve_kisi_id_for_entity(
+                ogrenci_id=ogrenci_id,
+                veli_id=veli_id,
+                personel_id=personel_id,
+            )
             identity, _ = ContactIdentityRepository.update_or_create(
                 kurum_id=kurum_id,
                 e164=e164,
@@ -108,6 +114,7 @@ class ContactResolver:
                     'ogrenci_id': ogrenci_id,
                     'veli_id': veli_id,
                     'personel_id': personel_id,
+                    'kisi_id': kisi_id,
                 },
             )
         elif identity:
@@ -238,6 +245,11 @@ class ContactResolver:
                 'veli_id': veli_id,
                 'personel_id': personel_id,
                 'label': label,
+                'kisi_id': KisiService.resolve_kisi_id_for_entity(
+                    ogrenci_id=ogrenci_id,
+                    veli_id=veli_id,
+                    personel_id=personel_id,
+                ),
             },
         )
         return identity, errors

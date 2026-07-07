@@ -11,6 +11,10 @@ from apps.personel.infrastructure.repositories import (
 )
 from apps.personel.interfaces.sube_context import personel_queryset_for_sube
 from apps.roller.models import Role, UserRole
+from apps.kimlik.application.kisi_service import KisiService
+from apps.kimlik.application.enforcement import assert_identity_for_new_record
+from apps.kimlik.exceptions import KimlikConflictError
+from apps.kimlik.domain.models import Kisi
 
 
 def resolve_system_role_for_personel(personel, role_code=None):
@@ -106,30 +110,78 @@ class PersonelService:
         return self.repository.get_count(kurum_id, sube_id, aktif_only)
     
     @transaction.atomic
-    def create(self, data, create_user_account=False):
+    def create(self, data, create_user_account=False, kisi_id=None):
         """
         Yeni personel oluştur
         
         Args:
             data: Personel verileri
             create_user_account: Otomatik kullanıcı hesabı oluşturulsun mu?
+            kisi_id: Mevcut merkezi kişi kaydı (opsiyonel)
         """
-        # TC Kimlik No kontrolü
         if data.get('tc_kimlik_no'):
             existing = self.repository.get_by_tc(data['tc_kimlik_no'], data['kurum_id'])
             if existing:
-                raise ValueError(f"Bu TC Kimlik No ile kayıtlı personel zaten var: {existing.tam_ad}")
+                raise KimlikConflictError(
+                    f'Bu TC Kimlik No ile kayıtlı personel zaten var: {existing.tam_ad}. Mevcut kişiyi kullanın.',
+                    code='duplicate_personel_tc',
+                    details={'personel_id': existing.id, 'kisi_id': existing.kisi_id},
+                )
+
+        assert_identity_for_new_record(
+            data['kurum_id'],
+            tc_kimlik_no=data.get('tc_kimlik_no'),
+            telefon=data.get('cep_telefon') or data.get('telefon'),
+            exclude_kisi_id=kisi_id,
+            allow_existing_personel=bool(kisi_id),
+            context='personel',
+        )
         
-        # Personel oluştur
         personel = self.repository.create(data)
+
+        kisi = None
+        if kisi_id:
+            kisi = Kisi.objects.filter(id=kisi_id, kurum_id=data['kurum_id']).first()
+        if kisi:
+            KisiService.sync_from_profile(kisi, data)
+            KisiService.link_personel(personel, kisi)
+        else:
+            KisiService.link_personel(personel)
         
-        # Otomatik kullanıcı hesabı oluştur
         if create_user_account and data.get('email'):
             user = self._create_user_account(personel)
             personel.user = user
             personel.save()
-        
+
         return personel
+
+    @transaction.atomic
+    def reuse_existing_for_sube(self, personel_id, kurum_id, sube_id, gorevlendirme_data=None):
+        """
+        Mevcut personeli farklı şubeye görevlendir — yeni Personel kaydı oluşturmaz.
+        """
+        personel = self.repository.get_by_id(personel_id)
+        if not personel or personel.kurum_id != kurum_id:
+            raise ValueError('Personel bulunamadı')
+
+        result = {'personel': personel, 'gorevlendirme': None, 'created_gorevlendirme': False}
+
+        if gorevlendirme_data:
+            gorev_repo = PersonelGorevlendirmeRepository()
+            existing = PersonelGorevlendirme.objects.filter(
+                personel=personel,
+                egitim_yili_id=gorevlendirme_data['egitim_yili_id'],
+                gorev_sube_id=gorevlendirme_data['gorev_sube_id'],
+            ).first()
+            if existing:
+                result['gorevlendirme'] = existing
+            else:
+                gorevlendirme_data['personel_id'] = personel.id
+                gorevlendirme_data['kurum_id'] = kurum_id
+                result['gorevlendirme'] = gorev_repo.create(gorevlendirme_data)
+                result['created_gorevlendirme'] = True
+
+        return result
     
     def _create_user_account(self, personel):
         """Personel için kullanıcı hesabı oluştur"""

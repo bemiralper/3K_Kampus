@@ -16,6 +16,15 @@ import {
 } from "../types";
 import { formatPhone, titleCase, validateTcKimlik } from "../utils";
 import { apiFetch } from "@/lib/api";
+import KisiBulunduModal from "@/components/kimlik/KisiBulunduModal";
+import OgrenciKimlikEkPanel from "@/components/kimlik/OgrenciKimlikEkPanel";
+import type { KimlikResolveResponse } from "@/lib/kimlik-api";
+import { useKimlikLookup } from "@/hooks/useKimlikLookup";
+import {
+  kimlikFieldClass,
+  mergeKimlikForOgrenci,
+  tcReadonlyClass,
+} from "@/lib/kimlik-form-utils";
 
 interface KimlikStepProps {
   data: WizardData;
@@ -23,7 +32,12 @@ interface KimlikStepProps {
   errors: Record<string, string>;
   onChange: (data: WizardData) => void;
   renewalState: RenewalState;
+  conflictNonce?: number;
   onRenewalDecision: (decision: "renew" | "new" | "cancel", tcResult: TcCheckResponse) => void;
+  onUseExistingStudent: (
+    tcResult: TcCheckResponse,
+    kimlikResult: KimlikResolveResponse | null,
+  ) => void;
 }
 
 export default function KimlikStep({
@@ -33,31 +47,55 @@ export default function KimlikStep({
   onChange,
   renewalState,
   onRenewalDecision,
+  onUseExistingStudent,
+  conflictNonce = 0,
 }: KimlikStepProps) {
   const [tcChecking, setTcChecking] = useState(false);
   const [tcResult, setTcResult] = useState<TcCheckResponse | null>(null);
-  const [showTcModal, setShowTcModal] = useState(false);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // TC değiştiğinde debounce ile kontrol
+  const kimlik = useKimlikLookup({
+    context: "ogrenci",
+    excludeKisiId: data.student.kisi_id,
+    tcDebounceMs: 300,
+  });
+
+  const tcLocked = Boolean(data.student.tc_locked || renewalState.tcLocked || renewalState.existingOgrenciId);
+  const modalKimlik = mergeKimlikForOgrenci(kimlik.result, tcResult);
+
   const checkTc = useCallback(async (tc: string) => {
     if (!validateTcKimlik(tc)) return;
     setTcChecking(true);
     try {
-      const res = await apiFetch<TcCheckResponse>(`/api/ogrenci-kayit/tc-check/?tc=${tc}`);
-      if (res.success && res.data) {
-        const result = res.data;
-        setTcResult(result);
-        if (result.found) {
-          setShowTcModal(true);
-        }
+      const [kimlikData, tcRes] = await Promise.all([
+        kimlik.runResolve({ tc }),
+        apiFetch<TcCheckResponse>(`/api/ogrenci-kayit/tc-check/?tc=${tc}`),
+      ]);
+      const tcCheck = tcRes.success ? tcRes.data ?? null : null;
+      setTcResult(tcCheck);
+      if (tcCheck?.found && !kimlikData?.found) {
+        kimlik.setShowModal(true);
       }
     } catch {
       // silently ignore
     } finally {
       setTcChecking(false);
     }
-  }, []);
+  }, [kimlik]);
+
+  useEffect(() => {
+    if (!conflictNonce) return;
+    void (async () => {
+      await kimlik.openConflictLookup(data.student.tc_kimlik_no, data.student.telefon);
+      if (data.student.tc_kimlik_no.length === 11) {
+        const tcRes = await apiFetch<TcCheckResponse>(
+          `/api/ogrenci-kayit/tc-check/?tc=${data.student.tc_kimlik_no}`,
+        );
+        if (tcRes.success && tcRes.data) setTcResult(tcRes.data);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- conflictNonce ile tetiklenir
+  }, [conflictNonce]);
 
   const handleTcChange = (value: string) => {
     const cleanedTc = value.replace(/\D/g, "").slice(0, 11);
@@ -85,21 +123,13 @@ export default function KimlikStep({
     };
   }, []);
 
-  const handleModalDecision = (decision: "renew" | "new" | "cancel") => {
-    setShowTcModal(false);
+  const handleApplyExisting = () => {
+    kimlik.dismissModal();
     if (tcResult) {
-      onRenewalDecision(decision, tcResult);
-    }
-    if (decision === "cancel") {
-      onChange({
-        ...data,
-        student: { ...data.student, tc_kimlik_no: "" },
-      });
-      setTcResult(null);
+      onUseExistingStudent(tcResult, kimlik.result);
+      kimlik.markHighlighted(["ad", "soyad", "telefon", "email", "dogum_tarihi", "tc_kimlik_no"]);
     }
   };
-
-  const isReadOnly = renewalState.isRenewal;
 
   return (
     <div className="wizard-step-content">
@@ -180,20 +210,24 @@ export default function KimlikStep({
           <div className="tc-input-wrapper">
             <input
               type="text"
-              className={`wizard-input ${errors.tc_kimlik_no ? 'error' : ''} ${tcResult?.found ? 'tc-found' : ''}`}
+              className={`${kimlikFieldClass(`wizard-input ${errors.tc_kimlik_no ? "error" : ""}`, "tc_kimlik_no", kimlik.highlightedFields)}${tcReadonlyClass(tcLocked)}`}
               value={data.student.tc_kimlik_no}
               maxLength={11}
               placeholder="11 haneli TC Kimlik No"
-              onChange={(e) => handleTcChange(e.target.value)}
+              readOnly={tcLocked}
+              onChange={(e) => {
+                if (tcLocked) return;
+                handleTcChange(e.target.value);
+              }}
             />
-            {tcChecking && (
+            {tcChecking || kimlik.checking ? (
               <div className="tc-spinner">
                 <svg className="spinner-svg" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="10" fill="none" stroke="#0262a7" strokeWidth="3" strokeDasharray="31" strokeLinecap="round" />
                 </svg>
               </div>
-            )}
-            {tcResult?.found && !showTcModal && renewalState.isRenewal && (
+            ) : null}
+            {tcResult?.found && renewalState.isRenewal && (
               <div className="tc-badge tc-badge-renewal">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
@@ -202,6 +236,11 @@ export default function KimlikStep({
               </div>
             )}
           </div>
+          {tcLocked && (
+            <span className="kimlik-tc-hint">
+              TC Kimlik Numarası sistemde tekil kimlik olarak kullanıldığı için değiştirilemez.
+            </span>
+          )}
           {errors.tc_kimlik_no && <span className="wizard-error">{errors.tc_kimlik_no}</span>}
         </div>
 
@@ -210,10 +249,9 @@ export default function KimlikStep({
           <label className="wizard-label required">Ad</label>
           <input
             type="text"
-            className={`wizard-input ${errors.ad ? 'error' : ''} ${isReadOnly ? 'readonly-field' : ''}`}
+            className={kimlikFieldClass(`wizard-input ${errors.ad ? "error" : ""}`, "ad", kimlik.highlightedFields)}
             value={data.student.ad}
             placeholder="Öğrenci adı (birden fazla ad girilebilir)"
-            readOnly={isReadOnly}
             onChange={(e) =>
               onChange({
                 ...data,
@@ -232,10 +270,9 @@ export default function KimlikStep({
           <label className="wizard-label required">Soyad</label>
           <input
             type="text"
-            className={`wizard-input ${errors.soyad ? 'error' : ''} ${isReadOnly ? 'readonly-field' : ''}`}
+            className={kimlikFieldClass(`wizard-input ${errors.soyad ? "error" : ""}`, "soyad", kimlik.highlightedFields)}
             value={data.student.soyad}
             placeholder="Öğrenci soyadı (birden fazla soyad girilebilir)"
-            readOnly={isReadOnly}
             onChange={(e) =>
               onChange({
                 ...data,
@@ -271,9 +308,9 @@ export default function KimlikStep({
             dropdownMode="select"
             placeholderText="GG.AA.YYYY"
             calendarStartDay={1}
-            className={`wizard-input ${errors.dogum_tarihi ? 'error' : ''} ${isReadOnly ? 'readonly-field' : ''}`}
-            readOnly={isReadOnly}
-            disabled={isReadOnly}
+            className={kimlikFieldClass(`wizard-input ${errors.dogum_tarihi ? "error" : ""}`, "dogum_tarihi", kimlik.highlightedFields)}
+            readOnly={false}
+            disabled={false}
           />
           {errors.dogum_tarihi && <span className="wizard-error">{errors.dogum_tarihi}</span>}
         </div>
@@ -282,9 +319,8 @@ export default function KimlikStep({
         <div className="wizard-field">
           <label className="wizard-label required">Cinsiyet</label>
           <select
-            className={`wizard-select ${errors.cinsiyet ? 'error' : ''} ${isReadOnly ? 'readonly-field' : ''}`}
+            className={`wizard-select ${errors.cinsiyet ? "error" : ""}`}
             value={data.student.cinsiyet ?? ""}
-            disabled={isReadOnly}
             onChange={(e) =>
               onChange({
                 ...data,
@@ -307,7 +343,7 @@ export default function KimlikStep({
           <label className="wizard-label">E-posta</label>
           <input
             type="email"
-            className="wizard-input"
+            className={kimlikFieldClass("wizard-input", "email", kimlik.highlightedFields)}
             value={data.student.email}
             placeholder="ornek@email.com"
             onChange={(e) =>
@@ -324,140 +360,32 @@ export default function KimlikStep({
           <label className="wizard-label">Telefon</label>
           <input
             type="text"
-            className="wizard-input"
+            className={kimlikFieldClass("wizard-input", "telefon", kimlik.highlightedFields)}
             value={data.student.telefon}
             placeholder="(5XX) XXX XX XX"
-            onChange={(e) =>
+            onChange={(e) => {
+              const formatted = formatPhone(e.target.value);
               onChange({
                 ...data,
-                student: { ...data.student, telefon: formatPhone(e.target.value) },
-              })
-            }
+                student: { ...data.student, telefon: formatted },
+              });
+              kimlik.checkPhone(formatted);
+            }}
+            onBlur={() => kimlik.checkPhone(data.student.telefon)}
           />
+          {kimlik.phoneError && <span className="kimlik-phone-error">{kimlik.phoneError}</span>}
         </div>
       </div>
 
-      {/* TC BULUNDU MODAL */}
-      {showTcModal && tcResult?.found && tcResult.ogrenci && (
-        <div className="tc-modal-overlay">
-          <div className="tc-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tc-modal-header">
-              <div className="tc-modal-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0262a7" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="16" x2="12" y2="12" />
-                  <line x1="12" y1="8" x2="12.01" y2="8" />
-                </svg>
-              </div>
-              <h3>Mevcut Öğrenci Bulundu</h3>
-              <button className="tc-modal-close" onClick={() => handleModalDecision("cancel")}>✕</button>
-            </div>
-
-            <div className="tc-modal-body">
-              {/* Öğrenci Bilgileri */}
-              <div className="tc-modal-student-card">
-                <div className="tc-student-avatar">
-                  {tcResult.ogrenci.ad.charAt(0)}{tcResult.ogrenci.soyad.charAt(0)}
-                </div>
-                <div className="tc-student-info">
-                  <h4>{tcResult.ogrenci.ad} {tcResult.ogrenci.soyad}</h4>
-                  <span className="tc-student-tc">TC: {tcResult.ogrenci.tc_kimlik_no}</span>
-                  <span className={`tc-student-status ${tcResult.ogrenci.aktif_mi ? 'active' : 'inactive'}`}>
-                    {tcResult.ogrenci.aktif_mi ? '● Aktif' : '○ Pasif'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Kayıt Geçmişi */}
-              {tcResult.kayit_gecmisi && tcResult.kayit_gecmisi.length > 0 && (
-                <div className="tc-modal-section">
-                  <h5>📚 Kayıt Geçmişi</h5>
-                  <div className="tc-kayit-list">
-                    {tcResult.kayit_gecmisi.map((k, i) => (
-                      <div key={i} className="tc-kayit-item">
-                        <span className="tc-kayit-yil">{k.egitim_yili}</span>
-                        <span className="tc-kayit-seviye">{k.sinif_seviyesi}{k.alan ? ` — ${k.alan}` : ''}</span>
-                        <span className={`tc-kayit-durum ${k.aktif_mi ? 'active' : 'inactive'}`}>
-                          {k.aktif_mi ? 'Aktif' : 'Tamamlandı'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Sözleşme Durumu */}
-              {tcResult.son_sozlesme && (
-                <div className="tc-modal-section">
-                  <h5>📄 Son Sözleşme</h5>
-                  <div className="tc-sozlesme-info">
-                    <span>{tcResult.son_sozlesme.sozlesme_no}</span>
-                    <span>{tcResult.son_sozlesme.paket_adi}</span>
-                    <span className={`tc-sozlesme-durum durum-${tcResult.son_sozlesme.durum}`}>
-                      {tcResult.son_sozlesme.durum === 'taslak' ? 'Taslak' :
-                       tcResult.son_sozlesme.durum === 'aktif' ? 'Aktif' :
-                       tcResult.son_sozlesme.durum === 'iptal' ? 'İptal' :
-                       tcResult.son_sozlesme.durum === 'tamamlandi' ? 'Tamamlandı' : tcResult.son_sozlesme.durum}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Aktif yılda kayıtlı uyarısı */}
-              {tcResult.aktif_yilda_kayitli && (
-                <div className="tc-modal-warning">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                  <span>Bu öğrenci aktif eğitim yılında zaten kayıtlı!</span>
-                </div>
-              )}
-
-              {/* Sonraki seviye önerisi */}
-              {tcResult.sonraki_seviye && !tcResult.aktif_yilda_kayitli && (
-                <div className="tc-modal-next-level">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0262a7" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" />
-                  </svg>
-                  <span>Önerilen sınıf seviyesi: <b>{tcResult.sonraki_seviye.ad}</b></span>
-                </div>
-              )}
-            </div>
-
-            <div className="tc-modal-footer">
-              <button
-                type="button"
-                className="tc-modal-btn tc-btn-cancel"
-                onClick={() => handleModalDecision("cancel")}
-              >
-                İptal
-              </button>
-              {!tcResult.aktif_yilda_kayitli && (
-                <>
-                  <button
-                    type="button"
-                    className="tc-modal-btn tc-btn-new"
-                    onClick={() => handleModalDecision("new")}
-                  >
-                    Yeni Kayıt Aç
-                  </button>
-                  <button
-                    type="button"
-                    className="tc-modal-btn tc-btn-renew"
-                    onClick={() => handleModalDecision("renew")}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                    </svg>
-                    Kayıt Yenile
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <KisiBulunduModal
+        open={kimlik.showModal}
+        result={modalKimlik}
+        context="ogrenci"
+        loading={tcChecking || kimlik.checking}
+        extraContent={<OgrenciKimlikEkPanel tcResult={tcResult} />}
+        onApply={handleApplyExisting}
+        onCancel={kimlik.dismissModal}
+      />
     </div>
   );
 }

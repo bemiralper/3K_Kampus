@@ -115,6 +115,8 @@ export type MetadataResponse = {
 
 export type StudentData = {
   kayit_turu?: number;
+  kisi_id?: number;
+  tc_locked?: boolean;
   tc_kimlik_no: string;
   ad: string;
   soyad: string;
@@ -157,6 +159,8 @@ export type GuardianAddressData = {
 
 export type GuardianData = {
   yakinlik_turu?: number;
+  kisi_id?: number;
+  tc_locked?: boolean;
   tc_kimlik_no: string;
   ad: string;
   soyad: string;
@@ -192,6 +196,7 @@ export type StepType = 'kimlik' | 'kurumsal' | 'adres' | 'veli' | 'paket' | 'oze
 
 export type TcCheckOgrenci = {
   id: number;
+  kisi_id?: number | null;
   tc_kimlik_no: string;
   ad: string;
   soyad: string;
@@ -265,6 +270,8 @@ export type TcCheckResponse = {
   adres?: TcCheckAdres | null;
   sonraki_seviye?: TcCheckSonrakiSeviye | null;
   aktif_yilda_kayitli?: boolean;
+  kimlik_roller?: import("@/lib/kimlik-api").KimlikRol[];
+  kimlik_uyarilari?: string[];
 };
 
 // ═══ Veli TC Kontrol Yanıtları ═══
@@ -278,6 +285,7 @@ export type VeliTcCheckBagliOgrenci = {
 };
 
 export type VeliTcCheckVeli = {
+  kisi_id?: number | null;
   tc_kimlik_no: string;
   ad: string;
   soyad: string;
@@ -292,13 +300,17 @@ export type VeliTcCheckResponse = {
   found: boolean;
   veli?: VeliTcCheckVeli;
   bagli_ogrenciler?: VeliTcCheckBagliOgrenci[];
+  kimlik_roller?: import("@/lib/kimlik-api").KimlikRol[];
+  kimlik_uyarilari?: string[];
 };
 
 // ═══ Kayıt Yenileme Durumu ═══
 
 export type RenewalState = {
   isRenewal: boolean;
+  tcLocked?: boolean;
   existingOgrenciId?: number;
+  existingKisiId?: number;
   previousEnrollment?: TcCheckSonKayit | null;
   suggestedSeviye?: TcCheckSonrakiSeviye | null;
   existingVeliler?: TcCheckVeli[];

@@ -111,23 +111,24 @@ def get_secili_sube_id(request, kurum_id=None):
     return _default_sube_id(kurum_id)
 
 
-def require_mandatory_sube_id(request, kurum_id=None):
+def require_mandatory_sube_id(request, kurum_id=None, *, allow_query_param=True):
     """
-    Şube bağlamı zorunlu — query param, header veya session.
+    Şube bağlamı zorunlu — header veya session (opsiyonel query param).
     Varsayılan şube kullanılmaz; eksikse None döner.
     """
     if kurum_id is None:
         kurum_id = get_secili_kurum_id(request)
 
-    query_params = getattr(request, 'query_params', None) or request.GET
-    raw = query_params.get('sube_id')
-    if raw:
-        try:
-            valid = _valid_sube_id(int(raw), kurum_id)
-            if valid:
-                return valid
-        except (TypeError, ValueError):
-            pass
+    if allow_query_param:
+        query_params = getattr(request, 'query_params', None) or request.GET
+        raw = query_params.get('sube_id')
+        if raw:
+            try:
+                valid = _valid_sube_id(int(raw), kurum_id)
+                if valid:
+                    return valid
+            except (TypeError, ValueError):
+                pass
 
     candidates = [
         _header_int(request, 'X-Sube-ID'),

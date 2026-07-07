@@ -33,6 +33,15 @@ class Personel(models.Model):
         related_name='personeller',
         verbose_name='Şube'
     )
+
+    kisi = models.ForeignKey(
+        'kimlik.Kisi',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='personel_kayitlari',
+        verbose_name='Merkezi Kişi',
+    )
     
     # Sisteme giriş hesabı (User ilişkisi - OneToOne)
     user = models.OneToOneField(

@@ -36,6 +36,9 @@ export type PersonelDetay = {
     date_joined: string | null;
   } | null;
   must_change_password: boolean;
+  user_ana_sube_ad?: string | null;
+  user_account_shared?: boolean;
+  user_account_owner_sube_ad?: string | null;
 };
 
 export type PersonelGorevlendirme = {

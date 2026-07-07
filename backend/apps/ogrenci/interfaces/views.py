@@ -265,13 +265,14 @@ def ogrenci_filter_options_api(request):
     """Filtre drawer seçenekleri."""
     from apps.ogrenci.interfaces.list_helpers import build_kalem_gruplari
     from apps.egitim_tanimlari.models import SinifSeviyesi
+    from apps.kurum.services.kayit_tanimlari_service import list_registration_types
     from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
     from apps.sinif.domain.models import Sinif
 
     if request.method != 'GET':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-    from apps.ogrenci.interfaces.sube_context import allowed_subeler_for_request, mandatory_ogrenci_context
+    from apps.ogrenci.interfaces.sube_context import mandatory_ogrenci_context
 
     ctx, err = mandatory_ogrenci_context(request)
     if err:
@@ -288,6 +289,10 @@ def ogrenci_filter_options_api(request):
     cinsiyet = [
         {'value': key, 'label': label}
         for key, label in Ogrenci.CINSIYET_CHOICES
+    ]
+    kayit_turleri = [
+        {'value': opt.code, 'label': opt.label}
+        for opt in list_registration_types()
     ]
     kalem_gruplari = build_kalem_gruplari(ctx)
     egitim_kalemleri = []
@@ -316,20 +321,15 @@ def ogrenci_filter_options_api(request):
         for s in sinif_qs.order_by('ad')
     ]
 
-    subeler = [
-        {'id': s['id'], 'ad': s['ad']}
-        for s in allowed_subeler_for_request(request, ctx['kurum_id'])
-    ]
-
     return JsonResponse({
         'success': True,
         'sinif_seviyeleri': sinif_seviyeleri,
         'giris_turu': giris_turu,
+        'kayit_turleri': kayit_turleri,
         'cinsiyet': cinsiyet,
         'kalem_gruplari': kalem_gruplari,
         'egitim_kalemleri': egitim_kalemleri,
         'siniflar': siniflar,
-        'subeler': subeler,
     })
 
 
@@ -859,6 +859,29 @@ def ogrenci_veliler_api(request, pk):
             sms_bildirimleri=sms_bildirimleri,
             varsayilan=varsayilan,
         )
+
+        from apps.kimlik.application.kisi_service import KisiService
+        from apps.kimlik.domain.models import Kisi
+        from apps.kimlik.exceptions import KimlikConflictError
+        try:
+            kisi_id = data.get('kisi_id')
+            if kisi_id:
+                kisi = Kisi.objects.filter(id=kisi_id, kurum_id=ogrenci.kurum_id).first()
+                if kisi:
+                    KisiService.link_veli(veli, kisi)
+                else:
+                    KisiService.link_veli(veli)
+            elif veli.tc_kimlik_no:
+                existing_kisi = Kisi.objects.filter(
+                    kurum_id=ogrenci.kurum_id,
+                    tc_kimlik_no=veli.tc_kimlik_no,
+                ).first()
+                KisiService.link_veli(veli, existing_kisi)
+            else:
+                KisiService.link_veli(veli)
+        except KimlikConflictError as e:
+            veli.delete()
+            return JsonResponse(e.as_dict(), status=409)
 
         return JsonResponse({
             'success': True,

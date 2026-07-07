@@ -3,8 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GuardianAddressData, LookupOption, MetadataResponse, RenewalState, VeliTcCheckResponse, WizardData } from "../types";
 import { formatAddress, formatPhone, titleCase, validateTcKimlik } from "../utils";
-
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import { apiFetch } from "@/lib/api";
+import KisiBulunduModal from "@/components/kimlik/KisiBulunduModal";
+import { pickVeliRol, resolveKimlik, type KimlikResolveResponse } from "@/lib/kimlik-api";
+import {
+  digitsOnlyPhone,
+  flashHighlightedFields,
+  kimlikFieldClass,
+  mergeKimlikForVeli,
+  tcReadonlyClass,
+} from "@/lib/kimlik-form-utils";
 
 interface VeliStepProps {
   data: WizardData;
@@ -19,9 +27,13 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
   // Veli TC kontrolü state'leri
   const [veliTcChecking, setVeliTcChecking] = useState<number | null>(null);
   const [veliTcResult, setVeliTcResult] = useState<VeliTcCheckResponse | null>(null);
-  const [showVeliTcModal, setShowVeliTcModal] = useState(false);
-  const [veliTcModalIndex, setVeliTcModalIndex] = useState<number>(0);
+  const [kimlikResult, setKimlikResult] = useState<KimlikResolveResponse | null>(null);
+  const [showKimlikModal, setShowKimlikModal] = useState(false);
+  const [veliModalIndex, setVeliModalIndex] = useState<number>(0);
+  const [phoneConflictByIndex, setPhoneConflictByIndex] = useState<Record<number, string>>({});
+  const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
   const veliDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const phoneDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Varsayılan ili bul (Erzurum)
   const defaultCity = metadata.cities?.find(c => c.is_default) || metadata.cities?.[0];
@@ -86,25 +98,27 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
     // Debounce ile veli TC kontrolü
     if (veliDebounceRef.current) clearTimeout(veliDebounceRef.current);
     if (cleanValue.length === 11 && validateTcKimlik(cleanValue)) {
-      veliDebounceRef.current = setTimeout(() => checkVeliTc(cleanValue, index), 300);
+      veliDebounceRef.current = setTimeout(() => checkVeliKimlik(cleanValue, index), 300);
     } else {
       setVeliTcResult(null);
+      setKimlikResult(null);
     }
   };
 
-  const checkVeliTc = useCallback(async (tc: string, index: number) => {
+  const checkVeliKimlik = useCallback(async (tc: string, index: number) => {
     setVeliTcChecking(index);
     try {
-      const res = await fetch(`${API_BASE}/api/ogrenci-kayit/veli-tc-check/?tc=${tc}`, {
-        headers: { "X-Kurum-ID": "1", "X-Sube-ID": "1" },
-      });
-      if (res.ok) {
-        const result: VeliTcCheckResponse = await res.json();
-        setVeliTcResult(result);
-        if (result.found) {
-          setVeliTcModalIndex(index);
-          setShowVeliTcModal(true);
-        }
+      const [kimlikRes, veliRes] = await Promise.all([
+        resolveKimlik({ tc, context: "veli" }),
+        apiFetch<VeliTcCheckResponse>(`/api/ogrenci-kayit/veli-tc-check/?tc=${tc}`),
+      ]);
+      const kimlik = kimlikRes.success ? kimlikRes.data ?? null : null;
+      const veliCheck = veliRes.success ? veliRes.data ?? null : null;
+      setKimlikResult(kimlik);
+      setVeliTcResult(veliCheck);
+      if (kimlik?.found || veliCheck?.found) {
+        setVeliModalIndex(index);
+        setShowKimlikModal(true);
       }
     } catch {
       // silently ignore
@@ -113,40 +127,84 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
     }
   }, []);
 
+  const checkVeliPhone = useCallback(
+    async (phone: string, index: number, excludeKisiId?: number) => {
+      const digits = digitsOnlyPhone(phone);
+      if (digits.length < 10) {
+        setPhoneConflictByIndex((prev) => {
+          const next = { ...prev };
+          delete next[index];
+          return next;
+        });
+        return;
+      }
+      setVeliTcChecking(index);
+      try {
+        const res = await resolveKimlik({
+          telefon: digits,
+          context: "veli",
+          exclude_kisi_id: excludeKisiId,
+        });
+        if (res.success && res.data?.found) {
+          setKimlikResult(res.data);
+          setVeliModalIndex(index);
+          setPhoneConflictByIndex((prev) => ({
+            ...prev,
+            [index]: "Bu telefon numarası başka bir kişiye ait.",
+          }));
+          setShowKimlikModal(true);
+        } else {
+          setPhoneConflictByIndex((prev) => {
+            const next = { ...prev };
+            delete next[index];
+            return next;
+          });
+        }
+      } finally {
+        setVeliTcChecking(null);
+      }
+    },
+    [],
+  );
+
   // Component unmount temizliği
   useEffect(() => {
     return () => {
       if (veliDebounceRef.current) clearTimeout(veliDebounceRef.current);
+      if (phoneDebounceRef.current) clearTimeout(phoneDebounceRef.current);
     };
   }, []);
 
-  const handleVeliTcModalDecision = (decision: "use" | "new" | "cancel") => {
-    setShowVeliTcModal(false);
-    if (decision === "use" && veliTcResult?.veli) {
-      // Mevcut veli bilgilerini otomatik doldur
-      const v = veliTcResult.veli;
-      const newGuardians = [...data.guardians];
-      newGuardians[veliTcModalIndex] = {
-        ...newGuardians[veliTcModalIndex],
-        tc_kimlik_no: v.tc_kimlik_no,
-        ad: v.ad,
-        soyad: v.soyad,
-        telefon: v.telefon,
-        email: v.email,
-        meslek: v.meslek,
-      };
-      onChange({ ...data, guardians: newGuardians });
-    } else if (decision === "cancel") {
-      // TC'yi temizle
-      const newGuardians = [...data.guardians];
-      newGuardians[veliTcModalIndex] = {
-        ...newGuardians[veliTcModalIndex],
-        tc_kimlik_no: "",
-      };
-      onChange({ ...data, guardians: newGuardians });
-      setVeliTcResult(null);
-    }
-    // decision === "new" → TC bırak, ama otomatik doldurma
+  const modalKimlik = mergeKimlikForVeli(kimlikResult, veliTcResult);
+
+  const applyKimlikVeli = () => {
+    if (!modalKimlik) return;
+    const ortak = modalKimlik.ortak_alanlar || {};
+    const veliRol = pickVeliRol(modalKimlik.roller);
+    const idx = veliModalIndex;
+    const newGuardians = [...data.guardians];
+    newGuardians[idx] = {
+      ...newGuardians[idx],
+      kisi_id: modalKimlik.kisi?.id || veliTcResult?.veli?.kisi_id || undefined,
+      tc_locked: true,
+      tc_kimlik_no: ortak.tc_kimlik_no || newGuardians[idx].tc_kimlik_no,
+      ad: ortak.ad || veliRol?.ad || newGuardians[idx].ad,
+      soyad: ortak.soyad || veliRol?.soyad || newGuardians[idx].soyad,
+      telefon: ortak.telefon || veliRol?.telefon || veliTcResult?.veli?.telefon || newGuardians[idx].telefon,
+      email: ortak.email || veliRol?.email || veliTcResult?.veli?.email || newGuardians[idx].email,
+      meslek: veliRol?.meslek || veliTcResult?.veli?.meslek || newGuardians[idx].meslek,
+    };
+    onChange({ ...data, guardians: newGuardians });
+    setPhoneConflictByIndex((prev) => {
+      const next = { ...prev };
+      delete next[idx];
+      return next;
+    });
+    flashHighlightedFields(
+      [`g${idx}_ad`, `g${idx}_soyad`, `g${idx}_telefon`, `g${idx}_email`, `g${idx}_tc`],
+      setHighlightedFields,
+    );
+    setShowKimlikModal(false);
   };
 
   const handleFieldChange = (index: number, field: string, value: any) => {
@@ -158,6 +216,16 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
   const handlePhoneChange = (index: number, field: string, value: string) => {
     const formatted = formatPhone(value);
     handleFieldChange(index, field, formatted);
+    setPhoneConflictByIndex((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+    if (phoneDebounceRef.current) clearTimeout(phoneDebounceRef.current);
+    phoneDebounceRef.current = setTimeout(
+      () => checkVeliPhone(formatted, index, data.guardians[index]?.kisi_id),
+      400,
+    );
   };
 
   const handleAdresSecimi = (index: number, ayniMi: boolean) => {
@@ -393,11 +461,19 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
                   <div className="tc-input-wrapper">
                     <input
                       type="text"
-                      className={"wizard-input " + (errors["guardian_" + index + "_tc_kimlik_no"] ? "error" : "")}
+                      className={kimlikFieldClass(
+                        `wizard-input ${errors["guardian_" + index + "_tc_kimlik_no"] ? "error" : ""}`,
+                        `g${index}_tc`,
+                        highlightedFields,
+                      ) + tcReadonlyClass(Boolean(guardian.tc_locked))}
                       value={guardian.tc_kimlik_no}
                       maxLength={11}
                       placeholder="11 haneli TC Kimlik No"
-                      onChange={(e) => handleTcChange(index, e.target.value)}
+                      readOnly={Boolean(guardian.tc_locked)}
+                      onChange={(e) => {
+                        if (guardian.tc_locked) return;
+                        handleTcChange(index, e.target.value);
+                      }}
                     />
                     {veliTcChecking === index && (
                       <div className="tc-spinner">
@@ -407,6 +483,11 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
                       </div>
                     )}
                   </div>
+                  {guardian.tc_locked && (
+                    <span className="kimlik-tc-hint">
+                      TC Kimlik Numarası sistemde tekil kimlik olarak kullanıldığı için değiştirilemez.
+                    </span>
+                  )}
                   {guardian.tc_kimlik_no.length === 11 && !validateTcKimlik(guardian.tc_kimlik_no) && (
                     <span className="wizard-warning">Geçersiz TC Kimlik No</span>
                   )}
@@ -420,7 +501,11 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
                   <label className="wizard-label required">Ad</label>
                   <input
                     type="text"
-                    className={"wizard-input " + (errors["guardian_" + index + "_ad"] ? "error" : "")}
+                    className={kimlikFieldClass(
+                      `wizard-input ${errors["guardian_" + index + "_ad"] ? "error" : ""}`,
+                      `g${index}_ad`,
+                      highlightedFields,
+                    )}
                     value={guardian.ad}
                     placeholder="Veli adı"
                     onChange={(e) => handleFieldChange(index, "ad", titleCase(e.target.value))}
@@ -435,7 +520,11 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
                   <label className="wizard-label required">Soyad</label>
                   <input
                     type="text"
-                    className={"wizard-input " + (errors["guardian_" + index + "_soyad"] ? "error" : "")}
+                    className={kimlikFieldClass(
+                      `wizard-input ${errors["guardian_" + index + "_soyad"] ? "error" : ""}`,
+                      `g${index}_soyad`,
+                      highlightedFields,
+                    )}
                     value={guardian.soyad}
                     placeholder="Veli soyadı"
                     onChange={(e) => handleFieldChange(index, "soyad", titleCase(e.target.value))}
@@ -450,11 +539,19 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
                   <label className="wizard-label required">Telefon</label>
                   <input
                     type="tel"
-                    className={"wizard-input " + (errors["guardian_" + index + "_telefon"] ? "error" : "")}
+                    className={kimlikFieldClass(
+                      `wizard-input ${errors["guardian_" + index + "_telefon"] ? "error" : ""}`,
+                      `g${index}_telefon`,
+                      highlightedFields,
+                    )}
                     value={guardian.telefon}
                     placeholder="(5XX) XXX XX XX"
                     onChange={(e) => handlePhoneChange(index, "telefon", e.target.value)}
+                    onBlur={() => checkVeliPhone(guardian.telefon, index, guardian.kisi_id)}
                   />
+                  {phoneConflictByIndex[index] && (
+                    <span className="kimlik-phone-error">{phoneConflictByIndex[index]}</span>
+                  )}
                   {errors["guardian_" + index + "_telefon"] && (
                     <span className="wizard-error">{errors["guardian_" + index + "_telefon"]}</span>
                   )}
@@ -465,7 +562,7 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
                   <label className="wizard-label">E-posta</label>
                   <input
                     type="email"
-                    className="wizard-input"
+                    className={kimlikFieldClass("wizard-input", `g${index}_email`, highlightedFields)}
                     value={guardian.email}
                     placeholder="veli@email.com"
                     onChange={(e) => handleFieldChange(index, "email", e.target.value)}
@@ -843,84 +940,14 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
         }
       `}</style>
 
-      {/* VELİ TC BULUNDU MODAL */}
-      {showVeliTcModal && veliTcResult?.found && veliTcResult.veli && (
-        <div className="tc-modal-overlay">
-          <div className="tc-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tc-modal-header">
-              <div className="tc-modal-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0262a7" strokeWidth="2">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-              </div>
-              <h3>Mevcut Veli Bulundu</h3>
-              <button className="tc-modal-close" onClick={() => handleVeliTcModalDecision("cancel")}>✕</button>
-            </div>
-
-            <div className="tc-modal-body">
-              <div className="tc-modal-student-card">
-                <div className="tc-student-avatar" style={{ background: "linear-gradient(135deg, #8b5cf6, #6d28d9)" }}>
-                  {veliTcResult.veli.ad.charAt(0)}{veliTcResult.veli.soyad.charAt(0)}
-                </div>
-                <div className="tc-student-info">
-                  <h4>{veliTcResult.veli.ad} {veliTcResult.veli.soyad}</h4>
-                  <span className="tc-student-tc">TC: {veliTcResult.veli.tc_kimlik_no}</span>
-                  <span style={{ fontSize: "13px", color: "#6b7280" }}>
-                    {veliTcResult.veli.veli_turu_display}
-                    {veliTcResult.veli.meslek ? ` • ${veliTcResult.veli.meslek}` : ""}
-                  </span>
-                </div>
-              </div>
-
-              {/* Bağlantılı Öğrenciler */}
-              {veliTcResult.bagli_ogrenciler && veliTcResult.bagli_ogrenciler.length > 0 && (
-                <div className="tc-modal-section">
-                  <h5>👨‍👧‍👦 Bağlantılı Öğrenciler</h5>
-                  <div className="tc-kayit-list">
-                    {veliTcResult.bagli_ogrenciler.map((ogr, i) => (
-                      <div key={i} className="tc-kayit-item">
-                        <span className="tc-kayit-seviye">{ogr.ad} {ogr.soyad}</span>
-                        <span className="tc-kayit-yil">{ogr.yakinlik}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="tc-modal-footer">
-              <button
-                type="button"
-                className="tc-modal-btn tc-btn-cancel"
-                onClick={() => handleVeliTcModalDecision("cancel")}
-              >
-                İptal
-              </button>
-              <button
-                type="button"
-                className="tc-modal-btn tc-btn-new"
-                onClick={() => handleVeliTcModalDecision("new")}
-              >
-                Yeni Veli Olarak Ekle
-              </button>
-              <button
-                type="button"
-                className="tc-modal-btn tc-btn-renew"
-                onClick={() => handleVeliTcModalDecision("use")}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
-                Mevcut Veliyi Kullan
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <KisiBulunduModal
+        open={showKimlikModal}
+        result={modalKimlik}
+        context="veli"
+        loading={veliTcChecking !== null}
+        onApply={applyKimlikVeli}
+        onCancel={() => setShowKimlikModal(false)}
+      />
     </div>
   );
 }

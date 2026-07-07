@@ -1177,12 +1177,10 @@ export default function SozlesmeOlusturClient() {
         return;
       }
       markClean();
+      initialSnapshotRef.current = buildFormSnapshot();
       const savedId = isEditMode ? Number(editId) : Number(data.id);
-      if (savedId) {
-        router.push(`${basePath}?sozlesme=${savedId}`);
-      } else {
-        router.push(basePath);
-      }
+      const targetPath = savedId ? `${basePath}?sozlesme=${savedId}` : basePath;
+      requestNavigation(targetPath);
     } catch (e: any) {
       setError(e.message || "Bir hata oluştu");
     }

@@ -11,6 +11,11 @@ from apps.ogrenci_kayit.permissions import OgrenciKayitAPIView as APIView
 
 from apps.egitim_tanimlari.models import Alan, SinifSeviyesi
 from apps.egitim_yili.domain.models import EgitimYili
+from apps.kimlik.application.kisi_service import KisiService
+from apps.kimlik.application.resolver import KimlikResolver
+from apps.kimlik.application.enforcement import assert_identity_for_new_record
+from apps.kimlik.exceptions import KimlikConflictError
+from apps.kimlik.domain.models import Kisi
 from apps.ogrenci.domain.models import Ogrenci, OgrenciAdres, OgrenciEgitimPaketi, OgrenciKayit, OgrenciVeli
 from apps.sinif.domain.models import Sinif
 from apps.sube.domain.models import Sube
@@ -170,10 +175,14 @@ class TcCheckView(APIView):
                 ogrenci=ogrenci, egitim_yili=aktif_yil
             ).exists()
 
+        resolver = KimlikResolver(kurum_id=kurum_id, sube_id=sube_id)
+        kimlik = resolver.resolve(tc=tc, context=KimlikResolver.CONTEXT_OGRENCI)
+
         result = {
             "found": True,
             "ogrenci": {
                 "id": ogrenci.id,
+                "kisi_id": ogrenci.kisi_id,
                 "tc_kimlik_no": ogrenci.tc_kimlik_no,
                 "ad": ogrenci.ad,
                 "soyad": ogrenci.soyad,
@@ -197,6 +206,8 @@ class TcCheckView(APIView):
             "adres": adres_info,
             "sonraki_seviye": sonraki_seviye,
             "aktif_yilda_kayitli": aktif_yilda_kayitli,
+            "kimlik_roller": kimlik.get("roller", []) if kimlik.get("found") else [],
+            "kimlik_uyarilari": kimlik.get("uyarilar", []) if kimlik.get("found") else [],
         }
 
         return Response(result)
@@ -244,6 +255,7 @@ class VeliTcCheckView(APIView):
         result = {
             "found": True,
             "veli": {
+                "kisi_id": ilk_veli.kisi_id,
                 "tc_kimlik_no": ilk_veli.tc_kimlik_no,
                 "ad": ilk_veli.ad,
                 "soyad": ilk_veli.soyad,
@@ -255,6 +267,11 @@ class VeliTcCheckView(APIView):
             },
             "bagli_ogrenciler": bagli_ogrenciler,
         }
+
+        resolver = KimlikResolver(kurum_id=kurum_id, sube_id=sube_id)
+        kimlik = resolver.resolve(tc=tc, context=KimlikResolver.CONTEXT_VELI)
+        result["kimlik_roller"] = kimlik.get("roller", []) if kimlik.get("found") else []
+        result["kimlik_uyarilari"] = kimlik.get("uyarilar", []) if kimlik.get("found") else []
 
         return Response(result)
 
@@ -465,6 +482,12 @@ class DirectRegistrationView(APIView):
                 ).first()
 
                 if not ogrenci:
+                    assert_identity_for_new_record(
+                        kurum_id,
+                        tc_kimlik_no=student_data["tc_kimlik_no"],
+                        telefon=normalize_phone(student_data.get("telefon") or ""),
+                        context='ogrenci',
+                    )
                     ogrenci = Ogrenci.objects.create(
                         kurum_id=kurum_id,
                         sube_id=sube_id,
@@ -478,9 +501,22 @@ class DirectRegistrationView(APIView):
                         kayit_turu=kayit_turu_code or "asil",
                         aktif_mi=True,
                     )
-                elif ogrenci.sube_id != sube_id:
-                    ogrenci.sube_id = sube_id
-                    ogrenci.save(update_fields=['sube_id'])
+                    KisiService.link_ogrenci(ogrenci)
+                else:
+                    if ogrenci.sube_id != sube_id:
+                        ogrenci.sube_id = sube_id
+                        ogrenci.save(update_fields=['sube_id'])
+                    if ogrenci.kisi_id:
+                        KisiService.sync_from_profile(ogrenci.kisi, {
+                            'ad': student_data['ad'],
+                            'soyad': student_data['soyad'],
+                            'dogum_tarihi': student_data.get('dogum_tarihi'),
+                            'cinsiyet': cinsiyet_code,
+                            'telefon': normalize_phone(student_data.get('telefon') or ""),
+                            'email': student_data.get('email') or '',
+                        })
+                    else:
+                        KisiService.link_ogrenci(ogrenci)
 
                 # Sınıf oluştur/bul
                 egitim_yili = EgitimYili.objects.get(id=enrollment_data["egitim_yili"])
@@ -564,8 +600,7 @@ class DirectRegistrationView(APIView):
 
                 # Veliler
                 if veli_secimi == 'self':
-                    # Öğrenci kendi velisi olarak kaydedilir
-                    OgrenciVeli.objects.create(
+                    veli_self = OgrenciVeli.objects.create(
                         ogrenci=ogrenci,
                         veli_turu='diger',
                         tc_kimlik_no=ogrenci.tc_kimlik_no or "",
@@ -576,6 +611,10 @@ class DirectRegistrationView(APIView):
                         ogrenci_kendi_velisi=True,
                         varsayilan=True,
                     )
+                    if ogrenci.kisi_id:
+                        KisiService.link_veli(veli_self, ogrenci.kisi)
+                    else:
+                        KisiService.link_veli(veli_self)
                 else:
                     for idx, guardian_data in enumerate(guardians_data):
                         if guardian_data.get("tc_kimlik_no") and guardian_data.get("ad"):
@@ -595,6 +634,21 @@ class DirectRegistrationView(APIView):
                                 meslek=guardian_data.get("meslek") or "",
                                 varsayilan=idx == 0,
                             )
+                            kisi_id = guardian_data.get("kisi_id")
+                            if kisi_id:
+                                kisi = Kisi.objects.filter(id=kisi_id, kurum_id=kurum_id).first()
+                                if kisi:
+                                    KisiService.link_veli(veli, kisi)
+                                else:
+                                    KisiService.link_veli(veli)
+                            elif veli.tc_kimlik_no:
+                                existing_kisi = Kisi.objects.filter(
+                                    kurum_id=kurum_id,
+                                    tc_kimlik_no=veli.tc_kimlik_no,
+                                ).first()
+                                KisiService.link_veli(veli, existing_kisi)
+                            else:
+                                KisiService.link_veli(veli)
                             
                             # Veli adresi - eğer farklı adres girildiyse kaydet
                             adres_ayni_mi = guardian_data.get("adres_ayni_mi", True)
@@ -775,6 +829,8 @@ class DirectRegistrationView(APIView):
                     "message": "Kayıt başarıyla tamamlandı",
                 }, status=status.HTTP_201_CREATED)
 
+        except KimlikConflictError as e:
+            return Response(e.as_dict(), status=status.HTTP_409_CONFLICT)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

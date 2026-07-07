@@ -4,8 +4,7 @@ from django.http import JsonResponse
 from apps.egitim_yili.domain.models import EgitimYili
 from shared.context import get_secili_kurum_id, get_secili_egitim_yili_id
 from shared.sube_access import get_allowed_subeler_for_user, serialize_sube
-from shared.sube_context import assert_record_sube_access as _assert_record
-from shared.sube_context import resolve_mandatory_sube as _resolve_mandatory
+from shared.sube_context import SUBE_FORBIDDEN_MSG, SUBE_REQUIRED_MSG, assert_record_sube_access as _assert_record
 
 
 def _error_response(err):
@@ -13,9 +12,21 @@ def _error_response(err):
 
 
 def resolve_mandatory_ogrenci_sube(request, kurum_id):
-    sube_id, err = _resolve_mandatory(request, kurum_id)
-    if err:
-        return None, _error_response(err)
+    """Öğrenci listesi — şube yalnızca üst bar (header/session), query param yok."""
+    from shared.context import require_mandatory_sube_id
+
+    sube_id = require_mandatory_sube_id(
+        request, kurum_id=int(kurum_id), allow_query_param=False,
+    )
+    if not sube_id:
+        return None, _error_response({'error': SUBE_REQUIRED_MSG, 'status': 400})
+
+    user = getattr(request, 'user', None)
+    if user and getattr(user, 'is_authenticated', False):
+        allowed = get_allowed_subeler_for_user(user, kurum_id=int(kurum_id))
+        if not allowed.filter(id=sube_id).exists():
+            return None, _error_response({'error': SUBE_FORBIDDEN_MSG, 'status': 403})
+
     return sube_id, None
 
 

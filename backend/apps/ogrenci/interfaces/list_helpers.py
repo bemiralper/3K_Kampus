@@ -284,12 +284,12 @@ def parse_list_params(request):
         'durum': p.get('durum', 'all') if p.get('durum', 'all') in ('aktif', 'pasif', 'all') else 'all',
         'sinif_seviyesi_ids': sinif_seviyesi_ids,
         'giris_turu': (p.get('giris_turu') or '').strip() or None,
+        'kayit_turu': (p.get('kayit_turu') or '').strip() or None,
         'cinsiyet': (p.get('cinsiyet') or '').strip() or None,
         'paket_id': int(p['paket_id']) if p.get('paket_id') else None,
         'paket_turu': (p.get('paket_turu') or '').strip() or None,
         'kalemler': kalemler,
         'sinif_ids': sinif_ids,
-        'sube_id': int(p['sube_id']) if p.get('sube_id') else None,
         'kayit_tarihi_bas': parse_date_param(p.get('kayit_tarihi_bas')),
         'kayit_tarihi_bit': parse_date_param(p.get('kayit_tarihi_bit')),
         'sort': p.get('sort', 'created_at_desc') if p.get('sort') in SORT_MAP else 'created_at_desc',
@@ -359,7 +359,7 @@ def get_varsayilan_veli(ogrenci):
 def build_kayit_queryset(ctx, params, apply_durum=True):
     """OgrenciKayit queryset — kurum/şube/yıl ve gelişmiş filtreler."""
     use_all_years = params['all_years'] or not ctx.get('egitim_yili_id')
-    effective_sube_id = params['sube_id'] or ctx['sube_id']
+    effective_sube_id = ctx['sube_id']
 
     qs = OgrenciKayit.objects.filter(
         kurum_id=ctx['kurum_id'],
@@ -379,6 +379,9 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
 
     if params['giris_turu']:
         qs = qs.filter(giris_turu=params['giris_turu'])
+
+    if params['kayit_turu']:
+        qs = qs.filter(ogrenci__kayit_turu=params['kayit_turu'])
 
     if params['cinsiyet']:
         qs = qs.filter(ogrenci__cinsiyet=params['cinsiyet'])

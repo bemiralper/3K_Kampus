@@ -120,16 +120,16 @@ export default function OgrenciListesiPage() {
     }[];
     egitim_kalemleri: { kalem_turu: string; kalem_id: number; kalem_adi: string }[];
     siniflar: { id: number; ad: string; sinif_seviyesi_id: number | null }[];
-    subeler: { id: number; ad: string }[];
     sinif_seviyeleri: { id: number; ad: string }[];
+    kayit_turleri: { value: string; label: string }[];
     giris_turu: { value: string; label: string }[];
     cinsiyet: { value: string; label: string }[];
   }>({
     kalem_gruplari: [],
     egitim_kalemleri: [],
     siniflar: [],
-    subeler: [],
     sinif_seviyeleri: [],
+    kayit_turleri: [],
     giris_turu: [],
     cinsiyet: [],
   });
@@ -258,8 +258,8 @@ export default function OgrenciListesiPage() {
         kalem_gruplari: data.kalem_gruplari || [],
         egitim_kalemleri: data.egitim_kalemleri || [],
         siniflar: data.siniflar || [],
-        subeler: data.subeler || [],
         sinif_seviyeleri: data.sinif_seviyeleri || [],
+        kayit_turleri: data.kayit_turleri || [],
         giris_turu: data.giris_turu || [],
         cinsiyet: data.cinsiyet || [],
       });
@@ -275,8 +275,8 @@ export default function OgrenciListesiPage() {
       all_years: false,
       sinif_seviyesi_ids: [],
       sinif_ids: [],
-      sube_id: "",
       kalemler: [],
+      kayit_turu: "",
       giris_turu: "",
       cinsiyet: "",
       paket_id: "",
@@ -309,7 +309,7 @@ export default function OgrenciListesiPage() {
       n += filters.sinif_seviyesi_ids!.length;
     }
     if ((filters.sinif_ids || []).length > 0) n += filters.sinif_ids!.length;
-    if (filters.sube_id) n++;
+    if (filters.kayit_turu) n++;
     if (filters.giris_turu) n++;
     if (filters.cinsiyet) n++;
     if (filters.kayit_tarihi_bas) n++;
@@ -353,11 +353,11 @@ export default function OgrenciListesiPage() {
       chips.push({ key: `sinif:${sinifId}`, label: `Sınıf: ${sinifAd}` });
     }
 
-    if (filters.sube_id) {
-      const subeAd =
-        filterOptions.subeler.find((s) => s.id === filters.sube_id)?.ad ||
-        String(filters.sube_id);
-      chips.push({ key: 'sube_id', label: `Şube: ${subeAd}` });
+    if (filters.kayit_turu) {
+      const label =
+        filterOptions.kayit_turleri.find((k) => k.value === filters.kayit_turu)?.label ||
+        filters.kayit_turu;
+      chips.push({ key: 'kayit_turu', label: `Kayıt türü: ${label}` });
     }
 
     if (filters.giris_turu) {
@@ -418,8 +418,8 @@ export default function OgrenciListesiPage() {
     }
 
     switch (key) {
-      case 'sube_id':
-        updateFilters({ sube_id: '', page: 1 });
+      case 'kayit_turu':
+        updateFilters({ kayit_turu: '', page: 1 });
         break;
       case 'giris_turu':
         updateFilters({ giris_turu: '', page: 1 });

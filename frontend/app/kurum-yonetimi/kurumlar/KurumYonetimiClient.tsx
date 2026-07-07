@@ -577,12 +577,14 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
               <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
             </svg>
           </div>
-          <div className="hero-text">
+            <div className="hero-text">
             <h1>Kurum Yönetimi</h1>
             <div className="hero-breadcrumb">
               <a href="/dashboard">Ana Sayfa</a>
               <span>/</span>
               <span>Kurum Yönetimi</span>
+              <span>/</span>
+              <a href="/kurum-yonetimi/kimlik-cakismalari">Kimlik Çakışmaları</a>
             </div>
           </div>
         </div>

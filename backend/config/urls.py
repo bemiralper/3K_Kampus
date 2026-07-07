@@ -35,6 +35,7 @@ urlpatterns = [
     path('ogrenciler/', lambda request: redirect(f"{settings.FRONTEND_URL}/ogrenciler", permanent=False)),
     path('ogrenciler/<path:rest>/', lambda request, rest: redirect(f"{settings.FRONTEND_URL}/ogrenciler/{rest}", permanent=False)),
     path('api/ogrenci-kayit/', include('apps.ogrenci_kayit.urls')),
+    path('api/kimlik/', include('apps.kimlik.interfaces.urls')),
     
     # Personel URLs
     path('personel/', include('apps.personel.interfaces.urls')),

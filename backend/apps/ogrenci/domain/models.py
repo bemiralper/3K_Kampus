@@ -32,6 +32,15 @@ class Ogrenci(models.Model):
         related_name='ogrenciler',
         verbose_name='Şube'
     )
+
+    kisi = models.ForeignKey(
+        'kimlik.Kisi',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ogrenci_kayitlari_kisi',
+        verbose_name='Merkezi Kişi',
+    )
     
     # Kimlik bilgileri
     tc_kimlik_no = models.CharField(
@@ -325,6 +334,15 @@ class OgrenciVeli(models.Model):
         on_delete=models.CASCADE,
         related_name='veliler',
         verbose_name='Öğrenci'
+    )
+
+    kisi = models.ForeignKey(
+        'kimlik.Kisi',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='veli_kayitlari',
+        verbose_name='Merkezi Kişi',
     )
     
     VELI_TURU_CHOICES = [

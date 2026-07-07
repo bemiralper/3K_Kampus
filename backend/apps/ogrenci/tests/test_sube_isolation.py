@@ -88,16 +88,18 @@ class OgrenciSubeIsolationAPITest(TestCase):
         self.assertIn(self.ogrenci_a.id, ids)
         self.assertNotIn(self.ogrenci_b.id, ids)
 
-    def test_list_scoped_to_sube_query_param(self):
+    def test_list_ignores_sube_query_param(self):
+        """Şube filtresi yalnızca üst bar (X-Sube-ID) bağlamından gelir."""
         res = self.client.get(
             f'/ogrenciler/api/list/?sube_id={self.sube_b.id}',
             HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_a.id),
             HTTP_X_EGITIMYILI_ID=str(self.yil.id),
         )
         self.assertEqual(res.status_code, 200)
         ids = {row['id'] for row in res.json().get('ogrenciler', [])}
-        self.assertIn(self.ogrenci_b.id, ids)
-        self.assertNotIn(self.ogrenci_a.id, ids)
+        self.assertIn(self.ogrenci_a.id, ids)
+        self.assertNotIn(self.ogrenci_b.id, ids)
 
     def test_filter_options_requires_sube(self):
         res = self.client.get(
