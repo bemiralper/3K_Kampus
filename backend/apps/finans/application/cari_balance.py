@@ -27,6 +27,24 @@ def empty_islem_totals() -> dict[str, float]:
     return {k: 0.0 for k in ISLEM_TURU_KEYS}
 
 
+# GelirTahsilat servisi her tahsilat için otomatik bir CariHareket(TAHSILAT)
+# üretir. Gün sonu / dashboard / dönem toplamları GelirTahsilat'ı zaten ayrı
+# saydığından, aynı kaynaktan gelen cari tahsilat hareketleri toplamlara
+# eklenirse çift sayım oluşur. Bu sabit, o hareketleri dışlamak için kullanılır.
+GELIR_TAHSILAT_KAYNAK_TIP = 'GelirTahsilat'
+
+
+def cari_bagimsiz_tahsilat_q():
+    """GelirTahsilat kaynaklı olmayan (bağımsız) cari TAHSILAT hareketleri filtresi.
+
+    Nakit/gün sonu toplamlarında GelirTahsilat kovasıyla çakışmayı (çift sayımı)
+    önler. `CariHareket.objects.filter(... & cari_bagimsiz_tahsilat_q())` şeklinde
+    kullanılır.
+    """
+    from django.db.models import Q
+    return ~Q(kaynak_tip=GELIR_TAHSILAT_KAYNAK_TIP)
+
+
 def net_bakiye(toplam_borc: float, toplam_alacak: float) -> float:
     return float(toplam_borc) - float(toplam_alacak)
 

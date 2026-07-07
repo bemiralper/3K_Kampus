@@ -293,6 +293,68 @@ class CariListeToplamTest(CariHesaplamaTestBase):
         self.assertNotEqual(ozet['toplam_borc'], float(tedarikci.toplam_borc))
 
 
+class GunSonuCariUyumTest(CariHesaplamaTestBase):
+    """Gün sonu / dönem toplamları cari tahsilatı çift saymamalı."""
+
+    def _gelir_ile_tahsilat(self, brut='1000', tahsilat='400'):
+        gelir, err = GelirService().create({
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube.id,
+            'cari_hesap_id': self._create_musteri().id,
+            'gelir_kategorisi_id': self.gelir_kat.id,
+            'fatura_tarihi': self.today,
+            'vade_tarihi': self.today,
+            'brut_tutar': Decimal(brut),
+            'kdv_orani': 0,
+            'olusturan': self.user,
+        })
+        self.assertIsNone(err, err)
+        tahsilat_obj, err = GelirTahsilatService().tahsilat_yap({
+            'gelir_kaydi_id': gelir.id,
+            'tutar': Decimal(tahsilat),
+            'tahsilat_tarihi': self.today,
+            'mali_hesap_id': self.mali_hesap.id,
+            'odeme_yontemi_id': self.odeme_yontemi.id,
+            'islem_yapan': self.user,
+        })
+        self.assertIsNone(err, err)
+        return gelir, tahsilat_obj
+
+    def test_gelir_tahsilat_gun_sonu_tek_sayilir(self):
+        """GelirTahsilat + otomatik CariHareket(TAHSILAT) çift sayılmamalı."""
+        from apps.finans.application.gun_sonu_finans_helpers import bugun_alinan_toplam
+
+        self._gelir_ile_tahsilat(brut='1000', tahsilat='400')
+        toplam = bugun_alinan_toplam(self.kurum.id, self.today, self.sube.id)
+        self.assertEqual(toplam, 400)
+
+    def test_gelir_tahsilat_iptali_gun_sonuna_yansimaz(self):
+        from apps.finans.application.gun_sonu_finans_helpers import bugun_alinan_toplam
+
+        _, tahsilat_obj = self._gelir_ile_tahsilat(brut='1000', tahsilat='400')
+        GelirTahsilatService().tahsilat_iptal(tahsilat_obj.id)
+        toplam = bugun_alinan_toplam(self.kurum.id, self.today, self.sube.id)
+        self.assertEqual(toplam, 0)
+
+    def test_period_summary_cari_bagimsiz_bos(self):
+        """Dönem özeti cari kovası GelirTahsilat kaynaklı hareketleri saymamalı."""
+        from apps.finans.application.period.period_service import PeriodService
+
+        self._gelir_ile_tahsilat(brut='1000', tahsilat='400')
+        data = PeriodService.period_summary(
+            kurum_id=self.kurum.id,
+            baslangic=self.today,
+            bitis=self.today,
+            sube_id=self.sube.id,
+            mode='alinan',
+        )
+        kaynaklar = data['ozet']['kaynak_kirilimi']
+        cari_row = next((k for k in kaynaklar if k.get('kaynak') == 'cari'), None)
+        if cari_row is not None:
+            self.assertEqual(int(cari_row.get('toplam') or 0), 0)
+        self.assertEqual(int(data['ozet']['toplam_tutar']), 400)
+
+
 class CariSilmeTest(CariHesaplamaTestBase):
     def test_cari_silme_bakiye_varken_engellenir(self):
         cari = self._create_musteri()

@@ -10,6 +10,7 @@ from datetime import date, datetime, time, timedelta
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
+from apps.finans.application.cari_balance import cari_bagimsiz_tahsilat_q
 from apps.finans.application.period.period_service import PeriodService, _sozlesme_ids
 from apps.finans.application.selectors.donem_bakiye_selector import DonemBakiyeSelector
 from apps.finans.application.selectors.gider_selector import GiderSelector
@@ -116,7 +117,7 @@ def _bugun_alinan_toplam(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> in
     ch_q = Q(
         kurum_id=kurum_id,
         islem_turu=CariHareketTuru.TAHSILAT,
-    ) & _bugun_islem_q('islem_tarihi', gun)
+    ) & _bugun_islem_q('islem_tarihi', gun) & cari_bagimsiz_tahsilat_q()
     ch_q &= _context_scope_q(
         sube_id=sube_id, egitim_yili_id=egitim_yili_id,
         sube_field='sube_id', yil_field='egitim_yili_id',
@@ -493,7 +494,7 @@ def _bugun_islem_satirlari(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> 
             'cari_hesap_id': gk.cari_hesap_id,
         })
 
-    ch_q = Q(kurum_id=kurum_id, islem_turu=CariHareketTuru.TAHSILAT) & _bugun_islem_q('islem_tarihi', gun)
+    ch_q = Q(kurum_id=kurum_id, islem_turu=CariHareketTuru.TAHSILAT) & _bugun_islem_q('islem_tarihi', gun) & cari_bagimsiz_tahsilat_q()
     ch_q &= _context_scope_q(
         sube_id=sube_id, egitim_yili_id=egitim_yili_id,
         sube_field='sube_id', yil_field='egitim_yili_id',

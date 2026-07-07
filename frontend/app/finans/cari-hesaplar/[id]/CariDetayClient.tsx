@@ -478,24 +478,40 @@ export default function CariDetayClient({
     [hesap?.hesap_turu],
   );
 
-  const tabToolbarProps = {
-    filters: tabFilters,
-    onChange: patchTabFilters,
-    columnsApi,
-    cariHesapId: cariHesapId,
-    exportTitle: exportTitleForTab,
-    exportRows: exportRowsForTab,
-    exportFilenamePrefix: `cari-${activeTab}-${cariHesapId}`,
-    filtersMeta: exportFiltersMeta,
-    odemeYontemleri: odemeYontemleriList,
-    ...(activeTab === "ekstre"
-      ? {
-          fallbackExportColumns: ekstreFallbackColumns,
-          allowEmptyRowsExport: !!cariOzet || hareketler.length > 0,
-          exportLabel: "Ekstre Raporu (PDF/Excel)",
-        }
-      : {}),
-  };
+  const tabToolbarProps = useMemo(
+    () => ({
+      filters: tabFilters,
+      onChange: patchTabFilters,
+      columnsApi,
+      cariHesapId: cariHesapId,
+      exportTitle: exportTitleForTab,
+      exportRows: exportRowsForTab,
+      exportFilenamePrefix: `cari-${activeTab}-${cariHesapId}`,
+      filtersMeta: exportFiltersMeta,
+      odemeYontemleri: odemeYontemleriList,
+      ...(activeTab === "ekstre"
+        ? {
+            fallbackExportColumns: ekstreFallbackColumns,
+            allowEmptyRowsExport: !!cariOzet || hareketler.length > 0,
+            exportLabel: "Ekstre Raporu (PDF/Excel)",
+          }
+        : {}),
+    }),
+    [
+      tabFilters,
+      patchTabFilters,
+      columnsApi,
+      cariHesapId,
+      exportTitleForTab,
+      exportRowsForTab,
+      activeTab,
+      exportFiltersMeta,
+      odemeYontemleriList,
+      ekstreFallbackColumns,
+      cariOzet,
+      hareketler.length,
+    ],
+  );
 
   useEffect(() => {
     if (activeTab === "ekstre" || activeTab === "odemeler") {
@@ -627,19 +643,19 @@ export default function CariDetayClient({
   };
 
   /* ─── ödeme actions ─── */
-  const openOdemeDrawer = async (giderId: number) => {
+  const openOdemeDrawer = (giderId: number) => {
     const gider = giderler.find((g) => g.id === giderId);
     setOdemeDrawerDefaults({
       odeme_yontemi_id: gider?.odeme_yontemi_id || undefined,
     });
     setSelectedGiderId(giderId);
-    try {
-      const taksitler = await giderKaydiService.taksitler(giderId);
-      setSelectedGiderTaksitler(taksitler);
-    } catch {
-      setSelectedGiderTaksitler([]);
-    }
+    // Drawer'ı anında aç; taksitleri arka planda yükle (UI donmaz).
+    setSelectedGiderTaksitler([]);
     setShowOdemeDrawer(true);
+    giderKaydiService
+      .taksitler(giderId)
+      .then((taksitler) => setSelectedGiderTaksitler(taksitler))
+      .catch(() => setSelectedGiderTaksitler([]));
   };
 
   /** Serbest ödeme iptal (cari hareket üzerinden) */
