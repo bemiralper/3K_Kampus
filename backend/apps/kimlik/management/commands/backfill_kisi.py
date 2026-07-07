@@ -13,6 +13,7 @@ from django.db import transaction
 from apps.kimlik.application.kisi_service import KisiService
 from apps.kimlik.domain.models import Kisi
 from apps.kimlik.domain.phone import normalize_phone
+from apps.kimlik.exceptions import KimlikConflictError
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
 from apps.personel.domain.models import Personel
@@ -74,6 +75,51 @@ def collect_conflicts(kurum_id: int | None = None, dry_run: bool = True) -> list
     return conflicts
 
 
+def build_conflict_skip_sets(conflicts: list[dict]) -> tuple[set[str], set[str], set[tuple[str, int]]]:
+    """Dry-run çakışma raporundan backfill atlama kümeleri üret."""
+    conflict_tcs: set[str] = set()
+    conflict_phones: set[str] = set()
+    conflict_entities: set[tuple[str, int]] = set()
+
+    for conflict in conflicts:
+        tc = (conflict.get('tc') or '').strip()
+        if tc:
+            conflict_tcs.add(tc)
+        telefon = normalize_phone(conflict.get('telefon') or '')
+        if telefon:
+            conflict_phones.add(telefon)
+        for kayit in conflict.get('kayitlar', []):
+            conflict_entities.add((kayit['model'], kayit['id']))
+            kayit_tc = (kayit.get('tc') or '').strip()
+            if kayit_tc:
+                conflict_tcs.add(kayit_tc)
+
+    return conflict_tcs, conflict_phones, conflict_entities
+
+
+def should_skip_record(
+    *,
+    model: str,
+    record_id: int,
+    tc: str | None,
+    telefon: str | None,
+    conflict_tcs: set[str],
+    conflict_phones: set[str],
+    conflict_entities: set[tuple[str, int]],
+) -> bool:
+    tc = (tc or '').strip()
+    telefon = normalize_phone(telefon or '')
+    if not tc:
+        return True
+    if tc in conflict_tcs:
+        return True
+    if telefon and telefon in conflict_phones:
+        return True
+    if (model, record_id) in conflict_entities:
+        return True
+    return False
+
+
 class Command(BaseCommand):
     help = 'Mevcut kayıtları Kisi tablosuna bağlar; çakışmaları raporlar.'
 
@@ -97,73 +143,120 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f'Dry-run tamamlandı. {len(conflicts)} çakışma.'))
             return
 
-        conflict_tcs = {c['tc'] for c in conflicts if c.get('tc')}
+        conflict_tcs, conflict_phones, conflict_entities = build_conflict_skip_sets(conflicts)
         linked = 0
+        skipped = 0
 
         kurum_qs = Kurum.objects.filter(aktif_mi=True)
         if kurum_id:
             kurum_qs = kurum_qs.filter(id=kurum_id)
 
         for kurum in kurum_qs:
-            with transaction.atomic():
-                tc_to_kisi: dict[str, Kisi] = {}
+            tc_to_kisi: dict[str, Kisi] = {}
 
-                for p in Personel.objects.filter(kurum=kurum, kisi__isnull=True):
-                    if not p.tc_kimlik_no or p.tc_kimlik_no in conflict_tcs:
-                        continue
-                    if p.tc_kimlik_no in tc_to_kisi:
-                        kisi = tc_to_kisi[p.tc_kimlik_no]
-                    else:
+            for p in Personel.objects.filter(kurum=kurum, kisi__isnull=True):
+                if should_skip_record(
+                    model='Personel',
+                    record_id=p.id,
+                    tc=p.tc_kimlik_no,
+                    telefon=p.cep_telefon or p.telefon,
+                    conflict_tcs=conflict_tcs,
+                    conflict_phones=conflict_phones,
+                    conflict_entities=conflict_entities,
+                ):
+                    skipped += 1
+                    continue
+                try:
+                    with transaction.atomic():
+                        if p.tc_kimlik_no in tc_to_kisi:
+                            kisi = tc_to_kisi[p.tc_kimlik_no]
+                        else:
+                            kisi = KisiService.create_from_profile(kurum.id, {
+                                'tc_kimlik_no': p.tc_kimlik_no,
+                                'ad': p.ad,
+                                'soyad': p.soyad,
+                                'dogum_tarihi': p.dogum_tarihi,
+                                'cinsiyet': p.cinsiyet,
+                                'telefon': p.cep_telefon or p.telefon,
+                                'email': p.email,
+                                'adres': p.adres,
+                                'il': p.il,
+                                'ilce': p.ilce,
+                            })
+                            tc_to_kisi[p.tc_kimlik_no] = kisi
+                        KisiService.link_personel(p, kisi)
+                        linked += 1
+                except KimlikConflictError as exc:
+                    skipped += 1
+                    self.stdout.write(self.style.WARNING(f'Personel #{p.id} atlandı: {exc}'))
+
+            for o in Ogrenci.objects.filter(kurum=kurum, kisi__isnull=True):
+                if should_skip_record(
+                    model='Ogrenci',
+                    record_id=o.id,
+                    tc=o.tc_kimlik_no,
+                    telefon=o.telefon,
+                    conflict_tcs=conflict_tcs,
+                    conflict_phones=conflict_phones,
+                    conflict_entities=conflict_entities,
+                ):
+                    skipped += 1
+                    continue
+                if o.tc_kimlik_no in tc_to_kisi:
+                    skipped += 1
+                    continue  # cross-entity conflict — skip
+                try:
+                    with transaction.atomic():
                         kisi = KisiService.create_from_profile(kurum.id, {
-                            'tc_kimlik_no': p.tc_kimlik_no,
-                            'ad': p.ad,
-                            'soyad': p.soyad,
-                            'dogum_tarihi': p.dogum_tarihi,
-                            'cinsiyet': p.cinsiyet,
-                            'telefon': p.cep_telefon or p.telefon,
-                            'email': p.email,
-                            'adres': p.adres,
-                            'il': p.il,
-                            'ilce': p.ilce,
+                            'tc_kimlik_no': o.tc_kimlik_no,
+                            'ad': o.ad,
+                            'soyad': o.soyad,
+                            'dogum_tarihi': o.dogum_tarihi,
+                            'cinsiyet': o.cinsiyet,
+                            'telefon': o.telefon,
+                            'email': o.email,
+                            'adres': o.adres,
                         })
-                        tc_to_kisi[p.tc_kimlik_no] = kisi
-                    KisiService.link_personel(p, kisi)
-                    linked += 1
+                        tc_to_kisi[o.tc_kimlik_no] = kisi
+                        KisiService.link_ogrenci(o, kisi)
+                        linked += 1
+                except KimlikConflictError as exc:
+                    skipped += 1
+                    self.stdout.write(self.style.WARNING(f'Öğrenci #{o.id} atlandı: {exc}'))
 
-                for o in Ogrenci.objects.filter(kurum=kurum, kisi__isnull=True):
-                    if not o.tc_kimlik_no or o.tc_kimlik_no in conflict_tcs:
-                        continue
-                    if o.tc_kimlik_no in tc_to_kisi:
-                        continue  # cross-entity conflict — skip
-                    kisi = KisiService.create_from_profile(kurum.id, {
-                        'tc_kimlik_no': o.tc_kimlik_no,
-                        'ad': o.ad,
-                        'soyad': o.soyad,
-                        'dogum_tarihi': o.dogum_tarihi,
-                        'cinsiyet': o.cinsiyet,
-                        'telefon': o.telefon,
-                        'email': o.email,
-                        'adres': o.adres,
-                    })
-                    tc_to_kisi[o.tc_kimlik_no] = kisi
-                    KisiService.link_ogrenci(o, kisi)
-                    linked += 1
+            for v in OgrenciVeli.objects.filter(ogrenci__kurum=kurum, kisi__isnull=True):
+                if should_skip_record(
+                    model='OgrenciVeli',
+                    record_id=v.id,
+                    tc=v.tc_kimlik_no,
+                    telefon=v.telefon,
+                    conflict_tcs=conflict_tcs,
+                    conflict_phones=conflict_phones,
+                    conflict_entities=conflict_entities,
+                ):
+                    skipped += 1
+                    continue
+                try:
+                    with transaction.atomic():
+                        if v.tc_kimlik_no in tc_to_kisi:
+                            KisiService.link_veli(v, tc_to_kisi[v.tc_kimlik_no])
+                        else:
+                            kisi = KisiService.create_from_profile(kurum.id, {
+                                'tc_kimlik_no': v.tc_kimlik_no,
+                                'ad': v.ad,
+                                'soyad': v.soyad,
+                                'telefon': v.telefon,
+                                'email': v.email,
+                            })
+                            tc_to_kisi[v.tc_kimlik_no] = kisi
+                            KisiService.link_veli(v, kisi)
+                        linked += 1
+                except KimlikConflictError as exc:
+                    skipped += 1
+                    self.stdout.write(self.style.WARNING(f'Veli #{v.id} atlandı: {exc}'))
 
-                for v in OgrenciVeli.objects.filter(ogrenci__kurum=kurum, kisi__isnull=True):
-                    if not v.tc_kimlik_no or v.tc_kimlik_no in conflict_tcs:
-                        continue
-                    if v.tc_kimlik_no in tc_to_kisi:
-                        KisiService.link_veli(v, tc_to_kisi[v.tc_kimlik_no])
-                    else:
-                        kisi = KisiService.create_from_profile(kurum.id, {
-                            'tc_kimlik_no': v.tc_kimlik_no,
-                            'ad': v.ad,
-                            'soyad': v.soyad,
-                            'telefon': v.telefon,
-                            'email': v.email,
-                        })
-                        tc_to_kisi[v.tc_kimlik_no] = kisi
-                        KisiService.link_veli(v, kisi)
-                    linked += 1
-
-        self.stdout.write(self.style.SUCCESS(f'Backfill tamamlandı. {linked} bağlantı, {len(conflicts)} çakışma raporlandı.'))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f'Backfill tamamlandı. {linked} bağlantı, {skipped} kayıt atlandı, {len(conflicts)} çakışma raporlandı.'
+            )
+        )

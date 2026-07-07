@@ -184,3 +184,74 @@ class KimlikPhase5Tests(TestCase):
         self.assertEqual(payload['error'], 'mesaj')
         self.assertEqual(payload['code'], 'duplicate_tc')
         self.assertEqual(payload['details']['kisi_id'], 1)
+
+
+class BackfillKisiTests(TestCase):
+    def setUp(self):
+        self.kurum = Kurum.objects.create(ad='Backfill Kurum', kod='BF', aktif_mi=True)
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='MRK', aktif_mi=True)
+
+    def test_backfill_skips_phone_conflict_veli(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from apps.kimlik.management.commands.backfill_kisi import build_conflict_skip_sets, collect_conflicts
+
+        ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='11111111111',
+            ad='Temiz',
+            soyad='Ogrenci',
+            telefon='05329998877',
+            aktif_mi=True,
+        )
+        ogrenci_cakisma = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='33333333333',
+            ad='Gamze',
+            soyad='Sarigol',
+            telefon='05321112233',
+            aktif_mi=True,
+        )
+        Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='44444444444',
+            ad='Personel',
+            soyad='Tel',
+            cep_telefon='05321112233',
+            aktif_mi=True,
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=ogrenci_cakisma,
+            veli_turu='baba',
+            tc_kimlik_no='22222222222',
+            ad='Baba',
+            soyad='Veli',
+            telefon='05321112233',
+        )
+
+        conflicts = collect_conflicts(kurum_id=self.kurum.id)
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]['tip'], 'telefon_farkli_tc')
+
+        conflict_tcs, conflict_phones, conflict_entities = build_conflict_skip_sets(conflicts)
+        self.assertIn('05321112233', conflict_phones)
+
+        out = StringIO()
+        call_command('backfill_kisi', kurum_id=self.kurum.id, stdout=out)
+        output = out.getvalue()
+
+        ogrenci.refresh_from_db()
+        ogrenci_cakisma.refresh_from_db()
+        veli = ogrenci_cakisma.veliler.first()
+        personel = Personel.objects.get(tc_kimlik_no='44444444444')
+
+        self.assertIsNotNone(ogrenci.kisi_id)
+        self.assertIsNone(ogrenci_cakisma.kisi_id)
+        self.assertIsNone(personel.kisi_id)
+        self.assertIsNone(veli.kisi_id)
+        self.assertIn('Backfill tamamlandı', output)
