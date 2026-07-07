@@ -106,7 +106,7 @@ export function hasWizardUserInput(data: WizardData): boolean {
   if (enrollment.sinif_seviyesi != null) return true;
   if (enrollment.alan != null) return true;
   if (enrollment.ogrenci_no.trim()) return true;
-  if (enrollment.geldigi_okul.trim()) return true;
+  if (enrollment.school_id != null) return true;
   if (enrollment.referans.trim()) return true;
 
   if (address.adres_turu != null) return true;

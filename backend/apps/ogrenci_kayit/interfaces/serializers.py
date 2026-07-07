@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from apps.egitim_tanimlari.models import Alan, SinifSeviyesi
 from apps.egitim_yili.domain.models import EgitimYili
+from apps.okul.models import Okul
 from apps.sube.domain.models import Sube
 
 from ..domain.sinif_seviyesi_rules import sinif_seviyesi_requires_alan
@@ -91,6 +92,7 @@ class DraftEnrollmentSerializer(serializers.ModelSerializer):
     alan = serializers.PrimaryKeyRelatedField(queryset=Alan.objects.filter(aktif_mi=True), required=False, allow_null=True)
     sube = serializers.PrimaryKeyRelatedField(queryset=Sube.objects.filter(aktif_mi=True), required=False, allow_null=True)
     giris_turu = LookupOptionField(category_code="entry_type")
+    school = serializers.PrimaryKeyRelatedField(queryset=Okul.objects.all(), required=False, allow_null=True)
 
     class Meta:
         model = DraftEnrollment
@@ -103,6 +105,7 @@ class DraftEnrollmentSerializer(serializers.ModelSerializer):
             "kaydi_alan",
             "giris_tarihi",
             "giris_turu",
+            "school",
             "geldigi_okul",
             "referans",
         ]

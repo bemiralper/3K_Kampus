@@ -1,6 +1,7 @@
 "use client";
 
 import { useKurum } from "@/lib/contexts/KurumContext";
+import SchoolAutocomplete from "@/components/okul/SchoolAutocomplete";
 import { LookupOption, MetadataResponse, WizardData } from "../types";
 
 interface KurumsalStepProps {
@@ -22,6 +23,11 @@ export default function KurumsalStep({
   const selectedSeviye = metadata.sinif_seviyeleri.find(
     (seviye) => seviye.id === data.enrollment.sinif_seviyesi
   );
+
+  const isMezun =
+    selectedSeviye?.ad?.toLowerCase().includes("mezun") ||
+    selectedSeviye?.kod?.toLowerCase().includes("mezun");
+  const schoolLabel = isMezun ? "Mezun Olduğu Okul" : "Geldiği Okul";
 
   const filteredSiniflar = (metadata.siniflar || []).filter((sinif) => {
     if (data.enrollment.egitim_yili && sinif.egitim_yili_id !== data.enrollment.egitim_yili) return false;
@@ -228,22 +234,24 @@ export default function KurumsalStep({
           {errors.giris_turu && <span className="wizard-error">{errors.giris_turu}</span>}
         </div>
 
-        {/* Geldiği Okul */}
-        <div className="wizard-field">
-          <label className="wizard-label">Geldiği Okul</label>
-          <input
-            type="text"
-            className="wizard-input"
-            value={data.enrollment.geldigi_okul}
-            placeholder="Önceki okul adı"
-            onChange={(e) =>
-              onChange({
-                ...data,
-                enrollment: { ...data.enrollment, geldigi_okul: e.target.value },
-              })
-            }
-          />
-        </div>
+        {/* Okul */}
+        <SchoolAutocomplete
+          label={schoolLabel}
+          value={data.enrollment.school_id}
+          displayValue={data.enrollment.school_ad}
+          placeholder="Okul adı yazarak arayın"
+          onChange={(schoolId, schoolAd) =>
+            onChange({
+              ...data,
+              enrollment: {
+                ...data.enrollment,
+                school_id: schoolId,
+                school_ad: schoolAd,
+                geldigi_okul: "",
+              },
+            })
+          }
+        />
 
         {/* Referans */}
         <div className="wizard-field">

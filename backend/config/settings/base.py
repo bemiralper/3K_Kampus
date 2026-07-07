@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'apps.sube',
     'apps.egitim_yili',
     'apps.egitim_tanimlari',
+    'apps.okul',
     'apps.egitim_paketleri',
     'apps.kimlik',  # Kimlik birleştirme (Kisi) — ogrenci/personel'den önce
     'apps.ogrenci',

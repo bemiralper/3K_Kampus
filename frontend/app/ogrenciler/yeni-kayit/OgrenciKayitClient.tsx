@@ -115,6 +115,8 @@ const initialData: WizardData = {
     giris_tarihi: new Date().toISOString().split("T")[0],
     giris_turu: undefined,
     geldigi_okul: "",
+    school_id: null,
+    school_ad: "",
     referans: "",
   },
   address: {

@@ -135,6 +135,8 @@ export type EnrollmentData = {
   sube?: number;
   giris_turu?: number;
   giris_tarihi: string;
+  school_id: number | null;
+  school_ad: string;
   geldigi_okul: string;
   referans: string;
 };

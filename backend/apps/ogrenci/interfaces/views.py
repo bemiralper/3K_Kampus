@@ -369,7 +369,7 @@ def ogrenci_akademik_api(request, pk):
     kayitlar = OgrenciKayit.objects.filter(
         ogrenci=ogrenci
     ).select_related(
-        'sinif', 'sinif__sinif_seviyesi', 'egitim_yili', 'sube'
+        'sinif', 'sinif__sinif_seviyesi', 'egitim_yili', 'sube', 'school'
     ).order_by('-egitim_yili__baslangic_yil', '-id')
 
     cancelled = [SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS]
@@ -430,7 +430,9 @@ def ogrenci_akademik_api(request, pk):
                 kayit.giris_turu, kayit.giris_turu
             ),
             'giris_tarihi': _format_date_short(kayit.giris_tarihi),
-            'geldigi_okul': kayit.geldigi_okul or '',
+            'school_id': kayit.school_id,
+            'school_ad': kayit.school.ad if kayit.school else '',
+            'geldigi_okul': kayit.school.ad if kayit.school else (kayit.geldigi_okul or ''),
             'aktif_mi': kayit.aktif_mi,
             'kalemler': kalemler,
             'ek_hizmetler': ek_hizmetler,

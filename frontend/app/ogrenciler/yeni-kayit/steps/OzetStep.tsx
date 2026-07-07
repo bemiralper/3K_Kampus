@@ -99,6 +99,13 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
     metadata.sinif_seviyeleri.find((s) => s.id === data.enrollment.sinif_seviyesi)?.has_alan
   );
 
+  const selectedSeviye = metadata.sinif_seviyeleri.find((s) => s.id === data.enrollment.sinif_seviyesi);
+  const isMezun =
+    selectedSeviye?.ad?.toLowerCase().includes("mezun") ||
+    selectedSeviye?.kod?.toLowerCase().includes("mezun");
+  const schoolLabel = isMezun ? "Mezun Olduğu Okul" : "Geldiği Okul";
+  const schoolDisplay = data.enrollment.school_ad || data.enrollment.geldigi_okul || "-";
+
   return (
     <div className="wizard-step-content">
       <div className="step-header">
@@ -208,8 +215,8 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
               <span className="value">{getLookupLabel("entry_type", data.enrollment.giris_turu)}</span>
             </div>
             <div className="summary-item">
-              <span className="label">Geldiği Okul</span>
-              <span className="value">{data.enrollment.geldigi_okul || "-"}</span>
+              <span className="label">{schoolLabel}</span>
+              <span className="value">{schoolDisplay}</span>
             </div>
             <div className="summary-item">
               <span className="label">Referans</span>
