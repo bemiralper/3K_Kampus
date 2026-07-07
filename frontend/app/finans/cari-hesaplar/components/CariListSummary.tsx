@@ -26,7 +26,7 @@ export default function CariListSummary({
           <strong>{totals.toplam_cari}</strong>
         </div>
         <div className="cari-bakiye-rapor-stat">
-          <span>Toplam Borç</span>
+          <span>Toplam Verecek</span>
           <strong>{fmtCariMoney(totals.toplam_borc)} ₺</strong>
         </div>
         <div className="cari-bakiye-rapor-stat">

@@ -18,7 +18,7 @@ export const CARI_RAPOR_TABLE_COLUMNS: Record<CariRaporColumnId, ColumnMeta> = {
   hesap_kodu: { label: "Cari Kodu", width: "100px", exportKey: "hesap_kodu" },
   cari_adi: { label: "Cari Adı", exportKey: "cari_adi" },
   tur: { label: "Tür", width: "100px", exportKey: "tur" },
-  borc: { label: "Borç", align: "right", width: "110px", exportKey: "borc" },
+  borc: { label: "Verecek", align: "right", width: "110px", exportKey: "borc" },
   alacak: { label: "Alacak", align: "right", width: "110px", exportKey: "alacak" },
   bakiye: { label: "Bakiye", align: "right", width: "110px", exportKey: "bakiye" },
   vadesi_gelen: { label: "Vadesi Gelen", align: "right", width: "120px", exportKey: "vadesi_gelen" },

@@ -27,6 +27,24 @@ def empty_islem_totals() -> dict[str, float]:
     return {k: 0.0 for k in ISLEM_TURU_KEYS}
 
 
+# GelirTahsilat servisi her tahsilat için otomatik bir CariHareket(TAHSILAT)
+# üretir. Gün sonu / dashboard / dönem toplamları GelirTahsilat'ı zaten ayrı
+# saydığından, aynı kaynaktan gelen cari tahsilat hareketleri toplamlara
+# eklenirse çift sayım oluşur. Bu sabit, o hareketleri dışlamak için kullanılır.
+GELIR_TAHSILAT_KAYNAK_TIP = 'GelirTahsilat'
+
+
+def cari_bagimsiz_tahsilat_q():
+    """GelirTahsilat kaynaklı olmayan (bağımsız) cari TAHSILAT hareketleri filtresi.
+
+    Nakit/gün sonu toplamlarında GelirTahsilat kovasıyla çakışmayı (çift sayımı)
+    önler. `CariHareket.objects.filter(... & cari_bagimsiz_tahsilat_q())` şeklinde
+    kullanılır.
+    """
+    from django.db.models import Q
+    return ~Q(kaynak_tip=GELIR_TAHSILAT_KAYNAK_TIP)
+
+
 def net_bakiye(toplam_borc: float, toplam_alacak: float) -> float:
     return float(toplam_borc) - float(toplam_alacak)
 
@@ -39,10 +57,30 @@ def bakiye_durumu_from_net(bakiye: float) -> str:
     return 'dengede'
 
 
+def acik_verecek(bakiye: float) -> float:
+    """Ödenecek açık tutar (net bakiye negatif)."""
+    return abs(float(bakiye)) if float(bakiye) < 0 else 0.0
+
+
+def acik_alacak(bakiye: float) -> float:
+    """Tahsil edilecek açık tutar (net bakiye pozitif)."""
+    b = float(bakiye)
+    return b if b > 0 else 0.0
+
+
+def row_bakiye(row: dict) -> float:
+    if row.get('bakiye') is not None:
+        return float(row['bakiye'])
+    return net_bakiye(
+        float(row.get('toplam_borc') or 0),
+        float(row.get('toplam_alacak') or 0),
+    )
+
+
 def aggregate_list_totals(items: list[dict]) -> dict:
     """
     Filtrelenmiş cari listesi/rapor satırlarından özet toplamlar.
-    Her satırda toplam_borc, toplam_alacak ve isteğe bağlı işlem türü alanları beklenir.
+    Borç/alacak özetleri açık bakiye (ödenecek / tahsil edilecek) olarak hesaplanır.
     """
     totals = {
         'toplam_cari': len(items),
@@ -60,10 +98,10 @@ def aggregate_list_totals(items: list[dict]) -> dict:
         'sifir_bakiye_cari': 0,
     }
     for row in items:
-        borc = float(row.get('toplam_borc') or 0)
-        alacak = float(row.get('toplam_alacak') or 0)
-        totals['toplam_borc'] += borc
-        totals['toplam_alacak'] += alacak
+        bakiye = row_bakiye(row)
+        totals['toplam_borc'] += acik_verecek(bakiye)
+        totals['toplam_alacak'] += acik_alacak(bakiye)
+        totals['net_bakiye'] += bakiye
         totals['toplam_satis'] += float(row.get('toplam_satis') or 0)
         totals['toplam_alis'] += float(row.get('toplam_alis') or 0)
         totals['toplam_tahsilat'] += float(row.get('toplam_tahsilat') or 0)
@@ -77,5 +115,4 @@ def aggregate_list_totals(items: list[dict]) -> dict:
             totals['alacakli_cari'] += 1
         else:
             totals['sifir_bakiye_cari'] += 1
-    totals['net_bakiye'] = totals['toplam_borc'] - totals['toplam_alacak']
     return totals

@@ -430,6 +430,7 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
     Günlük alınan toplam (sözleşme + gelir + cari) — dashboard ile aynı iş günü mantığı,
     strict şube filtresi (yalnızca aktif şube kayıtları).
     """
+    from apps.finans.application.cari_balance import cari_bagimsiz_tahsilat_q
     from apps.finans.constants.cari_types import CariHareketTuru
     from apps.finans.domain.cari_hareket import CariHareket
     from apps.odeme_takip.domain.models import Tahsilat
@@ -453,6 +454,7 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
     toplam += int(gt_qs.aggregate(t=Sum('tutar'))['t'] or 0)
 
     ch_qs = CariHareket.objects.filter(
+        cari_bagimsiz_tahsilat_q(),
         kurum_id=kurum_id,
         islem_turu=CariHareketTuru.TAHSILAT,
     ).filter(bugun_islem_q('islem_tarihi', gun))

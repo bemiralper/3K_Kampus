@@ -9,6 +9,7 @@ from datetime import date
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
 
+from apps.finans.application.cari_balance import cari_bagimsiz_tahsilat_q
 from apps.finans.constants.cari_types import CariHareketTuru
 from apps.finans.constants.gider_types import OdemeDurum
 from apps.finans.constants.payment_types import OdemeYontemiTipi
@@ -311,7 +312,7 @@ class PeriodService:
                 islem_turu=CariHareketTuru.TAHSILAT,
                 islem_tarihi__gte=baslangic,
                 islem_tarihi__lte=bitis,
-            )
+            ) & cari_bagimsiz_tahsilat_q()
             if sube_id:
                 ch_q &= Q(sube_id=sube_id)
             if egitim_yili_id:
@@ -719,7 +720,7 @@ class PeriodService:
                 islem_turu=CariHareketTuru.TAHSILAT,
                 islem_tarihi__gte=baslangic,
                 islem_tarihi__lte=bitis,
-            )
+            ) & cari_bagimsiz_tahsilat_q()
             if sube_id:
                 ch_q &= Q(sube_id=sube_id)
             if egitim_yili_id:

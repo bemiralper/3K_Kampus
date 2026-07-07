@@ -1,4 +1,5 @@
 import type { CariHesapListItem, CariHesapRaporItem } from "../../types/cari-hesap-types";
+import { cariRowAcikAlacak, cariRowAcikVerecek, resolveCariBakiye } from "./cari-open-balance";
 
 export type CariListTotals = {
   toplam_cari: number;
@@ -20,6 +21,7 @@ type TotalsRow = Pick<
   CariHesapListItem,
   | "toplam_borc"
   | "toplam_alacak"
+  | "bakiye"
   | "bakiye_durumu"
   | "toplam_satis"
   | "toplam_alis"
@@ -47,8 +49,10 @@ function accumulateTotals(items: TotalsRow[]): CariListTotals {
   };
 
   for (const row of items) {
-    totals.toplam_borc += Number(row.toplam_borc || 0);
-    totals.toplam_alacak += Number(row.toplam_alacak || 0);
+    // Özet: açık bakiye (ödenecek / tahsil edilecek), kümülatif hareket toplamı değil.
+    totals.toplam_borc += cariRowAcikVerecek(row);
+    totals.toplam_alacak += cariRowAcikAlacak(row);
+    totals.net_bakiye += resolveCariBakiye(row);
     totals.toplam_satis += Number(row.toplam_satis || 0);
     totals.toplam_alis += Number(row.toplam_alis || 0);
     totals.toplam_tahsilat += Number(row.toplam_tahsilat || 0);
@@ -59,7 +63,6 @@ function accumulateTotals(items: TotalsRow[]): CariListTotals {
     else if (row.bakiye_durumu === "alacakli") totals.alacakli_cari += 1;
     else totals.sifir_bakiye_cari += 1;
   }
-  totals.net_bakiye = totals.toplam_borc - totals.toplam_alacak;
   return totals;
 }
 
