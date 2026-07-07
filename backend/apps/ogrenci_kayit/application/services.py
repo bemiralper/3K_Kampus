@@ -13,6 +13,7 @@ from apps.ogrenci.domain.models import (
 )
 from apps.sinif.domain.models import Sinif
 from apps.sube.domain.models import Sube
+from apps.okul.application.enrollment import resolve_school_for_enrollment
 
 from ..domain.models import (
     DraftAddress,
@@ -515,6 +516,14 @@ def submit_draft(draft: WizardDraft, user):
         if existing_kayit:
             return None, "Bu öğrenci bu eğitim yılında zaten kayıtlı"
 
+        okul = None
+        if enrollment.school_id:
+            okul, school_err = resolve_school_for_enrollment(
+                enrollment.school_id, draft.kurum_id, draft.sube_id,
+            )
+            if school_err:
+                return None, school_err
+
         kayit = OgrenciKayit.objects.create(
             ogrenci=ogrenci,
             sinif=sinif,
@@ -524,7 +533,8 @@ def submit_draft(draft: WizardDraft, user):
             okul_no=enrollment.ogrenci_no,
             giris_turu=enrollment.giris_turu.code,
             giris_tarihi=enrollment.giris_tarihi,
-            geldigi_okul=enrollment.geldigi_okul,
+            school=okul,
+            geldigi_okul="",
             referans=enrollment.referans,
             kaydi_alan=enrollment.kaydi_alan,
         )

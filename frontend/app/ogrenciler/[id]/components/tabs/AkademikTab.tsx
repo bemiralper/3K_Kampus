@@ -28,6 +28,8 @@ type AkademikKayit = {
   giris_turu_display: string;
   giris_tarihi: string;
   geldigi_okul: string;
+  school_id?: number | null;
+  school_ad?: string;
   aktif_mi: boolean;
   kalemler: AkademikKalem[];
   ek_hizmetler: AkademikEkHizmet[];
@@ -157,10 +159,10 @@ export default function AkademikTab({ ogrenciId }: AkademikTabProps) {
                     <span className="akademik-info-label">Giriş Türü</span>
                     <span className="akademik-info-value">{kayit.giris_turu_display || "—"}</span>
                   </div>
-                  {kayit.geldigi_okul && (
+                  {(kayit.school_ad || kayit.geldigi_okul) && (
                     <div className="akademik-info-field">
-                      <span className="akademik-info-label">Geldiği Okul</span>
-                      <span className="akademik-info-value">{kayit.geldigi_okul}</span>
+                      <span className="akademik-info-label">Okul</span>
+                      <span className="akademik-info-value">{kayit.school_ad || kayit.geldigi_okul}</span>
                     </div>
                   )}
                 </div>

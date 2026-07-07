@@ -235,6 +235,15 @@ class OgrenciKayit(models.Model):
     )
     
     giris_tarihi = models.DateField('Giriş Tarihi', null=True, blank=True)
+    school = models.ForeignKey(
+        'okul.Okul',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ogrenci_kayitlari',
+        verbose_name='Okul',
+        db_column='school_id',
+    )
     geldigi_okul = models.CharField('Geldiği Okul', max_length=200, blank=True)
     referans = models.CharField('Referans Kişi/Kurum', max_length=200, blank=True)
     
@@ -270,6 +279,8 @@ class OgrenciKayit(models.Model):
             models.Index(fields=['kurum', 'sube', 'egitim_yili', 'aktif_mi']),
             models.Index(fields=['sinif', 'aktif_mi']),
             models.Index(fields=['ogrenci', 'egitim_yili']),
+            models.Index(fields=['school'], name='ogrenci_kayit_school_idx'),
+            models.Index(fields=['sube', 'school'], name='ogrenci_kayit_sube_school_idx'),
         ]
     
     def __str__(self):

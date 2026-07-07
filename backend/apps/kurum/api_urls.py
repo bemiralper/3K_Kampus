@@ -1,5 +1,5 @@
 """Kurum API URL Configuration"""
-from django.urls import path
+from django.urls import include, path
 from apps.kurum import views
 from apps.kurum.interfaces import demo_views
 
@@ -43,6 +43,9 @@ urlpatterns = [
     path("kayit-turleri/", views.api_kayit_turleri_list_create, name="api_kayit_turleri_list_create"),
     path("kayit-turleri/seed/", views.api_kayit_turleri_seed, name="api_kayit_turleri_seed"),
     path("kayit-turleri/<int:pk>/", views.api_kayit_turleri_detail, name="api_kayit_turleri_detail"),
+
+    # Okullar (şube kapsamlı referans veri)
+    path("okullar/", include("apps.okul.api_urls")),
 
     # Demo veri yönetimi
     path("demo/status/", demo_views.demo_status_view, name="api_demo_status"),

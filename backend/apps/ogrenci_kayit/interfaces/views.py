@@ -19,6 +19,7 @@ from apps.kimlik.domain.models import Kisi
 from apps.ogrenci.domain.models import Ogrenci, OgrenciAdres, OgrenciEgitimPaketi, OgrenciKayit, OgrenciVeli
 from apps.sinif.domain.models import Sinif
 from apps.sube.domain.models import Sube
+from apps.okul.application.enrollment import resolve_school_for_enrollment
 
 import re
 
@@ -557,6 +558,11 @@ class DirectRegistrationView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
+                school_id = enrollment_data.get("school_id")
+                okul, school_err = resolve_school_for_enrollment(school_id, kurum_id, sube_id)
+                if school_err:
+                    return Response({"detail": school_err}, status=status.HTTP_400_BAD_REQUEST)
+
                 kayit = OgrenciKayit.objects.create(
                     ogrenci=ogrenci,
                     sinif=sinif,
@@ -567,7 +573,8 @@ class DirectRegistrationView(APIView):
                     okul_no=enrollment_data.get("ogrenci_no") or "",
                     giris_turu=giris_turu_code,
                     giris_tarihi=enrollment_data.get("giris_tarihi"),
-                    geldigi_okul=enrollment_data.get("geldigi_okul") or "",
+                    school=okul,
+                    geldigi_okul="",
                     referans=enrollment_data.get("referans") or "",
                 )
 

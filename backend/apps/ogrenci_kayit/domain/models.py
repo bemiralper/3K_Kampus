@@ -204,6 +204,14 @@ class DraftEnrollment(models.Model):
         related_name="draft_giris_turu",
     )
     geldigi_okul = models.CharField(max_length=200, blank=True)
+    school = models.ForeignKey(
+        'okul.Okul',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='draft_enrollments',
+        db_column='school_id',
+    )
     referans = models.CharField(max_length=200, blank=True)
 
     class Meta:
