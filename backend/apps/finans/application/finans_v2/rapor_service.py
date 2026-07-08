@@ -452,11 +452,12 @@ class FinansV2RaporService:
 
     # ─── 11. Vade Borç Takibi (ödenmemiş gider taksitleri) ──
     def vade_borc(self, kurum_id, sube_id, params):
-        """Cari tedarikçilere olan vadesi gelen/gelecek borçlar — gider taksit bazlı."""
+        """Cari tedarikçilere olan vadesi gelen/gelecek borçlar — gider taksit + verilen çek/senet."""
         from collections import defaultdict
         from datetime import timedelta
 
         from apps.finans.infrastructure.gider_repository import GiderTaksitRepository
+        from apps.odeme_takip.domain.cek_senet import CekSenetDetay, CekSenetDurum, CekSenetYon
 
         today = timezone.localdate()
         gorunum = (params.get('gorunum') or 'detay').lower()
@@ -489,6 +490,36 @@ class FinansV2RaporService:
 
         taksitler = list(qs.order_by('vade_tarihi', 'gider_kaydi__cari_hesap__unvan'))
 
+        # Verilen çek/senet vadeleri (aktif, ödenmemiş)
+        cek_qs = CekSenetDetay.objects.filter(
+            kurum_id=kurum_id,
+            yon=CekSenetYon.VERILEN,
+            durum__in=CekSenetDurum.AKTIF_DURUMLAR,
+        ).select_related('cari_hesap', 'odeme_yontemi')
+        if sube_id:
+            cek_qs = cek_qs.filter(sube_id=sube_id)
+        if bas:
+            cek_qs = cek_qs.filter(vade_tarihi__gte=bas)
+        if bit:
+            cek_qs = cek_qs.filter(vade_tarihi__lte=bit)
+        if vade_durumu == 'gecmis':
+            cek_qs = cek_qs.filter(vade_tarihi__lt=today)
+        elif vade_durumu == 'gelen':
+            cek_qs = cek_qs.filter(
+                vade_tarihi__gte=today,
+                vade_tarihi__lte=today + timedelta(days=30),
+            )
+        elif vade_durumu == 'gelecek':
+            cek_qs = cek_qs.filter(vade_tarihi__gt=today)
+        verilen_cekler = list(cek_qs.order_by('vade_tarihi', 'cari_hesap__unvan'))
+
+        def _vade_durum_label(vade):
+            if vade < today:
+                return 'Vadesi Geçmiş'
+            if vade <= today + timedelta(days=30):
+                return 'Vadesi Gelen'
+            return 'Gelecek Vadeli'
+
         toplam_kalan = 0.0
         vadesi_gecmis = 0.0
         vadesi_gelen = 0.0
@@ -498,6 +529,13 @@ class FinansV2RaporService:
             if t.vade_tarihi < today:
                 vadesi_gecmis += kalan
             elif t.vade_tarihi <= today + timedelta(days=30):
+                vadesi_gelen += kalan
+        for detay in verilen_cekler:
+            kalan = float(detay.tutar or 0)
+            toplam_kalan += kalan
+            if detay.vade_tarihi < today:
+                vadesi_gecmis += kalan
+            elif detay.vade_tarihi <= today + timedelta(days=30):
                 vadesi_gelen += kalan
 
         if gorunum == 'ozet':
@@ -520,6 +558,21 @@ class FinansV2RaporService:
                 if t.vade_tarihi < today:
                     b['vadesi_gecmis'] += kalan
                 vd = t.vade_tarihi.isoformat()
+                if not b['ilk_vade'] or vd < b['ilk_vade']:
+                    b['ilk_vade'] = vd
+                if not b['son_vade'] or vd > b['son_vade']:
+                    b['son_vade'] = vd
+            for detay in verilen_cekler:
+                cari = detay.cari_hesap
+                cid = cari.id if cari else -detay.id
+                b = buckets[cid]
+                b['cari'] = cari.unvan if cari else '—'
+                kalan = float(detay.tutar or 0)
+                b['taksit_sayisi'] += 1
+                b['toplam_kalan'] += kalan
+                if detay.vade_tarihi < today:
+                    b['vadesi_gecmis'] += kalan
+                vd = detay.vade_tarihi.isoformat()
                 if not b['ilk_vade'] or vd < b['ilk_vade']:
                     b['ilk_vade'] = vd
                 if not b['son_vade'] or vd > b['son_vade']:
@@ -552,12 +605,6 @@ class FinansV2RaporService:
                 cari = g.cari_hesap
                 kalan = _f(t.kalan_tutar)
                 gecikme = (today - t.vade_tarihi).days if t.vade_tarihi < today else 0
-                if t.vade_tarihi < today:
-                    durum = 'Vadesi Geçmiş'
-                elif t.vade_tarihi <= today + timedelta(days=30):
-                    durum = 'Vadesi Gelen'
-                else:
-                    durum = 'Gelecek Vadeli'
                 rows.append({
                     'vade_tarihi': t.vade_tarihi.isoformat(),
                     'cari': cari.unvan if cari else '—',
@@ -568,9 +615,28 @@ class FinansV2RaporService:
                     'odenen': round(_f(t.odenen_tutar), 2),
                     'kalan': round(kalan, 2),
                     'gecikme_gun': gecikme if gecikme > 0 else 0,
-                    'durum': durum,
+                    'durum': _vade_durum_label(t.vade_tarihi),
                     'odeme_yontemi': g.odeme_yontemi.ad if g.odeme_yontemi else '—',
                 })
+            for detay in verilen_cekler:
+                cari = detay.cari_hesap
+                kalan = float(detay.tutar or 0)
+                gecikme = (today - detay.vade_tarihi).days if detay.vade_tarihi < today else 0
+                arac = 'Verilen Çek' if detay.arac_tipi == 'cek' else 'Verilen Senet'
+                rows.append({
+                    'vade_tarihi': detay.vade_tarihi.isoformat(),
+                    'cari': cari.unvan if cari else '—',
+                    'fatura_no': detay.cek_senet_no or f'ÇS-{detay.id}',
+                    'kategori': arac,
+                    'taksit': '—',
+                    'tutar': round(kalan, 2),
+                    'odenen': 0,
+                    'kalan': round(kalan, 2),
+                    'gecikme_gun': gecikme if gecikme > 0 else 0,
+                    'durum': _vade_durum_label(detay.vade_tarihi),
+                    'odeme_yontemi': detay.odeme_yontemi.ad if detay.odeme_yontemi else arac,
+                })
+            rows.sort(key=lambda r: (r['vade_tarihi'], r['cari']))
             columns = [
                 {'key': 'vade_tarihi', 'label': 'Vade', 'format': 'date'},
                 {'key': 'cari', 'label': 'Cari (Tedarikçi)'},
@@ -586,7 +652,11 @@ class FinansV2RaporService:
             ]
             baslik = 'Vade Borç Detay Raporu'
 
-        cari_sayisi = len({t.gider_kaydi.cari_hesap_id for t in taksitler if t.gider_kaydi.cari_hesap_id})
+        cari_sayisi = len({
+            *(t.gider_kaydi.cari_hesap_id for t in taksitler if t.gider_kaydi.cari_hesap_id),
+            *(d.cari_hesap_id for d in verilen_cekler if d.cari_hesap_id),
+        })
+        kayit_sayisi = len(taksitler) + len(verilen_cekler)
 
         return {
             'baslik': baslik,
@@ -594,7 +664,7 @@ class FinansV2RaporService:
                 {'label': 'Toplam Kalan Borç', 'value': round(toplam_kalan, 2), 'format': 'tl'},
                 {'label': 'Vadesi Geçmiş', 'value': round(vadesi_gecmis, 2), 'format': 'tl'},
                 {'label': 'Vadesi Gelen (30 gün)', 'value': round(vadesi_gelen, 2), 'format': 'tl'},
-                {'label': 'Taksit Sayısı', 'value': len(taksitler), 'format': 'int'},
+                {'label': 'Taksit / Çek Sayısı', 'value': kayit_sayisi, 'format': 'int'},
             ],
             'seriler': {
                 'vade_dagilim': [
@@ -609,7 +679,7 @@ class FinansV2RaporService:
                 'toplam_kalan': round(toplam_kalan, 2),
                 'vadesi_gecmis': round(vadesi_gecmis, 2),
                 'vadesi_gelen': round(vadesi_gelen, 2),
-                'taksit_sayisi': len(taksitler),
+                'taksit_sayisi': kayit_sayisi,
                 'cari_sayisi': cari_sayisi,
             },
         }

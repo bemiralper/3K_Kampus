@@ -227,6 +227,7 @@ export default function GelirGiderFormDrawer({
   }, [selectedCari, cfg.modul]);
 
   const kategoriLabel = (k: { id: number; ad: string; parent_id: number | null }) => {
+    if (cfg.modul === "gider") return k.ad;
     if (!k.parent_id) return k.ad;
     const parent = kategoriler.find((p) => p.id === k.parent_id);
     return parent ? `${parent.ad} › ${k.ad}` : k.ad;
@@ -236,8 +237,19 @@ export default function GelirGiderFormDrawer({
     const pool = cariKategoriIdSet
       ? kategoriler.filter((k) => cariKategoriIdSet.has(k.id))
       : kategoriler;
-    return pool.map((k) => ({ value: k.id, label: kategoriLabel(k) }));
-  }, [kategoriler, cariKategoriIdSet]);
+    const filtered =
+      cfg.modul === "gider"
+        ? (() => {
+            const parentIdsWithChildren = new Set(
+              pool.filter((k) => k.parent_id).map((k) => k.parent_id as number),
+            );
+            return pool.filter(
+              (k) => k.parent_id !== null || !parentIdsWithChildren.has(k.id),
+            );
+          })()
+        : pool;
+    return filtered.map((k) => ({ value: k.id, label: kategoriLabel(k) }));
+  }, [kategoriler, cariKategoriIdSet, cfg.modul]);
 
   const handleCariChange = (id: number) => {
     const cari = (dropdown?.cariler ?? []).find((c) => c.id === id);

@@ -320,8 +320,8 @@ function VadeBorcRaporTab() {
         styles={{ body: { padding: 14 } }}
       >
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 10 }}>
-          Tedarikçi cari hesaplarına bağlı <strong>ödenmemiş gider taksitlerini</strong> vade tarihine göre filtreleyin.
-          Vadesi geçmiş, yaklaşan ve gelecek borçlarınızı cari veya taksit düzeyinde görüntüleyin.
+          Tedarikçi cari hesaplarına bağlı <strong>ödenmemiş gider taksitleri</strong> ve{" "}
+          <strong>verilen çek/senet ödeme vadeleri</strong> — vade tarihine göre filtreleyin.
         </div>
         <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
           <Space wrap>

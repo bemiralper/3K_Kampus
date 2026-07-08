@@ -692,9 +692,17 @@ function FilterDrawer({
   const ikinciTanimlar =
     (cfg.modul === "gider" ? dropdown?.maliyet_merkezleri : dropdown?.gelir_kaynaklari) ?? [];
 
-  // Kategoriler: başlık (ana) → alt kategori gruplu. Başlık seçilince backend alt kategorileri de kapsar.
+  // Gider: yalnızca alt kategori adları; gelir: gruplu liste
   const kategoriGroups = (() => {
     const cats = dropdown?.kategoriler ?? [];
+    if (cfg.modul === "gider") {
+      const parentIdsWithChildren = new Set(
+        cats.filter((c) => c.parent_id).map((c) => c.parent_id as number),
+      );
+      return cats
+        .filter((c) => c.parent_id !== null || !parentIdsWithChildren.has(c.id))
+        .map((c) => ({ value: c.id, label: c.ad }));
+    }
     const parents = cats.filter((c) => !c.parent_id);
     const orphans = cats.filter((c) => c.parent_id && !parents.some((p) => p.id === c.parent_id));
     const groups = parents.map((p) => {

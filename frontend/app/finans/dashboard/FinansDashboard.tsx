@@ -2,22 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import "@/components/finans/finans-list.css";
 import { dashboardService, DashboardOverview } from "../services/dashboard-api";
-import { fmtCurrency } from "./dashboard-utils";
 import DashboardShortcuts from "./components/DashboardShortcuts";
 import DashboardKpiCards from "./components/DashboardKpiCards";
-import DashboardTodayTransactions from "./components/DashboardTodayTransactions";
-import DashboardOverdueList from "./components/DashboardOverdueList";
-import DashboardUpcomingDues from "./components/DashboardUpcomingDues";
-import DashboardRecentTahsilat from "./components/DashboardRecentTahsilat";
-import DashboardRecentGider from "./components/DashboardRecentGider";
-import DashboardMaliHesapTable from "./components/DashboardMaliHesapTable";
 import DashboardChartSkeleton from "./components/DashboardChartSkeleton";
-import { useDashboardLinks } from "./useDashboardLinks";
 import { IconRefresh } from "./dashboard-icons";
 import "./finans-dashboard.css";
 
@@ -33,7 +24,6 @@ const DashboardMonthlyLine = dynamic(() => import("./components/DashboardMonthly
 export default function FinansDashboard() {
   const { activeKurum, activeSube, activeEgitimYili } = useKurum();
   const { isMuhasebeMode } = useFinansPath();
-  const links = useDashboardLinks();
   const [data, setData] = useState<DashboardOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,8 +92,6 @@ export default function FinansDashboard() {
 
   if (!data) return null;
 
-  const geciken = data.geciken_ozet;
-
   return (
     <div className="fdash-page">
       <header className="fdash-head">
@@ -134,65 +122,6 @@ export default function FinansDashboard() {
         hideGelirGider={isMuhasebeMode}
         referansTarih={data.tarih}
       />
-
-      {geciken.toplam_taksit_sayisi > 0 && (
-        <div className="fdash-alert">
-          <div className="fdash-alert__text">
-            <span>{geciken.toplam_taksit_sayisi}</span> gecikmiş taksit ·{" "}
-            <span>{fmtCurrency(geciken.toplam_kalan_tutar)}</span> · ort.{" "}
-            {geciken.ortalama_gecikme_gun} gün
-          </div>
-          <Link href={links.gecikmisOdemeler} className="fdash-alert__link">
-            Gecikmiş ödemelere git →
-          </Link>
-        </div>
-      )}
-
-      <section className="fdash-block">
-        <h2 className="fdash-block-label">Günlük Hareketler</h2>
-        <DashboardTodayTransactions
-          rows={data.bugunku_islemler}
-          referansTarih={data.tarih}
-        />
-      </section>
-
-      <section className="fdash-block">
-        <h2 className="fdash-block-label">Takip Listeleri</h2>
-        <div className="fdash-split-2">
-          <DashboardOverdueList
-            rows={data.geciken_odemeler}
-            ozet={data.geciken_ozet}
-            kurumAd={activeKurum.ad}
-          />
-          <DashboardUpcomingDues rows={data.yaklasan_odemeler} />
-        </div>
-      </section>
-
-      <section className="fdash-block">
-        <h2 className="fdash-block-label">Son İşlemler</h2>
-        <div className="fdash-split-2">
-          <DashboardRecentTahsilat rows={data.son_tahsilatlar} />
-          <DashboardRecentGider rows={data.son_giderler} />
-        </div>
-      </section>
-
-      <section className="fdash-block">
-        <h2 className="fdash-block-label">Mali Hesaplar</h2>
-        <div className="fdash-split-2">
-          <DashboardMaliHesapTable
-            title="Kasa Hesapları"
-            rows={data.kasa_hesaplari}
-            emptyText="Kasa hesabı yok"
-            icon="kasa"
-          />
-          <DashboardMaliHesapTable
-            title="Banka Hesapları"
-            rows={data.banka_hesaplari}
-            emptyText="Banka hesabı yok"
-            icon="banka"
-          />
-        </div>
-      </section>
 
       <section className="fdash-block">
         <h2 className="fdash-block-label">Analiz</h2>

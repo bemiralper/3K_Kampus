@@ -27,6 +27,17 @@ export function postHeaders(): Record<string, string> {
   return apiHeaders({ "Content-Type": "application/json" });
 }
 
+export function parseApiError(payload: unknown, fallback = "Hata oluştu"): string {
+  if (!payload || typeof payload !== "object") return fallback;
+  const data = payload as Record<string, unknown>;
+  if (typeof data.error === "string" && data.error) return data.error;
+  if (typeof data.detail === "string" && data.detail) return data.detail;
+  const messages = Object.values(data)
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  return messages.join(", ") || fallback;
+}
+
 export const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 

@@ -326,25 +326,21 @@ class TahsilatService:
         if not neden or len(neden.strip()) < 3:
             return None, {'error': 'İptal nedeni belirtilmeli (en az 3 karakter)'}
 
-        eski_tutar = tahsilat.tutar
-
-        tahsilat.durum = TahsilatDurum.IPTAL_EDILDI
-        tahsilat.iptal_nedeni = neden
-        tahsilat.iptal_tarihi = timezone.now()
-        tahsilat.iptal_eden = user
-        tahsilat.save()
+        eski_tutar = int(tahsilat.tutar or 0)
+        sozlesme = tahsilat.sozlesme
 
         # ── Bağlı işlem masrafını iptal et ───────────
-        self.masraf_service.iptal(
+        _, masraf_err = self.masraf_service.iptal(
             IslemMasrafiKaynakTipi.TAHSILAT,
             tahsilat.pk,
             islem_tarihi=timezone.localdate(),
             islem_yapan=user,
         )
+        if masraf_err:
+            return None, {'error': masraf_err if isinstance(masraf_err, str) else 'İşlem masrafı iptal edilemedi'}
 
         # ── Kasa/banka bakiyesini geri al ────────────
-        if tahsilat.mali_hesap_id:
-            sozlesme = tahsilat.sozlesme
+        if tahsilat.mali_hesap_id and eski_tutar > 0:
             self.bakiye_service.tahsilat_iptal(
                 mali_hesap_id=tahsilat.mali_hesap_id,
                 kurum_id=sozlesme.kurum_id,
@@ -356,6 +352,27 @@ class TahsilatService:
                 aciklama=f'Tahsilat iptal: {sozlesme.sozlesme_no} — {neden}',
                 islem_yapan=user,
             )
+
+        # ── Bağlı çek/senet kaydını serbest bırak ────
+        try:
+            detay = CekSenetDetay.objects.filter(tahsilat_id=tahsilat.pk).first()
+            if detay and detay.aktif_mi:
+                detay.tahsilat = None
+                detay.tahsilat_mali_hesap = None
+                detay.tahsil_tarihi = None
+                if detay.durum in (CekSenetDurum.TAHSIL_EDILDI, CekSenetDurum.TAHSIL):
+                    detay.durum = CekSenetDurum.PORTFOYDE
+                detay.save(update_fields=[
+                    'tahsilat', 'tahsilat_mali_hesap', 'tahsil_tarihi', 'durum', 'updated_at',
+                ])
+        except Exception:
+            pass
+
+        tahsilat.durum = TahsilatDurum.IPTAL_EDILDI
+        tahsilat.iptal_nedeni = neden.strip()
+        tahsilat.iptal_tarihi = timezone.now()
+        tahsilat.iptal_eden = user
+        tahsilat.save()
 
         # Dağıtım kayıtlarına bağlı TÜM taksitlerin bakiyesini güncelle
         etkilenen_taksit_ids = set()

@@ -80,10 +80,18 @@ def tahsilat_cancel(request, pk):
 
     service = TahsilatService()
     neden = request.data.get('neden', '')
-    tahsilat, errors = service.cancel(
-        pk, neden,
-        user=request.user if request.user.is_authenticated else None,
-    )
+    try:
+        tahsilat, errors = service.cancel(
+            pk, neden,
+            user=request.user if request.user.is_authenticated else None,
+        )
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception:
+        return Response(
+            {'error': 'Tahsilat iptal edilirken beklenmeyen bir hata oluştu.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
     if errors:
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
     return Response(_serialize_tahsilat(tahsilat))

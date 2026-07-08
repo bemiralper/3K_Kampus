@@ -17,6 +17,7 @@ import {
   type GorevOncelik,
   type GorevDurum,
 } from '@/lib/gorev-api';
+import { fetchEventsCompact } from '@/lib/takvim-api';
 import { FC_TR_COMMON } from '@/lib/fullcalendar-tr';
 import { shortEventLabel } from '@/lib/calendar-event-label';
 import GorevCalTooltip, { type GorevTooltipData } from './GorevCalTooltip';
@@ -29,6 +30,8 @@ type Props = {
   backHref?: string;
   adminView?: boolean;
   allowPersonalCreate?: boolean;
+  /** Verilen çek/senet vade ödemelerini merkezi takvimden birleştir */
+  includeCekSenetEvents?: boolean;
 };
 
 function withDateBuffer(start: Date, end: Date) {
@@ -85,6 +88,7 @@ export default function GorevTakvimClient({
   backHref,
   adminView = false,
   allowPersonalCreate = false,
+  includeCekSenetEvents = false,
 }: Props) {
   const calRef = useRef<FullCalendar>(null);
   const [events, setEvents] = useState<FCEvent[]>([]);
@@ -108,19 +112,43 @@ export default function GorevTakvimClient({
       if (adminView) params.tum = 'true';
 
       const res = await fetchGorevTakvim(params);
+      let merged: FCEvent[] = [];
       if (res.success && res.data) {
-        setEvents(normalizeEvents(res.data));
-      } else {
+        merged = normalizeEvents(res.data);
+      } else if (!includeCekSenetEvents) {
         setError(res.error || 'Görevler yüklenemedi. Kurum seçili olduğundan emin olun.');
         setEvents([]);
+        return;
       }
+
+      if (includeCekSenetEvents) {
+        const takvimRes = await fetchEventsCompact({
+          baslangic: bufStart.toISOString(),
+          bitis: bufEnd.toISOString(),
+        });
+        const cekEvents = (takvimRes.success && takvimRes.data ? takvimRes.data : [])
+          .filter((e) => e.extendedProps?.kaynak_modul === 'cek_senet')
+          .map((e) => ({
+            ...e,
+            backgroundColor: (e.backgroundColor as string) || '#DC2626',
+            borderColor: (e.borderColor as string) || '#DC2626',
+          }));
+        merged = [...merged, ...cekEvents];
+      }
+
+      if (!merged.length && !res.success && !includeCekSenetEvents) {
+        setError(res.error || 'Görevler yüklenemedi. Kurum seçili olduğundan emin olun.');
+      } else {
+        setError(null);
+      }
+      setEvents(merged);
     } catch {
       setError('Görevler yüklenirken bir hata oluştu.');
       setEvents([]);
     } finally {
       setLoading(false);
     }
-  }, [adminView]);
+  }, [adminView, includeCekSenetEvents]);
 
   const handleDatesSet = useCallback((info: DatesSetArg) => {
     loadEvents(info.start, info.end);
@@ -135,6 +163,7 @@ export default function GorevTakvimClient({
   };
 
   const handleEventClick = (info: EventClickArg) => {
+    if (info.event.extendedProps?.kaynak_modul === 'cek_senet') return;
     openAtama(info.event.id);
   };
 

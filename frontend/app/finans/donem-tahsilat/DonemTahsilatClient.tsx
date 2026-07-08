@@ -281,12 +281,25 @@ function DonemTahsilatInner({ embedded = false }: { embedded?: boolean }) {
       { title: "Kaynak", key: "kaynak", render: (_: unknown, i) => { const m = kaynakMeta(i.kaynak); return <Tag color={m.color}>{i.kaynak_label}</Tag>; } },
       {
         title: "", key: "detay", align: "center", width: 60,
-        render: (_: unknown, i) => { const link = getRowLink(i); return link ? <Link href={link} style={{ color: "#2563eb", fontWeight: 600 }}>Git →</Link> : <span style={{ color: "#cbd5e1" }}>—</span>; },
+        render: (_: unknown, i) => {
+          const link = getRowLink(i);
+          return link ? (
+            <button
+              type="button"
+              onClick={() => router.push(link)}
+              style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 600, cursor: "pointer", padding: 0 }}
+            >
+              Git →
+            </button>
+          ) : (
+            <span style={{ color: "#cbd5e1" }}>—</span>
+          );
+        },
       },
     );
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modeIsAlinan, odemeHref, homeHref]);
+  }, [modeIsAlinan, odemeHref, homeHref, router]);
 
   if (!activeKurum) {
     return <Card style={{ textAlign: "center", padding: 32 }}><Empty description="Dönem tahsilat verilerini görüntülemek için kurum seçin." /></Card>;

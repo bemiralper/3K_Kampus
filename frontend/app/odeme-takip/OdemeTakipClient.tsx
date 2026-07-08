@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
 import { useOgrenciPath } from "@/components/ogrenci/OgrenciPathProvider";
@@ -10,7 +10,7 @@ import { odemeTakipBridge } from "@/app/finans/services/odeme-takip-bridge";
 import "./odeme-takip.css";
 
 import { Sozlesme, TahsilatItem, OdemeYontemi, IndirimTuru, DashboardOzet, TabType, TahsilatFormData, Taksit, OgrenciRiskSkoru } from "./types";
-import { API_BASE, formatCurrency, durumLabel, postHeaders, apiHeaders } from "./helpers";
+import { API_BASE, formatCurrency, durumLabel, postHeaders, apiHeaders, parseApiError } from "./helpers";
 import { STATUS_CONFIRM_MESSAGES } from "@/lib/sozlesme-notlar";
 
 import SozlesmelerTab from "./tabs/SozlesmelerTab";
@@ -86,6 +86,7 @@ export default function OdemeTakipClient() {
   const [showIptalModal, setShowIptalModal] = useState(false);
   const [iptalTahsilatId, setIptalTahsilatId] = useState<number | null>(null);
   const [iptalNeden, setIptalNeden] = useState("");
+  const [iptalHata, setIptalHata] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [statusSozlesmeId, setStatusSozlesmeId] = useState<number | null>(null);
@@ -155,10 +156,15 @@ export default function OdemeTakipClient() {
   }, [router, basePath]);
 
   const sozlesmeParam = searchParams.get("sozlesme");
+  const prevSubeIdRef = useRef<number | null>(null);
 
-  // Şube değişince önceki şubenin tüm verilerini temizle
+  // Şube değişince önceki şubenin tüm verilerini temizle (ilk yüklemede ?sozlesme= korunur)
   useEffect(() => {
     if (!activeSube?.id) return;
+    const prev = prevSubeIdRef.current;
+    prevSubeIdRef.current = activeSube.id;
+    if (prev === null || prev === activeSube.id) return;
+
     setSelectedSozlesme(null);
     setSozlesmeler([]);
     setTahsilatlar([]);
@@ -466,6 +472,8 @@ export default function OdemeTakipClient() {
 
   const handleTahsilatCancelOpen = (tahsilatId: number) => {
     setIptalTahsilatId(tahsilatId);
+    setIptalNeden("");
+    setIptalHata(null);
     setShowIptalModal(true);
   };
 
@@ -498,25 +506,41 @@ export default function OdemeTakipClient() {
 
   const handleTahsilatCancel = async () => {
     if (!iptalTahsilatId) return;
+    const neden = iptalNeden.trim();
+    if (neden.length < 3) {
+      setIptalHata("İptal nedeni en az 3 karakter olmalıdır.");
+      return;
+    }
     setSaving(true);
+    setIptalHata(null);
     try {
       const res = await fetch(`${API_BASE}/tahsilatlar/${iptalTahsilatId}/cancel/`, {
         method: "POST",
         headers: postHeaders(),
         credentials: "include",
-        body: JSON.stringify({ neden: iptalNeden }),
+        body: JSON.stringify({ neden }),
       });
       if (res.ok) {
         setShowIptalModal(false);
         setIptalNeden("");
+        setIptalTahsilatId(null);
         await fetchTahsilatlar();
         if (selectedSozlesme) await fetchSozlesmeDetail(selectedSozlesme.id);
         await fetchSozlesmeler();
       } else {
-        const err = await res.json();
-        alert(err.error || "Hata oluştu");
+        let message = "Tahsilat iptal edilemedi";
+        try {
+          message = parseApiError(await res.json(), message);
+        } catch {
+          message = res.status === 403
+            ? "Bu işlem için yetkiniz yok veya oturum süresi dolmuş olabilir."
+            : `Tahsilat iptal edilemedi (HTTP ${res.status})`;
+        }
+        setIptalHata(message);
       }
-    } catch { alert("Bağlantı hatası"); }
+    } catch {
+      setIptalHata("Bağlantı hatası — sunucuya ulaşılamadı.");
+    }
     setSaving(false);
   };
 
@@ -795,25 +819,28 @@ export default function OdemeTakipClient() {
       {/* İptal Modal */}
       {showIptalModal && (
         <>
-          <div className="odeme-modal-overlay" onClick={() => { setShowIptalModal(false); setIptalNeden(""); }} />
+          <div className="odeme-modal-overlay" onClick={() => { setShowIptalModal(false); setIptalNeden(""); setIptalTahsilatId(null); setIptalHata(null); }} />
           <div className="odeme-modal odeme-modal-sm">
             <h3 style={{ color: "#dc2626" }}>⚠️ Tahsilat İptal</h3>
             <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>Bu tahsilatı iptal etmek istediğinize emin misiniz? Lütfen iptal nedenini belirtin.</p>
             <textarea
               className="odeme-form-control"
               value={iptalNeden}
-              onChange={(e) => setIptalNeden(e.target.value)}
+              onChange={(e) => { setIptalNeden(e.target.value); setIptalHata(null); }}
               placeholder="İptal nedeni..."
               rows={3}
-              style={{ marginBottom: 16, resize: "vertical" }}
+              style={{ marginBottom: 8, resize: "vertical" }}
             />
+            {iptalHata && (
+              <p style={{ fontSize: 12, color: "#dc2626", marginBottom: 12 }}>{iptalHata}</p>
+            )}
             <div style={{ display: "flex", gap: 12 }}>
-              <button className="btn-modern btn-secondary" style={{ flex: 1 }} onClick={() => { setShowIptalModal(false); setIptalNeden(""); }}>Vazgeç</button>
+              <button className="btn-modern btn-secondary" style={{ flex: 1 }} onClick={() => { setShowIptalModal(false); setIptalNeden(""); setIptalTahsilatId(null); setIptalHata(null); }}>Vazgeç</button>
               <button
                 className="btn-modern"
                 style={{ flex: 1, background: "#dc2626", color: "#fff" }}
                 onClick={handleTahsilatCancel}
-                disabled={saving || iptalNeden.length < 3}
+                disabled={saving || iptalNeden.trim().length < 3}
               >{saving ? "İşleniyor..." : "İptal Et"}</button>
             </div>
           </div>

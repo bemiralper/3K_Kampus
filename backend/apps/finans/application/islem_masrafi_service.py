@@ -250,20 +250,24 @@ class IslemMasrafiService:
 
         iptal_tarihi = islem_tarihi or timezone.localdate()
         bakiye_tutar = masraf.bakiye_tutar
+        kurum_id = gider.kurum_id if gider else masraf.kurum_id
+        sube_id = gider.sube_id if gider else masraf.sube_id
+        egitim_yili_id = gider.egitim_yili_id if gider else None
 
-        self.bakiye_service.hareket_olustur(
-            mali_hesap_id=odeme.mali_hesap_id,
-            kurum_id=gider.kurum_id,
-            sube_id=gider.sube_id,
-            egitim_yili_id=gider.egitim_yili_id,
-            yon=HareketYonu.GIRIS,
-            tutar=bakiye_tutar,
-            kaynak=HareketKaynagi.GIDER_IPTAL,
-            islem_tarihi=iptal_tarihi,
-            kaynak_id=odeme.pk,
-            aciklama=f'İşlem masrafı iptali: {KesintiTuru.get_label(masraf.kesinti_turu)}',
-            islem_yapan=islem_yapan,
-        )
+        if odeme.mali_hesap_id and bakiye_tutar > 0 and kurum_id and egitim_yili_id:
+            self.bakiye_service.hareket_olustur(
+                mali_hesap_id=odeme.mali_hesap_id,
+                kurum_id=kurum_id,
+                sube_id=sube_id,
+                egitim_yili_id=egitim_yili_id,
+                yon=HareketYonu.GIRIS,
+                tutar=bakiye_tutar,
+                kaynak=HareketKaynagi.GIDER_IPTAL,
+                islem_tarihi=iptal_tarihi,
+                kaynak_id=odeme.pk,
+                aciklama=f'İşlem masrafı iptali: {KesintiTuru.get_label(masraf.kesinti_turu)}',
+                islem_yapan=islem_yapan,
+            )
 
         self.odeme_repo.iptal_et(odeme)
         if gider:
