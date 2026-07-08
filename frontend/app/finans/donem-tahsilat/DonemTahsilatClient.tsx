@@ -1,8 +1,36 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  Empty,
+  Row,
+  Segmented,
+  Space,
+  Spin,
+  Statistic,
+  Table,
+  Tag,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { ArrowDownOutlined, ArrowUpOutlined } from "@ant-design/icons";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import dayjs from "dayjs";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
@@ -11,10 +39,9 @@ import { paymentMethodService } from "../services/finans-api";
 import type { PeriodDetailItem, PeriodMode, PeriodSummary, PeriodKaynak, PeriodQueryParams } from "../types/period-types";
 import { fmtDate, fmtTL } from "@/components/finans/FinansFilterBar";
 import ExportDropdown from "@/components/finans/ExportDropdown";
-import FloatingMenu from "@/components/finans/FloatingMenu";
-import "./donem-tahsilat.css";
+import GGProvider from "../gelir-gider-v2/GGProvider";
 
-/* ═══════════════════════ constants & helpers ═══════════════════════ */
+const { RangePicker } = DatePicker;
 
 const DATE_PRESETS = [
   { key: "bugun", label: "Bugün" },
@@ -24,26 +51,20 @@ const DATE_PRESETS = [
   { key: "bu_yil", label: "Bu Yıl" },
 ] as const;
 
-const KAYNAK_OPTIONS: { key: PeriodKaynak; label: string; icon: string; color: string }[] = [
-  { key: "hepsi", label: "Tümü", icon: "◎", color: "#64748b" },
-  { key: "sozlesme", label: "Sözleşme", icon: "📄", color: "#2563eb" },
-  { key: "gelir", label: "Gelir Kaydı", icon: "💰", color: "#7c3aed" },
-  { key: "cari", label: "Cari Hesap", icon: "🏢", color: "#ea580c" },
+const KAYNAK_OPTIONS: { key: PeriodKaynak; label: string; color: string }[] = [
+  { key: "hepsi", label: "Tümü", color: "#64748b" },
+  { key: "sozlesme", label: "Sözleşme", color: "#2563eb" },
+  { key: "gelir", label: "Gelir Kaydı", color: "#7c3aed" },
+  { key: "cari", label: "Cari Hesap", color: "#ea580c" },
 ];
 
 const YONTEM_TIP_LABELS: Record<string, string> = {
-  nakit: "Nakit",
-  pos: "POS Cihazı",
-  havale_eft: "Havale / EFT",
-  online: "Online Ödeme",
-  cek: "Çek",
-  senet: "Senet",
+  nakit: "Nakit", pos: "POS Cihazı", havale_eft: "Havale / EFT",
+  online: "Online Ödeme", cek: "Çek", senet: "Senet",
 };
 
 const CHART_COLORS = ["#2563eb", "#059669", "#7c3aed", "#ea580c", "#db2777", "#0891b2", "#ca8a04", "#dc2626"];
-const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
-/** Yerel takvim gününü YYYY-MM-DD olarak döner (UTC'ye çevirmez — gün kaymasını önler). */
 function toLocalISODate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -51,7 +72,6 @@ function toLocalISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** "YYYY-MM-DD" metnini yerel takvim gününe (saat dilimi kaymasız) çevirir. */
 function parseLocalDate(d: string): Date {
   const [y, m, day] = d.split("-").map(Number);
   return new Date(y || 1970, (m || 1) - 1, day || 1);
@@ -92,9 +112,7 @@ function getPresetRange(key: string): { baslangic: string; bitis: string } {
 function getPreviousRange(baslangic: string, bitis: string): { baslangic: string; bitis: string } {
   const start = parseLocalDate(baslangic);
   const end = parseLocalDate(bitis);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return { baslangic, bitis };
-  }
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return { baslangic, bitis };
   const spanDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
   const prevEnd = new Date(start);
   prevEnd.setDate(prevEnd.getDate() - 1);
@@ -107,51 +125,11 @@ function kaynakMeta(kaynak: string | PeriodKaynak) {
   return KAYNAK_OPTIONS.find((k) => k.key === kaynak) || KAYNAK_OPTIONS[0];
 }
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-const AVATAR_COLORS = ["#2563eb", "#7c3aed", "#059669", "#ea580c", "#db2777", "#0891b2"];
-function avatarColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
-function buildConicGradient(segments: { color: string; pct: number }[]): string {
-  if (segments.length === 0) return "#e5e7eb";
-  let acc = 0;
-  const stops = segments.map((seg) => {
-    const start = acc;
-    acc = Math.min(100, acc + seg.pct);
-    return `${seg.color} ${start}% ${acc}%`;
-  });
-  if (acc < 100) stops.push(`#e5e7eb ${acc}% 100%`);
-  return `conic-gradient(${stops.join(", ")})`;
-}
-
-function getPageNumbers(current: number, total: number): (number | "…")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages: (number | "…")[] = [1];
-  const left = Math.max(2, current - 1);
-  const right = Math.min(total - 1, current + 1);
-  if (left > 2) pages.push("…");
-  for (let i = left; i <= right; i++) pages.push(i);
-  if (right < total - 1) pages.push("…");
-  pages.push(total);
-  return pages;
-}
-
-/* ═══════════════════════ main component ═══════════════════════ */
-
-export default function DonemTahsilatClient({ embedded = false }: { embedded?: boolean }) {
+function DonemTahsilatInner({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { activeKurum, activeSube, activeEgitimYili } = useKurum();
-  const { homeHref, portalHomeHref } = useFinansPath();
+  const { homeHref } = useFinansPath();
   const { href: odemeHref } = useOdemePath();
 
   const mode = (searchParams.get("mode") as PeriodMode) || "alinan";
@@ -165,17 +143,10 @@ export default function DonemTahsilatClient({ embedded = false }: { embedded?: b
   const [prevOzet, setPrevOzet] = useState<PeriodSummary | null>(null);
   const [items, setItems] = useState<PeriodDetailItem[]>([]);
   const [count, setCount] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [odemeYontemleri, setOdemeYontemleri] = useState<{ id: number; ad: string; tip: string }[]>([]);
   const [selectedYontemTipleri, setSelectedYontemTipleri] = useState<string[]>([]);
-  const [yontemExpanded, setYontemExpanded] = useState(false);
-  const [dateOpen, setDateOpen] = useState(false);
-  const dateBtnRef = useRef<HTMLButtonElement>(null);
-  const [draftBaslangic, setDraftBaslangic] = useState(baslangic);
-  const [draftBitis, setDraftBitis] = useState(bitis);
 
   useEffect(() => {
     if (!activeKurum) return;
@@ -202,13 +173,9 @@ export default function DonemTahsilatClient({ embedded = false }: { embedded?: b
       kurum_id: activeKurum.id,
       sube_id: activeSube?.id,
       egitim_yili_id: activeEgitimYili?.id,
-      baslangic,
-      bitis,
-      mode,
-      kaynak,
+      baslangic, bitis, mode, kaynak,
       odeme_yontemi_tipi: selectedYontemTipleri.length ? selectedYontemTipleri : undefined,
-      page,
-      page_size: pageSize,
+      page, page_size: pageSize,
     };
   }, [activeKurum, activeSube, activeEgitimYili, baslangic, bitis, mode, kaynak, selectedYontemTipleri, page, pageSize]);
 
@@ -220,9 +187,7 @@ export default function DonemTahsilatClient({ embedded = false }: { embedded?: b
 
   const load = useCallback(async () => {
     if (!queryParams) return;
-    const isFirstLoad = ozet === null && items.length === 0;
-    if (isFirstLoad) setLoading(true);
-    else setRefreshing(true);
+    setLoading(true);
     setError(null);
     try {
       const [summaryRes, detailsRes] = await Promise.all([
@@ -232,14 +197,11 @@ export default function DonemTahsilatClient({ embedded = false }: { embedded?: b
       setOzet(summaryRes.ozet);
       setItems(detailsRes.results || []);
       setCount(detailsRes.count);
-      setTotalPages(detailsRes.total_pages || 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Veri yüklenemedi");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryParams]);
 
   useEffect(() => { load(); }, [load]);
@@ -253,21 +215,10 @@ export default function DonemTahsilatClient({ embedded = false }: { embedded?: b
     return () => { cancelled = true; };
   }, [prevQueryParams]);
 
-  useEffect(() => { setDraftBaslangic(baslangic); setDraftBitis(bitis); }, [baslangic, bitis]);
-
-  const toggleYontem = (tip: string) => {
-    setSelectedYontemTipleri((prev) =>
-      prev.includes(tip) ? prev.filter((x) => x !== tip) : [...prev, tip]
-    );
-    updateParams({ page: "1" });
-  };
-
   const yontemTipleri = useMemo(() => {
     const seen = new Map<string, string>(Object.entries(YONTEM_TIP_LABELS));
     for (const o of odemeYontemleri) {
-      if (o.tip && !seen.has(o.tip)) {
-        seen.set(o.tip, YONTEM_TIP_LABELS[o.tip] || o.ad);
-      }
+      if (o.tip && !seen.has(o.tip)) seen.set(o.tip, YONTEM_TIP_LABELS[o.tip] || o.ad);
     }
     return Array.from(seen.entries()).map(([tip, label]) => ({ tip, label }));
   }, [odemeYontemleri]);
@@ -277,33 +228,7 @@ export default function DonemTahsilatClient({ embedded = false }: { embedded?: b
     return r.baslangic === baslangic && r.bitis === bitis;
   });
 
-  const hasNonDefaultFilters =
-    !activePreset || activePreset.key !== "bu_ay" || kaynak !== "hepsi" || selectedYontemTipleri.length > 0;
-
-  const clearFilters = () => {
-    const def = getPresetRange("bu_ay");
-    setSelectedYontemTipleri([]);
-    updateParams({ baslangic: def.baslangic, bitis: def.bitis, kaynak: null, page: "1" });
-  };
-
-  const getRowLink = (item: PeriodDetailItem): string | null => {
-    if (item.sozlesme_id) return `${odemeHref()}?sozlesme=${item.sozlesme_id}`;
-    if (item.gelir_id) return `${homeHref}/gelir-gider-islemleri?tab=gelirler`;
-    if (item.cari_hesap_id) return `${homeHref}/cari-hesaplar/${item.cari_hesap_id}`;
-    return null;
-  };
-
-  if (!activeKurum) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4 text-3xl">🏢</div>
-        <h3 className="text-lg font-bold text-gray-800 mb-1">Kurum Seçiniz</h3>
-        <p className="text-sm text-gray-500">Dönem tahsilat verilerini görüntülemek için kurum seçin.</p>
-      </div>
-    );
-  }
-
-  const maxGrafik = Math.max(...(ozet?.grafik?.map((g) => g.tutar) || [1]), 1);
+  const modeIsAlinan = mode === "alinan";
   const ortalama = ozet && ozet.toplam_adet > 0 ? ozet.toplam_tutar / ozet.toplam_adet : 0;
 
   let delta: number | null = null;
@@ -313,510 +238,249 @@ export default function DonemTahsilatClient({ embedded = false }: { embedded?: b
     delta = 100;
   }
 
-  const donutSegments = (ozet?.yontem_dagilimi || []).map((y, i) => ({
-    ...y,
-    color: CHART_COLORS[i % CHART_COLORS.length],
+  const yontemPie = (ozet?.yontem_dagilimi || []).map((y, i) => ({
+    name: y.yontem, value: y.toplam, oran: y.oran, color: CHART_COLORS[i % CHART_COLORS.length],
   }));
-  const kaynakTotal = (ozet?.kaynak_kirilimi || []).reduce((s, k) => s + k.toplam, 0) || 1;
+  const kaynakBar = (ozet?.kaynak_kirilimi || []).map((k) => ({
+    name: k.kaynak_label, tutar: k.toplam, adet: k.adet, color: kaynakMeta(k.kaynak).color,
+  }));
 
-  const modeIsAlinan = mode === "alinan";
-  const heroGradient = modeIsAlinan
-    ? "linear-gradient(135deg, #047857 0%, #059669 45%, #10b981 100%)"
-    : "linear-gradient(135deg, #b45309 0%, #d97706 45%, #f59e0b 100%)";
+  const getRowLink = (item: PeriodDetailItem): string | null => {
+    if (item.sozlesme_id) return `${odemeHref()}?sozlesme=${item.sozlesme_id}`;
+    if (item.gelir_id) return `${homeHref}/gelir-v2`;
+    if (item.cari_hesap_id) return `${homeHref}/cari-hesaplar-v2/${item.cari_hesap_id}`;
+    return null;
+  };
 
-  const visibleYontemler = yontemExpanded ? yontemTipleri : yontemTipleri.slice(0, 8);
+  const columns: ColumnsType<PeriodDetailItem> = useMemo(() => {
+    const cols: ColumnsType<PeriodDetailItem> = [
+      { title: "Kişi", dataIndex: "kisi_adi", key: "kisi", render: (v: string) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{v}</span> },
+    ];
+    if (modeIsAlinan) {
+      cols.push(
+        { title: "Tutar", dataIndex: "tutar", key: "tutar", align: "right", render: (v: number) => <span style={{ fontWeight: 700, color: "#059669" }}>{fmtTL(v)}</span> },
+        { title: "Yöntem", dataIndex: "odeme_yontemi", key: "yontem", render: (v: string) => v || "—" },
+        { title: "Durum", key: "durum", render: (_: unknown, i) => <Tag color="green">{i.tahsil_durumu_label || "Alındı"}</Tag> },
+        { title: "Tarih", dataIndex: "tarih", key: "tarih", render: (v: string) => fmtDate(v) },
+      );
+    } else {
+      cols.push(
+        { title: "Toplam", key: "toplam", align: "right", render: (_: unknown, i) => fmtTL(i.toplam_tutar ?? i.tutar) },
+        { title: "Alınan", key: "alinan", align: "right", render: (_: unknown, i) => <span style={{ color: "#059669" }}>{fmtTL(i.odenen_tutar ?? 0)}</span> },
+        { title: "Kalan", key: "kalan", align: "right", render: (_: unknown, i) => <span style={{ color: "#d97706", fontWeight: 700 }}>{fmtTL(i.kalan_tutar ?? i.tutar)}</span> },
+        { title: "Yöntem", dataIndex: "odeme_yontemi", key: "yontem", render: (v: string) => v || "—" },
+        {
+          title: "Durum", key: "durum", render: (_: unknown, i) => (
+            <Tag color={i.tahsil_durumu === "odendi" ? "green" : i.tahsil_durumu === "kismi" ? "gold" : "red"}>{i.tahsil_durumu_label || "—"}</Tag>
+          ),
+        },
+        { title: "Vade", key: "vade", render: (_: unknown, i) => fmtDate(i.vade_tarihi || i.tarih) },
+      );
+    }
+    cols.push(
+      { title: "Kaynak", key: "kaynak", render: (_: unknown, i) => { const m = kaynakMeta(i.kaynak); return <Tag color={m.color}>{i.kaynak_label}</Tag>; } },
+      {
+        title: "", key: "detay", align: "center", width: 60,
+        render: (_: unknown, i) => { const link = getRowLink(i); return link ? <Link href={link} style={{ color: "#2563eb", fontWeight: 600 }}>Git →</Link> : <span style={{ color: "#cbd5e1" }}>—</span>; },
+      },
+    );
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modeIsAlinan, odemeHref, homeHref]);
+
+  if (!activeKurum) {
+    return <Card style={{ textAlign: "center", padding: 32 }}><Empty description="Dönem tahsilat verilerini görüntülemek için kurum seçin." /></Card>;
+  }
 
   return (
-    <div className="donem-tahsilat">
+    <div style={{ padding: embedded ? 0 : "4px 4px 40px" }}>
       {!embedded && (
-        <div className="hero-header">
-          <div className="hero-content">
-            <div className="hero-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-              </svg>
-            </div>
-            <div className="hero-text">
-              <h1>Dönem Tahsilat</h1>
-              <div className="hero-breadcrumb">
-                <a href={portalHomeHref}>Ana Sayfa</a>
-                <span>/</span>
-                <a href={homeHref}>Finans</a>
-                <span>/</span>
-                <span>Dönem Tahsilat</span>
-              </div>
-            </div>
-          </div>
-          <div className="hero-actions">
-            {queryParams && (
-              <ExportDropdown
-                buildPath={(format, orientation) => periodService.reportExportUrl(queryParams, format, orientation)}
-                filenamePrefix={`donem-tahsilat-${mode}`}
-                disabled={loading}
-              />
-            )}
-          </div>
+        <div style={{ background: modeIsAlinan ? "linear-gradient(120deg, #05966915, #ffffff)" : "linear-gradient(120deg, #d9770615, #ffffff)", border: "1px solid #eef2f7", borderRadius: 16, padding: "18px 22px", marginBottom: 16 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>Dönem Tahsilat</h1>
+          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: 13 }}>Seçili dönemdeki tahsilat ve beklenen ödemeleri analiz edin.</p>
         </div>
       )}
 
-      {embedded && queryParams && (
-        <div className="flex justify-end mb-4">
-          <ExportDropdown
-            buildPath={(format, orientation) => periodService.reportExportUrl(queryParams, format, orientation)}
-            filenamePrefix={`donem-tahsilat-${mode}`}
-            disabled={loading}
-          />
-        </div>
-      )}
-
-      {/* ═══ Control bar: mode switch + date + kaynak + clear ═══ */}
-      <div className="dt-controlbar">
-        <div className="dt-mode-switch">
-          <button
-            type="button"
-            className={`dt-mode-btn ${modeIsAlinan ? "active alinan" : ""}`}
-            onClick={() => updateParams({ mode: "alinan", page: "1" })}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Alınan
-          </button>
-          <button
-            type="button"
-            className={`dt-mode-btn ${!modeIsAlinan ? "active beklenen" : ""}`}
-            onClick={() => updateParams({ mode: "beklenen", page: "1" })}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <circle cx="12" cy="12" r="9" />
-              <path strokeLinecap="round" d="M12 7v5l3 3" />
-            </svg>
-            Beklenen
-          </button>
-        </div>
-
-        <div className="dt-controlbar-sep" />
-
-        <button ref={dateBtnRef} type="button" className="dt-date-btn" onClick={() => setDateOpen((v) => !v)}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
-            <path strokeLinecap="round" d="M3 9.5h18M8 3v3M16 3v3" />
-          </svg>
-          {activePreset ? activePreset.label : fmtRange(baslangic, bitis)}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="dt-chevron">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-
-        <FloatingMenu open={dateOpen} anchorRef={dateBtnRef} onClose={() => setDateOpen(false)} className="dt-date-panel" align="start" minWidth={280}>
-          <div className="dt-date-panel-presets">
-            {DATE_PRESETS.map((p) => {
-              const range = getPresetRange(p.key);
-              const active = baslangic === range.baslangic && bitis === range.bitis;
-              return (
-                <button
-                  key={p.key}
-                  type="button"
-                  className={`dt-preset-chip ${active ? "active" : ""}`}
-                  onClick={() => { updateParams({ baslangic: range.baslangic, bitis: range.bitis, page: "1" }); setDateOpen(false); }}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="dt-date-panel-custom">
-            <label>
-              <span>Başlangıç</span>
-              <input type="date" value={draftBaslangic} onChange={(e) => setDraftBaslangic(e.target.value)} />
-            </label>
-            <label>
-              <span>Bitiş</span>
-              <input type="date" value={draftBitis} onChange={(e) => setDraftBitis(e.target.value)} />
-            </label>
-            <button
-              type="button"
-              className="dt-date-apply"
-              onClick={() => { updateParams({ baslangic: draftBaslangic, bitis: draftBitis, page: "1" }); setDateOpen(false); }}
-            >
-              Uygula
-            </button>
-          </div>
-        </FloatingMenu>
-
-        <div className="dt-controlbar-sep" />
-
-        <div className="dt-kaynak-chips">
-          {KAYNAK_OPTIONS.map((k) => {
-            const active = kaynak === k.key;
-            return (
-              <button
-                key={k.key}
-                type="button"
-                onClick={() => updateParams({ kaynak: k.key === "hepsi" ? null : k.key, page: "1" })}
-                className="dt-kaynak-chip"
-                style={
-                  active
-                    ? { background: k.color, borderColor: k.color, color: "#fff" }
-                    : { background: "#fff", borderColor: "#e5e7eb", color: "#4b5563" }
-                }
-              >
-                <span>{k.icon}</span>
-                {k.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {hasNonDefaultFilters && (
-          <button type="button" onClick={clearFilters} className="dt-clear-btn">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            Temizle
-          </button>
-        )}
-      </div>
-
-      {yontemTipleri.length > 0 && (
-        <div className="dt-yontem-row">
-          <span className="dt-yontem-label">Ödeme Yöntemi:</span>
-          {visibleYontemler.map((o) => (
-            <button
-              key={o.tip}
-              type="button"
-              onClick={() => toggleYontem(o.tip)}
-              className={`dt-yontem-chip ${selectedYontemTipleri.includes(o.tip) ? "active" : ""}`}
-            >
-              {o.label}
-            </button>
-          ))}
-          {yontemTipleri.length > 8 && (
-            <button type="button" className="dt-yontem-more" onClick={() => setYontemExpanded((v) => !v)}>
-              {yontemExpanded ? "Daha az göster" : `+${yontemTipleri.length - 8} daha`}
-            </button>
+      {/* Kontrol çubuğu */}
+      <Card size="small" style={{ marginBottom: 16 }} styles={{ body: { padding: 12 } }}>
+        <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
+          <Space wrap>
+            <Segmented
+              value={mode}
+              onChange={(v) => updateParams({ mode: String(v), page: "1" })}
+              options={[{ value: "alinan", label: "Alınan" }, { value: "beklenen", label: "Beklenen" }]}
+            />
+            <Segmented
+              value={activePreset?.key || "custom"}
+              onChange={(v) => { if (v === "custom") return; const r = getPresetRange(String(v)); updateParams({ baslangic: r.baslangic, bitis: r.bitis, page: "1" }); }}
+              options={[...DATE_PRESETS.map((p) => ({ value: p.key, label: p.label })), ...(activePreset ? [] : [{ value: "custom", label: fmtRange(baslangic, bitis) }])]}
+            />
+            <RangePicker
+              format="DD.MM.YYYY"
+              allowClear={false}
+              value={[dayjs(baslangic), dayjs(bitis)]}
+              onChange={(d) => { if (d && d[0] && d[1]) updateParams({ baslangic: d[0].format("YYYY-MM-DD"), bitis: d[1].format("YYYY-MM-DD"), page: "1" }); }}
+            />
+          </Space>
+          {queryParams && (
+            <ExportDropdown
+              buildPath={(format, orientation) => periodService.reportExportUrl(queryParams, format, orientation)}
+              filenamePrefix={`donem-tahsilat-${mode}`}
+              disabled={loading}
+            />
           )}
-        </div>
-      )}
+        </Space>
+        <Space wrap style={{ marginTop: 12 }}>
+          <span style={{ fontSize: 12, color: "#64748b" }}>Kaynak:</span>
+          <Segmented
+            value={kaynak}
+            onChange={(v) => updateParams({ kaynak: v === "hepsi" ? null : String(v), page: "1" })}
+            options={KAYNAK_OPTIONS.map((k) => ({ value: k.key, label: k.label }))}
+          />
+          {yontemTipleri.length > 0 && (
+            <>
+              <span style={{ fontSize: 12, color: "#64748b", marginLeft: 8 }}>Yöntem:</span>
+              {yontemTipleri.map((o) => {
+                const active = selectedYontemTipleri.includes(o.tip);
+                return (
+                  <Tag.CheckableTag
+                    key={o.tip}
+                    checked={active}
+                    onChange={() => { setSelectedYontemTipleri((prev) => prev.includes(o.tip) ? prev.filter((x) => x !== o.tip) : [...prev, o.tip]); updateParams({ page: "1" }); }}
+                  >
+                    {o.label}
+                  </Tag.CheckableTag>
+                );
+              })}
+            </>
+          )}
+        </Space>
+      </Card>
 
       {loading ? (
-        <div className="dt-skeleton">
-          <div className="dt-skeleton-hero" />
-          <div className="dt-skeleton-row">
-            <div className="dt-skeleton-card" />
-            <div className="dt-skeleton-card" />
-          </div>
-          <div className="dt-skeleton-table" />
-        </div>
+        <div style={{ padding: 80, textAlign: "center" }}><Spin size="large" /></div>
       ) : error ? (
-        <div className="flex flex-col items-center justify-center py-20">
-          <p className="text-sm font-semibold text-red-600 mb-3">{error}</p>
-          <button onClick={load} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">Tekrar Dene</button>
+        <div style={{ padding: 48, textAlign: "center" }}>
+          <p style={{ color: "#dc2626", fontWeight: 600, marginBottom: 12 }}>{error}</p>
+          <Button danger onClick={load}>Tekrar Dene</Button>
         </div>
       ) : (
-        <div className={`dt-content ${refreshing ? "dt-content--refreshing" : ""}`}>
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          {/* KPI'lar */}
           {ozet && (
-            <div className="dt-hero-row">
-              {/* Hero stat */}
-              <div className="dt-hero-card" style={{ background: heroGradient }}>
-                <div className="dt-hero-top">
-                  <span className="dt-hero-label">{modeIsAlinan ? "Toplam Tahsilat" : "Toplam Beklenen"}</span>
+            <Row gutter={[12, 12]}>
+              <Col xs={12} lg={6}>
+                <Card size="small">
+                  <Statistic
+                    title={<span style={{ fontSize: 12, color: "#64748b" }}>{modeIsAlinan ? "Toplam Tahsilat" : "Toplam Beklenen"}</span>}
+                    value={fmtTL(ozet.toplam_tutar)}
+                    valueStyle={{ fontWeight: 800, fontSize: 18, color: modeIsAlinan ? "#059669" : "#d97706" }}
+                  />
                   {delta !== null && (
-                    <span className={`dt-hero-delta ${delta >= 0 ? "up" : "down"}`}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                        {delta >= 0 ? <path d="M6 15l6-6 6 6" /> : <path d="M6 9l6 6 6-6" />}
-                      </svg>
-                      %{Math.abs(delta).toFixed(1)}
-                    </span>
+                    <div style={{ fontSize: 12, color: delta >= 0 ? "#059669" : "#dc2626", marginTop: 2 }}>
+                      {delta >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />} %{Math.abs(delta).toFixed(1)} · önceki dönem
+                    </div>
                   )}
-                </div>
-                <div className="dt-hero-value">{fmtTL(ozet.toplam_tutar)}</div>
-                <div className="dt-hero-sub">
-                  Önceki dönem: {prevOzet ? fmtTL(prevOzet.toplam_tutar) : "—"} · {fmtRange(prevRange.baslangic, prevRange.bitis)}
-                </div>
-                {ozet.grafik.length > 0 && (
-                  <div className="dt-sparkline">
-                    {ozet.grafik.map((g, i) => (
-                      <div key={i} className="dt-spark-bar-wrap" title={`${g.label}: ${fmtTL(g.tutar)}`}>
-                        <div className="dt-spark-bar" style={{ height: `${Math.max((g.tutar / maxGrafik) * 100, 4)}%` }} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Secondary stats */}
-              <div className="dt-mini-stats">
-                <div className="dt-mini-stat">
-                  <div className="dt-mini-stat-icon blue">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /></svg>
-                  </div>
-                  <div>
-                    <div className="dt-mini-stat-value">{ozet.toplam_adet}</div>
-                    <div className="dt-mini-stat-label">Kayıt Adedi</div>
-                  </div>
-                </div>
-                <div className="dt-mini-stat">
-                  <div className="dt-mini-stat-icon purple">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" /></svg>
-                  </div>
-                  <div>
-                    <div className="dt-mini-stat-value">
-                      {modeIsAlinan ? fmtTL(ortalama) : fmtTL(ozet.toplam_alinan ?? 0)}
-                    </div>
-                    <div className="dt-mini-stat-label">{modeIsAlinan ? "Ortalama Tahsilat" : "Toplam Alınan"}</div>
-                  </div>
-                </div>
-                {!modeIsAlinan && ozet.toplam_kalan != null && (
-                  <div className="dt-mini-stat">
-                    <div className="dt-mini-stat-icon orange">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
-                    </div>
-                    <div>
-                      <div className="dt-mini-stat-value">{fmtTL(ozet.toplam_kalan)}</div>
-                      <div className="dt-mini-stat-label">Toplam Kalan</div>
-                    </div>
-                  </div>
-                )}
-                {ozet.tahsil_orani != null && (
-                  <div className="dt-mini-stat">
-                    <div className="dt-mini-stat-icon emerald">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" /></svg>
-                    </div>
-                    <div>
-                      <div className="dt-mini-stat-value">%{ozet.tahsil_orani.toFixed(1)}</div>
-                      <div className="dt-mini-stat-label">Tahsil Oranı</div>
-                    </div>
-                  </div>
-                )}
-                {modeIsAlinan && ozet.beklenen_tutar != null && ozet.tahsil_orani == null && (
-                  <div className="dt-mini-stat">
-                    <div className="dt-mini-stat-icon orange">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
-                    </div>
-                    <div>
-                      <div className="dt-mini-stat-value">{fmtTL(ozet.beklenen_tutar)}</div>
-                      <div className="dt-mini-stat-label">Beklenen</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+                </Card>
+              </Col>
+              <Col xs={12} lg={6}><Card size="small"><Statistic title={<span style={{ fontSize: 12, color: "#64748b" }}>Kayıt Adedi</span>} value={ozet.toplam_adet} valueStyle={{ fontWeight: 800, fontSize: 18, color: "#2563eb" }} /></Card></Col>
+              <Col xs={12} lg={6}><Card size="small"><Statistic title={<span style={{ fontSize: 12, color: "#64748b" }}>{modeIsAlinan ? "Ortalama Tahsilat" : "Toplam Alınan"}</span>} value={fmtTL(modeIsAlinan ? ortalama : (ozet.toplam_alinan ?? 0))} valueStyle={{ fontWeight: 800, fontSize: 18, color: "#7c3aed" }} /></Card></Col>
+              <Col xs={12} lg={6}>
+                <Card size="small">
+                  {ozet.tahsil_orani != null ? (
+                    <Statistic title={<span style={{ fontSize: 12, color: "#64748b" }}>Tahsil Oranı</span>} value={`%${ozet.tahsil_orani.toFixed(1)}`} valueStyle={{ fontWeight: 800, fontSize: 18, color: "#059669" }} />
+                  ) : !modeIsAlinan && ozet.toplam_kalan != null ? (
+                    <Statistic title={<span style={{ fontSize: 12, color: "#64748b" }}>Toplam Kalan</span>} value={fmtTL(ozet.toplam_kalan)} valueStyle={{ fontWeight: 800, fontSize: 18, color: "#d97706" }} />
+                  ) : (
+                    <Statistic title={<span style={{ fontSize: 12, color: "#64748b" }}>Önceki Dönem</span>} value={prevOzet ? fmtTL(prevOzet.toplam_tutar) : "—"} valueStyle={{ fontWeight: 800, fontSize: 18, color: "#64748b" }} />
+                  )}
+                </Card>
+              </Col>
+            </Row>
           )}
 
-          {/* Distribution */}
+          {/* Grafikler */}
           {ozet && (
-            <div className="dt-dist-row">
-              <div className="dt-panel">
-                <h3 className="dt-panel-title">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 019 9h-9V3z" /></svg>
-                  Yöntem Dağılımı
-                </h3>
-                {donutSegments.length === 0 ? (
-                  <p className="dt-empty-mini">Bu aralıkta veri yok</p>
-                ) : (
-                  <div className="dt-donut-row">
-                    <div className="dt-donut" style={{ background: buildConicGradient(donutSegments.map((s) => ({ color: s.color, pct: s.oran }))) }}>
-                      <div className="dt-donut-hole">
-                        <span className="dt-donut-total">
-                          {fmtTL(modeIsAlinan ? ozet.toplam_tutar : (ozet.toplam_alinan ?? ozet.toplam_tutar))}
-                        </span>
-                        <span className="dt-donut-total-label">{modeIsAlinan ? "Toplam" : "Alınan"}</span>
+            <Row gutter={[12, 12]}>
+              <Col xs={24} lg={12}>
+                <Card size="small" title="Yöntem Dağılımı">
+                  {yontemPie.length === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bu aralıkta veri yok" />
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <ResponsiveContainer width={180} height={180}>
+                        <PieChart>
+                          <Pie data={yontemPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={2}>
+                            {yontemPie.map((s, i) => <Cell key={i} fill={s.color} />)}
+                          </Pie>
+                          <RTooltip formatter={(v?: number | string) => fmtTL(Number(v ?? 0))} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        {yontemPie.map((y, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                            <span style={{ width: 10, height: 10, borderRadius: 3, background: y.color }} />
+                            <span style={{ flex: 1, fontSize: 13, color: "#475569" }}>{y.name}</span>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>{fmtTL(y.value)}</span>
+                            <span style={{ fontSize: 11, color: "#94a3b8", width: 44, textAlign: "right" }}>%{y.oran?.toFixed?.(1) ?? "0"}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    <div className="dt-donut-legend">
-                      {donutSegments.map((y, i) => (
-                        <div key={i} className="dt-legend-item">
-                          <span className="dt-legend-dot" style={{ background: y.color }} />
-                          <span className="dt-legend-label">{y.yontem}</span>
-                          <span className="dt-legend-value">{fmtTL(y.toplam)}</span>
-                          <span className="dt-legend-pct">%{y.oran?.toFixed?.(1) ?? "0"}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="dt-panel">
-                <h3 className="dt-panel-title">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h7" /></svg>
-                  Kaynak Kırılımı
-                </h3>
-                {ozet.kaynak_kirilimi.length === 0 ? (
-                  <p className="dt-empty-mini">Kaynak verisi yok</p>
-                ) : (
-                  <>
-                    <div className="dt-stackbar">
-                      {ozet.kaynak_kirilimi.map((k, i) => {
-                        const meta = kaynakMeta(k.kaynak);
-                        return (
-                          <div
-                            key={i}
-                            className="dt-stackbar-seg"
-                            style={{ width: `${Math.max((k.toplam / kaynakTotal) * 100, 1.5)}%`, background: meta.color }}
-                            title={`${k.kaynak_label}: ${fmtTL(k.toplam)}`}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div className="dt-kaynak-legend">
-                      {ozet.kaynak_kirilimi.map((k, i) => {
-                        const meta = kaynakMeta(k.kaynak);
-                        return (
-                          <div key={i} className="dt-legend-item">
-                            <span className="dt-legend-dot" style={{ background: meta.color }} />
-                            <span className="dt-legend-label">{k.kaynak_label}</span>
-                            <span className="dt-legend-value">{fmtTL(k.toplam)}</span>
-                            <span className="dt-legend-pct">{k.adet} kayıt</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Table */}
-          {items.length === 0 ? (
-            <div className="empty-state bg-white rounded-2xl border border-gray-100">
-              <div className="empty-state-icon">📭</div>
-              <h4>Bu aralıkta {mode === "alinan" ? "tahsilat" : "beklenen ödeme"} yok</h4>
-              <p>Farklı bir tarih aralığı veya filtre deneyin.</p>
-              {hasNonDefaultFilters && (
-                <button type="button" onClick={clearFilters} className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100">
-                  Filtreleri Temizle
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="dt-table-card">
-              <div className="dt-table-head">
-                <h3>İşlem Detayları</h3>
-                <span>{count} kayıt</span>
-              </div>
-
-              {/* Desktop table */}
-              <div className="dt-table-scroll">
-                <table className="dt-table">
-                  <thead>
-                    <tr>
-                      <th>Kişi</th>
-                      {mode === "alinan" ? (
-                        <>
-                          <th className="num">Tutar</th>
-                          <th>Yöntem</th>
-                          <th>Durum</th>
-                          <th>Tarih</th>
-                        </>
-                      ) : (
-                        <>
-                          <th className="num">Toplam</th>
-                          <th className="num">Alınan</th>
-                          <th className="num">Kalan</th>
-                          <th>Yöntem</th>
-                          <th>Durum</th>
-                          <th>Vade</th>
-                        </>
-                      )}
-                      <th>Kaynak</th>
-                      <th className="center">Detay</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => {
-                      const link = getRowLink(item);
-                      const meta = kaynakMeta(item.kaynak);
-                      const color = avatarColor(item.kisi_adi || "?");
-                      const durumClass =
-                        item.tahsil_durumu === "odendi"
-                          ? "positive"
-                          : item.tahsil_durumu === "kismi"
-                            ? "pending"
-                            : "pending";
-                      return (
-                        <tr key={`${item.kaynak}-${item.id}`}>
-                          <td>
-                            <div className="dt-person">
-                              <span className="dt-avatar" style={{ background: color }}>{initials(item.kisi_adi || "?")}</span>
-                              <span className="dt-person-name">{item.kisi_adi}</span>
-                            </div>
-                          </td>
-                          {mode === "alinan" ? (
-                            <>
-                              <td className="num dt-amount positive">{fmtTL(item.tutar)}</td>
-                              <td className="dt-muted">{item.odeme_yontemi || "—"}</td>
-                              <td>
-                                <span className="dt-kaynak-badge" style={{ background: "#ecfdf5", color: "#059669" }}>
-                                  {item.tahsil_durumu_label || "Alındı"}
-                                </span>
-                              </td>
-                              <td className="dt-muted">{fmtDate(item.tarih)}</td>
-                            </>
-                          ) : (
-                            <>
-                              <td className="num dt-amount">{fmtTL(item.toplam_tutar ?? item.tutar)}</td>
-                              <td className="num dt-amount positive">{fmtTL(item.odenen_tutar ?? 0)}</td>
-                              <td className="num dt-amount pending">{fmtTL(item.kalan_tutar ?? item.tutar)}</td>
-                              <td className="dt-muted">{item.odeme_yontemi || "—"}</td>
-                              <td>
-                                <span className={`dt-kaynak-badge ${durumClass}`} style={{
-                                  background: item.tahsil_durumu === "odendi" ? "#ecfdf5" : item.tahsil_durumu === "kismi" ? "#fffbeb" : "#fef2f2",
-                                  color: item.tahsil_durumu === "odendi" ? "#059669" : item.tahsil_durumu === "kismi" ? "#d97706" : "#dc2626",
-                                }}>
-                                  {item.tahsil_durumu_label || "—"}
-                                </span>
-                              </td>
-                              <td className="dt-muted">{fmtDate(item.vade_tarihi || item.tarih)}</td>
-                            </>
-                          )}
-                          <td>
-                            <span className="dt-kaynak-badge" style={{ background: `${meta.color}1a`, color: meta.color }}>
-                              {item.kaynak_label}
-                            </span>
-                          </td>
-                          <td className="center">
-                            {link ? <Link href={link} className="dt-detail-link">Git →</Link> : <span className="dt-muted">—</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="dt-table-footer">
-                <div className="dt-pagesize">
-                  <span>Sayfa başına:</span>
-                  <select value={pageSize} onChange={(e) => updateParams({ page_size: e.target.value, page: "1" })}>
-                    {PAGE_SIZE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div className="dt-pagination">
-                  <button type="button" disabled={page <= 1} onClick={() => updateParams({ page: String(page - 1) })}>‹</button>
-                  {getPageNumbers(page, totalPages).map((p, i) =>
-                    p === "…" ? (
-                      <span key={`e${i}`} className="dt-page-ellipsis">…</span>
-                    ) : (
-                      <button
-                        key={p}
-                        type="button"
-                        className={p === page ? "active" : ""}
-                        onClick={() => updateParams({ page: String(p) })}
-                      >
-                        {p}
-                      </button>
-                    )
                   )}
-                  <button type="button" disabled={page >= totalPages} onClick={() => updateParams({ page: String(page + 1) })}>›</button>
-                </div>
-              </div>
-            </div>
+                </Card>
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card size="small" title="Kaynak Kırılımı">
+                  {kaynakBar.length === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Kaynak verisi yok" />
+                  ) : (
+                    <ResponsiveContainer width="100%" height={180}>
+                      <BarChart data={kaynakBar} layout="vertical" margin={{ left: 8, right: 16 }}>
+                        <XAxis type="number" tickFormatter={(v: number) => fmtTL(v)} tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
+                        <RTooltip formatter={(v?: number | string) => fmtTL(Number(v ?? 0))} />
+                        <Bar dataKey="tutar" radius={[0, 4, 4, 0]}>
+                          {kaynakBar.map((k, i) => <Cell key={i} fill={k.color} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </Card>
+              </Col>
+            </Row>
           )}
-        </div>
+
+          {/* Tablo */}
+          <Card size="small" title="İşlem Detayları" extra={<span style={{ fontSize: 12, color: "#64748b" }}>{count} kayıt</span>} styles={{ body: { padding: 0 } }}>
+            <Table
+              rowKey={(r) => `${r.kaynak}-${r.id}`}
+              size="small"
+              columns={columns}
+              dataSource={items}
+              locale={{ emptyText: <Empty description={`Bu aralıkta ${modeIsAlinan ? "tahsilat" : "beklenen ödeme"} yok`} /> }}
+              pagination={{
+                current: page,
+                pageSize,
+                total: count,
+                showSizeChanger: true,
+                pageSizeOptions: [10, 20, 50],
+                showTotal: (t) => `Toplam ${t} kayıt`,
+                onChange: (p, ps) => updateParams({ page: String(p), page_size: String(ps) }),
+              }}
+              scroll={{ x: "max-content" }}
+            />
+          </Card>
+        </Space>
       )}
     </div>
+  );
+}
+
+export default function DonemTahsilatClient({ embedded = false }: { embedded?: boolean }) {
+  return (
+    <GGProvider>
+      <DonemTahsilatInner embedded={embedded} />
+    </GGProvider>
   );
 }

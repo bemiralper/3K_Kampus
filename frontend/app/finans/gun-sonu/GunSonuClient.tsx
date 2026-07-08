@@ -1,22 +1,40 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  App as AntApp,
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  Empty,
+  Input,
+  Row,
+  Segmented,
+  Space,
+  Spin,
+  Statistic,
+  Table,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { WhatsAppOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import ExportDropdown, { type ExportFormat } from "@/components/finans/ExportDropdown";
 import GunSonuWhatsappModal from "@/components/finans/GunSonuWhatsappModal";
 import GunSonuDetayView from "./GunSonuDetayView";
+import GGProvider from "../gelir-gider-v2/GGProvider";
 import { gunSonuService } from "../services/para-hareketi-api";
 import type { GunSonuDetayRapor, GunSonuOzet, GunSonuOzetRapor } from "../types/para-hareketi-types";
 import { fmtTL } from "@/components/finans/FinansFilterBar";
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 
-type ViewTab = "rapor" | "canli" | "detay";
+type ViewTab = "rapor" | "detay" | "canli";
 
-export default function GunSonuClient({ embedded = false }: { embedded?: boolean }) {
+function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
   const { activeKurum, activeSube } = useKurum();
-  const { homeHref, portalHomeHref } = useFinansPath();
 
   const [gun, setGun] = useState(todayIso());
   const [notlar, setNotlar] = useState("");
@@ -32,10 +50,7 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
   const [whatsappOpen, setWhatsappOpen] = useState(false);
 
   const load = useCallback(async () => {
-    if (!activeKurum?.id) {
-      setLoading(false);
-      return;
-    }
+    if (!activeKurum?.id) { setLoading(false); return; }
     setLoading(true);
     setError(null);
     try {
@@ -55,10 +70,7 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    setDetay(null);
-    setDetayError(null);
-  }, [gun, activeSube?.id]);
+  useEffect(() => { setDetay(null); setDetayError(null); }, [gun, activeSube?.id]);
 
   const loadDetay = useCallback(async () => {
     if (!activeKurum?.id) return;
@@ -71,9 +83,7 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
         sube_id: activeSube?.id,
         notlar: notlarRef.current,
       });
-      if (!data?.detay_rapor) {
-        throw new Error("Detay rapor verisi alınamadı");
-      }
+      if (!data?.detay_rapor) throw new Error("Detay rapor verisi alınamadı");
       setDetay(data.detay_rapor);
     } catch (e) {
       setDetay(null);
@@ -83,9 +93,7 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
     }
   }, [activeKurum?.id, activeSube?.id, gun]);
 
-  useEffect(() => {
-    if (viewTab === "detay") loadDetay();
-  }, [viewTab, loadDetay]);
+  useEffect(() => { if (viewTab === "detay") loadDetay(); }, [viewTab, loadDetay]);
 
   const rapor = ozet?.ozet_rapor;
 
@@ -109,110 +117,78 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
   );
 
   if (!activeKurum) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4 text-3xl">🏢</div>
-        <h3 className="text-lg font-bold text-gray-800 mb-1">Kurum Seçiniz</h3>
-        <p className="text-sm text-gray-500">Gün sonu özetini görmek için üst menüden bir kurum seçin.</p>
-      </div>
-    );
+    return <Card style={{ textAlign: "center", padding: 32 }}><Empty description="Gün sonu özetini görmek için üst menüden bir kurum seçin." /></Card>;
   }
 
   return (
-    <div>
+    <div style={{ padding: embedded ? 0 : "4px 4px 40px" }}>
       {!embedded && (
-        <div className="hero-header">
-          <div className="hero-content">
-            <div className="hero-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div className="hero-text">
-              <h1>Gün Sonu</h1>
-              <div className="hero-breadcrumb">
-                <a href={portalHomeHref}>Ana Sayfa</a>
-                <span>/</span>
-                <a href={homeHref}>Finans</a>
-                <span>/</span>
-                <span>Gün Sonu</span>
-              </div>
-            </div>
-          </div>
+        <div style={{ background: "linear-gradient(120deg, #1F3C880d, #ffffff)", border: "1px solid #eef2f7", borderRadius: 16, padding: "18px 22px", marginBottom: 16 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>Gün Sonu</h1>
+          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: 13 }}>Günlük tahsilat, gider ve nakit özetini görüntüleyin, raporlayın.</p>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <label className="text-xs font-semibold text-gray-500">Tarih</label>
-        <input
-          type="date"
-          value={gun}
-          max={todayIso()}
-          onChange={(e) => setGun(e.target.value)}
-          className="px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none"
-        />
-        <button
-          type="button"
-          onClick={() => setGun(todayIso())}
-          className="px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition"
-        >
-          Bugün
-        </button>
+      <Card size="small" style={{ marginBottom: 16 }} styles={{ body: { padding: 12 } }}>
+        <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
+          <Space wrap>
+            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Tarih</span>
+            <DatePicker
+              format="DD.MM.YYYY"
+              allowClear={false}
+              value={dayjs(gun)}
+              disabledDate={(d) => d && d.isAfter(dayjs(), "day")}
+              onChange={(d) => d && setGun(d.format("YYYY-MM-DD"))}
+            />
+            <Button onClick={() => setGun(todayIso())}>Bugün</Button>
+          </Space>
+          <Space wrap>
+            <ExportDropdown
+              buildPath={buildExportPath}
+              filenamePrefix={filenamePrefix}
+              disabled={loading || (viewTab === "detay" ? detayLoading || !detay : !ozet)}
+              label={viewTab === "detay" ? "Detay Rapor İndir" : "Rapor İndir"}
+            />
+            <Button icon={<WhatsAppOutlined />} disabled={loading || !ozet} style={{ color: "#059669", borderColor: "#a7f3d0" }} onClick={() => setWhatsappOpen(true)}>
+              WhatsApp Gönder
+            </Button>
+          </Space>
+        </Space>
+      </Card>
 
-        <div className="flex-1" />
-
-        <ExportDropdown
-          buildPath={buildExportPath}
-          filenamePrefix={filenamePrefix}
-          disabled={loading || (viewTab === "detay" ? detayLoading || !detay : !ozet)}
-          label={viewTab === "detay" ? "Detay Rapor İndir" : "Rapor İndir"}
-        />
-        <button
-          type="button"
-          disabled={loading || !ozet}
-          onClick={() => setWhatsappOpen(true)}
-          className="px-4 py-2.5 text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition disabled:opacity-50"
-        >
-          WhatsApp Gönder
-        </button>
-      </div>
-
-      <div className="flex gap-2 mb-4 flex-wrap">
-        <TabButton active={viewTab === "rapor"} onClick={() => setViewTab("rapor")}>Özet Rapor</TabButton>
-        <TabButton active={viewTab === "detay"} onClick={() => setViewTab("detay")}>Detay Rapor</TabButton>
-        <TabButton active={viewTab === "canli"} onClick={() => setViewTab("canli")}>Canlı Özet</TabButton>
-      </div>
+      <Segmented
+        value={viewTab}
+        onChange={(v) => setViewTab(v as ViewTab)}
+        options={[
+          { value: "rapor", label: "Özet Rapor" },
+          { value: "detay", label: "Detay Rapor" },
+          { value: "canli", label: "Canlı Özet" },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-24">
-          <div className="w-10 h-10 border-[3px] border-gray-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-          <p className="text-sm text-gray-400">Yükleniyor…</p>
-        </div>
+        <div style={{ padding: 80, textAlign: "center" }}><Spin size="large" /></div>
       ) : error ? (
-        <div className="flex flex-col items-center justify-center py-20">
-          <p className="text-sm font-semibold text-red-600 mb-3">{error}</p>
-          <button onClick={load} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">Tekrar Dene</button>
+        <div style={{ padding: 48, textAlign: "center" }}>
+          <p style={{ color: "#dc2626", fontWeight: 600, marginBottom: 12 }}>{error}</p>
+          <Button danger onClick={load}>Tekrar Dene</Button>
         </div>
       ) : ozet && viewTab === "rapor" ? (
         rapor ? (
           <OzetRaporView rapor={rapor} notlar={notlar} onNotlarChange={setNotlar} onNotlarBlur={load} />
         ) : (
-          <div className="py-16 text-center text-sm text-gray-500">Rapor verisi alınamadı. Lütfen tekrar deneyin.</div>
+          <Card><Empty description="Rapor verisi alınamadı. Lütfen tekrar deneyin." /></Card>
         )
       ) : viewTab === "detay" ? (
         detayLoading ? (
-          <div className="flex flex-col items-center justify-center py-24">
-            <div className="w-10 h-10 border-[3px] border-gray-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-            <p className="text-sm text-gray-400">Detay rapor yükleniyor…</p>
-          </div>
+          <div style={{ padding: 80, textAlign: "center" }}><Spin size="large" tip="Detay rapor yükleniyor…" /></div>
         ) : detay ? (
           <GunSonuDetayView detay={detay} />
         ) : (
-          <div className="py-16 text-center">
-            <p className="text-sm font-semibold text-red-600 mb-2">{detayError || "Detay rapor yüklenemedi."}</p>
-            <button type="button" onClick={loadDetay} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">
-              Tekrar Dene
-            </button>
+          <div style={{ padding: 48, textAlign: "center" }}>
+            <p style={{ color: "#dc2626", fontWeight: 600, marginBottom: 12 }}>{detayError || "Detay rapor yüklenemedi."}</p>
+            <Button danger onClick={loadDetay}>Tekrar Dene</Button>
           </div>
         )
       ) : ozet ? (
@@ -232,25 +208,10 @@ export default function GunSonuClient({ embedded = false }: { embedded?: boolean
   );
 }
 
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-4 py-2 text-xs font-semibold rounded-xl border transition ${
-        active ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
+/* ─── Özet Rapor (markalı PDF önizleme) ─────────────────────────── */
 
 function OzetRaporView({
-  rapor,
-  notlar,
-  onNotlarChange,
-  onNotlarBlur,
+  rapor, notlar, onNotlarChange, onNotlarBlur,
 }: {
   rapor: GunSonuOzetRapor;
   notlar: string;
@@ -260,26 +221,26 @@ function OzetRaporView({
   const { meta, gunluk_ozet, tahsilat_dagilimi, islem_sayilari, kullanici_ozeti } = rapor;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      {/* Rapor başlığı */}
-      <div className="px-6 py-5 border-b-2 border-[#1F3C88] bg-gradient-to-r from-slate-50 to-blue-50/40">
-        <div className="flex items-start gap-4">
-          <img src="/img/3k-logo.png" alt="3K Kampüs" className="w-12 h-12 object-contain" />
-          <div className="flex-1">
-            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{meta.marka}</div>
-            <h2 className="text-xl font-extrabold text-[#1F3C88] mt-0.5">{meta.baslik}</h2>
-            {meta.kurum_ad && <div className="text-sm text-gray-600 mt-0.5">{meta.kurum_ad}</div>}
+    <Card styles={{ body: { padding: 0 } }} style={{ overflow: "hidden" }}>
+      <div style={{ padding: "20px 24px", borderBottom: "2px solid #1F3C88", background: "linear-gradient(90deg, #f8fafc, #eff6ff66)" }}>
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/img/3k-logo.png" alt="3K Kampüs" style={{ width: 48, height: 48, objectFit: "contain" }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 }}>{meta.marka}</div>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: "#1F3C88", margin: "2px 0 0" }}>{meta.baslik}</h2>
+            {meta.kurum_ad && <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>{meta.kurum_ad}</div>}
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 p-3 bg-white/70 rounded-xl border border-gray-100">
+        <Row gutter={[12, 12]} style={{ marginTop: 16, padding: 12, background: "#ffffffb3", borderRadius: 12, border: "1px solid #f1f5f9" }}>
           <MetaChip label="Tarih" value={meta.tarih} />
           <MetaChip label="Şube" value={meta.sube} />
           <MetaChip label="Hazırlayan" value={meta.hazirlayan} />
           <MetaChip label="Oluşturulma" value={meta.olusturulma} />
-        </div>
+        </Row>
       </div>
 
-      <div className="p-6 space-y-6">
+      <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24 }}>
         <ReportSection title="A. Günlük Özet">
           <ReportTable
             headers={["Bilgi", "Tutar"]}
@@ -295,11 +256,7 @@ function OzetRaporView({
         </ReportSection>
 
         <ReportSection title="B. Tahsilat Dağılımı">
-          <ReportTable
-            headers={["Ödeme Türü", "Tutar"]}
-            rows={tahsilat_dagilimi.map((r) => [r.label, fmtTL(r.tutar)])}
-            highlightLast
-          />
+          <ReportTable headers={["Ödeme Türü", "Tutar"]} rows={tahsilat_dagilimi.map((r) => [r.label, fmtTL(r.tutar)])} highlightLast />
         </ReportSection>
 
         <ReportSection title="C. İşlem Sayıları">
@@ -317,200 +274,148 @@ function OzetRaporView({
 
         <ReportSection title="Kullanıcı Bazlı İşlem Özeti">
           {kullanici_ozeti.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">Bugün personel bazlı işlem yok</p>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bugün personel bazlı işlem yok" />
           ) : (
             <ReportTable
               headers={["Personel", "Tahsilat", "Gelir", "Gider"]}
-              rows={kullanici_ozeti.map((k) => [
-                k.personel,
-                fmtTL(k.tahsilat),
-                fmtTL(k.gelir),
-                fmtTL(k.gider),
-              ])}
+              rows={kullanici_ozeti.map((k) => [k.personel, fmtTL(k.tahsilat), fmtTL(k.gelir), fmtTL(k.gider)])}
             />
           )}
         </ReportSection>
 
         <ReportSection title="G. Notlar">
-          <textarea
+          <Input.TextArea
             value={notlar}
             onChange={(e) => onNotlarChange(e.target.value)}
             onBlur={onNotlarBlur}
             placeholder="Gün sonu notlarınızı buraya yazın…"
             rows={4}
-            className="w-full px-4 py-3 border border-dashed border-gray-200 rounded-xl text-sm outline-none focus:border-blue-300 resize-none bg-gray-50/50"
           />
-          <p className="text-[10px] text-gray-400 mt-1">Notlar rapor export ve WhatsApp gönderimine dahil edilir.</p>
+          <p style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Notlar rapor export ve WhatsApp gönderimine dahil edilir.</p>
         </ReportSection>
       </div>
-    </div>
+    </Card>
   );
 }
 
 function MetaChip({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">{label}</div>
-      <div className="text-xs font-semibold text-gray-700 mt-0.5">{value}</div>
-    </div>
+    <Col xs={12} sm={6}>
+      <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginTop: 2 }}>{value}</div>
+    </Col>
   );
 }
 
 function ReportSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="text-sm font-extrabold text-[#1F3C88] mb-2 pl-3 border-l-4 border-blue-500">{title}</h3>
+      <h3 style={{ fontSize: 14, fontWeight: 800, color: "#1F3C88", margin: "0 0 8px", paddingLeft: 12, borderLeft: "4px solid #3b82f6" }}>{title}</h3>
       {children}
     </section>
   );
 }
 
-function ReportTable({
-  headers,
-  rows,
-  highlightLast,
-}: {
-  headers: string[];
-  rows: string[][];
-  highlightLast?: boolean;
-}) {
+function ReportTable({ headers, rows, highlightLast }: { headers: string[]; rows: string[][]; highlightLast?: boolean }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-100 shadow-sm">
-      <table className="w-full text-sm">
+    <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #f1f5f9" }}>
+      <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
         <thead>
-          <tr className="bg-[#1F3C88] text-white">
+          <tr style={{ background: "#1F3C88", color: "#fff" }}>
             {headers.map((h) => (
-              <th key={h} className="py-2.5 px-3 text-left text-[10px] font-bold uppercase tracking-wide">{h}</th>
+              <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{h}</th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-50">
-          {rows.map((row, i) => (
-            <tr
-              key={i}
-              className={
-                highlightLast && i === rows.length - 1
-                  ? "bg-blue-50 font-bold text-[#1F3C88]"
-                  : i % 2 === 1
-                    ? "bg-gray-50/50"
-                    : ""
-              }
-            >
-              {row.map((cell, j) => (
-                <td key={j} className={`py-2 px-3 ${j > 0 ? "text-right tabular-nums" : "text-gray-700"}`}>
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
+        <tbody>
+          {rows.map((row, i) => {
+            const isLast = highlightLast && i === rows.length - 1;
+            return (
+              <tr key={i} style={{ background: isLast ? "#eff6ff" : i % 2 === 1 ? "#f8fafc80" : "transparent", fontWeight: isLast ? 700 : 400, color: isLast ? "#1F3C88" : undefined }}>
+                {row.map((cell, j) => (
+                  <td key={j} style={{ padding: "8px 12px", textAlign: j > 0 ? "right" : "left", fontVariantNumeric: j > 0 ? "tabular-nums" : undefined, color: j === 0 && !isLast ? "#334155" : undefined, borderTop: "1px solid #f1f5f9" }}>
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
+/* ─── Canlı Özet ─────────────────────────────────────────────────── */
+
 function CanliOzetView({ ozet }: { ozet: GunSonuOzet }) {
+  const hesapColumns: ColumnsType<GunSonuOzet["hesap_bakiyeleri"][number]> = [
+    { title: "Hesap", dataIndex: "ad", key: "ad", render: (v: string) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{v}</span> },
+    { title: "Tip", dataIndex: "tip_label", key: "tip", render: (v: string) => v || "—" },
+    { title: "Şube", dataIndex: "sube_ad", key: "sube", render: (v: string) => v || "—" },
+    { title: "Bakiye", dataIndex: "bakiye", key: "bakiye", align: "right", render: (v: number) => <span style={{ fontWeight: 700 }}>{fmtTL(v)}</span> },
+  ];
+
   return (
-    <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        <SummaryCard label="Toplam Tahsilat" value={fmtTL(ozet.tahsilatlar.toplam)} sub={`${ozet.tahsilatlar.adet} işlem`} color="#059669" />
-        <SummaryCard label="Toplam Ödeme" value={fmtTL(ozet.odemeler.toplam)} sub={`${ozet.odemeler.adet} işlem`} color="#dc2626" />
-        <SummaryCard label="İade" value={fmtTL(ozet.iade_toplam)} color="#d97706" />
-        <SummaryCard label="Net" value={fmtTL(ozet.net)} color={ozet.net >= 0 ? "#059669" : "#dc2626"} />
-      </div>
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Row gutter={[12, 12]}>
+        <Col xs={12} lg={6}><Card size="small"><Statistic title="Toplam Tahsilat" value={fmtTL(ozet.tahsilatlar.toplam)} valueStyle={{ color: "#059669", fontWeight: 800, fontSize: 18 }} /><div style={{ fontSize: 11, color: "#94a3b8" }}>{ozet.tahsilatlar.adet} işlem</div></Card></Col>
+        <Col xs={12} lg={6}><Card size="small"><Statistic title="Toplam Ödeme" value={fmtTL(ozet.odemeler.toplam)} valueStyle={{ color: "#dc2626", fontWeight: 800, fontSize: 18 }} /><div style={{ fontSize: 11, color: "#94a3b8" }}>{ozet.odemeler.adet} işlem</div></Card></Col>
+        <Col xs={12} lg={6}><Card size="small"><Statistic title="İade" value={fmtTL(ozet.iade_toplam)} valueStyle={{ color: "#d97706", fontWeight: 800, fontSize: 18 }} /></Card></Col>
+        <Col xs={12} lg={6}><Card size="small"><Statistic title="Net" value={fmtTL(ozet.net)} valueStyle={{ color: ozet.net >= 0 ? "#059669" : "#dc2626", fontWeight: 800, fontSize: 18 }} /></Card></Col>
+      </Row>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Panel title="Tahsilatlar">
-          {ozet.tahsilatlar.kirilim.length === 0 ? (
-            <EmptyRow text="Bugün tahsilat yok" />
-          ) : (
-            <>
-              {ozet.tahsilatlar.kirilim.map((k) => (
-                <RowLine key={k.tip} label={k.label} value={fmtTL(k.toplam)} sub={`${k.adet} işlem`} />
-              ))}
-              <TotalLine label="TOPLAM" value={fmtTL(ozet.tahsilatlar.toplam)} color="#059669" />
-            </>
-          )}
-        </Panel>
+      <Row gutter={[12, 12]}>
+        <Col xs={24} lg={12}>
+          <Card size="small" title="Tahsilatlar">
+            {ozet.tahsilatlar.kirilim.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bugün tahsilat yok" />
+            ) : (
+              <>
+                {ozet.tahsilatlar.kirilim.map((k) => <RowLine key={k.tip} label={k.label} value={fmtTL(k.toplam)} sub={`${k.adet} işlem`} />)}
+                <TotalLine label="TOPLAM" value={fmtTL(ozet.tahsilatlar.toplam)} color="#059669" />
+              </>
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card size="small" title="Ödemeler">
+            {ozet.odemeler.kirilim.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bugün ödeme yok" />
+            ) : (
+              <>
+                {ozet.odemeler.kirilim.map((k) => <RowLine key={k.tip} label={k.label} value={fmtTL(k.toplam)} sub={`${k.adet} işlem`} />)}
+                <TotalLine label="TOPLAM" value={fmtTL(ozet.odemeler.toplam)} color="#dc2626" />
+              </>
+            )}
+          </Card>
+        </Col>
+      </Row>
 
-        <Panel title="Ödemeler">
-          {ozet.odemeler.kirilim.length === 0 ? (
-            <EmptyRow text="Bugün ödeme yok" />
-          ) : (
-            <>
-              {ozet.odemeler.kirilim.map((k) => (
-                <RowLine key={k.tip} label={k.label} value={fmtTL(k.toplam)} sub={`${k.adet} işlem`} />
-              ))}
-              <TotalLine label="TOPLAM" value={fmtTL(ozet.odemeler.toplam)} color="#dc2626" />
-            </>
-          )}
-        </Panel>
-      </div>
+      <Row gutter={[12, 12]}>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title="Kasada Beklenen" value={fmtTL(ozet.kasada_beklenen)} valueStyle={{ color: "#0891b2", fontWeight: 800, fontSize: 17 }} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title="Banka Bakiye" value={fmtTL(ozet.banka_bakiye)} valueStyle={{ color: "#2563eb", fontWeight: 800, fontSize: 17 }} /></Card></Col>
+        <Col xs={24} sm={8}><Card size="small"><Statistic title="Kart Bekleyen (POS)" value={fmtTL(ozet.kart_bekleyen)} valueStyle={{ color: "#7c3aed", fontWeight: 800, fontSize: 17 }} /></Card></Col>
+      </Row>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 mb-5">
-        <SummaryCard label="Kasada Beklenen" value={fmtTL(ozet.kasada_beklenen)} color="#0891b2" />
-        <SummaryCard label="Banka Bakiye" value={fmtTL(ozet.banka_bakiye)} color="#2563eb" />
-        <SummaryCard label="Kart Bekleyen (POS)" value={fmtTL(ozet.kart_bekleyen)} color="#7c3aed" />
-      </div>
-
-      <Panel title="Hesap Bakiyeleri (Anlık)">
+      <Card size="small" title="Hesap Bakiyeleri (Anlık)" styles={{ body: { padding: ozet.hesap_bakiyeleri.length === 0 ? 24 : 0 } }}>
         {ozet.hesap_bakiyeleri.length === 0 ? (
-          <EmptyRow text="Tanımlı mali hesap yok" />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Tanımlı mali hesap yok" />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[11px] font-semibold text-gray-400 uppercase">
-                  <th className="py-2 px-2">Hesap</th>
-                  <th className="py-2 px-2">Tip</th>
-                  <th className="py-2 px-2">Şube</th>
-                  <th className="py-2 px-2 text-right">Bakiye</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {ozet.hesap_bakiyeleri.map((h) => (
-                  <tr key={h.id}>
-                    <td className="py-2 px-2 font-medium text-gray-800">{h.ad}</td>
-                    <td className="py-2 px-2 text-gray-500">{h.tip_label}</td>
-                    <td className="py-2 px-2 text-gray-500">{h.sube_ad || "—"}</td>
-                    <td className="py-2 px-2 text-right font-bold text-gray-800">{fmtTL(h.bakiye)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table rowKey="id" size="small" columns={hesapColumns} dataSource={ozet.hesap_bakiyeleri} pagination={false} />
         )}
-      </Panel>
-    </>
-  );
-}
-
-function SummaryCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
-  return (
-    <div className="p-5 bg-white rounded-2xl border border-gray-100 shadow-sm border-l-4" style={{ borderLeftColor: color }}>
-      <div className="text-xs font-medium text-gray-500 mb-1">{label}</div>
-      <div className="text-xl font-extrabold" style={{ color }}>{value}</div>
-      {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
-    </div>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-      <h3 className="text-sm font-bold text-gray-700 mb-3">{title}</h3>
-      {children}
-    </div>
+      </Card>
+    </Space>
   );
 }
 
 function RowLine({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-      <span className="text-sm text-gray-600">{label}</span>
-      <div className="text-right">
-        <div className="text-sm font-bold text-gray-800">{value}</div>
-        {sub && <div className="text-[10px] text-gray-400">{sub}</div>}
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}>
+      <span style={{ fontSize: 13, color: "#475569" }}>{label}</span>
+      <div style={{ textAlign: "right" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{value}</div>
+        {sub && <div style={{ fontSize: 10, color: "#94a3b8" }}>{sub}</div>}
       </div>
     </div>
   );
@@ -518,13 +423,17 @@ function RowLine({ label, value, sub }: { label: string; value: string; sub?: st
 
 function TotalLine({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="flex items-center justify-between pt-3 mt-1 border-t-2" style={{ borderTopColor: color }}>
-      <span className="text-xs font-bold text-gray-500 uppercase">{label}</span>
-      <span className="text-base font-extrabold" style={{ color }}>{value}</span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, marginTop: 4, borderTop: `2px solid ${color}` }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{label}</span>
+      <span style={{ fontSize: 16, fontWeight: 800, color }}>{value}</span>
     </div>
   );
 }
 
-function EmptyRow({ text }: { text: string }) {
-  return <div className="py-6 text-center text-sm text-gray-400">{text}</div>;
+export default function GunSonuClient({ embedded = false }: { embedded?: boolean }) {
+  return (
+    <GGProvider>
+      <GunSonuInner embedded={embedded} />
+    </GGProvider>
+  );
 }

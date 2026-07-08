@@ -1,0 +1,355 @@
+/* ═══════════════════════════════════════════════════════════
+   Finans Dashboard
+   Önek: fdash-
+   ═══════════════════════════════════════════════════════════ */
+
+.fdash-page {
+  --fdash-primary: #0262a7;
+  --fdash-border: #e5e7eb;
+  --fdash-muted: #6b7280;
+  padding: 0 0 40px;
+  width: 100%;
+  color: #111827;
+}
+
+/* ── Başlık ─────────────────────────────── */
+.fdash-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.fdash-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  color: #0f172a;
+}
+.fdash-subtitle {
+  font-size: 13px;
+  color: var(--fdash-muted);
+  margin: 4px 0 0;
+  max-width: 640px;
+  line-height: 1.45;
+}
+.fdash-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.fdash-head-meta {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.fdash-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--fdash-border);
+  background: #fff;
+  color: #374151;
+  border-radius: 8px;
+  padding: 7px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fdash-btn:hover { background: #f9fafb; }
+.fdash-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ── Bölüm ──────────────────────────────── */
+.fdash-block { margin-bottom: 18px; }
+.fdash-block-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+  margin: 0 0 10px;
+}
+
+/* ── Kısayol kartları ───────────────────── */
+.fdash-shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+@media (max-width: 1200px) { .fdash-shortcut-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 760px) { .fdash-shortcut-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.fdash-shortcut {
+  display: block;
+  background: #fff;
+  border: 1px solid var(--fdash-border);
+  border-radius: 10px;
+  padding: 10px 11px 10px 13px;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.15s;
+}
+.fdash-shortcut:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.07);
+  transform: translateY(-1px);
+}
+.fdash-shortcut::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+.fdash-shortcut--accent::before { background: #0262a7; }
+.fdash-shortcut--emerald::before { background: #059669; }
+.fdash-shortcut--rose::before { background: #dc2626; }
+.fdash-shortcut--amber::before { background: #d97706; }
+.fdash-shortcut--slate::before { background: #64748b; }
+.fdash-shortcut--purple::before { background: #7c3aed; }
+.fdash-shortcut--info::before { background: #2563eb; }
+
+.fdash-shortcut__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+.fdash-shortcut__desc {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 2px;
+  line-height: 1.25;
+}
+
+/* ── KPI kartları (csv2 tarzı, küçük) ───── */
+.fdash-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 1100px) { .fdash-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .fdash-kpi-grid { grid-template-columns: 1fr; } }
+
+.fdash-kpi {
+  background: #fff;
+  border: 1px solid var(--fdash-border);
+  border-radius: 11px;
+  padding: 11px 12px 11px 14px;
+  position: relative;
+  overflow: hidden;
+}
+.fdash-kpi::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+.fdash-kpi--accent::before { background: #0262a7; }
+.fdash-kpi--success::before { background: #059669; }
+.fdash-kpi--danger::before { background: #dc2626; }
+.fdash-kpi--warning::before { background: #d97706; }
+.fdash-kpi--slate::before { background: #64748b; }
+.fdash-kpi--info::before { background: #2563eb; }
+
+.fdash-kpi__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fdash-muted);
+  margin-bottom: 5px;
+}
+.fdash-kpi__value {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+.fdash-kpi__value--pos { color: #059669; }
+.fdash-kpi__value--neg { color: #dc2626; }
+.fdash-kpi__sub {
+  font-size: 10px;
+  color: #9ca3af;
+  margin-top: 3px;
+}
+
+/* ── Uyarı şeridi ───────────────────────── */
+.fdash-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  margin-bottom: 12px;
+}
+.fdash-alert__text {
+  font-size: 12.5px;
+  color: #991b1b;
+  font-weight: 600;
+}
+.fdash-alert__text span { font-weight: 800; }
+.fdash-alert__link {
+  font-size: 11px;
+  font-weight: 700;
+  color: #b91c1c;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.fdash-alert__link:hover { text-decoration: underline; }
+
+/* ── Panel + tablo ──────────────────────── */
+.fdash-split-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+@media (max-width: 1050px) { .fdash-split-2 { grid-template-columns: 1fr; } }
+
+.fdash-panel {
+  background: #fff;
+  border: 1px solid var(--fdash-border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.fdash-panel--flush { margin-bottom: 0; }
+.fdash-panel__head {
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fdash-panel__head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fdash-panel__head h3 svg { width: 15px; height: 15px; color: #64748b; flex-shrink: 0; }
+.fdash-panel__link {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fdash-primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.fdash-panel__link:hover { text-decoration: underline; }
+.fdash-panel__summary {
+  padding: 7px 14px;
+  font-size: 11px;
+  color: var(--fdash-muted);
+  border-bottom: 1px solid #f8fafc;
+  background: #fafbfc;
+}
+.fdash-panel__actions {
+  display: flex;
+  gap: 4px;
+}
+.fdash-filter-btn {
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--fdash-border);
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  font-weight: 600;
+}
+.fdash-filter-btn--active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+.fdash-panel__foot {
+  padding: 8px 14px;
+  border-top: 1px solid #f1f5f9;
+  text-align: right;
+}
+.fdash-panel .finans-table-wrap { max-height: 320px; overflow-y: auto; }
+.fdash-panel .table-modern th {
+  font-size: 10.5px;
+  padding: 8px 10px;
+}
+.fdash-panel .table-modern td {
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+/* ── Grafikler ──────────────────────────── */
+.fdash-charts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+@media (max-width: 1100px) { .fdash-charts { grid-template-columns: 1fr; } }
+
+.fdash-chart-card {
+  background: #fff;
+  border: 1px solid var(--fdash-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.fdash-chart-card__head {
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fdash-chart-card__head h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+}
+.fdash-chart-card__head svg { width: 15px; height: 15px; color: #64748b; }
+.fdash-chart-card__body { padding: 12px 14px 14px; }
+.fdash-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  font-size: 12px;
+  color: var(--fdash-muted);
+}
+
+/* ── Durum ──────────────────────────────── */
+.fdash-state {
+  background: #fff;
+  border: 1px solid var(--fdash-border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  gap: 10px;
+}
+.fdash-state h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.fdash-state p { margin: 0; font-size: 13px; color: var(--fdash-muted); }
+.fdash-spinner {
+  width: 32px; height: 32px;
+  border: 2.5px solid #e5e7eb;
+  border-top-color: var(--fdash-primary);
+  border-radius: 50%;
+  animation: fdash-spin 0.7s linear infinite;
+}
+@keyframes fdash-spin { to { transform: rotate(360deg); } }

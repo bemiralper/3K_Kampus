@@ -14,6 +14,7 @@ import {
   PackageInfo, 
   EkHizmetInfo,
   DenemePaketiInfo,
+  YayinPaketiInfo,
   StepType,
   RenewalState,
   TcCheckResponse,
@@ -131,6 +132,7 @@ const initialData: WizardData = {
     paketler: [],
     ek_hizmet_ids: [],
     deneme_paketi_ids: [],
+    yayin_paketi_ids: [],
   },
   veliSecimi: null,
 };
@@ -148,7 +150,7 @@ function clearWizardStorage() {
 export default function OgrenciKayitClient() {
   const { href: ogrenciHref } = useOgrenciPath();
   const { href: odemeHref } = useOdemePath();
-  const { activeSube } = useKurum();
+  const { activeSube, activeEgitimYili } = useKurum();
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [data, setData] = useState<WizardData>(initialData);
@@ -157,10 +159,12 @@ export default function OgrenciKayitClient() {
   const [packages, setPackages] = useState<PackageInfo[]>([]);
   const [ekHizmetler, setEkHizmetler] = useState<EkHizmetInfo[]>([]);
   const [denemePaketleri, setDenemePaketleri] = useState<DenemePaketiInfo[]>([]);
+  const [yayinPaketleri, setYayinPaketleri] = useState<YayinPaketiInfo[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadingPackages, setLoadingPackages] = useState(false);
+  const [packageLoadError, setPackageLoadError] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [registeredStudent, setRegisteredStudent] = useState<any>(null);
   const [renewalState, setRenewalState] = useState<RenewalState>({
@@ -202,6 +206,7 @@ export default function OgrenciKayitClient() {
         setMetadata(meta);
         
         const activeYear = meta.egitim_yillari?.find((y) => y.aktif_mi);
+        const contextYearId = activeEgitimYili?.id;
         const defaultEntryType = meta.lookups.entry_type?.find((e) => e.code === "yeni_kayit");
         const defaultCity = meta.cities?.find((c) => c.is_default) || meta.cities?.[0];
 
@@ -230,7 +235,7 @@ export default function OgrenciKayitClient() {
           ...prev,
           enrollment: {
             ...prev.enrollment,
-            egitim_yili: activeYear?.id || meta.egitim_yillari?.[0]?.id,
+            egitim_yili: contextYearId || activeYear?.id || meta.egitim_yillari?.[0]?.id,
             giris_turu: defaultEntryType?.id || meta.lookups.entry_type?.[0]?.id,
           },
           address: defaultCity
@@ -252,6 +257,21 @@ export default function OgrenciKayitClient() {
     fetchMetadata();
   }, []);
 
+  // Üst bardaki eğitim yılı = kayıt eğitim yılı (Eğitim Paketleri modülü ile aynı kapsam)
+  useEffect(() => {
+    if (!activeEgitimYili?.id) return;
+    setData((prev) => {
+      if (prev.enrollment.egitim_yili === activeEgitimYili.id) return prev;
+      return {
+        ...prev,
+        enrollment: {
+          ...prev.enrollment,
+          egitim_yili: activeEgitimYili.id,
+        },
+      };
+    });
+  }, [activeEgitimYili?.id]);
+
   // Aktif şube (üst bar) = kayıt şubesi
   const prevSubeRef = useRef<number | undefined>();
   useEffect(() => {
@@ -267,7 +287,7 @@ export default function OgrenciKayitClient() {
         ...(subeChanged ? { sinif: undefined } : {}),
       },
       ...(subeChanged
-        ? { package: { paketler: [], ek_hizmet_ids: [], deneme_paketi_ids: [] } }
+        ? { package: { paketler: [], ek_hizmet_ids: [], deneme_paketi_ids: [], yayin_paketi_ids: [] } }
         : {}),
     }));
 
@@ -280,68 +300,114 @@ export default function OgrenciKayitClient() {
 
   // Paketleri yükle
   useEffect(() => {
-    if (currentStep === 4 && data.enrollment.egitim_yili) {
-      const fetchPackages = async () => {
-        setLoadingPackages(true);
-        try {
-          const params = new URLSearchParams();
-          params.append("egitim_yili", data.enrollment.egitim_yili!.toString());
-          if (data.enrollment.sinif_seviyesi) {
-            params.append("sinif_seviyesi", data.enrollment.sinif_seviyesi.toString());
-          }
-          if (data.enrollment.alan) {
-            params.append("alan", data.enrollment.alan.toString());
-          }
-          const result = await apiFetch<{
-            packages: PackageInfo[];
-            ek_hizmetler: EkHizmetInfo[];
-            deneme_paketleri: DenemePaketiInfo[];
-          }>(`/api/ogrenci-kayit/packages/?${params}`);
-          if (!result.success || !result.data) {
-            throw new Error(result.error || "Paketler yüklenemedi");
-          }
-          const uniquePackages = Array.from(
-            new Map((result.data.packages || []).map((p) => [p.id, p])).values()
-          );
-          const uniqueEkHizmetler = Array.from(
-            new Map((result.data.ek_hizmetler || []).map((h) => [h.id, h])).values()
-          );
-          const uniqueDenemeler = Array.from(
-            new Map((result.data.deneme_paketleri || []).map((d) => [d.id, d])).values()
-          );
-          setPackages(uniquePackages);
-          setEkHizmetler(uniqueEkHizmetler);
-          setDenemePaketleri(uniqueDenemeler);
+    if (currentStep !== 4 || !activeSube?.id || !activeEgitimYili?.id) return;
 
-          const validPackageIds = new Set(uniquePackages.map((p) => p.id));
-          setData((prev) => {
-            const currentPaketler = prev.package.paketler || [];
-            const filteredPaketler = currentPaketler.filter((id) => validPackageIds.has(id));
-            if (filteredPaketler.length === currentPaketler.length) {
-              return prev;
-            }
-            return {
-              ...prev,
-              package: {
-                ...prev.package,
-                paketler: filteredPaketler,
-              },
-            };
-          });
-        } catch (error) {
-          console.error("Paket yükleme hatası:", error);
-        } finally {
-          setLoadingPackages(false);
+    const fetchPackages = async () => {
+      if (!activeSube?.id) {
+        setPackageLoadError("Paket listesi için üst menüden şube seçin.");
+        setPackages([]);
+        setEkHizmetler([]);
+        setDenemePaketleri([]);
+        setYayinPaketleri([]);
+        return;
+      }
+
+      setLoadingPackages(true);
+      setPackageLoadError(null);
+      try {
+        const params = new URLSearchParams();
+        if (data.enrollment.sinif_seviyesi) {
+          params.append("sinif_seviyesi", data.enrollment.sinif_seviyesi.toString());
         }
-      };
+        if (data.enrollment.alan) {
+          params.append("alan", data.enrollment.alan.toString());
+        }
+        const result = await apiFetch<{
+          packages?: PackageInfo[];
+          ek_hizmetler?: EkHizmetInfo[];
+          deneme_paketleri?: DenemePaketiInfo[];
+          yayin_paketleri?: YayinPaketiInfo[];
+          warnings?: string[];
+        }>(`/api/ogrenci-kayit/packages/?${params}`);
+        if (!result.success) {
+          throw new Error(result.error || "Paketler yüklenemedi");
+        }
+        const payload = (result.data || result) as {
+          packages?: PackageInfo[];
+          ek_hizmetler?: EkHizmetInfo[];
+          deneme_paketleri?: DenemePaketiInfo[];
+          yayin_paketleri?: YayinPaketiInfo[];
+          warnings?: string[];
+        };
+        const uniquePackages = Array.from(
+          new Map((payload.packages || []).map((p) => [p.id, p])).values()
+        );
+        const uniqueEkHizmetler = Array.from(
+          new Map((payload.ek_hizmetler || []).map((h) => [h.id, h])).values()
+        );
+        const uniqueDenemeler = Array.from(
+          new Map((payload.deneme_paketleri || []).map((d) => [d.id, d])).values()
+        );
+        const uniqueYayinlar = Array.from(
+          new Map((payload.yayin_paketleri || []).map((y) => [y.id, y])).values()
+        );
+        setPackages(uniquePackages);
+        setEkHizmetler(uniqueEkHizmetler);
+        setDenemePaketleri(uniqueDenemeler);
+        setYayinPaketleri(uniqueYayinlar);
 
-      fetchPackages();
-    }
+        const warningText = (payload.warnings || []).join(" ");
+        if (
+          uniquePackages.length === 0 &&
+          uniqueEkHizmetler.length === 0 &&
+          uniqueDenemeler.length === 0 &&
+          uniqueYayinlar.length === 0
+        ) {
+          const yilLabel = activeEgitimYili
+            ? `${activeEgitimYili.baslangic_yil}-${activeEgitimYili.bitis_yil}`
+            : "seçili eğitim yılı";
+          const subeLabel = activeSube?.ad || "seçili şube";
+          setPackageLoadError(
+            warningText ||
+              `Bu şube (${subeLabel}) ve eğitim yılı (${yilLabel}) için tanımlı paket bulunamadı. Eğitim Paketleri modülünde üst bardaki şube ve eğitim yılının aynı olduğundan, paketlerin aktif ve (varsa) sınıf seviyesi eşleştiğinden emin olun.`
+          );
+        }
+
+        const validPackageIds = new Set(uniquePackages.map((p) => p.id));
+        setData((prev) => {
+          const currentPaketler = prev.package.paketler || [];
+          const filteredPaketler = currentPaketler.filter((id) => validPackageIds.has(id));
+          if (filteredPaketler.length === currentPaketler.length) {
+            return prev;
+          }
+          return {
+            ...prev,
+            package: {
+              ...prev.package,
+              paketler: filteredPaketler,
+            },
+          };
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Paketler yüklenemedi";
+        setPackageLoadError(message);
+        setPackages([]);
+        setEkHizmetler([]);
+        setDenemePaketleri([]);
+        setYayinPaketleri([]);
+        console.error("Paket yükleme hatası:", error);
+      } finally {
+        setLoadingPackages(false);
+      }
+    };
+
+    fetchPackages();
   }, [
     currentStep,
+    activeSube?.id,
     data.enrollment.sinif_seviyesi,
     data.enrollment.alan,
-    data.enrollment.egitim_yili,
+    activeEgitimYili?.id,
   ]);
 
   // İlçeleri yükle
@@ -586,8 +652,9 @@ export default function OgrenciKayitClient() {
           const hasPaket = (data.package.paketler || []).length > 0;
           const hasEkHizmet = (data.package.ek_hizmet_ids || []).length > 0;
           const hasDenemePaketi = (data.package.deneme_paketi_ids || []).length > 0;
-          if (!hasPaket && !hasEkHizmet && !hasDenemePaketi) {
-            newErrors.paket = "En az bir grup/özel ders paketi, ek hizmet veya deneme paketi seçiniz";
+          const hasYayinPaketi = (data.package.yayin_paketi_ids || []).length > 0;
+          if (!hasPaket && !hasEkHizmet && !hasDenemePaketi && !hasYayinPaketi) {
+            newErrors.paket = "En az bir grup/özel ders paketi, ek hizmet, deneme veya yayın paketi seçiniz";
           }
         }
         break;
@@ -786,7 +853,9 @@ export default function OgrenciKayitClient() {
             packages={packages}
             ekHizmetler={ekHizmetler}
             denemePaketleri={denemePaketleri}
+            yayinPaketleri={yayinPaketleri}
             loadingPackages={loadingPackages}
+            packageLoadError={packageLoadError}
             studentAlanId={data.enrollment.alan}
           />
         )}
@@ -798,6 +867,7 @@ export default function OgrenciKayitClient() {
             packages={packages}
             ekHizmetler={ekHizmetler}
             denemePaketleri={denemePaketleri}
+            yayinPaketleri={yayinPaketleri}
           />
         )}
 

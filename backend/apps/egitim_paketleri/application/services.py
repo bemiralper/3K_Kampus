@@ -2,7 +2,8 @@
 Egitim Paketleri Service Layer
 """
 from apps.egitim_paketleri.infrastructure.repositories import (
-    GrupDersiRepository, OzelDersRepository, DenemeRepository, EkHizmetRepository
+    GrupDersiRepository, OzelDersRepository, DenemeRepository, EkHizmetRepository,
+    PremiumPaketRepository, YayinPaketiRepository,
 )
 from apps.egitim_tanimlari.models import SinifSeviyesi, Alan, Ders
 from apps.egitim_yili.domain.models import EgitimYili
@@ -231,6 +232,11 @@ class GrupDersiService:
             from apps.egitim_paketleri.models import Deneme
             data['dahil_denemeler'] = list(Deneme.objects.filter(id__in=data.pop('dahil_denemeler_ids')))
 
+        # Process dahil yayın paketleri (M2M)
+        if 'dahil_yayin_paketleri_ids' in data:
+            from apps.egitim_paketleri.models import YayinPaketi
+            data['dahil_yayin_paketleri'] = list(YayinPaketi.objects.filter(id__in=data.pop('dahil_yayin_paketleri_ids')))
+
         return data
 
 
@@ -434,4 +440,172 @@ class DenemeService:
         if 'sinif_seviyeleri_ids' in data:
             data['sinif_seviyeleri'] = list(SinifSeviyesi.objects.filter(id__in=data.pop('sinif_seviyeleri_ids')))
         
+        return data
+
+
+class PremiumPaketService:
+    """Service for PremiumPaket business logic"""
+
+    def __init__(self):
+        self.repository = PremiumPaketRepository()
+
+    def get_all(self, kurum_id=None, sube_id=None, egitim_yili_id=None):
+        return self.repository.get_all(kurum_id, sube_id, egitim_yili_id)
+
+    def get_active(self, kurum_id=None, sube_id=None, egitim_yili_id=None):
+        return self.repository.get_active(kurum_id, sube_id, egitim_yili_id)
+
+    def get_by_id(self, id):
+        return self.repository.get_by_id(id)
+
+    def create(self, data):
+        errors = self._validate(data)
+        if errors:
+            return None, errors
+        data = self._process_relations(data)
+        premium = self.repository.create(data)
+        return premium, None
+
+    def update(self, id, data):
+        premium = self.repository.get_by_id(id)
+        if not premium:
+            return None, {'error': 'Premium paket bulunamadı'}
+        errors = self._validate(data, premium)
+        if errors:
+            return None, errors
+        data = self._process_relations(data)
+        premium = self.repository.update(premium, data)
+        return premium, None
+
+    def delete(self, id):
+        premium = self.repository.get_by_id(id)
+        if not premium:
+            return False, {'error': 'Premium paket bulunamadı'}
+        self.repository.delete(premium)
+        return True, None
+
+    def _validate(self, data, instance=None):
+        errors = {}
+        if not data.get('ad'):
+            errors['ad'] = 'Paket adı zorunludur'
+        if not data.get('kod'):
+            errors['kod'] = 'Kod zorunludur'
+        if not instance:
+            if not data.get('egitim_yili_id'):
+                errors['egitim_yili'] = 'Eğitim yılı zorunludur'
+            if not data.get('kurum_id'):
+                errors['kurum'] = 'Kurum zorunludur'
+            if not data.get('sube_id'):
+                errors['sube'] = 'Şube zorunludur'
+        return errors if errors else None
+
+    def _process_relations(self, data):
+        if 'kurum_id' in data:
+            try:
+                data['kurum'] = Kurum.objects.get(id=data.pop('kurum_id'))
+            except Kurum.DoesNotExist:
+                pass
+        if 'sube_id' in data:
+            try:
+                data['sube'] = Sube.objects.get(id=data.pop('sube_id'))
+            except Sube.DoesNotExist:
+                pass
+        if 'egitim_yili_id' in data:
+            try:
+                data['egitim_yili'] = EgitimYili.objects.get(id=data.pop('egitim_yili_id'))
+            except EgitimYili.DoesNotExist:
+                pass
+        if 'sinif_seviyeleri_ids' in data:
+            data['sinif_seviyeleri'] = list(SinifSeviyesi.objects.filter(id__in=data.pop('sinif_seviyeleri_ids')))
+        if 'dahil_ek_hizmetler_ids' in data:
+            from apps.egitim_paketleri.models import EkHizmet
+            data['dahil_ek_hizmetler'] = list(EkHizmet.objects.filter(id__in=data.pop('dahil_ek_hizmetler_ids')))
+        if 'dahil_denemeler_ids' in data:
+            from apps.egitim_paketleri.models import Deneme
+            data['dahil_denemeler'] = list(Deneme.objects.filter(id__in=data.pop('dahil_denemeler_ids')))
+        if 'dahil_yayin_paketleri_ids' in data:
+            from apps.egitim_paketleri.models import YayinPaketi
+            data['dahil_yayin_paketleri'] = list(YayinPaketi.objects.filter(id__in=data.pop('dahil_yayin_paketleri_ids')))
+        return data
+
+
+class YayinPaketiService:
+    """Service for YayinPaketi business logic"""
+
+    def __init__(self):
+        self.repository = YayinPaketiRepository()
+
+    def get_all(self, kurum_id=None, sube_id=None, egitim_yili_id=None):
+        return self.repository.get_all(kurum_id, sube_id, egitim_yili_id)
+
+    def get_active(self, kurum_id=None, sube_id=None, egitim_yili_id=None):
+        return self.repository.get_active(kurum_id, sube_id, egitim_yili_id)
+
+    def get_by_id(self, id):
+        return self.repository.get_by_id(id)
+
+    def create(self, data):
+        errors = self._validate(data)
+        if errors:
+            return None, errors
+        data = self._process_relations(data)
+        yayin = self.repository.create(data)
+        return yayin, None
+
+    def update(self, id, data):
+        yayin = self.repository.get_by_id(id)
+        if not yayin:
+            return None, {'error': 'Yayın paketi bulunamadı'}
+        errors = self._validate(data, yayin)
+        if errors:
+            return None, errors
+        data = self._process_relations(data)
+        yayin = self.repository.update(yayin, data)
+        return yayin, None
+
+    def delete(self, id):
+        yayin = self.repository.get_by_id(id)
+        if not yayin:
+            return False, {'error': 'Yayın paketi bulunamadı'}
+        # Grup dersi veya premium pakette kullanılıyorsa engelle
+        if yayin.dahil_oldugu_grup_dersleri.exists():
+            return False, {'error': 'Bu yayın paketi bir grup dersinde kullanılıyor, silinemez'}
+        if yayin.dahil_oldugu_premium_paketler.exists():
+            return False, {'error': 'Bu yayın paketi bir premium pakette kullanılıyor, silinemez'}
+        self.repository.delete(yayin)
+        return True, None
+
+    def _validate(self, data, instance=None):
+        errors = {}
+        if not data.get('ad'):
+            errors['ad'] = 'Paket adı zorunludur'
+        if not data.get('kod'):
+            errors['kod'] = 'Kod zorunludur'
+        if not instance:
+            if not data.get('egitim_yili_id'):
+                errors['egitim_yili'] = 'Eğitim yılı zorunludur'
+            if not data.get('kurum_id'):
+                errors['kurum'] = 'Kurum zorunludur'
+            if not data.get('sube_id'):
+                errors['sube'] = 'Şube zorunludur'
+        return errors if errors else None
+
+    def _process_relations(self, data):
+        if 'kurum_id' in data:
+            try:
+                data['kurum'] = Kurum.objects.get(id=data.pop('kurum_id'))
+            except Kurum.DoesNotExist:
+                pass
+        if 'sube_id' in data:
+            try:
+                data['sube'] = Sube.objects.get(id=data.pop('sube_id'))
+            except Sube.DoesNotExist:
+                pass
+        if 'egitim_yili_id' in data:
+            try:
+                data['egitim_yili'] = EgitimYili.objects.get(id=data.pop('egitim_yili_id'))
+            except EgitimYili.DoesNotExist:
+                pass
+        if 'sinif_seviyeleri_ids' in data:
+            data['sinif_seviyeleri'] = list(SinifSeviyesi.objects.filter(id__in=data.pop('sinif_seviyeleri_ids')))
         return data

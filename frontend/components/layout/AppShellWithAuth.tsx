@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { getDefaultHomePath, isCoachOnlyUser, isMuhasebeOnlyUser } from "@/lib/auth-routes";
-import { getContextGate } from "@/lib/post-login-routing";
+import { getContextGate, isPostLoginPending } from "@/lib/post-login-routing";
 import AppShell from "@/components/layout/AppShell";
 
 /** router.replace yerine — Next.js 14 parallelRoutes.get önbellek hatasını önler */
@@ -96,8 +96,22 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       return;
     }
 
-    // If on public route and authenticated, redirect to role home
+    // Giriş formu kurum/şube yönlendirmesini tamamlayana kadar müdahale etme
     if (isPublicRoute && isAuthenticated) {
+      if (isPostLoginPending()) {
+        return;
+      }
+      const gate = getContextGate();
+      if (gate === "kurum") {
+        hasRedirectedRef.current = true;
+        hardReplace("/kurum-sec");
+        return;
+      }
+      if (gate === "sube") {
+        hasRedirectedRef.current = true;
+        hardReplace("/sube-sec");
+        return;
+      }
       const home = getDefaultHomePath(user);
       hasRedirectedRef.current = true;
       hardReplace(home);

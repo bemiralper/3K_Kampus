@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.finans.infrastructure.gelir_repository import GelirKaydiRepository
 from apps.finans.application.cari_hareket_service import CariHareketService
+from apps.finans.application.finans_v2.kdv import kdv_hesapla, kdv_hesapla_mod, KDV_MOD_VALUES, KDV_HARIC
 from apps.finans.constants.cari_types import GelirDurum, CariHareketTuru, CariHareketYonu
 
 
@@ -58,14 +59,16 @@ class GelirService:
         if not data.get('fatura_no'):
             data['fatura_no'] = self._generate_fatura_no(data.get('kurum_id'))
 
-        # KDV hesapla
-        brut = data.get('brut_tutar', Decimal('0'))
+        # KDV hesapla (moda göre: haric | dahil | muaf)
+        girilen = data.get('brut_tutar', Decimal('0'))
         kdv_orani = data.get('kdv_orani', 20)
-        kdv_tutar = (brut * Decimal(kdv_orani) / Decimal('100')).quantize(Decimal('0.01'))
-        net_tutar = brut + kdv_tutar
-
-        data['kdv_tutar'] = kdv_tutar
-        data['net_tutar'] = net_tutar
+        kdv_mod = (data.get('kdv_mod') or KDV_HARIC)
+        if kdv_mod not in KDV_MOD_VALUES:
+            kdv_mod = KDV_HARIC
+        data['kdv_mod'] = kdv_mod
+        data['brut_tutar'], data['kdv_tutar'], data['net_tutar'] = kdv_hesapla_mod(
+            girilen, kdv_orani, kdv_mod,
+        )
         data['durum'] = GelirDurum.TASLAK
 
         gelir = self.gelir_repo.create(data)
@@ -115,12 +118,17 @@ class GelirService:
         old_fatura_tarihi = gelir.fatura_tarihi
         old_durum = gelir.durum
 
-        # Brüt tutar değiştiyse KDV'yi yeniden hesapla
-        if 'brut_tutar' in data or 'kdv_orani' in data:
-            brut = data.get('brut_tutar', gelir.brut_tutar)
+        # Tutar/KDV modu değiştiyse yeniden hesapla
+        if 'brut_tutar' in data or 'kdv_orani' in data or 'kdv_mod' in data:
+            girilen = data.get('brut_tutar', gelir.brut_tutar)
             kdv_orani = data.get('kdv_orani', gelir.kdv_orani)
-            data['kdv_tutar'] = (brut * Decimal(kdv_orani) / Decimal('100')).quantize(Decimal('0.01'))
-            data['net_tutar'] = brut + data['kdv_tutar']
+            kdv_mod = data.get('kdv_mod', getattr(gelir, 'kdv_mod', KDV_HARIC))
+            if kdv_mod not in KDV_MOD_VALUES:
+                kdv_mod = KDV_HARIC
+            data['kdv_mod'] = kdv_mod
+            data['brut_tutar'], data['kdv_tutar'], data['net_tutar'] = kdv_hesapla_mod(
+                girilen, kdv_orani, kdv_mod,
+            )
 
         gelir = self.gelir_repo.update(gelir, data)
 

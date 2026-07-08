@@ -7,7 +7,7 @@ import html
 from typing import Any
 
 from apps.finans.application.export.report_html_template import (
-    BRAND_ACCENT, BRAND_PRIMARY, _brand_display, _logo_data_uri, _logo_fallback_text,
+    BRAND_ACCENT, BRAND_PRIMARY, _brand_display, _logo_data_uri, _resolve_logo, _logo_fallback_text,
 )
 
 
@@ -54,7 +54,7 @@ def build_gun_sonu_ozet_html(report: dict, *, orientation: str = 'portrait') -> 
     kullanicilar = ozet.get('kullanici_ozeti') or []
     notlar = (ozet.get('notlar') or '').strip()
 
-    logo = _logo_data_uri()
+    logo = _resolve_logo(meta)
     kurum_ad = meta.get('kurum_ad') or meta.get('marka') or ''
     sube_ad = meta.get('sube') or ''
     brand_line = _brand_display(kurum_ad, sube_ad if sube_ad != 'Tüm Şubeler' else None)

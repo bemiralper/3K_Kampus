@@ -74,6 +74,14 @@ class GiderOdemeService:
         else:
             return self._normal_odeme_yap(gider, tutar, data)
 
+    @transaction.atomic
+    def record_from_cek_senet_odeme(self, gider, tutar, data: dict):
+        """
+        Çek/senet modülünden yapılan gider ödemesini GiderOdeme'ye yansıtır.
+        Normal ödeme akışıyla aynıdır; çek yöntemi doğrulama istisnası içindir.
+        """
+        return self._normal_odeme_yap(gider, tutar, data)
+
     def _normal_odeme_yap(self, gider, tutar, data):
         """Klasik ödeme: Mali hesaptan para çıkar, cari borç azalır."""
 

@@ -24,7 +24,7 @@ class GiderTaksitListSerializer(serializers.ModelSerializer):
         model = GiderTaksit
         fields = [
             'id', 'gider_kaydi_id', 'taksit_no', 'vade_tarihi', 'tutar', 'odenen_tutar',
-            'kalan_tutar', 'durum', 'durum_display',
+            'kalan_tutar', 'aciklama', 'durum', 'durum_display',
             'cari_hesap_adi', 'fatura_no', 'aciklama',
             'odeme_yontemi_id', 'odeme_yontemi_adi', 'odeme_yontemi_tip',
         ]

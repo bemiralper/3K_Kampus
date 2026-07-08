@@ -10,12 +10,13 @@ import {
   resolveFinansReportTab,
   type FinansReportTab,
 } from "@/lib/finans/finansReportNav";
-import VirmanClient from "../virman/VirmanClient";
 import GunSonuClient from "../gun-sonu/GunSonuClient";
 import VadesiGelenlerClient from "../vadesi-gelenler/VadesiGelenlerClient";
 import GecikmisOdemelerClient from "../gecikmis-odemeler/GecikmisOdemelerClient";
 import DonemTahsilatClient from "../donem-tahsilat/DonemTahsilatClient";
 import RaporlamaClient from "../raporlama/RaporlamaClient";
+import GGProvider from "../gelir-gider-v2/GGProvider";
+import GelirGiderRaporClient from "../gelir-gider-v2/RaporClient";
 
 function TahsilatRaporlarInner() {
   const router = useRouter();
@@ -29,11 +30,11 @@ function TahsilatRaporlarInner() {
     : FINANS_REPORT_ITEMS;
   const tab = resolveFinansReportTab(rawTab);
   const activeTab =
-    isMuhasebeMode && tab === "mali-analiz" ? ("virman" as FinansReportTab) : tab;
+    isMuhasebeMode && tab === "mali-analiz" ? ("gun-sonu" as FinansReportTab) : tab;
 
   useEffect(() => {
-    if (rawTab === "raporlar") {
-      router.replace(tahsilatTabHref(isMuhasebeMode ? "virman" : "mali-analiz"));
+    if (rawTab === "raporlar" || rawTab === "virman") {
+      router.replace(tahsilatTabHref(isMuhasebeMode ? "gun-sonu" : "mali-analiz"));
       return;
     }
     if (isMuhasebeMode && rawTab === "mali-analiz") {
@@ -97,11 +98,15 @@ function TahsilatRaporlarInner() {
       </div>
 
       <div>
-        {activeTab === "virman" && <VirmanClient embedded />}
         {activeTab === "gun-sonu" && <GunSonuClient embedded />}
         {activeTab === "gecikmis" && <GecikmisOdemelerClient embedded />}
         {activeTab === "vadesi-gelenler" && <VadesiGelenlerClient embedded />}
         {activeTab === "donem" && <DonemTahsilatClient embedded />}
+        {activeTab === "gelir-gider" && (
+          <GGProvider>
+            <GelirGiderRaporClient embedded />
+          </GGProvider>
+        )}
         {!isMuhasebeMode && activeTab === "mali-analiz" && <RaporlamaClient embedded />}
       </div>
     </div>

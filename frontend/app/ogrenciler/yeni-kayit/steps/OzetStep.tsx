@@ -1,7 +1,7 @@
 "use client";
 
 import { useKurum } from "@/lib/contexts/KurumContext";
-import { CityOption, DenemePaketiInfo, DistrictOption, EkHizmetInfo, LookupOption, MetadataResponse, PackageInfo, WizardData } from "../types";
+import { CityOption, DenemePaketiInfo, DistrictOption, EkHizmetInfo, LookupOption, MetadataResponse, PackageInfo, WizardData, YayinPaketiInfo } from "../types";
 import { formatDate, calculateAge, validateTcKimlik } from "../utils";
 
 interface OzetStepProps {
@@ -11,9 +11,10 @@ interface OzetStepProps {
   packages: PackageInfo[];
   ekHizmetler: EkHizmetInfo[];
   denemePaketleri: DenemePaketiInfo[];
+  yayinPaketleri: YayinPaketiInfo[];
 }
 
-export default function OzetStep({ data, metadata, districts, packages, ekHizmetler, denemePaketleri }: OzetStepProps) {
+export default function OzetStep({ data, metadata, districts, packages, ekHizmetler, denemePaketleri, yayinPaketleri }: OzetStepProps) {
   const { activeSube } = useKurum();
   const getLookupLabel = (category: string, id?: number) => {
     if (!id) return "-";
@@ -82,8 +83,10 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
   const selectedPackages = packages.filter((p) => (data.package.paketler || []).includes(p.id));
 
   const dahilDenemePaketiIds = new Set<number>();
+  const dahilYayinPaketiIds = new Set<number>();
   selectedPackages.forEach((pkg) => {
     (pkg.dahil_deneme_paketi_ids || []).forEach((id) => dahilDenemePaketiIds.add(id));
+    (pkg.dahil_yayin_paketi_ids || []).forEach((id) => dahilYayinPaketiIds.add(id));
   });
 
   // Seçili ek hizmetler (ücretli — grup dersine dahil olanlar ayrı gösterilir)
@@ -94,6 +97,13 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
   const selectedDenemePaketleri = denemePaketleri.filter((p) =>
     (data.package.deneme_paketi_ids || []).includes(p.id)
   );
+
+  // Yayın paketleri: ücretli seçilenler + grup/premiuma dahil (ücretsiz) olanlar
+  const paidYayinPaketleri = yayinPaketleri.filter((y) =>
+    (data.package.yayin_paketi_ids || []).includes(y.id) && !dahilYayinPaketiIds.has(y.id)
+  );
+  const dahilYayinPaketleri = yayinPaketleri.filter((y) => dahilYayinPaketiIds.has(y.id));
+  const displayYayinPaketleri = [...paidYayinPaketleri, ...dahilYayinPaketleri];
 
   const showAlan = Boolean(
     metadata.sinif_seviyeleri.find((s) => s.id === data.enrollment.sinif_seviyesi)?.has_alan
@@ -501,8 +511,63 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
           </div>
         )}
 
+        {/* Yayın Paketleri */}
+        {displayYayinPaketleri.length > 0 && (
+          <div className="summary-section">
+            <h4>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              Yayın Paketleri ({displayYayinPaketleri.length})
+            </h4>
+            <div className="summary-grid">
+              <div className="summary-item full-width">
+                <div className="value">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {displayYayinPaketleri.map(y => {
+                      const isDahil = dahilYayinPaketiIds.has(y.id);
+                      return (
+                        <div key={y.id} style={{
+                          padding: '10px 14px',
+                          background: isDahil ? '#ecfdf5' : '#eff6ff',
+                          border: isDahil ? '1px solid #a7f3d0' : '1px solid #bfdbfe',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div>
+                            <span style={{ fontWeight: 500 }}>{y.ad}</span>
+                            {isDahil && (
+                              <span style={{ fontSize: '12px', color: '#166534', marginLeft: '8px' }}>
+                                (Pakete dahil)
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ color: isDahil ? '#16a34a' : '#2563eb', fontWeight: 600 }}>
+                            {isDahil ? 'Ücretsiz' : formatPrice(y.kdv_dahil_fiyat || y.fiyat)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="summary-item">
+                <span className="label">Yayın Paketi Tutarı</span>
+                <span className="value price">
+                  {formatPrice(
+                    paidYayinPaketleri.reduce((sum, y) => sum + (y.kdv_dahil_fiyat || y.fiyat || 0), 0)
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Genel Toplam */}
-        {(selectedPackages.length > 0 || selectedEkHizmetler.length > 0 || selectedDenemePaketleri.length > 0) && (
+        {(selectedPackages.length > 0 || selectedEkHizmetler.length > 0 || selectedDenemePaketleri.length > 0 || displayYayinPaketleri.length > 0) && (
           <div className="summary-section">
             <div className="summary-grid">
               <div className="summary-item">
@@ -513,7 +578,8 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
                     selectedEkHizmetler.reduce((sum, h) => sum + (h.kdv_dahil_fiyat || h.fiyat || 0), 0) +
                     selectedDenemePaketleri
                       .filter((p) => !dahilDenemePaketiIds.has(p.id))
-                      .reduce((sum, p) => sum + (p.kdv_dahil_fiyat || p.fiyat || 0), 0)
+                      .reduce((sum, p) => sum + (p.kdv_dahil_fiyat || p.fiyat || 0), 0) +
+                    paidYayinPaketleri.reduce((sum, y) => sum + (y.kdv_dahil_fiyat || y.fiyat || 0), 0)
                   )}
                 </span>
               </div>

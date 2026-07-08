@@ -99,12 +99,18 @@ class OverdueReminderService:
         *,
         template: str | None = None,
         veli_selections: dict | None = None,
+        sube_id: int | None = None,
     ) -> dict:
+        taksit_qs = Taksit.objects.filter(
+            id__in=taksit_ids,
+            sozlesme__kurum_id=kurum_id,
+        )
+        # Tenant güvenliği: aktif şube dışındaki taksitlere hatırlatma
+        # gönderilmesini engelle (başka şubenin taksit ID'leri sızmasın).
+        if sube_id is not None:
+            taksit_qs = taksit_qs.filter(sozlesme__sube_id=sube_id)
         taksitler = list(
-            Taksit.objects.filter(
-                id__in=taksit_ids,
-                sozlesme__kurum_id=kurum_id,
-            ).select_related(
+            taksit_qs.select_related(
                 'sozlesme__ogrenci',
                 'sozlesme__veli',
                 'sozlesme__kurum',
@@ -186,12 +192,14 @@ class OverdueReminderService:
         force_resend: bool = False,
         sent_by_user_id: int | None = None,
         veli_selections: dict | None = None,
+        sube_id: int | None = None,
     ) -> dict:
         preview = cls.preview(
             kurum_id,
             taksit_ids,
             template=template,
             veli_selections=veli_selections,
+            sube_id=sube_id,
         )
         sent = 0
         skipped = 0

@@ -93,6 +93,7 @@ export default function SozlesmelerTab({
   const [mevcutGrupDersi, setMevcutGrupDersi] = useState<{ kalem_id: number; kalem_adi: string; ucretsiz?: boolean } | null>(null);
   const [mevcutDeneme, setMevcutDeneme] = useState<{ kalem_id: number; kalem_adi: string; ucretsiz?: boolean } | null>(null);
   const [seciliKalemId, setSeciliKalemId] = useState<number | null>(null);
+  const [seciliKalemIds, setSeciliKalemIds] = useState<Set<number>>(new Set());
   const [kalemIndirimOrani, setKalemIndirimOrani] = useState("0");
   const [kalemNetFiyat, setKalemNetFiyat] = useState("");
   const [indirimMode, setIndirimMode] = useState<"oran" | "net">("oran");
@@ -163,6 +164,7 @@ export default function SozlesmelerTab({
   const handleKalemTuruChange = (tur: string) => {
     setSeciliKalemTuru(tur);
     setSeciliKalemId(null);
+    setSeciliKalemIds(new Set());
     if (tur) fetchKalemSecenekleri(tur);
     else {
       setKalemSecenekleri([]);
@@ -174,78 +176,98 @@ export default function SozlesmelerTab({
   };
 
   const handleKalemEkle = async (replaceConfirmed = false) => {
-    if (!selectedSozlesme || !seciliKalemId || !seciliKalemTuru) return;
-    const secenek = kalemSecenekleri.find(k => k.id === seciliKalemId);
-    if (!secenek) return;
+    if (!selectedSozlesme || !seciliKalemTuru) return;
+    const isOzelDersMulti = seciliKalemTuru === "ozel_ders";
+    const targetIds = isOzelDersMulti
+      ? Array.from(seciliKalemIds)
+      : seciliKalemId != null
+        ? [seciliKalemId]
+        : [];
+    if (targetIds.length === 0) return;
 
-    const denemeDegisiyor =
-      seciliKalemTuru === "deneme" &&
-      mevcutDeneme &&
-      mevcutDeneme.kalem_id !== seciliKalemId;
+    for (let i = 0; i < targetIds.length; i++) {
+      const kalemId = targetIds[i];
+      const secenek = kalemSecenekleri.find(k => k.id === kalemId);
+      if (!secenek) continue;
 
-    if (denemeDegisiyor && !replaceConfirmed) {
-      const mesaj = mevcutDeneme.ucretsiz
-        ? `Mevcut ücretsiz deneme paketi "${mevcutDeneme.kalem_adi}" kaldırılacak. "${secenek.ad}" yeni paket olarak ücretsiz eklenecek. Onaylıyor musunuz?`
-        : `Mevcut ücretli deneme paketi "${mevcutDeneme.kalem_adi}" kaldırılacak ve "${secenek.ad}" (${formatCurrency(secenek.kdv_dahil_fiyat || secenek.fiyat)}) ile değiştirilecek. Onaylıyor musunuz?`;
-      if (!window.confirm(mesaj)) return;
-      replaceConfirmed = true;
-    }
+      const denemeDegisiyor =
+        seciliKalemTuru === "deneme" &&
+        mevcutDeneme &&
+        mevcutDeneme.kalem_id !== kalemId;
 
-    setKalemSaving(true);
-    try {
-      const secenekFiyat = secenek.kdv_dahil_fiyat || secenek.fiyat;
-      const ucretsizDeneme = denemeDegisiyor && !!mevcutDeneme?.ucretsiz;
-      const oran = ucretsizDeneme ? 0 : (parseFloat(kalemIndirimOrani) || 0);
-      const hedefNet = ucretsizDeneme ? 0 : (parseFloat(kalemNetFiyat) || 0);
-      const indirimTutar = ucretsizDeneme
-        ? secenekFiyat
-        : indirimMode === "net"
-          ? Math.max(0, Math.round(secenekFiyat - hedefNet))
-          : Math.round(secenekFiyat * oran / 100);
-      const netTutar = ucretsizDeneme ? 0 : Math.max(0, secenekFiyat - indirimTutar);
+      if (denemeDegisiyor && !replaceConfirmed) {
+        const mesaj = mevcutDeneme.ucretsiz
+          ? `Mevcut ücretsiz deneme paketi "${mevcutDeneme.kalem_adi}" kaldırılacak. "${secenek.ad}" yeni paket olarak ücretsiz eklenecek. Onaylıyor musunuz?`
+          : `Mevcut ücretli deneme paketi "${mevcutDeneme.kalem_adi}" kaldırılacak ve "${secenek.ad}" (${formatCurrency(secenek.kdv_dahil_fiyat || secenek.fiyat)}) ile değiştirilecek. Onaylıyor musunuz?`;
+        if (!window.confirm(mesaj)) return;
+        replaceConfirmed = true;
+      }
 
-      const res = await fetch(`${API_BASE}/sozlesmeler/${selectedSozlesme.id}/kalem-ekle/`, {
-        method: "POST",
-        headers: postHeaders(),
-        credentials: "include",
-        body: JSON.stringify({
-          kalem_turu: seciliKalemTuru,
-          kalem_id: secenek.id,
-          kalem_adi: secenek.ad,
-          brut_tutar: secenek.fiyat,
-          kdv_orani: secenek.kdv_orani,
-          indirim_orani: oran,
-          indirim_tutari: indirimTutar,
-          net_tutar: netTutar,
-          replace_confirmed: replaceConfirmed,
-        }),
-      });
-      if (res.ok) {
-        setShowKalemDrawer(false);
-        setSeciliKalemTuru("");
-        setSeciliKalemId(null);
-        setKalemIndirimOrani("0");
-        setKalemNetFiyat("");
-        setIndirimMode("oran");
-        setMevcutGrupDersi(null);
-        setMevcutDeneme(null);
-        onKalemChanged();
-      } else {
-        const err = await res.json();
-        if (
-          !replaceConfirmed &&
-          (err.code === "grup_degistirme_onayi_gerekli" || err.code === "deneme_degistirme_onayi_gerekli")
-        ) {
-          if (window.confirm(err.error || "Mevcut paket değiştirilecek. Onaylıyor musunuz?")) {
-            setKalemSaving(false);
-            await handleKalemEkle(true);
-            return;
+      setKalemSaving(true);
+      try {
+        const secenekFiyat = secenek.kdv_dahil_fiyat || secenek.fiyat;
+        const ucretsizDeneme = denemeDegisiyor && !!mevcutDeneme?.ucretsiz;
+        const oran = ucretsizDeneme ? 0 : (parseFloat(kalemIndirimOrani) || 0);
+        const hedefNet = ucretsizDeneme ? 0 : (parseFloat(kalemNetFiyat) || 0);
+        const indirimTutar = ucretsizDeneme
+          ? secenekFiyat
+          : indirimMode === "net"
+            ? Math.max(0, Math.round(secenekFiyat - hedefNet))
+            : Math.round(secenekFiyat * oran / 100);
+        const netTutar = ucretsizDeneme ? 0 : Math.max(0, secenekFiyat - indirimTutar);
+
+        const res = await fetch(`${API_BASE}/sozlesmeler/${selectedSozlesme.id}/kalem-ekle/`, {
+          method: "POST",
+          headers: postHeaders(),
+          credentials: "include",
+          body: JSON.stringify({
+            kalem_turu: seciliKalemTuru,
+            kalem_id: secenek.id,
+            kalem_adi: secenek.ad,
+            brut_tutar: secenek.fiyat,
+            kdv_orani: secenek.kdv_orani,
+            indirim_orani: oran,
+            indirim_tutari: indirimTutar,
+            net_tutar: netTutar,
+            replace_confirmed: replaceConfirmed,
+          }),
+        });
+        if (res.ok) {
+          if (i === targetIds.length - 1) {
+            setShowKalemDrawer(false);
+            setSeciliKalemTuru("");
+            setSeciliKalemId(null);
+            setSeciliKalemIds(new Set());
+            setKalemIndirimOrani("0");
+            setKalemNetFiyat("");
+            setIndirimMode("oran");
+            setMevcutGrupDersi(null);
+            setMevcutDeneme(null);
+            onKalemChanged();
           }
         } else {
-          alert(err.error || "Kalem eklenemedi");
+          const err = await res.json();
+          if (
+            !replaceConfirmed &&
+            (err.code === "grup_degistirme_onayi_gerekli" || err.code === "deneme_degistirme_onayi_gerekli")
+          ) {
+            if (window.confirm(err.error || "Mevcut paket değiştirilecek. Onaylıyor musunuz?")) {
+              setKalemSaving(false);
+              await handleKalemEkle(true);
+              return;
+            }
+          } else {
+            alert(err.error || "Kalem eklenemedi");
+          }
+          setKalemSaving(false);
+          return;
         }
+      } catch {
+        alert("Bağlantı hatası");
+        setKalemSaving(false);
+        return;
       }
-    } catch { alert("Bağlantı hatası"); }
+    }
     setKalemSaving(false);
   };
 
@@ -729,14 +751,39 @@ export default function SozlesmelerTab({
                       </div>
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 250, overflowY: "auto" }}>
-                        {kalemSecenekleri.map((k) => (
+                        {kalemSecenekleri.map((k) => {
+                          const isOzelDersMulti = seciliKalemTuru === "ozel_ders";
+                          const isSelected = isOzelDersMulti
+                            ? seciliKalemIds.has(k.id)
+                            : seciliKalemId === k.id;
+                          return (
                           <div
                             key={k.id}
-                            onClick={() => setSeciliKalemId(k.id)}
-                            className={`odeme-kalem-card ${seciliKalemId === k.id ? "selected" : ""}`}
+                            onClick={() => {
+                              if (isOzelDersMulti) {
+                                setSeciliKalemIds((prev) => {
+                                  const next = new Set(prev);
+                                  next.has(k.id) ? next.delete(k.id) : next.add(k.id);
+                                  return next;
+                                });
+                              } else {
+                                setSeciliKalemId(k.id);
+                              }
+                            }}
+                            className={`odeme-kalem-card ${isSelected ? "selected" : ""}`}
                           >
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ fontWeight: 600, fontSize: 13 }}>{k.ad}</span>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                {isOzelDersMulti && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    readOnly
+                                    style={{ accentColor: "var(--primary)" }}
+                                  />
+                                )}
+                                <span style={{ fontWeight: 600, fontSize: 13 }}>{k.ad}</span>
+                              </div>
                               <span style={{ fontWeight: 700, color: "var(--primary)", fontSize: 13 }}>{formatCurrency(k.fiyat)}</span>
                             </div>
                             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
@@ -744,7 +791,8 @@ export default function SozlesmelerTab({
                               {k.kod && ` • Kod: ${k.kod}`}
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -752,14 +800,18 @@ export default function SozlesmelerTab({
                 )}
 
                 {/* İndirim */}
-                {seciliKalemId && (() => {
-                  const secenek = kalemSecenekleri.find(k => k.id === seciliKalemId);
+                {(() => {
+                  const activeKalemId = seciliKalemTuru === "ozel_ders"
+                    ? (seciliKalemIds.size > 0 ? Array.from(seciliKalemIds)[0] : null)
+                    : seciliKalemId;
+                  if (!activeKalemId) return null;
+                  const secenek = kalemSecenekleri.find(k => k.id === activeKalemId);
                   if (!secenek) return null;
                   const kdvDahil = secenek.kdv_dahil_fiyat;
                   const ucretsizDeneme =
                     seciliKalemTuru === "deneme" &&
                     !!mevcutDeneme?.ucretsiz &&
-                    mevcutDeneme.kalem_id !== seciliKalemId;
+                    mevcutDeneme.kalem_id !== activeKalemId;
 
                   if (ucretsizDeneme) {
                     return (
@@ -791,6 +843,11 @@ export default function SozlesmelerTab({
 
                   return (
                     <div className="odeme-form-group">
+                      {seciliKalemTuru === "ozel_ders" && seciliKalemIds.size > 1 && (
+                        <div style={{ marginBottom: 8, fontSize: 12, color: "var(--text-muted)" }}>
+                          {seciliKalemIds.size} özel ders seçildi — aynı indirim tüm seçili paketlere uygulanır.
+                        </div>
+                      )}
                       <label className="odeme-form-label">İndirim Hesaplama</label>
                       <div className="odeme-mode-switch">
                         <button type="button" className={`odeme-mode-btn ${indirimMode === "oran" ? "active" : ""}`} onClick={() => setIndirimMode("oran")}>% Oran Gir</button>
@@ -829,8 +886,12 @@ export default function SozlesmelerTab({
                 })()}
 
                 {/* Özet */}
-                {seciliKalemId && (() => {
-                  const secenek = kalemSecenekleri.find(k => k.id === seciliKalemId);
+                {(() => {
+                  const activeKalemId = seciliKalemTuru === "ozel_ders"
+                    ? (seciliKalemIds.size > 0 ? Array.from(seciliKalemIds)[0] : null)
+                    : seciliKalemId;
+                  if (!activeKalemId) return null;
+                  const secenek = kalemSecenekleri.find(k => k.id === activeKalemId);
                   if (!secenek) return null;
                   const ind = parseFloat(kalemIndirimOrani) || 0;
                   const indTutar = indirimMode === "net"
@@ -865,7 +926,7 @@ export default function SozlesmelerTab({
                 className="btn-modern btn-primary"
                 style={{ flex: 1 }}
                 onClick={() => handleKalemEkle()}
-                disabled={kalemSaving || !seciliKalemId}
+                disabled={kalemSaving || (seciliKalemTuru === "ozel_ders" ? seciliKalemIds.size === 0 : !seciliKalemId)}
               >{kalemSaving ? "Ekleniyor..." : "Kalem Ekle"}</button>
             </div>
           </div>
@@ -1591,11 +1652,7 @@ function OdemePlaniSubTab({
                                     : s.odeme_yontemi?.id
                                       ? String(s.odeme_yontemi.id)
                                       : "",
-                                mali_hesap_id: s.mali_hesap_id
-                                  ? String(s.mali_hesap_id)
-                                  : s.mali_hesap?.id
-                                    ? String(s.mali_hesap.id)
-                                    : "",
+                                mali_hesap_id: "",
                                 tutar: String(t.kalan_tutar),
                                 tahsilat_tarihi: new Date().toISOString().slice(0, 10),
                                 referans_no: "",

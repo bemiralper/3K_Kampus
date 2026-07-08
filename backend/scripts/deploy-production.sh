@@ -168,6 +168,19 @@ else
   log "pip kurulumu atlandı"
 fi
 
+# PDF raporları (Gelir/Gider, Cari, Gün Sonu) — Playwright Chromium
+log "Playwright Chromium (PDF dışa aktarma)"
+if [[ "$PIP" == *"-m pip"* ]]; then
+  $PYTHON -m playwright install chromium
+else
+  "$PYTHON" -m playwright install chromium
+fi
+if [[ "$(id -u)" -eq 0 ]]; then
+  $PYTHON -m playwright install-deps chromium 2>/dev/null || log "Uyarı: playwright install-deps başarısız"
+else
+  $PYTHON -m playwright install-deps chromium 2>/dev/null || log "Not: playwright sistem paketleri için root gerekebilir (install-deps)"
+fi
+
 cd "$BACKEND_DIR"
 
 log "migrate"

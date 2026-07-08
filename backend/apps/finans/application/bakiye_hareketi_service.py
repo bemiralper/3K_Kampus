@@ -68,6 +68,12 @@ class BakiyeHareketiService:
         if kaynak not in HareketKaynagi.get_values():
             raise ValueError(f"Geçersiz hareket kaynağı: {kaynak}")
 
+        # ─── Eşzamanlılık kilidi ──────────────────
+        # Mali hesap satırını kilitleyerek son_bakiye okuması ile hareket
+        # oluşturma arasındaki race condition'ı engelle (double-spend koruması).
+        from apps.finans.domain.financial_account import MaliHesap
+        MaliHesap.objects.select_for_update().filter(pk=mali_hesap_id).first()
+
         # ─── Mevcut bakiye ────────────────────────
         bakiye_oncesi = self.repo.son_bakiye(mali_hesap_id)
 

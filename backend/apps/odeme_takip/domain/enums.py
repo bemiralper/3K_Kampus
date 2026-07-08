@@ -126,6 +126,8 @@ class OnayDurum:
 class PaketTuru:
     GRUP_DERSI = 'grup_dersi'
     OZEL_DERS = 'ozel_ders'
+    PREMIUM = 'premium'
+    YAYIN = 'yayin'
     DENEME = 'deneme'
     DAVRANIS = 'davranis'
     EK_HIZMET = 'ek_hizmet'
@@ -133,6 +135,8 @@ class PaketTuru:
     CHOICES = [
         (GRUP_DERSI, 'Grup Dersi'),
         (OZEL_DERS, 'Özel Ders'),
+        (PREMIUM, 'Premium Paket'),
+        (YAYIN, 'Yayın Paketi'),
         (DENEME, 'Deneme'),
         (DAVRANIS, 'Davranış Paketi'),
         (EK_HIZMET, 'Ek Hizmet'),
@@ -144,6 +148,8 @@ class KalemTuru:
     EK_HIZMET = 'ek_hizmet'
     GRUP_DERSI = 'grup_dersi'
     OZEL_DERS = 'ozel_ders'
+    PREMIUM = 'premium'
+    YAYIN = 'yayin'
     DENEME = 'deneme'
     EK_HIZMET_SATISI = 'ek_hizmet_satisi'
 
@@ -152,6 +158,8 @@ class KalemTuru:
         (EK_HIZMET, 'Ek Hizmet'),
         (GRUP_DERSI, 'Grup Dersi'),
         (OZEL_DERS, 'Özel Ders'),
+        (PREMIUM, 'Premium Paket'),
+        (YAYIN, 'Yayın Paketi'),
         (DENEME, 'Deneme'),
         (EK_HIZMET_SATISI, 'Ek Hizmet Satışı'),
     ]

@@ -9,7 +9,11 @@ from apps.odeme_takip.permissions import ODEME_TAKIP_PERMISSIONS
 from rest_framework.response import Response
 
 from apps.odeme_takip.domain.enums import KalemTuru, PaketTuru, SozlesmeDurum
-from apps.ogrenci_kayit.application.services import _apply_grup_alan_filter, _apply_ozel_alan_filter
+from apps.ogrenci_kayit.application.services import (
+    _apply_grup_alan_filter,
+    _apply_ozel_alan_filter,
+    _apply_sinif_seviyesi_filter,
+)
 from apps.ogrenci_kayit.domain.sinif_seviyesi_rules import sinif_seviyesi_requires_alan
 from apps.odeme_takip.interfaces.sube_context import resolve_mandatory_odeme_context
 
@@ -30,7 +34,7 @@ def _serialize_secenek(item, kod=""):
 
 def _classify_kalem_paket_turu(kalem, sozlesme=None):
     """Sözleşme kaleminin paket alt türünü belirle (grup / özel / deneme)."""
-    from apps.egitim_paketleri.models import Deneme, GrupDersi, OzelDers
+    from apps.egitim_paketleri.models import Deneme, GrupDersi, OzelDers, PremiumPaket
 
     tur = kalem.kalem_turu
     if tur in (KalemTuru.GRUP_DERSI, PaketTuru.GRUP_DERSI):
@@ -39,6 +43,8 @@ def _classify_kalem_paket_turu(kalem, sozlesme=None):
         return PaketTuru.OZEL_DERS
     if tur in (KalemTuru.DENEME, PaketTuru.DENEME):
         return PaketTuru.DENEME
+    if tur in (KalemTuru.PREMIUM, PaketTuru.PREMIUM):
+        return PaketTuru.PREMIUM
 
     if tur == KalemTuru.PAKET and sozlesme:
         if sozlesme.paket_id == kalem.kalem_id and sozlesme.paket_turu in (
@@ -55,6 +61,8 @@ def _classify_kalem_paket_turu(kalem, sozlesme=None):
         return PaketTuru.OZEL_DERS
     if Deneme.objects.filter(id=kid).exists():
         return PaketTuru.DENEME
+    if PremiumPaket.objects.filter(id=kid).exists():
+        return PaketTuru.PREMIUM
     return None
 
 
@@ -96,12 +104,13 @@ def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
     haric_grup = set()
     haric_ozel = set()
     haric_deneme = set()
+    haric_premium = set()
     haric_ek = set()
     mevcut_grup = None
     mevcut_deneme = None
 
     if not ogrenci_id:
-        return haric_grup, haric_ozel, haric_deneme, haric_ek, mevcut_grup, mevcut_deneme
+        return haric_grup, haric_ozel, haric_deneme, haric_premium, haric_ek, mevcut_grup, mevcut_deneme
 
     aktif_durumlar = [SozlesmeDurum.TASLAK, SozlesmeDurum.AKTIF, SozlesmeDurum.DONDURULMUS]
     sozlesme_qs = Sozlesme.objects.filter(ogrenci_id=ogrenci_id, durum__in=aktif_durumlar)
@@ -127,6 +136,8 @@ def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
                 }
         elif sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.OZEL_DERS:
             haric_ozel.add(sozlesme.paket_id)
+        elif sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.PREMIUM:
+            haric_premium.add(sozlesme.paket_id)
         elif sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.DENEME:
             haric_deneme.add(sozlesme.paket_id)
             if is_target and mevcut_deneme is None:
@@ -156,6 +167,8 @@ def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
                 haric_deneme.add(k.kalem_id)
                 if is_target:
                     mevcut_deneme = _serialize_mevcut_kalem(k)
+            elif kind == PaketTuru.PREMIUM:
+                haric_premium.add(k.kalem_id)
 
     if egitim_yili_id:
         from apps.ogrenci.domain.models import OgrenciEkHizmet
@@ -168,7 +181,7 @@ def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
         ).values_list("ek_hizmet_id", flat=True)
         haric_ek.update(dahil_ids)
 
-    return haric_grup, haric_ozel, haric_deneme, haric_ek, mevcut_grup, mevcut_deneme
+    return haric_grup, haric_ozel, haric_deneme, haric_premium, haric_ek, mevcut_grup, mevcut_deneme
 
 
 def _filter_paket_qs(model, kurum_id, sube_id, egitim_yili_id):
@@ -182,18 +195,13 @@ def _filter_paket_qs(model, kurum_id, sube_id, egitim_yili_id):
     return qs
 
 
-def _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id):
-    if sinif_seviyesi_id:
-        return qs.filter(sinif_seviyeleri__id=sinif_seviyesi_id).distinct()
-    return qs
-
-
 def _resolve_ogrenci_paket_filtreleri(
     ogrenci_id,
     egitim_yili_id,
     sozlesme_id=None,
     sinif_seviyesi_param=None,
     alan_param=None,
+    ogrenci_kayit_id=None,
 ):
     """Öğrenci kaydından sınıf seviyesi ve alan bilgisini çöz (kayıt sihirbazı ile aynı mantık)."""
     from apps.ogrenci.domain.models import OgrenciKayit
@@ -206,32 +214,47 @@ def _resolve_ogrenci_paket_filtreleri(
         return sinif_seviyesi_id, alan_id
 
     kayit = None
-    if sozlesme_id:
+    if ogrenci_kayit_id:
+        kayit = (
+            OgrenciKayit.objects.filter(id=ogrenci_kayit_id, aktif_mi=True)
+            .select_related("sinif__sinif_seviyesi", "sinif__alan", "sinif_seviyesi")
+            .first()
+        )
+
+    if sozlesme_id and not kayit:
         sozlesme = (
             Sozlesme.objects.filter(id=sozlesme_id)
-            .select_related("ogrenci_kayit__sinif__sinif_seviyesi", "ogrenci_kayit__sinif__alan")
+            .select_related("ogrenci_kayit__sinif__sinif_seviyesi", "ogrenci_kayit__sinif__alan", "ogrenci_kayit__sinif_seviyesi")
             .first()
         )
         if sozlesme and sozlesme.ogrenci_kayit_id:
             kayit = sozlesme.ogrenci_kayit
 
     if not kayit and ogrenci_id and egitim_yili_id:
+        try:
+            ey_id = int(egitim_yili_id)
+        except (TypeError, ValueError):
+            ey_id = egitim_yili_id
         kayit = (
             OgrenciKayit.objects.filter(
                 ogrenci_id=ogrenci_id,
-                egitim_yili_id=egitim_yili_id,
+                egitim_yili_id=ey_id,
                 aktif_mi=True,
             )
-            .select_related("sinif__sinif_seviyesi", "sinif__alan")
+            .select_related("sinif__sinif_seviyesi", "sinif__alan", "sinif_seviyesi")
             .first()
         )
 
-    if kayit and kayit.sinif:
+    if kayit:
         if sinif_seviyesi_id is None:
-            sinif_seviyesi_id = kayit.sinif.sinif_seviyesi_id
-        if alan_param is None and kayit.sinif.sinif_seviyesi:
-            if sinif_seviyesi_requires_alan(kayit.sinif.sinif_seviyesi):
-                alan_id = kayit.sinif.alan_id
+            if kayit.sinif and kayit.sinif.sinif_seviyesi_id:
+                sinif_seviyesi_id = kayit.sinif.sinif_seviyesi_id
+            elif kayit.sinif_seviyesi_id:
+                sinif_seviyesi_id = kayit.sinif_seviyesi_id
+        if alan_param is None:
+            if kayit.sinif and kayit.sinif.sinif_seviyesi:
+                if sinif_seviyesi_requires_alan(kayit.sinif.sinif_seviyesi):
+                    alan_id = kayit.sinif.alan_id
 
     return sinif_seviyesi_id, alan_id
 
@@ -257,7 +280,7 @@ def kalem_secenekleri(request):
     &ogrenci_id=&egitim_yili_id=&kurum_id=&sube_id=&sozlesme_id=
     &sinif_seviyesi_id=&alan_id=  (opsiyonel; yoksa öğrenci kaydından çözülür)
     """
-    from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, OzelDers
+    from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, OzelDers, PremiumPaket
 
     tur = request.query_params.get("tur", "")
     kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
@@ -265,13 +288,23 @@ def kalem_secenekleri(request):
         return err
     ogrenci_id = request.query_params.get("ogrenci_id")
     sozlesme_id = request.query_params.get("sozlesme_id")
+    ogrenci_kayit_id = request.query_params.get("ogrenci_kayit_id")
+
+    # Öğrenciye özel filtrelerde URL'deki eğitim yılını önceliklendir
+    filter_egitim_yili_id = request.query_params.get("egitim_yili_id") or egitim_yili_id
+    if filter_egitim_yili_id:
+        try:
+            filter_egitim_yili_id = int(filter_egitim_yili_id)
+        except (TypeError, ValueError):
+            filter_egitim_yili_id = egitim_yili_id
 
     sinif_seviyesi_id, alan_id = _resolve_ogrenci_paket_filtreleri(
         ogrenci_id,
-        egitim_yili_id,
+        filter_egitim_yili_id,
         sozlesme_id=sozlesme_id,
         sinif_seviyesi_param=request.query_params.get("sinif_seviyesi_id"),
         alan_param=request.query_params.get("alan_id"),
+        ogrenci_kayit_id=ogrenci_kayit_id,
     )
     filtre = _filtre_meta(sinif_seviyesi_id, alan_id)
 
@@ -286,8 +319,8 @@ def kalem_secenekleri(request):
             }
         )
 
-    haric_grup, haric_ozel, haric_deneme, haric_ek, mevcut_grup, mevcut_deneme = _collect_mevcut_paketler(
-        ogrenci_id, egitim_yili_id, sozlesme_id
+    haric_grup, haric_ozel, haric_deneme, haric_premium, haric_ek, mevcut_grup, mevcut_deneme = _collect_mevcut_paketler(
+        ogrenci_id, filter_egitim_yili_id, sozlesme_id
     )
 
     secenekler = []
@@ -300,7 +333,9 @@ def kalem_secenekleri(request):
         qs = _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id)
         qs = _apply_grup_alan_filter(qs, alan_id)
         for p in qs:
-            secenekler.append(_serialize_secenek(p, p.kod))
+            payload = _serialize_secenek(p, p.kod)
+            payload["paket_turu"] = PaketTuru.GRUP_DERSI
+            secenekler.append(payload)
 
     def add_ozel():
         qs = (
@@ -310,7 +345,9 @@ def kalem_secenekleri(request):
         qs = _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id)
         qs = _apply_ozel_alan_filter(qs, alan_id)
         for p in qs:
-            secenekler.append(_serialize_secenek(p, p.kod))
+            payload = _serialize_secenek(p, p.kod)
+            payload["paket_turu"] = PaketTuru.OZEL_DERS
+            secenekler.append(payload)
 
     def add_deneme():
         qs = (
@@ -321,6 +358,18 @@ def kalem_secenekleri(request):
         for p in qs:
             payload = _serialize_secenek(p, p.kod)
             payload["deneme_sayisi"] = p.deneme_sayisi
+            payload["paket_turu"] = PaketTuru.DENEME
+            secenekler.append(payload)
+
+    def add_premium():
+        qs = (
+            _filter_paket_qs(PremiumPaket, kurum_id, sube_id, egitim_yili_id)
+            .exclude(id__in=haric_premium)
+        )
+        qs = _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id)
+        for p in qs:
+            payload = _serialize_secenek(p, p.kod)
+            payload["paket_turu"] = PaketTuru.PREMIUM
             secenekler.append(payload)
 
     def add_ek():
@@ -339,11 +388,14 @@ def kalem_secenekleri(request):
         add_ozel()
     elif tur in ("deneme", "denemeler"):
         add_deneme()
+    elif tur in ("premium", "premium_paketler"):
+        add_premium()
     elif tur == "ek_hizmet":
         add_ek()
     elif tur == "paket":
         add_grup()
         add_ozel()
+        add_premium()
         add_deneme()
     else:
         return Response({"secenekler": [], "error": f"Geçersiz tur: {tur}"}, status=400)
@@ -367,6 +419,7 @@ def kalem_turleri(request):
             {"value": "grup_dersi", "label": "Grup Dersi", "kalem_turu": "grup_dersi"},
             {"value": "ozel_ders", "label": "Özel Ders", "kalem_turu": "ozel_ders"},
             {"value": "deneme", "label": "Deneme Paketi", "kalem_turu": "deneme"},
+            {"value": "premium", "label": "Premium Paket", "kalem_turu": "premium"},
             {"value": "ek_hizmet", "label": "Ek Hizmet", "kalem_turu": "ek_hizmet"},
         ]
     )

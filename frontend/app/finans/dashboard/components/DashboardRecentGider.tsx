@@ -29,17 +29,17 @@ export default function DashboardRecentGider({ rows }: Props) {
   const links = useDashboardLinks();
 
   return (
-    <div className="card-modern h-full">
-      <div className="card-modern-header">
+    <div className="fdash-panel fdash-panel--flush">
+      <div className="fdash-panel__head">
         <h3>
           <IconArrowUpCircle className="w-[18px] h-[18px]" />
           Son Giderler
         </h3>
-        <Link href={links.giderIslemleri} className="text-xs text-blue-600 hover:underline">
-          Detay
+        <Link href={links.giderIslemleri} className="fdash-panel__link">
+          Detay →
         </Link>
       </div>
-      <div className="card-modern-body p-0">
+      <div className="fdash-panel__body p-0">
         <div className="finans-table-wrap max-h-72 overflow-y-auto">
           <table className="table-modern">
             <thead>

@@ -8,7 +8,7 @@ import MaliHesapDetailPanel from "./components/MaliHesapDetailPanel";
 import MaliHesapForm from "./components/MaliHesapForm";
 import type { MaliHesap, MaliHesapAgacSube } from "../types/financial-account-types";
 
-function TanimlarInner() {
+function TanimlarInner({ embedded = false }: { embedded?: boolean }) {
   const { homeHref, portalHomeHref } = useFinansPath();
   const { activeKurum, activeSube, globalSubeAccess, filteredSubeler } = useKurum();
   const kurumId = activeKurum?.id;
@@ -95,25 +95,27 @@ function TanimlarInner() {
   return (
     <>
       {/* Hero Header */}
-      <div className="hero-header">
-        <div className="hero-content">
-          <div className="hero-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-            </svg>
-          </div>
-          <div className="hero-text">
-            <h1>Mali Hesaplar</h1>
-            <div className="hero-breadcrumb">
-              <a href={portalHomeHref}>Ana Sayfa</a>
-              <span>/</span>
-              <a href={homeHref}>Finans</a>
-              <span>/</span>
-              <span>Mali Hesaplar</span>
+      {!embedded && (
+        <div className="hero-header">
+          <div className="hero-content">
+            <div className="hero-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+            <div className="hero-text">
+              <h1>Mali Hesaplar</h1>
+              <div className="hero-breadcrumb">
+                <a href={portalHomeHref}>Ana Sayfa</a>
+                <span>/</span>
+                <a href={homeHref}>Finans</a>
+                <span>/</span>
+                <span>Mali Hesaplar</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Tree + Detail Split Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start" style={{ minHeight: "60vh" }}>
@@ -213,10 +215,10 @@ function TanimlarInner() {
   );
 }
 
-export default function TanimlarClient() {
+export default function TanimlarClient({ embedded = false }: { embedded?: boolean }) {
   return (
     <Suspense fallback={<div className="flex justify-center py-16"><div className="w-8 h-8 border-[3px] border-gray-200 border-t-blue-600 rounded-full animate-spin" /></div>}>
-      <TanimlarInner />
+      <TanimlarInner embedded={embedded} />
     </Suspense>
   );
 }

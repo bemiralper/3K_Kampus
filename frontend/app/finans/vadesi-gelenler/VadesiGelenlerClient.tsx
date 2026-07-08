@@ -1,26 +1,84 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
-import { useKurum } from "@/lib/contexts/KurumContext";
-import { useFinansPath } from "@/components/finans/FinansPathProvider";
-import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  App as AntApp,
+  Button,
+  Card,
+  Col,
+  Empty,
+  Input,
+  Row,
+  Segmented,
+  Space,
+  Spin,
+  Statistic,
+  Table,
+  Tag,
+  Tooltip,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
+import {
+  FileTextOutlined,
+  PlusCircleOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import Link from "next/link";
+import { useKurum } from "@/lib/contexts/KurumContext";
+import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
+import GGProvider from "../gelir-gider-v2/GGProvider";
 import { odemeTakipBridge } from "../services/odeme-takip-bridge";
 import type { VadesiGelenlerDonem, VadesiGelenTaksit } from "../types/para-hareketi-types";
 import { fmtDate, fmtTL } from "@/components/finans/FinansFilterBar";
-import FinansToast, { type FinansToastType } from "@/components/finans/FinansToast";
 import TahsilatAlModal from "../para-hareketleri/modals/TahsilatAlModal";
 
-const DONEM_TABS: { key: VadesiGelenlerDonem; label: string }[] = [
-  { key: "bugun", label: "Bugün" },
-  { key: "yarin", label: "Yarın" },
-  { key: "hafta", label: "Bu Hafta" },
-  { key: "ay", label: "Bu Ay" },
+const DONEM_OPTIONS: { value: VadesiGelenlerDonem; label: string }[] = [
+  { value: "bugun", label: "Bugün" },
+  { value: "yarin", label: "Yarın" },
+  { value: "hafta", label: "Bu Hafta" },
+  { value: "ay", label: "Bu Ay" },
 ];
 
-export default function VadesiGelenlerClient({ embedded = false }: { embedded?: boolean }) {
+const ACCENT = "#d97706";
+
+function kalanGunTag(gun: number) {
+  if (gun <= 0) return <Tag color="red">Bugün</Tag>;
+  if (gun <= 3) return <Tag color="volcano">{gun} gün</Tag>;
+  if (gun <= 7) return <Tag color="gold">{gun} gün</Tag>;
+  return <Tag color="blue">{gun} gün</Tag>;
+}
+
+function buildVadeDagilim(rows: VadesiGelenTaksit[]) {
+  const buckets = [
+    { key: "bugun", label: "Bugün", deger: 0 },
+    { key: "1-3", label: "1-3 gün", deger: 0 },
+    { key: "4-7", label: "4-7 gün", deger: 0 },
+    { key: "8+", label: "8+ gün", deger: 0 },
+  ];
+  for (const r of rows) {
+    const g = r.kalan_gun ?? 0;
+    const tutar = r.kalan_tutar || 0;
+    if (g <= 0) buckets[0].deger += tutar;
+    else if (g <= 3) buckets[1].deger += tutar;
+    else if (g <= 7) buckets[2].deger += tutar;
+    else buckets[3].deger += tutar;
+  }
+  return buckets;
+}
+
+function VadesiGelenlerInner({ embedded = false }: { embedded?: boolean }) {
+  const { message } = AntApp.useApp();
   const { activeKurum, activeSube, activeEgitimYili } = useKurum();
-  const { homeHref, portalHomeHref } = useFinansPath();
   const { href: odemeHref } = useOdemePath();
 
   const [donem, setDonem] = useState<VadesiGelenlerDonem>("hafta");
@@ -30,7 +88,6 @@ export default function VadesiGelenlerClient({ embedded = false }: { embedded?: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tahsilatHedef, setTahsilatHedef] = useState<{ sozlesmeId: number; taksitId: number } | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: FinansToastType } | null>(null);
 
   const load = useCallback(async () => {
     if (!activeKurum?.id) return;
@@ -53,150 +110,226 @@ export default function VadesiGelenlerClient({ embedded = false }: { embedded?: 
     }
   }, [activeKurum?.id, activeSube?.id, activeEgitimYili?.id, donem, arama]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const t = setTimeout(load, arama ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [load, arama]);
+
+  const dagitim = useMemo(() => buildVadeDagilim(rows), [rows]);
+  const enYakin = useMemo(() => {
+    if (!rows.length) return null;
+    return rows.reduce((min, r) => ((r.kalan_gun ?? 0) < (min.kalan_gun ?? 0) ? r : min), rows[0]);
+  }, [rows]);
+
+  const columns: ColumnsType<VadesiGelenTaksit> = [
+    {
+      title: "Öğrenci",
+      dataIndex: "ogrenci_adi",
+      key: "ogrenci_adi",
+      render: (v: string) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{v}</span>,
+      sorter: (a, b) => (a.ogrenci_adi || "").localeCompare(b.ogrenci_adi || "", "tr"),
+    },
+    { title: "Veli", dataIndex: "veli_adi", key: "veli_adi", render: (v: string) => v || "—" },
+    {
+      title: "Sözleşme",
+      dataIndex: "sozlesme_no",
+      key: "sozlesme_no",
+      render: (v: string) => <code style={{ fontSize: 12, background: "#f1f5f9", padding: "1px 6px", borderRadius: 6 }}>{v}</code>,
+    },
+    { title: "Taksit", dataIndex: "taksit_no", key: "taksit_no", align: "center", width: 80, render: (v: number) => `#${v}` },
+    {
+      title: "Vade",
+      dataIndex: "vade_tarihi",
+      key: "vade_tarihi",
+      render: (v: string) => fmtDate(v),
+      sorter: (a, b) => (a.vade_tarihi || "").localeCompare(b.vade_tarihi || ""),
+    },
+    {
+      title: "Kalan Gün",
+      dataIndex: "kalan_gun",
+      key: "kalan_gun",
+      align: "center",
+      render: (g: number) => kalanGunTag(g ?? 0),
+      sorter: (a, b) => (a.kalan_gun ?? 0) - (b.kalan_gun ?? 0),
+      defaultSortOrder: "ascend",
+    },
+    {
+      title: "Kalan Tutar",
+      dataIndex: "kalan_tutar",
+      key: "kalan_tutar",
+      align: "right",
+      render: (v: number) => <span style={{ fontWeight: 700, color: ACCENT }}>{fmtTL(v)}</span>,
+      sorter: (a, b) => (a.kalan_tutar || 0) - (b.kalan_tutar || 0),
+    },
+    {
+      title: "İşlem",
+      key: "islem",
+      align: "center",
+      width: 120,
+      render: (_: unknown, t: VadesiGelenTaksit) => (
+        <Space size={4}>
+          <Tooltip title="Sözleşmeye git">
+            <Link href={`${odemeHref()}?sozlesme=${t.sozlesme_id}`}>
+              <Button size="small" type="text" icon={<FileTextOutlined />} />
+            </Link>
+          </Tooltip>
+          <Tooltip title="Tahsilat Al">
+            <Button
+              size="small"
+              type="primary"
+              ghost
+              icon={<PlusCircleOutlined />}
+              onClick={() => setTahsilatHedef({ sozlesmeId: t.sozlesme_id, taksitId: t.id })}
+            />
+          </Tooltip>
+        </Space>
+      ),
+    },
+  ];
 
   if (!activeKurum) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4 text-3xl">🏢</div>
-        <h3 className="text-lg font-bold text-gray-800 mb-1">Kurum Seçiniz</h3>
-        <p className="text-sm text-gray-500">Vadesi gelen taksitleri görmek için üst menüden bir kurum seçin.</p>
-      </div>
+      <Card style={{ textAlign: "center", padding: 32 }}>
+        <Empty description="Vadesi gelen taksitleri görmek için üst menüden bir kurum seçin." />
+      </Card>
     );
   }
 
   return (
-    <div>
+    <div style={{ padding: embedded ? 0 : "4px 4px 40px" }}>
       {!embedded && (
-        <div className="hero-header">
-          <div className="hero-content">
-            <div className="hero-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <div className="hero-text">
-              <h1>Vadesi Gelenler</h1>
-              <div className="hero-breadcrumb">
-                <a href={portalHomeHref}>Ana Sayfa</a>
-                <span>/</span>
-                <a href={homeHref}>Finans</a>
-                <span>/</span>
-                <span>Vadesi Gelenler</span>
-              </div>
-            </div>
-          </div>
+        <div
+          style={{
+            background: "linear-gradient(120deg, #d977060d, #ffffff)",
+            border: "1px solid #eef2f7",
+            borderRadius: 16,
+            padding: "18px 22px",
+            marginBottom: 16,
+          }}
+        >
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>Vadesi Gelenler</h1>
+          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: 13 }}>
+            Yaklaşan taksit vadelerini dönem bazında takip edin ve tek tıkla tahsilat alın.
+          </p>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="tabs-modern">
-          {DONEM_TABS.map((t) => (
-            <a
-              key={t.key}
-              href="#"
-              className={`tab-modern ${donem === t.key ? "active" : ""}`}
-              onClick={(e) => { e.preventDefault(); setDonem(t.key); }}
-            >
-              {t.label}
-            </a>
-          ))}
-        </div>
-        <input
-          type="text"
-          value={arama}
-          onChange={(e) => setArama(e.target.value)}
-          placeholder="Öğrenci / sözleşme ara…"
-          className="px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none min-w-[220px]"
-        />
-      </div>
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={8}>
+          <Card size="small">
+            <Statistic
+              title={<span style={{ fontSize: 12, color: "#64748b" }}>Toplam Vadesi Gelecek</span>}
+              value={fmtTL(toplamTutar)}
+              valueStyle={{ fontSize: 20, fontWeight: 800, color: ACCENT }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8}>
+          <Card size="small">
+            <Statistic
+              title={<span style={{ fontSize: 12, color: "#64748b" }}>Taksit Adedi</span>}
+              value={rows.length}
+              valueStyle={{ fontSize: 20, fontWeight: 800, color: "#1F3C88" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8}>
+          <Card size="small">
+            <Statistic
+              title={<span style={{ fontSize: 12, color: "#64748b" }}>En Yakın Vade</span>}
+              value={enYakin ? ((enYakin.kalan_gun ?? 0) <= 0 ? "Bugün" : `${enYakin.kalan_gun} gün`) : "—"}
+              valueStyle={{ fontSize: 20, fontWeight: 800, color: "#dc2626" }}
+            />
+          </Card>
+        </Col>
+      </Row>
 
-      <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm border-l-4 mb-4" style={{ borderLeftColor: "#d97706" }}>
-        <div className="text-xs font-medium text-gray-500 mb-1">Toplam Vadesi Gelecek Tutar</div>
-        <div className="text-xl font-extrabold" style={{ color: "#d97706" }}>{fmtTL(toplamTutar)}</div>
-        <div className="text-[11px] text-gray-400 mt-0.5">{rows.length} taksit</div>
-      </div>
+      <Card
+        size="small"
+        style={{ marginBottom: 16 }}
+        styles={{ body: { padding: 12 } }}
+      >
+        <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
+          <Segmented
+            value={donem}
+            onChange={(v) => setDonem(v as VadesiGelenlerDonem)}
+            options={DONEM_OPTIONS}
+          />
+          <Space wrap>
+            <Input
+              allowClear
+              prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+              placeholder="Öğrenci / sözleşme ara…"
+              value={arama}
+              onChange={(e) => setArama(e.target.value)}
+              style={{ width: 240 }}
+            />
+            <Button icon={<ReloadOutlined />} onClick={load}>
+              Yenile
+            </Button>
+          </Space>
+        </Space>
+      </Card>
 
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-24">
-          <div className="w-10 h-10 border-[3px] border-gray-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-          <p className="text-sm text-gray-400">Yükleniyor…</p>
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-center justify-center py-20">
-          <p className="text-sm font-semibold text-red-600 mb-3">{error}</p>
-          <button onClick={load} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-semibold">Tekrar Dene</button>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-100">
-          <div className="text-4xl mb-3">✅</div>
-          <p className="text-base font-semibold text-gray-700">Bu dönemde vadesi gelen taksit yok</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50/80">
-                  <th className="text-left py-3 px-3 text-[11px] font-semibold text-gray-400 uppercase">Öğrenci</th>
-                  <th className="text-left py-3 px-3 text-[11px] font-semibold text-gray-400 uppercase">Veli</th>
-                  <th className="text-left py-3 px-3 text-[11px] font-semibold text-gray-400 uppercase">Sözleşme</th>
-                  <th className="text-center py-3 px-3 text-[11px] font-semibold text-gray-400 uppercase">Taksit</th>
-                  <th className="text-left py-3 px-3 text-[11px] font-semibold text-gray-400 uppercase">Vade</th>
-                  <th className="text-center py-3 px-3 text-[11px] font-semibold text-gray-400 uppercase">Kalan Gün</th>
-                  <th className="text-right py-3 px-3 text-[11px] font-semibold text-gray-400 uppercase">Kalan Tutar</th>
-                  <th className="text-center py-3 px-3 text-[11px] font-semibold text-gray-400 uppercase">İşlem</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {rows.map((t) => (
-                  <tr key={t.id} className="hover:bg-amber-50/20 transition-colors">
-                    <td className="py-3 px-3 font-medium text-gray-800">{t.ogrenci_adi}</td>
-                    <td className="py-3 px-3 text-gray-600">{t.veli_adi || "—"}</td>
-                    <td className="py-3 px-3"><code className="text-xs bg-gray-50 px-1.5 py-0.5 rounded">{t.sozlesme_no}</code></td>
-                    <td className="py-3 px-3 text-center text-gray-500">#{t.taksit_no}</td>
-                    <td className="py-3 px-3 text-gray-500">{fmtDate(t.vade_tarihi)}</td>
-                    <td className="py-3 px-3 text-center">
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
-                        {t.kalan_gun === 0 ? "Bugün" : `${t.kalan_gun} gün`}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-right font-bold text-amber-700">{fmtTL(t.kalan_tutar)}</td>
-                    <td className="py-3 px-3">
-                      <div className="flex items-center justify-center gap-1">
-                        <Link href={`${odemeHref()}?sozlesme=${t.sozlesme_id}`} title="Sözleşmeye git" className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition">📄</Link>
-                        <button
-                          type="button"
-                          title="Tahsilat Al"
-                          onClick={() => setTahsilatHedef({ sozlesmeId: t.sozlesme_id, taksitId: t.id })}
-                          className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 transition"
-                        >
-                          ➕
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {dagitim.some((d) => d.deger > 0) && (
+        <Card size="small" title="Vade Dağılımı" style={{ marginBottom: 16 }}>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={dagitim}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+              <XAxis dataKey="label" fontSize={11} />
+              <YAxis fontSize={11} />
+              <RTooltip formatter={(v) => fmtTL(Number(v))} />
+              <Bar dataKey="deger" name="Kalan Tutar" fill={ACCENT} radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
       )}
+
+      <Card size="small" styles={{ body: { padding: 0 } }}>
+        {loading ? (
+          <div style={{ padding: 80, textAlign: "center" }}>
+            <Spin size="large" />
+          </div>
+        ) : error ? (
+          <div style={{ padding: 48, textAlign: "center" }}>
+            <p style={{ color: "#dc2626", fontWeight: 600, marginBottom: 12 }}>{error}</p>
+            <Button onClick={load} danger>
+              Tekrar Dene
+            </Button>
+          </div>
+        ) : (
+          <Table
+            rowKey="id"
+            size="small"
+            columns={columns}
+            dataSource={rows}
+            locale={{ emptyText: <Empty description="Bu dönemde vadesi gelen taksit yok" /> }}
+            pagination={{ pageSize: 25, showSizeChanger: true, showTotal: (t) => `Toplam ${t} taksit` }}
+            scroll={{ x: "max-content" }}
+          />
+        )}
+      </Card>
 
       {tahsilatHedef && (
         <TahsilatAlModal
           prefillSozlesmeId={tahsilatHedef.sozlesmeId}
           prefillTaksitId={tahsilatHedef.taksitId}
           onClose={() => setTahsilatHedef(null)}
-          onSuccess={(message) => {
-            setToast({ message, type: "success" });
+          onSuccess={(msg) => {
+            message.success(msg || "Tahsilat alındı.");
             setTahsilatHedef(null);
             load();
           }}
         />
       )}
-
-      {toast && <FinansToast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
+  );
+}
+
+export default function VadesiGelenlerClient({ embedded = false }: { embedded?: boolean }) {
+  return (
+    <GGProvider>
+      <VadesiGelenlerInner embedded={embedded} />
+    </GGProvider>
   );
 }

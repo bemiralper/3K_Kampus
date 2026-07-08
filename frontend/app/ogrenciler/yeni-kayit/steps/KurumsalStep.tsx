@@ -53,6 +53,15 @@ export default function KurumsalStep({
         </div>
       </div>
 
+      {!activeSube && (
+        <div style={{
+          marginBottom: 16, padding: "10px 14px", borderRadius: 8,
+          background: "#fef2f2", border: "1px solid #fecaca", fontSize: 13, color: "#991b1b",
+        }}>
+          Okul listesi ve paket seçimi için üst menüden <strong>şube seçin</strong>.
+        </div>
+      )}
+
       {activeSube && (
         <div style={{
           marginBottom: 16, padding: "10px 14px", borderRadius: 8,
@@ -105,7 +114,7 @@ export default function KurumsalStep({
             ))}
           </select>
           <small style={{ color: '#666', fontSize: '12px', marginTop: '4px', display: 'block' }}>
-            Aktif eğitim yılı otomatik seçilmiştir
+            Üst menüde seçili eğitim yılı otomatik kullanılır (Eğitim Paketleri ile aynı kapsam)
           </small>
         </div>
 

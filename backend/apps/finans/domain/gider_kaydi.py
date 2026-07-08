@@ -102,6 +102,30 @@ class GiderKaydi(models.Model):
         help_text='İlişkili eğitim dönemi',
     )
 
+    # ─── Finansman Tanımları (v2, opsiyonel) ─────
+    maliyet_merkezi = models.ForeignKey(
+        'finans.MaliyetMerkezi',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='gider_kayitlari',
+        verbose_name='Maliyet/Gider Merkezi',
+    )
+    proje = models.ForeignKey(
+        'finans.Proje',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='gider_kayitlari',
+        verbose_name='Proje',
+    )
+    etiketler = models.ManyToManyField(
+        'finans.CariEtiket',
+        blank=True,
+        related_name='gider_kayitlari',
+        verbose_name='Etiketler',
+    )
+
     # ─── Fatura Bilgileri ────────────────────────
     fatura_no = models.CharField(
         'Fatura / Belge No',
@@ -133,6 +157,12 @@ class GiderKaydi(models.Model):
         'KDV Oranı (%)',
         choices=KdvOrani.CHOICES,
         default=KdvOrani.YIRMI,
+    )
+    kdv_mod = models.CharField(
+        'KDV Modu',
+        max_length=10,
+        default='haric',
+        help_text='haric | dahil | muaf — brüt/net hesaplama modu',
     )
     kdv_tutar = models.DecimalField(
         'KDV Tutarı',

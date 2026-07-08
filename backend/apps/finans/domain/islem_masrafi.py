@@ -52,6 +52,14 @@ class IslemMasrafi(models.Model):
         max_length=40,
         choices=KesintiTuru.CHOICES,
     )
+    masraf_turu = models.ForeignKey(
+        'finans.MasrafTuru',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='islem_masraflari',
+        verbose_name='Masraf Türü',
+    )
     kesinti_tutar = models.DecimalField(
         'Kesinti Tutarı',
         max_digits=15,

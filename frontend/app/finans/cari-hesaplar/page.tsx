@@ -1,5 +1,5 @@
-import CariHesaplarClient from "./CariHesaplarClient";
+import { redirect } from "next/navigation";
 
 export default function CariHesaplarPage() {
-  return <CariHesaplarClient />;
+  redirect("/finans/cari-hesaplar-v2");
 }

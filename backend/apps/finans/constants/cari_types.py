@@ -8,12 +8,32 @@ class CariHesapTuru:
     MUSTERI = 'musteri'
     TEDARIKCI = 'tedarikci'
     KARMA = 'karma'  # Hem müşteri hem tedarikçi
+    GELIR_HESABI = 'gelir_hesabi'   # Gelir odaklı cari (satış/tahsilat panosu)
+    GIDER_HESABI = 'gider_hesabi'   # Gider odaklı cari (alış/ödeme panosu)
+    DIGER = 'diger'                 # Genel amaçlı defter
 
     CHOICES = [
         (MUSTERI, 'Müşteri'),
         (TEDARIKCI, 'Tedarikçi'),
         (KARMA, 'Karma'),
+        (GELIR_HESABI, 'Gelir Hesabı'),
+        (GIDER_HESABI, 'Gider Hesabı'),
+        (DIGER, 'Diğer'),
     ]
+
+    # Türe göre yetenekler: satim = gelir/satış/tahsilat, alim = gider/alış/ödeme
+    YETENEKLER = {
+        MUSTERI: {'alim': False, 'satim': True},
+        TEDARIKCI: {'alim': True, 'satim': False},
+        KARMA: {'alim': True, 'satim': True},
+        GELIR_HESABI: {'alim': False, 'satim': True},
+        GIDER_HESABI: {'alim': True, 'satim': False},
+        DIGER: {'alim': True, 'satim': True},
+    }
+
+    @classmethod
+    def yetenek(cls, hesap_turu):
+        return cls.YETENEKLER.get(hesap_turu, {'alim': True, 'satim': True})
 
 
 class CariHareketTuru:

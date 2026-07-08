@@ -64,7 +64,6 @@ export function muhasebeHomeHref(): string {
 
 /** Tahsilat & Raporlar sekmesine birleştirilmiş eski finans alt yolları. */
 export const TAHSILAT_RAPOR_LEGACY_SEGMENTS = [
-  'virman',
   'gun-sonu',
   'gecikmis-odemeler',
   'vadesi-gelenler',

@@ -13,6 +13,7 @@ from apps.finans.application.export.report_html_template import (
     _brand_display,
     _format_cell,
     _logo_data_uri,
+    _resolve_logo,
     _logo_fallback_text,
 )
 
@@ -190,7 +191,7 @@ def build_period_report_html(
     meta = filters_meta or {}
     sube_ad = meta.get("sube_ad") or meta.get("sube")
     brand = _brand_display(kurum_ad, sube_ad)
-    logo = _logo_data_uri()
+    logo = _resolve_logo(meta)
     logo_html = (
         f'<img src="{logo}" alt="Logo" class="logo-img" />'
         if logo

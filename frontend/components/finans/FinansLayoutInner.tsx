@@ -12,12 +12,16 @@ const MODULE_SEGMENTS: Record<string, string> = {
   dashboard: "Dashboard",
   tanimlar: "Finans Tanımları",
   "gelir-gider-islemleri": "Gelir & Gider",
+  "gelir-v2": "Gelir İşlemleri",
+  "gider-v2": "Gider İşlemleri",
+  "gelir-gider-v2": "Gelir & Gider (Yeni)",
   "gider-islemleri": "Gelir & Gider",
   "gelir-islemleri": "Gelir & Gider",
   "gider-yonetimi": "Gelir & Gider",
   "gelir-yonetimi": "Gelir & Gider",
   giderler: "Gider Kayıtları",
   "cari-hesaplar": "Cari Hesaplar",
+  "cari-hesaplar-v2": "Cari Hesaplar",
   gelirler: "Gelir Kayıtları",
   "borc-odeme-plani": "Borç / Ödeme Planı",
   "kasa-banka": "Kasa / Banka",
@@ -29,6 +33,7 @@ const MODULE_SEGMENTS: Record<string, string> = {
   "gecikmis-odemeler": "Gecikmiş Ödemeler",
   "donem-tahsilat": "Dönem Tahsilat",
   "cek-senet": "Çek / Senet",
+  "cek-senet-v2": "Çek / Senet",
   raporlama: "Mali Analiz",
 };
 
@@ -44,7 +49,9 @@ export function FinansLayoutInner({ children }: { children: React.ReactNode }) {
     ? "Raporlar"
     : MODULE_SEGMENTS[firstSegment] || "Dashboard";
   const isDashboard = !firstSegment || firstSegment === "dashboard";
-  const isCariDetay = firstSegment === "cari-hesaplar" && /^\d+/.test(relativePath.split("/")[1] || "");
+  const isCariDetay =
+    (firstSegment === "cari-hesaplar" || firstSegment === "cari-hesaplar-v2") &&
+    /^\d+/.test(relativePath.split("/")[1] || "");
 
   return (
     <div className="section">
@@ -59,7 +66,7 @@ export function FinansLayoutInner({ children }: { children: React.ReactNode }) {
             <svg className="w-3 h-3 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
             {isCariDetay ? (
               <>
-                <Link href={`${homeHref}/cari-hesaplar`} className="hover:text-gray-600 transition-colors">Cari Hesaplar</Link>
+                <Link href={`${homeHref}/cari-hesaplar-v2`} className="hover:text-gray-600 transition-colors">Cari Hesaplar</Link>
                 <svg className="w-3 h-3 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                 <span className="text-gray-600 font-semibold">Cari Detay</span>
               </>

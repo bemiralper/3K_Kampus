@@ -105,6 +105,9 @@ export async function fetchOkullar(params: OkulListParams = {}): Promise<OkulLis
 export async function fetchOkulAutocomplete(q: string, limit = 20): Promise<OkulAutocompleteItem[]> {
   const qs = new URLSearchParams({ q, limit: String(limit), aktif_only: "1" });
   const res = await apiGet<OkulAutocompleteItem[]>(`${BASE}/autocomplete/?${qs.toString()}`);
+  if (!res.success) {
+    throw new Error(res.error || "Okul listesi alınamadı. Üst menüden şube seçili olduğundan emin olun.");
+  }
   return (res.data as OkulAutocompleteItem[] | undefined) || [];
 }
 

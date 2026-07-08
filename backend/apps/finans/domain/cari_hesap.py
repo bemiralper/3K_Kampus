@@ -84,6 +84,28 @@ class CariHesap(models.Model):
     iban = models.CharField('IBAN', max_length=34, blank=True, default='')
     hesap_sahibi = models.CharField('Hesap Sahibi', max_length=200, blank=True, default='')
 
+    # ─── Sınıflandırma & Risk (v2) ─────────────
+    kategori = models.CharField('Kategori', max_length=100, blank=True, default='')
+    risk_limiti = models.DecimalField(
+        'Risk Limiti',
+        max_digits=15,
+        decimal_places=2,
+        default=0,
+        help_text='0 = limit yok. Açık bakiye bu limiti aşarsa risk uyarısı verilir.',
+    )
+    varsayilan_vade_gun = models.PositiveIntegerField(
+        'Varsayılan Vade (gün)',
+        default=0,
+        help_text='İşlemler için varsayılan vade süresi (gün).',
+    )
+    para_birimi = models.CharField('Para Birimi', max_length=3, default='TRY')
+    etiketler = models.ManyToManyField(
+        'finans.CariEtiket',
+        blank=True,
+        related_name='cari_hesaplar',
+        verbose_name='Etiketler',
+    )
+
     # ─── Cari Bakiye ───────────────────────────
     toplam_borc = models.DecimalField(
         'Toplam Borç',
@@ -159,3 +181,20 @@ class CariHesap(models.Model):
     @property
     def hesap_turu_display(self):
         return dict(CariHesapTuru.CHOICES).get(self.hesap_turu, self.hesap_turu)
+
+    @property
+    def yetenekler(self):
+        """Türe göre alım/satım yetenekleri."""
+        return CariHesapTuru.yetenek(self.hesap_turu)
+
+    @property
+    def acik_borc(self):
+        """Ödenecek açık tutar (net bakiye negatifse mutlak değeri)."""
+        b = self.bakiye
+        return -b if b < 0 else 0
+
+    @property
+    def acik_alacak(self):
+        """Tahsil edilecek açık tutar (net bakiye pozitifse)."""
+        b = self.bakiye
+        return b if b > 0 else 0

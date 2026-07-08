@@ -1,4 +1,4 @@
-import CariDetayClient from "./CariDetayClient";
+import { redirect } from "next/navigation";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -6,5 +6,5 @@ interface Props {
 
 export default async function CariDetayPage({ params }: Props) {
   const { id } = await params;
-  return <CariDetayClient cariHesapId={Number(id)} />;
+  redirect(`/finans/cari-hesaplar-v2/${id}`);
 }

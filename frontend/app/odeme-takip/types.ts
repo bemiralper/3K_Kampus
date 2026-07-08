@@ -197,9 +197,6 @@ export interface TahsilatFormData {
   banka_adi?: string;
   cek_senet_vade?: string;
   cek_senet_durum?: string;
-  kesinti_turu?: string;
-  kesinti_tutar?: string;
-  kesinti_aciklama?: string;
 }
 
 // ─── Fesih Types ────────────────────────────────────────────

@@ -38,5 +38,19 @@ python manage.py collectstatic --noinput
 echo "[backend-prod] setup_roles"
 python manage.py setup_roles
 
+if ! python - <<'PY'
+import os, sys
+from pathlib import Path
+root = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/ms-playwright"))
+if not root.exists() or not any(root.glob("chromium*")):
+    sys.exit(1)
+sys.exit(0)
+PY
+then
+  echo "[backend-prod] Playwright Chromium eksik — kuruluyor..."
+  python -m playwright install chromium
+  python -m playwright install-deps chromium
+fi
+
 echo "[backend-prod] starting: $*"
 exec "$@"
