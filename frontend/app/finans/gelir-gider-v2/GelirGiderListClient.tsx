@@ -27,6 +27,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { MenuProps } from "antd";
+import type { DefaultOptionType } from "antd/es/select";
 import {
   PlusOutlined,
   ReloadOutlined,
@@ -693,7 +694,7 @@ function FilterDrawer({
     (cfg.modul === "gider" ? dropdown?.maliyet_merkezleri : dropdown?.gelir_kaynaklari) ?? [];
 
   // Gider: yalnızca alt kategori adları; gelir: gruplu liste
-  const kategoriGroups = (() => {
+  const kategoriFilterOptions = useMemo((): DefaultOptionType[] => {
     const cats = dropdown?.kategoriler ?? [];
     if (cfg.modul === "gider") {
       const parentIdsWithChildren = new Set(
@@ -705,7 +706,7 @@ function FilterDrawer({
     }
     const parents = cats.filter((c) => !c.parent_id);
     const orphans = cats.filter((c) => c.parent_id && !parents.some((p) => p.id === c.parent_id));
-    const groups = parents.map((p) => {
+    const groups: DefaultOptionType[] = parents.map((p) => {
       const kids = cats.filter((c) => c.parent_id === p.id);
       if (!kids.length) return { value: p.id, label: p.ad };
       return {
@@ -719,7 +720,7 @@ function FilterDrawer({
     });
     if (orphans.length) groups.push(...orphans.map((c) => ({ value: c.id, label: c.ad })));
     return groups;
-  })();
+  }, [dropdown?.kategoriler, cfg.modul]);
 
   return (
     <Drawer
@@ -770,7 +771,7 @@ function FilterDrawer({
             allowClear showSearch optionFilterProp="label" style={{ width: "100%" }} placeholder="Kategori / başlık"
             value={local[cfg.kategoriFilterKey] as number | undefined}
             onChange={(v) => upd(cfg.kategoriFilterKey, v)}
-            options={kategoriGroups}
+            options={kategoriFilterOptions}
           />
         </Field>
         <Field label={cfg.ikinciTanimLabel}>

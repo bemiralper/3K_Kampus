@@ -1652,7 +1652,11 @@ function OdemePlaniSubTab({
                                     : s.odeme_yontemi?.id
                                       ? String(s.odeme_yontemi.id)
                                       : "",
-                                mali_hesap_id: "",
+                                mali_hesap_id: s.mali_hesap_id
+                                  ? String(s.mali_hesap_id)
+                                  : s.mali_hesap?.id
+                                    ? String(s.mali_hesap.id)
+                                    : "",
                                 tutar: String(t.kalan_tutar),
                                 tahsilat_tarihi: new Date().toISOString().slice(0, 10),
                                 referans_no: "",

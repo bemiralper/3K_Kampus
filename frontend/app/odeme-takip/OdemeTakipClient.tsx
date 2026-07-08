@@ -397,7 +397,10 @@ export default function OdemeTakipClient() {
       ? selectedSozlesme
       : sozlesmeler.find((s) => s.id === Number(form.sozlesme_id));
     const taksit = sozlesme?.taksitler?.find((t) => t.id === Number(form.taksit_id));
-    const defaultMali = form.mali_hesap_id || "";
+    const defaultMali =
+      form.mali_hesap_id ||
+      (sozlesme?.mali_hesap_id ? String(sozlesme.mali_hesap_id) : "") ||
+      (sozlesme?.mali_hesap?.id ? String(sozlesme.mali_hesap.id) : "");
     const defaultYontem =
       form.odeme_yontemi_id ||
       (taksit?.odeme_yontemi_id ? String(taksit.odeme_yontemi_id) : "") ||
@@ -412,6 +415,14 @@ export default function OdemeTakipClient() {
   };
 
   const handleTahsilatCreate = async () => {
+    if (!tahsilatForm.mali_hesap_id) {
+      alert("Mali hesap (kasa/banka) seçimi zorunludur.");
+      return;
+    }
+    if (!tahsilatForm.odeme_yontemi_id) {
+      alert("Ödeme yöntemi seçimi zorunludur.");
+      return;
+    }
     setSaving(true);
     try {
       const selectedYontem = tahsilatOdemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
@@ -420,7 +431,7 @@ export default function OdemeTakipClient() {
         sozlesme_id: Number(tahsilatForm.sozlesme_id),
         taksit_id: tahsilatForm.taksit_id ? Number(tahsilatForm.taksit_id) : null,
         odeme_yontemi_id: Number(tahsilatForm.odeme_yontemi_id),
-        mali_hesap_id: tahsilatForm.mali_hesap_id ? Number(tahsilatForm.mali_hesap_id) : null,
+        mali_hesap_id: Number(tahsilatForm.mali_hesap_id),
         tutar: Number(tahsilatForm.tutar),
         tahsilat_tarihi: tahsilatForm.tahsilat_tarihi,
         referans_no: tahsilatForm.referans_no,
@@ -656,19 +667,20 @@ export default function OdemeTakipClient() {
             <div className="odeme-drawer-body">
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div className="odeme-form-group">
-                  <label className="odeme-form-label">Mali Hesap (Kasa / Banka)</label>
+                  <label className="odeme-form-label">Mali Hesap (Kasa / Banka) *</label>
                   <select
                     className="odeme-form-control"
+                    required
                     value={tahsilatForm.mali_hesap_id || ""}
                     onChange={(e) => setTahsilatForm({ ...tahsilatForm, mali_hesap_id: e.target.value, odeme_yontemi_id: "" })}
                   >
-                    <option value="">Seçiniz (boş bırakılırsa ödeme yönteminin hesabı kullanılır)</option>
+                    <option value="">Seçiniz</option>
                     {maliHesaplar.map((m) => (
                       <option key={m.id} value={m.id}>{m.ad} ({m.tip === "kasa" ? "Kasa" : m.tip === "banka" ? "Banka" : m.tip})</option>
                     ))}
                   </select>
                   <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
-                    Paranın giriş yaptığı kasa/banka hesabıdır — Gün Sonu ve kasa bakiyesi bu seçime göre güncellenir. Seçim yaparsanız aşağıdaki ödeme yöntemi listesi bu hesaba göre filtrelenir.
+                    Paranın giriş yaptığı kasa/banka hesabıdır — mali hesap bakiyesi ve Gün Sonu bu seçime göre güncellenir.
                   </div>
                 </div>
 

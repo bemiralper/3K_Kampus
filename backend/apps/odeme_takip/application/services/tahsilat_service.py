@@ -42,7 +42,7 @@ class TahsilatService:
         Tahsilatın gireceği mali hesabı belirler:
         1. İstekte açıkça belirtilmişse onu kullan.
         2. Seçilen ödeme yönteminin bağlı olduğu mali hesabı kullan.
-        3. Hiçbiri yoksa None döner — kayıt oluşur ama kasa bakiyesine yansımaz.
+        3. Sözleşmede tanımlı mali hesabı kullan.
         """
         mali_hesap_id = data.get('mali_hesap_id')
         if mali_hesap_id:
@@ -54,6 +54,9 @@ class TahsilatService:
             if yontem and yontem.mali_hesap_id:
                 if not (cek_senet_v2_enabled() and is_cek_senet_yontemi(yontem)):
                     return yontem.mali_hesap_id
+
+        if sozlesme.mali_hesap_id:
+            return sozlesme.mali_hesap_id
 
         return None
 
@@ -188,10 +191,16 @@ class TahsilatService:
 
         # ── Mali hesap belirle (kasa/banka bakiyesi buradan işlenir) ──
         mali_hesap_id = self._resolve_mali_hesap_id(data, sozlesme)
-        if mali_hesap_id:
-            mali_err = self._validate_mali_hesap_for_sozlesme(mali_hesap_id, sozlesme)
-            if mali_err:
-                return None, mali_err
+        if not mali_hesap_id:
+            return None, {
+                'mali_hesap_id': (
+                    'Mali hesap (kasa/banka) seçimi zorunludur. '
+                    'Tahsilatın hangi hesaba yattığını belirtin.'
+                ),
+            }
+        mali_err = self._validate_mali_hesap_for_sozlesme(mali_hesap_id, sozlesme)
+        if mali_err:
+            return None, mali_err
 
         # ── TEK Tahsilat kaydı oluştur (toplam tutar) ──
         tahsilat = self.repo.create({
@@ -209,20 +218,19 @@ class TahsilatService:
         })
 
         # ── Kasa/banka bakiyesine işle ──────────────
-        if mali_hesap_id:
-            hareket = self.bakiye_service.tahsilat_giris(
-                mali_hesap_id=mali_hesap_id,
-                kurum_id=sozlesme.kurum_id,
-                sube_id=sozlesme.sube_id,
-                egitim_yili_id=sozlesme.egitim_yili_id,
-                tutar=tutar,
-                islem_tarihi=data['tahsilat_tarihi'],
-                tahsilat_id=tahsilat.pk,
-                aciklama=f'Tahsilat: {sozlesme.sozlesme_no} — {data.get("aciklama", "")}'.strip(' —'),
-                islem_yapan=user,
-            )
-            tahsilat.bakiye_hareketi_id = hareket.pk
-            tahsilat.save(update_fields=['bakiye_hareketi_id'])
+        hareket = self.bakiye_service.tahsilat_giris(
+            mali_hesap_id=mali_hesap_id,
+            kurum_id=sozlesme.kurum_id,
+            sube_id=sozlesme.sube_id,
+            egitim_yili_id=sozlesme.egitim_yili_id,
+            tutar=tutar,
+            islem_tarihi=data['tahsilat_tarihi'],
+            tahsilat_id=tahsilat.pk,
+            aciklama=f'Tahsilat: {sozlesme.sozlesme_no} — {data.get("aciklama", "")}'.strip(' —'),
+            islem_yapan=user,
+        )
+        tahsilat.bakiye_hareketi_id = hareket.pk
+        tahsilat.save(update_fields=['bakiye_hareketi_id'])
 
         # ── Dağıtım mantığı — geçmiş/kısmi taksitler önce ──
         dagitimlar, etkilenen_taksitler, kalan_tutar = self._allocate_payment_to_taksitler(

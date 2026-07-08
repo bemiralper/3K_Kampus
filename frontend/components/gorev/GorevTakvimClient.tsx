@@ -130,10 +130,9 @@ export default function GorevTakvimClient({
           .filter((e) => e.extendedProps?.kaynak_modul === 'cek_senet')
           .map((e) => ({
             ...e,
-            backgroundColor: (e.backgroundColor as string) || '#DC2626',
-            borderColor: (e.borderColor as string) || '#DC2626',
+            color: e.color || '#DC2626',
           }));
-        merged = [...merged, ...cekEvents];
+        merged = [...merged, ...normalizeEvents(cekEvents as FCEvent[])];
       }
 
       if (!merged.length && !res.success && !includeCekSenetEvents) {
