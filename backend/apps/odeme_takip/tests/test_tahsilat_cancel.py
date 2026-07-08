@@ -1,0 +1,98 @@
+"""Tahsilat iptal testleri."""
+from datetime import timedelta
+from decimal import Decimal
+
+from django.test import TestCase
+from django.utils import timezone
+
+from apps.egitim_yili.domain.models import EgitimYili
+from apps.finans.constants.payment_types import OdemeYontemiTipi
+from apps.finans.domain.financial_account import MaliHesap
+from apps.finans.domain.payment_method import OdemeYontemi
+from apps.kurum.domain.models import Kurum
+from apps.odeme_takip.application.services.tahsilat_service import TahsilatService
+from apps.odeme_takip.domain.enums import SozlesmeDurum, TahsilatDurum, TaksitDurum
+from apps.odeme_takip.domain.models import Sozlesme, Taksit
+from apps.ogrenci.domain.models import Ogrenci
+from apps.sube.domain.models import Sube
+
+
+class TahsilatCancelTest(TestCase):
+    def setUp(self):
+        self.kurum = Kurum.objects.create(ad='İptal Kurum', kod='IPT')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='IPT')
+        self.ey = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
+        self.ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Ayşe',
+            soyad='Öğrenci',
+            aktif_mi=True,
+        )
+        self.mali_hesap = MaliHesap.objects.create(sube=self.sube, ad='Kasa')
+        self.odeme_yontemi = OdemeYontemi.objects.create(
+            mali_hesap=self.mali_hesap,
+            kurum=self.kurum,
+            ad='Nakit',
+            tip=OdemeYontemiTipi.NAKIT,
+            komisyon_orani=Decimal('0'),
+        )
+        self.sozlesme = Sozlesme.objects.create(
+            sozlesme_no='SZ-IPT-001',
+            ogrenci=self.ogrenci,
+            egitim_yili=self.ey,
+            kurum=self.kurum,
+            sube=self.sube,
+            baslangic_tarihi=timezone.localdate(),
+            bitis_tarihi=timezone.localdate() + timedelta(days=365),
+            brut_tutar=5000,
+            net_tutar=5000,
+            durum=SozlesmeDurum.AKTIF,
+        )
+        self.taksit = Taksit.objects.create(
+            sozlesme=self.sozlesme,
+            taksit_no=1,
+            vade_tarihi=timezone.localdate(),
+            tutar=5000,
+            odenen_tutar=0,
+            kalan_tutar=5000,
+            durum=TaksitDurum.BEKLEMEDE,
+        )
+        self.service = TahsilatService()
+        self.today = timezone.localdate()
+
+    def test_cancel_active_tahsilat_updates_taksit_and_status(self):
+        tahsilat, err = self.service.create({
+            'sozlesme_id': self.sozlesme.id,
+            'taksit_id': self.taksit.id,
+            'odeme_yontemi_id': self.odeme_yontemi.id,
+            'mali_hesap_id': self.mali_hesap.id,
+            'tutar': 5000,
+            'tahsilat_tarihi': self.today.isoformat(),
+        })
+        self.assertIsNone(err)
+
+        cancelled, cancel_err = self.service.cancel(tahsilat.pk, 'Yanlış kayıt', user=None)
+        self.assertIsNone(cancel_err)
+        self.assertEqual(cancelled.durum, TahsilatDurum.IPTAL_EDILDI)
+        self.assertEqual(cancelled.iptal_nedeni, 'Yanlış kayıt')
+
+        self.taksit.refresh_from_db()
+        self.assertEqual(self.taksit.odenen_tutar, 0)
+        self.assertEqual(self.taksit.kalan_tutar, 5000)
+        self.assertEqual(self.taksit.durum, TaksitDurum.BEKLEMEDE)
+
+    def test_cancel_requires_reason(self):
+        tahsilat, err = self.service.create({
+            'sozlesme_id': self.sozlesme.id,
+            'taksit_id': self.taksit.id,
+            'odeme_yontemi_id': self.odeme_yontemi.id,
+            'mali_hesap_id': self.mali_hesap.id,
+            'tutar': 1000,
+            'tahsilat_tarihi': self.today.isoformat(),
+        })
+        self.assertIsNone(err)
+
+        cancelled, cancel_err = self.service.cancel(tahsilat.pk, 'ab', user=None)
+        self.assertIsNone(cancelled)
+        self.assertIn('error', cancel_err)

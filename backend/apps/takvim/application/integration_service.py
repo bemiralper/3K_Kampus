@@ -37,6 +37,7 @@ class KaynakModul:
     CALISMA_PROGRAMI = 'calisma'        # Haftalık çalışma programı
     CALISMA_BLOK = 'calisma_blok'       # Çalışma programı tekil blok
     GOREV = 'gorev'                     # Görev modülü atamaları
+    CEK_SENET = 'cek_senet'             # Verilen çek/senet vade ödemeleri
 
 
 # ═══════════════════════════════════════════════════════════

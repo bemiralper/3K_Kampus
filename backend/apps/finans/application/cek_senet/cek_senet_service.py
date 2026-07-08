@@ -193,6 +193,15 @@ class CekSenetService:
         self.bakiye_service = BakiyeHareketiService()
         self.tahsilat_service = TahsilatService()
 
+    @staticmethod
+    def _sync_takvim(detay: CekSenetDetay, user=None):
+        try:
+            from apps.finans.application.cek_senet.calendar_bridge import CekSenetCalendarBridge
+            uid = user.pk if user and getattr(user, 'pk', None) else 1
+            CekSenetCalendarBridge().sync_detay(detay, user_id=uid)
+        except Exception:
+            pass
+
     # Sekme -> filtre eşlemesi
     SEKME_FILTRELERI = {
         'gelen-cekler': {'yon': CekSenetYon.ALINAN, 'arac_tipi': CekSenetAracTipi.CEK},
@@ -416,6 +425,7 @@ class CekSenetService:
             detay, 'olusturuldu', yeni_durum=CekSenetDurum.BEKLIYOR,
             tutar=detay.tutar, aciklama='Gider taksit planından oluşturuldu',
         )
+        self._sync_takvim(detay)
         return detay
 
     @transaction.atomic
@@ -440,6 +450,7 @@ class CekSenetService:
                     if detay and detay.durum == CekSenetDurum.BEKLIYOR:
                         detay.durum = CekSenetDurum.IPTAL
                         detay.save(update_fields=['durum', 'updated_at'])
+                        self._sync_takvim(detay)
                     continue
 
                 kalan = taksit.kalan_tutar
@@ -455,11 +466,13 @@ class CekSenetService:
                             'tutar', 'vade_tarihi', 'odeme_yontemi', 'arac_tipi',
                             'cari_hesap', 'updated_at',
                         ])
+                        self._sync_takvim(detay)
                 else:
                     self.create_from_gider_taksit(taksit, yontem)
             elif detay and detay.durum == CekSenetDurum.BEKLIYOR:
                 detay.durum = CekSenetDurum.IPTAL
                 detay.save(update_fields=['durum', 'updated_at'])
+                self._sync_takvim(detay)
 
     @transaction.atomic
     def transition(self, kayit_id: int, hedef_durum: str, payload: dict | None = None, user=None):
@@ -507,6 +520,7 @@ class CekSenetService:
                 aciklama=(payload.get('aciklama') or '').strip(),
                 user=user,
             )
+        self._sync_takvim(detay, user)
         return detay, None
 
     @transaction.atomic
@@ -702,6 +716,7 @@ class CekSenetService:
             detay, 'olusturuldu', yeni_durum=CekSenetDurum.BEKLIYOR,
             tutar=detay.tutar, aciklama='Manuel verilen kayıt oluşturuldu', user=user,
         )
+        self._sync_takvim(detay, user)
         return serialize_cek_senet(detay), None
 
     @transaction.atomic
@@ -790,6 +805,7 @@ class CekSenetService:
 
         detay.save(update_fields=update_fields)
         log_cek_senet(detay, 'guncellendi', tutar=detay.tutar, aciklama='Bilgiler güncellendi', user=user)
+        self._sync_takvim(detay, user)
         return serialize_cek_senet(detay), None
 
     @transaction.atomic
@@ -894,6 +910,7 @@ class CekSenetService:
             detay, 'iptal_edildi', onceki_durum=onceki, yeni_durum=CekSenetDurum.IPTAL,
             tutar=detay.tutar, aciklama=detay.durum_aciklamasi, user=user,
         )
+        self._sync_takvim(detay, user)
         return serialize_cek_senet(detay), None
 
     def timeline(self, kayit_id: int) -> list[dict]:
@@ -1100,4 +1117,5 @@ class CekSenetService:
             onceki_durum=onceki, yeni_durum=CekSenetDurum.ODENDI,
             tutar=tutar, aciklama=aciklama or 'Ödendi', user=user,
         )
+        self._sync_takvim(detay, user)
         return serialize_cek_senet(detay), None

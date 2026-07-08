@@ -34,6 +34,7 @@ import {
   YAxis,
 } from "recharts";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
 import GGProvider from "../gelir-gider-v2/GGProvider";
@@ -78,6 +79,7 @@ function buildVadeDagilim(rows: VadesiGelenTaksit[]) {
 
 function VadesiGelenlerInner({ embedded = false }: { embedded?: boolean }) {
   const { message } = AntApp.useApp();
+  const router = useRouter();
   const { activeKurum, activeSube, activeEgitimYili } = useKurum();
   const { href: odemeHref } = useOdemePath();
 
@@ -169,9 +171,12 @@ function VadesiGelenlerInner({ embedded = false }: { embedded?: boolean }) {
       render: (_: unknown, t: VadesiGelenTaksit) => (
         <Space size={4}>
           <Tooltip title="Sözleşmeye git">
-            <Link href={`${odemeHref()}?sozlesme=${t.sozlesme_id}`}>
-              <Button size="small" type="text" icon={<FileTextOutlined />} />
-            </Link>
+            <Button
+              size="small"
+              type="text"
+              icon={<FileTextOutlined />}
+              onClick={() => router.push(`${odemeHref()}?sozlesme=${t.sozlesme_id}`)}
+            />
           </Tooltip>
           <Tooltip title="Tahsilat Al">
             <Button
