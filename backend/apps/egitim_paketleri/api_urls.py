@@ -21,6 +21,10 @@ urlpatterns = [
     path("denemeler/<int:pk>/", api_views.DenemeDetailView.as_view(), name="denemeler_detail"),
     path("ek-hizmetler/", api_views.EkHizmetListCreateView.as_view(), name="ek_hizmetler_list_create"),
     path("ek-hizmetler/<int:pk>/", api_views.EkHizmetDetailView.as_view(), name="ek_hizmetler_detail"),
+    path("premium-paketler/", api_views.PremiumPaketListCreateView.as_view(), name="premium_paketler_list_create"),
+    path("premium-paketler/<int:pk>/", api_views.PremiumPaketDetailView.as_view(), name="premium_paketler_detail"),
+    path("yayin-paketleri/", api_views.YayinPaketiListCreateView.as_view(), name="yayin_paketleri_list_create"),
+    path("yayin-paketleri/<int:pk>/", api_views.YayinPaketiDetailView.as_view(), name="yayin_paketleri_detail"),
     path("referans-veriler/", api_views.ReferansVerilerView.as_view(), name="referans_veriler"),
     
     # Ek Hizmet Satış Endpoints

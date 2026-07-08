@@ -323,7 +323,12 @@ class YaklasanVadelerView(APIView):
             return err
 
         selector = GiderSelector()
-        gun = int(request.query_params.get('gun', 7))
+        try:
+            gun = int(request.query_params.get('gun', 7))
+        except (TypeError, ValueError):
+            gun = 7
+        if gun < 1:
+            gun = 7
         odeme_yontemi_tipi = request.query_params.get('odeme_yontemi_tipi') or None
         taksitler = selector.yaklasan_vadeler(
             kurum_id, gun=gun, odeme_yontemi_tipi=odeme_yontemi_tipi, sube_id=sube_id,

@@ -37,6 +37,13 @@ class GiderTaksit(models.Model):
     vade_tarihi = models.DateField(
         'Vade Tarihi',
     )
+    aciklama = models.CharField(
+        'Açıklama',
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Manuel taksit planında satır açıklaması',
+    )
 
     # ─── Tutar Bilgileri ─────────────────────────
     tutar = models.DecimalField(

@@ -200,15 +200,9 @@ class GunSonuReportService:
         return int(agg['toplam'] or 0), agg['adet'] or 0
 
     def _gider_odeme(self, kurum_id, gun, sube_id):
-        qs = GiderOdeme.objects.filter(
-            gider_kaydi__kurum_id=kurum_id,
-            odeme_tarihi=gun,
-            durum=OdemeDurum.TAMAMLANDI,
-        )
-        if sube_id:
-            qs = qs.filter(gider_kaydi__sube_id=sube_id)
-        agg = qs.aggregate(toplam=Sum('tutar'), adet=Count('id'))
-        return int(agg['toplam'] or 0), agg['adet'] or 0
+        from apps.finans.application.gun_sonu_finans_helpers import gider_odeme_toplam
+
+        return gider_odeme_toplam(kurum_id, gun, sube_id)
 
     def _iade(self, kurum_id, gun, sube_id):
         from apps.odeme_takip.domain.models import Tahsilat

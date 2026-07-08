@@ -281,12 +281,14 @@ const navItems: MenuItem[] = [
     icon: icons.wallet,
     children: [
       { label: "Dashboard", href: "/finans" },
-      { label: "Çek / Senet", href: "/finans/cek-senet" },
+      { label: "Çek / Senet", href: "/finans/cek-senet-v2" },
+      { label: "Virman", href: "/finans/virman" },
       { label: "Raporlar", href: "/finans/tahsilat-raporlar" },
       { label: "Sözleşme/Tahsilat", href: "/odeme-takip" },
-      { label: "Gelir & Gider", href: "/finans/gelir-gider-islemleri" },
-      { label: "Cari Hesaplar", href: "/finans/cari-hesaplar" },
-      { label: "Finans Tanımları", href: "/finans/tanimlar" },
+      { label: "Gelir İşlemleri", href: "/finans/gelir-v2" },
+      { label: "Gider İşlemleri", href: "/finans/gider-v2" },
+      { label: "Cari Hesaplar", href: "/finans/cari-hesaplar-v2" },
+      { label: "Finansman Tanımları", href: "/finans/gelir-gider-v2/tanimlar" },
     ],
   },
   {

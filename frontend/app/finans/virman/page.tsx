@@ -1,7 +1,5 @@
-"use client";
+import VirmanClient from "./VirmanClient";
 
-import FinansClientRedirect from "@/components/finans/FinansClientRedirect";
-
-export default function VirmanRedirectPage() {
-  return <FinansClientRedirect segment="tahsilat-raporlar" query="tab=virman" />;
+export default function VirmanPage() {
+  return <VirmanClient />;
 }

@@ -41,10 +41,8 @@ class TahsilatService:
         """
         Tahsilatın gireceği mali hesabı belirler:
         1. İstekte açıkça belirtilmişse onu kullan.
-        2. Seçilen ödeme yönteminin bağlı olduğu mali hesabı kullan (artık her
-           ödeme yöntemi tam olarak bir mali hesaba aittir).
-        3. Sözleşmenin varsayılan mali hesabı varsa onu kullan.
-        4. Hiçbiri yoksa None döner — kayıt oluşur ama kasa bakiyesine yansımaz.
+        2. Seçilen ödeme yönteminin bağlı olduğu mali hesabı kullan.
+        3. Hiçbiri yoksa None döner — kayıt oluşur ama kasa bakiyesine yansımaz.
         """
         mali_hesap_id = data.get('mali_hesap_id')
         if mali_hesap_id:
@@ -56,9 +54,6 @@ class TahsilatService:
             if yontem and yontem.mali_hesap_id:
                 if not (cek_senet_v2_enabled() and is_cek_senet_yontemi(yontem)):
                     return yontem.mali_hesap_id
-
-        if sozlesme.mali_hesap_id:
-            return sozlesme.mali_hesap_id
 
         return None
 
@@ -278,24 +273,6 @@ class TahsilatService:
         tahsilat._dagitim = dagitim_bilgisi
 
         self._create_cek_senet_detay_if_needed(tahsilat, data)
-
-        if mali_hesap_id:
-            aciklama = f'Tahsilat: {sozlesme.sozlesme_no} — {data.get("aciklama", "")}'.strip(' —')
-            _, masraf_err = self.masraf_service.process_if_present(
-                data,
-                kaynak_tip=IslemMasrafiKaynakTipi.TAHSILAT,
-                kaynak_id=tahsilat.pk,
-                kurum_id=sozlesme.kurum_id,
-                sube_id=sozlesme.sube_id,
-                egitim_yili_id=sozlesme.egitim_yili_id,
-                mali_hesap_id=mali_hesap_id,
-                odeme_yontemi_id=data['odeme_yontemi_id'],
-                islem_tarihi=data['tahsilat_tarihi'],
-                ana_islem_aciklama=aciklama,
-                islem_yapan=user,
-            )
-            if masraf_err:
-                return None, {'error': masraf_err}
 
         try:
             from apps.gorev.application.rule_engine import hook_tahsilat_created

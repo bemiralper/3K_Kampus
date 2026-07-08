@@ -1,9 +1,5 @@
 "use client";
 
 export default function DashboardChartSkeleton() {
-  return (
-    <div className="flex items-center justify-center h-[220px] cell-secondary text-sm animate-pulse">
-      Grafik yükleniyor…
-    </div>
-  );
+  return <div className="fdash-chart-empty animate-pulse">Grafik yükleniyor…</div>;
 }

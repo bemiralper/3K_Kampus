@@ -63,6 +63,9 @@ def _resolve_kurum_id_from_body(request) -> int | None:
 
 def _enrich_filters_meta(filters_meta: dict | None, kurum_id: int | None) -> dict:
     meta = dict(filters_meta or {})
+    # Logo çözümü ve markalama için kurum/şube kimliklerini meta'da tut
+    if kurum_id and not meta.get('kurum_id'):
+        meta['kurum_id'] = kurum_id
     if kurum_id and 'kurum_ad' not in meta:
         try:
             from apps.kurum.domain.models import Kurum
@@ -325,13 +328,20 @@ class PeriodDetailsView(ExportFormatMixin, FinansAPIView):
 
         fmt = self.get_export_format()
         if fmt != 'json':
+            sube_ad = ''
+            if sube_id:
+                try:
+                    from apps.sube.domain.models import Sube
+                    sube_ad = Sube.objects.filter(id=sube_id).values_list('ad', flat=True).first() or ''
+                except Exception:
+                    sube_ad = ''
             export_rows = [
                 {
                     'tarih': r['tarih'],
                     'kaynak': r['kaynak_label'],
                     'tutar': r['tutar'],
                     'aciklama': r.get('aciklama') or '',
-                    'sube_ad': '',
+                    'sube_ad': r.get('sube_ad') or sube_ad,
                     'odeme_yontemi_tipi': r.get('odeme_yontemi_tipi') or '',
                 }
                 for r in rows
@@ -341,7 +351,11 @@ class PeriodDetailsView(ExportFormatMixin, FinansAPIView):
                 export_rows,
                 PERIOD_DETAIL_COLUMNS,
                 title='Dönem Detayları',
-                filters_meta={'baslangic': baslangic.isoformat(), 'bitis': bitis.isoformat()},
+                filters_meta={
+                    'baslangic': baslangic.isoformat(),
+                    'bitis': bitis.isoformat(),
+                    'sube_id': sube_id or '',
+                },
                 export_format=fmt,
             )
 
@@ -524,7 +538,7 @@ class OverdueReminderPreviewView(FinansAPIView):
 
         from apps.finans.interfaces.views.sube_context import resolve_mandatory_finans_sube
 
-        _, err = resolve_mandatory_finans_sube(request, kurum_id)
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
         if err:
             return err
 
@@ -539,6 +553,7 @@ class OverdueReminderPreviewView(FinansAPIView):
             [int(x) for x in taksit_ids],
             template=template,
             veli_selections=veli_selections,
+            sube_id=sube_id,
         )
         return Response(result)
 
@@ -554,7 +569,7 @@ class OverdueReminderSendView(FinansAPIView):
 
         from apps.finans.interfaces.views.sube_context import resolve_mandatory_finans_sube
 
-        _, err = resolve_mandatory_finans_sube(request, kurum_id)
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
         if err:
             return err
 
@@ -572,6 +587,7 @@ class OverdueReminderSendView(FinansAPIView):
             force_resend=force_resend,
             sent_by_user_id=request.user.id if request.user.is_authenticated else None,
             veli_selections=veli_selections,
+            sube_id=sube_id,
         )
         return Response(result)
 

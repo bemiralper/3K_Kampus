@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.finans.infrastructure.gider_repository import GiderKaydiRepository, GiderTaksitRepository
 from apps.finans.application.cari_hareket_service import CariHareketService
+from apps.finans.application.finans_v2.kdv import kdv_hesapla, kdv_hesapla_mod, KDV_MOD_VALUES, KDV_HARIC
 from apps.finans.constants.gider_types import GiderDurum, GiderTaksitDurum
 from apps.finans.constants.cari_types import CariHareketTuru, CariHareketYonu
 
@@ -62,19 +63,24 @@ class GiderService:
         if not data.get('fatura_no'):
             data['fatura_no'] = self._generate_fatura_no(data.get('kurum_id'))
 
-        # KDV hesapla
-        brut = data.get('brut_tutar', Decimal('0'))
+        # KDV hesapla (moda göre: haric | dahil | muaf)
+        girilen = data.get('brut_tutar', Decimal('0'))
         kdv_orani = data.get('kdv_orani', 20)
-        kdv_tutar = (brut * Decimal(kdv_orani) / Decimal('100')).quantize(Decimal('0.01'))
-        net_tutar = brut + kdv_tutar
-
-        data['kdv_tutar'] = kdv_tutar
-        data['net_tutar'] = net_tutar
+        kdv_mod = (data.get('kdv_mod') or KDV_HARIC)
+        if kdv_mod not in KDV_MOD_VALUES:
+            kdv_mod = KDV_HARIC
+        data['kdv_mod'] = kdv_mod
+        data['brut_tutar'], data['kdv_tutar'], data['net_tutar'] = kdv_hesapla_mod(
+            girilen, kdv_orani, kdv_mod,
+        )
         data['durum'] = GiderDurum.TASLAK
 
-        # Özel taksit planı varsa JSON olarak sakla
+        # Özel taksit planı varsa doğrula ve JSON olarak sakla
         taksit_plani = data.pop('taksit_plani', None)
         if taksit_plani:
+            err = self._validate_taksit_plani(taksit_plani, data['net_tutar'])
+            if err:
+                return None, err
             data['taksit_plani_json'] = taksit_plani
 
         onaylayan_user = data.get('olusturan')
@@ -139,12 +145,24 @@ class GiderService:
 
         taksit_plani = data.pop('taksit_plani', None)
 
-        # Brüt tutar değiştiyse KDV'yi yeniden hesapla
-        if 'brut_tutar' in data or 'kdv_orani' in data:
-            brut = data.get('brut_tutar', gider.brut_tutar)
+        # Tutar/KDV modu değiştiyse yeniden hesapla
+        if 'brut_tutar' in data or 'kdv_orani' in data or 'kdv_mod' in data:
+            girilen = data.get('brut_tutar', gider.brut_tutar)
             kdv_orani = data.get('kdv_orani', gider.kdv_orani)
-            data['kdv_tutar'] = (brut * Decimal(kdv_orani) / Decimal('100')).quantize(Decimal('0.01'))
-            data['net_tutar'] = brut + data['kdv_tutar']
+            kdv_mod = data.get('kdv_mod', getattr(gider, 'kdv_mod', KDV_HARIC))
+            if kdv_mod not in KDV_MOD_VALUES:
+                kdv_mod = KDV_HARIC
+            data['kdv_mod'] = kdv_mod
+            data['brut_tutar'], data['kdv_tutar'], data['net_tutar'] = kdv_hesapla_mod(
+                girilen, kdv_orani, kdv_mod,
+            )
+
+        if taksit_plani:
+            net_kontrol = data.get('net_tutar', gider.net_tutar)
+            err = self._validate_taksit_plani(taksit_plani, net_kontrol)
+            if err:
+                return None, err
+            data['taksit_plani_json'] = taksit_plani
 
         gider = self.gider_repo.update(gider, data)
 
@@ -383,6 +401,39 @@ class GiderService:
                 self.taksitleri_odeme_ile_hizala(gider)
 
     # ─── Validasyon ──────────────────────────────
+
+    @staticmethod
+    def _validate_taksit_plani(taksit_plani, net_tutar):
+        """Manuel taksit planını doğrular: satırlar geçerli + toplam = net_tutar (±0.05).
+
+        Returns: None (geçerli) veya error_dict.
+        """
+        if not isinstance(taksit_plani, (list, tuple)) or len(taksit_plani) == 0:
+            return {'taksit_plani': 'Taksit planı en az bir satır içermelidir.'}
+
+        toplam = Decimal('0.00')
+        for idx, item in enumerate(taksit_plani, start=1):
+            if not isinstance(item, dict):
+                return {'taksit_plani': f'{idx}. taksit satırı geçersiz.'}
+            if not item.get('vade_tarihi'):
+                return {'taksit_plani': f'{idx}. taksitte vade tarihi zorunludur.'}
+            try:
+                tutar = Decimal(str(item.get('tutar', '0')))
+            except Exception:
+                return {'taksit_plani': f'{idx}. taksitte tutar geçersiz.'}
+            if tutar <= 0:
+                return {'taksit_plani': f'{idx}. taksit tutarı sıfırdan büyük olmalıdır.'}
+            toplam += tutar
+
+        net = Decimal(str(net_tutar or '0'))
+        if (toplam - net).copy_abs() > Decimal('0.05'):
+            return {
+                'taksit_plani': (
+                    f'Taksit toplamı ({toplam} ₺) net tutara ({net} ₺) eşit olmalıdır. '
+                    f'Fark: {(toplam - net):+} ₺'
+                )
+            }
+        return None
 
     def _validate_create(self, data):
         errors = {}

@@ -47,6 +47,9 @@ class CariHesapService:
             'tedarikci': 'TDR',
             'musteri': 'MST',
             'karma': 'KRM',
+            'gelir_hesabi': 'GLR',
+            'gider_hesabi': 'GDR',
+            'diger': 'DGR',
         }
         tur_kodu = tur_kodlari.get(hesap_turu, 'CRI')
         prefix = f'CH-{tur_kodu}-'

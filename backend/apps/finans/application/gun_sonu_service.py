@@ -117,25 +117,14 @@ class GunSonuService:
         return kirilim, toplam, adet
 
     def _odeme_kirilimi(self, kurum_id, gun, sube_id=None):
-        kova = {}
-
-        qs = GiderOdeme.objects.filter(
-            gider_kaydi__kurum_id=kurum_id,
-            odeme_tarihi=gun,
-            durum=OdemeDurum.TAMAMLANDI,
+        from apps.finans.application.gun_sonu_finans_helpers import (
+            RAPOR_ODEME_LABELS,
+            gider_odeme_kirilimi_topla,
         )
-        if sube_id:
-            qs = qs.filter(gider_kaydi__sube_id=sube_id)
-        for row in qs.values('odeme_yontemi__tip', 'bakiyeden_mahsup').annotate(toplam=Sum('tutar'), adet=Count('id')):
-            if row['bakiyeden_mahsup']:
-                b = 'cari_mahsup'
-            else:
-                b = self._tip_bucket(row['odeme_yontemi__tip'])
-            kova.setdefault(b, {'toplam': 0, 'adet': 0})
-            kova[b]['toplam'] += int(row['toplam'] or 0)
-            kova[b]['adet'] += row['adet']
 
-        labels = self._bucket_labels()
+        kova = gider_odeme_kirilimi_topla(kurum_id, gun, sube_id)
+
+        labels = dict(RAPOR_ODEME_LABELS)
         labels['cari_mahsup'] = 'Cari Bakiyeden Mahsup'
         kirilim = [
             {'tip': k, 'label': labels.get(k, k), 'toplam': v['toplam'], 'adet': v['adet']}

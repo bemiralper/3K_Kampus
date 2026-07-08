@@ -2,6 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  App as AntApp,
+  Button,
+  ConfigProvider,
+  Drawer,
+  Form,
+  Input,
+  Switch,
+  Typography,
+} from "antd";
+import trTR from "antd/locale/tr_TR";
+import { useKurum } from "@/lib/contexts/KurumContext";
+import {
   createOkul,
   fetchOkulAutocomplete,
   type OkulAutocompleteItem,
@@ -26,7 +38,15 @@ const EMPTY_FORM: OkulFormData = {
   aktif_mi: true,
 };
 
-export default function SchoolAutocomplete({
+export default function SchoolAutocomplete(props: SchoolAutocompleteProps) {
+  return (
+    <AntApp>
+      <SchoolAutocompleteInner {...props} />
+    </AntApp>
+  );
+}
+
+function SchoolAutocompleteInner({
   value,
   displayValue,
   label,
@@ -34,14 +54,16 @@ export default function SchoolAutocomplete({
   onChange,
   disabled = false,
 }: SchoolAutocompleteProps) {
+  const { message } = AntApp.useApp();
+  const { activeSube } = useKurum();
+  const [form] = Form.useForm<OkulFormData>();
   const [query, setQuery] = useState(displayValue);
   const [results, setResults] = useState<OkulAutocompleteItem[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickForm, setQuickForm] = useState<OkulFormData>(EMPTY_FORM);
   const [quickSaving, setQuickSaving] = useState(false);
-  const [quickError, setQuickError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -60,17 +82,29 @@ export default function SchoolAutocomplete({
   }, []);
 
   const runSearch = useCallback(async (q: string) => {
+    if (!activeSube?.id) {
+      setResults([]);
+      setLoadError("Okul listesi için üst menüden şube seçin.");
+      return;
+    }
     setLoading(true);
+    setLoadError(null);
     try {
       const items = await fetchOkulAutocomplete(q);
       setResults(items);
       setOpen(true);
-    } catch {
+    } catch (err) {
       setResults([]);
+      setLoadError(err instanceof Error ? err.message : "Okul listesi yüklenemedi.");
+      setOpen(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeSube?.id]);
+
+  useEffect(() => {
+    runSearch("");
+  }, [runSearch, activeSube?.id]);
 
   const handleInputChange = (text: string) => {
     setQuery(text);
@@ -88,35 +122,44 @@ export default function SchoolAutocomplete({
   };
 
   const openQuickAdd = () => {
-    setQuickForm({ ...EMPTY_FORM, ad: query.trim() });
-    setQuickError(null);
+    form.setFieldsValue({ ...EMPTY_FORM, ad: query.trim() });
     setShowQuickAdd(true);
     setOpen(false);
   };
 
+  const closeQuickAdd = () => {
+    if (quickSaving) return;
+    setShowQuickAdd(false);
+    form.resetFields();
+  };
+
   const handleQuickSave = async () => {
-    if (!quickForm.ad.trim()) {
-      setQuickError("Okul adı zorunludur.");
+    let values: OkulFormData;
+    try {
+      values = await form.validateFields();
+    } catch {
       return;
     }
+
     setQuickSaving(true);
-    setQuickError(null);
     try {
-      const created = await createOkul(quickForm);
+      const created = await createOkul(values);
       onChange(created.id, created.ad);
       setQuery(created.ad);
       setShowQuickAdd(false);
-      setQuickForm(EMPTY_FORM);
+      form.resetFields();
+      message.success("Okul başarıyla eklendi.");
+      runSearch(created.ad);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Okul eklenemedi.";
-      setQuickError(message);
+      const errMsg = err instanceof Error ? err.message : "Okul eklenemedi.";
+      message.error(errMsg);
     } finally {
       setQuickSaving(false);
     }
   };
 
   return (
-    <>
+    <ConfigProvider locale={trTR}>
       <div className="wizard-field" ref={wrapperRef}>
         <label className="wizard-label">{label}</label>
         <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
@@ -148,14 +191,16 @@ export default function SchoolAutocomplete({
                   marginTop: 4,
                   maxHeight: 220,
                   overflowY: "auto",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                  boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
                 }}
               >
                 {loading && (
                   <div style={{ padding: "10px 12px", fontSize: 13, color: "#6b7280" }}>Aranıyor…</div>
                 )}
                 {!loading && results.length === 0 && (
-                  <div style={{ padding: "10px 12px", fontSize: 13, color: "#6b7280" }}>Sonuç bulunamadı</div>
+                  <div style={{ padding: "10px 12px", fontSize: 13, color: "#6b7280" }}>
+                    {loadError || "Sonuç bulunamadı"}
+                  </div>
                 )}
                 {!loading &&
                   results.map((item) => (
@@ -183,97 +228,125 @@ export default function SchoolAutocomplete({
               </div>
             )}
           </div>
-          <button
-            type="button"
-            className="wizard-btn secondary"
+          <Button
+            type="default"
             onClick={openQuickAdd}
             disabled={disabled}
             title="Yeni Okul Ekle"
-            style={{ minWidth: 40, padding: "0 12px", fontSize: 18, lineHeight: 1 }}
+            style={{ minWidth: 42, height: 42, padding: "0 12px", fontSize: 20, lineHeight: 1 }}
           >
             +
-          </button>
+          </Button>
         </div>
+        {loadError && (
+          <span className="wizard-error" style={{ marginTop: 6 }}>{loadError}</span>
+        )}
       </div>
 
-      {showQuickAdd && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.4)",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          onClick={() => !quickSaving && setShowQuickAdd(false)}
-        >
+      <Drawer
+        title={null}
+        placement="right"
+        width={440}
+        open={showQuickAdd}
+        onClose={closeQuickAdd}
+        destroyOnClose
+        styles={{
+          body: { padding: "20px 24px 24px", background: "#f8fafc" },
+          header: { display: "none" },
+        }}
+        footer={
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Button onClick={closeQuickAdd} disabled={quickSaving}>
+              İptal
+            </Button>
+            <Button type="primary" loading={quickSaving} onClick={handleQuickSave}>
+              Kaydet
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ marginBottom: 20 }}>
           <div
             style={{
-              background: "#fff",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 44,
+              height: 44,
               borderRadius: 12,
-              padding: 24,
-              width: "100%",
-              maxWidth: 440,
-              boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+              background: "linear-gradient(135deg, #3b82f6, #2563eb)",
+              color: "#fff",
+              fontSize: 22,
+              marginBottom: 12,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <h4 style={{ margin: "0 0 16px", fontSize: 16 }}>Hızlı Okul Ekle</h4>
-            <div className="wizard-form-grid" style={{ gridTemplateColumns: "1fr" }}>
-              <div className="wizard-field">
-                <label className="wizard-label required">Okul Adı</label>
-                <input
-                  className="wizard-input"
-                  value={quickForm.ad}
-                  onChange={(e) => setQuickForm({ ...quickForm, ad: e.target.value })}
-                />
-              </div>
-              <div className="wizard-field">
-                <label className="wizard-label">Okul Türü</label>
-                <input
-                  className="wizard-input"
-                  value={quickForm.okul_turu || ""}
-                  onChange={(e) => setQuickForm({ ...quickForm, okul_turu: e.target.value })}
-                />
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div className="wizard-field">
-                  <label className="wizard-label">İl</label>
-                  <input
-                    className="wizard-input"
-                    value={quickForm.il || ""}
-                    onChange={(e) => setQuickForm({ ...quickForm, il: e.target.value })}
-                  />
-                </div>
-                <div className="wizard-field">
-                  <label className="wizard-label">İlçe</label>
-                  <input
-                    className="wizard-input"
-                    value={quickForm.ilce || ""}
-                    onChange={(e) => setQuickForm({ ...quickForm, ilce: e.target.value })}
-                  />
-                </div>
-              </div>
-            </div>
-            {quickError && <p style={{ color: "#dc2626", fontSize: 13, marginTop: 8 }}>{quickError}</p>}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-              <button
-                type="button"
-                className="wizard-btn secondary"
-                disabled={quickSaving}
-                onClick={() => setShowQuickAdd(false)}
-              >
-                İptal
-              </button>
-              <button type="button" className="wizard-btn primary" disabled={quickSaving} onClick={handleQuickSave}>
-                {quickSaving ? "Kaydediliyor…" : "Kaydet"}
-              </button>
-            </div>
+            🏫
           </div>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            Hızlı Okul Ekle
+          </Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ margin: "6px 0 0" }}>
+            Kurum modülündeki okul listesine yeni kayıt ekleyin. Seçili şubeye bağlanır.
+          </Typography.Paragraph>
+          {activeSube && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                fontSize: 13,
+                color: "#1e40af",
+              }}
+            >
+              Şube: <strong>{activeSube.ad}</strong>
+            </div>
+          )}
         </div>
-      )}
-    </>
+
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={EMPTY_FORM}
+          requiredMark="optional"
+          style={{
+            background: "#fff",
+            borderRadius: 12,
+            padding: 20,
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <Form.Item
+            name="ad"
+            label="Okul Adı"
+            rules={[{ required: true, message: "Okul adı zorunludur." }]}
+          >
+            <Input placeholder="Örn. Atatürk Anadolu Lisesi" size="large" />
+          </Form.Item>
+
+          <Form.Item name="okul_turu" label="Okul Türü">
+            <Input placeholder="Örn. Anadolu Lisesi, İlkokul" />
+          </Form.Item>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Form.Item name="il" label="İl">
+              <Input placeholder="İl" />
+            </Form.Item>
+            <Form.Item name="ilce" label="İlçe">
+              <Input placeholder="İlçe" />
+            </Form.Item>
+          </div>
+
+          <Form.Item name="not_metni" label="Not" style={{ marginTop: 16 }}>
+            <Input.TextArea rows={2} placeholder="İsteğe bağlı not" />
+          </Form.Item>
+
+          <Form.Item name="aktif_mi" label="Durum" valuePropName="checked">
+            <Switch checkedChildren="Aktif" unCheckedChildren="Pasif" defaultChecked />
+          </Form.Item>
+        </Form>
+      </Drawer>
+    </ConfigProvider>
   );
 }

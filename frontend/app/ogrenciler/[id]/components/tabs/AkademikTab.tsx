@@ -40,7 +40,7 @@ interface AkademikTabProps {
 }
 
 function kalemBadgeClass(tur: string): string {
-  const known = ["grup_dersi", "ozel_ders", "deneme", "ek_hizmet", "ek_hizmet_satisi", "paket"];
+  const known = ["grup_dersi", "ozel_ders", "premium", "yayin", "deneme", "ek_hizmet", "ek_hizmet_satisi", "paket"];
   return known.includes(tur) ? `akademik-kalem-badge--${tur}` : "akademik-kalem-badge--paket";
 }
 

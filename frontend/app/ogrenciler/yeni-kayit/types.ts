@@ -59,8 +59,21 @@ export type PackageInfo = {
   is_active: boolean;
   dahil_ek_hizmet_ids?: number[];  // Pakete dahil olan ek hizmet ID'leri
   dahil_deneme_paketi_ids?: number[];  // Alanlı grup dersinde dahil denemeler
+  dahil_yayin_paketi_ids?: number[];  // Grup/premium pakete dahil yayın paketleri
   net_fiyat?: number;
   alan_id?: number | null;
+};
+
+export type YayinPaketiInfo = {
+  id: number;
+  ad: string;
+  kod: string;
+  fiyat: number;
+  kdv_orani?: number;
+  kdv_dahil_fiyat?: number;
+  net_fiyat?: number;
+  aciklama: string;
+  sinif_seviyeleri: { id: number; ad: string }[];
 };
 
 export type EkHizmetInfo = {
@@ -180,6 +193,7 @@ export type PackageData = {
   paketler: string[];  // Çoklu paket seçimi - benzersiz ID'ler ("kategori_dbId")
   ek_hizmet_ids: number[];  // Ek hizmet seçimi (kütüphane, koçluk, deneme vb.)
   deneme_paketi_ids: number[];  // Deneme paketi seçimi
+  yayin_paketi_ids: number[];  // Yayın paketi seçimi
 };
 
 export type WizardData = {

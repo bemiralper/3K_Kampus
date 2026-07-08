@@ -537,4 +537,9 @@ class SozlesmeFesih(models.Model):
 
 
 # Çek/Senet detay — ayrı modülde tanımlı, migration keşfi için re-export
-from apps.odeme_takip.domain.cek_senet import CekSenetDetay, CekSenetDurum  # noqa: E402, F401
+from apps.odeme_takip.domain.cek_senet import (  # noqa: E402, F401
+    CekSenetDetay,
+    CekSenetDurum,
+    CekSenetLog,
+    CekSenetDosya,
+)

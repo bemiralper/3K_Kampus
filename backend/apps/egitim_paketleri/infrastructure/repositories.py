@@ -1,7 +1,9 @@
 """
 Egitim Paketleri Repository Layer
 """
-from apps.egitim_paketleri.models import GrupDersi, OzelDers, Deneme, EkHizmet
+from apps.egitim_paketleri.models import (
+    GrupDersi, OzelDers, Deneme, EkHizmet, PremiumPaket, YayinPaketi,
+)
 
 
 class EkHizmetRepository:
@@ -77,7 +79,7 @@ class GrupDersiRepository:
     @staticmethod
     def get_all(kurum_id=None, sube_id=None, egitim_yili_id=None):
         qs = GrupDersi.objects.select_related('alan', 'egitim_yili', 'kurum', 'sube').prefetch_related(
-            'sinif_seviyeleri', 'dersler', 'dahil_ek_hizmetler', 'dahil_denemeler'
+            'sinif_seviyeleri', 'dersler', 'dahil_ek_hizmetler', 'dahil_denemeler', 'dahil_yayin_paketleri'
         )
         if kurum_id:
             qs = qs.filter(kurum_id=kurum_id)
@@ -90,7 +92,7 @@ class GrupDersiRepository:
     @staticmethod
     def get_active(kurum_id=None, sube_id=None, egitim_yili_id=None):
         qs = GrupDersi.objects.select_related('alan', 'egitim_yili', 'kurum', 'sube').prefetch_related(
-            'sinif_seviyeleri', 'dersler', 'dahil_ek_hizmetler', 'dahil_denemeler'
+            'sinif_seviyeleri', 'dersler', 'dahil_ek_hizmetler', 'dahil_denemeler', 'dahil_yayin_paketleri'
         ).filter(aktif_mi=True)
         if kurum_id:
             qs = qs.filter(kurum_id=kurum_id)
@@ -104,7 +106,7 @@ class GrupDersiRepository:
     def get_by_id(id):
         try:
             return GrupDersi.objects.select_related('alan', 'egitim_yili', 'kurum', 'sube').prefetch_related(
-                'sinif_seviyeleri', 'dersler', 'dahil_ek_hizmetler', 'dahil_denemeler'
+                'sinif_seviyeleri', 'dersler', 'dahil_ek_hizmetler', 'dahil_denemeler', 'dahil_yayin_paketleri'
             ).get(id=id)
         except GrupDersi.DoesNotExist:
             return None
@@ -115,6 +117,7 @@ class GrupDersiRepository:
         sinif_seviyeleri = data.pop('sinif_seviyeleri', [])
         dahil_ek_hizmetler = data.pop('dahil_ek_hizmetler', [])
         dahil_denemeler = data.pop('dahil_denemeler', [])
+        dahil_yayin_paketleri = data.pop('dahil_yayin_paketleri', [])
         grup_dersi = GrupDersi.objects.create(**data)
         if dersler:
             grup_dersi.dersler.set(dersler)
@@ -124,6 +127,8 @@ class GrupDersiRepository:
             grup_dersi.dahil_ek_hizmetler.set(dahil_ek_hizmetler)
         if dahil_denemeler:
             grup_dersi.dahil_denemeler.set(dahil_denemeler)
+        if dahil_yayin_paketleri:
+            grup_dersi.dahil_yayin_paketleri.set(dahil_yayin_paketleri)
         return grup_dersi
     
     @staticmethod
@@ -132,6 +137,7 @@ class GrupDersiRepository:
         sinif_seviyeleri = data.pop('sinif_seviyeleri', None)
         dahil_ek_hizmetler = data.pop('dahil_ek_hizmetler', None)
         dahil_denemeler = data.pop('dahil_denemeler', None)
+        dahil_yayin_paketleri = data.pop('dahil_yayin_paketleri', None)
         for key, value in data.items():
             setattr(grup_dersi, key, value)
         grup_dersi.save()
@@ -143,11 +149,153 @@ class GrupDersiRepository:
             grup_dersi.dahil_ek_hizmetler.set(dahil_ek_hizmetler)
         if dahil_denemeler is not None:
             grup_dersi.dahil_denemeler.set(dahil_denemeler)
+        if dahil_yayin_paketleri is not None:
+            grup_dersi.dahil_yayin_paketleri.set(dahil_yayin_paketleri)
         return grup_dersi
     
     @staticmethod
     def delete(grup_dersi):
         grup_dersi.delete()
+
+
+class PremiumPaketRepository:
+    """Repository for PremiumPaket entity"""
+
+    @staticmethod
+    def get_all(kurum_id=None, sube_id=None, egitim_yili_id=None):
+        qs = PremiumPaket.objects.select_related('egitim_yili', 'kurum', 'sube').prefetch_related(
+            'sinif_seviyeleri', 'dahil_ek_hizmetler', 'dahil_denemeler', 'dahil_yayin_paketleri'
+        )
+        if kurum_id:
+            qs = qs.filter(kurum_id=kurum_id)
+        if sube_id:
+            qs = qs.filter(sube_id=sube_id)
+        if egitim_yili_id:
+            qs = qs.filter(egitim_yili_id=egitim_yili_id)
+        return qs.all()
+
+    @staticmethod
+    def get_active(kurum_id=None, sube_id=None, egitim_yili_id=None):
+        qs = PremiumPaket.objects.select_related('egitim_yili', 'kurum', 'sube').prefetch_related(
+            'sinif_seviyeleri', 'dahil_ek_hizmetler', 'dahil_denemeler', 'dahil_yayin_paketleri'
+        ).filter(aktif_mi=True)
+        if kurum_id:
+            qs = qs.filter(kurum_id=kurum_id)
+        if sube_id:
+            qs = qs.filter(sube_id=sube_id)
+        if egitim_yili_id:
+            qs = qs.filter(egitim_yili_id=egitim_yili_id)
+        return qs
+
+    @staticmethod
+    def get_by_id(id):
+        try:
+            return PremiumPaket.objects.select_related('egitim_yili', 'kurum', 'sube').prefetch_related(
+                'sinif_seviyeleri', 'dahil_ek_hizmetler', 'dahil_denemeler', 'dahil_yayin_paketleri'
+            ).get(id=id)
+        except PremiumPaket.DoesNotExist:
+            return None
+
+    @staticmethod
+    def create(data):
+        sinif_seviyeleri = data.pop('sinif_seviyeleri', [])
+        dahil_ek_hizmetler = data.pop('dahil_ek_hizmetler', [])
+        dahil_denemeler = data.pop('dahil_denemeler', [])
+        dahil_yayin_paketleri = data.pop('dahil_yayin_paketleri', [])
+        premium = PremiumPaket.objects.create(**data)
+        if sinif_seviyeleri:
+            premium.sinif_seviyeleri.set(sinif_seviyeleri)
+        if dahil_ek_hizmetler:
+            premium.dahil_ek_hizmetler.set(dahil_ek_hizmetler)
+        if dahil_denemeler:
+            premium.dahil_denemeler.set(dahil_denemeler)
+        if dahil_yayin_paketleri:
+            premium.dahil_yayin_paketleri.set(dahil_yayin_paketleri)
+        return premium
+
+    @staticmethod
+    def update(premium, data):
+        sinif_seviyeleri = data.pop('sinif_seviyeleri', None)
+        dahil_ek_hizmetler = data.pop('dahil_ek_hizmetler', None)
+        dahil_denemeler = data.pop('dahil_denemeler', None)
+        dahil_yayin_paketleri = data.pop('dahil_yayin_paketleri', None)
+        for key, value in data.items():
+            setattr(premium, key, value)
+        premium.save()
+        if sinif_seviyeleri is not None:
+            premium.sinif_seviyeleri.set(sinif_seviyeleri)
+        if dahil_ek_hizmetler is not None:
+            premium.dahil_ek_hizmetler.set(dahil_ek_hizmetler)
+        if dahil_denemeler is not None:
+            premium.dahil_denemeler.set(dahil_denemeler)
+        if dahil_yayin_paketleri is not None:
+            premium.dahil_yayin_paketleri.set(dahil_yayin_paketleri)
+        return premium
+
+    @staticmethod
+    def delete(premium):
+        premium.delete()
+
+
+class YayinPaketiRepository:
+    """Repository for YayinPaketi entity"""
+
+    @staticmethod
+    def get_all(kurum_id=None, sube_id=None, egitim_yili_id=None):
+        qs = YayinPaketi.objects.select_related('egitim_yili', 'kurum', 'sube').prefetch_related(
+            'sinif_seviyeleri'
+        )
+        if kurum_id:
+            qs = qs.filter(kurum_id=kurum_id)
+        if sube_id:
+            qs = qs.filter(sube_id=sube_id)
+        if egitim_yili_id:
+            qs = qs.filter(egitim_yili_id=egitim_yili_id)
+        return qs.all()
+
+    @staticmethod
+    def get_active(kurum_id=None, sube_id=None, egitim_yili_id=None):
+        qs = YayinPaketi.objects.select_related('egitim_yili', 'kurum', 'sube').prefetch_related(
+            'sinif_seviyeleri'
+        ).filter(aktif_mi=True)
+        if kurum_id:
+            qs = qs.filter(kurum_id=kurum_id)
+        if sube_id:
+            qs = qs.filter(sube_id=sube_id)
+        if egitim_yili_id:
+            qs = qs.filter(egitim_yili_id=egitim_yili_id)
+        return qs
+
+    @staticmethod
+    def get_by_id(id):
+        try:
+            return YayinPaketi.objects.select_related('egitim_yili', 'kurum', 'sube').prefetch_related(
+                'sinif_seviyeleri'
+            ).get(id=id)
+        except YayinPaketi.DoesNotExist:
+            return None
+
+    @staticmethod
+    def create(data):
+        sinif_seviyeleri = data.pop('sinif_seviyeleri', [])
+        yayin = YayinPaketi.objects.create(**data)
+        if sinif_seviyeleri:
+            yayin.sinif_seviyeleri.set(sinif_seviyeleri)
+        return yayin
+
+    @staticmethod
+    def update(yayin, data):
+        sinif_seviyeleri = data.pop('sinif_seviyeleri', None)
+        for key, value in data.items():
+            setattr(yayin, key, value)
+        yayin.save()
+        if sinif_seviyeleri is not None:
+            yayin.sinif_seviyeleri.set(sinif_seviyeleri)
+        return yayin
+
+    @staticmethod
+    def delete(yayin):
+        yayin.delete()
 
 
 class OzelDersRepository:

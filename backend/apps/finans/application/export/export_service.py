@@ -201,12 +201,46 @@ class ExportService:
                     html_doc,
                     landscape=(orientation == 'landscape'),
                 )
+        elif report_kind and str(report_kind).startswith('gelir_gider_'):
+            from apps.finans.application.export.gg_report_html import (
+                build_gg_report_html,
+                gg_report_footer_template,
+            )
+
+            html_doc = build_gg_report_html(
+                title=title or "Gelir & Gider Raporu",
+                columns=columns,
+                rows=rows,
+                filters_meta=meta,
+                kurum_ad=kurum_ad,
+                orientation=orientation,
+            )
+            footer = gg_report_footer_template(meta)
+            try:
+                pdf_bytes = render_html_to_pdf(
+                    html_doc,
+                    landscape=(orientation == 'landscape'),
+                    footer_template=footer,
+                )
+            except RuntimeError:
+                pdf_bytes = render_html_to_pdf(
+                    html_doc,
+                    landscape=(orientation == 'landscape'),
+                )
         else:
-            from apps.finans.application.export.report_html_template import build_finans_report_html
+            from apps.finans.application.export.report_html_template import (
+                build_finans_report_html,
+                finans_report_footer_template,
+            )
 
             keys, _ = cls._column_keys(columns)
             summary = {}
             if filters_meta:
+                # Önceden hazırlanmış KPI özet kutuları (Gelir/Gider raporları)
+                for chip in (filters_meta.get("summary_chips") or []):
+                    lbl = chip.get("label")
+                    if lbl:
+                        summary[lbl] = chip.get("value")
                 for k in ("toplam", "toplam_tutar", "adet", "count", "toplam_kalan"):
                     if k in (filters_meta or {}):
                         summary[k] = filters_meta[k]
@@ -215,15 +249,20 @@ class ExportService:
                 title=title or "Finans Raporu",
                 columns=columns,
                 rows=rows,
-                filters_meta={k: v for k, v in (filters_meta or {}).items() if k not in ("kurum_ad",)},
+                filters_meta={
+                    k: v for k, v in (filters_meta or {}).items()
+                    if k not in ("kurum_ad", "summary_chips")
+                },
                 kurum_ad=kurum_ad,
                 summary=summary or None,
                 orientation=orientation,
             )
+            footer = finans_report_footer_template(meta)
             try:
                 pdf_bytes = render_html_to_pdf(
                     html_doc,
                     landscape=(orientation == 'landscape'),
+                    footer_template=footer,
                 )
             except RuntimeError:
                 from apps.communication.application.pdf_render_service import PdfRenderService

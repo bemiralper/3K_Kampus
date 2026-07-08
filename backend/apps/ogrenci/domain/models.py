@@ -435,6 +435,8 @@ class OgrenciEgitimPaketi(models.Model):
     PAKET_TURU_CHOICES = [
         ('grup_dersi', 'Grup Dersi'),
         ('ozel_ders', 'Özel Ders'),
+        ('premium', 'Premium Paket'),
+        ('yayin', 'Yayın Paketi'),
         ('deneme', 'Deneme'),
         ('davranis', 'Davranış'),
     ]
@@ -445,7 +447,27 @@ class OgrenciEgitimPaketi(models.Model):
     )
     paket_id = models.IntegerField('Paket ID')
     paket_adi = models.CharField('Paket Adı', max_length=200, blank=True)
-    
+
+    # Bir üst pakete (grup dersi / premium) ücretsiz dahil edilen paketler için işaret.
+    # True ise sözleşmede tekrar faturalanmaz (ör. grup dersine dahil yayın paketi).
+    dahil_mi = models.BooleanField(
+        'Pakete Dahil',
+        default=False,
+        help_text='True ise ücretsiz — bir grup dersi/premium pakete dahildir'
+    )
+    kaynak_paket_turu = models.CharField(
+        'Kaynak Paket Türü',
+        max_length=20,
+        blank=True,
+        help_text='Dahil olduğu paket türü: grup_dersi, premium vb.'
+    )
+    kaynak_paket_id = models.IntegerField(
+        'Kaynak Paket ID',
+        null=True,
+        blank=True,
+        help_text='Dahil olduğu paketin DB ID\'si'
+    )
+
     kayit_tarihi = models.DateField('Kayıt Tarihi', auto_now_add=True)
     baslangic_tarihi = models.DateField('Başlangıç Tarihi', null=True, blank=True)
     bitis_tarihi = models.DateField('Bitiş Tarihi', null=True, blank=True)

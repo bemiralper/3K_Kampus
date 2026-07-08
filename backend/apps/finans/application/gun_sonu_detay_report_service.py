@@ -13,11 +13,13 @@ from apps.finans.application.gun_sonu_finans_helpers import (
     build_grafik_verileri,
     build_kasa_ozeti,
     bugun_islem_q,
+    gider_odeme_gun_qs,
     gun_local_datetime_q,
     int_amount,
     kova_listesi_with_yuzde,
     net_nakit_degisim,
     odeme_kirilimi_topla,
+    verilen_cek_gider_odemeleri_qs,
 )
 from apps.finans.application.gun_sonu_report_service import (
     GunSonuReportService,
@@ -259,11 +261,7 @@ class GunSonuDetayReportService:
         return rows
 
     def _gider_hareketleri(self, kurum_id, gun, sube_id) -> list[dict]:
-        qs = GiderOdeme.objects.filter(
-            gider_kaydi__kurum_id=kurum_id,
-            odeme_tarihi=gun,
-            durum=OdemeDurum.TAMAMLANDI,
-        ).select_related(
+        qs = gider_odeme_gun_qs(kurum_id, gun, sube_id).select_related(
             'gider_kaydi__gider_kategorisi',
             'gider_kaydi__cari_hesap',
             'gider_kaydi__onaylayan',
@@ -271,8 +269,6 @@ class GunSonuDetayReportService:
             'odeme_yontemi',
             'mali_hesap',
         ).order_by('created_at')
-        if sube_id:
-            qs = qs.filter(gider_kaydi__sube_id=sube_id)
 
         rows = []
         for g in qs:
@@ -291,6 +287,25 @@ class GunSonuDetayReportService:
                 'tutar': int_amount(g.tutar),
                 'personel': _user_display(g.islem_yapan),
             })
+
+        for detay in verilen_cek_gider_odemeleri_qs(kurum_id, gun, sube_id).order_by('updated_at'):
+            gider = detay.gider_taksit.gider_kaydi if detay.gider_taksit_id else None
+            kat = gider.gider_kategorisi if gider else None
+            cari = gider.cari_hesap if gider else detay.cari_hesap
+            rows.append({
+                'saat': _fmt_saat(detay.updated_at),
+                'gider_kodu': (gider.fatura_no if gider else None) or f'CS-{detay.id}',
+                'kategori': (kat.ad if kat else None) or 'Çek/Senet',
+                'cari': (cari.unvan if cari else None) or '—',
+                'odeme_turu': _odeme_label(detay.odeme_yontemi),
+                'kasa': detay.tahsilat_mali_hesap.ad if detay.tahsilat_mali_hesap_id else '—',
+                'aciklama': (detay.aciklama or '').strip() or 'Verilen çek/senet ödemesi',
+                'onaylayan': '—',
+                'tutar': int(detay.tutar or 0),
+                'personel': '—',
+            })
+
+        rows.sort(key=lambda r: r.get('saat') or '')
         return rows
 
     def _cari_hareketleri(self, kurum_id, gun, sube_id) -> list[dict]:
@@ -508,20 +523,20 @@ class GunSonuDetayReportService:
         return rows
 
     def _kategori_giderler(self, kurum_id, gun, sube_id) -> list[dict]:
-        qs = GiderOdeme.objects.filter(
-            gider_kaydi__kurum_id=kurum_id,
-            odeme_tarihi=gun,
-            durum=OdemeDurum.TAMAMLANDI,
-        ).values('gider_kaydi__gider_kategorisi__ad').annotate(toplam=Sum('tutar'))
-        if sube_id:
-            qs = qs.filter(gider_kaydi__sube_id=sube_id)
+        agg: dict[str, int] = defaultdict(int)
 
-        rows = []
-        for row in qs:
-            rows.append({
-                'kategori': row['gider_kaydi__gider_kategorisi__ad'] or 'Diğer',
-                'tutar': int_amount(row['toplam']),
-            })
+        for row in gider_odeme_gun_qs(kurum_id, gun, sube_id).values('gider_kaydi__gider_kategorisi__ad').annotate(toplam=Sum('tutar')):
+            kat = row['gider_kaydi__gider_kategorisi__ad'] or 'Diğer'
+            agg[kat] += int_amount(row['toplam'])
+
+        for detay in verilen_cek_gider_odemeleri_qs(kurum_id, gun, sube_id):
+            if detay.gider_taksit_id and detay.gider_taksit.gider_kaydi.gider_kategorisi_id:
+                kat = detay.gider_taksit.gider_kaydi.gider_kategorisi.ad
+            else:
+                kat = 'Çek/Senet'
+            agg[kat] += int(detay.tutar or 0)
+
+        rows = [{'kategori': k, 'tutar': v} for k, v in agg.items()]
         rows.sort(key=lambda r: -r['tutar'])
         toplam = sum(r['tutar'] for r in rows)
         if rows:

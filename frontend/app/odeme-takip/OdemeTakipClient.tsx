@@ -10,9 +10,6 @@ import { odemeTakipBridge } from "@/app/finans/services/odeme-takip-bridge";
 import "./odeme-takip.css";
 
 import { Sozlesme, TahsilatItem, OdemeYontemi, IndirimTuru, DashboardOzet, TabType, TahsilatFormData, Taksit, OgrenciRiskSkoru } from "./types";
-import IslemMasrafiFields from "@/components/finans/IslemMasrafiFields";
-import { EMPTY_ISLEM_MASRAFI, buildIslemMasrafiPayload } from "@/app/finans/types/islem-masrafi-types";
-import { islemMasrafiGoster } from "@/app/finans/utils/islem-masrafi-eligibility";
 import { API_BASE, formatCurrency, durumLabel, postHeaders, apiHeaders } from "./helpers";
 import { STATUS_CONFIRM_MESSAGES } from "@/lib/sozlesme-notlar";
 
@@ -85,7 +82,6 @@ export default function OdemeTakipClient() {
   const [tahsilatForm, setTahsilatForm] = useState<TahsilatFormData>({
     sozlesme_id: "", taksit_id: "", odeme_yontemi_id: "", tutar: "", tahsilat_tarihi: "", referans_no: "", aciklama: "",
     cek_senet_no: "", banka_adi: "", cek_senet_vade: "", cek_senet_durum: "portfoyde",
-    ...EMPTY_ISLEM_MASRAFI,
   });
   const [showIptalModal, setShowIptalModal] = useState(false);
   const [iptalTahsilatId, setIptalTahsilatId] = useState<number | null>(null);
@@ -395,10 +391,7 @@ export default function OdemeTakipClient() {
       ? selectedSozlesme
       : sozlesmeler.find((s) => s.id === Number(form.sozlesme_id));
     const taksit = sozlesme?.taksitler?.find((t) => t.id === Number(form.taksit_id));
-    const defaultMali =
-      form.mali_hesap_id ||
-      (sozlesme?.mali_hesap_id ? String(sozlesme.mali_hesap_id) : "") ||
-      (sozlesme?.mali_hesap?.id ? String(sozlesme.mali_hesap.id) : "");
+    const defaultMali = form.mali_hesap_id || "";
     const defaultYontem =
       form.odeme_yontemi_id ||
       (taksit?.odeme_yontemi_id ? String(taksit.odeme_yontemi_id) : "") ||
@@ -417,11 +410,6 @@ export default function OdemeTakipClient() {
     try {
       const selectedYontem = tahsilatOdemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
       const isCekSenet = selectedYontem?.tip === "cek" || selectedYontem?.tip === "senet";
-      const masraf = buildIslemMasrafiPayload({
-        kesinti_turu: (tahsilatForm.kesinti_turu || "") as "" | import("@/app/finans/types/islem-masrafi-types").KesintiTuru,
-        kesinti_tutar: tahsilatForm.kesinti_tutar || "",
-        kesinti_aciklama: tahsilatForm.kesinti_aciklama || "",
-      });
       const payload: Record<string, unknown> = {
         sozlesme_id: Number(tahsilatForm.sozlesme_id),
         taksit_id: tahsilatForm.taksit_id ? Number(tahsilatForm.taksit_id) : null,
@@ -431,7 +419,6 @@ export default function OdemeTakipClient() {
         tahsilat_tarihi: tahsilatForm.tahsilat_tarihi,
         referans_no: tahsilatForm.referans_no,
         aciklama: tahsilatForm.aciklama,
-        ...masraf,
       };
       if (isCekSenet && tahsilatForm.cek_senet_no) {
         payload.cek_senet_detay = {
@@ -453,7 +440,6 @@ export default function OdemeTakipClient() {
         setTahsilatForm({
           sozlesme_id: "", taksit_id: "", odeme_yontemi_id: "", tutar: "", tahsilat_tarihi: "", referans_no: "", aciklama: "",
           cek_senet_no: "", banka_adi: "", cek_senet_vade: "", cek_senet_durum: "portfoyde",
-          ...EMPTY_ISLEM_MASRAFI,
         });
         await fetchTahsilatlar();
         if (selectedSozlesme) await fetchSozlesmeDetail(selectedSozlesme.id);
@@ -652,7 +638,7 @@ export default function OdemeTakipClient() {
                     value={tahsilatForm.mali_hesap_id || ""}
                     onChange={(e) => setTahsilatForm({ ...tahsilatForm, mali_hesap_id: e.target.value, odeme_yontemi_id: "" })}
                   >
-                    <option value="">Otomatik (ödeme yöntemi / sözleşme varsayılanı)</option>
+                    <option value="">Seçiniz (boş bırakılırsa ödeme yönteminin hesabı kullanılır)</option>
                     {maliHesaplar.map((m) => (
                       <option key={m.id} value={m.id}>{m.ad} ({m.tip === "kasa" ? "Kasa" : m.tip === "banka" ? "Banka" : m.tip})</option>
                     ))}
@@ -759,23 +745,6 @@ export default function OdemeTakipClient() {
                     return null;
                   })()}
                 </div>
-
-                {(() => {
-                  const sel = tahsilatOdemeYontemleri.find((o) => String(o.id) === tahsilatForm.odeme_yontemi_id);
-                  const hesap = maliHesaplar.find((m) => String(m.id) === tahsilatForm.mali_hesap_id);
-                  const visible = islemMasrafiGoster(sel?.tip, hesap?.tip);
-                  return (
-                    <IslemMasrafiFields
-                      visible={visible}
-                      form={{
-                        kesinti_turu: (tahsilatForm.kesinti_turu || "") as "" | import("@/app/finans/types/islem-masrafi-types").KesintiTuru,
-                        kesinti_tutar: tahsilatForm.kesinti_tutar || "",
-                        kesinti_aciklama: tahsilatForm.kesinti_aciklama || "",
-                      }}
-                      onChange={(patch) => setTahsilatForm({ ...tahsilatForm, ...patch })}
-                    />
-                  );
-                })()}
 
                 <div className="odeme-form-group">
                   <label className="odeme-form-label">Tahsilat Tarihi *</label>

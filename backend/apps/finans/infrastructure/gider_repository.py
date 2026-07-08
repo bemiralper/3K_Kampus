@@ -159,20 +159,21 @@ class GiderTaksitRepository:
         if taksit_plani:
             # Özel taksit planı
             taksitler = []
-            for item in taksit_plani:
+            for sira, item in enumerate(taksit_plani, start=1):
                 from datetime import date as date_type
                 vade = item['vade_tarihi']
                 if isinstance(vade, str):
                     from datetime import datetime
-                    vade = datetime.strptime(vade, '%Y-%m-%d').date()
+                    vade = datetime.strptime(vade[:10], '%Y-%m-%d').date()
 
                 taksitler.append(GiderTaksit(
                     gider_kaydi=gider,
-                    taksit_no=item['taksit_no'],
+                    taksit_no=item.get('taksit_no') or sira,
                     vade_tarihi=vade,
                     tutar=Decimal(str(item['tutar'])),
                     odenen_tutar=Decimal('0.00'),
                     odeme_yontemi_id=item.get('odeme_yontemi_id') or None,
+                    aciklama=(item.get('aciklama') or '')[:255],
                     durum=GiderTaksitDurum.BEKLEMEDE,
                 ))
             return GiderTaksit.objects.bulk_create(taksitler)

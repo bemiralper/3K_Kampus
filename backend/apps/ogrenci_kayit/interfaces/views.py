@@ -41,9 +41,12 @@ from ..application.services import (
     get_mandatory_context,
     attach_grup_dersi_ek_hizmetler,
     attach_grup_dersi_denemeler,
+    attach_grup_dersi_yayin_paketleri,
+    attach_premium_paket_inclusions,
     list_ek_hizmetler,
     list_deneme_paketleri,
     list_packages,
+    list_yayin_paketleri,
     resolve_wizard_egitim_yili_id,
     submit_draft,
 )
@@ -683,9 +686,20 @@ class DirectRegistrationView(APIView):
                                 )
 
                 # Eğitim Paketleri
-                from apps.egitim_paketleri.models import GrupDersi, OzelDers, Deneme, EkHizmet
+                from apps.egitim_paketleri.models import (
+                    GrupDersi, OzelDers, Deneme, EkHizmet, PremiumPaket, YayinPaketi,
+                )
                 from apps.ogrenci.domain.models import OgrenciEkHizmet
-                
+
+                inclusion_kwargs = {
+                    "sinif_seviyesi_id": enrollment_data.get("sinif_seviyesi"),
+                    "kurum_id": kurum_id,
+                    "sube_id": sube_id,
+                    "egitim_yili_id": egitim_yili.id if egitim_yili else None,
+                    "alan_id": enrollment_data.get("alan"),
+                }
+                giris_tarihi = enrollment_data.get("giris_tarihi")
+
                 paket_listesi = package_data.get("paketler", [])
                 for paket_id_str in paket_listesi:
                     # paket_id_str formatı: "kategori_dbId" (örn: "grup_dersleri_1")
@@ -705,10 +719,16 @@ class DirectRegistrationView(APIView):
                     # Kategori'den paket türü ve model belirle
                     paket_turu = None
                     paket_adi = ""
+                    paket_obj = None
                     
                     if kategori == "grup_dersleri":
                         paket_turu = "grup_dersi"
                         paket_obj = GrupDersi.objects.filter(id=db_id).first()
+                        if paket_obj:
+                            paket_adi = paket_obj.ad
+                    elif kategori == "premium_paketler":
+                        paket_turu = "premium"
+                        paket_obj = PremiumPaket.objects.filter(id=db_id).first()
                         if paket_obj:
                             paket_adi = paket_obj.ad
                     elif kategori == "ozel_dersler":
@@ -723,42 +743,48 @@ class DirectRegistrationView(APIView):
                             paket_adi = paket_obj.ad
                     
                     if paket_turu and paket_adi:
-                        OgrenciEgitimPaketi.objects.create(
+                        # Ayrıca (ücretli) seçilen paketler dahil değildir. Grup/premiuma
+                        # ücretsiz dahil yayın paketi, aşağıdaki attach ile ayrıca oluşturulur.
+                        OgrenciEgitimPaketi.objects.get_or_create(
                             ogrenci=ogrenci,
                             paket_turu=paket_turu,
                             paket_id=db_id,
-                            paket_adi=paket_adi,
                             aktif_mi=True,
+                            defaults={
+                                "paket_adi": paket_adi,
+                                "dahil_mi": False,
+                                "baslangic_tarihi": giris_tarihi,
+                            },
                         )
                         
-                        # GrupDersi ise dahil ek hizmetlerini otomatik ekle
+                        # GrupDersi ise dahil ek hizmet/deneme/yayın paketlerini otomatik ekle
                         if kategori == "grup_dersleri" and paket_obj:
                             try:
                                 grup = GrupDersi.objects.prefetch_related(
-                                    'dahil_ek_hizmetler', 'dahil_denemeler'
+                                    'dahil_ek_hizmetler', 'dahil_denemeler', 'dahil_yayin_paketleri'
                                 ).get(id=db_id)
-                                inclusion_kwargs = {
-                                    "sinif_seviyesi_id": enrollment_data.get("sinif_seviyesi"),
-                                    "kurum_id": kurum_id,
-                                    "sube_id": sube_id,
-                                    "egitim_yili_id": egitim_yili.id if egitim_yili else None,
-                                    "alan_id": enrollment_data.get("alan"),
-                                }
                                 attach_grup_dersi_ek_hizmetler(
-                                    ogrenci,
-                                    grup,
-                                    egitim_yili,
-                                    enrollment_data.get("giris_tarihi"),
-                                    **inclusion_kwargs,
+                                    ogrenci, grup, egitim_yili, giris_tarihi, **inclusion_kwargs,
                                 )
                                 attach_grup_dersi_denemeler(
-                                    ogrenci,
-                                    grup,
-                                    egitim_yili,
-                                    enrollment_data.get("giris_tarihi"),
-                                    **inclusion_kwargs,
+                                    ogrenci, grup, egitim_yili, giris_tarihi, **inclusion_kwargs,
+                                )
+                                attach_grup_dersi_yayin_paketleri(
+                                    ogrenci, grup, egitim_yili, giris_tarihi, **inclusion_kwargs,
                                 )
                             except GrupDersi.DoesNotExist:
+                                pass
+
+                        # PremiumPaket ise dahil ek hizmet/deneme/yayın paketlerini otomatik ekle
+                        if kategori == "premium_paketler" and paket_obj:
+                            try:
+                                premium = PremiumPaket.objects.prefetch_related(
+                                    'dahil_ek_hizmetler', 'dahil_denemeler', 'dahil_yayin_paketleri'
+                                ).get(id=db_id)
+                                attach_premium_paket_inclusions(
+                                    ogrenci, premium, egitim_yili, giris_tarihi, **inclusion_kwargs,
+                                )
+                            except PremiumPaket.DoesNotExist:
                                 pass
 
                 # Ek Hizmetler (ayrıca seçilenler, pakete dahil olmayanlar)
@@ -826,6 +852,26 @@ class DirectRegistrationView(APIView):
                     except Deneme.DoesNotExist:
                         pass
 
+                # Yayın Paketleri (ayrıca ücretli seçilenler; grup/premiuma dahil olanlar
+                # yukarıda attach ile ücretsiz eklendi)
+                yayin_paketi_ids = package_data.get("yayin_paketi_ids", [])
+                for yayin_paketi_id in yayin_paketi_ids:
+                    try:
+                        yp = YayinPaketi.objects.get(id=yayin_paketi_id, aktif_mi=True)
+                        OgrenciEgitimPaketi.objects.get_or_create(
+                            ogrenci=ogrenci,
+                            paket_turu="yayin",
+                            paket_id=yp.id,
+                            aktif_mi=True,
+                            defaults={
+                                "paket_adi": yp.ad,
+                                "dahil_mi": False,
+                                "baslangic_tarihi": enrollment_data.get("giris_tarihi"),
+                            },
+                        )
+                    except YayinPaketi.DoesNotExist:
+                        pass
+
                 return Response({
                     "id": ogrenci.id,
                     "kayit_id": kayit.id,
@@ -854,6 +900,18 @@ class WizardNextStudentNumberView(APIView):
         return Response({"next_number": generate_student_number(sinif_seviyesi)})
 
 
+def _safe_wizard_list(fn, label: str = "liste"):
+    """Tablo/migration eksikliğinde tüm paket yanıtının çökmesini önler."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    try:
+        return fn(), None
+    except Exception as exc:
+        logger.exception("Wizard %s yüklenemedi", label)
+        return [], str(exc)
+
+
 class WizardPackageView(APIView):
     permission_classes = [IsAuthenticated, OgrenciKayitModulePermission]
 
@@ -864,37 +922,59 @@ class WizardPackageView(APIView):
         kurum_id, sube_id, egitim_yili_id, ctx_err = get_mandatory_context(request)
         if ctx_err:
             return Response({"detail": ctx_err['detail']}, status=ctx_err['status'])
-        egitim_yili_param = request.query_params.get("egitim_yili")
-        if egitim_yili_param:
-            egitim_yili_id = int(egitim_yili_param)
+        # Eğitim Paketleri modülü üst bardaki X-EgitimYili-ID ile aynı kapsamda çalışır.
+        # Query param yalnızca bağlam başlığı yoksa yedek olarak kullanılır.
+        if not egitim_yili_id:
+            egitim_yili_param = request.query_params.get("egitim_yili")
+            if egitim_yili_param:
+                egitim_yili_id = int(egitim_yili_param)
         egitim_yili_id = resolve_wizard_egitim_yili_id(egitim_yili_id, kurum_id)
 
-        packages = list_packages(
-            int(sinif_seviyesi_id) if sinif_seviyesi_id else None,
-            int(alan_id) if alan_id else None,
-            kurum_id=kurum_id,
-            sube_id=sube_id,
-            egitim_yili_id=egitim_yili_id,
+        inclusion_kwargs = {
+            "sinif_seviyesi_id": int(sinif_seviyesi_id) if sinif_seviyesi_id else None,
+            "alan_id": int(alan_id) if alan_id else None,
+            "kurum_id": kurum_id,
+            "sube_id": sube_id,
+            "egitim_yili_id": egitim_yili_id,
+        }
+
+        packages, packages_err = _safe_wizard_list(lambda: list_packages(**inclusion_kwargs), "packages")
+        ek_hizmetler, ek_err = _safe_wizard_list(
+            lambda: list_ek_hizmetler(
+                sinif_seviyesi_id=inclusion_kwargs["sinif_seviyesi_id"],
+                kurum_id=kurum_id,
+                sube_id=sube_id,
+                egitim_yili_id=egitim_yili_id,
+            ),
+            "ek_hizmetler",
+        )
+        deneme_paketleri, deneme_err = _safe_wizard_list(
+            lambda: list_deneme_paketleri(
+                sinif_seviyesi_id=inclusion_kwargs["sinif_seviyesi_id"],
+                kurum_id=kurum_id,
+                sube_id=sube_id,
+                egitim_yili_id=egitim_yili_id,
+            ),
+            "deneme_paketleri",
+        )
+        yayin_paketleri, yayin_err = _safe_wizard_list(
+            lambda: list_yayin_paketleri(
+                sinif_seviyesi_id=inclusion_kwargs["sinif_seviyesi_id"],
+                kurum_id=kurum_id,
+                sube_id=sube_id,
+                egitim_yili_id=egitim_yili_id,
+            ),
+            "yayin_paketleri",
         )
 
-        ek_hizmetler = list_ek_hizmetler(
-            sinif_seviyesi_id=int(sinif_seviyesi_id) if sinif_seviyesi_id else None,
-            kurum_id=kurum_id,
-            sube_id=sube_id,
-            egitim_yili_id=egitim_yili_id,
-        )
-
-        deneme_paketleri = list_deneme_paketleri(
-            sinif_seviyesi_id=int(sinif_seviyesi_id) if sinif_seviyesi_id else None,
-            kurum_id=kurum_id,
-            sube_id=sube_id,
-            egitim_yili_id=egitim_yili_id,
-        )
+        warnings = [msg for msg in (packages_err, ek_err, deneme_err, yayin_err) if msg]
 
         return Response({
             "packages": packages,
             "ek_hizmetler": ek_hizmetler,
             "deneme_paketleri": deneme_paketleri,
+            "yayin_paketleri": yayin_paketleri,
+            "warnings": warnings,
         })
 
 

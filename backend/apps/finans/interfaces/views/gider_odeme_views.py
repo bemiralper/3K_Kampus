@@ -70,6 +70,21 @@ class GiderOdemeIptalView(APIView):
     """POST → Ödemeyi iptal et."""
 
     def post(self, request, pk):
+        # Şube erişim doğrulaması (tahsilat iptaliyle tutarlı güvenlik)
+        from apps.finans.domain.gider_odeme import GiderOdeme
+        odeme_kaydi = (
+            GiderOdeme.objects.select_related('gider_kaydi')
+            .filter(pk=pk).first()
+        )
+        if not odeme_kaydi:
+            return Response({'error': 'Ödeme kaydı bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        gider = odeme_kaydi.gider_kaydi
+        err = assert_record_sube_access(
+            request, gider.kurum_id, gider.sube_id, allow_null_sube=True,
+        )
+        if err:
+            return err
+
         service = GiderOdemeService()
         odeme, errors = service.odeme_iptal(pk)
 

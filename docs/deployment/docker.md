@@ -54,6 +54,30 @@ docker compose -f docker-compose.dev.yml exec backend env DJANGO_ENV=demo python
 docker compose -f docker-compose.dev.yml --profile workers up --build
 ```
 
+### PDF raporları (Playwright)
+
+Gelir/Gider, Cari ve Gün Sonu PDF dışa aktarma **Chromium** gerektirir. Backend image build sırasında
+`playwright install chromium` otomatik çalışır (`docker/backend/Dockerfile`).
+
+Image yeniden build:
+
+```bash
+docker compose -f docker-compose.dev.yml --env-file .env.docker build --no-cache backend
+```
+
+Eski image kullanıyorsanız container içinde:
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python -m playwright install chromium
+docker compose -f docker-compose.dev.yml exec backend python -m playwright install-deps chromium
+```
+
+Native (Docker dışı) kurulum:
+
+```bash
+./backend/scripts/install-playwright.sh
+```
+
 ---
 
 ## Production (Docker)

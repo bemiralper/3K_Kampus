@@ -8,6 +8,7 @@ from rest_framework import serializers
 
 from apps.finans.application.hesap_transferi_service import HesapTransferiService
 from apps.finans.interfaces.views.sube_context import resolve_mandatory_finans_sube
+from shared.context import get_secili_kurum_id
 
 
 class HesapTransferiCreateSerializer(serializers.Serializer):
@@ -78,11 +79,26 @@ class HesapTransferiListCreateView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        # Tenant güvenliği: aktif kurum + zorunlu şube bağlamı doğrulanır,
+        # böylece başka kurum/şubeye ait hesaplarla virman yapılamaz.
+        kurum_id = request.data.get('kurum_id') or get_secili_kurum_id(request)
+        if not kurum_id:
+            return Response(
+                {'error': 'Kurum bağlamı zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
+        if err:
+            return err
+
         data = serializer.validated_data
         service = HesapTransferiService()
         transfer, errors = service.transfer_yap(
             data,
             user=request.user if request.user.is_authenticated else None,
+            kurum_id=int(kurum_id),
+            sube_id=sube_id,
         )
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)

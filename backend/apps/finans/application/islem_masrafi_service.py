@@ -53,6 +53,9 @@ class IslemMasrafiService:
             or nested.get('kesinti_aciklama')
             or ''
         ).strip()
+        masraf_turu_id = data.get('masraf_turu_id', nested.get('masraf_turu_id'))
+
+        masraf_turu_id = int(masraf_turu_id) if masraf_turu_id not in (None, '', 0, '0') else None
 
         if raw_tutar in (None, '', 0, '0'):
             return None
@@ -65,8 +68,15 @@ class IslemMasrafiService:
         if kesinti_tutar <= Decimal('0'):
             return None
 
+        # Dinamik masraf türü seçildiyse muhasebe kesinti_turu'nu ondan türet
+        if not kesinti_turu and masraf_turu_id:
+            from apps.finans.domain.finansman_tanimlari import MasrafTuru
+            mt = MasrafTuru.objects.filter(id=masraf_turu_id).first()
+            if mt and mt.kesinti_turu:
+                kesinti_turu = mt.kesinti_turu
+
         if not kesinti_turu:
-            return {'error': 'Kesinti türü seçilmelidir.'}
+            return {'error': 'Masraf türü seçilmelidir.'}
         if kesinti_turu not in KesintiTuru.get_values():
             return {'error': f'Geçersiz kesinti türü: {kesinti_turu}'}
 
@@ -74,6 +84,7 @@ class IslemMasrafiService:
             'kesinti_turu': kesinti_turu,
             'kesinti_tutar': kesinti_tutar,
             'kesinti_aciklama': kesinti_aciklama,
+            'masraf_turu_id': masraf_turu_id,
         }
 
     @staticmethod
@@ -112,6 +123,7 @@ class IslemMasrafiService:
         kesinti_turu = fee_data['kesinti_turu']
         kesinti_tutar = fee_data['kesinti_tutar']
         kesinti_aciklama = fee_data.get('kesinti_aciklama', '')
+        masraf_turu_id = fee_data.get('masraf_turu_id')
 
         kategori, kat_err = self.kategori_service.get_banka_gider_kategorisi(
             kurum_id, sube_id, kesinti_turu,
@@ -120,6 +132,15 @@ class IslemMasrafiService:
             return None, kat_err
 
         kesinti_label = KesintiTuru.get_label(kesinti_turu)
+        # Dinamik masraf türü seçildiyse etikette onun adını kullan
+        masraf_turu = None
+        if masraf_turu_id:
+            from apps.finans.domain.finansman_tanimlari import MasrafTuru
+            masraf_turu = (
+                MasrafTuru.objects.filter(id=masraf_turu_id, kurum_id=kurum_id).first()
+            )
+            if masraf_turu:
+                kesinti_label = masraf_turu.ad
         fatura_no = self._generate_masraf_fatura_no(kurum_id)
         aciklama_parts = [f'İşlem masrafı: {kesinti_label}']
         if ana_islem_aciklama:
@@ -188,6 +209,7 @@ class IslemMasrafiService:
             kaynak_tip=kaynak_tip,
             kaynak_id=kaynak_id,
             kesinti_turu=kesinti_turu,
+            masraf_turu=masraf_turu,
             kesinti_tutar=kesinti_tutar,
             kesinti_aciklama=kesinti_aciklama,
             gider_kaydi=gider,
@@ -275,6 +297,8 @@ class IslemMasrafiService:
             'id': masraf.id,
             'kesinti_turu': masraf.kesinti_turu,
             'kesinti_turu_label': masraf.get_kesinti_turu_display(),
+            'masraf_turu_id': masraf.masraf_turu_id,
+            'masraf_turu_ad': masraf.masraf_turu.ad if masraf.masraf_turu_id else None,
             'kesinti_tutar': str(masraf.kesinti_tutar),
             'kesinti_aciklama': masraf.kesinti_aciklama,
             'gider_kaydi_id': masraf.gider_kaydi_id,

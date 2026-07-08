@@ -46,6 +46,7 @@ interface GrupDersi {
   dersler: Ders[];
   dahil_ek_hizmetler: { id: number; ad: string; hizmet_turu: string; fiyat: number }[];
   dahil_denemeler?: { id: number; ad: string; deneme_sayisi: number; fiyat: number }[];
+  dahil_yayin_paketleri?: { id: number; ad: string; fiyat: number }[];
   kullanim_sayisi?: number;
 }
 
@@ -96,62 +97,47 @@ interface EkHizmet {
   deneme_paketi: { id: number; ad: string; deneme_sayisi: number } | null;
 }
 
+interface PremiumPaket {
+  id: number;
+  ad: string;
+  kod: string;
+  fiyat: number;
+  net_fiyat?: number;
+  kdv_orani: number;
+  kdv_dahil_fiyat: number;
+  aktif_mi: boolean;
+  aciklama: string;
+  sinif_seviyeleri: SinifSeviyesi[];
+  dahil_ek_hizmetler: { id: number; ad: string; hizmet_turu: string; fiyat: number }[];
+  dahil_denemeler: { id: number; ad: string; deneme_sayisi: number; fiyat: number }[];
+  dahil_yayin_paketleri?: { id: number; ad: string; fiyat: number }[];
+  kullanim_sayisi?: number;
+}
+
+interface YayinPaketi {
+  id: number;
+  ad: string;
+  kod: string;
+  fiyat: number;
+  net_fiyat?: number;
+  kdv_orani: number;
+  kdv_dahil_fiyat: number;
+  aktif_mi: boolean;
+  aciklama: string;
+  sinif_seviyeleri: SinifSeviyesi[];
+  kullanim_sayisi?: number;
+}
+
 interface ReferansVeriler {
   sinif_seviyeleri: SinifSeviyesi[];
   alanlar: Alan[];
   dersler: Ders[];
   ek_hizmetler: { id: number; ad: string; hizmet_turu: string; fiyat: number }[];
   denemeler: { id: number; ad: string; kod: string; deneme_sayisi: number; fiyat: number }[];
+  yayin_paketleri: { id: number; ad: string; kod: string; fiyat: number }[];
 }
 
-// Ek Hizmet Satış types
-interface SatisOgrenci {
-  id: number;
-  tam_ad: string;
-  tc_kimlik_no: string;
-  sinif_seviyesi: string;
-}
-
-interface UygunHizmet {
-  id: number;
-  ad: string;
-  kod: string;
-  hizmet_turu: string;
-  hizmet_turu_display: string;
-  fiyat: number;
-  kdv_orani: number;
-  kdv_dahil_fiyat: number;
-  aciklama: string;
-  deneme_paketi: { id: number; ad: string; deneme_sayisi: number } | null;
-}
-
-interface OgrenciMevcutHizmet {
-  id: number;
-  ek_hizmet_id: number;
-  ek_hizmet_ad: string;
-  hizmet_turu: string;
-  hizmet_turu_display: string;
-  fiyat: number;
-  dahil_mi: boolean;
-  kaynak_paket_turu: string;
-  aktif_mi: boolean;
-  egitim_yili: string;
-  created_at: string;
-}
-
-interface UygunDenemePaketi {
-  id: number;
-  ad: string;
-  kod: string;
-  deneme_sayisi: number;
-  fiyat: number;
-  kdv_orani: number;
-  kdv_dahil_fiyat: number;
-  aciklama: string;
-  sinif_seviyeleri: SinifSeviyesi[];
-}
-
-type PaketTuru = "grup_dersleri" | "ozel_dersler" | "denemeler" | "ek_hizmetler" | "ek_hizmet_satis";
+type PaketTuru = "grup_dersleri" | "ozel_dersler" | "denemeler" | "ek_hizmetler" | "premium_paketler" | "yayin_paketleri";
 
 // Format currency helper
 const formatCurrency = (amount: number) => {
@@ -181,12 +167,15 @@ export default function EgitimPaketleriClient() {
   const [ozelDersler, setOzelDersler] = useState<OzelDers[]>([]);
   const [denemeler, setDenemeler] = useState<Deneme[]>([]);
   const [ekHizmetler, setEkHizmetler] = useState<EkHizmet[]>([]);
+  const [premiumPaketler, setPremiumPaketler] = useState<PremiumPaket[]>([]);
+  const [yayinPaketleri, setYayinPaketleri] = useState<YayinPaketi[]>([]);
   const [referansVeriler, setReferansVeriler] = useState<ReferansVeriler>({
     sinif_seviyeleri: [],
     alanlar: [],
     dersler: [],
     ek_hizmetler: [],
     denemeler: [],
+    yayin_paketleri: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -215,18 +204,9 @@ export default function EgitimPaketleriClient() {
     hizmet_turu: "",
     dahil_ek_hizmetler_ids: [] as number[],
     dahil_denemeler_ids: [] as number[],
+    dahil_yayin_paketleri_ids: [] as number[],
     deneme_paketi_id: "" as string,
   });
-
-  // Ek Hizmet Satış states
-  const [satisArama, setSatisArama] = useState("");
-  const [satisOgrenciler, setSatisOgrenciler] = useState<SatisOgrenci[]>([]);
-  const [seciliOgrenci, setSeciliOgrenci] = useState<SatisOgrenci | null>(null);
-  const [uygunHizmetler, setUygunHizmetler] = useState<UygunHizmet[]>([]);
-  const [mevcutHizmetler, setMevcutHizmetler] = useState<OgrenciMevcutHizmet[]>([]);
-  const [satisLoading, setSatisLoading] = useState(false);
-  const [aramaTimeout, setAramaTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [uygunDenemePaketleri, setUygunDenemePaketleri] = useState<UygunDenemePaketi[]>([]);
 
   // Search state
   const [searchTerm, setSearchTerm] = useState("");
@@ -288,6 +268,34 @@ export default function EgitimPaketleriClient() {
     }
   }, []);
 
+  const fetchPremiumPaketler = useCallback(async () => {
+    try {
+      const res = await paketFetch(`/egitim-paketleri/api/premium-paketler/`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPremiumPaketler(data.data);
+      }
+    } catch (err) {
+      console.error("Premium paketler yüklenemedi:", err);
+    }
+  }, []);
+
+  const fetchYayinPaketleri = useCallback(async () => {
+    try {
+      const res = await paketFetch(`/egitim-paketleri/api/yayin-paketleri/`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setYayinPaketleri(data.data);
+      }
+    } catch (err) {
+      console.error("Yayın paketleri yüklenemedi:", err);
+    }
+  }, []);
+
   const fetchReferansVeriler = useCallback(async () => {
     try {
       const res = await paketFetch(`/egitim-paketleri/api/referans-veriler/`, {
@@ -314,6 +322,8 @@ export default function EgitimPaketleriClient() {
         fetchOzelDersler(),
         fetchDenemeler(),
         fetchEkHizmetler(),
+        fetchPremiumPaketler(),
+        fetchYayinPaketleri(),
         fetchReferansVeriler(),
       ]);
     } catch (err) {
@@ -321,7 +331,7 @@ export default function EgitimPaketleriClient() {
     } finally {
       setLoading(false);
     }
-  }, [fetchGrupDersleri, fetchOzelDersler, fetchDenemeler, fetchEkHizmetler, fetchReferansVeriler]);
+  }, [fetchGrupDersleri, fetchOzelDersler, fetchDenemeler, fetchEkHizmetler, fetchPremiumPaketler, fetchYayinPaketleri, fetchReferansVeriler]);
 
   useEffect(() => {
     loadAllData();
@@ -343,6 +353,7 @@ export default function EgitimPaketleriClient() {
       hizmet_turu: "",
       dahil_ek_hizmetler_ids: [],
       dahil_denemeler_ids: [],
+      dahil_yayin_paketleri_ids: [],
       deneme_paketi_id: "",
     });
     setEditingId(null);
@@ -367,6 +378,10 @@ export default function EgitimPaketleriClient() {
       endpoint = `/egitim-paketleri/api/ozel-dersler/${id}/`;
     } else if (activeTab === "ek_hizmetler") {
       endpoint = `/egitim-paketleri/api/ek-hizmetler/${id}/`;
+    } else if (activeTab === "premium_paketler") {
+      endpoint = `/egitim-paketleri/api/premium-paketler/${id}/`;
+    } else if (activeTab === "yayin_paketleri") {
+      endpoint = `/egitim-paketleri/api/yayin-paketleri/${id}/`;
     } else {
       endpoint = `/egitim-paketleri/api/denemeler/${id}/`;
     }
@@ -391,6 +406,7 @@ export default function EgitimPaketleriClient() {
           hizmet_turu: item.hizmet_turu || "",
           dahil_ek_hizmetler_ids: item.dahil_ek_hizmetler_ids || [],
           dahil_denemeler_ids: item.dahil_denemeler_ids || [],
+          dahil_yayin_paketleri_ids: item.dahil_yayin_paketleri_ids || [],
           deneme_paketi_id: item.deneme_paketi_id?.toString() || "",
         });
         setShowDrawer(true);
@@ -437,6 +453,7 @@ export default function EgitimPaketleriClient() {
           dersler_ids: formData.dersler_ids,
           dahil_ek_hizmetler_ids: formData.dahil_ek_hizmetler_ids,
           dahil_denemeler_ids: formData.dahil_denemeler_ids,
+          dahil_yayin_paketleri_ids: formData.dahil_yayin_paketleri_ids,
         };
       } else if (activeTab === "ozel_dersler") {
         endpoint = drawerMode === "create"
@@ -459,6 +476,25 @@ export default function EgitimPaketleriClient() {
           deneme_paketi_id: formData.hizmet_turu === "deneme" && formData.deneme_paketi_id
             ? parseInt(formData.deneme_paketi_id)
             : null,
+        };
+      } else if (activeTab === "premium_paketler") {
+        endpoint = drawerMode === "create"
+          ? `/egitim-paketleri/api/premium-paketler/`
+          : `/egitim-paketleri/api/premium-paketler/${editingId}/`;
+        payload = {
+          ...payload,
+          sinif_seviyeleri_ids: formData.sinif_seviyeleri_ids,
+          dahil_ek_hizmetler_ids: formData.dahil_ek_hizmetler_ids,
+          dahil_denemeler_ids: formData.dahil_denemeler_ids,
+          dahil_yayin_paketleri_ids: formData.dahil_yayin_paketleri_ids,
+        };
+      } else if (activeTab === "yayin_paketleri") {
+        endpoint = drawerMode === "create"
+          ? `/egitim-paketleri/api/yayin-paketleri/`
+          : `/egitim-paketleri/api/yayin-paketleri/${editingId}/`;
+        payload = {
+          ...payload,
+          sinif_seviyeleri_ids: formData.sinif_seviyeleri_ids,
         };
       } else {
         endpoint = drawerMode === "create"
@@ -484,10 +520,12 @@ export default function EgitimPaketleriClient() {
         setShowDrawer(false);
         resetForm();
         // Refresh data
-        if (activeTab === "grup_dersleri") await fetchGrupDersleri();
+        if (activeTab === "grup_dersleri") { await fetchGrupDersleri(); await fetchReferansVeriler(); }
         else if (activeTab === "ozel_dersler") await fetchOzelDersler();
         else if (activeTab === "ek_hizmetler") { await fetchEkHizmetler(); await fetchReferansVeriler(); }
-        else await fetchDenemeler();
+        else if (activeTab === "premium_paketler") { await fetchPremiumPaketler(); await fetchReferansVeriler(); }
+        else if (activeTab === "yayin_paketleri") await fetchYayinPaketleri();
+        else { await fetchDenemeler(); await fetchReferansVeriler(); }
       } else {
         // Error bir object olabilir (ör: {kurum: "...", sube: "..."}) — string'e çevir
         const errMsg = typeof data.error === 'object' && data.error !== null
@@ -532,6 +570,10 @@ export default function EgitimPaketleriClient() {
         endpoint = `/egitim-paketleri/api/ozel-dersler/${deletingId}/`;
       } else if (activeTab === "ek_hizmetler") {
         endpoint = `/egitim-paketleri/api/ek-hizmetler/${deletingId}/`;
+      } else if (activeTab === "premium_paketler") {
+        endpoint = `/egitim-paketleri/api/premium-paketler/${deletingId}/`;
+      } else if (activeTab === "yayin_paketleri") {
+        endpoint = `/egitim-paketleri/api/yayin-paketleri/${deletingId}/`;
       } else {
         endpoint = `/egitim-paketleri/api/denemeler/${deletingId}/`;
       }
@@ -544,10 +586,12 @@ export default function EgitimPaketleriClient() {
         setDeletingId(null);
         setDeletingItem(null);
         // Refresh data
-        if (activeTab === "grup_dersleri") await fetchGrupDersleri();
+        if (activeTab === "grup_dersleri") { await fetchGrupDersleri(); await fetchReferansVeriler(); }
         else if (activeTab === "ozel_dersler") await fetchOzelDersler();
-        else if (activeTab === "ek_hizmetler") await fetchEkHizmetler();
-        else await fetchDenemeler();
+        else if (activeTab === "ek_hizmetler") { await fetchEkHizmetler(); await fetchReferansVeriler(); }
+        else if (activeTab === "premium_paketler") { await fetchPremiumPaketler(); await fetchReferansVeriler(); }
+        else if (activeTab === "yayin_paketleri") await fetchYayinPaketleri();
+        else { await fetchDenemeler(); await fetchReferansVeriler(); }
       } else {
         const errMsg = typeof data.error === 'object' && data.error !== null
           ? Object.values(data.error).join(', ')
@@ -577,6 +621,8 @@ export default function EgitimPaketleriClient() {
   const ozelCount = ozelDersler.length;
   const denemeCount = denemeler.length;
   const ekHizmetCount = ekHizmetler.length;
+  const premiumCount = premiumPaketler.length;
+  const yayinCount = yayinPaketleri.length;
 
   // Get drawer title
   const getDrawerTitle = () => {
@@ -584,158 +630,9 @@ export default function EgitimPaketleriClient() {
     if (activeTab === "grup_dersleri") return `${action} Grup Dersi`;
     if (activeTab === "ozel_dersler") return `${action} Özel Ders`;
     if (activeTab === "ek_hizmetler") return `${action} Ek Hizmet`;
+    if (activeTab === "premium_paketler") return `${action} Premium Paket`;
+    if (activeTab === "yayin_paketleri") return `${action} Yayın Paketi`;
     return `${action} Deneme`;
-  };
-
-  // === EK HİZMET SATIŞ FONKSİYONLARI ===
-  
-  // Öğrenci arama
-  const handleOgrenciAra = (q: string) => {
-    setSatisArama(q);
-    if (aramaTimeout) clearTimeout(aramaTimeout);
-    
-    if (q.length < 2) {
-      setSatisOgrenciler([]);
-      return;
-    }
-    
-    const timeout = setTimeout(async () => {
-      try {
-        const res = await paketFetch(
-          `/egitim-paketleri/api/ek-hizmet-satis/ogrenci-ara/?q=${encodeURIComponent(q)}`,
-          { credentials: 'include' }
-        );
-        const data = await res.json();
-        if (data.success) {
-          setSatisOgrenciler(data.data);
-        }
-      } catch (err) {
-        console.error("Öğrenci arama hatası:", err);
-      }
-    }, 300);
-    setAramaTimeout(timeout);
-  };
-
-  // Öğrenci seç → uygun hizmetleri, mevcut hizmetleri ve deneme paketlerini yükle
-  const handleOgrenciSec = async (ogrenci: SatisOgrenci) => {
-    setSeciliOgrenci(ogrenci);
-    setSatisOgrenciler([]);
-    setSatisArama(ogrenci.tam_ad);
-    setSatisLoading(true);
-
-    try {
-      const [uygunRes, mevcutRes, denemePaketRes] = await Promise.all([
-        paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/ogrenci/${ogrenci.id}/uygun/`),
-        paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/ogrenci/${ogrenci.id}/`),
-        paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/ogrenci/${ogrenci.id}/uygun-deneme-paketleri/`),
-      ]);
-      const uygunData = await uygunRes.json();
-      const mevcutData = await mevcutRes.json();
-      const denemeData = await denemePaketRes.json();
-
-      if (uygunData.success) setUygunHizmetler(uygunData.data.uygun_hizmetler);
-      if (mevcutData.success) setMevcutHizmetler(mevcutData.data.hizmetler);
-      if (denemeData.success) setUygunDenemePaketleri(denemeData.data.uygun_deneme_paketleri);
-    } catch (err) {
-      console.error("Veri yüklenemedi:", err);
-    } finally {
-      setSatisLoading(false);
-    }
-  };
-
-  // Ek hizmet satışı yap
-  const handleHizmetSat = async (hizmet: UygunHizmet) => {
-    if (!seciliOgrenci) return;
-    setSatisLoading(true);
-
-    try {
-      const res = await paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: 'include',
-        body: JSON.stringify({
-          ogrenci_id: seciliOgrenci.id,
-          ek_hizmet_id: hizmet.id,
-          fiyat: hizmet.fiyat,
-        }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        // Listleri yenile
-        await handleOgrenciSec(seciliOgrenci);
-      } else {
-        setError(data.error || "Satış başarısız");
-      }
-    } catch (err) {
-      setError("Satış sırasında hata oluştu");
-    } finally {
-      setSatisLoading(false);
-    }
-  };
-
-  // Deneme paketi satışı yap
-  const handleDenemePaketiSat = async (paket: UygunDenemePaketi) => {
-    if (!seciliOgrenci) return;
-    setSatisLoading(true);
-
-    try {
-      const res = await paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: 'include',
-        body: JSON.stringify({
-          ogrenci_id: seciliOgrenci.id,
-          deneme_paketi_id: paket.id,
-          fiyat: paket.fiyat,
-        }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        await handleOgrenciSec(seciliOgrenci);
-      } else {
-        setError(data.error || "Deneme paketi satışı başarısız");
-      }
-    } catch (err) {
-      setError("Deneme paketi satışı sırasında hata oluştu");
-    } finally {
-      setSatisLoading(false);
-    }
-  };
-
-  // Ek hizmet iptal
-  const handleHizmetIptal = async (kayitId: number) => {
-    if (!seciliOgrenci) return;
-    setSatisLoading(true);
-
-    try {
-      const res = await paketFetch(`/egitim-paketleri/api/ek-hizmet-satis/${kayitId}/iptal/`, {
-        method: "DELETE",
-        credentials: 'include',
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        await handleOgrenciSec(seciliOgrenci);
-      } else {
-        setError(data.error || "İptal başarısız");
-      }
-    } catch (err) {
-      setError("İptal sırasında hata oluştu");
-    } finally {
-      setSatisLoading(false);
-    }
-  };
-
-  // Öğrenci seçimi temizle
-  const handleOgrenciTemizle = () => {
-    setSeciliOgrenci(null);
-    setSatisArama("");
-    setSatisOgrenciler([]);
-    setUygunHizmetler([]);
-    setMevcutHizmetler([]);
-    setUygunDenemePaketleri([]);
   };
 
   if (loading) {
@@ -776,17 +673,15 @@ export default function EgitimPaketleriClient() {
             </div>
           </div>
         </div>
-        {activeTab !== "ek_hizmet_satis" && (
-          <button className="btn-hero" onClick={handleOpenCreate}>
-            <span className="btn-hero-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </span>
-            <span>Yeni Paket Ekle</span>
-          </button>
-        )}
+        <button className="btn-hero" onClick={handleOpenCreate}>
+          <span className="btn-hero-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </span>
+          <span>Yeni Paket Ekle</span>
+        </button>
       </div>
 
       {/* Error Message */}
@@ -853,6 +748,29 @@ export default function EgitimPaketleriClient() {
             <span>Ek Hizmet</span>
           </div>
         </div>
+        <div className="quick-stat">
+          <div className="quick-stat-icon pink">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21.4 8 14 2 9.4h7.6L12 2z" />
+            </svg>
+          </div>
+          <div className="quick-stat-info">
+            <h4>{premiumCount}</h4>
+            <span>Premium Paket</span>
+          </div>
+        </div>
+        <div className="quick-stat">
+          <div className="quick-stat-icon teal">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+          </div>
+          <div className="quick-stat-info">
+            <h4>{yayinCount}</h4>
+            <span>Yayın Paketi</span>
+          </div>
+        </div>
       </div>
 
       {/* Modern Tabs - Global CSS kullanılacak */}
@@ -907,15 +825,27 @@ export default function EgitimPaketleriClient() {
           <span className="tab-count">{ekHizmetCount}</span>
         </a>
         <a
-          className={`tab-modern ${activeTab === "ek_hizmet_satis" ? "active" : ""}`}
-          onClick={(e) => { e.preventDefault(); setActiveTab("ek_hizmet_satis"); }}
+          className={`tab-modern ${activeTab === "premium_paketler" ? "active" : ""}`}
+          onClick={(e) => { e.preventDefault(); setActiveTab("premium_paketler"); }}
           href="#"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
-            <line x1="1" y1="10" x2="23" y2="10" />
+            <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21.4 8 14 2 9.4h7.6L12 2z" />
           </svg>
-          Ek Hizmet Satışı
+          Premium Paketler
+          <span className="tab-count">{premiumCount}</span>
+        </a>
+        <a
+          className={`tab-modern ${activeTab === "yayin_paketleri" ? "active" : ""}`}
+          onClick={(e) => { e.preventDefault(); setActiveTab("yayin_paketleri"); }}
+          href="#"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+          </svg>
+          Yayın Paketleri
+          <span className="tab-count">{yayinCount}</span>
         </a>
       </div>
 
@@ -927,9 +857,9 @@ export default function EgitimPaketleriClient() {
             {activeTab === "ozel_dersler" && "Özel Ders Paketleri"}
             {activeTab === "denemeler" && "Deneme Paketleri"}
             {activeTab === "ek_hizmetler" && "Ek Hizmetler"}
-            {activeTab === "ek_hizmet_satis" && "Ek Hizmet Satışı"}
+            {activeTab === "premium_paketler" && "Premium Paketler"}
+            {activeTab === "yayin_paketleri" && "Yayın Paketleri"}
           </h3>
-          {activeTab !== "ek_hizmet_satis" && (
           <div className="card-modern-header-actions">
             <div className="search-modern">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -944,7 +874,6 @@ export default function EgitimPaketleriClient() {
               />
             </div>
           </div>
-          )}
         </div>
         <div className="card-modern-body">
           {/* Grup Dersleri Tab */}
@@ -982,6 +911,9 @@ export default function EgitimPaketleriClient() {
                                 )}
                                 {paket.dahil_denemeler && paket.dahil_denemeler.length > 0 && (
                                   <> · {paket.dahil_denemeler.map(d => d.ad).join(", ")}</>
+                                )}
+                                {paket.dahil_yayin_paketleri && paket.dahil_yayin_paketleri.length > 0 && (
+                                  <> · {paket.dahil_yayin_paketleri.map(y => y.ad).join(", ")}</>
                                 )}
                               </span>
                             </div>
@@ -1363,293 +1295,200 @@ export default function EgitimPaketleriClient() {
             </>
           )}
 
-          {/* Ek Hizmet Satışı Tab */}
-          {activeTab === "ek_hizmet_satis" && (
-            <div style={{ padding: "20px" }}>
-              {/* Öğrenci Arama */}
-              <div style={{ marginBottom: "24px" }}>
-                <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#374151", marginBottom: "8px" }}>
-                  Öğrenci Ara
-                </label>
-                <div style={{ position: "relative" }}>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <div style={{ flex: 1, position: "relative" }}>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="Ad, soyad veya TC ile ara..."
-                        value={satisArama}
-                        onChange={(e) => handleOgrenciAra(e.target.value)}
-                        style={{ width: "100%", padding: "10px 12px", fontSize: "14px" }}
-                      />
-                      {satisOgrenciler.length > 0 && (
-                        <div style={{
-                          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
-                          background: "white", border: "1px solid #e5e7eb", borderRadius: "8px",
-                          boxShadow: "0 4px 12px rgba(0,0,0,0.15)", maxHeight: "240px", overflowY: "auto",
-                        }}>
-                          {satisOgrenciler.map((o) => (
-                            <div
-                              key={o.id}
-                              onClick={() => handleOgrenciSec(o)}
-                              style={{
-                                padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f3f4f6",
-                                display: "flex", justifyContent: "space-between", alignItems: "center",
-                              }}
-                              onMouseOver={(e) => (e.currentTarget.style.background = "#f0f7ff")}
-                              onMouseOut={(e) => (e.currentTarget.style.background = "white")}
-                            >
-                              <div>
-                                <div style={{ fontWeight: 500, color: "#111827" }}>{o.tam_ad}</div>
-                                <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                                  {o.sinif_seviyesi} · TC: {o.tc_kimlik_no}
-                                </div>
-                              </div>
+          {/* Premium Paketler Tab */}
+          {activeTab === "premium_paketler" && (
+            <>
+              {filterData(premiumPaketler).length > 0 ? (
+                <table className="table-modern">
+                  <thead>
+                    <tr>
+                      <th>Paket Bilgisi</th>
+                      <th>Kod</th>
+                      <th>Sınıf Seviyeleri</th>
+                      <th>Fiyat</th>
+                      <th>Durum</th>
+                      <th style={{ width: "100px" }}>İşlemler</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filterData(premiumPaketler).map((paket, index) => (
+                      <tr key={paket.id}>
+                        <td>
+                          <div className="cell-with-icon">
+                            <div className={`cell-icon ${getIconColors(index)}`}>
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21.4 8 14 2 9.4h7.6L12 2z" />
+                              </svg>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {seciliOgrenci && (
-                      <button
-                        className="btn-modern btn-secondary"
-                        onClick={handleOgrenciTemizle}
-                        style={{ whiteSpace: "nowrap" }}
-                      >
-                        Temizle
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Seçili Öğrenci Bilgisi */}
-              {seciliOgrenci && (
-                <div style={{
-                  background: "linear-gradient(135deg, #eff6ff, #f0fdf4)", padding: "16px 20px",
-                  borderRadius: "12px", marginBottom: "24px", border: "1px solid #bfdbfe",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <div style={{
-                      width: "42px", height: "42px", borderRadius: "50%", background: "#2563eb",
-                      display: "flex", alignItems: "center", justifyContent: "center", color: "white",
-                      fontWeight: 700, fontSize: "16px",
-                    }}>
-                      {seciliOgrenci.tam_ad.charAt(0)}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: "16px", color: "#111827" }}>{seciliOgrenci.tam_ad}</div>
-                      <div style={{ fontSize: "13px", color: "#6b7280" }}>
-                        {seciliOgrenci.sinif_seviyesi} · TC: {seciliOgrenci.tc_kimlik_no}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {satisLoading && (
-                <div style={{ textAlign: "center", padding: "30px" }}>
-                  <div className="loading-spinner"></div>
-                  <p style={{ marginTop: "12px", color: "#6b7280" }}>Yükleniyor...</p>
-                </div>
-              )}
-
-              {/* Mevcut Hizmetler */}
-              {seciliOgrenci && !satisLoading && mevcutHizmetler.length > 0 && (
-                <div style={{ marginBottom: "24px" }}>
-                  <h4 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "12px", color: "#374151" }}>
-                    Mevcut Ek Hizmetler ({mevcutHizmetler.filter(h => h.aktif_mi).length} aktif)
-                  </h4>
-                  <table className="table-modern">
-                    <thead>
-                      <tr>
-                        <th>Hizmet</th>
-                        <th>Tür</th>
-                        <th>Fiyat</th>
-                        <th>Kaynak</th>
-                        <th>Durum</th>
-                        <th style={{ width: "80px" }}>İşlem</th>
+                            <div className="cell-info">
+                              <span className="cell-primary">{paket.ad}</span>
+                              <span className="cell-secondary">
+                                {paket.dahil_ek_hizmetler.length + paket.dahil_denemeler.length + (paket.dahil_yayin_paketleri?.length || 0)} dahil kalem
+                                {paket.dahil_ek_hizmetler.length > 0 && (
+                                  <> · {paket.dahil_ek_hizmetler.map(h => h.ad).join(", ")}</>
+                                )}
+                                {paket.dahil_denemeler.length > 0 && (
+                                  <> · {paket.dahil_denemeler.map(d => d.ad).join(", ")}</>
+                                )}
+                                {paket.dahil_yayin_paketleri && paket.dahil_yayin_paketleri.length > 0 && (
+                                  <> · {paket.dahil_yayin_paketleri.map(y => y.ad).join(", ")}</>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="badge-modern primary">{paket.kod}</span>
+                        </td>
+                        <td>
+                          <span className="cell-secondary">
+                            {paket.sinif_seviyeleri?.map((s) => s.ad).join(", ") || "-"}
+                          </span>
+                        </td>
+                        <td>
+                          <div>
+                            <span className="price-tag">{formatCurrency(kdvDahilFiyat(paket))}</span>
+                            {paket.kdv_orani > 0 && (
+                              <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
+                                KDV Hariç: {formatCurrency(netFiyat(paket))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`badge-modern ${paket.aktif_mi ? "success" : "danger"}`}>
+                            {paket.aktif_mi ? "Aktif" : "Pasif"}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="row-actions">
+                            <button className="row-action-btn" title="Düzenle" onClick={() => handleOpenEdit(paket.id)}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </button>
+                            <button className="row-action-btn danger" title="Sil" onClick={() => handleDeleteClick(paket.id, paket.ad, paket.kullanim_sayisi || 0)}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {mevcutHizmetler.map((h) => (
-                        <tr key={h.id} style={{ opacity: h.aktif_mi ? 1 : 0.5 }}>
-                          <td><span className="cell-primary">{h.ek_hizmet_ad}</span></td>
-                          <td>
-                            <span className={`badge-modern ${h.hizmet_turu === 'kutuphane' ? 'info' : h.hizmet_turu === 'kocluk' ? 'warning' : 'success'}`}>
-                              {h.hizmet_turu_display}
-                            </span>
-                          </td>
-                          <td>
-                            {h.dahil_mi ? (
-                              <span className="badge-modern success">Dahil</span>
-                            ) : (
-                              <span className="price-tag">{formatCurrency(h.fiyat)}</span>
-                            )}
-                          </td>
-                          <td>
-                            <span style={{ fontSize: "12px", color: "#6b7280" }}>
-                              {h.dahil_mi ? "Paket dahili" : h.kaynak_paket_turu === "bireysel" ? "Bireysel satış" : h.kaynak_paket_turu || "-"}
-                            </span>
-                          </td>
-                          <td>
-                            <span className={`badge-modern ${h.aktif_mi ? "success" : "danger"}`}>
-                              {h.aktif_mi ? "Aktif" : "İptal"}
-                            </span>
-                          </td>
-                          <td>
-                            {h.aktif_mi && !h.dahil_mi && (
-                              <button
-                                className="row-action-btn danger"
-                                title="İptal Et"
-                                onClick={() => handleHizmetIptal(h.id)}
-                              >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <line x1="18" y1="6" x2="6" y2="18" />
-                                  <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg>
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Uygun Hizmetler — Satılabilir */}
-              {seciliOgrenci && !satisLoading && (
-                <div>
-                  <h4 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "12px", color: "#374151" }}>
-                    Satılabilir Ek Hizmetler ({uygunHizmetler.length})
-                  </h4>
-                  {uygunHizmetler.length > 0 ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "12px" }}>
-                      {uygunHizmetler.map((h) => (
-                        <div key={h.id} style={{
-                          border: "1px solid #e5e7eb", borderRadius: "12px", padding: "16px",
-                          background: "white", transition: "all 0.2s",
-                        }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: "14px", color: "#111827" }}>{h.ad}</div>
-                              <div style={{ fontSize: "12px", color: "#6b7280" }}>{h.kod}</div>
-                            </div>
-                            <span className={`badge-modern ${h.hizmet_turu === 'kutuphane' ? 'info' : h.hizmet_turu === 'kocluk' ? 'warning' : 'success'}`}>
-                              {h.hizmet_turu_display}
-                            </span>
-                          </div>
-                          {h.aciklama && (
-                            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>{h.aciklama}</p>
-                          )}
-                          {h.deneme_paketi && (
-                            <div style={{ fontSize: "12px", color: "#7c3aed", marginBottom: "8px", fontWeight: 500 }}>
-                              🎯 {h.deneme_paketi.ad} ({h.deneme_paketi.deneme_sayisi} deneme)
-                            </div>
-                          )}
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
-                            <div>
-                              <span className="price-tag">{formatCurrency(kdvDahilFiyat(h))}</span>
-                              <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
-                                KDV Hariç: {formatCurrency(netFiyat(h))} (+%{h.kdv_orani} KDV)
-                              </div>
-                            </div>
-                            <button
-                              className="btn-modern btn-primary"
-                              style={{ padding: "6px 14px", fontSize: "13px" }}
-                              onClick={() => handleHizmetSat(h)}
-                              disabled={satisLoading}
-                            >
-                              Sat
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ textAlign: "center", padding: "30px", color: "#6b7280" }}>
-                      <div style={{ fontSize: "32px", marginBottom: "8px" }}>✅</div>
-                      <p>Bu öğrenci için uygun ek hizmet bulunmuyor veya tümü zaten atanmış.</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Satılabilir Deneme Paketleri */}
-              {seciliOgrenci && !satisLoading && (
-                <div style={{ marginTop: "24px" }}>
-                  <h4 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "12px", color: "#374151", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "18px" }}>📝</span>
-                    Satılabilir Deneme Paketleri ({uygunDenemePaketleri.length})
-                  </h4>
-                  {uygunDenemePaketleri.length > 0 ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "12px" }}>
-                      {uygunDenemePaketleri.map((p) => (
-                        <div key={p.id} style={{
-                          border: "1px solid #ddd6fe", borderRadius: "12px", padding: "16px",
-                          background: "linear-gradient(135deg, #faf5ff, #f5f3ff)", transition: "all 0.2s",
-                        }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: "14px", color: "#111827" }}>{p.ad}</div>
-                              <div style={{ fontSize: "12px", color: "#6b7280" }}>{p.kod}</div>
-                            </div>
-                            <span className="badge-modern" style={{ background: "#ede9fe", color: "#7c3aed", fontWeight: 600 }}>
-                              {p.deneme_sayisi} Deneme
-                            </span>
-                          </div>
-                          {p.sinif_seviyeleri.length > 0 && (
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "8px" }}>
-                              {p.sinif_seviyeleri.map((s) => (
-                                <span key={s.id} style={{
-                                  fontSize: "11px", padding: "2px 8px", borderRadius: "10px",
-                                  background: "#e0e7ff", color: "#4338ca",
-                                }}>
-                                  {s.ad}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {p.aciklama && (
-                            <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "8px" }}>{p.aciklama}</p>
-                          )}
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
-                            <div>
-                              <span className="price-tag" style={{ color: "#7c3aed" }}>{formatCurrency(kdvDahilFiyat(p))}</span>
-                              <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
-                                KDV Hariç: {formatCurrency(netFiyat(p))} (+%{p.kdv_orani} KDV)
-                              </div>
-                            </div>
-                            <button
-                              className="btn-modern btn-primary"
-                              style={{ padding: "6px 14px", fontSize: "13px", background: "#7c3aed" }}
-                              onClick={() => handleDenemePaketiSat(p)}
-                              disabled={satisLoading}
-                            >
-                              Sat
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ textAlign: "center", padding: "20px", color: "#6b7280", fontSize: "13px" }}>
-                      <p>Bu öğrenci için uygun deneme paketi bulunmuyor veya tümü zaten atanmış.</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Öğrenci seçilmemiş durumu */}
-              {!seciliOgrenci && !satisLoading && (
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
                 <div className="empty-state">
-                  <div className="empty-state-icon">🔍</div>
-                  <h4>Öğrenci Seçin</h4>
-                  <p>Ek hizmet satışı yapmak için yukarıdan bir öğrenci arayın ve seçin</p>
+                  <div className="empty-state-icon">⭐</div>
+                  <h4>Henüz premium paket eklenmemiş</h4>
+                  <p>Ücretli ek hizmet ve deneme paketlerini ücretsiz dahil ederek premium paket oluşturun</p>
+                  <button className="btn-modern btn-primary" onClick={handleOpenCreate}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Premium Paket Ekle
+                  </button>
                 </div>
               )}
-            </div>
+            </>
+          )}
+
+          {/* Yayın Paketleri Tab */}
+          {activeTab === "yayin_paketleri" && (
+            <>
+              {filterData(yayinPaketleri).length > 0 ? (
+                <table className="table-modern">
+                  <thead>
+                    <tr>
+                      <th>Paket Bilgisi</th>
+                      <th>Kod</th>
+                      <th>Sınıf Seviyeleri</th>
+                      <th>Fiyat</th>
+                      <th>Durum</th>
+                      <th style={{ width: "100px" }}>İşlemler</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filterData(yayinPaketleri).map((paket, index) => (
+                      <tr key={paket.id}>
+                        <td>
+                          <div className="cell-with-icon">
+                            <div className={`cell-icon ${getIconColors(index)}`}>
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                              </svg>
+                            </div>
+                            <div className="cell-info">
+                              <span className="cell-primary">{paket.ad}</span>
+                              <span className="cell-secondary">
+                                {paket.aciklama || "Yayın paketi"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="badge-modern primary">{paket.kod}</span>
+                        </td>
+                        <td>
+                          <span className="cell-secondary">
+                            {paket.sinif_seviyeleri?.map((s) => s.ad).join(", ") || "-"}
+                          </span>
+                        </td>
+                        <td>
+                          <div>
+                            <span className="price-tag">{formatCurrency(kdvDahilFiyat(paket))}</span>
+                            {paket.kdv_orani > 0 && (
+                              <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
+                                KDV Hariç: {formatCurrency(netFiyat(paket))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`badge-modern ${paket.aktif_mi ? "success" : "danger"}`}>
+                            {paket.aktif_mi ? "Aktif" : "Pasif"}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="row-actions">
+                            <button className="row-action-btn" title="Düzenle" onClick={() => handleOpenEdit(paket.id)}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </button>
+                            <button className="row-action-btn danger" title="Sil" onClick={() => handleDeleteClick(paket.id, paket.ad, paket.kullanim_sayisi || 0)}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-state-icon">📚</div>
+                  <h4>Henüz yayın paketi eklenmemiş</h4>
+                  <p>Grup derslerini ve premium paketleri ücretsiz dahil ederek yayın paketi oluşturun</p>
+                  <button className="btn-modern btn-primary" onClick={handleOpenCreate}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Yayın Paketi Ekle
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1868,12 +1707,12 @@ export default function EgitimPaketleriClient() {
                   </div>
                 )}
 
-                {/* Dahil Ek Hizmetler - Sadece Grup Dersi için */}
-                {activeTab === "grup_dersleri" && referansVeriler.ek_hizmetler.filter(h => h.hizmet_turu !== "deneme").length > 0 && (
+                {/* Dahil Ek Hizmetler - Grup Dersi ve Premium Paket için */}
+                {(activeTab === "grup_dersleri" || activeTab === "premium_paketler") && referansVeriler.ek_hizmetler.filter(h => h.hizmet_turu !== "deneme").length > 0 && (
                   <div className="form-group">
                     <label>Dahil Ek Hizmetler</label>
                     <p className="form-help-text" style={{ fontSize: "12px", color: "#888", marginBottom: "8px" }}>
-                      Bu grup dersine kayıt olan öğrencilere otomatik olarak dahil edilecek hizmetler
+                      Bu pakete kayıt olan öğrencilere ücretsiz olarak dahil edilecek hizmetler
                     </p>
                     <div className="checkbox-group">
                       {referansVeriler.ek_hizmetler.filter(h => h.hizmet_turu !== "deneme").map((h) => (
@@ -1902,11 +1741,11 @@ export default function EgitimPaketleriClient() {
                   </div>
                 )}
 
-                {activeTab === "grup_dersleri" && referansVeriler.denemeler.length > 0 && (
+                {(activeTab === "grup_dersleri" || activeTab === "premium_paketler") && referansVeriler.denemeler.length > 0 && (
                   <div className="form-group">
                     <label>Dahil Deneme Paketleri</label>
                     <p className="form-help-text" style={{ fontSize: "12px", color: "#888", marginBottom: "8px" }}>
-                      Bu grup dersine kayıt olan öğrencilere otomatik olarak dahil edilecek deneme paketleri
+                      Bu pakete kayıt olan öğrencilere ücretsiz olarak dahil edilecek deneme paketleri
                     </p>
                     <div className="checkbox-group">
                       {referansVeriler.denemeler.map((d) => (
@@ -1929,6 +1768,40 @@ export default function EgitimPaketleriClient() {
                             }}
                           />
                           {d.ad} ({d.deneme_sayisi} deneme · {formatCurrency(kdvDahilFiyat(d))})
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Dahil Yayın Paketleri - Grup Dersi ve Premium Paket için */}
+                {(activeTab === "grup_dersleri" || activeTab === "premium_paketler") && referansVeriler.yayin_paketleri.length > 0 && (
+                  <div className="form-group">
+                    <label>Dahil Yayın Paketleri</label>
+                    <p className="form-help-text" style={{ fontSize: "12px", color: "#888", marginBottom: "8px" }}>
+                      Bu pakete kayıt olan öğrencilere ücretsiz olarak dahil edilecek yayın paketleri
+                    </p>
+                    <div className="checkbox-group">
+                      {referansVeriler.yayin_paketleri.map((y) => (
+                        <label key={y.id} className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={formData.dahil_yayin_paketleri_ids.includes(y.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({
+                                  ...formData,
+                                  dahil_yayin_paketleri_ids: [...formData.dahil_yayin_paketleri_ids, y.id],
+                                });
+                              } else {
+                                setFormData({
+                                  ...formData,
+                                  dahil_yayin_paketleri_ids: formData.dahil_yayin_paketleri_ids.filter((id) => id !== y.id),
+                                });
+                              }
+                            }}
+                          />
+                          {y.ad} ({formatCurrency(y.fiyat)})
                         </label>
                       ))}
                     </div>

@@ -55,19 +55,19 @@ export default function DashboardOverdueList({ rows, ozet, kurumAd }: Props) {
 
   return (
     <>
-      <div className="card-modern h-full">
-        <div className="card-modern-header">
+      <div className="fdash-panel fdash-panel--flush">
+        <div className="fdash-panel__head">
           <h3>
             <IconAlertTriangle className="w-[18px] h-[18px]" />
             Gecikmiş Borçlar
           </h3>
-          <Link href={links.gecikmisOdemeler} className="text-xs text-blue-600 hover:underline">
+          <Link href={links.gecikmisOdemeler} className="fdash-panel__link">
             Tümü ({ozet.toplam_taksit_sayisi})
           </Link>
         </div>
-        <div className="card-modern-body p-0">
+        <div className="fdash-panel__body p-0">
           {ozet.toplam_taksit_sayisi > 0 && (
-            <div className="px-4 py-2 text-xs cell-secondary border-b border-gray-100">
+            <div className="fdash-panel__summary">
               Toplam {fmtCurrency(ozet.toplam_kalan_tutar)} · Ort. {ozet.ortalama_gecikme_gun} gün gecikme
             </div>
           )}

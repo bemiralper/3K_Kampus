@@ -1,14 +1,44 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  App as AntApp,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  DatePicker,
+  Dropdown,
+  Empty,
+  Input,
+  InputNumber,
+  Row,
+  Segmented,
+  Space,
+  Spin,
+  Statistic,
+  Table,
+  Tag,
+  Tooltip,
+} from "antd";
+import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import type { SorterResult } from "antd/es/table/interface";
+import {
+  DollarOutlined,
+  MoreOutlined,
+  PhoneOutlined,
+  SettingOutlined,
+  WhatsAppOutlined,
+} from "@ant-design/icons";
+import dayjs from "dayjs";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
 import ExportDropdown from "@/components/finans/ExportDropdown";
 import TopluGecikmeMesajModal from "@/components/finans/TopluGecikmeMesajModal";
-import FinansToast, { type FinansToastType } from "@/components/finans/FinansToast";
-import FinansFilterBar, { fmtDate, fmtTL } from "@/components/finans/FinansFilterBar";
+import { fmtDate, fmtTL } from "@/components/finans/FinansFilterBar";
 import TahsilatAlModal from "../para-hareketleri/modals/TahsilatAlModal";
+import GGProvider from "../gelir-gider-v2/GGProvider";
 import { overdueService } from "../services/overdue-api";
 import {
   GECIKEN_COLUMN_EXPORT_KEYS,
@@ -20,23 +50,31 @@ import {
   type OverduePaymentsSummary,
 } from "../types/overdue-types";
 import GecikenDetayDrawer from "./GecikenDetayDrawer";
-import "./geciken-taksitler.css";
 
-const COLUMN_STORAGE_KEY = "geciken_taksitler_columns_v1";
+const { RangePicker } = DatePicker;
+const COLUMN_STORAGE_KEY = "geciken_taksitler_columns_v2";
 
-const ALL_COLUMNS: { key: GecikenColumnKey; label: string; sortKey?: string }[] = [
-  { key: "ogrenci", label: "Öğrenci", sortKey: "ogrenci_adi" },
-  { key: "veli", label: "Veli" },
-  { key: "telefon", label: "Telefon" },
-  { key: "sube", label: "Şube" },
-  { key: "sinif", label: "Sınıf" },
-  { key: "rehber", label: "Rehber Öğretmen" },
-  { key: "vade", label: "Son Ödeme Tarihi", sortKey: "vade_tarihi" },
-  { key: "gecikme", label: "Gecikme Günü", sortKey: "gecikme_gun" },
-  { key: "taksit_tutari", label: "Taksit Tutarı", sortKey: "kalan_tutar" },
-  { key: "kalan", label: "Kalan Borç", sortKey: "kalan_tutar" },
-  { key: "son_tahsilat", label: "Son Tahsilat" },
-  { key: "durum", label: "Durum" },
+type ColDef = {
+  key: GecikenColumnKey;
+  label: string;
+  sortField?: string;
+  render: (item: OverduePaymentItem) => React.ReactNode;
+  align?: "left" | "right" | "center";
+};
+
+const ALL_COLUMNS: ColDef[] = [
+  { key: "ogrenci", label: "Öğrenci", sortField: "ogrenci_adi", render: (i) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{i.ogrenci_adi}</span> },
+  { key: "veli", label: "Veli", render: (i) => i.veli_adi || "—" },
+  { key: "telefon", label: "Telefon", render: (i) => i.veli_telefon || "—" },
+  { key: "sube", label: "Şube", render: (i) => i.sube_ad || "—" },
+  { key: "sinif", label: "Sınıf", render: (i) => i.sinif_ad || "—" },
+  { key: "rehber", label: "Rehber Öğretmen", render: (i) => i.rehber_ogretmen || "—" },
+  { key: "vade", label: "Son Ödeme", sortField: "vade_tarihi", render: (i) => fmtDate(i.vade_tarihi) },
+  { key: "gecikme", label: "Gecikme", sortField: "gecikme_gun", align: "center", render: (i) => (i.gecikme_gun > 0 ? <Tag color="volcano">{i.gecikme_gun} gün</Tag> : "—") },
+  { key: "taksit_tutari", label: "Taksit Tutarı", align: "right", render: (i) => fmtTL(i.taksit_tutari) },
+  { key: "kalan", label: "Kalan Borç", sortField: "kalan_tutar", align: "right", render: (i) => <span style={{ fontWeight: 700, color: "#dc2626" }}>{fmtTL(i.kalan_tutar)}</span> },
+  { key: "son_tahsilat", label: "Son Tahsilat", render: (i) => (i.son_tahsilat_tarihi ? fmtDate(i.son_tahsilat_tarihi) : "—") },
+  { key: "durum", label: "Durum", render: (i) => <Tag color={durumRenkToAntd(i.durum_renk)}>{i.durum_label}</Tag> },
 ];
 
 const DEFAULT_VISIBLE: GecikenColumnKey[] = [
@@ -44,72 +82,39 @@ const DEFAULT_VISIBLE: GecikenColumnKey[] = [
   "vade", "gecikme", "kalan", "son_tahsilat", "durum",
 ];
 
-const VALID_COLUMN_KEYS = new Set<GecikenColumnKey>(ALL_COLUMNS.map((c) => c.key));
+const VALID_KEYS = new Set<GecikenColumnKey>(ALL_COLUMNS.map((c) => c.key));
 
-function loadVisibleColumns(): Set<GecikenColumnKey> {
-  if (typeof window === "undefined") return new Set(DEFAULT_VISIBLE);
+function durumRenkToAntd(renk: string): string {
+  if (renk === "red") return "red";
+  if (renk === "orange") return "orange";
+  if (renk === "blue") return "blue";
+  return "gold";
+}
+
+function loadVisibleColumns(): GecikenColumnKey[] {
+  if (typeof window === "undefined") return DEFAULT_VISIBLE;
   try {
     const raw = localStorage.getItem(COLUMN_STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as string[];
-      const filtered = parsed.filter((k): k is GecikenColumnKey => VALID_COLUMN_KEYS.has(k as GecikenColumnKey));
-      if (filtered.length > 0) return new Set(filtered);
+      const parsed = (JSON.parse(raw) as string[]).filter((k): k is GecikenColumnKey => VALID_KEYS.has(k as GecikenColumnKey));
+      if (parsed.length) return parsed;
     }
   } catch { /* ignore */ }
-  return new Set(DEFAULT_VISIBLE);
+  return DEFAULT_VISIBLE;
 }
 
-function saveVisibleColumns(cols: Set<GecikenColumnKey>) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(Array.from(cols)));
-}
-
-function usePersistedColumnVisibility() {
-  const [visibleCols, setVisibleCols] = useState<Set<GecikenColumnKey>>(() => new Set(DEFAULT_VISIBLE));
-
-  useEffect(() => {
-    setVisibleCols(loadVisibleColumns());
-  }, []);
-
-  const toggleCol = useCallback((key: GecikenColumnKey) => {
-    setVisibleCols((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        if (next.size <= 1) return prev;
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      saveVisibleColumns(next);
-      return next;
-    });
-  }, []);
-
-  const exportColumnKeys = useMemo(() => exportKeysFromVisible(visibleCols), [visibleCols]);
-
-  return { visibleCols, toggleCol, exportColumnKeys };
-}
-
-function exportKeysFromVisible(visible: Set<GecikenColumnKey>): string[] {
+function exportKeysFromVisible(visible: GecikenColumnKey[]): string[] {
   const keys: string[] = [];
   for (const col of ALL_COLUMNS) {
-    if (visible.has(col.key)) {
-      keys.push(...GECIKEN_COLUMN_EXPORT_KEYS[col.key]);
-    }
+    if (visible.includes(col.key)) keys.push(...GECIKEN_COLUMN_EXPORT_KEYS[col.key]);
   }
   return keys;
 }
 
-function durumBadgeClass(renk: string) {
-  if (renk === "red") return "gt-badge gt-badge--red";
-  if (renk === "orange") return "gt-badge gt-badge--orange";
-  if (renk === "blue") return "gt-badge gt-badge--blue";
-  return "gt-badge gt-badge--yellow";
-}
-
-export default function GecikmisOdemelerClient({ embedded = false }: { embedded?: boolean }) {
+function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
+  const { message } = AntApp.useApp();
   const { activeKurum, activeSube, activeEgitimYili } = useKurum();
-  const { homeHref, portalHomeHref } = useFinansPath();
+  const { homeHref } = useFinansPath();
   const { href: odemeHref } = useOdemePath();
 
   const [items, setItems] = useState<OverduePaymentItem[]>([]);
@@ -117,36 +122,27 @@ export default function GecikmisOdemelerClient({ embedded = false }: { embedded?
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [count, setCount] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const [ordering, setOrdering] = useState("-gecikme_gun");
 
-  const [filtersOpen, setFiltersOpen] = useState(true);
-  const [baslangic, setBaslangic] = useState("");
-  const [bitis, setBitis] = useState("");
   const [durum, setDurum] = useState<OverdueDurumFilter>("gecikmis");
+  const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [gecikmeAraligi, setGecikmeAraligi] = useState<GecikmeAraligi | "">("");
-  const [minTutar, setMinTutar] = useState("");
-  const [maxTutar, setMaxTutar] = useState("");
+  const [minTutar, setMinTutar] = useState<number | null>(null);
+  const [maxTutar, setMaxTutar] = useState<number | null>(null);
   const [arama, setArama] = useState("");
-  const [applied, setApplied] = useState({
-    baslangic: "", bitis: "", durum: "gecikmis" as OverdueDurumFilter,
-    gecikmeAraligi: "" as GecikmeAraligi | "", minTutar: "", maxTutar: "", arama: "",
-  });
 
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [colMenuOpen, setColMenuOpen] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<number[]>([]);
+  const [visibleCols, setVisibleCols] = useState<GecikenColumnKey[]>(DEFAULT_VISIBLE);
 
   const [detailItem, setDetailItem] = useState<OverduePaymentItem | null>(null);
   const [detailData, setDetailData] = useState<OverduePaymentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [tahsilatHedef, setTahsilatHedef] = useState<{ sozlesmeId: number; taksitId: number } | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: FinansToastType } | null>(null);
 
-  const { visibleCols, toggleCol, exportColumnKeys } = usePersistedColumnVisibility();
+  useEffect(() => { setVisibleCols(loadVisibleColumns()); }, []);
 
   const filterParams = useMemo(() => {
     if (!activeKurum) return null;
@@ -154,18 +150,18 @@ export default function GecikmisOdemelerClient({ embedded = false }: { embedded?
       kurum_id: activeKurum.id,
       sube_id: activeSube?.id,
       egitim_yili_id: activeEgitimYili?.id,
-      durum: applied.durum,
-      baslangic: applied.baslangic || undefined,
-      bitis: applied.bitis || undefined,
-      gecikme_araligi: applied.gecikmeAraligi || undefined,
-      min_tutar: applied.minTutar ? Number(applied.minTutar) : undefined,
-      max_tutar: applied.maxTutar ? Number(applied.maxTutar) : undefined,
-      arama: applied.arama || undefined,
+      durum,
+      baslangic: range?.[0]?.format("YYYY-MM-DD") || undefined,
+      bitis: range?.[1]?.format("YYYY-MM-DD") || undefined,
+      gecikme_araligi: gecikmeAraligi || undefined,
+      min_tutar: minTutar ?? undefined,
+      max_tutar: maxTutar ?? undefined,
+      arama: arama || undefined,
       page,
       page_size: pageSize,
       ordering,
     };
-  }, [activeKurum, activeSube, activeEgitimYili, applied, page, pageSize, ordering]);
+  }, [activeKurum, activeSube, activeEgitimYili, durum, range, gecikmeAraligi, minTutar, maxTutar, arama, page, pageSize, ordering]);
 
   const load = useCallback(async () => {
     if (!filterParams) return;
@@ -176,7 +172,6 @@ export default function GecikmisOdemelerClient({ embedded = false }: { embedded?
       setItems(data.results || []);
       setOzet(data.ozet);
       setCount(data.count);
-      setTotalPages(data.total_pages || 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Liste yüklenemedi");
     } finally {
@@ -184,273 +179,243 @@ export default function GecikmisOdemelerClient({ embedded = false }: { embedded?
     }
   }, [filterParams]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const t = setTimeout(load, arama ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [load, arama]);
 
-  const applyFilters = () => {
-    const min = minTutar ? Number(minTutar) : null;
-    const max = maxTutar ? Number(maxTutar) : null;
-    if (min != null && max != null && !Number.isNaN(min) && !Number.isNaN(max) && min > max) {
-      setError("Minimum tutar, maksimum tutardan büyük olamaz.");
-      return;
-    }
-    setApplied({
-      baslangic, bitis, durum, gecikmeAraligi, minTutar, maxTutar, arama,
-    });
-    setPage(1);
-  };
-
-  const clearFilters = () => {
-    setBaslangic(""); setBitis(""); setDurum("gecikmis");
-    setGecikmeAraligi(""); setMinTutar(""); setMaxTutar(""); setArama("");
-    setApplied({ baslangic: "", bitis: "", durum: "gecikmis", gecikmeAraligi: "", minTutar: "", maxTutar: "", arama: "" });
-    setPage(1);
-  };
-
-  const toggleSort = (sortKey?: string) => {
-    if (!sortKey) return;
-    setOrdering((prev) => (prev === sortKey ? `-${sortKey}` : prev === `-${sortKey}` ? sortKey : `-${sortKey}`));
-    setPage(1);
-  };
-
-  const openDetail = async (item: OverduePaymentItem) => {
+  const openDetail = useCallback(async (item: OverduePaymentItem) => {
     setDetailItem(item);
     setDetailData(null);
     if (!activeKurum) return;
     setDetailLoading(true);
     try {
-      const d = await overdueService.detail(item.taksit_id, activeKurum.id);
-      setDetailData(d);
+      setDetailData(await overdueService.detail(item.taksit_id, activeKurum.id));
     } catch {
       setDetailData(null);
     } finally {
       setDetailLoading(false);
     }
-  };
+  }, [activeKurum]);
 
-  const selectedItems = items.filter((i) => selected.has(i.taksit_id));
-
-  const toggleRow = (id: number) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  const toggleCol = (key: GecikenColumnKey) => {
+    setVisibleCols((prev) => {
+      let next: GecikenColumnKey[];
+      if (prev.includes(key)) {
+        if (prev.length <= 1) return prev;
+        next = prev.filter((k) => k !== key);
+      } else {
+        next = ALL_COLUMNS.filter((c) => prev.includes(c.key) || c.key === key).map((c) => c.key);
+      }
+      try { localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
   };
 
-  const toggleAll = () => {
-    if (selected.size === items.length) setSelected(new Set());
-    else setSelected(new Set(items.map((i) => i.taksit_id)));
+  const clearFilters = () => {
+    setDurum("gecikmis");
+    setRange(null);
+    setGecikmeAraligi("");
+    setMinTutar(null);
+    setMaxTutar(null);
+    setArama("");
+    setPage(1);
   };
 
   const handleCall = (phone: string | null) => {
-    if (!phone) { setToast({ message: "Telefon numarası yok", type: "error" }); return; }
+    if (!phone) { message.error("Telefon numarası yok"); return; }
     window.open(`tel:${phone.replace(/\s/g, "")}`, "_self");
   };
 
-  const handleNotEkle = () => {
-    const note = window.prompt("Not girin:");
-    if (note?.trim()) setToast({ message: "Not kaydedildi (yerel)", type: "success" });
+  const sortOrderFor = (field?: string): "ascend" | "descend" | null => {
+    if (!field) return null;
+    const bare = ordering.replace(/^-/, "");
+    if (bare !== field) return null;
+    return ordering.startsWith("-") ? "descend" : "ascend";
   };
 
+  const columns: ColumnsType<OverduePaymentItem> = useMemo(() => {
+    const base: ColumnsType<OverduePaymentItem> = ALL_COLUMNS
+      .filter((c) => visibleCols.includes(c.key))
+      .map((c) => ({
+        title: c.label,
+        key: c.key,
+        align: c.align,
+        sorter: c.sortField ? true : undefined,
+        sortOrder: sortOrderFor(c.sortField),
+        showSorterTooltip: false,
+        render: (_: unknown, item: OverduePaymentItem) => c.render(item),
+      }));
+    base.push({
+      title: "İşlemler",
+      key: "islem",
+      align: "center",
+      fixed: "right",
+      width: 150,
+      render: (_: unknown, item: OverduePaymentItem) => (
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="Tahsilat Al">
+            <Button size="small" type="text" icon={<DollarOutlined />} onClick={() => setTahsilatHedef({ sozlesmeId: item.sozlesme_id, taksitId: item.taksit_id })} />
+          </Tooltip>
+          <Tooltip title="WhatsApp">
+            <Button size="small" type="text" icon={<WhatsAppOutlined />} style={{ color: "#25D366" }} onClick={() => { setSelectedKeys([item.taksit_id]); setShowBulkModal(true); }} />
+          </Tooltip>
+          <Tooltip title="Ara">
+            <Button size="small" type="text" icon={<PhoneOutlined />} onClick={() => handleCall(item.veli_telefon)} />
+          </Tooltip>
+          <Tooltip title="Detay">
+            <Button size="small" type="text" icon={<MoreOutlined />} onClick={() => openDetail(item)} />
+          </Tooltip>
+        </Space>
+      ),
+    });
+    return base;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleCols, ordering, openDetail]);
+
+  const onTableChange = (
+    pag: TablePaginationConfig,
+    _filters: unknown,
+    sorter: SorterResult<OverduePaymentItem> | SorterResult<OverduePaymentItem>[],
+  ) => {
+    const s = Array.isArray(sorter) ? sorter[0] : sorter;
+    const colDef = ALL_COLUMNS.find((c) => c.key === s?.columnKey);
+    if (colDef?.sortField && s?.order) {
+      setOrdering((s.order === "ascend" ? "" : "-") + colDef.sortField);
+    } else if (s && !s.order) {
+      setOrdering("-gecikme_gun");
+    }
+    if (pag.current) setPage(pag.current);
+    if (pag.pageSize) setPageSize(pag.pageSize);
+  };
+
+  const selectedItems = items.filter((i) => selectedKeys.includes(i.taksit_id));
+  const exportColumnKeys = exportKeysFromVisible(visibleCols);
+
   if (!activeKurum) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <h3 className="text-lg font-bold text-gray-800 mb-1">Kurum Seçiniz</h3>
-        <p className="text-sm text-gray-500">Geciken taksitleri görüntülemek için üst menüden bir kurum seçin.</p>
-      </div>
-    );
+    return <Card style={{ textAlign: "center", padding: 32 }}><Empty description="Geciken taksitleri görmek için üst menüden bir kurum seçin." /></Card>;
   }
 
-  const visibleColumnDefs = ALL_COLUMNS.filter((c) => visibleCols.has(c.key));
-
   return (
-    <div className="geciken-taksitler">
+    <div style={{ padding: embedded ? 0 : "4px 4px 40px" }}>
       {!embedded && (
-        <div className="hero-header">
-          <div className="hero-content">
-            <div className="hero-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-            </div>
-            <div className="hero-text">
-              <h1>Geciken Taksitler</h1>
-              <div className="hero-breadcrumb">
-                <a href={portalHomeHref}>Ana Sayfa</a><span>/</span>
-                <a href={homeHref}>Finans</a><span>/</span>
-                <span>Gecikmiş Ödemeler</span>
-              </div>
-            </div>
-          </div>
+        <div style={{ background: "linear-gradient(120deg, #dc26260d, #ffffff)", border: "1px solid #eef2f7", borderRadius: 16, padding: "18px 22px", marginBottom: 16 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>Gecikmiş Ödemeler</h1>
+          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: 13 }}>Geciken taksitleri filtreleyin, tahsilat alın ve toplu hatırlatma gönderin.</p>
         </div>
       )}
 
-      {/* KPI Cards — compact */}
       {ozet && (
-        <div className="quick-stats quick-stats--compact gt-kpi-grid mb-4">
-          <KpiMini label="Toplam Geciken Tutar" value={fmtTL(ozet.toplam_geciken_tutar)} tone="red" />
-          <KpiMini label="Geciken Öğrenci" value={String(ozet.geciken_ogrenci_sayisi)} tone="orange" />
-          <KpiMini label="Bugün Vadesi Gelen" value={fmtTL(ozet.bugun_vadesi_gelen)} tone="blue" />
-          <KpiMini label="30+ Gün Geciken" value={fmtTL(ozet.otuz_artı_geciken)} tone="red" />
-          <KpiMini label="Ort. Gecikme" value={`${Math.round(ozet.ortalama_gecikme_gun)} gün`} tone="purple" />
-          <KpiMini label="Tahsilat Başarısı" value={`%${ozet.tahsilat_basarisi_orani}`} tone="green" />
-        </div>
+        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+          <Col xs={12} md={8} lg={4}><Card size="small"><Statistic title={<span style={{ fontSize: 11, color: "#64748b" }}>Toplam Geciken</span>} value={fmtTL(ozet.toplam_geciken_tutar)} valueStyle={{ fontSize: 17, fontWeight: 800, color: "#dc2626" }} /></Card></Col>
+          <Col xs={12} md={8} lg={4}><Card size="small"><Statistic title={<span style={{ fontSize: 11, color: "#64748b" }}>Geciken Öğrenci</span>} value={ozet.geciken_ogrenci_sayisi} valueStyle={{ fontSize: 17, fontWeight: 800, color: "#ea580c" }} /></Card></Col>
+          <Col xs={12} md={8} lg={4}><Card size="small"><Statistic title={<span style={{ fontSize: 11, color: "#64748b" }}>Bugün Vadesi</span>} value={fmtTL(ozet.bugun_vadesi_gelen)} valueStyle={{ fontSize: 17, fontWeight: 800, color: "#2563eb" }} /></Card></Col>
+          <Col xs={12} md={8} lg={4}><Card size="small"><Statistic title={<span style={{ fontSize: 11, color: "#64748b" }}>30+ Gün</span>} value={fmtTL(ozet.otuz_artı_geciken)} valueStyle={{ fontSize: 17, fontWeight: 800, color: "#991b1b" }} /></Card></Col>
+          <Col xs={12} md={8} lg={4}><Card size="small"><Statistic title={<span style={{ fontSize: 11, color: "#64748b" }}>Ort. Gecikme</span>} value={`${Math.round(ozet.ortalama_gecikme_gun)} gün`} valueStyle={{ fontSize: 17, fontWeight: 800, color: "#7c3aed" }} /></Card></Col>
+          <Col xs={12} md={8} lg={4}><Card size="small"><Statistic title={<span style={{ fontSize: 11, color: "#64748b" }}>Tahsilat Başarısı</span>} value={`%${ozet.tahsilat_basarisi_orani}`} valueStyle={{ fontSize: 17, fontWeight: 800, color: "#059669" }} /></Card></Col>
+        </Row>
       )}
 
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <button type="button" className="gt-toolbar-btn" onClick={() => setFiltersOpen((v) => !v)}>
-          {filtersOpen ? "Filtreleri Gizle" : "Filtreleri Göster"}
-        </button>
-        <div className="relative">
-          <button type="button" className="gt-toolbar-btn" onClick={() => setColMenuOpen((v) => !v)}>Kolonlar</button>
-          {colMenuOpen && (
-            <div className="gt-col-menu">
-              {ALL_COLUMNS.map((c) => (
-                <label key={c.key} className="gt-col-menu-item">
-                  <input type="checkbox" checked={visibleCols.has(c.key)} onChange={() => toggleCol(c.key)} />
-                  {c.label}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex-1" />
-        {filterParams && (
-          <ExportDropdown
-            buildPath={(f, orientation) =>
-              overdueService.exportUrl(filterParams, f, exportColumnKeys, orientation)
-            }
-            filenamePrefix="geciken-taksitler"
-            disabled={loading}
+      <Card size="small" style={{ marginBottom: 16 }} styles={{ body: { padding: 12 } }}>
+        <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
+          <Space wrap>
+            <Segmented
+              value={durum}
+              onChange={(v) => { setDurum(v as OverdueDurumFilter); setPage(1); }}
+              options={[
+                { value: "gecikmis", label: "Gecikmiş" },
+                { value: "bugun_vadeli", label: "Bugün Vadeli" },
+                { value: "yaklasan", label: "Yaklaşan" },
+              ]}
+            />
+            <RangePicker
+              format="DD.MM.YYYY"
+              value={range as never}
+              onChange={(d) => { setRange(d && d[0] && d[1] ? [d[0], d[1]] : null); setPage(1); }}
+            />
+            <Input.Search allowClear placeholder="Öğrenci / veli / sözleşme…" value={arama} onChange={(e) => { setArama(e.target.value); setPage(1); }} style={{ width: 220 }} />
+          </Space>
+          <Space wrap>
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: ALL_COLUMNS.map((c) => ({
+                  key: c.key,
+                  label: (
+                    <Checkbox checked={visibleCols.includes(c.key)} onClick={(e) => { e.preventDefault(); toggleCol(c.key); }}>
+                      {c.label}
+                    </Checkbox>
+                  ),
+                })),
+              }}
+            >
+              <Button icon={<SettingOutlined />}>Kolonlar</Button>
+            </Dropdown>
+            {filterParams && (
+              <ExportDropdown
+                buildPath={(f, orientation) => overdueService.exportUrl(filterParams, f, exportColumnKeys, orientation)}
+                filenamePrefix="geciken-taksitler"
+                disabled={loading}
+              />
+            )}
+            {selectedKeys.length > 0 && (
+              <Button type="primary" icon={<WhatsAppOutlined />} style={{ background: "#25D366", borderColor: "#25D366" }} onClick={() => setShowBulkModal(true)}>
+                Toplu WhatsApp ({selectedKeys.length})
+              </Button>
+            )}
+          </Space>
+        </Space>
+      </Card>
+
+      <Space style={{ marginBottom: 12 }}>
+        <span style={{ fontSize: 12, color: "#64748b" }}>Gecikme:</span>
+        <Segmented
+          size="small"
+          value={gecikmeAraligi || "all"}
+          onChange={(v) => { setGecikmeAraligi(v === "all" ? "" : (v as GecikmeAraligi)); setPage(1); }}
+          options={[
+            { value: "all", label: "Tümü" },
+            { value: "1-7", label: "1-7 gün" },
+            { value: "8-15", label: "8-15 gün" },
+            { value: "16-30", label: "16-30 gün" },
+            { value: "30+", label: "30+ gün" },
+          ]}
+        />
+        <InputNumber placeholder="Min ₺" value={minTutar} onChange={(v) => { setMinTutar(v); setPage(1); }} style={{ width: 110 }} min={0} />
+        <InputNumber placeholder="Max ₺" value={maxTutar} onChange={(v) => { setMaxTutar(v); setPage(1); }} style={{ width: 110 }} min={0} />
+        <Button size="small" onClick={clearFilters}>Temizle</Button>
+      </Space>
+
+      <Card size="small" styles={{ body: { padding: 0 } }}>
+        {loading ? (
+          <div style={{ padding: 80, textAlign: "center" }}><Spin size="large" /></div>
+        ) : error ? (
+          <div style={{ padding: 48, textAlign: "center" }}>
+            <p style={{ color: "#dc2626", fontWeight: 600, marginBottom: 12 }}>{error}</p>
+            <Button danger onClick={load}>Tekrar Dene</Button>
+          </div>
+        ) : (
+          <Table
+            rowKey="taksit_id"
+            size="small"
+            columns={columns}
+            dataSource={items}
+            rowSelection={{ selectedRowKeys: selectedKeys, onChange: (keys) => setSelectedKeys(keys as number[]) }}
+            onChange={onTableChange}
+            onRow={(item) => ({ onClick: () => openDetail(item), style: { cursor: "pointer" } })}
+            locale={{ emptyText: <Empty description="Bu filtrelerde kayıt yok" /> }}
+            pagination={{
+              current: page,
+              pageSize,
+              total: count,
+              showSizeChanger: true,
+              pageSizeOptions: [25, 50, 100, 200],
+              showTotal: (t) => `Toplam ${t.toLocaleString("tr-TR")} kayıt`,
+            }}
+            scroll={{ x: "max-content" }}
           />
         )}
-        {selected.size > 0 && (
-          <>
-            <button type="button" className="gt-toolbar-btn gt-toolbar-btn--wa" onClick={() => setShowBulkModal(true)}>
-              Toplu WhatsApp ({selected.size})
-            </button>
-            <button type="button" className="gt-toolbar-btn" onClick={() => setToast({ message: "SMS gönderimi yapılandırılıyor", type: "loading" })}>
-              Toplu SMS
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Filters */}
-      {filtersOpen && (
-        <FinansFilterBar>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Field label="Başlangıç Tarihi">
-              <input type="date" value={baslangic} onChange={(e) => setBaslangic(e.target.value)} className="gt-input" />
-            </Field>
-            <Field label="Bitiş Tarihi">
-              <input type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} className="gt-input" />
-            </Field>
-            <Field label="Durum">
-              <select value={durum} onChange={(e) => setDurum(e.target.value as OverdueDurumFilter)} className="gt-input">
-                <option value="gecikmis">Gecikmiş</option>
-                <option value="bugun_vadeli">Bugün Vadeli</option>
-                <option value="yaklasan">Yaklaşan Vadeler</option>
-              </select>
-            </Field>
-            <Field label="Gecikme Süresi">
-              <select value={gecikmeAraligi} onChange={(e) => setGecikmeAraligi(e.target.value as GecikmeAraligi | "")} className="gt-input">
-                <option value="">Tümü</option>
-                <option value="1-7">1-7 Gün</option>
-                <option value="8-15">8-15 Gün</option>
-                <option value="16-30">16-30 Gün</option>
-                <option value="30+">30+ Gün</option>
-              </select>
-            </Field>
-            <Field label="Min Tutar (₺)">
-              <input type="number" value={minTutar} onChange={(e) => setMinTutar(e.target.value)} className="gt-input" placeholder="0" />
-            </Field>
-            <Field label="Max Tutar (₺)">
-              <input type="number" value={maxTutar} onChange={(e) => setMaxTutar(e.target.value)} className="gt-input" placeholder="∞" />
-            </Field>
-            <Field label="Hızlı Arama (Öğrenci / Veli / Sözleşme)">
-              <input type="text" value={arama} onChange={(e) => setArama(e.target.value)} className="gt-input" placeholder="Ara…" />
-            </Field>
-            <div className="flex items-end gap-2">
-              <button type="button" onClick={applyFilters} className="gt-btn gt-btn--primary flex-1">Filtrele</button>
-              <button type="button" onClick={clearFilters} className="gt-btn gt-btn--ghost">Temizle</button>
-            </div>
-          </div>
-        </FinansFilterBar>
-      )}
-
-      {/* Table */}
-      {loading ? (
-        <div className="flex flex-col items-center py-24">
-          <div className="w-10 h-10 border-[3px] border-gray-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-          <p className="text-sm text-gray-400">Yükleniyor…</p>
-        </div>
-      ) : error ? (
-        <div className="py-20 text-center">
-          <p className="text-sm font-semibold text-red-600 mb-3">{error}</p>
-          <button onClick={load} className="gt-btn gt-btn--primary">Tekrar Dene</button>
-        </div>
-      ) : items.length === 0 ? (
-        <div className="py-20 text-center bg-white rounded-2xl border border-gray-100">
-          <p className="text-base font-semibold text-gray-700">Bu filtrelerde kayıt yok</p>
-          <p className="text-sm text-gray-400 mt-1">Filtreleri temizleyerek tekrar deneyin.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="finans-table-wrap overflow-x-auto">
-            <table className="table-modern w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="w-10">
-                    <input type="checkbox" checked={selected.size === items.length && items.length > 0} onChange={toggleAll} />
-                  </th>
-                  {visibleColumnDefs.map((col) => (
-                    <th key={col.key} className={col.sortKey ? "cursor-pointer select-none" : ""} onClick={() => toggleSort(col.sortKey)}>
-                      <span className="finans-th-inner">{col.label}{col.sortKey && ordering.includes(col.sortKey) ? (ordering.startsWith("-") ? " ↓" : " ↑") : ""}</span>
-                    </th>
-                  ))}
-                  <th className="text-center">İşlemler</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.taksit_id} className="gt-row cursor-pointer hover:bg-slate-50/80" onClick={() => openDetail(item)}>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={selected.has(item.taksit_id)} onChange={() => toggleRow(item.taksit_id)} />
-                    </td>
-                    {visibleColumnDefs.map((col) => (
-                      <td key={col.key} data-col={col.key}>
-                        {renderCell(col.key, item)}
-                      </td>
-                    ))}
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-center gap-0.5">
-                        <ActionBtn title="Tahsilat Al" onClick={() => setTahsilatHedef({ sozlesmeId: item.sozlesme_id, taksitId: item.taksit_id })}>💰</ActionBtn>
-                        <ActionBtn title="WhatsApp" onClick={() => { setSelected(new Set([item.taksit_id])); setShowBulkModal(true); }}>💬</ActionBtn>
-                        <ActionBtn title="Ara" onClick={() => handleCall(item.veli_telefon)}>📞</ActionBtn>
-                        <ActionBtn title="Detay" onClick={() => openDetail(item)}>⋯</ActionBtn>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-gray-50 text-xs text-gray-500">
-            <span>{count.toLocaleString("tr-TR")} kayıt · Sayfa {page}/{totalPages}</span>
-            <div className="flex items-center gap-2">
-              <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="gt-input gt-input--sm">
-                {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n}/sayfa</option>)}
-              </select>
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="gt-btn gt-btn--ghost gt-btn--sm">Önceki</button>
-              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="gt-btn gt-btn--ghost gt-btn--sm">Sonraki</button>
-            </div>
-          </div>
-        </div>
-      )}
+      </Card>
 
       {detailItem && (
         <GecikenDetayDrawer
@@ -461,18 +426,18 @@ export default function GecikmisOdemelerClient({ embedded = false }: { embedded?
           homeHref={homeHref}
           onClose={() => { setDetailItem(null); setDetailData(null); }}
           onTahsilat={() => setTahsilatHedef({ sozlesmeId: detailItem.sozlesme_id, taksitId: detailItem.taksit_id })}
-          onWhatsapp={() => { setSelected(new Set([detailItem.taksit_id])); setShowBulkModal(true); }}
+          onWhatsapp={() => { setSelectedKeys([detailItem.taksit_id]); setShowBulkModal(true); }}
           onCall={() => handleCall(detailItem.veli_telefon)}
-          onNotEkle={handleNotEkle}
+          onNotEkle={() => { const n = window.prompt("Not girin:"); if (n?.trim()) message.success("Not kaydedildi (yerel)"); }}
         />
       )}
 
       {showBulkModal && (
         <TopluGecikmeMesajModal
-          selectedItems={selectedItems.length ? selectedItems : items.filter((i) => selected.has(i.taksit_id))}
+          selectedItems={selectedItems.length ? selectedItems : items.filter((i) => selectedKeys.includes(i.taksit_id))}
           kurumAd={activeKurum.ad}
           onClose={() => setShowBulkModal(false)}
-          onSent={(sent) => setToast({ message: `${sent} kişiye mesaj gönderildi`, type: "success" })}
+          onSent={(sent) => message.success(`${sent} kişiye mesaj gönderildi`)}
         />
       )}
 
@@ -481,57 +446,17 @@ export default function GecikmisOdemelerClient({ embedded = false }: { embedded?
           prefillSozlesmeId={tahsilatHedef.sozlesmeId}
           prefillTaksitId={tahsilatHedef.taksitId}
           onClose={() => setTahsilatHedef(null)}
-          onSuccess={(message) => { setToast({ message, type: "success" }); setTahsilatHedef(null); load(); }}
+          onSuccess={(msg) => { message.success(msg || "Tahsilat alındı."); setTahsilatHedef(null); load(); }}
         />
       )}
-
-      {toast && <FinansToast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }
 
-function renderCell(key: GecikenColumnKey, item: OverduePaymentItem) {
-  switch (key) {
-    case "ogrenci": return <span className="font-medium text-gray-800">{item.ogrenci_adi}</span>;
-    case "veli": return item.veli_adi || "—";
-    case "telefon": return item.veli_telefon || "—";
-    case "sube": return item.sube_ad || "—";
-    case "sinif": return item.sinif_ad || "—";
-    case "rehber": return item.rehber_ogretmen || "—";
-    case "vade": return fmtDate(item.vade_tarihi);
-    case "gecikme": return item.gecikme_gun > 0 ? `${item.gecikme_gun} gün` : "—";
-    case "taksit_tutari": return <span className="cell-money">{fmtTL(item.taksit_tutari)}</span>;
-    case "kalan": return <span className="cell-money text-red-600">{fmtTL(item.kalan_tutar)}</span>;
-    case "son_tahsilat": return item.son_tahsilat_tarihi ? fmtDate(item.son_tahsilat_tarihi) : "—";
-    case "durum": return <span className={durumBadgeClass(item.durum_renk)}>{item.durum_label}</span>;
-    default: return "—";
-  }
-}
-
-function KpiMini({ label, value, tone }: { label: string; value: string; tone: string }) {
+export default function GecikmisOdemelerClient({ embedded = false }: { embedded?: boolean }) {
   return (
-    <div className={`quick-stat gt-kpi gt-kpi--${tone}`}>
-      <div className="quick-stat-info">
-        <h4>{value}</h4>
-        <span>{label}</span>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="text-[11px] font-semibold text-gray-500 block mb-1">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function ActionBtn({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" title={title} onClick={onClick} className="p-1.5 rounded-lg hover:bg-gray-100 text-sm transition">
-      {children}
-    </button>
+    <GGProvider>
+      <GecikmisOdemelerInner embedded={embedded} />
+    </GGProvider>
   );
 }

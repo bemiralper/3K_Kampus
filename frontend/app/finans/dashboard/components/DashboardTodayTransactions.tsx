@@ -61,30 +61,26 @@ export default function DashboardTodayTransactions({ rows, allRows, referansTari
   }, [rows, allRows, filter, referansTarih]);
 
   return (
-    <div className="card-modern mb-5">
-      <div className="card-modern-header">
+    <div className="fdash-panel">
+      <div className="fdash-panel__head">
         <h3>
           <IconClock className="w-[18px] h-[18px]" />
           Bugünkü İşlemler
         </h3>
-        <div className="card-modern-header-actions">
+        <div className="fdash-panel__actions">
           {(["bugun", "dun", "7gun"] as Filter[]).map((f) => (
             <button
               key={f}
               type="button"
               onClick={() => setFilter(f)}
-              className={`text-xs px-3 py-1 rounded-lg border ${
-                filter === f
-                  ? "bg-gray-900 text-white border-gray-900"
-                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-              }`}
+              className={`fdash-filter-btn ${filter === f ? "fdash-filter-btn--active" : ""}`}
             >
               {f === "bugun" ? "Bugün" : f === "dun" ? "Dün" : "7 Gün"}
             </button>
           ))}
         </div>
       </div>
-      <div className="card-modern-body p-0">
+      <div className="fdash-panel__body p-0">
         <div className="finans-table-wrap">
           <table className="table-modern">
             <thead>
@@ -121,8 +117,8 @@ export default function DashboardTodayTransactions({ rows, allRows, referansTari
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 border-t border-gray-100 text-right">
-          <Link href={links.donemTahsilat} className="text-xs text-blue-600 hover:underline">
+        <div className="fdash-panel__foot">
+          <Link href={links.donemTahsilat} className="fdash-panel__link">
             Tüm hareketler →
           </Link>
         </div>

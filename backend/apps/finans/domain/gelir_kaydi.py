@@ -75,6 +75,30 @@ class GelirKaydi(models.Model):
         verbose_name='Eğitim Yılı',
     )
 
+    # ─── Finansman Tanımları (v2, opsiyonel) ───
+    gelir_kaynagi = models.ForeignKey(
+        'finans.GelirKaynagi',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='gelir_kayitlari',
+        verbose_name='Gelir Kaynağı',
+    )
+    proje = models.ForeignKey(
+        'finans.Proje',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='gelir_kayitlari',
+        verbose_name='Proje',
+    )
+    etiketler = models.ManyToManyField(
+        'finans.CariEtiket',
+        blank=True,
+        related_name='gelir_kayitlari',
+        verbose_name='Etiketler',
+    )
+
     # ─── Fatura Bilgileri ──────────────────────
     fatura_no = models.CharField('Fatura No', max_length=50, blank=True, default='')
     fatura_tarihi = models.DateField('Fatura Tarihi')
@@ -87,6 +111,12 @@ class GelirKaydi(models.Model):
         'KDV Oranı (%)',
         choices=KdvOrani.CHOICES,
         default=KdvOrani.YIRMI,
+    )
+    kdv_mod = models.CharField(
+        'KDV Modu',
+        max_length=10,
+        default='haric',
+        help_text='haric | dahil | muaf — brüt/net hesaplama modu',
     )
     kdv_tutar = models.DecimalField('KDV Tutar', max_digits=15, decimal_places=2, default=0)
     net_tutar = models.DecimalField('Net Tutar (KDV dahil)', max_digits=15, decimal_places=2, default=0)

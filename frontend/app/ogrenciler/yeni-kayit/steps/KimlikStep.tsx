@@ -1,12 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import DatePicker, { registerLocale } from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
-import { tr } from "date-fns/locale";
-import { dateToIsoLocal, isoToLocalDate } from "@/lib/date-utils";
-
-registerLocale("tr", tr);
+import { ConfigProvider, DatePicker } from "antd";
+import trTR from "antd/locale/tr_TR";
+import dayjs from "dayjs";
+import "dayjs/locale/tr";
 import {
   LookupOption,
   MetadataResponse,
@@ -25,6 +23,8 @@ import {
   mergeKimlikForOgrenci,
   tcReadonlyClass,
 } from "@/lib/kimlik-form-utils";
+
+dayjs.locale("tr");
 
 interface KimlikStepProps {
   data: WizardData;
@@ -289,29 +289,30 @@ export default function KimlikStep({
         {/* Doğum Tarihi */}
         <div className="wizard-field">
           <label className="wizard-label required">Doğum Tarihi</label>
-          <DatePicker
-            selected={isoToLocalDate(data.student.dogum_tarihi || "")}
-            onChange={(date: Date | null) =>
-              onChange({
-                ...data,
-                student: {
-                  ...data.student,
-                  dogum_tarihi: date ? dateToIsoLocal(date) : "",
-                },
-              })
-            }
-            locale="tr"
-            dateFormat="dd.MM.yyyy"
-            maxDate={new Date()}
-            showMonthDropdown
-            showYearDropdown
-            dropdownMode="select"
-            placeholderText="GG.AA.YYYY"
-            calendarStartDay={1}
-            className={kimlikFieldClass(`wizard-input ${errors.dogum_tarihi ? "error" : ""}`, "dogum_tarihi", kimlik.highlightedFields)}
-            readOnly={false}
-            disabled={false}
-          />
+          <ConfigProvider locale={trTR}>
+            <DatePicker
+              value={data.student.dogum_tarihi ? dayjs(data.student.dogum_tarihi) : null}
+              onChange={(date) =>
+                onChange({
+                  ...data,
+                  student: {
+                    ...data.student,
+                    dogum_tarihi: date ? date.format("YYYY-MM-DD") : "",
+                  },
+                })
+              }
+              format="DD.MM.YYYY"
+              placeholder="GG.AA.YYYY"
+              style={{ width: "100%", height: 42 }}
+              status={errors.dogum_tarihi ? "error" : undefined}
+              disabledDate={(current) => !!current && current > dayjs().endOf("day")}
+              className={kimlikFieldClass(
+                "",
+                "dogum_tarihi",
+                kimlik.highlightedFields
+              )}
+            />
+          </ConfigProvider>
           {errors.dogum_tarihi && <span className="wizard-error">{errors.dogum_tarihi}</span>}
         </div>
 

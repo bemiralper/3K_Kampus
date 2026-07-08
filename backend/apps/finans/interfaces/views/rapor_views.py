@@ -39,6 +39,51 @@ def _resolve_rapor_sube(request, kurum_id):
     return sube_id, None
 
 
+def _rapor_format(request) -> str:
+    """İstenen dışa aktarma formatı: json (varsayılan) | csv | xlsx | pdf."""
+    fmt = (request.query_params.get('format') or 'json').lower().strip()
+    return fmt if fmt in ('json', 'csv', 'xlsx', 'pdf') else 'json'
+
+
+def _rapor_meta(request, kurum_id, sube_id, *, extra=None):
+    """Export başlığı için kurum/şube adı + raporu oluşturan bilgisini toplar."""
+    meta = {'kurum_id': kurum_id, 'sube_id': sube_id}
+    try:
+        from apps.kurum.domain.models import Kurum
+        ad = Kurum.objects.filter(id=kurum_id).values_list('ad', flat=True).first()
+        if ad:
+            meta['kurum_ad'] = ad
+    except Exception:
+        pass
+    try:
+        from apps.sube.domain.models import Sube
+        ad = Sube.objects.filter(id=sube_id).values_list('ad', flat=True).first()
+        if ad:
+            meta['sube_ad'] = ad
+    except Exception:
+        pass
+    user = getattr(request, 'user', None)
+    if user and getattr(user, 'is_authenticated', False):
+        meta['raporu_olusturan'] = user.get_full_name() or user.get_username()
+    if extra:
+        meta.update(extra)
+    return meta
+
+
+def _export_rapor(request, *, fmt, kurum_id, sube_id, title, columns, rows,
+                  summary_chips=None, filters_extra=None):
+    """Rapor verisini CSV/XLSX/PDF olarak markalı şekilde dışa aktarır."""
+    from apps.finans.application.export.export_service import ExportService
+
+    meta = _rapor_meta(request, kurum_id, sube_id, extra=filters_extra)
+    if summary_chips:
+        meta['summary_chips'] = summary_chips
+    orientation = 'landscape' if len(columns) > 5 else 'portrait'
+    return ExportService.build(
+        fmt, rows, columns, title=title, filters_meta=meta, orientation=orientation,
+    )
+
+
 class GelirGiderRaporView(APIView):
     """
     GET /finans/api/raporlar/gelir-gider/
@@ -79,6 +124,15 @@ class GelirGiderRaporView(APIView):
         tahsilat_gelir = tahsilat_base & ~Q(tahsilat_turu=TahsilatTuru.IADE)
         tahsilat_iade = tahsilat_base & Q(tahsilat_turu=TahsilatTuru.IADE)
 
+        # ─── Gider Filtresi (GiderKaydi — taslak/iptal hariç) ──
+        from apps.finans.domain.gider_kaydi import GiderKaydi
+        from apps.finans.constants.gider_types import GiderDurum
+
+        gider_base = Q(kurum_id=kurum_id, sube_id=sube_id)
+        if egitim_yili_id:
+            gider_base &= Q(egitim_yili_id=egitim_yili_id)
+        gider_base &= ~Q(durum__in=[GiderDurum.TASLAK, GiderDurum.IPTAL])
+
         # ─── Aylık Gelir (son 12 ay) ─────────────────────────
         bugun = date.today()
         aylik = []
@@ -103,8 +157,13 @@ class GelirGiderRaporView(APIView):
                 tahsilat_tarihi__lte=m_sonu,
             ).aggregate(t=Sum('tutar'))['t'] or 0
 
-            # Gider şimdilik 0 — GiderKaydi eklenince buraya bağlanacak
-            gider = 0
+            gider = int(
+                GiderKaydi.objects.filter(
+                    gider_base,
+                    fatura_tarihi__gte=m_basi,
+                    fatura_tarihi__lte=m_sonu,
+                ).aggregate(t=Sum('net_tutar'))['t'] or 0
+            )
 
             aylik.append({
                 'ay': m_basi.strftime('%Y-%m'),
@@ -127,6 +186,33 @@ class GelirGiderRaporView(APIView):
             .annotate(toplam=Sum('tutar'), adet=Count('id'))
             .order_by('-toplam')
         )
+
+        fmt = _rapor_format(request)
+        if fmt != 'json':
+            columns = [
+                {'key': 'donem', 'label': 'Dönem'},
+                {'key': 'gelir', 'label': 'Gelir'},
+                {'key': 'iade', 'label': 'İade'},
+                {'key': 'gider', 'label': 'Gider'},
+                {'key': 'net', 'label': 'Net'},
+            ]
+            rows = [
+                {
+                    'donem': a['ay_label'], 'gelir': a['gelir'], 'iade': a['iade'],
+                    'gider': a['gider'], 'net': a['net'],
+                }
+                for a in aylik
+            ]
+            return _export_rapor(
+                request, fmt=fmt, kurum_id=int(kurum_id), sube_id=sube_id,
+                title='Gelir-Gider Raporu', columns=columns, rows=rows,
+                summary_chips=[
+                    {'label': 'Toplam Gelir', 'value': toplam_gelir},
+                    {'label': 'Toplam İade', 'value': toplam_iade},
+                    {'label': 'Toplam Gider', 'value': toplam_gider},
+                    {'label': 'Net Gelir', 'value': toplam_gelir - toplam_iade - toplam_gider},
+                ],
+            )
 
         return Response({
             'aylik': aylik,
@@ -248,6 +334,33 @@ class TahsilatAnalizView(APIView):
             .order_by('durum')
         )
 
+        fmt = _rapor_format(request)
+        if fmt != 'json':
+            columns = [
+                {'key': 'donem', 'label': 'Dönem'},
+                {'key': 'beklenen', 'label': 'Beklenen'},
+                {'key': 'tahsil_edilen', 'label': 'Tahsil Edilen'},
+                {'key': 'oran', 'label': 'Oran (%)'},
+                {'key': 'adet', 'label': 'Adet'},
+            ]
+            rows = [
+                {
+                    'donem': a['ay_label'], 'beklenen': a['beklenen'],
+                    'tahsil_edilen': a['tahsil_edilen'], 'oran': a['oran'], 'adet': a['adet'],
+                }
+                for a in aylik_performans
+            ]
+            return _export_rapor(
+                request, fmt=fmt, kurum_id=int(kurum_id), sube_id=sube_id,
+                title='Tahsilat Analizi', columns=columns, rows=rows,
+                summary_chips=[
+                    {'label': 'Toplam Alacak', 'value': toplam_alacak},
+                    {'label': 'Toplam Tahsil', 'value': toplam_tahsil},
+                    {'label': 'Kalan Borç', 'value': toplam_alacak - toplam_tahsil},
+                    {'label': 'Genel Oran (%)', 'value': genel_oran},
+                ],
+            )
+
         return Response({
             'toplam_alacak': toplam_alacak,
             'toplam_tahsil': toplam_tahsil,
@@ -360,6 +473,37 @@ class BorcYaslandirmaView(APIView):
                     'gecikme_gun': gun,
                 })
 
+        fmt = _rapor_format(request)
+        if fmt != 'json':
+            columns = [
+                {'key': 'grup', 'label': 'Gecikme Aralığı'},
+                {'key': 'sozlesme_no', 'label': 'Sözleşme'},
+                {'key': 'ogrenci_adi', 'label': 'Öğrenci'},
+                {'key': 'taksit_no', 'label': 'Taksit'},
+                {'key': 'vade_tarihi', 'label': 'Vade'},
+                {'key': 'gecikme_gun', 'label': 'Gecikme (gün)'},
+                {'key': 'kalan', 'label': 'Kalan Tutar'},
+            ]
+            rows = []
+            for grup in gruplar.values():
+                for d in grup['detay']:
+                    rows.append({
+                        'grup': grup['label'],
+                        'sozlesme_no': d['sozlesme_no'],
+                        'ogrenci_adi': d['ogrenci_adi'],
+                        'taksit_no': d['taksit_no'],
+                        'vade_tarihi': d['vade_tarihi'],
+                        'gecikme_gun': d['gecikme_gun'],
+                        'kalan': d['kalan'],
+                    })
+            return _export_rapor(
+                request, fmt=fmt, kurum_id=int(kurum_id), sube_id=sube_id,
+                title='Alacak Vade (Borç Yaşlandırma)', columns=columns, rows=rows,
+                summary_chips=[
+                    {'label': g['label'], 'value': g['toplam']} for g in gruplar.values()
+                ] + [{'label': 'Toplam Geciken', 'value': toplam_geciken}],
+            )
+
         return Response({
             'gruplar': gruplar,
             'toplam_geciken_tutar': toplam_geciken,
@@ -398,6 +542,40 @@ class DonemRaporView(APIView):
 
         # ─── Yıllar Arası Karşılaştırma ─────────────────────
         yillar_arasi = donem_selector.get_yillar_arasi_karsilastirma(int(kurum_id))
+
+        fmt = _rapor_format(request)
+        if fmt != 'json':
+            columns = [
+                {'key': 'yil', 'label': 'Eğitim Yılı'},
+                {'key': 'donem_basi', 'label': 'Dönem Başı'},
+                {'key': 'toplam_gelir', 'label': 'Gelir'},
+                {'key': 'toplam_gider', 'label': 'Gider'},
+                {'key': 'net_kar', 'label': 'Net Kâr'},
+                {'key': 'donem_sonu_bakiye', 'label': 'Dönem Sonu'},
+            ]
+            rows = [
+                {
+                    'yil': y.get('yil'),
+                    'donem_basi': y.get('donem_basi'),
+                    'toplam_gelir': y.get('toplam_gelir'),
+                    'toplam_gider': y.get('toplam_gider'),
+                    'net_kar': y.get('net_kar'),
+                    'donem_sonu_bakiye': y.get('donem_sonu_bakiye'),
+                }
+                for y in (yillar_arasi or [])
+            ]
+            chips = None
+            if donem_ozet:
+                chips = [
+                    {'label': 'Toplam Gelir', 'value': donem_ozet.get('toplam_gelir')},
+                    {'label': 'Toplam Gider', 'value': donem_ozet.get('toplam_gider')},
+                    {'label': 'Net Kâr', 'value': donem_ozet.get('net_kar')},
+                    {'label': 'Toplam Bakiye', 'value': donem_ozet.get('toplam_bakiye')},
+                ]
+            return _export_rapor(
+                request, fmt=fmt, kurum_id=int(kurum_id), sube_id=sube_id,
+                title='Dönem Raporu', columns=columns, rows=rows, summary_chips=chips,
+            )
 
         return Response({
             'donem_ozet': donem_ozet,

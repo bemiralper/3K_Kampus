@@ -7,7 +7,7 @@ import html
 from typing import Any
 
 from apps.finans.application.export.report_html_template import (
-    BRAND_PRIMARY, _brand_display, _logo_data_uri, _logo_fallback_text,
+    BRAND_PRIMARY, _brand_display, _logo_data_uri, _resolve_logo, _logo_fallback_text,
 )
 
 
@@ -44,7 +44,7 @@ def build_gun_sonu_detay_html(report: dict, *, orientation: str = 'landscape') -
     kapak = detay.get('kapak') or {}
     ozet = detay.get('ozet') or {}
     page_size = 'A4 landscape' if orientation == 'landscape' else 'A4 portrait'
-    logo = _logo_data_uri()
+    logo = _resolve_logo(meta)
     kurum_ad = meta.get('kurum_ad') or kapak.get('kurum_ad') or ''
     sube_ad = kapak.get('sube') or meta.get('sube') or ''
     brand_line = _brand_display(kurum_ad, sube_ad if sube_ad != 'Tüm Şubeler' else None)

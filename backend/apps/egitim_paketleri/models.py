@@ -159,6 +159,7 @@ class GrupDersi(models.Model):
     aktif_mi = models.BooleanField('Aktif', default=True)
     dahil_ek_hizmetler = models.ManyToManyField(EkHizmet, related_name='dahil_oldugu_grup_dersleri', verbose_name='Dahil Ek Hizmetler', help_text='Bu grup dersine ücretsiz dahil olan ek hizmetler', blank=True)
     dahil_denemeler = models.ManyToManyField('Deneme', related_name='dahil_oldugu_grup_dersleri', verbose_name='Dahil Deneme Paketleri', help_text='Bu grup dersine ücretsiz dahil olan deneme paketleri', blank=True)
+    dahil_yayin_paketleri = models.ManyToManyField('YayinPaketi', related_name='dahil_oldugu_grup_dersleri', verbose_name='Dahil Yayın Paketleri', help_text='Bu grup dersine ücretsiz dahil olan yayın paketleri', blank=True)
     created_at = models.DateTimeField('Oluşturma Tarihi', auto_now_add=True)
     updated_at = models.DateTimeField('Güncelleme Tarihi', auto_now=True)
 
@@ -200,6 +201,132 @@ class GrupDersi(models.Model):
         if self.alan:
             return f"{self.ad} ({seviyeler} - {self.alan}) [{self.egitim_yili}]"
         return f"{self.ad} ({seviyeler}) [{self.egitim_yili}]"
+
+
+class PremiumPaket(models.Model):
+    """
+    Premium Paket — Ücretli ek hizmetlerin ve deneme paketlerinin
+    ücretsiz olarak paketlendiği, kendi fiyatı olan üst seviye paket.
+
+    Grup Dersi mantığına benzer: pakete kayıt olan öğrenciye,
+    `dahil_ek_hizmetler` ve `dahil_denemeler` ücretsiz olarak dahil edilir.
+    """
+    ad = models.CharField('Paket Adı', max_length=200)
+    kod = models.CharField('Kod', max_length=50)
+    kurum = models.ForeignKey(Kurum, on_delete=models.CASCADE, related_name='premium_paketler', verbose_name='Kurum', null=True, blank=True)
+    sube = models.ForeignKey(Sube, on_delete=models.CASCADE, related_name='premium_paketler', verbose_name='Şube', null=True, blank=True)
+    egitim_yili = models.ForeignKey(EgitimYili, on_delete=models.PROTECT, related_name='premium_paketler', verbose_name='Eğitim Yılı')
+    sinif_seviyeleri = models.ManyToManyField(SinifSeviyesi, related_name='premium_paketler', verbose_name='Sınıf Seviyeleri', help_text='Bu paket hangi sınıf seviyelerine uygulanır?', blank=True)
+    aciklama = models.TextField('Açıklama', blank=True)
+
+    brut_fiyat = models.IntegerField('Brüt Fiyat (KDV Dahil)', default=0, help_text='KDV dahil fiyat (TL). 100 TL\'nin katı olmalıdır.')
+    kdv_orani = models.IntegerField('KDV Oranı (%)', default=10, help_text='KDV oranı yüzde olarak (0, 10, 20)')
+    net_fiyat = models.IntegerField('Net Fiyat (KDV Hariç)', default=0, help_text='Otomatik hesaplanır.')
+    kdv_tutari = models.IntegerField('KDV Tutarı', default=0, help_text='Otomatik hesaplanır.')
+
+    aktif_mi = models.BooleanField('Aktif', default=True)
+    dahil_ek_hizmetler = models.ManyToManyField(EkHizmet, related_name='dahil_oldugu_premium_paketler', verbose_name='Dahil Ek Hizmetler', help_text='Bu premium pakete ücretsiz dahil olan ek hizmetler', blank=True)
+    dahil_denemeler = models.ManyToManyField('Deneme', related_name='dahil_oldugu_premium_paketler', verbose_name='Dahil Deneme Paketleri', help_text='Bu premium pakete ücretsiz dahil olan deneme paketleri', blank=True)
+    dahil_yayin_paketleri = models.ManyToManyField('YayinPaketi', related_name='dahil_oldugu_premium_paketler', verbose_name='Dahil Yayın Paketleri', help_text='Bu premium pakete ücretsiz dahil olan yayın paketleri', blank=True)
+    created_at = models.DateTimeField('Oluşturma Tarihi', auto_now_add=True)
+    updated_at = models.DateTimeField('Güncelleme Tarihi', auto_now=True)
+
+    @property
+    def fiyat(self):
+        return self.brut_fiyat
+
+    @property
+    def kdv_dahil_fiyat(self):
+        return self.brut_fiyat
+
+    def clean(self):
+        super().clean()
+        if self.brut_fiyat < 0:
+            raise ValidationError({'brut_fiyat': 'Fiyat negatif olamaz'})
+        if self.brut_fiyat % 100 != 0:
+            raise ValidationError({'brut_fiyat': 'Brüt fiyat 100 TL\'nin katı olmalıdır'})
+        if self.kdv_orani not in (0, 10, 20):
+            raise ValidationError({'kdv_orani': 'KDV oranı 0, 10 veya 20 olmalıdır'})
+
+    def save(self, *args, **kwargs):
+        self.net_fiyat, self.kdv_tutari = hesapla_kdv(self.brut_fiyat, self.kdv_orani)
+        super().save(*args, **kwargs)
+
+    class Meta:
+        db_table = 'premium_paket'
+        verbose_name = 'Premium Paket'
+        verbose_name_plural = 'Premium Paketler'
+        ordering = ['ad']
+        constraints = [
+            models.UniqueConstraint(fields=['kod', 'sube', 'egitim_yili'], name='unique_premium_paket_kod_sube_yil')
+        ]
+        indexes = [
+            models.Index(fields=['kurum', 'sube', 'egitim_yili']),
+        ]
+
+    def __str__(self):
+        return f"{self.ad} [{self.egitim_yili}]"
+
+
+class YayinPaketi(models.Model):
+    """
+    Yayın Paketi — Kendi fiyatı olan yayın/kitap paketi.
+
+    Grup Dersi ve Premium Paket içine ücretsiz olarak dahil edilebilen
+    bir kalemdir; kendi içinde başka paket barındırmaz.
+    """
+    ad = models.CharField('Paket Adı', max_length=200)
+    kod = models.CharField('Kod', max_length=50)
+    kurum = models.ForeignKey(Kurum, on_delete=models.CASCADE, related_name='yayin_paketleri', verbose_name='Kurum', null=True, blank=True)
+    sube = models.ForeignKey(Sube, on_delete=models.CASCADE, related_name='yayin_paketleri', verbose_name='Şube', null=True, blank=True)
+    egitim_yili = models.ForeignKey(EgitimYili, on_delete=models.PROTECT, related_name='yayin_paketleri', verbose_name='Eğitim Yılı')
+    sinif_seviyeleri = models.ManyToManyField(SinifSeviyesi, related_name='yayin_paketleri', verbose_name='Sınıf Seviyeleri', help_text='Bu paket hangi sınıf seviyelerine uygulanır?', blank=True)
+    aciklama = models.TextField('Açıklama', blank=True)
+
+    brut_fiyat = models.IntegerField('Brüt Fiyat (KDV Dahil)', default=0, help_text='KDV dahil fiyat (TL). 100 TL\'nin katı olmalıdır.')
+    kdv_orani = models.IntegerField('KDV Oranı (%)', default=10, help_text='KDV oranı yüzde olarak (0, 10, 20)')
+    net_fiyat = models.IntegerField('Net Fiyat (KDV Hariç)', default=0, help_text='Otomatik hesaplanır.')
+    kdv_tutari = models.IntegerField('KDV Tutarı', default=0, help_text='Otomatik hesaplanır.')
+
+    aktif_mi = models.BooleanField('Aktif', default=True)
+    created_at = models.DateTimeField('Oluşturma Tarihi', auto_now_add=True)
+    updated_at = models.DateTimeField('Güncelleme Tarihi', auto_now=True)
+
+    @property
+    def fiyat(self):
+        return self.brut_fiyat
+
+    @property
+    def kdv_dahil_fiyat(self):
+        return self.brut_fiyat
+
+    def clean(self):
+        super().clean()
+        if self.brut_fiyat < 0:
+            raise ValidationError({'brut_fiyat': 'Fiyat negatif olamaz'})
+        if self.brut_fiyat % 100 != 0:
+            raise ValidationError({'brut_fiyat': 'Brüt fiyat 100 TL\'nin katı olmalıdır'})
+        if self.kdv_orani not in (0, 10, 20):
+            raise ValidationError({'kdv_orani': 'KDV oranı 0, 10 veya 20 olmalıdır'})
+
+    def save(self, *args, **kwargs):
+        self.net_fiyat, self.kdv_tutari = hesapla_kdv(self.brut_fiyat, self.kdv_orani)
+        super().save(*args, **kwargs)
+
+    class Meta:
+        db_table = 'yayin_paketi'
+        verbose_name = 'Yayın Paketi'
+        verbose_name_plural = 'Yayın Paketleri'
+        ordering = ['ad']
+        constraints = [
+            models.UniqueConstraint(fields=['kod', 'sube', 'egitim_yili'], name='unique_yayin_paketi_kod_sube_yil')
+        ]
+        indexes = [
+            models.Index(fields=['kurum', 'sube', 'egitim_yili']),
+        ]
+
+    def __str__(self):
+        return f"{self.ad} [{self.egitim_yili}]"
 
 
 class OzelDers(models.Model):

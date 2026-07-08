@@ -28,13 +28,15 @@ class HesapTransferiService:
         return self.repo.get_all(kurum_id, sube_id, egitim_yili_id, filters)
 
     @transaction.atomic
-    def transfer_yap(self, data, user=None):
+    def transfer_yap(self, data, user=None, kurum_id=None, sube_id=None):
         """
         data: {
             kaynak_hesap_id, hedef_hesap_id, tutar, transfer_tarihi,
             transfer_turu (opsiyonel, default 'virman'), aciklama,
             egitim_yili_id (opsiyonel — dönem bakiyesi için)
         }
+        kurum_id / sube_id: verilirse hesapların bu tenant'a ait olduğu
+        doğrulanır (cross-tenant virman engellenir).
         """
         errors = self._validate(data)
         if errors:
@@ -51,6 +53,13 @@ class HesapTransferiService:
             return None, {'error': 'Kaynak ve hedef hesap aynı olamaz'}
         if kaynak.sube.kurum_id != hedef.sube.kurum_id:
             return None, {'error': 'Kaynak ve hedef hesap aynı kuruma ait olmalıdır'}
+
+        if kurum_id is not None:
+            if kaynak.sube.kurum_id != int(kurum_id) or hedef.sube.kurum_id != int(kurum_id):
+                return None, {'error': 'Seçilen hesaplar aktif kuruma ait değil'}
+        if sube_id is not None:
+            if kaynak.sube_id != int(sube_id) or hedef.sube_id != int(sube_id):
+                return None, {'error': 'Seçilen hesaplar aktif şubeye ait değil'}
 
         tutar = int(data['tutar'])
         transfer_turu = data.get('transfer_turu') or TransferTuru.VIRMAN

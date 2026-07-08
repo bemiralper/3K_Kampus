@@ -53,16 +53,40 @@ def ogrenci_paketleri(request, ogrenci_id):
             'ogrenci': _serialize_ogrenci(ogrenci),
         }, status=404)
 
-    # Eğitim Paketlerini getir
+    # Eğitim Paketlerini getir (bu kayıt dönemine ait olanlar)
+    from django.db.models import Q
+
     egitim_paketleri = OgrenciEgitimPaketi.objects.filter(
         ogrenci_id=ogrenci_id,
-        aktif_mi=True
+        aktif_mi=True,
     )
+    if kayit.kayit_tarihi:
+        egitim_paketleri = egitim_paketleri.filter(
+            Q(baslangic_tarihi__gte=kayit.kayit_tarihi)
+            | Q(baslangic_tarihi__isnull=True, kayit_tarihi__gte=kayit.kayit_tarihi)
+        )
 
+    from apps.egitim_paketleri.models import hesapla_kdv
     paket_listesi = []
+    dahil_paket_listesi = []
     for ep in egitim_paketleri:
         brut_fiyat, kdv_orani = _get_paket_fiyat(ep.paket_turu, ep.paket_id)
-        from apps.egitim_paketleri.models import hesapla_kdv
+        # Bir üst pakete ücretsiz dahil paketler (ör. grup dersine dahil yayın paketi)
+        # sözleşmede tekrar faturalanmaz.
+        if getattr(ep, 'dahil_mi', False):
+            dahil_paket_listesi.append({
+                'id': ep.id,
+                'paket_turu': ep.paket_turu,
+                'paket_turu_label': ep.get_paket_turu_display(),
+                'paket_id': ep.paket_id,
+                'paket_adi': ep.paket_adi,
+                'kaynak_paket_turu': ep.kaynak_paket_turu or '',
+                'kaynak_paket_id': ep.kaynak_paket_id,
+                'fiyat': brut_fiyat,
+                'kdv_orani': kdv_orani,
+                'kdv_dahil_fiyat': brut_fiyat,
+            })
+            continue
         net_fiyat, kdv_tutari = hesapla_kdv(brut_fiyat, kdv_orani)
         paket_listesi.append({
             'id': ep.id,
@@ -261,9 +285,16 @@ def ogrenci_paketleri(request, ogrenci_id):
             'egitim_yili_adi': str(kayit.egitim_yili) if kayit.egitim_yili else '',
             'egitim_yili_bitis_yil': kayit.egitim_yili.bitis_yil if kayit.egitim_yili else None,
             'sinif': kayit.sinif.ad if kayit.sinif else '',
+            'sinif_seviyesi_id': (
+                kayit.sinif.sinif_seviyesi_id
+                if kayit.sinif and kayit.sinif.sinif_seviyesi_id
+                else kayit.sinif_seviyesi_id
+            ),
+            'alan_id': kayit.sinif.alan_id if kayit.sinif else None,
             'kayit_tarihi': str(kayit.kayit_tarihi) if kayit.kayit_tarihi else None,
         },
         'egitim_paketleri': paket_listesi,
+        'dahil_paketler': dahil_paket_listesi,
         'ek_hizmetler': ek_hizmet_listesi,
         'dahil_hizmetler': dahil_hizmet_listesi,
         'dahil_deneme_paket_ids': sorted(dahil_deneme_paket_ids),
@@ -294,6 +325,8 @@ def _get_paket_fiyat(paket_turu, paket_id):
     model_map = {
         'grup_dersi': 'apps.egitim_paketleri.models.GrupDersi',
         'ozel_ders': 'apps.egitim_paketleri.models.OzelDers',
+        'premium': 'apps.egitim_paketleri.models.PremiumPaket',
+        'yayin': 'apps.egitim_paketleri.models.YayinPaketi',
         'deneme': 'apps.egitim_paketleri.models.Deneme',
         'davranis': 'apps.egitim_paketleri.models.DavranisPaketi',
     }

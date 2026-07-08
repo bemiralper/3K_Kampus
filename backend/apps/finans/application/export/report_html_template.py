@@ -14,6 +14,25 @@ from django.utils import timezone
 
 BRAND_PRIMARY = "#1F3C88"
 BRAND_ACCENT = "#2563eb"
+SOFTWARE_NAME = "3K Kampüs"
+
+
+def finans_report_footer_template(meta: dict[str, Any] | None = None) -> str:
+    """Chromium PDF alt bilgi — yazılım adı, tarih, kullanıcı ve sayfa numarası.
+
+    Tüm finans raporlarında (Gelir/Gider dahil) ortak kurumsal alt bilgi standardı.
+    """
+    meta = meta or {}
+    user = html.escape(str(meta.get("raporu_olusturan") or ""))
+    now = timezone.localtime(timezone.now()).strftime("%d.%m.%Y %H:%M")
+    return f"""
+<div style="width:100%;font-size:8px;color:#64748b;padding:0 8mm;font-family:Segoe UI,Arial,sans-serif;
+  display:flex;justify-content:space-between;align-items:center;">
+  <span style="font-weight:700;color:{BRAND_PRIMARY};">{SOFTWARE_NAME}</span>
+  <span>{now}{f' · {user}' if user else ''}</span>
+  <span>Sayfa <span class="pageNumber"></span> / <span class="totalPages"></span></span>
+</div>
+"""
 
 
 def _logo_data_uri() -> str | None:
@@ -26,6 +45,65 @@ def _logo_data_uri() -> str | None:
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             return f"data:image/png;base64,{encoded}"
     return None
+
+
+def _mime_for(path: Path) -> str:
+    ext = path.suffix.lower()
+    return {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+    }.get(ext, "image/png")
+
+
+def _kurum_logo_data_uri(kurum_id, sube_id=None) -> str | None:
+    """Şube/Kurum'a yüklenmiş kurumsal logoyu (app_logo) data URI olarak döner.
+
+    Öncelik: şube app_logo → kurum app_logo → şube/kurum login_logo.
+    Bulunamazsa None (çağıran taraf statik 3K logosuna düşer).
+    """
+    entities = []
+    try:
+        if sube_id:
+            from apps.sube.domain.models import Sube
+            s = Sube.objects.filter(id=sube_id).first()
+            if s:
+                entities.append(s)
+        if kurum_id:
+            from apps.kurum.domain.models import Kurum
+            k = Kurum.objects.filter(id=kurum_id).first()
+            if k:
+                entities.append(k)
+    except Exception:
+        return None
+
+    for entity in entities:
+        for field in ("app_logo", "login_logo"):
+            f = getattr(entity, field, None)
+            if not f:
+                continue
+            try:
+                path = Path(f.path)
+                if path.is_file():
+                    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+                    return f"data:{_mime_for(path)};base64,{encoded}"
+            except Exception:
+                continue
+    return None
+
+
+def _resolve_logo(filters_meta: dict | None) -> str | None:
+    """Rapor başlığı için logo: önce kurum/şube logosu, yoksa statik 3K logosu."""
+    meta = filters_meta or {}
+    kurum_id = meta.get("kurum_id")
+    sube_id = meta.get("sube_id")
+    logo = _kurum_logo_data_uri(kurum_id, sube_id)
+    if logo:
+        return logo
+    return _logo_data_uri()
 
 
 def _format_cell(value: Any) -> str:
@@ -80,7 +158,7 @@ def build_finans_report_html(
     """Ödev kontrol raporu tarzında markalı HTML belgesi."""
     keys = [c["key"] for c in columns]
     labels = [c.get("label", c["key"]) for c in columns]
-    logo = _logo_data_uri()
+    logo = _resolve_logo(filters_meta)
     now = timezone.localtime(timezone.now()).strftime("%d.%m.%Y %H:%M")
     sube_ad = None
     if filters_meta:
@@ -94,10 +172,19 @@ def build_finans_report_html(
     table_font = "9px" if orientation == "landscape" else "10px"
     th_font = "8px" if orientation == "landscape" else "9px"
 
+    raporu_olusturan = ""
+    if filters_meta:
+        raporu_olusturan = html.escape(str(filters_meta.get("raporu_olusturan") or ""))
+
+    _meta_skip = {
+        "raporu_olusturan", "report_kind", "report_totals", "rapor_adi",
+        "kurum_ad", "sube_ad", "sube", "kurum_id", "sube_id",
+        "toplam", "toplam_tutar", "adet", "count", "toplam_kalan",
+    }
     filter_rows = ""
     if filters_meta:
         for fk, fv in filters_meta.items():
-            if fv in (None, ""):
+            if fk in _meta_skip or fv in (None, ""):
                 continue
             filter_rows += (
                 f'<div class="meta-item"><span class="meta-label">{html.escape(_format_filter_label(fk))}</span>'
@@ -232,6 +319,9 @@ def build_finans_report_html(
       <div class="header-right">
         <div>Oluşturulma</div>
         <div style="font-weight:600;color:#475569;">{now}</div>
+        {f'<div style="margin-top:4px;">Raporu Oluşturan</div><div style="font-weight:600;color:#475569;">{raporu_olusturan}</div>' if raporu_olusturan else ''}
+        <div style="margin-top:4px;">Toplam Kayıt</div>
+        <div style="font-weight:600;color:#475569;">{len(rows)}</div>
       </div>
     </div>
     {f'<div class="meta-grid">{filter_rows}</div>' if filter_rows else ''}

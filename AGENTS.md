@@ -48,6 +48,12 @@ There are two Django entrypoints in the tree. Only one is current:
   package exists at `backend/apps/rapor/` so the backend can boot; leave it in place.
 - **Missing dependency:** `python-dateutil` is imported (e.g. `apps.takvim`) but was absent from
   the original `requirements.txt`; it is now listed there and in the startup update script.
+- **PDF raporları (Playwright):** Gelir/Gider, Cari ve Gün Sonu PDF dışa aktarma Chromium
+  gerektirir (`playwright` pip paketi yeterli değil; tarayıcı binary ayrı indirilir).
+  İlk kurulum veya playwright güncellemesinden sonra `backend/` venv ile:
+  `python -m playwright install chromium` ve Linux'ta `python -m playwright install-deps chromium`
+  (root/sudo gerekebilir). `deploy-production.sh` ve `docker/backend/Dockerfile` bunu otomatik dener.
+  Hata: `Executable doesn't exist at .../ms-playwright/chromium_headless_shell-*` → yukarıdaki komutları çalıştırın.
 
 ### Lint / test / build commands
 - Backend tests: `cd backend && DJANGO_ENV=test python manage.py test apps/finans/tests` (37 tests).

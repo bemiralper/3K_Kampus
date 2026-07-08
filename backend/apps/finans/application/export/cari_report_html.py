@@ -13,6 +13,7 @@ from apps.finans.application.export.report_html_template import (
     _brand_display,
     _format_cell,
     _logo_data_uri,
+    _resolve_logo,
     _logo_fallback_text,
 )
 
@@ -196,7 +197,7 @@ def build_cari_report_html(
     meta = dict(filters_meta or {})
     keys = [c["key"] for c in columns]
     labels = [c.get("label", c["key"]) for c in columns]
-    logo = _logo_data_uri()
+    logo = _resolve_logo(meta)
     now = timezone.localtime(timezone.now()).strftime("%d.%m.%Y %H:%M")
     sube_ad = meta.get("sube_ad") or meta.get("sube")
     kurum = _esc(kurum_ad or meta.get("kurum_ad") or "")

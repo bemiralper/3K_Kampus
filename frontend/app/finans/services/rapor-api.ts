@@ -4,9 +4,12 @@ import type {
   BorcYaslandirma,
   DonemRapor,
 } from "../types/rapor-types";
-import { finansRequest } from "./finans-http";
+import { finansRequest, finansDownload } from "./finans-http";
 
 const request = finansRequest;
+
+export type RaporExportEndpoint = "gelir-gider" | "tahsilat-analiz" | "borc-yaslandirma" | "donem";
+export type RaporExportFormat = "csv" | "xlsx" | "pdf";
 
 function buildParams(params: Record<string, string | number | undefined | null>): string {
   const qs = new URLSearchParams();
@@ -39,5 +42,19 @@ export const raporService = {
 
   donemRapor(params: { kurum_id: number; sube_id?: number; egitim_yili_id?: number }): Promise<DonemRapor> {
     return request(`/raporlar/donem/?${ctxParams(params)}`);
+  },
+
+  export(
+    endpoint: RaporExportEndpoint,
+    format: RaporExportFormat,
+    params: { kurum_id: number; sube_id?: number; egitim_yili_id?: number },
+  ): Promise<{ blob: Blob; filename: string }> {
+    const qs = buildParams({
+      kurum_id: params.kurum_id,
+      sube_id: params.sube_id,
+      egitim_yili_id: params.egitim_yili_id,
+      format,
+    });
+    return finansDownload(`/raporlar/${endpoint}/?${qs}`);
   },
 };

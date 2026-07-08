@@ -33,6 +33,21 @@ mkdir -p /app/backend/private/backups
 echo "[backend-dev] setup_roles"
 python manage.py setup_roles
 
+# PDF raporları — image eskiyse veya cache silindiyse Chromium'u tamamla
+if ! python - <<'PY'
+import os, sys
+from pathlib import Path
+root = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/ms-playwright"))
+if not root.exists() or not any(root.glob("chromium*")):
+    sys.exit(1)
+sys.exit(0)
+PY
+then
+  echo "[backend-dev] Playwright Chromium eksik — kuruluyor..."
+  python -m playwright install chromium
+  python -m playwright install-deps chromium 2>/dev/null || true
+fi
+
 if [ "$#" -gt 0 ]; then
   echo "[backend-dev] starting: $*"
   exec "$@"

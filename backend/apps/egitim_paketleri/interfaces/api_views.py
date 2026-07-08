@@ -10,7 +10,8 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.egitim_paketleri.application.services import (
-    GrupDersiService, OzelDersService, DenemeService, EkHizmetService
+    GrupDersiService, OzelDersService, DenemeService, EkHizmetService,
+    PremiumPaketService, YayinPaketiService,
 )
 from apps.egitim_paketleri.interfaces.sube_context import (
     assert_paket_record_access,
@@ -79,6 +80,10 @@ class GrupDersiListCreateView(View):
                         {'id': d.id, 'ad': d.ad, 'deneme_sayisi': d.deneme_sayisi, 'fiyat': d.brut_fiyat}
                         for d in p.dahil_denemeler.all()
                     ],
+                    'dahil_yayin_paketleri': [
+                        {'id': y.id, 'ad': y.ad, 'fiyat': y.brut_fiyat}
+                        for y in p.dahil_yayin_paketleri.all()
+                    ],
                 }
                 for p in grup_dersleri
             ]
@@ -103,6 +108,7 @@ class GrupDersiListCreateView(View):
                 'dersler_ids': data.get('dersler_ids', []),
                 'dahil_ek_hizmetler_ids': data.get('dahil_ek_hizmetler_ids', []),
                 'dahil_denemeler_ids': data.get('dahil_denemeler_ids', []),
+                'dahil_yayin_paketleri_ids': data.get('dahil_yayin_paketleri_ids', []),
                 'brut_fiyat': int(data.get('brut_fiyat', data.get('fiyat', 0))),
                 'kdv_orani': int(data.get('kdv_orani', 10)),
                 'aciklama': data.get('aciklama', ''),
@@ -145,6 +151,7 @@ class GrupDersiDetailView(View):
                 'dersler_ids': list(p.dersler.values_list('id', flat=True)),
                 'dahil_ek_hizmetler_ids': list(p.dahil_ek_hizmetler.values_list('id', flat=True)),
                 'dahil_denemeler_ids': list(p.dahil_denemeler.values_list('id', flat=True)),
+                'dahil_yayin_paketleri_ids': list(p.dahil_yayin_paketleri.values_list('id', flat=True)),
                 'fiyat': p.brut_fiyat,
                 'kdv_orani': p.kdv_orani,
                 'kdv_dahil_fiyat': p.brut_fiyat,
@@ -172,6 +179,7 @@ class GrupDersiDetailView(View):
                 'dersler_ids': data.get('dersler_ids', []),
                 'dahil_ek_hizmetler_ids': data.get('dahil_ek_hizmetler_ids', []),
                 'dahil_denemeler_ids': data.get('dahil_denemeler_ids', []),
+                'dahil_yayin_paketleri_ids': data.get('dahil_yayin_paketleri_ids', []),
                 'brut_fiyat': int(data.get('brut_fiyat', data.get('fiyat', 0))),
                 'kdv_orani': int(data.get('kdv_orani', 10)),
                 'aciklama': data.get('aciklama', ''),
@@ -483,8 +491,293 @@ class ReferansVerilerView(View):
                     {'id': d.id, 'ad': d.ad, 'kod': d.kod, 'deneme_sayisi': d.deneme_sayisi, 'fiyat': d.brut_fiyat}
                     for d in DenemeService().get_active(kurum_id, sube_id, egitim_yili_id)
                 ],
+                # Grup Dersi ve Premium Paket formu için: ücretsiz dahil edilebilecek yayın paketleri
+                'yayin_paketleri': self._safe_list(
+                    lambda: [
+                        {'id': y.id, 'ad': y.ad, 'kod': y.kod, 'fiyat': y.brut_fiyat}
+                        for y in YayinPaketiService().get_active(kurum_id, sube_id, egitim_yili_id)
+                    ]
+                ),
             }
         })
+
+    @staticmethod
+    def _safe_list(fn):
+        """Migration henüz uygulanmamış (tablo yok) ortamlarda referans verinin
+        tamamen çökmesini önler; ilgili liste boş döner."""
+        try:
+            return fn()
+        except Exception:
+            return []
+
+
+# =============================================
+# Premium Paket API
+# =============================================
+
+@method_decorator(csrf_exempt, name='dispatch')
+class PremiumPaketListCreateView(View):
+    """Premium Paket List ve Create API"""
+
+    def get(self, request):
+        kurum_id, sube_id, egitim_yili_id = get_kurum_sube_context(request)
+        if err := _paket_ctx_error_response(request):
+            return err
+        service = PremiumPaketService()
+        paketler = service.get_all(kurum_id, sube_id, egitim_yili_id)
+        return JsonResponse({
+            'success': True,
+            'data': [
+                {
+                    'id': p.id, 'ad': p.ad, 'kod': p.kod,
+                    'fiyat': p.brut_fiyat,
+                    'kdv_orani': p.kdv_orani,
+                    'kdv_dahil_fiyat': p.brut_fiyat,
+                    'net_fiyat': p.net_fiyat,
+                    'kdv_tutari': p.kdv_tutari,
+                    'aktif_mi': p.aktif_mi,
+                    'aciklama': p.aciklama or '',
+                    'sinif_seviyeleri': [{'id': s.id, 'ad': s.ad} for s in p.sinif_seviyeleri.all()],
+                    'dahil_ek_hizmetler': [
+                        {'id': h.id, 'ad': h.ad, 'hizmet_turu': h.hizmet_turu, 'fiyat': h.brut_fiyat}
+                        for h in p.dahil_ek_hizmetler.all()
+                    ],
+                    'dahil_denemeler': [
+                        {'id': d.id, 'ad': d.ad, 'deneme_sayisi': d.deneme_sayisi, 'fiyat': d.brut_fiyat}
+                        for d in p.dahil_denemeler.all()
+                    ],
+                    'dahil_yayin_paketleri': [
+                        {'id': y.id, 'ad': y.ad, 'fiyat': y.brut_fiyat}
+                        for y in p.dahil_yayin_paketleri.all()
+                    ],
+                }
+                for p in paketler
+            ]
+        })
+
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            service = PremiumPaketService()
+            kurum_id, sube_id, egitim_yili_id = get_kurum_sube_context(request)
+            if err := _paket_ctx_error_response(request):
+                return err
+            create_data = {
+                'ad': data.get('ad'),
+                'kod': data.get('kod'),
+                'kurum_id': kurum_id,
+                'sube_id': sube_id,
+                'egitim_yili_id': egitim_yili_id,
+                'sinif_seviyeleri_ids': data.get('sinif_seviyeleri_ids', []),
+                'dahil_ek_hizmetler_ids': data.get('dahil_ek_hizmetler_ids', []),
+                'dahil_denemeler_ids': data.get('dahil_denemeler_ids', []),
+                'dahil_yayin_paketleri_ids': data.get('dahil_yayin_paketleri_ids', []),
+                'brut_fiyat': int(data.get('brut_fiyat', data.get('fiyat', 0))),
+                'kdv_orani': int(data.get('kdv_orani', 10)),
+                'aciklama': data.get('aciklama', ''),
+                'aktif_mi': data.get('aktif_mi', True),
+            }
+            paket, errors = service.create(create_data)
+            if errors:
+                return JsonResponse({'success': False, 'error': errors}, status=400)
+            return JsonResponse({'success': True, 'data': {'id': paket.id, 'ad': paket.ad, 'kod': paket.kod}}, status=201)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class PremiumPaketDetailView(View):
+    """Premium Paket Detail, Update, Delete API"""
+
+    def get(self, request, pk):
+        service = PremiumPaketService()
+        p = service.get_by_id(pk)
+        _, err = _require_paket_record(request, p)
+        if err:
+            return err
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'id': p.id, 'ad': p.ad, 'kod': p.kod,
+                'sinif_seviyeleri_ids': list(p.sinif_seviyeleri.values_list('id', flat=True)),
+                'dahil_ek_hizmetler_ids': list(p.dahil_ek_hizmetler.values_list('id', flat=True)),
+                'dahil_denemeler_ids': list(p.dahil_denemeler.values_list('id', flat=True)),
+                'dahil_yayin_paketleri_ids': list(p.dahil_yayin_paketleri.values_list('id', flat=True)),
+                'fiyat': p.brut_fiyat,
+                'kdv_orani': p.kdv_orani,
+                'kdv_dahil_fiyat': p.brut_fiyat,
+                'net_fiyat': p.net_fiyat,
+                'kdv_tutari': p.kdv_tutari,
+                'aciklama': p.aciklama or '',
+                'aktif_mi': p.aktif_mi,
+            }
+        })
+
+    def put(self, request, pk):
+        try:
+            service = PremiumPaketService()
+            p = service.get_by_id(pk)
+            _, err = _require_paket_record(request, p)
+            if err:
+                return err
+            data = json.loads(request.body)
+            update_data = {
+                'ad': data.get('ad'),
+                'kod': data.get('kod'),
+                'sinif_seviyeleri_ids': data.get('sinif_seviyeleri_ids', []),
+                'dahil_ek_hizmetler_ids': data.get('dahil_ek_hizmetler_ids', []),
+                'dahil_denemeler_ids': data.get('dahil_denemeler_ids', []),
+                'dahil_yayin_paketleri_ids': data.get('dahil_yayin_paketleri_ids', []),
+                'brut_fiyat': int(data.get('brut_fiyat', data.get('fiyat', 0))),
+                'kdv_orani': int(data.get('kdv_orani', 10)),
+                'aciklama': data.get('aciklama', ''),
+                'aktif_mi': data.get('aktif_mi', True),
+            }
+            paket, errors = service.update(pk, update_data)
+            if errors:
+                return JsonResponse({'success': False, 'error': errors}, status=400)
+            return JsonResponse({'success': True, 'data': {'id': paket.id, 'ad': paket.ad}})
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+    def delete(self, request, pk):
+        service = PremiumPaketService()
+        p = service.get_by_id(pk)
+        _, err = _require_paket_record(request, p)
+        if err:
+            return err
+        success, errors = service.delete(pk)
+        if errors:
+            return JsonResponse({'success': False, 'error': errors}, status=400)
+        return JsonResponse({'success': True})
+
+
+# =============================================
+# Yayın Paketi API
+# =============================================
+
+@method_decorator(csrf_exempt, name='dispatch')
+class YayinPaketiListCreateView(View):
+    """Yayın Paketi List ve Create API"""
+
+    def get(self, request):
+        kurum_id, sube_id, egitim_yili_id = get_kurum_sube_context(request)
+        if err := _paket_ctx_error_response(request):
+            return err
+        service = YayinPaketiService()
+        paketler = service.get_all(kurum_id, sube_id, egitim_yili_id)
+        return JsonResponse({
+            'success': True,
+            'data': [
+                {
+                    'id': p.id, 'ad': p.ad, 'kod': p.kod,
+                    'fiyat': p.brut_fiyat,
+                    'kdv_orani': p.kdv_orani,
+                    'kdv_dahil_fiyat': p.brut_fiyat,
+                    'net_fiyat': p.net_fiyat,
+                    'kdv_tutari': p.kdv_tutari,
+                    'aktif_mi': p.aktif_mi,
+                    'aciklama': p.aciklama or '',
+                    'sinif_seviyeleri': [{'id': s.id, 'ad': s.ad} for s in p.sinif_seviyeleri.all()],
+                }
+                for p in paketler
+            ]
+        })
+
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            service = YayinPaketiService()
+            kurum_id, sube_id, egitim_yili_id = get_kurum_sube_context(request)
+            if err := _paket_ctx_error_response(request):
+                return err
+            create_data = {
+                'ad': data.get('ad'),
+                'kod': data.get('kod'),
+                'kurum_id': kurum_id,
+                'sube_id': sube_id,
+                'egitim_yili_id': egitim_yili_id,
+                'sinif_seviyeleri_ids': data.get('sinif_seviyeleri_ids', []),
+                'brut_fiyat': int(data.get('brut_fiyat', data.get('fiyat', 0))),
+                'kdv_orani': int(data.get('kdv_orani', 10)),
+                'aciklama': data.get('aciklama', ''),
+                'aktif_mi': data.get('aktif_mi', True),
+            }
+            paket, errors = service.create(create_data)
+            if errors:
+                return JsonResponse({'success': False, 'error': errors}, status=400)
+            return JsonResponse({'success': True, 'data': {'id': paket.id, 'ad': paket.ad, 'kod': paket.kod}}, status=201)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class YayinPaketiDetailView(View):
+    """Yayın Paketi Detail, Update, Delete API"""
+
+    def get(self, request, pk):
+        service = YayinPaketiService()
+        p = service.get_by_id(pk)
+        _, err = _require_paket_record(request, p)
+        if err:
+            return err
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'id': p.id, 'ad': p.ad, 'kod': p.kod,
+                'sinif_seviyeleri_ids': list(p.sinif_seviyeleri.values_list('id', flat=True)),
+                'fiyat': p.brut_fiyat,
+                'kdv_orani': p.kdv_orani,
+                'kdv_dahil_fiyat': p.brut_fiyat,
+                'net_fiyat': p.net_fiyat,
+                'kdv_tutari': p.kdv_tutari,
+                'aciklama': p.aciklama or '',
+                'aktif_mi': p.aktif_mi,
+            }
+        })
+
+    def put(self, request, pk):
+        try:
+            service = YayinPaketiService()
+            p = service.get_by_id(pk)
+            _, err = _require_paket_record(request, p)
+            if err:
+                return err
+            data = json.loads(request.body)
+            update_data = {
+                'ad': data.get('ad'),
+                'kod': data.get('kod'),
+                'sinif_seviyeleri_ids': data.get('sinif_seviyeleri_ids', []),
+                'brut_fiyat': int(data.get('brut_fiyat', data.get('fiyat', 0))),
+                'kdv_orani': int(data.get('kdv_orani', 10)),
+                'aciklama': data.get('aciklama', ''),
+                'aktif_mi': data.get('aktif_mi', True),
+            }
+            paket, errors = service.update(pk, update_data)
+            if errors:
+                return JsonResponse({'success': False, 'error': errors}, status=400)
+            return JsonResponse({'success': True, 'data': {'id': paket.id, 'ad': paket.ad}})
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+    def delete(self, request, pk):
+        service = YayinPaketiService()
+        p = service.get_by_id(pk)
+        _, err = _require_paket_record(request, p)
+        if err:
+            return err
+        success, errors = service.delete(pk)
+        if errors:
+            return JsonResponse({'success': False, 'error': errors}, status=400)
+        return JsonResponse({'success': True})
 
 
 @method_decorator(csrf_exempt, name='dispatch')

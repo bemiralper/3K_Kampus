@@ -29,6 +29,8 @@ SORT_MAP = {
 FILTER_KALEM_TURLERI = [
     ('grup_dersi', 'Grup Dersi'),
     ('ozel_ders', 'Özel Ders'),
+    ('premium', 'Premium Paket'),
+    ('yayin', 'Yayın Paketi'),
     ('deneme', 'Deneme'),
     ('ek_hizmet', 'Ek Hizmet'),
 ]
@@ -37,6 +39,8 @@ FILTER_KALEM_TURU_VALUES = {v for v, _ in FILTER_KALEM_TURLERI}
 FILTER_KALEM_GRUP_LABELS = {
     'grup_dersi': 'Grup Dersleri',
     'ozel_ders': 'Özel Dersler',
+    'premium': 'Premium Paketler',
+    'yayin': 'Yayın Paketleri',
     'deneme': 'Denemeler',
     'ek_hizmet': 'Ek Hizmetler',
 }
@@ -95,10 +99,14 @@ def parse_kalem_filter_param(raw):
 
 
 def _catalog_models():
-    from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, OzelDers
+    from apps.egitim_paketleri.models import (
+        Deneme, EkHizmet, GrupDersi, OzelDers, PremiumPaket, YayinPaketi,
+    )
     return {
         'grup_dersi': GrupDersi,
         'ozel_ders': OzelDers,
+        'premium': PremiumPaket,
+        'yayin': YayinPaketi,
         'deneme': Deneme,
         'ek_hizmet': EkHizmet,
     }
@@ -120,6 +128,10 @@ def resolve_kalem_filter_turu(kalem, sozlesme):
         return 'grup_dersi'
     if tur == KalemTuru.OZEL_DERS:
         return 'ozel_ders'
+    if tur == KalemTuru.PREMIUM:
+        return 'premium'
+    if tur == KalemTuru.YAYIN:
+        return 'yayin'
     if tur == KalemTuru.DENEME:
         return 'deneme'
     if tur in (KalemTuru.EK_HIZMET, KalemTuru.EK_HIZMET_SATISI):

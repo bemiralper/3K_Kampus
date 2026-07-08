@@ -14,6 +14,10 @@ class IslemMasrafiInputSerializer(serializers.Serializer):
         allow_blank=True,
         allow_null=True,
     )
+    masraf_turu_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+    )
     kesinti_tutar = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,

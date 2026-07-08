@@ -60,6 +60,43 @@ interface DahilHizmet {
   kdv_dahil_fiyat?: number;
 }
 
+interface DahilPaket {
+  id: number;
+  paket_turu: string;
+  paket_turu_label: string;
+  paket_id: number;
+  paket_adi: string;
+  kaynak_paket_turu?: string;
+  kaynak_paket_id?: number | null;
+  fiyat?: number;
+  kdv_orani?: number;
+  kdv_dahil_fiyat?: number;
+}
+
+function kaynakMatchesParent(
+  kaynakTur: string | undefined,
+  kaynakId: number | null | undefined,
+  parentTuru: string,
+  parentId: number,
+): boolean {
+  if (!kaynakTur || kaynakId == null) return false;
+  if (parentTuru === "grup_dersi" && kaynakId === parentId) {
+    return kaynakTur === "grup_dersi" || kaynakTur === "grup_dersleri";
+  }
+  if (parentTuru === "premium" && kaynakId === parentId) {
+    return kaynakTur === "premium" || kaynakTur === "premium_paketler";
+  }
+  return kaynakTur === parentTuru && kaynakId === parentId;
+}
+
+function dahilItemHasActiveParent(
+  kaynakTur: string | undefined,
+  kaynakId: number | null | undefined,
+  activeParents: Array<{ turu: string; id: number }>,
+): boolean {
+  return activeParents.some((p) => kaynakMatchesParent(kaynakTur, kaynakId, p.turu, p.id));
+}
+
 interface Kayit {
   id: number;
   kurum_id: number;
@@ -71,6 +108,8 @@ interface Kayit {
   egitim_yili_id: number;
   egitim_yili_adi: string;
   sinif: string;
+  sinif_seviyesi_id?: number | null;
+  alan_id?: number | null;
   kayit_tarihi: string | null;
 }
 
@@ -221,7 +260,7 @@ function resolvePaketTuruForKalem(
 /* ═══════════════════════════════════════════ */
 export default function SozlesmeOlusturClient() {
   const { basePath, href } = useOdemePath();
-  const { activeSube } = useKurum();
+  const { activeSube, activeEgitimYili } = useKurum();
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit"); // düzenleme modu
@@ -243,6 +282,7 @@ export default function SozlesmeOlusturClient() {
   const [paketData, setPaketData] = useState<{
     kayit: Kayit;
     egitim_paketleri: EgitimPaketi[];
+    dahil_paketler?: DahilPaket[];
     ek_hizmetler: EkHizmet[];
     dahil_hizmetler?: DahilHizmet[];
     dahil_deneme_paket_ids?: number[];
@@ -261,6 +301,8 @@ export default function SozlesmeOlusturClient() {
   const [selectedPaketIdx, setSelectedPaketIdx] = useState<number | null>(null); // Grup dersi (tek seçim)
   const [selectedOzelDersIdxs, setSelectedOzelDersIdxs] = useState<Set<number>>(new Set()); // Özel dersler (çoklu seçim)
   const [selectedDenemePaketIdxs, setSelectedDenemePaketIdxs] = useState<Set<number>>(new Set()); // Deneme paketleri (çoklu seçim)
+  const [selectedPremiumIdxs, setSelectedPremiumIdxs] = useState<Set<number>>(new Set());
+  const [selectedYayinIdxs, setSelectedYayinIdxs] = useState<Set<number>>(new Set());
   const [selectedEkHizmetIds, setSelectedEkHizmetIds] = useState<Set<number>>(new Set());
   const [kalemler, setKalemler] = useState<KalemRow[]>([]);
   const skipKalemAutoBuild = useRef(false);
@@ -290,42 +332,98 @@ export default function SozlesmeOlusturClient() {
 
   // ─── Yeni Paket/Hizmet Ekleme ─────
   const [showPaketEkle, setShowPaketEkle] = useState(false);
-  const [tumPaketler, setTumPaketler] = useState<{grupDersleri: any[], ozelDersler: any[], denemeler: any[], ekHizmetler: any[]} | null>(null);
+  const [tumPaketler, setTumPaketler] = useState<{
+    grupDersleri: any[];
+    ozelDersler: any[];
+    premiumPaketler: any[];
+    denemeler: any[];
+    ekHizmetler: any[];
+    filtreUyari?: string | null;
+  } | null>(null);
   const [tumPaketlerLoading, setTumPaketlerLoading] = useState(false);
 
   const loadTumPaketler = useCallback(async () => {
+    if (!selectedOgrenci?.id || !paketData?.kayit?.egitim_yili_id) return;
     setTumPaketlerLoading(true);
     try {
-      const base = `/api/egitim-paketleri/api`;
-      const [gRes, oRes, dRes, eRes] = await Promise.all([
-        fetch(`${base}/grup-dersleri/`, { credentials: "include" }),
-        fetch(`${base}/ozel-dersler/`, { credentials: "include" }),
-        fetch(`${base}/denemeler/`, { credentials: "include" }),
-        fetch(`${base}/ek-hizmetler/`, { credentials: "include" }),
-      ]);
-      const [gData, oData, dData, eData] = await Promise.all([gRes.json(), oRes.json(), dRes.json(), eRes.json()]);
-      setTumPaketler({
-        grupDersleri: (gData.data || []).filter((p: any) => p.aktif_mi),
-        ozelDersler: (oData.data || []).filter((p: any) => p.aktif_mi),
-        denemeler: (dData.data || []).filter((p: any) => p.aktif_mi),
-        ekHizmetler: (eData.data || []).filter((p: any) => p.aktif_mi),
+      const base = `${API_BASE}/kalem-secenekleri`;
+      const params = new URLSearchParams({
+        ogrenci_id: String(selectedOgrenci.id),
+        egitim_yili_id: String(paketData.kayit.egitim_yili_id),
+        ogrenci_kayit_id: String(paketData.kayit.id),
+        kurum_id: String(paketData.kayit.kurum_id),
+        sube_id: String(paketData.kayit.islem_sube_id ?? paketData.kayit.sube_id),
       });
-    } catch { setTumPaketler(null); }
+      if (paketData.kayit.sinif_seviyesi_id) {
+        params.set("sinif_seviyesi_id", String(paketData.kayit.sinif_seviyesi_id));
+      }
+      if (paketData.kayit.alan_id) {
+        params.set("alan_id", String(paketData.kayit.alan_id));
+      }
+      const headers = apiHeaders();
+      const fetchSecenek = async (tur: string) => {
+        const res = await fetch(`${base}/?${params}&tur=${tur}`, { credentials: "include", headers });
+        if (!res.ok) return { secenekler: [] as any[], filtre_uyarisi: null as string | null };
+        const data = await res.json();
+        return {
+          secenekler: data.secenekler || [],
+          filtre_uyarisi: data.filtre_uyarisi || null,
+        };
+      };
+      const [gData, oData, pData, dData, eData] = await Promise.all([
+        fetchSecenek("grup_dersi"),
+        fetchSecenek("ozel_ders"),
+        fetchSecenek("premium"),
+        fetchSecenek("deneme"),
+        fetchSecenek("ek_hizmet"),
+      ]);
+      const mapPaket = (items: any[]) =>
+        items.map((p) => ({
+          id: p.id,
+          ad: p.ad,
+          kod: p.kod,
+          fiyat: p.fiyat || 0,
+          kdv_orani: p.kdv_orani || 10,
+          kdv_dahil_fiyat: p.kdv_dahil_fiyat || p.fiyat || 0,
+          hizmet_turu: p.hizmet_turu,
+          hizmet_turu_display: p.hizmet_turu,
+          aktif_mi: true,
+        }));
+      const filtreUyari =
+        gData.filtre_uyarisi ||
+        oData.filtre_uyarisi ||
+        pData.filtre_uyarisi ||
+        dData.filtre_uyarisi ||
+        eData.filtre_uyarisi ||
+        null;
+      setTumPaketler({
+        grupDersleri: mapPaket(gData.secenekler),
+        ozelDersler: mapPaket(oData.secenekler),
+        premiumPaketler: mapPaket(pData.secenekler),
+        denemeler: mapPaket(dData.secenekler),
+        ekHizmetler: mapPaket(eData.secenekler),
+        filtreUyari,
+      });
+    } catch {
+      setTumPaketler(null);
+    }
     setTumPaketlerLoading(false);
-  }, []);
+  }, [selectedOgrenci?.id, paketData?.kayit?.egitim_yili_id]);
 
   const addPaketFromCatalog = (paket: any, turu: string) => {
     if (!paketData) return;
     const paketKey = `${turu}-${paket.id}`;
     const mevcutPaketKeys = paketData.egitim_paketleri.map((p: EgitimPaketi) => `${p.paket_turu}-${p.paket_id}`);
     if (mevcutPaketKeys.includes(paketKey)) return;
-    if (turu === "deneme" && hasGrupDersiSelected && (paketData.dahil_deneme_paket_ids || []).includes(paket.id)) return;
+    if (turu === "deneme" && dahilDenemePaketIdSet.has(paket.id)) return;
     if (kalemler.some(k => k.kalem_turu === "paket" && k.paket_turu === turu && k.kalem_id === paket.id)) return;
     if (paketData.mevcut_kalemler?.some(k => k.kalem_turu === "paket" && k.kalem_id === paket.id)) return;
     const yeniPaket: EgitimPaketi = {
       id: Date.now(), // geçici id
       paket_turu: turu,
-      paket_turu_label: turu === 'grup_dersi' ? 'Grup Dersi' : turu === 'ozel_ders' ? 'Özel Ders' : 'Deneme',
+      paket_turu_label: (
+        { grup_dersi: 'Grup Dersi', ozel_ders: 'Özel Ders', premium: 'Premium Paket', yayin: 'Yayın Paketi', deneme: 'Deneme' } as Record<string, string>
+      )[turu] || 'Paket',
       paket_id: paket.id,
       paket_adi: paket.ad,
       fiyat: paket.fiyat || 0,
@@ -342,13 +440,17 @@ export default function SozlesmeOlusturClient() {
       setSelectedOzelDersIdxs(prev => new Set([...prev, newIdx]));
     } else if (turu === 'deneme') {
       setSelectedDenemePaketIdxs(prev => new Set([...prev, newIdx]));
+    } else if (turu === 'premium') {
+      setSelectedPremiumIdxs(prev => new Set([...prev, newIdx]));
+    } else if (turu === 'yayin') {
+      setSelectedYayinIdxs(prev => new Set([...prev, newIdx]));
     }
   };
 
   const addEkHizmetFromCatalog = (hizmet: any) => {
     if (!paketData) return;
-    const dahilIds = new Set((paketData.dahil_hizmetler || []).map(d => d.ek_hizmet_id));
-    if (hasGrupDersiSelected && dahilIds.has(hizmet.id)) return;
+    const dahilIds = dahilEkHizmetIdSet;
+    if (dahilIds.has(hizmet.id)) return;
     const mevcutEkIds = paketData.ek_hizmetler.map((e: EkHizmet) => e.ek_hizmet_id);
     if (mevcutEkIds.includes(hizmet.id)) return;
     if (kalemler.some(k => k.kalem_turu === "ek_hizmet" && k.kalem_id === hizmet.id)) return;
@@ -516,6 +618,8 @@ export default function SozlesmeOlusturClient() {
       if (contractRestore?.kalemler?.length) {
         const ozelDersIdxs = new Set<number>();
         const denemeIdxs = new Set<number>();
+        const premiumIdxs = new Set<number>();
+        const yayinIdxs = new Set<number>();
         let grupDersiIdx: number | null = null;
         const ekIds = new Set<number>();
         const restoredRows: KalemRow[] = [];
@@ -533,6 +637,8 @@ export default function SozlesmeOlusturClient() {
             if (tur === "grup_dersi" && idx !== -1) grupDersiIdx = idx;
             if (tur === "ozel_ders" && idx !== -1) ozelDersIdxs.add(idx);
             if (tur === "deneme" && idx !== -1) denemeIdxs.add(idx);
+            if (tur === "premium" && idx !== -1) premiumIdxs.add(idx);
+            if (tur === "yayin" && idx !== -1) yayinIdxs.add(idx);
             const kdvHaric = hesaplaKalem(k.brut_tutar, k.kdv_orani, 0).kdv_haric;
             restoredRows.push({
               key: paketKalemKey(tur, k.kalem_id),
@@ -571,6 +677,8 @@ export default function SozlesmeOlusturClient() {
         setSelectedPaketIdx(grupDersiIdx);
         setSelectedOzelDersIdxs(ozelDersIdxs);
         setSelectedDenemePaketIdxs(denemeIdxs);
+        setSelectedPremiumIdxs(premiumIdxs);
+        setSelectedYayinIdxs(yayinIdxs);
         setSelectedEkHizmetIds(ekIds);
         skipKalemAutoBuild.current = true;
         setKalemler(restoredRows);
@@ -586,11 +694,17 @@ export default function SozlesmeOlusturClient() {
         }
         const ozelDersIdxs = new Set<number>();
         const denemeIdxs = new Set<number>();
+        const premiumIdxs = new Set<number>();
+        const yayinIdxs = new Set<number>();
         data.egitim_paketleri.forEach((p: EgitimPaketi, idx: number) => {
           if (p.paket_turu === "ozel_ders") ozelDersIdxs.add(idx);
           if (p.paket_turu === "deneme") denemeIdxs.add(idx);
+          if (p.paket_turu === "premium") premiumIdxs.add(idx);
+          if (p.paket_turu === "yayin") yayinIdxs.add(idx);
         });
         setSelectedOzelDersIdxs(ozelDersIdxs);
+        setSelectedPremiumIdxs(premiumIdxs);
+        setSelectedYayinIdxs(yayinIdxs);
         if (grupDersiIdx === -1) {
           const dahilDenemeIds = new Set<number>(data.dahil_deneme_paket_ids || []);
           const filteredDeneme = new Set<number>();
@@ -605,12 +719,12 @@ export default function SozlesmeOlusturClient() {
       }
       if (data.ek_hizmetler && data.ek_hizmetler.length > 0) {
         // Deneme paketi veya grup dersi seçiliyse, deneme türündeki ek hizmetleri otomatik seçme (zaten dahil)
-        const hasDenemePaketi = data.egitim_paketleri?.some((p: EgitimPaketi) => p.paket_turu === 'deneme');
-        const hasGrupDersi = data.egitim_paketleri?.some((p: EgitimPaketi) => p.paket_turu === 'grup_dersi');
+        const hasDenemePaketi = data.egitim_paketleri?.some((p: EgitimPaketi) => p.paket_turu === "deneme");
+        const hasGrupDersi = data.egitim_paketleri?.some((p: EgitimPaketi) => p.paket_turu === "grup_dersi");
+        const hasPremium = data.egitim_paketleri?.some((p: EgitimPaketi) => p.paket_turu === "premium");
         const allEkIds = new Set<number>();
         data.ek_hizmetler.forEach((eh: EkHizmet) => {
-          // Deneme paketi veya grup dersi varsa deneme türü ek hizmetleri seçme
-          if (eh.hizmet_turu === 'deneme' && (hasDenemePaketi || hasGrupDersi)) return;
+          if (eh.hizmet_turu === "deneme" && (hasDenemePaketi || hasGrupDersi || hasPremium)) return;
           allEkIds.add(eh.id);
         });
         setSelectedEkHizmetIds(allEkIds);
@@ -627,18 +741,20 @@ export default function SozlesmeOlusturClient() {
     setSelectedPaketIdx(null);
     setSelectedOzelDersIdxs(new Set());
     setSelectedDenemePaketIdxs(new Set());
+    setSelectedPremiumIdxs(new Set());
+    setSelectedYayinIdxs(new Set());
     setSelectedEkHizmetIds(new Set());
     setKalemler([]);
     setSelectedOdemeYontemiId("");
     loadPaketData(ogr.id);
   };
 
-  // Aktif şube değişince mali hesap listesini yenile
+  // Aktif şube / eğitim yılı değişince paket listesini yenile
   useEffect(() => {
     if (!selectedOgrenci?.id || isEditMode) return;
     loadPaketData(selectedOgrenci.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSube?.id]);
+  }, [activeSube?.id, activeEgitimYili?.id]);
 
   // ═════════════════════════════════════════
   // Edit Mode: Mevcut sözleşme verilerini yükle
@@ -746,41 +862,72 @@ export default function SozlesmeOlusturClient() {
   ]);
 
   // ═════════════════════════════════════════
-  // Grup dersi seçildiğinde deneme paketlerini temizle
+  // Seçili ana paketlere göre dinamik dahil hesabı
   // ═════════════════════════════════════════
-  const hasGrupDersiSelected = selectedPaketIdx !== null && paketData?.egitim_paketleri[selectedPaketIdx]?.paket_turu === "grup_dersi";
+  const activeParentPackages = useMemo(() => {
+    const parents: Array<{ turu: string; id: number }> = [];
+    if (!paketData) return parents;
+    if (selectedPaketIdx !== null) {
+      const p = paketData.egitim_paketleri[selectedPaketIdx];
+      if (p && (p.paket_turu === "grup_dersi" || p.paket_turu === "premium")) {
+        parents.push({ turu: p.paket_turu, id: p.paket_id });
+      }
+    }
+    for (const idx of selectedPremiumIdxs) {
+      const p = paketData.egitim_paketleri[idx];
+      if (p?.paket_turu === "premium") {
+        parents.push({ turu: "premium", id: p.paket_id });
+      }
+    }
+    return parents;
+  }, [paketData, selectedPaketIdx, selectedPremiumIdxs]);
 
-  const dahilEkHizmetIdSet = useMemo(
-    () => new Set((paketData?.dahil_hizmetler || []).map(d => d.ek_hizmet_id)),
-    [paketData?.dahil_hizmetler]
-  );
-  const dahilDenemePaketIdSet = useMemo(
-    () => new Set(paketData?.dahil_deneme_paket_ids || []),
-    [paketData?.dahil_deneme_paket_ids]
-  );
+  const derivedPaketView = useMemo(() => {
+    if (!paketData) {
+      return {
+        egitimPaketleri: [] as EgitimPaketi[],
+        dahilPaketler: [] as DahilPaket[],
+        dahilHizmetler: [] as DahilHizmet[],
+        promotedEkHizmetler: [] as EkHizmet[],
+        dahilDenemePaketIdSet: new Set<number>(),
+        dahilEkHizmetIdSet: new Set<number>(),
+      };
+    }
 
-  const isPaketKalemiMevcut = useCallback((paketTuru: string, paketId: number) => {
-    if (!paketData) return false;
-    if (paketData.egitim_paketleri.some(p => p.paket_turu === paketTuru && p.paket_id === paketId)) return true;
-    if (kalemler.some(k => k.kalem_turu === "paket" && k.paket_turu === paketTuru && k.kalem_id === paketId)) return true;
-    if (paketTuru === "deneme" && hasGrupDersiSelected && dahilDenemePaketIdSet.has(paketId)) return true;
-    return false;
-  }, [paketData, kalemler, dahilDenemePaketIdSet, hasGrupDersiSelected]);
+    const activeDahilPaketler: DahilPaket[] = [];
+    const promotedPaketler: EgitimPaketi[] = [];
+    for (const dp of paketData.dahil_paketler || []) {
+      if (dahilItemHasActiveParent(dp.kaynak_paket_turu, dp.kaynak_paket_id, activeParentPackages)) {
+        activeDahilPaketler.push(dp);
+      } else {
+        promotedPaketler.push({
+          id: dp.id,
+          paket_turu: dp.paket_turu,
+          paket_turu_label: dp.paket_turu_label,
+          paket_id: dp.paket_id,
+          paket_adi: dp.paket_adi,
+          fiyat: dp.fiyat || 0,
+          kdv_orani: dp.kdv_orani || 10,
+          kdv_tutari: 0,
+          kdv_dahil_fiyat: dp.kdv_dahil_fiyat || dp.fiyat || 0,
+        });
+      }
+    }
 
-  const isEkHizmetMevcut = useCallback((hizmetId: number) => {
-    if (!paketData) return false;
-    if (hasGrupDersiSelected && dahilEkHizmetIdSet.has(hizmetId)) return true;
-    if (paketData.ek_hizmetler.some(eh => eh.ek_hizmet_id === hizmetId)) return true;
-    if (kalemler.some(k => k.kalem_turu === "ek_hizmet" && k.kalem_id === hizmetId)) return true;
-    if (paketData.mevcut_kalemler?.some(k => k.kalem_turu === "ek_hizmet" && k.kalem_id === hizmetId)) return true;
-    return false;
-  }, [paketData, kalemler, dahilEkHizmetIdSet, hasGrupDersiSelected]);
+    const activeDahilHizmetler: DahilHizmet[] = [];
+    const promotedEkHizmetler: EkHizmet[] = [];
+    const dahilDenemePaketIdSet = new Set<number>();
+    const dahilEkHizmetIdSet = new Set<number>();
 
-  const selectableEkHizmetler = useMemo(() => {
-    if (!paketData) return [] as EkHizmet[];
-    const dahilEk = hasGrupDersiSelected
-      ? []
-      : (paketData.dahil_hizmetler || []).map((dh): EkHizmet => ({
+    for (const dh of paketData.dahil_hizmetler || []) {
+      if (dahilItemHasActiveParent(dh.kaynak_paket_turu, dh.kaynak_paket_id, activeParentPackages)) {
+        activeDahilHizmetler.push(dh);
+        dahilEkHizmetIdSet.add(dh.ek_hizmet_id);
+        if (dh.hizmet_turu === "deneme" && dh.deneme_paket_id) {
+          dahilDenemePaketIdSet.add(dh.deneme_paket_id);
+        }
+      } else {
+        promotedEkHizmetler.push({
           id: dh.id,
           ek_hizmet_id: dh.ek_hizmet_id,
           ad: dh.ad,
@@ -789,23 +936,92 @@ export default function SozlesmeOlusturClient() {
           kdv_orani: dh.kdv_orani || 10,
           kdv_tutari: 0,
           kdv_dahil_fiyat: dh.kdv_dahil_fiyat || dh.fiyat || 0,
-        }));
+        });
+      }
+    }
+
+    const existingKeys = new Set(
+      paketData.egitim_paketleri.map((p) => `${p.paket_turu}:${p.paket_id}`),
+    );
+    const mergedPromoted = promotedPaketler.filter(
+      (p) => !existingKeys.has(`${p.paket_turu}:${p.paket_id}`),
+    );
+
+    return {
+      egitimPaketleri: [...paketData.egitim_paketleri, ...mergedPromoted],
+      dahilPaketler: activeDahilPaketler,
+      dahilHizmetler: activeDahilHizmetler,
+      promotedEkHizmetler,
+      dahilDenemePaketIdSet,
+      dahilEkHizmetIdSet,
+    };
+  }, [paketData, activeParentPackages]);
+
+  const dahilDenemePaketIdSet = derivedPaketView.dahilDenemePaketIdSet;
+  const dahilEkHizmetIdSet = derivedPaketView.dahilEkHizmetIdSet;
+
+  const isPaketKalemiMevcut = useCallback((paketTuru: string, paketId: number) => {
+    if (!paketData) return false;
+    if (derivedPaketView.egitimPaketleri.some(p => p.paket_turu === paketTuru && p.paket_id === paketId)) return true;
+    if (kalemler.some(k => k.kalem_turu === "paket" && k.paket_turu === paketTuru && k.kalem_id === paketId)) return true;
+    if (paketTuru === "deneme" && dahilDenemePaketIdSet.has(paketId)) return true;
+    return false;
+  }, [paketData, kalemler, dahilDenemePaketIdSet, derivedPaketView.egitimPaketleri]);
+
+  const selectableEkHizmetler = useMemo(() => {
+    if (!paketData) return [] as EkHizmet[];
     const seen = new Set<number>();
     const merged: EkHizmet[] = [];
-    for (const eh of [...paketData.ek_hizmetler, ...dahilEk]) {
+    for (const eh of [...paketData.ek_hizmetler, ...derivedPaketView.promotedEkHizmetler]) {
       if (seen.has(eh.ek_hizmet_id)) continue;
       seen.add(eh.ek_hizmet_id);
       merged.push(eh);
     }
     return merged;
-  }, [paketData, hasGrupDersiSelected]);
+  }, [paketData, derivedPaketView.promotedEkHizmetler]);
+
+  const isEkHizmetMevcut = useCallback((hizmetId: number) => {
+    if (!paketData) return false;
+    if (dahilEkHizmetIdSet.has(hizmetId)) return true;
+    if (selectableEkHizmetler.some(eh => eh.ek_hizmet_id === hizmetId)) return true;
+    if (kalemler.some(k => k.kalem_turu === "ek_hizmet" && k.kalem_id === hizmetId)) return true;
+    if (paketData.mevcut_kalemler?.some(k => k.kalem_turu === "ek_hizmet" && k.kalem_id === hizmetId)) return true;
+    return false;
+  }, [paketData, kalemler, dahilEkHizmetIdSet, selectableEkHizmetler]);
 
   useEffect(() => {
-    if (hasGrupDersiSelected && selectedDenemePaketIdxs.size > 0) {
-      setSelectedDenemePaketIdxs(new Set());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasGrupDersiSelected]);
+    if (!paketData || dahilDenemePaketIdSet.size === 0) return;
+    setSelectedDenemePaketIdxs((prev) => {
+      let changed = false;
+      const next = new Set<number>();
+      for (const idx of prev) {
+        const p = derivedPaketView.egitimPaketleri[idx];
+        if (p?.paket_turu === "deneme" && dahilDenemePaketIdSet.has(p.paket_id)) {
+          changed = true;
+          continue;
+        }
+        next.add(idx);
+      }
+      return changed ? next : prev;
+    });
+  }, [dahilDenemePaketIdSet, derivedPaketView.egitimPaketleri, paketData]);
+
+  useEffect(() => {
+    if (dahilEkHizmetIdSet.size === 0) return;
+    setSelectedEkHizmetIds((prev) => {
+      let changed = false;
+      const next = new Set<number>();
+      for (const ehId of prev) {
+        const eh = selectableEkHizmetler.find((e) => e.id === ehId);
+        if (eh && dahilEkHizmetIdSet.has(eh.ek_hizmet_id)) {
+          changed = true;
+          continue;
+        }
+        next.add(ehId);
+      }
+      return changed ? next : prev;
+    });
+  }, [dahilEkHizmetIdSet, selectableEkHizmetler]);
 
   // Deneme paketi seçildiğinde, deneme türündeki ek hizmetleri otomatik kaldır
   useEffect(() => {
@@ -837,10 +1053,11 @@ export default function SozlesmeOlusturClient() {
       return;
     }
     const rows: KalemRow[] = [];
+    const egitimPaketleri = derivedPaketView.egitimPaketleri;
 
     // Grup dersi (ana paket - tek seçim)
-    if (selectedPaketIdx !== null && paketData.egitim_paketleri[selectedPaketIdx]) {
-      const p = paketData.egitim_paketleri[selectedPaketIdx];
+    if (selectedPaketIdx !== null && egitimPaketleri[selectedPaketIdx]) {
+      const p = egitimPaketleri[selectedPaketIdx];
       if (p.paket_turu === "grup_dersi") {
         const rowKey = paketKalemKey(p.paket_turu, p.paket_id);
         rows.push(mergeKalemRow(rowKey, {
@@ -851,7 +1068,7 @@ export default function SozlesmeOlusturClient() {
     }
 
     for (const idx of selectedOzelDersIdxs) {
-      const p = paketData.egitim_paketleri[idx];
+      const p = egitimPaketleri[idx];
       if (!p || p.paket_turu !== "ozel_ders") continue;
       const rowKey = paketKalemKey(p.paket_turu, p.paket_id);
       rows.push(mergeKalemRow(rowKey, {
@@ -861,9 +1078,29 @@ export default function SozlesmeOlusturClient() {
     }
 
     for (const idx of selectedDenemePaketIdxs) {
-      const p = paketData.egitim_paketleri[idx];
+      const p = egitimPaketleri[idx];
       if (!p || p.paket_turu !== "deneme") continue;
-      if (hasGrupDersiSelected && dahilDenemePaketIdSet.has(p.paket_id)) continue;
+      if (dahilDenemePaketIdSet.has(p.paket_id)) continue;
+      const rowKey = paketKalemKey(p.paket_turu, p.paket_id);
+      rows.push(mergeKalemRow(rowKey, {
+        kalem_turu: "paket", paket_turu: p.paket_turu, kalem_id: p.paket_id,
+        kalem_adi: p.paket_adi, fiyat: p.fiyat, kdv_orani: p.kdv_orani,
+      }, kalemler.find(k => k.key === rowKey)));
+    }
+
+    for (const idx of selectedPremiumIdxs) {
+      const p = egitimPaketleri[idx];
+      if (!p || p.paket_turu !== "premium") continue;
+      const rowKey = paketKalemKey(p.paket_turu, p.paket_id);
+      rows.push(mergeKalemRow(rowKey, {
+        kalem_turu: "paket", paket_turu: p.paket_turu, kalem_id: p.paket_id,
+        kalem_adi: p.paket_adi, fiyat: p.fiyat, kdv_orani: p.kdv_orani,
+      }, kalemler.find(k => k.key === rowKey)));
+    }
+
+    for (const idx of selectedYayinIdxs) {
+      const p = egitimPaketleri[idx];
+      if (!p || p.paket_turu !== "yayin") continue;
       const rowKey = paketKalemKey(p.paket_turu, p.paket_id);
       rows.push(mergeKalemRow(rowKey, {
         kalem_turu: "paket", paket_turu: p.paket_turu, kalem_id: p.paket_id,
@@ -882,7 +1119,7 @@ export default function SozlesmeOlusturClient() {
 
     setKalemler(rows);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPaketIdx, selectedOzelDersIdxs, selectedDenemePaketIdxs, selectedEkHizmetIds, paketData, dahilDenemePaketIdSet, hasGrupDersiSelected, selectableEkHizmetler]);
+  }, [selectedPaketIdx, selectedOzelDersIdxs, selectedDenemePaketIdxs, selectedPremiumIdxs, selectedYayinIdxs, selectedEkHizmetIds, paketData, dahilDenemePaketIdSet, derivedPaketView.egitimPaketleri, selectableEkHizmetler]);
 
   // Kalem KDV/İndirim/Brüt/Ödenecek değişikliği
   const updateKalem = (key: string, field: "kdv_orani" | "indirim_orani" | "brut_tutar" | "net_tutar" | "indirim_tutari", value: number) => {
@@ -1093,9 +1330,11 @@ export default function SozlesmeOlusturClient() {
     if (selectedPaketIdx !== null) allSelectedPaketIdxs.push(selectedPaketIdx);
     for (const idx of selectedOzelDersIdxs) allSelectedPaketIdxs.push(idx);
     for (const idx of selectedDenemePaketIdxs) allSelectedPaketIdxs.push(idx);
+    for (const idx of selectedPremiumIdxs) allSelectedPaketIdxs.push(idx);
+    for (const idx of selectedYayinIdxs) allSelectedPaketIdxs.push(idx);
 
     const firstPaketIdx = allSelectedPaketIdxs.length > 0 ? allSelectedPaketIdxs[0] : null;
-    const paket = firstPaketIdx !== null ? paketData.egitim_paketleri[firstPaketIdx] : null;
+    const paket = firstPaketIdx !== null ? derivedPaketView.egitimPaketleri[firstPaketIdx] : null;
     const anaKalem = paket
       ? kalemler.find(k => k.kalem_turu === "paket" && k.paket_turu === paket.paket_turu && k.kalem_id === paket.paket_id)
       : kalemler.find(k => k.kalem_turu === "paket");
@@ -1196,8 +1435,10 @@ export default function SozlesmeOlusturClient() {
       const hasPaket = selectedPaketIdx !== null;
       const hasOzelDers = selectedOzelDersIdxs.size > 0;
       const hasDenemePaket = selectedDenemePaketIdxs.size > 0;
+      const hasPremium = selectedPremiumIdxs.size > 0;
+      const hasYayin = selectedYayinIdxs.size > 0;
       const hasEkHizmet = selectedEkHizmetIds.size > 0;
-      return (hasPaket || hasOzelDers || hasDenemePaket || hasEkHizmet) && kalemler.length > 0;
+      return (hasPaket || hasOzelDers || hasDenemePaket || hasPremium || hasYayin || hasEkHizmet) && kalemler.length > 0;
     }
     if (step === 3) return true;
     return true;
@@ -1384,24 +1625,48 @@ export default function SozlesmeOlusturClient() {
 
       {/* ═══════ STEP 2: Paketler & Kalemler ═══════ */}
       {step === 2 && paketData && (() => {
+        const egitimPaketleri = derivedPaketView.egitimPaketleri;
         // Paketleri kategorilerine göre ayır
-        const grupDersleri = paketData.egitim_paketleri
+        const grupDersleri = egitimPaketleri
           .map((p, idx) => ({ ...p, _idx: idx }))
           .filter(p => p.paket_turu === "grup_dersi");
-        const ozelDersler = paketData.egitim_paketleri
+        const ozelDersler = egitimPaketleri
           .map((p, idx) => ({ ...p, _idx: idx }))
           .filter(p => p.paket_turu === "ozel_ders");
-        const denemePaketleri = paketData.egitim_paketleri
+        const denemePaketleri = egitimPaketleri
           .map((p, idx) => ({ ...p, _idx: idx }))
-          .filter(p => p.paket_turu === "deneme");
+          .filter(p => p.paket_turu === "deneme" && !dahilDenemePaketIdSet.has(p.paket_id));
+        const premiumPaketleri = egitimPaketleri
+          .map((p, idx) => ({ ...p, _idx: idx }))
+          .filter(p => p.paket_turu === "premium");
+        const yayinPaketleri = egitimPaketleri
+          .map((p, idx) => ({ ...p, _idx: idx }))
+          .filter(p => p.paket_turu === "yayin");
+        const dahilPaketler = derivedPaketView.dahilPaketler;
+        const hasBillablePackages =
+          grupDersleri.length > 0 ||
+          ozelDersler.length > 0 ||
+          denemePaketleri.length > 0 ||
+          premiumPaketleri.length > 0 ||
+          yayinPaketleri.length > 0 ||
+          (paketData.ek_hizmetler?.length || 0) > 0;
         // Ek hizmetleri ayır: deneme türü olanlar ve olmayanlar
         const filteredEkHizmetler = selectableEkHizmetler.filter(eh => eh.hizmet_turu !== "deneme");
         const denemeEkHizmetler = selectableEkHizmetler.filter(eh => eh.hizmet_turu === "deneme");
-        const dahilEkHizmetler = (paketData.dahil_hizmetler || []).filter(d => d.hizmet_turu !== "deneme");
-        const dahilDenemeHizmetler = (paketData.dahil_hizmetler || []).filter(d => d.hizmet_turu === "deneme");
+        const dahilEkHizmetler = derivedPaketView.dahilHizmetler.filter(d => d.hizmet_turu !== "deneme");
+        const dahilDenemeHizmetler = derivedPaketView.dahilHizmetler.filter(d => d.hizmet_turu === "deneme");
 
         return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {!hasBillablePackages && (
+            <div style={{ ...cardStyle, border: "1px solid #fcd34d", background: "#fffbeb" }}>
+              <p style={{ margin: 0, color: "#92400e", fontSize: 14 }}>
+                Bu öğrenci için faturalanabilir paket bulunamadı. Üst menüdeki şube ve eğitim yılını kontrol edin
+                veya &quot;Yeni Paket veya Hizmet Ekle&quot; ile katalogdan ekleyin.
+              </p>
+            </div>
+          )}
+
           {/* Grup Dersleri */}
           {grupDersleri.length > 0 && (
             <div style={cardStyle}>
@@ -1476,8 +1741,103 @@ export default function SozlesmeOlusturClient() {
             </div>
           )}
 
+          {/* Premium Paketler */}
+          {premiumPaketleri.length > 0 && (
+            <div style={cardStyle}>
+              <h3 style={cardTitleStyle}>⭐ Premium Paketler <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 13 }}>(Birden fazla seçilebilir)</span></h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {premiumPaketleri.map(p => {
+                  const isSelected = selectedPremiumIdxs.has(p._idx);
+                  return (
+                    <label key={p.id}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
+                        border: `2px solid ${isSelected ? "#f59e0b" : "#e5e7eb"}`,
+                        borderRadius: 8, cursor: "pointer", background: isSelected ? "#fffbeb" : "#fff",
+                      }}>
+                      <input type="checkbox" checked={isSelected}
+                        onChange={() => {
+                          setSelectedPremiumIdxs(prev => {
+                            const n = new Set(prev);
+                            n.has(p._idx) ? n.delete(p._idx) : n.add(p._idx);
+                            return n;
+                          });
+                        }}
+                        style={{ accentColor: "#f59e0b" }} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 600 }}>{p.paket_adi}</span>
+                        <span style={{ marginLeft: 8, color: "#6b7280", fontSize: 13 }}>({p.paket_turu_label})</span>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <span style={{ fontWeight: 700, color: "#059669" }}>{formatCurrency(p.kdv_dahil_fiyat)}</span>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Yayın Paketleri (ücretli) */}
+          {yayinPaketleri.length > 0 && (
+            <div style={cardStyle}>
+              <h3 style={cardTitleStyle}>📚 Yayın Paketleri <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 13 }}>(Ücretli)</span></h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {yayinPaketleri.map(p => {
+                  const isSelected = selectedYayinIdxs.has(p._idx);
+                  return (
+                    <label key={p.id}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
+                        border: `2px solid ${isSelected ? "#0ea5e9" : "#e5e7eb"}`,
+                        borderRadius: 8, cursor: "pointer", background: isSelected ? "#f0f9ff" : "#fff",
+                      }}>
+                      <input type="checkbox" checked={isSelected}
+                        onChange={() => {
+                          setSelectedYayinIdxs(prev => {
+                            const n = new Set(prev);
+                            n.has(p._idx) ? n.delete(p._idx) : n.add(p._idx);
+                            return n;
+                          });
+                        }}
+                        style={{ accentColor: "#0ea5e9" }} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 600 }}>{p.paket_adi}</span>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <span style={{ fontWeight: 700, color: "#059669" }}>{formatCurrency(p.kdv_dahil_fiyat)}</span>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Pakete Dahil (ücretsiz) paketler */}
+          {dahilPaketler.length > 0 && (
+            <div style={cardStyle}>
+              <h3 style={cardTitleStyle}>✓ Pakete Dahil Paketler <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 13 }}>(Ücretsiz — sözleşmeye eklenmez)</span></h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {dahilPaketler.map(dp => (
+                  <div key={`${dp.paket_turu}-${dp.paket_id}`}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                      border: "2px solid #a7f3d0", borderRadius: 8, background: "#ecfdf5",
+                    }}>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontWeight: 600 }}>{dp.paket_adi}</span>
+                      <span style={{ marginLeft: 8, color: "#6b7280", fontSize: 13 }}>({dp.paket_turu_label})</span>
+                    </div>
+                    <span style={{ fontWeight: 600, color: "#22c55e" }}>Ücretsiz</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Pakete Dahil Hizmetler (ücretsiz — sözleşmeye eklenmez) */}
-          {hasGrupDersiSelected && (dahilEkHizmetler.length > 0 || dahilDenemeHizmetler.length > 0) && (
+          {(dahilEkHizmetler.length > 0 || dahilDenemeHizmetler.length > 0) && (
             <div style={cardStyle}>
               <h3 style={cardTitleStyle}>✓ Pakete Dahil Hizmetler <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 13 }}>(Ücretsiz — sözleşmeye eklenmez)</span></h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1492,7 +1852,7 @@ export default function SozlesmeOlusturClient() {
                       <span style={{
                         marginLeft: 8, fontSize: 11, padding: "3px 10px", background: "#22c55e", color: "white",
                         borderRadius: 20, fontWeight: 600,
-                      }}>Grup Dersine Dahil</span>
+                      }}>Pakete Dahil</span>
                     </div>
                     <div style={{ fontWeight: 600, color: "#22c55e", fontSize: 14 }}>Ücretsiz</div>
                   </div>
@@ -1501,8 +1861,8 @@ export default function SozlesmeOlusturClient() {
             </div>
           )}
 
-          {/* Deneme Paketleri — Grup dersi seçiliyken gizle */}
-          {denemePaketleri.length > 0 && !hasGrupDersiSelected && (
+          {/* Deneme Paketleri */}
+          {denemePaketleri.length > 0 && (
             <div style={cardStyle}>
               <h3 style={cardTitleStyle}>📝 Deneme Paketleri <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 13 }}>(Birden fazla seçilebilir)</span></h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1539,8 +1899,8 @@ export default function SozlesmeOlusturClient() {
             </div>
           )}
 
-          {/* Deneme Ek Hizmetleri (Ek Hizmet Satışından gelen denemeler) — Grup dersi seçiliyken gizle */}
-          {denemeEkHizmetler.length > 0 && !hasGrupDersiSelected && (
+          {/* Deneme Ek Hizmetleri (Ek Hizmet Satışından gelen denemeler) */}
+          {denemeEkHizmetler.length > 0 && (
             <div style={cardStyle}>
               <h3 style={cardTitleStyle}>🎯 Deneme Hizmetleri <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 13 }}>(Ek hizmet satışından gelen denemeler)</span></h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1643,7 +2003,7 @@ export default function SozlesmeOlusturClient() {
           {/* ═══ Yeni Paket / Hizmet Ekleme Butonu ═══ */}
           <div style={{ display: "flex", justifyContent: "center" }}>
             <button
-              onClick={() => { setShowPaketEkle(true); if (!tumPaketler) loadTumPaketler(); }}
+              onClick={() => { setShowPaketEkle(true); loadTumPaketler(); }}
               style={{
                 padding: "12px 24px", borderRadius: 10, cursor: "pointer",
                 border: `2px dashed ${KURUM_COLOR}`, background: "#f0f7ff",
@@ -1672,6 +2032,11 @@ export default function SozlesmeOlusturClient() {
                     <p style={{ textAlign: "center", color: "#dc2626" }}>Paketler yüklenemedi</p>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                      {tumPaketler.filtreUyari && (
+                        <p style={{ margin: 0, padding: "10px 12px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, color: "#92400e", fontSize: 13 }}>
+                          {tumPaketler.filtreUyari}
+                        </p>
+                      )}
                       {/* Grup Dersleri */}
                       {tumPaketler.grupDersleri.length > 0 && (
                         <div>
@@ -1730,13 +2095,41 @@ export default function SozlesmeOlusturClient() {
                         </div>
                       )}
 
+                      {/* Premium Paketler */}
+                      {tumPaketler.premiumPaketler.length > 0 && (
+                        <div>
+                          <h4 style={{ fontSize: 14, fontWeight: 700, color: "#374151", marginBottom: 8 }}>⭐ Premium Paketler</h4>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {tumPaketler.premiumPaketler.map((p: any) => {
+                              const zatenVar = isPaketKalemiMevcut("premium", p.id);
+                              return (
+                                <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: zatenVar ? "#f0fdf4" : "#f9fafb", borderRadius: 8, border: `1px solid ${zatenVar ? "#bbf7d0" : "#e5e7eb"}` }}>
+                                  <div>
+                                    <span style={{ fontWeight: 600, fontSize: 13 }}>{p.ad}</span>
+                                    <span style={{ marginLeft: 8, fontSize: 12, color: "#059669", fontWeight: 700 }}>{formatCurrency(p.kdv_dahil_fiyat)}</span>
+                                  </div>
+                                  {zatenVar ? (
+                                    <span style={{ fontSize: 11, color: "#059669", fontWeight: 600 }}>✓ Mevcut</span>
+                                  ) : (
+                                    <button onClick={() => { addPaketFromCatalog(p, "premium"); }}
+                                      style={{ padding: "4px 12px", borderRadius: 6, border: "none", background: "#f59e0b", color: "#fff", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+                                      + Ekle
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Deneme Paketleri */}
                       {tumPaketler.denemeler.length > 0 && (
                         <div>
                           <h4 style={{ fontSize: 14, fontWeight: 700, color: "#374151", marginBottom: 8 }}>📝 Deneme Paketleri</h4>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             {tumPaketler.denemeler.map((p: any) => {
-                              const grupDahil = hasGrupDersiSelected && (paketData?.dahil_deneme_paket_ids || []).includes(p.id);
+                              const grupDahil = dahilDenemePaketIdSet.has(p.id);
                               const zatenVar = isPaketKalemiMevcut("deneme", p.id);
                               return (
                                 <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: zatenVar || grupDahil ? "#f0fdf4" : "#f9fafb", borderRadius: 8, border: `1px solid ${zatenVar || grupDahil ? "#bbf7d0" : "#e5e7eb"}` }}>
@@ -1763,11 +2156,11 @@ export default function SozlesmeOlusturClient() {
                       )}
 
                       {/* Deneme Hizmetleri (ek hizmet satışı) */}
-                      {tumPaketler.ekHizmetler.filter((h: any) => h.hizmet_turu === "deneme" && !(hasGrupDersiSelected || selectedDenemePaketIdxs.size > 0)).length > 0 && (
+                      {tumPaketler.ekHizmetler.filter((h: any) => h.hizmet_turu === "deneme" && dahilDenemePaketIdSet.size === 0 && selectedDenemePaketIdxs.size === 0).length > 0 && (
                         <div>
                           <h4 style={{ fontSize: 14, fontWeight: 700, color: "#374151", marginBottom: 8 }}>🎯 Deneme Hizmetleri</h4>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            {tumPaketler.ekHizmetler.filter((h: any) => h.hizmet_turu === "deneme" && !(hasGrupDersiSelected || selectedDenemePaketIdxs.size > 0)).map((h: any) => {
+                            {tumPaketler.ekHizmetler.filter((h: any) => h.hizmet_turu === "deneme" && dahilDenemePaketIdSet.size === 0 && selectedDenemePaketIdxs.size === 0).map((h: any) => {
                               const zatenVar = isEkHizmetMevcut(h.id);
                               return (
                                 <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: zatenVar ? "#f0fdf4" : "#f9fafb", borderRadius: 8, border: `1px solid ${zatenVar ? "#bbf7d0" : "#e5e7eb"}` }}>

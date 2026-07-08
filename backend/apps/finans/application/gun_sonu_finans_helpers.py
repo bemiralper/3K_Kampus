@@ -462,3 +462,79 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
         ch_qs = ch_qs.filter(sube_id=sube_id)
     toplam += int(ch_qs.aggregate(t=Sum('tutar'))['t'] or 0)
     return toplam
+
+
+def gider_odeme_gun_qs(kurum_id: int, gun: date, sube_id: int | None):
+    """Gün sonu gider ödemeleri — ödeme tarihi veya bugün kaydedilmiş işlemler."""
+    qs = GiderOdeme.objects.filter(
+        gider_kaydi__kurum_id=kurum_id,
+        durum=OdemeDurum.TAMAMLANDI,
+    ).filter(bugun_islem_q('odeme_tarihi', gun))
+    if sube_id:
+        qs = qs.filter(gider_kaydi__sube_id=sube_id)
+    return qs
+
+
+def verilen_cek_gider_odemeleri_qs(kurum_id: int, gun: date, sube_id: int | None):
+    """
+    GiderOdeme tablosuna yansımamış verilen çek/senet ödemeleri.
+    Eski kayıtlar ve gider bağlantısız manuel çekler için gün sonu tamamlayıcısı.
+    """
+    from django.db.models import Exists, OuterRef
+
+    from apps.odeme_takip.domain.cek_senet import CekSenetDetay, CekSenetDurum, CekSenetYon
+
+    qs = CekSenetDetay.objects.filter(
+        kurum_id=kurum_id,
+        yon=CekSenetYon.VERILEN,
+        durum=CekSenetDurum.ODENDI,
+    ).filter(bugun_islem_q('tahsil_tarihi', gun))
+
+    if sube_id:
+        qs = qs.filter(sube_id=sube_id)
+
+    has_gider_odeme = GiderOdeme.objects.filter(
+        gider_taksit_id=OuterRef('gider_taksit_id'),
+        durum=OdemeDurum.TAMAMLANDI,
+    )
+    return qs.annotate(_has_go=Exists(has_gider_odeme)).filter(
+        Q(gider_taksit_id__isnull=True) | Q(_has_go=False)
+    ).select_related(
+        'odeme_yontemi',
+        'cari_hesap',
+        'tahsilat_mali_hesap',
+        'gider_taksit__gider_kaydi__gider_kategorisi',
+        'gider_taksit__gider_kaydi__cari_hesap',
+    )
+
+
+def gider_odeme_kirilimi_topla(kurum_id: int, gun: date, sube_id: int | None) -> dict[str, dict]:
+    """Gider ödemeleri + eksik çek/senet ödemeleri ödeme türü kırılımı."""
+    kova: dict[str, dict] = defaultdict(lambda: {'toplam': 0, 'adet': 0})
+
+    for row in gider_odeme_gun_qs(kurum_id, gun, sube_id).values('odeme_yontemi__tip', 'bakiyeden_mahsup').annotate(
+        toplam=Sum('tutar'), adet=Count('id')
+    ):
+        if row['bakiyeden_mahsup']:
+            b = 'cari_mahsup'
+        else:
+            b = odeme_tip_to_bucket(row['odeme_yontemi__tip'])
+        kova[b]['toplam'] += int_amount(row['toplam'])
+        kova[b]['adet'] += row['adet'] or 0
+
+    for detay in verilen_cek_gider_odemeleri_qs(kurum_id, gun, sube_id):
+        tip = detay.odeme_yontemi.tip if detay.odeme_yontemi_id else None
+        b = odeme_tip_to_bucket(tip)
+        tutar = int(detay.tutar or 0)
+        kova[b]['toplam'] += tutar
+        kova[b]['adet'] += 1
+
+    return dict(kova)
+
+
+def gider_odeme_toplam(kurum_id: int, gun: date, sube_id: int | None) -> tuple[int, int]:
+    """Gider çıkış toplamı ve adet (GiderOdeme + tamamlayıcı çek/senet)."""
+    kova = gider_odeme_kirilimi_topla(kurum_id, gun, sube_id)
+    toplam = sum(v['toplam'] for v in kova.values())
+    adet = sum(v['adet'] for v in kova.values())
+    return toplam, adet

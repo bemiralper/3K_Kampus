@@ -15,40 +15,42 @@ export function useDashboardLinks() {
       isMuhasebeMode,
       odemeTakip: (sozlesmeId?: number) =>
         sozlesmeId ? `${odemeBase()}?sozlesme=${sozlesmeId}` : odemeBase(),
-      virman: tahsilatTabHref("virman"),
+      virman: finansHref("virman"),
       gunSonu: tahsilatTabHref("gun-sonu"),
       vadesiGelenler: tahsilatTabHref("vadesi-gelenler"),
       donemTahsilat: tahsilatTabHref("donem"),
       gecikmisOdemeler: tahsilatTabHref("gecikmis"),
-      gelirIslemleri: finansHref("gelir-gider-islemleri?tab=gelirler"),
-      giderIslemleri: finansHref("gelir-gider-islemleri?tab=giderler"),
-      gelirGider: finansHref("gelir-gider-islemleri"),
-      cariHesaplar: finansHref("cari-hesaplar"),
-      cariDetay: (id: number) => finansHref(`cari-hesaplar/${id}`),
+      gelirIslemleri: finansHref("gelir-v2"),
+      giderIslemleri: finansHref("gider-v2"),
+      gelirGider: finansHref("gelir-v2"),
+      cariHesaplar: finansHref("cari-hesaplar-v2"),
+      cariDetay: (id: number) => finansHref(`cari-hesaplar-v2/${id}`),
       kasaBanka: finansHref("kasa-banka"),
-      tahsilatRaporlar: tahsilatTabHref("mali-analiz"),
+      cekSenet: finansHref("cek-senet-v2"),
+      gelirGiderTanimlar: finansHref("gelir-gider-v2/tanimlar"),
+      tahsilatRaporlar: finansHref("tahsilat-raporlar"),
       /** Vadesi gelen / tahsilat satırı için uygun hedef. */
       tahsilatAction: (row: Pick<OverviewTransaction, "kaynak" | "sozlesme_id" | "gelir_id" | "gider_id" | "cari_hesap_id">) => {
         if (row.kaynak === "gider" || row.kaynak === "gider_kayit" || row.gider_id) {
-          return { href: finansHref("gelir-gider-islemleri?tab=giderler"), label: "Gider" };
+          return { href: finansHref("gider-v2"), label: "Gider" };
         }
         if (row.sozlesme_id) {
           return { href: `${odemeBase()}?sozlesme=${row.sozlesme_id}`, label: "Tahsilat" };
         }
         if (row.gelir_id) {
-          return { href: finansHref("gelir-gider-islemleri?tab=gelirler"), label: "Gelir" };
+          return { href: finansHref("gelir-v2"), label: "Gelir" };
         }
         if (row.cari_hesap_id) {
-          return { href: finansHref(`cari-hesaplar/${row.cari_hesap_id}`), label: "Cari" };
+          return { href: finansHref(`cari-hesaplar-v2/${row.cari_hesap_id}`), label: "Cari" };
         }
         return null;
       },
       /** Son tahsilat / hareket satırı detay linki. */
       tahsilatDetay: (row: Pick<OverviewTransaction, "kaynak" | "sozlesme_id" | "gelir_id" | "gider_id" | "cari_hesap_id">) => {
-        if (row.kaynak === "gider" || row.kaynak === "gider_kayit" || row.gider_id) return finansHref("gelir-gider-islemleri?tab=giderler");
+        if (row.kaynak === "gider" || row.kaynak === "gider_kayit" || row.gider_id) return finansHref("gider-v2");
         if (row.sozlesme_id) return `${odemeBase()}?sozlesme=${row.sozlesme_id}`;
-        if (row.gelir_id) return finansHref("gelir-gider-islemleri?tab=gelirler");
-        if (row.cari_hesap_id) return finansHref(`cari-hesaplar/${row.cari_hesap_id}`);
+        if (row.gelir_id) return finansHref("gelir-v2");
+        if (row.cari_hesap_id) return finansHref(`cari-hesaplar-v2/${row.cari_hesap_id}`);
         return null;
       },
     }),

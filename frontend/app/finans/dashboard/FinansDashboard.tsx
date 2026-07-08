@@ -2,17 +2,25 @@
 
 import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import "@/components/finans/finans-list.css";
 import { dashboardService, DashboardOverview } from "../services/dashboard-api";
-import DashboardSummaryCards from "./components/DashboardSummaryCards";
-import DashboardQuickActions from "./components/DashboardQuickActions";
-import DashboardSectionLabel from "./components/DashboardSectionLabel";
+import { fmtCurrency } from "./dashboard-utils";
+import DashboardShortcuts from "./components/DashboardShortcuts";
+import DashboardKpiCards from "./components/DashboardKpiCards";
+import DashboardTodayTransactions from "./components/DashboardTodayTransactions";
+import DashboardOverdueList from "./components/DashboardOverdueList";
+import DashboardUpcomingDues from "./components/DashboardUpcomingDues";
+import DashboardRecentTahsilat from "./components/DashboardRecentTahsilat";
+import DashboardRecentGider from "./components/DashboardRecentGider";
+import DashboardMaliHesapTable from "./components/DashboardMaliHesapTable";
 import DashboardChartSkeleton from "./components/DashboardChartSkeleton";
-import { IconLineChart, IconRefresh } from "./dashboard-icons";
+import { useDashboardLinks } from "./useDashboardLinks";
+import { IconRefresh } from "./dashboard-icons";
+import "./finans-dashboard.css";
 
-/** Recharts SSR'de vendor-chunk sorunlarına yol açar — sadece istemcide yükle. */
 const DashboardPieChart = dynamic(() => import("./components/DashboardPieChart"), {
   ssr: false,
   loading: () => <DashboardChartSkeleton />,
@@ -24,7 +32,8 @@ const DashboardMonthlyLine = dynamic(() => import("./components/DashboardMonthly
 
 export default function FinansDashboard() {
   const { activeKurum, activeSube, activeEgitimYili } = useKurum();
-  const { isMuhasebeMode, portalHomeHref } = useFinansPath();
+  const { isMuhasebeMode } = useFinansPath();
+  const links = useDashboardLinks();
   const [data, setData] = useState<DashboardOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -57,107 +66,158 @@ export default function FinansDashboard() {
 
   if (!activeKurum) {
     return (
-      <div className="card-modern flex flex-col items-center justify-center py-20 text-center px-6">
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style={{ background: "#eaf3fb", color: "#0262a7" }}>
-          <IconLineChart className="w-7 h-7" />
+      <div className="fdash-page">
+        <div className="fdash-state">
+          <h3>Kurum Seçiniz</h3>
+          <p>Finans dashboard verilerini görüntülemek için üst menüden bir kurum seçin.</p>
         </div>
-        <h3 className="text-lg font-bold text-gray-800 mb-1">Kurum Seçiniz</h3>
-        <p className="text-sm text-gray-500">
-          Finans dashboard verilerini görüntülemek için üst menüden bir kurum seçin.
-        </p>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="card-modern flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <div className="w-9 h-9 border-[3px] border-gray-200 border-t-blue-600 rounded-full animate-spin" />
-        <span className="text-sm text-gray-500">Dashboard yükleniyor...</span>
+      <div className="fdash-page">
+        <div className="fdash-state" style={{ minHeight: 360 }}>
+          <div className="fdash-spinner" />
+          <p>Dashboard yükleniyor…</p>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="card-modern flex flex-col items-center justify-center py-20 text-center px-6">
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 bg-red-50 text-red-600">
-          <IconRefresh className="w-7 h-7" />
+      <div className="fdash-page">
+        <div className="fdash-state">
+          <h3>Bir şeyler ters gitti</h3>
+          <p>{error}</p>
+          <button type="button" onClick={loadData} className="fdash-btn">
+            Tekrar Dene
+          </button>
         </div>
-        <h3 className="text-lg font-bold text-gray-800 mb-1">Bir şeyler ters gitti</h3>
-        <p className="text-sm text-gray-500 mb-4">{error}</p>
-        <button
-          type="button"
-          onClick={loadData}
-          className="px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700"
-        >
-          Tekrar Dene
-        </button>
       </div>
     );
   }
 
   if (!data) return null;
 
+  const geciken = data.geciken_ozet;
+
   return (
-    <div>
-      <div className="hero-header mb-6">
-        <div className="hero-content">
-          <div className="hero-icon">
-            <IconLineChart className="w-8 h-8" />
-          </div>
-          <div className="hero-text">
-            <h1>Finans Dashboard</h1>
-            <div className="hero-breadcrumb">
-              <a href={portalHomeHref}>Ana Sayfa</a>
-              <span>/</span>
-              <span>Finans</span>
-            </div>
-          </div>
+    <div className="fdash-page">
+      <header className="fdash-head">
+        <div>
+          <h1 className="fdash-title">Finans Dashboard</h1>
+          <p className="fdash-subtitle">
+            Tahsilat, gider, cari ve kasa hareketlerinin günlük özeti — {activeKurum.ad}
+            {activeSube ? ` · ${activeSube.ad}` : ""}.
+          </p>
         </div>
-        <div className="hero-actions flex items-center gap-3">
+        <div className="fdash-head-actions">
           {lastUpdated && (
-            <span className="text-xs text-white/70 whitespace-nowrap hidden sm:inline">
-              Güncellendi: {lastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+            <span className="fdash-head-meta">
+              {lastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
-          <button type="button" onClick={loadData} className="btn-hero" disabled={refreshing}>
-            <span className="btn-hero-icon">
-              <IconRefresh className={`w-[18px] h-[18px] ${refreshing ? "animate-spin" : ""}`} />
-            </span>
-            <span>Yenile</span>
+          <button type="button" onClick={loadData} className="fdash-btn" disabled={refreshing}>
+            <IconRefresh className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            Yenile
           </button>
         </div>
-      </div>
+      </header>
 
-      <DashboardQuickActions />
+      <DashboardShortcuts />
 
-      <DashboardSummaryCards cards={data.ozet_kartlar} hideGelirGider={isMuhasebeMode} referansTarih={data.tarih} />
+      <DashboardKpiCards
+        cards={data.ozet_kartlar}
+        hideGelirGider={isMuhasebeMode}
+        referansTarih={data.tarih}
+      />
 
-      <DashboardSectionLabel text="Analiz" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-        <DashboardPieChart
-          title="Tahsilat Dağılımı (Bu Ay)"
-          data={data.tahsilat_dagilimi}
-          nameKey="yontem"
-          emptyText="Bu ay tahsilat yok"
+      {geciken.toplam_taksit_sayisi > 0 && (
+        <div className="fdash-alert">
+          <div className="fdash-alert__text">
+            <span>{geciken.toplam_taksit_sayisi}</span> gecikmiş taksit ·{" "}
+            <span>{fmtCurrency(geciken.toplam_kalan_tutar)}</span> · ort.{" "}
+            {geciken.ortalama_gecikme_gun} gün
+          </div>
+          <Link href={links.gecikmisOdemeler} className="fdash-alert__link">
+            Gecikmiş ödemelere git →
+          </Link>
+        </div>
+      )}
+
+      <section className="fdash-block">
+        <h2 className="fdash-block-label">Günlük Hareketler</h2>
+        <DashboardTodayTransactions
+          rows={data.bugunku_islemler}
+          referansTarih={data.tarih}
         />
-        <DashboardPieChart
-          title="Gelir Kaynakları (Bu Ay)"
-          data={data.gelir_kaynak_kirilimi}
-          nameKey="kaynak_label"
-          emptyText="Kaynak verisi yok"
-        />
-        <DashboardPieChart
-          title="Gider Kategorileri (Bu Ay)"
-          data={data.gider_kategori_dagilimi}
-          nameKey="kategori_adi"
-          emptyText="Bu ay gider yok"
-        />
-      </div>
-      <div className="mb-6">
+      </section>
+
+      <section className="fdash-block">
+        <h2 className="fdash-block-label">Takip Listeleri</h2>
+        <div className="fdash-split-2">
+          <DashboardOverdueList
+            rows={data.geciken_odemeler}
+            ozet={data.geciken_ozet}
+            kurumAd={activeKurum.ad}
+          />
+          <DashboardUpcomingDues rows={data.yaklasan_odemeler} />
+        </div>
+      </section>
+
+      <section className="fdash-block">
+        <h2 className="fdash-block-label">Son İşlemler</h2>
+        <div className="fdash-split-2">
+          <DashboardRecentTahsilat rows={data.son_tahsilatlar} />
+          <DashboardRecentGider rows={data.son_giderler} />
+        </div>
+      </section>
+
+      <section className="fdash-block">
+        <h2 className="fdash-block-label">Mali Hesaplar</h2>
+        <div className="fdash-split-2">
+          <DashboardMaliHesapTable
+            title="Kasa Hesapları"
+            rows={data.kasa_hesaplari}
+            emptyText="Kasa hesabı yok"
+            icon="kasa"
+          />
+          <DashboardMaliHesapTable
+            title="Banka Hesapları"
+            rows={data.banka_hesaplari}
+            emptyText="Banka hesabı yok"
+            icon="banka"
+          />
+        </div>
+      </section>
+
+      <section className="fdash-block">
+        <h2 className="fdash-block-label">Analiz</h2>
+        <div className="fdash-charts">
+          <DashboardPieChart
+            title="Tahsilat Dağılımı (Bu Ay)"
+            data={data.tahsilat_dagilimi}
+            nameKey="yontem"
+            emptyText="Bu ay tahsilat yok"
+          />
+          <DashboardPieChart
+            title="Gelir Kaynakları (Bu Ay)"
+            data={data.gelir_kaynak_kirilimi}
+            nameKey="kaynak_label"
+            emptyText="Kaynak verisi yok"
+          />
+          <DashboardPieChart
+            title="Gider Kategorileri (Bu Ay)"
+            data={data.gider_kategori_dagilimi}
+            nameKey="kategori_adi"
+            emptyText="Bu ay gider yok"
+          />
+        </div>
         <DashboardMonthlyLine data={data.gunluk_gelir_gider_net} />
-      </div>
+      </section>
     </div>
   );
 }

@@ -121,6 +121,71 @@ from apps.finans.interfaces.views.cek_senet_views import (
     CekSenetTransitionView,
     CekSenetTahsilView,
     CekSenetOdeView,
+    CekSenetDashboardView,
+    CekSenetTimelineView,
+    CekSenetCiroView,
+    CekSenetProtestoView,
+    CekSenetIadeView,
+    CekSenetIptalView,
+    CekSenetDosyaView,
+    CekSenetDosyaDeleteView,
+)
+from apps.finans.interfaces.views.cari_v2_views import (
+    CariV2ListCreateView,
+    CariV2DetailView,
+    CariV2ToggleView,
+    CariV2DashboardView,
+    CariV2PanelView,
+    CariV2HareketlerView,
+    CariV2TabView,
+    CariV2ReportView,
+    CariV2ReportExportView,
+    CariV2EtiketView,
+    CariV2EtiketDetailView,
+    CariV2GorunumView,
+    CariV2GorunumDetailView,
+    CariV2PermissionsView,
+    CariV2DropdownView,
+)
+from apps.finans.interfaces.views.tanim_views import (
+    GelirKaynagiListCreateView,
+    GelirKaynagiDetailView,
+    GelirKaynagiToggleView,
+    MaliyetMerkeziListCreateView,
+    MaliyetMerkeziDetailView,
+    MaliyetMerkeziToggleView,
+    ProjeListCreateView,
+    ProjeDetailView,
+    ProjeToggleView,
+    AciklamaSablonuListCreateView,
+    AciklamaSablonuDetailView,
+    AciklamaSablonuToggleView,
+    MasrafTuruListCreateView,
+    MasrafTuruDetailView,
+    MasrafTuruToggleView,
+    FinansEtiketListCreateView,
+)
+from apps.finans.interfaces.views.gelir_v2_views import (
+    GelirV2ListCreateView,
+    GelirV2DetailView,
+    GelirV2OnaylaView,
+    GelirV2IptalView,
+    GelirV2DashboardView,
+)
+from apps.finans.interfaces.views.gider_v2_views import (
+    GiderV2ListCreateView,
+    GiderV2DetailView,
+    GiderV2OnaylaView,
+    GiderV2IptalView,
+    GiderV2DashboardView,
+)
+from apps.finans.interfaces.views.gelir_gider_v2_common_views import (
+    GelirGiderV2ReportView,
+    GelirGiderV2ReportExportView,
+    GelirGiderV2ListExportView,
+    GelirGiderV2YetkilerView,
+    GelirGiderV2LogView,
+    GelirGiderV2DropdownView,
 )
 
 app_name = 'finans'
@@ -367,6 +432,63 @@ urlpatterns = [
         name='cari-dosya-delete',
     ),
 
+    # ═══ Cari Hesaplar v2 (Yeni Modül) ══════════
+    path('cari/v2/hesaplar/', CariV2ListCreateView.as_view(), name='cari-v2-list-create'),
+    path('cari/v2/dashboard/', CariV2DashboardView.as_view(), name='cari-v2-dashboard'),
+    path('cari/v2/dropdown/', CariV2DropdownView.as_view(), name='cari-v2-dropdown'),
+    path('cari/v2/yetkiler/', CariV2PermissionsView.as_view(), name='cari-v2-yetkiler'),
+    path('cari/v2/etiketler/', CariV2EtiketView.as_view(), name='cari-v2-etiket-list'),
+    path('cari/v2/etiketler/<int:pk>/', CariV2EtiketDetailView.as_view(), name='cari-v2-etiket-detail'),
+    path('cari/v2/gorunumler/', CariV2GorunumView.as_view(), name='cari-v2-gorunum-list'),
+    path('cari/v2/gorunumler/<int:pk>/', CariV2GorunumDetailView.as_view(), name='cari-v2-gorunum-detail'),
+    path('cari/v2/raporlar/<slug:slug>/', CariV2ReportView.as_view(), name='cari-v2-rapor'),
+    path('cari/v2/raporlar/<slug:slug>/export/', CariV2ReportExportView.as_view(), name='cari-v2-rapor-export'),
+    path('cari/v2/hesaplar/<int:pk>/', CariV2DetailView.as_view(), name='cari-v2-detail'),
+    path('cari/v2/hesaplar/<int:pk>/toggle/', CariV2ToggleView.as_view(), name='cari-v2-toggle'),
+    path('cari/v2/hesaplar/<int:pk>/panel/', CariV2PanelView.as_view(), name='cari-v2-panel'),
+    path('cari/v2/hesaplar/<int:pk>/hareketler/', CariV2HareketlerView.as_view(), name='cari-v2-hareketler'),
+    path('cari/v2/hesaplar/<int:pk>/tab/<str:tab>/', CariV2TabView.as_view(), name='cari-v2-tab'),
+
+    # ═══ Finansman Tanımları (Ortak Master Data) ═══
+    path('tanimlar/gelir-kaynaklari/', GelirKaynagiListCreateView.as_view(), name='tanim-gelir-kaynagi-list'),
+    path('tanimlar/gelir-kaynaklari/<int:pk>/', GelirKaynagiDetailView.as_view(), name='tanim-gelir-kaynagi-detail'),
+    path('tanimlar/gelir-kaynaklari/<int:pk>/toggle/', GelirKaynagiToggleView.as_view(), name='tanim-gelir-kaynagi-toggle'),
+    path('tanimlar/maliyet-merkezleri/', MaliyetMerkeziListCreateView.as_view(), name='tanim-maliyet-merkezi-list'),
+    path('tanimlar/maliyet-merkezleri/<int:pk>/', MaliyetMerkeziDetailView.as_view(), name='tanim-maliyet-merkezi-detail'),
+    path('tanimlar/maliyet-merkezleri/<int:pk>/toggle/', MaliyetMerkeziToggleView.as_view(), name='tanim-maliyet-merkezi-toggle'),
+    path('tanimlar/projeler/', ProjeListCreateView.as_view(), name='tanim-proje-list'),
+    path('tanimlar/projeler/<int:pk>/', ProjeDetailView.as_view(), name='tanim-proje-detail'),
+    path('tanimlar/projeler/<int:pk>/toggle/', ProjeToggleView.as_view(), name='tanim-proje-toggle'),
+    path('tanimlar/aciklama-sablonlari/', AciklamaSablonuListCreateView.as_view(), name='tanim-aciklama-sablonu-list'),
+    path('tanimlar/aciklama-sablonlari/<int:pk>/', AciklamaSablonuDetailView.as_view(), name='tanim-aciklama-sablonu-detail'),
+    path('tanimlar/aciklama-sablonlari/<int:pk>/toggle/', AciklamaSablonuToggleView.as_view(), name='tanim-aciklama-sablonu-toggle'),
+    path('tanimlar/masraf-turleri/', MasrafTuruListCreateView.as_view(), name='tanim-masraf-turu-list'),
+    path('tanimlar/masraf-turleri/<int:pk>/', MasrafTuruDetailView.as_view(), name='tanim-masraf-turu-detail'),
+    path('tanimlar/masraf-turleri/<int:pk>/toggle/', MasrafTuruToggleView.as_view(), name='tanim-masraf-turu-toggle'),
+    path('tanimlar/etiketler/', FinansEtiketListCreateView.as_view(), name='tanim-etiket-list'),
+
+    # ═══ Gelir v2 (Yeni Modül) ══════════════════
+    path('gelir/v2/kayitlar/', GelirV2ListCreateView.as_view(), name='gelir-v2-list-create'),
+    path('gelir/v2/dashboard/', GelirV2DashboardView.as_view(), name='gelir-v2-dashboard'),
+    path('gelir/v2/kayitlar/<int:pk>/', GelirV2DetailView.as_view(), name='gelir-v2-detail'),
+    path('gelir/v2/kayitlar/<int:pk>/onayla/', GelirV2OnaylaView.as_view(), name='gelir-v2-onayla'),
+    path('gelir/v2/kayitlar/<int:pk>/iptal/', GelirV2IptalView.as_view(), name='gelir-v2-iptal'),
+
+    # ═══ Gider v2 (Yeni Modül) ══════════════════
+    path('gider/v2/kayitlar/', GiderV2ListCreateView.as_view(), name='gider-v2-list-create'),
+    path('gider/v2/dashboard/', GiderV2DashboardView.as_view(), name='gider-v2-dashboard'),
+    path('gider/v2/kayitlar/<int:pk>/', GiderV2DetailView.as_view(), name='gider-v2-detail'),
+    path('gider/v2/kayitlar/<int:pk>/onayla/', GiderV2OnaylaView.as_view(), name='gider-v2-onayla'),
+    path('gider/v2/kayitlar/<int:pk>/iptal/', GiderV2IptalView.as_view(), name='gider-v2-iptal'),
+
+    # ═══ Gelir & Gider v2 ortak ═════════════════
+    path('gelir-gider/v2/dropdown/', GelirGiderV2DropdownView.as_view(), name='gg-v2-dropdown'),
+    path('gelir-gider/v2/liste-export/', GelirGiderV2ListExportView.as_view(), name='gg-v2-liste-export'),
+    path('gelir-gider/v2/yetkiler/', GelirGiderV2YetkilerView.as_view(), name='gg-v2-yetkiler'),
+    path('gelir-gider/v2/loglar/', GelirGiderV2LogView.as_view(), name='gg-v2-loglar'),
+    path('gelir-gider/v2/raporlar/<slug:slug>/export/', GelirGiderV2ReportExportView.as_view(), name='gg-v2-rapor-export'),
+    path('gelir-gider/v2/raporlar/<slug:slug>/', GelirGiderV2ReportView.as_view(), name='gg-v2-rapor'),
+
     # ═══ Gelir Kategorileri ═════════════════════
     path(
         'gelir-kategorileri/',
@@ -589,6 +711,11 @@ urlpatterns = [
         name='cek-senet-list',
     ),
     path(
+        'cek-senet/dashboard/',
+        CekSenetDashboardView.as_view(),
+        name='cek-senet-dashboard',
+    ),
+    path(
         'cek-senet/<int:pk>/',
         CekSenetDetailView.as_view(),
         name='cek-senet-detail',
@@ -607,5 +734,40 @@ urlpatterns = [
         'cek-senet/<int:pk>/ode/',
         CekSenetOdeView.as_view(),
         name='cek-senet-ode',
+    ),
+    path(
+        'cek-senet/<int:pk>/ciro/',
+        CekSenetCiroView.as_view(),
+        name='cek-senet-ciro',
+    ),
+    path(
+        'cek-senet/<int:pk>/protesto/',
+        CekSenetProtestoView.as_view(),
+        name='cek-senet-protesto',
+    ),
+    path(
+        'cek-senet/<int:pk>/iade/',
+        CekSenetIadeView.as_view(),
+        name='cek-senet-iade',
+    ),
+    path(
+        'cek-senet/<int:pk>/iptal/',
+        CekSenetIptalView.as_view(),
+        name='cek-senet-iptal',
+    ),
+    path(
+        'cek-senet/<int:pk>/timeline/',
+        CekSenetTimelineView.as_view(),
+        name='cek-senet-timeline',
+    ),
+    path(
+        'cek-senet/<int:pk>/dosyalar/',
+        CekSenetDosyaView.as_view(),
+        name='cek-senet-dosyalar',
+    ),
+    path(
+        'cek-senet/<int:pk>/dosyalar/<int:dosya_id>/',
+        CekSenetDosyaDeleteView.as_view(),
+        name='cek-senet-dosya-delete',
     ),
 ]

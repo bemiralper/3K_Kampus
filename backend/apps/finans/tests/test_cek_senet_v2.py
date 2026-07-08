@@ -226,3 +226,155 @@ class CekSenetV2Test(TestCase):
         t.refresh_from_db()
         self.assertEqual(t.odeme_yontemi_id, self.cek_yontemi.id)
         self.assertEqual(CekSenetDetay.objects.filter(taksit__sozlesme=self.sozlesme).count(), 1)
+
+    # ─── V2 yeni akışlar ──────────────────────────────────────────
+
+    def _create_alinan(self):
+        service = CekSenetService()
+        created, err = service.create_alinan({
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube.id,
+            'odeme_yontemi_id': self.cek_yontemi.id,
+            'tutar': 4000,
+            'vade_tarihi': (timezone.localdate() + timedelta(days=20)).isoformat(),
+            'cek_senet_no': 'ALN-001',
+        }, user=self.user)
+        self.assertIsNone(err, err)
+        return created['id']
+
+    def test_create_alinan_portfoyde_and_logs(self):
+        detay_id = self._create_alinan()
+        detay = CekSenetDetay.objects.get(id=detay_id)
+        self.assertEqual(detay.durum, CekSenetDurum.PORTFOYDE)
+        self.assertEqual(detay.yon, CekSenetYon.ALINAN)
+        self.assertGreaterEqual(detay.loglar.count(), 1)
+
+    def test_ciro_et(self):
+        from apps.finans.domain.cari_hesap import CariHesap
+        cari = CariHesap.objects.create(
+            kurum=self.kurum, sube=self.sube, unvan='Tedarikçi A', hesap_turu='tedarikci',
+        )
+        detay_id = self._create_alinan()
+        result, err = CekSenetService().ciro_et(
+            detay_id, ciro_edilen_cari_id=cari.id, user=self.user,
+        )
+        self.assertIsNone(err, err)
+        self.assertEqual(result['durum'], CekSenetDurum.CIRO)
+        self.assertEqual(result['ciro_edilen_cari_id'], cari.id)
+
+    def test_protesto_ve_iade(self):
+        service = CekSenetService()
+        detay_id = self._create_alinan()
+        service.transition(detay_id, CekSenetDurum.TAHSILDE, {})
+        result, err = service.protesto_et(detay_id, user=self.user)
+        self.assertIsNone(err, err)
+        self.assertEqual(result['durum'], CekSenetDurum.PROTESTO)
+
+        result, err = service.iade_et(detay_id, user=self.user)
+        self.assertIsNone(err, err)
+        self.assertEqual(result['durum'], CekSenetDurum.IADE)
+
+    def test_dashboard_endpoint(self):
+        self._create_alinan()
+        response = self.client.get(
+            '/finans/api/cek-senet/dashboard/',
+            {'kurum_id': self.kurum.id, 'sube_id': self.sube.id},
+            HTTP_X_SUBE_ID=str(self.sube.id),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('kpi', response.data)
+        self.assertIn('toplam_portfoy', response.data['kpi'])
+        self.assertGreaterEqual(response.data['kpi']['toplam_portfoy']['adet'], 1)
+
+    def test_timeline_endpoint(self):
+        detay_id = self._create_alinan()
+        response = self.client.get(f'/finans/api/cek-senet/{detay_id}/timeline/')
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data['results']), 1)
+
+    def test_dosya_ekle_ve_sil(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        service = CekSenetService()
+        detay_id = self._create_alinan()
+        f = SimpleUploadedFile('cek.pdf', b'%PDF-1.4 test', content_type='application/pdf')
+        result, err = service.dosya_ekle(detay_id, dosya=f, dosya_adi='cek.pdf', user=self.user)
+        self.assertIsNone(err, err)
+        self.assertEqual(len(service.dosyalar(detay_id)), 1)
+        ok, err = service.dosya_sil(detay_id, result['id'], user=self.user)
+        self.assertTrue(ok)
+        self.assertEqual(len(service.dosyalar(detay_id)), 0)
+
+    def test_sekme_filtreleri(self):
+        self._create_alinan()
+        service = CekSenetService()
+        portfoy = service.list_kayitlar(self.kurum.id, sube_id=self.sube.id, sekme='portfoy')
+        self.assertGreaterEqual(portfoy['count'], 1)
+        gelen_cekler = service.list_kayitlar(self.kurum.id, sube_id=self.sube.id, sekme='gelen-cekler')
+        self.assertGreaterEqual(gelen_cekler['count'], 1)
+        iptaller = service.list_kayitlar(self.kurum.id, sube_id=self.sube.id, sekme='iptaller')
+        self.assertEqual(iptaller['count'], 0)
+
+    def test_gider_cek_odeme_creates_gider_odeme(self):
+        """Verilen çek ödendiğinde GiderOdeme oluşmalı — gün sonu/gider listesi için."""
+        from apps.finans.application.gun_sonu_service import GunSonuService
+        from apps.finans.constants.gider_types import GiderDurum, GiderTaksitDurum, OdemeDurum
+        from apps.finans.domain.cari_hesap import CariHesap
+        from apps.finans.domain.gider_kategorisi import GiderKategorisi
+        from apps.finans.domain.gider_kaydi import GiderKaydi
+        from apps.finans.domain.gider_odeme import GiderOdeme
+        from apps.finans.domain.gider_taksit import GiderTaksit
+
+        bugun = timezone.localdate()
+        cari = CariHesap.objects.create(
+            kurum=self.kurum, sube=self.sube, unvan='Çek Gider Cari', hesap_turu='tedarikci',
+        )
+        kat = GiderKategorisi.objects.create(kurum=self.kurum, sube=self.sube, ad='Çek Kat')
+        gider = GiderKaydi.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            cari_hesap=cari,
+            gider_kategorisi=kat,
+            fatura_tarihi=bugun,
+            vade_tarihi=bugun,
+            brut_tutar=2000,
+            kdv_orani=0,
+            kdv_tutar=0,
+            net_tutar=2000,
+            durum=GiderDurum.ONAYLANDI,
+        )
+        taksit = GiderTaksit.objects.create(
+            gider_kaydi=gider,
+            taksit_no=1,
+            vade_tarihi=bugun,
+            tutar=2000,
+            odeme_yontemi=self.cek_yontemi,
+            durum=GiderTaksitDurum.BEKLEMEDE,
+        )
+        service = CekSenetService()
+        service.sync_gider_plan(gider)
+        detay = taksit.cek_senet_detay
+        self.assertIsNotNone(detay)
+
+        _, err = service.transition(detay.pk, CekSenetDurum.HAZIRLANDI, {}, user=self.user)
+        self.assertIsNone(err, err)
+        _, err = service.transition(detay.pk, CekSenetDurum.VERILDI, {}, user=self.user)
+        self.assertIsNone(err, err)
+        result, err = service.ode(
+            detay.pk,
+            odeme_mali_hesap_id=self.mali_hesap.id,
+            odeme_tarihi=bugun,
+            user=self.user,
+        )
+        self.assertIsNone(err, err)
+        self.assertEqual(result['durum'], CekSenetDurum.ODENDI)
+
+        odemeler = GiderOdeme.objects.filter(gider_kaydi=gider, durum=OdemeDurum.TAMAMLANDI)
+        self.assertEqual(odemeler.count(), 1)
+        self.assertEqual(int(odemeler.first().tutar), 2000)
+
+        gider.refresh_from_db()
+        self.assertEqual(gider.durum, GiderDurum.ODENDI)
+
+        gun_sonu = GunSonuService().ozet(self.kurum.id, bugun, sube_id=self.sube.id)
+        self.assertGreaterEqual(gun_sonu['odemeler']['toplam'], 2000)

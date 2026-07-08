@@ -1,5 +1,5 @@
-import GelirGiderIslemleriClient from "./GelirGiderIslemleriClient";
+import FinansClientRedirect from "@/components/finans/FinansClientRedirect";
 
 export default function GelirGiderIslemleriPage() {
-  return <GelirGiderIslemleriClient />;
+  return <FinansClientRedirect segment="gelir-v2" />;
 }
