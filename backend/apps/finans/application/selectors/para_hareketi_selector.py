@@ -9,7 +9,7 @@ Hareketleri" ekranının veri kaynağı doğrudan burasıdır — ayrıca her
 kaydı okunabilir hale getirmek için kaynak modele (Tahsilat, GelirTahsilat,
 GiderOdeme, HesapTransferi) geri referans verilerek zenginleştirilir.
 """
-from django.db.models import Q
+from django.db.models import Q, Sum, Case, When, IntegerField
 
 from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
 from apps.finans.constants.hareket_types import HareketYonu, HareketKaynagi
@@ -22,7 +22,7 @@ class ParaHareketiSelector:
             'mali_hesap', 'islem_yapan',
         )
         if sube_id:
-            qs = qs.filter(sube_id=sube_id)
+            qs = qs.filter(Q(sube_id=sube_id) | Q(sube_id__isnull=True))
         if egitim_yili_id:
             qs = qs.filter(egitim_yili_id=egitim_yili_id)
 
@@ -42,6 +42,25 @@ class ParaHareketiSelector:
         if filters.get('arama'):
             qs = qs.filter(aciklama__icontains=filters['arama'])
 
+        agg = qs.aggregate(
+            toplam_giris=Sum(
+                Case(
+                    When(yon=HareketYonu.GIRIS, then='tutar'),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ),
+            toplam_cikis=Sum(
+                Case(
+                    When(yon=HareketYonu.CIKIS, then='tutar'),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ),
+        )
+        filtre_toplam_giris = int(agg['toplam_giris'] or 0)
+        filtre_toplam_cikis = int(agg['toplam_cikis'] or 0)
+
         qs = qs.order_by('-islem_tarihi', '-created_at', '-id')
 
         count = qs.count()
@@ -50,13 +69,13 @@ class ParaHareketiSelector:
         start = (page - 1) * page_size
         rows = list(qs[start:start + page_size])
 
-        toplam_giris = 0
-        toplam_cikis = 0
+        sayfa_toplam_giris = 0
+        sayfa_toplam_cikis = 0
         for r in rows:
             if r.yon == HareketYonu.GIRIS:
-                toplam_giris += r.tutar
+                sayfa_toplam_giris += r.tutar
             else:
-                toplam_cikis += r.tutar
+                sayfa_toplam_cikis += r.tutar
 
         return {
             'results': [self._enrich(r) for r in rows],
@@ -64,8 +83,11 @@ class ParaHareketiSelector:
             'page': page,
             'page_size': page_size,
             'total_pages': (count + page_size - 1) // page_size if page_size else 1,
-            'sayfa_toplam_giris': toplam_giris,
-            'sayfa_toplam_cikis': toplam_cikis,
+            'sayfa_toplam_giris': sayfa_toplam_giris,
+            'sayfa_toplam_cikis': sayfa_toplam_cikis,
+            'toplam_giris': filtre_toplam_giris,
+            'toplam_cikis': filtre_toplam_cikis,
+            'net_bakiye': filtre_toplam_giris - filtre_toplam_cikis,
         }
 
     # ─── Zenginleştirme ───────────────────────────

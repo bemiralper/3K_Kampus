@@ -87,7 +87,7 @@ class BakiyeHareketiRepository:
         """Mali hesabın en son hareket sonrası bakiyesi."""
         son = BakiyeHareketi.objects.filter(
             mali_hesap_id=mali_hesap_id,
-        ).order_by('-islem_tarihi', '-created_at').first()
+        ).order_by('-islem_tarihi', '-created_at', '-id').first()
         return son.bakiye_sonrasi if son else 0
 
     @staticmethod

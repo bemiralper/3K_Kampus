@@ -44,7 +44,14 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(f'Mali Hesap: {hesap.ad} (id={hesap.id}, şube={hesap.sube_id})')
-        self.stdout.write(f'Son bakiye (mevcut): {BakiyeHareketiRepository.son_bakiye(mali_hesap_id):,} TL')
+        son = BakiyeHareketiRepository.son_bakiye(mali_hesap_id)
+        self.stdout.write(f'Son bakiye (kayıtlı): {son:,} TL')
+        net = self._net_from_hareketler(mali_hesap_id)
+        self.stdout.write(f'Hesaplanan net (tüm hareketler): {net:,} TL')
+        if net != son:
+            self.stdout.write(self.style.WARNING(
+                f'  ⚠ Tutarsızlık: {son - net:+,} TL — --rebuild-chain çalıştırın'
+            ))
 
         if options['list'] or (not options['fix_orphan_iptal'] and not options['rebuild_chain']):
             self._list_hareketler(mali_hesap_id)
@@ -62,6 +69,19 @@ class Command(BaseCommand):
                     f'Son bakiye (güncel): {BakiyeHareketiRepository.son_bakiye(mali_hesap_id):,} TL'
                 )
             )
+
+    @staticmethod
+    def _net_from_hareketler(mali_hesap_id):
+        from apps.finans.constants.hareket_types import HareketYonu
+        bakiye = 0
+        for h in BakiyeHareketi.objects.filter(mali_hesap_id=mali_hesap_id).order_by(
+            'islem_tarihi', 'created_at', 'id',
+        ):
+            if h.yon == HareketYonu.GIRIS:
+                bakiye += int(h.tutar or 0)
+            else:
+                bakiye -= int(h.tutar or 0)
+        return bakiye
 
     def _list_hareketler(self, mali_hesap_id):
         hareketler = BakiyeHareketi.objects.filter(

@@ -31,6 +31,9 @@ export interface ParaHareketleriResponse {
   total_pages: number;
   sayfa_toplam_giris: number;
   sayfa_toplam_cikis: number;
+  toplam_giris?: number;
+  toplam_cikis?: number;
+  net_bakiye?: number;
 }
 
 export interface ParaHareketleriParams {

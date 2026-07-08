@@ -24,6 +24,8 @@ export default function HareketlerTab({ kurumId, maliHesapId }: Props) {
   const [count, setCount] = useState(0);
   const [toplamGiris, setToplamGiris] = useState(0);
   const [toplamCikis, setToplamCikis] = useState(0);
+  const [netBakiye, setNetBakiye] = useState(0);
+  const [yonFilter, setYonFilter] = useState<"" | "giris" | "cikis">("");
   const [baslangic, setBaslangic] = useState("");
   const [bitis, setBitis] = useState("");
 
@@ -31,19 +33,28 @@ export default function HareketlerTab({ kurumId, maliHesapId }: Props) {
     setLoading(true);
     setError(null);
     paraHareketiService
-      .list({ kurum_id: kurumId, mali_hesap_id: maliHesapId, baslangic: baslangic || undefined, bitis: bitis || undefined, page, page_size: 20 })
+      .list({
+        kurum_id: kurumId,
+        mali_hesap_id: maliHesapId,
+        baslangic: baslangic || undefined,
+        bitis: bitis || undefined,
+        yon: yonFilter || undefined,
+        page,
+        page_size: 50,
+      })
       .then((res) => {
         setData(res.results || []);
         setTotalPages(res.total_pages || 1);
         setCount(res.count || 0);
-        setToplamGiris(res.sayfa_toplam_giris || 0);
-        setToplamCikis(res.sayfa_toplam_cikis || 0);
+        setToplamGiris(res.toplam_giris ?? res.sayfa_toplam_giris ?? 0);
+        setToplamCikis(res.toplam_cikis ?? res.sayfa_toplam_cikis ?? 0);
+        setNetBakiye(res.net_bakiye ?? ((res.toplam_giris ?? 0) - (res.toplam_cikis ?? 0)));
       })
       .catch((err: any) => setError(err.message || "Hareketler yüklenemedi"))
       .finally(() => setLoading(false));
-  }, [kurumId, maliHesapId, baslangic, bitis, page]);
+  }, [kurumId, maliHesapId, baslangic, bitis, yonFilter, page]);
 
-  useEffect(() => { setPage(1); }, [maliHesapId, baslangic, bitis]);
+  useEffect(() => { setPage(1); }, [maliHesapId, baslangic, bitis, yonFilter]);
   useEffect(() => { load(); }, [load]);
 
   return (
@@ -71,9 +82,24 @@ export default function HareketlerTab({ kurumId, maliHesapId }: Props) {
             Temizle
           </button>
         )}
-        <div className="ml-auto flex items-center gap-4 text-xs">
-          <span className="text-emerald-600 font-semibold">Giriş: {fmtTL(toplamGiris)}</span>
-          <span className="text-red-500 font-semibold">Çıkış: {fmtTL(toplamCikis)}</span>
+        <select
+          value={yonFilter}
+          onChange={(e) => setYonFilter(e.target.value as "" | "giris" | "cikis")}
+          className="px-3 py-2 border border-gray-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+        >
+          <option value="">Tüm hareketler</option>
+          <option value="giris">Yalnızca giriş</option>
+          <option value="cikis">Yalnızca çıkış</option>
+        </select>
+        <div className="ml-auto flex flex-col items-end gap-0.5 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="text-emerald-600 font-semibold">Toplam Giriş: {fmtTL(toplamGiris)}</span>
+            <span className="text-red-500 font-semibold">Toplam Çıkış: {fmtTL(toplamCikis)}</span>
+            <span className={`font-semibold ${netBakiye < 0 ? "text-red-500" : "text-gray-700"}`}>
+              Net: {fmtTL(netBakiye)}
+            </span>
+          </div>
+          <span className="text-gray-400">{count} kayıt</span>
         </div>
       </div>
 
