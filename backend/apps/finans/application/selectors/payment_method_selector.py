@@ -44,7 +44,12 @@ class OdemeYontemiSelector:
         """
         qs = self.repo.get_active_by_kurum(kurum_id)
         if mali_hesap_id:
-            qs = qs.filter(mali_hesap_id=mali_hesap_id)
+            from apps.finans.application.odeme_yontemi_plan_helpers import (
+                filter_odeme_yontemleri_for_mali_hesap,
+            )
+            qs = filter_odeme_yontemleri_for_mali_hesap(
+                qs, mali_hesap_id, kurum_id=kurum_id,
+            )
         return qs.values(
             'id', 'ad', 'tip', 'mali_hesap_id', mali_hesap_ad=F('mali_hesap__ad'),
         )

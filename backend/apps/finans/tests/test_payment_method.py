@@ -300,7 +300,7 @@ class OdemeYontemiSelectorTest(TestCase):
         self.assertIn('mali_hesap_id', result[0])
 
     def test_get_dropdown_list_filtered_by_mali_hesap(self):
-        """mali_hesap_id verilince sadece o hesaba ait yöntemler döner."""
+        """mali_hesap_id verilince hesaba bağlı + plan kanonik kanallar döner."""
         diger_sube = Sube.objects.create(kurum=self.kurum, ad='Diğer Şube', kod='SEL2')
         diger_hesap = MaliHesap.objects.create(sube=diger_sube, ad='Diğer Kasa', tip=MaliHesapTipi.KASA)
         self.service.create(self.kurum.id, {
@@ -309,9 +309,12 @@ class OdemeYontemiSelectorTest(TestCase):
         })
 
         result = list(self.selector.get_dropdown_list(self.kurum.id, mali_hesap_id=self.mali_hesap.id))
-        self.assertEqual(len(result), 2)
+        self.assertGreaterEqual(len(result), 2)
         for item in result:
-            self.assertEqual(item['mali_hesap_id'], self.mali_hesap.id)
+            if item['mali_hesap_id'] is not None:
+                self.assertEqual(item['mali_hesap_id'], self.mali_hesap.id)
+            else:
+                self.assertEqual(item['tip'], OdemeYontemiTipi.NAKIT)
 
 
 class OdemeYontemiConstantsTest(TestCase):

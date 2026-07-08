@@ -55,13 +55,11 @@ class OdemeYontemiListCreateView(APIView):
 
         mali_hesap_id = request.query_params.get('mali_hesap_id')
         if mali_hesap_id:
-            # Mali hesaba bağlı yöntemler + kurum geneli çek/senet (mali_hesap=null)
-            queryset = queryset.filter(
-                Q(mali_hesap_id=mali_hesap_id)
-                | Q(
-                    mali_hesap__isnull=True,
-                    tip__in=[OdemeYontemiTipi.CEK, OdemeYontemiTipi.SENET],
-                )
+            from apps.finans.application.odeme_yontemi_plan_helpers import (
+                filter_odeme_yontemleri_for_mali_hesap,
+            )
+            queryset = filter_odeme_yontemleri_for_mali_hesap(
+                queryset, mali_hesap_id, kurum_id=kurum_id,
             )
 
         serializer = OdemeYontemiListSerializer(queryset, many=True)
@@ -308,11 +306,6 @@ class OdemeYontemiDropdownView(APIView):
         selector = OdemeYontemiSelector()
         if mali_hesap_id:
             data = list(selector.get_dropdown_list(kurum_id, mali_hesap_id=mali_hesap_id))
-            data += list(
-                selector.get_active_by_kurum(kurum_id)
-                .filter(mali_hesap__isnull=True, tip__in=[OdemeYontemiTipi.CEK, OdemeYontemiTipi.SENET])
-                .values('id', 'ad', 'tip', 'mali_hesap_id', mali_hesap_ad=F('mali_hesap__ad'))
-            )
         else:
             from apps.finans.application.odeme_yontemi_plan_helpers import (
                 dedupe_odeme_yontemleri_for_plan,

@@ -105,4 +105,27 @@ class Command(BaseCommand):
             return tahsilat.odeme_yontemi.mali_hesap_id
         if tahsilat.sozlesme_id and tahsilat.sozlesme.mali_hesap_id:
             return tahsilat.sozlesme.mali_hesap_id
+
+        # Plan kanonik ödeme yöntemi (mali_hesap=null) ile yapılmış eski tahsilatlar
+        oy = tahsilat.odeme_yontemi
+        sozlesme = tahsilat.sozlesme
+        if not oy or not sozlesme:
+            return None
+
+        from apps.finans.constants.account_types import MaliHesapTipi
+        from apps.finans.constants.payment_types import OdemeYontemiTipi
+        from apps.finans.domain.financial_account import MaliHesap
+
+        sube_id = sozlesme.sube_id
+        if oy.tip == OdemeYontemiTipi.NAKIT and sube_id:
+            kasa = (
+                MaliHesap.objects.filter(
+                    sube_id=sube_id, tip=MaliHesapTipi.KASA, aktif_mi=True,
+                )
+                .order_by('siralama', 'id')
+                .first()
+            )
+            if kasa:
+                return kasa.id
+
         return None

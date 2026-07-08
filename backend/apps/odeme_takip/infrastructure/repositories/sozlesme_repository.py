@@ -172,11 +172,11 @@ class ParametrikRepository:
         """
         Finans modülündeki OdemeYontemi'leri getir (eski odeme_sekilleri yerine).
 
-        mali_hesap_id verilirse o hesaba ait yöntemler + kurum geneli çek/senet döner.
+        mali_hesap_id verilirse o hesaba ait yöntemler + hesap tipine uygun plan kanonik
+        kanallar (Nakit/Havale/POS) + kurum geneli çek/senet döner.
         sube_id verilirse aktif şubedeki mali hesaplar + kurum geneli çek/senet döner.
         """
         from django.db.models import Q
-        from apps.finans.constants.payment_types import OdemeYontemiTipi
         from apps.finans.domain.payment_method import OdemeYontemi
 
         qs = OdemeYontemi.objects.filter(aktif_mi=True, silindi_mi=False)
@@ -188,12 +188,11 @@ class ParametrikRepository:
                 | Q(mali_hesap__isnull=True),
             )
         if mali_hesap_id:
-            qs = qs.filter(
-                Q(mali_hesap_id=mali_hesap_id)
-                | Q(
-                    mali_hesap__isnull=True,
-                    tip__in=[OdemeYontemiTipi.CEK, OdemeYontemiTipi.SENET],
-                )
+            from apps.finans.application.odeme_yontemi_plan_helpers import (
+                filter_odeme_yontemleri_for_mali_hesap,
+            )
+            qs = filter_odeme_yontemleri_for_mali_hesap(
+                qs, mali_hesap_id, kurum_id=kurum_id,
             )
         return qs.order_by('siralama', 'ad')
 

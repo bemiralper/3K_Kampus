@@ -6,7 +6,10 @@ gösterilir. Aynı tipte bankaya özel kayıtlar tekilleştirilir.
 """
 from __future__ import annotations
 
+from django.db.models import Q
+
 from apps.finans.application.cek_senet.cek_senet_helpers import is_cek_senet_tip
+from apps.finans.constants.account_types import MaliHesapTipi
 from apps.finans.constants.payment_types import OdemeYontemiTipi
 from apps.finans.domain.payment_method import OdemeYontemi
 
@@ -81,6 +84,52 @@ def dedupe_odeme_yontemleri_for_plan(queryset) -> list[dict]:
     ordered = [by_tip[tip] for tip in PLAN_TIP_ORDER if tip in by_tip]
     ordered.extend(cek_senet)
     return [serialize_plan_item(oy) for oy in ordered]
+
+
+def canonical_tips_for_mali_hesap(mali_hesap) -> tuple[str, ...]:
+    """
+    Mali hesap tipine göre tahsilatta seçilebilecek plan kanonik ödeme kanalları.
+    Banka hesabı seçildiğinde Havale/POS/Online; kasa seçildiğinde Nakit döner.
+    """
+    tip = getattr(mali_hesap, 'tip', None)
+    if tip == MaliHesapTipi.KASA:
+        return (OdemeYontemiTipi.NAKIT,)
+    if tip in (MaliHesapTipi.BANKA, MaliHesapTipi.DIGER):
+        return (
+            OdemeYontemiTipi.HAVALE_EFT,
+            OdemeYontemiTipi.POS,
+            OdemeYontemiTipi.ONLINE,
+        )
+    if tip == MaliHesapTipi.POS:
+        return (OdemeYontemiTipi.POS,)
+    if tip in (MaliHesapTipi.SANAL_POS, MaliHesapTipi.E_CUZDAN):
+        return (OdemeYontemiTipi.ONLINE,)
+    return tuple(STANDARD_PLAN_TIPS)
+
+
+def filter_odeme_yontemleri_for_mali_hesap(queryset, mali_hesap_id, kurum_id=None):
+    """
+    Mali hesap seçildiğinde ödeme yöntemi listesi:
+    - Hesaba bağlı kayıtlar
+    - Hesap tipine uygun plan kanonik kanallar (mali_hesap=null)
+    - Kurum geneli çek/senet
+    """
+    from apps.finans.domain.financial_account import MaliHesap
+
+    if kurum_id:
+        ensure_kurum_plan_odeme_yontemleri(int(kurum_id))
+
+    mali_hesap = MaliHesap.objects.filter(pk=mali_hesap_id, silindi_mi=False).first()
+    if not mali_hesap:
+        return queryset.filter(mali_hesap_id=mali_hesap_id)
+
+    tips = list(canonical_tips_for_mali_hesap(mali_hesap))
+    tips.extend([OdemeYontemiTipi.CEK, OdemeYontemiTipi.SENET])
+
+    return queryset.filter(
+        Q(mali_hesap_id=mali_hesap_id)
+        | Q(mali_hesap__isnull=True, tip__in=tips)
+    )
 
 
 def ensure_kurum_plan_odeme_yontemleri(kurum_id: int) -> dict[str, int]:
