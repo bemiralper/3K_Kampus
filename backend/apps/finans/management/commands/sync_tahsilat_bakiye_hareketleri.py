@@ -28,9 +28,10 @@ class Command(BaseCommand):
         manual_mali_hesap_id = options['mali_hesap_id']
         bakiye_service = BakiyeHareketiService()
 
-        if tahsilat_id and not manual_mali_hesap_id:
-            self.stderr.write(self.style.ERROR('--tahsilat-id ile birlikte --mali-hesap-id zorunludur'))
-            return
+        if tahsilat_id and manual_mali_hesap_id:
+            pass  # manuel override
+        elif tahsilat_id:
+            pass  # tahsilat kaydından çözümlenir
 
         qs = Tahsilat.objects.filter(
             durum=TahsilatDurum.AKTIF,

@@ -126,6 +126,9 @@ export interface TahsilatItem {
   taksit_id: number | null;
   taksit_no: number | null;
   odeme_yontemi: { id: number; ad: string };
+  mali_hesap?: { id: number; ad: string } | null;
+  bakiye_hareketi_id?: number | null;
+  bakiye_yansidi?: boolean;
   tutar: number;
   tahsilat_tarihi: string | null;
   referans_no: string;

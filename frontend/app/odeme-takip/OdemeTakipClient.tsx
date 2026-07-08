@@ -397,10 +397,12 @@ export default function OdemeTakipClient() {
       ? selectedSozlesme
       : sozlesmeler.find((s) => s.id === Number(form.sozlesme_id));
     const taksit = sozlesme?.taksitler?.find((t) => t.id === Number(form.taksit_id));
+    const varsayilanKasa = maliHesaplar.find((m) => m.tip === "kasa");
     const defaultMali =
       form.mali_hesap_id ||
       (sozlesme?.mali_hesap_id ? String(sozlesme.mali_hesap_id) : "") ||
-      (sozlesme?.mali_hesap?.id ? String(sozlesme.mali_hesap.id) : "");
+      (sozlesme?.mali_hesap?.id ? String(sozlesme.mali_hesap.id) : "") ||
+      (varsayilanKasa ? String(varsayilanKasa.id) : "");
     const defaultYontem =
       form.odeme_yontemi_id ||
       (taksit?.odeme_yontemi_id ? String(taksit.odeme_yontemi_id) : "") ||
@@ -453,6 +455,12 @@ export default function OdemeTakipClient() {
       });
       if (res.ok) {
         const tahsilatData = await res.json();
+        if (!tahsilatData?.bakiye_yansidi) {
+          alert(
+            "Tahsilat kaydedildi ancak kasa/banka bakiyesine yansımadı. "
+            + "Mali hesap seçimini kontrol edin veya yöneticiye bildirin."
+          );
+        }
         setShowTahsilatDrawer(false);
         setTahsilatForm({
           sozlesme_id: "", taksit_id: "", odeme_yontemi_id: "", tutar: "", tahsilat_tarihi: "", referans_no: "", aciklama: "",

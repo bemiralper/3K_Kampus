@@ -195,6 +195,8 @@ def _serialize_tahsilat(th):
             'id': th.mali_hesap_id,
             'ad': th.mali_hesap.ad if th.mali_hesap_id else '',
         } if th.mali_hesap_id else None,
+        'bakiye_hareketi_id': th.bakiye_hareketi_id,
+        'bakiye_yansidi': bool(th.bakiye_hareketi_id),
         'tutar': th.tutar or 0,
         'tahsilat_tarihi': str(th.tahsilat_tarihi) if th.tahsilat_tarihi else None,
         'referans_no': th.referans_no or '',

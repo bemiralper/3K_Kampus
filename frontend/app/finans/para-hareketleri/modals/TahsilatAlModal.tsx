@@ -60,7 +60,14 @@ export default function TahsilatAlModal({ onClose, onSuccess, prefillSozlesmeId,
     if (!activeKurum?.id) return;
     financialAccountService
       .dropdownByKurum(activeKurum.id, activeSube?.id)
-      .then((res) => setMaliHesaplar(res.mali_hesaplar || []))
+      .then((res) => {
+        const list = res.mali_hesaplar || [];
+        setMaliHesaplar(list);
+        if (!maliHesapId) {
+          const kasa = list.find((m) => m.tip === "kasa");
+          if (kasa) setMaliHesapId(String(kasa.id));
+        }
+      })
       .catch(() => setMaliHesaplar([]));
   }, [activeKurum?.id, activeSube?.id]);
 
@@ -113,6 +120,7 @@ export default function TahsilatAlModal({ onClose, onSuccess, prefillSozlesmeId,
   const handleSubmit = async () => {
     setError(null);
     if (!sozlesme) { setError("Lütfen bir sözleşme seçin."); return; }
+    if (!maliHesapId) { setError("Mali hesap (kasa/banka) seçimi zorunludur."); return; }
     if (!odemeYontemiId) { setError("Ödeme yöntemi seçmelisiniz."); return; }
     const tutarNum = Number(tutar);
     if (!tutarNum || tutarNum <= 0) { setError("Geçerli bir tutar girin."); return; }
@@ -120,17 +128,21 @@ export default function TahsilatAlModal({ onClose, onSuccess, prefillSozlesmeId,
     setSaving(true);
     try {
       const masraf = buildIslemMasrafiPayload(masrafForm);
-      await odemeTakipBridge.tahsilatOlustur({
+      const created = await odemeTakipBridge.tahsilatOlustur({
         sozlesme_id: sozlesme.id,
         taksit_id: taksitId ? Number(taksitId) : null,
         odeme_yontemi_id: Number(odemeYontemiId),
-        mali_hesap_id: maliHesapId ? Number(maliHesapId) : null,
+        mali_hesap_id: Number(maliHesapId),
         tutar: tutarNum,
         tahsilat_tarihi: tarih,
         referans_no: referansNo,
         aciklama,
         ...masraf,
       });
+      if (!created?.bakiye_yansidi) {
+        setError("Tahsilat kaydedildi ancak kasa/banka bakiyesine yansımadı. Mali hesabı kontrol edin.");
+        return;
+      }
       onSuccess(`${fmtTL(tutarNum)} tahsilat kaydedildi.`);
       onClose();
     } catch (e) {
@@ -194,13 +206,14 @@ export default function TahsilatAlModal({ onClose, onSuccess, prefillSozlesmeId,
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <FinansModalField label="Mali Hesap (Kasa / Banka)" hint="Boş bırakılırsa ödeme yöntemi/sözleşme varsayılanı kullanılır">
+        <FinansModalField label="Mali Hesap (Kasa / Banka) *" hint="Tahsilatın yattığı hesap — bakiye bu seçime göre güncellenir">
           <select
+            required
             value={maliHesapId}
             onChange={(e) => { setMaliHesapId(e.target.value); setOdemeYontemiId(""); }}
             style={finansModalInputStyle}
           >
-            <option value="">Otomatik</option>
+            <option value="">Seçiniz</option>
             {maliHesaplar.map((m) => (
               <option key={m.id} value={m.id}>{m.ad} ({m.tip === "kasa" ? "Kasa" : m.tip === "banka" ? "Banka" : m.tip})</option>
             ))}

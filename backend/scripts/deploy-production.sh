@@ -221,6 +221,22 @@ fi
 
 if [[ "$SKIP_RESTART" != true ]]; then
   restarted=false
+  if [[ -z "${LMS_BACKEND_SERVICE:-}" ]]; then
+    for svc in lms-backend lms-gunicorn gunicorn-lms; do
+      if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -qE 'enabled|disabled'; then
+        LMS_BACKEND_SERVICE=$svc
+        break
+      fi
+    done
+  fi
+  if [[ -z "${LMS_FRONTEND_SERVICE:-}" ]]; then
+    for svc in lms-frontend lms-next; do
+      if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -qE 'enabled|disabled'; then
+        LMS_FRONTEND_SERVICE=$svc
+        break
+      fi
+    done
+  fi
   if [[ -n "${LMS_BACKEND_SERVICE:-}" ]]; then
     log "restart backend: $LMS_BACKEND_SERVICE"
     sudo systemctl restart "$LMS_BACKEND_SERVICE"
