@@ -96,3 +96,36 @@ class TahsilatCancelTest(TestCase):
         cancelled, cancel_err = self.service.cancel(tahsilat.pk, 'ab', user=None)
         self.assertIsNone(cancelled)
         self.assertIn('error', cancel_err)
+
+    def test_cancel_without_prior_bakiye_hareketi_does_not_debit_account(self):
+        """Giriş hareketi olmayan tahsilat iptalinde kasa borçlandırılmamalı."""
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+        from apps.finans.constants.hareket_types import HareketKaynagi
+        from apps.finans.infrastructure.bakiye_hareketi_repository import BakiyeHareketiRepository
+        from apps.odeme_takip.domain.models import Tahsilat
+
+        tahsilat = Tahsilat.objects.create(
+            sozlesme=self.sozlesme,
+            taksit=self.taksit,
+            odeme_yontemi=self.odeme_yontemi,
+            mali_hesap=self.mali_hesap,
+            tutar=250000,
+            tahsilat_tarihi=self.today,
+            durum='aktif',
+            tahsilat_turu='normal',
+        )
+        bakiye_once = BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id)
+
+        cancelled, cancel_err = self.service.cancel(tahsilat.pk, 'Yanlış kayıt', user=None)
+        self.assertIsNone(cancel_err)
+        self.assertEqual(cancelled.durum, 'iptal_edildi')
+
+        bakiye_sonra = BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id)
+        self.assertEqual(bakiye_once, bakiye_sonra)
+        self.assertFalse(
+            BakiyeHareketi.objects.filter(
+                mali_hesap_id=self.mali_hesap.id,
+                kaynak=HareketKaynagi.TAHSILAT_IPTAL,
+                kaynak_id=tahsilat.pk,
+            ).exists()
+        )

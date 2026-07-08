@@ -348,7 +348,9 @@ class TahsilatService:
             return None, {'error': masraf_err if isinstance(masraf_err, str) else 'İşlem masrafı iptal edilemedi'}
 
         # ── Kasa/banka bakiyesini geri al ────────────
-        if tahsilat.mali_hesap_id and eski_tutar > 0:
+        # Yalnızca kasaya gerçekten girmiş tahsilat iptal edilir; giriş hareketi
+        # yokken çıkış yazmak bakiyeyi hatalı borçlandırır.
+        if tahsilat.mali_hesap_id and eski_tutar > 0 and tahsilat.bakiye_hareketi_id:
             self.bakiye_service.tahsilat_iptal(
                 mali_hesap_id=tahsilat.mali_hesap_id,
                 kurum_id=sozlesme.kurum_id,
