@@ -92,6 +92,21 @@ systemctl status lms-backend lms-frontend --no-pager
 journalctl -u lms-frontend -n 30 --no-pager
 ```
 
+**Django yönetim komutları** (migrate dışında — örn. mali hesap onarımı):
+
+```bash
+cd /var/www/lms/backend          # önemli: backend dizininden çalıştırın
+set -a && source /etc/lms/env && set +a
+export DJANGO_ENV=production
+PY=/var/www/lms/venv/bin/python
+
+$PY manage.py fix_tum_mali_hesap_bakiyeleri --diagnose-only
+$PY manage.py fix_tum_mali_hesap_bakiyeleri
+```
+
+`ModuleNotFoundError: No module named 'apps.kurum'` alırsanız komutu repo kökünden değil,
+`cd /var/www/lms/backend` sonrası `manage.py` ile çalıştırın.
+
 ---
 
 ## 5. Sorun olursa geri al
