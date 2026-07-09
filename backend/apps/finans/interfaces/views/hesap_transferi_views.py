@@ -41,6 +41,9 @@ def _serialize_transfer(t):
         'aciklama': t.aciklama or '',
         'islem_yapan': t.islem_yapan.get_full_name() if t.islem_yapan else None,
         'created_at': t.created_at.isoformat() if t.created_at else None,
+        'iptal_edildi': bool(t.iptal_edildi),
+        'iptal_tarihi': t.iptal_tarihi.isoformat() if t.iptal_tarihi else None,
+        'iptal_nedeni': t.iptal_nedeni or '',
     }
 
 
@@ -104,3 +107,34 @@ class HesapTransferiListCreateView(APIView):
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(_serialize_transfer(transfer), status=status.HTTP_201_CREATED)
+
+
+class HesapTransferiIptalView(APIView):
+    """
+    POST → Hesap transferini iptal et (ters BakiyeHareketi kayıtları oluşturur).
+    """
+
+    def post(self, request, pk):
+        kurum_id = request.data.get('kurum_id') or get_secili_kurum_id(request)
+        if not kurum_id:
+            return Response(
+                {'error': 'Kurum bağlamı zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
+        if err:
+            return err
+
+        service = HesapTransferiService()
+        transfer, errors = service.iptal(
+            pk,
+            neden=request.data.get('neden') or request.data.get('iptal_nedeni') or '',
+            user=request.user if request.user.is_authenticated else None,
+            kurum_id=int(kurum_id),
+            sube_id=sube_id,
+        )
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(_serialize_transfer(transfer), status=status.HTTP_200_OK)

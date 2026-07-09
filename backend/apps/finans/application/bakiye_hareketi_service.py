@@ -5,6 +5,8 @@ Bakiye Hareketi Service
 Temel Kural: Her finansal işlem (tahsilat, gider, devir) bu service
 üzerinden hareket oluşturmalıdır. Doğrudan repository'ye gitmek YASAK.
 """
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
 from django.db import transaction
 
 from apps.finans.infrastructure.bakiye_hareketi_repository import BakiyeHareketiRepository
@@ -58,6 +60,15 @@ class BakiyeHareketiService:
         Raises:
             ValueError: Geçersiz parametrelerde
         """
+        # ─── Tutar normalizasyonu ─────────────────
+        # Ledger tam sayı TL tutar. Kesirli (Decimal/float) bir tutar gelirse
+        # SESSİZCE KESMEK yerine tutarlı biçimde yuvarla (0.5 → yukarı). Böylece
+        # kuruş içeren tutarlar 1 TL'ye kadar kaymadan tek bir kurala göre işlenir.
+        try:
+            tutar = int(Decimal(str(tutar)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError(f"Geçersiz tutar: {tutar}")
+
         # ─── Validasyon ───────────────────────────
         if tutar <= 0:
             raise ValueError("Tutar 0'dan büyük olmalıdır.")

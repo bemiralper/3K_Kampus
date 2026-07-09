@@ -725,7 +725,7 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
                   <div className="fd-list-header">
                     <h3 className="fd-list-title">Tahsilatlar ({tahsilatlar.length})</h3>
                     <span className="fd-chip fd-chip--emerald">
-                      Toplam: {fmtTutar(tahsilatlar.filter(t => t.durum === "odendi").reduce((s, t) => s + Number(t.tutar), 0))} ₺
+                      Toplam: {fmtTutar(detailItem.tahsil_edilen)} ₺
                     </span>
                   </div>
                   {tahsilatlar.map((t) => (

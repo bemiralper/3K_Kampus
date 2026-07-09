@@ -57,6 +57,28 @@ export default function VirmanClient({ embedded = false }: { embedded?: boolean 
     load();
   };
 
+  const handleIptal = async (row: HesapTransferi) => {
+    const neden = window.prompt(
+      `"${row.kaynak_hesap?.ad} → ${row.hedef_hesap?.ad}" transferini iptal etmek için neden girin (en az 3 karakter):`,
+      "",
+    );
+    if (neden === null) return;
+    if (neden.trim().length < 3) {
+      setToast({ message: "İptal nedeni en az 3 karakter olmalı.", type: "error" });
+      return;
+    }
+    try {
+      await hesapTransferiService.iptal(row.id, neden.trim());
+      setToast({ message: "Transfer iptal edildi.", type: "success" });
+      load();
+    } catch (e) {
+      setToast({
+        message: e instanceof Error ? e.message : "Transfer iptal edilemedi",
+        type: "error",
+      });
+    }
+  };
+
   if (!activeKurum) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -136,16 +158,42 @@ export default function VirmanClient({ embedded = false }: { embedded?: boolean 
                   <th className="px-4 py-3 font-semibold">Kaynak</th>
                   <th className="px-4 py-3 font-semibold">Hedef</th>
                   <th className="px-4 py-3 font-semibold text-right">Tutar</th>
+                  <th className="px-4 py-3 font-semibold text-right">İşlem</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((row) => (
-                  <tr key={row.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <tr
+                    key={row.id}
+                    className={`border-b border-gray-50 hover:bg-gray-50/50 ${row.iptal_edildi ? "opacity-60" : ""}`}
+                  >
                     <td className="px-4 py-3">{fmtDate(row.transfer_tarihi)}</td>
-                    <td className="px-4 py-3">{row.transfer_turu_label || row.transfer_turu}</td>
+                    <td className="px-4 py-3">
+                      {row.transfer_turu_label || row.transfer_turu}
+                      {row.iptal_edildi && (
+                        <span className="ml-2 inline-block px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[11px] font-semibold">
+                          İptal
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">{row.kaynak_hesap?.ad || "—"}</td>
                     <td className="px-4 py-3">{row.hedef_hesap?.ad || "—"}</td>
-                    <td className="px-4 py-3 text-right font-semibold">{fmtTL(row.tutar)}</td>
+                    <td className={`px-4 py-3 text-right font-semibold ${row.iptal_edildi ? "line-through text-gray-400" : ""}`}>
+                      {fmtTL(row.tutar)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {row.iptal_edildi ? (
+                        <span className="text-xs text-gray-400">—</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleIptal(row)}
+                          className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline"
+                        >
+                          İptal Et
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

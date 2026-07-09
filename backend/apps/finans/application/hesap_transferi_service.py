@@ -8,12 +8,14 @@ Temel Kural: Her transfer kaynak hesapta ÇIKIŞ, hedef hesapta GİRİŞ olmak
 başarılı olur ya da hiçbiri kaydedilmez.
 """
 from django.db import transaction
+from django.utils import timezone
 
 from apps.finans.application.bakiye_hareketi_service import BakiyeHareketiService
 from apps.finans.application.islem_masrafi_service import IslemMasrafiService
 from apps.finans.domain.islem_masrafi import IslemMasrafiKaynakTipi
 from apps.finans.constants.hareket_types import HareketYonu, HareketKaynagi, TransferTuru
 from apps.finans.domain.financial_account import MaliHesap
+from apps.finans.domain.hesap_transferi import HesapTransferi
 from apps.finans.infrastructure.hesap_transferi_repository import HesapTransferiRepository
 
 
@@ -136,6 +138,100 @@ class HesapTransferiService:
             )
             if masraf_err:
                 return None, {'genel': masraf_err}
+
+        return transfer, None
+
+    @transaction.atomic
+    def iptal(self, transfer_id, neden='', user=None, kurum_id=None, sube_id=None):
+        """
+        Hesap transferini geri alır (iptal).
+
+        Kural: Transfer kaydı silinmez. Bunun yerine iki adet ters (reversal)
+        BakiyeHareketi oluşturulur — kaynak hesaba GİRİŞ (para geri döner),
+        hedef hesaptan ÇIKIŞ (para geri alınır). Varsa bağlı işlem masrafı da
+        iptal edilir. İşlem atomiktir ve çift-iptale karşı korumalıdır.
+        """
+        # Eşzamanlı çift iptal koruması — kaydı kilitle, güncel halini oku.
+        HesapTransferi.objects.select_for_update().filter(pk=transfer_id).first()
+
+        transfer = self.repo.get_by_id(transfer_id)
+        if not transfer:
+            return None, {'error': 'Transfer bulunamadı'}
+
+        # Tenant güvenliği
+        if kurum_id is not None and transfer.kurum_id != int(kurum_id):
+            return None, {'error': 'Transfer aktif kuruma ait değil'}
+        if sube_id is not None and transfer.sube_id and transfer.sube_id != int(sube_id):
+            return None, {'error': 'Transfer aktif şubeye ait değil'}
+
+        if transfer.iptal_edildi:
+            return None, {'error': 'Bu transfer zaten iptal edilmiş'}
+
+        tutar = int(transfer.tutar or 0)
+        kaynak = transfer.kaynak_hesap
+        hedef = transfer.hedef_hesap
+        etiket = TransferTuru.get_label(transfer.transfer_turu)
+        neden = (neden or '').strip()
+
+        # ── Bağlı işlem masrafını geri al ────────────
+        _, masraf_err = self.masraf_service.iptal(
+            IslemMasrafiKaynakTipi.HESAP_TRANSFERI,
+            transfer.id,
+            islem_tarihi=timezone.localdate(),
+            islem_yapan=user,
+        )
+        if masraf_err:
+            return None, {
+                'error': masraf_err if isinstance(masraf_err, str) else 'İşlem masrafı iptal edilemedi'
+            }
+
+        # ── Ters hareketleri oluştur (çift-iptal koruması ile) ──
+        zaten_iptal_var = self.bakiye_service.kaynak_hareketi_var_mi(
+            kaynak_tip='hesap_transferi_iptal',
+            kaynak_id=transfer.id,
+            kaynaklar=[HareketKaynagi.TRANSFER],
+        )
+        if tutar > 0 and not zaten_iptal_var:
+            iptal_aciklama = f'Transfer iptali ({etiket}): {kaynak.ad} → {hedef.ad}'
+            if neden:
+                iptal_aciklama = f'{iptal_aciklama} — {neden}'
+
+            # Kaynak hesaba para geri döner (GİRİŞ)
+            self.bakiye_service.hareket_olustur(
+                mali_hesap_id=kaynak.id,
+                kurum_id=transfer.kurum_id,
+                sube_id=transfer.sube_id,
+                egitim_yili_id=transfer.egitim_yili_id,
+                yon=HareketYonu.GIRIS,
+                tutar=tutar,
+                kaynak=HareketKaynagi.TRANSFER,
+                islem_tarihi=timezone.localdate(),
+                kaynak_tip='hesap_transferi_iptal',
+                kaynak_id=transfer.id,
+                aciklama=iptal_aciklama,
+                islem_yapan=user,
+            )
+            # Hedef hesaptan para geri alınır (ÇIKIŞ)
+            self.bakiye_service.hareket_olustur(
+                mali_hesap_id=hedef.id,
+                kurum_id=transfer.kurum_id,
+                sube_id=transfer.sube_id,
+                egitim_yili_id=transfer.egitim_yili_id,
+                yon=HareketYonu.CIKIS,
+                tutar=tutar,
+                kaynak=HareketKaynagi.TRANSFER,
+                islem_tarihi=timezone.localdate(),
+                kaynak_tip='hesap_transferi_iptal',
+                kaynak_id=transfer.id,
+                aciklama=iptal_aciklama,
+                islem_yapan=user,
+            )
+
+        transfer.iptal_edildi = True
+        transfer.iptal_tarihi = timezone.now()
+        transfer.iptal_nedeni = neden
+        transfer.iptal_eden = user
+        transfer.save(update_fields=['iptal_edildi', 'iptal_tarihi', 'iptal_nedeni', 'iptal_eden'])
 
         return transfer, None
 

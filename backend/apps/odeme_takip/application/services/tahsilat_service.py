@@ -232,6 +232,26 @@ class TahsilatService:
         tahsilat.bakiye_hareketi_id = hareket.pk
         tahsilat.save(update_fields=['bakiye_hareketi_id'])
 
+        # ── İşlem masrafı (banka/POS kesintisi) varsa gider olarak işle ──
+        # Kesinti, tahsilatın yattığı hesaptan ÇIKIŞ olarak muhasebeleşir.
+        _, masraf_err = self.masraf_service.process_if_present(
+            data,
+            kaynak_tip=IslemMasrafiKaynakTipi.TAHSILAT,
+            kaynak_id=tahsilat.pk,
+            kurum_id=sozlesme.kurum_id,
+            sube_id=sozlesme.sube_id,
+            egitim_yili_id=sozlesme.egitim_yili_id,
+            mali_hesap_id=mali_hesap_id,
+            odeme_yontemi_id=data['odeme_yontemi_id'],
+            islem_tarihi=data['tahsilat_tarihi'],
+            ana_islem_aciklama=f'Tahsilat: {sozlesme.sozlesme_no}',
+            islem_yapan=user,
+        )
+        if masraf_err:
+            return None, {
+                'error': masraf_err if isinstance(masraf_err, str) else 'İşlem masrafı kaydedilemedi'
+            }
+
         # ── Dağıtım mantığı — geçmiş/kısmi taksitler önce ──
         dagitimlar, etkilenen_taksitler, kalan_tutar = self._allocate_payment_to_taksitler(
             tahsilat, sozlesme_id, tutar,

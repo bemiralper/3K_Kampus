@@ -78,6 +78,9 @@ export interface HesapTransferi {
   aciklama: string;
   islem_yapan: string | null;
   created_at: string | null;
+  iptal_edildi?: boolean;
+  iptal_tarihi?: string | null;
+  iptal_nedeni?: string;
 }
 
 export interface HesapTransferiCreatePayload {

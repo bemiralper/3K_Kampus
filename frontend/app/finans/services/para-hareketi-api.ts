@@ -93,4 +93,11 @@ export const hesapTransferiService = {
       body: JSON.stringify(payload),
     });
   },
+
+  iptal(id: number, neden: string): Promise<HesapTransferi> {
+    return finansRequest(`/hesap-transferi/${id}/iptal/`, {
+      method: "POST",
+      body: JSON.stringify({ neden }),
+    });
+  },
 };

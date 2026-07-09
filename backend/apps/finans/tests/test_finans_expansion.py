@@ -722,6 +722,8 @@ class FinansExpansionTest(TestCase):
             'Özet', 'Tahsilatlar', 'Gelirler', 'Giderler', 'Cari Hareketleri',
             'İptaller', 'İadeler', 'Kullanıcı Özeti', 'Ödeme Türleri',
             'Kategori Analizi', 'Kasa Özeti',
+            'Kasa Hareketleri', 'Banka Hareketleri', 'POS Hareketleri',
+            'Personel Performans',
         }
         self.assertEqual(set(wb.sheetnames), expected_sheets)
         self.assertEqual(wb['Özet'].page_setup.orientation, 'landscape')

@@ -200,9 +200,17 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
   }
 
   const taksitler = data.taksitler || [];
+  // Tablo alt satırı (kolon toplamı) — gösterilen taksit satırlarının toplamı.
   const toplamTutar = taksitler.reduce((s, t) => s + t.tutar, 0);
   const toplamOdenen = taksitler.reduce((s, t) => s + t.odenen_tutar, 0);
   const toplamKalan = taksitler.reduce((s, t) => s + t.kalan_tutar, 0);
+
+  // Özet kartları — TEK DOĞRULUK KAYNAĞI backend'dir. Sözleşme seviyesindeki
+  // net tutar/ödenen/kalan (peşinat, emanet vb. dahil) taksit toplamından
+  // farklı olabilir; bu yüzden başlık rakamları backend alanlarından beslenir.
+  const ozetTutar = data.net_tutar ?? toplamTutar;
+  const ozetOdenen = data.toplam_odenen ?? toplamOdenen;
+  const ozetKalan = data.kalan_borc ?? toplamKalan;
 
   return (
     <>
@@ -417,7 +425,7 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
               border: "1px solid #e2e8f0", textAlign: "center",
             }}>
               <div style={{ color: "#94a3b8", fontSize: 8.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Toplam Tutar</div>
-              <div style={{ fontWeight: 700, color: "#334155", fontSize: 13 }}>{formatCurrency(toplamTutar)}</div>
+              <div style={{ fontWeight: 700, color: "#334155", fontSize: 13 }}>{formatCurrency(ozetTutar)}</div>
             </div>
             <div style={{
               padding: "8px 12px", borderRadius: 10,
@@ -425,16 +433,16 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
               border: "1px solid #bbf7d0", textAlign: "center",
             }}>
               <div style={{ color: "#6ee7b7", fontSize: 8.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Toplam Ödenen</div>
-              <div style={{ fontWeight: 700, color: "#059669", fontSize: 13 }}>{formatCurrency(toplamOdenen)}</div>
+              <div style={{ fontWeight: 700, color: "#059669", fontSize: 13 }}>{formatCurrency(ozetOdenen)}</div>
             </div>
             <div style={{
               padding: "8px 12px", borderRadius: 10,
-              background: toplamKalan > 0 ? "linear-gradient(135deg, #fef2f2, #fff1f2)" : "linear-gradient(135deg, #f0fdf4, #ecfdf5)",
-              border: `1px solid ${toplamKalan > 0 ? "#fecaca" : "#bbf7d0"}`, textAlign: "center",
+              background: ozetKalan > 0 ? "linear-gradient(135deg, #fef2f2, #fff1f2)" : "linear-gradient(135deg, #f0fdf4, #ecfdf5)",
+              border: `1px solid ${ozetKalan > 0 ? "#fecaca" : "#bbf7d0"}`, textAlign: "center",
             }}>
-              <div style={{ color: toplamKalan > 0 ? "#fca5a5" : "#6ee7b7", fontSize: 8.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Kalan Borç</div>
-              <div style={{ fontWeight: 700, color: toplamKalan > 0 ? "#dc2626" : "#059669", fontSize: 13 }}>
-                {formatCurrency(toplamKalan)}
+              <div style={{ color: ozetKalan > 0 ? "#fca5a5" : "#6ee7b7", fontSize: 8.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Kalan Borç</div>
+              <div style={{ fontWeight: 700, color: ozetKalan > 0 ? "#dc2626" : "#059669", fontSize: 13 }}>
+                {formatCurrency(ozetKalan)}
               </div>
             </div>
           </div>

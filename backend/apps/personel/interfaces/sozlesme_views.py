@@ -12,6 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from shared.permissions import require_module_permission
 
+from django.db import transaction
 from django.db.models import Sum, Count, F
 
 from apps.personel.application.sozlesme_service import SozlesmeService, HakedisService, AvansService
@@ -1334,37 +1335,40 @@ def api_maas_gider_kaydet(request):
     fatura_tarihi = body.get('fatura_tarihi', date.today().isoformat())
 
     created_giderler = []
-    for h in hakedisler:
-        tutar = h.brut_toplam
-        if tutar <= 0:
-            continue
+    # Bordronun kısmen kaydedilmesini önlemek için tüm gider kayıtları tek bir
+    # atomik işlemde oluşturulur — biri başarısız olursa hiçbiri kalmaz.
+    with transaction.atomic():
+        for h in hakedisler:
+            tutar = h.brut_toplam
+            if tutar <= 0:
+                continue
 
-        aciklama = f'{h.sozlesme.personel.tam_ad} — {_ay_adi(ay)} {yil} Maaş Gideri'
+            aciklama = f'{h.sozlesme.personel.tam_ad} — {_ay_adi(ay)} {yil} Maaş Gideri'
 
-        gider_data = {
-            'kurum': kurum,
-            'gider_kategorisi': kategori,
-            'fatura_tarihi': fatura_tarihi,
-            'vade_tarihi': fatura_tarihi,
-            'brut_tutar': tutar,
-            'kdv_orani': 0,
-            'aciklama': aciklama,
-            'durum': 'onaylandi',
-        }
-        if mali_hesap_id:
-            gider_data['mali_hesap_id'] = mali_hesap_id
-        if odeme_yontemi_id:
-            gider_data['odeme_yontemi_id'] = odeme_yontemi_id
+            gider_data = {
+                'kurum': kurum,
+                'gider_kategorisi': kategori,
+                'fatura_tarihi': fatura_tarihi,
+                'vade_tarihi': fatura_tarihi,
+                'brut_tutar': tutar,
+                'kdv_orani': 0,
+                'aciklama': aciklama,
+                'durum': 'onaylandi',
+            }
+            if mali_hesap_id:
+                gider_data['mali_hesap_id'] = mali_hesap_id
+            if odeme_yontemi_id:
+                gider_data['odeme_yontemi_id'] = odeme_yontemi_id
 
-        gider = GiderKaydi(**gider_data)
-        gider.kdv_tutar = Decimal('0.00')
-        gider.net_tutar = tutar
-        gider.save()
-        created_giderler.append({
-            'id': gider.id,
-            'personel': h.sozlesme.personel.tam_ad,
-            'tutar': float(tutar),
-        })
+            gider = GiderKaydi(**gider_data)
+            gider.kdv_tutar = Decimal('0.00')
+            gider.net_tutar = tutar
+            gider.save()
+            created_giderler.append({
+                'id': gider.id,
+                'personel': h.sozlesme.personel.tam_ad,
+                'tutar': float(tutar),
+            })
 
     return JsonResponse({
         'success': True,

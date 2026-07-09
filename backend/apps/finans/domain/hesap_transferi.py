@@ -92,6 +92,20 @@ class HesapTransferi(models.Model):
         verbose_name='İşlemi Yapan',
     )
 
+    # ─── İptal (geri alma) ───────────────────────
+    # Transfer kaydı ASLA silinmez; iptal yerine ters (reversal) BakiyeHareketi
+    # kayıtları oluşturulur ve bu bayrak set edilir.
+    iptal_edildi = models.BooleanField('İptal Edildi', default=False)
+    iptal_tarihi = models.DateTimeField('İptal Tarihi', null=True, blank=True)
+    iptal_nedeni = models.TextField('İptal Nedeni', blank=True, default='')
+    iptal_eden = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='iptal_ettigi_hesap_transferleri',
+        verbose_name='İptal Eden',
+    )
+
     # ─── Zaman Damgaları ─────────────────────────
     created_at = models.DateTimeField('Oluşturma Tarihi', auto_now_add=True)
 

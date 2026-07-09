@@ -98,7 +98,10 @@ from apps.finans.interfaces.views.gelir_tahsilat_views import (
     GelirTahsilatIptalView,
 )
 from apps.finans.interfaces.views.cari_odeme_views import CariSerbestOdemeView, CariSerbestOdemeIptalView
-from apps.finans.interfaces.views.hesap_transferi_views import HesapTransferiListCreateView
+from apps.finans.interfaces.views.hesap_transferi_views import (
+    HesapTransferiListCreateView,
+    HesapTransferiIptalView,
+)
 from apps.finans.interfaces.views.gun_sonu_views import (
     GunSonuView,
     GunSonuWhatsappPreviewView,
@@ -636,6 +639,11 @@ urlpatterns = [
         'hesap-transferi/',
         HesapTransferiListCreateView.as_view(),
         name='hesap-transferi-list-create',
+    ),
+    path(
+        'hesap-transferi/<int:pk>/iptal/',
+        HesapTransferiIptalView.as_view(),
+        name='hesap-transferi-iptal',
     ),
 
     # ═══ Gün Sonu ═══════════════════════════════
