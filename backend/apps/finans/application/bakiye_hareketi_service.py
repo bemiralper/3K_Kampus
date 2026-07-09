@@ -142,6 +142,15 @@ class BakiyeHareketiService:
             'toplam_gelir', 'toplam_gider', 'donem_sonu_bakiye', 'updated_at',
         ])
 
+    # ─── Koruma / Sorgu Yardımcıları ─────────────
+
+    def kaynak_hareketi_var_mi(self, kaynak_tip, kaynak_id, kaynaklar):
+        """
+        Aynı kaynak için belirtilen türde (örn. iptal) hareket zaten var mı?
+        Çift geri-alma korumasında iptal metotları çağırır.
+        """
+        return self.repo.kaynak_hareketi_var_mi(kaynak_tip, kaynak_id, kaynaklar)
+
     # ─── Kolaylık Metodları ──────────────────────
 
     def tahsilat_giris(self, mali_hesap_id, kurum_id, sube_id, egitim_yili_id,

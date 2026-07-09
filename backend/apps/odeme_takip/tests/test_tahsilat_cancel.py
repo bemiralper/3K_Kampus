@@ -97,6 +97,93 @@ class TahsilatCancelTest(TestCase):
         self.assertIsNone(cancelled)
         self.assertIn('error', cancel_err)
 
+    def test_cancel_creates_single_reversal_and_balance_returns_to_zero(self):
+        """Tahsilat girişi + iptal çıkışı = net 0; tam olarak bir iptal hareketi."""
+        from apps.finans.constants.hareket_types import HareketKaynagi
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+        from apps.finans.infrastructure.bakiye_hareketi_repository import (
+            BakiyeHareketiRepository,
+        )
+
+        bakiye_once = BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id)
+        tahsilat, err = self.service.create({
+            'sozlesme_id': self.sozlesme.id,
+            'taksit_id': self.taksit.id,
+            'odeme_yontemi_id': self.odeme_yontemi.id,
+            'mali_hesap_id': self.mali_hesap.id,
+            'tutar': 5000,
+            'tahsilat_tarihi': self.today.isoformat(),
+        })
+        self.assertIsNone(err)
+        self.assertEqual(
+            BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id),
+            bakiye_once + 5000,
+        )
+
+        cancelled, cancel_err = self.service.cancel(tahsilat.pk, 'Yanlış kayıt', user=None)
+        self.assertIsNone(cancel_err)
+
+        # Bakiye başlangıç seviyesine dönmeli (çift düşme olmamalı)
+        self.assertEqual(
+            BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id),
+            bakiye_once,
+        )
+        # Tam olarak bir iptal hareketi olmalı
+        self.assertEqual(
+            BakiyeHareketi.objects.filter(
+                kaynak=HareketKaynagi.TAHSILAT_IPTAL,
+                kaynak_id=tahsilat.pk,
+                kaynak_tip='tahsilat',
+            ).count(),
+            1,
+        )
+
+    def test_double_cancel_does_not_debit_twice(self):
+        """Aynı tahsilat iki kez iptal edilse bile kasa yalnızca bir kez geri alınmalı."""
+        from apps.finans.constants.hareket_types import HareketKaynagi
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+        from apps.finans.infrastructure.bakiye_hareketi_repository import (
+            BakiyeHareketiRepository,
+        )
+        from apps.odeme_takip.domain.enums import TahsilatDurum
+        from apps.odeme_takip.domain.models import Tahsilat
+
+        bakiye_once = BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id)
+        tahsilat, err = self.service.create({
+            'sozlesme_id': self.sozlesme.id,
+            'taksit_id': self.taksit.id,
+            'odeme_yontemi_id': self.odeme_yontemi.id,
+            'mali_hesap_id': self.mali_hesap.id,
+            'tutar': 5000,
+            'tahsilat_tarihi': self.today.isoformat(),
+        })
+        self.assertIsNone(err)
+
+        cancelled, cancel_err = self.service.cancel(tahsilat.pk, 'İlk iptal', user=None)
+        self.assertIsNone(cancel_err)
+
+        # İkinci iptal denemesi: durum zaten iptal → reddedilir
+        _, second_err = self.service.cancel(tahsilat.pk, 'İkinci iptal', user=None)
+        self.assertIsNotNone(second_err)
+
+        # Durum bozulmuş gibi zorla aktif yapıp yeniden iptal edilse bile
+        # ledger seviyesindeki koruma ikinci çıkışı engellemeli.
+        Tahsilat.objects.filter(pk=tahsilat.pk).update(durum=TahsilatDurum.AKTIF)
+        self.service.cancel(tahsilat.pk, 'Zorla tekrar iptal', user=None)
+
+        self.assertEqual(
+            BakiyeHareketi.objects.filter(
+                kaynak=HareketKaynagi.TAHSILAT_IPTAL,
+                kaynak_id=tahsilat.pk,
+                kaynak_tip='tahsilat',
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id),
+            bakiye_once,
+        )
+
     def test_cancel_without_prior_bakiye_hareketi_does_not_debit_account(self):
         """Giriş hareketi olmayan tahsilat iptalinde kasa borçlandırılmamalı."""
         from apps.finans.domain.bakiye_hareketi import BakiyeHareketi

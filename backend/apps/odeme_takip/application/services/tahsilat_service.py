@@ -324,6 +324,10 @@ class TahsilatService:
         Statü değişikliği + gerekçe + log
         Tüm TahsilatDagitim kayıtlarına bağlı taksitler de güncellenir.
         """
+        # Eşzamanlı çift iptal koruması — kaydı kilitle, ardından güncel halini oku.
+        from apps.odeme_takip.domain.models import Tahsilat as _TahsilatModel
+        _TahsilatModel.objects.select_for_update().filter(pk=tahsilat_id).first()
+
         tahsilat = self.repo.get_by_id(tahsilat_id)
         if not tahsilat:
             return None, {'error': 'Tahsilat bulunamadı'}
@@ -349,8 +353,21 @@ class TahsilatService:
 
         # ── Kasa/banka bakiyesini geri al ────────────
         # Yalnızca kasaya gerçekten girmiş tahsilat iptal edilir; giriş hareketi
-        # yokken çıkış yazmak bakiyeyi hatalı borçlandırır.
-        if tahsilat.mali_hesap_id and eski_tutar > 0 and tahsilat.bakiye_hareketi_id:
+        # yokken çıkış yazmak bakiyeyi hatalı borçlandırır. Ayrıca aynı tahsilat
+        # için daha önce bir iptal çıkışı yazıldıysa tekrar yazılmaz (çift borç
+        # koruması).
+        from apps.finans.constants.hareket_types import HareketKaynagi
+        zaten_iptal_var = self.bakiye_service.kaynak_hareketi_var_mi(
+            kaynak_tip='tahsilat',
+            kaynak_id=tahsilat.pk,
+            kaynaklar=[HareketKaynagi.TAHSILAT_IPTAL],
+        )
+        if (
+            tahsilat.mali_hesap_id
+            and eski_tutar > 0
+            and tahsilat.bakiye_hareketi_id
+            and not zaten_iptal_var
+        ):
             self.bakiye_service.tahsilat_iptal(
                 mali_hesap_id=tahsilat.mali_hesap_id,
                 kurum_id=sozlesme.kurum_id,
@@ -414,6 +431,7 @@ class TahsilatService:
 
         return tahsilat, None
 
+    @transaction.atomic
     def iade_yap(self, data, user=None):
         """
         İade — kurumdan öğrenciye/veliye nakit iade (kasadan/bankadan çıkış).
@@ -561,6 +579,7 @@ class TahsilatService:
                 errors['tutar'] = 'Geçersiz tutar'
         return errors if errors else None
 
+    @transaction.atomic
     def apply_advance(self, sozlesme_id, emanet_id, taksit_id, user=None):
         """Emaneti sonraki taksite mahsup et"""
         emanet = self.repo.get_by_id(emanet_id)

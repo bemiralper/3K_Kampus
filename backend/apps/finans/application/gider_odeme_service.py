@@ -112,6 +112,7 @@ class GiderOdemeService:
             yon=HareketYonu.CIKIS,
             kaynak=HareketKaynagi.GIDER,
             islem_tarihi=data['odeme_tarihi'],
+            kaynak_tip='GiderOdeme',
             kaynak_id=odeme.pk,
             aciklama=aciklama,
         )
@@ -223,6 +224,10 @@ class GiderOdemeService:
         Bakiyeden mahsup ödemelerde BakiyeHareketi oluşturulmaz, sadece cari hareket yapılır.
         Returns: (GiderOdeme, None) veya (None, error_dict)
         """
+        # Eşzamanlı çift iptal koruması — kaydı kilitle.
+        from apps.finans.domain.gider_odeme import GiderOdeme as _GiderOdeme
+        _GiderOdeme.objects.select_for_update().filter(pk=odeme_id).first()
+
         odeme = self.odeme_repo.get_by_id(odeme_id)
         if not odeme:
             return None, {'genel': 'Ödeme kaydı bulunamadı.'}
@@ -237,8 +242,14 @@ class GiderOdemeService:
         # 1. Ödemeyi iptal et
         odeme = self.odeme_repo.iptal_et(odeme)
 
-        # 2. BakiyeHareketi oluştur (sadece normal ödemelerde — mahsupta kasadan para çıkmamıştı)
-        if not is_mahsup and odeme.mali_hesap_id:
+        # 2. BakiyeHareketi oluştur (sadece normal ödemelerde — mahsupta kasadan para çıkmamıştı).
+        #    Daha önce iptal girişi yazıldıysa tekrar yazma (çift bakiye koruması).
+        zaten_iptal_var = self.bakiye_service.kaynak_hareketi_var_mi(
+            kaynak_tip='GiderOdeme',
+            kaynak_id=odeme.pk,
+            kaynaklar=[HareketKaynagi.GIDER_IPTAL],
+        )
+        if not is_mahsup and odeme.mali_hesap_id and not zaten_iptal_var:
             aciklama = f"Gider ödeme iptali: {gider.cari_hesap} - {gider.fatura_no or 'Belgesiz'}"
             self.bakiye_service.hareket_olustur(
                 mali_hesap_id=odeme.mali_hesap_id,
@@ -249,6 +260,7 @@ class GiderOdemeService:
                 yon=HareketYonu.GIRIS,
                 kaynak=HareketKaynagi.GIDER_IPTAL,
                 islem_tarihi=odeme.odeme_tarihi,
+                kaynak_tip='GiderOdeme',
                 kaynak_id=odeme.pk,
                 aciklama=aciklama,
             )

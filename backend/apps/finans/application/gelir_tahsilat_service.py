@@ -72,6 +72,7 @@ class GelirTahsilatService:
             yon=HareketYonu.GIRIS,
             kaynak=HareketKaynagi.TAHSILAT,
             islem_tarihi=data['tahsilat_tarihi'],
+            kaynak_tip='GelirTahsilat',
             kaynak_id=tahsilat.pk,
             aciklama=aciklama,
         )
@@ -122,6 +123,10 @@ class GelirTahsilatService:
         Tahsilatı iptal eder ve tüm bakiyeleri geri alır.
         Returns: (GelirTahsilat, None) veya (None, error_dict)
         """
+        # Eşzamanlı çift iptal koruması — kaydı kilitle.
+        from apps.finans.domain.gelir_tahsilat import GelirTahsilat as _GelirTahsilat
+        _GelirTahsilat.objects.select_for_update().filter(pk=tahsilat_id).first()
+
         tahsilat = self.tahsilat_repo.get_by_id(tahsilat_id)
         if not tahsilat:
             return None, {'genel': 'Tahsilat kaydı bulunamadı.'}
@@ -135,8 +140,14 @@ class GelirTahsilatService:
         # 1. Tahsilatı iptal et
         tahsilat = self.tahsilat_repo.iptal_et(tahsilat)
 
-        # 2. BakiyeHareketi — mali hesaptan para çıkış (iptal)
-        if tahsilat.mali_hesap_id:
+        # 2. BakiyeHareketi — mali hesaptan para çıkış (iptal).
+        #    Yalnızca giriş hareketi varsa ve daha önce iptal yazılmadıysa.
+        zaten_iptal_var = self.bakiye_service.kaynak_hareketi_var_mi(
+            kaynak_tip='GelirTahsilat',
+            kaynak_id=tahsilat.pk,
+            kaynaklar=[HareketKaynagi.TAHSILAT_IPTAL],
+        )
+        if tahsilat.mali_hesap_id and tahsilat.bakiye_hareketi_id and not zaten_iptal_var:
             aciklama = f"Tahsilat iptali: {gelir.cari_hesap} - {gelir.fatura_no or 'Belgesiz'}"
             self.bakiye_service.hareket_olustur(
                 mali_hesap_id=tahsilat.mali_hesap_id,
@@ -147,6 +158,7 @@ class GelirTahsilatService:
                 yon=HareketYonu.CIKIS,
                 kaynak=HareketKaynagi.TAHSILAT_IPTAL,
                 islem_tarihi=tahsilat.tahsilat_tarihi,
+                kaynak_tip='GelirTahsilat',
                 kaynak_id=tahsilat.pk,
                 aciklama=aciklama,
             )
