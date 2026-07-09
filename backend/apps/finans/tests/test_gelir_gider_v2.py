@@ -133,6 +133,24 @@ class GelirGiderV2Test(TestCase):
         _, err = GiderCommandService().create(self._gider_data(cari_hesap_id=self.musteri.id))
         self.assertIsNotNone(err)
 
+    def test_gider_liste_ve_rapor_iptal_kayitlarini_haric_tutar(self):
+        """İptal giderler varsayılan listede/raporda görünmemeli (dashboard ile tutarlı)."""
+        gider, _ = GiderCommandService().create(self._gider_data('500'))
+        GiderCommandService().onayla(gider.id)
+        _, err = GiderCommandService().iptal_et(gider.id)
+        self.assertIsNone(err)
+
+        res = GiderQueryService().list_paginated(self.kurum.id, self.sube.id)
+        self.assertEqual(res['total'], 0)
+
+        res_iptal = GiderQueryService().list_paginated(
+            self.kurum.id, self.sube.id, filters={'durum': 'iptal'},
+        )
+        self.assertEqual(res_iptal['total'], 1)
+
+        rapor = FinansV2RaporService().gider_analizi(self.kurum.id, self.sube.id, {})
+        self.assertEqual(rapor['kpis'][0]['value'], 0)
+
     def test_tum_raporlar_calisir(self):
         GelirCommandService().create(self._gelir_data('1000'))
         GiderCommandService().create(self._gider_data('400'))

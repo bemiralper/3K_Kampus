@@ -40,8 +40,15 @@ class GiderQueryService:
         ).prefetch_related('etiketler')
 
     def _apply_filters(self, qs, f):
-        if not f:
-            return qs
+        f = f or {}
+
+        # Varsayılan: iptal kayıtları listeleme/rapor dışında (dashboard ile tutarlı).
+        # İptal giderler cari'de IADE hareketi üretir; toplamlara dahil edilmemeli.
+        if f.get('durum'):
+            durumlar = [d for d in str(f['durum']).split(',') if d]
+            qs = qs.filter(durum__in=durumlar)
+        else:
+            qs = qs.exclude(durum=GiderDurum.IPTAL)
 
         arama = f.get('arama')
         if arama:
@@ -51,10 +58,6 @@ class GiderQueryService:
                 | Q(cari_hesap__unvan__icontains=arama)
                 | Q(gider_kategorisi__ad__icontains=arama)
             )
-
-        if f.get('durum'):
-            durumlar = [d for d in str(f['durum']).split(',') if d]
-            qs = qs.filter(durum__in=durumlar)
 
         if f.get('cari_hesap_id'):
             qs = qs.filter(cari_hesap_id=f['cari_hesap_id'])

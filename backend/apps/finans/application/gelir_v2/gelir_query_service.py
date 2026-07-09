@@ -45,8 +45,14 @@ class GelirQueryService:
         ).prefetch_related('etiketler')
 
     def _apply_filters(self, qs, f):
-        if not f:
-            return qs
+        f = f or {}
+
+        if f.get('durum'):
+            durumlar = [d for d in str(f['durum']).split(',') if d]
+            qs = qs.filter(durum__in=durumlar)
+        else:
+            # Varsayılan: iptal kayıtları listeleme/rapor dışında (dashboard ile tutarlı).
+            qs = qs.exclude(durum=GelirDurum.IPTAL)
 
         arama = f.get('arama')
         if arama:
@@ -56,10 +62,6 @@ class GelirQueryService:
                 | Q(cari_hesap__unvan__icontains=arama)
                 | Q(gelir_kategorisi__ad__icontains=arama)
             )
-
-        if f.get('durum'):
-            durumlar = [d for d in str(f['durum']).split(',') if d]
-            qs = qs.filter(durum__in=durumlar)
 
         if f.get('cari_hesap_id'):
             qs = qs.filter(cari_hesap_id=f['cari_hesap_id'])
