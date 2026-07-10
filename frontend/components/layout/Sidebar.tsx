@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { fetchKontrolBadge } from "@/lib/resources-api";
 import KurumLogo from "@/components/branding/KurumLogo";
 import { useSubmenuOrderMap } from "@/hooks/useMenuOrder";
+import { ADMIN_KUTUPHANE_BASE, kutuphaneSidebarChildren } from "@/lib/kutuphane-routes";
 
 // İkon tanımları
 const icons = {
@@ -255,6 +256,13 @@ const navItems: MenuItem[] = [
       { label: "Karşılaştırma", href: "/admin/olcme-degerlendirme/karsilastirma", group: "Analiz" },
       { label: "Konu & Kazanımlar", href: "/admin/olcme-degerlendirme/kazanimlar", group: "Tanımlar" },
     ],
+  },
+  {
+    id: "kutuphane",
+    label: "Kütüphane",
+    emoji: "",
+    icon: icons.book,
+    children: kutuphaneSidebarChildren(ADMIN_KUTUPHANE_BASE),
   },
   {
     id: "takvim",

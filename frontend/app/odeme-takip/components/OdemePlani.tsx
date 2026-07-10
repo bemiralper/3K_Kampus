@@ -97,6 +97,7 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
     orientation: "portrait",
     marginMm: "10mm 12mm",
     externalRef: contentRef,
+    extraCss: ".pdf-export-hide { display: none !important; }",
   });
 
   useEffect(() => {
@@ -211,6 +212,7 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
   const ozetTutar = data.net_tutar ?? toplamTutar;
   const ozetOdenen = data.toplam_odenen ?? toplamOdenen;
   const ozetKalan = data.kalan_borc ?? toplamKalan;
+  const showActionColumn = !printMode;
 
   return (
     <>
@@ -478,7 +480,9 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
                 <th style={{ ...thCell, textAlign: "right" }}>Ödenen</th>
                 <th style={{ ...thCell, textAlign: "right" }}>Kalan</th>
                 <th style={{ ...thCell, textAlign: "center" }}>Durum</th>
-                <th className="pdf-export-hide" style={{ ...thCell, textAlign: "center" }}>İşlem</th>
+                {showActionColumn && (
+                  <th className="pdf-export-hide" style={{ ...thCell, textAlign: "center" }}>İşlem</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -504,6 +508,7 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
                       {taksitDurumLabel[t.durum] || t.durum}
                     </span>
                   </td>
+                  {showActionColumn && (
                   <td className="pdf-export-hide" style={{ ...tdCell, textAlign: "center" }}>
                     {canRemind(t.durum) && t.kalan_tutar > 0 ? (
                       <button
@@ -528,6 +533,7 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
                       <span style={{ color: "#94a3b8", fontSize: 10 }}>—</span>
                     )}
                   </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -538,7 +544,7 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
                 <td style={{ ...tdCell, textAlign: "right", fontWeight: 800, fontSize: 11.5, color: "#059669" }}>{formatCurrency(toplamOdenen)}</td>
                 <td style={{ ...tdCell, textAlign: "right", fontWeight: 800, fontSize: 11.5, color: toplamKalan > 0 ? "#dc2626" : "#059669" }}>{formatCurrency(toplamKalan)}</td>
                 <td style={tdCell}></td>
-                <td style={tdCell}></td>
+                {showActionColumn && <td style={tdCell}></td>}
               </tr>
             </tfoot>
           </table>

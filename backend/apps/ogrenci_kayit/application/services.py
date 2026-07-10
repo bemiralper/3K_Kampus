@@ -178,11 +178,16 @@ def _resolve_paket_inclusions(
     sube_id=None,
     egitim_yili_id=None,
     alan_id: int | None = None,
+    wizard_display_only: bool = False,
 ):
     """
     Grup dersi / premium pakete dahil ek hizmet, deneme ve yayın paketi ID'lerini döndür.
-    Alanlı grup dersi veya alan seçili öğrencide tüm uygun ek hizmetler ve denemeler dahildir
-    (bu genişletme yalnızca grup derslerine uygulanır).
+
+    SADECE paket tanımında açıkça işaretlenmiş (M2M) kalemler ücretsiz dahildir.
+    Alanlı grup dersinde "tüm denemeler/ek hizmetler" otomatik genişletmesi UYGULANMAZ:
+    bir öğrenci birden fazla deneme paketi almaz; yalnızca seçilmiş olan(lar) ücretsizdir.
+    `wizard_display_only`, `is_grup`, `alan_id`, `sinif_seviyesi_id`, `kurum_id`, `sube_id`
+    parametreleri geriye dönük imza uyumluluğu için korunur.
     Deneme tipi ek hizmetler ek hizmet listesine dahil edilmez — denemeler ayrı yönetilir.
     """
     effective_yil = egitim_yili_id or getattr(paket, "egitim_yili_id", None)
@@ -201,30 +206,6 @@ def _resolve_paket_inclusions(
     if effective_yil:
         m2m_yayin_qs = m2m_yayin_qs.filter(egitim_yili_id=effective_yil)
     dahil_yayin_ids = set(m2m_yayin_qs.values_list("id", flat=True))
-
-    include_all = is_grup and bool(getattr(paket, "alan_id", None) or alan_id)
-    if include_all:
-        ek_qs = EkHizmet.objects.filter(aktif_mi=True).exclude(hizmet_turu="deneme")
-        if kurum_id:
-            ek_qs = ek_qs.filter(kurum_id=kurum_id)
-        if sube_id:
-            ek_qs = ek_qs.filter(sube_id=sube_id)
-        if effective_yil:
-            ek_qs = ek_qs.filter(egitim_yili_id=effective_yil)
-        if sinif_seviyesi_id:
-            ek_qs = ek_qs.filter(sinif_seviyeleri__id=sinif_seviyesi_id)
-        dahil_ek_hizmet_ids.update(ek_qs.distinct().values_list("id", flat=True))
-
-        deneme_qs = Deneme.objects.filter(aktif_mi=True)
-        if kurum_id:
-            deneme_qs = deneme_qs.filter(kurum_id=kurum_id)
-        if sube_id:
-            deneme_qs = deneme_qs.filter(sube_id=sube_id)
-        if effective_yil:
-            deneme_qs = deneme_qs.filter(egitim_yili_id=effective_yil)
-        if sinif_seviyesi_id:
-            deneme_qs = deneme_qs.filter(sinif_seviyeleri__id=sinif_seviyesi_id)
-        dahil_deneme_ids.update(deneme_qs.distinct().values_list("id", flat=True))
 
     return sorted(dahil_ek_hizmet_ids), sorted(dahil_deneme_ids), sorted(dahil_yayin_ids)
 
@@ -432,6 +413,19 @@ def resolve_or_create_sinif(kurum_id, sube_id, egitim_yili, sinif_seviyesi, alan
     )
 
 
+def _package_inclusions_for_wizard(paket, *, is_grup: bool, **inclusion_kwargs):
+    """Kayıt sihirbazı: yalnızca paket tanımında işaretli (M2M) dahil kalemler."""
+    try:
+        return _resolve_paket_inclusions(
+            paket,
+            is_grup=is_grup,
+            wizard_display_only=True,
+            **inclusion_kwargs,
+        )
+    except Exception:
+        return [], [], []
+
+
 def list_packages(
     sinif_seviyesi_id: int | None = None,
     alan_id: int | None = None,
@@ -463,24 +457,29 @@ def list_packages(
     grup_qs = _apply_grup_alan_filter(grup_qs, alan_id)
 
     for item in grup_qs.distinct():
-        dahil_ids, dahil_deneme_ids, dahil_yayin_ids = resolve_grup_dersi_inclusions(item, **inclusion_kwargs)
-        packages.append(
-            {
-                "id": f"grup_dersleri_{item.id}",
-                "db_id": item.id,
-                "ad": item.ad,
-                "kod": item.kod,
-                "kategori": "grup_dersleri",
-                "aciklama": item.aciklama or "",
-                **_price_payload(item),
-                "taksit_sayisi": 1,
-                "is_active": item.aktif_mi,
-                "dahil_ek_hizmet_ids": dahil_ids,
-                "dahil_deneme_paketi_ids": dahil_deneme_ids,
-                "dahil_yayin_paketi_ids": dahil_yayin_ids,
-                "alan_id": item.alan_id,
-            }
-        )
+        try:
+            dahil_ids, dahil_deneme_ids, dahil_yayin_ids = _package_inclusions_for_wizard(
+                item, is_grup=True, **inclusion_kwargs,
+            )
+            packages.append(
+                {
+                    "id": f"grup_dersleri_{item.id}",
+                    "db_id": item.id,
+                    "ad": item.ad,
+                    "kod": item.kod,
+                    "kategori": "grup_dersleri",
+                    "aciklama": item.aciklama or "",
+                    **_price_payload(item),
+                    "taksit_sayisi": 1,
+                    "is_active": item.aktif_mi,
+                    "dahil_ek_hizmet_ids": dahil_ids,
+                    "dahil_deneme_paketi_ids": dahil_deneme_ids,
+                    "dahil_yayin_paketi_ids": dahil_yayin_ids,
+                    "alan_id": item.alan_id,
+                }
+            )
+        except Exception:
+            continue
 
     premium_qs = PremiumPaket.objects.filter(aktif_mi=True).prefetch_related(
         "dahil_ek_hizmetler", "dahil_denemeler", "dahil_yayin_paketleri"
@@ -494,24 +493,29 @@ def list_packages(
     premium_qs = _apply_sinif_seviyesi_filter(premium_qs, sinif_seviyesi_id)
 
     for item in premium_qs.distinct():
-        dahil_ids, dahil_deneme_ids, dahil_yayin_ids = resolve_premium_paket_inclusions(item, **inclusion_kwargs)
-        packages.append(
-            {
-                "id": f"premium_paketler_{item.id}",
-                "db_id": item.id,
-                "ad": item.ad,
-                "kod": item.kod,
-                "kategori": "premium_paketler",
-                "aciklama": item.aciklama or "",
-                **_price_payload(item),
-                "taksit_sayisi": 1,
-                "is_active": item.aktif_mi,
-                "dahil_ek_hizmet_ids": dahil_ids,
-                "dahil_deneme_paketi_ids": dahil_deneme_ids,
-                "dahil_yayin_paketi_ids": dahil_yayin_ids,
-                "alan_id": None,
-            }
-        )
+        try:
+            dahil_ids, dahil_deneme_ids, dahil_yayin_ids = _package_inclusions_for_wizard(
+                item, is_grup=False, **inclusion_kwargs,
+            )
+            packages.append(
+                {
+                    "id": f"premium_paketler_{item.id}",
+                    "db_id": item.id,
+                    "ad": item.ad,
+                    "kod": item.kod,
+                    "kategori": "premium_paketler",
+                    "aciklama": item.aciklama or "",
+                    **_price_payload(item),
+                    "taksit_sayisi": 1,
+                    "is_active": item.aktif_mi,
+                    "dahil_ek_hizmet_ids": dahil_ids,
+                    "dahil_deneme_paketi_ids": dahil_deneme_ids,
+                    "dahil_yayin_paketi_ids": dahil_yayin_ids,
+                    "alan_id": None,
+                }
+            )
+        except Exception:
+            continue
 
     ozel_qs = OzelDers.objects.filter(aktif_mi=True)
     if kurum_id:

@@ -557,6 +557,61 @@ class AssignmentService:
 class AttendanceService:
     """Yoklama iş mantığı"""
 
+    @staticmethod
+    def _izinli_ogrenciler_for_session(session) -> set[int]:
+        try:
+            return set(
+                OgrenciIzinRepository.get_exempted_students_for_session(
+                    kurum_id=session.library.kurum_id,
+                    gun=session.tarih.weekday(),
+                    periyot_kodu=session.periyot_kodu,
+                    tarih=session.tarih,
+                    library_id=session.library_id,
+                )
+            )
+        except Exception:
+            return set()
+
+    def _apply_live_izin_to_records(self, session, records, *, persist: bool = False):
+        """Güncel izin tanımlarını yoklama kayıtlarına yansıtır."""
+        izinli_ogrenciler = self._izinli_ogrenciler_for_session(session)
+        updated = []
+        for record in records:
+            is_izinli = record.ogrenci_id in izinli_ogrenciler
+            changed = False
+            if is_izinli:
+                if not record.izinli_mi or record.durum != AttendanceStatus.EXCUSED:
+                    record.izinli_mi = True
+                    record.durum = AttendanceStatus.EXCUSED
+                    changed = True
+            elif record.izinli_mi:
+                record.izinli_mi = False
+                if record.durum == AttendanceStatus.EXCUSED:
+                    record.durum = AttendanceStatus.ABSENT
+                changed = True
+            if changed and persist:
+                record.save(update_fields=['izinli_mi', 'durum'])
+            updated.append(record)
+        return updated
+
+    @staticmethod
+    def sync_izin_for_open_sessions(ogrenci_id: int, kurum_id: int):
+        """İzin değişikliğinden sonra açık oturumlardaki öğrenci kaydını günceller."""
+        open_sessions = AttendanceSession.objects.filter(
+            durum=AttendanceSessionStatus.OPEN,
+            library__kurum_id=kurum_id,
+        ).select_related('library')
+        service = AttendanceService()
+        for session in open_sessions:
+            records = list(
+                AttendanceRecord.objects.filter(
+                    attendance_session_id=session.id,
+                    ogrenci_id=ogrenci_id,
+                )
+            )
+            if records:
+                service._apply_live_izin_to_records(session, records, persist=True)
+
     @transaction.atomic
     def open_session(self, library_id, periyot_kodu: str, tarih: date, user_id: int,
                      yoklama_tipi: str = 'PERIOD', ders_no: int = None,
@@ -782,11 +837,15 @@ class AttendanceService:
             elif cs == '' or cs is None:
                 record_data['cikis_saati'] = None
 
-            # İzinli öğrenciyi otomatik EXCUSED yap
+            # İzinli öğrenciyi otomatik EXCUSED yap; izin kaldırıldıysa sıfırla
             ogrenci_id = record_data['ogrenci_id']
             if ogrenci_id in izinli_ogrenciler:
                 record_data['durum'] = AttendanceStatus.EXCUSED
                 record_data['izinli_mi'] = True
+            else:
+                record_data['izinli_mi'] = False
+                if record_data.get('durum') == AttendanceStatus.EXCUSED:
+                    record_data['durum'] = AttendanceStatus.ABSENT
 
             existing = AttendanceRecord.objects.filter(
                 attendance_session_id=session_id,
@@ -879,9 +938,15 @@ class AttendanceService:
                 AttendanceRepository.bulk_create_records(records_data)
                 records = AttendanceRepository.get_records(session_id)
 
+        records_list = list(records)
+        if session.durum == AttendanceSessionStatus.OPEN:
+            records_list = self._apply_live_izin_to_records(session, records_list, persist=True)
+        else:
+            records_list = self._apply_live_izin_to_records(session, records_list, persist=False)
+
         return {
             'session': session,
-            'records': records
+            'records': records_list
         }
 
     def get_attendance_sheet_data(self, library_id, tarih: date, periyot_kodu=None) -> dict:
@@ -929,12 +994,17 @@ class AttendanceService:
                     ogrenci_id=atama.ogrenci_id
                 ).first()
 
-                # session ID'yi anahtar olarak kullan (frontend column.id ile eşleşmeli)
+                izinli_ogrenciler = self._izinli_ogrenciler_for_session(session)
+                is_izinli = atama.ogrenci_id in izinli_ogrenciler
+
                 key = str(session.id)
+                durum = record.durum if record else None
+                if is_izinli:
+                    durum = AttendanceStatus.EXCUSED
 
                 ogrenci_data['yoklamalar'][key] = {
-                    'durum': record.durum if record else None,
-                    'izinli_mi': record.izinli_mi if record else False,
+                    'durum': durum,
+                    'izinli_mi': is_izinli,
                     'giris_saati': str(record.giris_saati) if record and record.giris_saati else None,
                 }
 
@@ -1126,6 +1196,8 @@ class OgrenciIzinService:
         data['olusturan_id'] = user_id
         izin = self.repo.create(data)
 
+        AttendanceService.sync_izin_for_open_sessions(data['ogrenci_id'], data['kurum_id'])
+
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
             'entity_id': izin.id,
@@ -1147,6 +1219,9 @@ class OgrenciIzinService:
 
         izinler = self.repo.bulk_create(izinler_data)
 
+        if izinler:
+            AttendanceService.sync_izin_for_open_sessions(izinler[0].ogrenci_id, izinler[0].kurum_id)
+
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
             'entity_id': izinler[0].id if izinler else None,
@@ -1164,6 +1239,8 @@ class OgrenciIzinService:
 
         updated = self.repo.update(izin_id, data)
 
+        AttendanceService.sync_izin_for_open_sessions(izin.ogrenci_id, izin.kurum_id)
+
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
             'entity_id': izin_id,
@@ -1180,6 +1257,8 @@ class OgrenciIzinService:
             raise ValueError("İzin bulunamadı")
 
         result = self.repo.delete(izin_id)
+
+        AttendanceService.sync_izin_for_open_sessions(izin.ogrenci_id, izin.kurum_id)
 
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
@@ -1206,6 +1285,8 @@ class OgrenciIzinService:
             self._validate_izin(data)
 
         izinler = self.repo.bulk_create(izinler_data)
+
+        AttendanceService.sync_izin_for_open_sessions(ogrenci_id, kurum_id)
 
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',

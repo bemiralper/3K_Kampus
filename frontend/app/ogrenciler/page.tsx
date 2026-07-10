@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useOgrenciPath } from "@/components/ogrenci/OgrenciPathProvider";
-import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
 import { apiGet, apiDelete } from "@/lib/api";
 import Pagination from "../odeme-takip/components/Pagination";
 import OgrenciListToolbar, { type StatusFilter, type SortOption } from "./components/OgrenciListToolbar";
@@ -121,6 +120,7 @@ export default function OgrenciListesiPage() {
     egitim_kalemleri: { kalem_turu: string; kalem_id: number; kalem_adi: string }[];
     siniflar: { id: number; ad: string; sinif_seviyesi_id: number | null }[];
     sinif_seviyeleri: { id: number; ad: string }[];
+    okullar: { id: number; ad: string; okul_turu?: string }[];
     kayit_turleri: { value: string; label: string }[];
     giris_turu: { value: string; label: string }[];
     cinsiyet: { value: string; label: string }[];
@@ -129,6 +129,7 @@ export default function OgrenciListesiPage() {
     egitim_kalemleri: [],
     siniflar: [],
     sinif_seviyeleri: [],
+    okullar: [],
     kayit_turleri: [],
     giris_turu: [],
     cinsiyet: [],
@@ -136,23 +137,14 @@ export default function OgrenciListesiPage() {
 
   const statusFilter: StatusFilter = filters.durum || "all";
   const sortBy: SortOption =
-    filters.sort === "name_desc"
-      ? "name_desc"
-      : filters.sort === "name_asc"
-        ? "name_asc"
-        : filters.sort === "kayit_tarihi_asc"
-          ? "kayit_tarihi_asc"
-          : filters.sort === "created_at_desc" || filters.sort === "kayit_tarihi_desc" || !filters.sort
-            ? "created_at_desc"
-            : "created_at_desc";
-  const apiSort =
-    sortBy === "name_desc"
-      ? "name_desc"
-      : sortBy === "name_asc"
-        ? "name_asc"
-        : sortBy === "kayit_tarihi_asc"
-          ? "kayit_tarihi_asc"
-          : "created_at_desc";
+    filters.sort === "name_desc" ||
+    filters.sort === "name_asc" ||
+    filters.sort === "kayit_tarihi_asc" ||
+    filters.sort === "kayit_tarihi_desc" ||
+    filters.sort === "created_at_desc"
+      ? (filters.sort as SortOption)
+      : "created_at_desc";
+  const apiSort = sortBy;
   const searchQuery = filters.q || "";
 
   const syncUrl = useCallback(
@@ -204,6 +196,12 @@ export default function OgrenciListesiPage() {
       setLoading(false);
     }
   }, [filters, apiSort, activeKurum?.id, activeSube?.id, activeEgitimYili?.id]);
+
+  useEffect(() => {
+    const parsed = parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString()));
+    setFilters(parsed);
+    setSearchInput(parsed.q || "");
+  }, [searchParams]);
 
   useEffect(() => {
     if (!initialized) return;
@@ -259,6 +257,7 @@ export default function OgrenciListesiPage() {
         egitim_kalemleri: data.egitim_kalemleri || [],
         siniflar: data.siniflar || [],
         sinif_seviyeleri: data.sinif_seviyeleri || [],
+        okullar: data.okullar || [],
         kayit_turleri: data.kayit_turleri || [],
         giris_turu: data.giris_turu || [],
         cinsiyet: data.cinsiyet || [],
@@ -275,12 +274,11 @@ export default function OgrenciListesiPage() {
       all_years: false,
       sinif_seviyesi_ids: [],
       sinif_ids: [],
+      school_ids: [],
       kalemler: [],
       kayit_turu: "",
       giris_turu: "",
       cinsiyet: "",
-      paket_id: "",
-      paket_turu: "",
       kayit_tarihi_bas: "",
       kayit_tarihi_bit: "",
       sort: "created_at_desc",
@@ -309,6 +307,7 @@ export default function OgrenciListesiPage() {
       n += filters.sinif_seviyesi_ids!.length;
     }
     if ((filters.sinif_ids || []).length > 0) n += filters.sinif_ids!.length;
+    if ((filters.school_ids || []).length > 0) n += filters.school_ids!.length;
     if (filters.kayit_turu) n++;
     if (filters.giris_turu) n++;
     if (filters.cinsiyet) n++;
@@ -351,6 +350,13 @@ export default function OgrenciListesiPage() {
         filterOptions.siniflar.find((s) => s.id === sinifId)?.ad ||
         String(sinifId);
       chips.push({ key: `sinif:${sinifId}`, label: `Sınıf: ${sinifAd}` });
+    }
+
+    for (const schoolId of filters.school_ids || []) {
+      const okulAd =
+        filterOptions.okullar.find((o) => o.id === schoolId)?.ad ||
+        String(schoolId);
+      chips.push({ key: `school:${schoolId}`, label: `Okul: ${okulAd}` });
     }
 
     if (filters.kayit_turu) {
@@ -417,6 +423,15 @@ export default function OgrenciListesiPage() {
       return;
     }
 
+    if (key.startsWith('school:')) {
+      const id = parseInt(key.slice('school:'.length), 10);
+      updateFilters({
+        school_ids: (filters.school_ids || []).filter((x) => x !== id),
+        page: 1,
+      });
+      return;
+    }
+
     switch (key) {
       case 'kayit_turu':
         updateFilters({ kayit_turu: '', page: 1 });
@@ -439,7 +454,6 @@ export default function OgrenciListesiPage() {
   };
 
   const displayedOgrenciler = ogrenciler;
-
 
   const listTitle = filterMode === "yillik"
     ? `${activeEgitimYili?.baslangic_yil}-${activeEgitimYili?.bitis_yil} Öğrenci Kayıtları`

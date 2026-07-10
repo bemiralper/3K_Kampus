@@ -84,19 +84,26 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
 
   const dahilDenemePaketiIds = new Set<number>();
   const dahilYayinPaketiIds = new Set<number>();
+  const dahilEkHizmetIds = new Set<number>();
   selectedPackages.forEach((pkg) => {
     (pkg.dahil_deneme_paketi_ids || []).forEach((id) => dahilDenemePaketiIds.add(id));
     (pkg.dahil_yayin_paketi_ids || []).forEach((id) => dahilYayinPaketiIds.add(id));
+    (pkg.dahil_ek_hizmet_ids || []).forEach((id) => dahilEkHizmetIds.add(id));
   });
 
-  // Seçili ek hizmetler (ücretli — grup dersine dahil olanlar ayrı gösterilir)
+  // Seçili ek hizmetler (ücretli — pakete dahil olanlar ayrı gösterilir)
   const selectedEkHizmetler = ekHizmetler.filter((h) =>
     (data.package.ek_hizmet_ids || []).includes(h.id) && h.hizmet_turu !== "deneme"
   );
-
-  const selectedDenemePaketleri = denemePaketleri.filter((p) =>
-    (data.package.deneme_paketi_ids || []).includes(p.id)
+  const dahilEkHizmetler = ekHizmetler.filter((h) =>
+    dahilEkHizmetIds.has(h.id) && h.hizmet_turu !== "deneme"
   );
+
+  const paidDenemePaketleri = denemePaketleri.filter((p) =>
+    data.package.deneme_paketi_id === p.id && !dahilDenemePaketiIds.has(p.id)
+  );
+  const dahilDenemePaketleri = denemePaketleri.filter((p) => dahilDenemePaketiIds.has(p.id));
+  const displayDenemePaketleri = [...paidDenemePaketleri, ...dahilDenemePaketleri];
 
   // Yayın paketleri: ücretli seçilenler + grup/premiuma dahil (ücretsiz) olanlar
   const paidYayinPaketleri = yayinPaketleri.filter((y) =>
@@ -407,6 +414,46 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
           </div>
         </div>
 
+        {/* Pakete Dahil Ek Hizmetler */}
+        {dahilEkHizmetler.length > 0 && (
+          <div className="summary-section">
+            <h4>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              Pakete Dahil Hizmetler ({dahilEkHizmetler.length})
+            </h4>
+            <div className="summary-grid">
+              <div className="summary-item full-width">
+                <div className="value">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {dahilEkHizmetler.map(h => (
+                      <div key={h.id} style={{
+                        padding: '10px 14px',
+                        background: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}>
+                        <div>
+                          <span style={{ fontWeight: 500 }}>{h.ad}</span>
+                          <span style={{ fontSize: '12px', color: '#166534', marginLeft: '8px' }}>
+                            (Pakete dahil)
+                          </span>
+                        </div>
+                        <span style={{ color: '#16a34a', fontWeight: 600 }}>Ücretsiz</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Ek Hizmetler */}
         {selectedEkHizmetler.length > 0 && (
           <div className="summary-section">
@@ -453,7 +500,7 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
         )}
 
         {/* Deneme Paketleri */}
-        {selectedDenemePaketleri.length > 0 && (
+        {displayDenemePaketleri.length > 0 && (
           <div className="summary-section">
             <h4>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -462,13 +509,13 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
                 <line x1="16" y1="13" x2="8" y2="13" />
                 <line x1="16" y1="17" x2="8" y2="17" />
               </svg>
-              Deneme Paketleri ({selectedDenemePaketleri.length})
+              Deneme Paketleri ({displayDenemePaketleri.length})
             </h4>
             <div className="summary-grid">
               <div className="summary-item full-width">
                 <div className="value">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {selectedDenemePaketleri.map(p => (
+                    {displayDenemePaketleri.map(p => (
                       <div key={p.id} style={{ 
                         padding: '10px 14px', 
                         background: dahilDenemePaketiIds.has(p.id) ? '#ecfdf5' : '#faf5ff', 
@@ -485,7 +532,7 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
                           </span>
                           {dahilDenemePaketiIds.has(p.id) && (
                             <span style={{ fontSize: '12px', color: '#166534', marginLeft: '8px' }}>
-                              (Grup dersine dahil)
+                              (Pakete dahil)
                             </span>
                           )}
                         </div>
@@ -501,9 +548,7 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
                 <span className="label">Deneme Paketi Tutarı</span>
                 <span className="value price">
                   {formatPrice(
-                    selectedDenemePaketleri
-                      .filter((p) => !dahilDenemePaketiIds.has(p.id))
-                      .reduce((sum, p) => sum + (p.kdv_dahil_fiyat || p.fiyat || 0), 0)
+                    paidDenemePaketleri.reduce((sum, p) => sum + (p.kdv_dahil_fiyat || p.fiyat || 0), 0)
                   )}
                 </span>
               </div>
@@ -567,7 +612,7 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
         )}
 
         {/* Genel Toplam */}
-        {(selectedPackages.length > 0 || selectedEkHizmetler.length > 0 || selectedDenemePaketleri.length > 0 || displayYayinPaketleri.length > 0) && (
+        {(selectedPackages.length > 0 || selectedEkHizmetler.length > 0 || displayDenemePaketleri.length > 0 || displayYayinPaketleri.length > 0) && (
           <div className="summary-section">
             <div className="summary-grid">
               <div className="summary-item">
@@ -576,9 +621,7 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
                   {formatPrice(
                     selectedPackages.reduce((sum, p) => sum + (p.kdv_dahil_fiyat || p.fiyat || 0), 0) +
                     selectedEkHizmetler.reduce((sum, h) => sum + (h.kdv_dahil_fiyat || h.fiyat || 0), 0) +
-                    selectedDenemePaketleri
-                      .filter((p) => !dahilDenemePaketiIds.has(p.id))
-                      .reduce((sum, p) => sum + (p.kdv_dahil_fiyat || p.fiyat || 0), 0) +
+                    paidDenemePaketleri.reduce((sum, p) => sum + (p.kdv_dahil_fiyat || p.fiyat || 0), 0) +
                     paidYayinPaketleri.reduce((sum, y) => sum + (y.kdv_dahil_fiyat || y.fiyat || 0), 0)
                   )}
                 </span>

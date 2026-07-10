@@ -12,6 +12,7 @@ import {
   formatBytes,
   restoreBackup,
   updateSchedule,
+  uploadBackup,
   validateBackup,
   type BackupArtifact,
   type DashboardData,
@@ -42,6 +43,7 @@ const ACTION_LABELS: Record<string, string> = {
   delete: 'Sil',
   schedule_update: 'Zamanlama Güncelle',
   purge: 'Temizlik',
+  import: 'İçe Aktar',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -65,6 +67,8 @@ export default function YedeklemePage() {
   const [includeLogs, setIncludeLogs] = useState(false);
   const [restoreId, setRestoreId] = useState<number | null>(null);
   const [confirmText, setConfirmText] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -197,6 +201,31 @@ export default function YedeklemePage() {
       await loadAll();
     } else {
       setError(res.error || 'Silinemedi');
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) return;
+    const maxBytes = dashboard?.config.upload_max_bytes ?? 2 * 1024 ** 3;
+    if (uploadFile.size > maxBytes) {
+      setError(`Dosya çok büyük. Üst sınır: ${formatBytes(maxBytes)}`);
+      return;
+    }
+    setUploading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await uploadBackup(uploadFile);
+      if (res.success && res.data?.artifact) {
+        setMessage(`Yedek yüklendi: ${res.data.artifact.filename}`);
+        setUploadFile(null);
+        await loadAll();
+        switchTab('history');
+      } else {
+        setError(res.error || 'Yedek yüklenemedi');
+      }
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -333,6 +362,9 @@ export default function YedeklemePage() {
                     <tr key={a.id} style={{ borderTop: '1px solid #f1f5f9' }}>
                       <td style={tdStyle}>
                         <div>{a.filename}</div>
+                        {a.components?.imported === true && (
+                          <div style={{ fontSize: 11, color: '#4338ca', marginTop: 4 }}>Harici yükleme</div>
+                        )}
                         {a.status === 'failed' && a.error_message && (
                           <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }} title={a.error_message}>
                             {a.error_message.length > 80 ? `${a.error_message.slice(0, 80)}…` : a.error_message}
@@ -427,7 +459,40 @@ export default function YedeklemePage() {
           )}
 
           {tab === 'restore' && (
-            <div style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 12, padding: 20, maxWidth: 520 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 560 }}>
+              <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20 }}>
+                <h3 style={{ marginTop: 0, fontSize: 16 }}>Harici Yedek Yükle</h3>
+                <p style={{ fontSize: 14, color: '#374151', marginTop: 0 }}>
+                  Masaüstüne indirdiğiniz <code>.tar.gz</code> veya <code>.tar.gz.enc</code> dosyasını sisteme aktarın.
+                  Yükleme sonrası listeden geri yükleyebilirsiniz.
+                </p>
+                <label style={labelStyle}>
+                  Yedek dosyası
+                  <input
+                    type="file"
+                    accept=".tar.gz,.gz,.enc,application/gzip,application/x-gzip"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                    style={inputStyle}
+                  />
+                </label>
+                {uploadFile && (
+                  <p style={{ fontSize: 13, color: '#6b7280', marginTop: 0 }}>
+                    {uploadFile.name} · {formatBytes(uploadFile.size)}
+                    {dashboard?.config.upload_max_bytes && (
+                      <> · Üst sınır: {formatBytes(dashboard.config.upload_max_bytes)}</>
+                    )}
+                  </p>
+                )}
+                <button
+                  onClick={handleUpload}
+                  disabled={uploading || !uploadFile}
+                  style={{ ...primaryBtn, opacity: !uploadFile ? 0.5 : 1 }}
+                >
+                  {uploading ? 'Yükleniyor…' : 'Yedeği Sisteme Yükle'}
+                </button>
+              </div>
+
+              <div style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 12, padding: 20 }}>
               <h3 style={{ color: '#b91c1c', marginTop: 0 }}>Geri Yükleme</h3>
               <p style={{ fontSize: 14, color: '#374151' }}>
                 Bu işlem mevcut veritabanını ve medya dosyalarını seçilen yedekle değiştirir. Geri alınamaz.
@@ -455,6 +520,7 @@ export default function YedeklemePage() {
                   </button>
                 </>
               )}
+              </div>
             </div>
           )}
 

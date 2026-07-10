@@ -13,12 +13,11 @@ export type OgrenciListFilters = {
   all_years?: boolean;
   sinif_seviyesi_ids?: number[];
   sinif_ids?: number[];
+  school_ids?: number[];
   kalemler?: KalemFilter[];
   kayit_turu?: string;
   giris_turu?: string;
   cinsiyet?: string;
-  paket_id?: number | '';
-  paket_turu?: string;
   kayit_tarihi_bas?: string;
   kayit_tarihi_bit?: string;
   sort?: string;
@@ -35,6 +34,8 @@ export type ExportColumnDef = {
 export const KALEM_GRUP_LABELS: Record<string, string> = {
   grup_dersi: 'Grup Dersleri',
   ozel_ders: 'Özel Dersler',
+  premium: 'Premium Paketler',
+  yayin: 'Yayın Paketleri',
   deneme: 'Denemeler',
   ek_hizmet: 'Ek Hizmetler',
 };
@@ -45,6 +46,7 @@ export const EXPORT_COLUMNS: ExportColumnDef[] = [
   { key: 'tc_kimlik_no', label: 'TC Kimlik No' },
   { key: 'sinif_seviyesi', label: 'Sınıf Seviyesi', default: true },
   { key: 'sinif_ad', label: 'Sınıf' },
+  { key: 'geldigi_okul', label: 'Geldiği / Mezun Olduğu Okul' },
   { key: 'sube_ad', label: 'Şube' },
   { key: 'kalem_ozet', label: 'Eğitim Kalemleri' },
   { key: 'telefon', label: 'Telefon' },
@@ -116,13 +118,6 @@ export function serializeKalemlerParam(kalemler: KalemFilter[]): string {
 }
 
 export function parseFiltersFromSearchParams(params: URLSearchParams): OgrenciListFilters {
-  const num = (key: string) => {
-    const v = params.get(key);
-    if (!v) return '';
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : '';
-  };
-
   let kalemler = parseKalemlerParam(params.get('kalemler'));
   if (kalemler.length === 0) {
     const legacyTur = params.get('kalem_turu');
@@ -145,18 +140,19 @@ export function parseFiltersFromSearchParams(params: URLSearchParams): OgrenciLi
     if (legacy) sinifIds = parseIntListParam(legacy);
   }
 
+  const schoolIds = parseIntListParam(params.get('school_ids'));
+
   return {
     q: params.get('q') || '',
     durum: (params.get('durum') as OgrenciListFilters['durum']) || 'all',
     all_years: params.get('all_years') === '1',
     sinif_seviyesi_ids: sinifSeviyesiIds,
     sinif_ids: sinifIds,
+    school_ids: schoolIds,
     kalemler,
     kayit_turu: params.get('kayit_turu') || '',
     giris_turu: params.get('giris_turu') || '',
     cinsiyet: params.get('cinsiyet') || '',
-    paket_id: num('paket_id'),
-    paket_turu: params.get('paket_turu') || '',
     kayit_tarihi_bas: params.get('kayit_tarihi_bas') || '',
     kayit_tarihi_bit: params.get('kayit_tarihi_bit') || '',
     sort: params.get('sort') || 'created_at_desc',
@@ -176,14 +172,15 @@ export function filtersToSearchParams(filters: OgrenciListFilters): URLSearchPar
   if (filters.sinif_ids && filters.sinif_ids.length > 0) {
     p.set('sinif_ids', serializeIntListParam(filters.sinif_ids));
   }
+  if (filters.school_ids && filters.school_ids.length > 0) {
+    p.set('school_ids', serializeIntListParam(filters.school_ids));
+  }
   if (filters.kalemler && filters.kalemler.length > 0) {
     p.set('kalemler', serializeKalemlerParam(filters.kalemler));
   }
   if (filters.kayit_turu) p.set('kayit_turu', filters.kayit_turu);
   if (filters.giris_turu) p.set('giris_turu', filters.giris_turu);
   if (filters.cinsiyet) p.set('cinsiyet', filters.cinsiyet);
-  if (filters.paket_id) p.set('paket_id', String(filters.paket_id));
-  if (filters.paket_turu) p.set('paket_turu', filters.paket_turu);
   if (filters.kayit_tarihi_bas) p.set('kayit_tarihi_bas', filters.kayit_tarihi_bas);
   if (filters.kayit_tarihi_bit) p.set('kayit_tarihi_bit', filters.kayit_tarihi_bit);
   if (filters.sort) p.set('sort', filters.sort);

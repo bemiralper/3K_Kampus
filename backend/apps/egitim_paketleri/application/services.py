@@ -67,6 +67,10 @@ class EkHizmetService:
             errors['kod'] = 'Kod zorunludur'
         if not data.get('hizmet_turu'):
             errors['hizmet_turu'] = 'Hizmet türü zorunludur'
+        elif data.get('hizmet_turu') == 'deneme':
+            errors['hizmet_turu'] = 'Deneme artık ek hizmet olarak tanımlanamaz; Denemeler sekmesini kullanın'
+        elif data.get('hizmet_turu') not in ('kutuphane', 'kocluk'):
+            errors['hizmet_turu'] = 'Geçerli hizmet türü: kütüphane veya koçluk'
         if not instance:
             if not data.get('egitim_yili_id'):
                 errors['egitim_yili'] = 'Eğitim yılı zorunludur'
@@ -169,7 +173,11 @@ class GrupDersiService:
         
         if not data.get('kod'):
             errors['kod'] = 'Kod zorunludur'
-        
+
+        deneme_ids = data.get('dahil_denemeler_ids')
+        if deneme_ids is not None and len(deneme_ids) > 1:
+            errors['dahil_denemeler_ids'] = 'En fazla bir deneme paketi dahil edilebilir'
+
         # egitim_yili_id, kurum_id, sube_id sadece create için zorunlu
         if not instance:
             if not data.get('egitim_yili_id'):
@@ -222,15 +230,21 @@ class GrupDersiService:
         if 'dersler_ids' in data:
             data['dersler'] = list(Ders.objects.filter(id__in=data.pop('dersler_ids')))
         
-        # Process dahil ek hizmetler (M2M)
+        # Process dahil ek hizmetler (M2M) — deneme türü hariç
         if 'dahil_ek_hizmetler_ids' in data:
             from apps.egitim_paketleri.models import EkHizmet
-            data['dahil_ek_hizmetler'] = list(EkHizmet.objects.filter(id__in=data.pop('dahil_ek_hizmetler_ids')))
+            ids = data.pop('dahil_ek_hizmetler_ids')
+            data['dahil_ek_hizmetler'] = list(
+                EkHizmet.objects.filter(id__in=ids).exclude(hizmet_turu='deneme')
+            )
 
-        # Process dahil denemeler (M2M)
+        # Process dahil denemeler (M2M) — en fazla 1
         if 'dahil_denemeler_ids' in data:
             from apps.egitim_paketleri.models import Deneme
-            data['dahil_denemeler'] = list(Deneme.objects.filter(id__in=data.pop('dahil_denemeler_ids')))
+            ids = data.pop('dahil_denemeler_ids') or []
+            if len(ids) > 1:
+                ids = ids[:1]
+            data['dahil_denemeler'] = list(Deneme.objects.filter(id__in=ids))
 
         # Process dahil yayın paketleri (M2M)
         if 'dahil_yayin_paketleri_ids' in data:
@@ -490,6 +504,9 @@ class PremiumPaketService:
             errors['ad'] = 'Paket adı zorunludur'
         if not data.get('kod'):
             errors['kod'] = 'Kod zorunludur'
+        deneme_ids = data.get('dahil_denemeler_ids')
+        if deneme_ids is not None and len(deneme_ids) > 1:
+            errors['dahil_denemeler_ids'] = 'En fazla bir deneme paketi dahil edilebilir'
         if not instance:
             if not data.get('egitim_yili_id'):
                 errors['egitim_yili'] = 'Eğitim yılı zorunludur'
@@ -519,10 +536,16 @@ class PremiumPaketService:
             data['sinif_seviyeleri'] = list(SinifSeviyesi.objects.filter(id__in=data.pop('sinif_seviyeleri_ids')))
         if 'dahil_ek_hizmetler_ids' in data:
             from apps.egitim_paketleri.models import EkHizmet
-            data['dahil_ek_hizmetler'] = list(EkHizmet.objects.filter(id__in=data.pop('dahil_ek_hizmetler_ids')))
+            ids = data.pop('dahil_ek_hizmetler_ids')
+            data['dahil_ek_hizmetler'] = list(
+                EkHizmet.objects.filter(id__in=ids).exclude(hizmet_turu='deneme')
+            )
         if 'dahil_denemeler_ids' in data:
             from apps.egitim_paketleri.models import Deneme
-            data['dahil_denemeler'] = list(Deneme.objects.filter(id__in=data.pop('dahil_denemeler_ids')))
+            ids = data.pop('dahil_denemeler_ids') or []
+            if len(ids) > 1:
+                ids = ids[:1]
+            data['dahil_denemeler'] = list(Deneme.objects.filter(id__in=ids))
         if 'dahil_yayin_paketleri_ids' in data:
             from apps.egitim_paketleri.models import YayinPaketi
             data['dahil_yayin_paketleri'] = list(YayinPaketi.objects.filter(id__in=data.pop('dahil_yayin_paketleri_ids')))

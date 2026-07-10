@@ -133,7 +133,7 @@ function WeekScheduleBoard({
 }
 
 export default function DersProgramiPage() {
-  const { href, isCoachMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
+  const { href, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const { activeSube, activeKurum } = useKurum();
   const selectedSube = activeSube?.id ?? null;
 
@@ -189,13 +189,13 @@ export default function DersProgramiPage() {
       } else {
         setProgramAd('Varsayılan Program');
         setGunluk(applyProgramTemplate('hafta_ici'));
-        if (!isCoachMode) setEditMode(true);
+        setEditMode(true);
       }
     } catch {
       showToast('error', 'Program yüklenemedi');
     }
     setLoading(false);
-  }, [isCoachMode]);
+  }, []);
 
   useEffect(() => {
     if (selectedSube) loadProgram(selectedSube);
@@ -337,7 +337,7 @@ export default function DersProgramiPage() {
             </div>
           </div>
         </div>
-        {editMode && !isCoachMode && (
+        {editMode && (
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" onClick={() => { setEditMode(false); if (program && selectedSube) loadProgram(selectedSube); }}
               style={{ padding: '10px 18px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, fontSize: 14, cursor: 'pointer' }}>
@@ -387,7 +387,7 @@ export default function DersProgramiPage() {
                 </span>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                {!editMode && !isCoachMode && <button type="button" onClick={() => setEditMode(true)} className="dp-btn-primary">Düzenle</button>}
+                {!editMode && <button type="button" onClick={() => setEditMode(true)} className="dp-btn-primary">Düzenle</button>}
                 {!editMode && program && (
                   <button type="button" onClick={handlePrintPdf} className="dp-btn-secondary">PDF İndir</button>
                 )}

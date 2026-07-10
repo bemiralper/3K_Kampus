@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiDelete, resolveApiUrl, type ApiResponse } from './api';
+import { apiGet, apiPost, apiPut, apiDelete, apiPostForm, resolveApiUrl, type ApiResponse } from './api';
 
 const BASE = '/yedekleme/api';
 
@@ -33,6 +33,7 @@ export interface DashboardData {
     local_root: string;
     remote_provider: string;
     retention: Record<string, number | null>;
+    upload_max_bytes?: number;
   };
 }
 
@@ -55,6 +56,12 @@ export function fetchArtifacts(): Promise<ApiResponse<{ results: BackupArtifact[
 
 export function createBackup(includeLogs = false): Promise<ApiResponse<{ artifact: BackupArtifact }>> {
   return apiPost<{ artifact: BackupArtifact }>(`${BASE}/artifacts/create/`, { include_logs: includeLogs });
+}
+
+export function uploadBackup(file: File): Promise<ApiResponse<{ artifact: BackupArtifact }>> {
+  const form = new FormData();
+  form.append('file', file);
+  return apiPostForm<{ artifact: BackupArtifact }>(`${BASE}/artifacts/upload/`, form);
 }
 
 export function validateBackup(id: number): Promise<ApiResponse<{ valid: boolean; manifest?: Record<string, unknown> }>> {

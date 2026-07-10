@@ -15,7 +15,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; border: string;
 };
 
 export default function SalonlarListPage() {
-  const { href, isCoachMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
+  const { href, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +115,6 @@ export default function SalonlarListPage() {
             </div>
           </div>
         </div>
-        {!isCoachMode && (
         <Link href={href('salonlar/yeni')} style={{
           display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 22px',
           background: 'linear-gradient(135deg, #0061a6, #004d85)', color: '#fff', borderRadius: 10,
@@ -124,7 +123,6 @@ export default function SalonlarListPage() {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Yeni Salon
         </Link>
-        )}
       </div>
 
       {/* Filters */}
@@ -193,13 +191,11 @@ export default function SalonlarListPage() {
           <div style={{ fontSize: '56px', marginBottom: '20px' }}>🏛️</div>
           <div style={{ fontSize: '18px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Henüz Salon Tanımlanmamış</div>
           <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '24px' }}>İlk kütüphane salonunuzu oluşturarak başlayın.</div>
-          {!isCoachMode && (
           <Link href={href('salonlar/yeni')} style={{
             display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 24px',
             background: 'linear-gradient(135deg, #0061a6, #004d85)', color: '#fff', borderRadius: 10,
             textDecoration: 'none', fontSize: '14px', fontWeight: 600, boxShadow: '0 4px 14px rgba(0,97,166,0.3)',
           }}>+ İlk Salonu Oluştur</Link>
-          )}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '20px' }}>

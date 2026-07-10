@@ -1833,6 +1833,95 @@
     justify-content: center;
   }
 
+  .coach-nav-group-toggle {
+    width: 100%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+  }
+
+  .coach-nav-chevron {
+    margin-left: auto;
+    display: inline-flex;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+  }
+
+  .coach-nav-chevron.is-expanded {
+    transform: rotate(180deg);
+  }
+
+  .coach-nav-submenu {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 4px 0;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.25s ease, opacity 0.2s ease;
+  }
+
+  .coach-nav-submenu.is-open {
+    max-height: 320px;
+    opacity: 1;
+  }
+
+  .coach-nav-sublink {
+    display: block;
+    padding: 8px 14px 8px 46px;
+    color: var(--coach-sidebar-muted);
+    text-decoration: none;
+    font-size: 13px;
+    border-radius: 10px;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .coach-nav-sublink:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+  }
+
+  .coach-nav-sublink.is-active {
+    background: rgba(2, 98, 167, 0.2);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .coach-nav-submenu-tooltip {
+    display: none;
+  }
+
+  .coach-nav-submenu-tooltip-title {
+    padding: 6px 14px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--coach-sidebar-muted);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 4px;
+  }
+
+  .coach-sidebar.is-collapsed .coach-nav-group:hover .coach-nav-submenu-tooltip,
+  .coach-sidebar.is-collapsed .coach-nav-group.is-open .coach-nav-submenu-tooltip {
+    display: block;
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 0;
+    min-width: 180px;
+    padding: 8px 0;
+    border-radius: 12px;
+    background: #0f172a;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
+    z-index: 30;
+  }
+
+  .coach-nav-submenu-tooltip .coach-nav-sublink {
+    padding: 8px 14px;
+  }
+
   .coach-nav-tooltip {
     position: absolute;
     left: calc(100% + 10px);
@@ -1854,6 +1943,10 @@
 
   .coach-sidebar.is-collapsed .coach-nav-item:hover .coach-nav-tooltip {
     opacity: 1;
+  }
+
+  .coach-sidebar.is-collapsed .coach-nav-group:hover .coach-nav-tooltip {
+    opacity: 0;
   }
 
   .coach-sidebar.is-collapsed .coach-nav-sidebar .coach-nav-link {

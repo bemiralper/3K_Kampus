@@ -27,6 +27,7 @@ const HOP_BY_HOP_HEADERS = new Set([
 function isBinaryResponse(contentType: string, disposition: string | null): boolean {
   const ct = contentType.toLowerCase();
   if (ct.includes('application/pdf')) return true;
+  if (ct.includes('text/csv')) return true;
   if (ct.includes('spreadsheetml')) return true;
   if (ct.includes('application/vnd.ms-excel')) return true;
   if (ct.includes('application/octet-stream')) return true;

@@ -35,6 +35,10 @@ def normalize_phone(value: str) -> str:
     return digits  # 05321234567 formatında sakla
 
 from ..domain.sinif_seviyesi_rules import sinif_seviyesi_requires_alan
+from ..application.package_selection import (
+    legacy_package_payload_to_selection,
+    validate_student_selection,
+)
 from ..application.services import (
     generate_student_number,
     get_active_context,
@@ -451,14 +455,13 @@ class DirectRegistrationView(APIView):
         if sinif_seviyesi and sinif_seviyesi_requires_alan(sinif_seviyesi) and not enrollment_data.get("alan"):
             return Response({"detail": "alan zorunludur"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # En az bir paket veya ek hizmet seçilmiş olmalı
-        paketler = package_data.get("paketler", [])
-        ek_hizmet_ids = package_data.get("ek_hizmet_ids", [])
-        deneme_paketi_ids = package_data.get("deneme_paketi_ids", [])
-        if not paketler and not ek_hizmet_ids and not deneme_paketi_ids:
+        # En az bir paket veya hizmet seçilmiş olmalı
+        selection = legacy_package_payload_to_selection(package_data)
+        validation_errors = validate_student_selection(selection)
+        if validation_errors:
             return Response(
-                {"detail": "En az bir grup/özel ders paketi, ek hizmet veya deneme paketi seçiniz"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": validation_errors[0]},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
@@ -570,6 +573,7 @@ class DirectRegistrationView(APIView):
                     ogrenci=ogrenci,
                     sinif=sinif,
                     sinif_seviyesi=sinif_seviyesi,
+                    alan=alan,
                     egitim_yili=egitim_yili,
                     kurum_id=kurum_id,
                     sube_id=sube_id,
@@ -808,9 +812,12 @@ class DirectRegistrationView(APIView):
                     except EkHizmet.DoesNotExist:
                         pass
 
-                # Deneme Paketleri (ayrıca seçilenler)
-                deneme_paketi_ids = package_data.get("deneme_paketi_ids", [])
-                for deneme_paketi_id in deneme_paketi_ids:
+                # Deneme Paketi (ayrıca seçilen — en fazla 1)
+                deneme_paketi_id = package_data.get("deneme_paketi_id")
+                if deneme_paketi_id is None:
+                    legacy_ids = package_data.get("deneme_paketi_ids") or []
+                    deneme_paketi_id = legacy_ids[0] if legacy_ids else None
+                if deneme_paketi_id is not None:
                     try:
                         deneme_paketi = Deneme.objects.get(id=deneme_paketi_id, aktif_mi=True)
                         
@@ -848,6 +855,17 @@ class DirectRegistrationView(APIView):
                                 'egitim_yili': egitim_yili,
                                 'baslangic_tarihi': enrollment_data.get("giris_tarihi"),
                             }
+                        )
+                        OgrenciEgitimPaketi.objects.get_or_create(
+                            ogrenci=ogrenci,
+                            paket_turu="deneme",
+                            paket_id=deneme_paketi.id,
+                            aktif_mi=True,
+                            defaults={
+                                "paket_adi": deneme_paketi.ad,
+                                "dahil_mi": False,
+                                "baslangic_tarihi": enrollment_data.get("giris_tarihi"),
+                            },
                         )
                     except Deneme.DoesNotExist:
                         pass

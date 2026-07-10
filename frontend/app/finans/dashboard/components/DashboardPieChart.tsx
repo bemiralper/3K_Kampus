@@ -20,16 +20,18 @@ export default function DashboardPieChart({ title, data, nameKey, emptyText }: P
   }));
 
   return (
-    <div className="fdash-chart-card">
-      <div className="fdash-chart-card__head">
-        <IconPieChart />
-        <h3>{title}</h3>
+    <div className="card-modern h-full">
+      <div className="card-modern-header">
+        <h3>
+          <IconPieChart className="w-[18px] h-[18px]" />
+          {title}
+        </h3>
       </div>
-      <div className="fdash-chart-card__body">
+      <div className="card-modern-body">
         {chartData.length === 0 ? (
-          <div className="fdash-chart-empty">{emptyText}</div>
+          <div className="flex items-center justify-center h-48 cell-secondary text-sm">{emptyText}</div>
         ) : (
-          <div style={{ width: "100%", height: 200, minHeight: 200 }}>
+          <div style={{ width: "100%", height: 220, minHeight: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -38,8 +40,8 @@ export default function DashboardPieChart({ title, data, nameKey, emptyText }: P
                   nameKey="name"
                   cx="50%"
                   cy="50%"
-                  innerRadius={42}
-                  outerRadius={68}
+                  innerRadius={50}
+                  outerRadius={80}
                   paddingAngle={2}
                 >
                   {chartData.map((entry, i) => (
@@ -48,9 +50,9 @@ export default function DashboardPieChart({ title, data, nameKey, emptyText }: P
                 </Pie>
                 <Tooltip
                   formatter={(value?: number) => fmtCurrency(value ?? 0)}
-                  contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
                 />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
               </PieChart>
             </ResponsiveContainer>
           </div>

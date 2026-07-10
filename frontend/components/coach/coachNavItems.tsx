@@ -1,4 +1,16 @@
 import type { ReactNode } from "react";
+import {
+  COACH_KUTUPHANE_BASE,
+  KUTUPHANE_NAV_ITEMS,
+  kutuphaneHref,
+} from "@/lib/kutuphane-routes";
+
+export type CoachNavChildDef = {
+  id: string;
+  href: string;
+  label: string;
+  matchPrefix?: string;
+};
 
 export type CoachNavItemDef = {
   id: string;
@@ -6,7 +18,18 @@ export type CoachNavItemDef = {
   label: string;
   icon: ReactNode;
   matchPrefix?: string;
+  children?: CoachNavChildDef[];
 };
+
+export const COACH_KUTUPHANE_CHILDREN: CoachNavChildDef[] = KUTUPHANE_NAV_ITEMS.map((item) => {
+  const href = kutuphaneHref(COACH_KUTUPHANE_BASE, item.segment);
+  return {
+    id: `kutuphane-${item.segment || "dashboard"}`,
+    href,
+    label: item.label,
+    matchPrefix: href,
+  };
+});
 
 export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
   {
@@ -66,9 +89,10 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
   },
   {
     id: "kutuphane",
-    href: "/coach/kutuphane",
+    href: COACH_KUTUPHANE_BASE,
     label: "Kütüphane",
-    matchPrefix: "/coach/kutuphane",
+    matchPrefix: COACH_KUTUPHANE_BASE,
+    children: COACH_KUTUPHANE_CHILDREN,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
@@ -143,7 +167,19 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
   },
 ];
 
+export function isCoachNavChildActive(pathname: string, child: CoachNavChildDef): boolean {
+  const prefix = child.matchPrefix || child.href;
+  if (prefix === COACH_KUTUPHANE_BASE) {
+    return pathname === COACH_KUTUPHANE_BASE || pathname === `${COACH_KUTUPHANE_BASE}/`;
+  }
+  return pathname.startsWith(prefix);
+}
+
 export function isCoachNavActive(pathname: string, item: CoachNavItemDef): boolean {
+  if (item.children?.length) {
+    return item.children.some((child) => isCoachNavChildActive(pathname, child));
+  }
+
   const prefix = item.matchPrefix || item.href;
   if (prefix === "/coach/dashboard") {
     return pathname === "/coach" || pathname === "/coach/dashboard";

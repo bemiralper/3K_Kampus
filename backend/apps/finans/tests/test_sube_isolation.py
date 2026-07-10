@@ -121,6 +121,27 @@ class FinansSubeIsolationAPITest(TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn('sube_id', res.json().get('error', '').lower())
 
+    def test_legacy_gelir_gider_rapor_export_csv_with_format_param(self):
+        """DRF ?format=csv içerik müzakeresine takılmamalı — dosya indirilebilir olmalı."""
+        res = self.client.get(
+            '/finans/api/raporlar/gelir-gider/',
+            {'kurum_id': self.kurum.id, 'format': 'csv'},
+            HTTP_X_SUBE_ID=str(self.sube.id),
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        self.assertIn('text/csv', res['Content-Type'])
+        self.assertIn('attachment', res['Content-Disposition'])
+
+    def test_legacy_gelir_gider_rapor_export_pdf_with_fmt_param(self):
+        res = self.client.get(
+            '/finans/api/raporlar/gelir-gider/',
+            {'kurum_id': self.kurum.id, 'fmt': 'pdf'},
+            HTTP_X_SUBE_ID=str(self.sube.id),
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        self.assertIn('application/pdf', res['Content-Type'])
+        self.assertTrue(res.content.startswith(b'%PDF'))
+
     def test_report_requires_sube_context(self):
         """Slug raporları sube_id/header/session olmadan 400."""
         res = self.client.get(

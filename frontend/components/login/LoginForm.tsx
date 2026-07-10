@@ -1,13 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import {
-  clearLoginContextStorage,
-  resolvePostLoginRedirect,
-  setPostLoginPending,
-  STORAGE_SUBE,
-} from '@/lib/post-login-routing';
+import { resolvePostLoginRedirect } from '@/lib/post-login-routing';
 import { mergeBranding, type KurumBranding } from '@/lib/kurum-branding';
 
 type LoginFormProps = {
@@ -18,6 +14,7 @@ type LoginFormProps = {
 };
 
 export default function LoginForm({ branding, kurumKod = '3K', onSuccess, compact }: LoginFormProps) {
+  const router = useRouter();
   const { user, login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -36,19 +33,9 @@ export default function LoginForm({ branding, kurumKod = '3K', onSuccess, compac
     if (result.success) {
       setIsRedirecting(true);
       onSuccess?.();
-      clearLoginContextStorage();
-      localStorage.removeItem(STORAGE_SUBE);
-      setPostLoginPending(true);
       const loggedInUser = result.user ?? user;
-      try {
-        const nextPath = await resolvePostLoginRedirect(loggedInUser);
-        setPostLoginPending(false);
-        window.location.replace(nextPath);
-      } catch {
-        setPostLoginPending(false);
-        setIsRedirecting(false);
-        setError('Yönlendirme sırasında bir hata oluştu. Lütfen tekrar deneyin.');
-      }
+      const nextPath = await resolvePostLoginRedirect(loggedInUser);
+      router.replace(nextPath);
     } else {
       setError(result.error || 'Giriş başarısız');
       setIsSubmitting(false);

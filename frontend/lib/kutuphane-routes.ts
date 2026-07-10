@@ -27,6 +27,14 @@ export function kutuphaneHref(basePath: string, segment?: string): string {
   return `${basePath}/${segment.replace(/^\//, '')}`;
 }
 
+/** Admin / muhasebe yan paneli alt menü öğeleri */
+export function kutuphaneSidebarChildren(basePath: string) {
+  return KUTUPHANE_NAV_ITEMS.map((item) => ({
+    label: item.label,
+    href: kutuphaneHref(basePath, item.segment),
+  }));
+}
+
 export function isCoachKutuphanePath(pathname?: string | null): boolean {
   return Boolean(pathname?.startsWith(COACH_KUTUPHANE_BASE));
 }

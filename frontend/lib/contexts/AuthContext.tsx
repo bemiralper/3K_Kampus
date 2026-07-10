@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from "react";
 import { useIdleTimeout, touchActivity } from "@/lib/hooks/useIdleTimeout";
-import { clearLoginContextStorage } from "@/lib/post-login-routing";
 
 // Use relative URLs to go through Next.js proxy (same origin = no CORS/cookie issues)
 // The proxy is configured in next.config.js to forward /api/* to backend
@@ -227,7 +226,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setUser(null);
       writeCachedUser(null);
-      clearLoginContextStorage();
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.removeItem('gorev-ekran-sound-played');
       }

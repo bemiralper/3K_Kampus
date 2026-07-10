@@ -132,7 +132,7 @@ class KutuphaneCoachScopeTest(TestCase):
         self.assertIn(self.coach_student.id, seat_ids)
         self.assertIn(self.other_student.id, seat_ids)
 
-    def test_coach_cannot_create_salon(self):
+    def test_coach_can_create_salon(self):
         self.client.force_login(self.coach_user)
         res = self.client.post(
             '/kutuphane/api/salon/',
@@ -140,7 +140,8 @@ class KutuphaneCoachScopeTest(TestCase):
             content_type='application/json',
             **self.headers,
         )
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()['success'])
 
     def test_coach_can_assign_other_student_seat(self):
         self.client.force_login(self.coach_user)

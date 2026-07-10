@@ -45,13 +45,14 @@ def hesapla_kdv(brut_fiyat, kdv_orani):
 
 class EkHizmet(models.Model):
     """
-    Ek Hizmet Tanımı — Kütüphane, Koçluk, Deneme vb.
+    Ek Hizmet Tanımı — Kütüphane ve Koçluk.
+    Deneme ayrı katalog kaydı (Deneme modeli); yeni ek hizmet olarak oluşturulamaz.
+    Legacy kayıtlarda hizmet_turu='deneme' kalabilir (runtime bridge için).
     """
-    
+
     HIZMET_TURU_CHOICES = [
         ('kutuphane', 'Kütüphane'),
         ('kocluk', 'Koçluk'),
-        ('deneme', 'Deneme'),
     ]
     
     ad = models.CharField('Hizmet Adı', max_length=200)

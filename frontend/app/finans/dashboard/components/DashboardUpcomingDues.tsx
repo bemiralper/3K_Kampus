@@ -14,17 +14,17 @@ export default function DashboardUpcomingDues({ rows }: Props) {
   const links = useDashboardLinks();
 
   return (
-    <div className="fdash-panel fdash-panel--flush">
-      <div className="fdash-panel__head">
+    <div className="card-modern h-full">
+      <div className="card-modern-header">
         <h3>
           <IconCalendarClock className="w-[18px] h-[18px]" />
           Vadesi Gelen
         </h3>
-        <Link href={links.vadesiGelenler} className="fdash-panel__link">
-          Tümü →
+        <Link href={links.donemTahsilat} className="text-xs text-blue-600 hover:underline">
+          Dönem özeti
         </Link>
       </div>
-      <div className="fdash-panel__body p-0">
+      <div className="card-modern-body p-0">
         <div className="finans-table-wrap max-h-80 overflow-y-auto">
           <table className="table-modern">
             <thead>

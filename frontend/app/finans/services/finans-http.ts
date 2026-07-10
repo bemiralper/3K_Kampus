@@ -293,7 +293,7 @@ export async function finansDownload(
   const filename = match?.[2] || "export";
   const blob = await res.blob();
 
-  if (path.includes("format=pdf") || filename.toLowerCase().endsWith(".pdf")) {
+  if (path.includes("fmt=pdf") || path.includes("format=pdf") || filename.toLowerCase().endsWith(".pdf")) {
     const header = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
     const isPdf = header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
     if (!isPdf) {

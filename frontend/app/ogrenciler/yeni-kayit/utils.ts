@@ -119,7 +119,7 @@ export function hasWizardUserInput(data: WizardData): boolean {
 
   if (pkg.paketler.length > 0) return true;
   if (pkg.ek_hizmet_ids.length > 0) return true;
-  if (pkg.deneme_paketi_ids.length > 0) return true;
+  if (pkg.deneme_paketi_id != null) return true;
 
   return false;
 }

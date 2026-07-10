@@ -392,7 +392,6 @@ export default function SalonDetayPage() {
             </div>
           </div>
         </div>
-        {!isCoachMode && (
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {library.durum !== 'ACTIVE' && (
             <button onClick={() => handleStatusChange('ACTIVE')} style={{
@@ -421,7 +420,6 @@ export default function SalonDetayPage() {
             fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(10px)',
           }}>Sil</button>
         </div>
-        )}
       </div>
 
       {/* KPI Bar */}
@@ -479,7 +477,7 @@ export default function SalonDetayPage() {
         </div>
       ) : (
         <>
-          {activeTab === 'genel' && <GenelTab library={library} onSave={loadLibrary} showToast={showToast} readOnly={isCoachMode} />}
+          {activeTab === 'genel' && <GenelTab library={library} onSave={loadLibrary} showToast={showToast} />}
           {activeTab === 'masalar' && (
             <MasalarTab
               seats={seats}
@@ -490,7 +488,6 @@ export default function SalonDetayPage() {
               onToggleBulkForm={() => setShowBulkSeatForm(p => !p)}
               onBulkCreate={handleBulkCreateSeats}
               onStatusChange={handleSeatStatusChange}
-              readOnly={isCoachMode}
             />
           )}
           {activeTab === 'yoklama' && (

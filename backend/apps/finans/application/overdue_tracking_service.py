@@ -15,7 +15,7 @@ from apps.communication.application.integration_hooks import (
     already_sent,
     recently_sent_within_hours,
 )
-from apps.odeme_takip.domain.enums import TahsilatDurum, TaksitDurum
+from apps.odeme_takip.domain.enums import TahsilatDurum, TahsilatTuru, TaksitDurum
 from apps.odeme_takip.domain.models import Tahsilat, Taksit
 from apps.odeme_takip.domain.overdue import (
     active_sozlesme_q,
@@ -60,6 +60,10 @@ OVERDUE_EXPORT_COLUMNS = [
     {'key': 'vade_tarihi', 'label': 'Son Ödeme Tarihi'},
     {'key': 'gecikme_gun', 'label': 'Gecikme Günü'},
     {'key': 'taksit_tutari', 'label': 'Taksit Tutarı'},
+    {'key': 'sozlesme_tutari', 'label': 'Toplam Sözleşme Tutarı'},
+    {'key': 'toplam_odenen', 'label': 'Toplam Ödenen'},
+    {'key': 'toplam_kalan_borc', 'label': 'Toplam Kalan Borç'},
+    {'key': 'son_tahsilat_tutari', 'label': 'Son Ödeme Tutarı'},
     {'key': 'kalan_tutar', 'label': 'Kalan Borç'},
     {'key': 'son_tahsilat_tarihi', 'label': 'Son Tahsilat'},
     {'key': 'durum_label', 'label': 'Durum'},
@@ -385,8 +389,16 @@ class OverdueTrackingService:
             for row in Tahsilat.objects.filter(
                 sozlesme_id__in=sozlesme_ids,
                 durum=TahsilatDurum.AKTIF,
-            ).values('sozlesme_id').annotate(son=Max('tahsilat_tarihi'))
+            ).exclude(tahsilat_turu=TahsilatTuru.IADE).values('sozlesme_id').annotate(son=Max('tahsilat_tarihi'))
         }
+
+        son_tahsilat_tutar_map: dict[int, int] = {}
+        for tah in Tahsilat.objects.filter(
+            sozlesme_id__in=sozlesme_ids,
+            durum=TahsilatDurum.AKTIF,
+        ).exclude(tahsilat_turu=TahsilatTuru.IADE).order_by('sozlesme_id', '-tahsilat_tarihi', '-id'):
+            if tah.sozlesme_id not in son_tahsilat_tutar_map:
+                son_tahsilat_tutar_map[tah.sozlesme_id] = int(tah.tutar or 0)
 
         coach_map = self._coach_map(ogrenci_ids)
         veli_totals = self._veli_totals(taksitler)
@@ -438,9 +450,13 @@ class OverdueTrackingService:
                 'taksit_no': t.taksit_no,
                 'vade_tarihi': t.vade_tarihi.isoformat() if t.vade_tarihi else '',
                 'taksit_tutari': int(t.tutar or 0),
+                'sozlesme_tutari': int(t.sozlesme.net_tutar or 0),
+                'toplam_odenen': int(t.sozlesme.toplam_odenen or 0),
+                'toplam_kalan_borc': int(t.sozlesme.kalan_borc or 0),
                 'kalan_tutar': int(t.kalan_tutar or 0),
                 'gecikme_gun': gecikme,
                 'son_tahsilat_tarihi': son_tah.isoformat() if son_tah else None,
+                'son_tahsilat_tutari': son_tahsilat_tutar_map.get(t.sozlesme_id),
                 'toplam_gecikmis_tutar': veli_totals.get(veli_id, int(t.kalan_tutar or 0)),
                 'durum_label': _durum_label(gecikme, liste_durumu=liste_durumu),
                 'durum_renk': _durum_renk(gecikme, liste_durumu=liste_durumu),

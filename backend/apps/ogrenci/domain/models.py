@@ -191,6 +191,16 @@ class OgrenciKayit(models.Model):
         related_name='ogrenci_kayitlari',
         verbose_name='Sınıf Seviyesi',
     )
+
+    # Alan (11/12/mezun kayıtlarında seçilen alan — sözleşme paket filtresi için)
+    alan = models.ForeignKey(
+        'egitim_tanimlari.Alan',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ogrenci_kayitlari_alan',
+        verbose_name='Alan',
+    )
     
     # Eğitim Yılı (ZORUNLU - Tenant isolation için)
     egitim_yili = models.ForeignKey(

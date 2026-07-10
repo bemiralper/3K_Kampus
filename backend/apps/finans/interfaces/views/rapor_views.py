@@ -9,6 +9,7 @@ from django.db.models import Sum, Q, Count, F, Case, When, IntegerField, Value, 
 from django.db.models.functions import TruncMonth, ExtractMonth, ExtractYear
 from django.utils import timezone
 from apps.finans.interfaces.views.base import FinansAPIView as APIView
+from apps.finans.interfaces.views.expansion_views import ExportFormatMixin
 from rest_framework.response import Response
 
 from apps.odeme_takip.domain.models import Sozlesme, Taksit, Tahsilat
@@ -39,9 +40,17 @@ def _resolve_rapor_sube(request, kurum_id):
     return sube_id, None
 
 
-def _rapor_format(request) -> str:
+def _rapor_format(request, view=None) -> str:
     """İstenen dışa aktarma formatı: json (varsayılan) | csv | xlsx | pdf."""
-    fmt = (request.query_params.get('format') or 'json').lower().strip()
+    # fmt — DRF içerik müzakeresinden kaçınmak için tercih edilen parametre
+    fmt_param = (request.query_params.get('fmt') or '').lower().strip()
+    if fmt_param in ('json', 'csv', 'xlsx', 'pdf'):
+        return fmt_param
+    if view is not None and hasattr(view, 'get_export_format'):
+        fmt = view.get_export_format()
+    else:
+        fmt = request.query_params.get('format') or 'json'
+    fmt = (fmt or 'json').lower().strip()
     return fmt if fmt in ('json', 'csv', 'xlsx', 'pdf') else 'json'
 
 
@@ -79,12 +88,15 @@ def _export_rapor(request, *, fmt, kurum_id, sube_id, title, columns, rows,
     if summary_chips:
         meta['summary_chips'] = summary_chips
     orientation = 'landscape' if len(columns) > 5 else 'portrait'
-    return ExportService.build(
-        fmt, rows, columns, title=title, filters_meta=meta, orientation=orientation,
-    )
+    try:
+        return ExportService.build(
+            fmt, rows, columns, title=title, filters_meta=meta, orientation=orientation,
+        )
+    except (ValueError, RuntimeError) as exc:
+        return Response({'error': str(exc)}, status=400)
 
 
-class GelirGiderRaporView(APIView):
+class GelirGiderRaporView(ExportFormatMixin, APIView):
     """
     GET /finans/api/raporlar/gelir-gider/
     ?kurum_id=...&sube_id=...&egitim_yili_id=...
@@ -187,7 +199,7 @@ class GelirGiderRaporView(APIView):
             .order_by('-toplam')
         )
 
-        fmt = _rapor_format(request)
+        fmt = _rapor_format(request, self)
         if fmt != 'json':
             columns = [
                 {'key': 'donem', 'label': 'Dönem'},
@@ -231,7 +243,7 @@ class GelirGiderRaporView(APIView):
         })
 
 
-class TahsilatAnalizView(APIView):
+class TahsilatAnalizView(ExportFormatMixin, APIView):
     """
     GET /finans/api/raporlar/tahsilat-analiz/
     ?kurum_id=...&sube_id=...&egitim_yili_id=...
@@ -334,7 +346,7 @@ class TahsilatAnalizView(APIView):
             .order_by('durum')
         )
 
-        fmt = _rapor_format(request)
+        fmt = _rapor_format(request, self)
         if fmt != 'json':
             columns = [
                 {'key': 'donem', 'label': 'Dönem'},
@@ -386,7 +398,7 @@ class TahsilatAnalizView(APIView):
         })
 
 
-class BorcYaslandirmaView(APIView):
+class BorcYaslandirmaView(ExportFormatMixin, APIView):
     """
     GET /finans/api/raporlar/borc-yaslandirma/
     ?kurum_id=...&sube_id=...&egitim_yili_id=...
@@ -473,7 +485,7 @@ class BorcYaslandirmaView(APIView):
                     'gecikme_gun': gun,
                 })
 
-        fmt = _rapor_format(request)
+        fmt = _rapor_format(request, self)
         if fmt != 'json':
             columns = [
                 {'key': 'grup', 'label': 'Gecikme Aralığı'},
@@ -512,7 +524,7 @@ class BorcYaslandirmaView(APIView):
         })
 
 
-class DonemRaporView(APIView):
+class DonemRaporView(ExportFormatMixin, APIView):
     """
     GET /finans/api/raporlar/donem/
     ?kurum_id=...&sube_id=...&egitim_yili_id=...
@@ -543,7 +555,7 @@ class DonemRaporView(APIView):
         # ─── Yıllar Arası Karşılaştırma ─────────────────────
         yillar_arasi = donem_selector.get_yillar_arasi_karsilastirma(int(kurum_id))
 
-        fmt = _rapor_format(request)
+        fmt = _rapor_format(request, self)
         if fmt != 'json':
             columns = [
                 {'key': 'yil', 'label': 'Eğitim Yılı'},

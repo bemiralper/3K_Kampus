@@ -1,5 +1,5 @@
 """
-Kütüphane API — koç operasyonel erişim ve altyapı yazma yetkisi.
+Kütüphane API — koç / muhasebe / admin operasyonel erişim.
 """
 from django.http import JsonResponse
 
@@ -11,9 +11,41 @@ from apps.coaching.services.coach_access import (
 )
 
 
+def _role_code(user):
+    try:
+        return user.user_role.role.code
+    except Exception:
+        return None
+
+
+def _has_finans_portal_permissions(user):
+    try:
+        perms = set(user.user_role.role.get_all_permissions().values_list('code', flat=True))
+        return bool(perms & {'finans.manage', 'finans.write', 'finans.read'})
+    except Exception:
+        return False
+
+
+def is_kutuphane_full_access(user):
+    """
+    Kütüphane modülünde tam yetki — admin paneli, muhasebe portalı ve koç portalı.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if is_resource_admin(user):
+        return True
+    if get_coach_profile(user) is not None:
+        return True
+    if _role_code(user) == 'muhasebe':
+        return True
+    if _has_finans_portal_permissions(user):
+        return True
+    return False
+
+
 def is_kutuphane_infra_admin(user):
-    """Salon/masa/dolap altyapısı oluşturma — yalnızca kurum yöneticileri."""
-    return is_resource_admin(user)
+    """Salon/masa/dolap altyapısı — tüm portal kullanıcıları."""
+    return is_kutuphane_full_access(user)
 
 
 def kutuphane_forbidden(message='Bu işlem için yetkiniz yok'):
@@ -27,16 +59,11 @@ def require_infra_admin(request):
 
 
 def is_kutuphane_operational_coach(user):
-    """
-    Masa/dolap ataması, izin, yoklama — tüm koçlar kurum genelinde işlem yapabilir.
-    """
-    if is_resource_admin(user):
-        return True
-    return get_coach_profile(user) is not None
+    """Atama, izin, yoklama — tüm portal kullanıcıları kurum genelinde."""
+    return is_kutuphane_full_access(user)
 
 
 def require_kutuphane_operational_access(request, student_id):
-    """Atama, izin, geçici oturma — koçlar tüm öğrenciler için."""
     if is_kutuphane_operational_coach(request.user):
         return None
     if student_id is None:
@@ -47,7 +74,7 @@ def require_kutuphane_operational_access(request, student_id):
 
 
 def filter_kutuphane_assignments_qs(queryset, user, student_field='ogrenci_id'):
-    """Atama listeleri — koçlar kurum geneli görür."""
+    """Atama listeleri — portal kullanıcıları kurum geneli görür."""
     if is_kutuphane_operational_coach(user):
         return queryset
     return filter_by_student_scope(queryset, user, student_field=student_field)

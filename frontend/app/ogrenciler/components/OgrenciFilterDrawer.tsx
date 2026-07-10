@@ -8,6 +8,7 @@ import { kalemKey } from '../lib/ogrenci-list-utils';
 type FilterOption = { value: string; label: string };
 type SinifSeviyesiOption = { id: number; ad: string; kod: string };
 type SinifOption = { id: number; ad: string; sinif_seviyesi_id: number | null };
+type OkulOption = { id: number; ad: string; okul_turu?: string };
 type KalemGrup = {
   tur: string;
   label: string;
@@ -26,6 +27,8 @@ interface OgrenciFilterDrawerProps {
 const KALEM_TUR_CLASS: Record<string, string> = {
   grup_dersi: 'ogrenci-filter-category-card--grup',
   ozel_ders: 'ogrenci-filter-category-card--ozel',
+  premium: 'ogrenci-filter-category-card--premium',
+  yayin: 'ogrenci-filter-category-card--yayin',
   deneme: 'ogrenci-filter-category-card--deneme',
   ek_hizmet: 'ogrenci-filter-category-card--ek',
 };
@@ -39,6 +42,7 @@ function countActiveFilters(local: OgrenciListFilters): number {
   n += local.kalemler?.length || 0;
   n += local.sinif_seviyesi_ids?.length || 0;
   n += local.sinif_ids?.length || 0;
+  n += local.school_ids?.length || 0;
   if (local.kayit_turu) n += 1;
   if (local.giris_turu) n += 1;
   if (local.cinsiyet) n += 1;
@@ -62,6 +66,8 @@ export default function OgrenciFilterDrawer({
   const [cinsiyetOpts, setCinsiyetOpts] = useState<FilterOption[]>([]);
   const [kalemGruplari, setKalemGruplari] = useState<KalemGrup[]>([]);
   const [siniflar, setSiniflar] = useState<SinifOption[]>([]);
+  const [okullar, setOkullar] = useState<OkulOption[]>([]);
+  const [okulSearch, setOkulSearch] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -80,6 +86,7 @@ export default function OgrenciFilterDrawer({
       cinsiyet?: FilterOption[];
       kalem_gruplari?: KalemGrup[];
       siniflar?: SinifOption[];
+      okullar?: OkulOption[];
     }>('/ogrenciler/api/filter-options/').then((res) => {
       const data = res.data || res;
       const d = data as {
@@ -89,6 +96,7 @@ export default function OgrenciFilterDrawer({
         cinsiyet?: FilterOption[];
         kalem_gruplari?: KalemGrup[];
         siniflar?: SinifOption[];
+        okullar?: OkulOption[];
       };
       setSinifSeviyeleri(d.sinif_seviyeleri || []);
       setGirisTuru(d.giris_turu || []);
@@ -96,6 +104,7 @@ export default function OgrenciFilterDrawer({
       setCinsiyetOpts(d.cinsiyet || []);
       setKalemGruplari(d.kalem_gruplari || []);
       setSiniflar(d.siniflar || []);
+      setOkullar(d.okullar || []);
     });
   }, [open]);
 
@@ -108,6 +117,21 @@ export default function OgrenciFilterDrawer({
     () => new Set(local.sinif_ids || []),
     [local.sinif_ids]
   );
+
+  const selectedSchoolIds = useMemo(
+    () => new Set(local.school_ids || []),
+    [local.school_ids]
+  );
+
+  const filteredOkullar = useMemo(() => {
+    const q = okulSearch.trim().toLocaleLowerCase('tr');
+    if (!q) return okullar;
+    return okullar.filter(
+      (o) =>
+        o.ad.toLocaleLowerCase('tr').includes(q) ||
+        (o.okul_turu || '').toLocaleLowerCase('tr').includes(q),
+    );
+  }, [okullar, okulSearch]);
 
   const filteredSiniflar = useMemo(() => {
     const ids = local.sinif_seviyesi_ids || [];
@@ -192,6 +216,13 @@ export default function OgrenciFilterDrawer({
     update({ sinif_ids: sinifIds });
   };
 
+  const toggleSchool = (id: number) => {
+    const current = local.school_ids || [];
+    const exists = selectedSchoolIds.has(id);
+    const schoolIds = exists ? current.filter((x) => x !== id) : [...current, id];
+    update({ school_ids: schoolIds });
+  };
+
   const visibleGroups = kalemGruplari.filter((g) => selectedCategories.has(g.tur));
 
   const seviyelerForSinifList =
@@ -239,6 +270,10 @@ export default function OgrenciFilterDrawer({
             <div className="ogrenci-filter-summary-stat">
               <span className="ogrenci-filter-summary-label">Seviye</span>
               <strong>{local.sinif_seviyesi_ids?.length || 0}</strong>
+            </div>
+            <div className="ogrenci-filter-summary-stat">
+              <span className="ogrenci-filter-summary-label">Okul</span>
+              <strong>{local.school_ids?.length || 0}</strong>
             </div>
           </div>
 
@@ -352,6 +387,53 @@ export default function OgrenciFilterDrawer({
                       </div>
                     );
                   })
+                )}
+              </div>
+            </section>
+
+            <section className="ogrenci-filter-panel">
+              <div className="ogrenci-filter-panel-header">
+                <h4 className="ogrenci-filter-subsection-title">Geldiği / Mezun Olduğu Okul</h4>
+                <p className="ogrenci-filter-hint">
+                  Kayıt sırasında seçilen okula göre filtreleyin. Birden fazla okul seçebilirsiniz.
+                </p>
+              </div>
+
+              <div className="ogrenci-filter-block">
+                <input
+                  type="search"
+                  className="ogrenci-filter-school-search"
+                  placeholder="Okul adı veya türü ile ara..."
+                  value={okulSearch}
+                  onChange={(e) => setOkulSearch(e.target.value)}
+                />
+                {filteredOkullar.length === 0 ? (
+                  <p className="ogrenci-filter-empty-hint">
+                    {okullar.length === 0
+                      ? 'Bu şubede tanımlı okul yok. Kurum modülünden okul ekleyebilirsiniz.'
+                      : 'Aramanızla eşleşen okul bulunamadı.'}
+                  </p>
+                ) : (
+                  <div className="ogrenci-filter-select-chip-grid ogrenci-filter-select-chip-grid--scroll">
+                    {filteredOkullar.map((okul) => (
+                      <label
+                        key={okul.id}
+                        className={`ogrenci-filter-select-chip${selectedSchoolIds.has(okul.id) ? ' selected' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedSchoolIds.has(okul.id)}
+                          onChange={() => toggleSchool(okul.id)}
+                        />
+                        <span>
+                          {okul.ad}
+                          {okul.okul_turu ? (
+                            <span className="ogrenci-filter-chip-meta"> · {okul.okul_turu}</span>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 )}
               </div>
             </section>

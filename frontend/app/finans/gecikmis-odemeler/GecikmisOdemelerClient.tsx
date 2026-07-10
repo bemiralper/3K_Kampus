@@ -52,7 +52,7 @@ import {
 import GecikenDetayDrawer from "./GecikenDetayDrawer";
 
 const { RangePicker } = DatePicker;
-const COLUMN_STORAGE_KEY = "geciken_taksitler_columns_v2";
+const COLUMN_STORAGE_KEY = "geciken_taksitler_columns_v3";
 
 type ColDef = {
   key: GecikenColumnKey;
@@ -72,14 +72,17 @@ const ALL_COLUMNS: ColDef[] = [
   { key: "vade", label: "Son Ödeme", sortField: "vade_tarihi", render: (i) => fmtDate(i.vade_tarihi) },
   { key: "gecikme", label: "Gecikme", sortField: "gecikme_gun", align: "center", render: (i) => (i.gecikme_gun > 0 ? <Tag color="volcano">{i.gecikme_gun} gün</Tag> : "—") },
   { key: "taksit_tutari", label: "Taksit Tutarı", align: "right", render: (i) => fmtTL(i.taksit_tutari) },
-  { key: "kalan", label: "Kalan Borç", sortField: "kalan_tutar", align: "right", render: (i) => <span style={{ fontWeight: 700, color: "#dc2626" }}>{fmtTL(i.kalan_tutar)}</span> },
+  { key: "sozlesme_tutari", label: "Toplam Sözleşme", align: "right", render: (i) => fmtTL(i.sozlesme_tutari) },
+  { key: "son_odeme", label: "Son Ödeme", align: "right", render: (i) => (i.son_tahsilat_tutari != null ? fmtTL(i.son_tahsilat_tutari) : "—") },
+  { key: "toplam_kalan", label: "Toplam Kalan Borç", sortField: "toplam_kalan_borc", align: "right", render: (i) => <span style={{ fontWeight: 700, color: "#dc2626" }}>{fmtTL(i.toplam_kalan_borc)}</span> },
+  { key: "kalan", label: "Taksit Kalan", sortField: "kalan_tutar", align: "right", render: (i) => fmtTL(i.kalan_tutar) },
   { key: "son_tahsilat", label: "Son Tahsilat", render: (i) => (i.son_tahsilat_tarihi ? fmtDate(i.son_tahsilat_tarihi) : "—") },
   { key: "durum", label: "Durum", render: (i) => <Tag color={durumRenkToAntd(i.durum_renk)}>{i.durum_label}</Tag> },
 ];
 
 const DEFAULT_VISIBLE: GecikenColumnKey[] = [
-  "ogrenci", "veli", "telefon", "sube", "sinif", "rehber",
-  "vade", "gecikme", "kalan", "son_tahsilat", "durum",
+  "ogrenci", "veli", "telefon",
+  "vade", "gecikme", "sozlesme_tutari", "son_odeme", "toplam_kalan", "son_tahsilat", "durum",
 ];
 
 const VALID_KEYS = new Set<GecikenColumnKey>(ALL_COLUMNS.map((c) => c.key));

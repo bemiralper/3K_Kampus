@@ -20,29 +20,6 @@ import { personelAccessService } from "@/lib/personel-access-api";
 export const STORAGE_KURUM = "3k_active_kurum";
 export const STORAGE_SUBE = "3k_active_sube";
 export const STORAGE_CONTEXT_GATE = "3k_context_gate";
-export const STORAGE_POST_LOGIN_PENDING = "3k_post_login_pending";
-
-export function setPostLoginPending(pending: boolean): void {
-  if (typeof window === "undefined") return;
-  if (pending) {
-    sessionStorage.setItem(STORAGE_POST_LOGIN_PENDING, "1");
-  } else {
-    sessionStorage.removeItem(STORAGE_POST_LOGIN_PENDING);
-  }
-}
-
-export function isPostLoginPending(): boolean {
-  if (typeof window === "undefined") return false;
-  return sessionStorage.getItem(STORAGE_POST_LOGIN_PENDING) === "1";
-}
-
-export function clearLoginContextStorage(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(STORAGE_KURUM);
-  localStorage.removeItem(STORAGE_SUBE);
-  sessionStorage.removeItem(STORAGE_CONTEXT_GATE);
-  sessionStorage.removeItem(STORAGE_POST_LOGIN_PENDING);
-}
 
 export type ContextGate = "kurum" | "sube";
 

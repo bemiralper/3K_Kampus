@@ -230,6 +230,7 @@ BACKUP_CONFIG = {
         'manual': int(os.environ.get('BACKUP_RETENTION_MANUAL', '30')),
         'max_age_days': int(os.environ.get('BACKUP_MAX_AGE_DAYS', '0')) or None,
     },
+    'upload_max_bytes': int(os.environ.get('BACKUP_UPLOAD_MAX_BYTES', str(2 * 1024 ** 3))),
 }
 
 # Default primary key field type

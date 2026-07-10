@@ -40,6 +40,7 @@ import {
   type RaporExportEndpoint,
   type RaporExportFormat,
 } from "../services/rapor-api";
+import { downloadBlob, downloadPdfBlob } from "@/lib/download-file";
 import type {
   BorcYaslandirma,
   DonemRapor,
@@ -110,12 +111,11 @@ function ExportButtons({ endpoint, ctx, disabled }: { endpoint: RaporExportEndpo
     message.loading({ content: "Dışa aktarılıyor…", key: "rexp" });
     try {
       const { blob, filename } = await raporService.export(endpoint, fmt, ctx);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (fmt === "pdf") {
+        await downloadPdfBlob(blob, filename);
+      } else {
+        downloadBlob(blob, filename);
+      }
       message.success({ content: "İndirildi.", key: "rexp" });
     } catch (e) {
       message.error({ content: e instanceof Error ? e.message : "Dışa aktarılamadı.", key: "rexp" });

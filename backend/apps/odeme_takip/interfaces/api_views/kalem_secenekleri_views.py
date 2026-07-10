@@ -9,18 +9,21 @@ from apps.odeme_takip.permissions import ODEME_TAKIP_PERMISSIONS
 from rest_framework.response import Response
 
 from apps.odeme_takip.domain.enums import KalemTuru, PaketTuru, SozlesmeDurum
+from apps.ogrenci_kayit.application.enrollment_context import (
+    resolve_kayit_alan_id,
+    resolve_kayit_sinif_seviyesi_id,
+)
 from apps.ogrenci_kayit.application.services import (
     _apply_grup_alan_filter,
     _apply_ozel_alan_filter,
     _apply_sinif_seviyesi_filter,
 )
-from apps.ogrenci_kayit.domain.sinif_seviyesi_rules import sinif_seviyesi_requires_alan
 from apps.odeme_takip.interfaces.sube_context import resolve_mandatory_odeme_context
 
 
 def _serialize_secenek(item, kod=""):
     """Frontend KalemSecenegi formatına dönüştür."""
-    return {
+    payload = {
         "id": item.id,
         "ad": item.ad,
         "kod": kod or getattr(item, "kod", "") or "",
@@ -30,6 +33,17 @@ def _serialize_secenek(item, kod=""):
         "kdv_dahil_fiyat": item.brut_fiyat,
         "hizmet_turu": getattr(item, "hizmet_turu", None),
     }
+    if hasattr(item, "alan_id"):
+        payload["alan_id"] = item.alan_id
+    return payload
+
+
+from apps.ogrenci_kayit.application.package_selection import serialize_dahil_detay
+
+
+def _paket_dahil_detay(paket_turu, paket_obj, inclusion_kwargs):
+    tur = "grup_dersi" if paket_turu == PaketTuru.GRUP_DERSI else "premium"
+    return serialize_dahil_detay(paket_obj, tur, inclusion_kwargs)
 
 
 def _classify_kalem_paket_turu(kalem, sozlesme=None):
@@ -170,16 +184,8 @@ def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
             elif kind == PaketTuru.PREMIUM:
                 haric_premium.add(k.kalem_id)
 
-    if egitim_yili_id:
-        from apps.ogrenci.domain.models import OgrenciEkHizmet
-
-        dahil_ids = OgrenciEkHizmet.objects.filter(
-            ogrenci_id=ogrenci_id,
-            aktif_mi=True,
-            dahil_mi=True,
-            egitim_yili_id=egitim_yili_id,
-        ).values_list("ek_hizmet_id", flat=True)
-        haric_ek.update(dahil_ids)
+    # Pakete dahil (ücretsiz) ek hizmetler listeden ÇIKARILMAZ: sözleşmede grup/premium
+    # seçiliyken ücretsiz, paket kalkınca aynı kalemler ücretli seçilebilir olmalı.
 
     return haric_grup, haric_ozel, haric_deneme, haric_premium, haric_ek, mevcut_grup, mevcut_deneme
 
@@ -217,14 +223,19 @@ def _resolve_ogrenci_paket_filtreleri(
     if ogrenci_kayit_id:
         kayit = (
             OgrenciKayit.objects.filter(id=ogrenci_kayit_id, aktif_mi=True)
-            .select_related("sinif__sinif_seviyesi", "sinif__alan", "sinif_seviyesi")
+            .select_related("sinif__sinif_seviyesi", "sinif__alan", "sinif_seviyesi", "alan")
             .first()
         )
 
     if sozlesme_id and not kayit:
         sozlesme = (
             Sozlesme.objects.filter(id=sozlesme_id)
-            .select_related("ogrenci_kayit__sinif__sinif_seviyesi", "ogrenci_kayit__sinif__alan", "ogrenci_kayit__sinif_seviyesi")
+            .select_related(
+                "ogrenci_kayit__sinif__sinif_seviyesi",
+                "ogrenci_kayit__sinif__alan",
+                "ogrenci_kayit__sinif_seviyesi",
+                "ogrenci_kayit__alan",
+            )
             .first()
         )
         if sozlesme and sozlesme.ogrenci_kayit_id:
@@ -241,20 +252,17 @@ def _resolve_ogrenci_paket_filtreleri(
                 egitim_yili_id=ey_id,
                 aktif_mi=True,
             )
-            .select_related("sinif__sinif_seviyesi", "sinif__alan", "sinif_seviyesi")
+            .select_related("sinif__sinif_seviyesi", "sinif__alan", "sinif_seviyesi", "alan")
             .first()
         )
 
     if kayit:
         if sinif_seviyesi_id is None:
-            if kayit.sinif and kayit.sinif.sinif_seviyesi_id:
-                sinif_seviyesi_id = kayit.sinif.sinif_seviyesi_id
-            elif kayit.sinif_seviyesi_id:
-                sinif_seviyesi_id = kayit.sinif_seviyesi_id
+            sinif_seviyesi_id = resolve_kayit_sinif_seviyesi_id(kayit)
         if alan_param is None:
-            if kayit.sinif and kayit.sinif.sinif_seviyesi:
-                if sinif_seviyesi_requires_alan(kayit.sinif.sinif_seviyesi):
-                    alan_id = kayit.sinif.alan_id
+            alan_id = resolve_kayit_alan_id(kayit, ogrenci_id, egitim_yili_id)
+    elif alan_param is None and ogrenci_id:
+        alan_id = resolve_kayit_alan_id(None, ogrenci_id, egitim_yili_id)
 
     return sinif_seviyesi_id, alan_id
 
@@ -280,7 +288,7 @@ def kalem_secenekleri(request):
     &ogrenci_id=&egitim_yili_id=&kurum_id=&sube_id=&sozlesme_id=
     &sinif_seviyesi_id=&alan_id=  (opsiyonel; yoksa öğrenci kaydından çözülür)
     """
-    from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, OzelDers, PremiumPaket
+    from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, OzelDers, PremiumPaket, YayinPaketi
 
     tur = request.query_params.get("tur", "")
     kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
@@ -325,6 +333,14 @@ def kalem_secenekleri(request):
 
     secenekler = []
 
+    inclusion_kwargs = {
+        "sinif_seviyesi_id": sinif_seviyesi_id,
+        "kurum_id": kurum_id,
+        "sube_id": sube_id,
+        "egitim_yili_id": filter_egitim_yili_id,
+        "alan_id": alan_id,
+    }
+
     def add_grup():
         qs = (
             _filter_paket_qs(GrupDersi, kurum_id, sube_id, egitim_yili_id)
@@ -335,6 +351,7 @@ def kalem_secenekleri(request):
         for p in qs:
             payload = _serialize_secenek(p, p.kod)
             payload["paket_turu"] = PaketTuru.GRUP_DERSI
+            payload.update(_paket_dahil_detay(PaketTuru.GRUP_DERSI, p, inclusion_kwargs))
             secenekler.append(payload)
 
     def add_ozel():
@@ -370,6 +387,7 @@ def kalem_secenekleri(request):
         for p in qs:
             payload = _serialize_secenek(p, p.kod)
             payload["paket_turu"] = PaketTuru.PREMIUM
+            payload.update(_paket_dahil_detay(PaketTuru.PREMIUM, p, inclusion_kwargs))
             secenekler.append(payload)
 
     def add_ek():
@@ -382,6 +400,14 @@ def kalem_secenekleri(request):
         for h in qs:
             secenekler.append(_serialize_secenek(h, h.kod))
 
+    def add_yayin():
+        qs = _filter_paket_qs(YayinPaketi, kurum_id, sube_id, egitim_yili_id)
+        qs = _apply_sinif_seviyesi_filter(qs, sinif_seviyesi_id)
+        for p in qs:
+            payload = _serialize_secenek(p, p.kod)
+            payload["paket_turu"] = "yayin"
+            secenekler.append(payload)
+
     if tur in ("grup_dersi", "grup_dersleri"):
         add_grup()
     elif tur in ("ozel_ders", "ozel_dersler"):
@@ -392,6 +418,8 @@ def kalem_secenekleri(request):
         add_premium()
     elif tur == "ek_hizmet":
         add_ek()
+    elif tur in ("yayin", "yayin_paketi", "yayin_paketleri"):
+        add_yayin()
     elif tur == "paket":
         add_grup()
         add_ozel()
@@ -421,5 +449,6 @@ def kalem_turleri(request):
             {"value": "deneme", "label": "Deneme Paketi", "kalem_turu": "deneme"},
             {"value": "premium", "label": "Premium Paket", "kalem_turu": "premium"},
             {"value": "ek_hizmet", "label": "Ek Hizmet", "kalem_turu": "ek_hizmet"},
+            {"value": "yayin", "label": "Yayın Paketi", "kalem_turu": "yayin"},
         ]
     )

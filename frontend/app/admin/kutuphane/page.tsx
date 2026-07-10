@@ -261,7 +261,6 @@ export default function KutuphaneDashboardPage() {
                   <div style={{ fontSize: 48, marginBottom: 16 }}>📚</div>
                   <div style={{ fontSize: 16, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Henüz Salon Tanımlanmamış</div>
                   <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 20 }}>Kütüphane salonlarını tanımlayarak başlayın.</div>
-                  {!isCoachMode && (
                   <Link href={href('salonlar/yeni')} style={{
                     display: 'inline-block', padding: '10px 22px',
                     background: 'linear-gradient(135deg, #0061a6, #004d85)', color: '#fff', borderRadius: 10,
@@ -269,7 +268,6 @@ export default function KutuphaneDashboardPage() {
                   }}>
                     + İlk Salonu Oluştur
                   </Link>
-                  )}
                 </div>
               )}
             </div>

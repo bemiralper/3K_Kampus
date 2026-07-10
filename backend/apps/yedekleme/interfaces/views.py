@@ -8,6 +8,7 @@ from apps.yedekleme.application.config import backup_root, get_backup_config, re
 from apps.yedekleme.application.providers.registry import get_remote_storage_provider
 from apps.yedekleme.application.services.audit_service import log_backup_operation
 from apps.yedekleme.application.services.backup_orchestrator import BackupOrchestrator, RestoreService
+from apps.yedekleme.application.services.import_service import BackupImportService
 from apps.yedekleme.application.services.retention_service import RetentionService
 from apps.yedekleme.domain.models import (
     BackupArtifact,
@@ -67,6 +68,7 @@ def dashboard_view(request):
             'local_root': str(backup_root()),
             'remote_provider': get_backup_config().get('remote_provider', 'local'),
             'retention': retention_policy(),
+            'upload_max_bytes': int(get_backup_config().get('upload_max_bytes', 2 * 1024 ** 3)),
         },
     })
 
@@ -112,6 +114,51 @@ def artifact_create_view(request):
             success=False,
             error_message=str(exc),
             duration_ms=duration_ms,
+        )
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@require_http_methods(['POST'])
+@api_permission_required(
+    'yedekleme.create', 'yedekleme.restore', 'yedekleme.manage',
+    write_codes=('yedekleme.create', 'yedekleme.restore', 'yedekleme.manage'),
+)
+def artifact_upload_view(request):
+    """Masaüstünden indirilmiş .tar.gz yedeği sisteme kaydeder."""
+    uploaded = request.FILES.get('file')
+    if not uploaded:
+        return JsonResponse({'error': 'Yedek dosyası gerekli (form alanı: file).'}, status=400)
+    t0 = time.monotonic()
+    try:
+        artifact = BackupImportService().import_file(uploaded, user=request.user)
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        log_backup_operation(
+            user=request.user,
+            action=BackupOperationAction.IMPORT,
+            ip_address=_client_ip(request),
+            artifact=artifact,
+            duration_ms=duration_ms,
+            metadata={'filename': artifact.filename, 'size_bytes': artifact.size_bytes},
+        )
+        return JsonResponse({'artifact': _artifact_json(artifact)}, status=201)
+    except ValueError as exc:
+        log_backup_operation(
+            user=request.user,
+            action=BackupOperationAction.IMPORT,
+            ip_address=_client_ip(request),
+            success=False,
+            error_message=str(exc),
+            duration_ms=int((time.monotonic() - t0) * 1000),
+        )
+        return JsonResponse({'error': str(exc)}, status=400)
+    except Exception as exc:
+        log_backup_operation(
+            user=request.user,
+            action=BackupOperationAction.IMPORT,
+            ip_address=_client_ip(request),
+            success=False,
+            error_message=str(exc),
+            duration_ms=int((time.monotonic() - t0) * 1000),
         )
         return JsonResponse({'error': str(exc)}, status=500)
 

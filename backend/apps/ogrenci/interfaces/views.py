@@ -160,8 +160,6 @@ def ogrenci_list_api(request):
     items, pagination = paginate_queryset(qs, params['page'], params['page_size'])
 
     filter_kalemler = list(params.get('kalemler') or [])
-    if not filter_kalemler and params.get('kalem_turu') and params.get('kalem_id'):
-        filter_kalemler = [(params['kalem_turu'], params['kalem_id'])]
 
     kalemler_map = build_ogrenci_kalemler_map(items, filter_kalemler=filter_kalemler or None)
 
@@ -241,8 +239,6 @@ def ogrenci_list_export_api(request):
     kayitlar = list(qs[:MAX_EXPORT_ROWS])
 
     filter_kalemler = list(params.get('kalemler') or [])
-    if not filter_kalemler and params.get('kalem_turu') and params.get('kalem_id'):
-        filter_kalemler = [(params['kalem_turu'], params['kalem_id'])]
 
     kalemler_map = build_ogrenci_kalemler_map(
         kayitlar, filter_kalemler=filter_kalemler or None,
@@ -321,6 +317,21 @@ def ogrenci_filter_options_api(request):
         for s in sinif_qs.order_by('ad')
     ]
 
+    from apps.okul.models import Okul
+
+    okullar = [
+        {
+            'id': o.id,
+            'ad': o.ad,
+            'okul_turu': o.okul_turu or '',
+        }
+        for o in Okul.objects.filter(
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            aktif_mi=True,
+        ).order_by('ad')
+    ]
+
     return JsonResponse({
         'success': True,
         'sinif_seviyeleri': sinif_seviyeleri,
@@ -330,6 +341,7 @@ def ogrenci_filter_options_api(request):
         'kalem_gruplari': kalem_gruplari,
         'egitim_kalemleri': egitim_kalemleri,
         'siniflar': siniflar,
+        'okullar': okullar,
     })
 
 
@@ -350,6 +362,7 @@ def ogrenci_akademik_api(request, pk):
         FILTER_KALEM_TURLERI,
         _catalog_kalem_adi,
         resolve_kalem_filter_turu,
+        resolve_sinif_seviyesi_ad,
     )
     from apps.odeme_takip.domain.models import Sozlesme
     from apps.odeme_takip.domain.enums import SozlesmeDurum
@@ -369,7 +382,7 @@ def ogrenci_akademik_api(request, pk):
     kayitlar = OgrenciKayit.objects.filter(
         ogrenci=ogrenci
     ).select_related(
-        'sinif', 'sinif__sinif_seviyesi', 'egitim_yili', 'sube', 'school'
+        'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili', 'sube', 'school'
     ).order_by('-egitim_yili__baslangic_yil', '-id')
 
     cancelled = [SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS]
@@ -418,10 +431,7 @@ def ogrenci_akademik_api(request, pk):
             'egitim_yili': kayit.egitim_yili.yil_str if kayit.egitim_yili else '',
             'egitim_yili_id': kayit.egitim_yili_id,
             'sinif_ad': kayit.sinif.ad if kayit.sinif else '',
-            'sinif_seviyesi': (
-                kayit.sinif.sinif_seviyesi.ad
-                if kayit.sinif and kayit.sinif.sinif_seviyesi else ''
-            ),
+            'sinif_seviyesi': resolve_sinif_seviyesi_ad(kayit),
             'sube_ad': kayit.sube.ad if kayit.sube else '',
             'okul_no': kayit.okul_no or '',
             'kayit_tarihi': _format_date_short(kayit.kayit_tarihi),

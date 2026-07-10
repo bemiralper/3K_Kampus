@@ -473,9 +473,6 @@ export default function EgitimPaketleriClient() {
           ...payload,
           hizmet_turu: formData.hizmet_turu,
           sinif_seviyeleri_ids: formData.sinif_seviyeleri_ids,
-          deneme_paketi_id: formData.hizmet_turu === "deneme" && formData.deneme_paketi_id
-            ? parseInt(formData.deneme_paketi_id)
-            : null,
         };
       } else if (activeTab === "premium_paketler") {
         endpoint = drawerMode === "create"
@@ -1282,7 +1279,7 @@ export default function EgitimPaketleriClient() {
                 <div className="empty-state">
                   <div className="empty-state-icon">⭐</div>
                   <h4>Henüz ek hizmet eklenmemiş</h4>
-                  <p>Kütüphane, koçluk veya deneme ek hizmetlerini ekleyin</p>
+                  <p>Kütüphane ve koçluk ek hizmetlerini ekleyin. Denemeler ayrı sekmeden tanımlanır.</p>
                   <button className="btn-modern btn-primary" onClick={handleOpenCreate}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <line x1="12" y1="5" x2="12" y2="19" />
@@ -1586,30 +1583,7 @@ export default function EgitimPaketleriClient() {
                       <option value="">Hizmet türü seçin</option>
                       <option value="kutuphane">Kütüphane</option>
                       <option value="kocluk">Koçluk</option>
-                      <option value="deneme">Deneme</option>
                     </select>
-                  </div>
-                )}
-
-                {/* Deneme Paketi - Ek hizmet türü deneme ise */}
-                {activeTab === "ek_hizmetler" && formData.hizmet_turu === "deneme" && (
-                  <div className="form-group">
-                    <label>İlişkili Deneme Paketi</label>
-                    <select
-                      className="form-control"
-                      value={formData.deneme_paketi_id}
-                      onChange={(e) => setFormData({ ...formData, deneme_paketi_id: e.target.value })}
-                    >
-                      <option value="">Seçiniz (Opsiyonel)</option>
-                      {referansVeriler.denemeler?.map((d: any) => (
-                        <option key={d.id} value={d.id}>
-                          {d.ad} ({d.deneme_sayisi} deneme)
-                        </option>
-                      ))}
-                    </select>
-                    <small style={{ color: "#6b7280", fontSize: "11px" }}>
-                      Bu ek hizmeti bir deneme paketi ile ilişkilendirebilirsiniz
-                    </small>
                   </div>
                 )}
 
@@ -1743,29 +1717,27 @@ export default function EgitimPaketleriClient() {
 
                 {(activeTab === "grup_dersleri" || activeTab === "premium_paketler") && referansVeriler.denemeler.length > 0 && (
                   <div className="form-group">
-                    <label>Dahil Deneme Paketleri</label>
+                    <label>Dahil Deneme Paketi</label>
                     <p className="form-help-text" style={{ fontSize: "12px", color: "#888", marginBottom: "8px" }}>
-                      Bu pakete kayıt olan öğrencilere ücretsiz olarak dahil edilecek deneme paketleri
+                      En fazla bir deneme paketi ücretsiz dahil edilebilir
                     </p>
                     <div className="checkbox-group">
+                      <label className="checkbox-label">
+                        <input
+                          type="radio"
+                          name="dahil_deneme"
+                          checked={formData.dahil_denemeler_ids.length === 0}
+                          onChange={() => setFormData({ ...formData, dahil_denemeler_ids: [] })}
+                        />
+                        Dahil deneme yok
+                      </label>
                       {referansVeriler.denemeler.map((d) => (
                         <label key={d.id} className="checkbox-label">
                           <input
-                            type="checkbox"
+                            type="radio"
+                            name="dahil_deneme"
                             checked={formData.dahil_denemeler_ids.includes(d.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFormData({
-                                  ...formData,
-                                  dahil_denemeler_ids: [...formData.dahil_denemeler_ids, d.id],
-                                });
-                              } else {
-                                setFormData({
-                                  ...formData,
-                                  dahil_denemeler_ids: formData.dahil_denemeler_ids.filter((id) => id !== d.id),
-                                });
-                              }
-                            }}
+                            onChange={() => setFormData({ ...formData, dahil_denemeler_ids: [d.id] })}
                           />
                           {d.ad} ({d.deneme_sayisi} deneme · {formatCurrency(kdvDahilFiyat(d))})
                         </label>

@@ -7,8 +7,33 @@ from rest_framework.decorators import api_view, permission_classes
 from apps.odeme_takip.permissions import ODEME_TAKIP_PERMISSIONS
 from rest_framework.response import Response
 
+from django.db.models import Q
+
 from shared.context import get_secili_egitim_yili_id
 from apps.odeme_takip.interfaces.sube_context import resolve_mandatory_odeme_context
+
+
+from apps.ogrenci_kayit.application.enrollment_context import (
+    resolve_kayit_alan_id,
+    resolve_kayit_sinif_seviyesi_id,
+)
+
+
+def _inclusion_kwargs_from_kayit(kayit):
+    return {
+        'sinif_seviyesi_id': resolve_kayit_sinif_seviyesi_id(kayit),
+        'kurum_id': kayit.kurum_id,
+        'sube_id': kayit.sube_id,
+        'egitim_yili_id': kayit.egitim_yili_id,
+        'alan_id': resolve_kayit_alan_id(kayit),
+    }
+
+
+from apps.ogrenci_kayit.application.package_selection import (
+    build_dahil_from_catalog,
+    catalog_dahil_ids_for_paket,
+    enrollment_to_selection,
+)
 
 
 @api_view(['GET'])
@@ -45,7 +70,7 @@ def ogrenci_paketleri(request, ogrenci_id):
         ogrenci_id=ogrenci_id,
         egitim_yili_id=egitim_yili_id,
         aktif_mi=True
-    ).select_related('kurum', 'sube', 'egitim_yili', 'sinif').first()
+    ).select_related('kurum', 'sube', 'egitim_yili', 'sinif', 'sinif_seviyesi', 'alan').first()
 
     if not kayit:
         return Response({
@@ -60,13 +85,19 @@ def ogrenci_paketleri(request, ogrenci_id):
         ogrenci_id=ogrenci_id,
         aktif_mi=True,
     )
+    # Bu kayıt dönemine ait paketler: OgrenciEgitimPaketi.kayit_tarihi ile eşleştir.
+    # baslangic_tarihi (giriş tarihi) kayıt gününden önce olabilir; o yüzden baslangic filtresi kullanılmaz.
     if kayit.kayit_tarihi:
-        egitim_paketleri = egitim_paketleri.filter(
-            Q(baslangic_tarihi__gte=kayit.kayit_tarihi)
-            | Q(baslangic_tarihi__isnull=True, kayit_tarihi__gte=kayit.kayit_tarihi)
-        )
+        egitim_paketleri = egitim_paketleri.filter(kayit_tarihi__gte=kayit.kayit_tarihi)
 
-    from apps.egitim_paketleri.models import hesapla_kdv
+    from apps.egitim_paketleri.models import GrupDersi, hesapla_kdv
+    inclusion_kwargs = _inclusion_kwargs_from_kayit(kayit)
+    grup_paket_ids = list(
+        egitim_paketleri.filter(paket_turu='grup_dersi').values_list('paket_id', flat=True)
+    )
+    grup_alan_by_id = dict(
+        GrupDersi.objects.filter(id__in=grup_paket_ids).values_list('id', 'alan_id')
+    )
     paket_listesi = []
     dahil_paket_listesi = []
     for ep in egitim_paketleri:
@@ -88,7 +119,14 @@ def ogrenci_paketleri(request, ogrenci_id):
             })
             continue
         net_fiyat, kdv_tutari = hesapla_kdv(brut_fiyat, kdv_orani)
-        paket_listesi.append({
+        # Ücretsiz dahil kalemler YALNIZCA paket tanımından (M2M) gelir. Bir öğrenci
+        # tek deneme paketi alır; alanlı grupta "tüm denemeler" genişletmesi yapılmaz.
+        dahil_ek_ids, dahil_deneme_ids, dahil_yayin_ids = (
+            catalog_dahil_ids_for_paket(ep.paket_turu, ep.paket_id, inclusion_kwargs)
+            if ep.paket_turu in ('grup_dersi', 'premium')
+            else ([], [], [])
+        )
+        entry = {
             'id': ep.id,
             'paket_turu': ep.paket_turu,
             'paket_turu_label': ep.get_paket_turu_display(),
@@ -101,14 +139,21 @@ def ogrenci_paketleri(request, ogrenci_id):
             'baslangic_tarihi': str(ep.baslangic_tarihi) if ep.baslangic_tarihi else None,
             'bitis_tarihi': str(ep.bitis_tarihi) if ep.bitis_tarihi else None,
             'kayit_tarihi': str(ep.kayit_tarihi) if ep.kayit_tarihi else None,
-        })
+            'dahil_ek_hizmet_ids': dahil_ek_ids,
+            'dahil_deneme_paketi_ids': dahil_deneme_ids,
+            'dahil_yayin_paketi_ids': dahil_yayin_ids,
+        }
+        if ep.paket_turu == 'grup_dersi':
+            entry['alan_id'] = grup_alan_by_id.get(ep.paket_id)
+        paket_listesi.append(entry)
 
     # Ek Hizmetleri getir (sadece ayrı satın alınanlar — dahil_mi=False)
     ek_hizmetler = OgrenciEkHizmet.objects.filter(
         ogrenci_id=ogrenci_id,
         aktif_mi=True,
         dahil_mi=False,
-        egitim_yili_id=egitim_yili_id,
+    ).filter(
+        Q(egitim_yili_id=egitim_yili_id) | Q(egitim_yili_id__isnull=True),
     ).select_related('ek_hizmet')
 
     ek_hizmet_listesi = []
@@ -129,35 +174,20 @@ def ogrenci_paketleri(request, ogrenci_id):
             'kdv_dahil_fiyat': fiyat,
         })
 
-    # Pakete dahil hizmetler (sözleşmede tekrar eklenmesin diye)
-    dahil_hizmetler_qs = OgrenciEkHizmet.objects.filter(
-        ogrenci_id=ogrenci_id,
-        aktif_mi=True,
-        dahil_mi=True,
-        egitim_yili_id=egitim_yili_id,
-    ).select_related('ek_hizmet')
+    # Pakete dahil hizmetler — katalog tanımından (öğrenci kaydı ile aynı kapsam)
+    dahil_hizmet_listesi, dahil_deneme_paket_ids_list, catalog_dahil_paketler = (
+        build_dahil_from_catalog(paket_listesi, inclusion_kwargs)
+    )
+    dahil_deneme_paket_ids = set(dahil_deneme_paket_ids_list)
 
-    dahil_hizmet_listesi = []
-    dahil_deneme_paket_ids = set()
-    for eh in dahil_hizmetler_qs:
-        hizmet = eh.ek_hizmet
-        if not hizmet:
-            continue
-        deneme_paket_id = getattr(hizmet, 'deneme_paketi_id', None)
-        if hizmet.hizmet_turu == 'deneme' and deneme_paket_id:
-            dahil_deneme_paket_ids.add(deneme_paket_id)
-        dahil_hizmet_listesi.append({
-            'id': eh.id,
-            'ek_hizmet_id': hizmet.id,
-            'ad': hizmet.ad,
-            'hizmet_turu': hizmet.hizmet_turu,
-            'kaynak_paket_turu': eh.kaynak_paket_turu or '',
-            'kaynak_paket_id': eh.kaynak_paket_id,
-            'deneme_paket_id': deneme_paket_id,
-            'fiyat': hizmet.brut_fiyat or 0,
-            'kdv_orani': hizmet.kdv_orani or 10,
-            'kdv_dahil_fiyat': hizmet.brut_fiyat or 0,
-        })
+    existing_dahil_paket_keys = {
+        (dp['paket_turu'], dp['paket_id']) for dp in dahil_paket_listesi
+    }
+    for dp in catalog_dahil_paketler:
+        key = (dp['paket_turu'], dp['paket_id'])
+        if key not in existing_dahil_paket_keys:
+            dahil_paket_listesi.append(dp)
+            existing_dahil_paket_keys.add(key)
 
     # Velileri getir
     veliler = OgrenciVeli.objects.filter(ogrenci_id=ogrenci_id)
@@ -285,12 +315,8 @@ def ogrenci_paketleri(request, ogrenci_id):
             'egitim_yili_adi': str(kayit.egitim_yili) if kayit.egitim_yili else '',
             'egitim_yili_bitis_yil': kayit.egitim_yili.bitis_yil if kayit.egitim_yili else None,
             'sinif': kayit.sinif.ad if kayit.sinif else '',
-            'sinif_seviyesi_id': (
-                kayit.sinif.sinif_seviyesi_id
-                if kayit.sinif and kayit.sinif.sinif_seviyesi_id
-                else kayit.sinif_seviyesi_id
-            ),
-            'alan_id': kayit.sinif.alan_id if kayit.sinif else None,
+            'sinif_seviyesi_id': resolve_kayit_sinif_seviyesi_id(kayit),
+            'alan_id': resolve_kayit_alan_id(kayit),
             'kayit_tarihi': str(kayit.kayit_tarihi) if kayit.kayit_tarihi else None,
         },
         'egitim_paketleri': paket_listesi,

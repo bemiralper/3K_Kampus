@@ -131,7 +131,7 @@ const initialData: WizardData = {
   package: {
     paketler: [],
     ek_hizmet_ids: [],
-    deneme_paketi_ids: [],
+    deneme_paketi_id: null,
     yayin_paketi_ids: [],
   },
   veliSecimi: null,
@@ -287,7 +287,7 @@ export default function OgrenciKayitClient() {
         ...(subeChanged ? { sinif: undefined } : {}),
       },
       ...(subeChanged
-        ? { package: { paketler: [], ek_hizmet_ids: [], deneme_paketi_ids: [], yayin_paketi_ids: [] } }
+        ? { package: { paketler: [], ek_hizmet_ids: [], deneme_paketi_id: null, yayin_paketi_ids: [] } }
         : {}),
     }));
 
@@ -356,21 +356,25 @@ export default function OgrenciKayitClient() {
         setDenemePaketleri(uniqueDenemeler);
         setYayinPaketleri(uniqueYayinlar);
 
-        const warningText = (payload.warnings || []).join(" ");
-        if (
-          uniquePackages.length === 0 &&
-          uniqueEkHizmetler.length === 0 &&
-          uniqueDenemeler.length === 0 &&
-          uniqueYayinlar.length === 0
-        ) {
+        const warningText = (payload.warnings || []).filter(Boolean).join(" ");
+        const hasAnyCatalog =
+          uniquePackages.length > 0 ||
+          uniqueEkHizmetler.length > 0 ||
+          uniqueDenemeler.length > 0 ||
+          uniqueYayinlar.length > 0;
+
+        if (warningText) {
+          setPackageLoadError(warningText);
+        } else if (!hasAnyCatalog) {
           const yilLabel = activeEgitimYili
             ? `${activeEgitimYili.baslangic_yil}-${activeEgitimYili.bitis_yil}`
             : "seçili eğitim yılı";
           const subeLabel = activeSube?.ad || "seçili şube";
           setPackageLoadError(
-            warningText ||
-              `Bu şube (${subeLabel}) ve eğitim yılı (${yilLabel}) için tanımlı paket bulunamadı. Eğitim Paketleri modülünde üst bardaki şube ve eğitim yılının aynı olduğundan, paketlerin aktif ve (varsa) sınıf seviyesi eşleştiğinden emin olun.`
+            `Bu şube (${subeLabel}) ve eğitim yılı (${yilLabel}) için tanımlı paket bulunamadı. Eğitim Paketleri modülünde üst bardaki şube ve eğitim yılının aynı olduğundan, paketlerin aktif ve (varsa) sınıf seviyesi eşleştiğinden emin olun.`
           );
+        } else {
+          setPackageLoadError(null);
         }
 
         const validPackageIds = new Set(uniquePackages.map((p) => p.id));
@@ -651,7 +655,7 @@ export default function OgrenciKayitClient() {
         {
           const hasPaket = (data.package.paketler || []).length > 0;
           const hasEkHizmet = (data.package.ek_hizmet_ids || []).length > 0;
-          const hasDenemePaketi = (data.package.deneme_paketi_ids || []).length > 0;
+          const hasDenemePaketi = data.package.deneme_paketi_id != null;
           const hasYayinPaketi = (data.package.yayin_paketi_ids || []).length > 0;
           if (!hasPaket && !hasEkHizmet && !hasDenemePaketi && !hasYayinPaketi) {
             newErrors.paket = "En az bir grup/özel ders paketi, ek hizmet, deneme veya yayın paketi seçiniz";
@@ -856,7 +860,6 @@ export default function OgrenciKayitClient() {
             yayinPaketleri={yayinPaketleri}
             loadingPackages={loadingPackages}
             packageLoadError={packageLoadError}
-            studentAlanId={data.enrollment.alan}
           />
         )}
         {currentStep === 5 && (

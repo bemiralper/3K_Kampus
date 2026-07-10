@@ -147,11 +147,17 @@ export function buildDersProgramiPrintHtml(options: {
     options.gunAktiflik,
   );
   const gunAktiflik = options.gunAktiflik || deriveGunAktiflik(gunluk);
+  const branding = meta.kurumBranding;
+  const theme = branding?.tema_rengi || '#0262a7';
+  const kurumAd = branding?.gorunen_ad || branding?.ad || '3K Kampüs';
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const logo = logoSrc(branding, origin);
+  const printedAt = new Date().toLocaleString('tr-TR');
 
   const dayColumns = DAYS.map((d) => {
     const dayInfo = gunAktiflik[d.key];
     if (!dayInfo?.aktif) {
-      return `<td class="day-cell closed"><div class="day-closed">Kapalı</div></td>`;
+      return `<td class="dp-day closed"><span class="dp-closed-label">Kapalı</span></td>`;
     }
 
     const daySchedule = gunluk[d.key];
@@ -161,106 +167,134 @@ export function buildDersProgramiPrintHtml(options: {
       const lines = pd.dersler.map((ders: { ders_no: number; baslangic: string; bitis: string }) => {
         const start = (ders.baslangic || '').slice(0, 5);
         const end = (ders.bitis || '').slice(0, 5);
-        return `<div class="period-line">
-          <span class="etut-label">${ders.ders_no}. Etüt</span>
-          <span class="period-time">${escapeHtml(start)} – ${escapeHtml(end)}</span>
+        return `<div class="dp-slot">
+          <span class="dp-slot-no">${ders.ders_no}. Etüt</span>
+          <span class="dp-slot-time">${escapeHtml(start)} – ${escapeHtml(end)}</span>
         </div>`;
       }).join('');
-      const icon = p.code === 'MORNING' ? '☀' : p.code === 'AFTERNOON' ? '🌤' : '🌙';
-      return `<div class="session-block">
-        <div class="session-title" style="color:${p.color}">${icon} ${escapeHtml(p.label)}</div>
+      const icon = p.code === 'MORNING' ? '☀' : p.code === 'AFTERNOON' ? '◐' : '☾';
+      return `<div class="dp-session" style="--session-color:${p.color}">
+        <div class="dp-session-head">${icon} ${escapeHtml(p.label)}</div>
         ${lines}
       </div>`;
     }).filter(Boolean).join('');
 
     if (!sessionBlocks) {
-      return `<td class="day-cell closed"><div class="day-closed">Kapalı</div></td>`;
+      return `<td class="dp-day closed"><span class="dp-closed-label">Kapalı</span></td>`;
     }
 
-    return `<td class="day-cell">${sessionBlocks}</td>`;
+    return `<td class="dp-day">${sessionBlocks}</td>`;
   }).join('');
 
-  const weekHoursTable = `
-    <table class="week-hours-table">
-      <thead><tr>${DAYS.map((d) => `<th>${escapeHtml(d.short)}<span class="day-full">${escapeHtml(d.label)}</span></th>`).join('')}</tr></thead>
-      <tbody><tr>${dayColumns}</tr></tbody>
-    </table>`;
-
   const activeDayCount = DAYS.filter((d) => gunAktiflik[d.key]?.aktif).length;
-  const totalPeriods = Object.values(gunAktiflik).reduce(
-    (s, g) => s + (g.aktif ? g.periyotlar.length : 0),
-    0,
-  );
   const totalDers = Object.values(gunluk).reduce(
     (s, day) => s + PERIODS.reduce((ps, p) => ps + (day[p.code]?.dersler?.length || 0), 0),
     0,
   );
 
-  const bodyContent = `
-  <div class="print-main">
-    <div class="dp-stats-bar">
-      <span><strong>Program:</strong> ${escapeHtml(programAd)}</span>
-      <span class="dp-stats-sep">·</span>
-      <span><strong>Aktif gün:</strong> ${activeDayCount}/7</span>
-      <span class="dp-stats-sep">·</span>
-      <span><strong>Toplam etüt:</strong> ${totalDers}</span>
-      <span class="dp-stats-sep">·</span>
-      <span><strong>Oturum:</strong> ${totalPeriods}</span>
+  return `<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"/>
+<title>${escapeHtml(meta.title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap" rel="stylesheet"/>
+<style>
+  :root { --theme: ${theme}; --ink: #0f172a; --muted: #64748b; --line: #dbe3ef; --soft: #f8fafc; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: A4 landscape; margin: 6mm; }
+  body {
+    font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+    color: var(--ink); background: #fff; font-size: 10px; line-height: 1.35;
+    padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .dp-wrap { width: 100%; max-width: 285mm; margin: 0 auto; }
+  .dp-header {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
+    padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px;
+    background: linear-gradient(135deg, #ffffff 0%, var(--soft) 100%);
+    margin-bottom: 8px;
+  }
+  .dp-logo {
+    width: 52px; height: 52px; object-fit: contain; border-radius: 10px;
+    border: 1px solid var(--line); background: #fff; padding: 4px;
+  }
+  .dp-title { font-size: 20px; font-weight: 800; color: var(--theme); letter-spacing: -0.03em; }
+  .dp-sub { font-size: 11px; font-weight: 600; color: #334155; margin-top: 2px; }
+  .dp-meta { font-size: 9px; color: var(--muted); margin-top: 4px; }
+  .dp-badges { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
+  .dp-badge {
+    font-size: 9px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: #fff; color: #334155; white-space: nowrap;
+  }
+  .dp-badge strong { color: var(--theme); }
+  .dp-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+  .dp-table thead th {
+    font-size: 11px; font-weight: 800; color: #fff; background: var(--theme);
+    padding: 8px 4px; border: 1px solid color-mix(in srgb, var(--theme) 80%, #000);
+    text-align: center; vertical-align: middle;
+  }
+  .dp-table thead th .dp-day-full {
+    display: block; font-size: 8px; font-weight: 600; opacity: 0.9; margin-top: 1px;
+  }
+  .dp-table tbody td.dp-day {
+    vertical-align: top; border: 1px solid var(--line); background: #fff;
+    padding: 6px 5px; min-height: 72px;
+  }
+  .dp-table tbody td.dp-day.closed { background: #f1f5f9; }
+  .dp-closed-label { display: block; text-align: center; color: #94a3b8; font-style: italic; font-weight: 600; padding: 16px 2px; }
+  .dp-session {
+    margin-bottom: 6px; padding: 5px 6px; border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--session-color) 25%, var(--line));
+    background: color-mix(in srgb, var(--session-color) 6%, #fff);
+  }
+  .dp-session:last-child { margin-bottom: 0; }
+  .dp-session-head {
+    font-size: 9.5px; font-weight: 800; color: var(--session-color);
+    margin-bottom: 4px; letter-spacing: 0.01em;
+  }
+  .dp-slot {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 4px;
+    padding: 3px 0; border-bottom: 1px dashed #e8edf3;
+  }
+  .dp-slot:last-child { border-bottom: none; padding-bottom: 0; }
+  .dp-slot-no { font-size: 9px; font-weight: 700; color: #475569; }
+  .dp-slot-time {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 10px; font-weight: 700; color: var(--ink); white-space: nowrap;
+  }
+  .dp-footer {
+    margin-top: 6px; display: flex; justify-content: space-between; align-items: center;
+    font-size: 8px; color: #94a3b8; padding: 0 2px;
+  }
+  @media print {
+    body { padding: 0; }
+    .dp-wrap { max-width: none; }
+    .dp-header, .dp-table { page-break-inside: avoid; break-inside: avoid; }
+    .dp-table tbody tr { page-break-inside: avoid; break-inside: avoid; }
+  }
+</style></head><body>
+  <div class="dp-wrap">
+    <header class="dp-header">
+      <img class="dp-logo" src="${logo}" alt="${escapeHtml(kurumAd)}" onerror="this.style.display='none'"/>
+      <div>
+        <div class="dp-title">${escapeHtml(meta.title)}</div>
+        <div class="dp-sub">${escapeHtml(kurumAd)}${meta.subeAdi ? ` · ${escapeHtml(meta.subeAdi)}` : ''}</div>
+        <div class="dp-meta">${escapeHtml(programAd)}${meta.subtitle ? ` · ${escapeHtml(meta.subtitle)}` : ''}</div>
+      </div>
+      <div class="dp-badges">
+        <span class="dp-badge"><strong>${activeDayCount}</strong> aktif gün</span>
+        <span class="dp-badge"><strong>${totalDers}</strong> etüt</span>
+      </div>
+    </header>
+    <table class="dp-table">
+      <thead><tr>${DAYS.map((d) => `<th>${escapeHtml(d.short)}<span class="dp-day-full">${escapeHtml(d.label)}</span></th>`).join('')}</tr></thead>
+      <tbody><tr>${dayColumns}</tr></tbody>
+    </table>
+    <div class="dp-footer">
+      <span>Haftalık çalışma programı</span>
+      <span>Yazdırma: ${printedAt}</span>
     </div>
-    ${weekHoursTable}
-  </div>`;
-
-  return printShell({
-    meta: { ...meta, orientation: 'landscape' },
-    singlePage: true,
-    bodyContent,
-    extraStyles: `
-      .dp-stats-bar {
-        display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
-        font-size: 10px; color: #475569; margin-bottom: 6px; padding: 5px 8px;
-        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
-      }
-      .dp-stats-bar strong { color: #0f172a; font-weight: 700; }
-      .dp-stats-sep { color: #cbd5e1; }
-      .week-hours-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-      .week-hours-table th {
-        font-size: 12px; font-weight: 800; padding: 5px 4px; vertical-align: bottom;
-        line-height: 1.2; color: #0f172a; background: #f1f5f9; border: 1px solid #cbd5e1;
-      }
-      .week-hours-table th .day-full {
-        display: block; font-size: 8px; font-weight: 600; color: #64748b; margin-top: 1px;
-      }
-      .week-hours-table td.day-cell {
-        vertical-align: top; width: 14.28%; padding: 5px 4px;
-        border: 1px solid #cbd5e1; background: #fff;
-      }
-      .week-hours-table td.day-cell.closed { background: #f8fafc; }
-      .session-block { margin-bottom: 5px; padding-bottom: 4px; border-bottom: 1px dashed #e2e8f0; }
-      .session-block:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
-      .session-title { font-size: 10px; font-weight: 800; margin-bottom: 3px; white-space: nowrap; }
-      .period-line {
-        display: flex; flex-direction: column; gap: 1px;
-        margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #f1f5f9;
-      }
-      .period-line:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
-      .etut-label { font-size: 10px; font-weight: 800; color: #334155; line-height: 1.2; }
-      .period-time {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 11px; font-weight: 700; line-height: 1.25; color: #0f172a;
-      }
-      .day-closed { font-size: 10px; font-weight: 600; color: #94a3b8; font-style: italic; text-align: center; padding: 8px 2px; }
-      @media print {
-        .print-main { page-break-inside: avoid; break-inside: avoid; }
-        .week-hours-table { page-break-inside: avoid; break-inside: avoid; }
-        .week-hours-table tbody tr { page-break-inside: avoid; break-inside: avoid; }
-        .week-hours-table td.day-cell { padding: 4px 3px; }
-        .session-block { margin-bottom: 4px; padding-bottom: 3px; }
-        .period-time { font-size: 10.5px; }
-        .etut-label { font-size: 9.5px; }
-        .session-title { font-size: 9.5px; margin-bottom: 2px; }
-      }
-    `,
-  });
+  </div>
+</body></html>`;
 }
 
 export function buildSeatStudentListPrintHtml(options: {

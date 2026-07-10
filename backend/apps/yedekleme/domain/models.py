@@ -22,6 +22,7 @@ class BackupOperationAction(models.TextChoices):
     VALIDATE = 'validate', 'Doğrula'
     RESTORE = 'restore', 'Geri Yükle'
     DELETE = 'delete', 'Sil'
+    IMPORT = 'import', 'İçe Aktar'
     SCHEDULE_UPDATE = 'schedule_update', 'Zamanlama Güncelle'
     PURGE = 'purge', 'Temizlik'
 

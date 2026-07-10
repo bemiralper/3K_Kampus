@@ -18,17 +18,17 @@ export default function DashboardMaliHesapTable({ title, rows, emptyText, icon }
   const Icon = icon === "banka" ? IconBank : IconCash;
 
   return (
-    <div className="fdash-panel fdash-panel--flush">
-      <div className="fdash-panel__head">
+    <div className="card-modern h-full">
+      <div className="card-modern-header">
         <h3>
           <Icon className="w-[18px] h-[18px]" />
           {title}
         </h3>
-        <Link href={links.kasaBanka} className="fdash-panel__link">
-          Kasa / Banka →
+        <Link href={links.kasaBanka} className="text-xs text-blue-600 hover:underline">
+          Kasa / Banka
         </Link>
       </div>
-      <div className="fdash-panel__body p-0">
+      <div className="card-modern-body p-0">
         <div className="finans-table-wrap">
           <table className="table-modern">
             <thead>

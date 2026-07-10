@@ -4,7 +4,13 @@ import Link from "next/link";
 import KurumLogo from "@/components/branding/KurumLogo";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type DragEvent } from "react";
-import { COACH_NAV_ITEMS, isCoachNavActive } from "@/components/coach/coachNavItems";
+import {
+  COACH_NAV_ITEMS,
+  isCoachNavActive,
+  isCoachNavChildActive,
+  type CoachNavItemDef,
+  type CoachNavChildDef,
+} from "@/components/coach/coachNavItems";
 import { useCoachMenuOrder } from "@/hooks/useCoachMenuOrder";
 import { fetchKontrolBadge } from "@/lib/resources-api";
 import { fetchNotificationSummary } from "@/lib/communication-api";
@@ -15,6 +21,16 @@ type CoachSidebarProps = {
   onLogout: () => void;
 };
 
+function NavChevron({ expanded }: { expanded: boolean }) {
+  return (
+    <span className={`coach-nav-chevron${expanded ? " is-expanded" : ""}`} aria-hidden>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+      </svg>
+    </span>
+  );
+}
+
 export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSidebarProps) {
   const pathname = usePathname();
   const { reorder, getOrderedItems } = useCoachMenuOrder();
@@ -23,6 +39,7 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dragPosition, setDragPosition] = useState<"before" | "after">("after");
+  const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
 
   useEffect(() => {
     fetchKontrolBadge().then((res) => {
@@ -42,6 +59,21 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
     }, 30_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setExpandedMenus([]);
+      return;
+    }
+    const activeParent = COACH_NAV_ITEMS.find(
+      (item) => item.children?.length && isCoachNavActive(pathname, item),
+    );
+    setExpandedMenus(activeParent ? [activeParent.id] : []);
+  }, [isOpen, pathname]);
+
+  const toggleSubmenu = (id: string) => {
+    setExpandedMenus((prev) => (prev.includes(id) ? [] : [id]));
+  };
 
   const items = getOrderedItems().map((item) => {
     if (item.id === "odev-kontrol" && kontrolBadge > 0) {
@@ -75,6 +107,117 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
     setDragOverId(id);
   };
 
+  const closeMobileIfNeeded = () => {
+    if (window.matchMedia("(max-width: 991px)").matches) onToggle();
+  };
+
+  const renderSubmenuLink = (child: CoachNavChildDef) => {
+    const childActive = isCoachNavChildActive(pathname, child);
+    return (
+      <li key={child.id} className="coach-nav-subitem">
+        <Link
+          href={child.href}
+          className={`coach-nav-sublink${childActive ? " is-active" : ""}`}
+          aria-current={childActive ? "page" : undefined}
+          onClick={closeMobileIfNeeded}
+        >
+          {child.label}
+        </Link>
+      </li>
+    );
+  };
+
+  const renderNavItem = (item: CoachNavItemDef & { badge?: number }) => {
+    const hasChildren = !!item.children?.length;
+    const active = isCoachNavActive(pathname, item);
+    const badge = item.badge;
+    const isExpanded = expandedMenus.includes(item.id);
+    const isDragOver = dragOverId === item.id;
+
+    if (hasChildren) {
+      return (
+        <li
+          key={item.id}
+          className={`coach-nav-item coach-nav-group${isExpanded ? " is-open" : ""}${isDragOver ? ` drag-over-${dragPosition}` : ""}${dragId === item.id ? " is-dragging" : ""}`}
+          draggable={isOpen}
+          onDragStart={(e) => handleDragStart(e, item.id)}
+          onDragEnd={handleDragEnd}
+          onDragOver={(e) => handleDragOver(e, item.id)}
+        >
+          <button
+            type="button"
+            className={`coach-nav-link coach-nav-group-toggle${active ? " is-active" : ""}`}
+            onClick={() => toggleSubmenu(item.id)}
+            aria-expanded={isExpanded}
+            title={!isOpen ? item.label : undefined}
+          >
+            {active && <span className="coach-nav-active-bar" aria-hidden />}
+            <span className="coach-nav-icon">{item.icon}</span>
+            {isOpen && (
+              <>
+                <span className="coach-nav-label">{item.label}</span>
+                <NavChevron expanded={isExpanded} />
+              </>
+            )}
+          </button>
+          {isOpen && isExpanded && (
+            <ul className="coach-nav-submenu is-open">
+              {item.children!.map(renderSubmenuLink)}
+            </ul>
+          )}
+          {!isOpen && (
+            <>
+              <span className="coach-nav-tooltip">{item.label}</span>
+              <div className="coach-nav-submenu-tooltip">
+                <div className="coach-nav-submenu-tooltip-title">{item.label}</div>
+                {item.children!.map((child) => {
+                  const childActive = isCoachNavChildActive(pathname, child);
+                  return (
+                    <Link
+                      key={child.id}
+                      href={child.href}
+                      className={`coach-nav-sublink${childActive ? " is-active" : ""}`}
+                      onClick={closeMobileIfNeeded}
+                    >
+                      {child.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </li>
+      );
+    }
+
+    return (
+      <li
+        key={item.id}
+        className={`coach-nav-item${isDragOver ? ` drag-over-${dragPosition}` : ""}${dragId === item.id ? " is-dragging" : ""}`}
+        draggable={isOpen}
+        onDragStart={(e) => handleDragStart(e, item.id)}
+        onDragEnd={handleDragEnd}
+        onDragOver={(e) => handleDragOver(e, item.id)}
+      >
+        <Link
+          href={item.href}
+          className={`coach-nav-link${active ? " is-active" : ""}`}
+          aria-current={active ? "page" : undefined}
+          title={!isOpen ? item.label : undefined}
+          onClick={closeMobileIfNeeded}
+        >
+          {active && <span className="coach-nav-active-bar" aria-hidden />}
+          <span className="coach-nav-icon">{item.icon}</span>
+          {isOpen && <span className="coach-nav-label">{item.label}</span>}
+          {isOpen && badge != null && badge > 0 && (
+            <span className="coach-nav-badge">{badge > 99 ? "99+" : badge}</span>
+          )}
+        </Link>
+        {!isOpen && <span className="coach-nav-tooltip">{item.label}</span>}
+      </li>
+    );
+  };
+
   return (
     <aside
       className={`coach-sidebar${isOpen ? " is-open" : " is-collapsed"}`}
@@ -102,42 +245,7 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
       </div>
 
       <nav className="coach-nav-sidebar" aria-label="Koç menüsü">
-        <ul className="coach-nav-list">
-          {items.map((item) => {
-            const active = isCoachNavActive(pathname, item);
-            const badge = "badge" in item ? (item as { badge?: number }).badge : undefined;
-            const isDragOver = dragOverId === item.id;
-
-            return (
-              <li
-                key={item.id}
-                className={`coach-nav-item${isDragOver ? ` drag-over-${dragPosition}` : ""}${dragId === item.id ? " is-dragging" : ""}`}
-                draggable={isOpen}
-                onDragStart={(e) => handleDragStart(e, item.id)}
-                onDragEnd={handleDragEnd}
-                onDragOver={(e) => handleDragOver(e, item.id)}
-              >
-                <Link
-                  href={item.href}
-                  className={`coach-nav-link${active ? " is-active" : ""}`}
-                  aria-current={active ? "page" : undefined}
-                  title={!isOpen ? item.label : undefined}
-                  onClick={() => {
-                    if (window.matchMedia("(max-width: 991px)").matches) onToggle();
-                  }}
-                >
-                  {active && <span className="coach-nav-active-bar" aria-hidden />}
-                  <span className="coach-nav-icon">{item.icon}</span>
-                  {isOpen && <span className="coach-nav-label">{item.label}</span>}
-                  {isOpen && badge != null && badge > 0 && (
-                    <span className="coach-nav-badge">{badge > 99 ? "99+" : badge}</span>
-                  )}
-                </Link>
-                {!isOpen && <span className="coach-nav-tooltip">{item.label}</span>}
-              </li>
-            );
-          })}
-        </ul>
+        <ul className="coach-nav-list">{items.map(renderNavItem)}</ul>
       </nav>
 
       <div className="coach-sidebar-footer">

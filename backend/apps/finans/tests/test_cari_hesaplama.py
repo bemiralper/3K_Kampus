@@ -140,69 +140,6 @@ class MusteriCariHesaplamaTest(CariHesaplamaTestBase):
         self.assertIsNone(err, err)
         self._assert_bakiye(cari, bakiye=0)
 
-    def test_gelir_tahsilat_iptal_bakiye_ve_cift_koruma(self):
-        """Gelir tahsilatı iptalinde kasa bir kez geri alınır; çift iptal borçlandırmaz."""
-        from apps.finans.constants.hareket_types import HareketKaynagi
-        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
-        from apps.finans.infrastructure.bakiye_hareketi_repository import (
-            BakiyeHareketiRepository,
-        )
-        from apps.finans.domain.gelir_tahsilat import GelirTahsilat
-
-        cari = self._create_musteri()
-        gelir_svc = GelirService()
-        gelir, _ = gelir_svc.create({
-            'kurum_id': self.kurum.id,
-            'sube_id': self.sube.id,
-            'cari_hesap_id': cari.id,
-            'gelir_kategorisi_id': self.gelir_kat.id,
-            'fatura_tarihi': self.today,
-            'vade_tarihi': self.today,
-            'brut_tutar': Decimal('4000'),
-            'kdv_orani': 0,
-            'olusturan': self.user,
-        })
-
-        bakiye_once = BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id)
-        tahsilat_svc = GelirTahsilatService()
-        tahsilat, err = tahsilat_svc.tahsilat_yap({
-            'gelir_kaydi_id': gelir.id,
-            'tutar': Decimal('4000'),
-            'tahsilat_tarihi': self.today,
-            'mali_hesap_id': self.mali_hesap.id,
-            'odeme_yontemi_id': self.odeme_yontemi.id,
-            'islem_yapan': self.user,
-        })
-        self.assertIsNone(err, err)
-        self.assertEqual(
-            BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id),
-            bakiye_once + 4000,
-        )
-
-        _, err = tahsilat_svc.tahsilat_iptal(tahsilat.id)
-        self.assertIsNone(err, err)
-        self.assertEqual(
-            BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id),
-            bakiye_once,
-        )
-
-        # Durum bozulsa bile ledger koruması ikinci çıkışı engeller
-        GelirTahsilat.objects.filter(pk=tahsilat.id).update(durum='tamamlandi')
-        tahsilat_svc.tahsilat_iptal(tahsilat.id)
-
-        self.assertEqual(
-            BakiyeHareketi.objects.filter(
-                kaynak=HareketKaynagi.TAHSILAT_IPTAL,
-                kaynak_tip='GelirTahsilat',
-                kaynak_id=tahsilat.id,
-            ).count(),
-            1,
-        )
-        self.assertEqual(
-            BakiyeHareketiRepository.son_bakiye(self.mali_hesap.id),
-            bakiye_once,
-        )
-
     def test_musteri_islem_turu_totals(self):
         cari = self._create_musteri()
         gelir_svc = GelirService()

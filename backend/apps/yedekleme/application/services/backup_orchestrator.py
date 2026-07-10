@@ -170,6 +170,16 @@ class RestoreService:
         if result.returncode != 0 and 'warnings ignored' not in (result.stderr or '').lower():
             raise RuntimeError(result.stderr.strip() or 'pg_restore başarısız')
 
+    @staticmethod
+    def _clear_directory_contents(path: Path) -> None:
+        """Mount point kökünü silmeden içeriği temizler (Docker volume EBUSY önlenir)."""
+        path.mkdir(parents=True, exist_ok=True)
+        for item in path.iterdir():
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
+
     def _restore_files(self, files_dir: Path) -> None:
         if not files_dir.exists():
             return
@@ -187,6 +197,5 @@ class RestoreService:
                 matched = Path(roots[0])
             if matched is None:
                 continue
-            if matched.exists():
-                shutil.rmtree(matched)
-            shutil.copytree(child, matched)
+            self._clear_directory_contents(matched)
+            shutil.copytree(child, matched, dirs_exist_ok=True)

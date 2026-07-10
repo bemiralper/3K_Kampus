@@ -22,9 +22,13 @@ export interface OverduePaymentItem {
   taksit_no: number;
   vade_tarihi: string;
   taksit_tutari: number;
+  sozlesme_tutari: number;
+  toplam_odenen: number;
+  toplam_kalan_borc: number;
   kalan_tutar: number;
   gecikme_gun: number;
   son_tahsilat_tarihi: string | null;
+  son_tahsilat_tutari: number | null;
   toplam_gecikmis_tutar: number;
   durum_label: string;
   durum_renk: DurumRenk;
@@ -179,6 +183,9 @@ export type GecikenColumnKey =
   | "vade"
   | "gecikme"
   | "taksit_tutari"
+  | "sozlesme_tutari"
+  | "son_odeme"
+  | "toplam_kalan"
   | "kalan"
   | "son_tahsilat"
   | "durum";
@@ -194,6 +201,9 @@ export const GECIKEN_COLUMN_EXPORT_KEYS: Record<GecikenColumnKey, string[]> = {
   vade: ["vade_tarihi"],
   gecikme: ["gecikme_gun"],
   taksit_tutari: ["taksit_tutari"],
+  sozlesme_tutari: ["sozlesme_tutari"],
+  son_odeme: ["son_tahsilat_tutari"],
+  toplam_kalan: ["toplam_kalan_borc"],
   kalan: ["kalan_tutar"],
   son_tahsilat: ["son_tahsilat_tarihi"],
   durum: ["durum_label"],

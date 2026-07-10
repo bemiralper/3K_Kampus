@@ -652,6 +652,12 @@
   }
 }
 
+@media (min-width: 1100px) {
+  .ogrenci-filter-layout {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
 .ogrenci-filter-summary-bar {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -877,10 +883,28 @@
 }
 
 .ogrenci-filter-select:focus,
-.ogrenci-filter-date-input:focus {
+.ogrenci-filter-date-input:focus,
+.ogrenci-filter-school-search:focus {
   outline: none;
   border-color: #0262a7;
   box-shadow: 0 0 0 3px rgba(2, 98, 167, 0.12);
+}
+
+.ogrenci-filter-school-search {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text-color);
+  margin-bottom: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ogrenci-filter-chip-meta {
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .ogrenci-filter-demographic-layout {

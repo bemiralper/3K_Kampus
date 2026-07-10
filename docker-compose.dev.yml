@@ -5,7 +5,7 @@ name: lms-dev
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-lms_db}

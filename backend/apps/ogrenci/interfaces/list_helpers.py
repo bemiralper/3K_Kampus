@@ -254,6 +254,7 @@ EXPORT_COLUMNS = {
     'aktif_mi': 'Durum',
     'egitim_yili': 'Eğitim Yılı',
     'kalem_ozet': 'Eğitim Kalemleri',
+    'geldigi_okul': 'Geldiği / Mezun Olduğu Okul',
 }
 
 
@@ -302,6 +303,7 @@ def parse_list_params(request):
         'paket_turu': (p.get('paket_turu') or '').strip() or None,
         'kalemler': kalemler,
         'sinif_ids': sinif_ids,
+        'school_ids': parse_int_list_param(p.get('school_ids') or ''),
         'kayit_tarihi_bas': parse_date_param(p.get('kayit_tarihi_bas')),
         'kayit_tarihi_bit': parse_date_param(p.get('kayit_tarihi_bit')),
         'sort': p.get('sort', 'created_at_desc') if p.get('sort') in SORT_MAP else 'created_at_desc',
@@ -368,6 +370,63 @@ def get_varsayilan_veli(ogrenci):
     return veli
 
 
+def resolve_sinif_seviyesi_ad(kayit):
+    """Sınıf seviyesi: atanmış sınıf veya doğrudan kayıt FK'si."""
+    if kayit.sinif and kayit.sinif.sinif_seviyesi:
+        return kayit.sinif.sinif_seviyesi.ad
+    if getattr(kayit, 'sinif_seviyesi', None):
+        return kayit.sinif_seviyesi.ad
+    return ''
+
+
+def get_ogrenci_ids_by_enrollment_kalem_filters(ctx, filter_specs, use_all_years):
+    """Kayıt/sözleşme öncesi öğrenci paket kayıtlarından kalem filtresi (OR)."""
+    if not filter_specs:
+        return set()
+
+    from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+    ogrenci_ids = set()
+    enrollment_turleri = {'grup_dersi', 'ozel_ders', 'premium', 'yayin', 'deneme'}
+
+    for filter_turu, filter_id in filter_specs:
+        if filter_turu == 'ek_hizmet':
+            qs = OgrenciEkHizmet.objects.filter(
+                ek_hizmet_id=filter_id,
+                aktif_mi=True,
+                dahil_mi=False,
+            )
+            if not use_all_years and ctx.get('egitim_yili_id'):
+                qs = qs.filter(
+                    models.Q(egitim_yili_id=ctx['egitim_yili_id'])
+                    | models.Q(egitim_yili_id__isnull=True)
+                )
+            ogrenci_ids |= set(qs.values_list('ogrenci_id', flat=True))
+            continue
+
+        if filter_turu not in enrollment_turleri:
+            continue
+
+        ep_ogrenci_ids = OgrenciEgitimPaketi.objects.filter(
+            paket_turu=filter_turu,
+            paket_id=filter_id,
+            aktif_mi=True,
+            dahil_mi=False,
+        ).values_list('ogrenci_id', flat=True)
+
+        kayit_qs = OgrenciKayit.objects.filter(
+            ogrenci_id__in=ep_ogrenci_ids,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            aktif_mi=True,
+        )
+        if not use_all_years and ctx.get('egitim_yili_id'):
+            kayit_qs = kayit_qs.filter(egitim_yili_id=ctx['egitim_yili_id'])
+        ogrenci_ids |= set(kayit_qs.values_list('ogrenci_id', flat=True))
+
+    return ogrenci_ids
+
+
 def build_kayit_queryset(ctx, params, apply_durum=True):
     """OgrenciKayit queryset — kurum/şube/yıl ve gelişmiş filtreler."""
     use_all_years = params['all_years'] or not ctx.get('egitim_yili_id')
@@ -377,17 +436,31 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
         kurum_id=ctx['kurum_id'],
         sube_id=effective_sube_id,
     ).select_related(
-        'ogrenci', 'sinif', 'sinif__sinif_seviyesi', 'egitim_yili', 'sube'
+        'ogrenci', 'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'school', 'egitim_yili', 'sube'
     ).prefetch_related('ogrenci__veliler')
 
     if not use_all_years:
         qs = qs.filter(egitim_yili_id=ctx['egitim_yili_id'])
 
     if params['sinif_seviyesi_ids']:
-        qs = qs.filter(sinif__sinif_seviyesi_id__in=params['sinif_seviyesi_ids'])
+        qs = qs.filter(
+            models.Q(sinif__sinif_seviyesi_id__in=params['sinif_seviyesi_ids'])
+            | models.Q(sinif_seviyesi_id__in=params['sinif_seviyesi_ids'])
+        )
 
     if params['sinif_ids']:
         qs = qs.filter(sinif_id__in=params['sinif_ids'])
+
+    if params['school_ids']:
+        from apps.okul.models import Okul
+
+        school_names = list(
+            Okul.objects.filter(id__in=params['school_ids']).values_list('ad', flat=True)
+        )
+        school_q = models.Q(school_id__in=params['school_ids'])
+        if school_names:
+            school_q |= models.Q(geldigi_okul__in=school_names)
+        qs = qs.filter(school_q)
 
     if params['giris_turu']:
         qs = qs.filter(giris_turu=params['giris_turu'])
@@ -427,6 +500,9 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
             sozlesme_qs = sozlesme_qs.filter(egitim_yili_id=ctx['egitim_yili_id'])
 
         ogrenci_ids = get_ogrenci_ids_by_kalem_filters(sozlesme_qs, filter_kalemler)
+        ogrenci_ids |= get_ogrenci_ids_by_enrollment_kalem_filters(
+            ctx, filter_kalemler, use_all_years,
+        )
         qs = qs.filter(ogrenci_id__in=ogrenci_ids)
 
     if params['q']:
@@ -572,10 +648,7 @@ def serialize_kayit_row(kayit, include_egitim_yili=False, kalem_ozet='', egitim_
         'cinsiyet': ogrenci.cinsiyet or '',
         'sinif_id': kayit.sinif.id if kayit.sinif else None,
         'sinif_ad': kayit.sinif.ad if kayit.sinif else '',
-        'sinif_seviyesi': (
-            kayit.sinif.sinif_seviyesi.ad
-            if kayit.sinif and kayit.sinif.sinif_seviyesi else ''
-        ),
+        'sinif_seviyesi': resolve_sinif_seviyesi_ad(kayit),
         'sube_ad': kayit.sube.ad if kayit.sube else '',
         'kayit_tarihi': format_date(kayit.kayit_tarihi),
         'okul_no': kayit.okul_no or '',
@@ -583,6 +656,9 @@ def serialize_kayit_row(kayit, include_egitim_yili=False, kalem_ozet='', egitim_
         'giris_turu_display': (
             dict(OgrenciKayit.GIRIS_TURU_CHOICES).get(kayit.giris_turu, kayit.giris_turu)
             if kayit.giris_turu else ''
+        ),
+        'geldigi_okul': (
+            kayit.school.ad if kayit.school else (kayit.geldigi_okul or '')
         ),
         'profil_foto': ogrenci.profil_foto.url if ogrenci.profil_foto else None,
     }

@@ -53,7 +53,7 @@ export const raporService = {
       kurum_id: params.kurum_id,
       sube_id: params.sube_id,
       egitim_yili_id: params.egitim_yili_id,
-      format,
+      fmt: format,
     });
     return finansDownload(`/raporlar/${endpoint}/?${qs}`);
   },

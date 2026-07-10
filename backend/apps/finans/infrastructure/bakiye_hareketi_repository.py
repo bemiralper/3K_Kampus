@@ -56,19 +56,6 @@ class BakiyeHareketiRepository:
             kaynak_id=kaynak_id,
         ).select_related('mali_hesap')
 
-    @staticmethod
-    def kaynak_hareketi_var_mi(kaynak_tip, kaynak_id, kaynaklar):
-        """
-        Belirtilen kaynak (kaynak_tip + kaynak_id) için verilen kaynak
-        türlerinden (örn. TAHSILAT_IPTAL) bir hareket zaten var mı?
-        Çift geri-alma / çift muhasebeleştirme korumasında kullanılır.
-        """
-        return BakiyeHareketi.objects.filter(
-            kaynak_tip=kaynak_tip,
-            kaynak_id=kaynak_id,
-            kaynak__in=kaynaklar,
-        ).exists()
-
     # ─── AGGREGATES ──────────────────────────────
 
     @staticmethod

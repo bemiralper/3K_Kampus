@@ -6,6 +6,7 @@ import { useKurum } from '@/lib/contexts/KurumContext';
 import { brandingFromKurum, getAppLogo } from '@/lib/kurum-branding';
 import {
   EXPORT_COLUMNS,
+  DEFAULT_EXPORT_KEYS,
   buildListApiQuery,
   getContextHeadersFromStorage,
   type OgrenciListFilters,
@@ -110,7 +111,7 @@ export default function OgrenciExportModal({
 
   useEffect(() => {
     if (open) {
-      setSelectedKeys([]);
+      setSelectedKeys([...DEFAULT_EXPORT_KEYS]);
       setError(null);
     }
   }, [open]);

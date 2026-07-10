@@ -527,13 +527,11 @@ export default function DolaplarPage() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
             Dolap Ata
           </button>
-          {!isCoachMode && (
           <button onClick={() => { setShowAddModal(true); setAddBulk(false); setAddForm({ dolap_no: '', boyut: 'STANDARD', kilit_tipi: 'ANAHTAR', notlar: '' }); }}
             style={{ padding: '12px 22px', background: 'linear-gradient(135deg, #0061a6, #004d85)', color: '#fff', borderRadius: 12, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,97,166,0.3)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Dolap Ekle
           </button>
-          )}
         </div>
       </div>
 

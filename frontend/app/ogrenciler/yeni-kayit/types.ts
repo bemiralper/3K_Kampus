@@ -58,7 +58,7 @@ export type PackageInfo = {
   taksit_sayisi: number;
   is_active: boolean;
   dahil_ek_hizmet_ids?: number[];  // Pakete dahil olan ek hizmet ID'leri
-  dahil_deneme_paketi_ids?: number[];  // Alanlı grup dersinde dahil denemeler
+  dahil_deneme_paketi_ids?: number[];  // Pakete tanımlı ücretsiz denemeler (M2M)
   dahil_yayin_paketi_ids?: number[];  // Grup/premium pakete dahil yayın paketleri
   net_fiyat?: number;
   alan_id?: number | null;
@@ -190,9 +190,9 @@ export type GuardianData = {
 };
 
 export type PackageData = {
-  paketler: string[];  // Çoklu paket seçimi - benzersiz ID'ler ("kategori_dbId")
-  ek_hizmet_ids: number[];  // Ek hizmet seçimi (kütüphane, koçluk, deneme vb.)
-  deneme_paketi_ids: number[];  // Deneme paketi seçimi
+  paketler: string[];  // grup/premium/özel ders composite ID ("kategori_dbId")
+  ek_hizmet_ids: number[];  // Ücretli kütüphane, koçluk
+  deneme_paketi_id: number | null;  // En fazla bir deneme paketi
   yayin_paketi_ids: number[];  // Yayın paketi seçimi
 };
 
