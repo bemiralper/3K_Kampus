@@ -108,10 +108,14 @@ def _serialize_mevcut_kalem(kalem):
     }
 
 
-def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
+def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None, include_target_own=False):
     """
     Tür bazlı sahip olunan paket ID'leri.
     Grup / özel / deneme ID'leri karıştırılmaz (farklı tablolarda aynı sayısal ID olabilir).
+
+    include_target_own=True (tam sözleşme düzenleme): hedef sözleşmenin KENDİ paketleri
+    hariç listesine EKLENMEZ; böylece dahil (ücretsiz) hizmet türetmesi için katalogda
+    tam detayıyla kalırlar. Varsayılan (kalem ekleme akışı) davranışı değişmez.
     """
     from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi
 
@@ -137,9 +141,14 @@ def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
 
     for sozlesme in sozlesme_qs:
         is_target = target_sozlesme and sozlesme.id == target_sozlesme.id
+        # Tam düzenleme modunda (include_target_own) hedef sözleşmenin KENDİ paketleri
+        # listeden çıkarılmaz: dahil (ücretsiz) hizmet türetmesi için katalogda tam
+        # detayıyla kalmalılar. Kalem ekleme akışında ise eskisi gibi hariç tutulur.
+        skip_haric = is_target and include_target_own
 
         if sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.GRUP_DERSI:
-            haric_grup.add(sozlesme.paket_id)
+            if not skip_haric:
+                haric_grup.add(sozlesme.paket_id)
             if is_target and mevcut_grup is None:
                 mevcut_grup = {
                     "kalem_id": sozlesme.paket_id,
@@ -149,11 +158,14 @@ def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
                     "kaynak": "sozlesme",
                 }
         elif sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.OZEL_DERS:
-            haric_ozel.add(sozlesme.paket_id)
+            if not skip_haric:
+                haric_ozel.add(sozlesme.paket_id)
         elif sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.PREMIUM:
-            haric_premium.add(sozlesme.paket_id)
+            if not skip_haric:
+                haric_premium.add(sozlesme.paket_id)
         elif sozlesme.paket_id and sozlesme.paket_turu == PaketTuru.DENEME:
-            haric_deneme.add(sozlesme.paket_id)
+            if not skip_haric:
+                haric_deneme.add(sozlesme.paket_id)
             if is_target and mevcut_deneme is None:
                 net = _deneme_net_tutar(sozlesme)
                 mevcut_deneme = {
@@ -167,22 +179,27 @@ def _collect_mevcut_paketler(ogrenci_id, egitim_yili_id, sozlesme_id=None):
         kalemler = SozlesmeKalemi.objects.filter(sozlesme=sozlesme)
         for k in kalemler:
             if k.kalem_turu in (KalemTuru.EK_HIZMET, KalemTuru.EK_HIZMET_SATISI):
-                haric_ek.add(k.kalem_id)
+                if not skip_haric:
+                    haric_ek.add(k.kalem_id)
                 continue
 
             kind = _classify_kalem_paket_turu(k, sozlesme)
             if kind == PaketTuru.GRUP_DERSI:
-                haric_grup.add(k.kalem_id)
+                if not skip_haric:
+                    haric_grup.add(k.kalem_id)
                 if is_target:
                     mevcut_grup = _serialize_mevcut_kalem(k)
             elif kind == PaketTuru.OZEL_DERS:
-                haric_ozel.add(k.kalem_id)
+                if not skip_haric:
+                    haric_ozel.add(k.kalem_id)
             elif kind == PaketTuru.DENEME:
-                haric_deneme.add(k.kalem_id)
+                if not skip_haric:
+                    haric_deneme.add(k.kalem_id)
                 if is_target:
                     mevcut_deneme = _serialize_mevcut_kalem(k)
             elif kind == PaketTuru.PREMIUM:
-                haric_premium.add(k.kalem_id)
+                if not skip_haric:
+                    haric_premium.add(k.kalem_id)
 
     # Pakete dahil (ücretsiz) ek hizmetler listeden ÇIKARILMAZ: sözleşmede grup/premium
     # seçiliyken ücretsiz, paket kalkınca aynı kalemler ücretli seçilebilir olmalı.
@@ -327,8 +344,9 @@ def kalem_secenekleri(request):
             }
         )
 
+    include_own = request.query_params.get("include_own") in ("1", "true", "True")
     haric_grup, haric_ozel, haric_deneme, haric_premium, haric_ek, mevcut_grup, mevcut_deneme = _collect_mevcut_paketler(
-        ogrenci_id, filter_egitim_yili_id, sozlesme_id
+        ogrenci_id, filter_egitim_yili_id, sozlesme_id, include_target_own=include_own
     )
 
     secenekler = []

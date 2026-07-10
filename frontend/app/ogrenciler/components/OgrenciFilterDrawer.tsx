@@ -231,7 +231,7 @@ export default function OgrenciFilterDrawer({
       : sinifSeviyeleri;
 
   return (
-    <div className="ogrenci-drawer-overlay" onClick={onClose}>
+    <div className="ogrenci-drawer-overlay ogrenci-drawer-overlay--filter" onClick={onClose}>
       <div
         className="ogrenci-filter-drawer ogrenci-filter-drawer--wide"
         onClick={(e) => e.stopPropagation()}

@@ -22,7 +22,7 @@ import {
 } from "../utils/taksitPlan";
 import type { Veli } from "../types";
 import { buildTaksitOdemeYontemleri, isCekSenetYontem } from "@/lib/finans/paymentMethodUtils";
-import { mapSelectionToKalemInputs, catalogFromKalemSecenekleri, toggleEkHizmet } from "@/lib/package-selection";
+import { mapSelectionToKalemInputs, catalogFromKalemSecenekleri, mergePackageCatalogs, toggleEkHizmet, type StudentPackageSelection } from "@/lib/package-selection";
 import {
   useContractPackageSelection,
   catalogFromPaketData,
@@ -145,6 +145,69 @@ interface KalemRow {
   net_tutar: number;
 }
 
+function selectionFromKalemRows(rows: KalemRow[]): StudentPackageSelection {
+  let parent: StudentPackageSelection["parent"] = null;
+  const ozelDersIds: number[] = [];
+  let denemePaketiId: number | null = null;
+  const yayinPaketiIds: number[] = [];
+  const ekHizmetIds: number[] = [];
+
+  for (const k of rows) {
+    const tur = k.paket_turu || k.kalem_turu;
+    if (tur === "grup_dersi" && !parent) {
+      parent = { tur: "grup_dersi", id: k.kalem_id };
+    } else if (tur === "premium" && !parent) {
+      parent = { tur: "premium", id: k.kalem_id };
+    } else if (tur === "ozel_ders") {
+      ozelDersIds.push(k.kalem_id);
+    } else if (tur === "deneme" && denemePaketiId === null) {
+      denemePaketiId = k.kalem_id;
+    } else if (tur === "yayin") {
+      yayinPaketiIds.push(k.kalem_id);
+    } else if (k.kalem_turu === "ek_hizmet") {
+      ekHizmetIds.push(k.kalem_id);
+    }
+  }
+
+  return { parent, ozelDersIds, denemePaketiId, yayinPaketiIds, ekHizmetIds };
+}
+
+/**
+ * Düzenlenen sözleşmenin mevcut kalemlerinden bir PackageCatalog üretir.
+ * Katalogda (kayıt paketleri + kalem-secenekleri) bulunmayan "yetim" kalemlerin
+ * seçim yeniden kurulurken düşmemesi için katalağa enjekte edilir.
+ */
+function catalogFromKalemRows(rows: KalemRow[]): import("@/lib/package-selection").PackageCatalog {
+  const catalog: import("@/lib/package-selection").PackageCatalog = {
+    grupDersleri: [],
+    premiumPaketler: [],
+    ozelDersler: [],
+    denemeler: [],
+    yayinPaketleri: [],
+    ekHizmetler: [],
+  };
+  for (const k of rows) {
+    const fiyat = k.brut_tutar;
+    if (k.kalem_turu === "ek_hizmet") {
+      catalog.ekHizmetler.push({ id: k.kalem_id, ad: k.kalem_adi, hizmet_turu: "kutuphane", fiyat, kdv_orani: k.kdv_orani });
+      continue;
+    }
+    const tur = k.paket_turu;
+    if (tur === "grup_dersi") {
+      catalog.grupDersleri.push({ id: k.kalem_id, ad: k.kalem_adi, fiyat, kdv_orani: k.kdv_orani, kategori: "grup_dersleri" });
+    } else if (tur === "premium") {
+      catalog.premiumPaketler.push({ id: k.kalem_id, ad: k.kalem_adi, fiyat, kdv_orani: k.kdv_orani, kategori: "premium_paketler" });
+    } else if (tur === "ozel_ders") {
+      catalog.ozelDersler.push({ id: k.kalem_id, ad: k.kalem_adi, fiyat, kdv_orani: k.kdv_orani });
+    } else if (tur === "deneme") {
+      catalog.denemeler.push({ id: k.kalem_id, ad: k.kalem_adi, fiyat, kdv_orani: k.kdv_orani });
+    } else if (tur === "yayin") {
+      catalog.yayinPaketleri.push({ id: k.kalem_id, ad: k.kalem_adi, fiyat, kdv_orani: k.kdv_orani });
+    }
+  }
+  return catalog;
+}
+
 interface TaksitPreview {
   taksit_no: number;
   vade_tarihi: string;
@@ -237,7 +300,9 @@ function finalizeKalemPayload(k: KalemRow) {
 }
 
 function paketKalemKey(paketTuru: string, paketId: number) {
-  return `paket-${paketTuru}-${paketId}`;
+  // deriveBillableItems ile aynı şema: seçim → kalem rebuild'inde key eşleşsin,
+  // böylece düzenleme modunda girilen fiyat/indirim korunur.
+  return `paket:${paketTuru}:${paketId}`;
 }
 
 // Net ödenecek tutardan liste fiyatını hesapla (ters hesaplama)
@@ -338,6 +403,8 @@ export default function SozlesmeOlusturClient() {
   const [selectedEkHizmetIds, setSelectedEkHizmetIds] = useState<Set<number>>(new Set());
   const [kalemler, setKalemler] = useState<KalemRow[]>([]);
   const skipKalemAutoBuild = useRef(false);
+  const editSelectionSyncedRef = useRef(false);
+  const editSeedCatalogRef = useRef<import("@/lib/package-selection").PackageCatalog | null>(null);
   const [kalemCatalog, setKalemCatalog] = useState<import("@/lib/package-selection").PackageCatalog | null>(null);
   const contractSel = useContractPackageSelection(paketData, kalemCatalog);
 
@@ -389,6 +456,11 @@ export default function SozlesmeOlusturClient() {
         kurum_id: String(paketData.kayit.kurum_id),
         sube_id: String(paketData.kayit.islem_sube_id ?? paketData.kayit.sube_id),
       });
+      if (editId) {
+        params.set("sozlesme_id", editId);
+        // Tam düzenleme: sözleşmenin kendi paketleri katalogda kalsın (dahil hizmet türetmesi için)
+        params.set("include_own", "1");
+      }
       if (paketData.kayit.sinif_seviyesi_id) {
         params.set("sinif_seviyesi_id", String(paketData.kayit.sinif_seviyesi_id));
       }
@@ -449,13 +521,19 @@ export default function SozlesmeOlusturClient() {
         filtreUyari,
       };
       setTumPaketler(mapped);
-      setKalemCatalog(catalogFromKalemSecenekleri(mapped));
+      const fetchedCatalog = catalogFromKalemSecenekleri(mapped);
+      // Düzenleme modunda mevcut (seed) kalemleri koru — katalogda olmayanlar düşmesin.
+      setKalemCatalog(
+        editSeedCatalogRef.current
+          ? mergePackageCatalogs(fetchedCatalog, editSeedCatalogRef.current)
+          : fetchedCatalog,
+      );
     } catch {
       setTumPaketler(null);
       setKalemCatalog(null);
     }
     setTumPaketlerLoading(false);
-  }, [selectedOgrenci?.id, paketData?.kayit]);
+  }, [selectedOgrenci?.id, paketData?.kayit, editId]);
 
   const addPaketFromCatalog = (paket: any, turu: string) => {
     if (!paketData) return;
@@ -736,7 +814,7 @@ export default function SozlesmeOlusturClient() {
             if (eh) ekIds.add(eh.id);
             const kdvHaric = hesaplaKalem(k.brut_tutar, k.kdv_orani, 0).kdv_haric;
             restoredRows.push({
-              key: `ek-${k.kalem_id}`,
+              key: `ek:${k.kalem_id}`,
               kalem_turu: "ek_hizmet",
               kalem_id: k.kalem_id,
               kalem_adi: k.kalem_adi,
@@ -852,6 +930,11 @@ export default function SozlesmeOlusturClient() {
         setSelectedYayinIdxs(filteredYayinIdxs);
         setSelectedEkHizmetIds(filteredEkIds);
         skipKalemAutoBuild.current = true;
+        // Mevcut kalemleri kataloğa seed'le: katalogda olmayan bir paket bile
+        // seçim yeniden kurulurken düşmesin ve "seçili" görünsün.
+        const seed = catalogFromKalemRows(restoredRows);
+        editSeedCatalogRef.current = seed;
+        setKalemCatalog(seed);
         setKalemler(restoredRows);
         setPaketLoading(false);
         return;
@@ -966,6 +1049,8 @@ export default function SozlesmeOlusturClient() {
     setSelectedYayinIdxs(new Set());
     setSelectedEkHizmetIds(new Set());
     contractSel.resetForNewStudent();
+    editSeedCatalogRef.current = null;
+    editSelectionSyncedRef.current = false;
     setKalemCatalog(null);
     setTumPaketler(null);
     setKalemler([]);
@@ -1311,14 +1396,32 @@ export default function SozlesmeOlusturClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDenemePaketIdxs.size]);
 
-  // Kayıtlı paketlerden seçim state yükle (yeni sözleşme) + tam katalog
+  // Tam katalog (kalem-secenekleri) — düzenleme modunda da yüklenmeli
+  useEffect(() => {
+    if (!paketData?.kayit?.id) return;
+    void loadTumPaketler();
+  }, [paketData?.kayit?.id, loadTumPaketler]);
+
+  // Kayıtlı paketlerden seçim state yükle (yalnızca yeni sözleşme)
   useEffect(() => {
     if (!paketData?.kayit?.id) return;
     if (skipKalemAutoBuild.current) return;
-    void loadTumPaketler();
     contractSel.loadFromEnrollment(paketData.kayit.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paketData?.kayit?.id, loadTumPaketler]);
+  }, [paketData?.kayit?.id]);
+
+  // Düzenleme modu: katalog yüklendikten sonra mevcut kalemleri seçime yansıt
+  useEffect(() => {
+    editSelectionSyncedRef.current = false;
+  }, [editId]);
+
+  useEffect(() => {
+    if (!isEditMode || !editLoaded || !kalemCatalog || kalemler.length === 0) return;
+    if (editSelectionSyncedRef.current) return;
+    editSelectionSyncedRef.current = true;
+    contractSel.setSelection(selectionFromKalemRows(kalemler));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, editLoaded, kalemCatalog, kalemler]);
 
   // Kalemler: seçim motoru → KalemRow[]
   useEffect(() => {
