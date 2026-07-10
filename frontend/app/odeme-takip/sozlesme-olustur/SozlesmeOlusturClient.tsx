@@ -299,6 +299,31 @@ function finalizeKalemPayload(k: KalemRow) {
   };
 }
 
+/** Gönderimde sözleşme kökündeki ana paket — yalnızca grup/premium; özel ders kalemlerde kalır. */
+function resolveAnaKalemForSubmit(
+  selection: StudentPackageSelection,
+  kalemler: KalemRow[],
+): KalemRow | null {
+  const parent = selection.parent;
+  if (parent) {
+    const fromParent = kalemler.find(
+      (k) =>
+        k.kalem_turu === "paket" &&
+        normalizePaketTuru(k.paket_turu || "") === parent.tur &&
+        k.kalem_id === parent.id,
+    );
+    if (fromParent) return fromParent;
+  }
+  return (
+    kalemler.find(
+      (k) =>
+        k.kalem_turu === "paket" &&
+        (normalizePaketTuru(k.paket_turu || "") === "grup_dersi" ||
+          normalizePaketTuru(k.paket_turu || "") === "premium"),
+    ) ?? null
+  );
+}
+
 function paketKalemKey(paketTuru: string, paketId: number) {
   // deriveBillableItems ile aynı şema: seçim → kalem rebuild'inde key eşleşsin,
   // böylece düzenleme modunda girilen fiyat/indirim korunur.
@@ -1673,19 +1698,9 @@ export default function SozlesmeOlusturClient() {
       ilkOdemeTarihi,
       taksitPeriyodu,
     );
-    const parent = contractSel.selection.parent;
-    const paket = parent
-      ? paketData.egitim_paketleri.find(
-          (p) => normalizePaketTuru(p.paket_turu) === parent.tur && p.paket_id === parent.id,
-        ) ?? null
-      : null;
-    const anaKalem = paket
-      ? kalemler.find(
-          (k) => k.kalem_turu === "paket" && k.paket_turu === paket.paket_turu && k.kalem_id === paket.paket_id,
-        )
-      : kalemler.find((k) => k.kalem_turu === "paket");
-
+    const anaKalem = resolveAnaKalemForSubmit(contractSel.selection, kalemler);
     const anaPayload = anaKalem ? finalizeKalemPayload(anaKalem) : null;
+    const anaKey = anaKalem?.key ?? null;
 
     const body: any = {
       ogrenci_id: selectedOgrenci.id,
@@ -1695,14 +1710,14 @@ export default function SozlesmeOlusturClient() {
       sube_id: activeSube?.id ?? paketData.kayit.islem_sube_id ?? paketData.kayit.sube_id,
       baslangic_tarihi: baslangicTarihi,
       bitis_tarihi: bitisTarihi,
-      paket_turu: paket?.paket_turu || "ek_hizmet",
-      paket_id: paket?.paket_id || undefined,
-      paket_adi: paket?.paket_adi || "Ek Hizmetler",
-      brut_tutar: anaPayload?.brut_tutar ?? paket?.fiyat ?? 0,
-      kdv_orani: anaPayload?.kdv_orani ?? paket?.kdv_orani ?? 0,
+      paket_turu: anaKalem ? normalizePaketTuru(anaKalem.paket_turu || "") : "ek_hizmet",
+      paket_id: anaKalem ? anaKalem.kalem_id : null,
+      paket_adi: anaKalem ? anaKalem.kalem_adi : "Ek Hizmetler",
+      brut_tutar: anaPayload?.brut_tutar ?? 0,
+      kdv_orani: anaPayload?.kdv_orani ?? 0,
       indirim_orani: anaPayload?.indirim_orani ?? 0,
       indirim_tutari: anaPayload?.indirim_tutari ?? 0,
-      net_tutar: anaPayload?.net_tutar ?? anaPayload?.brut_tutar ?? paket?.fiyat ?? 0,
+      net_tutar: anaPayload?.net_tutar ?? 0,
       odeme_turu: odemeTuru,
       taksit_sayisi: odemeTuru === "pesin" ? 1 : taksitSayisi,
       ilk_odeme_tarihi: ilkOdemeTarihi,
@@ -1724,13 +1739,10 @@ export default function SozlesmeOlusturClient() {
       veli_id: selectedVeliId || null,
       odeme_yontemi_id: isCekSenetMode ? null : selectedOdemeYontemiId || null,
       mali_hesap_id: null,
-      // Tüm kalemler (ana paket hariç — ana paket zaten paket_id/paket_adi ile gönderiliyor)
+      // Tüm kalemler (ana paket hariç — ana paket kök alanlarda)
       kalemler: kalemler
-        .filter(k => {
-          if (k.kalem_turu === "paket" && paket && k.paket_turu === paket.paket_turu && k.kalem_id === paket.paket_id) return false;
-          return true;
-        })
-        .map(k => finalizeKalemPayload(k)),
+        .filter((k) => anaKey == null || k.key !== anaKey)
+        .map((k) => finalizeKalemPayload(k)),
     };
 
     try {

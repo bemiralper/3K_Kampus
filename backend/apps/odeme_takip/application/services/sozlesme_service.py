@@ -255,7 +255,14 @@ class SozlesmeService:
 
         # Ek kalemler hesapla
         kalem_objeleri = []
+        ana_paket_id = data.get('paket_id') if has_ana_paket else None
         for k in kalemler_raw:
+            if (
+                has_ana_paket
+                and k.get('kalem_turu') == KalemTuru.PAKET
+                and k.get('kalem_id') == ana_paket_id
+            ):
+                continue
             k_fiyat = self._kalem_fiyat_from_payload(k)
             k_brut = k_fiyat['brut_tutar']
 
@@ -416,13 +423,19 @@ class SozlesmeService:
             toplam_brut = 0
             toplam_kdv = 0
             toplam_indirim = 0
-            has_ana_paket = bool(data.get('paket_id', sozlesme.paket_id))
 
-            # Ana paket kalemi (varsa)
-            ana_paket_id = data.get('paket_id', sozlesme.paket_id)
+            # Ana paket: istemci açıkça paket_id gönderdiyse (null dahil) onu kullan;
+            # yoksa eski sözleşme kökündeki değere düşme — çift sayımı önler.
+            if 'paket_id' in data:
+                ana_paket_id = data.get('paket_id')
+                has_ana_paket = bool(ana_paket_id)
+            else:
+                ana_paket_id = sozlesme.paket_id
+                has_ana_paket = bool(ana_paket_id)
+
             ana_paket_adi = data.get('paket_adi', sozlesme.paket_adi)
-            ana_brut = int(data.get('brut_tutar', sozlesme.brut_tutar))
-            ana_kdv_orani = int(data.get('kdv_orani', sozlesme.kdv_orani))
+            ana_brut = int(data.get('brut_tutar', sozlesme.brut_tutar) or 0)
+            ana_kdv_orani = int(data.get('kdv_orani', sozlesme.kdv_orani) or 0)
 
             if has_ana_paket and ana_brut > 0:
                 ana_payload = {
@@ -450,8 +463,14 @@ class SozlesmeService:
                 toplam_kdv += ana_fiyat['kdv_tutari']
                 toplam_indirim += ana_fiyat['indirim_tutari']
 
-            # Ek kalemler
+            # Ek kalemler — ana paket ile aynı id tekrar eklenmesin
             for k in kalemler_raw:
+                if (
+                    has_ana_paket
+                    and k.get('kalem_turu') == KalemTuru.PAKET
+                    and k.get('kalem_id') == ana_paket_id
+                ):
+                    continue
                 k_fiyat = self._kalem_fiyat_from_payload(k)
                 k_brut = k_fiyat['brut_tutar']
 
@@ -478,6 +497,12 @@ class SozlesmeService:
             update_fields['kdv_dahil_tutar'] = toplam_brut
             update_fields['toplam_indirim_tutari'] = toplam_indirim
             update_fields['net_tutar'] = net_tutar
+            if 'paket_id' in data:
+                update_fields['paket_id'] = data.get('paket_id')
+            if 'paket_turu' in data:
+                update_fields['paket_turu'] = data.get('paket_turu')
+            if 'paket_adi' in data:
+                update_fields['paket_adi'] = data.get('paket_adi')
 
         # Fiyat güncelleme (kalemler yoksa, sadece brut_tutar değişmişse — Integer-Only)
         elif 'brut_tutar' in data:
