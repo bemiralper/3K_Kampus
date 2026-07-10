@@ -2,6 +2,7 @@
 
 import type { GiderTaksit } from "@/app/finans/types/gider-types";
 import { isCekSenetTip } from "@/lib/finans/paymentMethodUtils";
+import { buildGiderTaksitPlanRows } from "@/app/odeme-takip/utils/taksitPlan";
 
 function fmt(v: number) {
   return Number(v).toLocaleString("tr-TR", { minimumFractionDigits: 2 });
@@ -98,34 +99,27 @@ export function GiderPlannedTaksitCards({
   netTutar: number;
   vadeTarihi: string;
 }) {
+  const plan = buildGiderTaksitPlanRows(netTutar, count, vadeTarihi, "aylik");
   return (
     <div className="fd-taksit-list">
-      {Array.from({ length: count }, (_, i) => {
-        const birimTutar = Math.floor((netTutar / count) * 100) / 100;
-        const tutar = i === count - 1
-          ? Math.round((netTutar - birimTutar * (count - 1)) * 100) / 100
-          : birimTutar;
-        const vade = new Date(vadeTarihi);
-        vade.setDate(vade.getDate() + 30 * i);
-        return (
-          <div key={i} className="fd-taksit-card">
+      {plan.map((row) => (
+          <div key={row.taksit_no} className="fd-taksit-card">
             <div className="fd-taksit-card-head">
-              <span className="fd-taksit-no">#{i + 1}</span>
+              <span className="fd-taksit-no">#{row.taksit_no}</span>
               <span className="fd-chip fd-chip--amber">Planlanan</span>
             </div>
             <div className="fd-taksit-grid">
               <div>
                 <span className="fd-taksit-field-label">Planlanan Vade</span>
-                <div className="fd-taksit-field-value">{vade.toLocaleDateString("tr-TR")}</div>
+                <div className="fd-taksit-field-value">{fmtDate(row.vade_tarihi)}</div>
               </div>
               <div>
                 <span className="fd-taksit-field-label">Tutar</span>
-                <div className="fd-taksit-field-value">{fmt(tutar)} ₺</div>
+                <div className="fd-taksit-field-value">{fmt(row.tutar)} ₺</div>
               </div>
             </div>
           </div>
-        );
-      })}
+      ))}
     </div>
   );
 }

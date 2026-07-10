@@ -22,6 +22,7 @@ import {
   Modal,
   Tooltip,
   Popconfirm,
+  Alert,
   App as AntApp,
   Grid,
 } from "antd";
@@ -181,6 +182,10 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
 
   const fetchAux = useCallback(async () => {
     if (!kurumId) return;
+    if (!subeId) {
+      setDropdown(null);
+      return;
+    }
     try {
       const [dash, dd] = await Promise.all([
         ggService.dashboard(modul, kurumId, subeId),
@@ -188,10 +193,14 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
       ]);
       setDashboard(dash);
       setDropdown(dd);
-    } catch {
-      /* sessiz */
+    } catch (e) {
+      message.error(
+        e instanceof FinansHttpError
+          ? e.message
+          : "Cari hesap ve kategori listesi yüklenemedi. Şube seçimini kontrol edin.",
+      );
     }
-  }, [kurumId, subeId, modul]);
+  }, [kurumId, subeId, modul, message]);
 
   useEffect(() => { fetchList(); }, [fetchList]);
   useEffect(() => { fetchAux(); }, [fetchAux]);
@@ -450,6 +459,16 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
           </Button>
         </Space>
       </div>
+
+      {!subeId && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Şube seçilmedi"
+          description="Cari hesap ve kategori listeleri için üst menüden şube seçin. Aksi halde gider/gelir formu boş görünür."
+        />
+      )}
 
       {/* Dashboard kartları */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>

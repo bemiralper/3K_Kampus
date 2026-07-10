@@ -76,6 +76,7 @@ export default function OdemeTakipClient() {
   const [tahsilatOdemeYontemleri, setTahsilatOdemeYontemleri] = useState<OdemeYontemi[]>([]);
   const [indirimTurleri, setIndirimTurleri] = useState<IndirimTuru[]>([]);
   const [maliHesaplar, setMaliHesaplar] = useState<{ id: number; ad: string; tip: string }[]>([]);
+  const [maliHesapLoadError, setMaliHesapLoadError] = useState<string | null>(null);
 
   // Drawers & Modals
   const [showTahsilatDrawer, setShowTahsilatDrawer] = useState(false);
@@ -270,11 +271,32 @@ export default function OdemeTakipClient() {
   }, [fetchSozlesmeler, fetchParametrik, activeSube?.id, activeEgitimYili?.id]);
 
   useEffect(() => {
-    if (!activeKurum?.id || !activeSube?.id) return;
+    if (!activeKurum?.id) {
+      setMaliHesaplar([]);
+      setMaliHesapLoadError(null);
+      return;
+    }
+    if (!activeSube?.id) {
+      setMaliHesaplar([]);
+      setMaliHesapLoadError("Mali hesap listesi için üst menüden şube seçin.");
+      return;
+    }
+    setMaliHesapLoadError(null);
     financialAccountService
       .dropdownByKurum(activeKurum.id, activeSube.id)
-      .then((res) => setMaliHesaplar(res.mali_hesaplar || []))
-      .catch(() => setMaliHesaplar([]));
+      .then((res) => {
+        const list = res.mali_hesaplar || [];
+        setMaliHesaplar(list);
+        if (list.length === 0) {
+          setMaliHesapLoadError("Bu şubede tanımlı mali hesap yok. Finans → Tanımlar → Mali Hesaplar bölümünden ekleyin.");
+        }
+      })
+      .catch((err: unknown) => {
+        setMaliHesaplar([]);
+        setMaliHesapLoadError(
+          err instanceof Error ? err.message : "Mali hesap listesi yüklenemedi.",
+        );
+      });
   }, [activeKurum?.id, activeSube?.id]);
 
   useEffect(() => {
@@ -674,6 +696,11 @@ export default function OdemeTakipClient() {
             </div>
             <div className="odeme-drawer-body">
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {maliHesapLoadError && (
+                  <div style={{ padding: 12, borderRadius: 8, background: "#fffbeb", border: "1px solid #fde68a", fontSize: 13, color: "#92400e" }}>
+                    ⚠️ {maliHesapLoadError}
+                  </div>
+                )}
                 <div className="odeme-form-group">
                   <label className="odeme-form-label">Mali Hesap (Kasa / Banka) *</label>
                   <select

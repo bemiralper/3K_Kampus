@@ -17,6 +17,27 @@ class TaksitService:
     def __init__(self):
         self.repo = TaksitRepository()
 
+    @staticmethod
+    def _installment_count_for_equal_plan(taksit_sayisi, pesinat=0):
+        """UI ile uyum: taksit_sayisi peşinat dahil toplam satır sayısı."""
+        count = max(1, int(taksit_sayisi or 1))
+        if int(pesinat or 0) > 0:
+            return max(1, count - 1)
+        return count
+
+    @staticmethod
+    def _split_equal_amounts(net, count):
+        """Frontend buildEqualTaksitRows ile uyumlu — 100 TL aşağı yuvarlama."""
+        net = int(net)
+        count = int(count)
+        if count <= 0:
+            return []
+        if count == 1:
+            return [net]
+        base = (net // count // 100) * 100
+        last = net - base * (count - 1)
+        return [last if i == count - 1 else base for i in range(count)]
+
     # ─── SORGULAR ────────────────────────
     def get_vadesi_gecenler(self, kurum_id=None, sube_id=None, egitim_yili_id=None):
         """Vadesi geçmiş taksitler — repository / overdue.py."""
@@ -72,16 +93,11 @@ class TaksitService:
             taksit_no += 1
             net -= pesinat
 
-        # Kalan tutarı eşit taksitlere böl (1000'e yuvarlama — frontend önizleme ile uyumlu)
-        if taksit_sayisi <= 0:
-            taksit_sayisi = 1
-        # Taksit tutarını 1000'in katına yuvarla (aşağı); son taksit kalan farkı alır
-        taksit_tutar = (net // taksit_sayisi // 1000) * 1000
-        son_taksit_tutar = net - taksit_tutar * (taksit_sayisi - 1)
+        # Kalan tutarı eşit taksitlere böl (100 TL yuvarlama — frontend önizleme ile uyumlu)
+        installment_count = self._installment_count_for_equal_plan(taksit_sayisi, pesinat)
+        amounts = self._split_equal_amounts(net, installment_count)
 
-        for i in range(taksit_sayisi):
-            tutar = son_taksit_tutar if i == taksit_sayisi - 1 else taksit_tutar
-
+        for i, tutar in enumerate(amounts):
             vade = self._hesapla_vade(ilk_odeme_tarihi, i, periyot, has_pesinat=(pesinat > 0))
 
             Taksit.objects.create(
@@ -186,13 +202,10 @@ class TaksitService:
             sozlesme=sozlesme
         ).order_by('-taksit_no').values_list('taksit_no', flat=True).first() or 0
 
-        # 1000'e yuvarlama — frontend önizleme ile uyumlu; son taksit kalan farkı alır
-        taksit_tutar = (kalan_borc // taksit_sayisi // 1000) * 1000
-        son_taksit_tutar = kalan_borc - taksit_tutar * (taksit_sayisi - 1)
+        installment_count = max(1, int(taksit_sayisi or 1))
+        amounts = self._split_equal_amounts(kalan_borc, installment_count)
 
-        for i in range(taksit_sayisi):
-            tutar = son_taksit_tutar if i == taksit_sayisi - 1 else taksit_tutar
-
+        for i, tutar in enumerate(amounts):
             vade = self._hesapla_vade(ilk_odeme_tarihi, i, periyot)
 
             Taksit.objects.create(

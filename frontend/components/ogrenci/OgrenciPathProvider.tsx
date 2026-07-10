@@ -63,5 +63,26 @@ export function OgrenciPathProvider({
 }
 
 export function useOgrenciPath(): OgrenciPathContextValue {
-  return useContext(OgrenciPathContext) ?? defaultValue;
+  const ctx = useContext(OgrenciPathContext);
+  const pathname = usePathname();
+
+  return useMemo(() => {
+    if (ctx) return ctx;
+    const basePath = getOgrenciBasePath(pathname);
+    return {
+      basePath,
+      isMuhasebeMode: basePath === MUHASEBE_OGRENCI_BASE,
+      href: (segment?: string) => {
+        if (basePath === MUHASEBE_OGRENCI_BASE) {
+          if (!segment) return `${basePath}/liste`;
+          if (/^\d+$/.test(segment)) return `${basePath}/liste/${segment}`;
+          return ogrenciHref(basePath, segment);
+        }
+        if (!segment) return basePath;
+        return ogrenciHref(basePath, segment);
+      },
+      listHref: basePath === MUHASEBE_OGRENCI_BASE ? `${basePath}/liste` : basePath,
+      portalHomeHref: basePath === MUHASEBE_OGRENCI_BASE ? muhasebeHomeHref() : '/dashboard',
+    };
+  }, [ctx, pathname]);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Drawer,
   Form,
@@ -18,12 +18,22 @@ import {
   Typography,
   App as AntApp,
 } from "antd";
-import { PlusOutlined, DeleteOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import {
+  buildGiderTaksitPlanRows,
+  spreadGiderAmountFromIndex,
+} from "@/app/odeme-takip/utils/taksitPlan";
 import { ggService } from "./gg-v2-api";
 import { GGDropdown, GGListItem } from "./gg-v2-types";
 import { ModulConfig } from "./gg-config";
 import { FinansHttpError } from "../services/finans-http";
+
+type TaksitFormRow = {
+  taksit_no: number;
+  vade_tarihi: dayjs.Dayjs;
+  tutar: number;
+  aciklama?: string;
+};
 
 interface Props {
   cfg: ModulConfig;
@@ -49,22 +59,65 @@ export default function GelirGiderFormDrawer({
   const { message } = AntApp.useApp();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [taksitFirstAmountEdited, setTaksitFirstAmountEdited] = useState(false);
+  const planSyncKeyRef = useRef("");
 
-  // KDV moduna göre girilen tutardan net tutarı hesaplar (canlı önizleme + taksit).
   const hesaplaNet = (girilen: number, oran: number, mod: string): number => {
     const t = Number(girilen) || 0;
     if (mod === "muaf" || !oran) return t;
-    if (mod === "dahil") return t; // girilen zaten KDV dahil net
-    return t * (1 + Number(oran) / 100); // haric
+    if (mod === "dahil") return t;
+    return t * (1 + Number(oran) / 100);
+  };
+
+  const formatIlkVade = (v: dayjs.Dayjs | string | undefined): string => {
+    if (!v) return dayjs().format("YYYY-MM-DD");
+    if (dayjs.isDayjs(v)) return v.format("YYYY-MM-DD");
+    return dayjs(v).format("YYYY-MM-DD");
+  };
+
+  const planToFormRows = (
+    plan: ReturnType<typeof buildGiderTaksitPlanRows>,
+  ): TaksitFormRow[] =>
+    plan.map((r) => ({
+      taksit_no: r.taksit_no,
+      vade_tarihi: dayjs(r.vade_tarihi),
+      tutar: r.tutar,
+      aciklama: "",
+    }));
+
+  const syncTaksitPlani = (force = false) => {
+    if (cfg.modul !== "gider") return;
+    if (form.getFieldValue("taksit_mod") !== "taksitli") return;
+
+    const net = hesaplaNet(
+      Number(form.getFieldValue("brut_tutar") || 0),
+      Number(form.getFieldValue("kdv_orani") || 0),
+      form.getFieldValue("kdv_mod") || "haric",
+    );
+    const adet = Math.max(2, Number(form.getFieldValue("taksit_sayisi") || 2));
+    const periyot = form.getFieldValue("taksit_periyodu") || "aylik";
+    const ilkVade = formatIlkVade(
+      form.getFieldValue("vade_tarihi") ?? form.getFieldValue("fatura_tarihi"),
+    );
+    const syncKey = `${adet}|${net}|${ilkVade}|${periyot}`;
+    if (!force && taksitFirstAmountEdited && planSyncKeyRef.current === syncKey) return;
+    if (net <= 0 || !ilkVade) return;
+
+    planSyncKeyRef.current = syncKey;
+    const plan = buildGiderTaksitPlanRows(net, adet, ilkVade, periyot);
+    form.setFieldsValue({ taksit_plani: planToFormRows(plan) });
   };
 
   useEffect(() => {
     if (!open) return;
+    setTaksitFirstAmountEdited(false);
+    planSyncKeyRef.current = "";
+
     if (editing) {
       const editKdvMod = (editing as unknown as { kdv_mod?: string }).kdv_mod || "haric";
-      // Düzenlemede: 'dahil' modda kullanıcı net'i görür, aksi halde brüt tabanı.
       const girilenTutar =
         editKdvMod === "dahil" ? Number(editing.net_tutar) : Number(editing.brut_tutar);
+      const taksitli = (editing.taksit_sayisi ?? 1) > 1;
       form.setFieldsValue({
         cari_hesap_id: editing.cari_hesap?.id ?? undefined,
         [cfg.kategoriFormKey]:
@@ -81,9 +134,10 @@ export default function GelirGiderFormDrawer({
         vade_tarihi: editing.vade_tarihi ? dayjs(editing.vade_tarihi) : undefined,
         aciklama: editing.aciklama ?? undefined,
         etiket_ids: editing.etiketler?.map((e) => e.id) ?? [],
-        taksit_mod: (editing.taksit_sayisi ?? 1) > 1 ? "otomatik" : "pesin",
+        taksit_mod: taksitli ? "taksitli" : "pesin",
         taksit_sayisi: editing.taksit_sayisi ?? 1,
-        gun_araligi: 30,
+        taksit_periyodu: "aylik",
+        taksit_plani: [],
       });
     } else {
       form.resetFields();
@@ -92,26 +146,80 @@ export default function GelirGiderFormDrawer({
         kdv_mod: "haric",
         fatura_tarihi: dayjs(),
         taksit_mod: "pesin",
-        taksit_sayisi: 1,
-        gun_araligi: 30,
+        taksit_sayisi: 2,
+        taksit_periyodu: "aylik",
+        taksit_plani: [],
       });
     }
   }, [open, editing, cfg, form]);
 
-  // Otomatik plan satırları üretir (manuel editöre başlangıç / önizleme).
-  const uretPlan = (net: number, adet: number, gun: number, ilkVade: dayjs.Dayjs) => {
-    const rows: { taksit_no: number; vade_tarihi: dayjs.Dayjs; tutar: number; aciklama: string }[] = [];
-    const birim = Math.round((net / adet) * 100) / 100;
-    for (let i = 1; i <= adet; i++) {
-      const tutar = i === adet ? Math.round((net - birim * (adet - 1)) * 100) / 100 : birim;
-      rows.push({
-        taksit_no: i,
-        vade_tarihi: ilkVade.add(gun * (i - 1), "day"),
-        tutar,
-        aciklama: "",
-      });
+  const taksitMod = Form.useWatch("taksit_mod", form);
+  const taksitSayisi = Form.useWatch("taksit_sayisi", form);
+  const brutTutar = Form.useWatch("brut_tutar", form);
+  const kdvOrani = Form.useWatch("kdv_orani", form);
+  const kdvMod = Form.useWatch("kdv_mod", form);
+  const vadeTarihi = Form.useWatch("vade_tarihi", form);
+  const faturaTarihi = Form.useWatch("fatura_tarihi", form);
+  const taksitPeriyodu = Form.useWatch("taksit_periyodu", form);
+
+  useEffect(() => {
+    setTaksitFirstAmountEdited(false);
+    planSyncKeyRef.current = "";
+  }, [brutTutar, kdvOrani, kdvMod, taksitSayisi, vadeTarihi, faturaTarihi, taksitPeriyodu]);
+
+  useEffect(() => {
+    if (!open || cfg.modul !== "gider" || taksitMod !== "taksitli") return;
+    if (taksitFirstAmountEdited) return;
+    syncTaksitPlani();
+  }, [
+    open,
+    cfg.modul,
+    taksitMod,
+    taksitSayisi,
+    brutTutar,
+    kdvOrani,
+    kdvMod,
+    vadeTarihi,
+    faturaTarihi,
+    taksitPeriyodu,
+    taksitFirstAmountEdited,
+  ]);
+
+  const handleTaksitModChange = (mod: "pesin" | "taksitli") => {
+    setTaksitFirstAmountEdited(false);
+    planSyncKeyRef.current = "";
+    if (mod === "taksitli") {
+      form.setFieldsValue({ taksit_sayisi: Math.max(2, Number(form.getFieldValue("taksit_sayisi") || 2)) });
+    } else {
+      form.setFieldsValue({ taksit_sayisi: 1, taksit_plani: [] });
     }
-    return rows;
+  };
+
+  const handleTaksitSayisiChange = (value: number | null) => {
+    setTaksitFirstAmountEdited(false);
+    planSyncKeyRef.current = "";
+    form.setFieldsValue({ taksit_sayisi: Math.max(2, Number(value) || 2) });
+  };
+
+  const handleFirstTaksitAmountChange = (value: number | null) => {
+    const net = hesaplaNet(
+      Number(form.getFieldValue("brut_tutar") || 0),
+      Number(form.getFieldValue("kdv_orani") || 0),
+      form.getFieldValue("kdv_mod") || "haric",
+    );
+    const rows = (form.getFieldValue("taksit_plani") ?? []) as TaksitFormRow[];
+    if (!rows.length || net <= 0) return;
+
+    setTaksitFirstAmountEdited(true);
+    const amounts = spreadGiderAmountFromIndex(
+      rows.map((r) => Number(r.tutar) || 0),
+      0,
+      Number(value) || 0,
+      net,
+    );
+    form.setFieldsValue({
+      taksit_plani: rows.map((row, i) => ({ ...row, tutar: amounts[i] })),
+    });
   };
 
   const submit = async () => {
@@ -142,14 +250,10 @@ export default function GelirGiderFormDrawer({
       if (mod === "pesin") {
         payload.taksit_sayisi = 1;
         payload.taksit_plani = null;
-      } else if (mod === "manuel") {
-        const satirlar = (values.taksit_plani_manuel ?? []) as {
-          vade_tarihi?: dayjs.Dayjs;
-          tutar?: number;
-          aciklama?: string;
-        }[];
-        if (!satirlar.length) {
-          message.error("Manuel taksit için en az bir satır ekleyin.");
+      } else {
+        const satirlar = (values.taksit_plani ?? []) as TaksitFormRow[];
+        if (satirlar.length < 2) {
+          message.error("Taksitli ödemede en az 2 taksit olmalı.");
           return;
         }
         const net = hesaplaNet(values.brut_tutar, values.kdv_orani, values.kdv_mod);
@@ -167,25 +271,6 @@ export default function GelirGiderFormDrawer({
           tutar: Number(r.tutar) || 0,
           aciklama: r.aciklama ?? "",
         }));
-      } else {
-        // otomatik: plan client'ta üretilir (gün aralığı + başlangıç vade dikkate alınır)
-        const adet = Number(values.taksit_sayisi) || 1;
-        const gun = Number(values.gun_araligi) || 30;
-        const net = hesaplaNet(values.brut_tutar, values.kdv_orani, values.kdv_mod);
-        const ilkVade = values.vade_tarihi ?? values.fatura_tarihi ?? dayjs();
-        if (adet <= 1) {
-          payload.taksit_sayisi = 1;
-          payload.taksit_plani = null;
-        } else {
-          const plan = uretPlan(net, adet, gun, ilkVade);
-          payload.taksit_sayisi = adet;
-          payload.taksit_plani = plan.map((r) => ({
-            taksit_no: r.taksit_no,
-            vade_tarihi: r.vade_tarihi.format("YYYY-MM-DD"),
-            tutar: r.tutar,
-            aciklama: r.aciklama,
-          }));
-        }
       }
     }
 
@@ -212,19 +297,16 @@ export default function GelirGiderFormDrawer({
     (cfg.modul === "gider" ? dropdown?.maliyet_merkezleri : dropdown?.gelir_kaynaklari) ?? [];
 
   const cariId = Form.useWatch("cari_hesap_id", form);
-  const selectedCari = useMemo(
-    () => (dropdown?.cariler ?? []).find((c) => c.id === cariId),
-    [dropdown?.cariler, cariId],
-  );
+  const selectedCari = (dropdown?.cariler ?? []).find((c) => c.id === cariId);
 
-  const cariKategoriIdSet = useMemo(() => {
+  const cariKategoriIdSet = (() => {
     if (!selectedCari) return null;
     const ids =
       cfg.modul === "gider"
         ? selectedCari.gider_kategorileri
         : selectedCari.gelir_kategorileri;
     return ids && ids.length > 0 ? new Set(ids) : null;
-  }, [selectedCari, cfg.modul]);
+  })();
 
   const kategoriLabel = (k: { id: number; ad: string; parent_id: number | null }) => {
     if (cfg.modul === "gider") return k.ad;
@@ -233,7 +315,7 @@ export default function GelirGiderFormDrawer({
     return parent ? `${parent.ad} › ${k.ad}` : k.ad;
   };
 
-  const kategoriSecenekleri = useMemo(() => {
+  const kategoriSecenekleri = (() => {
     const pool = cariKategoriIdSet
       ? kategoriler.filter((k) => cariKategoriIdSet.has(k.id))
       : kategoriler;
@@ -249,7 +331,7 @@ export default function GelirGiderFormDrawer({
           })()
         : pool;
     return filtered.map((k) => ({ value: k.id, label: kategoriLabel(k) }));
-  }, [kategoriler, cariKategoriIdSet, cfg.modul]);
+  })();
 
   const handleCariChange = (id: number) => {
     const cari = (dropdown?.cariler ?? []).find((c) => c.id === id);
@@ -478,102 +560,68 @@ export default function GelirGiderFormDrawer({
         {cfg.modul === "gider" && (
           <>
             <Divider style={{ margin: "4px 0 12px" }} orientation="left" plain>
-              Taksitlendirme
+              Ödeme Şekli
             </Divider>
             <Form.Item name="taksit_mod">
-              <Radio.Group optionType="button" buttonStyle="solid">
+              <Radio.Group
+                optionType="button"
+                buttonStyle="solid"
+                onChange={(e) => handleTaksitModChange(e.target.value)}
+              >
                 <Radio.Button value="pesin">Peşin</Radio.Button>
-                <Radio.Button value="otomatik">Otomatik</Radio.Button>
-                <Radio.Button value="manuel">Manuel</Radio.Button>
+                <Radio.Button value="taksitli">Taksitli</Radio.Button>
               </Radio.Group>
             </Form.Item>
 
-            {/* OTOMATİK */}
             <Form.Item noStyle shouldUpdate={(p, c) => p.taksit_mod !== c.taksit_mod}>
               {() =>
-                form.getFieldValue("taksit_mod") === "otomatik" ? (
-                  <Row gutter={12}>
-                    <Col span={12}>
-                      <Form.Item name="taksit_sayisi" label="Taksit Sayısı">
-                        <InputNumber style={{ width: "100%" }} min={2} max={60} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item name="gun_araligi" label="Gün Aralığı" tooltip="Taksitler arası gün. Ör. 30 = aylık.">
-                        <InputNumber style={{ width: "100%" }} min={1} max={365} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                ) : null
-              }
-            </Form.Item>
+                form.getFieldValue("taksit_mod") === "taksitli" ? (
+                  <>
+                    <Row gutter={12}>
+                      <Col span={12}>
+                        <Form.Item name="taksit_sayisi" label="Taksit Sayısı">
+                          <InputNumber
+                            style={{ width: "100%" }}
+                            min={2}
+                            max={60}
+                            onChange={handleTaksitSayisiChange}
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={12}>
+                        <Form.Item
+                          name="taksit_periyodu"
+                          label="Taksit Periyodu"
+                          tooltip="Vade tarihleri takvim ayına göre ilerler."
+                        >
+                          <Select
+                            onChange={() => {
+                              setTaksitFirstAmountEdited(false);
+                              planSyncKeyRef.current = "";
+                            }}
+                            options={[
+                              { value: "aylik", label: "Aylık" },
+                              { value: "iki_aylik", label: "2 Aylık" },
+                              { value: "uc_aylik", label: "3 Aylık" },
+                            ]}
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
 
-            {/* OTOMATİK önizleme */}
-            <Form.Item noStyle shouldUpdate={() => true}>
-              {() => {
-                if (form.getFieldValue("taksit_mod") !== "otomatik") return null;
-                const adet = Number(form.getFieldValue("taksit_sayisi") || 1);
-                if (adet <= 1) return null;
-                const net = hesaplaNet(
-                  Number(form.getFieldValue("brut_tutar") || 0),
-                  Number(form.getFieldValue("kdv_orani") || 0),
-                  form.getFieldValue("kdv_mod") || "haric",
-                );
-                const gun = Number(form.getFieldValue("gun_araligi") || 30);
-                const ilkVade = form.getFieldValue("vade_tarihi") || form.getFieldValue("fatura_tarihi");
-                const taksitTutar = net > 0 ? net / adet : 0;
-                return (
-                  <Alert
-                    type="info" showIcon style={{ marginBottom: 16 }}
-                    message={`${adet} taksit oluşturulacak`}
-                    description={
-                      net > 0
-                        ? `Her biri ~${taksitTutar.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺ · ${gun} gün arayla${ilkVade ? ` · ilk vade ${dayjs(ilkVade).format("DD.MM.YYYY")}` : ""}.`
-                        : "Tutar girildiğinde taksit dağılımı hesaplanır."
-                    }
-                  />
-                );
-              }}
-            </Form.Item>
+                    <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8, fontSize: 12 }}>
+                      Tutar eşit bölünür. İlk taksit tutarını değiştirirseniz diğer taksitler aynı olur, son taksit kalanı alır.
+                    </Typography.Text>
 
-            {/* MANUEL editör */}
-            <Form.Item noStyle shouldUpdate={(p, c) => p.taksit_mod !== c.taksit_mod}>
-              {() =>
-                form.getFieldValue("taksit_mod") === "manuel" ? (
-                  <div style={{ marginBottom: 12 }}>
-                    <Space style={{ marginBottom: 8 }}>
-                      <Button
-                        size="small"
-                        icon={<ThunderboltOutlined />}
-                        onClick={() => {
-                          const net = hesaplaNet(
-                            Number(form.getFieldValue("brut_tutar") || 0),
-                            Number(form.getFieldValue("kdv_orani") || 0),
-                            form.getFieldValue("kdv_mod") || "haric",
-                          );
-                          const adet = Number(form.getFieldValue("taksit_sayisi") || 3) || 3;
-                          const gun = Number(form.getFieldValue("gun_araligi") || 30);
-                          const ilkVade = form.getFieldValue("vade_tarihi") || form.getFieldValue("fatura_tarihi") || dayjs();
-                          if (net <= 0) {
-                            message.warning("Önce tutar girin.");
-                            return;
-                          }
-                          const plan = uretPlan(net, adet, gun, dayjs(ilkVade));
-                          form.setFieldsValue({ taksit_plani_manuel: plan });
-                        }}
-                      >
-                        Otomatik doldur
-                      </Button>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        Satır ekleyip düzenleyebilirsin; toplam net tutara eşit olmalı.
-                      </Typography.Text>
-                    </Space>
-                    <Form.List name="taksit_plani_manuel">
-                      {(fields, { add, remove }) => (
+                    <Form.List name="taksit_plani">
+                      {(fields) => (
                         <>
-                          {fields.map(({ key, name, ...rest }) => (
+                          {fields.map(({ key, name, ...rest }, idx) => (
                             <Row gutter={8} key={key} align="middle" style={{ marginBottom: 8 }}>
-                              <Col span={8}>
+                              <Col span={2}>
+                                <Typography.Text type="secondary">#{idx + 1}</Typography.Text>
+                              </Col>
+                              <Col span={10}>
                                 <Form.Item
                                   {...rest}
                                   name={[name, "vade_tarihi"]}
@@ -583,48 +631,33 @@ export default function GelirGiderFormDrawer({
                                   <DatePicker style={{ width: "100%" }} format="DD.MM.YYYY" placeholder="Vade" />
                                 </Form.Item>
                               </Col>
-                              <Col span={7}>
+                              <Col span={12}>
                                 <Form.Item
                                   {...rest}
                                   name={[name, "tutar"]}
                                   rules={[{ required: true, message: "Tutar" }]}
                                   style={{ marginBottom: 0 }}
                                 >
-                                  <InputNumber style={{ width: "100%" }} min={0} step={0.01} precision={2} addonAfter="₺" placeholder="0,00" />
+                                  <InputNumber
+                                    style={{ width: "100%" }}
+                                    min={0}
+                                    step={0.01}
+                                    precision={2}
+                                    addonAfter="₺"
+                                    placeholder="0,00"
+                                    onChange={idx === 0 ? handleFirstTaksitAmountChange : undefined}
+                                  />
                                 </Form.Item>
-                              </Col>
-                              <Col span={7}>
-                                <Form.Item {...rest} name={[name, "aciklama"]} style={{ marginBottom: 0 }}>
-                                  <Input placeholder="Açıklama" />
-                                </Form.Item>
-                              </Col>
-                              <Col span={2} style={{ textAlign: "center" }}>
-                                <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
                               </Col>
                             </Row>
                           ))}
-                          <Button
-                            type="dashed"
-                            block
-                            icon={<PlusOutlined />}
-                            onClick={() =>
-                              add({
-                                vade_tarihi: form.getFieldValue("vade_tarihi") || form.getFieldValue("fatura_tarihi") || dayjs(),
-                                tutar: undefined,
-                                aciklama: "",
-                              })
-                            }
-                          >
-                            Taksit satırı ekle
-                          </Button>
                         </>
                       )}
                     </Form.List>
 
-                    {/* Manuel toplam kontrolü */}
                     <Form.Item noStyle shouldUpdate={() => true}>
                       {() => {
-                        const rows = (form.getFieldValue("taksit_plani_manuel") ?? []) as { tutar?: number }[];
+                        const rows = (form.getFieldValue("taksit_plani") ?? []) as { tutar?: number }[];
                         const toplam = rows.reduce((s, r) => s + (Number(r?.tutar) || 0), 0);
                         const net = hesaplaNet(
                           Number(form.getFieldValue("brut_tutar") || 0),
@@ -645,7 +678,7 @@ export default function GelirGiderFormDrawer({
                         );
                       }}
                     </Form.Item>
-                  </div>
+                  </>
                 ) : null
               }
             </Form.Item>

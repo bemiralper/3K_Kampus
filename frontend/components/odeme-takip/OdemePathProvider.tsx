@@ -48,5 +48,16 @@ export function OdemePathProvider({
 }
 
 export function useOdemePath(): OdemePathContextValue {
-  return useContext(OdemePathContext) ?? defaultValue;
+  const ctx = useContext(OdemePathContext);
+  const pathname = usePathname();
+
+  return useMemo(() => {
+    if (ctx) return ctx;
+    const basePath = getOdemeTakipBasePath(pathname);
+    return {
+      basePath,
+      isMuhasebeMode: basePath === MUHASEBE_ODEME_TAKIP_BASE,
+      href: (segment?: string) => odemeTakipHref(basePath, segment),
+    };
+  }, [ctx, pathname]);
 }

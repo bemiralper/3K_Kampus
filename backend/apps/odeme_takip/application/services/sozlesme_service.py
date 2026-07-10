@@ -336,7 +336,10 @@ class SozlesmeService:
             SozlesmeKalemi.objects.create(sozlesme=sozlesme, **ko)
 
         # Taksit planı oluştur
-        self._apply_taksit_plan(sozlesme, data)
+        try:
+            self._apply_taksit_plan(sozlesme, data)
+        except ValueError as exc:
+            return None, {'error': str(exc)}
 
         # Audit log
         self.gecmis_repo.create({
@@ -502,14 +505,20 @@ class SozlesmeService:
                 durum__in=[TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI],
             ).exists()
             if is_aktif and has_paid_taksit:
-                self.taksit_service.create_remaining_plan(
-                    sozlesme=sozlesme,
-                    taksit_sayisi=sozlesme.taksit_sayisi,
-                    ilk_odeme_tarihi=sozlesme.ilk_odeme_tarihi or sozlesme.baslangic_tarihi,
-                    periyot=sozlesme.taksit_periyodu,
-                )
+                try:
+                    self.taksit_service.create_remaining_plan(
+                        sozlesme=sozlesme,
+                        taksit_sayisi=sozlesme.taksit_sayisi,
+                        ilk_odeme_tarihi=sozlesme.ilk_odeme_tarihi or sozlesme.baslangic_tarihi,
+                        periyot=sozlesme.taksit_periyodu,
+                    )
+                except ValueError as exc:
+                    return None, {'error': str(exc)}
             else:
-                self._apply_taksit_plan(sozlesme, data)
+                try:
+                    self._apply_taksit_plan(sozlesme, data)
+                except ValueError as exc:
+                    return None, {'error': str(exc)}
 
         islem_turu = GecmisIslemTuru.REVIZYON if is_aktif else GecmisIslemTuru.GUNCELLEME
         self.gecmis_repo.create({

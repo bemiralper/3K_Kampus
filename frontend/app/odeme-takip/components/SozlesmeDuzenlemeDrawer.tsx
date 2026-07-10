@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Sozlesme } from "../types";
 import { formatCurrency, formatDate, API_BASE, postHeaders, odemeTuruLabel, taksitPeriyoduLabel, egitimTuruLabel, gecmisIslemTuruText, islemYapanText } from "../helpers";
+import { normalizeDateInput } from "../utils/taksitPlan";
 import SozlesmeNotlarEditor from "./SozlesmeNotlarEditor";
 import { SozlesmeNot, parseNotlarJson, serializeNotlarForApi } from "@/lib/sozlesme-notlar";
 
@@ -59,11 +60,11 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
       const data: Sozlesme = await res.json();
       setSozlesme(data);
       setForm({
-        baslangic_tarihi: data.baslangic_tarihi || "",
-        bitis_tarihi: data.bitis_tarihi || "",
+        baslangic_tarihi: normalizeDateInput(data.baslangic_tarihi),
+        bitis_tarihi: normalizeDateInput(data.bitis_tarihi),
         odeme_turu: data.odeme_turu || "",
         taksit_sayisi: String(data.taksit_sayisi || ""),
-        ilk_odeme_tarihi: data.ilk_odeme_tarihi || "",
+        ilk_odeme_tarihi: normalizeDateInput(data.ilk_odeme_tarihi),
         taksit_periyodu: data.taksit_periyodu || "",
         muacceliyet_durumu: data.muacceliyet_durumu || false,
         cayma_suresi: String(data.cayma_suresi || ""),
@@ -133,8 +134,18 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
         onSaved();
         onClose();
       } else {
-        const err = await res.json();
-        if (err.error) {
+        const rawText = await res.text();
+        let err: Record<string, unknown> = {};
+        if (rawText) {
+          try {
+            err = JSON.parse(rawText) as Record<string, unknown>;
+          } catch {
+            setErrors([`Sunucu hatası (${res.status})`]);
+            setSaving(false);
+            return;
+          }
+        }
+        if (typeof err.error === "string") {
           setErrors([err.error]);
         } else {
           setErrors(Object.values(err).flat().map(String));

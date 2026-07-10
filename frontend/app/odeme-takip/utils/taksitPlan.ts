@@ -180,6 +180,92 @@ export function defaultEgitimYiliBitis(bitisYil?: number | null): string {
   return `${year}-06-30`;
 }
 
+/** API / datetime → `<input type="date">` (YYYY-MM-DD) */
+export function normalizeDateInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+export type GiderTaksitPlanRow = {
+  taksit_no: number;
+  vade_tarihi: string;
+  tutar: number;
+};
+
+/** Gider: net tutarı eşit kuruş paylarına böler; son taksit kalanı alır. */
+export function splitGiderAmountEqually(netTutar: number, count: number): number[] {
+  if (count <= 0) return [];
+  if (count === 1) return [Math.round(netTutar * 100) / 100];
+  const birim = Math.floor((netTutar / count) * 100) / 100;
+  const amounts = Array.from({ length: count }, () => birim);
+  amounts[count - 1] = Math.round((netTutar - birim * (count - 1)) * 100) / 100;
+  return amounts;
+}
+
+/** Düzenlenen taksit tutarı sonrakilere yansır; son taksit kalan bakiyeyi alır. */
+export function spreadGiderAmountFromIndex(
+  amounts: number[],
+  editIndex: number,
+  editedAmount: number,
+  netTutar: number,
+): number[] {
+  if (amounts.length === 0) return [];
+  const result = [...amounts];
+  result[editIndex] = Math.max(0, Math.round(editedAmount * 100) / 100);
+
+  const trailing = result.length - editIndex - 1;
+  if (trailing <= 0) {
+    result[editIndex] = Math.round(netTutar * 100) / 100;
+    return result;
+  }
+  if (trailing === 1) {
+    const sumBefore = result.slice(0, -1).reduce((s, v) => s + v, 0);
+    result[result.length - 1] = Math.round(Math.max(0, netTutar - sumBefore) * 100) / 100;
+    return result;
+  }
+  for (let i = editIndex + 1; i < result.length - 1; i++) {
+    result[i] = result[editIndex];
+  }
+  const sumBeforeLast = result.slice(0, -1).reduce((s, v) => s + v, 0);
+  result[result.length - 1] = Math.round(Math.max(0, netTutar - sumBeforeLast) * 100) / 100;
+  return result;
+}
+
+/** Gider taksit satırları: takvim ayı vadeleri + eşit tutar bölüşümü. */
+export function buildGiderTaksitPlanRows(
+  netTutar: number,
+  taksitSayisi: number,
+  ilkVadeYyyyMmDd: string,
+  periyot = "aylik",
+): GiderTaksitPlanRow[] {
+  if (!ilkVadeYyyyMmDd || netTutar <= 0 || taksitSayisi <= 1) return [];
+
+  const ilkVade = normalizeDateInput(ilkVadeYyyyMmDd);
+  if (!ilkVade) return [];
+
+  const pm = periodMonths(periyot);
+  const amounts = splitGiderAmountEqually(netTutar, taksitSayisi);
+  return amounts.map((tutar, i) => ({
+    taksit_no: i + 1,
+    vade_tarihi: addMonths(ilkVade, i * pm),
+    tutar,
+  }));
+}
+
+/** @deprecated buildGiderTaksitPlanRows kullanın */
+export function buildGiderEqualTaksitPlan(
+  netTutar: number,
+  taksitSayisi: number,
+  ilkVadeYyyyMmDd: string,
+  periyot = "aylik",
+): GiderTaksitPlanRow[] {
+  return buildGiderTaksitPlanRows(netTutar, taksitSayisi, ilkVadeYyyyMmDd, periyot);
+}
+
 /** Düzenlenen taksit tutarı sonraki taksitlere yansır; son taksit kalan bakiyeyi alır. */
 export function spreadTaksitAmountsFromIndex(
   rows: ManuelTaksitRow[],

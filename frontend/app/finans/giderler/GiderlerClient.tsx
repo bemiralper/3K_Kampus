@@ -28,6 +28,7 @@ import { isCekSenetTip } from "@/lib/finans/paymentMethodUtils";
 import { EMPTY_ISLEM_MASRAFI, buildIslemMasrafiPayload, type IslemMasrafiFormState } from "../types/islem-masrafi-types";
 import { islemMasrafiGoster } from "../utils/islem-masrafi-eligibility";
 import { useOdemeYontemleriForMaliHesap } from "../hooks/useOdemeYontemleriForMaliHesap";
+import { buildGiderTaksitPlanRows, spreadGiderAmountFromIndex } from "@/app/odeme-takip/utils/taksitPlan";
 
 /* ═══════════════════════════════════════════════════════════════
    Gider Yönetimi — Kayıt Listesi + CRUD + Onay Workflow
@@ -455,7 +456,7 @@ export function GiderFormModal({
   const effectiveSubeId = subeId ?? activeSube?.id;
   const isCariLocked = Boolean(lockedCariHesap);
 
-  const [form, setForm] = useState<GiderKaydiCreatePayload>({
+  const [form, setForm] = useState<GiderKaydiCreatePayload & { odeme_sekli?: "pesin" | "taksitli" }>({
     kurum_id: kurumId,
     cari_hesap_id: defaultCariHesapId || lockedCariHesap?.id || 0,
     gider_kategorisi_id: lockedCariHesap?.gider_kategorileri?.[0] ?? 0,
@@ -469,6 +470,7 @@ export function GiderFormModal({
     brut_tutar: 0,
     kdv_orani: 20,
     taksit_sayisi: 1,
+    odeme_sekli: "pesin" as "pesin" | "taksitli",
     tekrar_mi: false,
     tekrar_sikligi: "aylik",
   });
@@ -477,7 +479,7 @@ export function GiderFormModal({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [taksitPlani, setTaksitPlani] = useState<TaksitPlaniItem[]>([]);
-  const [taksitPlaniManual, setTaksitPlaniManual] = useState(false);
+  const [taksitFirstAmountEdited, setTaksitFirstAmountEdited] = useState(false);
 
   const [odemeSimdi, setOdemeSimdi] = useState(false);
   const [masrafForm, setMasrafForm] = useState({ ...EMPTY_ISLEM_MASRAFI });
@@ -611,36 +613,38 @@ export function GiderFormModal({
   const kdvTutar = Math.round((netTutarGirilen - brutTutar) * 100) / 100;
   const netTutar = netTutarGirilen;
 
-  // Taksit planını otomatik oluştur (taksit_sayisi, vade_tarihi veya netTutar değiştiğinde)
+  // Taksit planını oluştur (taksit sayısı / vade / net değişince eşit böl)
   useEffect(() => {
+    const isTaksitli = form.odeme_sekli === "taksitli";
     const count = form.taksit_sayisi ?? 1;
-    if (count <= 1 || netTutar <= 0) {
+    if (!isTaksitli || count <= 1 || netTutar <= 0) {
       setTaksitPlani([]);
-      setTaksitPlaniManual(false);
+      setTaksitFirstAmountEdited(false);
       return;
     }
-    // Manuel düzenleme yapılmışsa planı bozmayız (taksit sayısı değişmediyse)
-    if (taksitPlaniManual && taksitPlani.length === count) return;
+    if (taksitFirstAmountEdited && taksitPlani.length === count) return;
 
     const vadeStr = form.vade_tarihi;
-    const baseDate = vadeStr ? new Date(vadeStr) : new Date();
-    const birimTutar = Math.floor((netTutar / count) * 100) / 100;
-
-    const plan: TaksitPlaniItem[] = [];
-    for (let i = 1; i <= count; i++) {
-      const d = new Date(baseDate);
-      d.setDate(d.getDate() + 30 * (i - 1));
-      const tutar = i === count ? Math.round((netTutar - birimTutar * (count - 1)) * 100) / 100 : birimTutar;
-      plan.push({
-        taksit_no: i,
-        vade_tarihi: d.toISOString().slice(0, 10),
-        tutar,
-      });
+    if (!vadeStr) {
+      setTaksitPlani([]);
+      return;
     }
-    setTaksitPlani(plan);
-    setTaksitPlaniManual(false);
+
+    const plan = buildGiderTaksitPlanRows(netTutar, count, vadeStr, "aylik");
+    setTaksitPlani(
+      plan.map((r) => ({
+        taksit_no: r.taksit_no,
+        vade_tarihi: r.vade_tarihi,
+        tutar: r.tutar,
+      })),
+    );
+    setTaksitFirstAmountEdited(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.taksit_sayisi, form.vade_tarihi, netTutar]);
+  }, [form.odeme_sekli, form.taksit_sayisi, form.vade_tarihi, netTutar]);
+
+  useEffect(() => {
+    setTaksitFirstAmountEdited(false);
+  }, [netTutar]);
 
   // Taksit toplamı hesapla
   const taksitToplam = taksitPlani.reduce((s, t) => s + (Number(t.tutar) || 0), 0);
@@ -703,7 +707,8 @@ export function GiderFormModal({
     setGeneralError(null);
     try {
       // Kullanıcı net (KDV dahil) giriyor → backend brüt bekliyor
-      const payload: GiderKaydiCreatePayload = { ...form, brut_tutar: brutTutar };
+      const { odeme_sekli: _odemeSekli, ...formRest } = form;
+      const payload: GiderKaydiCreatePayload = { ...formRest, brut_tutar: brutTutar };
       if (taksitPlani.length > 0) {
         payload.taksit_plani = taksitPlani;
       }
@@ -745,7 +750,7 @@ export function GiderFormModal({
 
   const todayIso = () => new Date().toISOString().slice(0, 10);
   const planliOdeme =
-    (form.taksit_sayisi ?? 1) > 1 ||
+    (form.odeme_sekli === "taksitli" && (form.taksit_sayisi ?? 1) > 1) ||
     Boolean(form.vade_tarihi && form.vade_tarihi > todayIso());
 
   useEffect(() => {
@@ -878,7 +883,7 @@ export function GiderFormModal({
                   <div className="fd-calc-item-label">KDV %{kdvOrani}</div>
                   <div className="fd-calc-item-value">{kdvTutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺</div>
                 </div>
-                {(form.taksit_sayisi ?? 1) > 1 && (
+                {(form.odeme_sekli === "taksitli" && (form.taksit_sayisi ?? 1) > 1) && (
                   <div>
                     <div className="fd-calc-item-label">Taksit</div>
                     <div className="fd-calc-item-value">{(netTutar / (form.taksit_sayisi ?? 1)).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺</div>
@@ -899,9 +904,49 @@ export function GiderFormModal({
                   {KDV_ORANLARI.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
                 </FSelect>
               </FField>
-              <FField label="Taksit Sayısı">
-                <FInput type="number" min={1} max={60} value={form.taksit_sayisi || 1} onChange={e => set("taksit_sayisi", Number(e.target.value))} />
+              <FField label="Ödeme Şekli">
+                <div style={{ display: "flex", gap: 8 }}>
+                  {(["pesin", "taksitli"] as const).map((sekli) => (
+                    <button
+                      key={sekli}
+                      type="button"
+                      onClick={() => {
+                        setTaksitFirstAmountEdited(false);
+                        setForm((f) => ({
+                          ...f,
+                          odeme_sekli: sekli,
+                          taksit_sayisi: sekli === "pesin" ? 1 : Math.max(2, f.taksit_sayisi ?? 2),
+                        }));
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: `1px solid ${form.odeme_sekli === sekli ? "#1F3C88" : "#d1d5db"}`,
+                        background: form.odeme_sekli === sekli ? "#eff6ff" : "#fff",
+                        fontWeight: form.odeme_sekli === sekli ? 600 : 400,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {sekli === "pesin" ? "Peşin" : "Taksitli"}
+                    </button>
+                  ))}
+                </div>
               </FField>
+              {form.odeme_sekli === "taksitli" && (
+                <FField label="Taksit Sayısı">
+                  <FInput
+                    type="number"
+                    min={2}
+                    max={60}
+                    value={form.taksit_sayisi || 2}
+                    onChange={(e) => {
+                      setTaksitFirstAmountEdited(false);
+                      set("taksit_sayisi", Math.max(2, Number(e.target.value) || 2));
+                    }}
+                  />
+                </FField>
+              )}
             </div>
             <div className="fd-row-3">
               <FField label="Fatura No">
@@ -925,7 +970,7 @@ export function GiderFormModal({
       id: "taksit",
       label: "Taksit Planı",
       icon: <IconTaksit />,
-      hidden: (form.taksit_sayisi ?? 1) <= 1,
+      hidden: form.odeme_sekli !== "taksitli" || (form.taksit_sayisi ?? 1) <= 1,
       fields: ["taksit_plani"],
       validate: validateTaksitStep,
       content: (
@@ -933,21 +978,23 @@ export function GiderFormModal({
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>{form.taksit_sayisi} Taksit</span>
             <button type="button" onClick={() => {
-              setTaksitPlaniManual(false);
-              const count = form.taksit_sayisi ?? 1;
-              const baseDate = form.vade_tarihi ? new Date(form.vade_tarihi) : new Date();
-              const birimTutar = Math.floor((netTutar / count) * 100) / 100;
-              const plan: TaksitPlaniItem[] = [];
-              for (let i = 1; i <= count; i++) {
-                const d = new Date(baseDate);
-                d.setDate(d.getDate() + 30 * (i - 1));
-                plan.push({ taksit_no: i, vade_tarihi: d.toISOString().slice(0, 10), tutar: i === count ? Math.round((netTutar - birimTutar * (count - 1)) * 100) / 100 : birimTutar });
-              }
-              setTaksitPlani(plan);
+              setTaksitFirstAmountEdited(false);
+              const count = form.taksit_sayisi ?? 2;
+              const vadeStr = form.vade_tarihi;
+              if (!vadeStr || count <= 1) return;
+              const plan = buildGiderTaksitPlanRows(netTutar, count, vadeStr, "aylik");
+              setTaksitPlani(plan.map((r) => ({
+                taksit_no: r.taksit_no,
+                vade_tarihi: r.vade_tarihi,
+                tutar: r.tutar,
+              })));
             }} style={{ background: "none", border: "none", color: "#64748b", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
               Sıfırla
             </button>
           </div>
+          <p style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
+            Tutar eşit bölünür. İlk taksit tutarını değiştirirseniz diğerleri aynı olur, son taksit kalanı alır.
+          </p>
           <div className="fd-taksit-edit-list">
             <div className="fd-taksit-edit-row fd-taksit-edit-row--head">
               <span className="fd-taksit-no">#</span>
@@ -965,7 +1012,6 @@ export function GiderFormModal({
                     const updated = [...taksitPlani];
                     updated[idx] = { ...updated[idx], vade_tarihi: e.target.value };
                     setTaksitPlani(updated);
-                    setTaksitPlaniManual(true);
                   }}
                 />
                 <FInput
@@ -974,10 +1020,21 @@ export function GiderFormModal({
                   min={0}
                   value={t.tutar || ""}
                   onChange={e => {
+                    const val = parseFloat(e.target.value) || 0;
+                    if (idx === 0) {
+                      const amounts = spreadGiderAmountFromIndex(
+                        taksitPlani.map((row) => Number(row.tutar) || 0),
+                        0,
+                        val,
+                        netTutar,
+                      );
+                      setTaksitPlani(taksitPlani.map((row, i) => ({ ...row, tutar: amounts[i] })));
+                      setTaksitFirstAmountEdited(true);
+                      return;
+                    }
                     const updated = [...taksitPlani];
-                    updated[idx] = { ...updated[idx], tutar: parseFloat(e.target.value) || 0 };
+                    updated[idx] = { ...updated[idx], tutar: val };
                     setTaksitPlani(updated);
-                    setTaksitPlaniManual(true);
                   }}
                 />
                 <FSelect
@@ -989,7 +1046,6 @@ export function GiderFormModal({
                       odeme_yontemi_id: e.target.value ? Number(e.target.value) : null,
                     };
                     setTaksitPlani(updated);
-                    setTaksitPlaniManual(true);
                   }}
                 >
                   <option value="">Nakit/Havale (varsayılan)</option>
@@ -1135,7 +1191,7 @@ export function GiderFormModal({
             <FReviewRow label="Kategori" value={seciliKategoriLabel || "—"} />
             <FReviewRow label="Net Tutar" value={`${netTutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺`} />
             <FReviewRow label={`KDV (%${kdvOrani})`} value={`${kdvTutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺`} muted />
-            {(form.taksit_sayisi ?? 1) > 1 && (
+            {(form.odeme_sekli === "taksitli" && (form.taksit_sayisi ?? 1) > 1) && (
               <FReviewRow label="Taksit Sayısı" value={`${form.taksit_sayisi} Taksit`} />
             )}
             <FReviewRow label="Mali Hesap" value={seciliMaliHesapAd || "Belirtilmedi"} muted={!seciliMaliHesapAd} />
@@ -1202,7 +1258,7 @@ export function GiderEditModal({
   const [cariHesaplar, setCariHesaplar] = useState<CariHesapDropdownItem[]>([]);
   const [flatKategoriler, setFlatKategoriler] = useState<{ id: number; label: string }[]>([]);
   const [maliHesaplar, setMaliHesaplar] = useState<{ id: number; ad: string }[]>([]);
-  const [form, setForm] = useState<GiderKaydiUpdatePayload>({
+  const [form, setForm] = useState<GiderKaydiUpdatePayload & { odeme_sekli?: "pesin" | "taksitli" }>({
     cari_hesap_id: data.cari_hesap_id,
     gider_kategorisi_id: data.gider_kategorisi_id,
     sube_id: data.sube_id,
@@ -1215,6 +1271,7 @@ export function GiderEditModal({
     brut_tutar: Number(data.net_tutar),
     kdv_orani: data.kdv_orani,
     taksit_sayisi: data.taksit_sayisi,
+    odeme_sekli: (data.taksit_sayisi ?? 1) > 1 ? "taksitli" : "pesin",
   });
 
   useEffect(() => {
@@ -1402,15 +1459,50 @@ export function GiderEditModal({
             <FInput type="date" value={form.vade_tarihi || ""} onChange={(e) => set("vade_tarihi", e.target.value)} />
           </FField>
         </div>
-        <FField label="Taksit Sayısı">
-          <FInput
-            type="number"
-            min={1}
-            max={60}
-            value={form.taksit_sayisi || 1}
-            onChange={(e) => set("taksit_sayisi", Number(e.target.value))}
-          />
+        <FField label="Ödeme Şekli">
+          <div style={{ display: "flex", gap: 8 }}>
+            {(["pesin", "taksitli"] as const).map((sekli) => (
+              <button
+                key={sekli}
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    odeme_sekli: sekli,
+                    taksit_sayisi: sekli === "pesin" ? 1 : Math.max(2, f.taksit_sayisi ?? 2),
+                  }))
+                }
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: `1px solid ${form.odeme_sekli === sekli ? "#1F3C88" : "#d1d5db"}`,
+                  background: form.odeme_sekli === sekli ? "#eff6ff" : "#fff",
+                  fontWeight: form.odeme_sekli === sekli ? 600 : 400,
+                  cursor: "pointer",
+                }}
+              >
+                {sekli === "pesin" ? "Peşin" : "Taksitli"}
+              </button>
+            ))}
+          </div>
         </FField>
+        {form.odeme_sekli === "taksitli" && (
+          <FField label="Taksit Sayısı">
+            <FInput
+              type="number"
+              min={2}
+              max={60}
+              value={form.taksit_sayisi || 2}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  taksit_sayisi: Math.max(2, Number(e.target.value) || 2),
+                }))
+              }
+            />
+          </FField>
+        )}
         <FField label="Açıklama">
           <FTextarea rows={2} value={form.aciklama || ""} onChange={(e) => set("aciklama", e.target.value)} />
         </FField>

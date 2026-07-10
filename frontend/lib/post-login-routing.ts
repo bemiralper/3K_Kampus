@@ -50,12 +50,56 @@ async function persistSingleSube(
   await setActiveContext(sube.kurum_id, sube.id, null);
 }
 
+/** Koç / muhasebe portalı: finans API'leri için kurum+şube bağlamını oturum açılışında yaz. */
+async function ensureContextForPortalUser(_user: User): Promise<void> {
+  const storedKurumRaw = localStorage.getItem(STORAGE_KURUM);
+  const storedKurumId = storedKurumRaw ? parseInt(storedKurumRaw, 10) : NaN;
+  const hasStoredKurum = Number.isFinite(storedKurumId);
+
+  const kurumRes = await personelAccessService.myKurumlar();
+  const kurumId =
+    kurumRes.kurumlar.length === 1
+      ? kurumRes.kurumlar[0].id
+      : hasStoredKurum && kurumRes.kurumlar.some((k) => k.id === storedKurumId)
+        ? storedKurumId
+        : kurumRes.kurumlar[0]?.id;
+
+  if (kurumId) {
+    localStorage.setItem(STORAGE_KURUM, String(kurumId));
+  }
+
+  const subeRes = await personelAccessService.mySubeler(
+    kurumId ? { kurum_id: kurumId } : undefined,
+  );
+
+  if (subeRes.subeler.length === 1) {
+    await persistSingleSube(subeRes.subeler[0]);
+    return;
+  }
+
+  const storedSubeRaw = localStorage.getItem(STORAGE_SUBE);
+  const storedSubeId = storedSubeRaw ? parseInt(storedSubeRaw, 10) : NaN;
+  const matched = Number.isFinite(storedSubeId)
+    ? subeRes.subeler.find((s) => s.id === storedSubeId)
+    : undefined;
+  if (matched) {
+    await persistSingleSube(matched);
+  }
+}
+
 /** Giriş başarılı olduktan sonra gidilecek path. */
 export async function resolvePostLoginRedirect(user: User | null): Promise<string> {
   if (!user) return "/?giris=1";
 
+  const home = getDefaultHomePath(user);
+
   if (isCoachOnlyUser(user) || isMuhasebeOnlyUser(user)) {
-    return getDefaultHomePath(user);
+    try {
+      await ensureContextForPortalUser(user);
+    } catch {
+      /* portal home yine de açılır */
+    }
+    return home;
   }
 
   try {

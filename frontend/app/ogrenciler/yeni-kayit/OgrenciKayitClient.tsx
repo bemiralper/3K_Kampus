@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useOgrenciPath } from "@/components/ogrenci/OgrenciPathProvider";
-import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
+import { getOdemeTakipBasePath, odemeTakipHref } from "@/lib/muhasebe-routes";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useUnsavedChangesGuard } from "@/lib/hooks/useUnsavedChangesGuard";
 import UnsavedChangesModal from "@/components/UnsavedChangesModal";
@@ -148,10 +148,15 @@ function clearWizardStorage() {
 }
 
 export default function OgrenciKayitClient() {
+  const pathname = usePathname();
   const { href: ogrenciHref } = useOgrenciPath();
-  const { href: odemeHref } = useOdemePath();
   const { activeSube, activeEgitimYili } = useKurum();
   const router = useRouter();
+
+  const sozlesmeOlusturHref = (ogrenciId: number | string) => {
+    const base = getOdemeTakipBasePath(pathname);
+    return `${odemeTakipHref(base, "sozlesme-olustur")}?ogrenci_id=${ogrenciId}`;
+  };
   const [currentStep, setCurrentStep] = useState(0);
   const [data, setData] = useState<WizardData>(initialData);
   const [metadata, setMetadata] = useState<MetadataResponse | null>(null);
@@ -960,7 +965,8 @@ export default function OgrenciKayitClient() {
                       }),
                     );
                   }
-                  requestNavigation(`${odemeHref("sozlesme-olustur")}?ogrenci_id=${registeredStudent.id}`);
+                  markClean();
+                  window.location.assign(sozlesmeOlusturHref(registeredStudent.id));
                 }}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, width: "100%",

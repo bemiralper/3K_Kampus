@@ -8,12 +8,14 @@ import { apiGet } from "@/lib/api";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import SozlesmeNotlarEditor from "../components/SozlesmeNotlarEditor";
 import { SozlesmeNot, parseNotlarJson, serializeNotlarForApi } from "@/lib/sozlesme-notlar";
-import { API_BASE, formatCurrency, formatDate, postHeaders, apiHeaders, taksitPeriyoduLabel, odemeTuruTaksitPlaniMi } from "../helpers";
+import { API_BASE, formatCurrency, formatDate, postHeaders, apiHeaders, parseApiError, taksitPeriyoduLabel, odemeTuruTaksitPlaniMi } from "../helpers";
 import {
   addMonths,
   buildEqualTaksitRows,
   clampTaksitSayisi,
   defaultEgitimYiliBitis,
+  normalizeDateInput,
+  redistributeTaksitAmounts,
   rowsMatchEqualPlan,
   spreadTaksitAmountsFromIndex,
   type ManuelTaksitRow,
@@ -1004,22 +1006,31 @@ export default function SozlesmeOlusturClient() {
         setOdemeTuru(sz.odeme_turu || "taksitli");
         setTaksitSayisi(sz.taksit_sayisi || 2);
         setTaksitPeriyodu(sz.taksit_periyodu || "aylik");
-        if (sz.ilk_odeme_tarihi) setIlkOdemeTarihi(sz.ilk_odeme_tarihi);
-        if (sz.baslangic_tarihi) setBaslangicTarihi(sz.baslangic_tarihi);
-        if (sz.bitis_tarihi) setBitisTarihi(sz.bitis_tarihi);
+        if (sz.ilk_odeme_tarihi) setIlkOdemeTarihi(normalizeDateInput(sz.ilk_odeme_tarihi));
+        if (sz.baslangic_tarihi) setBaslangicTarihi(normalizeDateInput(sz.baslangic_tarihi));
+        if (sz.bitis_tarihi) setBitisTarihi(normalizeDateInput(sz.bitis_tarihi));
         setNotlarJson(parseNotlarJson(sz.notlar_json, sz.notlar));
         if (sz.odeme_yontemi_id) setSelectedOdemeYontemiId(sz.odeme_yontemi_id);
         if (sz.veli_id) setSelectedVeliId(sz.veli_id);
 
         if (sz.taksitler?.length) {
-          setManuelRows(
-            sz.taksitler.map((t: { tutar: number; vade_tarihi: string; odeme_yontemi_id?: number | null }) => ({
+          const loadedRows: ManuelTaksitRow[] = sz.taksitler.map(
+            (t: { tutar: number; vade_tarihi: string; odeme_yontemi_id?: number | null }) => ({
               tutar: String(t.tutar),
-              vade_tarihi: t.vade_tarihi || "",
+              vade_tarihi: normalizeDateInput(t.vade_tarihi),
               ...(t.odeme_yontemi_id ? { odeme_yontemi_id: t.odeme_yontemi_id } : {}),
-            })),
+            }),
           );
-          setTaksitPlanDirty(true);
+          setManuelRows(loadedRows);
+          const matchesEqual = rowsMatchEqualPlan(
+            loadedRows,
+            sz.net_tutar || 0,
+            0,
+            sz.taksit_sayisi || 2,
+            normalizeDateInput(sz.ilk_odeme_tarihi) || normalizeDateInput(sz.baslangic_tarihi),
+            sz.taksit_periyodu || "aylik",
+          );
+          setTaksitPlanDirty(!matchesEqual);
         }
 
         // Tüm adımlardan başla (öğrenci ve kalemler yüklendi)
@@ -1439,9 +1450,22 @@ export default function SozlesmeOlusturClient() {
   );
 
   useEffect(() => {
-    if (!odemeTuruTaksitPlaniMi(odemeTuru) || taksitPlanDirty || hedefTutar <= 0) return;
+    if (!odemeTuruTaksitPlaniMi(odemeTuru) || taksitPlanDirty || hedefTutar <= 0 || !ilkOdemeTarihi) return;
     rebuildEqualPlan(taksitSayisi);
   }, [odemeTuru, hedefTutar, pesinatVal, ilkOdemeTarihi, taksitPeriyodu, taksitPlanDirty, taksitSayisi, rebuildEqualPlan]);
+
+  const prevHedefRef = useRef({ hedefTutar, pesinatVal });
+  useEffect(() => {
+    if (!odemeTuruTaksitPlaniMi(odemeTuru) || !taksitPlanDirty || hedefTutar <= 0) return;
+    const prev = prevHedefRef.current;
+    if (prev.hedefTutar === hedefTutar && prev.pesinatVal === pesinatVal) return;
+    prevHedefRef.current = { hedefTutar, pesinatVal };
+    setManuelRows((rows) => {
+      const currentTotal = rows.reduce((s, r) => s + (parseFloat(r.tutar) || 0), 0);
+      if (Math.abs(currentTotal - hedefTutar) < 1) return rows;
+      return redistributeTaksitAmounts(rows, hedefTutar, pesinatVal, taksitPlanOptions);
+    });
+  }, [odemeTuru, hedefTutar, pesinatVal, taksitPlanDirty, taksitPlanOptions]);
 
   const handleManuelDateChange = (index: number, value: string) => {
     setTaksitPlanDirty(true);
@@ -1510,7 +1534,13 @@ export default function SozlesmeOlusturClient() {
       return;
     }
 
-    const validManuelRows = manuelRows.filter((r) => r.tutar && r.vade_tarihi);
+    let validManuelRows = manuelRows.filter((r) => r.tutar && r.vade_tarihi);
+    if (isTaksitMode && validManuelRows.length > 0) {
+      const rowTotal = validManuelRows.reduce((s, r) => s + (parseFloat(r.tutar) || 0), 0);
+      if (Math.abs(rowTotal - hedefTutar) >= 1) {
+        validManuelRows = redistributeTaksitAmounts(validManuelRows, hedefTutar, pesinatVal, taksitPlanOptions);
+      }
+    }
 
     if (isCekSenetMode && validManuelRows.length === 0) {
       setError("Çek/senet sözleşmesi için en az bir taksit tanımlayın.");
@@ -1609,21 +1639,23 @@ export default function SozlesmeOlusturClient() {
         credentials: "include",
         body: JSON.stringify(body),
       });
-      const data = await r.json();
+      const rawText = await r.text();
+      let data: Record<string, unknown> = {};
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText) as Record<string, unknown>;
+        } catch {
+          setError(r.ok ? "Sunucu yanıtı okunamadı" : `Sunucu hatası (${r.status})`);
+          setSubmitting(false);
+          return;
+        }
+      }
       if (!r.ok) {
-        // Backend: { errors: { field: msg } } veya { error: msg }
         if (data.errors && typeof data.errors === "object") {
-          setFieldErrors(data.errors);
-          const msgs = Object.values(data.errors).join(", ");
-          setError(msgs);
-        } else if (data.error) {
-          setError(data.error);
-        } else if (typeof data === "object") {
-          // Legacy format: direct field errors
-          const msgs = Object.entries(data).map(([k, v]) => `${k}: ${v}`).join(", ");
-          setError(msgs);
+          setFieldErrors(data.errors as Record<string, string>);
+          setError(Object.values(data.errors as Record<string, string>).join(", "));
         } else {
-          setError("Sözleşme oluşturulamadı");
+          setError(parseApiError(data, isEditMode ? "Sözleşme güncellenemedi" : "Sözleşme oluşturulamadı"));
         }
         setSubmitting(false);
         return;

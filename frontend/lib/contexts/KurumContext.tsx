@@ -292,8 +292,8 @@ export function KurumProvider({ children }: { children: ReactNode }) {
         setAllowedSubeIds(ids);
         setAccessibleSubeler(res.subeler);
         setGlobalSubeAccess(res.global_sube_access);
-        // Aktif şube izin listesinde değilse düzelt
-        if (ids.length > 0 && activeSube && !ids.includes(activeSube.id)) {
+        // Aktif şube izin listesinde değilse veya hiç seçilmemişse düzelt
+        if (ids.length > 0 && (!activeSube || !ids.includes(activeSube.id))) {
           const fallback =
             subeler.find((s) => s.id === ids[0]) ||
             ({
