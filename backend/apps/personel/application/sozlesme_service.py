@@ -46,8 +46,11 @@ class SozlesmeService:
 
         gecerli_gecisler = {
             SozlesmeDurumu.TASLAK: [SozlesmeDurumu.AKTIF, SozlesmeDurumu.FESHEDILDI],
-            SozlesmeDurumu.AKTIF: [SozlesmeDurumu.ASKIDA, SozlesmeDurumu.SONA_ERDI, SozlesmeDurumu.FESHEDILDI],
+            SozlesmeDurumu.AKTIF: [SozlesmeDurumu.PASIF, SozlesmeDurumu.SURESI_DOLMU, SozlesmeDurumu.FESHEDILDI],
+            SozlesmeDurumu.PASIF: [SozlesmeDurumu.AKTIF, SozlesmeDurumu.FESHEDILDI],
+            # Geriye uyumluluk
             SozlesmeDurumu.ASKIDA: [SozlesmeDurumu.AKTIF, SozlesmeDurumu.FESHEDILDI],
+            SozlesmeDurumu.SONA_ERDI: [],
         }
 
         izin_verilen = gecerli_gecisler.get(sozlesme.durum, [])

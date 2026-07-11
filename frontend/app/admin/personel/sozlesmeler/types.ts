@@ -3,9 +3,51 @@
    ═══════════════════════════════════════════ */
 
 export type SozlesmeTuru = 'TAM_ZAMANLI' | 'DERS_UCRETLI' | 'KARMA';
-export type SozlesmeDurumu = 'TASLAK' | 'AKTIF' | 'ASKIDA' | 'SONA_ERDI' | 'FESHEDILDI';
+export type SozlesmeDurumu = 'TASLAK' | 'AKTIF' | 'ASKIDA' | 'SONA_ERDI' | 'FESHEDILDI' | 'PASIF' | 'SURESI_DOLMU';
 export type UcretTipi = 'SAAT_BASI' | 'DERS_BASI' | 'AYLIK_PAKET';
+export type DersUcretTipi = 'SAAT_BASI' | 'DERS_BASI';
 export type HakedisDurumu = 'HESAPLANDI' | 'ONAYLANDI' | 'ODENDI' | 'IPTAL';
+
+// ── Sözleşme v2 alt kayıtları ──
+
+export interface MaasPlaniSatiri {
+  id?: number;
+  sira_no: number;
+  baslangic_tarihi: string;
+  bitis_tarihi: string;
+  calisilan_gun: number;
+  maas: number;
+  aciklama: string;
+}
+
+export interface MesaiSaati {
+  id?: number;
+  gun: number;
+  baslangic: string | null;
+  bitis: string | null;
+  mola_dakika: number;
+  aktif: boolean;
+}
+
+export interface SozlesmeMadde {
+  id?: number;
+  sira: number;
+  metin: string;
+}
+
+export interface OzetMetrikleri {
+  toplam_maas: number;
+  toplam_calisma_suresi_ay: number;
+  haftalik_calisma_saati: number;
+  ders_ucreti: number;
+  ders_ucret_tipi: string;
+  sgk_gun: number;
+  haftalik_calisma_gun: number;
+  gunluk_ucret: number;
+  saatlik_ucret: number;
+  tahmini_aylik_maliyet: number;
+  kalan_gun: number;
+}
 
 export interface DersUcret {
   id?: number;
@@ -31,25 +73,54 @@ export interface UcretDonemi {
 
 export interface Sozlesme {
   id: number;
+  sozlesme_no?: string;
+  dogrulama_kodu?: string;
+  is_ogretmen?: boolean;
+  belge_basligi?: string;
+  rol_kodu?: string;
+  rol_ad?: string;
+  kurum_id?: number;
+  kurum?: { ad?: string; adres?: string; telefon_sabit?: string };
+  login_logo_url?: string | null;
   personel_id: number;
   personel_ad: string;
+  personel_tc?: string;
   personel_foto: string | null;
+  personel_no_snapshot?: string;
+  brans_snapshot?: string;
+  gorev_snapshot?: string;
+  departman_snapshot?: string;
   egitim_yili_id: number;
   egitim_yili_display: string;
+  sube_id?: number | null;
+  sube_ad?: string | null;
+  gorevlendirme_id?: number | null;
   sozlesme_turu: SozlesmeTuru;
   sozlesme_turu_display: string;
   durum: SozlesmeDurumu;
   durum_display: string;
+  duzenlenme_tarihi?: string | null;
   baslangic_tarihi: string;
   bitis_tarihi: string;
   brut_maas: number;
   net_maas: number;
   sgk_gun: number;
+  haftalik_calisma_gun_sayisi?: number;
+  haftalik_izin_gunleri?: number[];
   ders_ucreti_aktif: boolean;
+  ders_ucret_tipi?: string;
+  ders_birim_ucret?: number;
+  toplam_calisma_suresi_ay?: number;
+  toplam_sozlesme_bedeli?: number;
+  auto_save_rev?: number;
   notlar: string;
   sozlesme_dosya: string | null;
   ders_ucretleri: DersUcret[];
   ucret_donemleri: UcretDonemi[];
+  maas_plani?: MaasPlaniSatiri[];
+  mesai_saatleri?: MesaiSaati[];
+  maddeler?: SozlesmeMadde[];
+  ozet?: OzetMetrikleri;
   fesih_tarihi: string | null;
   fesih_sebebi: string;
   created_at: string;
@@ -61,6 +132,7 @@ export interface SozlesmeFormData {
   durum?: SozlesmeDurumu;
   baslangic_tarihi: string;
   bitis_tarihi: string;
+  duzenlenme_tarihi?: string;
   brut_maas: number;
   net_maas: number;
   sgk_gun: number;
@@ -68,6 +140,19 @@ export interface SozlesmeFormData {
   notlar: string;
   ders_ucretleri: DersUcret[];
   ucret_donemleri: UcretDonemi[];
+  sube_id?: number | null;
+  gorevlendirme_id?: number | null;
+  personel_no_snapshot?: string;
+  brans_snapshot?: string;
+  gorev_snapshot?: string;
+  departman_snapshot?: string;
+  haftalik_calisma_gun_sayisi?: number;
+  haftalik_izin_gunleri?: number[];
+  ders_ucret_tipi?: string;
+  ders_birim_ucret?: number;
+  maas_plani?: MaasPlaniSatiri[];
+  mesai_saatleri?: MesaiSaati[];
+  maddeler?: SozlesmeMadde[];
 }
 
 export interface Hakedis {
@@ -113,12 +198,35 @@ export interface HakedisStats {
   durum_dagilimi: Record<string, number>;
 }
 
+export interface Gorevlendirme {
+  id: number;
+  personel_id: number;
+  brans_id: number | null;
+  brans_ad: string;
+  gorev_ad: string;
+  sube_id: number | null;
+  sube_ad: string;
+}
+
+export interface HelperPersonel {
+  id: number;
+  ad: string;
+  soyad: string;
+  tam_ad: string;
+  tc_kimlik_no: string;
+  sube_id?: number;
+  fotograf?: string;
+  personel_no?: string;
+}
+
 export interface HelperData {
-  personeller: { id: number; ad: string; soyad: string; tam_ad: string; tc_kimlik_no: string }[];
+  personeller: HelperPersonel[];
+  gorevlendirmeler?: Gorevlendirme[];
   branslar: { id: number; ad: string; kod: string }[];
   sozlesme_turleri: { value: string; label: string }[];
   sozlesme_durumlari: { value: string; label: string }[];
   ucret_tipleri: { value: string; label: string }[];
+  ders_ucret_tipleri?: { value: string; label: string }[];
 }
 
 // ── Sabitler ──
@@ -137,6 +245,8 @@ export const SOZLESME_TURU_COLORS: Record<SozlesmeTuru, string> = {
 export const DURUM_LABELS: Record<SozlesmeDurumu, string> = {
   TASLAK: 'Taslak',
   AKTIF: 'Aktif',
+  PASIF: 'Pasif',
+  SURESI_DOLMU: 'Süresi Doldu',
   ASKIDA: 'Askıda',
   SONA_ERDI: 'Sona Erdi',
   FESHEDILDI: 'Feshedildi',
@@ -145,6 +255,8 @@ export const DURUM_LABELS: Record<SozlesmeDurumu, string> = {
 export const DURUM_COLORS: Record<SozlesmeDurumu, string> = {
   TASLAK: '#6b7280',
   AKTIF: '#10b981',
+  PASIF: '#f59e0b',
+  SURESI_DOLMU: '#6b7280',
   ASKIDA: '#f59e0b',
   SONA_ERDI: '#6b7280',
   FESHEDILDI: '#ef4444',

@@ -1,8 +1,9 @@
 /* ═══════════════════════════════════════════
    Personel Sözleşmeleri — API Servisi
    ═══════════════════════════════════════════ */
-import { apiGet, apiPost, apiPut, apiDelete, type ApiResponse } from '@/lib/api';
-import type { Sozlesme, SozlesmeFormData, SozlesmeStats, Hakedis, HakedisStats, HelperData, AvansKaydi, PersonelOdemeGecmisi, GiderKategorisi, FesihData } from '../types';
+import { apiGet, apiPost, apiPut, apiDelete, apiFetch, resolveApiUrl, getContextHeaders, type ApiResponse } from '@/lib/api';
+import { downloadPdfBlob } from '@/lib/download-file';
+import type { Sozlesme, SozlesmeFormData, SozlesmeStats, Hakedis, HakedisStats, HelperData, AvansKaydi, PersonelOdemeGecmisi, GiderKategorisi, FesihData, OzetMetrikleri } from '../types';
 
 const BASE = '/personel/api/sozlesmeler';
 
@@ -25,6 +26,69 @@ export async function updateSozlesme(id: number, data: Partial<SozlesmeFormData>
   return apiPut<Sozlesme>(`${BASE}/${id}/`, data);
 }
 
+export async function saveTaslak(id: number, data: Partial<SozlesmeFormData>): Promise<ApiResponse<Sozlesme>> {
+  return apiPut<Sozlesme>(`${BASE}/${id}/taslak/`, { ...data, durum: 'TASLAK' });
+}
+
+export async function previewHesap(payload: Partial<SozlesmeFormData>): Promise<ApiResponse<OzetMetrikleri>> {
+  return apiPost<OzetMetrikleri>(`${BASE}/preview-hesap/`, payload);
+}
+
+export async function fetchPrintToken(id: number): Promise<{ success: boolean; token?: string; error?: string }> {
+  const res = await apiFetch<Record<string, unknown>>(`${BASE}/${id}/print-token/`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  const token = typeof res.token === 'string' ? res.token : undefined;
+  if (res.success && token) {
+    return { success: true, token };
+  }
+  return { success: false, error: res.error || 'Print token alınamadı.' };
+}
+
+export function getSozlesmePdfUrl(id: number): string {
+  return resolveApiUrl(`${BASE}/${id}/pdf/`);
+}
+
+export async function downloadSozlesmePdf(id: number): Promise<{ success: boolean; error?: string }> {
+  try {
+    const url = resolveApiUrl(`${BASE}/${id}/pdf/`);
+    const res = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const json = await res.json();
+        return { success: false, error: (json.error as string) || 'PDF oluşturulamadı.' };
+      }
+      return { success: false, error: `PDF indirilemedi (${res.status})` };
+    }
+    const blob = await res.blob();
+    if (!blob.size) {
+      return { success: false, error: 'PDF dosyası boş.' };
+    }
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    const filename = match?.[1] || `personel_sozlesme_${id}.pdf`;
+    await downloadPdfBlob(blob, filename);
+    return { success: true };
+  } catch {
+    return { success: false, error: 'Bağlantı hatası.' };
+  }
+}
+
+export function getPrintTokenUrl(id: number, token: string): string {
+  const qs = `token=${encodeURIComponent(token)}`;
+  if (typeof window !== 'undefined') {
+    return `/print/personel/sozlesme/${id}?${qs}`;
+  }
+  const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+  return `${frontendUrl}/print/personel/sozlesme/${id}?${qs}`;
+}
+
 export async function deleteSozlesme(id: number): Promise<ApiResponse<void>> {
   return apiDelete<void>(`${BASE}/${id}/`);
 }
@@ -37,8 +101,11 @@ export async function fetchSozlesmeStats(): Promise<ApiResponse<SozlesmeStats>> 
   return apiGet<SozlesmeStats>(`${BASE}/stats/`);
 }
 
-export async function fetchHelperData(): Promise<ApiResponse<HelperData>> {
-  return apiGet<HelperData>(`${BASE}/helper-data/`);
+export async function fetchHelperData(excludeSozlesmeId?: number): Promise<ApiResponse<HelperData>> {
+  const params = new URLSearchParams();
+  if (excludeSozlesmeId) params.set('exclude_sozlesme_id', String(excludeSozlesmeId));
+  const qs = params.toString();
+  return apiGet<HelperData>(`${BASE}/helper-data/${qs ? `?${qs}` : ''}`);
 }
 
 // ── Hakedişler ──

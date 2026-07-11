@@ -35,8 +35,64 @@ def finans_report_footer_template(meta: dict[str, Any] | None = None) -> str:
 """
 
 
+def _image_field_data_uri(field) -> str | None:
+    """ImageField / FileField içeriğini data URI olarak döner (storage uyumlu)."""
+    if not field:
+        return None
+    try:
+        name = getattr(field, 'name', '') or 'logo.png'
+        if hasattr(field, 'open'):
+            with field.open('rb') as fh:
+                raw = fh.read()
+        else:
+            path = Path(field.path)
+            if not path.is_file():
+                return None
+            raw = path.read_bytes()
+        if not raw:
+            return None
+        encoded = base64.b64encode(raw).decode('ascii')
+        return f'data:{_mime_for(Path(name))};base64,{encoded}'
+    except Exception:
+        return None
+
+
+def _media_path_to_data_uri(relative_path: str) -> str | None:
+    if not relative_path:
+        return None
+    rel = relative_path.lstrip('/')
+    if rel.startswith('media/'):
+        rel = rel[6:]
+    try:
+        from django.core.files.storage import default_storage
+        if default_storage.exists(rel):
+            with default_storage.open(rel, 'rb') as fh:
+                raw = fh.read()
+            if raw:
+                encoded = base64.b64encode(raw).decode('ascii')
+                return f'data:{_mime_for(Path(rel))};base64,{encoded}'
+    except Exception:
+        pass
+    path = Path(settings.MEDIA_ROOT) / rel
+    if path.is_file():
+        encoded = base64.b64encode(path.read_bytes()).decode('ascii')
+        return f'data:{_mime_for(path)};base64,{encoded}'
+    return None
+
+
+def _url_to_data_uri(url: str | None) -> str | None:
+    if not url:
+        return None
+    if url.startswith('data:'):
+        return url
+    if '/media/' in url:
+        return _media_path_to_data_uri(url.split('/media/', 1)[1])
+    return None
+
+
 def _logo_data_uri() -> str | None:
     candidates = [
+        Path(settings.BASE_DIR).parent / "frontend" / "public" / "img" / "beyaz-logo.png",
         Path(settings.BASE_DIR).parent / "frontend" / "public" / "img" / "3k-logo.png",
         Path(settings.BASE_DIR) / "static" / "img" / "3k-logo.png",
     ]
@@ -82,17 +138,49 @@ def _kurum_logo_data_uri(kurum_id, sube_id=None) -> str | None:
 
     for entity in entities:
         for field in ("app_logo", "login_logo"):
-            f = getattr(entity, field, None)
-            if not f:
-                continue
-            try:
-                path = Path(f.path)
-                if path.is_file():
-                    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-                    return f"data:{_mime_for(path)};base64,{encoded}"
-            except Exception:
-                continue
+            uri = _image_field_data_uri(getattr(entity, field, None))
+            if uri:
+                return uri
     return None
+
+
+def _login_banner_logo_data_uri(kurum_id, sube_id=None) -> str | None:
+    """Koyu arka plan PDF/banner: şube login_logo öncelikli (beyaz logo)."""
+    entities = []
+    try:
+        if sube_id:
+            from apps.sube.domain.models import Sube
+            s = Sube.objects.filter(id=sube_id).first()
+            if s:
+                entities.append(s)
+        if kurum_id:
+            from apps.kurum.domain.models import Kurum
+            k = Kurum.objects.filter(id=kurum_id).first()
+            if k:
+                entities.append(k)
+    except Exception:
+        return None
+
+    for entity in entities:
+        for field in ("login_logo", "app_logo"):
+            uri = _image_field_data_uri(getattr(entity, field, None))
+            if uri:
+                return uri
+    return None
+
+
+def resolve_login_banner_logo(
+    kurum_id,
+    sube_id=None,
+    login_logo_url: str | None = None,
+) -> str | None:
+    logo = _login_banner_logo_data_uri(kurum_id, sube_id)
+    if logo:
+        return logo
+    logo = _url_to_data_uri(login_logo_url)
+    if logo:
+        return logo
+    return _logo_data_uri()
 
 
 def _resolve_logo(filters_meta: dict | None) -> str | None:

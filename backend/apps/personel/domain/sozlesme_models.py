@@ -24,9 +24,17 @@ class SozlesmeTuru(models.TextChoices):
 class SozlesmeDurumu(models.TextChoices):
     TASLAK = 'TASLAK', 'Taslak'
     AKTIF = 'AKTIF', 'Aktif'
+    PASIF = 'PASIF', 'Pasif'
+    FESHEDILDI = 'FESHEDILDI', 'Feshedildi'
+    SURESI_DOLMU = 'SURESI_DOLMU', 'Süresi Doldu'
+    # Geriye uyumluluk (migration öncesi kayıtlar)
     ASKIDA = 'ASKIDA', 'Askıda'
     SONA_ERDI = 'SONA_ERDI', 'Sona Erdi'
-    FESHEDILDI = 'FESHEDILDI', 'Feshedildi'
+
+
+class DersUcretTipi(models.TextChoices):
+    SAAT_BASI = 'SAAT_BASI', 'Saat Başı'
+    DERS_BASI = 'DERS_BASI', 'Ders Başı'
 
 
 class UcretTipi(models.TextChoices):
@@ -75,8 +83,35 @@ class PersonelSozlesme(models.Model):
         related_name='personel_sozlesmeleri',
         verbose_name='Eğitim Yılı',
     )
+    sube = models.ForeignKey(
+        'sube.Sube',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='personel_sozlesmeleri',
+        verbose_name='Şube',
+    )
+    gorevlendirme = models.ForeignKey(
+        'personel.PersonelGorevlendirme',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sozlesmeler',
+        verbose_name='Görevlendirme',
+    )
 
     # ─── Sözleşme Bilgileri ───
+    sozlesme_no = models.CharField(
+        'Sözleşme No',
+        max_length=32,
+        blank=True,
+        db_index=True,
+    )
+    duzenlenme_tarihi = models.DateField(
+        'Düzenlenme Tarihi',
+        null=True,
+        blank=True,
+    )
     sozlesme_turu = models.CharField(
         'Sözleşme Türü',
         max_length=20,
@@ -110,6 +145,52 @@ class PersonelSozlesme(models.Model):
         default=30,
         help_text='Aylık SGK gün sayısı (0-30)',
     )
+
+    # ─── Snapshot (PDF / yasal kayıt) ───
+    personel_no_snapshot = models.CharField('Personel No', max_length=32, blank=True)
+    brans_snapshot = models.CharField('Branş', max_length=200, blank=True)
+    gorev_snapshot = models.CharField('Görev', max_length=200, blank=True)
+    departman_snapshot = models.CharField('Departman', max_length=200, blank=True)
+
+    # ─── Çalışma düzeni ───
+    haftalik_calisma_gun_sayisi = models.PositiveSmallIntegerField(
+        'Haftalık Çalışma Gün Sayısı',
+        default=5,
+    )
+    haftalik_izin_gunleri = models.JSONField(
+        'Haftalık İzin Günleri',
+        default=list,
+        blank=True,
+        help_text='1=Pazartesi … 7=Pazar',
+    )
+    ders_ucret_tipi = models.CharField(
+        'Ders Ücret Tipi',
+        max_length=20,
+        choices=DersUcretTipi.choices,
+        blank=True,
+    )
+    ders_birim_ucret = models.DecimalField(
+        'Ders/Saat Birim Ücret (₺)',
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
+
+    # ─── Hesaplanmış özet (cache) ───
+    toplam_calisma_suresi_ay = models.DecimalField(
+        'Toplam Çalışma Süresi (Ay)',
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal('0.00'),
+    )
+    toplam_sozlesme_bedeli = models.DecimalField(
+        'Toplam Sözleşme Bedeli (₺)',
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal('0.00'),
+    )
+    auto_save_rev = models.PositiveIntegerField('Auto Save Rev', default=0)
 
     # ─── Ders Ücreti Bayrağı ───
     ders_ucreti_aktif = models.BooleanField(
@@ -153,7 +234,7 @@ class PersonelSozlesme(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['personel', 'egitim_yili'],
-                condition=models.Q(durum__in=['TASLAK', 'AKTIF', 'ASKIDA']),
+                condition=models.Q(durum__in=['TASLAK', 'AKTIF', 'PASIF', 'ASKIDA']),
                 name='unique_aktif_sozlesme_per_yil',
             )
         ]
@@ -238,6 +319,115 @@ class UcretDonemi(models.Model):
     def __str__(self):
         bitis = f"{self.bitis_ay}. ay" if self.bitis_ay else 'sonsuza kadar'
         return f"{self.baslangic_ay}. ay – {bitis}: {self.brut_maas}₺"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  2b) AYLIK MAAŞ PLANI SATIRI
+# ═══════════════════════════════════════════════════════════════
+
+class MaasPlaniSatiri(models.Model):
+    """Sözleşme maaş planı — ay bazlı satır."""
+
+    sozlesme = models.ForeignKey(
+        PersonelSozlesme,
+        on_delete=models.CASCADE,
+        related_name='maas_plani',
+        verbose_name='Sözleşme',
+    )
+    sira_no = models.PositiveSmallIntegerField('Ay Sırası', help_text='1, 2, 3 …')
+    baslangic_tarihi = models.DateField('Başlangıç Tarihi')
+    bitis_tarihi = models.DateField('Bitiş Tarihi')
+    calisilan_gun = models.PositiveSmallIntegerField('Çalışılan Gün', default=0)
+    maas = models.DecimalField(
+        'Maaş (₺)',
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
+    aciklama = models.CharField('Açıklama', max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'personel_maas_plani_satiri'
+        verbose_name = 'Maaş Planı Satırı'
+        verbose_name_plural = 'Maaş Planı Satırları'
+        ordering = ['sozlesme', 'sira_no']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['sozlesme', 'sira_no'],
+                name='unique_maas_plani_sira',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['sozlesme', 'sira_no']),
+        ]
+
+    def __str__(self):
+        return f"{self.sira_no}. ay — {self.maas}₺"
+
+
+class SozlesmeMesaiSaati(models.Model):
+    """Haftalık mesai saatleri — gün bazlı."""
+
+    sozlesme = models.ForeignKey(
+        PersonelSozlesme,
+        on_delete=models.CASCADE,
+        related_name='mesai_saatleri',
+        verbose_name='Sözleşme',
+    )
+    gun = models.PositiveSmallIntegerField(
+        'Gün',
+        help_text='1=Pazartesi … 7=Pazar',
+    )
+    baslangic = models.TimeField('Başlangıç', null=True, blank=True)
+    bitis = models.TimeField('Bitiş', null=True, blank=True)
+    mola_dakika = models.PositiveSmallIntegerField('Mola (dk)', default=0)
+    aktif = models.BooleanField('Çalışma Günü', default=True)
+
+    class Meta:
+        db_table = 'personel_sozlesme_mesai'
+        verbose_name = 'Mesai Saati'
+        verbose_name_plural = 'Mesai Saatleri'
+        ordering = ['sozlesme', 'gun']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['sozlesme', 'gun'],
+                name='unique_sozlesme_mesai_gun',
+            ),
+        ]
+
+    def __str__(self):
+        return f"Gün {self.gun}: {self.baslangic}-{self.bitis}"
+
+
+class SozlesmeMadde(models.Model):
+    """Sözleşme ek maddeleri — sıralı metin."""
+
+    sozlesme = models.ForeignKey(
+        PersonelSozlesme,
+        on_delete=models.CASCADE,
+        related_name='maddeler',
+        verbose_name='Sözleşme',
+    )
+    sira = models.PositiveSmallIntegerField('Sıra')
+    metin = models.TextField('Madde Metni')
+
+    class Meta:
+        db_table = 'personel_sozlesme_madde'
+        verbose_name = 'Sözleşme Maddesi'
+        verbose_name_plural = 'Sözleşme Maddeleri'
+        ordering = ['sozlesme', 'sira']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['sozlesme', 'sira'],
+                name='unique_sozlesme_madde_sira',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.sira}. {self.metin[:40]}"
 
 
 # ═══════════════════════════════════════════════════════════════

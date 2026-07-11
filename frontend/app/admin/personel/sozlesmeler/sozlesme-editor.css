@@ -1,0 +1,527 @@
+/* ═══════════════════════════════════════════
+   Personel Sözleşme Editörü — Enterprise ERP
+   70/30 layout, sticky özet paneli
+   ═══════════════════════════════════════════ */
+
+.sozlesme-editor {
+  --se-primary: #0262a7;
+  --se-primary-light: #e8f2fa;
+  --se-border: #e2e8f0;
+  --se-bg: #f8fafc;
+  --se-card: #ffffff;
+  --se-text: #0f172a;
+  --se-muted: #64748b;
+  --se-radius: 12px;
+  --se-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04);
+
+  min-height: 100vh;
+  background: var(--se-bg);
+  color: var(--se-text);
+  font-family: inherit;
+}
+
+/* ── Üst başlık çubuğu ── */
+.sozlesme-editor__header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  background: var(--se-card);
+  border-bottom: 1px solid var(--se-border);
+  box-shadow: var(--se-shadow);
+}
+
+.sozlesme-editor__header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.sozlesme-editor__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid var(--se-primary-light);
+}
+
+.sozlesme-editor__avatar-fallback {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--se-primary-light);
+  color: var(--se-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.sozlesme-editor__title-block h1 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.sozlesme-editor__title-block p {
+  font-size: 12px;
+  color: var(--se-muted);
+  margin: 2px 0 0;
+}
+
+.sozlesme-editor__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sozlesme-editor__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.sozlesme-editor__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Ana gövde: 70/30 ── */
+.sozlesme-editor__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 0;
+  max-width: 1440px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .sozlesme-editor__body {
+    grid-template-columns: 1fr;
+  }
+  .sozlesme-editor__summary-col {
+    order: -1;
+    position: static !important;
+  }
+}
+
+/* ── Sol: sekme navigasyonu + içerik ── */
+.sozlesme-editor__main-col {
+  display: flex;
+  min-height: calc(100vh - 76px);
+  border-right: 1px solid var(--se-border);
+}
+
+.sozlesme-editor__tabs {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--se-card);
+  border-right: 1px solid var(--se-border);
+  padding: 16px 0;
+  position: sticky;
+  top: 76px;
+  align-self: start;
+  max-height: calc(100vh - 76px);
+  overflow-y: auto;
+}
+
+.sozlesme-editor__tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 18px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--se-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border-left: 3px solid transparent;
+}
+
+.sozlesme-editor__tab-btn:hover {
+  background: var(--se-bg);
+  color: var(--se-text);
+}
+
+.sozlesme-editor__tab-btn.is-active {
+  background: var(--se-primary-light);
+  color: var(--se-primary);
+  border-left-color: var(--se-primary);
+  font-weight: 600;
+}
+
+.sozlesme-editor__content {
+  flex: 1;
+  padding: 24px;
+  min-width: 0;
+}
+
+.sozlesme-editor__section {
+  background: var(--se-card);
+  border: 1px solid var(--se-border);
+  border-radius: var(--se-radius);
+  padding: 20px;
+  box-shadow: var(--se-shadow);
+}
+
+.sozlesme-editor__section-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Sağ: sticky özet paneli ── */
+.sozlesme-editor__summary-col {
+  position: sticky;
+  top: 76px;
+  align-self: start;
+  max-height: calc(100vh - 76px);
+  overflow-y: auto;
+  padding: 20px 16px 24px;
+}
+
+.sozlesme-editor__ozet-panel {
+  background: var(--se-card);
+  border: 1px solid var(--se-border);
+  border-radius: var(--se-radius);
+  box-shadow: var(--se-shadow);
+  overflow: hidden;
+}
+
+.sozlesme-editor__ozet-header {
+  background: linear-gradient(135deg, var(--se-primary) 0%, #034d85 100%);
+  color: #fff;
+  padding: 14px 16px;
+}
+
+.sozlesme-editor__ozet-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sozlesme-editor__ozet-header p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.sozlesme-editor__ozet-body {
+  padding: 12px 16px 16px;
+}
+
+.sozlesme-editor__ozet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+}
+
+.sozlesme-editor__ozet-row:last-child {
+  border-bottom: none;
+}
+
+.sozlesme-editor__ozet-label {
+  color: var(--se-muted);
+  font-weight: 500;
+}
+
+.sozlesme-editor__ozet-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.sozlesme-editor__ozet-highlight {
+  background: #ecfdf5;
+  margin: 8px -16px -16px;
+  padding: 12px 16px;
+  border-top: 1px solid #d1fae5;
+}
+
+.sozlesme-editor__ozet-highlight .sozlesme-editor__ozet-value {
+  color: #047857;
+  font-size: 16px;
+}
+
+/* ── Form elemanları ── */
+.se-field {
+  margin-bottom: 14px;
+}
+
+.se-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--se-muted);
+  margin-bottom: 4px;
+}
+
+.se-input,
+.se-select,
+.se-textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--se-border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--se-text);
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.se-input:focus,
+.se-select:focus,
+.se-textarea:focus {
+  border-color: var(--se-primary);
+  box-shadow: 0 0 0 3px rgba(2, 98, 167, 0.12);
+}
+
+.se-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.se-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 640px) {
+  .se-grid-2,
+  .se-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Butonlar ── */
+.se-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.se-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.se-btn-primary {
+  background: var(--se-primary);
+  color: #fff;
+}
+
+.se-btn-primary:hover:not(:disabled) {
+  background: #034d85;
+}
+
+.se-btn-secondary {
+  background: #fff;
+  border-color: var(--se-border);
+  color: var(--se-text);
+}
+
+.se-btn-secondary:hover:not(:disabled) {
+  background: var(--se-bg);
+}
+
+.se-btn-ghost {
+  background: transparent;
+  border-color: var(--se-border);
+  color: var(--se-muted);
+}
+
+.se-btn-danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.se-btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+/* ── Maaş planı tablosu ── */
+.se-maas-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.se-maas-grid th {
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--se-bg);
+  color: var(--se-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--se-border);
+}
+
+.se-maas-grid td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.se-maas-grid .se-input {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.se-maas-grid tr:hover td {
+  background: #fafbfc;
+}
+
+/* ── Mesai hafta grid ── */
+.se-mesai-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.se-mesai-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 1fr 80px 60px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--se-bg);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.se-mesai-row.is-off {
+  opacity: 0.55;
+}
+
+.se-mesai-day {
+  font-weight: 600;
+}
+
+/* ── Maddeler listesi ── */
+.se-madde-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  background: var(--se-bg);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.se-madde-order {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.se-madde-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--se-primary);
+  min-width: 24px;
+  text-align: center;
+  padding-top: 8px;
+}
+
+/* ── Detay görünümü (read-only) ── */
+.sozlesme-detay {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.sozlesme-detay__card {
+  background: var(--se-card);
+  border: 1px solid var(--se-border);
+  border-radius: var(--se-radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: var(--se-shadow);
+}
+
+.sozlesme-detay__info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 13px;
+}
+
+.sozlesme-detay__info-row:last-child {
+  border-bottom: none;
+}
+
+.sozlesme-detay__info-label {
+  color: var(--se-muted);
+  font-weight: 500;
+}
+
+.sozlesme-detay__info-value {
+  font-weight: 600;
+}
+
+/* ── Toast ── */
+.se-toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 9999;
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.se-toast--success { background: #10b981; }
+.se-toast--error { background: #ef4444; }
+
+/* ── Loading ── */
+.se-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  color: var(--se-muted);
+  font-size: 14px;
+}
