@@ -337,14 +337,43 @@ class GelirGiderV2DropdownView(APIView):
             return [{'id': o.id, 'ad': o.ad} for o in qs]
 
         from django.db.models import Q
+        from apps.finans.application.odeme_yontemi_plan_helpers import (
+            dedupe_odeme_yontemleri_for_plan,
+            ensure_kurum_plan_odeme_yontemleri,
+        )
+
         sube_filter = Q(sube_id=sube_id) | Q(sube__isnull=True)
+
+        # Form/filtre «Ödeme Şekli»: tip başına tek kanal (plan).
+        # Aksi halde plan kanonikleri + her mali hesabın yöntemleri üst üste biner.
+        ensure_kurum_plan_odeme_yontemleri(int(kurum_id))
+        oy_qs = OdemeYontemi.objects.filter(
+            kurum_id=kurum_id,
+            aktif_mi=True,
+            silindi_mi=False,
+        ).filter(
+            Q(mali_hesap__sube_id=sube_id) | Q(mali_hesap__isnull=True),
+        )
+        odeme_yontemleri_plan = dedupe_odeme_yontemleri_for_plan(oy_qs)
+
+        # Operasyonel ödeme (ödeme drawer): şube mali hesaplarına bağlı yöntemler + çek/senet
+        odeme_yontemleri_operasyon = [
+            {
+                'id': o.id,
+                'ad': o.ad,
+                'tip': o.tip,
+                'mali_hesap_id': o.mali_hesap_id,
+            }
+            for o in oy_qs.filter(
+                Q(mali_hesap__sube_id=sube_id)
+                | Q(mali_hesap__isnull=True, tip__in=['cek', 'senet']),
+            ).order_by('siralama', 'ad', 'id')
+        ]
 
         payload = {
             'cariler': cariler,
-            'odeme_yontemleri': [
-                {'id': o.id, 'ad': o.ad, 'tip': o.tip}
-                for o in OdemeYontemi.objects.filter(kurum_id=kurum_id, aktif_mi=True).order_by('ad')
-            ],
+            'odeme_yontemleri': odeme_yontemleri_plan,
+            'odeme_yontemleri_operasyon': odeme_yontemleri_operasyon,
             'mali_hesaplar': [
                 {'id': m.id, 'ad': m.ad, 'tip': m.tip}
                 for m in MaliHesap.objects.filter(

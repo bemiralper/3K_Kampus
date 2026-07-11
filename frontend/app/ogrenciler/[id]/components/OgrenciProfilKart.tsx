@@ -327,6 +327,34 @@ export default function OgrenciProfilKart({
             </div>
           </div>
 
+          {data.alan?.ad ? (
+            <div className="detail-item">
+              <div className="detail-icon indigo">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+              </div>
+              <div className="detail-content">
+                <span className="detail-label">Alan</span>
+                <span className="detail-value">{data.alan.ad}</span>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="detail-item">
+            <div className="detail-icon cyan">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            </div>
+            <div className="detail-content">
+              <span className="detail-label">Kayıt Türü</span>
+              <span className="detail-value">{data.kayit_turu_display || data.kayit_turu || '-'}</span>
+            </div>
+          </div>
+
           {/* Kayıt Tarihi */}
           <div className="detail-item">
             <div className="detail-icon amber">

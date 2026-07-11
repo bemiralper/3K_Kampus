@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { apiGet } from "@/lib/api";
+import { getOdemeTakipBasePath } from "@/lib/muhasebe-routes";
 
 /* ─── Tip Tanımları ─── */
 interface TaksitItem {
@@ -151,6 +154,7 @@ interface FinansTabProps {
 }
 
 export default function FinansTab({ ogrenciId }: FinansTabProps) {
+  const pathname = usePathname();
   const [data, setData] = useState<FinansOzetResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -232,6 +236,7 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
 
   const { sozlesmeler, ozet } = data;
   const aktifSozlesme = sozlesmeler[selectedSozlesmeIdx] || sozlesmeler[0];
+  const odemeTakipHref = `${getOdemeTakipBasePath(pathname)}?sozlesme=${aktifSozlesme.id}&sub=odeme-plani`;
 
   // Uyarıları backend verisinden türet
   const uyarilar: UyariItem[] = [];
@@ -494,6 +499,9 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
             Taksit Planı
             <span className="finans-taksit-count">{aktifSozlesme.taksitler.length} taksit</span>
           </h3>
+          <Link href={odemeTakipHref} className="finans-taksit-shortcut">
+            Ödeme Planı →
+          </Link>
         </div>
         <div className="card-modern-body" style={{ padding: 0 }}>
           {aktifSozlesme.taksitler.length === 0 ? (
@@ -691,6 +699,16 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
 
         /* ── Taksit Count ── */
         .finans-taksit-count { font-size:12px; font-weight:500; color:#94a3b8; margin-left:4px; }
+        .finans-taksit-shortcut {
+          flex-shrink:0;
+          display:inline-flex; align-items:center;
+          padding:8px 14px; border-radius:8px;
+          background:${KURUM_COLOR}; color:#fff;
+          font-size:13px; font-weight:600; text-decoration:none;
+          white-space:nowrap; line-height:1.2;
+        }
+        .finans-taksit-shortcut:hover { background:${KURUM_LIGHT}; color:#fff; }
+        .finans-card-header h3 { min-width:0; flex:1; }
 
         /* ── Tablo ── */
         .finans-table-wrap { overflow-x:auto; min-width:0; max-width:100%; }

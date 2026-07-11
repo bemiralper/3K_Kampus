@@ -276,7 +276,11 @@ def ogrenci_filter_options_api(request):
 
     sinif_seviyeleri = [
         {'id': s.id, 'ad': s.ad, 'kod': s.kod, 'sira': s.sira}
-        for s in SinifSeviyesi.objects.filter(aktif_mi=True).order_by('sira', 'ad')
+        for s in SinifSeviyesi.objects.filter(
+            aktif_mi=True,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+        ).order_by('sira', 'ad')
     ]
     giris_turu = [
         {'value': key, 'label': label}
@@ -318,6 +322,7 @@ def ogrenci_filter_options_api(request):
     ]
 
     from apps.okul.models import Okul
+    from apps.egitim_tanimlari.models import Alan
 
     okullar = [
         {
@@ -332,6 +337,15 @@ def ogrenci_filter_options_api(request):
         ).order_by('ad')
     ]
 
+    alanlar = [
+        {'id': a.id, 'ad': a.ad, 'kod': a.kod}
+        for a in Alan.objects.filter(
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            aktif_mi=True,
+        ).order_by('sira', 'ad')
+    ]
+
     return JsonResponse({
         'success': True,
         'sinif_seviyeleri': sinif_seviyeleri,
@@ -342,6 +356,7 @@ def ogrenci_filter_options_api(request):
         'egitim_kalemleri': egitim_kalemleri,
         'siniflar': siniflar,
         'okullar': okullar,
+        'alanlar': alanlar,
     })
 
 
@@ -599,6 +614,9 @@ def ogrenci_api(request, pk):
         if 'sinif_seviyesi_id' in data:
             seviye_val = data.get('sinif_seviyesi_id')
             kayit_updates['sinif_seviyesi_id'] = int(seviye_val) if seviye_val not in (None, '', 0) else None
+        if 'alan_id' in data:
+            alan_val = data.get('alan_id')
+            kayit_updates['alan_id'] = int(alan_val) if alan_val not in (None, '', 0) else None
 
         if kayit_updates:
             aktif_kayit = OgrenciKayit.objects.filter(
@@ -609,8 +627,10 @@ def ogrenci_api(request, pk):
                     aktif_kayit.sinif_id = kayit_updates['sinif_id']
                 if 'sinif_seviyesi_id' in kayit_updates:
                     aktif_kayit.sinif_seviyesi_id = kayit_updates['sinif_seviyesi_id']
+                if 'alan_id' in kayit_updates:
+                    aktif_kayit.alan_id = kayit_updates['alan_id']
                 aktif_kayit.save(update_fields=[
-                    f for f in ('sinif_id', 'sinif_seviyesi_id') if f in kayit_updates
+                    f for f in ('sinif_id', 'sinif_seviyesi_id', 'alan_id') if f in kayit_updates
                 ])
 
         return JsonResponse({
@@ -634,13 +654,14 @@ def ogrenci_api(request, pk):
         ogrenci=ogrenci,
         aktif_mi=True,
     ).select_related(
-        'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili'
+        'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili', 'alan'
     ).order_by('-egitim_yili__baslangic_yil', '-created_at').first()
     
     # Sınıf ve eğitim yılı bilgileri
     sinif_bilgi = None
     egitim_yili_bilgi = None
     sinif_seviyesi_bilgi = None
+    alan_bilgi = None
     okul_no = ''
     
     kayit_tarihi = ''
@@ -660,6 +681,12 @@ def ogrenci_api(request, pk):
                 'id': seviye_obj.id,
                 'ad': seviye_obj.ad,
                 'seviye': seviye_obj.seviye if hasattr(seviye_obj, 'seviye') else None,
+            }
+        if aktif_kayit.alan_id:
+            alan_bilgi = {
+                'id': aktif_kayit.alan_id,
+                'ad': aktif_kayit.alan.ad,
+                'kod': aktif_kayit.alan.kod,
             }
         if aktif_kayit.egitim_yili:
             egitim_yili_bilgi = {
@@ -702,6 +729,16 @@ def ogrenci_api(request, pk):
     
     # Ek hizmet bilgileri
     from apps.ogrenci.domain.models import OgrenciEkHizmet
+    from apps.kurum.services.kayit_tanimlari_service import list_registration_types
+
+    kayit_turu_code = ogrenci.kayit_turu or 'asil'
+    kayit_turu_labels = {opt.code: opt.label for opt in list_registration_types()}
+    kayit_turu_display = (
+        kayit_turu_labels.get(kayit_turu_code)
+        or dict(ogrenci.KAYIT_TURU_CHOICES).get(kayit_turu_code)
+        or kayit_turu_code
+    )
+
     ek_hizmetler = []
     for eh in OgrenciEkHizmet.objects.filter(
         ogrenci=ogrenci, aktif_mi=True
@@ -729,8 +766,8 @@ def ogrenci_api(request, pk):
         'dogum_tarihi_iso': ogrenci.dogum_tarihi.isoformat() if ogrenci.dogum_tarihi else '',
         'cinsiyet': ogrenci.cinsiyet or '',
         'cinsiyet_display': dict(ogrenci.CINSIYET_CHOICES).get(ogrenci.cinsiyet, '-'),
-        'kayit_turu': ogrenci.kayit_turu or 'asil',
-        'kayit_turu_display': dict(ogrenci.KAYIT_TURU_CHOICES).get(ogrenci.kayit_turu, 'Asil'),
+        'kayit_turu': kayit_turu_code,
+        'kayit_turu_display': kayit_turu_display,
         'telefon': ogrenci.telefon or '',
         'email': ogrenci.email or '',
         # Eski model uyumluluğu
@@ -758,6 +795,7 @@ def ogrenci_api(request, pk):
         'okul_no': okul_no,
         'sinif': sinif_bilgi,
         'sinif_seviyesi': sinif_seviyesi_bilgi,
+        'alan': alan_bilgi,
         'egitim_yili': egitim_yili_bilgi,
         'kayit_tarihi': kayit_tarihi,
         'profil_foto': ogrenci.profil_foto.url if ogrenci.profil_foto else None,
@@ -1132,17 +1170,17 @@ def ogrenci_adres_detail_api(request, pk, adres_id):
 
 
 def kayit_turleri_api(request):
-    """Kayıt türleri API - sistemdeki kayıt türlerini döndürür (login gerektirmez)"""
-    from apps.ogrenci.domain.models import Ogrenci
-    
+    """Kayıt türleri — Kurum Yönetimi lookup tanımlarından."""
+    from apps.kurum.services.kayit_tanimlari_service import list_registration_types
+
     kayit_turleri = [
-        {'value': key, 'label': label}
-        for key, label in Ogrenci.KAYIT_TURU_CHOICES
+        {'value': opt.code, 'label': opt.label}
+        for opt in list_registration_types()
     ]
-    
+
     return JsonResponse({
         'success': True,
-        'kayit_turleri': kayit_turleri
+        'kayit_turleri': kayit_turleri,
     })
 
 

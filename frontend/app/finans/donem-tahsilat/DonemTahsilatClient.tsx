@@ -56,6 +56,7 @@ const KAYNAK_OPTIONS: { key: PeriodKaynak; label: string; color: string }[] = [
   { key: "sozlesme", label: "Sözleşme", color: "#2563eb" },
   { key: "gelir", label: "Gelir Kaydı", color: "#7c3aed" },
   { key: "cari", label: "Cari Hesap", color: "#ea580c" },
+  { key: "cek_senet", label: "Çek / Senet", color: "#0d9488" },
 ];
 
 const YONTEM_TIP_LABELS: Record<string, string> = {
@@ -150,11 +151,12 @@ function DonemTahsilatInner({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => {
     if (!activeKurum) return;
-    paymentMethodService.list({
-      kurum_id: String(activeKurum.id),
-      ...(activeSube?.id ? { sube_id: String(activeSube.id) } : {}),
-    })
-      .then((res) => setOdemeYontemleri((res.odeme_yontemleri || []).filter((o) => o.aktif_mi)))
+    paymentMethodService.dropdown(
+      activeKurum.id,
+      undefined,
+      activeSube?.id,
+    )
+      .then((res) => setOdemeYontemleri((res.odeme_yontemleri || []) as { id: number; ad: string; tip: string; aktif_mi?: boolean }[]))
       .catch(() => setOdemeYontemleri([]));
   }, [activeKurum, activeSube?.id]);
 
@@ -246,6 +248,9 @@ function DonemTahsilatInner({ embedded = false }: { embedded?: boolean }) {
   }));
 
   const getRowLink = (item: PeriodDetailItem): string | null => {
+    if (item.cek_senet_id || item.kaynak === "cek_senet") {
+      return `${homeHref}/cek-senet-v2`;
+    }
     if (item.sozlesme_id) return `${odemeHref()}?sozlesme=${item.sozlesme_id}`;
     if (item.gelir_id) return `${homeHref}/gelir-v2`;
     if (item.cari_hesap_id) return `${homeHref}/cari-hesaplar-v2/${item.cari_hesap_id}`;
@@ -348,7 +353,9 @@ function DonemTahsilatInner({ embedded = false }: { embedded?: boolean }) {
           <Segmented
             value={kaynak}
             onChange={(v) => updateParams({ kaynak: v === "hepsi" ? null : String(v), page: "1" })}
-            options={KAYNAK_OPTIONS.map((k) => ({ value: k.key, label: k.label }))}
+            options={KAYNAK_OPTIONS
+              .filter((k) => modeIsAlinan ? k.key !== "cek_senet" : true)
+              .map((k) => ({ value: k.key, label: k.label }))}
           />
           {yontemTipleri.length > 0 && (
             <>

@@ -36,7 +36,7 @@ export default function TahsilatlarTab({ tahsilatlar: initialTahsilatlar, onTahs
 
   useEffect(() => {
     if (!kurumId || !activeSube?.id) return;
-    const url = `${API_BASE.replace("/odeme-takip/api", "/finans/api")}/odeme-yontemleri/dropdown/?kurum_id=${kurumId}`;
+    const url = `${API_BASE.replace("/odeme-takip/api", "/finans/api")}/odeme-yontemleri/dropdown/?kurum_id=${kurumId}&sube_id=${activeSube.id}`;
     fetch(url, { credentials: "include", headers: apiHeaders() })
       .then((r) => r.json())
       .then((data) => setOdemeYontemleri(data?.odeme_yontemleri || []))

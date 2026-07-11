@@ -172,8 +172,8 @@ class ParametrikRepository:
         """
         Finans modülündeki OdemeYontemi'leri getir (eski odeme_sekilleri yerine).
 
-        mali_hesap_id verilirse o hesaba ait yöntemler + hesap tipine uygun plan kanonik
-        kanallar (Nakit/Havale/POS) + kurum geneli çek/senet döner.
+        mali_hesap_id verilirse o hesaba bağlı yöntemler + kurum geneli çek/senet döner
+        (plan kanonikleri dahil edilmez — çift liste önlenir).
         sube_id verilirse aktif şubedeki mali hesaplar + kurum geneli çek/senet döner.
         """
         from django.db.models import Q

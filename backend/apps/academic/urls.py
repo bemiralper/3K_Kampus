@@ -10,6 +10,8 @@ from apps.academic.interfaces.views import (
     schedule_template_detail_api,
     schedule_template_update_api,
     schedule_template_delete_api,
+    schedule_template_copy_api,
+    schedule_template_usage_api,
     # TimeSlot
     timeslot_list_api,
     timeslot_create_api,
@@ -23,18 +25,29 @@ from apps.academic.interfaces.views import (
     # Slot Generator
     timeslot_generate_preview_api,
     timeslot_generate_create_api,
+    timeslot_bulk_shift_api,
+    timeslot_bulk_duration_api,
     # Weekly Cycle
     weekly_cycle_list_api,
     weekly_cycle_create_api,
     weekly_cycle_detail_api,
     weekly_cycle_update_api,
     weekly_cycle_delete_api,
+    weekly_cycle_copy_api,
+    weekly_cycle_usage_api,
+    weekly_cycle_plan_save_api,
     weekly_day_list_api,
     weekly_day_create_api,
     weekly_day_detail_api,
     weekly_day_update_api,
     weekly_day_delete_api,
     weekly_day_create_defaults_api,
+    # Teacher Availability
+    teacher_availability_teachers_api,
+    teacher_availability_detail_api,
+    teacher_availability_grid_api,
+    teacher_availability_save_api,
+    teacher_availability_temp_delete_api,
     # Program Grid
     grid_generate_preview_api,
     grid_generate_create_api,
@@ -120,6 +133,8 @@ urlpatterns = [
     path('schedule-templates/<int:template_id>/', schedule_template_detail_api, name='schedule-template-detail'),
     path('schedule-templates/<int:template_id>/update/', schedule_template_update_api, name='schedule-template-update'),
     path('schedule-templates/<int:template_id>/delete/', schedule_template_delete_api, name='schedule-template-delete'),
+    path('schedule-templates/<int:template_id>/copy/', schedule_template_copy_api, name='schedule-template-copy'),
+    path('schedule-templates/<int:template_id>/usage/', schedule_template_usage_api, name='schedule-template-usage'),
     path('schedule-templates/<int:template_id>/timeslots/', timeslot_by_template_api, name='schedule-template-timeslots'),
     path('schedule-templates/<int:template_id>/timeslots/bulk-delete/', timeslot_bulk_delete_api, name='timeslot-bulk-delete'),
     
@@ -135,6 +150,8 @@ urlpatterns = [
     # Slot Generator endpoints
     path('timeslots/generate-preview/', timeslot_generate_preview_api, name='timeslot-generate-preview'),
     path('timeslots/generate-create/', timeslot_generate_create_api, name='timeslot-generate-create'),
+    path('timeslots/bulk-shift/', timeslot_bulk_shift_api, name='timeslot-bulk-shift'),
+    path('timeslots/bulk-duration/', timeslot_bulk_duration_api, name='timeslot-bulk-duration'),
     
     # Weekly Cycle endpoints
     path('weekly-cycles/', weekly_cycle_list_api, name='weekly-cycle-list'),
@@ -142,6 +159,9 @@ urlpatterns = [
     path('weekly-cycles/<int:pk>/', weekly_cycle_detail_api, name='weekly-cycle-detail'),
     path('weekly-cycles/<int:pk>/update/', weekly_cycle_update_api, name='weekly-cycle-update'),
     path('weekly-cycles/<int:pk>/delete/', weekly_cycle_delete_api, name='weekly-cycle-delete'),
+    path('weekly-cycles/<int:pk>/copy/', weekly_cycle_copy_api, name='weekly-cycle-copy'),
+    path('weekly-cycles/<int:pk>/usage/', weekly_cycle_usage_api, name='weekly-cycle-usage'),
+    path('weekly-cycles/<int:pk>/plan/', weekly_cycle_plan_save_api, name='weekly-cycle-plan-save'),
     path('weekly-cycles/<int:cycle_pk>/create-defaults/', weekly_day_create_defaults_api, name='weekly-day-create-defaults'),
     
     # Weekly Day endpoints
@@ -225,4 +245,11 @@ urlpatterns = [
     path('schedule/versions/<int:pk>/duplicate/', schedule_version_duplicate_api, name='schedule-version-duplicate'),
     path('schedule/versions/<int:pk>/lock/', schedule_version_lock_api, name='schedule-version-lock'),
     path('schedule/versions/<int:pk>/unlock/', schedule_version_unlock_api, name='schedule-version-unlock'),
+
+    # Teacher Availability (Öğretmen Uygunluğu)
+    path('teacher-availability/teachers/', teacher_availability_teachers_api, name='teacher-availability-teachers'),
+    path('teacher-availability/<int:personel_id>/', teacher_availability_detail_api, name='teacher-availability-detail'),
+    path('teacher-availability/<int:personel_id>/grid/<int:calendar_id>/', teacher_availability_grid_api, name='teacher-availability-grid'),
+    path('teacher-availability/<int:personel_id>/save/', teacher_availability_save_api, name='teacher-availability-save'),
+    path('teacher-availability/<int:personel_id>/temporary/<int:set_id>/', teacher_availability_temp_delete_api, name='teacher-availability-temp-delete'),
 ]

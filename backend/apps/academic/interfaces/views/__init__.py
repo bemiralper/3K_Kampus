@@ -8,6 +8,8 @@ from .schedule_template import (
     schedule_template_detail_api,
     schedule_template_update_api,
     schedule_template_delete_api,
+    schedule_template_copy_api,
+    schedule_template_usage_api,
 )
 from .timeslot import (
     timeslot_list_api,
@@ -22,6 +24,15 @@ from .timeslot import (
     # Slot Generator
     timeslot_generate_preview_api,
     timeslot_generate_create_api,
+    timeslot_bulk_shift_api,
+    timeslot_bulk_duration_api,
+)
+from .teacher_availability import (
+    teacher_availability_teachers_api,
+    teacher_availability_detail_api,
+    teacher_availability_grid_api,
+    teacher_availability_save_api,
+    teacher_availability_temp_delete_api,
 )
 from .weekly_cycle import (
     weekly_cycle_list_api,
@@ -29,6 +40,9 @@ from .weekly_cycle import (
     weekly_cycle_detail_api,
     weekly_cycle_update_api,
     weekly_cycle_delete_api,
+    weekly_cycle_copy_api,
+    weekly_cycle_usage_api,
+    weekly_cycle_plan_save_api,
     weekly_day_list_api,
     weekly_day_create_api,
     weekly_day_detail_api,
@@ -95,11 +109,15 @@ __all__ = [
     'schedule_template_detail_api',
     'schedule_template_update_api',
     'schedule_template_delete_api',
+    'schedule_template_copy_api',
+    'schedule_template_usage_api',
     # TimeSlot
     'timeslot_list_api',
     'timeslot_create_api',
     'timeslot_bulk_create_api',
     'timeslot_bulk_delete_api',
+    'timeslot_bulk_shift_api',
+    'timeslot_bulk_duration_api',
     'timeslot_detail_api',
     'timeslot_update_api',
     'timeslot_delete_api',
@@ -114,6 +132,9 @@ __all__ = [
     'weekly_cycle_detail_api',
     'weekly_cycle_update_api',
     'weekly_cycle_delete_api',
+    'weekly_cycle_copy_api',
+    'weekly_cycle_usage_api',
+    'weekly_cycle_plan_save_api',
     'weekly_day_list_api',
     'weekly_day_create_api',
     'weekly_day_detail_api',
@@ -165,4 +186,10 @@ __all__ = [
     'schedule_version_duplicate_api',
     'schedule_version_lock_api',
     'schedule_version_unlock_api',
+    # Teacher Availability
+    'teacher_availability_teachers_api',
+    'teacher_availability_detail_api',
+    'teacher_availability_grid_api',
+    'teacher_availability_save_api',
+    'teacher_availability_temp_delete_api',
 ]

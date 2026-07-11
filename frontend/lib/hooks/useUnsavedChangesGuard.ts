@@ -42,6 +42,14 @@ export interface LeaveDialogProps {
   onConfirm: () => void;
 }
 
+/**
+ * Kaydedilmemiş değişiklik koruması.
+ *
+ * NOT: Next.js App Router ile `history.pushState` kullanmak istemci
+ * navigasyonunu bozabilir (menü/link tıklamaları “kilitlenmiş” gibi görünür).
+ * Bu yüzden yalnızca link yakalama + beforeunload kullanılır; tarayıcı geri
+ * tuşu için history stack’e dokunulmaz.
+ */
 export function useUnsavedChangesGuard({
   isDirty,
   message = DEFAULT_MESSAGE,
@@ -51,12 +59,16 @@ export function useUnsavedChangesGuard({
   const pathname = usePathname();
   const router = useRouter();
   const bypassRef = useRef(false);
+  const isDirtyRef = useRef(isDirty);
   const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null);
+
+  isDirtyRef.current = isDirty;
 
   const active = enabled && isDirty && !bypassRef.current;
 
   const markClean = useCallback(() => {
     bypassRef.current = true;
+    setPendingNavigation(null);
   }, []);
 
   const resetBypass = useCallback(() => {
@@ -78,7 +90,8 @@ export function useUnsavedChangesGuard({
 
   const requestNavigation = useCallback(
     (target: string | (() => void)) => {
-      if (!enabled || !isDirty || bypassRef.current) {
+      if (!enabled || !isDirtyRef.current || bypassRef.current) {
+        setPendingNavigation(null);
         if (typeof target === "string") {
           router.push(target);
         } else {
@@ -89,6 +102,7 @@ export function useUnsavedChangesGuard({
 
       if (typeof target === "string") {
         if (!isLeavingCurrentPage(target, pathname)) {
+          setPendingNavigation(null);
           router.push(target);
           return;
         }
@@ -98,7 +112,7 @@ export function useUnsavedChangesGuard({
 
       setPendingNavigation({ kind: "action", action: target });
     },
-    [enabled, isDirty, pathname, router]
+    [enabled, pathname, router]
   );
 
   const cancelNavigation = useCallback(() => {
@@ -120,34 +134,20 @@ export function useUnsavedChangesGuard({
   useEffect(() => {
     if (!active) return;
 
-    const handlePopState = () => {
-      window.history.pushState({ unsavedGuard: true }, "");
-      setPendingNavigation({
-        kind: "action",
-        action: () => {
-          bypassRef.current = true;
-          window.history.back();
-        },
-      });
-    };
-
-    window.history.pushState({ unsavedGuard: true }, "");
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [active]);
-
-  useEffect(() => {
-    if (!active) return;
-
     const handleClick = (event: MouseEvent) => {
       if (event.defaultPrevented) return;
       if (event.button !== 0) return;
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (bypassRef.current) return;
 
       const target = event.target as HTMLElement | null;
+      // Ayrılma onay diyaloğundaki tıklamaları yakalama
+      if (target?.closest?.("[data-unsaved-modal]")) return;
+
       const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
       if (!anchor) return;
       if (anchor.target === "_blank") return;
+      if (anchor.hasAttribute("download")) return;
 
       const href = anchor.getAttribute("href");
       if (!href || !isLeavingCurrentPage(href, pathname)) return;
@@ -163,12 +163,19 @@ export function useUnsavedChangesGuard({
 
   const prevIsDirtyRef = useRef(isDirty);
   useEffect(() => {
-    // Re-enable guard only when the form becomes dirty again after a clean state.
-    // Do not reset bypass while still dirty (e.g. markClean() before snapshot update).
+    // Form yeniden kirlenince korumayı tekrar aç.
+    // Hâlâ dirty iken markClean() sonrası bypass'ı sıfırlama.
     if (!prevIsDirtyRef.current && isDirty) {
       bypassRef.current = false;
     }
     prevIsDirtyRef.current = isDirty;
+  }, [isDirty]);
+
+  // Dirty kalkınca açık diyaloğu kapat
+  useEffect(() => {
+    if (!isDirty) {
+      setPendingNavigation(null);
+    }
   }, [isDirty]);
 
   const leaveDialogProps: LeaveDialogProps = {

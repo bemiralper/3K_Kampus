@@ -109,26 +109,25 @@ def canonical_tips_for_mali_hesap(mali_hesap) -> tuple[str, ...]:
 
 def filter_odeme_yontemleri_for_mali_hesap(queryset, mali_hesap_id, kurum_id=None):
     """
-    Mali hesap seçildiğinde ödeme yöntemi listesi:
-    - Hesaba bağlı kayıtlar
-    - Hesap tipine uygun plan kanonik kanallar (mali_hesap=null)
-    - Kurum geneli çek/senet
+    Operasyonel ekranlar (tahsilat / gelir / gider) için ödeme yöntemi listesi.
+
+    - Seçili mali hesaba bağlı yöntemler
+    - Kurum geneli çek/senet (mali_hesap=null) — banka/kasa hesabından bağımsız kanal
+
+    Kurum plan kanonikleri (Nakit/Havale/POS/Online, mali_hesap=null) burada
+    dönmez; onlar yalnızca sözleşme/taksit plan dropdown'unda kullanılır.
+    Böylece aynı etiket iki kez listelenmez.
     """
-    from apps.finans.domain.financial_account import MaliHesap
-
     if kurum_id:
+        # Plan kayıtları sözleşme ekranı için hazır kalsın; listeye eklenmez.
         ensure_kurum_plan_odeme_yontemleri(int(kurum_id))
-
-    mali_hesap = MaliHesap.objects.filter(pk=mali_hesap_id, silindi_mi=False).first()
-    if not mali_hesap:
-        return queryset.filter(mali_hesap_id=mali_hesap_id)
-
-    tips = list(canonical_tips_for_mali_hesap(mali_hesap))
-    tips.extend([OdemeYontemiTipi.CEK, OdemeYontemiTipi.SENET])
 
     return queryset.filter(
         Q(mali_hesap_id=mali_hesap_id)
-        | Q(mali_hesap__isnull=True, tip__in=tips)
+        | Q(
+            mali_hesap__isnull=True,
+            tip__in=[OdemeYontemiTipi.CEK, OdemeYontemiTipi.SENET],
+        )
     )
 
 

@@ -83,6 +83,60 @@ export function getHeaderLogo(branding: KurumBranding): string {
   return DEFAULT_APP_LOGO;
 }
 
+export type SubeBrandingInput = {
+  ad: string;
+  gorunen_ad?: string;
+  slogan?: string;
+  login_logo_url?: string | null;
+  app_logo_url?: string | null;
+  favicon_url?: string | null;
+  login_arkaplan_rengi?: string;
+  login_arkaplan_rengi_2?: string;
+  tema_rengi?: string;
+};
+
+/** Şube markası — kurum fallback yok */
+export function brandingFromSube(sube: SubeBrandingInput): KurumBranding {
+  return mergeBranding({
+    ad: sube.ad,
+    gorunen_ad: sube.gorunen_ad || sube.ad,
+    slogan: sube.slogan,
+    login_logo_url: sube.login_logo_url ?? null,
+    app_logo_url: sube.app_logo_url ?? null,
+    favicon_url: sube.favicon_url ?? null,
+    login_arkaplan_rengi: sube.login_arkaplan_rengi,
+    login_arkaplan_rengi_2: sube.login_arkaplan_rengi_2,
+    tema_rengi: sube.tema_rengi,
+  });
+}
+
+/**
+ * Yazdırma/PDF logosu — yalnızca şubede tanımlı app_logo / login_logo.
+ * Kurum logosuna düşmez.
+ */
+export function getSubePrintLogo(sube: SubeBrandingInput | null | undefined): {
+  src: string;
+  /** login_logo (beyaz) kullanıldığında koyu zemin gerekir */
+  onDarkBackground: boolean;
+} {
+  if (!sube) {
+    return { src: DEFAULT_APP_LOGO, onDarkBackground: false };
+  }
+  if (sube.app_logo_url) {
+    return {
+      src: resolveBrandingAssetUrl(sube.app_logo_url, DEFAULT_APP_LOGO),
+      onDarkBackground: false,
+    };
+  }
+  if (sube.login_logo_url) {
+    return {
+      src: resolveBrandingAssetUrl(sube.login_logo_url, DEFAULT_LOGIN_LOGO),
+      onDarkBackground: true,
+    };
+  }
+  return { src: DEFAULT_APP_LOGO, onDarkBackground: false };
+}
+
 export function getFaviconUrl(branding: KurumBranding): string {
   if (!branding.favicon_url) return DEFAULT_FAVICON;
   return resolveBrandingAssetUrl(branding.favicon_url, DEFAULT_FAVICON);

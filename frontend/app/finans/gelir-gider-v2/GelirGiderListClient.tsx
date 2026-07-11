@@ -45,8 +45,13 @@ import {
   BarsOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
+import Link from "next/link";
 import { useKurum } from "@/lib/contexts/KurumContext";
+import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import { ggService } from "./gg-v2-api";
+import { cekSenetV2Service } from "../services/cek-senet-v2-api";
+import type { CekSenetV2Dashboard } from "../types/cek-senet-v2-types";
+import { fmtTL } from "@/components/finans/FinansFilterBar";
 import {
   DATE,
   GGDashboard,
@@ -108,11 +113,13 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
 
   const { message, modal } = AntApp.useApp();
   const { activeKurum, activeSube } = useKurum();
+  const { homeHref } = useFinansPath();
   const screens = Grid.useBreakpoint();
   const kurumId = activeKurum?.id;
   const subeId = activeSube?.id ?? null;
 
   const [dashboard, setDashboard] = useState<GGDashboard | null>(null);
+  const [cekPortfoy, setCekPortfoy] = useState<CekSenetV2Dashboard["kpi"] | null>(null);
   const [dropdown, setDropdown] = useState<GGDropdown | null>(null);
   const [items, setItems] = useState<GGListItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -184,15 +191,18 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
     if (!kurumId) return;
     if (!subeId) {
       setDropdown(null);
+      setCekPortfoy(null);
       return;
     }
     try {
-      const [dash, dd] = await Promise.all([
+      const [dash, dd, cekDash] = await Promise.all([
         ggService.dashboard(modul, kurumId, subeId),
         ggService.dropdown(modul, kurumId, subeId),
+        cekSenetV2Service.dashboard(kurumId, subeId).catch(() => null),
       ]);
       setDashboard(dash);
       setDropdown(dd);
+      setCekPortfoy(cekDash?.kpi ?? null);
     } catch (e) {
       message.error(
         e instanceof FinansHttpError
@@ -484,6 +494,42 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
           </Col>
         ))}
       </Row>
+
+      {cekPortfoy && ((cekPortfoy.tahsil_bekleyen?.adet ?? 0) > 0 || (cekPortfoy.odeme_bekleyen?.adet ?? 0) > 0) && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Çek / Senet portföyü"
+          description={
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", justifyContent: "space-between" }}>
+              <span>
+                {modul === "gelir" ? (
+                  <>
+                    Tahsil bekleyen: <strong>{cekPortfoy.tahsil_bekleyen.adet}</strong>
+                    {" · "}
+                    {fmtTL(cekPortfoy.tahsil_bekleyen.tutar)}
+                  </>
+                ) : (
+                  <>
+                    Ödeme bekleyen (verilen): <strong>{cekPortfoy.odeme_bekleyen.adet}</strong>
+                    {" · "}
+                    {fmtTL(cekPortfoy.odeme_bekleyen.tutar)}
+                    {(cekPortfoy.tahsil_bekleyen?.adet ?? 0) > 0 && (
+                      <>
+                        {" · "}Alınan portföy: {cekPortfoy.tahsil_bekleyen.adet} / {fmtTL(cekPortfoy.tahsil_bekleyen.tutar)}
+                      </>
+                    )}
+                  </>
+                )}
+              </span>
+              <Link href={`${homeHref}/cek-senet-v2`}>
+                <Button size="small" type="primary">Çek/Senet’e git</Button>
+              </Link>
+            </div>
+          }
+        />
+      )}
 
       {/* En büyük kalemler */}
       {dashboard?.en_buyuk_kalemler?.length ? (

@@ -1,0 +1,164 @@
+.ds-page {
+  width: 100%;
+}
+
+.ds-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.ds-loading {
+  padding: 32px;
+  text-align: center;
+  color: #64748b;
+}
+
+.ds-panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.ds-panel--gen {
+  background: #f8fafc;
+}
+
+.ds-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ds-gen-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.ds-field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.ds-color-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+/* Preview */
+.ds-preview {
+  position: sticky;
+  top: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  min-height: 320px;
+}
+
+.ds-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.ds-preview-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ds-preview-head span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.ds-preview-track {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 220px);
+  overflow: auto;
+}
+
+.ds-preview-empty {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.ds-preview-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  gap: 8px;
+  align-items: center;
+}
+
+.ds-preview-time {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-align: center;
+}
+
+.ds-preview-line {
+  border-left: 2px solid #cbd5e1;
+  padding-left: 10px;
+}
+
+.ds-preview-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.ds-preview-chip strong {
+  font-size: 13px;
+}
+
+.ds-preview-chip em {
+  font-style: normal;
+  opacity: 0.75;
+  margin-left: auto;
+}
+
+.akademik-tab-panel--wide {
+  max-width: none;
+}
+
+.akademik-page--wide {
+  max-width: none;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+@media print {
+  .ds-page-head button,
+  .ant-dropdown,
+  .ant-pagination {
+    display: none !important;
+  }
+}

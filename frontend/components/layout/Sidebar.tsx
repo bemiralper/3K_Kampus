@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { fetchKontrolBadge } from "@/lib/resources-api";
 import KurumLogo from "@/components/branding/KurumLogo";
 import { useSubmenuOrderMap } from "@/hooks/useMenuOrder";
+import { akademikSidebarChildren } from "@/lib/akademik-routes";
 import { ADMIN_KUTUPHANE_BASE, kutuphaneSidebarChildren } from "@/lib/kutuphane-routes";
 
 // İkon tanımları
@@ -174,18 +175,10 @@ const navItems: MenuItem[] = [
   },
   {
     id: "akademik",
-    label: "Akademik",
-    emoji: "",
+    label: "Akademik Operasyon",
+    emoji: "📚",
     icon: icons.calendar,
-    children: [
-      { label: "Ders Saatleri", href: "/akademik-planlama/ders-saatleri" },
-      { label: "Haftalık Gün Yapısı", href: "/akademik-planlama/haftalik-gun-yapisi" },
-      { label: "Sınıf Ders Planı", href: "/akademik-planlama/sinif-ders-plani" },
-      { label: "Öğretmen Atamaları", href: "/akademik-planlama/ders-ogretmen-atamalari" },
-      { label: "Sınıf Yerleşimi", href: "/akademik-planlama/ogrenci-sinif-yerlesimi" },
-      { label: "Ders Programı", href: "/akademik-planlama/ders-programi" },
-      { label: "Program Görüntüle", href: "/akademik-planlama/program-goruntuleme" },
-    ],
+    children: akademikSidebarChildren(),
   },
   {
     id: "ogrenci",

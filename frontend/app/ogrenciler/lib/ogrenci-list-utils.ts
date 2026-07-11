@@ -14,6 +14,7 @@ export type OgrenciListFilters = {
   sinif_seviyesi_ids?: number[];
   sinif_ids?: number[];
   school_ids?: number[];
+  alan_ids?: number[];
   kalemler?: KalemFilter[];
   kayit_turu?: string;
   giris_turu?: string;
@@ -141,6 +142,7 @@ export function parseFiltersFromSearchParams(params: URLSearchParams): OgrenciLi
   }
 
   const schoolIds = parseIntListParam(params.get('school_ids'));
+  const alanIds = parseIntListParam(params.get('alan_ids'));
 
   return {
     q: params.get('q') || '',
@@ -149,6 +151,7 @@ export function parseFiltersFromSearchParams(params: URLSearchParams): OgrenciLi
     sinif_seviyesi_ids: sinifSeviyesiIds,
     sinif_ids: sinifIds,
     school_ids: schoolIds,
+    alan_ids: alanIds,
     kalemler,
     kayit_turu: params.get('kayit_turu') || '',
     giris_turu: params.get('giris_turu') || '',
@@ -174,6 +177,9 @@ export function filtersToSearchParams(filters: OgrenciListFilters): URLSearchPar
   }
   if (filters.school_ids && filters.school_ids.length > 0) {
     p.set('school_ids', serializeIntListParam(filters.school_ids));
+  }
+  if (filters.alan_ids && filters.alan_ids.length > 0) {
+    p.set('alan_ids', serializeIntListParam(filters.alan_ids));
   }
   if (filters.kalemler && filters.kalemler.length > 0) {
     p.set('kalemler', serializeKalemlerParam(filters.kalemler));

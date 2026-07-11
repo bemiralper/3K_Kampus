@@ -304,6 +304,7 @@ def parse_list_params(request):
         'kalemler': kalemler,
         'sinif_ids': sinif_ids,
         'school_ids': parse_int_list_param(p.get('school_ids') or ''),
+        'alan_ids': parse_int_list_param(p.get('alan_ids') or ''),
         'kayit_tarihi_bas': parse_date_param(p.get('kayit_tarihi_bas')),
         'kayit_tarihi_bit': parse_date_param(p.get('kayit_tarihi_bit')),
         'sort': p.get('sort', 'created_at_desc') if p.get('sort') in SORT_MAP else 'created_at_desc',
@@ -461,6 +462,9 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
         if school_names:
             school_q |= models.Q(geldigi_okul__in=school_names)
         qs = qs.filter(school_q)
+
+    if params.get('alan_ids'):
+        qs = qs.filter(alan_id__in=params['alan_ids'])
 
     if params['giris_turu']:
         qs = qs.filter(giris_turu=params['giris_turu'])

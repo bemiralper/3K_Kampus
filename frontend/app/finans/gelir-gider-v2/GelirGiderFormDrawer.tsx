@@ -27,6 +27,9 @@ import { ggService } from "./gg-v2-api";
 import { GGDropdown, GGListItem } from "./gg-v2-types";
 import { ModulConfig } from "./gg-config";
 import { FinansHttpError } from "../services/finans-http";
+import { isCekSenetTip } from "@/lib/finans/paymentMethodUtils";
+import Link from "next/link";
+import { useFinansPath } from "@/components/finans/FinansPathProvider";
 
 type TaksitFormRow = {
   taksit_no: number;
@@ -57,10 +60,14 @@ export default function GelirGiderFormDrawer({
   onSaved,
 }: Props) {
   const { message } = AntApp.useApp();
+  const { homeHref } = useFinansPath();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [taksitFirstAmountEdited, setTaksitFirstAmountEdited] = useState(false);
   const planSyncKeyRef = useRef("");
+  const odemeYontemiId = Form.useWatch("odeme_yontemi_id", form) as number | undefined;
+  const seciliOdemeYontemi = (dropdown?.odeme_yontemleri ?? []).find((o) => o.id === odemeYontemiId);
+  const cekSenetSecili = cfg.modul === "gider" && isCekSenetTip(seciliOdemeYontemi?.tip);
 
   const hesaplaNet = (girilen: number, oran: number, mod: string): number => {
     const t = Number(girilen) || 0;
@@ -447,11 +454,31 @@ export default function GelirGiderFormDrawer({
               <Select
                 allowClear
                 placeholder="Ödeme şekli"
-                options={(dropdown?.odeme_yontemleri ?? []).map((o) => ({ value: o.id, label: o.ad }))}
+                options={(dropdown?.odeme_yontemleri ?? []).map((o) => ({
+                  value: o.id,
+                  label: isCekSenetTip(o.tip) ? `${o.ad} (çek/senet)` : o.ad,
+                }))}
               />
             </Form.Item>
           </Col>
         </Row>
+
+        {cekSenetSecili && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="Çek/senet portföye düşecek"
+            description={
+              <span>
+                Kayıt sonrası bu gider <strong>Finans → Çek/Senet</strong> modülünde
+                <strong> Verilen / Bekliyor</strong> olarak görünür. Ödeme drawer’dan çek/senet
+                ile kasa düşümü yapılmaz; tahsil/ödeme için{" "}
+                <Link href={`${homeHref}/cek-senet-v2`}>Çek/Senet</Link> ekranını kullanın.
+              </span>
+            }
+          />
+        )}
 
         <Divider style={{ margin: "4px 0 16px" }} />
 

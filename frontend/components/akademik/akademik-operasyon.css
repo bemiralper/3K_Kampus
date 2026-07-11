@@ -1,0 +1,146 @@
+.akademik-page {
+  padding: 1.5rem 1.75rem 2.5rem;
+  max-width: 1400px;
+}
+
+.akademik-hero {
+  margin-bottom: 1.25rem;
+}
+
+.akademik-hero h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+}
+
+.akademik-hero-desc {
+  margin: 0.75rem 0 0;
+  max-width: 52rem;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.5;
+}
+
+.akademik-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  color: var(--text-muted, #6b7280);
+}
+
+.akademik-breadcrumb a {
+  color: var(--link-color, #2563eb);
+  text-decoration: none;
+}
+
+.akademik-breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.akademik-tab-nav {
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.akademik-tab-nav-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-bottom: 0.65rem;
+}
+
+.akademik-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #374151);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.akademik-tab:hover {
+  background: var(--hover-bg, #f9fafb);
+  border-color: var(--border-color-strong, #d1d5db);
+}
+
+.akademik-tab.is-active {
+  background: var(--primary-soft, #eff6ff);
+  border-color: var(--link-color, #2563eb);
+  color: var(--link-color, #2563eb);
+}
+
+.akademik-tab-panel {
+  min-height: 280px;
+}
+
+.akademik-home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.akademik-home-card {
+  display: block;
+  padding: 1.1rem 1.15rem;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.akademik-home-card:hover {
+  border-color: var(--link-color, #2563eb);
+  box-shadow: 0 2px 8px rgb(37 99 235 / 0.08);
+}
+
+.akademik-home-card h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+}
+
+.akademik-home-card p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, #6b7280);
+}
+
+.akademik-placeholder-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.65rem;
+  padding: 2.5rem 1.5rem;
+  background: var(--card-bg, #fff);
+  border: 1px dashed var(--border-color, #d1d5db);
+  border-radius: 16px;
+}
+
+.akademik-placeholder-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.akademik-placeholder-card h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.akademik-placeholder-card p {
+  margin: 0;
+  max-width: 28rem;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.55;
+}

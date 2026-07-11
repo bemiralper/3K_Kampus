@@ -121,6 +121,7 @@ export default function OgrenciListesiPage() {
     siniflar: { id: number; ad: string; sinif_seviyesi_id: number | null }[];
     sinif_seviyeleri: { id: number; ad: string }[];
     okullar: { id: number; ad: string; okul_turu?: string }[];
+    alanlar: { id: number; ad: string; kod?: string }[];
     kayit_turleri: { value: string; label: string }[];
     giris_turu: { value: string; label: string }[];
     cinsiyet: { value: string; label: string }[];
@@ -130,6 +131,7 @@ export default function OgrenciListesiPage() {
     siniflar: [],
     sinif_seviyeleri: [],
     okullar: [],
+    alanlar: [],
     kayit_turleri: [],
     giris_turu: [],
     cinsiyet: [],
@@ -258,6 +260,7 @@ export default function OgrenciListesiPage() {
         siniflar: data.siniflar || [],
         sinif_seviyeleri: data.sinif_seviyeleri || [],
         okullar: data.okullar || [],
+        alanlar: (data as typeof filterOptions).alanlar || [],
         kayit_turleri: data.kayit_turleri || [],
         giris_turu: data.giris_turu || [],
         cinsiyet: data.cinsiyet || [],
@@ -275,6 +278,7 @@ export default function OgrenciListesiPage() {
       sinif_seviyesi_ids: [],
       sinif_ids: [],
       school_ids: [],
+      alan_ids: [],
       kalemler: [],
       kayit_turu: "",
       giris_turu: "",
@@ -308,6 +312,7 @@ export default function OgrenciListesiPage() {
     }
     if ((filters.sinif_ids || []).length > 0) n += filters.sinif_ids!.length;
     if ((filters.school_ids || []).length > 0) n += filters.school_ids!.length;
+    if ((filters.alan_ids || []).length > 0) n += filters.alan_ids!.length;
     if (filters.kayit_turu) n++;
     if (filters.giris_turu) n++;
     if (filters.cinsiyet) n++;
@@ -357,6 +362,12 @@ export default function OgrenciListesiPage() {
         filterOptions.okullar.find((o) => o.id === schoolId)?.ad ||
         String(schoolId);
       chips.push({ key: `school:${schoolId}`, label: `Okul: ${okulAd}` });
+    }
+
+    for (const alanId of filters.alan_ids || []) {
+      const alanAd =
+        filterOptions.alanlar.find((a) => a.id === alanId)?.ad || String(alanId);
+      chips.push({ key: `alan:${alanId}`, label: `Alan: ${alanAd}` });
     }
 
     if (filters.kayit_turu) {
@@ -427,6 +438,15 @@ export default function OgrenciListesiPage() {
       const id = parseInt(key.slice('school:'.length), 10);
       updateFilters({
         school_ids: (filters.school_ids || []).filter((x) => x !== id),
+        page: 1,
+      });
+      return;
+    }
+
+    if (key.startsWith('alan:')) {
+      const id = parseInt(key.slice('alan:'.length), 10);
+      updateFilters({
+        alan_ids: (filters.alan_ids || []).filter((x) => x !== id),
         page: 1,
       });
       return;

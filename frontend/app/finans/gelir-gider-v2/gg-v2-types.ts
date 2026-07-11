@@ -135,7 +135,14 @@ export interface GGDropdown {
     gelir_kategorileri?: number[];
     gider_kategorileri?: number[];
   }[];
-  odeme_yontemleri: { id: number; ad: string; tip: string }[];
+  odeme_yontemleri: { id: number; ad: string; tip: string; mali_hesap_id?: number | null }[];
+  /** Şube mali hesaplarına bağlı yöntemler (ödeme drawer cascade). */
+  odeme_yontemleri_operasyon?: {
+    id: number;
+    ad: string;
+    tip: string;
+    mali_hesap_id?: number | null;
+  }[];
   mali_hesaplar?: { id: number; ad: string; tip: string }[];
   projeler: { id: number; ad: string }[];
   etiketler: GGEtiket[];

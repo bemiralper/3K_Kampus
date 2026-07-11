@@ -209,7 +209,7 @@ class SlotGenerator:
                     break_end = self._add_minutes(current_time, self.config.short_break_duration)
                     self._generated_slots.append(GeneratedSlot(
                         order=order,
-                        name=f"{lesson_number}. Teneffüs",
+                        name="Teneffüs",
                         start_time=current_time,
                         end_time=break_end,
                         slot_type=SlotType.SHORT_BREAK,

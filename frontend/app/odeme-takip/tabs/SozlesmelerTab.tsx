@@ -50,6 +50,7 @@ interface Props {
   onWhatsAppPlan: (sozlesmeId: number, studentName?: string) => void;
   onWhatsAppSozlesme: (sozlesmeId: number, studentName?: string) => void;
   onWhatsAppMakbuz: (tahsilatId: number, studentName?: string) => void;
+  initialSubTab?: SozlesmeSubTab;
 }
 
 // ─── Badge Helper ───────────────────────────────────────────
@@ -76,9 +77,10 @@ export default function SozlesmelerTab({
   setSearchTerm, onSelectSozlesme, onCloseDetail, onStatusChange, onStatusRevert,
   onTahsilatStart, onTahsilatCancel, onDelete, onMakbuz, onOdemePlani, onSozlesmeBelgesi, onFesihBelgesi, onEdit, onKalemChanged,
   onWhatsAppPlan, onWhatsAppSozlesme, onWhatsAppMakbuz,
+  initialSubTab,
 }: Props) {
   const { href } = useOdemePath();
-  const [subTab, setSubTab] = useState<SozlesmeSubTab>("genel");
+  const [subTab, setSubTab] = useState<SozlesmeSubTab>(initialSubTab || "genel");
   const [durumFilter, setDurumFilter] = useState(""); // ← Tüm durumlar
 
   // Pagination
@@ -122,7 +124,14 @@ export default function SozlesmelerTab({
 
   const pagedSozlesmeler = paginateList(filteredSozlesmeler, currentPage, pageSize);
 
-  useEffect(() => { setSubTab("genel"); }, [selectedSozlesme?.id]);
+  useEffect(() => {
+    const allowed: SozlesmeSubTab[] = ["genel", "kalemler", "odeme-plani", "tahsilatlar", "belgeler"];
+    if (initialSubTab && allowed.includes(initialSubTab)) {
+      setSubTab(initialSubTab);
+    } else {
+      setSubTab("genel");
+    }
+  }, [selectedSozlesme?.id, initialSubTab]);
 
   // ─── Kalem Fonksiyonları ──────────────────────────────────
 

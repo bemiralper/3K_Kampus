@@ -92,34 +92,68 @@ def gate_schedule_template_drf(request, template_id, *, is_active=True, allow_nu
     return ctx, template, None
 
 
-def gate_weekly_cycle(request, cycle_id):
+def gate_weekly_cycle(request, cycle_id, *, is_active=True):
     from apps.academic.domain.weekly_cycle import WeeklyCycle
 
-    try:
-        cycle = WeeklyCycle.objects.select_related('schedule_template').get(pk=cycle_id, is_active=True)
-    except WeeklyCycle.DoesNotExist:
-        return None, None, JsonResponse({'success': False, 'error': 'Haftalık döngü bulunamadı.'}, status=404)
-    return gate_schedule_template(request, cycle.schedule_template_id)
+    qs = WeeklyCycle.objects.select_related('schedule_template').filter(pk=cycle_id)
+    if is_active:
+        qs = qs.filter(is_active=True)
+    cycle = qs.first()
+    if not cycle:
+        return None, None, JsonResponse({'success': False, 'error': 'Çalışma takvimi bulunamadı.'}, status=404)
+
+    kurum_id = cycle.kurum_id or (cycle.schedule_template.kurum_id if cycle.schedule_template_id else None)
+    sube_id = cycle.sube_id or (cycle.schedule_template.sube_id if cycle.schedule_template_id else None)
+    ctx, err = mandatory_academic_context(request)
+    if err:
+        return None, None, err
+    if cycle.kurum_id and cycle.kurum_id != ctx['kurum_id']:
+        return None, None, JsonResponse({'success': False, 'error': 'Çalışma takvimi bulunamadı.'}, status=404)
+
+    gate = assert_academic_sube_access(
+        request, ctx['kurum_id'], sube_id, allow_null_sube=True,
+    )
+    if gate:
+        return None, None, gate
+    return ctx, cycle, None
 
 
-def gate_weekly_cycle_drf(request, cycle_id):
+def gate_weekly_cycle_drf(request, cycle_id, *, is_active=True):
     from apps.academic.domain.weekly_cycle import WeeklyCycle
 
-    try:
-        cycle = WeeklyCycle.objects.select_related('schedule_template').get(pk=cycle_id, is_active=True)
-    except WeeklyCycle.DoesNotExist:
-        return None, None, Response({'detail': 'Haftalık döngü bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
-    return gate_schedule_template_drf(request, cycle.schedule_template_id)
+    qs = WeeklyCycle.objects.select_related('schedule_template').filter(pk=cycle_id)
+    if is_active:
+        qs = qs.filter(is_active=True)
+    cycle = qs.first()
+    if not cycle:
+        return None, None, Response({'detail': 'Çalışma takvimi bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    kurum_id = cycle.kurum_id or (cycle.schedule_template.kurum_id if cycle.schedule_template_id else None)
+    sube_id = cycle.sube_id or (cycle.schedule_template.sube_id if cycle.schedule_template_id else None)
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return None, None, err
+    if cycle.kurum_id and cycle.kurum_id != ctx['kurum_id']:
+        return None, None, Response({'detail': 'Çalışma takvimi bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    gate = assert_academic_sube_access_drf(
+        request, ctx['kurum_id'], sube_id, allow_null_sube=True,
+    )
+    if gate:
+        return None, None, gate
+    return ctx, cycle, None
 
 
 def gate_weekly_day_drf(request, day_id):
     from apps.academic.domain.weekly_day import WeeklyDay
 
     try:
-        day = WeeklyDay.objects.select_related('weekly_cycle__schedule_template').get(pk=day_id)
+        day = WeeklyDay.objects.select_related(
+            'weekly_cycle', 'weekly_cycle__schedule_template',
+        ).get(pk=day_id)
     except WeeklyDay.DoesNotExist:
         return None, None, Response({'detail': 'Gün kaydı bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
-    return gate_schedule_template_drf(request, day.weekly_cycle.schedule_template_id)
+    return gate_weekly_cycle_drf(request, day.weekly_cycle_id, is_active=False)
 
 
 def gate_timeslot(request, timeslot_id):

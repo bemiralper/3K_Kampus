@@ -51,8 +51,9 @@ export const paymentMethodService = {
   },
 
   /**
-   * mali_hesap_id verilirse SADECE o mali hesaba ait ödeme yöntemleri döner.
-   * Cascade akışı: önce Mali Hesap seç -> sonra bu dropdown ile Ödeme Yöntemi seç.
+   * Dropdown.
+   * - mali_hesap_id YOK → PLAN (tip başına tek; sözleşme/filtre/Ödeme Şekli)
+   * - mali_hesap_id VAR → OPERASYON (sadece o hesaba bağlı + çek/senet)
    */
   dropdown(
     kurum_id: number,

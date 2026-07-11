@@ -9,6 +9,13 @@ from apps.academic.domain.weekly_cycle import WeeklyCycle
 from apps.academic.domain.weekly_day import WeeklyDay, DayOfWeek
 from apps.academic.domain.program_grid_cell import ProgramGridCell, CellStatus
 from apps.academic.domain.class_lesson_plan import ClassLessonPlan
+from apps.academic.domain.teacher_availability import (
+    TeacherAvailabilitySet,
+    TeacherAvailabilityCalendar,
+    TeacherAvailabilityCell,
+    AvailabilityKind,
+    SlotAvailabilityStatus,
+)
 
 __all__ = [
     'ScheduleTemplate',
@@ -20,4 +27,9 @@ __all__ = [
     'ProgramGridCell',
     'CellStatus',
     'ClassLessonPlan',
+    'TeacherAvailabilitySet',
+    'TeacherAvailabilityCalendar',
+    'TeacherAvailabilityCell',
+    'AvailabilityKind',
+    'SlotAvailabilityStatus',
 ]

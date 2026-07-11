@@ -404,6 +404,10 @@ class CekSenetService:
         if hasattr(gider_taksit, 'cek_senet_detay') and gider_taksit.cek_senet_detay_id:
             return gider_taksit.cek_senet_detay
 
+        if not gider_taksit.odeme_yontemi_id:
+            gider_taksit.odeme_yontemi = odeme_yontemi
+            gider_taksit.save(update_fields=['odeme_yontemi', 'updated_at'])
+
         gider = gider_taksit.gider_kaydi
         kalan = gider_taksit.kalan_tutar
         tutar = int(kalan) if kalan else int(gider_taksit.tutar)
@@ -438,11 +442,12 @@ class CekSenetService:
         from apps.finans.domain.gider_taksit import GiderTaksit
 
         taksitler = GiderTaksit.objects.filter(gider_kaydi=gider_kaydi).select_related(
-            'odeme_yontemi', 'gider_kaydi__cari_hesap',
+            'odeme_yontemi', 'gider_kaydi__cari_hesap', 'gider_kaydi__odeme_yontemi',
         ).prefetch_related('cek_senet_detay')
 
         for taksit in taksitler:
-            yontem = taksit.odeme_yontemi
+            # Taksit satırı yoksa gider kaydındaki ödeme şekli (v2 form) kullanılır.
+            yontem = taksit.odeme_yontemi or getattr(gider_kaydi, 'odeme_yontemi', None)
             detay = getattr(taksit, 'cek_senet_detay', None)
 
             if yontem and is_cek_senet_yontemi(yontem):

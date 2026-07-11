@@ -157,6 +157,15 @@ export default function OdemeTakipClient() {
   }, [router, basePath]);
 
   const sozlesmeParam = searchParams.get("sozlesme");
+  const subParam = searchParams.get("sub");
+  const initialSubTab =
+    subParam === "genel" ||
+    subParam === "kalemler" ||
+    subParam === "odeme-plani" ||
+    subParam === "tahsilatlar" ||
+    subParam === "belgeler"
+      ? subParam
+      : undefined;
   const prevSubeIdRef = useRef<number | null>(null);
 
   // Şube değişince önceki şubenin tüm verilerini temizle (ilk yüklemede ?sozlesme= korunur)
@@ -666,6 +675,7 @@ export default function OdemeTakipClient() {
           onWhatsAppPlan={(id, name) => openWhatsAppNotify("plan", { sozlesmeId: id }, name)}
           onWhatsAppSozlesme={(id, name) => openWhatsAppNotify("sozlesme", { sozlesmeId: id }, name)}
           onWhatsAppMakbuz={(id, name) => openWhatsAppNotify("makbuz", { tahsilatId: id }, name)}
+          initialSubTab={initialSubTab}
         />
       )}
       {activeTab === "tahsilatlar" && (

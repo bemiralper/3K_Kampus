@@ -573,3 +573,93 @@ def timeslot_generate_create_api(request):
             'error': str(e)
         }, status=500)
 
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def timeslot_bulk_shift_api(request):
+    """POST /api/academic/timeslots/bulk-shift/"""
+    try:
+        from datetime import datetime, timedelta
+        from django.core.exceptions import ValidationError
+
+        data = json.loads(request.body)
+        template_id = data.get('template_id')
+        minutes = int(data.get('minutes', 0))
+
+        if not template_id:
+            return JsonResponse({'success': False, 'error': 'template_id zorunludur.'}, status=400)
+        if minutes == 0:
+            return JsonResponse({'success': False, 'error': 'minutes sıfır olamaz.'}, status=400)
+
+        _, template, gate_err = gate_schedule_template(request, template_id)
+        if gate_err:
+            return gate_err
+
+        slots = list(TimeSlot.objects.filter(schedule_template=template, is_active=True).order_by('order'))
+        delta = timedelta(minutes=minutes)
+
+        for slot in slots:
+            base = datetime.combine(datetime.today(), slot.start_time)
+            slot.start_time = (base + delta).time()
+            base_end = datetime.combine(datetime.today(), slot.end_time)
+            slot.end_time = (base_end + delta).time()
+            slot.full_clean()
+            slot.save()
+
+        serializer = TimeSlotSerializer(slots, many=True)
+        return JsonResponse({
+            'success': True,
+            'message': f'Saatler {minutes} dakika kaydırıldı.',
+            'data': serializer.data,
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı.'}, status=400)
+    except ValidationError as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def timeslot_bulk_duration_api(request):
+    """POST /api/academic/timeslots/bulk-duration/"""
+    try:
+        from datetime import datetime, timedelta
+        from apps.academic.domain.timeslot import SlotType
+
+        data = json.loads(request.body)
+        template_id = data.get('template_id')
+        duration = int(data.get('duration', 0))
+        slot_type = data.get('slot_type', SlotType.LESSON)
+
+        if not template_id or duration <= 0:
+            return JsonResponse({'success': False, 'error': 'template_id ve duration zorunludur.'}, status=400)
+
+        _, template, gate_err = gate_schedule_template(request, template_id)
+        if gate_err:
+            return gate_err
+
+        slots = list(
+            TimeSlot.objects.filter(
+                schedule_template=template, is_active=True, slot_type=slot_type,
+            ).order_by('order'),
+        )
+
+        for slot in slots:
+            base = datetime.combine(datetime.today(), slot.start_time)
+            slot.end_time = (base + timedelta(minutes=duration)).time()
+            slot.full_clean()
+            slot.save()
+
+        serializer = TimeSlotSerializer(slots, many=True)
+        return JsonResponse({
+            'success': True,
+            'message': f'{len(slots)} slot süresi güncellendi.',
+            'data': serializer.data,
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı.'}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+

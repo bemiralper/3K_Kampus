@@ -7,6 +7,11 @@ import { useAuth } from "@/lib/contexts/AuthContext";
 import NotificationBell from "@/components/notification/NotificationBell";
 import ContextSelector from "@/components/layout/ContextSelector";
 import UserAccountDropdown from "@/components/profile/UserAccountDropdown";
+import {
+  AKADEMIK_MODULE_LABEL,
+  akademikBreadcrumbMap,
+  akademikCommandPaletteItems,
+} from "@/lib/akademik-routes";
 import "@/components/profile/profile-portal.css";
 
 interface TopbarProps {
@@ -21,14 +26,7 @@ const breadcrumbMap: Record<string, string> = {
   "kimlik-cakismalari": "Kimlik Çakışmaları",
   "egitim-tanimlari": "Eğitim Tanımları",
   "egitim-paketleri": "Eğitim Paketleri",
-  "akademik-planlama": "Akademik Planlama",
-  "ders-saatleri": "Ders Saatleri",
-  "haftalik-gun-yapisi": "Haftalık Gün Yapısı",
-  "sinif-ders-plani": "Sınıf Ders Planı",
-  "ders-ogretmen-atamalari": "Ders Öğretmen Atamaları",
-  "ogrenci-sinif-yerlesimi": "Öğrenci Sınıf Yerleşimi",
-  "ders-programi": "Ders Programı",
-  "program-goruntuleme": "Program Görüntüleme",
+  ...akademikBreadcrumbMap(),
   ogrenciler: "Öğrenciler",
   "yeni-kayit": "Yeni Kayıt",
   personel: "Personel",
@@ -80,13 +78,8 @@ const allMenuItems = [
   { label: "Kimlik Çakışmaları", href: "/kurum-yonetimi/kimlik-cakismalari", section: "Kurum" },
   { label: "Eğitim Tanımları", href: "/egitim-tanimlari", section: "Kurum" },
   { label: "Eğitim Paketleri", href: "/egitim-paketleri", section: "Kurum" },
-  { label: "Ders Saatleri", href: "/akademik-planlama/ders-saatleri", section: "Akademik" },
-  { label: "Haftalık Gün Yapısı", href: "/akademik-planlama/haftalik-gun-yapisi", section: "Akademik" },
-  { label: "Sınıf Ders Planı", href: "/akademik-planlama/sinif-ders-plani", section: "Akademik" },
-  { label: "Ders Öğretmen Atamaları", href: "/akademik-planlama/ders-ogretmen-atamalari", section: "Akademik" },
-  { label: "Öğrenci Sınıf Yerleşimi", href: "/akademik-planlama/ogrenci-sinif-yerlesimi", section: "Akademik" },
-  { label: "Ders Programı", href: "/akademik-planlama/ders-programi", section: "Akademik" },
-  { label: "Program Görüntüleme", href: "/akademik-planlama/program-goruntuleme", section: "Akademik" },
+  { label: AKADEMIK_MODULE_LABEL, href: "/akademik-planlama", section: "Akademik" },
+  ...akademikCommandPaletteItems(),
   { label: "Öğrenci Listesi", href: "/ogrenciler", section: "Öğrenci" },
   { label: "Yeni Kayıt", href: "/ogrenciler/yeni-kayit", section: "Öğrenci" },
   { label: "Personel Tanımları", href: "/personel", section: "Personel" },

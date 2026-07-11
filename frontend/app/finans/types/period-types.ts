@@ -1,7 +1,7 @@
 // ─── Dönem Tahsilat — TypeScript Types ────────────────────────
 
 export type PeriodMode = "alinan" | "beklenen";
-export type PeriodKaynak = "hepsi" | "sozlesme" | "gelir" | "cari";
+export type PeriodKaynak = "hepsi" | "sozlesme" | "gelir" | "cari" | "cek_senet";
 
 export interface YontemDagilimItem {
   yontem: string;
@@ -59,6 +59,7 @@ export interface PeriodDetailItem {
   sozlesme_no?: string | null;
   gelir_id?: number | null;
   cari_hesap_id?: number | null;
+  cek_senet_id?: number | null;
 }
 
 export interface PeriodDetailsResponse {

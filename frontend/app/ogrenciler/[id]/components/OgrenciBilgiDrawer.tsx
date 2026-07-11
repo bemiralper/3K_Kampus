@@ -43,9 +43,11 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
     aktif_mi: true,
     sinif_seviyesi_id: '' as number | '',
     sinif_id: '' as number | '',
+    alan_id: '' as number | '',
   });
   const [sinifSeviyeleri, setSinifSeviyeleri] = useState<{ id: number; ad: string }[]>([]);
   const [siniflar, setSiniflar] = useState<{ id: number; ad: string; sinif_seviyesi_id: number | null }[]>([]);
+  const [alanlar, setAlanlar] = useState<{ id: number; ad: string; kod?: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -117,6 +119,10 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
           const payload = result.data || result;
           setSinifSeviyeleri(payload.sinif_seviyeleri || []);
           setSiniflar(payload.siniflar || []);
+          setAlanlar(payload.alanlar || []);
+          if (payload.kayit_turleri?.length) {
+            setKayitTurleri(payload.kayit_turleri);
+          }
         })
         .catch(err => console.error('Sınıf seçenekleri yüklenemedi:', err));
     }
@@ -138,6 +144,7 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
         aktif_mi: data.aktif_mi,
         sinif_seviyesi_id: data.sinif_seviyesi?.id ?? '',
         sinif_id: data.sinif?.id ?? '',
+        alan_id: data.alan?.id ?? '',
       });
       setError('');
       setSuccess('');
@@ -175,6 +182,7 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
           ...formData,
           sinif_seviyesi_id: formData.sinif_seviyesi_id || null,
           sinif_id: formData.sinif_id || null,
+          alan_id: formData.alan_id || null,
         }),
       });
 
@@ -207,6 +215,13 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
                 ad: siniflar.find((s) => s.id === Number(formData.sinif_id))?.ad || data.sinif?.ad || '',
               }
             : data.sinif,
+          alan: formData.alan_id
+            ? {
+                id: Number(formData.alan_id),
+                ad: alanlar.find((a) => a.id === Number(formData.alan_id))?.ad || data.alan?.ad || '',
+                kod: alanlar.find((a) => a.id === Number(formData.alan_id))?.kod,
+              }
+            : null,
         };
         setTimeout(() => {
           onSuccess(updatedData);
@@ -779,6 +794,36 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
                         <option key={tur.value} value={tur.value}>{tur.label}</option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="form-field">
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
+                      Alan
+                    </label>
+                    <select
+                      value={formData.alan_id}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : '';
+                        setFormData({ ...formData, alan_id: val });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        fontSize: '14px',
+                        background: 'white',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <option value="">Seçiniz (opsiyonel)…</option>
+                      {alanlar.map((alan) => (
+                        <option key={alan.id} value={alan.id}>{alan.ad}</option>
+                      ))}
+                    </select>
+                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8' }}>
+                      Genelde 11–12. sınıf ve mezun kayıtlarında kullanılır.
+                    </p>
                   </div>
 
                   <div className="form-field">

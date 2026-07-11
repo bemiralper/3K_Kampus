@@ -23,6 +23,7 @@ KAYNAK_LABELS = {
     'sozlesme': 'Sözleşme Tahsilatı',
     'gelir': 'Gelir Kaydı',
     'cari': 'Cari Hesap',
+    'cek_senet': 'Çek / Senet Portföyü',
 }
 
 
@@ -50,6 +51,68 @@ def _normalize_kaynak(kaynak: str | None) -> str | None:
     if not kaynak or kaynak == 'hepsi':
         return None
     return kaynak
+
+
+def _cek_senet_aktif_qs(*, kurum_id: int, baslangic: date, bitis: date, sube_id=None):
+    """Alınan, aktif (portföy) çek/senet — vadesi dönem içinde."""
+    from apps.odeme_takip.domain.cek_senet import CekSenetDetay, CekSenetDurum, CekSenetYon
+
+    q = Q(
+        kurum_id=kurum_id,
+        yon=CekSenetYon.ALINAN,
+        durum__in=list(CekSenetDurum.AKTIF_DURUMLAR),
+        vade_tarihi__gte=baslangic,
+        vade_tarihi__lte=bitis,
+    )
+    if sube_id:
+        q &= Q(sube_id=sube_id)
+    return CekSenetDetay.objects.filter(q)
+
+
+def _cek_senet_linked_taksit_ids(kurum_id, baslangic, bitis, sube_id=None) -> set[int]:
+    """Portföyde görünen (çift sayılmasın diye) sözleşme taksit id'leri."""
+    return set(
+        _cek_senet_aktif_qs(
+            kurum_id=kurum_id, baslangic=baslangic, bitis=bitis, sube_id=sube_id,
+        )
+        .exclude(taksit_id__isnull=True)
+        .values_list('taksit_id', flat=True)
+    )
+
+
+def _cek_senet_row(detay) -> dict:
+    from apps.odeme_takip.domain.cek_senet import CekSenetDurum
+
+    tip = detay.arac_tipi  # 'cek' | 'senet'
+    cari = getattr(detay, 'cari_hesap', None)
+    cari_ad = None
+    if cari is not None:
+        cari_ad = getattr(cari, 'unvan', None) or getattr(cari, 'gorunen_ad', None)
+    kisi = cari_ad or detay.keside_eden or detay.cek_senet_no or f'Çek/Senet #{detay.id}'
+    no = detay.cek_senet_no or f'#{detay.id}'
+    return {
+        'id': detay.id,
+        'kaynak': 'cek_senet',
+        'kaynak_label': KAYNAK_LABELS['cek_senet'],
+        'kisi_adi': kisi,
+        'tutar': int(detay.tutar or 0),
+        'toplam_tutar': int(detay.tutar or 0),
+        'odenen_tutar': 0,
+        'kalan_tutar': int(detay.tutar or 0),
+        'tahsil_durumu': 'bekliyor',
+        'tahsil_durumu_label': CekSenetDurum.get_label(detay.durum) or 'Portföyde',
+        'odeme_yontemi': _yontem_label(tip),
+        'odeme_yontemi_tipi': tip,
+        'odeme_yontemi_tipleri': [tip],
+        'tarih': detay.vade_tarihi.isoformat(),
+        'vade_tarihi': detay.vade_tarihi.isoformat(),
+        'aciklama': detay.aciklama or f'{_yontem_label(tip)} {no}',
+        'sozlesme_id': None,
+        'sozlesme_no': None,
+        'gelir_id': None,
+        'cari_hesap_id': detay.cari_hesap_id,
+        'cek_senet_id': detay.id,
+    }
 
 
 def _yontem_filter(
@@ -143,10 +206,13 @@ def _gelir_yontem_label(gelir_id: int) -> str | None:
 def _beklenen_row_matches_yontem(row: dict, selected_tips: list[str]) -> bool:
     if not selected_tips:
         return True
-    if row.get('tahsil_durumu') == 'bekliyor':
-        return True
     row_tips = set(row.get('odeme_yontemi_tipleri') or [])
-    return bool(row_tips & set(selected_tips))
+    if row.get('odeme_yontemi_tipi'):
+        row_tips.add(row['odeme_yontemi_tipi'])
+    if row_tips:
+        return bool(row_tips & set(selected_tips))
+    # Yöntem henüz atanmamış bekleyen satır — filtreyi bozma
+    return row.get('tahsil_durumu') == 'bekliyor'
 
 
 def _aggregate_yontem_rows(yontem_rows: list[dict], toplam_tutar: int) -> list[dict]:
@@ -232,7 +298,7 @@ class PeriodService:
                 'adet': int(kaynaklar[key]['adet'] or 0),
                 'oran': round(int(kaynaklar[key]['toplam'] or 0) / toplam_tutar * 100, 1) if toplam_tutar else 0,
             }
-            for key in ('sozlesme', 'gelir', 'cari')
+            for key in ('sozlesme', 'gelir', 'cari', 'cek_senet')
             if kaynaklar.get(key, {}).get('toplam') or kaynaklar.get(key, {}).get('adet')
         ]
 
@@ -372,6 +438,14 @@ class PeriodService:
         sozlesme_beklenen = {'toplam': 0, 'adet': 0, 'alinan': 0, 'kalan': 0}
         gelir_beklenen = {'toplam': 0, 'adet': 0, 'alinan': 0, 'kalan': 0}
         cari_beklenen = {'toplam': 0, 'adet': 0, 'alinan': 0, 'kalan': 0}
+        cek_senet_beklenen = {'toplam': 0, 'adet': 0, 'alinan': 0, 'kalan': 0}
+
+        linked_taksit_ids: set[int] = set()
+        if not kaynak:
+            # hepsi: portföy satırı olarak sayılacak taksitleri sözleşme listesinden çıkar
+            linked_taksit_ids = _cek_senet_linked_taksit_ids(
+                kurum_id, baslangic, bitis, sube_id,
+            )
 
         if not kaynak or kaynak == 'sozlesme':
             soz_ids = _sozlesme_ids(kurum_id, sube_id, egitim_yili_id)
@@ -384,6 +458,8 @@ class PeriodService:
                 vade_tarihi__gte=baslangic,
                 vade_tarihi__lte=bitis,
             ):
+                if t.id in linked_taksit_ids:
+                    continue
                 tutar = int(t.tutar or 0)
                 odenen = int(t.odenen_tutar or 0)
                 kalan_t = int(t.kalan_tutar or 0)
@@ -423,10 +499,28 @@ class PeriodService:
                 adet += 1
             gelir_beklenen = {'toplam': toplam, 'adet': adet, 'alinan': alinan, 'kalan': kalan}
 
+        if not kaynak or kaynak == 'cek_senet':
+            qs = _cek_senet_aktif_qs(
+                kurum_id=kurum_id, baslangic=baslangic, bitis=bitis, sube_id=sube_id,
+            )
+            adet = 0
+            toplam = 0
+            for detay in qs.only('tutar'):
+                tutar = int(detay.tutar or 0)
+                toplam += tutar
+                adet += 1
+            cek_senet_beklenen = {
+                'toplam': toplam,
+                'adet': adet,
+                'alinan': 0,
+                'kalan': toplam,
+            }
+
         return {
             'sozlesme': sozlesme_beklenen,
             'gelir': gelir_beklenen,
             'cari': cari_beklenen,
+            'cek_senet': cek_senet_beklenen,
         }
 
     @classmethod
@@ -488,6 +582,19 @@ class PeriodService:
                     .values('odeme_yontemi__tip')
                     .annotate(toplam=Sum('tutar'), adet=Count('id'))
                 )
+
+        if not kaynak or kaynak == 'cek_senet':
+            qs = _cek_senet_aktif_qs(
+                kurum_id=kurum_id, baslangic=baslangic, bitis=bitis, sube_id=sube_id,
+            )
+            if selected_tips:
+                qs = qs.filter(arac_tipi__in=selected_tips)
+            for row in qs.values('arac_tipi').annotate(toplam=Sum('tutar'), adet=Count('id')):
+                yontem_rows.append({
+                    'odeme_yontemi__tip': row['arac_tipi'],
+                    'toplam': row['toplam'],
+                    'adet': row['adet'],
+                })
 
         toplam_alinan = sum(int(y.get('toplam') or 0) for y in yontem_rows)
         return _aggregate_yontem_rows(yontem_rows, toplam_alinan)
@@ -557,6 +664,11 @@ class PeriodService:
                 'odeme_yontemi_tipi': odeme_yontemi_tipi,
                 'odeme_yontemi_tipleri': odeme_yontemi_tipleri,
             })
+            linked_taksit_ids: set[int] = set()
+            if not kaynak:
+                linked_taksit_ids = _cek_senet_linked_taksit_ids(
+                    kurum_id, baslangic, bitis, sube_id,
+                )
             soz_ids = _sozlesme_ids(kurum_id, sube_id, egitim_yili_id)
             if not kaynak or kaynak == 'sozlesme':
                 for t in Taksit.objects.filter(
@@ -564,6 +676,8 @@ class PeriodService:
                     vade_tarihi__gte=baslangic,
                     vade_tarihi__lte=bitis,
                 ).select_related('sozlesme__ogrenci', 'sozlesme__sube'):
+                    if t.id in linked_taksit_ids:
+                        continue
                     ogr = t.sozlesme.ogrenci
                     kisi = f'{ogr.ad} {ogr.soyad}'.strip() if ogr else '—'
                     toplam_t = int(t.tutar or 0)
@@ -592,6 +706,7 @@ class PeriodService:
                         'sozlesme_no': t.sozlesme.sozlesme_no,
                         'gelir_id': None,
                         'cari_hesap_id': None,
+                        'cek_senet_id': None,
                     })
             if not kaynak or kaynak == 'gelir':
                 from apps.finans.domain.gelir_kaydi import GelirKaydi
@@ -636,7 +751,14 @@ class PeriodService:
                         'sozlesme_no': None,
                         'gelir_id': g.id,
                         'cari_hesap_id': g.cari_hesap_id,
+                        'cek_senet_id': None,
                     })
+            if not kaynak or kaynak == 'cek_senet':
+                qs = _cek_senet_aktif_qs(
+                    kurum_id=kurum_id, baslangic=baslangic, bitis=bitis, sube_id=sube_id,
+                ).select_related('cari_hesap', 'odeme_yontemi')
+                for detay in qs:
+                    rows.append(_cek_senet_row(detay))
             if selected_tips:
                 rows = [r for r in rows if _beklenen_row_matches_yontem(r, selected_tips)]
             rows.sort(key=lambda r: (r['tarih'], r['id']))

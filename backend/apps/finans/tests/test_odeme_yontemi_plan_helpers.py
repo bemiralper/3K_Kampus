@@ -58,27 +58,51 @@ class OdemeYontemiPlanHelpersTest(TestCase):
         oy = OdemeYontemi.objects.get(id=canonical[OdemeYontemiTipi.NAKIT])
         self.assertIsNone(oy.mali_hesap_id)
 
-    def test_filter_includes_canonical_nakit_for_kasa(self):
+    def test_filter_excludes_kurum_plan_canonicals_for_kasa(self):
+        """Kasa seçilince yalnızca hesaba bağlı yöntemler; kurum plan Nakit gelmez."""
         ensure_kurum_plan_odeme_yontemleri(self.kurum.id)
+        OdemeYontemi.objects.create(
+            kurum=self.kurum, mali_hesap=self.kasa, ad='Kasa Nakit', tip=OdemeYontemiTipi.NAKIT,
+        )
         qs = OdemeYontemi.objects.filter(kurum=self.kurum, aktif_mi=True, silindi_mi=False)
         filtered = filter_odeme_yontemleri_for_mali_hesap(
             qs, self.kasa.id, kurum_id=self.kurum.id,
         )
-        tips = set(filtered.values_list('tip', flat=True))
-        self.assertIn(OdemeYontemiTipi.NAKIT, tips)
+        # Hesaba bağlı nakit var
+        self.assertTrue(filtered.filter(mali_hesap_id=self.kasa.id, tip=OdemeYontemiTipi.NAKIT).exists())
+        # Kurum plan nakit (mali_hesap=null) listede yok
+        self.assertFalse(
+            filtered.filter(mali_hesap__isnull=True, tip=OdemeYontemiTipi.NAKIT).exists()
+        )
 
-    def test_filter_includes_canonical_havale_for_banka(self):
+    def test_filter_excludes_kurum_plan_canonicals_for_banka(self):
+        """Banka seçilince yalnızca o hesaba bağlı yöntemler; plan Havale/POS gelmez."""
         ensure_kurum_plan_odeme_yontemleri(self.kurum.id)
         qs = OdemeYontemi.objects.filter(kurum=self.kurum, aktif_mi=True, silindi_mi=False)
         filtered = filter_odeme_yontemleri_for_mali_hesap(
             qs, self.mali_a.id, kurum_id=self.kurum.id,
         )
-        tips = set(filtered.values_list('tip', flat=True))
-        self.assertIn(OdemeYontemiTipi.HAVALE_EFT, tips)
-        self.assertIn(OdemeYontemiTipi.POS, tips)
-        # Banka A'ya özel kayıt da listede
+        self.assertTrue(filtered.filter(mali_hesap_id=self.mali_a.id).exists())
+        self.assertFalse(
+            filtered.filter(mali_hesap__isnull=True, tip=OdemeYontemiTipi.HAVALE_EFT).exists()
+        )
+        self.assertFalse(
+            filtered.filter(mali_hesap__isnull=True, tip=OdemeYontemiTipi.POS).exists()
+        )
+        # Başka bankaya bağlı yöntemler gelmez
+        self.assertFalse(filtered.filter(mali_hesap_id=self.mali_b.id).exists())
+
+    def test_filter_includes_kurum_cek_senet(self):
+        ensure_kurum_plan_odeme_yontemleri(self.kurum.id)
+        OdemeYontemi.objects.create(
+            kurum=self.kurum, mali_hesap=None, ad='Müşteri Çeki', tip=OdemeYontemiTipi.CEK,
+        )
+        qs = OdemeYontemi.objects.filter(kurum=self.kurum, aktif_mi=True, silindi_mi=False)
+        filtered = filter_odeme_yontemleri_for_mali_hesap(
+            qs, self.mali_a.id, kurum_id=self.kurum.id,
+        )
         self.assertTrue(
-            filtered.filter(mali_hesap_id=self.mali_a.id).exists()
+            filtered.filter(mali_hesap__isnull=True, tip=OdemeYontemiTipi.CEK).exists()
         )
 
     def test_canonical_tips_for_kasa_and_banka(self):

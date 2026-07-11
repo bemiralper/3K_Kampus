@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Drawer, Form, InputNumber, Select, DatePicker, Input, Switch, Button, Space,
   Statistic, Row, Col, Divider, Table, Tag, Popconfirm, Alert, App as AntApp,
@@ -9,6 +9,9 @@ import dayjs from "dayjs";
 import { ggService } from "./gg-v2-api";
 import { GGDropdown, GGListItem, GGOdeme, GGTaksit, TL } from "./gg-v2-types";
 import { FinansHttpError } from "../services/finans-http";
+import { isCekSenetTip } from "@/lib/finans/paymentMethodUtils";
+import Link from "next/link";
+import { useFinansPath } from "@/components/finans/FinansPathProvider";
 
 interface Props {
   open: boolean;
@@ -20,6 +23,7 @@ interface Props {
 
 export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved }: Props) {
   const { message } = AntApp.useApp();
+  const { homeHref } = useFinansPath();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [odemeler, setOdemeler] = useState<GGOdeme[]>([]);
@@ -32,6 +36,27 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
   const net = Number(row?.net_tutar ?? 0);
   const odenen = Number(row?.odenen_toplam ?? 0);
   const taksitli = (row?.taksit_sayisi ?? 1) > 1;
+  const maliHesapId = Form.useWatch("mali_hesap_id", form) as number | undefined;
+  const planYontem = (dropdown?.odeme_yontemleri ?? []).find(
+    (o) => o.id === row?.odeme_yontemi?.id,
+  );
+  const cekSenetPlanli = isCekSenetTip(planYontem?.tip);
+
+  const hesapOdemeYontemleri = useMemo(() => {
+    const ops = dropdown?.odeme_yontemleri_operasyon;
+    const source = ops?.length
+      ? ops
+      : (dropdown?.odeme_yontemleri ?? []).map((o) => ({
+          ...o,
+          mali_hesap_id: (o as { mali_hesap_id?: number | null }).mali_hesap_id ?? null,
+        }));
+    if (!maliHesapId) return [];
+    return source.filter(
+      (o) =>
+        !isCekSenetTip(o.tip) &&
+        (o.mali_hesap_id === maliHesapId || o.mali_hesap_id == null),
+    );
+  }, [dropdown, maliHesapId]);
 
   const loadData = useCallback(async () => {
     if (!row) return;
@@ -136,6 +161,22 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
         <Col span={8}><Statistic title="Kalan" value={kalan} precision={2} suffix="₺" valueStyle={{ color: kalan > 0 ? "#dc2626" : "#64748b" }} /></Col>
       </Row>
 
+      {cekSenetPlanli && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Bu gider çek/senet planlı"
+          description={
+            <span>
+              Çek/senet ödemesi bu drawer’dan yapılmaz.{" "}
+              <Link href={`${homeHref}/cek-senet-v2`}>Çek/Senet</Link> ekranından hazırla → ver → öde.
+              Burada yalnızca nakit/havale/POS vb. kasa ödemesi girebilirsiniz.
+            </span>
+          }
+        />
+      )}
+
       {taksitli && (
         <>
           <Divider orientation="left" style={{ fontSize: 13 }}>Taksit Planı ({row?.taksit_sayisi} taksit)</Divider>
@@ -201,14 +242,17 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
                   <Select
                     showSearch optionFilterProp="label" placeholder="Seçin"
                     options={(dropdown?.mali_hesaplar ?? []).map((m) => ({ value: m.id, label: m.ad }))}
+                    onChange={() => form.setFieldsValue({ odeme_yontemi_id: undefined })}
                   />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item name="odeme_yontemi_id" label="Ödeme Yöntemi" rules={[{ required: true, message: "Ödeme yöntemi seçin." }]}>
                   <Select
-                    showSearch optionFilterProp="label" placeholder="Seçin"
-                    options={(dropdown?.odeme_yontemleri ?? []).map((o) => ({ value: o.id, label: o.ad }))}
+                    showSearch optionFilterProp="label"
+                    placeholder={maliHesapId ? "Seçin" : "Önce mali hesap seçin"}
+                    disabled={!maliHesapId}
+                    options={hesapOdemeYontemleri.map((o) => ({ value: o.id, label: o.ad }))}
                   />
                 </Form.Item>
               </Col>
@@ -222,7 +266,10 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
               {() => {
                 const MASRAF_ODEME_TIPS = ["pos", "havale_eft", "online"];
                 const MASRAF_HESAP_TIPS = ["banka", "pos", "sanal_pos"];
-                const oy = (dropdown?.odeme_yontemleri ?? []).find((o) => o.id === form.getFieldValue("odeme_yontemi_id"));
+                const oyId = form.getFieldValue("odeme_yontemi_id");
+                const oy =
+                  hesapOdemeYontemleri.find((o) => o.id === oyId)
+                  || (dropdown?.odeme_yontemleri ?? []).find((o) => o.id === oyId);
                 const mh = (dropdown?.mali_hesaplar ?? []).find((m) => m.id === form.getFieldValue("mali_hesap_id"));
                 const eligible =
                   (oy && MASRAF_ODEME_TIPS.includes(oy.tip)) ||

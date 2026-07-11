@@ -768,6 +768,11 @@ export function GiderFormModal({
   const cariHesapKategoriIds = seciliCariHesap?.gider_kategorileri ?? [];
   const selectedYontem = hesapOdemeYontemleri.find(o => o.id === form.odeme_yontemi_id);
   const selectedHesap = maliHesaplar.find(m => m.id === form.mali_hesap_id);
+
+  useEffect(() => {
+    if (isCekSenetTip(selectedYontem?.tip)) setOdemeSimdi(false);
+  }, [selectedYontem?.tip]);
+
   const masrafVisible = odemeSimdi && !planliOdeme && islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
   const lockedKategoriOptions = useMemo(
     () => (presetGiderKategorileri || []).map((k) => ({ id: k.id, label: k.ad })),
@@ -1065,6 +1070,16 @@ export function GiderFormModal({
                 : "Çek/senet taksit için Finans → Tanımlar → Ödeme Yöntemleri'nden Çek/Senet tipi ekleyin."}
             </p>
           )}
+          {taksitPlani.some((t) => {
+            const tip = odemeYontemleri.find((o) => o.id === t.odeme_yontemi_id)?.tip;
+            return isCekSenetTip(tip);
+          }) && (
+            <p className="text-xs text-teal-800 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 mt-3">
+              Çek/senet seçilen taksitler kayıt sonrası <strong>Finans → Çek/Senet</strong> modülüne
+              <strong> Verilen / Bekliyor</strong> olarak düşer. Kasadan düşüş için oradan hazırla → ver → öde adımlarını izleyin;
+              bu ekranın Ödemeler sekmesinden çek/senet ödenmez.
+            </p>
+          )}
           <div className="fd-taksit-total">
             <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#64748b" }}>Toplam</span>
             <span style={{ color: taksitFark > 0.02 ? "#e11d48" : "#047857" }}>
@@ -1119,6 +1134,11 @@ export function GiderFormModal({
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
                   Vadeli veya taksitli giderlerde anlık ödeme yapılmaz. Vade tarihinde
                   Ödemeler sekmesinden ödeme girebilirsiniz.
+                </p>
+              ) : isCekSenetTip(selectedYontem?.tip) ? (
+                <p className="text-xs text-teal-800 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 mb-3">
+                  Çek/senet ile kasa/bankadan anlık ödeme yapılmaz. Doğru akış: taksit planında
+                  Çek/Senet yöntemi seçin → kayıt <strong>Çek/Senet</strong> portföyüne düşer → oradan ödeyin.
                 </p>
               ) : (
                 <label className="flex items-start gap-2 text-sm text-slate-600 mb-3 cursor-pointer">
