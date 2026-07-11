@@ -15,6 +15,8 @@ from shared.permissions import require_module_permission
 from django.db import transaction
 from django.db.models import Sum, Count, F
 
+from apps.personel.interfaces.sozlesme_serializers import serialize_sozlesme, parse_sozlesme_body
+from apps.personel.application.contract_calc_service import calc_ozet_metrikleri
 from apps.personel.application.sozlesme_service import SozlesmeService, HakedisService, AvansService
 from apps.personel.domain.sozlesme_models import (
     PersonelSozlesme, DersUcretTanim, AylikHakedis, AvansKaydi,
@@ -46,59 +48,7 @@ def _ctx(request):
 
 
 def _serialize_sozlesme(s):
-    """Sözleşme → dict"""
-    return {
-        'id': s.id,
-        'personel_id': s.personel_id,
-        'personel_ad': s.personel.tam_ad,
-        'personel_foto': s.personel.fotograf.url if s.personel.fotograf else None,
-        'egitim_yili_id': s.egitim_yili_id,
-        'egitim_yili_display': str(s.egitim_yili),
-        'sozlesme_turu': s.sozlesme_turu,
-        'sozlesme_turu_display': s.get_sozlesme_turu_display(),
-        'durum': s.durum,
-        'durum_display': s.get_durum_display(),
-        'baslangic_tarihi': s.baslangic_tarihi.isoformat() if s.baslangic_tarihi else None,
-        'bitis_tarihi': s.bitis_tarihi.isoformat() if s.bitis_tarihi else None,
-        'brut_maas': float(s.brut_maas),
-        'net_maas': float(s.net_maas),
-        'sgk_gun': s.sgk_gun,
-        'ders_ucreti_aktif': s.ders_ucreti_aktif,
-        'notlar': s.notlar,
-        'sozlesme_dosya': s.sozlesme_dosya.url if s.sozlesme_dosya else None,
-        # ── Fesih bilgileri ──
-        'fesih_tarihi': s.fesih_tarihi.isoformat() if s.fesih_tarihi else None,
-        'fesih_sebebi': s.fesih_sebebi or '',
-        # ── Ders ücretleri ──
-        'ders_ucretleri': [
-            {
-                'id': du.id,
-                'brans_id': du.brans_id,
-                'brans_ad': du.brans.ad if du.brans else 'Genel',
-                'ucret_tipi': du.ucret_tipi,
-                'ucret_tipi_display': du.get_ucret_tipi_display(),
-                'birim_ucret': float(du.birim_ucret),
-                'haftalik_saat': float(du.haftalik_saat),
-                'min_saat': float(du.min_saat) if du.min_saat else None,
-                'max_saat': float(du.max_saat) if du.max_saat else None,
-                'notlar': du.notlar,
-            }
-            for du in s.ders_ucretleri.all()
-        ],
-        # ── Ücret dönemleri ──
-        'ucret_donemleri': [
-            {
-                'id': ud.id,
-                'baslangic_ay': ud.baslangic_ay,
-                'bitis_ay': ud.bitis_ay,
-                'brut_maas': float(ud.brut_maas),
-                'net_maas': float(ud.net_maas),
-                'aciklama': ud.aciklama,
-            }
-            for ud in s.ucret_donemleri.all()
-        ],
-        'created_at': s.created_at.isoformat() if s.created_at else None,
-    }
+    return serialize_sozlesme(s)
 
 
 def _serialize_hakedis(h):
@@ -165,7 +115,10 @@ def api_sozlesme_list_create(request):
             'sozlesme_turu': request.GET.get('sozlesme_turu', ''),
             'search': request.GET.get('search', ''),
         }
-        qs = svc.list(kurum_id, ey_id, filters)
+        list_ey_id = ey_id
+        if request.GET.get('tum_yillar') in ('1', 'true', 'yes'):
+            list_ey_id = None
+        qs = svc.list(kurum_id, list_ey_id, filters)
         return JsonResponse({
             'success': True,
             'data': [_serialize_sozlesme(s) for s in qs],
@@ -177,46 +130,7 @@ def api_sozlesme_list_create(request):
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
 
-    data = {
-        'kurum_id': kurum_id,
-        'personel_id': body.get('personel_id'),
-        'egitim_yili_id': ey_id,
-        'sozlesme_turu': body.get('sozlesme_turu', SozlesmeTuru.TAM_ZAMANLI),
-        'durum': body.get('durum', SozlesmeDurumu.TASLAK),
-        'baslangic_tarihi': body.get('baslangic_tarihi'),
-        'bitis_tarihi': body.get('bitis_tarihi'),
-        'brut_maas': _dec(body.get('brut_maas')),
-        'net_maas': _dec(body.get('net_maas')),
-        'sgk_gun': int(body.get('sgk_gun', 30)),
-        'ders_ucreti_aktif': body.get('ders_ucreti_aktif', False),
-        'notlar': body.get('notlar', ''),
-    }
-
-    # Ders ücreti tanımları
-    ders_ucretleri = []
-    for du in body.get('ders_ucretleri', []):
-        ders_ucretleri.append({
-            'brans_id': du.get('brans_id') or None,
-            'ucret_tipi': du.get('ucret_tipi', UcretTipi.SAAT_BASI),
-            'birim_ucret': _dec(du.get('birim_ucret'), '0.01'),
-            'haftalik_saat': _dec(du.get('haftalik_saat'), '0.0'),
-            'min_saat': _dec(du.get('min_saat')) if du.get('min_saat') else None,
-            'max_saat': _dec(du.get('max_saat')) if du.get('max_saat') else None,
-            'notlar': du.get('notlar', ''),
-        })
-    data['ders_ucretleri'] = ders_ucretleri
-
-    # Ücret dönemleri
-    ucret_donemleri = []
-    for ud in body.get('ucret_donemleri', []):
-        ucret_donemleri.append({
-            'baslangic_ay': int(ud.get('baslangic_ay', 1)),
-            'bitis_ay': int(ud.get('bitis_ay', 0)),
-            'brut_maas': _dec(ud.get('brut_maas')),
-            'net_maas': _dec(ud.get('net_maas')),
-            'aciklama': ud.get('aciklama', ''),
-        })
-    data['ucret_donemleri'] = ucret_donemleri
+    data = parse_sozlesme_body(body, kurum_id, ey_id)
 
     try:
         sozlesme = svc.create(data)
@@ -243,47 +157,7 @@ def api_sozlesme_detail(request, pk):
         except json.JSONDecodeError:
             return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
 
-        data = {}
-        field_map = {
-            'sozlesme_turu': str, 'durum': str,
-            'baslangic_tarihi': str, 'bitis_tarihi': str,
-            'sgk_gun': int, 'ders_ucreti_aktif': bool, 'notlar': str,
-        }
-        for field, caster in field_map.items():
-            if field in body:
-                data[field] = caster(body[field])
-        if 'brut_maas' in body:
-            data['brut_maas'] = _dec(body['brut_maas'])
-        if 'net_maas' in body:
-            data['net_maas'] = _dec(body['net_maas'])
-        if 'personel_id' in body:
-            data['personel_id'] = body['personel_id']
-
-        if 'ders_ucretleri' in body:
-            ders_ucretleri = []
-            for du in body['ders_ucretleri']:
-                ders_ucretleri.append({
-                    'brans_id': du.get('brans_id') or None,
-                    'ucret_tipi': du.get('ucret_tipi', UcretTipi.SAAT_BASI),
-                    'birim_ucret': _dec(du.get('birim_ucret'), '0.01'),
-                    'haftalik_saat': _dec(du.get('haftalik_saat'), '0.0'),
-                    'min_saat': _dec(du.get('min_saat')) if du.get('min_saat') else None,
-                    'max_saat': _dec(du.get('max_saat')) if du.get('max_saat') else None,
-                    'notlar': du.get('notlar', ''),
-                })
-            data['ders_ucretleri'] = ders_ucretleri
-
-        if 'ucret_donemleri' in body:
-            ucret_donemleri = []
-            for ud in body['ucret_donemleri']:
-                ucret_donemleri.append({
-                    'baslangic_ay': int(ud.get('baslangic_ay', 1)),
-                    'bitis_ay': int(ud.get('bitis_ay', 0)),
-                    'brut_maas': _dec(ud.get('brut_maas')),
-                    'net_maas': _dec(ud.get('net_maas')),
-                    'aciklama': ud.get('aciklama', ''),
-                })
-            data['ucret_donemleri'] = ucret_donemleri
+        data = parse_sozlesme_body(body, kurum_id=None, ey_id=None, partial=True)
 
         try:
             sozlesme = svc.update(pk, data)
@@ -326,6 +200,102 @@ def api_sozlesme_durum(request, pk):
 
 @csrf_exempt
 @require_module_permission("personel", manage_only=True)
+@require_http_methods(['PUT'])
+def api_sozlesme_taslak(request, pk):
+    """Taslak kaydet — durum TASLAK kalır."""
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
+
+    body['durum'] = SozlesmeDurumu.TASLAK
+    svc = SozlesmeService()
+    data = parse_sozlesme_body(body, kurum_id=None, ey_id=None, partial=True, taslak=True)
+    try:
+        sozlesme = svc.update(pk, data)
+        if not sozlesme:
+            return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
+        return JsonResponse({'success': True, 'data': _serialize_sozlesme(sozlesme)})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@csrf_exempt
+@require_module_permission("personel", manage_only=True)
+@require_http_methods(['POST'])
+def api_sozlesme_preview_hesap(request):
+    """Canlı özet hesaplama — kaydetmeden."""
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
+
+    ozet = calc_ozet_metrikleri(
+        maas_plani=body.get('maas_plani', []),
+        mesai_saatleri=body.get('mesai_saatleri', []),
+        ders_birim_ucret=body.get('ders_birim_ucret', 0),
+        ders_ucret_tipi=body.get('ders_ucret_tipi', ''),
+        sgk_gun=int(body.get('sgk_gun', 30)),
+        haftalik_calisma_gun=int(body.get('haftalik_calisma_gun_sayisi', 5)),
+        baslangic_tarihi=body.get('baslangic_tarihi'),
+        bitis_tarihi=body.get('bitis_tarihi'),
+    )
+    return JsonResponse({'success': True, 'data': ozet})
+
+
+@csrf_exempt
+@require_module_permission("personel", manage_only=True)
+@require_http_methods(['POST'])
+def api_sozlesme_print_token(request, pk):
+    kurum_id, _ = _ctx(request)
+    from apps.personel.application.print_token import create_print_token, DOC_PERSONEL_SOZLESME
+    s = SozlesmeService().get(pk)
+    if not s:
+        return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
+    token = create_print_token(pk, kurum_id or s.kurum_id, doc_type=DOC_PERSONEL_SOZLESME)
+    return JsonResponse({'success': True, 'token': token})
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def api_sozlesme_print_data(request, pk):
+    """Print sayfası — yalnızca geçerli print token ile."""
+    from apps.personel.application.print_token import validate_print_token, DOC_PERSONEL_SOZLESME
+
+    token = request.headers.get('X-Print-Token') or request.GET.get('token')
+    payload = validate_print_token(token) if token else None
+    if not payload or payload['entity_id'] != pk or payload['doc_type'] != DOC_PERSONEL_SOZLESME:
+        return JsonResponse({'success': False, 'error': 'Geçersiz print token.'}, status=403)
+
+    s = SozlesmeService().get(pk)
+    if not s:
+        return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
+    return JsonResponse({'success': True, 'data': _serialize_sozlesme(s)})
+
+
+@csrf_exempt
+@require_module_permission("personel", manage_only=True)
+@require_http_methods(['GET'])
+def api_sozlesme_pdf(request, pk):
+    """Sözleşme belgesi PDF (Playwright — print route)."""
+    kurum_id, _ = _ctx(request)
+    s = SozlesmeService().get(pk)
+    if not s:
+        return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
+    try:
+        from apps.personel.application.contract_pdf_service import render_personel_sozlesme_pdf
+        pdf_bytes = render_personel_sozlesme_pdf(pk, kurum_id or s.kurum_id)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    filename = f'personel_sozlesme_{s.sozlesme_no or pk}.pdf'
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@csrf_exempt
+@require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_sozlesme_stats(request):
     kurum_id, ey_id = _ctx(request)
@@ -339,31 +309,82 @@ def api_sozlesme_stats(request):
 @require_http_methods(['GET'])
 def api_sozlesme_helper_data(request):
     """Dropdown verilerini döndür: personeller, branşlar, enum'lar."""
-    kurum_id, _ = _ctx(request)
+    kurum_id, ey_id = _ctx(request)
+    exclude_sozlesme_id = request.GET.get('exclude_sozlesme_id')
 
-    from apps.personel.domain.models import Personel
+    from apps.personel.domain.models import Personel, PersonelGorevlendirme
+    from apps.personel.domain.sozlesme_models import DersUcretTipi, PersonelSozlesme, SozlesmeDurumu
     from apps.egitim_tanimlari.models import Brans
+    from apps.personel.application.contract_calc_service import personel_no_from_id
+
+    blocked_personel_ids: set[int] = set()
+    if ey_id:
+        blocked_qs = PersonelSozlesme.objects.filter(
+            kurum_id=kurum_id,
+            egitim_yili_id=ey_id,
+            durum__in=(
+                SozlesmeDurumu.TASLAK,
+                SozlesmeDurumu.AKTIF,
+                SozlesmeDurumu.PASIF,
+                SozlesmeDurumu.ASKIDA,
+            ),
+        )
+        if exclude_sozlesme_id:
+            try:
+                blocked_qs = blocked_qs.exclude(pk=int(exclude_sozlesme_id))
+            except (TypeError, ValueError):
+                pass
+        blocked_personel_ids = set(blocked_qs.values_list('personel_id', flat=True))
 
     personeller = list(
         Personel.objects.filter(kurum_id=kurum_id, aktif_mi=True)
+        .exclude(id__in=blocked_personel_ids)
+        .select_related('sube')
         .order_by('soyad', 'ad')
-        .values('id', 'ad', 'soyad', 'tc_kimlik_no')
+        .values('id', 'ad', 'soyad', 'tc_kimlik_no', 'sube_id', 'fotograf')
     )
     for p in personeller:
         p['tam_ad'] = f"{p['ad']} {p['soyad']}"
+        p['personel_no'] = personel_no_from_id(p['id'])
+
+    gorevlendirmeler = []
+    if ey_id:
+        for g in PersonelGorevlendirme.objects.filter(
+            kurum_id=kurum_id, egitim_yili_id=ey_id, aktif_mi=True,
+        ).select_related('personel', 'brans', 'rol', 'gorev_sube'):
+            gorevlendirmeler.append({
+                'id': g.id,
+                'personel_id': g.personel_id,
+                'brans_id': g.brans_id,
+                'brans_ad': g.brans.ad if g.brans_id else '',
+                'gorev_ad': g.rol.name if g.rol_id else '',
+                'sube_id': g.gorev_sube_id,
+                'sube_ad': g.gorev_sube.ad if g.gorev_sube_id else '',
+            })
 
     branslar = list(
         Brans.objects.filter(aktif_mi=True).order_by('ad').values('id', 'ad', 'kod')
     )
 
+    tur_labels = {
+        'TAM_ZAMANLI': 'Tam Zamanlı',
+        'DERS_UCRETLI': 'Ders Ücretli',
+        'KARMA': 'Her İkisi',
+    }
+
     return JsonResponse({
         'success': True,
         'data': {
             'personeller': personeller,
+            'gorevlendirmeler': gorevlendirmeler,
             'branslar': branslar,
-            'sozlesme_turleri': [{'value': v, 'label': l} for v, l in SozlesmeTuru.choices],
-            'sozlesme_durumlari': [{'value': v, 'label': l} for v, l in SozlesmeDurumu.choices],
+            'sozlesme_turleri': [
+                {'value': v, 'label': tur_labels.get(v, l)}
+                for v, l in SozlesmeTuru.choices
+            ],
+            'sozlesme_durumlari': [{'value': v, 'label': l} for v, l in SozlesmeDurumu.choices if v not in ('ASKIDA', 'SONA_ERDI')],
             'ucret_tipleri': [{'value': v, 'label': l} for v, l in UcretTipi.choices],
+            'ders_ucret_tipleri': [{'value': v, 'label': l} for v, l in DersUcretTipi.choices],
         },
     })
 

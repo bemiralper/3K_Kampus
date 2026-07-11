@@ -13,6 +13,11 @@ urlpatterns = [
     path('helper-data/', v.api_sozlesme_helper_data, name='sozlesme_helper_data'),
     path('<int:pk>/', v.api_sozlesme_detail, name='sozlesme_detail'),
     path('<int:pk>/durum/', v.api_sozlesme_durum, name='sozlesme_durum'),
+    path('<int:pk>/taslak/', v.api_sozlesme_taslak, name='sozlesme_taslak'),
+    path('<int:pk>/print-token/', v.api_sozlesme_print_token, name='sozlesme_print_token'),
+    path('<int:pk>/print-data/', v.api_sozlesme_print_data, name='sozlesme_print_data'),
+    path('<int:pk>/pdf/', v.api_sozlesme_pdf, name='sozlesme_pdf'),
+    path('preview-hesap/', v.api_sozlesme_preview_hesap, name='sozlesme_preview_hesap'),
 
     # ── Hakedişler ──
     path('hakedis/', v.api_hakedis_list_create, name='hakedis_list_create'),
