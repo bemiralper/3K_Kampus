@@ -144,3 +144,9 @@ export LMS_BACKEND_SERVICE=lms-backend
 export LMS_FRONTEND_SERVICE=lms-frontend
 ./backend/scripts/deploy-production.sh
 ```
+
+---
+
+## Geri dönüş (checkpoint)
+
+Büyük modül değişikliği öncesi sabitlenmiş commit’lere dönmek için: [checkpoint-rollback.md](./checkpoint-rollback.md)
