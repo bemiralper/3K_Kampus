@@ -59,6 +59,26 @@ type Props = {
 
 type SlotRow = TimeSlot | (GeneratedSlotPreview & { id?: number; _draft?: boolean });
 
+function slotId(slot: SlotRow): number | null {
+  return 'id' in slot && typeof slot.id === 'number' ? slot.id : null;
+}
+
+function slotStartLabel(slot: SlotRow): string {
+  if ('start_time_display' in slot) {
+    const display = (slot as TimeSlot).start_time_display;
+    if (display) return display;
+  }
+  return String(slot.start_time).slice(0, 5);
+}
+
+function slotEndLabel(slot: SlotRow): string {
+  if ('end_time_display' in slot) {
+    const display = (slot as TimeSlot).end_time_display;
+    if (display) return display;
+  }
+  return String(slot.end_time).slice(0, 5);
+}
+
 type EditorForm = {
   name: string;
   description?: string;
@@ -232,11 +252,8 @@ export default function TemplateEditorDrawer({ open, templateId, onClose, onSave
       return;
     }
     const nextOrder = (slots.reduce((max, s) => Math.max(max, s.order), 0) || 0) + 1;
-    const lastEnd = slots.length
-      ? ('end_time_display' in slots[slots.length - 1]
-          ? slots[slots.length - 1].end_time_display
-          : String(slots[slots.length - 1].end_time).slice(0, 5))
-      : generator.start_time;
+    const last = slots[slots.length - 1];
+    const lastEnd = last ? slotEndLabel(last) : generator.start_time;
     try {
       const created = await createTimeSlot({
         schedule_template: templateId,
@@ -294,55 +311,60 @@ export default function TemplateEditorDrawer({ open, templateId, onClose, onSave
         title: 'Ders No',
         dataIndex: 'order',
         width: 72,
-        render: (order: number, record, index) => (
-          <InputNumber
-            min={1}
-            size="small"
-            value={order}
-            disabled={!('id' in record)}
-            onChange={(val) => {
-              if ('id' in record && val) persistSlotPatch(record.id, { order: val }).catch(() => undefined);
-            }}
-          />
-        ),
+        render: (order: number, record) => {
+          const id = slotId(record);
+          return (
+            <InputNumber
+              min={1}
+              size="small"
+              value={order}
+              disabled={id == null}
+              onChange={(val) => {
+                if (id != null && val) persistSlotPatch(id, { order: val }).catch(() => undefined);
+              }}
+            />
+          );
+        },
       },
       {
         title: 'Başlangıç',
         width: 110,
-        render: (_, record) => (
-          <TimePicker
-            size="small"
-            format="HH:mm"
-            value={toTimePickerValue(
-              'start_time_display' in record ? record.start_time_display : String(record.start_time),
-            )}
-            disabled={!('id' in record)}
-            onChange={(val) => {
-              if ('id' in record) {
-                persistSlotPatch(record.id, { start_time: fromTimePickerValue(val) }).catch(() => undefined);
-              }
-            }}
-          />
-        ),
+        render: (_, record) => {
+          const id = slotId(record);
+          return (
+            <TimePicker
+              size="small"
+              format="HH:mm"
+              value={toTimePickerValue(slotStartLabel(record))}
+              disabled={id == null}
+              onChange={(val) => {
+                if (id != null) {
+                  persistSlotPatch(id, { start_time: fromTimePickerValue(val) }).catch(() => undefined);
+                }
+              }}
+            />
+          );
+        },
       },
       {
         title: 'Bitiş',
         width: 110,
-        render: (_, record) => (
-          <TimePicker
-            size="small"
-            format="HH:mm"
-            value={toTimePickerValue(
-              'end_time_display' in record ? record.end_time_display : String(record.end_time),
-            )}
-            disabled={!('id' in record)}
-            onChange={(val) => {
-              if ('id' in record) {
-                persistSlotPatch(record.id, { end_time: fromTimePickerValue(val) }).catch(() => undefined);
-              }
-            }}
-          />
-        ),
+        render: (_, record) => {
+          const id = slotId(record);
+          return (
+            <TimePicker
+              size="small"
+              format="HH:mm"
+              value={toTimePickerValue(slotEndLabel(record))}
+              disabled={id == null}
+              onChange={(val) => {
+                if (id != null) {
+                  persistSlotPatch(id, { end_time: fromTimePickerValue(val) }).catch(() => undefined);
+                }
+              }}
+            />
+          );
+        },
       },
       {
         title: 'Süre',
@@ -353,16 +375,17 @@ export default function TemplateEditorDrawer({ open, templateId, onClose, onSave
         title: 'Tip',
         width: 150,
         render: (_, record) => {
+          const id = slotId(record);
           const meta = slotTypeMeta(record.slot_type, subeThemeHex);
           return (
             <Select
               size="small"
               style={{ width: '100%' }}
               value={record.slot_type}
-              disabled={!('id' in record)}
+              disabled={id == null}
               options={SLOT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               onChange={(val: SlotTypeCode) => {
-                if ('id' in record) persistSlotPatch(record.id, { slot_type: val }).catch(() => undefined);
+                if (id != null) persistSlotPatch(id, { slot_type: val }).catch(() => undefined);
               }}
               tagRender={() => <Tag color={meta.color}>{meta.label}</Tag>}
             />
@@ -380,8 +403,10 @@ export default function TemplateEditorDrawer({ open, templateId, onClose, onSave
       {
         title: '',
         width: 48,
-        render: (_, record) =>
-          'id' in record ? (
+        render: (_, record) => {
+          const id = slotId(record);
+          if (id == null) return null;
+          return (
             <Button
               type="text"
               danger
@@ -389,13 +414,14 @@ export default function TemplateEditorDrawer({ open, templateId, onClose, onSave
               onClick={() =>
                 Modal.confirm({
                   title: 'Satır silinsin mi?',
-                  onOk: () => handleDeleteSlot(record.id),
+                  onOk: () => handleDeleteSlot(id),
                 })
               }
             >
               Sil
             </Button>
-          ) : null,
+          );
+        },
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps

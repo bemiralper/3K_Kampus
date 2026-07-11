@@ -62,7 +62,7 @@ export default function GorevEkranMesajiOverlay() {
       cancelled = true;
       clearInterval(pollId);
     };
-  }, [kurumLoading, activeKurum?.id]);
+  }, [kurumLoading, activeKurum]);
 
   const dismiss = async (goToTask = false) => {
     if (!current) return;
