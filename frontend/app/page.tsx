@@ -4,7 +4,9 @@ import LandingPageClient from '@/components/landing/LandingPageClient';
 import { fetchLandingData as fetchLandingDataRaw } from '@/lib/website-api';
 import { buildLandingMetadata } from '@/lib/landing-seo';
 import { LANDING_KURUM_KOD } from '@/lib/landing-theme';
+import { landingPageDynamic } from '@/lib/landing-page-data';
 
+export const dynamic = landingPageDynamic;
 export const revalidate = 0;
 
 const getLandingData = cache(() => fetchLandingDataRaw(LANDING_KURUM_KOD));
