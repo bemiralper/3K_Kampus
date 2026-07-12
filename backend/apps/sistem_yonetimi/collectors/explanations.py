@@ -7,6 +7,19 @@ import re
 # (pattern, title, explanation) — ilk eşleşen kazanır
 LOG_EXPLANATIONS: list[tuple[re.Pattern[str], str, str]] = [
     (
+        re.compile(r'Handling signal: term|was sent SIGTERM|Shutting down: Master|Worker exiting \(pid:', re.I),
+        'Gunicorn kontrollü yeniden başlatma',
+        'Bu bir hata değil. systemctl restart / deploy sırasında Gunicorn’a SIGTERM gider; '
+        'worker’lar kapanır, master kapanır, hemen ardından yeni süreç ayağa kalkar. '
+        'Ardından “Starting gunicorn / Booting worker” satırları gelmeli.',
+    ),
+    (
+        re.compile(r'Starting gunicorn|Listening at:|Booting worker with pid|Using worker: sync|Control socket listening', re.I),
+        'Gunicorn başladı',
+        'Backend (Gunicorn) yeni master/worker süreçleriyle ayağa kalktı. Deploy veya '
+        'servis restart sonrası beklenen INFO kaydı.',
+    ),
+    (
         re.compile(r'WORKER TIMEOUT', re.I),
         'Gunicorn worker zaman aşımı',
         'Bir istek Gunicorn --timeout süresini aştığı için worker süreci öldürüldü. '
