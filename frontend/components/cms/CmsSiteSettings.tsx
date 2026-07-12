@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { websiteAdminApi, invalidateLandingCache, type SiteSettings } from '@/lib/website-api';
 import SiteSettingsPanel from '@/components/website-admin/SiteSettingsPanel';
+import CmsSocialLinks from './CmsSocialLinks';
 
 type Props = {
   onMessage: (msg: string, type?: 'success' | 'error') => void;
@@ -49,14 +50,19 @@ export default function CmsSiteSettings({ onMessage }: Props) {
   if (!settings) return <div className="wam-empty" style={{ padding: '2rem' }}>Ayarlar bulunamadı</div>;
 
   return (
-    <SiteSettingsPanel
-      settings={settings}
-      onChange={setSettings}
-      onSave={() => save()}
-      onSaveSettings={save}
-      saving={saving}
-      onMessage={onMessage}
-      autoSaveOnGalleryUpload
-    />
+    <>
+      <SiteSettingsPanel
+        settings={settings}
+        onChange={setSettings}
+        onSave={() => save()}
+        onSaveSettings={save}
+        saving={saving}
+        onMessage={onMessage}
+        autoSaveOnGalleryUpload
+      />
+      <div style={{ marginTop: '1.25rem' }}>
+        <CmsSocialLinks onMessage={onMessage} />
+      </div>
+    </>
   );
 }

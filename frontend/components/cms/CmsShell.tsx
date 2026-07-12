@@ -33,7 +33,7 @@ export type CmsNavId =
 
 const NAV: { id: CmsNavId; label: string; desc: string; needsPage?: boolean }[] = [
   { id: 'dashboard', label: 'Özet', desc: 'Sağlık ve istatistik' },
-  { id: 'site', label: 'Anasayfa & Hero', desc: 'Dönen yazı, galeri, iletişim' },
+  { id: 'site', label: 'Anasayfa & Hero', desc: 'Hero, iletişim, sosyal medya' },
   { id: 'sections', label: 'Anasayfa Bölümleri', desc: 'Neden 3K, ders formatları' },
   { id: 'home-content', label: 'Sınav & SSS', desc: 'Deneme takvimi, yorum, SSS' },
   { id: 'pages', label: 'Sayfalar', desc: 'Oluştur / yayınla' },
