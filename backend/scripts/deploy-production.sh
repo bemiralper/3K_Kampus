@@ -189,6 +189,19 @@ log "migrate"
 log "collectstatic"
 "$PYTHON" manage.py collectstatic --noinput
 
+MEDIA_DIR="$BACKEND_DIR/media"
+log "media dizini hazırlanıyor: $MEDIA_DIR"
+mkdir -p "$MEDIA_DIR"
+if [[ "$(id -u)" -eq 0 ]] && id "$LMS_RUN_USER" &>/dev/null 2>&1; then
+  chown -R "$LMS_RUN_USER:$LMS_RUN_GROUP" "$MEDIA_DIR"
+  chmod -R u+rwX,g+rwX,o+rX "$MEDIA_DIR"
+fi
+media_files="$(find "$MEDIA_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')"
+log "media dosya sayısı: ${media_files:-0}"
+if [[ "${media_files:-0}" -eq 0 ]]; then
+  log "Uyarı: backend/media boş — nginx /media/ 404 verebilir; verify-production-media.sh ile kontrol edin"
+fi
+
 log "setup_roles (izin seed — idempotent)"
 "$PYTHON" manage.py setup_roles
 
