@@ -36,6 +36,19 @@ class SiteSettings(models.Model):
     hero_alt_baslik = models.CharField('Hero Alt Başlık', max_length=300, blank=True, default='')
     hero_slogan = models.CharField('Hero Slogan', max_length=400, blank=True, default='')
     hero_maddeler = models.JSONField('Hero Maddeler', default=list, blank=True)
+    hero_rotating_words = models.JSONField('Hero Dönen Kelimeler', default=list, blank=True)
+    hero_gallery = models.JSONField('Hero Galeri Görselleri', default=list, blank=True)
+    neden_baslik = models.CharField('Neden Başlık', max_length=200, blank=True, default='Neden 3K Kampüs?')
+    neden_alt_baslik = models.CharField(
+        'Neden Alt Başlık', max_length=300, blank=True,
+        default='Başarıya giden yolda fark yaratan hizmetlerimiz',
+    )
+    ders_formatlari_config = models.JSONField('Ders Formatları', default=dict, blank=True)
+    landing_bolumleri = models.JSONField('Ek Anasayfa Bölümleri', default=list, blank=True)
+    landing_section_order = models.JSONField('Anasayfa Bölüm Sırası', default=list, blank=True)
+    landing_sections_hidden = models.JSONField('Gizli Anasayfa Bölümleri', default=list, blank=True)
+    yorumlar_goster = models.BooleanField('Öğrenci Yorumları Anasayfada', default=True)
+    sss_goster = models.BooleanField('SSS Anasayfada', default=True)
     tanitim_baslik = models.CharField('Tanıtım Başlık', max_length=200, blank=True, default='')
     tanitim_icerik = models.TextField('Tanıtım İçerik', blank=True, default='')
     youtube_video_id = models.CharField('YouTube Video ID', max_length=50, blank=True, default='')
@@ -311,3 +324,24 @@ class IletisimMesaji(models.Model):
 
     def __str__(self):
         return f'{self.ad_soyad} — {self.created_at:%d.%m.%Y}'
+
+
+# CMS v2 (Page Builder) — re-export for migrations / admin / backup
+from apps.website.cms_models import (  # noqa: E402
+    WebPage,
+    WebPageVersion,
+    MediaFolder,
+    MediaAsset,
+    MediaVariant,
+    NavMenu,
+    NavItem,
+    SiteTheme,
+    RedirectRule,
+    SlugHistory,
+    ContentCategory,
+    ContentEntry,
+    FormDefinition,
+    FormSubmission,
+    IntegrationSettings,
+    NotFoundHit,
+)

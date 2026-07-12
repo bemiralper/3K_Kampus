@@ -81,6 +81,13 @@ export const ModulePermissions = {
     EXPORT: 'rapor.export',
     MANAGE: 'rapor.manage',
   },
+
+  // Kurumsal Site CMS
+  WEBSITE: {
+    READ: 'website.read',
+    WRITE: 'website.write',
+    MANAGE: 'website.manage',
+  },
   
   // Rol Yönetimi
   ROLLER: {

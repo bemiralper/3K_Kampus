@@ -108,7 +108,7 @@ const allMenuItems = [
   { label: "Yedekleme", href: "/admin/yedekleme", section: "Yedekleme" },
   { label: "Yedek Kaynakları", href: "/admin/yedekleme?tab=resources", section: "Yedekleme" },
   { label: "Yedek Geçmişi", href: "/admin/yedekleme?tab=history", section: "Yedekleme" },
-  { label: "Kurumsal Site", href: "/website-yonetimi", section: "Ayarlar" },
+  { label: "Web Sitesi", href: "/website-yonetimi", section: "Ayarlar" },
 ];
 
 // ─── Breadcrumb Component ───

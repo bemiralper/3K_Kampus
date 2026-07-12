@@ -59,6 +59,9 @@ PERMISSIONS_DATA = [
     {'code': 'yedekleme.manage', 'name': 'Yedekleme Yönetimi', 'module': 'yedekleme', 'permission_type': 'manage', 'description': 'Yedekleme zamanlaması, silme ve tüm yedek işlemleri'},
     {'code': 'demo.read', 'name': 'Demo Görüntüleme', 'module': 'demo', 'permission_type': 'read', 'description': 'Demo veri durumunu görüntüleyebilir'},
     {'code': 'demo.manage', 'name': 'Demo Yönetimi', 'module': 'demo', 'permission_type': 'manage', 'description': 'Demo veri oluşturma, temizleme ve operasyonel sıfırlama'},
+    {'code': 'website.read', 'name': 'Kurumsal Site Görüntüleme', 'module': 'website', 'permission_type': 'read', 'description': 'Kurumsal web sitesi CMS içeriğini görüntüleyebilir'},
+    {'code': 'website.write', 'name': 'Kurumsal Site Düzenleme', 'module': 'website', 'permission_type': 'write', 'description': 'Sayfa, blok, medya ve menü düzenleyebilir'},
+    {'code': 'website.manage', 'name': 'Kurumsal Site Yönetimi', 'module': 'website', 'permission_type': 'manage', 'description': 'Kurumsal site CMS modülünün tüm yetkilerine sahip'},
 ]
 
 ROLES_DATA = [
@@ -83,6 +86,7 @@ ROLES_DATA = [
             'communication.manage', 'communication.config', 'communication.bulk',
             'gorev.manage', 'gorev.analytics',
             'demo.manage', 'yedekleme.read', 'yedekleme.create', 'yedekleme.manage',
+            'website.manage',
         ],
     },
     {
@@ -96,6 +100,7 @@ ROLES_DATA = [
             'finans.read', 'egitim_tanimlari.read', 'egitim_paketleri.read',
             'sinif.manage', 'rapor.read',
             'gorev.manage', 'gorev.analytics',
+            'website.read',
         ],
     },
     {

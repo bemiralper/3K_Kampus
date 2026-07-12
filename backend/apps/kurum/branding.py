@@ -13,9 +13,18 @@ BRANDING_TEXT_FIELDS = (
 
 
 def _media_url(request, file_field, *, cache_bust: int | None = None) -> str | None:
-    """Same-origin /media/ yolu — tarayıcı Next.js proxy üzerinden erişir."""
+    """Same-origin /media/ yolu — tarayıcı Next.js proxy üzerinden erişir.
+
+    Dosya diskte yoksa None döner (ör. sunucu yedeğinden gelen ama medyası
+    kopyalanmamış kayıtlar). Böylece frontend bozuk favicon yerine fallback kullanır.
+    """
     if not file_field:
         return None
+    try:
+        if not file_field.storage.exists(file_field.name):
+            return None
+    except Exception:
+        pass
     url = file_field.url
     if not url.startswith('/'):
         url = f'/{url.lstrip("/")}'
@@ -23,6 +32,21 @@ def _media_url(request, file_field, *, cache_bust: int | None = None) -> str | N
         sep = '&' if '?' in url else '?'
         url = f'{url}{sep}v={cache_bust}'
     return url
+
+
+def _kurum_favicon_from_sube(kurum, request) -> str | None:
+    """Kurumda favicon yoksa (veya dosyası eksikse) şube favicon'una düş."""
+    try:
+        from apps.sube.domain.models import Sube
+        subeler = Sube.objects.filter(kurum_id=kurum.id).order_by('id')
+        for sube in subeler:
+            version = int(sube.updated_at.timestamp()) if getattr(sube, 'updated_at', None) else None
+            url = _media_url(request, getattr(sube, 'favicon', None), cache_bust=version)
+            if url:
+                return url
+    except Exception:
+        return None
+    return None
 
 
 def _serialize_branding_entity(entity, request, *, default_name: str) -> dict:
@@ -44,6 +68,11 @@ def _serialize_branding_entity(entity, request, *, default_name: str) -> dict:
 def serialize_kurum_branding(kurum, request=None) -> dict:
     """Kurum marka bilgilerini JSON-safe dict olarak döndür."""
     data = _serialize_branding_entity(kurum, request, default_name=kurum.ad)
+    # Kurumda favicon yoksa/dosyası eksikse şube favicon'una düş
+    if not data.get('favicon_url'):
+        fallback = _kurum_favicon_from_sube(kurum, request)
+        if fallback:
+            data['favicon_url'] = fallback
     data.update({
         'id': kurum.id,
         'kod': kurum.kod or '',

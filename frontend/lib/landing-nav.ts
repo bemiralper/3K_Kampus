@@ -11,7 +11,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Duyurular', href: '/#duyurular', id: 'duyurular' },
   { label: 'Sınav Takvimi', href: '/#sinav-takvimi', id: 'sinav-takvimi' },
   { label: '3K Sistemi', href: '/3k-sistemi', id: '3k-sistemi' },
-  { label: 'İletişim', href: '/#iletisim', id: 'iletisim' },
+  { label: 'İletişim', href: '/iletisim', id: 'iletisim' },
 ];
 
 /**
@@ -19,8 +19,13 @@ export const NAV_ITEMS: NavItem[] = [
  * (Next.js 14 App Router parallelRoutes.get hatasını önler).
  */
 export function handleLandingNav(href: string, pathname: string) {
-  if (href.startsWith('/3k-sistemi')) {
-    hardNavigate(href);
+  // Ayrı sayfalar (ör. /3k-sistemi, /iletisim) — hash olmayan mutlak yollar
+  if (/^\/[a-z0-9-]/i.test(href) && !href.startsWith('/#')) {
+    if (pathname === href) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      hardNavigate(href);
+    }
     return;
   }
 
@@ -55,6 +60,7 @@ export function handleLandingNav(href: string, pathname: string) {
 
 export function navItemActiveId(pathname: string, scrollActiveId: string): string {
   if (pathname === '/3k-sistemi' || pathname.startsWith('/3k-sistemi/')) return '3k-sistemi';
+  if (pathname === '/iletisim' || pathname.startsWith('/iletisim/')) return 'iletisim';
   if (pathname !== '/') return '';
   return scrollActiveId;
 }

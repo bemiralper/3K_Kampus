@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 from apps.website import views
 
 app_name = 'website_admin_api'
@@ -32,4 +32,6 @@ urlpatterns = [
     path('yasal-metinler/<int:pk>/', views.api_admin_yasal_detail, name='admin_yasal_detail'),
     path('iletisim-mesajlari/', views.api_admin_iletisim_mesajlari, name='admin_iletisim'),
     path('iletisim-mesajlari/<int:pk>/', views.api_admin_iletisim_mesaj_detail, name='admin_iletisim_detail'),
+    # CMS v2 Page Builder
+    path('v2/', include('apps.website.v2_admin_urls')),
 ]

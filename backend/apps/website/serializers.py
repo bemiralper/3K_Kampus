@@ -14,6 +14,17 @@ def _media_url(request, field):
         return None
 
 
+def _resolve_landing_sections_hidden(settings) -> list:
+    """Gizli bölüm listesi + eski boolean bayrakları birleştir."""
+    hidden = list(settings.landing_sections_hidden or [])
+    hidden_set = set(hidden)
+    if not settings.yorumlar_goster:
+        hidden_set.add('yorumlar')
+    if not settings.sss_goster:
+        hidden_set.add('sss')
+    return sorted(hidden_set)
+
+
 def serialize_site_settings(settings, request):
     if not settings:
         return None
@@ -27,6 +38,17 @@ def serialize_site_settings(settings, request):
         'hero_alt_baslik': settings.hero_alt_baslik,
         'hero_slogan': settings.hero_slogan,
         'hero_maddeler': settings.hero_maddeler or [],
+        'hero_rotating_words': settings.hero_rotating_words or [],
+        'hero_gallery': settings.hero_gallery or [],
+        'neden_baslik': settings.neden_baslik,
+        'neden_alt_baslik': settings.neden_alt_baslik,
+        'ders_formatlari_config': settings.ders_formatlari_config or {},
+        'landing_bolumleri': settings.landing_bolumleri or [],
+        'landing_section_order': settings.landing_section_order or [],
+        'landing_sections_hidden': _resolve_landing_sections_hidden(settings),
+        'yorumlar_goster': settings.yorumlar_goster,
+        'sss_goster': settings.sss_goster,
+        'settings_updated_at': settings.updated_at.isoformat() if settings.updated_at else None,
         'tanitim_baslik': settings.tanitim_baslik,
         'tanitim_icerik': settings.tanitim_icerik,
         'youtube_video_id': settings.youtube_video_id,

@@ -4,25 +4,29 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 type LandingRevealSectionProps = {
   children: ReactNode;
+  /** Stagger için gecikme (ms) */
+  delay?: number;
 };
 
-function shouldSkipReveal() {
+function prefersReducedMotion() {
   if (typeof window === 'undefined') return false;
-  return (
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    || window.matchMedia('(pointer: coarse)').matches
-    || window.matchMedia('(max-width: 1024px)').matches
-  );
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-export default function LandingRevealSection({ children }: LandingRevealSectionProps) {
+export default function LandingRevealSection({ children, delay = 0 }: LandingRevealSectionProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
-    if (shouldSkipReveal()) {
+    if (prefersReducedMotion()) {
+      el.classList.add('is-visible');
+      return;
+    }
+
+    // Zaten görünürse veya observer desteklenmiyorsa hemen göster
+    if (typeof IntersectionObserver === 'undefined') {
       el.classList.add('is-visible');
       return;
     }
@@ -34,15 +38,26 @@ export default function LandingRevealSection({ children }: LandingRevealSectionP
           observer.disconnect();
         }
       },
-      { rootMargin: '0px 0px -4% 0px', threshold: 0.06 },
+      { rootMargin: '0px 0px -8% 0px', threshold: 0.08 },
     );
 
     observer.observe(el);
-    return () => observer.disconnect();
+
+    // Güvenlik: 1.2s sonra hâlâ gizliyse zorla göster (içerik asla kaybolmasın)
+    const fallback = window.setTimeout(() => el.classList.add('is-visible'), 1200);
+
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(fallback);
+    };
   }, []);
 
   return (
-    <div ref={ref} className="landing-reveal">
+    <div
+      ref={ref}
+      className="landing-reveal"
+      style={delay ? ({ ['--reveal-delay' as string]: `${delay}ms` }) : undefined}
+    >
       {children}
     </div>
   );

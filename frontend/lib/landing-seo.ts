@@ -17,6 +17,9 @@ export function buildLandingMetadata(data: LandingData | null, path = '/'): Meta
   const indexable = settings?.seo_robots_index !== false;
   const ogImage = branding.app_logo_url || branding.login_logo_url;
   const ogImageUrl = ogImage ? absoluteSiteUrl(getAppLogo(branding)) : undefined;
+  // Favicon: same-origin (göreli) yol — hem dev hem prod'da çalışır ve
+  // Next.js head <link> düğümleriyle client tarafı DOM çakışması yaratmaz.
+  const faviconUrl = getFaviconUrl(branding);
 
   const metadata: Metadata = {
     title,
@@ -42,8 +45,8 @@ export function buildLandingMetadata(data: LandingData | null, path = '/'): Meta
       ...(ogImageUrl ? { images: [ogImageUrl] } : {}),
     },
     icons: {
-      icon: absoluteSiteUrl(getFaviconUrl(branding)),
-      apple: absoluteSiteUrl(getFaviconUrl(branding)),
+      icon: faviconUrl,
+      apple: faviconUrl,
     },
   };
 

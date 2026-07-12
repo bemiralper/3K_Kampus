@@ -1,19 +1,33 @@
 'use client';
 
 import type { SiteSettings } from '@/lib/website-api';
+import { resolveMediaUrl, websiteCmsV2Api } from '@/lib/website-api';
 import { WamInput, WamTextarea } from './WamField';
+import CommaListInput from './CommaListInput';
 import { formatPhoneInput } from '@/lib/phone-format';
 import { parseMapEmbedUrl, buildMapEmbedFromAddress } from '@/lib/map-embed';
 
 type SiteSettingsPanelProps = {
   settings: SiteSettings;
   onChange: (settings: SiteSettings) => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
+  onSaveSettings?: (settings: SiteSettings) => void | Promise<void>;
   saving: boolean;
+  onMessage?: (msg: string, type?: 'success' | 'error') => void;
+  autoSaveOnGalleryUpload?: boolean;
 };
 
-export default function SiteSettingsPanel({ settings, onChange, onSave, saving }: SiteSettingsPanelProps) {
-  const set = (key: keyof SiteSettings, value: string | string[]) => {
+export default function SiteSettingsPanel({
+  settings,
+  onChange,
+  onSave,
+  onSaveSettings,
+  saving,
+  onMessage,
+  autoSaveOnGalleryUpload,
+}: SiteSettingsPanelProps) {
+  const mediaCache = settings.settings_updated_at || String(Date.now());
+  const set = (key: keyof SiteSettings, value: string | string[] | SiteSettings['hero_gallery']) => {
     onChange({ ...settings, [key]: value });
   };
 
@@ -81,14 +95,145 @@ export default function SiteSettingsPanel({ settings, onChange, onSave, saving }
             <WamInput label="Alt Başlık" value={settings.hero_alt_baslik || ''} onChange={e => set('hero_alt_baslik', e.target.value)} />
             <WamInput label="Slogan" full value={settings.hero_slogan || ''} onChange={e => set('hero_slogan', e.target.value)} />
           </div>
-          <WamInput
+          <CommaListInput
             label="Hero Maddeler"
-            hint="Virgülle ayırın"
+            hint="Virgülle ayırın (yazmayı bitirince veya Enter ile kaydedilir)"
             full
-            value={(settings.hero_maddeler || []).join(', ')}
-            onChange={e => set('hero_maddeler', e.target.value.split(',').map(x => x.trim()).filter(Boolean))}
+            value={settings.hero_maddeler || []}
+            onChange={(items) => set('hero_maddeler', items)}
             placeholder="Akademik Takip, Bireysel Koçluk, Deneme Analizleri"
           />
+        </section>
+
+        <section className="wam-settings-card">
+          <div className="wam-settings-card-head">
+            <span className="wam-settings-icon">🔁</span>
+            <div>
+              <h5>Hero Dönen Yazı & Galeri</h5>
+              <p>Anasayfa hero&apos;sunda sırayla değişen kelimeler ve fareyle gezilen görsel galerisi</p>
+            </div>
+          </div>
+
+          <CommaListInput
+            label="Dönen Kelimeler"
+            hint="Virgülle ayırın — hero başlığında sırayla değişerek gösterilir"
+            full
+            value={settings.hero_rotating_words || []}
+            onChange={(items) => set('hero_rotating_words', items)}
+            placeholder="KURS, KÜTÜPHANE, KOÇLUK"
+          />
+
+          <div className="wam-field wam-field-full" style={{ marginTop: '0.75rem' }}>
+            <label className="wam-field-label">Galeri Görselleri</label>
+            <p className="wam-field-hint" style={{ marginBottom: '0.5rem' }}>
+              Görsel adresini yapıştırın (Medya Kütüphanesi&apos;ne yükleyip URL&apos;sini kopyalayabilir veya herhangi bir görsel bağlantısı kullanabilirsiniz). Fareyi galerinin üzerinde yatay gezdirdikçe görseller değişir.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {(settings.hero_gallery || []).map((item, idx) => {
+                const gallery = settings.hero_gallery || [];
+                const updateAt = (patch: Partial<{ url: string; caption: string }>) => {
+                  const next = gallery.map((g, i) => (i === idx ? { ...g, ...patch } : g));
+                  onChange({ ...settings, hero_gallery: next });
+                };
+                const removeAt = () => {
+                  onChange({ ...settings, hero_gallery: gallery.filter((_, i) => i !== idx) });
+                };
+                const move = (dir: -1 | 1) => {
+                  const j = idx + dir;
+                  if (j < 0 || j >= gallery.length) return;
+                  const next = [...gallery];
+                  [next[idx], next[j]] = [next[j], next[idx]];
+                  onChange({ ...settings, hero_gallery: next });
+                };
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      gap: '0.6rem',
+                      alignItems: 'center',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      padding: '0.6rem',
+                      background: '#fff',
+                    }}
+                  >
+                    <span style={{ width: 64, height: 44, flexShrink: 0, borderRadius: 8, overflow: 'hidden', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {item.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={resolveMediaUrl(item.url, mediaCache) || item.url}
+                          alt={item.caption || ''}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 18, color: '#94a3b8' }}>🖼</span>
+                      )}
+                    </span>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.35rem', minWidth: 0 }}>
+                      <input
+                        className="wam-input"
+                        value={item.url || ''}
+                        onChange={(e) => updateAt({ url: e.target.value })}
+                        placeholder="https://… veya /media/…"
+                        style={{ width: '100%' }}
+                      />
+                      <input
+                        className="wam-input"
+                        value={item.caption || ''}
+                        onChange={(e) => updateAt({ caption: e.target.value })}
+                        placeholder="Etiket (örn. Kütüphane)"
+                        style={{ width: '100%' }}
+                      />
+                      <label className="wam-btn wam-btn-ghost" style={{ width: 'fit-content', cursor: 'pointer', fontSize: 12 }}>
+                        Dosyadan yükle
+                        <input
+                          type="file"
+                          accept="image/*"
+                          hidden
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const res = await websiteCmsV2Api.uploadMedia(file, { folder: 'hero', title: item.caption || file.name });
+                            if (res.success && res.data?.url) {
+                              const mediaUrl = resolveMediaUrl(res.data.url, String(Date.now())) || res.data.url;
+                              const nextGallery = gallery.map((g, i) => (i === idx ? { ...g, url: mediaUrl } : g));
+                              const nextSettings = { ...settings, hero_gallery: nextGallery };
+                              onChange(nextSettings);
+                              if (autoSaveOnGalleryUpload && onSaveSettings) {
+                                await onSaveSettings(nextSettings);
+                                onMessage?.('Görsel yüklendi ve kaydedildi', 'success');
+                              } else {
+                                onMessage?.('Görsel yüklendi — kaydetmeyi unutmayın', 'success');
+                              }
+                            } else {
+                              onMessage?.(res.error || 'Yükleme başarısız', 'error');
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <button type="button" className="wam-btn wam-btn-ghost" onClick={() => move(-1)} disabled={idx === 0} title="Yukarı" style={{ padding: '2px 8px' }}>↑</button>
+                      <button type="button" className="wam-btn wam-btn-ghost" onClick={() => move(1)} disabled={idx === (settings.hero_gallery || []).length - 1} title="Aşağı" style={{ padding: '2px 8px' }}>↓</button>
+                    </div>
+                    <button type="button" className="wam-btn wam-btn-ghost" onClick={removeAt} title="Kaldır" style={{ color: '#dc2626' }}>Sil</button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              className="wam-btn wam-btn-secondary"
+              style={{ marginTop: '0.6rem' }}
+              onClick={() => onChange({ ...settings, hero_gallery: [...(settings.hero_gallery || []), { url: '', caption: '' }] })}
+            >
+              + Görsel Ekle
+            </button>
+          </div>
         </section>
 
         <section className="wam-settings-card">

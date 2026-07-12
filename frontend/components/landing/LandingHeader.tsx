@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { getHeaderLogo, mergeBranding, type KurumBranding } from '@/lib/kurum-branding';
-import { LANDING_COLORS, SECTION_SCROLL_ORDER, scrollToSection } from '@/lib/landing-theme';
+import { LANDING_COLORS, SECTION_SCROLL_ORDER } from '@/lib/landing-theme';
 import { NAV_ITEMS, handleLandingNav, navItemActiveId } from '@/lib/landing-nav';
 import MobileMenu from './MobileMenu';
 
@@ -24,21 +25,24 @@ export default function LandingHeader({ branding, onLoginClick }: LandingHeaderP
   const activeId = navItemActiveId(pathname, scrollActiveId);
 
   useEffect(() => {
-    if (pathname !== '/') return;
+    if (pathname !== '/') {
+      setScrolled(true);
+      return;
+    }
 
     let ticking = false;
-    let lastScrolled = window.scrollY > 20;
+    let lastScrolled = window.scrollY > 16;
     let lastActiveId = 'anasayfa';
 
     const update = () => {
       ticking = false;
-      const newScrolled = window.scrollY > 20;
+      const newScrolled = window.scrollY > 16;
       if (newScrolled !== lastScrolled) {
         lastScrolled = newScrolled;
         setScrolled(newScrolled);
       }
 
-      const offset = 100;
+      const offset = 120;
       let current = 'anasayfa';
       for (const id of SECTION_SCROLL_ORDER) {
         const el = document.getElementById(id);
@@ -64,62 +68,61 @@ export default function LandingHeader({ branding, onLoginClick }: LandingHeaderP
     return () => window.removeEventListener('scroll', onScroll);
   }, [pathname]);
 
-  useEffect(() => {
-    setScrolled(window.scrollY > 20);
-  }, [pathname]);
-
-  const navClick = (href: string) => {
-    handleLandingNav(href, pathname);
-  };
+  const navClick = (href: string) => handleLandingNav(href, pathname);
 
   return (
     <>
-      <header
-        className={`landing-header sticky top-0 z-50 ${
-          scrolled
-            ? 'border-b border-slate-200/60 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.06)] lg:bg-white/95 lg:shadow-[0_8px_30px_rgba(15,23,42,0.06)] lg:backdrop-blur-md'
-            : 'border-b border-transparent bg-white lg:bg-white/90 lg:backdrop-blur-sm'
-        }`}
+      <motion.header
+        initial={{ y: -24, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        className={`landing-header ${scrolled ? 'is-scrolled' : ''}`}
       >
-        <div className="mx-auto flex h-[4.25rem] max-w-7xl items-center gap-6 px-4 lg:px-8">
-          <Link href="/" className="flex shrink-0 items-center gap-2.5">
+        <div className="landing-header__inner">
+          <Link href="/" className="landing-header__brand" aria-label={b.gorunen_ad}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logo} alt={b.gorunen_ad} className="h-10 w-auto max-w-[140px] object-contain" />
-            <span className="hidden font-bold tracking-tight sm:block" style={{ color: LANDING_COLORS.navy }}>
-              {b.gorunen_ad}
-            </span>
+            <img src={logo} alt={b.gorunen_ad} className="landing-header__logo" />
+            <span className="landing-header__brand-text">{b.gorunen_ad}</span>
           </Link>
 
-          <nav className="landing-nav hidden flex-1 justify-center lg:flex" aria-label="Ana menü">
-            <ul className="flex items-center gap-1">
-              {NAV_ITEMS.map(item => {
-                const isActive = activeId === item.id;
-                return (
-                  <li key={item.href}>
-                    <button
-                      type="button"
-                      onClick={() => navClick(item.href)}
-                      className={`landing-nav-link ${isActive ? 'is-active' : ''}`}
-                    >
-                      {item.label}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+          <nav className="landing-header__nav" aria-label="Ana menü">
+            {NAV_ITEMS.map((item) => {
+              const isActive = activeId === item.id;
+              return (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => navClick(item.href)}
+                  className={`landing-navlink ${isActive ? 'is-active' : ''}`}
+                  aria-current={isActive ? 'page' : undefined}
+                >
+                  {isActive && (
+                    <motion.span
+                      layoutId="landing-nav-pill"
+                      className="landing-navlink__pill"
+                      transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <span className="landing-navlink__label">{item.label}</span>
+                </button>
+              );
+            })}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
-            <button
+          <div className="landing-header__actions">
+            <motion.button
               type="button"
               onClick={onLoginClick}
-              className="landing-login-btn hidden sm:inline-flex"
+              className="landing-header__login"
+              whileHover={{ y: -1, scale: 1.015 }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 24 }}
             >
               Giriş Yap
-            </button>
+            </motion.button>
             <button
               type="button"
-              className="landing-header-menu-btn lg:hidden"
+              className="landing-header__burger"
               onClick={() => setMobileOpen(true)}
               aria-label="Menüyü aç"
               aria-expanded={mobileOpen}
@@ -130,81 +133,162 @@ export default function LandingHeader({ branding, onLoginClick }: LandingHeaderP
             </button>
           </div>
         </div>
-      </header>
+      </motion.header>
 
       <style jsx global>{`
-        .landing-nav-link {
+        .landing-header {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          border-bottom: 1px solid transparent;
+          background: rgba(255, 255, 255, 0.72);
+          transition: background 0.35s ease, box-shadow 0.35s ease,
+            border-color 0.35s ease, backdrop-filter 0.35s ease;
+        }
+        .landing-header.is-scrolled {
+          background: rgba(255, 255, 255, 0.9);
+          border-bottom-color: rgba(226, 232, 240, 0.8);
+          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+          backdrop-filter: saturate(180%) blur(14px);
+          -webkit-backdrop-filter: saturate(180%) blur(14px);
+        }
+        .landing-header__inner {
+          margin: 0 auto;
+          display: flex;
+          align-items: center;
+          gap: 1.5rem;
+          max-width: 80rem;
+          height: 4.5rem;
+          padding: 0 1rem;
+          transition: height 0.35s ease;
+        }
+        .landing-header.is-scrolled .landing-header__inner {
+          height: 3.85rem;
+        }
+        @media (min-width: 1024px) {
+          .landing-header__inner {
+            padding: 0 2rem;
+          }
+        }
+        .landing-header__brand {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.625rem;
+          flex-shrink: 0;
+          text-decoration: none;
+        }
+        .landing-header__logo {
+          height: 2.4rem;
+          width: auto;
+          max-width: 8.75rem;
+          object-fit: contain;
+          transition: height 0.35s ease;
+        }
+        .landing-header.is-scrolled .landing-header__logo {
+          height: 2.1rem;
+        }
+        .landing-header__brand-text {
+          display: none;
+          font-weight: 700;
+          letter-spacing: -0.02em;
+          color: ${LANDING_COLORS.navy};
+        }
+        @media (min-width: 640px) {
+          .landing-header__brand-text {
+            display: block;
+          }
+        }
+        .landing-header__nav {
+          display: none;
+          flex: 1;
+          align-items: center;
+          justify-content: center;
+          gap: 0.25rem;
+        }
+        @media (min-width: 1024px) {
+          .landing-header__nav {
+            display: flex;
+          }
+        }
+        .landing-navlink {
           position: relative;
           display: inline-flex;
           align-items: center;
           padding: 0.5rem 1rem;
           border: none;
-          background: transparent !important;
-          font-size: 14px;
+          background: transparent;
+          font-size: 0.9375rem;
           font-weight: 500;
-          color: #475569;
-          cursor: pointer;
-          transition: color 0.2s ease;
+          color: ${LANDING_COLORS.gray700};
           letter-spacing: -0.01em;
+          cursor: pointer;
+          border-radius: 999px;
+          transition: color 0.2s ease;
         }
-        .landing-nav-link:hover {
-          color: ${LANDING_COLORS.navy};
-          background: transparent !important;
+        .landing-navlink__label {
+          position: relative;
+          z-index: 1;
         }
-        .landing-nav-link.is-active {
+        .landing-navlink__pill {
+          position: absolute;
+          inset: 0;
+          border-radius: 999px;
+          background: ${LANDING_COLORS.accent}14;
+          z-index: 0;
+        }
+        .landing-navlink:hover {
+          color: ${LANDING_COLORS.accent};
+        }
+        .landing-navlink.is-active {
           color: ${LANDING_COLORS.accent};
           font-weight: 600;
-          background: transparent !important;
         }
-        .landing-nav-link.is-active::after {
-          content: '';
-          position: absolute;
-          bottom: -2px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 24px;
-          height: 2px;
-          border-radius: 999px;
-          background: ${LANDING_COLORS.accent};
+        .landing-header__actions {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-left: auto;
         }
-        [id="anasayfa"], [id="duyurular"], [id="ders-formatlari"], [id="sinav-takvimi"],
-        [id="iletisim"], [id="sss"] {
-          scroll-margin-top: 5.5rem;
-        }
-        .landing-login-btn {
+        .landing-header__login {
+          display: none;
           align-items: center;
           justify-content: center;
-          padding: 0.55rem 1.35rem;
+          padding: 0.6rem 1.4rem;
           border: none;
           border-radius: 999px;
-          background: ${LANDING_COLORS.accent} !important;
-          color: #fff !important;
-          font-size: 14px;
+          background: linear-gradient(135deg, ${LANDING_COLORS.accent} 0%, ${LANDING_COLORS.navyLight} 100%);
+          color: #fff;
+          font-size: 0.9375rem;
           font-weight: 600;
           cursor: pointer;
-          transition: transform 0.15s ease, box-shadow 0.15s ease;
-          box-shadow: 0 2px 8px rgba(2, 98, 167, 0.35);
+          box-shadow: 0 6px 18px rgba(2, 98, 167, 0.32);
         }
-        .landing-login-btn:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 4px 14px rgba(2, 98, 167, 0.4);
+        @media (min-width: 640px) {
+          .landing-header__login {
+            display: inline-flex;
+          }
         }
-        .landing-header-menu-btn {
+        .landing-header__burger {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 2.5rem;
-          height: 2.5rem;
-          padding: 0;
-          border: none;
-          border-radius: 0.625rem;
-          background: #f1f5f9 !important;
+          width: 2.6rem;
+          height: 2.6rem;
+          border: 1px solid ${LANDING_COLORS.gray200};
+          border-radius: 0.75rem;
+          background: #fff;
           color: ${LANDING_COLORS.navy};
           cursor: pointer;
           flex-shrink: 0;
         }
-        .landing-header-menu-btn:active {
-          background: #e2e8f0 !important;
+        @media (min-width: 1024px) {
+          .landing-header__burger {
+            display: none;
+          }
+        }
+        [id="anasayfa"], [id="duyurular"], [id="ders-formatlari"],
+        [id="sinav-takvimi"], [id="iletisim"], [id="sss"] {
+          scroll-margin-top: 5.5rem;
         }
       `}</style>
 

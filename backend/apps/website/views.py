@@ -278,6 +278,11 @@ def api_admin_settings(request):
             for f in [
                 'telefon', 'whatsapp', 'eposta', 'adres', 'calisma_saatleri',
                 'hero_baslik', 'hero_alt_baslik', 'hero_slogan', 'hero_maddeler',
+                'hero_rotating_words', 'hero_gallery',
+                'neden_baslik', 'neden_alt_baslik', 'ders_formatlari_config', 'landing_bolumleri',
+                'landing_section_order',
+                'landing_sections_hidden',
+                'yorumlar_goster', 'sss_goster',
                 'tanitim_baslik', 'tanitim_icerik', 'youtube_video_id',
                 'harita_embed_url', 'footer_copyright', 'footer_baslik', 'footer_aciklama',
                 'footer_marka_metni', 'seo_baslik', 'seo_aciklama',
@@ -290,6 +295,21 @@ def api_admin_settings(request):
                 settings.harita_embed_url = normalize_map_embed_url(settings.harita_embed_url)
             elif 'adres' in data and (settings.harita_embed_url or '').strip() == '' and (settings.adres or '').strip():
                 settings.harita_embed_url = build_map_embed_from_address(settings.adres)
+            if 'landing_sections_hidden' in data:
+                hidden = settings.landing_sections_hidden or []
+                settings.yorumlar_goster = 'yorumlar' not in hidden
+                settings.sss_goster = 'sss' not in hidden
+            elif 'yorumlar_goster' in data or 'sss_goster' in data:
+                hidden = list(settings.landing_sections_hidden or [])
+                if not settings.yorumlar_goster and 'yorumlar' not in hidden:
+                    hidden.append('yorumlar')
+                elif settings.yorumlar_goster and 'yorumlar' in hidden:
+                    hidden.remove('yorumlar')
+                if not settings.sss_goster and 'sss' not in hidden:
+                    hidden.append('sss')
+                elif settings.sss_goster and 'sss' in hidden:
+                    hidden.remove('sss')
+                settings.landing_sections_hidden = hidden
             settings.save()
             return JsonResponse({'success': True, 'data': serialize_site_settings(settings, request)})
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)

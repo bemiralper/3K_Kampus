@@ -11,22 +11,16 @@ import {
   mergeBranding,
   type KurumBranding,
 } from '@/lib/kurum-branding';
-import { fetchLandingData, type LandingData } from '@/lib/website-api';
+import { fetchLandingData, invalidateLandingCache, type LandingData } from '@/lib/website-api';
 import { LANDING_KURUM_KOD, SITE_TAB_TITLE, applyPendingLandingScroll } from '@/lib/landing-theme';
 import TopBar, { TopBarMobile } from './TopBar';
 import LandingHeader from './LandingHeader';
 import HeroSection from './HeroSection';
+import LandingPageSections from './LandingPageSections';
 import QuickAccessCards from './QuickAccessCards';
-import DuyurularSection from './DuyurularSection';
-import SinavTakvimiSection from './SinavTakvimiSection';
-import NedenSection from './NedenSection';
-import Sistem3kTeaser from './Sistem3kTeaser';
-import DersFormatlariSection from './DersFormatlariSection';
-import YorumlarSlider from './YorumlarSlider';
-import SSSSection from './SSSSection';
-import IletisimSection from './IletisimSection';
-import LandingFooter from './LandingFooter';
 import LandingRevealSection from './LandingRevealSection';
+import { isLandingSectionVisible } from '@/lib/landing-section-order';
+import LandingFooter from './LandingFooter';
 import LoginModal from '@/components/login/LoginModal';
 import LandingJsonLd from '@/components/landing/LandingJsonLd';
 
@@ -47,6 +41,19 @@ function LandingPageInner({ initialData }: { initialData: LandingData | null }) 
 
   useEffect(() => {
     applyPendingLandingScroll();
+  }, []);
+
+  // Admin değişikliklerinden sonra güncel ayarları al (SSR önbelleği baypas)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await invalidateLandingCache();
+      const landing = await fetchLandingData(LANDING_KURUM_KOD);
+      if (cancelled || !landing) return;
+      setData(landing);
+      if (landing.kurum) setBranding(mergeBranding(landing.kurum));
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -99,33 +106,12 @@ function LandingPageInner({ initialData }: { initialData: LandingData | null }) 
           heroSlides={data?.hero_slides ?? []}
           onLoginClick={() => setLoginOpen(true)}
         />
-        <LandingRevealSection>
-          <QuickAccessCards />
-        </LandingRevealSection>
-        <LandingRevealSection>
-          <DersFormatlariSection />
-        </LandingRevealSection>
-        <LandingRevealSection>
-          <DuyurularSection duyurular={data?.duyurular ?? []} />
-        </LandingRevealSection>
-        <LandingRevealSection>
-          <SinavTakvimiSection sinavlar={data?.sinav_takvimi ?? []} />
-        </LandingRevealSection>
-        <LandingRevealSection>
-          <NedenSection kartlar={data?.neden_kartlari ?? []} />
-        </LandingRevealSection>
-        <LandingRevealSection>
-          <Sistem3kTeaser settings={settings} />
-        </LandingRevealSection>
-        <LandingRevealSection>
-          <YorumlarSlider yorumlar={data?.ogrenci_yorumlari ?? []} />
-        </LandingRevealSection>
-        <LandingRevealSection>
-          <SSSSection items={data?.sss ?? []} />
-        </LandingRevealSection>
-        <LandingRevealSection>
-          <IletisimSection settings={settings} />
-        </LandingRevealSection>
+        {isLandingSectionVisible('quick-access', settings) && (
+          <LandingRevealSection>
+            <QuickAccessCards settings={settings} />
+          </LandingRevealSection>
+        )}
+        {data && <LandingPageSections settings={settings} data={data} />}
         <LandingFooter
           settings={settings}
           footerLinks={data?.footer_links ?? []}

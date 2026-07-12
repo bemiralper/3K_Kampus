@@ -3,10 +3,11 @@ import { cache } from 'react';
 import LandingPageClient from '@/components/landing/LandingPageClient';
 import { fetchLandingData as fetchLandingDataRaw } from '@/lib/website-api';
 import { buildLandingMetadata } from '@/lib/landing-seo';
+import { LANDING_KURUM_KOD } from '@/lib/landing-theme';
 
-export const revalidate = 60;
+export const revalidate = 0;
 
-const getLandingData = cache(() => fetchLandingDataRaw('3K'));
+const getLandingData = cache(() => fetchLandingDataRaw(LANDING_KURUM_KOD));
 
 export async function generateMetadata(): Promise<Metadata> {
   const data = await getLandingData();

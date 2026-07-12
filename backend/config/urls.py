@@ -7,7 +7,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.shortcuts import redirect
 from django.views.generic import RedirectView
-import views as backend_views
+from config.legacy_api import legacy_index_api, legacy_dashboard_api
 
 urlpatterns = [
     path('', lambda request: redirect(settings.FRONTEND_URL, permanent=False)),
@@ -30,8 +30,8 @@ urlpatterns = [
     path('egitim-paketleri/', lambda request: redirect(f"{settings.FRONTEND_URL}/egitim-paketleri", permanent=False)),
     path('egitim-paketleri/<path:rest>/', lambda request, rest: redirect(f"{settings.FRONTEND_URL}/egitim-paketleri/{rest}", permanent=False)),
     path('ogrenciler/api/', include('apps.ogrenci.api_urls')),
-    path('api/legacy/index/', backend_views.legacy_index_api),
-    path('api/legacy/dashboard/', backend_views.legacy_dashboard_api),
+    path('api/legacy/index/', legacy_index_api),
+    path('api/legacy/dashboard/', legacy_dashboard_api),
     path('ogrenciler/', lambda request: redirect(f"{settings.FRONTEND_URL}/ogrenciler", permanent=False)),
     path('ogrenciler/<path:rest>/', lambda request, rest: redirect(f"{settings.FRONTEND_URL}/ogrenciler/{rest}", permanent=False)),
     path('api/ogrenci-kayit/', include('apps.ogrenci_kayit.urls')),

@@ -784,6 +784,11 @@ def api_kurum_branding_public(request, kod):
 
     kurum = Kurum.objects.filter(kod__iexact=kod.strip(), aktif_mi=True).first()
     if not kurum:
+        # Marka sitesi kodu (ör. "3K") gerçek kurum kodundan (ör. "001") farklı olabilir;
+        # landing kurumuna düş (aynı çözümleme landing/CMS API'lerinde de kullanılıyor).
+        from apps.website.seed_defaults import resolve_landing_kurum
+        kurum = resolve_landing_kurum(kod.strip())
+    if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
 
     return JsonResponse({

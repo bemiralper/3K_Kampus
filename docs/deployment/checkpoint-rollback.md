@@ -8,7 +8,9 @@ Büyük canlı alımlarından önce kod tabanının sabitlenmiş hali. Bu commit
 
 | Etiket / dal | Commit | Ne içerir |
 |--------------|--------|-----------|
-| `checkpoint/2026-07-12-pre-akademi-finans-portal` | `8ddf8d1` | **Bu deploy öncesi canlı** — Akademi redesign + şube finans + muhasebe portal düzeltmeleri **öncesi** |
+| `checkpoint/2026-07-13-pre-cms-v2-landing` | `8b6c643` | **CMS v2 + anasayfa bölüm yönetimi deploy öncesi canlı** — website migration 0008–0014 **öncesi** |
+| `backup/checkpoint-pre-cms-v2-landing-20260713` | `8b6c643` | Aynı commit’te yedek dal |
+| `checkpoint/2026-07-12-pre-akademi-finans-portal` | `8ddf8d1` | Akademi redesign + şube finans + muhasebe portal düzeltmeleri **öncesi** |
 | `backup/checkpoint-pre-akademi-finans-20260712` | `8ddf8d1` | Aynı commit’te yedek dal |
 | `checkpoint/2026-07-11-pre-akademi-redesign` | `0144af3` | Personel sözleşme v2 (PR #7) dahil, önceki Akademi checkpoint |
 | `backup/checkpoint-pre-akademi-20260711` | `0144af3` | 11 Temmuz yedek dal |
@@ -60,7 +62,17 @@ export LMS_FRONTEND_SERVICE=lms-frontend
 
 `--no-git` kullanın; kod zaten checkout ile güncellendi.
 
-**Migration uyarısı:** Akademik migration’lar (`0009`–`0014`) uygulandıysa, eski koda dönmek DB şemasını bozabilir. Tam geri dönüş için yedek DB restore gerekebilir — bkz. [backup-restore.md](./backup-restore.md).
+**Migration uyarısı:** Website CMS migration’ları (`website` `0008`–`0014`: hero galeri, bölüm sırası, görünürlük vb.) uygulandıysa, eski koda dönmek DB şemasını bozabilir. Tam geri dönüş için yedek DB restore gerekebilir — bkz. [backup-restore.md](./backup-restore.md).
+
+CMS v2 deploy sonrası hızlı geri alma:
+
+```bash
+cd /var/www/lms
+git fetch origin --tags
+git checkout checkpoint/2026-07-13-pre-cms-v2-landing
+export LMS_APP_ROOT=/var/www/lms LMS_BACKEND_SERVICE=lms-backend LMS_FRONTEND_SERVICE=lms-frontend
+./backend/scripts/rollback-production.sh checkpoint/2026-07-13-pre-cms-v2-landing
+```
 
 ---
 

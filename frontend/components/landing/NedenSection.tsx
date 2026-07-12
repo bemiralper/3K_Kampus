@@ -2,6 +2,7 @@
 
 import type { NedenKart } from '@/lib/website-api';
 import { LANDING_COLORS } from '@/lib/landing-theme';
+import { DEFAULT_NEDEN_ALT, DEFAULT_NEDEN_BASLIK } from '@/lib/landing-sections';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   chart: <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>,
@@ -13,15 +14,19 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 type NedenSectionProps = {
   kartlar: NedenKart[];
+  baslik?: string;
+  altBaslik?: string;
 };
 
-export default function NedenSection({ kartlar }: NedenSectionProps) {
+export default function NedenSection({ kartlar, baslik, altBaslik }: NedenSectionProps) {
+  const title = baslik?.trim() || DEFAULT_NEDEN_BASLIK;
+  const subtitle = altBaslik?.trim() || DEFAULT_NEDEN_ALT;
   return (
     <section className="bg-slate-50 py-16 lg:py-24">
       <div className="mx-auto max-w-7xl px-4 lg:px-8">
         <div className="mb-10 text-center">
-          <h2 className="text-3xl font-bold tracking-tight" style={{ color: LANDING_COLORS.navy }}>Neden 3K Kampüs?</h2>
-          <p className="mt-2 text-slate-500">Başarıya giden yolda fark yaratan hizmetlerimiz</p>
+          <h2 className="text-3xl font-bold tracking-tight" style={{ color: LANDING_COLORS.navy }}>{title}</h2>
+          <p className="mt-2 text-slate-500">{subtitle}</p>
         </div>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {kartlar.map(k => (

@@ -61,6 +61,40 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
             'Deneme Analizleri',
             'Veli Bilgilendirme',
         ]
+        settings.hero_rotating_words = ['KURS', 'KÜTÜPHANE', 'KOÇLUK']
+        settings.hero_gallery = [
+            {'url': 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1200&q=80&auto=format&fit=crop', 'caption': 'Kurs'},
+            {'url': 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?w=1200&q=80&auto=format&fit=crop', 'caption': 'Kütüphane'},
+            {'url': 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1200&q=80&auto=format&fit=crop', 'caption': 'Koçluk'},
+            {'url': 'https://images.unsplash.com/photo-1513258496099-48168024aec0?w=1200&q=80&auto=format&fit=crop', 'caption': 'Başarı'},
+        ]
+        settings.ders_formatlari_config = {
+            'eyebrow': 'Ders Formatlarımız',
+            'title': '5 Kişilik Grup Dersleri & Birebir Özel Ders',
+            'subtitle': 'Her öğrencinin ihtiyacına uygun iki farklı eğitim modeli sunuyoruz: verimli grup çalışması ve tam odaklı birebir destek.',
+            'footer_note': 'Grup dersi ve özel ders programları birlikte planlanabilir.',
+            'cards': [
+                {
+                    'id': 'grup',
+                    'badge': 'Grup Dersi',
+                    'title': '5 Kişilik Grup Dersleri',
+                    'accent': '#0262a7',
+                    'description': 'En fazla 5 öğrenciden oluşan sınıflarda, interaktif ve disiplinli bir eğitim ortamı sunuyoruz.',
+                    'highlights': ['Maksimum 5 kişilik sınıflar', 'Konu anlatımı + soru çözümü', 'Deneme analizi ve eksik takibi', 'LGS & YKS hazırlık programları'],
+                },
+                {
+                    'id': 'ozel',
+                    'badge': 'Özel Ders',
+                    'title': 'Birebir Özel Dersler',
+                    'accent': '#1e3a5f',
+                    'description': 'Öğrencinin eksiklerine, hedefine ve öğrenme hızına göre planlanan birebir derslerle maksimum verim hedeflenir.',
+                    'highlights': ['Birebir öğretmen eşleşmesi', 'Kişiye özel konu ve soru planı', 'Esnek ders saatleri', 'Grup dersiyle birlikte alınabilir'],
+                },
+            ],
+        }
+        settings.landing_bolumleri = []
+        settings.neden_baslik = 'Neden 3K Kampüs?'
+        settings.neden_alt_baslik = 'Başarıya giden yolda fark yaratan hizmetlerimiz'
         settings.tanitim_baslik = '3K Kampüs Farkı'
         settings.tanitim_icerik = (
             '3K Kampüs, LGS ve YKS hazırlık süreçlerinde öğrencilerimize bireysel koçluk, '
@@ -100,7 +134,7 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
         ('kurumsal', '3K Sistemi', '/3k-sistemi', 1),
         ('hizli', 'Duyurular', '#duyurular', 0),
         ('hizli', 'Sınav Takvimi', '#sinav-takvimi', 1),
-        ('hizli', 'İletişim', '#iletisim', 2),
+        ('hizli', 'İletişim', '/iletisim', 2),
         ('yasal', 'KVKK', '/yasal/kvkk', 0),
         ('yasal', 'Gizlilik Politikası', '/yasal/gizlilik', 1),
     ]:

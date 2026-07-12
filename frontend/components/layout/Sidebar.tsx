@@ -364,7 +364,7 @@ const navItems: MenuItem[] = [
     icon: icons.building,
     children: [
       { label: "Demo Yönetimi", href: "/ayarlar/demo-yonetimi" },
-      { label: "Kurumsal Site", href: "/website-yonetimi" },
+      { label: "Web Sitesi", href: "/website-yonetimi" },
     ],
   },
 ];

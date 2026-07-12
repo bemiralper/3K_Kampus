@@ -10,6 +10,8 @@ import { parseMapEmbedUrl } from '@/lib/map-embed';
 
 type IletisimSectionProps = {
   settings: SiteSettings | null;
+  /** Ayrı iletişim sayfasında üst başlık kendi hero'sunda gösterildiği için gizlenir */
+  hideHeader?: boolean;
 };
 
 type FormState = { ad_soyad: string; telefon: string; mesaj: string };
@@ -56,7 +58,7 @@ function ContactCard({
   return <div className="iletisim-card">{inner}</div>;
 }
 
-export default function IletisimSection({ settings }: IletisimSectionProps) {
+export default function IletisimSection({ settings, hideHeader = false }: IletisimSectionProps) {
   const mapSrc = parseMapEmbedUrl(settings?.harita_embed_url);
   const [form, setForm] = useState<FormState>({ ad_soyad: '', telefon: '', mesaj: '' });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -99,13 +101,15 @@ export default function IletisimSection({ settings }: IletisimSectionProps) {
   return (
     <section id="iletisim" className="iletisim-section">
       <div className="mx-auto max-w-7xl px-4 lg:px-8">
-        <div className="iletisim-header">
-          <p className="iletisim-eyebrow">Bize Ulaşın</p>
-          <h2>İletişim</h2>
-          <p className="iletisim-lead">
-            Sorularınız, kayıt talepleriniz veya bilgi almak için formu doldurun; en kısa sürede size dönüş yapalım.
-          </p>
-        </div>
+        {!hideHeader && (
+          <div className="iletisim-header">
+            <p className="iletisim-eyebrow">Bize Ulaşın</p>
+            <h2>İletişim</h2>
+            <p className="iletisim-lead">
+              Sorularınız, kayıt talepleriniz veya bilgi almak için formu doldurun; en kısa sürede size dönüş yapalım.
+            </p>
+          </div>
+        )}
 
         <div className="iletisim-grid">
           <div className="iletisim-info">
