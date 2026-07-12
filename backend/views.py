@@ -97,15 +97,15 @@ def legacy_dashboard_api(request):
             {
                 'id': kayit.id,
                 'ogrenci': {
-                    'ad': kayit.ogrenci.ad,
-                    'soyad': kayit.ogrenci.soyad,
+                    'ad': kayit.ogrenci.ad if kayit.ogrenci else '',
+                    'soyad': kayit.ogrenci.soyad if kayit.ogrenci else '',
                 },
                 'sinif': {
-                    'ad': kayit.sinif.ad,
+                    'ad': kayit.sinif.ad if kayit.sinif else '',
                 },
                 'egitim_yili': {
-                    'baslangic_yil': kayit.egitim_yili.baslangic_yil,
-                    'bitis_yil': kayit.egitim_yili.bitis_yil,
+                    'baslangic_yil': kayit.egitim_yili.baslangic_yil if kayit.egitim_yili else None,
+                    'bitis_yil': kayit.egitim_yili.bitis_yil if kayit.egitim_yili else None,
                 },
             }
             for kayit in recent_ogrenci_kayitlar
