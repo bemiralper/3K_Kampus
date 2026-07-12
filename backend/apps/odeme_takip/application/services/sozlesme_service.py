@@ -5,6 +5,7 @@ Sözleşme Service
 Integer-Only: Tüm parasal hesaplamalar tam sayı aritmetiğiyle yapılır.
 Decimal KULLANILMAZ.
 """
+from django.db import transaction
 from django.utils import timezone
 
 from apps.egitim_paketleri.models import hesapla_kdv
@@ -208,7 +209,14 @@ class SozlesmeService:
             self.taksit_service._sync_cek_senet_plan(sozlesme)
         else:
             self.taksit_service._apply_contract_odeme_yontemi_to_taksits(sozlesme)
-            self.taksit_service._sync_cek_senet_plan(sozlesme)
+            # Peşin/taksitli yollarda sync'i atla; sadece eski çek/senet detayı varsa temizle
+            from apps.odeme_takip.domain.models import Taksit
+            has_cek_detay = Taksit.objects.filter(
+                sozlesme=sozlesme,
+                cek_senet_detay__isnull=False,
+            ).exists()
+            if has_cek_detay:
+                self.taksit_service._sync_cek_senet_plan(sozlesme)
 
     # ─── LIST ────────────────────────────
     def get_all(self, kurum_id=None, sube_id=None, egitim_yili_id=None, durum=None, ogrenci_id=None):
@@ -233,6 +241,13 @@ class SozlesmeService:
         if errors:
             return None, {'errors': errors}
 
+        try:
+            with transaction.atomic():
+                return self._create_atomic(data, user)
+        except ValueError as exc:
+            return None, {'error': str(exc)}
+
+    def _create_atomic(self, data, user=None):
         # Sözleşme no üret
         from apps.egitim_yili.domain.models import EgitimYili
         egitim_yili = EgitimYili.objects.get(id=data['egitim_yili_id'])
@@ -342,11 +357,8 @@ class SozlesmeService:
         for ko in kalem_objeleri:
             SozlesmeKalemi.objects.create(sozlesme=sozlesme, **ko)
 
-        # Taksit planı oluştur
-        try:
-            self._apply_taksit_plan(sozlesme, data)
-        except ValueError as exc:
-            return None, {'error': str(exc)}
+        # Taksit planı oluştur (hata → atomic rollback)
+        self._apply_taksit_plan(sozlesme, data)
 
         # Audit log
         self.gecmis_repo.create({
@@ -392,6 +404,13 @@ class SozlesmeService:
         if sozlesme.durum not in [SozlesmeDurum.TASLAK, SozlesmeDurum.AKTIF]:
             return None, {'error': 'Sadece taslak veya aktif sözleşmeler düzenlenebilir'}
 
+        try:
+            with transaction.atomic():
+                return self._update_atomic(sozlesme, data, user)
+        except ValueError as exc:
+            return None, {'error': str(exc)}
+
+    def _update_atomic(self, sozlesme, data, user=None):
         is_aktif = sozlesme.durum == SozlesmeDurum.AKTIF
 
         eski_deger = {
@@ -530,20 +549,14 @@ class SozlesmeService:
                 durum__in=[TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI],
             ).exists()
             if is_aktif and has_paid_taksit:
-                try:
-                    self.taksit_service.create_remaining_plan(
-                        sozlesme=sozlesme,
-                        taksit_sayisi=sozlesme.taksit_sayisi,
-                        ilk_odeme_tarihi=sozlesme.ilk_odeme_tarihi or sozlesme.baslangic_tarihi,
-                        periyot=sozlesme.taksit_periyodu,
-                    )
-                except ValueError as exc:
-                    return None, {'error': str(exc)}
+                self.taksit_service.create_remaining_plan(
+                    sozlesme=sozlesme,
+                    taksit_sayisi=sozlesme.taksit_sayisi,
+                    ilk_odeme_tarihi=sozlesme.ilk_odeme_tarihi or sozlesme.baslangic_tarihi,
+                    periyot=sozlesme.taksit_periyodu,
+                )
             else:
-                try:
-                    self._apply_taksit_plan(sozlesme, data)
-                except ValueError as exc:
-                    return None, {'error': str(exc)}
+                self._apply_taksit_plan(sozlesme, data)
 
         islem_turu = GecmisIslemTuru.REVIZYON if is_aktif else GecmisIslemTuru.GUNCELLEME
         self.gecmis_repo.create({

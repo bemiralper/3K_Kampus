@@ -27,6 +27,35 @@ export function postHeaders(): Record<string, string> {
   return apiHeaders({ "Content-Type": "application/json" });
 }
 
+/** AbortController ile zaman sınırlı fetch; timeout'ta AbortError fırlatır. */
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 45_000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const external = init.signal;
+  const onAbort = () => controller.abort();
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener("abort", onAbort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(
+        `İstek zaman aşımına uğradı (${Math.round(timeoutMs / 1000)} sn). Bağlantıyı kontrol edip tekrar deneyin.`,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    if (external) external.removeEventListener("abort", onAbort);
+  }
+}
+
 export function parseApiError(payload: unknown, fallback = "Hata oluştu"): string {
   if (!payload || typeof payload !== "object") return fallback;
   const data = payload as Record<string, unknown>;

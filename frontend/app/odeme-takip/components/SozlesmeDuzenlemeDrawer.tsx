@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Sozlesme } from "../types";
-import { formatCurrency, formatDate, API_BASE, postHeaders, odemeTuruLabel, taksitPeriyoduLabel, egitimTuruLabel, gecmisIslemTuruText, islemYapanText } from "../helpers";
+import { formatCurrency, formatDate, API_BASE, postHeaders, fetchWithTimeout, odemeTuruLabel, taksitPeriyoduLabel, egitimTuruLabel, gecmisIslemTuruText, islemYapanText } from "../helpers";
 import { normalizeDateInput } from "../utils/taksitPlan";
 import SozlesmeNotlarEditor from "./SozlesmeNotlarEditor";
 import { SozlesmeNot, parseNotlarJson, serializeNotlarForApi } from "@/lib/sozlesme-notlar";
@@ -33,6 +33,7 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
   const [loading, setLoading] = useState(true);
   const [sozlesme, setSozlesme] = useState<Sozlesme | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [notlarJson, setNotlarJson] = useState<SozlesmeNot[]>([]);
   const [notlarChanged, setNotlarChanged] = useState(false);
@@ -98,11 +99,13 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
 
   // Kaydet
   const handleSave = async () => {
+    if (savingRef.current) return;
     if (changedFields.size === 0 && !notlarChanged) {
       onClose();
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     setErrors([]);
 
@@ -124,12 +127,16 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
     }
 
     try {
-      const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/update/`, {
-        method: "PUT",
-        headers: postHeaders(),
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
+      const res = await fetchWithTimeout(
+        `${API_BASE}/sozlesmeler/${sozlesmeId}/update/`,
+        {
+          method: "PUT",
+          headers: postHeaders(),
+          credentials: "include",
+          body: JSON.stringify(payload),
+        },
+        45_000,
+      );
       if (res.ok) {
         onSaved();
         onClose();
@@ -141,7 +148,6 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
             err = JSON.parse(rawText) as Record<string, unknown>;
           } catch {
             setErrors([`Sunucu hatası (${res.status})`]);
-            setSaving(false);
             return;
           }
         }
@@ -151,10 +157,13 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
           setErrors(Object.values(err).flat().map(String));
         }
       }
-    } catch {
-      setErrors(["Bağlantı hatası"]);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Bağlantı hatası";
+      setErrors([msg]);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const inputStyle: React.CSSProperties = {

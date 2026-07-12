@@ -8,7 +8,7 @@ import { apiGet } from "@/lib/api";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import SozlesmeNotlarEditor from "../components/SozlesmeNotlarEditor";
 import { SozlesmeNot, parseNotlarJson, serializeNotlarForApi } from "@/lib/sozlesme-notlar";
-import { API_BASE, formatCurrency, formatDate, postHeaders, apiHeaders, parseApiError, taksitPeriyoduLabel, odemeTuruTaksitPlaniMi } from "../helpers";
+import { API_BASE, formatCurrency, formatDate, postHeaders, apiHeaders, parseApiError, fetchWithTimeout, taksitPeriyoduLabel, odemeTuruTaksitPlaniMi } from "../helpers";
 import {
   addMonths,
   buildEqualTaksitRows,
@@ -494,7 +494,11 @@ export default function SozlesmeOlusturClient() {
       }
       const headers = apiHeaders();
       const fetchSecenek = async (tur: string) => {
-        const res = await fetch(`${base}/?${params}&tur=${tur}`, { credentials: "include", headers });
+        const res = await fetchWithTimeout(
+          `${base}/?${params}&tur=${tur}`,
+          { credentials: "include", headers },
+          30_000,
+        );
         if (!res.ok) return { secenekler: [] as any[], filtre_uyarisi: null as string | null };
         const data = await res.json();
         return {
@@ -553,9 +557,12 @@ export default function SozlesmeOlusturClient() {
           ? mergePackageCatalogs(fetchedCatalog, editSeedCatalogRef.current)
           : fetchedCatalog,
       );
-    } catch {
+    } catch (e: unknown) {
       setTumPaketler(null);
       setKalemCatalog(null);
+      if (e instanceof Error && e.message.includes("zaman aşımı")) {
+        setError(e.message);
+      }
     }
     setTumPaketlerLoading(false);
   }, [selectedOgrenci?.id, paketData?.kayit, editId]);
@@ -654,6 +661,7 @@ export default function SozlesmeOlusturClient() {
 
   // ─── Submit ───────────────────────
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const initialSnapshotRef = useRef<string | null>(null);
@@ -773,13 +781,17 @@ export default function SozlesmeOlusturClient() {
   }) => {
     setPaketLoading(true);
     try {
-      const r = await fetch(`${API_BASE}/ogrenci/${ogrenciId}/paketler/`, {
-        credentials: "include",
-        headers: apiHeaders(),
-      });
+      const r = await fetchWithTimeout(
+        `${API_BASE}/ogrenci/${ogrenciId}/paketler/`,
+        {
+          credentials: "include",
+          headers: apiHeaders(),
+        },
+        30_000,
+      );
       if (!r.ok) {
-        const err = await r.json();
-        setError(err.error || "Paket bilgisi alınamadı");
+        const err = await r.json().catch(() => ({}));
+        setError((err as { error?: string }).error || "Paket bilgisi alınamadı");
         setPaketData(null);
         setPaketLoading(false);
         return;
@@ -1058,7 +1070,10 @@ export default function SozlesmeOlusturClient() {
       } else {
         setSelectedEkHizmetIds(new Set());
       }
-    } catch { setError("Paket bilgisi alınamadı"); }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Paket bilgisi alınamadı";
+      setError(msg);
+    }
     setPaketLoading(false);
   }, []);
 
@@ -1629,36 +1644,39 @@ export default function SozlesmeOlusturClient() {
   // Submit
   // ═════════════════════════════════════════
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     setFieldErrors({});
 
-    if (!selectedOgrenci || !paketData) {
-      setError("Öğrenci seçimi zorunludur.");
+    const fail = (msg: string) => {
+      setError(msg);
+      submittingRef.current = false;
       setSubmitting(false);
+    };
+
+    if (!selectedOgrenci || !paketData) {
+      fail("Öğrenci seçimi zorunludur.");
       return;
     }
     if (kalemler.length === 0) {
-      setError("En az bir ücretli kalem (paket, özel ders, deneme paketi veya ek hizmet) seçilmelidir.");
-      setSubmitting(false);
+      fail("En az bir ücretli kalem (paket, özel ders, deneme paketi veya ek hizmet) seçilmelidir.");
       return;
     }
     const isCekSenetMode = odemeTuru === "cek_senet";
     const isTaksitMode = odemeTuruTaksitPlaniMi(odemeTuru);
 
     if ((odemeTuru === "pesin" || odemeTuru === "taksitli") && !selectedOdemeYontemiId) {
-      setError("Ödeme yöntemi seçimi zorunludur.");
-      setSubmitting(false);
+      fail("Ödeme yöntemi seçimi zorunludur.");
       return;
     }
     if (!bitisTarihi) {
-      setError("Sözleşme bitiş tarihi zorunludur. Eğitim tamamlanma tarihini mutlaka girin.");
-      setSubmitting(false);
+      fail("Sözleşme bitiş tarihi zorunludur. Eğitim tamamlanma tarihini mutlaka girin.");
       return;
     }
     if (bitisTarihi < baslangicTarihi) {
-      setError("Bitiş tarihi başlangıç tarihinden önce olamaz.");
-      setSubmitting(false);
+      fail("Bitiş tarihi başlangıç tarihinden önce olamaz.");
       return;
     }
 
@@ -1671,8 +1689,7 @@ export default function SozlesmeOlusturClient() {
     }
 
     if (isCekSenetMode && validManuelRows.length === 0) {
-      setError("Çek/senet sözleşmesi için en az bir taksit tanımlayın.");
-      setSubmitting(false);
+      fail("Çek/senet sözleşmesi için en az bir taksit tanımlayın.");
       return;
     }
 
@@ -1684,8 +1701,7 @@ export default function SozlesmeOlusturClient() {
     if (isCekSenetMode) {
       const missingYontem = cekSenetRowsForSubmit.some((r) => !r.odeme_yontemi_id);
       if (missingYontem) {
-        setError("Çek/senet sözleşmesinde her taksit satırı için ödeme yöntemi (çek/senet) seçilmelidir.");
-        setSubmitting(false);
+        fail("Çek/senet sözleşmesinde her taksit satırı için ödeme yöntemi (çek/senet) seçilmelidir.");
         return;
       }
     }
@@ -1748,31 +1764,33 @@ export default function SozlesmeOlusturClient() {
     try {
       const url = isEditMode ? `${API_BASE}/sozlesmeler/${editId}/update/` : `${API_BASE}/sozlesmeler/create/`;
       const method = isEditMode ? "PUT" : "POST";
-      const r = await fetch(url, {
-        method,
-        headers: postHeaders(),
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
+      const r = await fetchWithTimeout(
+        url,
+        {
+          method,
+          headers: postHeaders(),
+          credentials: "include",
+          body: JSON.stringify(body),
+        },
+        45_000,
+      );
       const rawText = await r.text();
       let data: Record<string, unknown> = {};
       if (rawText) {
         try {
           data = JSON.parse(rawText) as Record<string, unknown>;
         } catch {
-          setError(r.ok ? "Sunucu yanıtı okunamadı" : `Sunucu hatası (${r.status})`);
-          setSubmitting(false);
+          fail(r.ok ? "Sunucu yanıtı okunamadı" : `Sunucu hatası (${r.status})`);
           return;
         }
       }
       if (!r.ok) {
         if (data.errors && typeof data.errors === "object") {
           setFieldErrors(data.errors as Record<string, string>);
-          setError(Object.values(data.errors as Record<string, string>).join(", "));
+          fail(Object.values(data.errors as Record<string, string>).join(", "));
         } else {
-          setError(parseApiError(data, isEditMode ? "Sözleşme güncellenemedi" : "Sözleşme oluşturulamadı"));
+          fail(parseApiError(data, isEditMode ? "Sözleşme güncellenemedi" : "Sözleşme oluşturulamadı"));
         }
-        setSubmitting(false);
         return;
       }
       markClean();
@@ -1780,13 +1798,13 @@ export default function SozlesmeOlusturClient() {
       setSnapshotReady(true);
       const savedId = isEditMode ? Number(editId) : Number(data.id);
       const targetPath = savedId ? `${basePath}?sozlesme=${savedId}` : basePath;
+      submittingRef.current = false;
       setSubmitting(false);
       requestNavigation(targetPath);
-      return;
-    } catch (e: any) {
-      setError(e.message || "Bir hata oluştu");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Bir hata oluştu";
+      fail(msg.includes("fetch") || msg.includes("Network") ? `Bağlantı hatası: ${msg}` : msg);
     }
-    setSubmitting(false);
   };
 
   // ═════════════════════════════════════════
