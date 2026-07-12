@@ -17,7 +17,10 @@ import { fetchNotificationSummary } from "@/lib/communication-api";
 
 type CoachSidebarProps = {
   isOpen: boolean;
+  isDesktop: boolean;
+  mobileDrawerOpen: boolean;
   onToggle: () => void;
+  onCloseMobile: () => void;
   onLogout: () => void;
 };
 
@@ -31,7 +34,14 @@ function NavChevron({ expanded }: { expanded: boolean }) {
   );
 }
 
-export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSidebarProps) {
+export default function CoachSidebar({
+  isOpen,
+  isDesktop,
+  mobileDrawerOpen,
+  onToggle,
+  onCloseMobile,
+  onLogout,
+}: CoachSidebarProps) {
   const pathname = usePathname();
   const { reorder, getOrderedItems } = useCoachMenuOrder();
   const [kontrolBadge, setKontrolBadge] = useState(0);
@@ -108,7 +118,7 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
   };
 
   const closeMobileIfNeeded = () => {
-    if (window.matchMedia("(max-width: 991px)").matches) onToggle();
+    if (!isDesktop && mobileDrawerOpen) onCloseMobile();
   };
 
   const renderSubmenuLink = (child: CoachNavChildDef) => {
@@ -139,7 +149,7 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
         <li
           key={item.id}
           className={`coach-nav-item coach-nav-group${isExpanded ? " is-open" : ""}${isDragOver ? ` drag-over-${dragPosition}` : ""}${dragId === item.id ? " is-dragging" : ""}`}
-          draggable={isOpen}
+          draggable={isDesktop && isOpen}
           onDragStart={(e) => handleDragStart(e, item.id)}
           onDragEnd={handleDragEnd}
           onDragOver={(e) => handleDragOver(e, item.id)}
@@ -194,7 +204,7 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
       <li
         key={item.id}
         className={`coach-nav-item${isDragOver ? ` drag-over-${dragPosition}` : ""}${dragId === item.id ? " is-dragging" : ""}`}
-        draggable={isOpen}
+        draggable={isDesktop && isOpen}
         onDragStart={(e) => handleDragStart(e, item.id)}
         onDragEnd={handleDragEnd}
         onDragOver={(e) => handleDragOver(e, item.id)}
@@ -222,7 +232,7 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
     <aside
       className={`coach-sidebar${isOpen ? " is-open" : " is-collapsed"}`}
       id="coach-sidebar"
-      aria-hidden={!isOpen}
+      aria-hidden={!isDesktop && !mobileDrawerOpen}
     >
       <div className="coach-sidebar-header">
         <div className="coach-logo-container">
@@ -260,7 +270,7 @@ export default function CoachSidebar({ isOpen, onToggle, onLogout }: CoachSideba
   );
 }
 
-const MOBILE_BOTTOM_IDS = ["dashboard", "ogrenciler", "odev-kontrol", "gorusmeler"] as const;
+const MOBILE_BOTTOM_IDS = ["dashboard", "ogrenciler", "odev-kontrol"] as const;
 
 type CoachBottomNavProps = {
   onMenuClick: () => void;
@@ -286,7 +296,9 @@ export function CoachBottomNav({ onMenuClick, menuOpen }: CoachBottomNavProps) {
                 aria-current={active ? "page" : undefined}
               >
                 <span className="coach-nav-icon">{item.icon}</span>
-                <span className="coach-nav-label">{item.label.split(" ")[0]}</span>
+                <span className="coach-nav-label">
+                  {item.id === "ogrenciler" ? "Öğrenciler" : item.label.split(" ")[0]}
+                </span>
               </Link>
             </li>
           );

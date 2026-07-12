@@ -54,9 +54,24 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const { isOpen: sidebarOpen, toggle: toggleSidebar } = useCoachSidebarCollapse();
+  const {
+    isSidebarWide,
+    isDesktop,
+    mobileDrawerOpen,
+    toggle: toggleSidebar,
+    closeMobileDrawer,
+  } = useCoachSidebarCollapse();
 
   const pageTitle = useMemo(() => resolvePageTitle(pathname), [pathname]);
+
+  useEffect(() => {
+    if (!mobileDrawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMobileDrawer();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileDrawerOpen, closeMobileDrawer]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -88,22 +103,27 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  const shellClass = isSidebarWide ? " coach-sidebar-open" : " coach-shell-collapsed";
+
   return (
     <KurumProvider>
       <CommunicationChatProvider>
-      <div className={`coach-shell${sidebarOpen ? " coach-sidebar-open" : " coach-shell-collapsed"}`}>
-        {sidebarOpen && (
+      <div className={`coach-shell${shellClass}`}>
+        {!isDesktop && mobileDrawerOpen && (
           <button
             type="button"
             className="coach-sidebar-backdrop"
             aria-label="Menüyü kapat"
-            onClick={toggleSidebar}
+            onClick={closeMobileDrawer}
           />
         )}
 
         <CoachSidebar
-          isOpen={sidebarOpen}
+          isOpen={isSidebarWide}
+          isDesktop={isDesktop}
+          mobileDrawerOpen={mobileDrawerOpen}
           onToggle={toggleSidebar}
+          onCloseMobile={closeMobileDrawer}
           onLogout={handleLogout}
         />
 
@@ -111,14 +131,14 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
           <CoachTopbar
             title={pageTitle}
             user={user}
-            sidebarOpen={sidebarOpen}
+            sidebarOpen={isSidebarWide}
             onToggleSidebar={toggleSidebar}
             onLogout={handleLogout}
           />
           <main className="coach-content">{children}</main>
         </div>
 
-        <CoachBottomNav onMenuClick={toggleSidebar} menuOpen={sidebarOpen} />
+        <CoachBottomNav onMenuClick={toggleSidebar} menuOpen={mobileDrawerOpen} />
       </div>
       <ActiveKurumBranding />
       <GorevEkranMesajiOverlay />

@@ -10,7 +10,7 @@ import { ActiveKurumBranding } from "@/components/branding/KurumLogo";
 import { KurumProvider } from "@/lib/contexts/KurumContext";
 
 export default function AppShell({ children }: { children: ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -18,18 +18,26 @@ export default function AppShell({ children }: { children: ReactNode }) {
     const checkMobile = () => {
       const mobile = window.innerWidth < 992;
       setIsMobile(mobile);
+      // Mobilde daraltılmış (gizli) kalsın; masaüstünde kayıtlı tercihi koru
+      if (mobile && !isInitialized) {
+        setSidebarOpen(false);
+      }
     };
     
     checkMobile();
     
-    // localStorage'dan sidebar durumunu oku
     if (!isInitialized) {
       const savedState = localStorage.getItem("sidebarOpen");
-      if (savedState !== null) {
-        setSidebarOpen(JSON.parse(savedState));
+      if (window.innerWidth < 992) {
+        setSidebarOpen(false);
+      } else if (savedState !== null) {
+        try {
+          setSidebarOpen(JSON.parse(savedState));
+        } catch {
+          setSidebarOpen(true);
+        }
       } else {
-        // İlk açılışta masaüstünde açık, mobilde kapalı
-        setSidebarOpen(window.innerWidth >= 992);
+        setSidebarOpen(true);
       }
       setIsInitialized(true);
     }
@@ -39,10 +47,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [isInitialized]);
 
   const toggleSidebar = () => {
-    const newState = !sidebarOpen;
-    setSidebarOpen(newState);
-    // Durumu localStorage'a kaydet
-    localStorage.setItem("sidebarOpen", JSON.stringify(newState));
+    setSidebarOpen((prev) => {
+      const newState = !prev;
+      localStorage.setItem("sidebarOpen", JSON.stringify(newState));
+      return newState;
+    });
   };
 
   const closeSidebar = () => {
@@ -56,7 +65,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <KurumProvider>
       <div className="app-container">
         <Suspense fallback={null}>
-          <Sidebar isOpen={sidebarOpen && isInitialized} onToggle={toggleSidebar} />
+          <Sidebar isOpen={isInitialized ? sidebarOpen : true} onToggle={toggleSidebar} />
         </Suspense>
         <div 
           className={`sidebar-overlay ${sidebarOpen && isMobile && isInitialized ? "show" : ""}`}
@@ -65,9 +74,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <div 
           className="app-main"
           style={{
-            marginLeft: isInitialized && !isMobile ? (sidebarOpen ? "250px" : "78px") : !isMobile ? "78px" : "0",
-            width: isInitialized && !isMobile ? `calc(100% - ${sidebarOpen ? "250px" : "78px"})` : !isMobile ? "calc(100% - 78px)" : "100%",
-            maxWidth: isInitialized && !isMobile ? `calc(100% - ${sidebarOpen ? "250px" : "78px"})` : !isMobile ? "calc(100% - 78px)" : "100%",
+            marginLeft: isInitialized && !isMobile ? (sidebarOpen ? "250px" : "78px") : !isMobile ? "250px" : "0",
+            width: isInitialized && !isMobile ? `calc(100% - ${sidebarOpen ? "250px" : "78px"})` : !isMobile ? "calc(100% - 250px)" : "100%",
+            maxWidth: isInitialized && !isMobile ? `calc(100% - ${sidebarOpen ? "250px" : "78px"})` : !isMobile ? "calc(100% - 250px)" : "100%",
             transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
           }}
         >

@@ -575,6 +575,121 @@
     max-width: 110px;
     object-fit: contain;
   }
+
+  /* Sayfa hero / aksiyon butonları — mobilde kompakt */
+  .muhasebe-content .hero-header,
+  .muhasebe-content .odeme-hero,
+  .muhasebe-content .gv-hero-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .muhasebe-content .hero-content,
+  .muhasebe-content .odeme-hero-content,
+  .muhasebe-content .gv-hero-content {
+    gap: 12px;
+  }
+
+  .muhasebe-content .hero-icon,
+  .muhasebe-content .odeme-hero-icon,
+  .muhasebe-content .gv-hero-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+
+  .muhasebe-content .hero-text h1,
+  .muhasebe-content .odeme-hero h1,
+  .muhasebe-content .gv-hero-header h1 {
+    font-size: 18px;
+    line-height: 1.25;
+  }
+
+  .muhasebe-content .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .muhasebe-content .btn-hero,
+  .muhasebe-content .gv-btn-hero,
+  .muhasebe-content a.btn-hero {
+    padding: 9px 12px;
+    font-size: 13px;
+    border-radius: 10px;
+    gap: 8px;
+    width: auto;
+    max-width: 100%;
+    justify-content: center;
+  }
+
+  .muhasebe-content .btn-hero-icon,
+  .muhasebe-content .gv-btn-hero-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+  }
+
+  .muhasebe-content .card-modern-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+
+  .muhasebe-content .card-modern-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .muhasebe-content .card-modern-header-actions .btn-hero,
+  .muhasebe-content .card-modern-header-actions .btn-modern,
+  .muhasebe-content .card-modern-header-actions .btn-modern.btn-primary {
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+
+  .muhasebe-content .search-modern {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .muhasebe-content .gorev-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .muhasebe-content .gorev-toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .muhasebe-content .gorev-btn,
+  .muhasebe-content .gorev-btn-primary {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .muhasebe-content .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .muhasebe-content .page-header-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 }
 
 @media (min-width: 992px) {

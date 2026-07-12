@@ -109,6 +109,8 @@ export function akademikSidebarChildren() {
   return AKADEMIK_GROUPS.map((group) => ({
     label: group.label,
     href: akademikTabHref(group.slug, group.tabs[0].segment),
+    /** Aktif menü eşlemesi — grup altındaki tüm sekmeler */
+    matchPrefix: akademikGroupHref(group.slug),
   }));
 }
 

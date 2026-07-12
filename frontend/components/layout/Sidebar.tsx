@@ -140,6 +140,8 @@ interface SubMenuItem {
   href: string;
   group?: string; // Koçluk gruplama için
   badge?: number; // Badge desteği
+  /** Aktif state için href yerine kullanılacak önek (grup sayfaları) */
+  matchPrefix?: string;
 }
 
 interface MenuItem {
@@ -443,6 +445,43 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
+/** Yol, menü öğesinin href veya matchPrefix'ine uyuyor mu? */
+function pathMatchesMenuItem(
+  pathname: string | null | undefined,
+  item: Pick<SubMenuItem, "href" | "matchPrefix">,
+): boolean {
+  if (!pathname) return false;
+  const prefix = item.matchPrefix || item.href;
+  return pathname === prefix || pathname.startsWith(`${prefix}/`) || pathname === item.href;
+}
+
+/**
+ * Kardeşler arasında en uzun eşleşen öğeyi aktif say —
+ * `/finans` Dashboard'unun `/finans/cek-senet` sayfasında da aktif görünmesini engeller.
+ */
+function resolveActiveSubHref(
+  pathname: string | null | undefined,
+  siblings: SubMenuItem[],
+): string | null {
+  if (!pathname || siblings.length === 0) return null;
+  let best: SubMenuItem | null = null;
+  let bestLen = -1;
+  for (const sibling of siblings) {
+    const prefix = sibling.matchPrefix || sibling.href;
+    const matches =
+      pathname === sibling.href ||
+      pathname === prefix ||
+      pathname.startsWith(`${prefix}/`);
+    if (!matches) continue;
+    const score = prefix.length;
+    if (score > bestLen) {
+      best = sibling;
+      bestLen = score;
+    }
+  }
+  return best?.href ?? null;
+}
+
 export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
@@ -454,6 +493,8 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const navItemRefs = useRef<{ [key: string]: HTMLLIElement | null }>({});
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const enterTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  /** Daraltılmışken tıklanan üst menüyü açılışta accordion'da tut */
+  const pendingExpandRef = useRef<string | null>(null);
   const { pinnedIds, togglePin } = usePinnedItems();
   const { reorder, getOrdered } = useMenuOrder(navItems);
 
@@ -506,19 +547,26 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
     };
   }, []);
 
-  // Sidebar açıldığında sadece aktif menüyü aç, diğerlerini kapat
+  // Sidebar açıldığında / rota değişince yalnızca aktif üst menüyü aç
   useEffect(() => {
-    if (isOpen) {
-      const activeParent = visibleNavItems.find(
-        (item) =>
-          item.children &&
-          item.children.some(
-            (child) => pathname === child.href || pathname?.startsWith(child.href + "/")
-          )
-      );
-      setExpandedMenus(activeParent ? [activeParent.id] : []);
+    if (!isOpen) {
+      setExpandedMenus([]);
+      return;
     }
-  }, [isOpen, pathname, visibleNavItems]);
+    if (pendingExpandRef.current) {
+      setExpandedMenus([pendingExpandRef.current]);
+      pendingExpandRef.current = null;
+      return;
+    }
+    const activeParent = visibleNavItems.find(
+      (item) =>
+        item.children &&
+        item.children.some((child) => pathMatchesMenuItem(pathname, child)),
+    );
+    setExpandedMenus(activeParent ? [activeParent.id] : []);
+    // visibleNavItems bilinçli olarak dışarıda: permission yüklenince accordion kapanmasın
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, pathname]);
 
   // Filter items by search (with custom order)
   const filteredNavItems = useMemo(() => {
@@ -547,6 +595,14 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
       setExpandedMenus([id]);
     }
   };
+
+  /** Mobilde link tıklanınca drawer'ı kapat */
+  const handleNavNavigate = useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 992 && isOpen) {
+      onToggle();
+    }
+    setHoveredMenu(null);
+  }, [isOpen, onToggle]);
 
   // ─── Drag & Drop Handlers ───
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -604,20 +660,16 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   // Aktif menü kontrolü
   const isMenuActive = (item: MenuItem): boolean => {
     if (item.href) {
-      return pathname === item.href || pathname?.startsWith(item.href + "/");
+      return pathname === item.href || Boolean(pathname?.startsWith(`${item.href}/`));
     }
     if (item.children) {
-      return item.children.some(
-        (child) => pathname === child.href || pathname?.startsWith(child.href + "/")
-      );
+      return resolveActiveSubHref(pathname, item.children) != null;
     }
     return false;
   };
 
-  const isSubmenuActive = (href: string): boolean => {
-    if (pathname === href) return true;
-    if (pathname?.startsWith(href + "/")) return true;
-    return false;
+  const isSubmenuActive = (child: SubMenuItem, siblings: SubMenuItem[]): boolean => {
+    return resolveActiveSubHref(pathname, siblings) === child.href;
   };
 
   // Hover handler - tooltip
@@ -716,7 +768,8 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         >
           <Link
             href={child.href}
-            className={`submenu-link ${isSubmenuActive(child.href) ? "active" : ""}`}
+            className={`submenu-link ${isSubmenuActive(child, orderedChildren) ? "active" : ""}`}
+            onClick={handleNavNavigate}
           >
             <span className="submenu-dot" />
             <span className="submenu-label">{child.label}</span>
@@ -770,11 +823,20 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           <>
             <div className="nav-link-row">
               <button
+                type="button"
                 className={`nav-link ${isActive ? "active" : ""}`}
-                onClick={() => isOpen && toggleSubmenu(item.id)}
+                onClick={() => {
+                  if (!isOpen) {
+                    pendingExpandRef.current = item.id;
+                    onToggle();
+                    return;
+                  }
+                  toggleSubmenu(item.id);
+                }}
                 onMouseEnter={() => handleMouseEnter(item.label)}
                 onMouseLeave={handleMouseLeave}
                 title={item.label}
+                aria-expanded={isExpanded}
               >
                 <span className="nav-icon" data-icon={item.id}>{item.icon}</span>
                 <span className="nav-label">
@@ -786,6 +848,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
               </button>
               {isOpen && (
                 <button
+                  type="button"
                   className={`pin-btn ${isPinned ? "pinned" : ""}`}
                   onClick={(e) => { e.stopPropagation(); togglePin(item.id); }}
                   title={isPinned ? "Sabitliği kaldır" : "Menüyü sabitle"}
@@ -806,6 +869,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                 href={item.href || "#"}
                 className={`nav-link ${isActive ? "active" : ""}`}
                 title={item.label}
+                onClick={handleNavNavigate}
                 onMouseEnter={() => handleMouseEnter(item.label)}
                 onMouseLeave={handleMouseLeave}
               >
@@ -816,6 +880,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
               </Link>
               {isOpen && (
                 <button
+                  type="button"
                   className={`pin-btn ${isPinned ? "pinned" : ""}`}
                   onClick={(e) => { e.stopPropagation(); togglePin(item.id); }}
                   title={isPinned ? "Sabitliği kaldır" : "Menüyü sabitle"}
@@ -833,10 +898,31 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
     );
   };
 
+  const hoveredItem = hoveredMenu
+    ? visibleNavItems.find((item) => item.label === hoveredMenu)
+    : null;
+  const hoveredChildren = hoveredItem?.children;
+
   return (
     <aside className={`sidebar ${isOpen ? "open" : ""}`} id="sidebar">
       <div className="sidebar-header">
-        <KurumLogo variant="app" width={40} height={40} />
+        <KurumLogo variant="app" width={40} height={40} showText={isOpen} />
+        <button
+          type="button"
+          className="toggle-btn"
+          onClick={onToggle}
+          aria-label={isOpen ? "Menüyü daralt" : "Menüyü genişlet"}
+          aria-expanded={isOpen}
+          title={isOpen ? "Menüyü daralt" : "Menüyü genişlet"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            {isOpen ? (
+              <polyline points="15 18 9 12 15 6" />
+            ) : (
+              <polyline points="9 18 15 12 9 6" />
+            )}
+          </svg>
+        </button>
       </div>
 
       {/* Sidebar Search - only when open */}
@@ -855,6 +941,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           />
           {searchQuery && (
             <button
+              type="button"
               className="sidebar-search-clear"
               onClick={() => setSearchQuery("")}
             >
@@ -870,11 +957,12 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           <div className="pinned-section">
             <div className="pinned-header">📌 Sabitlenmiş</div>
             <ul className="nav-list pinned-list">
-              {pinnedItems.map((item, idx) => (
-                <li key={idx} className={`nav-item pinned-item ${isMenuActive(item) ? "active" : ""}`}>
+              {pinnedItems.map((item) => (
+                <li key={item.id} className={`nav-item pinned-item ${isMenuActive(item) ? "active" : ""}`}>
                   <Link
                     href={item.href || (item.children?.[0]?.href || "#")}
                     className={`nav-link ${isMenuActive(item) ? "active" : ""}`}
+                    onClick={handleNavNavigate}
                   >
                     <span className="nav-icon" data-icon={item.id}>{item.icon}</span>
                     <span className="nav-label">
@@ -894,8 +982,8 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         </ul>
       </nav>
 
-      {/* Floating Submenu Tooltip */}
-      {!isOpen && hoveredMenu && (
+      {/* Daraltılmış menü: alt menülü öğelerde uçan panel */}
+      {!isOpen && hoveredMenu && hoveredChildren && hoveredChildren.length > 0 && (
         <div
           className="submenu-tooltip visible"
           style={tooltipStyle}
@@ -903,22 +991,20 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           onMouseLeave={handleTooltipMouseLeave}
         >
           <div className="submenu-tooltip-header">{hoveredMenu}</div>
-          {visibleNavItems
-            .find((item) => item.label === hoveredMenu)
-            ?.children?.map((child, childIdx) => {
-              const badge = child.href === ODEV_KONTROL_HREF ? kontrolBadgeCount : child.badge;
-              return (
+          {hoveredChildren.map((child) => {
+            const badge = child.href === ODEV_KONTROL_HREF ? kontrolBadgeCount : child.badge;
+            return (
               <Link
                 href={child.href}
-                className={`submenu-tooltip-item ${isSubmenuActive(child.href) ? "active" : ""}`}
-                key={childIdx}
-                onClick={() => setHoveredMenu(null)}
+                className={`submenu-tooltip-item ${isSubmenuActive(child, hoveredChildren) ? "active" : ""}`}
+                key={child.href}
+                onClick={handleNavNavigate}
               >
                 {child.label}
                 {badge && badge > 0 ? ` (${badge})` : ""}
               </Link>
-              );
-            })}
+            );
+          })}
         </div>
       )}
     </aside>

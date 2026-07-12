@@ -47,7 +47,7 @@ export default function CoachTopbar({
         <h1 className="coach-topbar-title">{title}</h1>
       </div>
 
-      <div className="coach-topbar-trailing" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div className="coach-topbar-trailing">
         <AdminPortalReturn variant="compact" />
         <ContextSelector />
         <NotificationBell />
