@@ -16,6 +16,8 @@ interface UnsavedChangesModalProps {
 /**
  * Portal + inline stiller: styled-jsx portal'da bazen uygulanmaz;
  * görünmez overlay tüm tıklamaları yutar (menü “kilitlenir”).
+ *
+ * open=false iken body overflow mutlaka geri alınır; unmount'ta da temizlenir.
  */
 export default function UnsavedChangesModal({
   open,
@@ -33,7 +35,10 @@ export default function UnsavedChangesModal({
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      document.body.style.overflow = "";
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
     };
@@ -41,10 +46,16 @@ export default function UnsavedChangesModal({
     document.body.style.overflow = "hidden";
     document.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = prevOverflow;
+      document.body.style.overflow = prevOverflow || "";
       document.removeEventListener("keydown", onKey);
     };
   }, [open, onCancel]);
+
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   if (!open || !mounted) return null;
 

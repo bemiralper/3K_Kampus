@@ -1784,23 +1784,52 @@ export default function SozlesmeOlusturClient() {
           return;
         }
       }
+
+      const goToSozlesme = (id: number) => {
+        markClean();
+        initialSnapshotRef.current = buildFormSnapshot();
+        setSnapshotReady(true);
+        // Soft router.push burada bazen unsaved-modal / yarı geçiş bırakıp UI'yı kilitliyor;
+        // kayıt sonrası sert yönlendirme detayı garanti eder.
+        requestNavigation(`${basePath}?sozlesme=${id}`, { hard: true });
+      };
+
       if (!r.ok) {
+        const existingRaw = data.existing_id;
+        const existingId = typeof existingRaw === "number"
+          ? existingRaw
+          : typeof existingRaw === "string"
+            ? Number(existingRaw)
+            : NaN;
+        if (!isEditMode && Number.isFinite(existingId) && existingId > 0) {
+          goToSozlesme(existingId);
+          return;
+        }
         if (data.errors && typeof data.errors === "object") {
-          setFieldErrors(data.errors as Record<string, string>);
-          fail(Object.values(data.errors as Record<string, string>).join(", "));
+          const fieldErrs = { ...(data.errors as Record<string, string>) };
+          delete (fieldErrs as Record<string, unknown>).existing_id;
+          setFieldErrors(fieldErrs);
+          fail(Object.values(fieldErrs).filter((v) => typeof v === "string").join(", "));
         } else {
           fail(parseApiError(data, isEditMode ? "Sözleşme güncellenemedi" : "Sözleşme oluşturulamadı"));
         }
         return;
       }
+
+      const savedId = isEditMode
+        ? Number(editId)
+        : Number(data.id ?? (data as { data?: { id?: unknown } }).data?.id);
+      if (Number.isFinite(savedId) && savedId > 0) {
+        goToSozlesme(savedId);
+        return;
+      }
+
       markClean();
       initialSnapshotRef.current = buildFormSnapshot();
       setSnapshotReady(true);
-      const savedId = isEditMode ? Number(editId) : Number(data.id);
-      const targetPath = savedId ? `${basePath}?sozlesme=${savedId}` : basePath;
       submittingRef.current = false;
       setSubmitting(false);
-      requestNavigation(targetPath);
+      requestNavigation(basePath, { hard: true });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Bir hata oluştu";
       fail(msg.includes("fetch") || msg.includes("Network") ? `Bağlantı hatası: ${msg}` : msg);

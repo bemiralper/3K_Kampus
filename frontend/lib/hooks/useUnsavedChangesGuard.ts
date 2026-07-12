@@ -68,6 +68,8 @@ export function useUnsavedChangesGuard({
 
   const markClean = useCallback(() => {
     bypassRef.current = true;
+    // Sync ref: bir sonraki render'ı beklemeden requestNavigation soft-nav'i atlamasın
+    isDirtyRef.current = false;
     setPendingNavigation(null);
   }, []);
 
@@ -89,12 +91,21 @@ export function useUnsavedChangesGuard({
   );
 
   const requestNavigation = useCallback(
-    (target: string | (() => void)) => {
-      if (!enabled || !isDirtyRef.current || bypassRef.current) {
+    (target: string | (() => void), options?: { hard?: boolean }) => {
+      const go = (href: string) => {
         setPendingNavigation(null);
+        if (options?.hard && typeof window !== "undefined") {
+          window.location.assign(href);
+          return;
+        }
+        router.push(href);
+      };
+
+      if (!enabled || !isDirtyRef.current || bypassRef.current) {
         if (typeof target === "string") {
-          router.push(target);
+          go(target);
         } else {
+          setPendingNavigation(null);
           target();
         }
         return;
@@ -102,8 +113,7 @@ export function useUnsavedChangesGuard({
 
       if (typeof target === "string") {
         if (!isLeavingCurrentPage(target, pathname)) {
-          setPendingNavigation(null);
-          router.push(target);
+          go(target);
           return;
         }
         setPendingNavigation({ kind: "href", href: target });

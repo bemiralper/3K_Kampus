@@ -239,7 +239,11 @@ class SozlesmeService:
         """
         errors = self._validate_create(data)
         if errors:
-            return None, {'errors': errors}
+            existing_id = errors.pop('existing_id', None)
+            payload = {'errors': errors}
+            if existing_id is not None:
+                payload['existing_id'] = existing_id
+            return None, payload
 
         try:
             with transaction.atomic():
@@ -996,7 +1000,12 @@ class SozlesmeService:
                 durum__in=aktif_durumlar,
             ).first()
             if mevcut:
-                errors['ogrenci_id'] = f'Bu öğrencinin bu eğitim yılında zaten bir sözleşmesi var ({mevcut.sozlesme_no}). Mevcut sözleşme üzerinden devam edin.'
+                errors['ogrenci_id'] = (
+                    f'Bu öğrencinin bu eğitim yılında zaten bir sözleşmesi var '
+                    f'({mevcut.sozlesme_no}). Mevcut sözleşme üzerinden devam edin.'
+                )
+                # İstemci mevcut sözleşmeye yönlenebilsin (çift tıklama / yarım UI yanıtı)
+                errors['existing_id'] = mevcut.id
         if not data.get('kurum_id'):
             errors['kurum_id'] = 'Kurum zorunlu'
         if not data.get('sube_id'):
