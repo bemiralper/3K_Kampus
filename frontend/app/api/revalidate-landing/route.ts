@@ -7,6 +7,8 @@ export async function POST() {
   revalidatePath('/duyurular');
   revalidatePath('/hakkimizda');
   revalidatePath('/3k-sistemi');
+  revalidatePath('/yasal/kvkk');
+  revalidatePath('/yasal/gizlilik');
   revalidatePath('/yasal/[tur]', 'page');
   return NextResponse.json({ revalidated: true });
 }

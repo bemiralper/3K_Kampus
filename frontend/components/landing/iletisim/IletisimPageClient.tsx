@@ -23,7 +23,9 @@ type Props = {
 
 function IletisimPageInner({ initialData = null }: Props) {
   const [data, setData] = useState<LandingData | null>(initialData);
-  const [branding, setBranding] = useState<KurumBranding>(DEFAULT_BRANDING);
+  const [branding, setBranding] = useState<KurumBranding>(() =>
+    initialData?.kurum ? mergeBranding(initialData.kurum) : DEFAULT_BRANDING,
+  );
   const [loginOpen, setLoginOpen] = useState(false);
 
   useEffect(() => {
