@@ -125,6 +125,7 @@ def logs_view(request):
         query=(request.GET.get('q') or '').strip(),
         levels=levels,
         offset=offset_i,
+        source_category=spec.category,
     )
     result['source'] = source
     result['label'] = spec.label

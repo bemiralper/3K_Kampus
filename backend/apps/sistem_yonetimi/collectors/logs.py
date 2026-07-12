@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
@@ -16,29 +15,33 @@ LEVEL_PATTERNS = [
     (re.compile(r'\bINFO\b', re.I), 'INFO'),
 ]
 
+# Gunicorn / combined access log: ..."METHOD path HTTP/1.1" 200 1234
+ACCESS_LOG_STATUS_RE = re.compile(r'"[A-Z]+\s+[^\"]*\s+HTTP/[\d.]+"\s+(\d{3})\b')
 
-def detect_level(line: str) -> str:
+
+def detect_level(line: str, *, source_category: str | None = None) -> str:
+    """
+    Access log satırlarında seviye HTTP status'tan çıkarılır.
+    Aksi halde keyword aranır; query string içindeki levels=ERROR yanlış pozitif üretmesin.
+    """
+    status_match = ACCESS_LOG_STATUS_RE.search(line)
+    if status_match or (source_category or '') in ('api', 'gunicorn_access', 'access'):
+        if status_match:
+            code = int(status_match.group(1))
+            if code >= 500:
+                return 'ERROR'
+            if code >= 400:
+                return 'WARNING'
+            return 'INFO'
+        return 'INFO'
+
+    # Tırnaklı request URI / query (levels=ERROR vb.) seviye tespitini bozmasın
+    scrubbed = re.sub(r'"[^"]*"', ' ', line)
+    scrubbed = re.sub(r'\blevels=[A-Za-z]+\b', ' ', scrubbed, flags=re.I)
     for pat, level in LEVEL_PATTERNS:
-        if pat.search(line):
+        if pat.search(scrubbed):
             return level
     return 'INFO'
-
-
-def _safe_path(path: str | Path, allowed_roots: list[Path]) -> Path | None:
-    try:
-        p = Path(path).resolve()
-    except Exception:
-        return None
-    if not p.exists() or not p.is_file():
-        return None
-    for root in allowed_roots:
-        try:
-            p.relative_to(root.resolve())
-            return p
-        except ValueError:
-            continue
-    # Also allow exact registered paths even if parent isn't in roots
-    return p if p.exists() else None
 
 
 def read_tail_lines(
@@ -49,6 +52,7 @@ def read_tail_lines(
     query: str = '',
     levels: set[str] | None = None,
     offset: int | None = None,
+    source_category: str | None = None,
 ) -> dict:
     """
     Read from end of file (or from offset).
@@ -73,7 +77,6 @@ def read_tail_lines(
                 truncated = True
                 raw = raw[:max_bytes]
             text = raw.decode('utf-8', errors='replace')
-            # If we started mid-file, drop first partial line
             if start > 0 and offset is None:
                 nl = text.find('\n')
                 if nl >= 0:
@@ -82,7 +85,7 @@ def read_tail_lines(
             cursor = start
             for line in text.splitlines(keepends=False):
                 line_bytes = len(line.encode('utf-8', errors='replace')) + 1
-                level = detect_level(line)
+                level = detect_level(line, source_category=source_category)
                 if levels and level not in levels:
                     cursor += line_bytes
                     continue

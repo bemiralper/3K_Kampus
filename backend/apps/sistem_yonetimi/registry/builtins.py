@@ -43,7 +43,7 @@ def _register_logs():
         ('whatsapp', 'İletişim kuyruğu', str(log_dir / 'comm_queue.log'), 'whatsapp'),
         ('sms', 'Kampanya', str(log_dir / 'campaigns.log'), 'sms'),
         ('mail', 'Hatırlatmalar', str(log_dir / 'reminders.log'), 'mail'),
-        ('api', 'API access (gunicorn)', str(log_dir / 'backend-access.log'), 'api'),
+        ('api', 'API access log (HTTP 200=OK; ERROR=5xx)', str(log_dir / 'backend-access.log'), 'api'),
         ('security', 'Gunicorn error (security)', str(log_dir / 'backend-error.log'), 'security'),
         ('postgres', 'PostgreSQL (varsa)', '/var/log/postgresql/postgresql-16-main.log', 'postgres'),
     ]

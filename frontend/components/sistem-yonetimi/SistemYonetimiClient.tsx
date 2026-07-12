@@ -170,14 +170,8 @@ export default function SistemYonetimiClient() {
       return res.error || 'Servisler yüklenemedi.';
     }
     if (tab === 'logs') {
-      const src = await fetchLogSources();
-      if (src.success && src.data) setLogSources(src.data.items);
-      const res = await fetchLogs({ source: logSource, q: logQuery, levels: logLevels, max_lines: 250 });
-      if (res.success && res.data) {
-        setLogLines(res.data.lines || []);
-        return res.data.error || null;
-      }
-      return res.error || 'Loglar yüklenemedi.';
+      // Log içeriği ayrı effect ile yüklenir (filtre değişiminde diğer sekmeleri bozmamak için)
+      return null;
     }
     if (tab === 'errors') {
       const res = await fetchErrors({ status: 'open', page: 1, page_size: 50 });
@@ -237,7 +231,7 @@ export default function SistemYonetimiClient() {
       return res.error || 'Ayarlar yüklenemedi.';
     }
     return null;
-  }, [loadOverview, logLevels, logQuery, logSource, perfRange]);
+  }, [loadOverview, perfRange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,6 +247,21 @@ export default function SistemYonetimiClient() {
       cancelled = true;
     };
   }, [activeTab, loadTabData]);
+
+  // Log filtreleri değişince yalnızca Log Merkezi açıkken yenile (diğer sekmeleri tetiklemez)
+  useEffect(() => {
+    if (activeTab !== 'logs') return;
+    let cancelled = false;
+    void (async () => {
+      const src = await fetchLogSources();
+      if (!cancelled && src.success && src.data) setLogSources(src.data.items);
+      const res = await fetchLogs({ source: logSource, q: logQuery, levels: logLevels, max_lines: 250 });
+      if (!cancelled && res.success && res.data) setLogLines(res.data.lines || []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, logSource, logQuery, logLevels]);
 
   useEffect(() => {
     if (tabFromUrl && TABS.some((t) => t.key === tabFromUrl) && tabFromUrl !== activeTab) {
