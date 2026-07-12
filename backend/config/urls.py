@@ -102,6 +102,10 @@ urlpatterns = [
     # Platform yedekleme (super admin)
     path('yedekleme/api/', include('apps.yedekleme.interfaces.urls')),
     path('yedekleme/', lambda request: redirect(f"{settings.FRONTEND_URL}/admin/yedekleme", permanent=False)),
+
+    # Sistem Yönetimi (System Center)
+    path('sistem-yonetimi/api/', include('apps.sistem_yonetimi.interfaces.urls')),
+    path('sistem-yonetimi/', lambda request: redirect(f"{settings.FRONTEND_URL}/admin/sistem-yonetimi", permanent=False)),
 ]
 
 if settings.DEBUG:

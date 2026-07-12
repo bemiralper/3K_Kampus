@@ -41,6 +41,9 @@ PERMISSIONS_DATA = [
     {'code': 'roller.manage', 'name': 'Rol Yönetimi', 'module': 'roller', 'permission_type': 'manage', 'description': 'Rol modülünün tüm yetkilerine sahip'},
     {'code': 'sistem.admin', 'name': 'Sistem Yöneticisi', 'module': 'sistem', 'permission_type': 'admin', 'description': 'Tüm sistem ayarlarına erişebilir'},
     {'code': 'sistem.settings', 'name': 'Ayarlar', 'module': 'sistem', 'permission_type': 'manage', 'description': 'Sistem ayarlarını düzenleyebilir'},
+    {'code': 'sistem_yonetimi.read', 'name': 'Sistem Yönetimi Görüntüleme', 'module': 'sistem_yonetimi', 'permission_type': 'read', 'description': 'Sistem Yönetimi panelini görüntüleyebilir'},
+    {'code': 'sistem_yonetimi.manage', 'name': 'Sistem Yönetimi Yönetimi', 'module': 'sistem_yonetimi', 'permission_type': 'manage', 'description': 'Görev çalıştırma, ayar ve log indirme'},
+    {'code': 'sistem_yonetimi.ops', 'name': 'Sistem Operasyon', 'module': 'sistem_yonetimi', 'permission_type': 'admin', 'description': 'Servis başlat/durdur/yeniden başlat'},
     {'code': 'communication.read', 'name': 'İletişim Görüntüleme', 'module': 'communication', 'permission_type': 'read', 'description': 'Konuşma ve mesajları görüntüleyebilir'},
     {'code': 'communication.write', 'name': 'İletişim Gönderme', 'module': 'communication', 'permission_type': 'write', 'description': 'Mesaj gönderebilir'},
     {'code': 'communication.manage', 'name': 'İletişim Yönetimi', 'module': 'communication', 'permission_type': 'manage', 'description': 'Tüm kurum konuşmaları ve logları yönetebilir'},
@@ -160,8 +163,10 @@ ROLES_DATA = [
         'level': 40,
         'is_system_role': True,
         'permissions': [
-            'sistem.settings', 'roller.read', 'personel.read',
+            'sistem.settings', 'sistem_yonetimi.read', 'sistem_yonetimi.manage', 'sistem_yonetimi.ops',
+            'roller.read', 'personel.read',
             'ogrenci.read', 'rapor.read',
+            'yedekleme.read', 'yedekleme.create', 'yedekleme.manage',
         ],
     },
     {

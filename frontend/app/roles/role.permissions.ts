@@ -93,6 +93,9 @@ export const ModulePermissions = {
   SISTEM: {
     ADMIN: 'sistem.admin',
     SETTINGS: 'sistem.settings',
+    READ: 'sistem_yonetimi.read',
+    MANAGE: 'sistem_yonetimi.manage',
+    OPS: 'sistem_yonetimi.ops',
   },
 } as const;
 
@@ -228,4 +231,9 @@ export const SidebarPermissions = {
   RAPORLAR: [ModulePermissions.RAPOR.READ],
   ROL_YONETIMI: [ModulePermissions.ROLLER.READ],
   SISTEM_AYARLARI: [ModulePermissions.SISTEM.SETTINGS],
+  SISTEM_YONETIMI: [
+    ModulePermissions.SISTEM.READ,
+    ModulePermissions.SISTEM.MANAGE,
+    ModulePermissions.SISTEM.ADMIN,
+  ],
 };

@@ -58,6 +58,9 @@ export interface DashboardData {
     max_artifacts: number;
     auto_delete_old: boolean;
     last_run_at: string | null;
+    last_run_status?: string | null;
+    last_run_message?: string | null;
+    last_run_artifact?: BackupArtifact | null;
   };
   last_success: { action: string | null; step: string | null; created_at: string | null };
   last_error: {
@@ -86,6 +89,9 @@ export interface ScheduleData {
   auto_delete_old: boolean;
   encrypt: boolean;
   last_run_at: string | null;
+  last_run_status?: string | null;
+  last_run_message?: string | null;
+  last_run_artifact?: BackupArtifact | null;
 }
 
 export interface BackupSettingsData {
@@ -232,11 +238,11 @@ export function fetchSchedule(): Promise<ApiResponse<ScheduleData>> {
   return apiGet(`${BASE}/schedule/`);
 }
 
-export function updateSchedule(data: Partial<ScheduleData>): Promise<ApiResponse<{ updated: boolean }>> {
+export function updateSchedule(data: Partial<ScheduleData>): Promise<ApiResponse<{ updated: boolean; schedule?: ScheduleData }>> {
   return apiPut(`${BASE}/schedule/`, data);
 }
 
-export function runScheduleNow(): Promise<ApiResponse<{ artifact: BackupArtifact; job: BackupJob }>> {
+export function runScheduleNow(): Promise<ApiResponse<{ artifact: BackupArtifact; job: BackupJob; schedule?: ScheduleData }>> {
   return apiPost(`${BASE}/schedule/run/`, {});
 }
 

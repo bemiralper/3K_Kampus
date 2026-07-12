@@ -108,6 +108,10 @@
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
+.yedekleme-grid--metrics {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .yedekleme-grid--two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -534,6 +538,26 @@
   border-color: #fecaca;
   background: #fef2f2;
   color: #b91c1c;
+}
+
+.yedekleme-callout--success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.yedekleme-callout--muted {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.yedekleme-callout p {
+  margin: 8px 0 0;
+}
+
+.yedekleme-callout strong {
+  display: block;
 }
 
 .yedekleme-progress {

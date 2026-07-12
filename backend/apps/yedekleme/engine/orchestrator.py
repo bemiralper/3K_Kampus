@@ -56,6 +56,26 @@ class BackupEngine:
             metadata=metadata or {},
             duration_ms=duration_ms,
         )
+        try:
+            from apps.sistem_yonetimi.services.audit import write_audit, write_timeline
+            write_audit(
+                user=self.user,
+                module='yedekleme',
+                action=str(action),
+                description=step or str(action),
+                ip_address=self.ip_address,
+                metadata={'success': success, **(metadata or {})},
+            )
+            if action in ('create', 'restore', 'purge') and step:
+                write_timeline(
+                    category='backup',
+                    title=step,
+                    detail=error_message or '',
+                    level='success' if success else 'error',
+                    metadata={'action': str(action)},
+                )
+        except Exception:
+            pass
 
     def _update_job(self, job: BackupJob, *, phase=None, progress=None, message=None, status=None, result=None, error=None):
         if phase is not None:
@@ -603,12 +623,19 @@ class BackupEngine:
             ScheduleFrequency.MONTHLY: BackupTrigger.MONTHLY,
         }
         trigger = trigger_map.get(schedule.frequency, BackupTrigger.MANUAL)
-        artifact, job = self.create_backup(
-            kind=schedule.kind or BackupKind.FULL,
-            resource_codes=schedule.resource_codes or None,
-            trigger=trigger if schedule.enabled and schedule.frequency != ScheduleFrequency.OFF else BackupTrigger.MANUAL,
-            encrypt=bool(schedule.encrypt),
+        try:
+            artifact, job = self.create_backup(
+                kind=schedule.kind or BackupKind.FULL,
+                resource_codes=schedule.resource_codes or None,
+                trigger=trigger if schedule.enabled and schedule.frequency != ScheduleFrequency.OFF else BackupTrigger.MANUAL,
+                encrypt=bool(schedule.encrypt),
+            )
+        except Exception as exc:  # noqa: BLE001
+            schedule.record_run(status=BackupStatus.FAILED, message=str(exc)[:512])
+            raise
+        schedule.record_run(
+            artifact=artifact,
+            status=job.status,
+            message=job.error_message or job.message or artifact.filename,
         )
-        schedule.last_run_at = _now()
-        schedule.save(update_fields=['last_run_at'])
         return artifact, job

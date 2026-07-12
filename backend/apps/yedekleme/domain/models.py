@@ -167,6 +167,16 @@ class BackupSchedule(models.Model):
     auto_delete_old = models.BooleanField('Eski Yedekleri Sil', default=True)
     encrypt = models.BooleanField('Şifrele', default=False)
     last_run_at = models.DateTimeField('Son Çalışma', null=True, blank=True)
+    last_run_status = models.CharField('Son Çalışma Durumu', max_length=20, blank=True, default='')
+    last_run_message = models.CharField('Son Çalışma Mesajı', max_length=512, blank=True, default='')
+    last_run_artifact = models.ForeignKey(
+        'BackupArtifact',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        verbose_name='Son Çalışma Yedeği',
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -178,6 +188,19 @@ class BackupSchedule(models.Model):
     def get_singleton(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+    def record_run(self, *, artifact=None, status: str = '', message: str = ''):
+        """Son otomatik/manuel-zamanlanmış çalışmayı kalıcı olarak kaydeder."""
+        from django.utils import timezone
+
+        self.last_run_at = timezone.now()
+        self.last_run_status = (status or '')[:20]
+        self.last_run_message = (message or '')[:512]
+        update_fields = ['last_run_at', 'last_run_status', 'last_run_message']
+        if artifact is not None:
+            self.last_run_artifact = artifact
+            update_fields.append('last_run_artifact')
+        self.save(update_fields=update_fields)
 
 
 class BackupSettings(models.Model):

@@ -55,12 +55,19 @@ class Command(BaseCommand):
             trigger = trigger_map.get(schedule.frequency, BackupTrigger.DAILY)
 
         engine = BackupEngine()
-        artifact, _job = engine.create_backup(
-            kind=schedule.kind or 'full',
-            resource_codes=schedule.resource_codes or None,
-            trigger=trigger,
-            encrypt=bool(schedule.encrypt),
+        try:
+            artifact, job = engine.create_backup(
+                kind=schedule.kind or 'full',
+                resource_codes=schedule.resource_codes or None,
+                trigger=trigger,
+                encrypt=bool(schedule.encrypt),
+            )
+        except Exception as exc:  # noqa: BLE001
+            schedule.record_run(status='failed', message=str(exc)[:512])
+            raise
+        schedule.record_run(
+            artifact=artifact,
+            status=job.status,
+            message=job.error_message or job.message or artifact.filename,
         )
-        schedule.last_run_at = timezone.now()
-        schedule.save(update_fields=['last_run_at'])
         self.stdout.write(self.style.SUCCESS(f'Yedek oluşturuldu: {artifact.filename}'))

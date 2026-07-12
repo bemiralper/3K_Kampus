@@ -127,6 +127,37 @@ function formatDate(value?: string | null) {
   return new Date(value).toLocaleString('tr-TR');
 }
 
+/** 24 saatlik saat dilimi etiketi (gece / sabah / öğleden sonra / akşam). */
+function dayPartLabel(hour: number): string {
+  if (hour >= 0 && hour < 6) return 'gece';
+  if (hour < 12) return 'sabah';
+  if (hour < 18) return 'öğleden sonra';
+  return 'akşam';
+}
+
+function formatScheduleClock(hour: number, minute: number): string {
+  const hh = String(hour).padStart(2, '0');
+  const mm = String(minute).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function formatScheduleTime(hour: number, minute: number): string {
+  return `${formatScheduleClock(hour, minute)} (${dayPartLabel(hour)})`;
+}
+
+function toTimeInputValue(hour: number, minute: number): string {
+  return formatScheduleClock(hour, minute);
+}
+
+function parseTimeInputValue(value: string): { hour: number; minute: number } | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
 function errorText(fallback: string, error?: string) {
   if (!error?.trim()) return fallback;
   // Zaten açıklayıcıysa tekrar önekleme
@@ -384,13 +415,43 @@ export default function YedeklemeClient() {
     setBusyKey(null);
     if (res.success && res.data) {
       setActiveJob(res.data.job);
-      setNotice({ type: 'success', text: 'Zamanlanmış yedek şimdi çalıştırıldı.' });
+      if (res.data.schedule) setSchedule(res.data.schedule);
+      const ok = res.data.job.status === 'completed';
+      setNotice({
+        type: ok ? 'success' : 'error',
+        text: ok
+          ? `Yedek tamamlandı: ${res.data.artifact.filename}`
+          : `Yedek başarısız: ${res.data.job.error_message || res.data.job.message || 'bilinmeyen hata'}`,
+      });
       void loadDashboard();
       void loadArtifacts();
       void loadSchedule();
       void loadLogs();
     } else {
+      void loadSchedule();
       setNotice({ type: 'error', text: errorText('Zamanlanmış yedek çalıştırılamadı.', res.error) });
+    }
+  };
+
+  const handleStopSchedule = async () => {
+    if (!schedule) return;
+    if (!window.confirm('Otomatik yedeklemeyi durdurmak istiyor musunuz? Planlanan saatlerde bir daha çalışmaz.')) return;
+    setBusyKey('schedule-stop');
+    setNotice(null);
+    const res = await updateSchedule({
+      ...schedule,
+      frequency: 'off',
+      enabled: false,
+    });
+    setBusyKey(null);
+    if (res.success) {
+      if (res.data?.schedule) setSchedule(res.data.schedule);
+      else setSchedule({ ...schedule, frequency: 'off', enabled: false });
+      setNotice({ type: 'success', text: 'Otomatik yedekleme durduruldu (kapalı).' });
+      void loadDashboard();
+      void loadSchedule();
+    } else {
+      setNotice({ type: 'error', text: errorText('Durdurulamadı.', res.error) });
     }
   };
 
@@ -642,11 +703,44 @@ export default function YedeklemeClient() {
         <>
           {activeTab === 'dashboard' && (
             <section className="yedekleme-section">
-              <div className="yedekleme-grid yedekleme-grid--six">
+              <div className="yedekleme-grid yedekleme-grid--metrics">
                 <MetricCard label="Son yedek" value={dashboard?.latest_backup?.filename || '-'} detail={formatDate(dashboard?.latest_backup?.started_at)} />
                 <MetricCard label="Toplam yedek" value={String(dashboard?.total_backups ?? 0)} detail="Tamamlanmış arşiv" />
                 <MetricCard label="Toplam boyut" value={formatBytes(dashboard?.total_size_bytes ?? 0)} detail={dashboard?.config.local_root || 'Yerel depolama'} />
-                <MetricCard label="Otomatik durum" value={dashboard?.schedule.enabled ? 'Aktif' : 'Kapalı'} detail={dashboard?.schedule.enabled ? `${FREQUENCY_LABELS[dashboard.schedule.frequency] || dashboard.schedule.frequency} ${String(dashboard.schedule.hour).padStart(2, '0')}:${String(dashboard.schedule.minute).padStart(2, '0')}` : 'Zamanlama yok'} tone={dashboard?.schedule.enabled ? 'success' : 'muted'} />
+                <MetricCard
+                  label="Otomatik durum"
+                  value={dashboard?.schedule.enabled ? 'Aktif' : 'Kapalı'}
+                  detail={
+                    dashboard?.schedule.enabled
+                      ? `${FREQUENCY_LABELS[dashboard.schedule.frequency] || dashboard.schedule.frequency} ${formatScheduleTime(dashboard.schedule.hour, dashboard.schedule.minute)}`
+                      : 'Zamanlama yok'
+                  }
+                  tone={dashboard?.schedule.enabled ? 'success' : 'muted'}
+                />
+                <MetricCard
+                  label="Son otomatik çalışma"
+                  value={
+                    dashboard?.schedule.last_run_status === 'completed'
+                      ? 'Başarılı'
+                      : dashboard?.schedule.last_run_status === 'failed'
+                        ? 'Başarısız'
+                        : dashboard?.schedule.last_run_at
+                          ? (STATUS_LABELS[dashboard.schedule.last_run_status || ''] || dashboard.schedule.last_run_status || '—')
+                          : 'Henüz yok'
+                  }
+                  detail={
+                    dashboard?.schedule.last_run_at
+                      ? `${formatDate(dashboard.schedule.last_run_at)}${dashboard.schedule.last_run_artifact ? ` · ${dashboard.schedule.last_run_artifact.filename}` : ''}`
+                      : 'Şimdi Çalıştır veya cron sonrası burada görünür'
+                  }
+                  tone={
+                    dashboard?.schedule.last_run_status === 'completed'
+                      ? 'success'
+                      : dashboard?.schedule.last_run_status === 'failed'
+                        ? 'danger'
+                        : 'muted'
+                  }
+                />
                 <MetricCard label="Son başarılı işlem" value={ACTION_LABELS[dashboard?.last_success.action || ''] || dashboard?.last_success.action || '-'} detail={formatDate(dashboard?.last_success.created_at)} tone="success" />
                 <MetricCard label="Son hata" value={dashboard?.last_error.error_message || '-'} detail={formatDate(dashboard?.last_error.created_at)} tone={dashboard?.last_error.error_message ? 'danger' : 'muted'} />
               </div>
@@ -770,13 +864,22 @@ export default function YedeklemeClient() {
                         <option value="monthly">Aylık</option>
                       </select>
                     </label>
-                    <label className="yedekleme-field">
-                      <span>Saat</span>
-                      <input type="number" min={0} max={23} value={schedule.hour} onChange={(event) => setSchedule({ ...schedule, hour: Number(event.target.value) })} />
-                    </label>
-                    <label className="yedekleme-field">
-                      <span>Dakika</span>
-                      <input type="number" min={0} max={59} value={schedule.minute} onChange={(event) => setSchedule({ ...schedule, minute: Number(event.target.value) })} />
+                    <label className="yedekleme-field yedekleme-field--full">
+                      <span>Çalışma saati (24 saat)</span>
+                      <input
+                        type="time"
+                        step={60}
+                        value={toTimeInputValue(schedule.hour, schedule.minute)}
+                        onChange={(event) => {
+                          const parsed = parseTimeInputValue(event.target.value);
+                          if (!parsed) return;
+                          setSchedule({ ...schedule, hour: parsed.hour, minute: parsed.minute });
+                        }}
+                      />
+                      <small>
+                        Sunucu yerel saati · seçili: {formatScheduleTime(schedule.hour, schedule.minute)}
+                        {' '}— örn. 03:00 gece, 15:00 öğleden sonra
+                      </small>
                     </label>
                     <label className="yedekleme-field">
                       <span>En fazla arşiv</span>
@@ -804,25 +907,66 @@ export default function YedeklemeClient() {
                     <button className="yedekleme-btn" onClick={handleRunScheduleNow} disabled={busyKey === 'schedule-run'}>
                       {busyKey === 'schedule-run' ? 'Çalışıyor...' : 'Şimdi Çalıştır'}
                     </button>
+                    {schedule.frequency !== 'off' && schedule.enabled && (
+                      <button className="yedekleme-btn yedekleme-btn--danger" onClick={handleStopSchedule} disabled={busyKey === 'schedule-stop'}>
+                        {busyKey === 'schedule-stop' ? 'Durduruluyor...' : 'Otomatiği Durdur'}
+                      </button>
+                    )}
+                    <p className="yedekleme-help yedekleme-field--full">
+                      “Şimdi Çalıştır” bitene kadar bekler; yarıda kesilemez. Gelecekteki otomatik çalıştırmaları durdurmak için
+                      {' '}<strong>Otomatiği Durdur</strong> veya sıklığı <strong>Kapalı</strong> yapıp kaydedin.
+                    </p>
                   </div>
                 ) : (
                   <EmptyState text="Zamanlama bilgisi yüklenemedi." />
                 )}
               </Panel>
-              <Panel title="Çalışma Bilgisi" description="Cron komutu ve son çalışma">
+              <Panel title="Çalışma Bilgisi" description="Son sonuç ve cron">
                 <div className="yedekleme-stack">
-                  <KeyValue label="Son çalışma" value={formatDate(schedule?.last_run_at)} />
-                  <KeyValue label="Durum" value={schedule?.enabled && schedule.frequency !== 'off' ? 'Aktif (cron gerekli)' : 'Kapalı'} />
+                  <div className={cls(
+                    'yedekleme-callout',
+                    schedule?.last_run_status === 'completed' && 'yedekleme-callout--success',
+                    schedule?.last_run_status === 'failed' && 'yedekleme-callout--danger',
+                    !schedule?.last_run_at && 'yedekleme-callout--muted',
+                  )}
+                  >
+                    <strong>Son çalışma sonucu</strong>
+                    {!schedule?.last_run_at ? (
+                      <p>Henüz otomatik veya “Şimdi Çalıştır” ile bir çalışma yok.</p>
+                    ) : (
+                      <>
+                        <p>
+                          <StatusBadge status={schedule.last_run_status || 'pending'} />
+                          {' '}{formatDate(schedule.last_run_at)}
+                        </p>
+                        <p>{schedule.last_run_message || '-'}</p>
+                        {schedule.last_run_artifact && (
+                          <p>
+                            Dosya: <code>{schedule.last_run_artifact.filename}</code>
+                            {' '}({formatBytes(schedule.last_run_artifact.size_bytes || 0)})
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {activeJob && (
+                    <div className="yedekleme-callout">
+                      <strong>Bu oturumdaki iş</strong>
+                      <JobProgress job={activeJob} />
+                    </div>
+                  )}
+                  <KeyValue label="Plan durumu" value={schedule?.enabled && schedule.frequency !== 'off' ? 'Aktif (cron gerekli)' : 'Kapalı'} />
                   <KeyValue
                     label="Plan"
                     value={
                       schedule && schedule.frequency !== 'off'
-                        ? `${FREQUENCY_LABELS[schedule.frequency] || schedule.frequency} ${String(schedule.hour).padStart(2, '0')}:${String(schedule.minute).padStart(2, '0')}`
+                        ? `${FREQUENCY_LABELS[schedule.frequency] || schedule.frequency} ${formatScheduleTime(schedule.hour, schedule.minute)}`
                         : '-'
                     }
                   />
                   <p className="yedekleme-help">
-                    UI ayarı tek başına yetmez. Sunucuda dakikalık cron ile
+                    Saat 24 saat formatındadır (00–23). Varsayılan 03:00 gece yarığıdır.
+                    UI ayarı tek başına yetmez; sunucuda dakikalık cron ile
                     {' '}<code>run_scheduled_backups</code> çalışmalıdır. Docker’da host cron veya
                     {' '}<code>docker compose exec backend python manage.py run_scheduled_backups</code>.
                   </p>

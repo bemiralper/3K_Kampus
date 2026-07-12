@@ -8,6 +8,8 @@ import KurumLogo from "@/components/branding/KurumLogo";
 import { useSubmenuOrderMap } from "@/hooks/useMenuOrder";
 import { akademikSidebarChildren } from "@/lib/akademik-routes";
 import { ADMIN_KUTUPHANE_BASE, kutuphaneSidebarChildren } from "@/lib/kutuphane-routes";
+import { useAuth } from "@/lib/contexts/AuthContext";
+import { PermissionChecks } from "@/app/roles/role.permissions";
 
 // İkon tanımları
 const icons = {
@@ -148,6 +150,8 @@ interface MenuItem {
   id: string; // Pin/favori sistemi için
   children?: SubMenuItem[];
   badge?: number;
+  /** Boş/undefined = herkes; aksi halde kullanıcının bunlardan birine sahip olması gerekir */
+  requiredPermissions?: string[];
 }
 
 const ODEV_KONTROL_HREF = "/admin/odev/kontrol";
@@ -316,6 +320,26 @@ const navItems: MenuItem[] = [
     icon: icons.shield,
   },
   {
+    id: "sistem-yonetimi",
+    label: "Sistem Yönetimi",
+    emoji: "",
+    icon: icons.shield,
+    requiredPermissions: ["sistem_yonetimi.read", "sistem_yonetimi.manage", "sistem.admin"],
+    children: [
+      { label: "Genel Durum", href: "/admin/sistem-yonetimi?tab=overview" },
+      { label: "Sistem Sağlığı", href: "/admin/sistem-yonetimi?tab=health" },
+      { label: "Servisler", href: "/admin/sistem-yonetimi?tab=services" },
+      { label: "Log Merkezi", href: "/admin/sistem-yonetimi?tab=logs" },
+      { label: "Hata Merkezi", href: "/admin/sistem-yonetimi?tab=errors" },
+      { label: "Arka Plan Görevleri", href: "/admin/sistem-yonetimi?tab=jobs" },
+      { label: "Audit Log", href: "/admin/sistem-yonetimi?tab=audit" },
+      { label: "Performans", href: "/admin/sistem-yonetimi?tab=performance" },
+      { label: "Depolama", href: "/admin/sistem-yonetimi?tab=storage" },
+      { label: "Günlükler", href: "/admin/sistem-yonetimi?tab=timeline" },
+      { label: "Ayarlar", href: "/admin/sistem-yonetimi?tab=settings" },
+    ],
+  },
+  {
     id: "yedekleme",
     label: "Yedekleme",
     emoji: "",
@@ -421,6 +445,8 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const userPermissions = user?.permissions || [];
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
@@ -431,12 +457,19 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const { pinnedIds, togglePin } = usePinnedItems();
   const { reorder, getOrdered } = useMenuOrder(navItems);
 
+  const visibleNavItems = useMemo(() => {
+    return navItems.filter((item) => {
+      if (!item.requiredPermissions?.length) return true;
+      return PermissionChecks.hasAnyPermission(userPermissions, item.requiredPermissions);
+    });
+  }, [userPermissions]);
+
   const submenuParents = useMemo(
     () =>
-      navItems
+      visibleNavItems
         .filter((i) => i.children?.length)
         .map((i) => ({ id: i.id, childIds: i.children!.map((c) => c.href) })),
-    [],
+    [visibleNavItems],
   );
   const { reorderSubmenu, getOrderedChildren } = useSubmenuOrderMap(
     "sidebar-submenu-order",
@@ -476,7 +509,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   // Sidebar açıldığında sadece aktif menüyü aç, diğerlerini kapat
   useEffect(() => {
     if (isOpen) {
-      const activeParent = navItems.find(
+      const activeParent = visibleNavItems.find(
         (item) =>
           item.children &&
           item.children.some(
@@ -485,11 +518,11 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
       );
       setExpandedMenus(activeParent ? [activeParent.id] : []);
     }
-  }, [isOpen, pathname]);
+  }, [isOpen, pathname, visibleNavItems]);
 
   // Filter items by search (with custom order)
   const filteredNavItems = useMemo(() => {
-    const ordered = getOrdered(navItems);
+    const ordered = getOrdered(visibleNavItems);
     if (!searchQuery.trim()) return ordered;
     const q = searchQuery.toLowerCase();
     return ordered.filter((item) => {
@@ -499,12 +532,12 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
       }
       return false;
     });
-  }, [searchQuery, getOrdered]);
+  }, [searchQuery, getOrdered, visibleNavItems]);
 
   // Pinned items
   const pinnedItems = useMemo(() => {
-    return navItems.filter((item) => pinnedIds.includes(item.id));
-  }, [pinnedIds]);
+    return visibleNavItems.filter((item) => pinnedIds.includes(item.id));
+  }, [pinnedIds, visibleNavItems]);
 
   // Accordion toggle
   const toggleSubmenu = (id: string) => {
@@ -870,7 +903,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
           onMouseLeave={handleTooltipMouseLeave}
         >
           <div className="submenu-tooltip-header">{hoveredMenu}</div>
-          {navItems
+          {visibleNavItems
             .find((item) => item.label === hoveredMenu)
             ?.children?.map((child, childIdx) => {
               const badge = child.href === ODEV_KONTROL_HREF ? kontrolBadgeCount : child.badge;

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Allowlisted systemctl wrapper for LMS System Center.
+# Install: sudo install -m 0755 deploy/sistem/lms-systemctl-helper /usr/local/sbin/lms-systemctl-helper
+# Sudoers (lms user): lms ALL=(root) NOPASSWD: /usr/local/sbin/lms-systemctl-helper
+set -euo pipefail
+
+ACTION="${1:-}"
+UNIT="${2:-}"
+
+ALLOWED_ACTIONS="start stop restart status"
+ALLOWED_UNITS="postgresql nginx lms-backend lms-frontend redis celery"
+
+ok_action=0
+for a in $ALLOWED_ACTIONS; do
+  if [ "$a" = "$ACTION" ]; then ok_action=1; break; fi
+done
+ok_unit=0
+for u in $ALLOWED_UNITS; do
+  if [ "$u" = "$UNIT" ]; then ok_unit=1; break; fi
+done
+
+if [ "$ok_action" != 1 ] || [ "$ok_unit" != 1 ]; then
+  echo "Denied: action=$ACTION unit=$UNIT" >&2
+  exit 2
+fi
+
+exec /bin/systemctl "$ACTION" "$UNIT"

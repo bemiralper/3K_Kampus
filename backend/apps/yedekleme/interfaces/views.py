@@ -116,6 +116,25 @@ def _job_json(job: BackupJob) -> dict:
     }
 
 
+def _schedule_json(schedule: BackupSchedule) -> dict:
+    art = schedule.last_run_artifact
+    return {
+        'frequency': schedule.frequency,
+        'hour': schedule.hour,
+        'minute': schedule.minute,
+        'enabled': schedule.enabled and schedule.frequency != ScheduleFrequency.OFF,
+        'kind': schedule.kind,
+        'resource_codes': schedule.resource_codes or [],
+        'max_artifacts': schedule.max_artifacts,
+        'auto_delete_old': schedule.auto_delete_old,
+        'encrypt': schedule.encrypt,
+        'last_run_at': schedule.last_run_at.isoformat() if schedule.last_run_at else None,
+        'last_run_status': schedule.last_run_status or None,
+        'last_run_message': schedule.last_run_message or None,
+        'last_run_artifact': _artifact_json(art) if art else None,
+    }
+
+
 def _ensure_registry():
     if not BackupResource.objects.exists():
         sync_registered_resources()
@@ -134,16 +153,7 @@ def dashboard_view(request):
         'latest_backup': _artifact_json(latest) if latest else None,
         'total_backups': BackupArtifact.objects.filter(status=BackupStatus.COMPLETED).count(),
         'total_size_bytes': agg['total'] or 0,
-        'schedule': {
-            'frequency': schedule.frequency,
-            'hour': schedule.hour,
-            'minute': schedule.minute,
-            'enabled': schedule.enabled and schedule.frequency != ScheduleFrequency.OFF,
-            'kind': schedule.kind,
-            'max_artifacts': schedule.max_artifacts,
-            'auto_delete_old': schedule.auto_delete_old,
-            'last_run_at': schedule.last_run_at.isoformat() if schedule.last_run_at else None,
-        },
+        'schedule': _schedule_json(schedule),
         'last_success': {
             'action': last_ok.action if last_ok else None,
             'step': last_ok.step if last_ok else None,
@@ -442,18 +452,7 @@ def backup_delete_view(request, artifact_id: int):
 def schedule_view(request):
     schedule = BackupSchedule.get_singleton()
     if request.method == 'GET':
-        return JsonResponse({
-            'frequency': schedule.frequency,
-            'hour': schedule.hour,
-            'minute': schedule.minute,
-            'enabled': schedule.enabled,
-            'kind': schedule.kind,
-            'resource_codes': schedule.resource_codes or [],
-            'max_artifacts': schedule.max_artifacts,
-            'auto_delete_old': schedule.auto_delete_old,
-            'encrypt': schedule.encrypt,
-            'last_run_at': schedule.last_run_at.isoformat() if schedule.last_run_at else None,
-        })
+        return JsonResponse(_schedule_json(schedule))
     data = _body(request)
     if 'frequency' in data:
         schedule.frequency = data['frequency']
@@ -473,13 +472,13 @@ def schedule_view(request):
         schedule.auto_delete_old = bool(data['auto_delete_old'])
     if 'encrypt' in data:
         schedule.encrypt = bool(data['encrypt']) and enc.encryption_key_available()
-    schedule.save()
+        schedule.save()
     _engine(request)._log(  # noqa: SLF001
         action=BackupOperationAction.SCHEDULE_UPDATE,
         step='Zamanlama güncellendi',
         metadata={'frequency': schedule.frequency, 'enabled': schedule.enabled},
     )
-    return JsonResponse({'updated': True})
+    return JsonResponse({'updated': True, 'schedule': _schedule_json(schedule)})
 
 
 @require_http_methods(['POST'])
@@ -490,8 +489,15 @@ def schedule_run_now_view(request):
     try:
         artifact, job = _engine(request).run_scheduled_now()
     except Exception as exc:  # noqa: BLE001
-        return JsonResponse({'error': str(exc)}, status=400)
-    return JsonResponse({'artifact': _artifact_json(artifact), 'job': _job_json(job)}, status=201)
+        return JsonResponse(
+            {'error': str(exc), 'schedule': _schedule_json(BackupSchedule.get_singleton())},
+            status=400,
+        )
+    return JsonResponse({
+        'artifact': _artifact_json(artifact),
+        'job': _job_json(job),
+        'schedule': _schedule_json(BackupSchedule.get_singleton()),
+    }, status=201)
 
 
 @require_http_methods(['POST'])

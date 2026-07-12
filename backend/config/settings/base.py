@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'apps.communication',  # İletişim Merkezi - WhatsApp / SMS / Email
     'apps.website',  # Kurumsal web sitesi / landing page CMS
     'apps.yedekleme',  # Platform geneli yedekleme ve geri yükleme
+    'apps.sistem_yonetimi.apps.SistemYonetimiConfig',  # Sistem Yönetimi (System Center)
 ]
 
 # WhatsApp Business Cloud API (dev: empty defaults)
@@ -119,6 +120,7 @@ MIDDLEWARE = [
     
     # Custom middleware - MUST be after SessionMiddleware and AuthenticationMiddleware
     'shared.middleware.active_context.ActiveContextMiddleware',
+    'apps.sistem_yonetimi.middleware.SystemErrorMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -233,6 +235,15 @@ BACKUP_CONFIG = {
         'max_age_days': int(os.environ.get('BACKUP_MAX_AGE_DAYS', '0')) or None,
     },
     'upload_max_bytes': int(os.environ.get('BACKUP_UPLOAD_MAX_BYTES', str(2 * 1024 ** 3))),
+}
+
+# Sistem Yönetimi (System Center)
+SISTEM_YONETIMI = {
+    'ops_enabled': os.environ.get('SISTEM_OPS_ENABLED', '1') not in ('0', 'false', 'False'),
+    'docker_mode': os.environ.get('SISTEM_DOCKER_MODE', '') in ('1', 'true', 'True')
+        or os.path.exists('/.dockerenv'),
+    'helper_path': os.environ.get('SISTEM_SYSTEMCTL_HELPER', '/usr/local/sbin/lms-systemctl-helper'),
+    'log_dir': os.environ.get('SISTEM_LOG_DIR', '/var/log/lms'),
 }
 
 # Default primary key field type
