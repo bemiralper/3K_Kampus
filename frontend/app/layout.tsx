@@ -4,7 +4,7 @@ import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/lib/contexts/AuthContext";
 import AppShellWithAuth from "@/components/layout/AppShellWithAuth";
 import ChunkLoadRecovery from "@/components/ChunkLoadRecovery";
-import PublicGoogleAnalytics from "@/components/landing/PublicGoogleAnalytics";
+import PublicMarketingIntegrations from "@/components/landing/PublicMarketingIntegrations";
 
 /**
  * Meta Business domain verification (https://3kkampus.com/)
@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="tr">
       <body>
-        <PublicGoogleAnalytics />
+        <PublicMarketingIntegrations />
         <ChunkLoadRecovery />
         <AuthProvider>
           <AppShellWithAuth>{children}</AppShellWithAuth>

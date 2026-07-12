@@ -25,9 +25,9 @@ const FIELDS: FieldDef[] = [
   },
   {
     key: 'gtm_id',
-    label: 'Google Tag Manager',
+    label: 'Google Tag Manager (GTM)',
     placeholder: 'GTM-XXXXXXX',
-    help: 'tagmanager.google.com → Konteyner kimliği. GA4 zaten doluysa çoğu kurum için GTM zorunlu değildir.',
+    help: 'tagmanager.google.com → Konteyner kimliği (GTM-…). Yalnızca bu kodu yazın — Google\'ın verdiği <script> parçalarını yapıştırmanız gerekmez; site otomatik ekler. GA4\'ü GTM içinden yönetiyorsanız aşağıdaki GA4 alanını boş bırakın.',
   },
   {
     key: 'google_ads_id',
@@ -68,10 +68,17 @@ const FIELDS: FieldDef[] = [
   },
   {
     key: 'head_code',
-    label: 'Head ek kodu',
+    label: 'Head ek kodu (isteğe bağlı)',
     textarea: true,
-    placeholder: '<!-- doğrulama veya ek meta -->',
-    help: 'İsteğe bağlı. <head> içine gidecek ekstra HTML/script. GA4 için ayrı alan yeterli; buraya yalnızca özel etiketler.',
+    placeholder: '<!-- GTM dışı ek meta / script -->',
+    help: 'GTM için bu alanı kullanmayın — yalnızca GTM kimliği yeterli. Diğer doğrulama veya üçüncü parti <head> kodları için.',
+  },
+  {
+    key: 'body_start_code',
+    label: 'Body başlangıç kodu (isteğe bağlı)',
+    textarea: true,
+    placeholder: '<!-- body açılışının hemen altı -->',
+    help: 'GTM noscript parçası otomatik eklenir. Buraya yalnızca ek iframe / widget kodu gerekirse yapıştırın.',
   },
   {
     key: 'body_end_code',
