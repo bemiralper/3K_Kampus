@@ -20,6 +20,7 @@ urlpatterns = [
     path('theme/', v2.api_v2_theme, name='theme'),
     path('integrations/', v2.api_v2_integrations, name='integrations'),
     path('integrations/test/', v2.api_v2_integrations_test, name='integrations_test'),
+    path('integrations/search-console-file/', v2.api_v2_search_console_file, name='search_console_file'),
     path('redirects/', v2.api_v2_redirects, name='redirects'),
     path('forms/', v2.api_v2_forms, name='forms'),
     path('forms/<int:pk>/', v2.api_v2_form_detail, name='form_detail'),

@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { websiteCmsV2Api, type CmsIntegrations } from '@/lib/website-api';
+import { absoluteSiteUrl } from '@/lib/site-url';
 
 type Props = {
   onMessage: (msg: string, type?: 'success' | 'error') => void;
@@ -27,12 +28,6 @@ const FIELDS: FieldDef[] = [
     label: 'Google Tag Manager',
     placeholder: 'GTM-XXXXXXX',
     help: 'tagmanager.google.com → Konteyner kimliği. GA4 zaten doluysa çoğu kurum için GTM zorunlu değildir.',
-  },
-  {
-    key: 'search_console_verification',
-    label: 'Search Console doğrulama kodu',
-    placeholder: 'googleXXXXXXXXXXXXXXXX.html içindeki meta content değeri',
-    help: 'search.google.com/search-console → Mülk ekle → HTML etiketi yöntemi. Yalnızca content="…" arasındaki kodu yapıştırın (meta etiketin tamamını değil).',
   },
   {
     key: 'google_ads_id',
@@ -97,6 +92,8 @@ export default function CmsIntegrations({ onMessage }: Props) {
   const [data, setData] = useState<CmsIntegrations>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,6 +120,32 @@ export default function CmsIntegrations({ onMessage }: Props) {
     } else onMessage(res.error || 'Test başarısız', 'error');
   };
 
+  const uploadVerificationFile = async (file: File) => {
+    setUploading(true);
+    const res = await websiteCmsV2Api.uploadSearchConsoleFile(file);
+    setUploading(false);
+    if (res.success && res.data) {
+      onMessage(`Search Console dosyası yüklendi: ${res.data.filename}`);
+      await load();
+    } else {
+      onMessage(res.error || 'Dosya yüklenemedi', 'error');
+    }
+  };
+
+  const removeVerificationFile = async () => {
+    if (!confirm('Search Console doğrulama dosyası silinsin mi?')) return;
+    const res = await websiteCmsV2Api.deleteSearchConsoleFile();
+    if (res.success) {
+      onMessage('Doğrulama dosyası kaldırıldı');
+      await load();
+    } else onMessage(res.error || 'Silinemedi', 'error');
+  };
+
+  const verificationFilename = data.search_console_html_filename || '';
+  const verificationUrl = verificationFilename
+    ? absoluteSiteUrl(`/${verificationFilename}`)
+    : '';
+
   if (loading) return <div className="wam-empty">Yükleniyor…</div>;
 
   return (
@@ -144,6 +167,76 @@ export default function CmsIntegrations({ onMessage }: Props) {
         </div>
       </div>
       <div className="wam-panel-body">
+        <section className="wam-settings-card" style={{ marginBottom: '1.5rem' }}>
+          <div className="wam-settings-card-head">
+            <span className="wam-settings-icon">🔍</span>
+            <div>
+              <h5>Google Search Console — HTML dosyası</h5>
+              <p>
+                search.google.com/search-console → Mülk ekle → <strong>HTML dosyası</strong> yöntemi.
+                Google&apos;dan indirdiğiniz <code>google….html</code> dosyasını buradan yükleyin; site kökünde otomatik yayınlanır.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginTop: '0.75rem' }}>
+            <button
+              type="button"
+              className="wam-btn wam-btn-primary wam-btn-sm"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              {uploading ? 'Yükleniyor…' : verificationFilename ? 'Dosyayı Değiştir' : 'HTML Dosyası Yükle'}
+            </button>
+            {verificationFilename && (
+              <button type="button" className="wam-btn wam-btn-danger wam-btn-sm" onClick={() => void removeVerificationFile()}>
+                Dosyayı Kaldır
+              </button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".html,text/html"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadVerificationFile(f);
+                e.target.value = '';
+              }}
+            />
+          </div>
+          {verificationFilename ? (
+            <div className="wam-info-banner" style={{ marginTop: '0.75rem' }}>
+              <div>
+                <strong>Yüklü dosya:</strong> {verificationFilename}
+                {verificationUrl && (
+                  <>
+                    <br />
+                    <a href={verificationUrl} target="_blank" rel="noopener noreferrer">
+                      {verificationUrl}
+                    </a>
+                    {' '}— tarayıcıda açılıp Google metnini göstermeli, sonra Search Console&apos;da Doğrula.
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="wam-field-hint" style={{ marginTop: '0.75rem' }}>
+              Dosya adını değiştirmeyin. Doğrulama sonrası da dosyayı panelden silmeyin.
+            </p>
+          )}
+          <div className="wam-field cms-field-help" style={{ marginTop: '1rem' }}>
+            <label>Alternatif: HTML etiketi (meta content)</label>
+            <p className="cms-field-hint">
+              Dosya yerine HTML etiketi yöntemini seçtiyseniz yalnızca content değerini yapıştırın.
+            </p>
+            <input
+              placeholder="google-site-verification content değeri"
+              value={String(data.search_console_verification ?? '')}
+              onChange={(e) => setData({ ...data, search_console_verification: e.target.value })}
+            />
+          </div>
+        </section>
+
         {FIELDS.map((f) => (
           <div key={f.key} className="wam-field cms-field-help" style={{ marginBottom: '1.25rem' }}>
             <label>{f.label}</label>

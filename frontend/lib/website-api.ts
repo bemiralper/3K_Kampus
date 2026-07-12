@@ -400,7 +400,11 @@ export type CmsTheme = {
   dark_mode_enabled?: boolean;
 };
 
-export type CmsIntegrations = Record<string, unknown>;
+export type CmsIntegrations = Record<string, unknown> & {
+  search_console_html_filename?: string;
+  search_console_html_uploaded?: boolean;
+  search_console_verification?: string;
+};
 
 export type CmsRedirect = {
   id: number;
@@ -556,6 +560,16 @@ export const websiteCmsV2Api = {
       '/integrations/test/',
       v2Json('POST', { service }),
     ),
+  uploadSearchConsoleFile: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return v2Fetch<{ filename: string; url: string; search_console_verification?: string }>(
+      '/integrations/search-console-file/',
+      { method: 'POST', body: fd },
+    );
+  },
+  deleteSearchConsoleFile: () =>
+    v2Fetch<{ deleted: boolean }>('/integrations/search-console-file/', { method: 'DELETE' }),
 
   listRedirects: () => v2Fetch<CmsRedirect[]>('/redirects/'),
   createRedirect: (data: { source_path: string; target_path?: string; redirect_type?: string; aktif?: boolean }) =>

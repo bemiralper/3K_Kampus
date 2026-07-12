@@ -446,6 +446,10 @@ class IntegrationSettings(models.Model):
     ga4_id = models.CharField(max_length=40, blank=True, default='')
     gtm_id = models.CharField(max_length=40, blank=True, default='')
     search_console_verification = models.CharField(max_length=120, blank=True, default='')
+    search_console_html_filename = models.CharField(
+        'Search Console HTML dosyası', max_length=120, blank=True, default='',
+    )
+    search_console_html_content = models.TextField(blank=True, default='')
     google_ads_id = models.CharField(max_length=40, blank=True, default='')
     google_maps_api_key = models.CharField(max_length=120, blank=True, default='')
     recaptcha_site_key = models.CharField(max_length=120, blank=True, default='')

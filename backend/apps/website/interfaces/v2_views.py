@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -529,6 +530,11 @@ def api_v2_integrations(request):
     ]
     if request.method == 'GET':
         data = {f: getattr(integ, f) for f in fields}
+        data['search_console_html_filename'] = integ.search_console_html_filename or ''
+        data['search_console_html_uploaded'] = bool(
+            (integ.search_console_html_filename or '').strip()
+            and (integ.search_console_html_content or '').strip()
+        )
         # secret mask
         if data.get('recaptcha_secret_key'):
             data['recaptcha_secret_key'] = '••••••••'
@@ -562,8 +568,19 @@ def api_v2_integrations_test(request):
         ok = bool(integ and integ.gtm_id.startswith('GTM-'))
         detail = integ.gtm_id if ok else 'GTM kimliği GTM- ile başlamalı'
     elif service == 'search_console':
-        ok = bool(integ and integ.search_console_verification)
-        detail = 'Doğrulama meta değeri kayıtlı' if ok else 'Doğrulama kodu yok'
+        has_file = bool(
+            integ
+            and (integ.search_console_html_filename or '').strip()
+            and (integ.search_console_html_content or '').strip()
+        )
+        has_meta = bool(integ and (integ.search_console_verification or '').strip())
+        ok = has_file or has_meta
+        if has_file:
+            detail = f'HTML dosyası yüklü: {integ.search_console_html_filename}'
+        elif has_meta:
+            detail = 'Doğrulama meta değeri kayıtlı'
+        else:
+            detail = 'Doğrulama dosyası veya meta kodu yok'
     elif service == 'smtp':
         cfg = (integ.smtp_config if integ else {}) or {}
         ok = bool(cfg.get('host') and cfg.get('user'))
@@ -571,6 +588,78 @@ def api_v2_integrations_test(request):
     else:
         return _err('Bilinmeyen servis')
     return _ok({'service': service, 'ok': ok, 'detail': detail})
+
+
+_SEARCH_CONSOLE_FILE_RE = re.compile(r'^google[a-z0-9]+\.html$', re.I)
+
+
+@csrf_exempt
+@require_http_methods(['POST', 'DELETE'])
+def api_v2_search_console_file(request):
+    auth = _require_website_auth(request, write=True)
+    if auth:
+        return auth
+    kurum_id = _kurum_id(request)
+    integ, _ = IntegrationSettings.objects.get_or_create(kurum_id=kurum_id)
+
+    if request.method == 'DELETE':
+        integ.search_console_html_filename = ''
+        integ.search_console_html_content = ''
+        integ.save(update_fields=['search_console_html_filename', 'search_console_html_content'])
+        return _ok({'deleted': True})
+
+    uploaded = request.FILES.get('file')
+    if not uploaded:
+        return _err('Dosya gerekli')
+    filename = (uploaded.name or '').strip()
+    if not _SEARCH_CONSOLE_FILE_RE.match(filename):
+        return _err('Dosya adı google….html formatında olmalı (Google\'dan indirdiğiniz adı değiştirmeyin)')
+    raw = uploaded.read()
+    if len(raw) > 16384:
+        return _err('Dosya 16KB\'dan küçük olmalı')
+    try:
+        content = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        content = raw.decode('utf-8', errors='replace')
+
+    integ.search_console_html_filename = filename
+    integ.search_console_html_content = content
+    meta_match = re.search(
+        r'google-site-verification["\']\s*content=["\']([^"\']+)',
+        content,
+        re.I,
+    )
+    if meta_match:
+        integ.search_console_verification = meta_match.group(1).strip()
+    integ.save()
+    return _ok({
+        'filename': filename,
+        'url': f'/{filename}',
+        'search_console_verification': integ.search_console_verification or '',
+    })
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def api_public_v2_verification_file(request, kod: str, filename: str):
+    from apps.website.seed_defaults import resolve_landing_kurum
+    from django.http import Http404
+
+    safe_name = (filename or '').strip()
+    if not _SEARCH_CONSOLE_FILE_RE.match(safe_name):
+        raise Http404()
+    kurum = Kurum.objects.filter(kod__iexact=kod.strip(), aktif_mi=True).first()
+    if not kurum:
+        kurum = resolve_landing_kurum(kod)
+    if not kurum:
+        raise Http404()
+    integ = IntegrationSettings.objects.filter(kurum_id=kurum.id).first()
+    if not integ or integ.search_console_html_filename != safe_name:
+        raise Http404()
+    body = (integ.search_console_html_content or '').strip()
+    if not body:
+        raise Http404()
+    return HttpResponse(body, content_type='text/html; charset=utf-8')
 
 
 @csrf_exempt
