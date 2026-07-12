@@ -10,4 +10,10 @@ class CommunicationConfig(AppConfig):
     verbose_name = 'İletişim Merkezi'
 
     def ready(self):
+        try:
+            from apps.yedekleme.registry import register_resources
+            from .backup_resources import RESOURCES
+            register_resources(self.label, RESOURCES)
+        except Exception:
+            pass
         import apps.communication.signals  # noqa: F401

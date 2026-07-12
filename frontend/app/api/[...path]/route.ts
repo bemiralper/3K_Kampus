@@ -177,8 +177,17 @@ async function proxyRequest(request: NextRequest, path: string) {
     return proxyResponse;
   } catch (error) {
     console.error('[API Proxy] Error:', error);
+    const detail = error instanceof Error ? error.message : String(error);
+    const backendDown =
+      /ECONNREFUSED|ENOTFOUND|fetch failed|network|socket/i.test(detail);
     return NextResponse.json(
-      { error: 'Proxy error', details: String(error) },
+      {
+        error: backendDown
+          ? `Backend’e bağlanılamadı (${BACKEND_URL}). Django sunucusunun çalıştığından emin olun.`
+          : `API vekil katmanı hatası: ${detail.slice(0, 240)}`,
+        details: detail,
+        code: backendDown ? 'backend_unreachable' : 'proxy_error',
+      },
       { status: 502 }
     );
   }

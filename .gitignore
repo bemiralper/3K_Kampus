@@ -73,3 +73,6 @@ frontend/Responsive Sidebar With Collapsing/
 
 # Legacy templates
 frontend/legacy-templates/
+
+# Yedek dosyaları (yerel/docker)
+backend/private/backups/

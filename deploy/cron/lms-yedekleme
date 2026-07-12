@@ -1,0 +1,17 @@
+# /etc/cron.d/lms-yedekleme
+# 3K Kampüs — otomatik yedekleme (systemd/native production)
+#
+# Kurulum:
+#   sudo ./backend/scripts/install-backup-cron.sh
+#
+# Not: UI'daki saat/dakika (±1 dk) bu job her dakika çalıştığı için yakalanır.
+#      Yalnızca "Otomatik Yedekleme" açık ve sıklık Kapalı değilse yedek alınır.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Her dakika — zamanlanmış yedek penceresi
+* * * * * lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups >> /var/log/lms/backups.log 2>&1
+
+# Her gün 04:00 — retention / eski yedek temizliği
+0 4 * * * lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_expired_backups >> /var/log/lms/backups.log 2>&1

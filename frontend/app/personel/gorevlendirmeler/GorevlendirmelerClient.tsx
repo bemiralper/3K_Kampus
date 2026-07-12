@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { usePersonelPath } from "@/components/personel/PersonelPathProvider";
+import { useKurum } from "@/lib/contexts/KurumContext";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 
 // Types
@@ -31,12 +32,6 @@ interface Personel {
   ad: string;
 }
 
-interface EgitimYili {
-  id: number;
-  ad: string;
-  aktif_mi: boolean;
-}
-
 interface Sube {
   id: number;
   ad: string;
@@ -59,16 +54,14 @@ interface Brans {
 
 interface HelperData {
   personeller: Personel[];
-  egitim_yillari: EgitimYili[];
   subeler: Sube[];
   roller: Rol[];
   branslar: Brans[];
 }
 
-// Görev tipleri yerine roller kullanılıyor (backend'den geliyor)
-
 export default function GorevlendirmelerClient() {
   const { basePath: personelHomeHref } = usePersonelPath();
+  const { activeEgitimYili } = useKurum();
   const searchParams = useSearchParams();
   const prefilledPersonelRef = useRef(false);
   // Data states
@@ -79,7 +72,6 @@ export default function GorevlendirmelerClient() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Filter states
-  const [selectedYil, setSelectedYil] = useState<number | "">("");
   const [searchTerm, setSearchTerm] = useState("");
 
   // Drawer states
@@ -92,7 +84,7 @@ export default function GorevlendirmelerClient() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingItem, setDeletingItem] = useState<Gorevlendirme | null>(null);
 
-  // Form data
+  // Form data — egitim_yili_id üst menüden gelir
   const [formData, setFormData] = useState({
     personel_id: "" as number | "",
     egitim_yili_id: "" as number | "",
@@ -105,32 +97,33 @@ export default function GorevlendirmelerClient() {
     notlar: "",
   });
 
-  // Fetch helper data (personeller, birimler, egitim_yillari)
+  const selectedYilId = activeEgitimYili?.id ?? null;
+
+  // Fetch helper data (personeller, şubeler, roller)
   const fetchHelperData = useCallback(async () => {
     try {
       const result = await apiGet<HelperData>("/personel/api/gorevlendirme/helper-data/");
       if (result.success && result.data) {
         setHelperData(result.data);
-        const aktifYil = result.data.egitim_yillari?.find((y: EgitimYili) => y.aktif_mi);
-        if (aktifYil) {
-          setSelectedYil(aktifYil.id);
-          setFormData(prev => ({ ...prev, egitim_yili_id: aktifYil.id }));
-        }
       }
     } catch (err) {
       console.error("Helper data yüklenemedi:", err);
     }
   }, []);
 
-  // Fetch gorevlendirmeler
+  // Fetch gorevlendirmeler — seçili eğitim yılına göre
   const fetchGorevlendirmeler = useCallback(async () => {
+    if (!selectedYilId) {
+      setGorevlendirmeler([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const endpoint = selectedYil
-        ? `/personel/api/gorevlendirmeler/?egitim_yili_id=${selectedYil}`
-        : "/personel/api/gorevlendirmeler/";
-      const result = await apiGet<{ gorevlendirmeler?: Gorevlendirme[] }>(endpoint);
+      const result = await apiGet<{ gorevlendirmeler?: Gorevlendirme[] }>(
+        `/personel/api/gorevlendirmeler/?egitim_yili_id=${selectedYilId}`,
+      );
       if (result.success) {
         setGorevlendirmeler(
           (result.gorevlendirmeler ?? result.data?.gorevlendirmeler ?? []) as Gorevlendirme[],
@@ -144,32 +137,38 @@ export default function GorevlendirmelerClient() {
     } finally {
       setLoading(false);
     }
-  }, [selectedYil]);
+  }, [selectedYilId]);
 
   // Initial load
   useEffect(() => {
     fetchHelperData();
   }, [fetchHelperData]);
 
-  // Fetch when year changes
+  // Fetch when context year changes
   useEffect(() => {
-    if (selectedYil) {
-      fetchGorevlendirmeler();
+    fetchGorevlendirmeler();
+  }, [fetchGorevlendirmeler]);
+
+  // Keep form year in sync with topbar selection
+  useEffect(() => {
+    if (selectedYilId) {
+      setFormData((prev) =>
+        prev.egitim_yili_id === selectedYilId ? prev : { ...prev, egitim_yili_id: selectedYilId },
+      );
     }
-  }, [selectedYil, fetchGorevlendirmeler]);
+  }, [selectedYilId]);
 
   // Personel detayından ?personel_id= ile gelindiyse formu aç
   useEffect(() => {
     if (prefilledPersonelRef.current || !helperData?.personeller?.length) return;
-    const raw = searchParams.get('personel_id');
+    const raw = searchParams.get("personel_id");
     if (!raw) return;
     const personelId = Number(raw);
     if (!personelId || !helperData.personeller.some((p) => p.id === personelId)) return;
     prefilledPersonelRef.current = true;
-    const aktifYil = helperData.egitim_yillari?.find((y) => y.aktif_mi);
     setFormData({
       personel_id: personelId,
-      egitim_yili_id: aktifYil?.id || "",
+      egitim_yili_id: selectedYilId || "",
       gorev_sube_id: "",
       rol_id: "",
       brans_id: "",
@@ -180,14 +179,13 @@ export default function GorevlendirmelerClient() {
     });
     setDrawerMode("create");
     setShowDrawer(true);
-  }, [searchParams, helperData]);
+  }, [searchParams, helperData, selectedYilId]);
 
   // Reset form
   const resetForm = () => {
-    const aktifYil = helperData?.egitim_yillari?.find(y => y.aktif_mi);
     setFormData({
       personel_id: "",
-      egitim_yili_id: aktifYil?.id || "",
+      egitim_yili_id: selectedYilId || "",
       gorev_sube_id: "",
       rol_id: "",
       brans_id: "",
@@ -232,7 +230,7 @@ export default function GorevlendirmelerClient() {
       return;
     }
     if (!formData.egitim_yili_id) {
-      setError("Eğitim yılı seçimi zorunludur");
+      setError("Üst menüden eğitim yılı seçin");
       return;
     }
     if (!formData.gorev_sube_id) {
@@ -378,12 +376,12 @@ export default function GorevlendirmelerClient() {
       );
     }
 
-    if (!selectedYil) {
+    if (!selectedYilId) {
       return (
         <div className="gv-empty-state">
           <div className="gv-empty-state-icon">📅</div>
-          <h4>Eğitim Yılı Seçin</h4>
-          <p>Görevlendirmeleri görüntülemek için bir eğitim yılı seçin</p>
+          <h4>Eğitim Yılı Seçilmedi</h4>
+          <p>Görevlendirmeleri görüntülemek için üst menüden bir eğitim yılı seçin</p>
         </div>
       );
     }
@@ -517,7 +515,7 @@ export default function GorevlendirmelerClient() {
             </div>
           </div>
         </div>
-        <button className="gv-btn-hero" onClick={handleOpenCreate} disabled={!selectedYil}>
+        <button className="gv-btn-hero" onClick={handleOpenCreate} disabled={!selectedYilId}>
           <span className="gv-btn-hero-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="12" y1="5" x2="12" y2="19" />
@@ -541,25 +539,6 @@ export default function GorevlendirmelerClient() {
           <button className="gv-alert-close" onClick={() => setSuccessMessage(null)}>×</button>
         </div>
       )}
-
-      {/* Filters */}
-      <div className="gv-filters">
-        <div className="gv-filter-group">
-          <label className="gv-filter-label">Eğitim Yılı</label>
-          <select
-            className="gv-filter-select"
-            value={selectedYil}
-            onChange={(e) => setSelectedYil(e.target.value ? Number(e.target.value) : "")}
-          >
-            <option value="">Yıl Seçin</option>
-            {helperData?.egitim_yillari?.map((yil) => (
-              <option key={yil.id} value={yil.id}>
-                {yil.ad} {yil.aktif_mi ? "(Aktif)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
 
       {/* Quick Stats */}
       <div className="gv-quick-stats">
@@ -635,24 +614,6 @@ export default function GorevlendirmelerClient() {
                   {helperData?.personeller?.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.ad}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="gv-form-group">
-                <label className="gv-form-label">
-                  Eğitim Yılı <span className="gv-required">*</span>
-                </label>
-                <select
-                  className="gv-form-select"
-                  value={formData.egitim_yili_id}
-                  onChange={(e) => setFormData({ ...formData, egitim_yili_id: e.target.value ? Number(e.target.value) : "" })}
-                >
-                  <option value="">Yıl Seçin</option>
-                  {helperData?.egitim_yillari?.map((yil) => (
-                    <option key={yil.id} value={yil.id}>
-                      {yil.ad} {yil.aktif_mi ? "(Aktif)" : ""}
                     </option>
                   ))}
                 </select>

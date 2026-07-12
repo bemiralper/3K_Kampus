@@ -757,7 +757,7 @@ def gorevlendirme_create_api(request):
         
         # Gerekli alanlar
         personel_id = data.get('personel_id')
-        egitim_yili_id = data.get('egitim_yili_id')
+        egitim_yili_id = data.get('egitim_yili_id') or ctx.get('egitim_yili_id')
         gorev_sube_id = data.get('gorev_sube_id')
         
         if not personel_id:
@@ -769,7 +769,7 @@ def gorevlendirme_create_api(request):
         if not egitim_yili_id:
             return JsonResponse({
                 'success': False,
-                'error': 'Eğitim yılı seçilmedi'
+                'error': 'Eğitim yılı seçilmedi (üst menüden seçin)'
             }, status=400)
             
         if not gorev_sube_id:

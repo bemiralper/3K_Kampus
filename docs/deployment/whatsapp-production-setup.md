@@ -135,7 +135,13 @@ location /api/communication/events/stream/ {
 
 # Takvim hatırlatmaları (mevcut)
 * * * * * cd /var/www/lms/backend && DJANGO_ENV=production /var/www/lms/venv/bin/python manage.py process_reminders >> /var/log/lms/reminders.log 2>&1
+
+# Yedekleme — UI saat/dakika penceresi için her dakika
+* * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups >> /var/log/lms/backups.log 2>&1
+0 4 * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_expired_backups >> /var/log/lms/backups.log 2>&1
 ```
+
+Yedekleme cron’unu tek komutla kurmak için: `sudo ./backend/scripts/install-backup-cron.sh` ([backup-restore.md](./backup-restore.md)).
 
 ### 5.2 Celery + Redis (opsiyonel)
 

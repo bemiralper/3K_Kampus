@@ -1,18 +1,11 @@
 from django.core.management.base import BaseCommand
 
-from apps.yedekleme.application.services.audit_service import log_backup_operation
-from apps.yedekleme.application.services.retention_service import RetentionService
-from apps.yedekleme.domain.models import BackupOperationAction
+from apps.yedekleme.engine import RetentionService
 
 
 class Command(BaseCommand):
-    help = 'Süresi dolmuş yedekleri temizler (retention policy).'
+    help = 'Retention politikasına göre eski yedekleri siler.'
 
     def handle(self, *args, **options):
-        result = RetentionService().purge_expired()
-        log_backup_operation(
-            user=None,
-            action=BackupOperationAction.PURGE,
-            metadata=result,
-        )
-        self.stdout.write(self.style.SUCCESS(f"Silinen: {result['deleted_count']}"))
+        result = RetentionService().purge()
+        self.stdout.write(self.style.SUCCESS(f"Silinen: {result.get('deleted', 0)}"))

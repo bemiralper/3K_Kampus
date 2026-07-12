@@ -105,7 +105,9 @@ const allMenuItems = [
   { label: "Sözleşme/Tahsilat", href: "/odeme-takip", section: "Finans" },
   { label: "Rol Yönetimi", href: "/roles", section: "Genel" },
   { label: "Demo Yönetimi", href: "/ayarlar/demo-yonetimi", section: "Ayarlar" },
-  { label: "Yedekleme", href: "/admin/yedekleme", section: "Ayarlar" },
+  { label: "Yedekleme", href: "/admin/yedekleme", section: "Yedekleme" },
+  { label: "Yedek Kaynakları", href: "/admin/yedekleme?tab=resources", section: "Yedekleme" },
+  { label: "Yedek Geçmişi", href: "/admin/yedekleme?tab=history", section: "Yedekleme" },
   { label: "Kurumsal Site", href: "/website-yonetimi", section: "Ayarlar" },
 ];
 

@@ -1,0 +1,134 @@
+"""Tam veritabanı dump/restore (pg_dump -Fc / pg_restore)."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+from django.conf import settings
+
+from apps.yedekleme.engine.handlers.base import (
+    DryRunReport,
+    ExportResult,
+    RestoreAnalysis,
+    RestoreResult,
+)
+from apps.yedekleme.infrastructure.pg_tools import pg_dump_binary, pg_env, pg_restore_binary
+
+
+class DatabaseFullHandler:
+    key = 'database_full'
+
+    def export(self, resource, work_dir: Path, log) -> ExportResult:
+        work_dir.mkdir(parents=True, exist_ok=True)
+        out = work_dir / 'database.dump'
+        db = settings.DATABASES['default']
+        cmd = [
+            pg_dump_binary(),
+            '-Fc',
+            '--no-owner',
+            '--no-acl',
+            '-h', str(db.get('HOST') or 'localhost'),
+            '-p', str(db.get('PORT') or '5432'),
+            '-U', str(db.get('USER') or ''),
+            '-f', str(out),
+            str(db.get('NAME') or ''),
+        ]
+        log.info('database_full.dump_started', resource=resource.code)
+        proc = subprocess.run(cmd, env=pg_env(db), capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f'pg_dump failed: {proc.stderr or proc.stdout}')
+        size = out.stat().st_size if out.exists() else 0
+        meta = {
+            'engine': 'postgresql',
+            'format': 'custom',
+            'size_bytes': size,
+            'django_version': getattr(settings, 'DJANGO_VERSION_FOR_BACKUP', None) or '',
+        }
+        (work_dir / 'meta.json').write_text(json.dumps(meta, indent=2), encoding='utf-8')
+        log.info('database_full.dump_done', size_bytes=size)
+        return ExportResult(files=['database.dump', 'meta.json'], meta=meta, bytes_written=size)
+
+    def analyze_restore(self, resource, payload_dir: Path) -> RestoreAnalysis:
+        dump = payload_dir / 'database.dump'
+        if not dump.exists():
+            return RestoreAnalysis(
+                resource_code=resource.code,
+                present=False,
+                missing_files=['database.dump'],
+                incompatibilities=['Tam veritabanı dump dosyası eksik'],
+            )
+        size = dump.stat().st_size
+        toc_tables: list[str] = []
+        try:
+            db = settings.DATABASES['default']
+            proc = subprocess.run(
+                [pg_restore_binary(), '-l', str(dump)],
+                env=pg_env(db),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if proc.returncode == 0:
+                for line in proc.stdout.splitlines():
+                    if 'TABLE DATA' in line or ' TABLE ' in line:
+                        parts = line.split()
+                        if parts:
+                            toc_tables.append(parts[-1] if '.' not in parts[-1] else parts[-1])
+        except Exception as exc:  # noqa: BLE001
+            return RestoreAnalysis(
+                resource_code=resource.code,
+                present=True,
+                size_bytes=size,
+                estimated_seconds=max(5.0, size / (5 * 1024 * 1024)),
+                incompatibilities=[f'TOC okunamadı: {exc}'],
+                details={'toc_tables': []},
+            )
+        return RestoreAnalysis(
+            resource_code=resource.code,
+            present=True,
+            size_bytes=size,
+            estimated_seconds=max(5.0, size / (5 * 1024 * 1024)),
+            conflicts=['Tam dump geri yükleme mevcut veritabanını --clean ile değiştirir'],
+            details={'toc_table_count': len(toc_tables), 'toc_sample': toc_tables[:40]},
+        )
+
+    def dry_run(self, resource, payload_dir: Path) -> DryRunReport:
+        analysis = self.analyze_restore(resource, payload_dir)
+        tables = analysis.details.get('toc_sample') or []
+        return DryRunReport(
+            resource_code=resource.code,
+            tables_changed=list(tables)[:100],
+            notes=[
+                'Tam dump dry-run: satır bazlı sayım yapılamaz; TOC analizi gösterilir.',
+                'Gerçek restore pg_restore --clean --if-exists kullanır.',
+            ],
+            details=analysis.details,
+        )
+
+    def restore(self, resource, payload_dir: Path, *, dry_run: bool = False) -> RestoreResult:
+        if dry_run:
+            report = self.dry_run(resource, payload_dir)
+            return RestoreResult(ok=True, message='dry-run', meta={'dry_run': report.__dict__})
+        dump = payload_dir / 'database.dump'
+        if not dump.exists():
+            return RestoreResult(ok=False, message='database.dump eksik')
+        db = settings.DATABASES['default']
+        cmd = [
+            pg_restore_binary(),
+            '--clean',
+            '--if-exists',
+            '--no-owner',
+            '--no-acl',
+            '-h', str(db.get('HOST') or 'localhost'),
+            '-p', str(db.get('PORT') or '5432'),
+            '-U', str(db.get('USER') or ''),
+            '-d', str(db.get('NAME') or ''),
+            str(dump),
+        ]
+        proc = subprocess.run(cmd, env=pg_env(db), capture_output=True, text=True)
+        # pg_restore often returns non-zero with warnings; treat stderr with ERROR as failure
+        if proc.returncode != 0 and 'ERROR' in (proc.stderr or ''):
+            return RestoreResult(ok=False, message=proc.stderr[-2000:])
+        return RestoreResult(ok=True, message='pg_restore tamamlandı', meta={'stderr': (proc.stderr or '')[-500:]})

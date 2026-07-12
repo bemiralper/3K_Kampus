@@ -217,12 +217,14 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Platform geneli yedekleme (super admin / yedekleme.* izinleri)
+# Yedekleme v2 — Resource Registry + AES-256-GCM (BACKUP_ENCRYPTION_KEY)
+BACKUP_ENCRYPTION_KEY = os.environ.get('BACKUP_ENCRYPTION_KEY', '')
 BACKUP_CONFIG = {
     'local_root': Path(os.environ.get('BACKUP_LOCAL_ROOT', str(BASE_DIR / 'private' / 'backups'))),
     'file_roots': [MEDIA_ROOT],
     'exclude_patterns': ['__pycache__', '*.pyc', '.DS_Store', 'Thumbs.db'],
     'remote_provider': os.environ.get('BACKUP_REMOTE_PROVIDER', 'local'),
-    'encryption_provider': os.environ.get('BACKUP_ENCRYPTION_PROVIDER', 'none'),
+    'encryption_provider': os.environ.get('BACKUP_ENCRYPTION_PROVIDER', 'aes256'),
     'retention': {
         'daily': int(os.environ.get('BACKUP_RETENTION_DAILY', '7')),
         'weekly': int(os.environ.get('BACKUP_RETENTION_WEEKLY', '4')),
