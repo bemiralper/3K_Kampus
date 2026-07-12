@@ -91,7 +91,11 @@ ENVIRONMENT_LABEL = os.environ.get('ENVIRONMENT_LABEL', LMS_ENVIRONMENT.title())
 COMMUNICATION_AI_ENABLED = os.environ.get('COMMUNICATION_AI_ENABLED', 'False').lower() in (
     '1', 'true', 'yes',
 )
-COMMUNICATION_SSE_MAX_ITERATIONS = int(os.environ.get('COMMUNICATION_SSE_MAX_ITERATIONS', '0'))
+# SSE: 0 = sınırsız (Gunicorn sync worker + --timeout ile çakışır → WORKER TIMEOUT).
+# Varsayılan ~90 sn (18×5s heartbeat); istemci yeniden bağlanır. Env ile değiştirilebilir.
+COMMUNICATION_SSE_MAX_ITERATIONS = int(os.environ.get('COMMUNICATION_SSE_MAX_ITERATIONS', '18'))
+COMMUNICATION_SSE_POLL_SECONDS = float(os.environ.get('COMMUNICATION_SSE_POLL_SECONDS', '5'))
+
 COMMUNICATION_WHATSAPP_COST_USD = os.environ.get('COMMUNICATION_WHATSAPP_COST_USD', '0.0009')
 COMMUNICATION_ATTACHMENT_MAX_BYTES = int(
     os.environ.get('COMMUNICATION_ATTACHMENT_MAX_BYTES', str(16 * 1024 * 1024)),

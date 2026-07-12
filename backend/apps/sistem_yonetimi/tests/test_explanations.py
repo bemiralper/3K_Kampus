@@ -12,7 +12,12 @@ class LogExplanationTests(SimpleTestCase):
     def test_unknown_line_has_no_explanation(self):
         self.assertIsNone(explain_log_line('hello world ordinary access log'))
 
-    def test_programming_error(self):
-        hint = explain_log_line('django.db.utils.ProgrammingError: column yedekleme_schedule.last_run_status does not exist')
-        self.assertIsNotNone(hint)
-        self.assertIn('Migration', hint['title'])
+    def test_sse_stream_and_sigkill_explanations(self):
+        h1 = explain_log_line(
+            '[ERROR] Error handling request GET /api/communication/events/stream/?kurum_id=2&sube_id=2'
+        )
+        self.assertIsNotNone(h1)
+        self.assertIn('SSE', h1['title'])
+        h2 = explain_log_line('[ERROR] Worker (pid:85824) was sent SIGKILL! Perhaps out of memory?')
+        self.assertIsNotNone(h2)
+        self.assertIn('SIGKILL', h2['title'])

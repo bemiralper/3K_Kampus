@@ -10,8 +10,22 @@ LOG_EXPLANATIONS: list[tuple[re.Pattern[str], str, str]] = [
         re.compile(r'WORKER TIMEOUT', re.I),
         'Gunicorn worker zaman aşımı',
         'Bir istek Gunicorn --timeout süresini aştığı için worker süreci öldürüldü. '
-        'Genelde uzun süren yedek, PDF/rapor, ağır export veya takılan DB sorgusu tetikler. '
-        'Aynı dakikadaki access log’da hangi URL’nin uzun sürdüğüne bakın.',
+        'Sık görülen neden: /api/communication/events/stream/ (SSE) uzun süre açık kalması. '
+        'Ayrıca uzun yedek/PDF/rapor da tetikleyebilir. Aynı dakikadaki access log’a bakın.',
+    ),
+    (
+        re.compile(r'Error handling request GET /api/communication/events/stream', re.I),
+        'İletişim SSE stream kesildi',
+        'Koç inbox canlı dinleme (Server-Sent Events) bağlantısı worker öldüğü için koptu. '
+        'Genelde WORKER TIMEOUT ile aynı andadır. Stream artık ~90 sn sonra temiz kapanıp '
+        'yeniden bağlanacak şekilde ayarlanmıştır.',
+    ),
+    (
+        re.compile(r'was sent SIGKILL|Perhaps out of memory', re.I),
+        'Worker zorla öldürüldü (SIGKILL)',
+        'Gunicorn worker’a SIGKILL gitti. Mesaj “out of memory?” dese de çoğu zaman timeout '
+        'sonrası zorunlu öldürmedir; gerçek OOM için dmesg/journalctl’e bakın. '
+        'SSE veya uzun isteklerle birlikte gelirse önce timeout senaryosunu düşünün.',
     ),
     (
         re.compile(r'worker.*exited with code|Worker .* died|Worker \(pid:', re.I),

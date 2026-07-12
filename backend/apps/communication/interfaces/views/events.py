@@ -49,7 +49,11 @@ class CommunicationEventsStreamView(CommunicationAPIView):
         def event_generator():
             last_unread = -1
             last_conversations = -1
-            max_iter = int(getattr(settings, 'COMMUNICATION_SSE_MAX_ITERATIONS', 0) or 0)
+            # Gunicorn sync worker --timeout (genelde 120s) dolmadan temiz kapanmalı.
+            max_iter = int(getattr(settings, 'COMMUNICATION_SSE_MAX_ITERATIONS', 18) or 0)
+            poll_sec = float(getattr(settings, 'COMMUNICATION_SSE_POLL_SECONDS', 5) or 5)
+            if poll_sec < 1:
+                poll_sec = 1
             iteration = 0
             try:
                 close_old_connections()
@@ -76,8 +80,9 @@ class CommunicationEventsStreamView(CommunicationAPIView):
                     close_old_connections()
                     iteration += 1
                     if max_iter and iteration >= max_iter:
+                        yield _sse_event('reconnect', {'reason': 'max_iterations', 'after_sec': 1})
                         break
-                    time.sleep(5)
+                    time.sleep(poll_sec)
             except GeneratorExit:
                 pass
             finally:
