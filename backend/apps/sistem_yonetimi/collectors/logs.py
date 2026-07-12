@@ -6,6 +6,8 @@ import os
 import re
 from pathlib import Path
 
+from apps.sistem_yonetimi.collectors.explanations import explain_log_line
+
 LEVEL_PATTERNS = [
     (re.compile(r'\bCRITICAL\b|\bFATAL\b', re.I), 'CRITICAL'),
     (re.compile(r'\bERROR\b|\bERR\b', re.I), 'ERROR'),
@@ -87,7 +89,11 @@ def read_tail_lines(
                 if query and query.lower() not in line.lower():
                     cursor += line_bytes
                     continue
-                lines_out.append({'text': line, 'level': level, 'offset': cursor})
+                entry = {'text': line, 'level': level, 'offset': cursor}
+                hint = explain_log_line(line)
+                if hint:
+                    entry['explanation'] = hint
+                lines_out.append(entry)
                 cursor += line_bytes
             next_offset = min(size, start + len(raw))
     except OSError as exc:

@@ -518,16 +518,23 @@ export default function SistemYonetimiClient() {
               </div>
               <div className="sistem-log">
                 {logLines.length === 0 ? <div>Kayıt yok</div> : logLines.map((line, idx) => (
-                  <div
-                    key={`${line.offset}-${idx}`}
-                    className={cls(
-                      'sistem-log-line',
-                      (line.level === 'ERROR' || line.level === 'CRITICAL') && 'is-error',
-                      line.level === 'WARNING' && 'is-warn',
-                      line.level === 'DEBUG' && 'is-debug',
+                  <div key={`${line.offset}-${idx}`} className="sistem-log-entry">
+                    <div
+                      className={cls(
+                        'sistem-log-line',
+                        (line.level === 'ERROR' || line.level === 'CRITICAL') && 'is-error',
+                        line.level === 'WARNING' && 'is-warn',
+                        line.level === 'DEBUG' && 'is-debug',
+                      )}
+                    >
+                      {line.text}
+                    </div>
+                    {line.explanation && (
+                      <div className="sistem-log-explain">
+                        <strong>{line.explanation.title}</strong>
+                        <span>{line.explanation.text}</span>
+                      </div>
                     )}
-                  >
-                    {line.text}
                   </div>
                 ))}
               </div>

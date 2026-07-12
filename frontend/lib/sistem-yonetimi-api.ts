@@ -73,6 +73,7 @@ export interface LogLine {
   text: string;
   level: string;
   offset: number;
+  explanation?: { title: string; text: string } | null;
 }
 
 export interface ErrorItem {
