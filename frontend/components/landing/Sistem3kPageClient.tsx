@@ -18,7 +18,9 @@ import LoginModal from '@/components/login/LoginModal';
 
 function Sistem3kPageInner({ initialData }: { initialData: LandingData | null }) {
   const [data, setData] = useState<LandingData | null>(initialData);
-  const [branding, setBranding] = useState<KurumBranding>(DEFAULT_BRANDING);
+  const [branding, setBranding] = useState<KurumBranding>(() =>
+    initialData?.kurum ? mergeBranding(initialData.kurum) : DEFAULT_BRANDING,
+  );
   const [loginOpen, setLoginOpen] = useState(false);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ function Sistem3kPageInner({ initialData }: { initialData: LandingData | null })
 
   return (
     <>
-      <KurumBrandingHead branding={b} documentTitle={SITE_TAB_TITLE} />
+      <KurumBrandingHead branding={b} documentTitle={SITE_TAB_TITLE} manageFavicon={false} />
       <div className="min-h-screen bg-white">
         <TopBar settings={settings} socialLinks={data?.social_links ?? []} />
         <TopBarMobile settings={settings} />
