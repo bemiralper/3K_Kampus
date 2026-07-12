@@ -85,6 +85,63 @@ function firstValidationError(errors: Record<string, unknown>): string | null {
   return null;
 }
 
+/** HTTP durum koduna göre kullanıcıya açıklayıcı Türkçe mesaj */
+export function describeHttpStatus(status: number): string {
+  const hints: Record<number, string> = {
+    400: "İstek geçersiz veya eksik bilgi gönderildi.",
+    401: "Oturum açmanız gerekiyor. Lütfen tekrar giriş yapın.",
+    403: "Bu işlem için yetkiniz yok.",
+    404: "İstenen kayıt veya adres bulunamadı.",
+    405: "Bu işlem için kullanılan yöntem desteklenmiyor.",
+    408: "İstek zaman aşımına uğradı.",
+    409: "Kayıt çakışması oluştu.",
+    413: "Gönderilen dosya veya istek gövdesi çok büyük.",
+    422: "Gönderilen veriler doğrulanamadı.",
+    429: "Çok fazla istek gönderildi. Kısa süre sonra tekrar deneyin.",
+    500: "Sunucu içinde bir hata oluştu.",
+    502: "Ağ geçidi hatası — backend yanıt vermiyor olabilir.",
+    503: "Servis geçici olarak kullanılamıyor.",
+    504: "Sunucu yanıt vermedi (zaman aşımı).",
+  };
+  return hints[status] || `Sunucu hatası (HTTP ${status}).`;
+}
+
+/** HTML hata sayfasından (Django CSRF / 500 debug vb.) anlamlı metin çıkarır */
+export function extractHtmlErrorMessage(html: string, status: number): string {
+  const compact = html.replace(/\s+/g, " ").trim();
+  const title = compact.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() || "";
+  const exceptionValue =
+    compact.match(/Exception Value:\s*<\/[^>]+>\s*<[^>]+>([^<]+)/i)?.[1]?.trim() ||
+    compact.match(/<pre class="exception_value"[^>]*>([^<]+)/i)?.[1]?.trim() ||
+    "";
+  const exceptionType =
+    compact.match(/Exception Type:\s*<\/[^>]+>\s*<[^>]+>([^<]+)/i)?.[1]?.trim() || "";
+
+  // Sadece gerçek CSRF doğrulama hataları — debug sayfasındaki CsrfViewMiddleware adı değil
+  const csrfFailed =
+    /CSRF verification failed/i.test(compact) ||
+    /CSRF token missing or incorrect/i.test(compact) ||
+    /csrfmiddlewaretoken/i.test(title) ||
+    (/forbidden/i.test(title) && /csrf/i.test(compact) && status === 403);
+
+  if (csrfFailed) {
+    return "Güvenlik jetonu (CSRF) geçersiz veya eksik — sayfayı yenileyip tekrar deneyin.";
+  }
+  if (/DisallowedHost/i.test(title) || /DisallowedHost/i.test(compact)) {
+    return `${describeHttpStatus(status)} İstek host adı sunucu tarafından reddedildi.`;
+  }
+
+  const detailParts = [exceptionType, exceptionValue, title.replace(/^Error\s*/i, "").trim()]
+    .filter(Boolean)
+    .filter((part, index, arr) => arr.indexOf(part) === index);
+
+  if (detailParts.length) {
+    return `${describeHttpStatus(status)} Ayrıntı: ${detailParts.join(" — ").slice(0, 280)}`;
+  }
+
+  return `${describeHttpStatus(status)} Sunucu JSON yerine HTML döndürdü; sayfayı yenileyip tekrar deneyin.`;
+}
+
 export function extractApiError(data: unknown, response: Response, fallback: string): string {
   if (data && typeof data === "object") {
     const obj = data as Record<string, unknown>;
@@ -112,11 +169,8 @@ export function extractApiError(data: unknown, response: Response, fallback: str
       }
     }
   }
-  if (response.status === 401) {
-    return "Oturum açmanız gerekiyor. Lütfen tekrar giriş yapın.";
-  }
-  if (response.status === 403) {
-    return "Bu işlem için yetkiniz yok.";
+  if (response.status >= 400) {
+    return describeHttpStatus(response.status);
   }
   return fallback;
 }
@@ -130,13 +184,14 @@ export async function parseJsonResponse<T = unknown>(
   if (!contentType.includes("application/json")) {
     const text = await res.text();
     if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-      throw new Error(
-        res.status === 401
-          ? "Oturum açmanız gerekiyor. Lütfen tekrar giriş yapın."
-          : "Sunucudan beklenmeyen yanıt alındı. Lütfen sayfayı yenileyip tekrar deneyin."
-      );
+      throw new Error(extractHtmlErrorMessage(text, res.status));
     }
-    throw new Error(extractApiError(null, res, `${fallbackError} (${res.status})`));
+    const snippet = text.trim().slice(0, 160);
+    throw new Error(
+      snippet
+        ? `${describeHttpStatus(res.status)} Ayrıntı: ${snippet}`
+        : extractApiError(null, res, `${fallbackError} (${res.status})`)
+    );
   }
 
   const data = await res.json();
@@ -220,10 +275,20 @@ export async function apiFetch<T = unknown>(
   options: FetchOptions = {}
 ): Promise<ApiResponse<T>> {
   const url = resolveApiUrl(endpoint);
-  
+  const method = (options.method || "GET").toUpperCase();
+  const isMutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+
+  if (isMutating) {
+    try {
+      await ensureCsrfCookie();
+    } catch {
+      /* CSRF ön-yükleme başarısız olsa da asıl istek hata mesajını üretir */
+    }
+  }
+
   const contextHeaders = getContextHeaders();
   const csrfToken = getCsrfToken();
-  
+
   const headers: Record<string, string> = {
     ...contextHeaders,
     ...options.headers,
@@ -233,15 +298,16 @@ export async function apiFetch<T = unknown>(
   if (!isFormData) {
     headers["Content-Type"] = "application/json";
   }
-  
+
   // CSRF token'ı ekle (POST, PUT, PATCH, DELETE için)
-  if (csrfToken && options.method && ["POST", "PUT", "PATCH", "DELETE"].includes(options.method.toUpperCase())) {
+  if (csrfToken && isMutating) {
     headers["X-CSRFToken"] = csrfToken;
   }
-  
+
   try {
     const response = await fetch(url, {
       ...options,
+      method,
       headers,
       credentials: "include",
     });
@@ -256,11 +322,11 @@ export async function apiFetch<T = unknown>(
         notifySessionExpired();
       }
     }
-    
+
     if (response.status === 204) {
       return { success: true, data: undefined as T };
     }
-    
+
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
       const text = await response.text();
@@ -268,8 +334,10 @@ export async function apiFetch<T = unknown>(
       return {
         success: false,
         error: htmlError
-          ? extractApiError(null, response, "Sunucudan beklenmeyen yanıt alındı.")
-          : `Beklenmeyen yanıt formatı (${response.status})`,
+          ? extractHtmlErrorMessage(text, response.status)
+          : text.trim()
+            ? `${describeHttpStatus(response.status)} Ayrıntı: ${text.trim().slice(0, 200)}`
+            : describeHttpStatus(response.status),
       };
     }
     
@@ -310,6 +378,12 @@ export async function apiFetch<T = unknown>(
       data: data as T,
     };
   } catch (error) {
+    if (error instanceof TypeError) {
+      return {
+        success: false,
+        error: "Ağ bağlantısı kurulamadı. Backend veya internet bağlantınızı kontrol edin.",
+      };
+    }
     const errorMessage = error instanceof Error ? error.message : "Bilinmeyen hata";
     return {
       success: false,

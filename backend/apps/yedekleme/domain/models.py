@@ -1,9 +1,37 @@
+"""Yedekleme domain modelleri — Resource Registry + Artifact + Job + Schedule."""
+
 from django.conf import settings
 from django.db import models
 
 
+class ResourceType(models.TextChoices):
+    DATABASE_TABLE = 'database_table', 'Database Table'
+    FILE_DIRECTORY = 'file_directory', 'File Directory'
+    CONFIGURATION = 'configuration', 'Configuration'
+    MEDIA = 'media', 'Media'
+    LOGS = 'logs', 'Logs'
+    CACHE = 'cache', 'Cache'
+    EXPORT = 'export', 'Export'
+    OTHER = 'other', 'Other'
+
+
+class BackupKind(models.TextChoices):
+    FULL = 'full', 'Tam Sistem'
+    DATABASE = 'database', 'Veritabanı'
+    FILES = 'files', 'Dosyalar'
+    SETTINGS = 'settings', 'Ayarlar'
+    SELECTED = 'selected', 'Seçili Kaynaklar'
+
+
 class BackupTrigger(models.TextChoices):
     MANUAL = 'manual', 'Manuel'
+    DAILY = 'daily', 'Günlük'
+    WEEKLY = 'weekly', 'Haftalık'
+    MONTHLY = 'monthly', 'Aylık'
+
+
+class ScheduleFrequency(models.TextChoices):
+    OFF = 'off', 'Kapalı'
     DAILY = 'daily', 'Günlük'
     WEEKLY = 'weekly', 'Haftalık'
     MONTHLY = 'monthly', 'Aylık'
@@ -14,17 +42,71 @@ class BackupStatus(models.TextChoices):
     RUNNING = 'running', 'Çalışıyor'
     COMPLETED = 'completed', 'Tamamlandı'
     FAILED = 'failed', 'Başarısız'
+    CANCELLED = 'cancelled', 'İptal'
+
+
+class JobPhase(models.TextChoices):
+    QUEUED = 'queued', 'Kuyrukta'
+    PREPARING = 'preparing', 'Hazırlanıyor'
+    EXPORTING = 'exporting', 'Dışa aktarılıyor'
+    COMPRESSING = 'compressing', 'Sıkıştırılıyor'
+    ENCRYPTING = 'encrypting', 'Şifreleniyor'
+    HASHING = 'hashing', 'Hash hesaplanıyor'
+    STORING = 'storing', 'Kaydediliyor'
+    ANALYZING = 'analyzing', 'Analiz ediliyor'
+    DRY_RUN = 'dry_run', 'Dry-run'
+    RESTORING = 'restoring', 'Geri yükleniyor'
+    DONE = 'done', 'Tamamlandı'
+    ERROR = 'error', 'Hata'
 
 
 class BackupOperationAction(models.TextChoices):
     CREATE = 'create', 'Yedek Oluştur'
     DOWNLOAD = 'download', 'İndir'
-    VALIDATE = 'validate', 'Doğrula'
+    VERIFY = 'verify', 'Doğrula'
+    PREVIEW = 'preview', 'Önizle'
+    ANALYZE = 'analyze', 'Analiz'
+    DRY_RUN = 'dry_run', 'Dry-run'
     RESTORE = 'restore', 'Geri Yükle'
     DELETE = 'delete', 'Sil'
     IMPORT = 'import', 'İçe Aktar'
     SCHEDULE_UPDATE = 'schedule_update', 'Zamanlama Güncelle'
+    SETTINGS_UPDATE = 'settings_update', 'Ayar Güncelle'
+    RESOURCE_UPDATE = 'resource_update', 'Kaynak Güncelle'
+    RESOURCE_SYNC = 'resource_sync', 'Kaynak Sync'
     PURGE = 'purge', 'Temizlik'
+
+
+class BackupResource(models.Model):
+    """Resource Registry kaydı. Motor yalnızca bu kayıtları okur; silinmez."""
+
+    code = models.CharField('Kod', max_length=128, unique=True, db_index=True)
+    name = models.CharField('Kaynak Adı', max_length=255)
+    resource_type = models.CharField(
+        'Tür', max_length=32, choices=ResourceType.choices, default=ResourceType.OTHER,
+    )
+    description = models.TextField('Açıklama', blank=True, default='')
+    handler_key = models.CharField('Handler', max_length=64, default='other')
+    config = models.JSONField('Yapılandırma', default=dict, blank=True)
+    is_active = models.BooleanField('Aktif', default=True)
+    is_default = models.BooleanField('Varsayılan', default=True)
+    encrypt = models.BooleanField('Şifrele', default=False)
+    compress = models.BooleanField('Sıkıştır', default=True)
+    priority = models.IntegerField('Öncelik', default=100)
+    is_restorable = models.BooleanField('Geri Yüklenebilir', default=True)
+    source_app = models.CharField('Kaynak App', max_length=128, blank=True, default='')
+    is_system = models.BooleanField('Sistem Kaynağı', default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'yedekleme_resource'
+        verbose_name = 'Yedek Kaynağı'
+        verbose_name_plural = 'Yedek Kaynakları'
+        ordering = ['priority', 'code']
+
+    def __str__(self):
+        return f'{self.code} ({self.name})'
 
 
 class BackupArtifact(models.Model):
@@ -35,10 +117,16 @@ class BackupArtifact(models.Model):
     status = models.CharField(
         'Durum', max_length=20, choices=BackupStatus.choices, default=BackupStatus.PENDING,
     )
+    kind = models.CharField(
+        'Tür', max_length=20, choices=BackupKind.choices, default=BackupKind.FULL,
+    )
     trigger = models.CharField(
         'Tetikleyici', max_length=20, choices=BackupTrigger.choices, default=BackupTrigger.MANUAL,
     )
-    components = models.JSONField('Bileşenler', default=dict, blank=True)
+    resource_codes = models.JSONField('Kaynak Kodları', default=list, blank=True)
+    manifest = models.JSONField('Manifest', default=dict, blank=True)
+    encrypted = models.BooleanField('Şifreli', default=False)
+    format_version = models.CharField('Format', max_length=16, default='2.0')
     started_at = models.DateTimeField('Başlangıç', auto_now_add=True)
     finished_at = models.DateTimeField('Bitiş', null=True, blank=True)
     duration_ms = models.PositiveIntegerField('Süre (ms)', null=True, blank=True)
@@ -63,20 +151,22 @@ class BackupArtifact(models.Model):
 
 
 class BackupSchedule(models.Model):
-    """Platform geneli otomatik yedek zamanlaması (tek kayıt)."""
+    """Otomatik yedek zamanlaması (tek kayıt, pk=1)."""
 
     frequency = models.CharField(
-        'Sıklık',
-        max_length=20,
-        choices=BackupTrigger.choices,
-        default=BackupTrigger.DAILY,
+        'Sıklık', max_length=20, choices=ScheduleFrequency.choices, default=ScheduleFrequency.OFF,
     )
     hour = models.PositiveSmallIntegerField('Saat', default=3)
     minute = models.PositiveSmallIntegerField('Dakika', default=0)
     enabled = models.BooleanField('Aktif', default=False)
-    include_logs = models.BooleanField('Logları Dahil Et', default=False)
+    kind = models.CharField(
+        'Yedek Türü', max_length=20, choices=BackupKind.choices, default=BackupKind.FULL,
+    )
+    resource_codes = models.JSONField('Seçili Kaynaklar', default=list, blank=True)
+    max_artifacts = models.PositiveIntegerField('Maksimum Yedek', default=10)
+    auto_delete_old = models.BooleanField('Eski Yedekleri Sil', default=True)
+    encrypt = models.BooleanField('Şifrele', default=False)
     last_run_at = models.DateTimeField('Son Çalışma', null=True, blank=True)
-    retention_override = models.JSONField('Retention Override', null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -88,6 +178,60 @@ class BackupSchedule(models.Model):
     def get_singleton(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+
+class BackupSettings(models.Model):
+    """Platform yedekleme ayarları (tek kayıt)."""
+
+    encryption_enabled = models.BooleanField('Şifreleme Aktif', default=False)
+    default_encrypt = models.BooleanField('Varsayılan Şifrele', default=False)
+    default_compress = models.BooleanField('Varsayılan Sıkıştır', default=True)
+    notes = models.TextField('Notlar', blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'yedekleme_settings'
+        verbose_name = 'Yedekleme Ayarı'
+        verbose_name_plural = 'Yedekleme Ayarları'
+
+    @classmethod
+    def get_singleton(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class BackupJob(models.Model):
+    """Canlı işlem durumu (polling için)."""
+
+    artifact = models.ForeignKey(
+        BackupArtifact,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='jobs',
+    )
+    action = models.CharField(max_length=32, choices=BackupOperationAction.choices)
+    status = models.CharField(
+        max_length=20, choices=BackupStatus.choices, default=BackupStatus.PENDING,
+    )
+    phase = models.CharField(max_length=32, choices=JobPhase.choices, default=JobPhase.QUEUED)
+    progress = models.PositiveSmallIntegerField(default=0)
+    message = models.CharField(max_length=512, blank=True, default='')
+    result = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True, default='')
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='backup_jobs',
+    )
+
+    class Meta:
+        db_table = 'yedekleme_job'
+        ordering = ['-started_at']
 
 
 class BackupOperationLog(models.Model):
@@ -107,6 +251,14 @@ class BackupOperationLog(models.Model):
         blank=True,
         related_name='operation_logs',
     )
+    job = models.ForeignKey(
+        BackupJob,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='logs',
+    )
+    step = models.CharField('Adım', max_length=128, blank=True, default='')
     duration_ms = models.PositiveIntegerField('Süre (ms)', null=True, blank=True)
     success = models.BooleanField('Başarılı', default=True)
     error_message = models.TextField('Hata', blank=True, default='')
