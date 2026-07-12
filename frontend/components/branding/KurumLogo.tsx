@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
+import { usePathname } from 'next/navigation';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import {
   brandingFromContext,
@@ -51,14 +52,17 @@ export default function KurumLogo({
   );
 }
 
-/** Aktif kurum teması + favicon — AppShell / portal layout'larda */
+/** Aktif kurum/şube teması + favicon — AppShell / portal layout'larda */
 export function ActiveKurumBranding() {
   const { activeKurum, activeSube } = useKurum();
+  const pathname = usePathname();
   const branding = useMemo(
     () => (activeKurum ? brandingFromContext(activeKurum, activeSube) : null),
     [activeKurum, activeSube],
   );
-  const faviconKey = branding ? brandingFaviconKey(branding) : '';
+  const faviconKey = branding
+    ? `${brandingFaviconKey(branding)}|s:${activeSube?.id ?? ''}|f:${activeSube?.favicon_url ?? ''}`
+    : '';
 
   useEffect(() => {
     if (!branding) return;
@@ -66,7 +70,8 @@ export function ActiveKurumBranding() {
     document.title = `${branding.gorunen_ad} — 3K Kampüs`;
     resetFaviconCache();
     applyFavicon(branding, { force: true });
-  }, [branding, faviconKey]);
+    // Next client navigasyonunda metadata varsayılan icon'u yeniden ekleyebilir
+  }, [branding, faviconKey, pathname]);
 
   return null;
 }

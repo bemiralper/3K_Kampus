@@ -155,9 +155,16 @@ export function brandingFaviconKey(branding: KurumBranding): string {
   return `${branding.favicon_url ?? ''}|${branding.tema_rengi}`;
 }
 
-/** Var olan node'u yeniden kullanmak yerine her zaman sıfırdan oluşturur —
- *  bazı tarayıcılar (özellikle Chrome'un sekme/geçmiş favicon önbelleği)
- *  mevcut bir <link>'in href'ini değiştirmeyi güvenilir şekilde algılamaz. */
+/** Next.js `public/favicon.svg` ve metadata <link rel="icon"> satırlarını temizle —
+ *  aksi halde tarayıcı şube favicon'u yerine varsayılanı göstermeye devam eder. */
+function clearForeignFaviconLinks() {
+  document.head
+    .querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')
+    .forEach((el) => {
+      if (!el.hasAttribute(KURUM_FAVICON_ATTR)) el.remove();
+    });
+}
+
 function faviconMimeType(href: string): string | undefined {
   const path = href.split('?')[0].split('#')[0].toLowerCase();
   if (path.endsWith('.svg')) return 'image/svg+xml';
@@ -168,31 +175,26 @@ function faviconMimeType(href: string): string | undefined {
   return undefined;
 }
 
+/** Her seferinde sıfırdan <link> oluştur — href güncellemesi Chrome sekme önbelleğinde güvenilir değil. */
 function replaceFaviconLink(rel: string, href: string, sizes?: string) {
   const key = rel.replace(/\s+/g, '-');
   const selector = `link[${KURUM_FAVICON_ATTR}="${key}"]`;
-  const existing = document.head.querySelector(selector);
-  let link: HTMLLinkElement;
-  if (existing instanceof HTMLLinkElement) {
-    link = existing;
-  } else {
-    link = document.createElement('link');
-    link.setAttribute(KURUM_FAVICON_ATTR, key);
-    link.rel = rel;
-    document.head.appendChild(link);
-  }
+  document.head.querySelectorAll(selector).forEach((el) => el.remove());
+
+  const link = document.createElement('link');
+  link.setAttribute(KURUM_FAVICON_ATTR, key);
+  link.rel = rel;
   if (sizes) link.setAttribute('sizes', sizes);
-  else link.removeAttribute('sizes');
   const mime = faviconMimeType(href);
   if (mime) link.type = mime;
-  else link.removeAttribute('type');
   link.href = href;
+  document.head.appendChild(link);
 }
 
 function setFaviconHref(href: string) {
-  // Next.js metadata ile çakışmamak için yalnızca kendi link'lerimizi güncelleriz;
-  // React'ın yönettiği head node'larına dokunmayız.
+  clearForeignFaviconLinks();
   replaceFaviconLink('icon', href);
+  replaceFaviconLink('shortcut icon', href);
   replaceFaviconLink('apple-touch-icon', href, '180x180');
 }
 

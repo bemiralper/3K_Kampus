@@ -28,6 +28,9 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "3K Kampüs",
   description: "3K Kampüs Eğitim Yönetim Sistemi",
+  // Varsayılan icon'u kapat — ActiveKurumBranding şube/kurum favicon'unu uygular.
+  // (public/favicon.svg yine fallback dosya olarak kalır; <link> client tarafında yönetilir.)
+  icons: {},
   ...(FACEBOOK_DOMAIN_VERIFICATION
     ? {
         other: {
