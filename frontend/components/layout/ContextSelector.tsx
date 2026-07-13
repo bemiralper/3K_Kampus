@@ -3,8 +3,13 @@
 import { useState, useRef, useEffect } from "react";
 import { useKurum, Kurum, Sube, EgitimYili } from "@/lib/contexts/KurumContext";
 
+type ContextSelectorProps = {
+  /** Mobilde tam genişlik özet şerit */
+  layout?: "inline" | "mobile-bar";
+};
+
 /** Kurum / şube / eğitim yılı seçici — admin, koç ve muhasebe header'larında ortak */
-export default function ContextSelector() {
+export default function ContextSelector({ layout = "inline" }: ContextSelectorProps) {
   const {
     filteredKurumlar,
     activeKurum,
@@ -63,10 +68,12 @@ export default function ContextSelector() {
     { key: "yil" as const, label: "Yıl", icon: "📅" },
   ];
 
+  const isMobileBar = layout === "mobile-bar";
+
   return (
-    <div className="ctx-compact-wrapper" ref={popoverRef}>
+    <div className={`ctx-compact-wrapper${isMobileBar ? " ctx-compact-wrapper--mobile-bar" : ""}`} ref={popoverRef}>
       <button
-        className="ctx-compact-btn"
+        className={`ctx-compact-btn${isMobileBar ? " ctx-compact-btn--mobile-bar" : ""}`}
         type="button"
         onClick={() => setShowPopover(!showPopover)}
         title="Kurum / Şube / Eğitim Yılı Seçimi"
@@ -212,6 +219,28 @@ export default function ContextSelector() {
           text-overflow: ellipsis;
           white-space: nowrap;
         }
+        .ctx-compact-wrapper--mobile-bar {
+          width: 100%;
+        }
+        .ctx-compact-btn--mobile-bar {
+          width: 100%;
+          max-width: none;
+          justify-content: flex-start;
+          padding: 8px 12px;
+          font-size: 12px;
+          background: #f0f7ff;
+          border-color: #bfdbfe;
+        }
+        .ctx-compact-btn--mobile-bar .ctx-compact-text {
+          display: block;
+          flex: 1;
+          text-align: left;
+        }
+        .ctx-compact-wrapper--mobile-bar .ctx-popover {
+          left: 0;
+          right: 0;
+          width: auto;
+        }
         .ctx-popover {
           position: absolute;
           top: calc(100% + 6px);
@@ -338,11 +367,11 @@ export default function ContextSelector() {
           white-space: nowrap;
         }
         @media (max-width: 768px) {
-          .ctx-compact-btn {
+          .ctx-compact-btn:not(.ctx-compact-btn--mobile-bar) {
             max-width: 44px;
             padding: 7px 10px;
           }
-          .ctx-compact-text {
+          .ctx-compact-btn:not(.ctx-compact-btn--mobile-bar) .ctx-compact-text {
             display: none;
           }
         }

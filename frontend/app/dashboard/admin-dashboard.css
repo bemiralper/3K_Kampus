@@ -1,0 +1,499 @@
+/* Yönetici ana dashboard — tek ekran, kompakt SaaS layout */
+
+.adm-dash {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  max-height: calc(100vh - var(--topbar-height) - 24px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.adm-dash--state {
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  color: #64748b;
+  text-align: center;
+  gap: 12px;
+}
+
+.adm-dash-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #0262a7;
+  border-radius: 50%;
+  animation: adm-spin 0.8s linear infinite;
+}
+
+@keyframes adm-spin {
+  to { transform: rotate(360deg); }
+}
+
+.adm-dash-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.adm-dash-head h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.adm-dash-head p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.adm-dash-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #0262a7;
+  color: #fff;
+}
+
+.adm-dash-btn--ghost {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.adm-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.adm-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e8edf3;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  min-width: 0;
+}
+
+.adm-kpi--link {
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.adm-kpi--link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(2, 98, 167, 0.12);
+}
+
+.adm-kpi__top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.adm-kpi__icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.adm-kpi__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-kpi__value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.adm-kpi__hint {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.adm-kpi--blue { border-top: 3px solid #0262a7; }
+.adm-kpi--green { border-top: 3px solid #10b981; }
+.adm-kpi--amber { border-top: 3px solid #f59e0b; }
+.adm-kpi--violet { border-top: 3px solid #8b5cf6; }
+.adm-kpi--slate { border-top: 3px solid #64748b; }
+
+.adm-tabs {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 10px;
+  width: fit-content;
+}
+
+.adm-tab {
+  border: none;
+  background: transparent;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.adm-tab.is-active {
+  background: #fff;
+  color: #0262a7;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.adm-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.adm-chart-grid--ogrenci {
+  flex: none;
+  min-height: 420px;
+}
+
+.adm-chart-grid--ogrenci .adm-chart-card__body {
+  min-height: 200px;
+}
+
+.adm-chart-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid #e8edf3;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.adm-chart-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 4px;
+  flex-shrink: 0;
+}
+
+.adm-chart-card__head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.adm-chart-card__sub {
+  margin: 2px 0 0;
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.adm-chart-card__link {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0262a7;
+  text-decoration: none;
+}
+
+.adm-chart-card__body {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  padding: 0 4px 4px;
+}
+
+.adm-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.adm-chart-card--placeholder .adm-placeholder-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.adm-chart-card--placeholder a {
+  color: #0262a7;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* Öğrenci — sınıf + cinsiyet grafik */
+.adm-sinif-chart {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 6px;
+}
+
+.adm-sinif-chart__graph {
+  flex: 1;
+  min-height: 120px;
+}
+
+.adm-sinif-table-wrap {
+  flex-shrink: 0;
+  max-height: 88px;
+  overflow: auto;
+  border-top: 1px solid #f1f5f9;
+}
+
+.adm-sinif-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+
+.adm-sinif-table th,
+.adm-sinif-table td {
+  padding: 3px 6px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.adm-sinif-table th {
+  color: #64748b;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: #fff;
+}
+
+.adm-sinif-table td strong {
+  color: #0f172a;
+}
+
+.adm-cinsiyet-chart {
+  position: relative;
+  height: 100%;
+}
+
+.adm-cinsiyet-legend {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  padding-bottom: 4px;
+}
+
+.adm-cinsiyet-legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.adm-cinsiyet-legend .dot--kiz { background: #ec4899; }
+.adm-cinsiyet-legend .dot--erkek { background: #0262a7; }
+
+/* Doğum günleri */
+.adm-birthdays {
+  flex-shrink: 0;
+  border: 1px solid #e8edf3;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  margin-top: 2px;
+}
+
+.adm-birthdays__head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.adm-birthdays__head p {
+  margin: 4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.adm-birthdays__badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.adm-birthdays__badge--today {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.adm-birthdays__badge--tomorrow {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.adm-birthdays__hint {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.adm-birthdays__empty {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.adm-birthdays__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.adm-birthday-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #eef2f7;
+  background: #f8fafc;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.adm-birthday-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.adm-birthday-card.is-today {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.adm-birthday-card.is-tomorrow {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.adm-birthday-card__date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 64px;
+  gap: 2px;
+}
+
+.adm-birthday-card__etiket {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.adm-birthday-card.is-today .adm-birthday-card__etiket { color: #b45309; }
+.adm-birthday-card.is-tomorrow .adm-birthday-card__etiket { color: #1d4ed8; }
+
+.adm-birthday-card__gun {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f172a;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.adm-birthday-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.adm-birthday-card__info strong {
+  font-size: 12px;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-birthday-card__info span {
+  font-size: 10px;
+  color: #64748b;
+}
+
+@media (max-width: 1100px) {
+  .adm-dash {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .adm-kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adm-chart-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+
+  .adm-chart-card__body {
+    min-height: 180px;
+  }
+}
+
+@media (max-width: 576px) {
+  .adm-kpi-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .adm-kpi__value {
+    font-size: 0.95rem;
+  }
+}

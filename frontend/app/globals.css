@@ -4,6 +4,7 @@
 
 @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Rubik:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap");
 @import "./sidebar.css";
+@import "./admin-mobile.css";
 
 /* ========================================
    DRAWER STYLES
@@ -938,11 +939,15 @@ a {
   .sidebar {
     transform: translateX(-100%);
     width: var(--sidebar-width);
+    pointer-events: none;
+    visibility: hidden;
   }
 
   .sidebar.open {
     transform: translateX(0);
     width: var(--sidebar-width);
+    pointer-events: auto;
+    visibility: visible;
   }
 
   .app-main {

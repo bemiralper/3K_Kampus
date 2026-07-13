@@ -8,7 +8,9 @@ Büyük canlı alımlarından önce kod tabanının sabitlenmiş hali. Bu commit
 
 | Etiket / dal | Commit | Ne içerir |
 |--------------|--------|-----------|
-| `checkpoint/2026-07-13-pre-cms-v2-landing` | `8b6c643` | **CMS v2 + anasayfa bölüm yönetimi deploy öncesi canlı** — website migration 0008–0014 **öncesi** |
+| `checkpoint/2026-07-13-pre-website-cms-content` | `1df43ad` | **Website CMS duyuru/haber + admin dashboard deploy öncesi** — migration 0016 **öncesi** |
+| `backup/checkpoint-pre-website-cms-content-20260713` | `1df43ad` | Aynı commit'te yedek dal |
+| `checkpoint/2026-07-13-pre-cms-v2-landing` | `8b6c643` | CMS v2 + anasayfa bölüm yönetimi deploy öncesi canlı — website migration 0008–0014 **öncesi** |
 | `backup/checkpoint-pre-cms-v2-landing-20260713` | `8b6c643` | Aynı commit’te yedek dal |
 | `checkpoint/2026-07-12-pre-akademi-finans-portal` | `8ddf8d1` | Akademi redesign + şube finans + muhasebe portal düzeltmeleri **öncesi** |
 | `backup/checkpoint-pre-akademi-finans-20260712` | `8ddf8d1` | Aynı commit’te yedek dal |

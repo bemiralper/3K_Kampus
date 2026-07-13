@@ -15,5 +15,6 @@ urlpatterns = [
     path('public/<str:kod>/v2/forms/<slug:slug>/submit/', v2.api_public_v2_form_submit, name='public_v2_form'),
     path('public/<str:kod>/v2/robots.txt', v2.api_public_v2_robots, name='public_v2_robots'),
     path('public/<str:kod>/v2/verification/<str:filename>/', v2.api_public_v2_verification_file, name='public_v2_verification'),
+    path('public/<str:kod>/v2/content/', v2.api_public_v2_content_list, name='public_v2_content'),
     path('public/<str:kod>/v2/sitemap-pages/', v2.api_public_v2_sitemap_pages, name='public_v2_sitemap'),
 ]

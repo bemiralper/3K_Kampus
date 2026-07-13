@@ -7,7 +7,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:800
 // Bu set, Django urls.py'de "api/<prefix>/" şeklinde tanımlı olan path segment'lerini listeler.
 const API_PREFIXED_PATHS = new Set([
   'coaching', 'terms', 'academic', 'resources', 'student-resources',
-  'legacy', 'ogrenci-kayit', 'communication', 'kimlik',
+  'legacy', 'ogrenci-kayit', 'communication', 'kimlik', 'admin',
 ]);
 
 /** undici fetch rejects hop-by-hop headers forwarded from the browser/nginx chain */

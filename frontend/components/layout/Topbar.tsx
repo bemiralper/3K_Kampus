@@ -16,6 +16,8 @@ import "@/components/profile/profile-portal.css";
 
 interface TopbarProps {
   onMenuClick: () => void;
+  isMobile?: boolean;
+  onSearchClick?: () => void;
 }
 
 // ─── Breadcrumb Map ───
@@ -965,11 +967,19 @@ function QuickActions() {
   );
 }
 
-export default function Topbar({ onMenuClick }: TopbarProps) {
+export default function Topbar({
+  onMenuClick,
+  isMobile = false,
+  onSearchClick,
+}: TopbarProps) {
   const { user, logout } = useAuth();
   const [showCommandPalette, setShowCommandPalette] = useState(false);
 
-  // ⌘K / Ctrl+K global shortcut
+  const openCommandPalette = useCallback(() => {
+    setShowCommandPalette(true);
+  }, []);
+
+  // ⌘K / Ctrl+K global shortcut + mobil alt nav "Ara"
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -977,9 +987,14 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
         setShowCommandPalette((prev) => !prev);
       }
     };
+    const handleAdminSearch = () => openCommandPalette();
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+    window.addEventListener("admin-open-command-palette", handleAdminSearch);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("admin-open-command-palette", handleAdminSearch);
+    };
+  }, [openCommandPalette]);
 
   const handleLogout = async () => {
     await logout();
@@ -987,48 +1002,62 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
 
   return (
     <>
-      <header className="app-topbar">
-        <div className="topbar-left">
-          <button
-            className="sidebar-toggle-btn"
-            type="button"
-            onClick={onMenuClick}
-            aria-label="Toggle Menu"
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
-          
-          {/* Compact Context Selector */}
-          <ContextSelector />
-        </div>
+      <header className={`app-topbar${isMobile ? " app-topbar--stacked" : ""}`}>
+        <div className="topbar-primary-row">
+          <div className="topbar-left">
+            <button
+              className="sidebar-toggle-btn"
+              type="button"
+              onClick={onMenuClick}
+              aria-label="Menüyü aç"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
 
-        <div className="topbar-right">
-          {/* Command Palette Trigger */}
-          <button
-            className="cmd-trigger-btn"
-            type="button"
-            onClick={() => setShowCommandPalette(true)}
-            title="Sayfa Ara (⌘K)"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <span className="cmd-trigger-text">Öğrenci veya sayfa ara...</span>
-            <kbd className="cmd-trigger-kbd">⌘K</kbd>
-          </button>
+            {!isMobile && <ContextSelector />}
+          </div>
 
-          {/* Quick Actions */}
-          <QuickActions />
+          <div className="topbar-right">
+          {isMobile ? (
+            <button
+              className="topbar-icon-btn admin-topbar-search-mobile"
+              type="button"
+              onClick={onSearchClick ?? openCommandPalette}
+              aria-label="Ara"
+              title="Ara"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              className="cmd-trigger-btn"
+              type="button"
+              onClick={openCommandPalette}
+              title="Sayfa Ara (⌘K)"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <span className="cmd-trigger-text">Öğrenci veya sayfa ara...</span>
+              <kbd className="cmd-trigger-kbd">⌘K</kbd>
+            </button>
+          )}
 
-          {/* Notification Bell */}
+          <div className="admin-topbar-hide-mobile">
+            <QuickActions />
+          </div>
+
           <NotificationBell />
 
-          <button className="topbar-icon-btn" type="button" aria-label="Mesajlar">
+          <button className="topbar-icon-btn admin-topbar-hide-mobile" type="button" aria-label="Mesajlar">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
@@ -1039,9 +1068,36 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
             profileHref="/admin/profil"
             onLogout={handleLogout}
           />
+          </div>
         </div>
 
+        {isMobile && (
+          <div className="topbar-context-row">
+            <ContextSelector layout="mobile-bar" />
+          </div>
+        )}
+
         <style jsx>{`
+          .topbar-primary-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            width: 100%;
+            min-width: 0;
+          }
+          .topbar-context-row {
+            width: 100%;
+            padding-top: 6px;
+          }
+          :global(.app-topbar--stacked) {
+            flex-direction: column;
+            align-items: stretch;
+            height: auto;
+            min-height: var(--topbar-height);
+            padding-top: 8px;
+            padding-bottom: 8px;
+          }
           .cmd-trigger-btn {
             display: flex;
             align-items: center;
@@ -1229,12 +1285,8 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
             .user-info {
               display: none;
             }
-            
-            .dropdown-arrow {
-              display: none;
-            }
 
-            .cmd-trigger-btn {
+            .dropdown-arrow {
               display: none;
             }
           }

@@ -11,6 +11,18 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from apps.kurum.domain.models import Kurum
+from apps.website.application.content_service import (
+    append_attachment_media,
+    append_gallery_media,
+    apply_media_as_cover,
+    landing_content_qs,
+    parse_datetime,
+    published_content_qs,
+    remove_attachment_item,
+    remove_gallery_item,
+    serialize_admin_content,
+    serialize_public_content,
+)
 from apps.website.application.media_service import create_media_asset, serialize_media
 from apps.website.application.migrate_service import migrate_kurum_to_pages
 from apps.website.application.page_service import PageService, serialize_page
@@ -816,7 +828,7 @@ def api_v2_content(request):
         qs = ContentEntry.objects.filter(kurum_id=kurum_id)
         if kind:
             qs = qs.filter(kind=kind)
-        return _ok([_serialize_content(c) for c in qs[:200]])
+        return _ok([serialize_admin_content(c) for c in qs[:200]])
 
     body = _parse_json(request) or {}
 
@@ -845,6 +857,9 @@ def api_v2_content(request):
         is_featured=bool(body.get('is_featured')),
         is_pinned=bool(body.get('is_pinned')),
         show_as_popup=bool(body.get('show_as_popup')),
+        priority=body.get('priority') or ContentEntry.PRIORITY_NORMAL,
+        publish_at=parse_datetime(body.get('publish_at')),
+        unpublish_at=parse_datetime(body.get('unpublish_at')),
         meta_title=body.get('meta_title') or '',
         meta_description=body.get('meta_description') or '',
     )
@@ -852,29 +867,7 @@ def api_v2_content(request):
 
 
 def _serialize_content(c, *, full: bool = False):
-    data = {
-        'id': c.id,
-        'kind': c.kind,
-        'title': c.title,
-        'slug': c.slug,
-        'excerpt': c.excerpt,
-        'status': c.status,
-        'is_featured': c.is_featured,
-        'is_pinned': c.is_pinned,
-        'cover_url': c.cover_url,
-        'sira': c.sira,
-        'publish_at': c.publish_at.isoformat() if c.publish_at else None,
-        'view_count': c.view_count,
-    }
-    if full:
-        data.update({
-            'body': c.body,
-            'author_name': c.author_name,
-            'meta_title': c.meta_title,
-            'meta_description': c.meta_description,
-            'show_as_popup': c.show_as_popup,
-        })
-    return data
+    return serialize_admin_content(c, full=full)
 
 
 @csrf_exempt
@@ -898,15 +891,139 @@ def api_v2_content_detail(request, pk: int):
 
     body = _parse_json(request) or {}
     for field in (
-        'kind', 'title', 'excerpt', 'body', 'cover_url', 'author_name',
-        'status', 'is_featured', 'is_pinned', 'show_as_popup', 'sira',
-        'meta_title', 'meta_description',
+        'kind', 'title', 'excerpt', 'body', 'cover_url', 'cover_thumb_url', 'author_name',
+        'status', 'is_featured', 'is_pinned', 'show_as_popup', 'sira', 'priority',
+        'meta_title', 'meta_description', 'gallery', 'attachments',
     ):
         if field in body:
             setattr(c, field, body[field])
+    if 'publish_at' in body:
+        c.publish_at = parse_datetime(body.get('publish_at'))
+    if 'unpublish_at' in body:
+        c.unpublish_at = parse_datetime(body.get('unpublish_at'))
     if 'slug' in body and body['slug']:
         c.slug = body['slug']
     c.save()
+    return _ok(_serialize_content(c, full=True))
+
+
+@csrf_exempt
+@require_http_methods(['POST', 'DELETE'])
+def api_v2_content_cover(request, pk: int):
+    auth = _require_website_auth(request, write=True)
+    if auth:
+        return auth
+    kurum_id = _kurum_id(request)
+    c = ContentEntry.objects.filter(kurum_id=kurum_id, pk=pk).first()
+    if not c:
+        return _err('İçerik bulunamadı', 404)
+    if request.method == 'DELETE':
+        c.cover_url = ''
+        c.cover_thumb_url = ''
+        c.save(update_fields=['cover_url', 'cover_thumb_url', 'updated_at'])
+        return _ok(_serialize_content(c, full=True))
+    uploaded = request.FILES.get('file')
+    if not uploaded:
+        media_id = request.POST.get('media_id') or ( _parse_json(request) or {}).get('media_id')
+        if media_id:
+            asset = MediaAsset.objects.filter(kurum_id=kurum_id, pk=media_id).first()
+            if not asset:
+                return _err('Medya bulunamadı', 404)
+            apply_media_as_cover(c, asset)
+            return _ok(_serialize_content(c, full=True))
+        return _err('Dosya veya media_id gerekli')
+    asset, error = create_media_asset(
+        kurum_id=kurum_id,
+        uploaded=uploaded,
+        title=request.POST.get('title', c.title),
+        folder='icerik',
+        user=request.user,
+    )
+    if error:
+        return _err(error)
+    apply_media_as_cover(c, asset)
+    return _ok(_serialize_content(c, full=True))
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def api_v2_content_gallery(request, pk: int):
+    auth = _require_website_auth(request, write=True)
+    if auth:
+        return auth
+    kurum_id = _kurum_id(request)
+    c = ContentEntry.objects.filter(kurum_id=kurum_id, pk=pk).first()
+    if not c:
+        return _err('İçerik bulunamadı', 404)
+    uploaded = request.FILES.get('file')
+    if not uploaded:
+        return _err('Dosya gerekli')
+    asset, error = create_media_asset(
+        kurum_id=kurum_id,
+        uploaded=uploaded,
+        title=request.POST.get('title', ''),
+        folder='icerik-galeri',
+        user=request.user,
+    )
+    if error:
+        return _err(error)
+    row = append_gallery_media(c, asset, title=request.POST.get('title', ''))
+    return _ok({'item': row, 'content': _serialize_content(c, full=True)})
+
+
+@csrf_exempt
+@require_http_methods(['DELETE'])
+def api_v2_content_gallery_item(request, pk: int, item_id: str):
+    auth = _require_website_auth(request, write=True)
+    if auth:
+        return auth
+    kurum_id = _kurum_id(request)
+    c = ContentEntry.objects.filter(kurum_id=kurum_id, pk=pk).first()
+    if not c:
+        return _err('İçerik bulunamadı', 404)
+    if not remove_gallery_item(c, item_id):
+        return _err('Galeri öğesi bulunamadı', 404)
+    return _ok(_serialize_content(c, full=True))
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def api_v2_content_attachment(request, pk: int):
+    auth = _require_website_auth(request, write=True)
+    if auth:
+        return auth
+    kurum_id = _kurum_id(request)
+    c = ContentEntry.objects.filter(kurum_id=kurum_id, pk=pk).first()
+    if not c:
+        return _err('İçerik bulunamadı', 404)
+    uploaded = request.FILES.get('file')
+    if not uploaded:
+        return _err('Dosya gerekli')
+    asset, error = create_media_asset(
+        kurum_id=kurum_id,
+        uploaded=uploaded,
+        title=request.POST.get('title', uploaded.name),
+        folder='icerik-ekler',
+        user=request.user,
+    )
+    if error:
+        return _err(error)
+    row = append_attachment_media(c, asset, title=request.POST.get('title', ''))
+    return _ok({'item': row, 'content': _serialize_content(c, full=True)})
+
+
+@csrf_exempt
+@require_http_methods(['DELETE'])
+def api_v2_content_attachment_item(request, pk: int, item_id: str):
+    auth = _require_website_auth(request, write=True)
+    if auth:
+        return auth
+    kurum_id = _kurum_id(request)
+    c = ContentEntry.objects.filter(kurum_id=kurum_id, pk=pk).first()
+    if not c:
+        return _err('İçerik bulunamadı', 404)
+    if not remove_attachment_item(c, item_id):
+        return _err('Ek dosya bulunamadı', 404)
     return _ok(_serialize_content(c, full=True))
 
 
@@ -1169,3 +1286,34 @@ def api_public_v2_sitemap_pages(request, kod: str):
         }
         for p in pages
     ])
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def api_public_v2_content_list(request, kod: str):
+    """Public duyuru/haber/blog listesi — filtre: kind, q."""
+    from apps.website.seed_defaults import resolve_landing_kurum
+    kurum = Kurum.objects.filter(kod__iexact=kod.strip(), aktif_mi=True).first()
+    if not kurum:
+        kurum = resolve_landing_kurum(kod)
+    if not kurum:
+        return _err('Kurum bulunamadı', 404)
+
+    kind = (request.GET.get('kind') or '').strip()
+    q = (request.GET.get('q') or '').strip()
+    limit = min(int(request.GET.get('limit') or 50), 100)
+
+    qs = published_content_qs(kurum.id, kind=kind or None)
+    if not kind:
+        qs = qs.filter(kind__in=(ContentEntry.KIND_DUYURU, ContentEntry.KIND_HABER))
+    if q:
+        from django.db.models import Q
+        qs = qs.filter(Q(title__icontains=q) | Q(excerpt__icontains=q))
+
+    items = [serialize_public_content(c, request) for c in qs[:limit]]
+    popup = None
+    popup_entry = qs.filter(show_as_popup=True).first()
+    if popup_entry:
+        popup = serialize_public_content(popup_entry, request, full=True)
+
+    return _ok({'items': items, 'toplam': qs.count(), 'popup': popup})

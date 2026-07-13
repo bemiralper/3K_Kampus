@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
-/** SSR-safe: ilk render false, mount sonrası gerçek değer */
+function subscribe(query: string, callback: () => void) {
+  const mq = window.matchMedia(query);
+  mq.addEventListener("change", callback);
+  return () => mq.removeEventListener("change", callback);
+}
+
+/** SSR-safe media query — istemci tarafında anında doğru breakpoint */
 export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const update = () => setMatches(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, [query]);
-
-  return matches;
+  return useSyncExternalStore(
+    (callback) => subscribe(query, callback),
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
 }

@@ -1,0 +1,339 @@
+/* Admin mobil — tüm modül sayfalarına ortak */
+
+:root {
+  --admin-bottom-nav-h: 56px;
+}
+
+/* ==================== SHELL ==================== */
+
+.app-container.admin-sidebar-expanded .app-main {
+  margin-left: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+}
+
+.app-container.admin-sidebar-collapsed .app-main {
+  margin-left: var(--sidebar-collapsed-width);
+  width: calc(100% - var(--sidebar-collapsed-width));
+}
+
+@media (max-width: 991px) {
+  .app-container.admin-mobile-shell .app-main {
+    margin-left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-bottom: calc(var(--admin-bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-container.admin-mobile-shell .app-content {
+    padding: 12px;
+  }
+
+  .app-container.admin-mobile-shell .app-topbar {
+    height: auto;
+    min-height: 52px;
+    padding: 8px 10px;
+    gap: 0;
+  }
+
+  .app-container.admin-mobile-shell .topbar-primary-row {
+    min-height: 36px;
+  }
+
+  .app-container.admin-mobile-shell .topbar-left {
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .app-container.admin-mobile-shell .topbar-right {
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .app-container.admin-mobile-shell .sidebar-toggle-btn,
+  .app-container.admin-mobile-shell .topbar-icon-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .admin-topbar-hide-mobile {
+    display: none !important;
+  }
+
+  .admin-topbar-search-mobile {
+    background: var(--body-bg);
+    border: 1px solid var(--border-color);
+  }
+
+  /* Drawer — kapalıyken tıklama yakalamasın */
+  .app-container.admin-mobile-shell .sidebar {
+    width: min(280px, 88vw);
+    transform: translateX(-100%);
+    z-index: 1100;
+    box-shadow: 8px 0 32px rgba(15, 23, 42, 0.28);
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .app-container.admin-mobile-drawer-open .sidebar,
+  .app-container.admin-mobile-shell .sidebar.open {
+    transform: translateX(0);
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .admin-sidebar-backdrop {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    border: none;
+    padding: 0;
+    margin: 0;
+    background: rgba(15, 23, 42, 0.45);
+    cursor: pointer;
+    opacity: 1;
+    pointer-events: all;
+  }
+}
+
+/* ==================== BOTTOM NAV ==================== */
+
+.admin-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 991px) {
+  .admin-bottom-nav {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1040;
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.08);
+  }
+
+  .admin-bottom-nav-list {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-around;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    height: var(--admin-bottom-nav-h);
+  }
+
+  .admin-bottom-nav-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 4px;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    line-height: 1.1;
+  }
+
+  .admin-bottom-nav-link.is-active {
+    color: #0262a7;
+  }
+
+  .admin-bottom-nav-label {
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+  }
+}
+
+/* ==================== PAGE HEADERS (tüm modüller) ==================== */
+
+@media (max-width: 991px) {
+  .hero-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .hero-content {
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .hero-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+
+  .hero-text {
+    min-width: 0;
+  }
+
+  .hero-text h1 {
+    font-size: 1.15rem;
+    line-height: 1.25;
+    word-break: break-word;
+  }
+
+  .hero-text p {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .hero-breadcrumb {
+    flex-wrap: wrap;
+    font-size: 11px;
+    gap: 4px;
+  }
+
+  .hero-header > .btn-hero,
+  .hero-header > a.btn-hero,
+  .hero-header > button.btn-hero {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 16px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+
+  .btn-hero {
+    padding: 10px 16px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+
+  .btn-hero-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .page-header-left h2 {
+    font-size: 1.15rem;
+    line-height: 1.25;
+    word-break: break-word;
+  }
+
+  .page-header-right {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .page-header-right > * {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .section {
+    gap: 14px;
+  }
+
+  .tabs-modern {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 4px;
+    margin-bottom: 16px;
+  }
+
+  .tabs-modern::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-modern {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 576px) {
+  .app-container.admin-mobile-shell .app-content {
+    padding: 10px;
+  }
+
+  .hero-text h1 {
+    font-size: 1.05rem;
+  }
+
+  /* Genel buton boyutu — modül sayfalarında taşmayı azalt */
+  .app-content .btn,
+  .app-content button.btn-primary,
+  .app-content .btn-primary {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .app-content .btn-lg,
+  .app-content button.btn-lg {
+    min-height: 40px;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  .quick-stats {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-card h3 {
+    font-size: 18px;
+  }
+}
+
+/* Context selector — mobil şerit (Topbar alt satır) */
+@media (max-width: 991px) {
+  .topbar-context-row {
+    width: 100%;
+  }
+
+  .ctx-compact-wrapper--mobile-bar .ctx-popover {
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    max-width: none;
+  }
+}
+
+/* Tablolar — yatay kaydırma */
+@media (max-width: 991px) {
+  .app-content .table-responsive,
+  .app-content .data-table-wrapper,
+  .app-content .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

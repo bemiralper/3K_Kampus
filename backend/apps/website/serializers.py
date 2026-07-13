@@ -1,5 +1,6 @@
 """Website serialization helpers."""
 from apps.kurum.branding import serialize_kurum_branding
+from apps.website.application.content_service import landing_content_qs, serialize_public_content
 
 
 def _media_url(request, field):
@@ -196,6 +197,15 @@ def serialize_iletisim_mesaji(msg):
     }
 
 
+def _landing_duyurular(kurum, request):
+    """CMS v2 içerik varsa onu kullan; yoksa legacy Duyuru modeline düş."""
+    cms_items = list(landing_content_qs(kurum.id, limit=6))
+    if cms_items:
+        return [serialize_public_content(c, request) for c in cms_items]
+    from apps.website.models import Duyuru
+    return [serialize_duyuru(d, request) for d in Duyuru.objects.filter(kurum=kurum, aktif=True)[:6]]
+
+
 def build_landing_payload(kurum, request):
     settings = getattr(kurum, 'site_settings', None)
     try:
@@ -215,9 +225,7 @@ def build_landing_payload(kurum, request):
         'hero_slides': [
             serialize_hero_slide(s, request) for s in kurum.hero_slides.filter(aktif=True)
         ],
-        'duyurular': [
-            serialize_duyuru(d, request) for d in kurum.duyurular.filter(aktif=True)[:6]
-        ],
+        'duyurular': _landing_duyurular(kurum, request),
         'sinav_takvimi': [
             serialize_sinav(s, request) for s in kurum.sinav_takvim.filter(aktif=True)
         ],

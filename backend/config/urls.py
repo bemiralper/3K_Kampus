@@ -32,6 +32,7 @@ urlpatterns = [
     path('ogrenciler/api/', include('apps.ogrenci.api_urls')),
     path('api/legacy/index/', legacy_index_api),
     path('api/legacy/dashboard/', legacy_dashboard_api),
+    path('api/admin/dashboard/', include('apps.dashboard.interfaces.urls')),
     path('ogrenciler/', lambda request: redirect(f"{settings.FRONTEND_URL}/ogrenciler", permanent=False)),
     path('ogrenciler/<path:rest>/', lambda request, rest: redirect(f"{settings.FRONTEND_URL}/ogrenciler/{rest}", permanent=False)),
     path('api/ogrenci-kayit/', include('apps.ogrenci_kayit.urls')),

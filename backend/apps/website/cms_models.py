@@ -352,6 +352,16 @@ class ContentEntry(models.Model):
         (KIND_BLOG, 'Blog'),
         (KIND_ETKINLIK, 'Etkinlik'),
     ]
+    PRIORITY_NORMAL = 'normal'
+    PRIORITY_BILGI = 'bilgi'
+    PRIORITY_ONEMLI = 'onemli'
+    PRIORITY_KRITIK = 'kritik'
+    PRIORITY_CHOICES = [
+        (PRIORITY_NORMAL, 'Normal'),
+        (PRIORITY_BILGI, 'Bilgi'),
+        (PRIORITY_ONEMLI, 'Önemli'),
+        (PRIORITY_KRITIK, 'Kritik'),
+    ]
     STATUS_DRAFT = 'draft'
     STATUS_PUBLISHED = 'published'
     STATUS_CHOICES = [
@@ -369,6 +379,12 @@ class ContentEntry(models.Model):
     excerpt = models.TextField(blank=True, default='')
     body = models.TextField(blank=True, default='')
     cover_url = models.URLField(max_length=500, blank=True, default='')
+    cover_thumb_url = models.URLField(max_length=500, blank=True, default='')
+    gallery = models.JSONField(default=list, blank=True)
+    attachments = models.JSONField(default=list, blank=True)
+    priority = models.CharField(
+        max_length=20, choices=PRIORITY_CHOICES, default=PRIORITY_NORMAL, db_index=True,
+    )
     tags = models.JSONField(default=list, blank=True)
     author_name = models.CharField(max_length=120, blank=True, default='')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
@@ -377,6 +393,7 @@ class ContentEntry(models.Model):
     show_as_popup = models.BooleanField(default=False)
     sira = models.PositiveIntegerField('Sıra', default=0, db_index=True)
     publish_at = models.DateTimeField(null=True, blank=True)
+    unpublish_at = models.DateTimeField(null=True, blank=True)
     event_start = models.DateTimeField(null=True, blank=True)
     event_end = models.DateTimeField(null=True, blank=True)
     event_location = models.CharField(max_length=200, blank=True, default='')

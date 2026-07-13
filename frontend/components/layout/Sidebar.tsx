@@ -26,6 +26,12 @@ const icons = {
       <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
     </svg>
   ),
+  bell: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  ),
   settings: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <circle cx="12" cy="12" r="3" />
@@ -443,6 +449,8 @@ function useMenuOrder(defaultItems: MenuItem[]) {
 interface SidebarProps {
   isOpen: boolean;
   onToggle: () => void;
+  isDesktop?: boolean;
+  onCloseMobile?: () => void;
 }
 
 /** Yol, menü öğesinin href veya matchPrefix'ine uyuyor mu? */
@@ -482,7 +490,12 @@ function resolveActiveSubHref(
   return best?.href ?? null;
 }
 
-export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
+export default function Sidebar({
+  isOpen,
+  onToggle,
+  isDesktop = true,
+  onCloseMobile,
+}: SidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
   const userPermissions = user?.permissions || [];
@@ -598,11 +611,11 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
 
   /** Mobilde link tıklanınca drawer'ı kapat */
   const handleNavNavigate = useCallback(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 992 && isOpen) {
-      onToggle();
+    if (!isDesktop && isOpen) {
+      onCloseMobile?.();
     }
     setHoveredMenu(null);
-  }, [isOpen, onToggle]);
+  }, [isDesktop, isOpen, onCloseMobile]);
 
   // ─── Drag & Drop Handlers ───
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -826,6 +839,11 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                 type="button"
                 className={`nav-link ${isActive ? "active" : ""}`}
                 onClick={() => {
+                  if (!isDesktop && !isOpen) {
+                    pendingExpandRef.current = item.id;
+                    onToggle();
+                    return;
+                  }
                   if (!isOpen) {
                     pendingExpandRef.current = item.id;
                     onToggle();
@@ -910,7 +928,14 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         <button
           type="button"
           className="toggle-btn"
-          onClick={onToggle}
+          onClick={() => {
+            if (!isDesktop) {
+              if (isOpen) onCloseMobile?.();
+              else onToggle();
+              return;
+            }
+            onToggle();
+          }}
           aria-label={isOpen ? "Menüyü daralt" : "Menüyü genişlet"}
           aria-expanded={isOpen}
           title={isOpen ? "Menüyü daralt" : "Menüyü genişlet"}

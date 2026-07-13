@@ -32,6 +32,11 @@ def _get_kurum_by_kod(kod):
     return Kurum.objects.filter(kod__iexact=kod.strip(), aktif_mi=True).first()
 
 
+def _resolve_public_kurum(kod):
+    """Public site — kod eşleşmezse landing kurumuna düş (anasayfa ile aynı mantık)."""
+    return _get_kurum_by_kod(kod) or resolve_landing_kurum(kod)
+
+
 def _parse_json(request):
     try:
         return json.loads(request.body.decode('utf-8') or '{}')
@@ -85,7 +90,7 @@ def _upload_image(request, instance, field_name, file_key, max_mb=5):
 def api_public_landing(request, kod):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
-    kurum = _get_kurum_by_kod(kod) or resolve_landing_kurum(kod)
+    kurum = _resolve_public_kurum(kod)
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
     ensure_website_defaults(kurum)
@@ -96,9 +101,22 @@ def api_public_landing(request, kod):
 def api_public_duyuru_detail(request, kod, slug):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
-    kurum = _get_kurum_by_kod(kod)
+    kurum = _resolve_public_kurum(kod)
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
+    from apps.website.application.content_service import published_content_qs, serialize_public_content
+    from apps.website.cms_models import ContentEntry
+
+    entry = published_content_qs(kurum.id).filter(
+        slug=slug,
+        kind__in=(ContentEntry.KIND_DUYURU, ContentEntry.KIND_HABER, ContentEntry.KIND_BLOG),
+    ).first()
+    if entry:
+        ContentEntry.objects.filter(pk=entry.pk).update(view_count=entry.view_count + 1)
+        return JsonResponse({
+            'success': True,
+            'data': serialize_public_content(entry, request, full=True),
+        })
     duyuru = Duyuru.objects.filter(kurum=kurum, slug=slug, aktif=True).first()
     if not duyuru:
         return JsonResponse({'success': False, 'error': 'Duyuru bulunamadı'}, status=404)
@@ -109,7 +127,7 @@ def api_public_duyuru_detail(request, kod, slug):
 def api_public_yasal_detail(request, kod, tur):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
-    kurum = _get_kurum_by_kod(kod)
+    kurum = _resolve_public_kurum(kod)
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
     metin = get_object_or_404(YasalMetin, kurum=kurum, tur=tur, aktif=True)
@@ -120,7 +138,7 @@ def api_public_yasal_detail(request, kod, tur):
 def api_public_iletisim(request, kod):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
-    kurum = _get_kurum_by_kod(kod)
+    kurum = _resolve_public_kurum(kod)
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
     data = _parse_json(request)

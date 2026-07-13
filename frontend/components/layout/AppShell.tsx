@@ -1,88 +1,108 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
+import AdminBottomNav from "@/components/layout/AdminBottomNav";
 import LegacyScripts from "@/components/LegacyScripts";
 import GorevEkranMesajiOverlay from "@/components/gorev/GorevEkranMesajiOverlay";
 import { ActiveKurumBranding } from "@/components/branding/KurumLogo";
 import { KurumProvider } from "@/lib/contexts/KurumContext";
+import { useAdminSidebarCollapse } from "@/hooks/useAdminSidebarCollapse";
 
 export default function AppShell({ children }: { children: ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const pathname = usePathname();
+  const {
+    isSidebarWide,
+    isDesktop,
+    mobileDrawerOpen,
+    toggle: toggleSidebar,
+    openMobileDrawer,
+    closeMobileDrawer,
+  } = useAdminSidebarCollapse();
 
   useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth < 992;
-      setIsMobile(mobile);
-      // Mobilde daraltılmış (gizli) kalsın; masaüstünde kayıtlı tercihi koru
-      if (mobile && !isInitialized) {
-        setSidebarOpen(false);
-      }
+    closeMobileDrawer();
+  }, [pathname, closeMobileDrawer]);
+
+  useEffect(() => {
+    if (!mobileDrawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMobileDrawer();
     };
-    
-    checkMobile();
-    
-    if (!isInitialized) {
-      const savedState = localStorage.getItem("sidebarOpen");
-      if (window.innerWidth < 992) {
-        setSidebarOpen(false);
-      } else if (savedState !== null) {
-        try {
-          setSidebarOpen(JSON.parse(savedState));
-        } catch {
-          setSidebarOpen(true);
-        }
-      } else {
-        setSidebarOpen(true);
-      }
-      setIsInitialized(true);
-    }
-    
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, [isInitialized]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileDrawerOpen, closeMobileDrawer]);
 
-  const toggleSidebar = () => {
-    setSidebarOpen((prev) => {
-      const newState = !prev;
-      localStorage.setItem("sidebarOpen", JSON.stringify(newState));
-      return newState;
-    });
-  };
-
-  const closeSidebar = () => {
-    if (isMobile) {
-      setSidebarOpen(false);
-      localStorage.setItem("sidebarOpen", JSON.stringify(false));
+  useEffect(() => {
+    if (!isDesktop && mobileDrawerOpen) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = prev;
+      };
     }
-  };
+  }, [isDesktop, mobileDrawerOpen]);
+
+  const shellClass = [
+    "app-container",
+    isDesktop && isSidebarWide ? "admin-sidebar-expanded" : "admin-sidebar-collapsed",
+    !isDesktop && isSidebarWide ? "admin-mobile-drawer-open" : "",
+    !isDesktop ? "admin-mobile-shell" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <KurumProvider>
-      <div className="app-container">
+      <div className={shellClass}>
         <Suspense fallback={null}>
-          <Sidebar isOpen={isInitialized ? sidebarOpen : true} onToggle={toggleSidebar} />
+          <Sidebar
+            isOpen={isSidebarWide}
+            isDesktop={isDesktop}
+            onToggle={toggleSidebar}
+            onCloseMobile={closeMobileDrawer}
+          />
         </Suspense>
-        <div 
-          className={`sidebar-overlay ${sidebarOpen && isMobile && isInitialized ? "show" : ""}`}
-          onClick={closeSidebar}
-        />
-        <div 
-          className="app-main"
-          style={{
-            marginLeft: isInitialized && !isMobile ? (sidebarOpen ? "250px" : "78px") : !isMobile ? "250px" : "0",
-            width: isInitialized && !isMobile ? `calc(100% - ${sidebarOpen ? "250px" : "78px"})` : !isMobile ? "calc(100% - 250px)" : "100%",
-            maxWidth: isInitialized && !isMobile ? `calc(100% - ${sidebarOpen ? "250px" : "78px"})` : !isMobile ? "calc(100% - 250px)" : "100%",
-            transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
-          }}
-        >
-          <Topbar onMenuClick={toggleSidebar} />
+        {!isDesktop && mobileDrawerOpen && (
+          <button
+            type="button"
+            className="sidebar-overlay show admin-sidebar-backdrop"
+            aria-label="Menüyü kapat"
+            onClick={closeMobileDrawer}
+          />
+        )}
+        <div className="app-main">
+          <Topbar
+            onMenuClick={() => {
+              if (!isDesktop) {
+                if (mobileDrawerOpen) closeMobileDrawer();
+                else openMobileDrawer();
+                return;
+              }
+              toggleSidebar();
+            }}
+            isMobile={!isDesktop}
+            onSearchClick={() => {
+              window.dispatchEvent(new CustomEvent("admin-open-command-palette"));
+            }}
+          />
           <main className="app-content">{children}</main>
         </div>
+        {!isDesktop && (
+          <AdminBottomNav
+            menuOpen={mobileDrawerOpen}
+            onMenuClick={() => {
+              if (mobileDrawerOpen) closeMobileDrawer();
+              else openMobileDrawer();
+            }}
+            onSearchClick={() => {
+              window.dispatchEvent(new CustomEvent("admin-open-command-palette"));
+            }}
+          />
+        )}
         <ActiveKurumBranding />
         <GorevEkranMesajiOverlay />
         <LegacyScripts />

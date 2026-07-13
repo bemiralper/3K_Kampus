@@ -100,9 +100,50 @@ export type SocialLink = { id: number; platform: string; url: string; sira: numb
 export type FooterLink = { id: number; kolon: string; etiket: string; url: string; sira: number; aktif: boolean };
 export type HeroSlide = { id: number; gorsel_url: string | null; sira: number; aktif: boolean };
 export type Duyuru = {
-  id: number; baslik: string; slug: string; ozet: string;
-  kapak_gorseli_url?: string | null; yayin_tarihi?: string | null; sira: number;
+  id: number;
+  cms_id?: number;
+  kind?: string;
+  baslik: string;
+  slug: string;
+  ozet: string;
+  kapak_gorseli_url?: string | null;
+  kapak_thumb_url?: string | null;
+  yayin_tarihi?: string | null;
+  sira: number;
+  oncelik?: string;
+  sabit?: boolean;
+  one_cikan?: boolean;
+  view_count?: number;
   icerik?: string;
+  galeri?: PublicContentGorsel[];
+  ekler?: PublicContentEk[];
+};
+
+export type PublicContentGorsel = {
+  id: string | number;
+  baslik?: string;
+  url: string | null;
+  thumb?: string | null;
+  genislik?: number;
+  yukseklik?: number;
+  sira?: number;
+};
+
+export type PublicContentEk = {
+  id: string | number;
+  dosya_adi: string;
+  dosya_turu: string;
+  boyut: number;
+  url: string | null;
+  sira?: number;
+};
+
+export type PublicContentItem = Duyuru;
+
+export type PublicContentListResponse = {
+  items: PublicContentItem[];
+  toplam: number;
+  popup: PublicContentItem | null;
 };
 export type SinavTakvim = {
   id: number; tur: string; tarih: string;
@@ -189,6 +230,22 @@ export async function fetchDuyuruDetail(kod: string, slug: string): Promise<Duyu
     { cache: 'no-store' },
   );
   return res.data?.data ?? null;
+}
+
+export async function fetchPublicContentList(
+  kod: string,
+  params?: { kind?: string; q?: string; limit?: number },
+): Promise<PublicContentListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.kind) qs.set('kind', params.kind);
+  if (params?.q) qs.set('q', params.q);
+  if (params?.limit) qs.set('limit', String(params.limit));
+  const q = qs.toString();
+  const res = await fetchJson<ApiResponse<PublicContentListResponse>>(
+    resolveUrl(`${BASE}/public/${encodeURIComponent(kod)}/v2/content/${q ? `?${q}` : ''}`),
+    typeof window === 'undefined' ? { next: { revalidate: 30 } } : { cache: 'no-store' },
+  );
+  return res.data?.data ?? { items: [], toplam: 0, popup: null };
 }
 
 export async function fetchYasalDetail(kod: string, tur: string): Promise<YasalMetin | null> {
@@ -439,11 +496,16 @@ export type CmsContentEntry = {
   slug: string;
   excerpt?: string;
   status: string;
+  priority?: string;
   is_featured?: boolean;
   is_pinned?: boolean;
   cover_url?: string;
+  cover_thumb_url?: string;
+  gallery?: Array<{ id: string; media_id?: number; title?: string; sira?: number }>;
+  attachments?: Array<{ id: string; media_id?: number; title?: string; sira?: number }>;
   sira?: number;
   publish_at?: string | null;
+  unpublish_at?: string | null;
   view_count?: number;
   // full detay
   body?: string;
@@ -592,6 +654,32 @@ export const websiteCmsV2Api = {
     v2Fetch<{ deleted: boolean }>(`/content/${id}/`, { method: 'DELETE' }),
   reorderContent: (items: Array<{ id: number; sira: number }>) =>
     v2Fetch<{ reordered: boolean }>('/content/', v2Json('POST', { reorder: true, items })),
+
+  uploadContentCover: (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return v2Fetch<CmsContentEntry>(`/content/${id}/cover/`, { method: 'POST', body: fd });
+  },
+  setContentCoverFromMedia: (id: number, mediaId: number) =>
+    v2Fetch<CmsContentEntry>(`/content/${id}/cover/`, v2Json('POST', { media_id: mediaId })),
+  deleteContentCover: (id: number) =>
+    v2Fetch<CmsContentEntry>(`/content/${id}/cover/`, { method: 'DELETE' }),
+  uploadContentGallery: (id: number, file: File, title?: string) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (title) fd.append('title', title);
+    return v2Fetch<{ item: unknown; content: CmsContentEntry }>(`/content/${id}/gallery/`, { method: 'POST', body: fd });
+  },
+  deleteContentGalleryItem: (id: number, itemId: string) =>
+    v2Fetch<CmsContentEntry>(`/content/${id}/gallery/${encodeURIComponent(itemId)}/`, { method: 'DELETE' }),
+  uploadContentAttachment: (id: number, file: File, title?: string) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (title) fd.append('title', title);
+    return v2Fetch<{ item: unknown; content: CmsContentEntry }>(`/content/${id}/attachments/`, { method: 'POST', body: fd });
+  },
+  deleteContentAttachment: (id: number, itemId: string) =>
+    v2Fetch<CmsContentEntry>(`/content/${id}/attachments/${encodeURIComponent(itemId)}/`, { method: 'DELETE' }),
 
   migrateLegacy: (force = false) =>
     v2Fetch<Record<string, unknown>>('/migrate-legacy/', v2Json('POST', { force })),

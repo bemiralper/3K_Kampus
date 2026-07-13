@@ -22,6 +22,7 @@ import LandingRevealSection from './LandingRevealSection';
 import { isLandingSectionVisible } from '@/lib/landing-section-order';
 import LandingFooter from './LandingFooter';
 import LoginModal from '@/components/login/LoginModal';
+import ContentPopupBanner from './ContentPopupBanner';
 import LandingJsonLd from '@/components/landing/LandingJsonLd';
 
 function LandingPageInner({ initialData }: { initialData: LandingData | null }) {
@@ -125,6 +126,7 @@ function LandingPageInner({ initialData }: { initialData: LandingData | null }) 
         branding={b}
         kurumKod={LANDING_KURUM_KOD}
       />
+      <ContentPopupBanner />
     </>
   );
 }

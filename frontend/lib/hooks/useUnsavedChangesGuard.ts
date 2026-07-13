@@ -133,6 +133,10 @@ export function useUnsavedChangesGuard({
     if (!active) return;
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Listener React'in bir sonraki render/effect temizliğine kadar bağlı
+      // kalabilir. Kayıt sonrası markClean() ref'leri senkron güncellediği için
+      // sert yönlendirmede gereksiz tarayıcı uyarısını burada engelle.
+      if (bypassRef.current || !isDirtyRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     };

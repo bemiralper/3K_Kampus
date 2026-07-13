@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'apps.website',  # Kurumsal web sitesi / landing page CMS
     'apps.yedekleme',  # Platform geneli yedekleme ve geri yükleme
     'apps.sistem_yonetimi.apps.SistemYonetimiConfig',  # Sistem Yönetimi (System Center)
+    'apps.dashboard.apps.DashboardConfig',
 ]
 
 # WhatsApp Business Cloud API (dev: empty defaults)
