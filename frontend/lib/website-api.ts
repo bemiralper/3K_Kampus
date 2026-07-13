@@ -93,6 +93,8 @@ export type SiteSettings = {
   seo_aciklama?: string;
   seo_anahtar_kelimeler?: string;
   seo_canonical_url?: string;
+  /** Anasayfa WhatsApp / Open Graph kapak görseli (/media/… veya https://…) */
+  seo_og_image_url?: string;
   google_site_verification?: string;
   google_analytics_id?: string;
   seo_robots_index?: boolean;
@@ -119,6 +121,8 @@ export type Duyuru = {
   icerik?: string;
   galeri?: PublicContentGorsel[];
   ekler?: PublicContentEk[];
+  meta_title?: string;
+  meta_description?: string;
 };
 
 export type PublicContentGorsel = {
@@ -503,8 +507,25 @@ export type CmsContentEntry = {
   is_pinned?: boolean;
   cover_url?: string;
   cover_thumb_url?: string;
-  gallery?: Array<{ id: string; media_id?: number; title?: string; sira?: number }>;
-  attachments?: Array<{ id: string; media_id?: number; title?: string; sira?: number }>;
+  gallery?: Array<{
+    id: string;
+    media_id?: number;
+    title?: string;
+    baslik?: string;
+    url?: string | null;
+    thumb?: string | null;
+    sira?: number;
+  }>;
+  attachments?: Array<{
+    id: string;
+    media_id?: number;
+    title?: string;
+    dosya_adi?: string;
+    dosya_turu?: string;
+    boyut?: number;
+    url?: string | null;
+    sira?: number;
+  }>;
   sira?: number;
   publish_at?: string | null;
   unpublish_at?: string | null;

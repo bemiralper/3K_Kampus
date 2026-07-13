@@ -79,6 +79,13 @@ class SiteSettings(models.Model):
     seo_aciklama = models.CharField('SEO Açıklama', max_length=400, blank=True, default='')
     seo_anahtar_kelimeler = models.CharField('SEO Anahtar Kelimeler', max_length=500, blank=True, default='')
     seo_canonical_url = models.URLField('Canonical URL', max_length=500, blank=True, default='')
+    seo_og_image_url = models.CharField(
+        'WhatsApp / Open Graph Görseli',
+        max_length=500,
+        blank=True,
+        default='',
+        help_text='Anasayfa paylaşımında görünen kapak (önerilen 1200×630). Örn. /media/…',
+    )
     google_site_verification = models.CharField('Google Site Verification', max_length=120, blank=True, default='')
     google_analytics_id = models.CharField(
         'Google Analytics Ölçüm Kimliği', max_length=32, blank=True, default='',

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect } from 'react';
 import type { PublicContentGorsel } from '@/lib/website-api';
+import { resolveMediaUrl } from '@/lib/website-api';
 
 type Props = {
   images: PublicContentGorsel[];
@@ -26,6 +27,7 @@ export default function ContentLightbox({ images, index, onClose, onChange }: Pr
 
   const img = images[index];
   if (!img) return null;
+  const src = resolveMediaUrl(img.url || img.thumb) || '';
 
   return (
     <div className="wc-lightbox wc-scope" role="dialog" aria-modal="true" onClick={onClose}>
@@ -37,7 +39,7 @@ export default function ContentLightbox({ images, index, onClose, onChange }: Pr
         </>
       )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={img.url || ''} alt={img.baslik || ''} onClick={(e) => e.stopPropagation()} />
+      <img src={src} alt={img.baslik || ''} onClick={(e) => e.stopPropagation()} />
     </div>
   );
 }

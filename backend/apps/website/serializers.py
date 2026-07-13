@@ -63,6 +63,7 @@ def serialize_site_settings(settings, request):
         'seo_aciklama': settings.seo_aciklama,
         'seo_anahtar_kelimeler': settings.seo_anahtar_kelimeler,
         'seo_canonical_url': settings.seo_canonical_url,
+        'seo_og_image_url': getattr(settings, 'seo_og_image_url', '') or '',
         'google_site_verification': settings.google_site_verification,
         'google_analytics_id': settings.google_analytics_id,
         'seo_robots_index': settings.seo_robots_index,

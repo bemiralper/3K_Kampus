@@ -267,6 +267,92 @@ export default function SiteSettingsPanel({
             />
           </div>
           <WamTextarea label="SEO Açıklama" full value={settings.seo_aciklama || ''} onChange={e => set('seo_aciklama', e.target.value)} rows={2} />
+          <div style={{ marginTop: '0.75rem' }}>
+            <label className="wam-label" style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+              WhatsApp / Open Graph görseli
+            </label>
+            <p className="wam-field-hint" style={{ marginBottom: 8 }}>
+              Anasayfa linki paylaşıldığında görünür. Önerilen: <strong>1200×630 px</strong> (yatay). Boşsa hero galeri / logo kullanılır.
+            </p>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  width: 160,
+                  height: 84,
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {settings.seo_og_image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={resolveMediaUrl(settings.seo_og_image_url, mediaCache) || settings.seo_og_image_url}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>Yok</span>
+                )}
+              </span>
+              <div style={{ flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input
+                  className="wam-input"
+                  value={settings.seo_og_image_url || ''}
+                  onChange={(e) => set('seo_og_image_url', e.target.value)}
+                  placeholder="https://… veya /media/…"
+                  style={{ width: '100%' }}
+                />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <label className="wam-btn wam-btn-ghost" style={{ width: 'fit-content', cursor: 'pointer', fontSize: 12 }}>
+                    Dosyadan yükle
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const res = await websiteCmsV2Api.uploadMedia(file, {
+                          folder: 'seo',
+                          title: 'Open Graph',
+                        });
+                        if (res.success && res.data?.url) {
+                          const mediaUrl = resolveMediaUrl(res.data.url, String(Date.now())) || res.data.url;
+                          const nextSettings = { ...settings, seo_og_image_url: mediaUrl };
+                          onChange(nextSettings);
+                          if (autoSaveOnGalleryUpload && onSaveSettings) {
+                            await onSaveSettings(nextSettings);
+                            onMessage?.('OG görseli yüklendi ve kaydedildi', 'success');
+                          } else {
+                            onMessage?.('OG görseli yüklendi — kaydetmeyi unutmayın', 'success');
+                          }
+                        } else {
+                          onMessage?.(res.error || 'Yükleme başarısız', 'error');
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {settings.seo_og_image_url && (
+                    <button
+                      type="button"
+                      className="wam-btn wam-btn-ghost"
+                      style={{ fontSize: 12 }}
+                      onClick={() => set('seo_og_image_url', '')}
+                    >
+                      Kaldır
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
           <WamInput
             label="Anahtar Kelimeler"
             hint="Virgülle ayırın"

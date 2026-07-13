@@ -305,7 +305,8 @@ def api_admin_settings(request):
                 'tanitim_baslik', 'tanitim_icerik', 'youtube_video_id',
                 'harita_embed_url', 'footer_copyright', 'footer_baslik', 'footer_aciklama',
                 'footer_marka_metni', 'seo_baslik', 'seo_aciklama',
-                'seo_anahtar_kelimeler', 'seo_canonical_url', 'google_site_verification',
+                'seo_anahtar_kelimeler', 'seo_canonical_url', 'seo_og_image_url',
+                'google_site_verification',
                 'google_analytics_id', 'seo_robots_index',
             ]:
                 if f in data:

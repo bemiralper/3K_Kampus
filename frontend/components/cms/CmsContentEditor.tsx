@@ -413,23 +413,34 @@ export default function CmsContentEditor({
         <h4 className="cms-editor-section__title">Medya & ekler</h4>
         <div className="wam-field">
           <label>Galeri görselleri</label>
+          <p className="cms-editor-section__hint">Detay sayfasında tıklanınca büyüyen görseller.</p>
           <div className="cms-gallery-grid">
-            {(editor.gallery ?? []).map((g) => (
-              <div key={g.id} className="cms-gallery-thumb">
-                <span>#{g.media_id}</span>
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-danger cms-btn-sm"
-                  onClick={async () => {
-                    if (!editor.id) return;
-                    const res = await websiteCmsV2Api.deleteContentGalleryItem(editor.id, g.id);
-                    if (res.success && res.data) setEditor({ ...editor, gallery: res.data.gallery ?? [] });
-                  }}
-                >
-                  Sil
-                </button>
-              </div>
-            ))}
+            {(editor.gallery ?? []).map((g) => {
+              const src = resolveMediaUrl(g.thumb || g.url);
+              return (
+                <div key={g.id} className="cms-gallery-thumb cms-gallery-thumb--media">
+                  {src ? (
+                    <a href={src} target="_blank" rel="noopener noreferrer" className="cms-gallery-thumb__preview" title="Görseli aç">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt={g.title || g.baslik || ''} />
+                    </a>
+                  ) : (
+                    <span className="cms-gallery-thumb__fallback">#{g.media_id}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-danger cms-btn-sm"
+                    onClick={async () => {
+                      if (!editor.id) return;
+                      const res = await websiteCmsV2Api.deleteContentGalleryItem(editor.id, g.id);
+                      if (res.success && res.data) setEditor({ ...editor, gallery: res.data.gallery ?? [] });
+                    }}
+                  >
+                    Sil
+                  </button>
+                </div>
+              );
+            })}
           </div>
           <button
             type="button"
@@ -455,22 +466,31 @@ export default function CmsContentEditor({
         <div className="wam-field">
           <label>Ek dosyalar (PDF, Word, Excel, PPT, ZIP)</label>
           <ul className="cms-attach-list">
-            {(editor.attachments ?? []).map((a) => (
-              <li key={a.id}>
-                <span>{a.title || `Medya #${a.media_id}`}</span>
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-danger cms-btn-sm"
-                  onClick={async () => {
-                    if (!editor.id) return;
-                    const res = await websiteCmsV2Api.deleteContentAttachment(editor.id, a.id);
-                    if (res.success && res.data) setEditor({ ...editor, attachments: res.data.attachments ?? [] });
-                  }}
-                >
-                  Sil
-                </button>
-              </li>
-            ))}
+            {(editor.attachments ?? []).map((a) => {
+              const href = resolveMediaUrl(a.url);
+              return (
+                <li key={a.id}>
+                  {href ? (
+                    <a href={href} target="_blank" rel="noopener noreferrer">
+                      {a.title || a.dosya_adi || `Medya #${a.media_id}`}
+                    </a>
+                  ) : (
+                    <span>{a.title || a.dosya_adi || `Medya #${a.media_id}`}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-danger cms-btn-sm"
+                    onClick={async () => {
+                      if (!editor.id) return;
+                      const res = await websiteCmsV2Api.deleteContentAttachment(editor.id, a.id);
+                      if (res.success && res.data) setEditor({ ...editor, attachments: res.data.attachments ?? [] });
+                    }}
+                  >
+                    Sil
+                  </button>
+                </li>
+              );
+            })}
           </ul>
           <button
             type="button"
@@ -495,6 +515,10 @@ export default function CmsContentEditor({
 
       <section className="cms-editor-section">
         <h4 className="cms-editor-section__title">SEO</h4>
+        <p className="cms-editor-section__hint">
+          Google arama sonuçlarında ve (kapak yoksa) bazı paylaşımlarda görünen metinler.
+          Boş bırakırsanız sayfa başlığı ve özet kullanılır. WhatsApp önizlemesi için asıl görsel kapak fotoğrafıdır.
+        </p>
         <div className="cms-drawer-grid cms-drawer-grid--2">
           <div className="wam-field">
             <label>SEO başlık</label>
@@ -502,6 +526,7 @@ export default function CmsContentEditor({
               value={editor.meta_title}
               onChange={(e) => setEditor({ ...editor, meta_title: e.target.value })}
               maxLength={70}
+              placeholder="Arama sonucunda görünen başlık (en fazla 70 karakter)"
             />
           </div>
           <div className="wam-field">
@@ -510,6 +535,7 @@ export default function CmsContentEditor({
               value={editor.meta_description}
               onChange={(e) => setEditor({ ...editor, meta_description: e.target.value })}
               maxLength={320}
+              placeholder="Arama sonucunda görünen kısa açıklama"
             />
           </div>
         </div>

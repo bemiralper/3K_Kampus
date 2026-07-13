@@ -52,25 +52,36 @@ def landing_content_qs(kurum_id: int, limit: int = 6):
 
 
 def _media_url(request, url: str | None) -> str | None:
+    """Medya yolunu same-origin /media/... olarak döndür (frontend proxy ile uyumlu)."""
     if not url:
         return None
+    if url.startswith('/media/'):
+        return url
+    idx = url.find('/media/')
+    if idx >= 0:
+        return url[idx:]
     if url.startswith('http://') or url.startswith('https://'):
         return url
-    if request:
-        return request.build_absolute_uri(url)
-    return url
+    return url if url.startswith('/') else f'/{url}'
 
 
 def _asset_urls(asset: MediaAsset | None, request=None) -> tuple[str | None, str | None]:
     if not asset or not asset.file:
         return None, None
-    main = _media_url(request, asset.file.url)
+    try:
+        file_url = asset.file.url
+    except Exception:
+        return None, None
+    main = _media_url(request, file_url)
     thumb = main
     variants = list(asset.variants.all())
     if variants:
         webp = next((v for v in variants if v.format == 'webp'), variants[0])
         if webp.file:
-            thumb = _media_url(request, webp.file.url)
+            try:
+                thumb = _media_url(request, webp.file.url) or main
+            except Exception:
+                pass
     return main, thumb
 
 
@@ -104,9 +115,12 @@ def resolve_gallery(entry: ContentEntry, request=None) -> list[dict]:
         url, thumb = _asset_urls(asset, request)
         if not url:
             continue
+        title = row.get('title') or row.get('baslik') or ''
         out.append({
             'id': row.get('id') or str(aid),
-            'baslik': row.get('title') or row.get('baslik') or '',
+            'media_id': int(aid) if aid else None,
+            'title': title,
+            'baslik': title,
             'url': url,
             'thumb': thumb or url,
             'genislik': asset.width if asset else 0,
@@ -129,6 +143,8 @@ def resolve_attachments(entry: ContentEntry, request=None) -> list[dict]:
         name = row.get('title') or row.get('dosya_adi') or asset.title or asset.file.name.rsplit('/', 1)[-1]
         out.append({
             'id': row.get('id') or str(aid),
+            'media_id': int(aid) if aid else None,
+            'title': name,
             'dosya_adi': name,
             'dosya_turu': _attachment_type(name, asset.mime_type or ''),
             'boyut': asset.size_bytes or 0,
@@ -182,8 +198,8 @@ def serialize_admin_content(entry: ContentEntry, *, full: bool = False) -> dict:
         'is_pinned': entry.is_pinned,
         'cover_url': entry.cover_url,
         'cover_thumb_url': entry.cover_thumb_url,
-        'gallery': entry.gallery or [],
-        'attachments': entry.attachments or [],
+        'gallery': resolve_gallery(entry),
+        'attachments': resolve_attachments(entry),
         'sira': entry.sira,
         'publish_at': entry.publish_at.isoformat() if entry.publish_at else None,
         'unpublish_at': entry.unpublish_at.isoformat() if entry.unpublish_at else None,

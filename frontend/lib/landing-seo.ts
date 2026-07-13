@@ -14,9 +14,12 @@ export function absoluteMediaUrl(url: string | null | undefined): string | undef
 
 /** Duyuru / haber detay — WhatsApp & sosyal önizleme */
 export function buildDuyuruMetadata(duyuru: Duyuru, slug: string): Metadata {
-  const title = duyuru.baslik || 'Duyuru';
+  const title = duyuru.meta_title?.trim() || duyuru.baslik || 'Duyuru';
   const pageTitle = `${title} · ${SITE_TAB_TITLE}`;
-  const description = (duyuru.ozet || '').trim() || undefined;
+  const description =
+    duyuru.meta_description?.trim() ||
+    (duyuru.ozet || '').trim() ||
+    undefined;
   const canonical = absoluteSiteUrl(`/duyurular/${slug}`);
   const cover =
     absoluteMediaUrl(duyuru.kapak_gorseli_url) ||
@@ -67,8 +70,17 @@ export function buildLandingMetadata(data: LandingData | null, path = '/'): Meta
     ? settings.seo_anahtar_kelimeler.split(',').map((k) => k.trim()).filter(Boolean)
     : undefined;
   const indexable = settings?.seo_robots_index !== false;
-  const ogImage = branding.app_logo_url || branding.login_logo_url;
-  const ogImageUrl = ogImage ? absoluteSiteUrl(getAppLogo(branding)) : undefined;
+
+  const galleryFirst = settings?.hero_gallery?.find((g) => g?.url)?.url;
+  const slideFirst = data?.hero_slides?.find((s) => s?.gorsel_url)?.gorsel_url;
+  const ogImageUrl =
+    absoluteMediaUrl(settings?.seo_og_image_url) ||
+    absoluteMediaUrl(galleryFirst) ||
+    absoluteMediaUrl(slideFirst) ||
+    (branding.app_logo_url || branding.login_logo_url
+      ? absoluteSiteUrl(getAppLogo(branding))
+      : undefined);
+
   // Favicon: same-origin (göreli) yol — hem dev hem prod'da çalışır ve
   // Next.js head <link> düğümleriyle client tarafı DOM çakışması yaratmaz.
   const faviconUrl = getFaviconUrl(branding);
@@ -88,7 +100,18 @@ export function buildLandingMetadata(data: LandingData | null, path = '/'): Meta
       siteName: branding.gorunen_ad,
       title,
       description,
-      ...(ogImageUrl ? { images: [{ url: ogImageUrl, alt: branding.gorunen_ad }] } : {}),
+      ...(ogImageUrl
+        ? {
+            images: [
+              {
+                url: ogImageUrl,
+                width: 1200,
+                height: 630,
+                alt: title,
+              },
+            ],
+          }
+        : {}),
     },
     twitter: {
       card: ogImageUrl ? 'summary_large_image' : 'summary',
