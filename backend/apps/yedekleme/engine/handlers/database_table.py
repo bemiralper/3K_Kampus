@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict, deque
+from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID
-from datetime import date, datetime, time
+
 from django.apps import apps
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, transaction
@@ -33,14 +35,26 @@ class _Encoder(DjangoJSONEncoder):
         return super().default(o)
 
 
+def _append_m2m_through_tables(model, tables: list[str]) -> None:
+    for field in model._meta.many_to_many:
+        through = field.remote_field.through
+        tname = through._meta.db_table
+        if tname not in tables:
+            tables.append(tname)
+
+
 def _resolve_tables(config: dict) -> list[str]:
     tables: list[str] = []
     for label in config.get('models') or []:
         try:
             model = apps.get_model(label)
-            tables.append(model._meta.db_table)
+            t = model._meta.db_table
+            if t not in tables:
+                tables.append(t)
+            _append_m2m_through_tables(model, tables)
         except LookupError:
-            tables.append(label)  # may already be a table name
+            if label not in tables:
+                tables.append(label)  # may already be a table name
     for t in config.get('tables') or []:
         if t not in tables:
             tables.append(t)
@@ -52,6 +66,7 @@ def _resolve_tables(config: dict) -> list[str]:
             t = model._meta.db_table
             if t not in tables:
                 tables.append(t)
+            _append_m2m_through_tables(model, tables)
         except LookupError:
             pass
     return tables
@@ -81,6 +96,90 @@ def _fetch_all(table: str) -> tuple[list[str], list[dict[str, Any]]]:
         cols = [c[0] for c in cur.description]
         rows = [dict(zip(cols, row)) for row in cur.fetchall()]
     return cols, rows
+
+
+def _column_udt_types(table: str) -> dict[str, str]:
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT column_name, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = %s
+            """,
+            [table],
+        )
+        return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def _fk_edges(tables: list[str]) -> list[tuple[str, str]]:
+    """(child, parent) — child FK ile parent'a bağlı."""
+    if not tables:
+        return []
+    with connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                src.relname AS child_table,
+                tgt.relname AS parent_table
+            FROM pg_constraint c
+            JOIN pg_class src ON src.oid = c.conrelid
+            JOIN pg_namespace nsrc ON nsrc.oid = src.relnamespace
+            JOIN pg_class tgt ON tgt.oid = c.confrelid
+            JOIN pg_namespace ntgt ON ntgt.oid = tgt.relnamespace
+            WHERE c.contype = 'f'
+              AND nsrc.nspname = current_schema()
+              AND ntgt.nspname = current_schema()
+              AND src.relname = ANY(%s)
+              AND tgt.relname = ANY(%s)
+            """,
+            [tables, tables],
+        )
+        return [(r[0], r[1]) for r in cur.fetchall() if r[0] != r[1]]
+
+
+def _topo_sort_tables(tables: list[str]) -> list[str]:
+    """Parent tablolar önce (INSERT sırası). Döngüde orijinal sıra korunur."""
+    table_set = set(tables)
+    edges = _fk_edges(tables)
+    indegree: dict[str, int] = {t: 0 for t in tables}
+    children: dict[str, list[str]] = defaultdict(list)
+    for child, parent in edges:
+        if child in table_set and parent in table_set:
+            children[parent].append(child)
+            indegree[child] = indegree.get(child, 0) + 1
+    queue = deque([t for t in tables if indegree.get(t, 0) == 0])
+    ordered: list[str] = []
+    seen: set[str] = set()
+    while queue:
+        node = queue.popleft()
+        if node in seen:
+            continue
+        seen.add(node)
+        ordered.append(node)
+        for child in children.get(node, []):
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                queue.append(child)
+    for t in tables:
+        if t not in seen:
+            ordered.append(t)
+    return ordered
+
+
+def _coerce_value(value: Any, udt_name: str | None) -> Any:
+    if value is None:
+        return None
+    if udt_name == 'bytea':
+        if isinstance(value, (bytes, memoryview)):
+            return bytes(value)
+        if isinstance(value, str):
+            if not value:
+                return b''
+            try:
+                return bytes.fromhex(value)
+            except ValueError:
+                return value.encode('utf-8')
+    return value
 
 
 class DatabaseTableHandler:
@@ -163,7 +262,6 @@ class DatabaseTableHandler:
             tables_changed.append(table)
             backup_rows = int(t.get('row_count') or 0)
             current = _row_count(table) if _table_exists(table) else 0
-            # Replace strategy: delete all current, insert backup rows
             delete += current
             insert += backup_rows
         return DryRunReport(
@@ -172,7 +270,10 @@ class DatabaseTableHandler:
             rows_to_delete=delete,
             rows_to_insert=insert,
             rows_to_update=update,
-            notes=['Tablo geri yükleme stratejisi: TRUNCATE + INSERT (FK sırası priority ile).'],
+            notes=[
+                'Tablo geri yükleme: FK topo-sıra + session_replication_role=replica '
+                '+ DELETE (CASCADE yok; hub tablolar dışındaki veriyi silmez).',
+            ],
             details=meta,
         )
 
@@ -186,18 +287,42 @@ class DatabaseTableHandler:
             return RestoreResult(ok=False, message='meta.json eksik')
         meta = json.loads(meta_path.read_text(encoding='utf-8'))
 
+        pending: list[dict[str, Any]] = []
+        for t in meta.get('tables') or []:
+            table = t.get('table')
+            if not table:
+                continue
+            data_path = payload_dir / f'{table}.jsonl'
+            if not data_path.exists():
+                continue
+            if not _table_exists(table):
+                return RestoreResult(ok=False, message=f'Tablo yok: {table}')
+            pending.append({
+                'table': table,
+                'columns': t.get('columns') or [],
+                'data_path': data_path,
+            })
+
+        if not pending:
+            return RestoreResult(ok=True, message='geri yüklenecek tablo yok', meta=meta)
+
+        insert_order = _topo_sort_tables([p['table'] for p in pending])
+        by_table = {p['table']: p for p in pending}
+        ordered = [by_table[t] for t in insert_order if t in by_table]
+        # Truncate: çocuklar önce (ters sıra), CASCADE kullanma
+        truncate_order = list(reversed(ordered))
+
         with transaction.atomic():
-            for t in meta.get('tables') or []:
-                table = t['table']
-                data_path = payload_dir / f'{table}.jsonl'
-                if not data_path.exists():
-                    continue
-                if not _table_exists(table):
-                    return RestoreResult(ok=False, message=f'Tablo yok: {table}')
-                cols = t.get('columns') or []
-                with connection.cursor() as cur:
-                    cur.execute(f'TRUNCATE TABLE "{table}" CASCADE')  # noqa: S608
-                    with data_path.open(encoding='utf-8') as fh:
+            with connection.cursor() as cur:
+                cur.execute("SET LOCAL session_replication_role = 'replica'")
+                # CASCADE yok: dış tabloları boşaltmaz. replica rolü FK kontrollerini gevşetir.
+                for item in truncate_order:
+                    cur.execute(f'DELETE FROM "{item["table"]}"')  # noqa: S608
+                for item in ordered:
+                    table = item['table']
+                    cols = item['columns']
+                    udt = _column_udt_types(table)
+                    with item['data_path'].open(encoding='utf-8') as fh:
                         for line in fh:
                             line = line.strip()
                             if not line:
@@ -206,9 +331,10 @@ class DatabaseTableHandler:
                             use_cols = cols or list(row.keys())
                             placeholders = ', '.join(['%s'] * len(use_cols))
                             col_sql = ', '.join(f'"{c}"' for c in use_cols)
-                            values = [row.get(c) for c in use_cols]
+                            values = [_coerce_value(row.get(c), udt.get(c)) for c in use_cols]
                             cur.execute(
                                 f'INSERT INTO "{table}" ({col_sql}) VALUES ({placeholders})',  # noqa: S608
                                 values,
                             )
+                cur.execute("SET LOCAL session_replication_role = 'origin'")
         return RestoreResult(ok=True, message='tablolar geri yüklendi', meta=meta)

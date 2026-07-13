@@ -68,7 +68,7 @@ def sync_registered_resources(*, deactivate_missing: bool = False) -> dict:
                 created += 1
                 continue
 
-            # Sync immutable-ish fields from code; preserve UI-managed flags
+            # Sync code-owned fields; preserve UI-managed flags except system priority/restorable
             changed = False
             for field, value in {
                 'name': spec.name,
@@ -81,6 +81,14 @@ def sync_registered_resources(*, deactivate_missing: bool = False) -> dict:
             }.items():
                 if getattr(obj, field) != value:
                     setattr(obj, field, value)
+                    changed = True
+            # Sistem kaynaklarında priority / is_restorable kodla hizalanır (UI drift önleme)
+            if spec.is_system:
+                if obj.priority != spec.priority:
+                    obj.priority = spec.priority
+                    changed = True
+                if obj.is_restorable != spec.is_restorable:
+                    obj.is_restorable = spec.is_restorable
                     changed = True
             if changed:
                 obj.save()

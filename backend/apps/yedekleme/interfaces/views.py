@@ -431,7 +431,19 @@ def backup_restore_view(request, artifact_id: int):
         return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
     data = _body(request)
     try:
-        return JsonResponse(_engine(request).restore(art, confirm=data.get('confirm') or ''))
+        result = _engine(request).restore(art, confirm=data.get('confirm') or '')
+        if result.get('full_database_restored') or result.get('relogin_required'):
+            # pg_restore django_session'ı siler; eski session kaydı middleware'de SessionInterrupted üretir.
+            try:
+                request.session.flush()
+            except Exception:
+                try:
+                    request.session.clear()
+                    request.session.cycle_key()
+                except Exception:
+                    pass
+            result = {**result, 'relogin_required': True}
+        return JsonResponse(result)
     except Exception as exc:  # noqa: BLE001
         return JsonResponse({'error': str(exc)}, status=400)
 

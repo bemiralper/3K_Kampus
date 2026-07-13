@@ -11,6 +11,7 @@ RESOURCES = [
         description='Öğrenci sözleşmeleri ve ilişkili ödeme takip kayıtları.',
         config={
             'tables': [
+                'indirim_turu',
                 'sozlesme',
                 'sozlesme_kalemi',
                 'taksit',
@@ -19,7 +20,6 @@ RESOURCES = [
                 'sozlesme_fesih',
                 'sozlesme_gecmisi',
                 'sozlesme_indirimi',
-                'indirim_turu',
             ],
         },
         priority=50,

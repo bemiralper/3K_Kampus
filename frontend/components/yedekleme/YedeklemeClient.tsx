@@ -638,12 +638,23 @@ export default function YedeklemeClient() {
     setRestoreProgress(res.success ? 100 : 0);
     setBusyKey(null);
     if (res.success) {
-      setNotice({ type: 'success', text: 'Geri yükleme tamamlandı.' });
+      const relogin = Boolean(res.data?.relogin_required || res.data?.full_database_restored);
+      setNotice({
+        type: 'success',
+        text: relogin
+          ? 'Geri yükleme tamamlandı. Tam veritabanı yenilendi — lütfen yeniden giriş yapın.'
+          : 'Geri yükleme tamamlandı.',
+      });
       setRestoreConfirm('');
       setAnalyzeData(res.data || null);
       void loadDashboard();
       void loadArtifacts();
       void loadLogs();
+      if (relogin) {
+        window.setTimeout(() => {
+          window.location.href = '/login';
+        }, 1500);
+      }
     } else {
       setNotice({ type: 'error', text: errorText('Geri yükleme başarısız.', res.error) });
     }

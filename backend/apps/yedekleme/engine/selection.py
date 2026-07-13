@@ -43,6 +43,14 @@ def resolve_resources(
         raise ValueError(f'Bilinmeyen yedek türü: {kind}')
 
     resources = list(qs.order_by('priority', 'code'))
+
+    # Tam dump varken tablo-seviye export gereksiz ve restore'da yıkıcıdır.
+    # SELECTED türünde kullanıcı bilinçli seçtiyse bırakılır; restore tarafı yine atlar.
+    if kind in (BackupKind.FULL, BackupKind.DATABASE) and any(
+        r.handler_key == 'database_full' for r in resources
+    ):
+        resources = [r for r in resources if r.handler_key != 'database_table']
+
     if not resources:
         raise ValueError('Yedeklenecek aktif kaynak bulunamadı')
     return resources

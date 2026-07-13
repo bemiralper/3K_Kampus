@@ -48,7 +48,8 @@ SYSTEM_RESOURCES = [
         is_default=True,
         compress=True,
         priority=30,
-        is_restorable=True,
+        # Snapshot bilgilendirme amaçlıdır; runtime Django settings'e uygulanmaz.
+        is_restorable=False,
         is_system=True,
     ),
     ResourceSpec(

@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from django.conf import settings
+from django.db import connections
 
 from apps.yedekleme.engine.handlers.base import (
     DryRunReport,
@@ -127,8 +128,23 @@ class DatabaseFullHandler:
             '-d', str(db.get('NAME') or ''),
             str(dump),
         ]
+        # Açık bağlantılar pg_restore --clean sırasında kilit/session sorununa yol açar.
+        connections.close_all()
         proc = subprocess.run(cmd, env=pg_env(db), capture_output=True, text=True)
-        # pg_restore often returns non-zero with warnings; treat stderr with ERROR as failure
-        if proc.returncode != 0 and 'ERROR' in (proc.stderr or ''):
-            return RestoreResult(ok=False, message=proc.stderr[-2000:])
-        return RestoreResult(ok=True, message='pg_restore tamamlandı', meta={'stderr': (proc.stderr or '')[-500:]})
+        connections.close_all()
+        stderr = proc.stderr or ''
+        stdout = proc.stdout or ''
+        combined_upper = f'{stderr}\n{stdout}'.upper()
+        has_error = 'ERROR:' in combined_upper or 'FATAL:' in combined_upper
+        # pg_restore: 0 = ok, 1 = warnings; >1 veya ERROR satırı = başarısız
+        if has_error or proc.returncode not in (0, 1):
+            return RestoreResult(
+                ok=False,
+                message=(stderr or stdout or f'pg_restore exit={proc.returncode}')[-2000:],
+                meta={'returncode': proc.returncode},
+            )
+        return RestoreResult(
+            ok=True,
+            message='pg_restore tamamlandı',
+            meta={'stderr': stderr[-500:], 'returncode': proc.returncode},
+        )

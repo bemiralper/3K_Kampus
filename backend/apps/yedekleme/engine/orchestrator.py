@@ -27,6 +27,11 @@ from apps.yedekleme.engine import encryption as enc
 from apps.yedekleme.engine.archive import create_zip, extract_zip, sha256_file, verify_checksums, write_checksums
 from apps.yedekleme.engine.handlers import get_handler
 from apps.yedekleme.engine.handlers.base import DryRunReport, JobLog, RestoreAnalysis
+from apps.yedekleme.engine.plan import (
+    entry_priority,
+    filter_restore_entries,
+    manifest_has_full_database,
+)
 from apps.yedekleme.engine.selection import resolve_resources
 from apps.yedekleme.engine.storage import delete_file, fetch_file, store_file
 
@@ -179,6 +184,8 @@ class BackupEngine:
                     'name': resource.name,
                     'type': resource.resource_type,
                     'handler': resource.handler_key,
+                    'priority': resource.priority,
+                    'config': dict(resource.config or {}),
                     'encrypt_flag': resource.encrypt,
                     'compress_flag': resource.compress,
                     'restorable': resource.is_restorable,
@@ -197,7 +204,7 @@ class BackupEngine:
                 'created_at': started.isoformat(),
                 'django_version': django.get_version(),
                 'resources': resource_manifest,
-                'encrypted': False,
+                'encrypted': bool(do_encrypt),
                 'key_fingerprint': enc.key_fingerprint() if do_encrypt else None,
             }
             (work / 'manifest.json').write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -292,12 +299,27 @@ class BackupEngine:
             if out_dir is not None:
                 shutil.rmtree(out_dir, ignore_errors=True)
 
+    def _assert_encryption_key(self, fingerprint: str | None) -> None:
+        if not fingerprint:
+            return
+        if not enc.encryption_key_available():
+            raise enc.EncryptionError('Şifreli yedek için BACKUP_ENCRYPTION_KEY gerekli')
+        current = enc.key_fingerprint()
+        if current and fingerprint != current:
+            raise enc.EncryptionError(
+                f'Şifreleme anahtarı uyuşmuyor (yedek={fingerprint}, sunucu={current})'
+            )
+
     def _extract_artifact(self, artifact: BackupArtifact, work: Path) -> Path:
         src = fetch_file(artifact.storage_key)
         archive = work / 'archive.bin'
         shutil.copy2(src, archive)
         zip_path = work / 'backup.zip'
-        if artifact.encrypted or str(artifact.filename).endswith('.enc'):
+        is_enc = artifact.encrypted or str(artifact.filename).endswith('.enc')
+        if is_enc:
+            self._assert_encryption_key((artifact.manifest or {}).get('key_fingerprint'))
+            if not enc.encryption_key_available():
+                raise enc.EncryptionError('Şifreli yedek için BACKUP_ENCRYPTION_KEY gerekli')
             enc.decrypt_file(archive, zip_path)
         else:
             zip_path = archive if archive.suffix == '.zip' else zip_path
@@ -309,6 +331,16 @@ class BackupEngine:
         if not (extract_dir / 'manifest.json').exists():
             try:
                 extract_zip(archive, extract_dir)
+            except Exception:
+                pass
+        # Manifest içindeki fingerprint (eski yedeklerde artifact.manifest boş olabilir)
+        manifest_path = extract_dir / 'manifest.json'
+        if manifest_path.exists() and is_enc:
+            try:
+                m = json.loads(manifest_path.read_text(encoding='utf-8'))
+                self._assert_encryption_key(m.get('key_fingerprint'))
+            except enc.EncryptionError:
+                raise
             except Exception:
                 pass
         return extract_dir
@@ -442,6 +474,7 @@ class BackupEngine:
             extract_dir = self._extract_artifact(artifact, work)
             manifest = json.loads((extract_dir / 'manifest.json').read_text(encoding='utf-8'))
             payload = extract_dir / 'payload'
+            full_db = manifest_has_full_database(manifest)
             reports = []
             agg = {
                 'tables_changed': [],
@@ -457,6 +490,14 @@ class BackupEngine:
                 resource = BackupResource.objects.filter(code=code).first()
                 if not resource or not resource.is_restorable:
                     continue
+                # Tam dump varken tablo dry-run yanıltıcı (gerçek restore atlar)
+                if full_db and entry.get('handler') == 'database_table':
+                    reports.append({
+                        'resource_code': code,
+                        'notes': ['Tam dump varken tablo restore atlanır'],
+                        'skipped': True,
+                    })
+                    continue
                 handler = get_handler(resource.handler_key)
                 report: DryRunReport = handler.dry_run(resource, payload / code.replace('/', '_'))
                 reports.append(report.__dict__)
@@ -468,7 +509,12 @@ class BackupEngine:
                 agg['files_to_replace'] += report.files_to_replace
                 agg['files_to_delete'] += report.files_to_delete
 
-            result = {'summary': agg, 'resources': reports, 'side_effects': False}
+            result = {
+                'summary': agg,
+                'resources': reports,
+                'side_effects': False,
+                'full_database_present': full_db,
+            }
             self._update_job(job, phase=JobPhase.DONE, progress=100, status=BackupStatus.COMPLETED, result=result, message='Dry-run tamam')
             self._log(action=BackupOperationAction.DRY_RUN, artifact=artifact, job=job, step='Dry-run', metadata=agg)
             return result
@@ -493,6 +539,7 @@ class BackupEngine:
             created_by=self.user,
         )
         started = _now()
+        full_db_restored = False
         try:
             extract_dir = self._extract_artifact(artifact, work)
             ok, errors = verify_checksums(extract_dir)
@@ -500,38 +547,117 @@ class BackupEngine:
                 raise RuntimeError('Bozuk yedek: ' + '; '.join(errors[:5]))
             manifest = json.loads((extract_dir / 'manifest.json').read_text(encoding='utf-8'))
             payload = extract_dir / 'payload'
-            entries = sorted(
+
+            def _fallback_priority(entry: dict) -> int:
+                resource = BackupResource.objects.filter(code=entry.get('code')).first()
+                return resource.priority if resource else 100
+
+            sorted_entries = sorted(
                 manifest.get('resources') or [],
-                key=lambda e: next(
-                    (r.priority for r in BackupResource.objects.filter(code=e['code'])),
-                    100,
-                ),
+                key=lambda e: entry_priority(e, _fallback_priority),
             )
+            entries, skipped_tables = filter_restore_entries(sorted_entries)
+            full_db_restored = manifest_has_full_database(manifest)
+
             results = []
+            for skipped in skipped_tables:
+                results.append({
+                    'code': skipped.get('code'),
+                    'ok': True,
+                    'message': 'atlandı (tam dump varken tablo restore gereksiz/yıkıcı)',
+                    'skipped': True,
+                })
+
             for entry in entries:
                 code = entry['code']
+                handler_key = entry.get('handler')
                 resource = BackupResource.objects.filter(code=code).first()
-                if not resource:
-                    results.append({'code': code, 'ok': False, 'message': 'registryde yok'})
-                    continue
-                if not resource.is_restorable:
+                if resource:
+                    handler_key = resource.handler_key or handler_key
+                    is_restorable = resource.is_restorable
+                    target = resource
+                else:
+                    if not handler_key:
+                        results.append({'code': code, 'ok': False, 'message': 'registryde yok'})
+                        continue
+                    is_restorable = bool(entry.get('restorable', True))
+
+                    class _ManifestResource:
+                        pass
+
+                    target = _ManifestResource()
+                    target.code = code
+                    target.handler_key = handler_key
+                    target.is_restorable = is_restorable
+                    target.config = dict(entry.get('config') or {})
+
+                if not is_restorable:
                     results.append({'code': code, 'ok': True, 'message': 'atlandı (restorable=false)'})
                     continue
-                self._update_job(job, message=f'Geri yükleniyor: {code}', progress=min(95, 10 + len(results) * 5))
-                handler = get_handler(resource.handler_key)
-                res = handler.restore(resource, payload / code.replace('/', '_'), dry_run=False)
+                if not full_db_restored:
+                    self._update_job(
+                        job,
+                        message=f'Geri yükleniyor: {code}',
+                        progress=min(95, 10 + len(results) * 5),
+                    )
+                handler = get_handler(handler_key)
+                res = handler.restore(target, payload / code.replace('/', '_'), dry_run=False)
                 results.append({'code': code, 'ok': res.ok, 'message': res.message, 'meta': res.meta})
                 if not res.ok:
                     raise RuntimeError(f'{code}: {res.message}')
+                if handler_key == 'database_full':
+                    full_db_restored = True
+                    # pg_restore (handler) bağlantıları kapatmış olabilir; yenile.
+                    from django.db import connection as dj_conn
+                    dj_conn.ensure_connection()
 
             duration = int((_now() - started).total_seconds() * 1000)
-            result = {'restored': True, 'results': results, 'duration_ms': duration}
-            self._update_job(job, phase=JobPhase.DONE, progress=100, status=BackupStatus.COMPLETED, result=result, message='Geri yükleme tamam')
-            self._log(action=BackupOperationAction.RESTORE, artifact=artifact, job=job, step='Başarılı', duration_ms=duration, metadata=result)
+            result = {
+                'restored': True,
+                'results': results,
+                'duration_ms': duration,
+                'full_database_restored': full_db_restored,
+                'skipped_table_resources': [s.get('code') for s in skipped_tables],
+                'relogin_required': full_db_restored,
+            }
+            if not full_db_restored:
+                self._update_job(
+                    job,
+                    phase=JobPhase.DONE,
+                    progress=100,
+                    status=BackupStatus.COMPLETED,
+                    result=result,
+                    message='Geri yükleme tamam',
+                )
+                self._log(
+                    action=BackupOperationAction.RESTORE,
+                    artifact=artifact,
+                    job=job,
+                    step='Başarılı',
+                    duration_ms=duration,
+                    metadata=result,
+                )
             return result
         except Exception as exc:  # noqa: BLE001
-            self._update_job(job, phase=JobPhase.ERROR, status=BackupStatus.FAILED, error=str(exc), progress=100)
-            self._log(action=BackupOperationAction.RESTORE, artifact=artifact, job=job, step='Hata', success=False, error_message=str(exc))
+            if not full_db_restored:
+                try:
+                    self._update_job(
+                        job,
+                        phase=JobPhase.ERROR,
+                        status=BackupStatus.FAILED,
+                        error=str(exc),
+                        progress=100,
+                    )
+                    self._log(
+                        action=BackupOperationAction.RESTORE,
+                        artifact=artifact,
+                        job=job,
+                        step='Hata',
+                        success=False,
+                        error_message=str(exc),
+                    )
+                except Exception:
+                    pass
             raise
         finally:
             shutil.rmtree(work, ignore_errors=True)
@@ -562,6 +688,9 @@ class BackupEngine:
             shutil.copy2(stored, archive)
             zip_path = work / 'backup.zip'
             if encrypted:
+                if not enc.encryption_key_available():
+                    delete_file(storage_key)
+                    raise enc.EncryptionError('Şifreli yedek için BACKUP_ENCRYPTION_KEY gerekli')
                 enc.decrypt_file(archive, zip_path)
             else:
                 shutil.copy2(archive, zip_path)
@@ -576,6 +705,14 @@ class BackupEngine:
                 raise RuntimeError(
                     f'Desteklenmeyen format: {manifest.get("version")} (beklenen {MANIFEST_VERSION})'
                 )
+            # Manifest encrypted bayrağı veya fingerprint varsa doğrula
+            manifest_encrypted = bool(manifest.get('encrypted')) or encrypted
+            if manifest_encrypted:
+                try:
+                    self._assert_encryption_key(manifest.get('key_fingerprint'))
+                except enc.EncryptionError:
+                    delete_file(storage_key)
+                    raise
             ok, errors = verify_checksums(extract_dir)
             if not ok:
                 delete_file(storage_key)
@@ -591,7 +728,7 @@ class BackupEngine:
                 trigger=BackupTrigger.MANUAL,
                 resource_codes=[r.get('code') for r in (manifest.get('resources') or []) if r.get('code')],
                 manifest=manifest,
-                encrypted=encrypted,
+                encrypted=manifest_encrypted,
                 format_version=MANIFEST_VERSION,
                 created_by=self.user,
                 finished_at=_now(),
