@@ -76,6 +76,8 @@ export type SiteSettings = {
   landing_bolumleri?: LandingBolum[];
   landing_section_order?: string[];
   landing_sections_hidden?: string[];
+  /** Anasayfada gösterilecek duyuru kartı sayısı (1–12) */
+  anasayfa_duyuru_limit?: number;
   yorumlar_goster?: boolean;
   sss_goster?: boolean;
   settings_updated_at?: string | null;

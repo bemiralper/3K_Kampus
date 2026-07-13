@@ -47,6 +47,11 @@ class SiteSettings(models.Model):
     landing_bolumleri = models.JSONField('Ek Anasayfa Bölümleri', default=list, blank=True)
     landing_section_order = models.JSONField('Anasayfa Bölüm Sırası', default=list, blank=True)
     landing_sections_hidden = models.JSONField('Gizli Anasayfa Bölümleri', default=list, blank=True)
+    anasayfa_duyuru_limit = models.PositiveSmallIntegerField(
+        'Anasayfa Duyuru Adedi',
+        default=6,
+        help_text='Anasayfada gösterilecek duyuru/haber kartı sayısı (1–12).',
+    )
     yorumlar_goster = models.BooleanField('Öğrenci Yorumları Anasayfada', default=True)
     sss_goster = models.BooleanField('SSS Anasayfada', default=True)
     tanitim_baslik = models.CharField('Tanıtım Başlık', max_length=200, blank=True, default='')

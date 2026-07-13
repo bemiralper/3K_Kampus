@@ -47,6 +47,7 @@ def serialize_site_settings(settings, request):
         'landing_bolumleri': settings.landing_bolumleri or [],
         'landing_section_order': settings.landing_section_order or [],
         'landing_sections_hidden': _resolve_landing_sections_hidden(settings),
+        'anasayfa_duyuru_limit': max(1, min(12, int(getattr(settings, 'anasayfa_duyuru_limit', 6) or 6))),
         'yorumlar_goster': settings.yorumlar_goster,
         'sss_goster': settings.sss_goster,
         'settings_updated_at': settings.updated_at.isoformat() if settings.updated_at else None,
@@ -197,13 +198,26 @@ def serialize_iletisim_mesaji(msg):
     }
 
 
+def _landing_duyuru_limit(settings_obj) -> int:
+    raw = getattr(settings_obj, 'anasayfa_duyuru_limit', 6) if settings_obj else 6
+    try:
+        return max(1, min(12, int(raw or 6)))
+    except (TypeError, ValueError):
+        return 6
+
+
 def _landing_duyurular(kurum, request):
     """CMS v2 içerik varsa onu kullan; yoksa legacy Duyuru modeline düş."""
-    cms_items = list(landing_content_qs(kurum.id, limit=6))
+    try:
+        settings_obj = kurum.site_settings
+    except Exception:
+        settings_obj = None
+    limit = _landing_duyuru_limit(settings_obj)
+    cms_items = list(landing_content_qs(kurum.id, limit=limit))
     if cms_items:
         return [serialize_public_content(c, request) for c in cms_items]
     from apps.website.models import Duyuru
-    return [serialize_duyuru(d, request) for d in Duyuru.objects.filter(kurum=kurum, aktif=True)[:6]]
+    return [serialize_duyuru(d, request) for d in Duyuru.objects.filter(kurum=kurum, aktif=True)[:limit]]
 
 
 def build_landing_payload(kurum, request):

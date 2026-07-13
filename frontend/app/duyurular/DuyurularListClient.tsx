@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { fetchPublicContentList, resolveMediaUrl, type Duyuru } from '@/lib/website-api';
+import { fetchPublicContentList, type Duyuru } from '@/lib/website-api';
 import { LANDING_KURUM_KOD } from '@/lib/landing-theme';
 import { formatDateTR } from '@/lib/format-date';
 import ContentBadge from '@/components/website-content/ContentBadge';
+import ContentCoverFrame from '@/components/website-content/ContentCoverFrame';
 import { CONTENT_KIND_LABEL } from '@/lib/content-labels';
 import '@/app/duyurular/content.css';
 
@@ -67,16 +68,14 @@ export default function DuyurularListClient({ initialItems }: Props) {
         <p className="text-center text-slate-500">Eşleşen içerik bulunamadı.</p>
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((d) => {
-            const cover = resolveMediaUrl(d.kapak_thumb_url || d.kapak_gorseli_url);
-            return (
+          {items.map((d) => (
               <Link key={d.id} href={`/duyurular/${d.slug}`} className="wc-card wc-scope">
-                {cover && (
-                  <div className="wc-card__cover">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={cover} alt="" loading="lazy" />
-                  </div>
-                )}
+                <ContentCoverFrame
+                  src={d.kapak_thumb_url || d.kapak_gorseli_url}
+                  alt=""
+                  variant="card"
+                  className="wc-card__cover"
+                />
                 <div className="wc-card__body">
                   <div className="wc-card__meta">
                     {d.kind && <span className="wc-kind">{CONTENT_KIND_LABEL[d.kind] || d.kind}</span>}
@@ -88,8 +87,7 @@ export default function DuyurularListClient({ initialItems }: Props) {
                   <span className="wc-card__link">Devamını Oku →</span>
                 </div>
               </Link>
-            );
-          })}
+            ))}
         </div>
       )}
     </>

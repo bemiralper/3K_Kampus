@@ -1860,6 +1860,28 @@
   font-size: 13px;
 }
 
+.cms-home-limit-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 16px;
+  margin: 0 0 4px;
+  border-bottom: 1px solid var(--cms-line, #e2e8f0);
+  background: #f8fafc;
+  font-size: 13px;
+}
+
+.cms-home-limit-bar label {
+  font-weight: 700;
+  color: #334155;
+}
+
+.cms-home-limit-hint {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .cms-badge--info {
   background: #e0f2fe;
   color: #0369a1;
@@ -2006,6 +2028,44 @@
   box-shadow: inset 0 0 0 9999px rgba(15, 23, 42, 0.12);
   pointer-events: none;
   border-radius: 12px;
+}
+
+.cms-cover-aspect-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cms-cover-aspect-btn {
+  flex: 1 1 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cms-cover-aspect-btn.is-active {
+  border-color: #0262a7;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px #0262a7;
+}
+
+.cms-cover-aspect-btn__label {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.cms-cover-aspect-btn__hint {
+  font-size: 11px;
+  color: #64748b;
 }
 
 .cms-cover-crop-zoom {

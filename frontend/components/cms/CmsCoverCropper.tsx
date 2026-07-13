@@ -1,26 +1,37 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-/** Landing kartları 16:9 — önerilen kapak çıktısı */
-export const COVER_OUTPUT_WIDTH = 1200;
-export const COVER_OUTPUT_HEIGHT = 675;
-export const COVER_SIZE_HINT = `${COVER_OUTPUT_WIDTH}×${COVER_OUTPUT_HEIGHT} px (16:9)`;
+export type CoverAspectId = '16:9' | '1:1' | '4:5';
 
-const DEFAULT_PREVIEW_W = 480;
-const DEFAULT_PREVIEW_H = Math.round((DEFAULT_PREVIEW_W * COVER_OUTPUT_HEIGHT) / COVER_OUTPUT_WIDTH);
+export type CoverAspectPreset = {
+  id: CoverAspectId;
+  label: string;
+  hint: string;
+  width: number;
+  height: number;
+};
+
+export const COVER_ASPECTS: CoverAspectPreset[] = [
+  { id: '16:9', label: '16:9', hint: 'Web kart / yatay', width: 1200, height: 675 },
+  { id: '1:1', label: '1:1', hint: 'Instagram kare', width: 1200, height: 1200 },
+  { id: '4:5', label: '4:5', hint: 'Instagram dikey', width: 1080, height: 1350 },
+];
+
+export const DEFAULT_COVER_ASPECT = COVER_ASPECTS[0];
+export const COVER_SIZE_HINT = COVER_ASPECTS.map((a) => `${a.label} ${a.width}×${a.height}`).join(' · ');
+
+const DEFAULT_PREVIEW_W = 420;
 
 type Props = {
   imageSrc: string;
   onCancel: () => void;
   onComplete: (file: File) => void | Promise<void>;
   busy?: boolean;
+  initialAspect?: CoverAspectId;
 };
 
-/**
- * Görünen pan/zoom ile canvas çıktısı aynı matematik:
- * cover baseScale * userScale, merkez + position offset.
- */
+/** cover baseScale * userScale, merkez + position offset */
 export function computeCoverDraw(
   naturalWidth: number,
   naturalHeight: number,
@@ -38,16 +49,28 @@ export function computeCoverDraw(
   return { scaledW, scaledH, drawX, drawY, finalScale, baseScale };
 }
 
-export default function CmsCoverCropper({ imageSrc, onCancel, onComplete, busy }: Props) {
+export default function CmsCoverCropper({
+  imageSrc,
+  onCancel,
+  onComplete,
+  busy,
+  initialAspect = '16:9',
+}: Props) {
   const imgRef = useRef<HTMLImageElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [aspectId, setAspectId] = useState<CoverAspectId>(initialAspect);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [ready, setReady] = useState(false);
-  const [previewSize, setPreviewSize] = useState({ w: DEFAULT_PREVIEW_W, h: DEFAULT_PREVIEW_H });
+  const [previewSize, setPreviewSize] = useState({ w: DEFAULT_PREVIEW_W, h: Math.round(DEFAULT_PREVIEW_W * 9 / 16) });
+
+  const aspect = useMemo(
+    () => COVER_ASPECTS.find((a) => a.id === aspectId) || DEFAULT_COVER_ASPECT,
+    [aspectId],
+  );
 
   useEffect(() => {
     setReady(false);
@@ -56,18 +79,23 @@ export default function CmsCoverCropper({ imageSrc, onCancel, onComplete, busy }
   }, [imageSrc]);
 
   useEffect(() => {
+    setPosition({ x: 0, y: 0 });
+    setScale(1);
+  }, [aspectId]);
+
+  useEffect(() => {
     const el = areaRef.current;
     if (!el) return;
     const sync = () => {
       const w = el.clientWidth || DEFAULT_PREVIEW_W;
-      const h = el.clientHeight || Math.round((w * COVER_OUTPUT_HEIGHT) / COVER_OUTPUT_WIDTH);
+      const h = el.clientHeight || Math.round((w * aspect.height) / aspect.width);
       setPreviewSize({ w, h });
     };
     sync();
     const ro = new ResizeObserver(sync);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [aspect]);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -107,8 +135,10 @@ export default function CmsCoverCropper({ imageSrc, onCancel, onComplete, busy }
     const previewH = areaRef.current?.clientHeight || previewSize.h;
     if (previewW < 8 || previewH < 8) return;
 
-    canvas.width = COVER_OUTPUT_WIDTH;
-    canvas.height = COVER_OUTPUT_HEIGHT;
+    const outW = aspect.width;
+    const outH = aspect.height;
+    canvas.width = outW;
+    canvas.height = outH;
 
     const { scaledW, scaledH, drawX, drawY } = computeCoverDraw(
       img.naturalWidth,
@@ -118,18 +148,18 @@ export default function CmsCoverCropper({ imageSrc, onCancel, onComplete, busy }
       previewW,
       previewH,
     );
-    const ratioX = COVER_OUTPUT_WIDTH / previewW;
-    const ratioY = COVER_OUTPUT_HEIGHT / previewH;
+    const ratioX = outW / previewW;
+    const ratioY = outH / previewH;
 
     ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, COVER_OUTPUT_WIDTH, COVER_OUTPUT_HEIGHT);
+    ctx.fillRect(0, 0, outW, outH);
     ctx.drawImage(img, drawX * ratioX, drawY * ratioY, scaledW * ratioX, scaledH * ratioY);
 
     await new Promise<void>((resolve) => {
       canvas.toBlob(
         async (blob) => {
           if (blob) {
-            const file = new File([blob], 'cover-1200x675.jpg', { type: 'image/jpeg' });
+            const file = new File([blob], `cover-${aspect.id.replace(':', 'x')}.jpg`, { type: 'image/jpeg' });
             await onComplete(file);
           }
           resolve();
@@ -146,9 +176,27 @@ export default function CmsCoverCropper({ imageSrc, onCancel, onComplete, busy }
         <div className="cms-cover-crop-head">
           <div>
             <h3>Kapak fotoğrafını ayarla</h3>
-            <p>Sürükleyerek konumlandırın, kaydırarak veya slider ile yakınlaştırın. Çıktı: {COVER_SIZE_HINT}</p>
+            <p>
+              Oran seçin, sürükleyip yakınlaştırın. Çıktı: {aspect.width}×{aspect.height} ({aspect.label})
+            </p>
           </div>
           <button type="button" className="cms-drawer-close" onClick={onCancel} aria-label="Kapat">✕</button>
+        </div>
+
+        <div className="cms-cover-aspect-row" role="radiogroup" aria-label="Kapak oranı">
+          {COVER_ASPECTS.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="radio"
+              aria-checked={aspectId === a.id}
+              className={`cms-cover-aspect-btn${aspectId === a.id ? ' is-active' : ''}`}
+              onClick={() => setAspectId(a.id)}
+            >
+              <span className="cms-cover-aspect-btn__label">{a.label}</span>
+              <span className="cms-cover-aspect-btn__hint">{a.hint}</span>
+            </button>
+          ))}
         </div>
 
         <div
@@ -157,7 +205,7 @@ export default function CmsCoverCropper({ imageSrc, onCancel, onComplete, busy }
           style={{
             width: DEFAULT_PREVIEW_W,
             maxWidth: '100%',
-            aspectRatio: `${COVER_OUTPUT_WIDTH} / ${COVER_OUTPUT_HEIGHT}`,
+            aspectRatio: `${aspect.width} / ${aspect.height}`,
           }}
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}

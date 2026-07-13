@@ -300,6 +300,7 @@ def api_admin_settings(request):
                 'neden_baslik', 'neden_alt_baslik', 'ders_formatlari_config', 'landing_bolumleri',
                 'landing_section_order',
                 'landing_sections_hidden',
+                'anasayfa_duyuru_limit',
                 'yorumlar_goster', 'sss_goster',
                 'tanitim_baslik', 'tanitim_icerik', 'youtube_video_id',
                 'harita_embed_url', 'footer_copyright', 'footer_baslik', 'footer_aciklama',
@@ -309,6 +310,11 @@ def api_admin_settings(request):
             ]:
                 if f in data:
                     setattr(settings, f, data[f])
+            if 'anasayfa_duyuru_limit' in data:
+                try:
+                    settings.anasayfa_duyuru_limit = max(1, min(12, int(data['anasayfa_duyuru_limit'])))
+                except (TypeError, ValueError):
+                    settings.anasayfa_duyuru_limit = 6
             if 'harita_embed_url' in data:
                 settings.harita_embed_url = normalize_map_embed_url(settings.harita_embed_url)
             elif 'adres' in data and (settings.harita_embed_url or '').strip() == '' and (settings.adres or '').strip():

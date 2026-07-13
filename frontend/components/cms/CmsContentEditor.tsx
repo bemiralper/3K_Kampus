@@ -9,7 +9,7 @@ import {
 } from '@/lib/website-api';
 import { CONTENT_PRIORITY_META, type ContentPriority } from '@/lib/content-labels';
 import RichTextEditor from './RichTextEditor';
-import CmsCoverCropper, { COVER_SIZE_HINT } from './CmsCoverCropper';
+import CmsCoverCropper, { COVER_ASPECTS, COVER_SIZE_HINT } from './CmsCoverCropper';
 
 const EDITABLE_KINDS = [
   { value: 'duyuru', label: 'Duyuru' },
@@ -342,7 +342,8 @@ export default function CmsContentEditor({
       <section className="cms-editor-section">
         <h4 className="cms-editor-section__title">Kapak görseli</h4>
         <p className="cms-editor-section__hint">
-          Önerilen boyut: <strong>{COVER_SIZE_HINT}</strong>. Yükledikten sonra sürükleyip yakınlaştırarak kırpabilirsiniz.
+          Oran seçenekleri: <strong>{COVER_ASPECTS.map((a) => a.label).join(' / ')}</strong>
+          {' '}({COVER_SIZE_HINT}). Kart ve detayda görsel tam görünür (letterbox); sosyal medya görselleri için 1:1 veya 4:5 seçin.
         </p>
         <div className="cms-cover-row">
           {coverPreview ? (

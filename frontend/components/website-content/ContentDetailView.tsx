@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import ContentAttachmentList from './ContentAttachmentList';
 import ContentBadge from './ContentBadge';
+import ContentCoverFrame from './ContentCoverFrame';
 import ContentLightbox from './ContentLightbox';
 import { CONTENT_KIND_LABEL, formatContentDate, shouldShowContentExcerpt } from '@/lib/content-labels';
 import { resolveMediaUrl, type PublicContentItem } from '@/lib/website-api';
@@ -11,7 +12,7 @@ type Props = { item: PublicContentItem; variant?: 'standalone' | 'embedded' };
 
 export default function ContentDetailView({ item, variant = 'standalone' }: Props) {
   const [lightbox, setLightbox] = useState<number | null>(null);
-  const cover = resolveMediaUrl(item.kapak_gorseli_url || item.kapak_thumb_url);
+  const cover = item.kapak_gorseli_url || item.kapak_thumb_url;
   const galeri = item.galeri ?? [];
   const embedded = variant === 'embedded';
   const showLead = !embedded && shouldShowContentExcerpt(item.ozet, item.icerik);
@@ -43,10 +44,7 @@ export default function ContentDetailView({ item, variant = 'standalone' }: Prop
         </div>
       )}
       {cover && (
-        <div className="wc-detail-cover mt-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={cover} alt={item.baslik} />
-        </div>
+        <ContentCoverFrame src={cover} alt={item.baslik} variant="detail" className="mt-6" />
       )}
       {showLead && <p className="mt-4 text-lg text-slate-600">{item.ozet}</p>}
       {bodyHtml ? (

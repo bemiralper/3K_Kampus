@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { websiteCmsV2Api, type CmsContentEntry } from '@/lib/website-api';
+import {
+  websiteAdminApi,
+  websiteCmsV2Api,
+  type CmsContentEntry,
+} from '@/lib/website-api';
 import { contentKindLabel, contentStatusLabel, statusBadgeClass } from '@/lib/cms/cms-labels';
 import SortableList from './SortableList';
 import CmsContentEditor, {
@@ -22,12 +26,16 @@ const KINDS = [
   { value: 'etkinlik', label: 'Etkinlik' },
 ];
 
+const LIMIT_OPTIONS = [3, 4, 6, 9, 12];
+
 export default function CmsContentPanel({ onMessage }: Props) {
   const [items, setItems] = useState<CmsContentEntry[]>([]);
   const [kind, setKind] = useState('');
   const [loading, setLoading] = useState(true);
   const [editor, setEditor] = useState<ContentEditorState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [homeLimit, setHomeLimit] = useState(6);
+  const [limitSaving, setLimitSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,6 +46,25 @@ export default function CmsContentPanel({ onMessage }: Props) {
   }, [kind, onMessage]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await websiteAdminApi.getSettings();
+      if (res.success && res.data?.anasayfa_duyuru_limit) {
+        setHomeLimit(res.data.anasayfa_duyuru_limit);
+      }
+    })();
+  }, []);
+
+  const saveHomeLimit = async (value: number) => {
+    const next = Math.max(1, Math.min(12, value));
+    setHomeLimit(next);
+    setLimitSaving(true);
+    const res = await websiteAdminApi.updateSettings({ anasayfa_duyuru_limit: next });
+    setLimitSaving(false);
+    if (res.success) onMessage(`Anasayfada ${next} duyuru kartı gösterilecek`);
+    else onMessage(res.error || 'Ayar kaydedilemedi', 'error');
+  };
 
   const openCreate = () => setEditor({ ...EMPTY_CONTENT_EDITOR, kind: kind || 'duyuru' });
 
@@ -80,6 +107,25 @@ export default function CmsContentPanel({ onMessage }: Props) {
           <button type="button" className="cms-btn cms-btn-primary cms-btn-sm" onClick={openCreate}>+ Yeni İçerik</button>
         </div>
       </div>
+
+      <div className="cms-home-limit-bar">
+        <label htmlFor="anasayfa-duyuru-limit">
+          Anasayfada gösterilecek kart sayısı
+        </label>
+        <select
+          id="anasayfa-duyuru-limit"
+          className="cms-select"
+          value={homeLimit}
+          disabled={limitSaving}
+          onChange={(e) => void saveHomeLimit(Number(e.target.value))}
+        >
+          {LIMIT_OPTIONS.map((n) => (
+            <option key={n} value={n}>{n} kart</option>
+          ))}
+        </select>
+        <span className="cms-home-limit-hint">Sıralamadaki ilk {homeLimit} içerik anasayfada görünür.</span>
+      </div>
+
       <div className="wam-panel-body">
         {loading ? (
           <div className="wam-empty">Yükleniyor…</div>
