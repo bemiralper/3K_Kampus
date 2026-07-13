@@ -36,3 +36,24 @@ export function formatFileSize(bytes: number): string {
   if (kb < 1024) return `${Math.round(kb)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
 }
+
+/** HTML/metin karşılaştırması — özet ile gövde aynıysa özet gösterilmez. */
+export function plainTextFromHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function shouldShowContentExcerpt(excerpt: string | undefined, bodyHtml: string | undefined): boolean {
+  const ex = (excerpt || '').trim();
+  const body = plainTextFromHtml(bodyHtml || '');
+  if (!ex) return false;
+  if (!body) return true;
+  if (ex === body) return false;
+  if (body.startsWith(ex)) return false;
+  return true;
+}

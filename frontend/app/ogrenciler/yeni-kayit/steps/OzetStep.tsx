@@ -318,6 +318,16 @@ export default function OzetStep({ data, metadata, districts, packages, ekHizmet
                     <div className="summary-item">
                       <span className="label">Telefon</span>
                       <span className="value">{guardian.telefon || "-"}</span>
+                      {guardian.telefonlar && guardian.telefonlar.length > 1 && (
+                        <div style={{ marginTop: 4, fontSize: 12, color: "#64748b" }}>
+                          {guardian.telefonlar.map((p) => (
+                            <div key={p.numara}>
+                              {p.numara}{p.etiket ? ` (${p.etiket})` : ""}
+                              {p.whatsapp_varsayilan ? " · WhatsApp varsayılan" : ""}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="summary-item">
                       <span className="label">E-posta</span>

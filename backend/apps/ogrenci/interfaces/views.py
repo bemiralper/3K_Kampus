@@ -40,6 +40,19 @@ def _normalize_sms_bildirimleri(raw, *, default_on_create: bool = False) -> list
 
 
 def _veli_api_dict(veli: OgrenciVeli) -> dict:
+    from apps.ogrenci.application.veli_telefon import (
+        ensure_telefonlar_populated,
+        normalize_telefonlar,
+    )
+    if ensure_telefonlar_populated(veli):
+        try:
+            veli.save(update_fields=['telefonlar'])
+        except Exception:
+            pass
+    telefonlar = normalize_telefonlar(
+        getattr(veli, 'telefonlar', None),
+        fallback_telefon=veli.telefon or '',
+    )
     return {
         'id': veli.id,
         'veli_turu': veli.veli_turu,
@@ -49,6 +62,7 @@ def _veli_api_dict(veli: OgrenciVeli) -> dict:
         'soyad': veli.soyad,
         'tam_ad': f"{veli.ad} {veli.soyad}".strip(),
         'telefon': veli.telefon or '',
+        'telefonlar': telefonlar,
         'email': veli.email or '',
         'meslek': veli.meslek or '',
         'varsayilan': veli.varsayilan,
@@ -897,18 +911,24 @@ def ogrenci_veliler_api(request, pk):
         )
 
         # Veli oluştur
-        veli = OgrenciVeli.objects.create(
+        from apps.ogrenci.application.veli_telefon import apply_telefonlar
+        veli = OgrenciVeli(
             ogrenci=ogrenci,
             veli_turu=veli_turu,
             tc_kimlik_no=_json_str(data, 'tc_kimlik_no'),
             ad=ad,
             soyad=soyad,
-            telefon=_json_str(data, 'telefon'),
             email=_json_str(data, 'email'),
             meslek=_json_str(data, 'meslek'),
             sms_bildirimleri=sms_bildirimleri,
             varsayilan=varsayilan,
         )
+        apply_telefonlar(
+            veli,
+            telefonlar=data.get('telefonlar'),
+            telefon=_json_str(data, 'telefon'),
+        )
+        veli.save()
 
         from apps.kimlik.application.kisi_service import KisiService
         from apps.kimlik.domain.models import Kisi
@@ -981,8 +1001,13 @@ def ogrenci_veli_detail_api(request, pk, veli_id):
             veli.ad = _json_str(data, 'ad')
         if 'soyad' in data:
             veli.soyad = _json_str(data, 'soyad')
-        if 'telefon' in data:
-            veli.telefon = _json_str(data, 'telefon')
+        if 'telefon' in data or 'telefonlar' in data:
+            from apps.ogrenci.application.veli_telefon import apply_telefonlar
+            apply_telefonlar(
+                veli,
+                telefonlar=data.get('telefonlar') if 'telefonlar' in data else None,
+                telefon=_json_str(data, 'telefon') if 'telefon' in data else None,
+            )
         if 'email' in data:
             veli.email = _json_str(data, 'email')
         if 'meslek' in data:

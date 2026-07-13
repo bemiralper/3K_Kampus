@@ -181,6 +181,7 @@ export type GuardianData = {
   soyad: string;
   email: string;
   telefon: string;
+  telefonlar?: { numara: string; etiket: string; whatsapp_varsayilan: boolean }[];
   meslek: string;
   is_sms_enabled: boolean;
   is_email_enabled: boolean;

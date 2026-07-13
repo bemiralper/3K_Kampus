@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIsoLocal } from "@/lib/date-utils";
 import React, { useEffect, useMemo, useState } from "react";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { financialAccountService, paymentMethodService } from "../../services/finans-api";
@@ -16,7 +17,7 @@ import { islemMasrafiGoster } from "../../utils/islem-masrafi-eligibility";
 
 const fmtTL = (v: number) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v || 0);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayIsoLocal();
 
 interface OdemeYapModalProps {
   onClose: () => void;

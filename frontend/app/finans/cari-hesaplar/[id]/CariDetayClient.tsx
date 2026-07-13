@@ -17,7 +17,7 @@ import {
   CariDosya,
   CariHesapCariOzet,
   HESAP_TURLERI,
-  CARI_ISLEM_YETKI,
+  resolveCariIslemYetki,
   cariTabGorunur,
 } from "../../types/cari-hesap-types";
 import {
@@ -489,9 +489,10 @@ export default function CariDetayClient({
     () => HESAP_TURLERI.find((t) => t.value === hesap?.hesap_turu),
     [hesap?.hesap_turu]
   );
-  const islemYetki = hesap?.hesap_turu
-    ? CARI_ISLEM_YETKI[hesap.hesap_turu]
-    : CARI_ISLEM_YETKI.tedarikci;
+  const islemYetki = useMemo(
+    () => resolveCariIslemYetki(hesap?.hesap_turu),
+    [hesap?.hesap_turu],
+  );
   const bakiye = (hesap?.toplam_borc ?? 0) - (hesap?.toplam_alacak ?? 0);
   const bakiyeInfo = bakiyeEtiketi(bakiye);
   const serbestBakiye = hesap?.serbest_bakiye ?? 0;
@@ -860,77 +861,44 @@ export default function CariDetayClient({
             {islemYetki.islemLabel}
           </span>
           <span className="hero-code">{hesap.hesap_kodu || "—"}</span>
+        </div>
+      </div>
+
+      <div className="cari-action-bar">
+        <div className="cari-action-bar__left">
+          <button
+            type="button"
+            className="cari-action-bar__btn cari-action-bar__btn--primary"
+            onClick={() => setShowSerbestOdemeDrawer(true)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+              <line x1="1" y1="10" x2="23" y2="10" />
+            </svg>
+            Serbest Ödeme
+          </button>
           {islemYetki.alim && (
             <button
-              className="btn-hero"
-              onClick={() => setShowSerbestOdemeDrawer(true)}
-            >
-              <span className="btn-hero-icon">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <rect
-                    x="1"
-                    y="4"
-                    width="22"
-                    height="16"
-                    rx="2"
-                    ry="2"
-                  />
-                  <line x1="1" y1="10" x2="23" y2="10" />
-                </svg>
-              </span>
-              <span>Ödeme Yap</span>
-            </button>
-          )}
-          {islemYetki.alim && (
-            <button
-              className="btn-hero btn-hero-secondary"
+              type="button"
+              className="cari-action-bar__btn"
               onClick={() => setShowGiderDrawer(true)}
             >
-              <span className="btn-hero-icon">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </span>
-              <span>Gider Ekle</span>
+              Gider Ekle
             </button>
           )}
           {islemYetki.satim && (
             <button
-              className="btn-hero btn-hero-secondary"
+              type="button"
+              className="cari-action-bar__btn"
               onClick={openGelirDrawer}
             >
-              <span className="btn-hero-icon">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </span>
-              <span>Gelir Ekle</span>
+              Gelir Ekle
             </button>
           )}
         </div>
+        <p className="cari-action-bar__hint">
+          Gider kaydı olmadan kasadan cari hesaba ödeme
+        </p>
       </div>
 
       {/* ─── QUICK STATS ─── */}
@@ -1200,7 +1168,7 @@ export default function CariDetayClient({
                 </button>
               </>
             )}
-            {activeTab === "odemeler" && cariTabGorunur("odemeler", hesap.hesap_turu) && (
+            {activeTab === "odemeler" && (
               <>
                 <button
                   onClick={loadOdemeler}
@@ -2075,7 +2043,7 @@ export default function CariDetayClient({
       )}
 
       {/* DRAWER: SERBEST ÖDEME */}
-      {showSerbestOdemeDrawer && islemYetki.alim && (
+      {showSerbestOdemeDrawer && (
         <SerbestOdemeDrawer
           kurumId={kurumId}
           cariHesapId={cariHesapId}
@@ -2199,12 +2167,50 @@ export default function CariDetayClient({
           font-weight: 600;
           font-family: monospace;
         }
-        .btn-hero-secondary {
-          background: rgba(255, 255, 255, 0.15) !important;
-          border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        .cari-action-bar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 14px 20px;
+          background: #fff;
+          border-bottom: 1px solid #e2e8f0;
         }
-        .btn-hero-secondary:hover {
-          background: rgba(255, 255, 255, 0.25) !important;
+        .cari-action-bar__left {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px;
+        }
+        .cari-action-bar__btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          border: 1px solid #cbd5e1;
+          background: #fff;
+          color: #0f172a;
+          border-radius: 10px;
+          padding: 10px 16px;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .cari-action-bar__btn:hover {
+          background: #f8fafc;
+        }
+        .cari-action-bar__btn--primary {
+          background: #0262a7;
+          border-color: #0262a7;
+          color: #fff;
+        }
+        .cari-action-bar__btn--primary:hover {
+          background: #014f87;
+        }
+        .cari-action-bar__hint {
+          margin: 0;
+          font-size: 12px;
+          color: #64748b;
         }
 
         /* Detail sections */

@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIsoLocal } from "@/lib/date-utils";
 import React, { useEffect, useMemo, useState } from "react";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { financialAccountService, paymentMethodService } from "../../services/finans-api";
@@ -21,7 +22,7 @@ const fmtTL = (v: number) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(v || 0);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayIsoLocal();
 
 export type VirmanMode = "virman" | "kasadan_bankaya" | "bankadan_kasaya";
 

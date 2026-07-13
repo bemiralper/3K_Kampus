@@ -1,5 +1,6 @@
 // ─── Finans Modülü — Dashboard API Service ─────────────────────
 import { finansRequest } from "./finans-http";
+import { todayIsoLocal } from "@/lib/date-utils";
 
 // ─── Legacy Dashboard Types ─────────────────────────────────────
 
@@ -210,14 +211,6 @@ export interface DashboardOverview {
 
 // ─── Service ────────────────────────────────────────────────────
 
-function localTodayISO(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function buildParams(params: {
   kurum_id: number;
   sube_id?: number;
@@ -228,7 +221,7 @@ function buildParams(params: {
   qs.set("kurum_id", String(params.kurum_id));
   if (params.sube_id) qs.set("sube_id", String(params.sube_id));
   if (params.egitim_yili_id) qs.set("egitim_yili_id", String(params.egitim_yili_id));
-  qs.set("referans_tarih", params.referans_tarih ?? localTodayISO());
+  qs.set("referans_tarih", params.referans_tarih ?? todayIsoLocal());
   return qs;
 }
 

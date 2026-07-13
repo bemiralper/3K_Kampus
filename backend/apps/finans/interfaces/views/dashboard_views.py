@@ -64,7 +64,7 @@ class FinansDashboardView(APIView):
         aktif_sozlesme_ids = list(aktif_sozlesmeler.values_list('id', flat=True))
         tum_sozlesme_ids = list(tum_sozlesmeler.values_list('id', flat=True))
 
-        bugun = date.today()
+        bugun = timezone.localdate()
         ay_basi = bugun.replace(day=1)
         yedi_gun_sonra = bugun + timedelta(days=7)
 
@@ -312,6 +312,9 @@ class DashboardOverviewView(APIView):
             return err
 
         egitim_yili_id = request.query_params.get('egitim_yili_id')
+        if not egitim_yili_id:
+            from shared.context import get_secili_egitim_yili_id
+            egitim_yili_id = get_secili_egitim_yili_id(request)
         referans_tarih = parse_date(request.query_params.get('referans_tarih'))
 
         data = DashboardOverviewService.build(

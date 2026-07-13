@@ -232,11 +232,23 @@ export const CARI_ISLEM_YETKI = {
   karma: { alim: true, satim: true, islemLabel: 'Alım & Satış' },
 } as const;
 
+export type CariIslemYetki = (typeof CARI_ISLEM_YETKI)[CariHesapTuru];
+
+/** API'den gelen hesap_turu için güvenli yetki çözümü. */
+export function resolveCariIslemYetki(hesapTuru?: string | null): CariIslemYetki {
+  const key = String(hesapTuru || '').toLowerCase().trim();
+  if (key === 'musteri' || key === 'tedarikci' || key === 'karma') {
+    return CARI_ISLEM_YETKI[key];
+  }
+  // Bilinmeyen türde ödeme butonunu gizlememek için tedarikçi yetkisi
+  return CARI_ISLEM_YETKI.tedarikci;
+}
+
 export function cariTabGorunur(
   tab: 'giderler' | 'gelirler' | 'odemeler',
-  hesapTuru: CariHesapTuru
+  hesapTuru: CariHesapTuru | string
 ): boolean {
-  const y = CARI_ISLEM_YETKI[hesapTuru];
+  const y = resolveCariIslemYetki(hesapTuru);
   if (tab === 'giderler' || tab === 'odemeler') return y.alim;
   if (tab === 'gelirler') return y.satim;
   return true;

@@ -1,7 +1,59 @@
 import type { Metadata } from 'next';
-import type { LandingData } from '@/lib/website-api';
+import type { Duyuru, LandingData } from '@/lib/website-api';
+import { resolveMediaUrl } from '@/lib/website-api';
 import { mergeBranding, getFaviconUrl, getAppLogo } from '@/lib/kurum-branding';
 import { absoluteSiteUrl } from '@/lib/site-url';
+import { SITE_TAB_TITLE } from '@/lib/landing-theme';
+
+/** Göreli /media/... yolunu WhatsApp OG için mutlak HTTPS URL yapar */
+export function absoluteMediaUrl(url: string | null | undefined): string | undefined {
+  const resolved = resolveMediaUrl(url);
+  if (!resolved) return undefined;
+  return absoluteSiteUrl(resolved);
+}
+
+/** Duyuru / haber detay — WhatsApp & sosyal önizleme */
+export function buildDuyuruMetadata(duyuru: Duyuru, slug: string): Metadata {
+  const title = duyuru.baslik || 'Duyuru';
+  const pageTitle = `${title} · ${SITE_TAB_TITLE}`;
+  const description = (duyuru.ozet || '').trim() || undefined;
+  const canonical = absoluteSiteUrl(`/duyurular/${slug}`);
+  const cover =
+    absoluteMediaUrl(duyuru.kapak_gorseli_url) ||
+    absoluteMediaUrl(duyuru.kapak_thumb_url);
+
+  return {
+    title: pageTitle,
+    description,
+    alternates: { canonical },
+    openGraph: {
+      type: 'article',
+      locale: 'tr_TR',
+      url: canonical,
+      siteName: SITE_TAB_TITLE,
+      title,
+      description,
+      ...(cover
+        ? {
+            images: [
+              {
+                url: cover,
+                width: 1200,
+                height: 675,
+                alt: title,
+              },
+            ],
+          }
+        : {}),
+    },
+    twitter: {
+      card: cover ? 'summary_large_image' : 'summary',
+      title,
+      description,
+      ...(cover ? { images: [cover] } : {}),
+    },
+  };
+}
 
 export function buildLandingMetadata(data: LandingData | null, path = '/'): Metadata {
   const branding = mergeBranding(data?.kurum);

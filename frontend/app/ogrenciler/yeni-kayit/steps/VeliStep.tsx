@@ -13,6 +13,10 @@ import {
   mergeKimlikForVeli,
   tcReadonlyClass,
 } from "@/lib/kimlik-form-utils";
+import VeliTelefonEditor, {
+  ensureTelefonlar,
+  whatsappDefaultPhone,
+} from "@/components/ogrenci/VeliTelefonEditor";
 
 interface VeliStepProps {
   data: WizardData;
@@ -75,6 +79,7 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
             ad: "",
             soyad: "",
             telefon: "",
+            telefonlar: ensureTelefonlar(null, ""),
             email: "",
             meslek: "",
             is_sms_enabled: true,
@@ -183,6 +188,8 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
     const veliRol = pickVeliRol(modalKimlik.roller);
     const idx = veliModalIndex;
     const newGuardians = [...data.guardians];
+    const phone =
+      ortak.telefon || veliRol?.telefon || veliTcResult?.veli?.telefon || newGuardians[idx].telefon;
     newGuardians[idx] = {
       ...newGuardians[idx],
       kisi_id: modalKimlik.kisi?.id || veliTcResult?.veli?.kisi_id || undefined,
@@ -190,7 +197,8 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
       tc_kimlik_no: ortak.tc_kimlik_no || newGuardians[idx].tc_kimlik_no,
       ad: ortak.ad || veliRol?.ad || newGuardians[idx].ad,
       soyad: ortak.soyad || veliRol?.soyad || newGuardians[idx].soyad,
-      telefon: ortak.telefon || veliRol?.telefon || veliTcResult?.veli?.telefon || newGuardians[idx].telefon,
+      telefon: phone,
+      telefonlar: ensureTelefonlar(newGuardians[idx].telefonlar, phone),
       email: ortak.email || veliRol?.email || veliTcResult?.veli?.email || newGuardians[idx].email,
       meslek: veliRol?.meslek || veliTcResult?.veli?.meslek || newGuardians[idx].meslek,
     };
@@ -292,6 +300,7 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
           ad: "",
           soyad: "",
           telefon: "",
+          telefonlar: ensureTelefonlar(null, ""),
           email: "",
           meslek: "",
           is_sms_enabled: true,
@@ -534,26 +543,22 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
                   )}
                 </div>
 
-                {/* Telefon */}
-                <div className="wizard-field">
-                  <label className="wizard-label required">Telefon</label>
-                  <input
-                    type="tel"
-                    className={kimlikFieldClass(
-                      `wizard-input ${errors["guardian_" + index + "_telefon"] ? "error" : ""}`,
-                      `g${index}_telefon`,
-                      highlightedFields,
-                    )}
-                    value={guardian.telefon}
-                    placeholder="(5XX) XXX XX XX"
-                    onChange={(e) => handlePhoneChange(index, "telefon", e.target.value)}
-                    onBlur={() => checkVeliPhone(guardian.telefon, index, guardian.kisi_id)}
+                {/* Telefonlar */}
+                <div className="wizard-field full-width">
+                  <VeliTelefonEditor
+                    idPrefix={`g${index}`}
+                    value={ensureTelefonlar(guardian.telefonlar, guardian.telefon)}
+                    error={errors["guardian_" + index + "_telefon"]}
+                    onChange={(telefonlar) => {
+                      const newGuardians = [...data.guardians];
+                      const telefon = whatsappDefaultPhone(telefonlar);
+                      newGuardians[index] = { ...newGuardians[index], telefonlar, telefon };
+                      onChange({ ...data, guardians: newGuardians });
+                      if (telefon) checkVeliPhone(telefon, index, guardian.kisi_id);
+                    }}
                   />
                   {phoneConflictByIndex[index] && (
                     <span className="kimlik-phone-error">{phoneConflictByIndex[index]}</span>
-                  )}
-                  {errors["guardian_" + index + "_telefon"] && (
-                    <span className="wizard-error">{errors["guardian_" + index + "_telefon"]}</span>
                   )}
                 </div>
 

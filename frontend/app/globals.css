@@ -4837,10 +4837,30 @@ a {
   text-align: right;
 }
 
+.veli-phones {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.veli-phone-row {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .veli-detail-value-phone {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.veli-detail-value-phone .whatsapp-btn {
+  flex-shrink: 0;
+  border: none;
+  cursor: pointer;
+  padding: 0;
 }
 
 .veli-detail-value-phone span {

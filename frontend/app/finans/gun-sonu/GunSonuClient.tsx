@@ -28,8 +28,9 @@ import GGProvider from "../gelir-gider-v2/GGProvider";
 import { gunSonuService } from "../services/para-hareketi-api";
 import type { GunSonuDetayRapor, GunSonuOzet, GunSonuOzetRapor } from "../types/para-hareketi-types";
 import { fmtTL } from "@/components/finans/FinansFilterBar";
+import { todayIsoLocal } from "@/lib/date-utils";
 
-function todayIso() { return new Date().toISOString().slice(0, 10); }
+function todayIso() { return todayIsoLocal(); }
 
 type ViewTab = "rapor" | "detay" | "canli";
 

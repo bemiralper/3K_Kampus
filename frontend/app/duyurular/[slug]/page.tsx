@@ -1,27 +1,27 @@
-import Link from 'next/link';
+import type { Metadata } from 'next';
 import { fetchDuyuruDetail } from '@/lib/website-api';
-import { LANDING_KURUM_KOD } from '@/lib/landing-theme';
+import { LANDING_KURUM_KOD, SITE_TAB_TITLE } from '@/lib/landing-theme';
+import { buildDuyuruMetadata } from '@/lib/landing-seo';
+import { getLandingPageData, landingPageDynamic } from '@/lib/landing-page-data';
 import { notFound } from 'next/navigation';
-import ContentDetailView from '@/components/website-content/ContentDetailView';
+import DuyuruDetailPageClient from '../DuyuruDetailPageClient';
 import '@/app/duyurular/content.css';
+
+export const dynamic = landingPageDynamic;
 
 type Props = { params: { slug: string } };
 
-export default async function DuyuruDetailPage({ params }: Props) {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const duyuru = await fetchDuyuruDetail(LANDING_KURUM_KOD, params.slug);
-  if (!duyuru) notFound();
+  if (!duyuru) return { title: `Duyuru · ${SITE_TAB_TITLE}` };
+  return buildDuyuruMetadata(duyuru, params.slug);
+}
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4">
-          <Link href="/duyurular" className="text-sm font-medium text-[#0262a7] hover:underline">← Duyurular</Link>
-          <Link href="/" className="text-sm text-slate-500 hover:underline">Anasayfa</Link>
-        </div>
-      </header>
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <ContentDetailView item={duyuru} />
-      </div>
-    </div>
-  );
+export default async function DuyuruDetailPage({ params }: Props) {
+  const [initialData, duyuru] = await Promise.all([
+    getLandingPageData(),
+    fetchDuyuruDetail(LANDING_KURUM_KOD, params.slug),
+  ]);
+  if (!duyuru) notFound();
+  return <DuyuruDetailPageClient initialData={initialData} duyuru={duyuru} />;
 }

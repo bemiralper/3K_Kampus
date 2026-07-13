@@ -21,6 +21,7 @@ import {
 } from "./types";
 import { validateTcKimlik, hasWizardUserInput } from "./utils";
 import { apiFetch } from "@/lib/api";
+import { ensureTelefonlar } from "@/components/ogrenci/VeliTelefonEditor";
 import { isKimlikConflictCode, useKimlikLookup } from "@/hooks/useKimlikLookup";
 import type { KimlikResolveResponse } from "@/lib/kimlik-api";
 import KimlikStep from "./steps/KimlikStep";
@@ -474,6 +475,10 @@ export default function OgrenciKayitClient() {
         soyad: v.soyad,
         email: v.email || "",
         telefon: v.telefon || "",
+        telefonlar: ensureTelefonlar(
+          (v as { telefonlar?: { numara: string; etiket: string; whatsapp_varsayilan: boolean }[] }).telefonlar,
+          v.telefon || "",
+        ),
         meslek: v.meslek || "",
         is_sms_enabled: true,
         is_email_enabled: true,

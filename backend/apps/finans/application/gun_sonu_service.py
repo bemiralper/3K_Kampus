@@ -11,6 +11,7 @@ Veri kaynakları:
 from datetime import date
 
 from django.db.models import Sum, Count
+from django.utils import timezone
 
 from apps.finans.constants.payment_types import OdemeYontemiTipi
 from apps.finans.constants.gider_types import OdemeDurum
@@ -28,7 +29,7 @@ class GunSonuService:
         self.bakiye_repo = BakiyeHareketiRepository()
 
     def ozet(self, kurum_id, gun=None, sube_id=None):
-        gun = gun or date.today()
+        gun = gun or timezone.localdate()
 
         tahsilat_kirilimi, tahsilat_toplam, tahsilat_adet = self._tahsilat_kirilimi(kurum_id, gun, sube_id)
         odeme_kirilimi, odeme_toplam, odeme_adet = self._odeme_kirilimi(kurum_id, gun, sube_id)

@@ -167,6 +167,7 @@ class DraftGuardianSerializer(serializers.ModelSerializer):
             "soyad",
             "email",
             "telefon",
+            "telefonlar",
             "sms_bildirimleri",
             "egitim_seviyesi",
             "meslek",

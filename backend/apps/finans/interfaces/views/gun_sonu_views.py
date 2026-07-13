@@ -3,6 +3,7 @@ Gün Sonu View — günlük tahsilat/ödeme özeti, özet rapor export ve WhatsA
 """
 from datetime import date
 
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -22,7 +23,8 @@ from apps.finans.interfaces.views.expansion_views import (
 
 def _parse_gun(gun_str: str | None) -> date | tuple[None, Response]:
     if not gun_str:
-        return date.today(), None
+        # Europe/Istanbul (TIME_ZONE) — UTC date.today() gece 00:00-03:00 kayması yapar
+        return timezone.localdate(), None
     try:
         return date.fromisoformat(gun_str), None
     except ValueError:

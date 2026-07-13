@@ -146,7 +146,7 @@ class GelirGiderRaporView(ExportFormatMixin, APIView):
         gider_base &= ~Q(durum__in=[GiderDurum.TASLAK, GiderDurum.IPTAL])
 
         # ─── Aylık Gelir (son 12 ay) ─────────────────────────
-        bugun = date.today()
+        bugun = timezone.localdate()
         aylik = []
 
         for i in range(11, -1, -1):
@@ -271,7 +271,7 @@ class TahsilatAnalizView(ExportFormatMixin, APIView):
         sozlesmeler = Sozlesme.objects.filter(f, durum__in=aktif_durumlar)
         sozlesme_ids = list(sozlesmeler.values_list('id', flat=True))
 
-        bugun = date.today()
+        bugun = timezone.localdate()
         ay_basi = bugun.replace(day=1)
 
         # ─── Genel Tahsilat Oranları ─────────────────────────
@@ -429,7 +429,7 @@ class BorcYaslandirmaView(ExportFormatMixin, APIView):
             .values_list('id', flat=True)
         )
 
-        bugun = date.today()
+        bugun = timezone.localdate()
 
         # ─── Gecikmiş Taksitler ──────────────────────────────
         geciken_taksitler = (

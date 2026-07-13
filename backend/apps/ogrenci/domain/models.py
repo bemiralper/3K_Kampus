@@ -397,6 +397,12 @@ class OgrenciVeli(models.Model):
     ad = models.CharField('Ad', max_length=100)
     soyad = models.CharField('Soyad', max_length=100)
     telefon = models.CharField('Telefon', max_length=20, blank=True)
+    telefonlar = models.JSONField(
+        'Telefon Numaraları',
+        default=list,
+        blank=True,
+        help_text='[{"numara":"05xx","etiket":"Cep","whatsapp_varsayilan":true}] — telefon alanı WhatsApp varsayılanıdır.',
+    )
     email = models.EmailField('E-posta', blank=True)
     
     # SMS Bildirimleri (JSON array olarak saklanacak)

@@ -215,17 +215,21 @@ export const tanimService = {
   },
 
   update(tip: TanimTipi, id: number, payload: Record<string, unknown>): Promise<GGTanim> {
-    return request<GGTanim>(`/${TANIM_PATHS[tip]}/${id}/`, {
+    const kurum_id = Number(payload.kurum_id);
+    const qs = Number.isFinite(kurum_id) && kurum_id > 0 ? `?${buildParams({ kurum_id })}` : "";
+    return request<GGTanim>(`/${TANIM_PATHS[tip]}/${id}/${qs}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
   },
 
-  remove(tip: TanimTipi, id: number): Promise<void> {
-    return request(`/${TANIM_PATHS[tip]}/${id}/`, { method: "DELETE" });
+  remove(tip: TanimTipi, id: number, kurum_id: number): Promise<void> {
+    return request(`/${TANIM_PATHS[tip]}/${id}/?${buildParams({ kurum_id })}`, { method: "DELETE" });
   },
 
-  toggle(tip: TanimTipi, id: number): Promise<GGTanim> {
-    return request<GGTanim>(`/${TANIM_PATHS[tip]}/${id}/toggle/`, { method: "POST" });
+  toggle(tip: TanimTipi, id: number, kurum_id: number): Promise<GGTanim> {
+    return request<GGTanim>(`/${TANIM_PATHS[tip]}/${id}/toggle/?${buildParams({ kurum_id })}`, {
+      method: "POST",
+    });
   },
 };

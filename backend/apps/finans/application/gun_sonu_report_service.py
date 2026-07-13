@@ -72,7 +72,7 @@ class GunSonuReportService:
         sube_ad: str | None = None,
         base: dict | None = None,
     ) -> dict:
-        gun = gun or date.today()
+        gun = gun or timezone.localdate()
         if base is None:
             base = self._gun_sonu.ozet(kurum_id, gun, sube_id)
 

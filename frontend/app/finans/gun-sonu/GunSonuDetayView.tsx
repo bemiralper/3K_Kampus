@@ -110,18 +110,60 @@ function PieMini({ title, data }: { title: string; data: { label: string; tutar:
   );
 }
 
+function StoryCard({
+  label,
+  value,
+  hint,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone?: "in" | "out" | "net" | "neutral";
+}) {
+  const toneClass =
+    tone === "in" ? "border-emerald-200 bg-emerald-50/60"
+    : tone === "out" ? "border-rose-200 bg-rose-50/60"
+    : tone === "net" ? "border-blue-200 bg-blue-50/70"
+    : "border-slate-200 bg-white";
+  const valueClass =
+    tone === "in" ? "text-emerald-700"
+    : tone === "out" ? "text-rose-700"
+    : tone === "net" ? "text-blue-800"
+    : "text-slate-900";
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${toneClass}`}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-1 text-xl font-extrabold tabular-nums ${valueClass}`}>{value}</div>
+      <div className="mt-1 text-[11px] leading-snug text-slate-500">{hint}</div>
+    </div>
+  );
+}
+
 export default function GunSonuDetayView({ detay }: Props) {
   const ozet = detay.ozet;
   const yo = detay.yonetici_ozeti;
   const kasa = detay.kasa_ozeti;
   const grafik = detay.grafikler;
+  const banka = detay.banka_hareketleri;
+
+  const giren = (ozet.toplam_alinan ?? ozet.toplam_tahsilat) + ozet.toplam_gelir;
+  const cikan = ozet.toplam_gider + ozet.toplam_iade;
+  const fark = giren - cikan;
+  const kasaNet = kasa.gunluk_giris - kasa.gunluk_cikis;
 
   return (
     <div className="space-y-4">
-      {/* Yönetici Özeti */}
       <div className="bg-gradient-to-r from-slate-50 to-blue-50/40 border border-gray-100 rounded-2xl p-5">
         <h2 className="text-lg font-extrabold text-[#1F3C88] mb-1">{detay.kapak.baslik}</h2>
         <p className="text-sm text-gray-600">{detay.kapak.kurum_ad} · {detay.kapak.sube} · {detay.kapak.tarih}</p>
+        <p className="mt-2 text-xs text-slate-500 max-w-3xl leading-relaxed">
+          Bu rapor seçilen günün parasal hareketlerini özetler.
+          <strong> Giren</strong> = tahsilat + gelir;
+          <strong> Çıkan</strong> = gider ödemeleri + iadeler;
+          <strong> Fark</strong> = giren − çıkan.
+          Altta kasa/banka satırları fiziksel nakit ve banka hesaplarına yansıyan hareketlerdir.
+        </p>
 
         {detay.uyarilar && detay.uyarilar.length > 0 && (
           <div className="mt-3 space-y-1">
@@ -140,8 +182,91 @@ export default function GunSonuDetayView({ detay }: Props) {
           </div>
         )}
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+          <StoryCard
+            label="1) Bugün giren"
+            value={fmtTL(giren)}
+            hint={`Tahsilat ${fmtTL(ozet.toplam_alinan ?? ozet.toplam_tahsilat)} + gelir ${fmtTL(ozet.toplam_gelir)}`}
+            tone="in"
+          />
+          <StoryCard
+            label="2) Bugün çıkan"
+            value={fmtTL(cikan)}
+            hint={`Gider ${fmtTL(ozet.toplam_gider)} + iade ${fmtTL(ozet.toplam_iade)}`}
+            tone="out"
+          />
+          <StoryCard
+            label="3) Günün farkı"
+            value={fmtTL(fark)}
+            hint={fark >= 0 ? "Giren, çıkandan fazla" : "Çıkan, girenden fazla"}
+            tone="net"
+          />
+          <StoryCard
+            label="4) Kasa net değişim"
+            value={fmtTL(kasaNet)}
+            hint={`Kasaya +${fmtTL(kasa.gunluk_giris)} / kasadan −${fmtTL(kasa.gunluk_cikis)}`}
+            tone="neutral"
+          />
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white/90 p-4">
+          <p className="text-xs font-bold text-slate-700 mb-2">Kasa hikâyesi (nakit)</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+            <div>
+              <div className="text-[10px] uppercase text-slate-400 font-semibold">Güne başlangıç</div>
+              <div className="text-sm font-extrabold text-slate-800 tabular-nums">{fmtTL(kasa.acilis_kasa)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-emerald-600 font-semibold">+ Giriş</div>
+              <div className="text-sm font-extrabold text-emerald-700 tabular-nums">{fmtTL(kasa.gunluk_giris)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-rose-600 font-semibold">− Çıkış</div>
+              <div className="text-sm font-extrabold text-rose-700 tabular-nums">{fmtTL(kasa.gunluk_cikis)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-blue-600 font-semibold">= Beklenen kasa</div>
+              <div className="text-sm font-extrabold text-blue-800 tabular-nums">{fmtTL(kasa.beklenen_kasa)}</div>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Formül: başlangıç + giriş − çıkış = beklenen kasa
+            {kasa.sayim_yapildi ? ` · Sayılan: ${fmtTL(kasa.sayilan_kasa ?? 0)} · Fark: ${fmtTL(kasa.kasa_farki)}` : " · Sayım yapılmadı"}
+          </p>
+        </div>
+
+        {banka && (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white/90 p-4">
+            <p className="text-xs font-bold text-slate-700 mb-2">Banka özeti</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center mb-3">
+              <div>
+                <div className="text-[10px] uppercase text-emerald-600 font-semibold">Banka giriş</div>
+                <div className="text-sm font-extrabold text-emerald-700 tabular-nums">{fmtTL(banka.banka_girisleri)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase text-rose-600 font-semibold">Banka çıkış</div>
+                <div className="text-sm font-extrabold text-rose-700 tabular-nums">{fmtTL(banka.banka_cikislari)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase text-slate-500 font-semibold">Havale</div>
+                <div className="text-sm font-extrabold text-slate-800 tabular-nums">{fmtTL(banka.havale)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase text-slate-500 font-semibold">EFT</div>
+                <div className="text-sm font-extrabold text-slate-800 tabular-nums">{fmtTL(banka.eft)}</div>
+              </div>
+            </div>
+            {banka.banka_bazli_toplamlar.length > 0 && (
+              <SimpleTable
+                headers={["Banka hesabı", "Giriş", "Çıkış", "Net"]}
+                rows={banka.banka_bazli_toplamlar.map((r) => [r.banka, r.giris, r.cikis, r.net])}
+              />
+            )}
+          </div>
+        )}
+
         {yo && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-4 pt-4 border-t border-blue-100">
             <MiniStat label="Yeni Öğrenci" value={String(yo.yeni_ogrenci)} />
             <MiniStat label="Yeni Sözleşme" value={String(yo.yeni_sozlesme)} />
             <MiniStat label="Tahsilat" value={fmtTL(yo.tahsilat)} />
@@ -154,16 +279,8 @@ export default function GunSonuDetayView({ detay }: Props) {
             <MiniStat label="Kesilen Fatura" value={String(yo.kesilen_fatura)} />
           </div>
         )}
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-blue-100">
-          <MiniStat label="Toplam Tahsilat" value={fmtTL(ozet.toplam_tahsilat)} />
-          <MiniStat label="Toplam Gelir" value={fmtTL(ozet.toplam_gelir)} />
-          <MiniStat label="Toplam Gider" value={fmtTL(ozet.toplam_gider)} />
-          <MiniStat label="Net Nakit (Kasa)" value={fmtTL(ozet.net_nakit_girisi)} highlight />
-        </div>
       </div>
 
-      {/* Grafikler */}
       {grafik && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <PieMini title="Ödeme Türü Dağılımı" data={grafik.odeme_turu_dagilimi} />
@@ -296,29 +413,6 @@ export default function GunSonuDetayView({ detay }: Props) {
         </Section>
       )}
 
-      {detay.banka_hareketleri && (
-        <Section title="Banka Hareketleri">
-          <SimpleTable
-            headers={["Kalem", "Tutar"]}
-            rows={[
-              ["Havale", detay.banka_hareketleri.havale],
-              ["EFT", detay.banka_hareketleri.eft],
-              ["Banka Girişleri", detay.banka_hareketleri.banka_girisleri],
-              ["Banka Çıkışları", detay.banka_hareketleri.banka_cikislari],
-            ]}
-          />
-          {detay.banka_hareketleri.banka_bazli_toplamlar.length > 0 && (
-            <>
-              <p className="text-[11px] font-semibold text-gray-500 mt-3 mb-1">Banka Bazlı Toplamlar</p>
-              <SimpleTable
-                headers={["Banka", "Giriş", "Çıkış", "Net"]}
-                rows={detay.banka_hareketleri.banka_bazli_toplamlar.map((r) => [r.banka, r.giris, r.cikis, r.net])}
-              />
-            </>
-          )}
-        </Section>
-      )}
-
       {detay.pos_hareketleri && (
         <Section title="POS Hareketleri" count={detay.pos_hareketleri.length}>
           <SimpleTable
@@ -328,7 +422,7 @@ export default function GunSonuDetayView({ detay }: Props) {
         </Section>
       )}
 
-      <Section title="Kasa Özeti" defaultOpen>
+      <Section title="Kasa Özeti (detay kalemleri)">
         <SimpleTable
           headers={["Kalem", "Tutar"]}
           rows={[

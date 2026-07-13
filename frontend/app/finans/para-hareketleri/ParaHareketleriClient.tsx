@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
+import { todayIsoLocal, dateToIsoLocal } from "@/lib/date-utils";
 import { paraHareketiService } from "../services/para-hareketi-api";
 import { financialAccountService } from "../services/finans-api";
 import { KAYNAK_LABELS, type ParaHareketi } from "../types/para-hareketi-types";
@@ -40,11 +41,11 @@ const KAYNAK_FILTER_OPTIONS = [
   { value: "gelir", label: "Gelir Tahsilatı" },
 ];
 
-function todayIso() { return new Date().toISOString().slice(0, 10); }
+function todayIso() { return todayIsoLocal(); }
 function daysAgoIso(n: number) {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return dateToIsoLocal(d);
 }
 
 export default function ParaHareketleriClient({ embedded = false }: { embedded?: boolean }) {

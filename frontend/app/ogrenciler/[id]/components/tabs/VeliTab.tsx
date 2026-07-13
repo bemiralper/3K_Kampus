@@ -3,6 +3,11 @@
 import { useState, useEffect } from "react";
 import { OgrenciDetay, OgrenciVeli } from "../../types";
 import WhatsAppChatButton from "@/components/communication/WhatsAppChatButton";
+import VeliTelefonEditor, {
+  ensureTelefonlar,
+  whatsappDefaultPhone,
+  type VeliTelefonItem,
+} from "@/components/ogrenci/VeliTelefonEditor";
 import { apiFetch } from "@/lib/api";
 
 interface VeliTabProps {
@@ -15,6 +20,7 @@ interface VeliFormData {
   ad: string;
   soyad: string;
   telefon: string;
+  telefonlar: VeliTelefonItem[];
   email: string;
   meslek: string;
   sms_bildirimleri: string[];
@@ -65,6 +71,7 @@ export default function VeliTab({ data }: VeliTabProps) {
     ad: '',
     soyad: '',
     telefon: '',
+    telefonlar: ensureTelefonlar(null, ''),
     email: '',
     meslek: '',
     sms_bildirimleri: [...DEFAULT_SMS_BILDIRIMLERI],
@@ -80,23 +87,28 @@ export default function VeliTab({ data }: VeliTabProps) {
     ad: '',
     soyad: '',
     telefon: '',
+    telefonlar: ensureTelefonlar(null, ''),
     email: '',
     meslek: '',
     sms_bildirimleri: [...DEFAULT_SMS_BILDIRIMLERI],
   });
 
-  const toFormData = (veli: OgrenciVeli): VeliFormData => ({
-    veli_turu: veli.veli_turu,
-    tc_kimlik_no: veli.tc_kimlik_no || '',
-    ad: veli.ad || '',
-    soyad: veli.soyad || '',
-    telefon: veli.telefon || '',
-    email: veli.email || '',
-    meslek: veli.meslek || '',
-    sms_bildirimleri: veli.sms_bildirimleri?.length
-      ? [...veli.sms_bildirimleri]
-      : [...DEFAULT_SMS_BILDIRIMLERI],
-  });
+  const toFormData = (veli: OgrenciVeli): VeliFormData => {
+    const telefonlar = ensureTelefonlar(veli.telefonlar, veli.telefon || '');
+    return {
+      veli_turu: veli.veli_turu,
+      tc_kimlik_no: veli.tc_kimlik_no || '',
+      ad: veli.ad || '',
+      soyad: veli.soyad || '',
+      telefon: whatsappDefaultPhone(telefonlar),
+      telefonlar,
+      email: veli.email || '',
+      meslek: veli.meslek || '',
+      sms_bildirimleri: veli.sms_bildirimleri?.length
+        ? [...veli.sms_bildirimleri]
+        : [...DEFAULT_SMS_BILDIRIMLERI],
+    };
+  };
 
   const toggleBildirim = (code: string) => {
     setFormData((prev) => {
@@ -160,6 +172,11 @@ export default function VeliTab({ data }: VeliTabProps) {
       setSaveError('Ad ve soyad zorunludur.');
       return;
     }
+    const telefonlar = ensureTelefonlar(formData.telefonlar, formData.telefon);
+    if (!whatsappDefaultPhone(telefonlar)) {
+      setSaveError('En az bir telefon numarası giriniz.');
+      return;
+    }
     if (!isAddingNew && !editingVeliId) {
       setSaveError('Düzenlenecek veli seçilemedi. Lütfen tekrar deneyin.');
       return;
@@ -172,9 +189,15 @@ export default function VeliTab({ data }: VeliTabProps) {
         ? `/ogrenciler/api/${data.id}/veliler/`
         : `/ogrenciler/api/${data.id}/veliler/${editingVeliId}/`;
 
+      const payload = {
+        ...formData,
+        telefonlar,
+        telefon: whatsappDefaultPhone(telefonlar),
+      };
+
       const result = await apiFetch(endpoint, {
         method: isAddingNew ? 'POST' : 'PUT',
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (!result.success) {
@@ -265,17 +288,22 @@ export default function VeliTab({ data }: VeliTabProps) {
       </div>
 
       <div className="form-row">
-        <div className="form-group">
-          <label>Telefon</label>
-          <input
-            type="text"
-            value={formData.telefon}
-            onChange={(e) => setFormData({ ...formData, telefon: e.target.value })}
-            className="form-input"
-            placeholder="05XX XXX XX XX"
+        <div className="form-group form-group-full">
+          <VeliTelefonEditor
+            value={formData.telefonlar}
+            onChange={(telefonlar) =>
+              setFormData({
+                ...formData,
+                telefonlar,
+                telefon: whatsappDefaultPhone(telefonlar),
+              })
+            }
           />
         </div>
-        <div className="form-group">
+      </div>
+
+      <div className="form-row">
+        <div className="form-group form-group-full">
           <label>E-posta</label>
           <input
             type="email"
@@ -455,20 +483,32 @@ export default function VeliTab({ data }: VeliTabProps) {
           {/* Telefon */}
           <div className="veli-detail-row">
             <span className="veli-detail-label">Telefon</span>
-            <div className="veli-detail-value-phone">
-              <span>{veli.telefon || '-'}</span>
-              {veli.telefon && (
-                <span onClick={(e) => e.stopPropagation()}>
-                  <WhatsAppChatButton
-                  phone={veli.telefon}
-                  ogrenciId={data.id}
-                  veliId={veli.id}
-                  contactLabel={`${veli.ad} ${veli.soyad}`.trim()}
-                  className="whatsapp-btn"
-                  title="Veliye uygulama içi mesaj"
-                  size={16}
-                />
-                </span>
+            <div className="veli-phones">
+              {ensureTelefonlar(veli.telefonlar, veli.telefon).map((p, idx) => {
+                if (!p.numara) return null;
+                return (
+                  <div key={`${veli.id}-${p.numara}-${idx}`} className="veli-phone-row">
+                    <div className="veli-detail-value-phone">
+                      <span>
+                        {p.numara}
+                        {p.etiket ? ` · ${p.etiket}` : ''}
+                        {p.whatsapp_varsayilan ? ' · WA' : ''}
+                      </span>
+                      <WhatsAppChatButton
+                        phone={p.numara}
+                        ogrenciId={data.id}
+                        veliId={veli.id}
+                        contactLabel={`${veli.ad} ${veli.soyad}`.trim()}
+                        className="whatsapp-btn"
+                        title={`${p.numara} numarasına mesaj`}
+                        size={16}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {!whatsappDefaultPhone(ensureTelefonlar(veli.telefonlar, veli.telefon)) && (
+                <span className="veli-detail-value">—</span>
               )}
             </div>
           </div>

@@ -166,6 +166,7 @@ from apps.finans.interfaces.views.tanim_views import (
     MasrafTuruListCreateView,
     MasrafTuruDetailView,
     MasrafTuruToggleView,
+    MasrafTuruSeedView,
     FinansEtiketListCreateView,
 )
 from apps.finans.interfaces.views.gelir_v2_views import (
@@ -466,6 +467,7 @@ urlpatterns = [
     path('tanimlar/aciklama-sablonlari/<int:pk>/', AciklamaSablonuDetailView.as_view(), name='tanim-aciklama-sablonu-detail'),
     path('tanimlar/aciklama-sablonlari/<int:pk>/toggle/', AciklamaSablonuToggleView.as_view(), name='tanim-aciklama-sablonu-toggle'),
     path('tanimlar/masraf-turleri/', MasrafTuruListCreateView.as_view(), name='tanim-masraf-turu-list'),
+    path('tanimlar/masraf-turleri/seed/', MasrafTuruSeedView.as_view(), name='tanim-masraf-turu-seed'),
     path('tanimlar/masraf-turleri/<int:pk>/', MasrafTuruDetailView.as_view(), name='tanim-masraf-turu-detail'),
     path('tanimlar/masraf-turleri/<int:pk>/toggle/', MasrafTuruToggleView.as_view(), name='tanim-masraf-turu-toggle'),
     path('tanimlar/etiketler/', FinansEtiketListCreateView.as_view(), name='tanim-etiket-list'),

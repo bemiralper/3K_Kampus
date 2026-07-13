@@ -259,6 +259,11 @@ class DraftGuardian(models.Model):
     soyad = models.CharField(max_length=100)
     email = models.EmailField(blank=True)
     telefon = models.CharField(max_length=20)
+    telefonlar = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Ek/çoklu telefonlar; telefon alanı WhatsApp varsayılanıdır.',
+    )
     sms_bildirimleri = models.ManyToManyField(
         LookupOption,
         related_name="draft_sms_bildirimleri",

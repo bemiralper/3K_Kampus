@@ -43,6 +43,15 @@ class MaliHesapService:
         create_data = self._build_persist_data(data, sube_id=sube_id)
 
         instance = self.repo.create(create_data)
+        # Banka/kasa için operasyonel ödeme yöntemlerini otomatik oluştur
+        try:
+            from apps.finans.application.odeme_yontemi_plan_helpers import (
+                ensure_mali_hesap_odeme_yontemleri,
+            )
+            ensure_mali_hesap_odeme_yontemleri(instance)
+        except Exception:
+            # Hesap oluştu; yöntem seed hatası hesabı geri almaz
+            pass
         return instance, None
 
     # ─── UPDATE ──────────────────────────────────

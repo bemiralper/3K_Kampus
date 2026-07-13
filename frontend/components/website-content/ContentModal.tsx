@@ -2,15 +2,18 @@
 
 import Link from 'next/link';
 import ContentBadge from './ContentBadge';
-import { CONTENT_KIND_LABEL, formatContentDate } from '@/lib/content-labels';
+import { CONTENT_KIND_LABEL, formatContentDate, shouldShowContentExcerpt } from '@/lib/content-labels';
 import type { PublicContentItem } from '@/lib/website-api';
 
 type Props = {
   item: PublicContentItem;
   onClose: () => void;
+  loading?: boolean;
 };
 
-export default function ContentModal({ item, onClose }: Props) {
+export default function ContentModal({ item, onClose, loading = false }: Props) {
+  const showExcerpt = shouldShowContentExcerpt(item.ozet, item.icerik);
+
   return (
     <div className="wc-modal-overlay wc-scope" onClick={onClose}>
       <div className="wc-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
@@ -28,10 +31,18 @@ export default function ContentModal({ item, onClose }: Props) {
           <button type="button" onClick={onClose} aria-label="Kapat" style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer' }}>✕</button>
         </div>
         <div className="wc-modal__body">
-          {item.ozet && <p style={{ marginTop: 0 }}>{item.ozet}</p>}
-          {item.icerik ? (
-            <div dangerouslySetInnerHTML={{ __html: item.icerik }} />
-          ) : null}
+          {loading ? (
+            <p style={{ color: '#64748b', margin: 0 }}>Yükleniyor…</p>
+          ) : (
+            <>
+              {showExcerpt && <p style={{ marginTop: 0, color: '#475569', fontWeight: 500 }}>{item.ozet}</p>}
+              {item.icerik ? (
+                <div className="wc-prose" dangerouslySetInnerHTML={{ __html: item.icerik }} />
+              ) : !showExcerpt && item.ozet ? (
+                <p style={{ marginTop: 0 }}>{item.ozet}</p>
+              ) : null}
+            </>
+          )}
         </div>
         <div className="wc-modal__foot">
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Kapat</button>

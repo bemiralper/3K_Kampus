@@ -88,7 +88,7 @@ class GunSonuDetayReportService:
         kurum_ad: str | None = None,
         sube_ad: str | None = None,
     ) -> dict:
-        gun = gun or date.today()
+        gun = gun or timezone.localdate()
         base = self._gun_sonu.ozet(kurum_id, gun, sube_id)
         ozet_wrap = self._ozet_svc.build_ozet_rapor(
             kurum_id, gun, sube_id,

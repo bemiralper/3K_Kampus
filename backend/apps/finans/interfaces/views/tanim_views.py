@@ -224,6 +224,35 @@ class MasrafTuruListCreateView(_TanimListCreateView):
     service_class = MasrafTuruService
     extra_query_keys = ('odeme_tipi',)
 
+    def get(self, request):
+        response = super().get(request)
+        if response.status_code != 200:
+            return response
+        if response.data.get('count', 0) == 0:
+            kurum_id = request.query_params.get('kurum_id')
+            if kurum_id:
+                from apps.finans.application.tanimlar.masraf_turu_seed import ensure_masraf_turleri
+                ensure_masraf_turleri(int(kurum_id))
+                return super().get(request)
+        return response
+
+
+class MasrafTuruSeedView(APIView):
+    """Eksik varsayılan masraf türlerini kuruma ekler."""
+
+    def post(self, request):
+        kurum_id, err = _require_kurum(request, from_body=True)
+        if err:
+            return err
+        from apps.finans.application.tanimlar.masraf_turu_seed import ensure_masraf_turleri
+        created = ensure_masraf_turleri(int(kurum_id))
+        svc = MasrafTuruService()
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
+        if err:
+            return err
+        data = svc.list(kurum_id, sube_id)
+        return Response({'created': created, 'results': data, 'count': len(data)})
+
 
 class MasrafTuruDetailView(_TanimDetailView):
     service_class = MasrafTuruService

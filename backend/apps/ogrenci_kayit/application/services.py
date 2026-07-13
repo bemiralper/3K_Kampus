@@ -722,13 +722,13 @@ def submit_draft(draft: WizardDraft, user):
 
         for index, guardian in enumerate(draft.guardians.all()):
             sms_codes = [option.code for option in guardian.sms_bildirimleri.all()]
-            OgrenciVeli.objects.create(
+            from apps.ogrenci.application.veli_telefon import apply_telefonlar
+            veli = OgrenciVeli(
                 ogrenci=ogrenci,
                 veli_turu=guardian.veli_turu.code,
                 tc_kimlik_no=guardian.tc_kimlik_no,
                 ad=guardian.ad,
                 soyad=guardian.soyad,
-                telefon=guardian.telefon,
                 email=guardian.email,
                 sms_bildirimleri=sms_codes,
                 egitim_seviyesi=guardian.egitim_seviyesi,
@@ -737,6 +737,12 @@ def submit_draft(draft: WizardDraft, user):
                 ogrenci_kendi_velisi=student.ogrenci_kendi_velisi,
                 varsayilan=index == 0,
             )
+            apply_telefonlar(
+                veli,
+                telefonlar=getattr(guardian, 'telefonlar', None),
+                telefon=guardian.telefon,
+            )
+            veli.save()
 
         for paket in draft.packages.all():
             OgrenciEgitimPaketi.objects.create(

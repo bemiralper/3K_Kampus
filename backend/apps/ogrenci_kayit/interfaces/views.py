@@ -637,17 +637,23 @@ class DirectRegistrationView(APIView):
                                 veli_turu_opt = LookupOption.objects.filter(id=guardian_data["yakinlik_turu"]).first()
                                 veli_turu_code = veli_turu_opt.code if veli_turu_opt else "anne"
                             
-                            veli = OgrenciVeli.objects.create(
+                            from apps.ogrenci.application.veli_telefon import apply_telefonlar
+                            veli = OgrenciVeli(
                                 ogrenci=ogrenci,
                                 veli_turu=veli_turu_code,
                                 tc_kimlik_no=guardian_data.get("tc_kimlik_no") or "",
                                 ad=guardian_data.get("ad") or "",
                                 soyad=guardian_data.get("soyad") or "",
-                                telefon=normalize_phone(guardian_data.get("telefon") or ""),
                                 email=guardian_data.get("email") or "",
                                 meslek=guardian_data.get("meslek") or "",
                                 varsayilan=idx == 0,
                             )
+                            apply_telefonlar(
+                                veli,
+                                telefonlar=guardian_data.get("telefonlar"),
+                                telefon=normalize_phone(guardian_data.get("telefon") or ""),
+                            )
+                            veli.save()
                             kisi_id = guardian_data.get("kisi_id")
                             if kisi_id:
                                 kisi = Kisi.objects.filter(id=kisi_id, kurum_id=kurum_id).first()

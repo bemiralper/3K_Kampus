@@ -20,6 +20,7 @@ export type OgrenciVeli = {
   soyad: string;
   tam_ad: string;
   telefon: string;
+  telefonlar?: { numara: string; etiket: string; whatsapp_varsayilan: boolean }[];
   email: string;
   meslek: string;
   varsayilan: boolean;

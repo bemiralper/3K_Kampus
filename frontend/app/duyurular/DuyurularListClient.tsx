@@ -66,7 +66,7 @@ export default function DuyurularListClient({ initialItems }: Props) {
       {empty ? (
         <p className="text-center text-slate-500">Eşleşen içerik bulunamadı.</p>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((d) => {
             const cover = resolveMediaUrl(d.kapak_thumb_url || d.kapak_gorseli_url);
             return (

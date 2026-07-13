@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from django.db.models import Count, Q, Sum
+from django.utils import timezone
 
 from apps.finans.application.period.period_service import PeriodService, parse_date
 from apps.finans.application.cari_balance import cari_bagimsiz_tahsilat_q
@@ -46,7 +47,7 @@ class ReportService:
         baslangic = parse_date(params.get('baslangic'))
         bitis = parse_date(params.get('bitis'))
         if not baslangic or not bitis:
-            today = date.today()
+            today = timezone.localdate()
             bitis = bitis or today
             baslangic = baslangic or (today - timedelta(days=30))
 

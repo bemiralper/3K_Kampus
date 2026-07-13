@@ -98,8 +98,8 @@ export default function FinansDashboard() {
         <div>
           <h1 className="fdash-title">Finans Dashboard</h1>
           <p className="fdash-subtitle">
-            Tahsilat, gider, cari ve kasa hareketlerinin günlük özeti — {activeKurum.ad}
-            {activeSube ? ` · ${activeSube.ad}` : ""}.
+            Sol: bugünün giren/çıkan/farkı · Orta: bu ayın toplamı · Sağ: kasa ve banka bakiyeleri
+            {activeSube ? ` · ${activeSube.ad}` : ""} — {activeKurum.ad}
           </p>
         </div>
         <div className="fdash-head-actions">
@@ -121,6 +121,8 @@ export default function FinansDashboard() {
         cards={data.ozet_kartlar}
         hideGelirGider={isMuhasebeMode}
         referansTarih={data.tarih}
+        kasaHesaplari={data.kasa_hesaplari}
+        bankaHesaplari={data.banka_hesaplari}
       />
 
       <section className="fdash-block">

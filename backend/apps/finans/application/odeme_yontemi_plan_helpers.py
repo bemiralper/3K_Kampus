@@ -122,6 +122,13 @@ def filter_odeme_yontemleri_for_mali_hesap(queryset, mali_hesap_id, kurum_id=Non
         # Plan kayıtları sözleşme ekranı için hazır kalsın; listeye eklenmez.
         ensure_kurum_plan_odeme_yontemleri(int(kurum_id))
 
+    # Eksik operasyonel yöntemleri (eski banka hesapları için) tamamla
+    if mali_hesap_id:
+        from apps.finans.domain.financial_account import MaliHesap
+        mh = MaliHesap.objects.filter(pk=mali_hesap_id).select_related('sube').first()
+        if mh:
+            ensure_mali_hesap_odeme_yontemleri(mh)
+
     return queryset.filter(
         Q(mali_hesap_id=mali_hesap_id)
         | Q(
@@ -169,6 +176,61 @@ def ensure_kurum_plan_odeme_yontemleri(kurum_id: int) -> dict[str, int]:
         canonical[f'{oy.tip}:{oy.id}'] = oy.id
 
     return canonical
+
+
+def ensure_mali_hesap_odeme_yontemleri(mali_hesap) -> int:
+    """
+    Mali hesap tipine göre operasyonel ödeme yöntemlerini oluşturur (idempotent).
+    Kasa → Nakit; Banka → Havale/EFT, POS, Online.
+    Returns: yeni oluşturulan kayıt sayısı.
+    """
+    tips = canonical_tips_for_mali_hesap(mali_hesap)
+    if not tips:
+        return 0
+
+    kurum_id = mali_hesap.sube.kurum_id
+    created = 0
+    for i, tip in enumerate(tips):
+        label = OdemeYontemiTipi.get_label(tip)
+        existing = (
+            OdemeYontemi.objects.filter(
+                kurum_id=kurum_id,
+                mali_hesap=mali_hesap,
+                tip=tip,
+                silindi_mi=False,
+            ).first()
+        )
+        if existing:
+            continue
+        # Soft-deleted varsa geri aç
+        revived = (
+            OdemeYontemi.all_objects.filter(
+                kurum_id=kurum_id,
+                mali_hesap=mali_hesap,
+                tip=tip,
+            )
+            .order_by('id')
+            .first()
+        )
+        if revived and revived.silindi_mi:
+            revived.silindi_mi = False
+            revived.aktif_mi = True
+            revived.silinme_tarihi = None
+            revived.ad = label
+            revived.siralama = (i + 1) * 10
+            revived.save()
+            continue
+
+        OdemeYontemi.objects.create(
+            kurum_id=kurum_id,
+            mali_hesap=mali_hesap,
+            ad=label,
+            tip=tip,
+            aktif_mi=True,
+            siralama=(i + 1) * 10,
+        )
+        created += 1
+    return created
 
 
 def remap_odeme_yontemi_to_plan_canonical(kurum_id: int) -> int:

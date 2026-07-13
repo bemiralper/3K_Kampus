@@ -256,8 +256,13 @@ function MasrafTuruTab({ kurumId, subeId }: { kurumId: number; subeId: number | 
   };
 
   const remove = async (row: GGTanim) => {
+    const kullanim = Number(row.kullanim_sayisi ?? 0);
+    if (kullanim > 0) {
+      message.warning(`Bu masraf türü ${kullanim} işlemde kullanılıyor; silinemez. Pasife alabilirsiniz.`);
+      return;
+    }
     try {
-      await tanimService.remove("masraf_turu", row.id);
+      await tanimService.remove("masraf_turu", row.id, kurumId);
       message.success("Silindi.");
       load();
     } catch (e) {
@@ -266,7 +271,7 @@ function MasrafTuruTab({ kurumId, subeId }: { kurumId: number; subeId: number | 
   };
 
   const toggle = async (row: GGTanim) => {
-    try { await tanimService.toggle("masraf_turu", row.id); load(); }
+    try { await tanimService.toggle("masraf_turu", row.id, kurumId); load(); }
     catch (e) { message.error(e instanceof FinansHttpError ? e.message : "İşlem başarısız."); }
   };
 
@@ -293,6 +298,10 @@ function MasrafTuruTab({ kurumId, subeId }: { kurumId: number; subeId: number | 
             render: (v) => (Number(v) > 0 ? `${Number(v).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺` : "—"),
           },
           {
+            title: "Kullanım", dataIndex: "kullanim_sayisi", key: "kullanim_sayisi", width: 80, align: "center",
+            render: (v) => Number(v ?? 0) || "—",
+          },
+          {
             title: "Durum", dataIndex: "aktif_mi", key: "aktif_mi", width: 100,
             render: (v: boolean, r) => (
               <Tag color={v ? "green" : "default"} style={{ cursor: "pointer" }} onClick={() => toggle(r)}>
@@ -305,8 +314,20 @@ function MasrafTuruTab({ kurumId, subeId }: { kurumId: number; subeId: number | 
             render: (_, r) => (
               <Space size={2}>
                 <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-                <Popconfirm title="Silinsin mi?" okText="Sil" cancelText="Vazgeç" onConfirm={() => remove(r)}>
-                  <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                <Popconfirm
+                  title={Number(r.kullanim_sayisi ?? 0) > 0 ? "Kullanımda — silinemez" : "Silinsin mi?"}
+                  okText="Sil"
+                  cancelText="Vazgeç"
+                  disabled={Number(r.kullanim_sayisi ?? 0) > 0}
+                  onConfirm={() => remove(r)}
+                >
+                  <Button
+                    size="small"
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    disabled={Number(r.kullanim_sayisi ?? 0) > 0}
+                  />
                 </Popconfirm>
               </Space>
             ),
@@ -401,7 +422,7 @@ function TanimTablosu({
 
   const remove = async (row: GGTanim) => {
     try {
-      await tanimService.remove(tip, row.id);
+      await tanimService.remove(tip, row.id, kurumId);
       message.success("Silindi.");
       load();
     } catch (e) {
@@ -411,7 +432,7 @@ function TanimTablosu({
 
   const toggle = async (row: GGTanim) => {
     try {
-      await tanimService.toggle(tip, row.id);
+      await tanimService.toggle(tip, row.id, kurumId);
       load();
     } catch (e) {
       message.error(e instanceof FinansHttpError ? e.message : "İşlem başarısız.");

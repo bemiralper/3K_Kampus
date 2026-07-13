@@ -1,13 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
-import type { Duyuru } from '@/lib/website-api';
-import { resolveMediaUrl } from '@/lib/website-api';
+import { resolveMediaUrl, type Duyuru } from '@/lib/website-api';
 import { formatDateTR } from '@/lib/format-date';
 import { LANDING_COLORS } from '@/lib/landing-theme';
 import ContentBadge from '@/components/website-content/ContentBadge';
-import ContentModal from '@/components/website-content/ContentModal';
 import { CONTENT_KIND_LABEL } from '@/lib/content-labels';
 import '@/app/duyurular/content.css';
 
@@ -17,7 +15,6 @@ type DuyurularSectionProps = {
 
 export default function DuyurularSection({ duyurular }: DuyurularSectionProps) {
   const items = useMemo(() => duyurular.slice(0, 6), [duyurular]);
-  const [modalItem, setModalItem] = useState<Duyuru | null>(null);
 
   return (
     <section id="duyurular" className="bg-slate-50 py-16 lg:py-24 wc-scope">
@@ -27,11 +24,7 @@ export default function DuyurularSection({ duyurular }: DuyurularSectionProps) {
             <h2 className="text-3xl font-bold tracking-tight" style={{ color: LANDING_COLORS.navy }}>Duyurular</h2>
             <p className="mt-2 text-slate-500">3K Kampüs&apos;ten güncel haberler</p>
           </div>
-          <Link
-            href="/duyurular"
-            className="text-sm font-semibold"
-            style={{ color: LANDING_COLORS.accent }}
-          >
+          <Link href="/duyurular" className="text-sm font-semibold" style={{ color: LANDING_COLORS.accent }}>
             Tümünü Gör →
           </Link>
         </div>
@@ -59,15 +52,7 @@ export default function DuyurularSection({ duyurular }: DuyurularSectionProps) {
                     </div>
                     <h3 className="wc-card__title">{d.baslik}</h3>
                     <p className="wc-card__excerpt">{d.ozet}</p>
-                    <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-                      <button
-                        type="button"
-                        className="wc-card__link"
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-                        onClick={() => setModalItem(d)}
-                      >
-                        Hızlı Oku
-                      </button>
+                    <div className="wc-card__actions">
                       <Link href={`/duyurular/${d.slug}`} className="wc-card__link">
                         Detay →
                       </Link>
@@ -79,12 +64,6 @@ export default function DuyurularSection({ duyurular }: DuyurularSectionProps) {
           </div>
         )}
       </div>
-      {modalItem && (
-        <ContentModal
-          item={{ ...modalItem, icerik: modalItem.icerik || modalItem.ozet }}
-          onClose={() => setModalItem(null)}
-        />
-      )}
     </section>
   );
 }

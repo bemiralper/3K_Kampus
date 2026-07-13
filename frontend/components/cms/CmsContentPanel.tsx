@@ -77,7 +77,7 @@ export default function CmsContentPanel({ onMessage }: Props) {
               <option key={k.value || 'all'} value={k.value}>{k.label}</option>
             ))}
           </select>
-          <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>+ Yeni İçerik</button>
+          <button type="button" className="cms-btn cms-btn-primary cms-btn-sm" onClick={openCreate}>+ Yeni İçerik</button>
         </div>
       </div>
       <div className="wam-panel-body">
@@ -99,8 +99,8 @@ export default function CmsContentPanel({ onMessage }: Props) {
                 {item.is_pinned && <span className="cms-badge cms-badge--info">Sabit</span>}
                 <span className="cms-content-views">{item.view_count ?? 0} görüntülenme</span>
                 <span className="cms-content-actions">
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => void openEdit(item)}>Düzenle</button>
-                  <button type="button" className="btn btn-danger btn-sm" onClick={() => void remove(item)}>Sil</button>
+                  <button type="button" className="cms-btn cms-btn-ghost cms-btn-sm" onClick={() => void openEdit(item)}>Düzenle</button>
+                  <button type="button" className="cms-btn cms-btn-danger cms-btn-sm" onClick={() => void remove(item)}>Sil</button>
                 </span>
               </div>
             )}
@@ -109,11 +109,21 @@ export default function CmsContentPanel({ onMessage }: Props) {
       </div>
 
       {editor && (
-        <div className="cms-drawer-overlay" onClick={() => !saving && setEditor(null)}>
-          <div className="cms-drawer cms-drawer--wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="cms-drawer-overlay">
+          <div className="cms-drawer cms-drawer--wide cms-drawer--content" role="dialog" aria-modal="true">
             <div className="cms-drawer-head">
-              <h3>{editor.id ? 'İçeriği Düzenle' : 'Yeni İçerik'}</h3>
-              <button type="button" className="cms-drawer-close" onClick={() => setEditor(null)} aria-label="Kapat">✕</button>
+              <div>
+                <h3>{editor.id ? 'İçeriği Düzenle' : 'Yeni İçerik'}</h3>
+                <p className="cms-drawer-sub">Kapatmak için ✕ veya İptal kullanın — dışarı tıklayınca kapanmaz.</p>
+              </div>
+              <button
+                type="button"
+                className="cms-drawer-close"
+                onClick={() => !saving && setEditor(null)}
+                aria-label="Kapat"
+              >
+                ✕
+              </button>
             </div>
             <div className="cms-drawer-body">
               <CmsContentEditor

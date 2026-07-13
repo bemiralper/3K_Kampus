@@ -9,6 +9,7 @@ import {
 } from '@/lib/website-api';
 import { CONTENT_PRIORITY_META, type ContentPriority } from '@/lib/content-labels';
 import RichTextEditor from './RichTextEditor';
+import CmsCoverCropper, { COVER_SIZE_HINT } from './CmsCoverCropper';
 
 const EDITABLE_KINDS = [
   { value: 'duyuru', label: 'Duyuru' },
@@ -114,6 +115,7 @@ export default function CmsContentEditor({
   const galleryRef = useRef<HTMLInputElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
 
   const ensureSaved = async (): Promise<number | null> => {
     if (editor.id) return editor.id;
@@ -189,6 +191,7 @@ export default function CmsContentEditor({
     setUploading(true);
     const res = await websiteCmsV2Api.uploadContentCover(id, file);
     setUploading(false);
+    setCropSrc(null);
     if (res.success && res.data) {
       setEditor((prev) =>
         prev
@@ -202,6 +205,14 @@ export default function CmsContentEditor({
       );
       onMessage('Kapak yüklendi');
     } else onMessage(res.error || 'Kapak yüklenemedi', 'error');
+  };
+
+  const onPickCover = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setCropSrc(reader.result);
+    };
+    reader.readAsDataURL(file);
   };
 
   const uploadGallery = async (file: File) => {
@@ -236,53 +247,103 @@ export default function CmsContentEditor({
 
   return (
     <>
-      <div className="cms-drawer-grid">
-        <div className="wam-field">
-          <label>Başlık</label>
-          <input value={editor.title} onChange={(e) => setEditor({ ...editor, title: e.target.value })} placeholder="İçerik başlığı" />
-        </div>
-        <div className="wam-field">
-          <label>Tür</label>
-          <select value={editor.kind} onChange={(e) => setEditor({ ...editor, kind: e.target.value })}>
-            {EDITABLE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-          </select>
-        </div>
-        <div className="wam-field">
-          <label>Durum</label>
-          <select value={editor.status} onChange={(e) => setEditor({ ...editor, status: e.target.value })}>
-            <option value="draft">Taslak</option>
-            <option value="published">Yayında</option>
-          </select>
-        </div>
-        <div className="wam-field">
-          <label>Öncelik</label>
-          <select value={editor.priority} onChange={(e) => setEditor({ ...editor, priority: e.target.value })}>
-            {(Object.keys(CONTENT_PRIORITY_META) as ContentPriority[]).map((p) => (
-              <option key={p} value={p}>{CONTENT_PRIORITY_META[p].label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      {cropSrc && (
+        <CmsCoverCropper
+          imageSrc={cropSrc}
+          busy={uploading || saving}
+          onCancel={() => setCropSrc(null)}
+          onComplete={(file) => void uploadCover(file)}
+        />
+      )}
 
-      <div className="cms-drawer-grid cms-drawer-grid--2">
-        <div className="wam-field">
-          <label>Yayın Tarihi</label>
-          <input type="datetime-local" value={editor.publish_at} onChange={(e) => setEditor({ ...editor, publish_at: e.target.value })} />
+      <section className="cms-editor-section">
+        <h4 className="cms-editor-section__title">Temel bilgiler</h4>
+        <div className="cms-drawer-grid">
+          <div className="wam-field">
+            <label>Başlık</label>
+            <input
+              value={editor.title}
+              onChange={(e) => setEditor({ ...editor, title: e.target.value })}
+              placeholder="İçerik başlığı"
+            />
+          </div>
+          <div className="wam-field">
+            <label>Tür</label>
+            <select value={editor.kind} onChange={(e) => setEditor({ ...editor, kind: e.target.value })}>
+              {EDITABLE_KINDS.map((k) => (
+                <option key={k.value} value={k.value}>{k.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="wam-field">
+            <label>Durum</label>
+            <select value={editor.status} onChange={(e) => setEditor({ ...editor, status: e.target.value })}>
+              <option value="draft">Taslak</option>
+              <option value="published">Yayında</option>
+            </select>
+          </div>
+          <div className="wam-field">
+            <label>Öncelik</label>
+            <select value={editor.priority} onChange={(e) => setEditor({ ...editor, priority: e.target.value })}>
+              {(Object.keys(CONTENT_PRIORITY_META) as ContentPriority[]).map((p) => (
+                <option key={p} value={p}>{CONTENT_PRIORITY_META[p].label}</option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div className="wam-field">
-          <label>Yayından Kalkış</label>
-          <input type="datetime-local" value={editor.unpublish_at} onChange={(e) => setEditor({ ...editor, unpublish_at: e.target.value })} />
+
+        <div className="cms-drawer-grid cms-drawer-grid--2">
+          <div className="wam-field">
+            <label>Yayın Tarihi</label>
+            <input
+              type="datetime-local"
+              value={editor.publish_at}
+              onChange={(e) => setEditor({ ...editor, publish_at: e.target.value })}
+            />
+          </div>
+          <div className="wam-field">
+            <label>Yayından Kalkış</label>
+            <input
+              type="datetime-local"
+              value={editor.unpublish_at}
+              onChange={(e) => setEditor({ ...editor, unpublish_at: e.target.value })}
+            />
+          </div>
         </div>
-      </div>
 
-      <div className="cms-content-flags">
-        <label><input type="checkbox" checked={editor.is_pinned} onChange={(e) => setEditor({ ...editor, is_pinned: e.target.checked })} /> Sabitle (üstte)</label>
-        <label><input type="checkbox" checked={editor.is_featured} onChange={(e) => setEditor({ ...editor, is_featured: e.target.checked })} /> Öne çıkar</label>
-        <label><input type="checkbox" checked={editor.show_as_popup} onChange={(e) => setEditor({ ...editor, show_as_popup: e.target.checked })} /> Anasayfa popup</label>
-      </div>
+        <div className="cms-content-flags">
+          <label>
+            <input
+              type="checkbox"
+              checked={editor.is_pinned}
+              onChange={(e) => setEditor({ ...editor, is_pinned: e.target.checked })}
+            />
+            Sabitle (üstte)
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={editor.is_featured}
+              onChange={(e) => setEditor({ ...editor, is_featured: e.target.checked })}
+            />
+            Öne çıkar
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={editor.show_as_popup}
+              onChange={(e) => setEditor({ ...editor, show_as_popup: e.target.checked })}
+            />
+            Anasayfa popup
+          </label>
+        </div>
+      </section>
 
-      <div className="wam-field">
-        <label>Kapak Görseli</label>
+      <section className="cms-editor-section">
+        <h4 className="cms-editor-section__title">Kapak görseli</h4>
+        <p className="cms-editor-section__hint">
+          Önerilen boyut: <strong>{COVER_SIZE_HINT}</strong>. Yükledikten sonra sürükleyip yakınlaştırarak kırpabilirsiniz.
+        </p>
         <div className="cms-cover-row">
           {coverPreview ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -291,13 +352,18 @@ export default function CmsContentEditor({
             <div className="cms-cover-preview cms-cover-preview--empty">Kapak yok</div>
           )}
           <div className="cms-cover-actions">
-            <button type="button" className="btn btn-secondary btn-sm" disabled={uploading} onClick={() => coverRef.current?.click()}>
-              {uploading ? 'Yükleniyor…' : 'Dosyadan yükle'}
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost cms-btn-sm"
+              disabled={uploading}
+              onClick={() => coverRef.current?.click()}
+            >
+              {uploading ? 'Yükleniyor…' : 'Dosya seç ve kırp'}
             </button>
             {editor.cover_url && editor.id && (
               <button
                 type="button"
-                className="btn btn-danger btn-sm"
+                className="cms-btn cms-btn-danger cms-btn-sm"
                 onClick={async () => {
                   if (!editor.id) return;
                   const res = await websiteCmsV2Api.deleteContentCover(editor.id);
@@ -309,91 +375,160 @@ export default function CmsContentEditor({
             )}
           </div>
         </div>
-        <input ref={coverRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadCover(f); e.target.value = ''; }} />
         <input
-          value={editor.cover_url}
-          onChange={(e) => setEditor({ ...editor, cover_url: e.target.value })}
-          placeholder="veya URL: /media/…"
-          style={{ marginTop: 8 }}
+          ref={coverRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onPickCover(f);
+            e.target.value = '';
+          }}
         />
-      </div>
+      </section>
 
-      <div className="wam-field">
-        <label>Özet</label>
-        <textarea rows={2} value={editor.excerpt} onChange={(e) => setEditor({ ...editor, excerpt: e.target.value })} placeholder="Kısa açıklama (kartlarda görünür)" />
-      </div>
-
-      <div className="wam-field">
-        <label>İçerik</label>
-        <RichTextEditor value={editor.body} onChange={(html) => setEditor((prev) => (prev ? { ...prev, body: html } : prev))} />
-      </div>
-
-      <div className="wam-field">
-        <label>Galeri Görselleri</label>
-        <div className="cms-gallery-grid">
-          {(editor.gallery ?? []).map((g) => (
-            <div key={g.id} className="cms-gallery-thumb">
-              <span>#{g.media_id}</span>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={async () => {
-                  if (!editor.id) return;
-                  const res = await websiteCmsV2Api.deleteContentGalleryItem(editor.id, g.id);
-                  if (res.success && res.data) setEditor({ ...editor, gallery: res.data.gallery ?? [] });
-                }}
-              >
-                Sil
-              </button>
-            </div>
-          ))}
-        </div>
-        <button type="button" className="btn btn-secondary btn-sm" disabled={uploading} onClick={() => galleryRef.current?.click()}>
-          + Görsel ekle
-        </button>
-        <input ref={galleryRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadGallery(f); e.target.value = ''; }} />
-      </div>
-
-      <div className="wam-field">
-        <label>Ek Dosyalar (PDF, Word, Excel, PPT, ZIP)</label>
-        <ul className="cms-attach-list">
-          {(editor.attachments ?? []).map((a) => (
-            <li key={a.id}>
-              <span>{a.title || `Medya #${a.media_id}`}</span>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={async () => {
-                  if (!editor.id) return;
-                  const res = await websiteCmsV2Api.deleteContentAttachment(editor.id, a.id);
-                  if (res.success && res.data) setEditor({ ...editor, attachments: res.data.attachments ?? [] });
-                }}
-              >
-                Sil
-              </button>
-            </li>
-          ))}
-        </ul>
-        <button type="button" className="btn btn-secondary btn-sm" disabled={uploading} onClick={() => attachRef.current?.click()}>
-          + Dosya ekle
-        </button>
-        <input ref={attachRef} type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadAttachment(f); e.target.value = ''; }} />
-      </div>
-
-      <div className="cms-drawer-grid cms-drawer-grid--2">
+      <section className="cms-editor-section">
+        <h4 className="cms-editor-section__title">Metin</h4>
         <div className="wam-field">
-          <label>SEO Başlık</label>
-          <input value={editor.meta_title} onChange={(e) => setEditor({ ...editor, meta_title: e.target.value })} maxLength={70} />
+          <label>Özet</label>
+          <textarea
+            rows={2}
+            value={editor.excerpt}
+            onChange={(e) => setEditor({ ...editor, excerpt: e.target.value })}
+            placeholder="Kısa açıklama (kartlarda görünür)"
+          />
         </div>
         <div className="wam-field">
-          <label>SEO Açıklama</label>
-          <input value={editor.meta_description} onChange={(e) => setEditor({ ...editor, meta_description: e.target.value })} maxLength={320} />
+          <label>İçerik</label>
+          <RichTextEditor
+            value={editor.body}
+            onChange={(html) => setEditor((prev) => (prev ? { ...prev, body: html } : prev))}
+          />
         </div>
-      </div>
+      </section>
+
+      <section className="cms-editor-section">
+        <h4 className="cms-editor-section__title">Medya & ekler</h4>
+        <div className="wam-field">
+          <label>Galeri görselleri</label>
+          <div className="cms-gallery-grid">
+            {(editor.gallery ?? []).map((g) => (
+              <div key={g.id} className="cms-gallery-thumb">
+                <span>#{g.media_id}</span>
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-danger cms-btn-sm"
+                  onClick={async () => {
+                    if (!editor.id) return;
+                    const res = await websiteCmsV2Api.deleteContentGalleryItem(editor.id, g.id);
+                    if (res.success && res.data) setEditor({ ...editor, gallery: res.data.gallery ?? [] });
+                  }}
+                >
+                  Sil
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="cms-btn cms-btn-ghost cms-btn-sm"
+            disabled={uploading}
+            onClick={() => galleryRef.current?.click()}
+          >
+            + Görsel ekle
+          </button>
+          <input
+            ref={galleryRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadGallery(f);
+              e.target.value = '';
+            }}
+          />
+        </div>
+
+        <div className="wam-field">
+          <label>Ek dosyalar (PDF, Word, Excel, PPT, ZIP)</label>
+          <ul className="cms-attach-list">
+            {(editor.attachments ?? []).map((a) => (
+              <li key={a.id}>
+                <span>{a.title || `Medya #${a.media_id}`}</span>
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-danger cms-btn-sm"
+                  onClick={async () => {
+                    if (!editor.id) return;
+                    const res = await websiteCmsV2Api.deleteContentAttachment(editor.id, a.id);
+                    if (res.success && res.data) setEditor({ ...editor, attachments: res.data.attachments ?? [] });
+                  }}
+                >
+                  Sil
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="cms-btn cms-btn-ghost cms-btn-sm"
+            disabled={uploading}
+            onClick={() => attachRef.current?.click()}
+          >
+            + Dosya ekle
+          </button>
+          <input
+            ref={attachRef}
+            type="file"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadAttachment(f);
+              e.target.value = '';
+            }}
+          />
+        </div>
+      </section>
+
+      <section className="cms-editor-section">
+        <h4 className="cms-editor-section__title">SEO</h4>
+        <div className="cms-drawer-grid cms-drawer-grid--2">
+          <div className="wam-field">
+            <label>SEO başlık</label>
+            <input
+              value={editor.meta_title}
+              onChange={(e) => setEditor({ ...editor, meta_title: e.target.value })}
+              maxLength={70}
+            />
+          </div>
+          <div className="wam-field">
+            <label>SEO açıklama</label>
+            <input
+              value={editor.meta_description}
+              onChange={(e) => setEditor({ ...editor, meta_description: e.target.value })}
+              maxLength={320}
+            />
+          </div>
+        </div>
+      </section>
 
       <div className="cms-drawer-foot">
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditor(null)} disabled={saving}>İptal</button>
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => void save()} disabled={saving || uploading}>
+        <button
+          type="button"
+          className="cms-btn cms-btn-ghost"
+          onClick={() => setEditor(null)}
+          disabled={saving}
+        >
+          İptal
+        </button>
+        <button
+          type="button"
+          className="cms-btn cms-btn-primary"
+          onClick={() => void save()}
+          disabled={saving || uploading}
+        >
           {saving ? 'Kaydediliyor…' : 'Kaydet'}
         </button>
       </div>

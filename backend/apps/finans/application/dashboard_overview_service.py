@@ -199,40 +199,82 @@ def _gunluk_gelir_gider_net(
 
 
 def _mali_hesap_bloklari(kurum_id, sube_id, egitim_yili_id) -> tuple[list[dict], list[dict], int, int]:
-    if not egitim_yili_id:
-        return [], [], 0, 0
+    """
+    Kasa/banka bakiyeleri.
 
-    selector = DonemBakiyeSelector()
-    if sube_id:
-        ozet = selector.get_sube_ozet(int(sube_id), int(egitim_yili_id))
-        hesaplar = ozet.get('hesaplar', [])
-    else:
-        donemler = selector.repo.get_by_kurum_ve_yil(int(kurum_id), int(egitim_yili_id))
-        hesap_map: dict[int, dict] = {}
-        for d in donemler:
-            hid = d.mali_hesap_id
-            if hid not in hesap_map:
-                hesap_map[hid] = {
-                    'id': d.id,
-                    'mali_hesap_id': hid,
-                    'mali_hesap_ad': d.mali_hesap.ad,
-                    'mali_hesap_tip': d.mali_hesap.tip,
-                    'donem_basi_bakiye': 0,
-                    'toplam_gelir': 0,
-                    'toplam_gider': 0,
-                    'donem_sonu_bakiye': 0,
-                }
-            hesap_map[hid]['donem_basi_bakiye'] += d.donem_basi_bakiye
-            hesap_map[hid]['toplam_gelir'] += d.toplam_gelir
-            hesap_map[hid]['toplam_gider'] += d.toplam_gider
-            hesap_map[hid]['donem_sonu_bakiye'] += d.donem_sonu_bakiye
-        hesaplar = list(hesap_map.values())
+    Öncelik: DonemBakiye (eğitim yılı seçiliyse).
+    Yedek: aktif MaliHesap + BakiyeHareketi son bakiye — böylece yeni eklenen
+    banka hesapları dönem satırı olmasa da dashboard'da görünür.
+    """
+    hesaplar: list[dict] = []
+
+    if egitim_yili_id:
+        selector = DonemBakiyeSelector()
+        if sube_id:
+            ozet = selector.get_sube_ozet(int(sube_id), int(egitim_yili_id))
+            hesaplar = ozet.get('hesaplar', [])
+        else:
+            donemler = selector.repo.get_by_kurum_ve_yil(int(kurum_id), int(egitim_yili_id))
+            hesap_map: dict[int, dict] = {}
+            for d in donemler:
+                hid = d.mali_hesap_id
+                if hid not in hesap_map:
+                    hesap_map[hid] = {
+                        'id': d.id,
+                        'mali_hesap_id': hid,
+                        'mali_hesap_ad': d.mali_hesap.ad,
+                        'mali_hesap_tip': d.mali_hesap.tip,
+                        'donem_basi_bakiye': 0,
+                        'toplam_gelir': 0,
+                        'toplam_gider': 0,
+                        'donem_sonu_bakiye': 0,
+                    }
+                hesap_map[hid]['donem_basi_bakiye'] += d.donem_basi_bakiye
+                hesap_map[hid]['toplam_gelir'] += d.toplam_gelir
+                hesap_map[hid]['toplam_gider'] += d.toplam_gider
+                hesap_map[hid]['donem_sonu_bakiye'] += d.donem_sonu_bakiye
+            hesaplar = list(hesap_map.values())
+
+    # Dönem satırı yoksa veya eğitim yılı gelmediyse canlı bakiyeye düş
+    if not hesaplar:
+        hesaplar = _mali_hesap_canli_bakiyeler(kurum_id, sube_id)
 
     kasa = [h for h in hesaplar if h.get('mali_hesap_tip') == MaliHesapTipi.KASA]
     banka = [h for h in hesaplar if h.get('mali_hesap_tip') == MaliHesapTipi.BANKA]
     kasa_toplam = sum(int(h.get('donem_sonu_bakiye') or 0) for h in kasa)
     banka_toplam = sum(int(h.get('donem_sonu_bakiye') or 0) for h in banka)
     return kasa, banka, kasa_toplam, banka_toplam
+
+
+def _mali_hesap_canli_bakiyeler(kurum_id, sube_id) -> list[dict]:
+    """Aktif mali hesaplar + son BakiyeHareketi bakiyesi (dönem bağımsız)."""
+    from apps.finans.application.selectors.bakiye_hareketi_selector import BakiyeHareketiSelector
+    from apps.finans.domain.financial_account import MaliHesap
+
+    qs = MaliHesap.objects.filter(
+        sube__kurum_id=kurum_id,
+        aktif_mi=True,
+        silindi_mi=False,
+        tip__in=[MaliHesapTipi.KASA, MaliHesapTipi.BANKA],
+    )
+    if sube_id:
+        qs = qs.filter(sube_id=sube_id)
+
+    selector = BakiyeHareketiSelector()
+    rows: list[dict] = []
+    for mh in qs.order_by('tip', 'siralama', 'ad'):
+        bakiye = int(selector.get_son_bakiye(mh.id) or 0)
+        rows.append({
+            'id': mh.id,
+            'mali_hesap_id': mh.id,
+            'mali_hesap_ad': mh.ad,
+            'mali_hesap_tip': mh.tip,
+            'donem_basi_bakiye': 0,
+            'toplam_gelir': 0,
+            'toplam_gider': 0,
+            'donem_sonu_bakiye': bakiye,
+        })
+    return rows
 
 
 def _serialize_gider_odeme(odeme) -> dict:
