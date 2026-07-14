@@ -244,11 +244,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onExpired = () => {
+      // Tam DB restore oturum tablosunu siler; polling 401'i "oturum bitti" sanıp
+      // hemen çıkışa atmasın — kullanıcıya restore sonrası login mesajı bırakılsın.
+      try {
+        if (window.sessionStorage.getItem('yedekleme_restore_in_progress') === '1') {
+          window.sessionStorage.removeItem('yedekleme_restore_in_progress');
+          // Eski eğitim yılı localStorage'da kalırsa boş liste görünür (ör. 2027-2028).
+          window.localStorage.removeItem('3k_active_egitim_yili');
+          window.location.href = '/login?restored=1';
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
       void handleIdleLogout();
     };
     window.addEventListener("3k:session-expired", onExpired);
     return () => window.removeEventListener("3k:session-expired", onExpired);
   }, [handleIdleLogout]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (new URLSearchParams(window.location.search).get('restored') === '1') {
+        localStorage.removeItem('3k_active_egitim_yili');
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Check auth on mount - only once
   useEffect(() => {

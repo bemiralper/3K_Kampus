@@ -110,7 +110,8 @@ def get_current_context(request):
             egitim_yili_id = None
     
     if not egitim_yili:
-        egitim_yili = EgitimYili.objects.filter(aktif_mi=True).first()
+        from apps.egitim_yili.application.defaults import pick_default_egitim_yili
+        egitim_yili = pick_default_egitim_yili()
         egitim_yili_id = egitim_yili.id if egitim_yili else None
     
     return {

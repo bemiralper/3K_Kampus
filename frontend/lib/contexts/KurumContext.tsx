@@ -117,6 +117,26 @@ const STORAGE_KEYS = {
   activeEgitimYili: "3k_active_egitim_yili",
 };
 
+/** Türk eğitim takvimi: Eyl–Ağu → o dönem; birden fazla aktif yılda doğru varsayılan. */
+export function pickDefaultEgitimYili(years: EgitimYili[]): EgitimYili | null {
+  if (!years.length) return null;
+  const aktif = years.filter((y) => y.aktif_mi);
+  const pool = aktif.length ? aktif : years;
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const calendarYear = now.getFullYear();
+  // Eylül–Aralık: calendarYear/calendarYear+1; Ocak–Ağustos: calendarYear-1/calendarYear
+  const startYear = month >= 9 ? calendarYear : calendarYear - 1;
+  const exact = pool.find((y) => y.baslangic_yil === startYear);
+  if (exact) return exact;
+  // Geçmişe en yakın aktif yıl (gelecek yılları tercih etme)
+  const pastOrCurrent = pool
+    .filter((y) => y.baslangic_yil <= startYear)
+    .sort((a, b) => b.baslangic_yil - a.baslangic_yil);
+  if (pastOrCurrent[0]) return pastOrCurrent[0];
+  return [...pool].sort((a, b) => a.baslangic_yil - b.baslangic_yil)[0] || null;
+}
+
 export function KurumProvider({ children }: { children: ReactNode }) {
   // Data states
   const [kurumlar, setKurumlar] = useState<Kurum[]>([]);
@@ -218,9 +238,8 @@ export function KurumProvider({ children }: { children: ReactNode }) {
             (y: EgitimYili) => y.id === parseInt(storedYilId)
           ) || null;
         }
-        if (!selectedYil && result.egitimYillari.length > 0) {
-          // Default: first active yil or first yil
-          selectedYil = result.egitimYillari.find((y: EgitimYili) => y.aktif_mi) || result.egitimYillari[0];
+        if (!selectedYil) {
+          selectedYil = pickDefaultEgitimYili(result.egitimYillari);
         }
         setActiveEgitimYiliState(selectedYil);
 

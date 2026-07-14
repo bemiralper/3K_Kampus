@@ -12,9 +12,12 @@ from django.test import Client, TestCase, TransactionTestCase, override_settings
 
 from apps.yedekleme.domain.models import (
     BackupArtifact,
+    BackupJob,
     BackupKind,
+    BackupOperationAction,
     BackupResource,
     BackupStatus,
+    BackupTrigger,
     ResourceType,
 )
 from apps.yedekleme.engine.archive import create_zip, extract_zip, sha256_file, verify_checksums, write_checksums
@@ -153,6 +156,20 @@ class PlanFilterTests(TestCase):
         self.assertEqual([e['code'] for e in restore], ['system.database', 'system.media'])
         self.assertEqual([e['code'] for e in skipped], ['finans.cariler'])
         self.assertTrue(manifest_has_full_database({'resources': entries}))
+
+    def test_order_restore_puts_media_before_full_db(self):
+        from apps.yedekleme.engine.plan import order_restore_entries
+
+        entries = [
+            {'code': 'system.database', 'handler': 'database_full', 'priority': 10},
+            {'code': 'system.settings', 'handler': 'configuration', 'priority': 30},
+            {'code': 'system.media', 'handler': 'file_directory', 'priority': 20},
+        ]
+        ordered = order_restore_entries(entries)
+        self.assertEqual(
+            [e['code'] for e in ordered],
+            ['system.media', 'system.settings', 'system.database'],
+        )
 
     def test_filter_keeps_tables_without_full(self):
         entries = [
@@ -500,6 +517,127 @@ class ApiPermissionTests(TestCase):
                 body = res.json()
                 self.assertEqual(body['artifact']['status'], 'completed')
                 self.assertEqual(body['artifact']['kind'], 'selected')
+
+    def test_restore_full_db_api_returns_relogin_required(self):
+        self.user.is_superuser = True
+        self.user.save()
+        self.client.force_login(self.user)
+        artifact = BackupArtifact.objects.create(
+            filename='restore-test.zip',
+            storage_key='restore-test/restore-test.zip',
+            size_bytes=1,
+            checksum='abc',
+            status=BackupStatus.COMPLETED,
+            kind=BackupKind.FULL,
+            resource_codes=['system.database'],
+            manifest={'resources': [{'code': 'system.database', 'handler': 'database_full'}]},
+            format_version='2.0',
+        )
+        restore_payload = {
+            'restored': True,
+            'full_database_restored': True,
+            'relogin_required': True,
+            'results': [{'code': 'system.database', 'ok': True, 'message': 'ok'}],
+            'duration_ms': 10,
+            'job_id': 1,
+        }
+        with mock.patch('apps.yedekleme.interfaces.views._restore_worker') as mock_worker:
+            with mock.patch.object(BackupEngine, 'create_restore_job') as mock_create_job:
+                job = BackupJob.objects.create(
+                    artifact=artifact,
+                    action=BackupOperationAction.RESTORE,
+                    status=BackupStatus.RUNNING,
+                )
+                mock_create_job.return_value = job
+                res = self.client.post(
+                    f'/yedekleme/api/backups/{artifact.id}/restore/',
+                    data=json.dumps({'confirm': 'RESTORE'}),
+                    content_type='application/json',
+                )
+        self.assertEqual(res.status_code, 202, res.content)
+        body = res.json()
+        self.assertTrue(body.get('accepted'))
+        self.assertEqual(body['job']['id'], job.id)
+        mock_worker.assert_called_once()
+
+    def test_pre_restore_does_not_block_on_recent_running_create(self):
+        from django.utils import timezone
+
+        art = BackupArtifact.objects.create(
+            filename='live.zip',
+            storage_key='live/live.zip',
+            size_bytes=1,
+            checksum='x',
+            status=BackupStatus.RUNNING,
+            kind=BackupKind.FULL,
+            started_at=timezone.now(),
+        )
+        BackupJob.objects.create(
+            artifact=art,
+            action=BackupOperationAction.CREATE,
+            status=BackupStatus.RUNNING,
+            started_at=timezone.now(),
+        )
+        engine = BackupEngine()
+        with mock.patch('apps.yedekleme.engine.orchestrator.resolve_resources') as mock_res:
+            mock_resource = mock.Mock()
+            mock_resource.code = 'x'
+            mock_res.return_value = [mock_resource]
+            with mock.patch.object(engine, '_preflight_disk_check', return_value='Yetersiz disk alanı'):
+                with self.assertRaises(RuntimeError) as ctx:
+                    engine.create_backup(kind=BackupKind.DATABASE, trigger=BackupTrigger.PRE_RESTORE)
+                self.assertNotIn('devam eden', str(ctx.exception))
+        with self.assertRaises(RuntimeError) as ctx:
+            engine.create_backup(kind=BackupKind.DATABASE, trigger=BackupTrigger.MANUAL)
+        self.assertIn('devam eden', str(ctx.exception))
+
+    def test_fail_stale_running_jobs_clears_old_create(self):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        old = timezone.now() - timedelta(hours=2)
+        art = BackupArtifact.objects.create(
+            filename='old.zip',
+            storage_key='old/old.zip',
+            size_bytes=1,
+            checksum='x',
+            status=BackupStatus.RUNNING,
+            kind=BackupKind.FULL,
+        )
+        BackupJob.objects.create(
+            artifact=art,
+            action=BackupOperationAction.CREATE,
+            status=BackupStatus.RUNNING,
+        )
+        BackupJob.objects.filter(artifact=art).update(started_at=old)
+        BackupArtifact.objects.filter(pk=art.pk).update(started_at=old)
+        cleaned = BackupEngine().fail_stale_running_jobs(max_age_minutes=30)
+        self.assertEqual(cleaned, 1)
+        self.assertFalse(BackupJob.objects.filter(status=BackupStatus.RUNNING).exists())
+
+    def test_cancel_job_marks_running_as_cancelled(self):
+        art = BackupArtifact.objects.create(
+            filename='cancel-me.zip',
+            storage_key='cancel/cancel-me.zip',
+            size_bytes=1,
+            checksum='x',
+            status=BackupStatus.RUNNING,
+            kind=BackupKind.DATABASE,
+        )
+        job = BackupJob.objects.create(
+            artifact=art,
+            action=BackupOperationAction.CREATE,
+            status=BackupStatus.RUNNING,
+            phase='exporting',
+            progress=10,
+            message='Kaynak dışa aktarılıyor: system.database',
+        )
+        result = BackupEngine().cancel_job(job, reason='Test iptal')
+        self.assertTrue(result['cancelled'])
+        job.refresh_from_db()
+        art.refresh_from_db()
+        self.assertEqual(job.status, BackupStatus.CANCELLED)
+        self.assertEqual(art.status, BackupStatus.FAILED)
 
 
 class TenantScopedBackupTests(TransactionTestCase):

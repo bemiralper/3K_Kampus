@@ -31,6 +31,7 @@ from apps.yedekleme.engine.plan import (
     entry_priority,
     filter_restore_entries,
     manifest_has_full_database,
+    order_restore_entries,
 )
 from apps.yedekleme.engine.selection import resolve_resources
 from apps.yedekleme.engine.storage import delete_file, fetch_file, store_file
@@ -160,6 +161,80 @@ class BackupEngine:
             job.finished_at = _now()
         job.save()
 
+    def fail_stale_running_jobs(self, *, max_age_minutes: int | None = None) -> int:
+        """RUNNING durumunda takılı kalan job/artifact kayıtlarını FAILED yapar."""
+        from datetime import timedelta as _timedelta
+
+        cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
+        minutes = max_age_minutes if max_age_minutes is not None else int(cfg.get('stale_job_minutes') or 30)
+        cutoff = _now() - _timedelta(minutes=max(1, minutes))
+        msg = f'Asılı kalan iş temizlendi (>{minutes} dk RUNNING)'
+
+        jobs = BackupJob.objects.filter(status=BackupStatus.RUNNING, started_at__lt=cutoff)
+        count = jobs.count()
+        if count:
+            jobs.update(
+                status=BackupStatus.FAILED,
+                phase=JobPhase.ERROR,
+                progress=100,
+                error_message=msg,
+                finished_at=_now(),
+                message='Zaman aşımı / süreç kesildi',
+            )
+        BackupArtifact.objects.filter(
+            status=BackupStatus.RUNNING,
+            started_at__lt=cutoff,
+        ).update(
+            status=BackupStatus.FAILED,
+            error_message=msg,
+            finished_at=_now(),
+        )
+        return count
+
+    def cancel_job(self, job: BackupJob, *, reason: str = 'Manuel iptal') -> dict:
+        """Takılı veya istenmeyen RUNNING işi iptal eder (artifact dahil)."""
+        if job.status != BackupStatus.RUNNING:
+            return {'cancelled': False, 'message': 'İş zaten bitmiş', 'job_id': job.id}
+
+        now = _now()
+        job.status = BackupStatus.CANCELLED
+        job.phase = JobPhase.ERROR
+        job.progress = 100
+        job.error_message = reason
+        job.message = 'İptal edildi'
+        job.finished_at = now
+        job.save(
+            update_fields=['status', 'phase', 'progress', 'error_message', 'message', 'finished_at'],
+        )
+        if job.artifact_id:
+            BackupArtifact.objects.filter(pk=job.artifact_id, status=BackupStatus.RUNNING).update(
+                status=BackupStatus.FAILED,
+                error_message=reason,
+                finished_at=now,
+            )
+        self._log(
+            action=BackupOperationAction.PURGE,
+            artifact=job.artifact,
+            job=job,
+            step='İş iptal edildi',
+            success=False,
+            error_message=reason,
+            metadata={'job_id': job.id},
+        )
+        return {'cancelled': True, 'job_id': job.id, 'message': reason}
+
+    def create_restore_job(self, artifact: BackupArtifact) -> BackupJob:
+        self.fail_stale_running_jobs()
+        return BackupJob.objects.create(
+            artifact=artifact,
+            action=BackupOperationAction.RESTORE,
+            status=BackupStatus.RUNNING,
+            phase=JobPhase.RESTORING,
+            progress=2,
+            message='Geri yükleme kuyruğa alındı',
+            created_by=self.user,
+        )
+
     def create_backup(
         self,
         *,
@@ -172,17 +247,19 @@ class BackupEngine:
     ) -> tuple[BackupArtifact, BackupJob]:
         # M7: Eşzamanlılık sınırı — aynı anda tek bir create işi. Stale (asılı
         # kalmış) işleri engellemesin diye yalnızca yakın zamanlı RUNNING işler
-        # bloklar; eskiler cleanup_stale_backup_jobs ile FAILED işaretlenir.
+        # bloklar; eskiler fail_stale_running_jobs ile FAILED işaretlenir.
         cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
         max_age_hours = int(cfg.get('max_job_age_hours') or 3)
         from datetime import timedelta as _timedelta
         cutoff = _now() - _timedelta(hours=max_age_hours)
-        if BackupJob.objects.filter(
-            action=BackupOperationAction.CREATE,
-            status=BackupStatus.RUNNING,
-            started_at__gte=cutoff,
-        ).exists():
-            raise RuntimeError('Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.')
+        if trigger != BackupTrigger.PRE_RESTORE:
+            self.fail_stale_running_jobs()
+            if BackupJob.objects.filter(
+                action=BackupOperationAction.CREATE,
+                status=BackupStatus.RUNNING,
+                started_at__gte=cutoff,
+            ).exists():
+                raise RuntimeError('Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.')
 
         tenant = {k: v for k, v in (tenant or {}).items() if v is not None} or None
         if tenant:
@@ -639,24 +716,23 @@ class BackupEngine:
         finally:
             shutil.rmtree(work, ignore_errors=True)
 
-    def restore(self, artifact: BackupArtifact, *, confirm: str) -> dict:
+    def restore(self, artifact: BackupArtifact, *, confirm: str, job: BackupJob | None = None) -> dict:
         if confirm != 'RESTORE':
             raise ValueError('confirm alanı "RESTORE" olmalıdır')
 
         from apps.yedekleme.domain.models import BackupResource
 
         work = Path(tempfile.mkdtemp(prefix='backup_restore_'))
-        job = BackupJob.objects.create(
-            artifact=artifact,
-            action=BackupOperationAction.RESTORE,
-            status=BackupStatus.RUNNING,
-            phase=JobPhase.RESTORING,
-            created_by=self.user,
-        )
+        if job is None:
+            job = self.create_restore_job(artifact)
+        else:
+            self._update_job(job, message='Geri yükleme başlatılıyor', progress=5)
         started = _now()
         full_db_restored = False
         try:
+            self._update_job(job, message='Yedek arşivi açılıyor', progress=10)
             extract_dir = self._extract_artifact(artifact, work)
+            self._update_job(job, message='Checksum doğrulanıyor', progress=14)
             ok, errors = verify_checksums(extract_dir)
             if not ok:
                 raise RuntimeError('Bozuk yedek: ' + '; '.join(errors[:5]))
@@ -672,6 +748,7 @@ class BackupEngine:
                 key=lambda e: entry_priority(e, _fallback_priority),
             )
             entries, skipped_tables = filter_restore_entries(sorted_entries)
+            entries = order_restore_entries(entries)
             full_db_restored = manifest_has_full_database(manifest)
 
             # C4: Tam DB restore yıkıcıdır (pg_restore --clean). Restore'a başlamadan
@@ -699,6 +776,7 @@ class BackupEngine:
                         step='Restore öncesi güvenlik yedeği alındı',
                         metadata=safety_backup,
                     )
+                    self._update_job(job, message='Güvenlik yedeği alındı, geri yükleme başlıyor', progress=22)
                 except Exception as exc:  # noqa: BLE001
                     # Güvenlik yedeği alınamıyorsa yıkıcı restore'a BAŞLAMA.
                     msg = f'Restore öncesi güvenlik yedeği alınamadı, işlem iptal edildi: {exc}'
@@ -754,6 +832,8 @@ class BackupEngine:
                         message=f'Geri yükleniyor: {code}',
                         progress=min(95, 10 + len(results) * 5),
                     )
+                if handler_key == 'database_full':
+                    self._update_job(job, message='Tam veritabanı geri yükleniyor (pg_restore)', progress=55)
                 handler = get_handler(handler_key)
                 res = handler.restore(target, payload / code.replace('/', '_'), dry_run=False)
                 results.append({'code': code, 'ok': res.ok, 'message': res.message, 'meta': res.meta})
@@ -768,6 +848,7 @@ class BackupEngine:
             duration = int((_now() - started).total_seconds() * 1000)
             result = {
                 'restored': True,
+                'job_id': job.id,
                 'results': results,
                 'duration_ms': duration,
                 'full_database_restored': full_db_restored,
@@ -775,7 +856,7 @@ class BackupEngine:
                 'relogin_required': full_db_restored,
                 'safety_backup': safety_backup,
             }
-            if not full_db_restored:
+            try:
                 self._update_job(
                     job,
                     phase=JobPhase.DONE,
@@ -784,6 +865,9 @@ class BackupEngine:
                     result=result,
                     message='Geri yükleme tamam',
                 )
+            except Exception:
+                pass
+            if not full_db_restored:
                 self._log(
                     action=BackupOperationAction.RESTORE,
                     artifact=artifact,

@@ -12,6 +12,8 @@ import {
   dryRunBackup,
   fetchBackups,
   fetchDashboard,
+  cleanupStaleJobs,
+  cancelJob,
   fetchJob,
   fetchLogs,
   fetchResources,
@@ -235,6 +237,10 @@ export default function YedeklemeClient() {
     const res = await fetchDashboard();
     if (res.success && res.data) {
       setDashboard(res.data);
+      const running = (res.data.active_jobs || []).find((job) => job.status === 'running');
+      if (running) {
+        setActiveJob((current) => current ?? running);
+      }
       return null;
     }
     return errorText('Genel durum yüklenemedi.', res.error);
@@ -332,6 +338,54 @@ export default function YedeklemeClient() {
     }, 1800);
     return () => window.clearInterval(interval);
   }, [activeJob, loadArtifacts, loadDashboard, loadLogs]);
+
+  useEffect(() => {
+    if (!activeJob || !['completed', 'failed', 'cancelled'].includes(activeJob.status)) return;
+    if (activeJob.action !== 'restore') return;
+
+    if (activeJob.status === 'completed') {
+      const relogin = Boolean(activeJob.result?.relogin_required || activeJob.result?.full_database_restored);
+      setRestoreProgress(100);
+      setBusyKey(null);
+      window.sessionStorage.removeItem('yedekleme_restore_in_progress');
+      setNotice({
+        type: 'success',
+        text: relogin
+          ? 'Geri yükleme tamamlandı. Tam veritabanı yenilendi — lütfen yeniden giriş yapın. Sonra kurum/şube seçip Öğrenciler sayfasını açın.'
+          : 'Geri yükleme tamamlandı.',
+      });
+      if (relogin) {
+        window.setTimeout(() => {
+          window.location.href = '/login?restored=1';
+        }, 1500);
+      }
+      return;
+    }
+
+    if (activeJob.status === 'failed') {
+      window.sessionStorage.removeItem('yedekleme_restore_in_progress');
+      setRestoreProgress(0);
+      setBusyKey(null);
+      const err = activeJob.error_message || activeJob.message || '';
+      const cancelledBeforeRestore =
+        err.includes('güvenlik yedeği') ||
+        err.includes('Güvenlik yedeği') ||
+        err.includes('devam eden bir yedekleme');
+      setNotice({
+        type: 'error',
+        text: cancelledBeforeRestore
+          ? `Geri yükleme başlamadan iptal edildi — mevcut veritabanı değiştirilmedi. ${err}`
+          : errorText('Geri yükleme başarısız.', err),
+      });
+    }
+  }, [activeJob]);
+
+  useEffect(() => {
+    if (activeJob?.action === 'restore' && activeJob.status === 'running') {
+      setBusyKey('restore');
+      setRestoreProgress(activeJob.progress || 10);
+    }
+  }, [activeJob]);
 
   useEffect(() => {
     if (tabFromUrl && TABS.some((t) => t.key === tabFromUrl) && tabFromUrl !== activeTab) {
@@ -655,30 +709,58 @@ export default function YedeklemeClient() {
     if (!restoreArtifactId || restoreConfirm !== 'RESTORE') return;
     if (!window.confirm('Bu işlem mevcut verileri seçilen yedek ile değiştirecek. Devam edilsin mi?')) return;
     setBusyKey('restore');
-    setRestoreProgress(35);
+    setRestoreProgress(8);
+    setNotice(null);
+    window.sessionStorage.setItem('yedekleme_restore_in_progress', '1');
     const res = await restoreBackup(restoreArtifactId, restoreConfirm);
-    setRestoreProgress(res.success ? 100 : 0);
-    setBusyKey(null);
-    if (res.success) {
-      const relogin = Boolean(res.data?.relogin_required || res.data?.full_database_restored);
+    if (res.success && res.data?.job) {
+      setActiveJob(res.data.job);
+      setRestoreConfirm('');
       setNotice({
         type: 'success',
-        text: relogin
-          ? 'Geri yükleme tamamlandı. Tam veritabanı yenilendi — lütfen yeniden giriş yapın.'
-          : 'Geri yükleme tamamlandı.',
+        text: res.data.message || 'Geri yükleme başlatıldı. İlerleme aşağıdaki iş kartında görünür. Tamamlanınca yeniden giriş gerekebilir.',
       });
-      setRestoreConfirm('');
-      setAnalyzeData(res.data || null);
+      void loadLogs();
+      return;
+    }
+    window.sessionStorage.removeItem('yedekleme_restore_in_progress');
+    setRestoreProgress(0);
+    setBusyKey(null);
+    setNotice({ type: 'error', text: errorText('Geri yükleme başlatılamadı.', res.error) });
+  };
+
+  const handleCleanupStaleJobs = async () => {
+    if (!window.confirm('15 dakikadan eski takılı RUNNING işler iptal edilecek. Devam?')) return;
+    setBusyKey('cleanup-jobs');
+    const res = await cleanupStaleJobs(15);
+    setBusyKey(null);
+    if (res.success) {
+      setNotice({
+        type: 'success',
+        text: `${res.data?.cleaned_jobs ?? 0} takılı iş temizlendi. Geri yüklemeyi tekrar deneyebilirsiniz.`,
+      });
+      setActiveJob(null);
       void loadDashboard();
       void loadArtifacts();
       void loadLogs();
-      if (relogin) {
-        window.setTimeout(() => {
-          window.location.href = '/login';
-        }, 1500);
-      }
     } else {
-      setNotice({ type: 'error', text: errorText('Geri yükleme başarısız.', res.error) });
+      setNotice({ type: 'error', text: errorText('Takılı işler temizlenemedi.', res.error) });
+    }
+  };
+
+  const handleCancelJob = async (job: BackupJob) => {
+    if (!window.confirm(`"${job.message || 'Bu iş'}" iptal edilsin mi?`)) return;
+    setBusyKey(`cancel-job-${job.id}`);
+    const res = await cancelJob(job.id);
+    setBusyKey(null);
+    if (res.success && res.data?.cancelled) {
+      setNotice({ type: 'success', text: 'İş iptal edildi. Geri yüklemeyi tekrar deneyebilirsiniz.' });
+      if (activeJob?.id === job.id) setActiveJob(null);
+      void loadDashboard();
+      void loadArtifacts();
+      void loadLogs();
+    } else {
+      setNotice({ type: 'error', text: errorText('İş iptal edilemedi.', res.error) });
     }
   };
 
@@ -778,6 +860,27 @@ export default function YedeklemeClient() {
                 <MetricCard label="Son hata" value={dashboard?.last_error.error_message || '-'} detail={formatDate(dashboard?.last_error.created_at)} tone={dashboard?.last_error.error_message ? 'danger' : 'muted'} />
               </div>
 
+              {(dashboard?.active_jobs?.length ?? 0) > 0 && (
+                <Panel
+                  title="Devam Eden İşler"
+                  description="Yedekleme veya geri yükleme sürüyorsa ilerleme burada görünür"
+                >
+                  <div className="yedekleme-stack">
+                    {dashboard!.active_jobs!.map((job) => (
+                      <JobProgress key={job.id} job={job} onCancel={handleCancelJob} busy={busyKey === `cancel-job-${job.id}`} />
+                    ))}
+                    <button
+                      type="button"
+                      className="yedekleme-btn"
+                      onClick={handleCleanupStaleJobs}
+                      disabled={busyKey === 'cleanup-jobs'}
+                    >
+                      Takılı işleri temizle
+                    </button>
+                  </div>
+                </Panel>
+              )}
+
               <div className="yedekleme-grid yedekleme-grid--two">
                 <Panel title="Son Yedek Detayı" description="En güncel tamamlanmış arşiv">
                   {dashboard?.latest_backup ? (
@@ -872,7 +975,7 @@ export default function YedeklemeClient() {
 
               <Panel title="İş Durumu" description="Oluşturma ilerlemesi">
                 {activeJob ? (
-                  <JobProgress job={activeJob} />
+                  <JobProgress job={activeJob} onCancel={handleCancelJob} busy={busyKey === `cancel-job-${activeJob.id}`} />
                 ) : (
                   <EmptyState text="Henüz çalışan yedekleme işi yok." />
                 )}
@@ -985,7 +1088,7 @@ export default function YedeklemeClient() {
                   {activeJob && (
                     <div className="yedekleme-callout">
                       <strong>Bu oturumdaki iş</strong>
-                      <JobProgress job={activeJob} />
+                      <JobProgress job={activeJob} onCancel={handleCancelJob} busy={busyKey === `cancel-job-${activeJob.id}`} />
                     </div>
                   )}
                   <KeyValue label="Plan durumu" value={schedule?.enabled && schedule.frequency !== 'off' ? 'Aktif (cron gerekli)' : 'Kapalı'} />
@@ -1207,12 +1310,23 @@ export default function YedeklemeClient() {
                   <span>Onay için RESTORE yazın</span>
                   <input value={restoreConfirm} onChange={(event) => setRestoreConfirm(event.target.value)} placeholder="RESTORE" autoComplete="off" />
                 </label>
-                {busyKey === 'restore' || restoreProgress > 0 ? <ProgressBar value={restoreProgress || 35} /> : null}
+                {activeJob?.action === 'restore' && activeJob.status === 'running' ? (
+                  <JobProgress job={activeJob} onCancel={handleCancelJob} busy={busyKey === `cancel-job-${activeJob.id}`} />
+                ) : busyKey === 'restore' || restoreProgress > 0 ? (
+                  <ProgressBar value={restoreProgress || 10} />
+                ) : null}
                 <button className="yedekleme-btn yedekleme-btn--danger" onClick={handleRestore} disabled={!restoreArtifactId || restoreConfirm !== 'RESTORE' || busyKey === 'restore'}>
                   Geri Yüklemeyi Başlat
                 </button>
               </Panel>
               <div className="yedekleme-stack">
+                <Panel title="Geri Yükleme İş Durumu" description="Aşama, yüzde ve hata mesajı">
+                  {activeJob?.action === 'restore' ? (
+                    <JobProgress job={activeJob} onCancel={handleCancelJob} busy={busyKey === `cancel-job-${activeJob.id}`} />
+                  ) : (
+                    <EmptyState text="Geri yükleme başlatıldığında ilerleme burada görünür. Günlükler sekmesinde adım adım kayıt tutulur." />
+                  )}
+                </Panel>
                 <Panel title="Analiz Paneli" description="Yedek içeriği ve risk özeti">
                   {analyzeData ? <JsonPreview data={analyzeData} /> : <EmptyState text="Analiz sonucu henüz yok." />}
                 </Panel>
@@ -1370,7 +1484,19 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
-function JobProgress({ job }: { job: BackupJob }) {
+function JobProgress({
+  job,
+  onCancel,
+  busy = false,
+}: {
+  job: BackupJob;
+  onCancel?: (job: BackupJob) => void;
+  busy?: boolean;
+}) {
+  const stuckHint =
+    job.status === 'running' && job.phase === 'exporting'
+      ? 'pg_dump uzun sürebilir; 15 dk hareketsiz kalırsa otomatik iptal edilir veya aşağıdan iptal edin.'
+      : null;
   return (
     <div className="yedekleme-stack">
       <div className="yedekleme-title-row">
@@ -1380,6 +1506,12 @@ function JobProgress({ job }: { job: BackupJob }) {
       <ProgressBar value={job.progress || (job.status === 'completed' ? 100 : 15)} />
       <KeyValue label="Faz" value={job.phase || '-'} />
       <KeyValue label="Başlangıç" value={formatDate(job.started_at)} />
+      {stuckHint && <div className="yedekleme-callout">{stuckHint}</div>}
+      {job.status === 'running' && onCancel && (
+        <button type="button" className="yedekleme-btn yedekleme-btn--danger" onClick={() => onCancel(job)} disabled={busy}>
+          {busy ? 'İptal ediliyor...' : 'Bu işi iptal et'}
+        </button>
+      )}
       {job.error_message && <div className="yedekleme-callout yedekleme-callout--danger">{job.error_message}</div>}
       {Object.keys(job.result || {}).length > 0 && <JsonPreview data={job.result} />}
     </div>

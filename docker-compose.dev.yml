@@ -36,7 +36,8 @@ services:
       DJANGO_ENV: development
     volumes:
       - ./backend:/app/backend
-      - media_dev:/app/backend/media
+      # Host media ile aynı olsun (named volume host'taki dosyaları gizler)
+      - ./backend/media:/app/backend/media
     ports:
       - "8000:8000"
     depends_on:
@@ -94,6 +95,5 @@ services:
 
 volumes:
   pgdata_dev:
-  media_dev:
   frontend_node_modules:
   frontend_next_cache:

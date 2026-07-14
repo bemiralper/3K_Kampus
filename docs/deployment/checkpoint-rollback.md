@@ -8,6 +8,8 @@ Büyük canlı alımlarından önce kod tabanının sabitlenmiş hali. Bu commit
 
 | Etiket / dal | Commit | Ne içerir |
 |--------------|--------|-----------|
+| `checkpoint/2026-07-15-pre-restore-session-media-fix` | `4550429` | **Restore oturum/medya sırası + eğitim yılı varsayılanı deploy öncesi** |
+| `backup/checkpoint-pre-restore-session-media-20260715` | `4550429` | Aynı commit'te yedek dal |
 | `checkpoint/2026-07-14-pre-yedekleme-v2-hardening` | `4bbd268` | **Yedekleme v2 hardening deploy öncesi** — migration 0004 (bildirim/remote) **öncesi** |
 | `backup/checkpoint-pre-yedekleme-v2-hardening-20260714` | `4bbd268` | Aynı commit'te yedek dal |
 | `checkpoint/2026-07-13-pre-website-cms-content` | `1df43ad` | **Website CMS duyuru/haber + admin dashboard deploy öncesi** — migration 0016 **öncesi** |

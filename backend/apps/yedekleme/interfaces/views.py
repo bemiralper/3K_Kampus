@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 
 from django.conf import settings
 from django.db.models import Q, Sum
@@ -19,6 +20,7 @@ from apps.yedekleme.domain.models import (
     BackupSchedule,
     BackupSettings,
     BackupStatus,
+    JobPhase,
     ResourceType,
     ScheduleFrequency,
 )
@@ -34,6 +36,40 @@ def _client_ip(request):
     if xff:
         return xff.split(',')[0].strip()
     return request.META.get('REMOTE_ADDR')
+
+
+def _restore_worker(*, artifact_id: int, job_id: int, user_id: int | None, ip_address: str | None, confirm: str) -> None:
+    """Uzun süren restore işini HTTP yanıtından bağımsız çalıştırır."""
+    import logging
+
+    from django.contrib.auth import get_user_model
+    from django.db import connection
+
+    logger = logging.getLogger(__name__)
+    connection.close()
+    try:
+        User = get_user_model()
+        user = User.objects.filter(pk=user_id).first() if user_id else None
+        artifact = BackupArtifact.objects.get(pk=artifact_id)
+        job = BackupJob.objects.get(pk=job_id)
+        BackupEngine(user=user, ip_address=ip_address).restore(artifact, confirm=confirm, job=job)
+        logger.info('restore_worker.done artifact_id=%s job_id=%s', artifact_id, job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('restore_worker.failed artifact_id=%s job_id=%s: %s', artifact_id, job_id, exc)
+        try:
+            connection.close()
+            job = BackupJob.objects.filter(pk=job_id).first()
+            if job and job.status == BackupStatus.RUNNING:
+                job.status = BackupStatus.FAILED
+                job.phase = JobPhase.ERROR
+                job.progress = 100
+                job.error_message = str(exc)[:2000]
+                job.message = 'Geri yükleme başarısız'
+                job.save(update_fields=['status', 'phase', 'progress', 'error_message', 'message'])
+        except Exception:  # noqa: BLE001
+            logger.exception('restore_worker.status_update_failed job_id=%s', job_id)
+    finally:
+        connection.close()
 
 
 def _engine(request) -> BackupEngine:
@@ -152,15 +188,21 @@ def _ensure_registry():
 @api_permission_required('yedekleme.read', 'yedekleme.manage')
 def dashboard_view(request):
     _ensure_registry()
+    try:
+        BackupEngine().fail_stale_running_jobs(max_age_minutes=15)
+    except Exception:
+        pass
     latest = BackupArtifact.objects.filter(status=BackupStatus.COMPLETED).first()
     schedule = BackupSchedule.get_singleton()
     agg = BackupArtifact.objects.filter(status=BackupStatus.COMPLETED).aggregate(total=Sum('size_bytes'))
     last_ok = BackupOperationLog.objects.filter(success=True).first()
     last_err = BackupOperationLog.objects.filter(success=False).first()
+    active_jobs = BackupJob.objects.filter(status=BackupStatus.RUNNING).order_by('-started_at')[:8]
     return JsonResponse({
         'latest_backup': _artifact_json(latest) if latest else None,
         'total_backups': BackupArtifact.objects.filter(status=BackupStatus.COMPLETED).count(),
         'total_size_bytes': agg['total'] or 0,
+        'active_jobs': [_job_json(j) for j in active_jobs],
         'schedule': _schedule_json(schedule),
         'last_success': {
             'action': last_ok.action if last_ok else None,
@@ -451,22 +493,31 @@ def backup_restore_view(request, artifact_id: int):
     if _art_err:
         return _art_err
     data = _body(request)
-    try:
-        result = _engine(request).restore(art, confirm=data.get('confirm') or '')
-        if result.get('full_database_restored') or result.get('relogin_required'):
-            # pg_restore django_session'ı siler; eski session kaydı middleware'de SessionInterrupted üretir.
-            try:
-                request.session.flush()
-            except Exception:
-                try:
-                    request.session.clear()
-                    request.session.cycle_key()
-                except Exception:
-                    pass
-            result = {**result, 'relogin_required': True}
-        return JsonResponse(result)
-    except Exception as exc:  # noqa: BLE001
-        return JsonResponse({'error': str(exc)}, status=400)
+    confirm = data.get('confirm') or ''
+    if confirm != 'RESTORE':
+        return JsonResponse({'error': 'confirm alanı "RESTORE" olmalıdır'}, status=400)
+
+    engine = _engine(request)
+    job = engine.create_restore_job(art)
+    threading.Thread(
+        target=_restore_worker,
+        kwargs={
+            'artifact_id': art.id,
+            'job_id': job.id,
+            'user_id': request.user.id if request.user.is_authenticated else None,
+            'ip_address': _client_ip(request),
+            'confirm': confirm,
+        },
+        daemon=True,
+    ).start()
+    return JsonResponse(
+        {
+            'accepted': True,
+            'job': _job_json(job),
+            'message': 'Geri yükleme arka planda başlatıldı. İlerlemeyi iş kartından takip edin.',
+        },
+        status=202,
+    )
 
 
 @require_http_methods(['DELETE'])
@@ -656,6 +707,40 @@ def job_detail_view(request, job_id: int):
     except BackupJob.DoesNotExist:
         return JsonResponse({'error': 'İş bulunamadı'}, status=404)
     return JsonResponse({'job': _job_json(job)})
+
+
+@require_http_methods(['POST'])
+@api_permission_required('yedekleme.manage', write_codes=['yedekleme.manage'])
+def jobs_cleanup_stale_view(request):
+    data = _body(request)
+    try:
+        if data.get('minutes') is not None:
+            max_age_minutes = max(5, int(data['minutes']))
+        else:
+            hours = max(1, int(data.get('hours') or 1))
+            max_age_minutes = hours * 60
+    except (TypeError, ValueError):
+        max_age_minutes = 15
+    cleaned = _engine(request).fail_stale_running_jobs(max_age_minutes=max_age_minutes)
+    _engine(request)._log(  # noqa: SLF001
+        action=BackupOperationAction.PURGE,
+        step='Takılı job temizliği',
+        metadata={'cleaned_jobs': cleaned, 'max_age_minutes': max_age_minutes},
+    )
+    return JsonResponse({'cleaned_jobs': cleaned, 'max_age_minutes': max_age_minutes})
+
+
+@require_http_methods(['POST'])
+@api_permission_required('yedekleme.manage', write_codes=['yedekleme.manage'])
+def job_cancel_view(request, job_id: int):
+    try:
+        job = BackupJob.objects.get(pk=job_id)
+    except BackupJob.DoesNotExist:
+        return JsonResponse({'error': 'İş bulunamadı'}, status=404)
+    data = _body(request)
+    reason = (data.get('reason') or 'Manuel iptal').strip()[:500]
+    result = _engine(request).cancel_job(job, reason=reason or 'Manuel iptal')
+    return JsonResponse({'job': _job_json(BackupJob.objects.get(pk=job_id)), **result})
 
 
 @require_http_methods(['POST'])

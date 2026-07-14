@@ -20,7 +20,13 @@ def _is_exempt_path(path: str) -> bool:
         '/auth/api/logout/',
         '/admin/login/',
     )
-    return any(path.startswith(prefix) for prefix in exempt_prefixes)
+    if any(path.startswith(prefix) for prefix in exempt_prefixes):
+        return True
+    # Uzun süren yedekleme işlemleri — oturum tablosu restore sırasında değişebilir.
+    normalized = path.rstrip('/')
+    if normalized.endswith('/restore') and '/yedekleme/api/backups/' in path:
+        return True
+    return False
 
 
 def _wants_json_response(request) -> bool:

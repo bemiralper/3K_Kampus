@@ -22,6 +22,8 @@ urlpatterns = [
     path('schedule/run/', views.schedule_run_now_view, name='yedekleme-schedule-run'),
     path('settings/', views.settings_view, name='yedekleme-settings'),
     path('logs/', views.logs_view, name='yedekleme-logs'),
+    path('jobs/cleanup-stale/', views.jobs_cleanup_stale_view, name='yedekleme-jobs-cleanup-stale'),
+    path('jobs/<int:job_id>/cancel/', views.job_cancel_view, name='yedekleme-job-cancel'),
     path('jobs/<int:job_id>/', views.job_detail_view, name='yedekleme-job'),
     path('purge/', views.purge_view, name='yedekleme-purge'),
 ]

@@ -49,6 +49,7 @@ export interface DashboardData {
   latest_backup: BackupArtifact | null;
   total_backups: number;
   total_size_bytes: number;
+  active_jobs?: BackupJob[];
   schedule: {
     frequency: string;
     hour: number;
@@ -234,8 +235,16 @@ export function dryRunBackup(id: number): Promise<ApiResponse<Record<string, unk
   return apiPost(`${BASE}/backups/${id}/dry-run/`, {});
 }
 
-export function restoreBackup(id: number, confirm: string): Promise<ApiResponse<Record<string, unknown>>> {
+export function restoreBackup(id: number, confirm: string): Promise<ApiResponse<{ accepted?: boolean; job: BackupJob; message?: string }>> {
   return apiPost(`${BASE}/backups/${id}/restore/`, { confirm });
+}
+
+export function cleanupStaleJobs(minutes = 15): Promise<ApiResponse<{ cleaned_jobs: number; max_age_minutes: number }>> {
+  return apiPost(`${BASE}/jobs/cleanup-stale/`, { minutes });
+}
+
+export function cancelJob(id: number, reason?: string): Promise<ApiResponse<{ cancelled: boolean; job: BackupJob; message?: string }>> {
+  return apiPost(`${BASE}/jobs/${id}/cancel/`, { reason: reason || 'Manuel iptal' });
 }
 
 export function deleteBackup(id: number): Promise<ApiResponse<{ deleted: boolean }>> {
