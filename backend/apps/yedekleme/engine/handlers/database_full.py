@@ -23,6 +23,56 @@ from apps.yedekleme.infrastructure.pg_tools import (
 )
 
 
+def reset_all_sequences(log=None) -> str | None:
+    """Veritabanındaki tüm SERIAL/IDENTITY sequence'leri tablo MAX(id)'sine göre düzeltir.
+
+    pg_dump, sequence'in DUMP ANINDAKİ değerini kaydeder (SETVAL). Restore ile dump
+    anındaki değere dönülür; ancak restore sırasında (bu restore job'unun kendisi,
+    güvenlik yedeği kaydı gibi) --clean'den ÖNCE veya SONRA oluşturulan/geri yazılan
+    satırlar sequence'in bilmediği id'ler kullanabilir. Sonuç: sonraki INSERT'lerde
+    "duplicate key value violates unique constraint" hatası. Bu fonksiyon her
+    sequence'i ilgili tablonun gerçek MAX(id)'sine göre yeniden senkronize eder —
+    her zaman güvenli bir "no-op veya fix"tir; restore akışında pg_restore'dan hemen
+    sonra VE tüm reinstate/temizlik adımlarından sonra (en son adım olarak) çağrılır.
+    """
+    from django.db import connection as dj_conn
+
+    sql = """
+    DO $$
+    DECLARE
+        r RECORD;
+        seq_name text;
+    BEGIN
+        FOR r IN
+            SELECT c.relname AS table_name, a.attname AS column_name
+            FROM pg_class c
+            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'r' AND n.nspname = 'public'
+        LOOP
+            seq_name := pg_get_serial_sequence(quote_ident(r.table_name), r.column_name);
+            IF seq_name IS NOT NULL THEN
+                EXECUTE format(
+                    'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I), 1), true)',
+                    seq_name, r.column_name, r.table_name
+                );
+            END IF;
+        END LOOP;
+    END $$;
+    """
+    try:
+        dj_conn.ensure_connection()
+        with dj_conn.cursor() as cur:
+            cur.execute(sql)
+        if log:
+            log.info('database_full.sequences_reset')
+        return None
+    except Exception as exc:  # noqa: BLE001
+        if log:
+            log.info('database_full.sequences_reset_error', error=str(exc)[:300])
+        return str(exc)[:300]
+
+
 class DatabaseFullHandler:
     key = 'database_full'
 
@@ -66,6 +116,14 @@ class DatabaseFullHandler:
             '-Fc',
             '--no-owner',
             '--no-acl',
+            # django_session ömürlük/geçici oturum verisidir, iş verisi değildir.
+            # Dump'a dahil edilirse --clean restore'da TOC'ta yer alır ve mevcut
+            # (canlı) oturumlar tabloyla birlikte DROP edilip yedek anındaki
+            # (muhtemelen alakasız/eski) oturumlarla değiştirilir → restore'u
+            # yapan kullanıcı DAHİL herkes anında "oturum geçersiz" hatası alır.
+            # Tabloyu dump dışı bırakmak restore --clean'in bu tabloya hiç
+            # dokunmamasını sağlar; aktif oturumlar restore sırasında bozulmaz.
+            '--exclude-table=public.django_session',
             '-h', str(db.get('HOST') or 'localhost'),
             '-p', str(db.get('PORT') or '5432'),
             '-U', str(db.get('USER') or ''),
@@ -94,6 +152,9 @@ class DatabaseFullHandler:
             'size_bytes': size,
             'globals_included': bool(globals_file),
             'django_version': getattr(settings, 'DJANGO_VERSION_FOR_BACKUP', None) or '',
+            # Restore tarafı bu bayrağa bakarak relogin_required'ı belirler:
+            # django_session dump dışı → restore aktif oturumlara dokunmaz.
+            'excludes_session_table': True,
         }
         (work_dir / 'meta.json').write_text(json.dumps(meta, indent=2), encoding='utf-8')
         log.info('database_full.dump_done', size_bytes=size)
@@ -170,12 +231,21 @@ class DatabaseFullHandler:
             '--if-exists',
             '--no-owner',
             '--no-acl',
+            '--single-transaction',
             '-h', str(db.get('HOST') or 'localhost'),
             '-p', str(db.get('PORT') or '5432'),
             '-U', str(db.get('USER') or ''),
             '-d', str(db.get('NAME') or ''),
             str(dump),
         ]
+        # --single-transaction: tüm restore tek transaction içinde çalışır; bu sayede
+        # DEFERRABLE FK'ler (örn. auth_user'a referanslar) yalnızca COMMIT anında
+        # kontrol edilir. Aksi halde pg_dump'ın tablo sıralaması bağımlılık grafiğini
+        # tam çözemediğinde ("errors ignored on restore: N") ara adımlarda FK ihlali
+        # oluşur ve restore YARIM veri ile "başarılı" görünebilir. Tek transaction
+        # ayrıca atomiklik sağlar: hata olursa DB baştaki (--clean öncesi) haline
+        # değil ama en azından tutarlı/rollback edilmiş haline döner, yarım yamalak
+        # veri kalmaz.
         # Açık bağlantılar pg_restore --clean sırasında kilit/session sorununa yol açar.
         connections.close_all()
         proc = subprocess.run(cmd, env=pg_env(db), capture_output=True, text=True)
@@ -191,8 +261,13 @@ class DatabaseFullHandler:
                 message=(stderr or stdout or f'pg_restore exit={proc.returncode}')[-2000:],
                 meta={'returncode': proc.returncode},
             )
+        seq_error = reset_all_sequences()
         return RestoreResult(
             ok=True,
             message='pg_restore tamamlandı',
-            meta={'stderr': stderr[-500:], 'returncode': proc.returncode},
+            meta={
+                'stderr': stderr[-500:],
+                'returncode': proc.returncode,
+                'sequences_reset_error': seq_error,
+            },
         )

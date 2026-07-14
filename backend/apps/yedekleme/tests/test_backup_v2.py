@@ -180,6 +180,43 @@ class PlanFilterTests(TestCase):
         self.assertEqual(skipped, [])
 
 
+class FileDirectoryRestoreSkipTests(TestCase):
+    def test_restore_skips_when_meta_missing(self):
+        from apps.yedekleme.engine.handlers.file_directory import FileDirectoryHandler
+
+        handler = FileDirectoryHandler()
+
+        class _R:
+            code = 'kurum.files'
+            config = {'relative_to': 'media', 'path': 'kurum'}
+
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            (work / 'meta.json').write_text(
+                json.dumps({'missing': True, 'source': '/tmp/nope'}),
+                encoding='utf-8',
+            )
+            res = handler.restore(_R(), work, dry_run=False)
+            self.assertTrue(res.ok, res.message)
+            self.assertIn('atlandı', res.message)
+
+    def test_restore_skips_when_files_dir_absent(self):
+        from apps.yedekleme.engine.handlers.file_directory import FileDirectoryHandler
+
+        handler = FileDirectoryHandler()
+
+        class _R:
+            code = 'personel.files'
+            config = {'relative_to': 'media', 'path': 'personel'}
+
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            (work / 'meta.json').write_text(json.dumps({'file_count': 0}), encoding='utf-8')
+            res = handler.restore(_R(), work, dry_run=False)
+            self.assertTrue(res.ok, res.message)
+            self.assertIn('atlandı', res.message)
+
+
 class SelectionFullTests(TestCase):
     def setUp(self):
         BackupResource.objects.create(
@@ -463,6 +500,151 @@ class RestoreOrchestrationTests(TransactionTestCase):
                 # Güvenlik yedeği tam DB restore'da alınmalı
                 mock_create.assert_called_once()
                 self.assertEqual(result['safety_backup']['artifact_id'], 99999)
+                # Eski format yedekler (excludes_session_table meta'sı yok) django_session'ı
+                # da içerir → --clean aktif oturumları siler, relogin zorunlu kalmalı.
+                self.assertTrue(result['relogin_required'])
+
+    def test_relogin_not_required_when_session_table_excluded(self):
+        """Yeni format yedekler (database_full.export excludes_session_table=True
+        işaretler) django_session'a dokunmaz; restore sonrası relogin gerekmez."""
+        with tempfile.TemporaryDirectory() as td:
+            with override_settings(BACKUP_CONFIG={
+                'local_root': Path(td),
+                'file_roots': [],
+                'exclude_patterns': [],
+                'retention': {},
+            }):
+                BackupResource.objects.create(
+                    code='system.database',
+                    name='Full',
+                    resource_type=ResourceType.DATABASE_TABLE,
+                    handler_key='database_full',
+                    is_active=True,
+                    is_restorable=True,
+                    priority=10,
+                )
+                engine = BackupEngine()
+                work = Path(td) / 'craft'
+                payload = work / 'payload'
+                (payload / 'system_database').mkdir(parents=True)
+                (payload / 'system_database' / 'meta.json').write_text(
+                    '{"excludes_session_table": true}', encoding='utf-8'
+                )
+                manifest = {
+                    'version': '2.0',
+                    'resources': [
+                        {
+                            'code': 'system.database',
+                            'handler': 'database_full',
+                            'priority': 10,
+                            'restorable': True,
+                            'config': {},
+                            'meta': {'excludes_session_table': True},
+                        },
+                    ],
+                    'encrypted': False,
+                }
+                (work / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+                files = [work / 'manifest.json']
+                for p in payload.rglob('*'):
+                    if p.is_file():
+                        files.append(p)
+                write_checksums(work, files)
+                zip_path = Path(td) / 'fake2.zip'
+                create_zip(work, zip_path)
+                storage_key = 'fake2/fake2.zip'
+                dest = Path(td) / storage_key
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(zip_path.read_bytes())
+
+                artifact = BackupArtifact.objects.create(
+                    filename='fake2.zip',
+                    storage_key=storage_key,
+                    size_bytes=dest.stat().st_size,
+                    checksum=sha256_file(dest),
+                    status=BackupStatus.COMPLETED,
+                    kind=BackupKind.FULL,
+                    resource_codes=['system.database'],
+                    manifest=manifest,
+                    format_version='2.0',
+                )
+
+                mock_full = mock.Mock()
+                mock_full.restore.return_value = mock.Mock(ok=True, message='ok', meta={})
+                from apps.yedekleme.engine.handlers import get_handler as real_get
+
+                def _get(key):
+                    return mock_full if key == 'database_full' else real_get(key)
+
+                safety_artifact = mock.Mock(id=88888, filename='safety2.zip', size_bytes=1)
+                with mock.patch('apps.yedekleme.engine.orchestrator.get_handler', side_effect=_get), \
+                        mock.patch.object(
+                            BackupEngine, 'create_backup',
+                            return_value=(safety_artifact, mock.Mock()),
+                        ):
+                    result = engine.restore(artifact, confirm='RESTORE')
+
+                self.assertTrue(result['restored'])
+                self.assertTrue(result['full_database_restored'])
+                self.assertFalse(result['relogin_required'])
+
+    def test_clear_stale_running_snapshot_preserves_known_good(self):
+        """Restore'un kendi bilinen-doğru job/artifact'leri FAILED'e çevrilmemeli;
+        snapshot'tan gelen alakasız RUNNING kayıtlar temizlenmeli."""
+        good_artifact = BackupArtifact.objects.create(
+            filename='good.zip', storage_key='good/good.zip', status=BackupStatus.RUNNING,
+            kind=BackupKind.FULL,
+        )
+        good_job = BackupJob.objects.create(
+            artifact=good_artifact, action=BackupOperationAction.RESTORE,
+            status=BackupStatus.RUNNING,
+        )
+        stale_artifact = BackupArtifact.objects.create(
+            filename='stale.zip', storage_key='stale/stale.zip', status=BackupStatus.RUNNING,
+            kind=BackupKind.FULL,
+        )
+        stale_job = BackupJob.objects.create(
+            artifact=stale_artifact, action=BackupOperationAction.CREATE,
+            status=BackupStatus.RUNNING,
+        )
+
+        engine = BackupEngine()
+        engine._clear_stale_running_snapshot(
+            keep_job_ids={good_job.pk}, keep_artifact_ids={good_artifact.pk},
+        )
+
+        good_job.refresh_from_db()
+        good_artifact.refresh_from_db()
+        stale_job.refresh_from_db()
+        stale_artifact.refresh_from_db()
+
+        self.assertEqual(good_job.status, BackupStatus.RUNNING)
+        self.assertEqual(good_artifact.status, BackupStatus.RUNNING)
+        self.assertEqual(stale_job.status, BackupStatus.FAILED)
+        self.assertEqual(stale_artifact.status, BackupStatus.FAILED)
+
+    def test_reinstate_after_full_restore_reinserts_missing_row(self):
+        """Restore snapshot'ı bir job/artifact satırını DROP edip kaybettiyse
+        (yedek anında yoktu), bellekteki nesne aynı PK ile geri yazılmalı."""
+        artifact = BackupArtifact.objects.create(
+            filename='r.zip', storage_key='r/r.zip', status=BackupStatus.COMPLETED,
+            kind=BackupKind.FULL,
+        )
+        job = BackupJob.objects.create(
+            artifact=artifact, action=BackupOperationAction.RESTORE,
+            status=BackupStatus.COMPLETED, progress=100, message='tamam',
+        )
+        job_pk = job.pk
+        # Restore'un tablo DROP+CREATE'ini simüle et: satırı DB'den sil (bellekteki
+        # Python nesnesi hâlâ doğru veriyi tutuyor).
+        BackupJob.objects.filter(pk=job_pk).delete()
+        self.assertFalse(BackupJob.objects.filter(pk=job_pk).exists())
+
+        BackupEngine()._reinstate_after_full_restore(artifact, job)
+
+        restored = BackupJob.objects.get(pk=job_pk)
+        self.assertEqual(restored.status, BackupStatus.COMPLETED)
+        self.assertEqual(restored.message, 'tamam')
 
 
 class ApiPermissionTests(TestCase):

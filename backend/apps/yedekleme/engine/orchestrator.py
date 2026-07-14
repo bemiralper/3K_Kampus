@@ -223,6 +223,58 @@ class BackupEngine:
         )
         return {'cancelled': True, 'job_id': job.id, 'message': reason}
 
+    def _reinstate_after_full_restore(self, *instances) -> None:
+        """Tam DB restore, restore'un kendi iz kayıtlarını (artifact/job) DROP edip
+        yedek anındaki haline döndürebilir — ya satır tamamen kaybolur ya da (pg_dump
+        bu satırı henüz 'running' iken yakaladığı için) yanlış/eski durumla geri
+        gelir. Her iki durumda da bildiğimiz doğru (bellekteki) hale geri yazar."""
+        for instance in instances:
+            if instance is None or instance.pk is None:
+                continue
+            try:
+                model = type(instance)
+                if not model.objects.filter(pk=instance.pk).exists():
+                    instance.save(force_insert=True)
+                else:
+                    instance.save(force_update=True)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _clear_stale_running_snapshot(self, *, keep_job_ids: set | None = None, keep_artifact_ids: set | None = None) -> None:
+        """pg_dump, kendi create job kaydını her zaman 'running' halde yakalar
+        (dump işi bitmeden alınan bir anlık görüntü olduğu için). Bu yedek daha
+        sonra restore edilince o 'running' satır geri gelir ve gerçekte bitmiş
+        bir işi hâlâ çalışıyormuş gibi gösterip yeni yedeklemeleri bloke eder.
+        Restore sonrası bu tür tutarsız RUNNING kayıtları temizler.
+
+        keep_job_ids / keep_artifact_ids: bu restore'un kendi bilinen-doğru
+        kayıtları (restore job'u, restore edilen artifact, güvenlik yedeği) —
+        bunlar zaten _reinstate_after_full_restore ile doğru duruma yazıldı,
+        burada FAILED'e çevrilmemeli.
+        """
+        from apps.yedekleme.domain.models import BackupArtifact as _Artifact
+
+        keep_job_ids = keep_job_ids or set()
+        keep_artifact_ids = keep_artifact_ids or set()
+
+        qs = BackupJob.objects.filter(status=BackupStatus.RUNNING).exclude(pk__in=keep_job_ids)
+        stale_ids = list(qs.values_list('id', 'artifact_id'))
+        if stale_ids:
+            msg = 'Restore edilen yedek anlık görüntüsünde tutarsız iş kaydı (otomatik temizlendi)'
+            qs.update(status=BackupStatus.FAILED, phase=JobPhase.ERROR, progress=100, error_message=msg, finished_at=_now())
+            artifact_ids = [aid for _, aid in stale_ids if aid and aid not in keep_artifact_ids]
+            if artifact_ids:
+                _Artifact.objects.filter(pk__in=artifact_ids, status=BackupStatus.RUNNING).update(
+                    status=BackupStatus.FAILED, error_message=msg, finished_at=_now(),
+                )
+        # Kendi bilinen-doğru artifact'leri hariç, snapshot'tan gelen diğer
+        # RUNNING artifact'leri de temizle (örn. job satırı zaten silinmiş olabilir).
+        _Artifact.objects.filter(status=BackupStatus.RUNNING).exclude(pk__in=keep_artifact_ids).update(
+            status=BackupStatus.FAILED,
+            error_message='Restore edilen yedek anlık görüntüsünde tutarsız kayıt (otomatik temizlendi)',
+            finished_at=_now(),
+        )
+
     def create_restore_job(self, artifact: BackupArtifact) -> BackupJob:
         self.fail_stale_running_jobs()
         return BackupJob.objects.create(
@@ -754,11 +806,13 @@ class BackupEngine:
             # C4: Tam DB restore yıkıcıdır (pg_restore --clean). Restore'a başlamadan
             # önce mevcut veritabanının otomatik güvenlik yedeğini al → rollback imkânı.
             safety_backup = None
+            safety_art = None
+            safety_job = None
             if full_db_restored:
                 self._update_job(job, message='Güvenlik yedeği alınıyor (restore öncesi)', progress=8)
                 try:
                     safety_engine = BackupEngine(user=self.user, ip_address=self.ip_address)
-                    safety_art, _safety_job = safety_engine.create_backup(
+                    safety_art, safety_job = safety_engine.create_backup(
                         kind=BackupKind.DATABASE,
                         trigger=BackupTrigger.PRE_RESTORE,
                         encrypt=False,
@@ -792,6 +846,7 @@ class BackupEngine:
                     raise RuntimeError(msg) from exc
 
             results = []
+            session_table_excluded = False
             for skipped in skipped_tables:
                 results.append({
                     'code': skipped.get('code'),
@@ -834,6 +889,7 @@ class BackupEngine:
                     )
                 if handler_key == 'database_full':
                     self._update_job(job, message='Tam veritabanı geri yükleniyor (pg_restore)', progress=55)
+                    session_table_excluded = bool((entry.get('meta') or {}).get('excludes_session_table'))
                 handler = get_handler(handler_key)
                 res = handler.restore(target, payload / code.replace('/', '_'), dry_run=False)
                 results.append({'code': code, 'ok': res.ok, 'message': res.message, 'meta': res.meta})
@@ -844,6 +900,26 @@ class BackupEngine:
                     # pg_restore (handler) bağlantıları kapatmış olabilir; yenile.
                     from django.db import connection as dj_conn
                     dj_conn.ensure_connection()
+                    # yedekleme_artifact/yedekleme_job da 'public' şemasında olduğu için
+                    # --clean bunları da DROP edip yedek anındaki haline döndürür. Bu
+                    # restore'dan ÖNCE oluşmuş kayıtlar (restore edilen artifact, bu
+                    # job'un kendisi, restore öncesi alınan güvenlik yedeği) dump anında
+                    # henüz yoktu → restore sonrası kayıp olurlar. Var olan Python
+                    # nesnelerini aynı PK ile geri yazarak iz kaybını önlüyoruz.
+                    self._reinstate_after_full_restore(artifact, job, safety_art, safety_job)
+
+                    def _real_pk(obj):
+                        pk = getattr(obj, 'pk', None) if obj is not None else None
+                        return pk if isinstance(pk, int) else None
+
+                    keep_jobs = {p for p in (_real_pk(job), _real_pk(safety_job)) if p is not None}
+                    keep_artifacts = {p for p in (_real_pk(artifact), _real_pk(safety_art)) if p is not None}
+                    self._clear_stale_running_snapshot(keep_job_ids=keep_jobs, keep_artifact_ids=keep_artifacts)
+                    # Reinstate adımı force_insert ile PK'yi elle yazdığı için sequence
+                    # bundan habersiz kalır (nextval hâlâ eski/düşük değerde) — restore
+                    # akışının SON adımı olarak sequence'leri bir kez daha senkronize et.
+                    from apps.yedekleme.engine.handlers.database_full import reset_all_sequences
+                    reset_all_sequences()
 
             duration = int((_now() - started).total_seconds() * 1000)
             result = {
@@ -853,7 +929,11 @@ class BackupEngine:
                 'duration_ms': duration,
                 'full_database_restored': full_db_restored,
                 'skipped_table_resources': [s.get('code') for s in skipped_tables],
-                'relogin_required': full_db_restored,
+                # Eski (v2 öncesi düzeltme) yedekler django_session'ı da içerir; bunlarda
+                # --clean tüm aktif oturumları siler ve relogin gerekir. Yeni yedekler
+                # django_session'ı dump dışı bıraktığı için (bkz. database_full.export)
+                # aktif oturumlar restore'dan etkilenmez, relogin gerekmez.
+                'relogin_required': full_db_restored and not session_table_excluded,
                 'safety_backup': safety_backup,
             }
             try:

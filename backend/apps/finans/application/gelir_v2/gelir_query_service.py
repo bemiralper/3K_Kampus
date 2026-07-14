@@ -169,7 +169,11 @@ class GelirQueryService:
                 {'id': e.id, 'ad': e.ad, 'renk': e.renk}
                 for e in g.etiketler.all()
             ],
-            'olusturan': (g.olusturan.get_full_name() or g.olusturan.username) if g.olusturan_id else None,
+            'olusturan': (
+                (g.olusturan.get_full_name() or g.olusturan.username)
+                if g.olusturan is not None
+                else None
+            ),
             'duzenlenebilir_mi': g.duzenlenebilir_mi,
             'iptal_edilebilir_mi': g.iptal_edilebilir_mi,
             'created_at': g.created_at.isoformat() if g.created_at else None,

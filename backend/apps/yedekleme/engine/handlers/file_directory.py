@@ -158,8 +158,29 @@ class FileDirectoryHandler:
         dest = _resolve_source_path(resource.config or {})
         if dest is None:
             return RestoreResult(ok=False, message='Hedef path çözülemedi')
+
+        meta: dict = {}
+        meta_path = payload_dir / 'meta.json'
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding='utf-8'))
+            except Exception:  # noqa: BLE001
+                meta = {}
+
+        # Yedek anında klasör yoktu (veya boş) — yıkıcı hata değil, atla.
+        if meta.get('missing'):
+            return RestoreResult(
+                ok=True,
+                message='atlandı (yedek anında kaynak dizin yoktu)',
+                meta={'skipped': True, 'missing': True, 'source': meta.get('source')},
+            )
         if not files_dir.exists():
-            return RestoreResult(ok=False, message='files/ eksik')
+            return RestoreResult(
+                ok=True,
+                message='atlandı (files/ yok — yedekte dosya yok)',
+                meta={'skipped': True, 'files_missing': True},
+            )
+
         dest.mkdir(parents=True, exist_ok=True)
         count = 0
         for path in files_dir.rglob('*'):

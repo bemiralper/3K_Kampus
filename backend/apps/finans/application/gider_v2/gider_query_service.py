@@ -165,7 +165,11 @@ class GiderQueryService:
                 {'id': e.id, 'ad': e.ad, 'renk': e.renk}
                 for e in g.etiketler.all()
             ],
-            'olusturan': (g.olusturan.get_full_name() or g.olusturan.username) if g.olusturan_id else None,
+            'olusturan': (
+                (g.olusturan.get_full_name() or g.olusturan.username)
+                if g.olusturan is not None
+                else None
+            ),
             'duzenlenebilir_mi': g.duzenlenebilir_mi,
             'iptal_edilebilir_mi': g.iptal_edilebilir_mi,
             'odenebilir_mi': g.odenebilir_mi,
