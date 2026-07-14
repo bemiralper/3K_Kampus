@@ -12,6 +12,11 @@ def pg_restore_binary() -> str:
     return path
 
 
+def pg_dumpall_binary() -> str:
+    path = os.environ.get('PG_DUMPALL') or shutil.which('pg_dumpall') or 'pg_dumpall'
+    return path
+
+
 def pg_env(db: dict) -> dict:
     env = os.environ.copy()
     password = db.get('PASSWORD', '')

@@ -58,12 +58,23 @@ class FileDirectoryHandler:
             log.info('file_directory.missing', resource=resource.code, source=str(src))
             return ExportResult(files=['meta.json'], meta=meta, bytes_written=0)
 
+        # L3: Tek dosya boyut sınırı (0/None = sınırsız). Loglar gibi sınırsız
+        # büyüyen kaynaklarda devasa dosyaları yedeğe almamak için.
+        max_file_bytes = int((resource.config or {}).get('max_file_bytes') or 0)
+        skipped_large = 0
+
         dest_root.mkdir(parents=True, exist_ok=True)
         for path in src.rglob('*'):
             if path.is_dir():
                 continue
             rel = path.relative_to(src)
             if any(_should_exclude(part, exclude) for part in rel.parts):
+                continue
+            try:
+                if max_file_bytes and path.stat().st_size > max_file_bytes:
+                    skipped_large += 1
+                    continue
+            except OSError:
                 continue
             target = dest_root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -74,6 +85,8 @@ class FileDirectoryHandler:
         meta = {
             'source': str(src),
             'file_count': len(files_meta),
+            'skipped_large': skipped_large,
+            'max_file_bytes': max_file_bytes or None,
             'files': files_meta[:5000],
         }
         (work_dir / 'meta.json').write_text(json.dumps(meta, indent=2), encoding='utf-8')

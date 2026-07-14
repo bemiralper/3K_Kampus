@@ -87,7 +87,9 @@ RESOURCES = [
         name='İşlem Masrafları',
         resource_type=ResourceType.DATABASE_TABLE,
         description='İşlem masrafı kayıtları.',
-        config={'models': ['finans.IslemMasrafi']},
+        # IslemMasrafi modeli app registry'ye boot'ta import edilmediğinden
+        # (apps.get_model çözemez) doğrudan tablo adıyla tanımlanır.
+        config={'tables': ['finans_islem_masrafi']},
         priority=44,
     ),
     ResourceSpec(

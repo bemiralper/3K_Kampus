@@ -49,6 +49,14 @@ def _body(request) -> dict:
         return {}
 
 
+def _get_artifact_or_error(artifact_id):
+    """Artifact'ı getirir; yoksa (None, 404 JsonResponse) döner (get-or-404 tekrarını önler)."""
+    art = BackupArtifact.objects.filter(pk=artifact_id).first()
+    if art is None:
+        return None, JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    return art, None
+
+
 def _artifact_json(art: BackupArtifact) -> dict:
     created_by_name = None
     if art.created_by_id and art.created_by is not None:
@@ -329,12 +337,32 @@ def backups_view(request):
     kind = data.get('kind') or BackupKind.FULL
     if kind not in {c.value for c in BackupKind}:
         return JsonResponse({'error': 'Geçersiz kind'}, status=400)
+
+    # Opsiyonel kurum/şube/eğitim-yılı kapsamı (multi-tenant yedek).
+    tenant = None
+    raw_tenant = data.get('tenant') if isinstance(data.get('tenant'), dict) else {
+        'kurum_id': data.get('kurum_id'),
+        'sube_id': data.get('sube_id'),
+        'egitim_yili_id': data.get('egitim_yili_id'),
+    }
+    tenant = {}
+    for key in ('kurum_id', 'sube_id', 'egitim_yili_id'):
+        val = raw_tenant.get(key)
+        if val in (None, '', 0):
+            continue
+        try:
+            tenant[key] = int(val)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': f'Geçersiz {key}'}, status=400)
+    tenant = tenant or None
+
     try:
         artifact, job = _engine(request).create_backup(
             kind=kind,
             resource_codes=data.get('resource_codes'),
             encrypt=data.get('encrypt'),
             compress=bool(data.get('compress', True)),
+            tenant=tenant,
         )
     except Exception as exc:  # noqa: BLE001
         return JsonResponse({'error': str(exc)}, status=400)
@@ -344,20 +372,18 @@ def backups_view(request):
 @require_http_methods(['GET'])
 @api_permission_required('yedekleme.read', 'yedekleme.manage')
 def backup_detail_view(request, artifact_id: int):
-    try:
-        art = BackupArtifact.objects.get(pk=artifact_id)
-    except BackupArtifact.DoesNotExist:
-        return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    art, _art_err = _get_artifact_or_error(artifact_id)
+    if _art_err:
+        return _art_err
     return JsonResponse({'artifact': _artifact_json(art)})
 
 
 @require_http_methods(['GET'])
 @api_permission_required('yedekleme.read', 'yedekleme.manage')
 def backup_preview_view(request, artifact_id: int):
-    try:
-        art = BackupArtifact.objects.get(pk=artifact_id)
-    except BackupArtifact.DoesNotExist:
-        return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    art, _art_err = _get_artifact_or_error(artifact_id)
+    if _art_err:
+        return _art_err
     try:
         return JsonResponse(_engine(request).preview(art))
     except Exception as exc:  # noqa: BLE001
@@ -367,10 +393,9 @@ def backup_preview_view(request, artifact_id: int):
 @require_http_methods(['GET'])
 @api_permission_required('yedekleme.read', 'yedekleme.manage')
 def backup_download_view(request, artifact_id: int):
-    try:
-        art = BackupArtifact.objects.get(pk=artifact_id)
-    except BackupArtifact.DoesNotExist:
-        return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    art, _art_err = _get_artifact_or_error(artifact_id)
+    if _art_err:
+        return _art_err
     try:
         path = fetch_file(art.storage_key)
     except FileNotFoundError:
@@ -386,10 +411,9 @@ def backup_download_view(request, artifact_id: int):
 @require_http_methods(['POST'])
 @api_permission_required('yedekleme.restore', 'yedekleme.manage', write_codes=['yedekleme.restore', 'yedekleme.manage'])
 def backup_verify_view(request, artifact_id: int):
-    try:
-        art = BackupArtifact.objects.get(pk=artifact_id)
-    except BackupArtifact.DoesNotExist:
-        return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    art, _art_err = _get_artifact_or_error(artifact_id)
+    if _art_err:
+        return _art_err
     try:
         return JsonResponse(_engine(request).verify(art))
     except Exception as exc:  # noqa: BLE001
@@ -399,10 +423,9 @@ def backup_verify_view(request, artifact_id: int):
 @require_http_methods(['POST'])
 @api_permission_required('yedekleme.restore', 'yedekleme.manage', write_codes=['yedekleme.restore', 'yedekleme.manage'])
 def backup_analyze_view(request, artifact_id: int):
-    try:
-        art = BackupArtifact.objects.get(pk=artifact_id)
-    except BackupArtifact.DoesNotExist:
-        return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    art, _art_err = _get_artifact_or_error(artifact_id)
+    if _art_err:
+        return _art_err
     try:
         return JsonResponse(_engine(request).analyze(art))
     except Exception as exc:  # noqa: BLE001
@@ -412,10 +435,9 @@ def backup_analyze_view(request, artifact_id: int):
 @require_http_methods(['POST'])
 @api_permission_required('yedekleme.restore', 'yedekleme.manage', write_codes=['yedekleme.restore', 'yedekleme.manage'])
 def backup_dry_run_view(request, artifact_id: int):
-    try:
-        art = BackupArtifact.objects.get(pk=artifact_id)
-    except BackupArtifact.DoesNotExist:
-        return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    art, _art_err = _get_artifact_or_error(artifact_id)
+    if _art_err:
+        return _art_err
     try:
         return JsonResponse(_engine(request).dry_run(art))
     except Exception as exc:  # noqa: BLE001
@@ -425,10 +447,9 @@ def backup_dry_run_view(request, artifact_id: int):
 @require_http_methods(['POST'])
 @api_permission_required('yedekleme.restore', 'yedekleme.manage', write_codes=['yedekleme.restore', 'yedekleme.manage'])
 def backup_restore_view(request, artifact_id: int):
-    try:
-        art = BackupArtifact.objects.get(pk=artifact_id)
-    except BackupArtifact.DoesNotExist:
-        return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    art, _art_err = _get_artifact_or_error(artifact_id)
+    if _art_err:
+        return _art_err
     data = _body(request)
     try:
         result = _engine(request).restore(art, confirm=data.get('confirm') or '')
@@ -451,10 +472,9 @@ def backup_restore_view(request, artifact_id: int):
 @require_http_methods(['DELETE'])
 @api_permission_required('yedekleme.manage', write_codes=['yedekleme.manage'])
 def backup_delete_view(request, artifact_id: int):
-    try:
-        art = BackupArtifact.objects.get(pk=artifact_id)
-    except BackupArtifact.DoesNotExist:
-        return JsonResponse({'error': 'Yedek bulunamadı'}, status=404)
+    art, _art_err = _get_artifact_or_error(artifact_id)
+    if _art_err:
+        return _art_err
     _engine(request).delete_artifact(art)
     return JsonResponse({'deleted': True})
 
@@ -555,6 +575,10 @@ def settings_view(request):
             'encryption_enabled': s.encryption_enabled,
             'default_encrypt': s.default_encrypt,
             'default_compress': s.default_compress,
+            'notify_enabled': s.notify_enabled,
+            'notify_emails': s.notify_emails,
+            'notify_on_success': s.notify_on_success,
+            'notify_on_failure': s.notify_on_failure,
             'notes': s.notes,
             'encryption_key_available': enc.encryption_key_available(),
             'key_fingerprint': enc.key_fingerprint(),
@@ -563,9 +587,12 @@ def settings_view(request):
             'legacy_format_supported': False,
         })
     data = _body(request)
-    for field in ('encryption_enabled', 'default_encrypt', 'default_compress'):
+    for field in ('encryption_enabled', 'default_encrypt', 'default_compress',
+                  'notify_enabled', 'notify_on_success', 'notify_on_failure'):
         if field in data:
             setattr(s, field, bool(data[field]))
+    if 'notify_emails' in data:
+        s.notify_emails = (data['notify_emails'] or '')[:512]
     if 'notes' in data:
         s.notes = data['notes'] or ''
     s.save()

@@ -98,6 +98,10 @@ export interface BackupSettingsData {
   encryption_enabled: boolean;
   default_encrypt: boolean;
   default_compress: boolean;
+  notify_enabled: boolean;
+  notify_emails: string;
+  notify_on_success: boolean;
+  notify_on_failure: boolean;
   notes: string;
   encryption_key_available: boolean;
   key_fingerprint: string | null;
@@ -206,6 +210,10 @@ export function createBackup(payload: {
   resource_codes?: string[];
   encrypt?: boolean;
   compress?: boolean;
+  // Opsiyonel çoklu kurum kapsamı (yalnızca tablo-seviye kaynaklar yedeklenir).
+  kurum_id?: number;
+  sube_id?: number;
+  egitim_yili_id?: number;
 }): Promise<ApiResponse<{ artifact: BackupArtifact; job: BackupJob }>> {
   return apiPost(`${BASE}/backups/`, payload);
 }

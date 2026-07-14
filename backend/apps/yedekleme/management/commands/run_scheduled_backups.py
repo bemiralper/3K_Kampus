@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from apps.yedekleme.domain.models import BackupSchedule, BackupTrigger, ScheduleFrequency
+from apps.yedekleme.domain.models import BackupSchedule, ScheduleFrequency
 from apps.yedekleme.engine import BackupEngine
 from apps.yedekleme.registry import sync_registered_resources
 
@@ -27,11 +27,7 @@ class Command(BaseCommand):
 
         now = timezone.localtime()
         if not force:
-            delta = abs(now.hour * 60 + now.minute - (schedule.hour * 60 + schedule.minute))
-            if delta > 1:
-                self.stdout.write('Şu an çalışma saati değil.')
-                return
-
+            # Bu dönem içinde zaten çalıştı mı? (dedupe)
             if schedule.last_run_at:
                 last = timezone.localtime(schedule.last_run_at)
                 if schedule.frequency == ScheduleFrequency.DAILY and last.date() == now.date():
@@ -44,15 +40,16 @@ class Command(BaseCommand):
                     self.stdout.write('Bu ay zaten çalıştı.')
                     return
 
-        trigger_map = {
-            ScheduleFrequency.DAILY: BackupTrigger.DAILY,
-            ScheduleFrequency.WEEKLY: BackupTrigger.WEEKLY,
-            ScheduleFrequency.MONTHLY: BackupTrigger.MONTHLY,
-        }
-        if force and (not schedule.enabled or schedule.frequency == ScheduleFrequency.OFF):
-            trigger = BackupTrigger.MANUAL
-        else:
-            trigger = trigger_map.get(schedule.frequency, BackupTrigger.DAILY)
+            # Catch-up: sabit ±1 dk pencere yerine, planlanan saat GEÇTİYSE ve bu
+            # dönemde henüz çalışmadıysa tetikle. Böylece cron 1/5/15 dk'da bir
+            # koşsa da pencere kaçmaz.
+            now_minutes = now.hour * 60 + now.minute
+            sched_minutes = schedule.hour * 60 + schedule.minute
+            if now_minutes < sched_minutes:
+                self.stdout.write('Planlanan saat henüz gelmedi.')
+                return
+
+        trigger = schedule.effective_trigger()
 
         engine = BackupEngine()
         try:
@@ -71,3 +68,12 @@ class Command(BaseCommand):
             message=job.error_message or job.message or artifact.filename,
         )
         self.stdout.write(self.style.SUCCESS(f'Yedek oluşturuldu: {artifact.filename}'))
+
+        # Retention: zamanlı yedek sonrası eski yedekleri otomatik temizle.
+        try:
+            from apps.yedekleme.engine.retention import RetentionService
+            purged = RetentionService().purge()
+            if purged.get('deleted'):
+                self.stdout.write(f'Retention: {purged["deleted"]} eski yedek silindi.')
+        except Exception as exc:  # noqa: BLE001
+            self.stderr.write(f'Retention uyarısı: {exc}')

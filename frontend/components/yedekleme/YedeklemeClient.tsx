@@ -390,6 +390,28 @@ export default function YedeklemeClient() {
     }
   };
 
+  const handleRetryBackup = async (artifact: BackupArtifact) => {
+    setBusyKey('create');
+    setNotice(null);
+    const payload = {
+      kind: artifact.kind,
+      resource_codes: artifact.kind === 'selected' ? (artifact.resource_codes || []) : undefined,
+      encrypt: Boolean(artifact.encrypted && dashboard?.config.encryption_key_available),
+      compress: true,
+    };
+    const res = await createBackup(payload);
+    setBusyKey(null);
+    if (res.success && res.data) {
+      setActiveJob(res.data.job);
+      setNotice({ type: 'success', text: 'Yedekleme yeniden başlatıldı.' });
+      void loadDashboard();
+      void loadArtifacts();
+      void loadLogs();
+    } else {
+      setNotice({ type: 'error', text: errorText('Yedek yeniden başlatılamadı.', res.error) });
+    }
+  };
+
   const handleSaveSchedule = async () => {
     if (!schedule) return;
     setBusyKey('schedule');
@@ -1119,6 +1141,9 @@ export default function YedeklemeClient() {
                               <button className="yedekleme-link-btn" onClick={() => handleDownload(artifact)} disabled={artifact.status !== 'completed'}>İndir</button>
                               <button className="yedekleme-link-btn" onClick={() => handleVerify(artifact)} disabled={artifact.status !== 'completed'}>Doğrula</button>
                               <button className="yedekleme-link-btn" onClick={() => selectForRestore(artifact)} disabled={artifact.status !== 'completed'}>Geri yükle</button>
+                              {(artifact.status === 'failed' || artifact.status === 'cancelled') && (
+                                <button className="yedekleme-link-btn" onClick={() => handleRetryBackup(artifact)} disabled={busyKey === 'create'}>Yeniden dene</button>
+                              )}
                               <button className="yedekleme-link-btn yedekleme-link-btn--danger" onClick={() => handleDeleteBackup(artifact)}>Sil</button>
                             </div>
                           </td>
@@ -1255,6 +1280,10 @@ export default function YedeklemeClient() {
                     <label className="yedekleme-check"><input type="checkbox" checked={settings.encryption_enabled} onChange={(event) => setSettings({ ...settings, encryption_enabled: event.target.checked })} /> Şifreleme özelliği aktif</label>
                     <label className="yedekleme-check"><input type="checkbox" checked={settings.default_encrypt} onChange={(event) => setSettings({ ...settings, default_encrypt: event.target.checked })} /> Varsayılan olarak şifrele</label>
                     <label className="yedekleme-check"><input type="checkbox" checked={settings.default_compress} onChange={(event) => setSettings({ ...settings, default_compress: event.target.checked })} /> Varsayılan olarak sıkıştır</label>
+                    <label className="yedekleme-check"><input type="checkbox" checked={settings.notify_enabled} onChange={(event) => setSettings({ ...settings, notify_enabled: event.target.checked })} /> E-posta bildirimleri aktif</label>
+                    <label className="yedekleme-check"><input type="checkbox" checked={settings.notify_on_success} disabled={!settings.notify_enabled} onChange={(event) => setSettings({ ...settings, notify_on_success: event.target.checked })} /> Başarılı yedek/geri yüklemede bildir</label>
+                    <label className="yedekleme-check"><input type="checkbox" checked={settings.notify_on_failure} disabled={!settings.notify_enabled} onChange={(event) => setSettings({ ...settings, notify_on_failure: event.target.checked })} /> Hatada bildir</label>
+                    <label className="yedekleme-field"><span>Bildirim e-postaları (virgülle ayır)</span><input type="text" value={settings.notify_emails} disabled={!settings.notify_enabled} onChange={(event) => setSettings({ ...settings, notify_emails: event.target.value })} placeholder="admin@ornek.com, bt@ornek.com" /></label>
                     <label className="yedekleme-field"><span>Notlar</span><textarea value={settings.notes} onChange={(event) => setSettings({ ...settings, notes: event.target.value })} rows={5} /></label>
                     <button className="yedekleme-btn yedekleme-btn--primary" onClick={handleSaveSettings} disabled={busyKey === 'settings'}>Ayarları Kaydet</button>
                   </div>

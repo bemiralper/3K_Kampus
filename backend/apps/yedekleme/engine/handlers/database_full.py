@@ -15,11 +15,47 @@ from apps.yedekleme.engine.handlers.base import (
     RestoreAnalysis,
     RestoreResult,
 )
-from apps.yedekleme.infrastructure.pg_tools import pg_dump_binary, pg_env, pg_restore_binary
+from apps.yedekleme.infrastructure.pg_tools import (
+    pg_dump_binary,
+    pg_dumpall_binary,
+    pg_env,
+    pg_restore_binary,
+)
 
 
 class DatabaseFullHandler:
     key = 'database_full'
+
+    def _dump_globals(self, db: dict, work_dir: Path, log) -> str | None:
+        """pg_dumpall --globals-only ile rolleri/tablespace'leri en iyi çabayla alır.
+
+        Süperkullanıcı gerektirebilir; başarısız olursa yedeği BOZMAZ (None döner).
+        Bilgilendirme amaçlıdır; database.dump restore'unu etkilemez.
+        """
+        out = work_dir / 'globals.sql'
+        cmd = [
+            pg_dumpall_binary(),
+            '--globals-only',
+            '--no-role-passwords',
+            '-h', str(db.get('HOST') or 'localhost'),
+            '-p', str(db.get('PORT') or '5432'),
+            '-U', str(db.get('USER') or ''),
+            '-f', str(out),
+        ]
+        try:
+            proc = subprocess.run(cmd, env=pg_env(db), capture_output=True, text=True, timeout=120)
+            if proc.returncode == 0 and out.exists():
+                log.info('database_full.globals_done', size_bytes=out.stat().st_size)
+                return 'globals.sql'
+            log.info('database_full.globals_skip', error=(proc.stderr or '')[:200])
+        except Exception as exc:  # noqa: BLE001
+            log.info('database_full.globals_error', error=str(exc)[:200])
+        if out.exists():
+            try:
+                out.unlink()
+            except OSError:
+                pass
+        return None
 
     def export(self, resource, work_dir: Path, log) -> ExportResult:
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -41,15 +77,27 @@ class DatabaseFullHandler:
         if proc.returncode != 0:
             raise RuntimeError(f'pg_dump failed: {proc.stderr or proc.stdout}')
         size = out.stat().st_size if out.exists() else 0
+        files = ['database.dump', 'meta.json']
+
+        # Opsiyonel: rol/tablespace globalleri (opt-in, en iyi çaba).
+        cfg = resource.config or {}
+        want_globals = bool(cfg.get('include_globals')) or bool(
+            (getattr(settings, 'BACKUP_CONFIG', {}) or {}).get('dump_globals')
+        )
+        globals_file = self._dump_globals(db, work_dir, log) if want_globals else None
+        if globals_file:
+            files.insert(1, globals_file)
+
         meta = {
             'engine': 'postgresql',
             'format': 'custom',
             'size_bytes': size,
+            'globals_included': bool(globals_file),
             'django_version': getattr(settings, 'DJANGO_VERSION_FOR_BACKUP', None) or '',
         }
         (work_dir / 'meta.json').write_text(json.dumps(meta, indent=2), encoding='utf-8')
         log.info('database_full.dump_done', size_bytes=size)
-        return ExportResult(files=['database.dump', 'meta.json'], meta=meta, bytes_written=size)
+        return ExportResult(files=files, meta=meta, bytes_written=size)
 
     def analyze_restore(self, resource, payload_dir: Path) -> RestoreAnalysis:
         dump = payload_dir / 'database.dump'

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from apps.yedekleme.engine.handlers.base import ResourceHandler
 from apps.yedekleme.engine.handlers.configuration import ConfigurationHandler
 from apps.yedekleme.engine.handlers.database_full import DatabaseFullHandler
 from apps.yedekleme.engine.handlers.database_table import DatabaseTableHandler
@@ -21,7 +22,7 @@ _HANDLERS = {
 }
 
 
-def get_handler(key: str):
+def get_handler(key: str) -> ResourceHandler:
     handler = _HANDLERS.get(key)
     if handler is None:
         raise KeyError(f'Bilinmeyen resource handler: {key}')

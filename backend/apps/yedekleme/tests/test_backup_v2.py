@@ -59,6 +59,62 @@ class ArchiveEncryptionTests(TestCase):
             self.assertEqual(src.read_bytes(), dec.read_bytes())
             self.assertTrue(key_fingerprint())
 
+    @override_settings(BACKUP_ENCRYPTION_KEY='test-secret-key-for-aes-256!!')
+    def test_streaming_encrypt_decrypt_multichunk(self):
+        from apps.yedekleme.engine import encryption as enc_mod
+
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(enc_mod, '_STREAM_CHUNK', 1024):
+            src = Path(td) / 'big.bin'
+            enc = Path(td) / 'big.enc'
+            dec = Path(td) / 'big.dec'
+            payload = b'x' * (1024 * 5 + 123)  # birden çok parça
+            src.write_bytes(payload)
+            enc_mod.encrypt_file(src, enc)
+            enc_mod.decrypt_file(enc, dec)
+            self.assertEqual(dec.read_bytes(), payload)
+
+    @override_settings(BACKUP_ENCRYPTION_KEY='test-secret-key-for-aes-256!!')
+    def test_legacy_oneshot_decrypt_compat(self):
+        """Eski (tek-atış) formatla şifrelenmiş yedekler hâlâ çözülebilmeli."""
+        import os as _os
+
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        from apps.yedekleme.engine import encryption as enc_mod
+
+        with tempfile.TemporaryDirectory() as td:
+            enc = Path(td) / 'legacy.enc'
+            dec = Path(td) / 'legacy.dec'
+            data = b'legacy-format-payload'
+            key = enc_mod._raw_key()
+            nonce = _os.urandom(12)
+            enc.write_bytes(nonce + AESGCM(key).encrypt(nonce, data, None))
+            enc_mod.decrypt_file(enc, dec)
+            self.assertEqual(dec.read_bytes(), data)
+
+    def test_extract_zip_rejects_zip_slip(self):
+        import zipfile
+
+        from apps.yedekleme.engine.archive import UnsafeArchiveError, extract_zip
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            evil = root / 'evil.zip'
+            with zipfile.ZipFile(evil, 'w') as zf:
+                zf.writestr('../escape.txt', 'pwned')
+            with self.assertRaises(UnsafeArchiveError):
+                extract_zip(evil, root / 'out')
+            # Hedef dışına dosya yazılmamış olmalı
+            self.assertFalse((root / 'escape.txt').exists())
+
+    def test_quote_ident_escapes_double_quotes(self):
+        from apps.yedekleme.engine.handlers.database_table import _quote_ident
+
+        self.assertEqual(_quote_ident('auth_user'), '"auth_user"')
+        self.assertEqual(_quote_ident('a"b'), '"a""b"')
+        # Kaçış sonrası içeride tırnak kırılması olmamalı
+        self.assertEqual(_quote_ident('x"; DROP TABLE y; --'), '"x""; DROP TABLE y; --"')
+
 
 class RegistryTests(TestCase):
     def test_sync_creates_and_preserves_flags(self):
@@ -371,7 +427,15 @@ class RestoreOrchestrationTests(TransactionTestCase):
                         return mock_table
                     return real_get(key)
 
-                with mock.patch('apps.yedekleme.engine.orchestrator.get_handler', side_effect=_get):
+                # C4: restore öncesi güvenlik yedeği gerçek pg_dump çalıştırır;
+                # bu birim testte handler'lar mock olduğundan güvenlik yedeğini de
+                # mock'layarak izole ediyoruz (davranış: full restore'da alınır).
+                safety_artifact = mock.Mock(id=99999, filename='safety.zip', size_bytes=1)
+                with mock.patch('apps.yedekleme.engine.orchestrator.get_handler', side_effect=_get), \
+                        mock.patch.object(
+                            BackupEngine, 'create_backup',
+                            return_value=(safety_artifact, mock.Mock()),
+                        ) as mock_create:
                     result = engine.restore(artifact, confirm='RESTORE')
 
                 self.assertTrue(result['restored'])
@@ -379,6 +443,9 @@ class RestoreOrchestrationTests(TransactionTestCase):
                 self.assertIn('test.tbl', result['skipped_table_resources'])
                 mock_full.restore.assert_called_once()
                 mock_table.restore.assert_not_called()
+                # Güvenlik yedeği tam DB restore'da alınmalı
+                mock_create.assert_called_once()
+                self.assertEqual(result['safety_backup']['artifact_id'], 99999)
 
 
 class ApiPermissionTests(TestCase):
@@ -433,3 +500,70 @@ class ApiPermissionTests(TestCase):
                 body = res.json()
                 self.assertEqual(body['artifact']['status'], 'completed')
                 self.assertEqual(body['artifact']['kind'], 'selected')
+
+
+class TenantScopedBackupTests(TransactionTestCase):
+    """Kurum-bazlı yedek: yalnızca hedef kurumun verisi export/restore edilir;
+    diğer kurumların verisi ASLA silinmez."""
+
+    def _log(self):
+        class _L:
+            def info(self, *a, **k):
+                pass
+
+            def error(self, *a, **k):
+                pass
+        return _L()
+
+    def _resource(self, config):
+        class _R:
+            code = 'test.tenant'
+        r = _R()
+        r.config = config
+        return r
+
+    def test_tenant_export_restore_isolates_other_kurum(self):
+        from django.db import connection
+
+        handler = DatabaseTableHandler()
+        with connection.cursor() as cur:
+            cur.execute('DROP TABLE IF EXISTS _tenant_test')
+            cur.execute(
+                'CREATE TABLE _tenant_test (id serial PRIMARY KEY, kurum_id int, val text)'
+            )
+            cur.execute("INSERT INTO _tenant_test (id, kurum_id, val) VALUES "
+                        "(1, 10, 'a10'), (2, 10, 'b10'), (3, 20, 'a20'), (4, 20, 'b20')")
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                work = Path(td) / 'payload'
+                # Kurum 10 kapsamlı export
+                res_export = self._resource({'tables': ['_tenant_test'], '__tenant__': {'kurum_id': 10}})
+                result = handler.export(res_export, work, self._log())
+                # Yalnızca kurum 10 satırları export edilmeli
+                jsonl = (work / '_tenant_test.jsonl').read_text(encoding='utf-8').strip().splitlines()
+                self.assertEqual(len(jsonl), 2)
+
+                # Kurum 10 satırlarını boz/sil, kurum 20 dursun
+                from django.db import connection as c2
+                with c2.cursor() as cur:
+                    cur.execute("DELETE FROM _tenant_test WHERE kurum_id = 10")
+                    cur.execute("UPDATE _tenant_test SET val = 'MODIFIED' WHERE kurum_id = 20")
+
+                # Restore (kurum kapsamlı): kurum 10 geri gelmeli, kurum 20 DOKUNULMAMALI
+                res_restore = self._resource({'tables': ['_tenant_test']})
+                rr = handler.restore(res_restore, work, dry_run=False)
+                self.assertTrue(rr.ok, rr.message)
+
+                with c2.cursor() as cur:
+                    cur.execute("SELECT kurum_id, val FROM _tenant_test ORDER BY id")
+                    rows = cur.fetchall()
+                # kurum 10: a10,b10 geri geldi; kurum 20: MODIFIED (restore silmedi/ezmedi)
+                as_map = {(r[0], r[1]) for r in rows}
+                self.assertIn((10, 'a10'), as_map)
+                self.assertIn((10, 'b10'), as_map)
+                self.assertIn((20, 'MODIFIED'), as_map)
+                # kurum 20 hâlâ 2 satır olmalı
+                self.assertEqual(sum(1 for r in rows if r[0] == 20), 2)
+        finally:
+            with connection.cursor() as cur:
+                cur.execute('DROP TABLE IF EXISTS _tenant_test')

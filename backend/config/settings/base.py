@@ -232,14 +232,24 @@ BACKUP_CONFIG = {
     'exclude_patterns': ['__pycache__', '*.pyc', '.DS_Store', 'Thumbs.db'],
     'remote_provider': os.environ.get('BACKUP_REMOTE_PROVIDER', 'local'),
     'encryption_provider': os.environ.get('BACKUP_ENCRYPTION_PROVIDER', 'aes256'),
+    # Off-site (S3 uyumlu) replikasyon — remote_provider='s3' ve s3_bucket dolu ise etkin.
+    's3_bucket': os.environ.get('BACKUP_S3_BUCKET', ''),
+    's3_prefix': os.environ.get('BACKUP_S3_PREFIX', ''),
+    's3_region': os.environ.get('BACKUP_S3_REGION', ''),
+    's3_endpoint_url': os.environ.get('BACKUP_S3_ENDPOINT_URL', ''),
+    's3_access_key': os.environ.get('BACKUP_S3_ACCESS_KEY', ''),
+    's3_secret_key': os.environ.get('BACKUP_S3_SECRET_KEY', ''),
     'retention': {
         'daily': int(os.environ.get('BACKUP_RETENTION_DAILY', '7')),
         'weekly': int(os.environ.get('BACKUP_RETENTION_WEEKLY', '4')),
         'monthly': int(os.environ.get('BACKUP_RETENTION_MONTHLY', '12')),
         'manual': int(os.environ.get('BACKUP_RETENTION_MANUAL', '30')),
+        'pre_restore': int(os.environ.get('BACKUP_RETENTION_PRE_RESTORE', '5')),
         'max_age_days': int(os.environ.get('BACKUP_MAX_AGE_DAYS', '0')) or None,
     },
     'upload_max_bytes': int(os.environ.get('BACKUP_UPLOAD_MAX_BYTES', str(2 * 1024 ** 3))),
+    'min_free_bytes': int(os.environ.get('BACKUP_MIN_FREE_BYTES', str(256 * 1024 * 1024))),
+    'max_job_age_hours': int(os.environ.get('BACKUP_MAX_JOB_AGE_HOURS', '3')),
 }
 
 # Sistem Yönetimi (System Center)

@@ -72,6 +72,18 @@ def _resolve_tables(config: dict) -> list[str]:
     return tables
 
 
+def _quote_ident(name: str) -> str:
+    """PostgreSQL identifier'ını güvenli biçimde tırnak içine alır.
+
+    İçteki çift tırnakları ikiye katlayarak (`"` -> `""`) kırılmayı imkânsız
+    kılar; böylece manifest'ten (güvenilmeyen arşiv) gelen tablo/kolon adları
+    üzerinden SQL enjeksiyonu yapılamaz.
+    """
+    if not isinstance(name, str) or '\x00' in name:
+        raise ValueError(f'Geçersiz identifier: {name!r}')
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _table_exists(table: str) -> bool:
     with connection.cursor() as cur:
         cur.execute(
@@ -86,16 +98,59 @@ def _table_exists(table: str) -> bool:
 
 def _row_count(table: str) -> int:
     with connection.cursor() as cur:
-        cur.execute(f'SELECT COUNT(*) FROM "{table}"')  # noqa: S608
+        cur.execute(f'SELECT COUNT(*) FROM {_quote_ident(table)}')  # noqa: S608
         return int(cur.fetchone()[0])
 
 
-def _fetch_all(table: str) -> tuple[list[str], list[dict[str, Any]]]:
-    with connection.cursor() as cur:
-        cur.execute(f'SELECT * FROM "{table}"')  # noqa: S608
+# Tenant (çoklu kurum) kapsamı için desteklenen sütunlar. Bir tabloda mevcut
+# olanlar filtre olarak uygulanır; olmayanlar (paylaşılan/global tablolar) atlanır.
+_TENANT_COLUMNS = ('kurum_id', 'sube_id', 'egitim_yili_id')
+
+
+def _tenant_conditions_for_table(table: str, tenant: dict | None) -> list[dict]:
+    """Tablo için uygulanabilir tenant koşulları [{'column','value'}]. Yoksa []."""
+    if not tenant:
+        return []
+    cols = set(_column_udt_types(table).keys())
+    conditions: list[dict] = []
+    for key in _TENANT_COLUMNS:
+        if key in tenant and tenant[key] is not None and key in cols:
+            conditions.append({'column': key, 'value': tenant[key]})
+    return conditions
+
+
+def _where_clause(conditions: list[dict]) -> tuple[str, list]:
+    if not conditions:
+        return '', []
+    parts = [f'{_quote_ident(c["column"])} = %s' for c in conditions]
+    return ' WHERE ' + ' AND '.join(parts), [c['value'] for c in conditions]
+
+
+def _export_table_jsonl(
+    table: str,
+    data_path: Path,
+    *,
+    batch_size: int = 2000,
+    conditions: list[dict] | None = None,
+) -> tuple[list[str], int]:
+    """Tabloyu artımlı (batch) olarak JSONL'e yazar; tüm satırları belleğe almaz.
+
+    `conditions` verilirse (tenant kapsamı) yalnızca eşleşen satırlar yazılır.
+    """
+    written = 0
+    cols: list[str] = []
+    where_sql, where_params = _where_clause(conditions or [])
+    with connection.cursor() as cur, data_path.open('w', encoding='utf-8') as fh:
+        cur.execute(f'SELECT * FROM {_quote_ident(table)}{where_sql}', where_params)  # noqa: S608
         cols = [c[0] for c in cur.description]
-        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-    return cols, rows
+        while True:
+            batch = cur.fetchmany(batch_size)
+            if not batch:
+                break
+            for row in batch:
+                fh.write(json.dumps(dict(zip(cols, row)), cls=_Encoder, ensure_ascii=False) + '\n')
+                written += 1
+    return cols, written
 
 
 def _column_udt_types(table: str) -> dict[str, str]:
@@ -187,7 +242,9 @@ class DatabaseTableHandler:
 
     def export(self, resource, work_dir: Path, log) -> ExportResult:
         work_dir.mkdir(parents=True, exist_ok=True)
-        tables = _resolve_tables(resource.config or {})
+        config = resource.config or {}
+        tenant = config.get('__tenant__') or None
+        tables = _resolve_tables(config)
         if not tables:
             raise RuntimeError(f'{resource.code}: tablo/model tanımlı değil')
         files: list[str] = []
@@ -198,18 +255,18 @@ class DatabaseTableHandler:
                 log.info('database_table.skip_missing', table=table)
                 meta_tables.append({'table': table, 'missing': True, 'rows': 0})
                 continue
-            cols, rows = _fetch_all(table)
+            conditions = _tenant_conditions_for_table(table, tenant)
             data_path = work_dir / f'{table}.jsonl'
-            with data_path.open('w', encoding='utf-8') as fh:
-                for row in rows:
-                    fh.write(json.dumps(row, cls=_Encoder, ensure_ascii=False) + '\n')
-            schema = {'table': table, 'columns': cols, 'row_count': len(rows)}
+            cols, row_count = _export_table_jsonl(table, data_path, conditions=conditions)
+            schema = {'table': table, 'columns': cols, 'row_count': row_count}
+            if conditions:
+                schema['tenant_conditions'] = conditions
             schema_path = work_dir / f'{table}.schema.json'
             schema_path.write_text(json.dumps(schema, indent=2), encoding='utf-8')
             files.extend([data_path.name, schema_path.name])
             total += data_path.stat().st_size + schema_path.stat().st_size
             meta_tables.append(schema)
-            log.info('database_table.exported', table=table, rows=len(rows))
+            log.info('database_table.exported', table=table, rows=row_count)
         meta = {'tables': meta_tables}
         (work_dir / 'meta.json').write_text(json.dumps(meta, indent=2), encoding='utf-8')
         files.append('meta.json')
@@ -301,10 +358,16 @@ class DatabaseTableHandler:
                 'table': table,
                 'columns': t.get('columns') or [],
                 'data_path': data_path,
+                'tenant_conditions': t.get('tenant_conditions') or [],
             })
 
         if not pending:
             return RestoreResult(ok=True, message='geri yüklenecek tablo yok', meta=meta)
+
+        # Tenant kapsamı: herhangi bir tabloda tenant koşulu varsa bu bir
+        # kurum-bazlı yedektir → SADECE o kuruma ait satırlar silinir/eklenir;
+        # diğer kurumların verisi ASLA silinmez (veri güvenliği).
+        tenant_scoped = any(p['tenant_conditions'] for p in pending)
 
         insert_order = _topo_sort_tables([p['table'] for p in pending])
         by_table = {p['table']: p for p in pending}
@@ -317,24 +380,44 @@ class DatabaseTableHandler:
                 cur.execute("SET LOCAL session_replication_role = 'replica'")
                 # CASCADE yok: dış tabloları boşaltmaz. replica rolü FK kontrollerini gevşetir.
                 for item in truncate_order:
-                    cur.execute(f'DELETE FROM "{item["table"]}"')  # noqa: S608
+                    quoted = _quote_ident(item['table'])
+                    conds = item['tenant_conditions']
+                    if tenant_scoped and not conds:
+                        # Paylaşılan/global tablo (tenant sütunu yok) — SİLME.
+                        continue
+                    where_sql, where_params = _where_clause(conds)
+                    cur.execute(f'DELETE FROM {quoted}{where_sql}', where_params)  # noqa: S608
                 for item in ordered:
                     table = item['table']
-                    cols = item['columns']
                     udt = _column_udt_types(table)
+                    # Kolonları gerçek DB kolonlarıyla sınırla (whitelist);
+                    # manifest'ten gelen bilinmeyen/enjeksiyon adlarını ele.
+                    valid_cols = set(udt.keys())
+                    quoted_table = _quote_ident(table)
+                    # Tenant kapsamında paylaşılan tabloya çakışma olursa dokunma.
+                    conflict_sql = (
+                        ' ON CONFLICT DO NOTHING'
+                        if tenant_scoped and not item['tenant_conditions']
+                        else ''
+                    )
                     with item['data_path'].open(encoding='utf-8') as fh:
                         for line in fh:
                             line = line.strip()
                             if not line:
                                 continue
                             row = json.loads(line)
-                            use_cols = cols or list(row.keys())
+                            candidate = item['columns'] or list(row.keys())
+                            use_cols = [c for c in candidate if c in valid_cols]
+                            if not use_cols:
+                                continue
                             placeholders = ', '.join(['%s'] * len(use_cols))
-                            col_sql = ', '.join(f'"{c}"' for c in use_cols)
+                            col_sql = ', '.join(_quote_ident(c) for c in use_cols)
                             values = [_coerce_value(row.get(c), udt.get(c)) for c in use_cols]
                             cur.execute(
-                                f'INSERT INTO "{table}" ({col_sql}) VALUES ({placeholders})',  # noqa: S608
+                                f'INSERT INTO {quoted_table} ({col_sql}) '  # noqa: S608
+                                f'VALUES ({placeholders}){conflict_sql}',
                                 values,
                             )
                 cur.execute("SET LOCAL session_replication_role = 'origin'")
-        return RestoreResult(ok=True, message='tablolar geri yüklendi', meta=meta)
+        msg = 'tablolar geri yüklendi (kurum kapsamlı)' if tenant_scoped else 'tablolar geri yüklendi'
+        return RestoreResult(ok=True, message=msg, meta=meta)

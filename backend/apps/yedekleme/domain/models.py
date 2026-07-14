@@ -28,6 +28,7 @@ class BackupTrigger(models.TextChoices):
     DAILY = 'daily', 'Günlük'
     WEEKLY = 'weekly', 'Haftalık'
     MONTHLY = 'monthly', 'Aylık'
+    PRE_RESTORE = 'pre_restore', 'Restore Öncesi Güvenlik'
 
 
 class ScheduleFrequency(models.TextChoices):
@@ -189,6 +190,20 @@ class BackupSchedule(models.Model):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
 
+    def effective_trigger(self) -> str:
+        """Zamanlamanın mevcut durumuna göre BackupTrigger değeri.
+
+        Kapalı/OFF ise MANUAL; aksi halde frekansa karşılık gelen tetikleyici.
+        Hem orchestrator hem management command bunu kullanır (tek kaynak).
+        """
+        if not self.enabled or self.frequency == ScheduleFrequency.OFF:
+            return BackupTrigger.MANUAL
+        return {
+            ScheduleFrequency.DAILY: BackupTrigger.DAILY,
+            ScheduleFrequency.WEEKLY: BackupTrigger.WEEKLY,
+            ScheduleFrequency.MONTHLY: BackupTrigger.MONTHLY,
+        }.get(self.frequency, BackupTrigger.MANUAL)
+
     def record_run(self, *, artifact=None, status: str = '', message: str = ''):
         """Son otomatik/manuel-zamanlanmış çalışmayı kalıcı olarak kaydeder."""
         from django.utils import timezone
@@ -209,6 +224,10 @@ class BackupSettings(models.Model):
     encryption_enabled = models.BooleanField('Şifreleme Aktif', default=False)
     default_encrypt = models.BooleanField('Varsayılan Şifrele', default=False)
     default_compress = models.BooleanField('Varsayılan Sıkıştır', default=True)
+    notify_enabled = models.BooleanField('Bildirim Aktif', default=False)
+    notify_emails = models.CharField('Bildirim E-postaları', max_length=512, blank=True, default='')
+    notify_on_success = models.BooleanField('Başarıda Bildir', default=False)
+    notify_on_failure = models.BooleanField('Hatada Bildir', default=True)
     notes = models.TextField('Notlar', blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
 

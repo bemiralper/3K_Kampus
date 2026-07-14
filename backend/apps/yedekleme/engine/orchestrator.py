@@ -82,6 +82,67 @@ class BackupEngine:
         except Exception:
             pass
 
+    def _preflight_disk_check(self) -> str | None:
+        """Yedek hedefinde yeterli boş alan var mı? Yoksa açıklayıcı hata metni döndürür.
+
+        Gereken alan ≈ veritabanı boyutu × 1.3 (tahmini) veya yapılandırılan minimum.
+        Herhangi bir hata olursa (ör. disk_usage başarısız) kontrol atlanır (None).
+        """
+        try:
+            from apps.yedekleme.engine.storage import local_root
+
+            cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
+            min_free = int(cfg.get('min_free_bytes') or (256 * 1024 * 1024))
+
+            required = min_free
+            try:
+                from django.db import connection as dj_conn
+                with dj_conn.cursor() as cur:
+                    cur.execute('SELECT pg_database_size(current_database())')
+                    db_size = int(cur.fetchone()[0])
+                required = max(min_free, int(db_size * 1.3))
+            except Exception:  # noqa: BLE001
+                pass
+
+            root = local_root()
+            usage = shutil.disk_usage(str(root))
+            if usage.free < required:
+                free_mb = usage.free // (1024 * 1024)
+                req_mb = required // (1024 * 1024)
+                return (
+                    f'Yetersiz disk alanı: {free_mb} MB boş, ~{req_mb} MB gerekli. '
+                    f'Yedekleme iptal edildi.'
+                )
+        except Exception:  # noqa: BLE001
+            return None
+        return None
+
+    def _notify(self, *, event: str, success: bool, subject: str, body: str) -> None:
+        """Opt-in bildirim (e-posta). BackupSettings ile kapalıysa hiçbir şey yapmaz.
+
+        Tüm hatalar yutulur — bildirim, yedek/restore akışını asla bozmamalı.
+        """
+        try:
+            from apps.yedekleme.domain.models import BackupSettings
+
+            s = BackupSettings.get_singleton()
+            if not s.notify_enabled:
+                return
+            if success and not s.notify_on_success:
+                return
+            if not success and not s.notify_on_failure:
+                return
+            recipients = [e.strip() for e in (s.notify_emails or '').replace(';', ',').split(',') if e.strip()]
+            if not recipients:
+                return
+            from django.conf import settings as dj_settings
+            from django.core.mail import send_mail
+
+            from_email = getattr(dj_settings, 'DEFAULT_FROM_EMAIL', None) or 'no-reply@3kkampus'
+            send_mail(subject, body, from_email, recipients, fail_silently=True)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _update_job(self, job: BackupJob, *, phase=None, progress=None, message=None, status=None, result=None, error=None):
         if phase is not None:
             job.phase = phase
@@ -107,8 +168,38 @@ class BackupEngine:
         trigger: str = BackupTrigger.MANUAL,
         encrypt: bool | None = None,
         compress: bool = True,
+        tenant: dict | None = None,
     ) -> tuple[BackupArtifact, BackupJob]:
-        resources = resolve_resources(kind, resource_codes)
+        # M7: Eşzamanlılık sınırı — aynı anda tek bir create işi. Stale (asılı
+        # kalmış) işleri engellemesin diye yalnızca yakın zamanlı RUNNING işler
+        # bloklar; eskiler cleanup_stale_backup_jobs ile FAILED işaretlenir.
+        cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
+        max_age_hours = int(cfg.get('max_job_age_hours') or 3)
+        from datetime import timedelta as _timedelta
+        cutoff = _now() - _timedelta(hours=max_age_hours)
+        if BackupJob.objects.filter(
+            action=BackupOperationAction.CREATE,
+            status=BackupStatus.RUNNING,
+            started_at__gte=cutoff,
+        ).exists():
+            raise RuntimeError('Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.')
+
+        tenant = {k: v for k, v in (tenant or {}).items() if v is not None} or None
+        if tenant:
+            # Kurum/şube kapsamlı yedek yalnızca tablo-seviye export ile mümkün
+            # (pg_dump tenant'a göre filtrelenemez). Full dump / dosya kaynakları hariç.
+            from apps.yedekleme.domain.models import BackupResource, ResourceType
+
+            q = BackupResource.objects.filter(is_active=True, resource_type=ResourceType.DATABASE_TABLE)
+            if resource_codes:
+                q = q.filter(code__in=resource_codes)
+            resources = list(q.order_by('priority', 'code'))
+            if not resources:
+                raise ValueError('Kurum kapsamlı yedek için tablo (database_table) kaynağı bulunamadı')
+            for r in resources:
+                r.config = {**(r.config or {}), '__tenant__': tenant}
+        else:
+            resources = resolve_resources(kind, resource_codes)
         codes = [r.code for r in resources]
 
         ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
@@ -145,6 +236,17 @@ class BackupEngine:
             artifact.save()
             self._update_job(job, phase=JobPhase.ERROR, progress=100, status=BackupStatus.FAILED, error=artifact.error_message)
             raise RuntimeError(artifact.error_message)
+
+        # M4: Yedek başlamadan disk alanı ön-kontrolü (doomed backup'ı erkenden durdur).
+        disk_error = self._preflight_disk_check()
+        if disk_error:
+            artifact.status = BackupStatus.FAILED
+            artifact.error_message = disk_error
+            artifact.finished_at = _now()
+            artifact.save()
+            self._update_job(job, phase=JobPhase.ERROR, progress=100, status=BackupStatus.FAILED, error=disk_error)
+            self._log(action=BackupOperationAction.CREATE, artifact=artifact, job=job, step='Hata (disk)', success=False, error_message=disk_error)
+            raise RuntimeError(disk_error)
 
         work = Path(tempfile.mkdtemp(prefix='backup_work_'))
         out_dir = None
@@ -206,6 +308,7 @@ class BackupEngine:
                 'resources': resource_manifest,
                 'encrypted': bool(do_encrypt),
                 'key_fingerprint': enc.key_fingerprint() if do_encrypt else None,
+                'tenant': tenant,
             }
             (work / 'manifest.json').write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding='utf-8')
 
@@ -271,6 +374,12 @@ class BackupEngine:
                 duration_ms=duration,
                 metadata={'checksum': checksum, 'size_bytes': size},
             )
+            self._notify(
+                event='create',
+                success=True,
+                subject=f'[3K Yedekleme] Başarılı: {final_name}',
+                body=f'Yedek tamamlandı.\nDosya: {final_name}\nBoyut: {size} byte\nTür: {kind}\nSüre: {duration} ms',
+            )
             return artifact, job
         except Exception as exc:  # noqa: BLE001
             artifact.status = BackupStatus.FAILED
@@ -292,6 +401,12 @@ class BackupEngine:
                 step='Hata',
                 success=False,
                 error_message=str(exc),
+            )
+            self._notify(
+                event='create',
+                success=False,
+                subject=f'[3K Yedekleme] BAŞARISIZ: {filename}',
+                body=f'Yedekleme başarısız oldu.\nTür: {kind}\nHata: {exc}',
             )
             raise
         finally:
@@ -559,6 +674,45 @@ class BackupEngine:
             entries, skipped_tables = filter_restore_entries(sorted_entries)
             full_db_restored = manifest_has_full_database(manifest)
 
+            # C4: Tam DB restore yıkıcıdır (pg_restore --clean). Restore'a başlamadan
+            # önce mevcut veritabanının otomatik güvenlik yedeğini al → rollback imkânı.
+            safety_backup = None
+            if full_db_restored:
+                self._update_job(job, message='Güvenlik yedeği alınıyor (restore öncesi)', progress=8)
+                try:
+                    safety_engine = BackupEngine(user=self.user, ip_address=self.ip_address)
+                    safety_art, _safety_job = safety_engine.create_backup(
+                        kind=BackupKind.DATABASE,
+                        trigger=BackupTrigger.PRE_RESTORE,
+                        encrypt=False,
+                        compress=True,
+                    )
+                    safety_backup = {
+                        'artifact_id': safety_art.id,
+                        'filename': safety_art.filename,
+                        'size_bytes': safety_art.size_bytes,
+                    }
+                    self._log(
+                        action=BackupOperationAction.RESTORE,
+                        artifact=artifact,
+                        job=job,
+                        step='Restore öncesi güvenlik yedeği alındı',
+                        metadata=safety_backup,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # Güvenlik yedeği alınamıyorsa yıkıcı restore'a BAŞLAMA.
+                    msg = f'Restore öncesi güvenlik yedeği alınamadı, işlem iptal edildi: {exc}'
+                    self._update_job(job, phase=JobPhase.ERROR, status=BackupStatus.FAILED, error=msg, progress=100)
+                    self._log(
+                        action=BackupOperationAction.RESTORE,
+                        artifact=artifact,
+                        job=job,
+                        step='Hata (güvenlik yedeği)',
+                        success=False,
+                        error_message=msg,
+                    )
+                    raise RuntimeError(msg) from exc
+
             results = []
             for skipped in skipped_tables:
                 results.append({
@@ -619,6 +773,7 @@ class BackupEngine:
                 'full_database_restored': full_db_restored,
                 'skipped_table_resources': [s.get('code') for s in skipped_tables],
                 'relogin_required': full_db_restored,
+                'safety_backup': safety_backup,
             }
             if not full_db_restored:
                 self._update_job(
@@ -637,6 +792,15 @@ class BackupEngine:
                     duration_ms=duration,
                     metadata=result,
                 )
+            self._notify(
+                event='restore',
+                success=True,
+                subject=f'[3K Yedekleme] Geri yükleme tamamlandı: {artifact.filename}',
+                body=(
+                    f'Geri yükleme tamamlandı.\nYedek: {artifact.filename}\n'
+                    f'Tam veritabanı: {"evet" if full_db_restored else "hayır"}\nSüre: {duration} ms'
+                ),
+            )
             return result
         except Exception as exc:  # noqa: BLE001
             if not full_db_restored:
@@ -658,6 +822,12 @@ class BackupEngine:
                     )
                 except Exception:
                     pass
+            self._notify(
+                event='restore',
+                success=False,
+                subject=f'[3K Yedekleme] Geri yükleme BAŞARISIZ: {artifact.filename}',
+                body=f'Geri yükleme başarısız.\nYedek: {artifact.filename}\nHata: {exc}',
+            )
             raise
         finally:
             shutil.rmtree(work, ignore_errors=True)
@@ -751,20 +921,14 @@ class BackupEngine:
 
     def run_scheduled_now(self) -> tuple[BackupArtifact, BackupJob]:
         """UI / API'den zamanlanmış yedeği hemen çalıştırır."""
-        from apps.yedekleme.domain.models import BackupSchedule, ScheduleFrequency
+        from apps.yedekleme.domain.models import BackupSchedule
 
         schedule = BackupSchedule.get_singleton()
-        trigger_map = {
-            ScheduleFrequency.DAILY: BackupTrigger.DAILY,
-            ScheduleFrequency.WEEKLY: BackupTrigger.WEEKLY,
-            ScheduleFrequency.MONTHLY: BackupTrigger.MONTHLY,
-        }
-        trigger = trigger_map.get(schedule.frequency, BackupTrigger.MANUAL)
         try:
             artifact, job = self.create_backup(
                 kind=schedule.kind or BackupKind.FULL,
                 resource_codes=schedule.resource_codes or None,
-                trigger=trigger if schedule.enabled and schedule.frequency != ScheduleFrequency.OFF else BackupTrigger.MANUAL,
+                trigger=schedule.effective_trigger(),
                 encrypt=bool(schedule.encrypt),
             )
         except Exception as exc:  # noqa: BLE001
@@ -775,4 +939,10 @@ class BackupEngine:
             status=job.status,
             message=job.error_message or job.message or artifact.filename,
         )
+        # Retention: zamanlı yedek sonrası eski yedekleri otomatik temizle.
+        try:
+            from apps.yedekleme.engine.retention import RetentionService
+            RetentionService().purge()
+        except Exception:  # noqa: BLE001
+            pass
         return artifact, job
