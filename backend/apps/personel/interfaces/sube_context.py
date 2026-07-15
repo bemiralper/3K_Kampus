@@ -71,14 +71,13 @@ def personel_queryset_for_sube(kurum_id, sube_id, egitim_yili_id=None, *, aktif_
     """
     Aktif şubede görünür personeller.
 
-    Görevlendirme şubesi önceliklidir; görevlendirme yoksa ana şube (personel.sube) kullanılır.
+    Personel birden fazla şubede görünebilir: aktif görevlendirme şubesi veya ana şube (personel.sube).
     """
     gorev_base = _gorevlendirme_exists_filter(kurum_id, egitim_yili_id)
     has_gorev_in_sube = PersonelGorevlendirme.objects.filter(
         **gorev_base,
         gorev_sube_id=sube_id,
     )
-    has_any_gorev = PersonelGorevlendirme.objects.filter(**gorev_base)
 
     qs = Personel.objects.filter(kurum_id=kurum_id)
     if aktif_only:
@@ -86,7 +85,7 @@ def personel_queryset_for_sube(kurum_id, sube_id, egitim_yili_id=None, *, aktif_
 
     return qs.filter(
         Q(Exists(has_gorev_in_sube))
-        | (Q(sube_id=sube_id) & ~Q(Exists(has_any_gorev)))
+        | Q(sube_id=sube_id)
     ).select_related('kurum', 'sube', 'user').order_by('soyad', 'ad')
 
 
@@ -106,7 +105,7 @@ def personel_visible_in_sube(personel, sube_id, egitim_yili_id=None):
     gorev_qs = PersonelGorevlendirme.objects.filter(**gorev_base)
     if gorev_qs.filter(gorev_sube_id=sube_id).exists():
         return True
-    if not gorev_qs.exists() and personel.sube_id == sube_id:
+    if personel.sube_id == sube_id:
         return True
     return False
 

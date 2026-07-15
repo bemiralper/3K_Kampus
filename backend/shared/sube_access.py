@@ -73,10 +73,11 @@ def get_allowed_subeler_for_user(user, kurum_id=None, egitim_yili_id=None):
     if egitim_yili_id:
         gorev_qs = gorev_qs.filter(egitim_yili_id=egitim_yili_id)
 
-    sube_ids = gorev_qs.values_list('gorev_sube_id', flat=True).distinct()
+    sube_ids = set(gorev_qs.values_list('gorev_sube_id', flat=True))
+    if personel.sube_id:
+        sube_ids.add(personel.sube_id)
     if not sube_ids:
-        # Görevlendirme yoksa ana şube
-        return base_qs.filter(id=personel.sube_id)
+        return Sube.objects.none()
 
     return base_qs.filter(id__in=sube_ids)
 

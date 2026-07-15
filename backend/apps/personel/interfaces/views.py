@@ -796,7 +796,14 @@ def gorevlendirme_create_api(request):
             request, personel, ctx.get('egitim_yili_id'),
         )
         if personel_gate:
-            return personel_gate
+            # Personel başka şubede kayıtlı olabilir; hedef görev şubesine ekleme izni ver
+            if personel.kurum_id != kurum_id:
+                return personel_gate
+            target_gate = assert_gorevlendirme_record_sube_access(
+                request, kurum_id, gorev_sube_id,
+            )
+            if target_gate:
+                return target_gate
         
         # Eğitim yılı kontrolü - Global model, kurum_id yok
         try:

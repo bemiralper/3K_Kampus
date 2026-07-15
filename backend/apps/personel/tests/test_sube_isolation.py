@@ -1,6 +1,8 @@
 """
 Şube zorunluluğu — personel list/detail endpoint'leri.
 """
+import json
+
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 
@@ -21,6 +23,19 @@ def _assign_personel_read(user, kurum):
     perm, _ = Permission.objects.get_or_create(
         code='personel.read',
         defaults={'name': 'personel.read', 'module': 'personel', 'permission_type': 'read'},
+    )
+    RolePermission.objects.get_or_create(role=role, permission=perm)
+    UserRole.objects.update_or_create(user=user, defaults={'role': role, 'kurum': kurum})
+
+
+def _assign_personel_manage(user, kurum):
+    role, _ = Role.objects.get_or_create(
+        code='personel_sube_manage_test',
+        defaults={'name': 'Personel Sube Manage Test', 'level': 100, 'is_system_role': True},
+    )
+    perm, _ = Permission.objects.get_or_create(
+        code='personel.manage',
+        defaults={'name': 'personel.manage', 'module': 'personel', 'permission_type': 'manage'},
     )
     RolePermission.objects.get_or_create(role=role, permission=perm)
     UserRole.objects.update_or_create(user=user, defaults={'role': role, 'kurum': kurum})
@@ -98,7 +113,8 @@ class PersonelSubeIsolationAPITest(TestCase):
         self.assertTrue(body.get('success'))
         ids = {row['id'] for row in body.get('personeller', [])}
         self.assertIn(self.personel_home_a.id, ids)
-        self.assertNotIn(self.personel_cross.id, ids)
+        # Ana şubesi A olan personel, B görevlendirmesi olsa da A listesinde kalır
+        self.assertIn(self.personel_cross.id, ids)
 
     def test_list_includes_cross_sube_gorevlendirme(self):
         res = self.client.get(
@@ -112,14 +128,15 @@ class PersonelSubeIsolationAPITest(TestCase):
         self.assertIn(self.personel_cross.id, ids)
         self.assertNotIn(self.personel_home_a.id, ids)
 
-    def test_detail_forbidden_wrong_sube(self):
+    def test_detail_ok_home_sube_with_gorev_elsewhere(self):
         res = self.client.get(
             f'/personel/api/{self.personel_cross.id}/',
             HTTP_X_KURUM_ID=str(self.kurum.id),
             HTTP_X_SUBE_ID=str(self.sube_a.id),
             HTTP_X_EGITIMYILI_ID=str(self.yil.id),
         )
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json().get('personel', {}).get('id'), self.personel_cross.id)
 
     def test_detail_ok_matching_gorev_sube(self):
         res = self.client.get(
@@ -130,6 +147,53 @@ class PersonelSubeIsolationAPITest(TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json().get('personel', {}).get('id'), self.personel_cross.id)
+
+    def test_gorevlendirme_create_keeps_home_sube_visibility(self):
+        """Şube B'ye görevlendirme eklemek ana şube A görünürlüğünü kaldırmamalı."""
+        manage_user = User.objects.create_user(username='personeliso_manage', password='test')
+        _assign_personel_manage(manage_user, self.kurum)
+        self.client.force_login(manage_user)
+
+        personel = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            ad='Yeni',
+            soyad='CokSube',
+            aktif_mi=True,
+        )
+        res = self.client.post(
+            '/personel/api/gorevlendirme/create/',
+            data=json.dumps({
+                'personel_id': personel.id,
+                'egitim_yili_id': self.yil.id,
+                'gorev_sube_id': self.sube_b.id,
+                'rol_id': self.gorev_rol.id,
+                'aktif_mi': True,
+            }),
+            content_type='application/json',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_b.id),
+            HTTP_X_EGITIMYILI_ID=str(self.yil.id),
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.json().get('success'))
+
+        list_a = self.client.get(
+            '/personel/api/list/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_a.id),
+            HTTP_X_EGITIMYILI_ID=str(self.yil.id),
+        )
+        list_b = self.client.get(
+            '/personel/api/list/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_b.id),
+            HTTP_X_EGITIMYILI_ID=str(self.yil.id),
+        )
+        ids_a = {row['id'] for row in list_a.json().get('personeller', [])}
+        ids_b = {row['id'] for row in list_b.json().get('personeller', [])}
+        self.assertIn(personel.id, ids_a)
+        self.assertIn(personel.id, ids_b)
 
     def test_gorevlendirme_list_requires_sube(self):
         res = self.client.get(
