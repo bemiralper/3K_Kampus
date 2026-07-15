@@ -239,7 +239,7 @@ function MaasPlaniGrid({
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontSize: 12, color: '#64748b' }}>
-          Maaş veya tarih değişikliği sonraki aylara otomatik kopyalanır.
+          Maaş değişikliği sonraki aylara kopyalanır. Son ay kısmi ise bitiş tarihini kısaltın (ör. 15 gün).
         </span>
         <button type="button" className="se-btn se-btn-secondary se-btn-sm" onClick={addRow}>
           + Ay Ekle
@@ -951,9 +951,14 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
                 <MaasPlaniGrid
                   rows={form.maas_plani || []}
                   contractStart={form.baslangic_tarihi}
-                  onChange={(rows) =>
-                    patchForm({ maas_plani: rows, net_maas: rows[0]?.maas ?? form.net_maas ?? 0 })
-                  }
+                  onChange={(rows) => {
+                    const lastEnd = rows[rows.length - 1]?.bitis_tarihi;
+                    patchForm({
+                      maas_plani: rows,
+                      net_maas: rows[0]?.maas ?? form.net_maas ?? 0,
+                      ...(lastEnd ? { bitis_tarihi: lastEnd } : {}),
+                    });
+                  }}
                 />
               </div>
             )}

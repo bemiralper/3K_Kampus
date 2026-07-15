@@ -64,13 +64,13 @@ export function deriveMonthDates(
   const out: MaasPlaniSatiri[] = [];
   for (let i = 0; i < rows.length; i++) {
     const row = { ...rows[i] };
+    let b: Date;
     if (i === 0) {
       if (!row.baslangic_tarihi) row.baslangic_tarihi = start;
-      const b = parseDate(row.baslangic_tarihi) || parseDate(start)!;
-      if (!row.bitis_tarihi) row.bitis_tarihi = toIsoDate(monthEnd(b));
+      b = parseDate(row.baslangic_tarihi) || parseDate(start)!;
+      row.baslangic_tarihi = toIsoDate(b);
     } else {
       const prevEnd = parseDate(out[i - 1].bitis_tarihi);
-      let b: Date;
       if (prevEnd) {
         b = new Date(prevEnd);
         b.setDate(b.getDate() + 1);
@@ -78,6 +78,15 @@ export function deriveMonthDates(
         b = addMonths(parseDate(start)!, i);
       }
       row.baslangic_tarihi = toIsoDate(b);
+    }
+    // Kısmi ay (ör. son ay 15 gün): aynı ay içindeki kullanıcı bitişini koru.
+    // Zincir kayınca (başlangıç başka aya kaydıysa) ay sonuna tamamla.
+    const existingEnd = parseDate(row.bitis_tarihi);
+    const sameMonth =
+      !!existingEnd &&
+      existingEnd.getFullYear() === b.getFullYear() &&
+      existingEnd.getMonth() === b.getMonth();
+    if (!existingEnd || existingEnd < b || !sameMonth) {
       row.bitis_tarihi = toIsoDate(monthEnd(b));
     }
     row.calisilan_gun = calcCalisilanGun(row.baslangic_tarihi, row.bitis_tarihi);
