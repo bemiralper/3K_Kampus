@@ -32,6 +32,9 @@ export type AdminDashboardData = {
     aktif_personel: number;
     aktif_sozlesme: number;
     kasa_banka_toplam: number;
+    kasa_toplam: number;
+    banka_toplam: number;
+    pos_toplam: number;
   };
   ogrenci: {
     kpis: {

@@ -987,6 +987,19 @@ class AdminDashboardKasaDagilimiTest(TestCase):
         # POS artık Mali Hesaplar ağacındaki gibi canlı bakiyeden görünür.
         self.assertEqual(by_label['POS Hesapları'], 7_500)
 
+    def test_kasa_banka_kpi_includes_pos_toplam(self):
+        """Ana dashboard 'Kasa + Banka' KPI'sı Kasa+Banka+POS/Diğer toplamını yansıtmalı."""
+        from apps.dashboard.application.admin_dashboard_service import AdminDashboardService
+
+        data = AdminDashboardService.build(
+            kurum_id=self.kurum.id, sube_id=self.sube.id, egitim_yili_id=self.ey.id,
+        )
+        self.assertEqual(data['genel']['kasa_toplam'], 10_000)
+        self.assertEqual(data['genel']['banka_toplam'], 50_000)
+        self.assertEqual(data['genel']['pos_toplam'], 7_500)
+        self.assertEqual(data['genel']['kasa_banka_toplam'], 10_000 + 50_000 + 7_500)
+        self.assertEqual(data['finans']['kpis']['kasa_banka'], data['genel']['kasa_banka_toplam'])
+
 
 class GelirGiderRaporCompletenessTest(TestCase):
     """Raporlama → Gelir-Gider: tüm gelir kaynakları + nakit bazlı gider."""
@@ -1100,6 +1113,50 @@ class GelirGiderRaporCompletenessTest(TestCase):
         satir = self._bu_ay_satiri(body)
         self.assertEqual(satir['gider'], self.odenen_gider_tutari)
         self.assertNotEqual(satir['gider'], self.tahakkuk_gider_tutari)
+
+
+class GunSonuNetFinansalSonucCariTest(TestCase):
+    """Gün Sonu Özet Raporu — net sonuç, Gelir-Gider raporuyla aynı gelir tanımını kullanmalı."""
+
+    def setUp(self):
+        from apps.finans.application.cari_hareket_service import CariHareketService
+        from apps.finans.constants.account_types import MaliHesapTipi
+        from apps.finans.constants.cari_types import CariHareketTuru, CariHareketYonu
+        from apps.finans.domain.cari_hesap import CariHesap
+
+        self.kurum = Kurum.objects.create(ad='Gün Sonu Cari Kurum', kod='GSC')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='GSC')
+        self.today = timezone.localdate()
+
+        mali_hesap = MaliHesap.objects.create(sube=self.sube, ad='Kasa', tip=MaliHesapTipi.KASA)
+        OdemeYontemi.objects.create(
+            mali_hesap=mali_hesap, kurum=self.kurum, ad='Nakit',
+            tip=OdemeYontemiTipi.NAKIT, komisyon_orani=Decimal('0'),
+        )
+        musteri = CariHesap.objects.create(
+            kurum=self.kurum, sube=self.sube, unvan='Serbest Müşteri', hesap_turu='musteri',
+        )
+
+        # Sözleşmeye/gelir kaydına bağlı olmayan bağımsız cari tahsilatı — "Toplam
+        # Alınan" KPI'sına dahildi ama önceki sürümde net sonuca hiç girmiyordu.
+        CariHareketService().hareket_olustur(
+            cari_hesap_id=musteri.id, kurum_id=self.kurum.id, sube_id=self.sube.id,
+            egitim_yili_id=None, tutar=Decimal('1500'),
+            yon=CariHareketYonu.ALACAK, islem_turu=CariHareketTuru.TAHSILAT,
+            islem_tarihi=self.today, aciklama='Bağımsız tahsilat',
+        )
+        self.cari_tahsilat_tutari = 1500
+
+    def test_net_gunluk_finansal_sonuc_includes_bagimsiz_cari_tahsilat(self):
+        from apps.finans.application.gun_sonu_report_service import GunSonuReportService
+
+        rapor = GunSonuReportService().build_ozet_rapor(self.kurum.id, self.today, self.sube.id)
+        gunluk = rapor['ozet_rapor']['gunluk_ozet']
+
+        self.assertEqual(gunluk['toplam_alinan'], self.cari_tahsilat_tutari)
+        # Önceki sürümde bu alan 0 kalırdı çünkü sadece sözleşme + gelir tahsilatı
+        # sayıyordu; artık "Toplam Alınan" ile aynı kapsamda olmalı.
+        self.assertEqual(gunluk['net_gunluk_finansal_sonuc'], self.cari_tahsilat_tutari)
 
 
 class SonBakiyeChainCorruptionTest(TestCase):

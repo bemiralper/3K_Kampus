@@ -11,7 +11,7 @@ from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
 from apps.egitim_tanimlari.models import SinifSeviyesi
-from apps.finans.application.dashboard_overview_service import _mali_hesap_bloklari
+from apps.finans.application.dashboard_overview_service import _mali_hesap_bloklari, _pos_hesap_bloklari
 from apps.finans.constants.account_types import MaliHesapTipi
 from apps.odeme_takip.application.services.sozlesme_service import SozlesmeService
 from apps.odeme_takip.domain.enums import SozlesmeDurum, TahsilatDurum, TahsilatTuru
@@ -209,7 +209,12 @@ class AdminDashboardService:
         kasa_hesaplari, banka_hesaplari, kasa_toplam, banka_toplam = _mali_hesap_bloklari(
             kurum_id, sube_id, egitim_yili_id,
         )
-        kasa_banka_toplam = kasa_toplam + banka_toplam
+        _, pos_toplam = _pos_hesap_bloklari(kurum_id, sube_id)
+        # "Kasa + Banka" KPI'sı Mali Hesaplar'daki TÜM canlı bakiyeleri kapsamalı;
+        # önceden POS hesapları (örn. kart tahsilatının biriktiği hesap) bu
+        # toplama dahil edilmiyordu ve kartta gösterilen tutar mali hesaplardaki
+        # gerçek toplamdan daha az görünüyordu.
+        kasa_banka_toplam = kasa_toplam + banka_toplam + pos_toplam
         kasa_dagilimi = cls._kasa_dagilimi(kasa_hesaplari, banka_hesaplari, kurum_id, sube_id, egitim_yili_id)
         tahsilat_12_ay = cls._aylik_tahsilat_12_ay(kurum_id, sube_id, egitim_yili_id, bugun)
 
@@ -225,6 +230,9 @@ class AdminDashboardService:
                 'aktif_personel': aktif_personel,
                 'aktif_sozlesme': aktif_sozlesme,
                 'kasa_banka_toplam': kasa_banka_toplam,
+                'kasa_toplam': kasa_toplam,
+                'banka_toplam': banka_toplam,
+                'pos_toplam': pos_toplam,
             },
             'ogrenci': {
                 'kpis': {

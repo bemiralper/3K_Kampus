@@ -86,7 +86,13 @@ class GunSonuReportService:
         toplam_gider = gider_odeme
         toplam_iade = iade_toplam
         net_nakit_girisi = net_nakit_degisim(kurum_id, gun, sube_id)
-        net_gunluk_finansal = toplam_tahsilat + toplam_gelir - toplam_gider - toplam_iade
+        # toplam_alinan; sözleşme + serbest gelir + cari (bağımsız müşteri) tahsilatını
+        # kapsar (bkz. bugun_alinan_toplam) — Gelir-Gider raporuyla aynı gelir tanımı.
+        # Önceden net sonuç sadece sozlesme_tahsilat + gelir_tahsilat kullanıyordu ve
+        # cari bağımsız tahsilatı atlıyordu; bu da üstteki "Toplam Alınan" KPI'sı ile
+        # alttaki "Net Günlük Finansal Sonuç" arasında tutarsızlığa yol açıyordu.
+        toplam_alinan = bugun_alinan_toplam(kurum_id, gun, sube_id)
+        net_gunluk_finansal = toplam_alinan - toplam_gider - toplam_iade
 
         odeme_kova = odeme_kirilimi_topla(kurum_id, gun, sube_id)
         tahsilat_dagilimi = kova_listesi_with_yuzde(odeme_kova)
@@ -120,7 +126,7 @@ class GunSonuReportService:
                 'meta': meta,
                 'gunluk_ozet': {
                     'toplam_tahsilat': toplam_tahsilat,
-                    'toplam_alinan': bugun_alinan_toplam(kurum_id, gun, sube_id),
+                    'toplam_alinan': toplam_alinan,
                     'toplam_iade': toplam_iade,
                     'toplam_gelir': toplam_gelir,
                     'toplam_gider': toplam_gider,

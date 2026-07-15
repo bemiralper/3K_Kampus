@@ -139,6 +139,9 @@ export default function AdminDashboardClient() {
         <DashKpiCard
           label="Kasa + Banka"
           value={fmtMoney(data.genel.kasa_banka_toplam)}
+          hint={`Kasa ${fmtMoney(data.genel.kasa_toplam)} · Banka ${fmtMoney(data.genel.banka_toplam)}${
+            data.genel.pos_toplam ? ` · POS ${fmtMoney(data.genel.pos_toplam)}` : ''
+          }`}
           href="/finans"
           tone="amber"
           icon="💰"

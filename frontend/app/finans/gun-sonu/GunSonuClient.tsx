@@ -1,26 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  App as AntApp,
-  Button,
-  Card,
-  Col,
-  DatePicker,
-  Empty,
-  Input,
-  Row,
-  Segmented,
-  Space,
-  Spin,
-  Statistic,
-  Table,
-} from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { WhatsAppOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
 import { useKurum } from "@/lib/contexts/KurumContext";
-import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import ExportDropdown, { type ExportFormat } from "@/components/finans/ExportDropdown";
 import GunSonuWhatsappModal from "@/components/finans/GunSonuWhatsappModal";
 import GunSonuDetayView from "./GunSonuDetayView";
@@ -29,10 +10,23 @@ import { gunSonuService } from "../services/para-hareketi-api";
 import type { GunSonuDetayRapor, GunSonuOzet, GunSonuOzetRapor } from "../types/para-hareketi-types";
 import { fmtTL } from "@/components/finans/FinansFilterBar";
 import { todayIsoLocal } from "@/lib/date-utils";
+import "./gun-sonu.css";
 
 function todayIso() { return todayIsoLocal(); }
 
+function yesterdayIso() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 type ViewTab = "rapor" | "detay" | "canli";
+
+const VIEW_TABS: { value: ViewTab; label: string }[] = [
+  { value: "rapor", label: "Özet Rapor" },
+  { value: "detay", label: "Detay Rapor" },
+  { value: "canli", label: "Canlı Özet" },
+];
 
 function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
   const { activeKurum, activeSube } = useKurum();
@@ -117,79 +111,96 @@ function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
     [gun, viewTab],
   );
 
+  const isToday = gun === todayIso();
+  const isYesterday = gun === yesterdayIso();
+
   if (!activeKurum) {
-    return <Card style={{ textAlign: "center", padding: 32 }}><Empty description="Gün sonu özetini görmek için üst menüden bir kurum seçin." /></Card>;
+    return (
+      <div className="gs-state">
+        <p>Gün sonu özetini görmek için üst menüden bir kurum seçin.</p>
+      </div>
+    );
   }
 
   return (
-    <div style={{ padding: embedded ? 0 : "4px 4px 40px" }}>
+    <div className="gs-page">
       {!embedded && (
-        <div style={{ background: "linear-gradient(120deg, #1F3C880d, #ffffff)", border: "1px solid #eef2f7", borderRadius: 16, padding: "18px 22px", marginBottom: 16 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>Gün Sonu</h1>
-          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: 13 }}>Günlük tahsilat, gider ve nakit özetini görüntüleyin, raporlayın.</p>
+        <div className="gs-head">
+          <h1>Gün Sonu Finans Raporu</h1>
+          <p>Seçilen günün tahsilat, gider ve nakit hareketlerini tek bakışta görün; özet halinde inceleyin veya detaylı dökün.</p>
         </div>
       )}
 
-      <Card size="small" style={{ marginBottom: 16 }} styles={{ body: { padding: 12 } }}>
-        <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
-          <Space wrap>
-            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Tarih</span>
-            <DatePicker
-              format="DD.MM.YYYY"
-              allowClear={false}
-              value={dayjs(gun)}
-              disabledDate={(d) => d && d.isAfter(dayjs(), "day")}
-              onChange={(d) => d && setGun(d.format("YYYY-MM-DD"))}
-            />
-            <Button onClick={() => setGun(todayIso())}>Bugün</Button>
-          </Space>
-          <Space wrap>
-            <ExportDropdown
-              buildPath={buildExportPath}
-              filenamePrefix={filenamePrefix}
-              disabled={loading || (viewTab === "detay" ? detayLoading || !detay : !ozet)}
-              label={viewTab === "detay" ? "Detay Rapor İndir" : "Rapor İndir"}
-            />
-            <Button icon={<WhatsAppOutlined />} disabled={loading || !ozet} style={{ color: "#059669", borderColor: "#a7f3d0" }} onClick={() => setWhatsappOpen(true)}>
-              WhatsApp Gönder
-            </Button>
-          </Space>
-        </Space>
-      </Card>
+      <div className="gs-toolbar">
+        <div className="gs-toolbar__group">
+          <span className="gs-toolbar__label">Tarih</span>
+          <input
+            type="date"
+            value={gun}
+            max={todayIso()}
+            onChange={(e) => e.target.value && setGun(e.target.value)}
+          />
+          <button type="button" className={`gs-btn ${isYesterday ? "gs-btn--active" : ""}`} onClick={() => setGun(yesterdayIso())}>
+            Dün
+          </button>
+          <button type="button" className={`gs-btn ${isToday ? "gs-btn--active" : ""}`} onClick={() => setGun(todayIso())}>
+            Bugün
+          </button>
+          {activeSube?.ad && <span className="gs-chip">🏢 {activeSube.ad}</span>}
+        </div>
+        <div className="gs-toolbar__group">
+          <ExportDropdown
+            buildPath={buildExportPath}
+            filenamePrefix={filenamePrefix}
+            disabled={loading || (viewTab === "detay" ? detayLoading || !detay : !ozet)}
+            label={viewTab === "detay" ? "Detay Rapor İndir" : "Rapor İndir"}
+          />
+          <button
+            type="button"
+            className="gs-btn gs-btn--whatsapp"
+            disabled={loading || !ozet}
+            onClick={() => setWhatsappOpen(true)}
+          >
+            💬 WhatsApp Gönder
+          </button>
+        </div>
+      </div>
 
-      <Segmented
-        value={viewTab}
-        onChange={(v) => setViewTab(v as ViewTab)}
-        options={[
-          { value: "rapor", label: "Özet Rapor" },
-          { value: "detay", label: "Detay Rapor" },
-          { value: "canli", label: "Canlı Özet" },
-        ]}
-        style={{ marginBottom: 16 }}
-      />
+      <div className="gs-tabs">
+        {VIEW_TABS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            className={viewTab === t.value ? "active" : ""}
+            onClick={() => setViewTab(t.value)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
       {loading ? (
-        <div style={{ padding: 80, textAlign: "center" }}><Spin size="large" /></div>
+        <div className="gs-state"><div className="gs-spinner" /><p>Yükleniyor…</p></div>
       ) : error ? (
-        <div style={{ padding: 48, textAlign: "center" }}>
-          <p style={{ color: "#dc2626", fontWeight: 600, marginBottom: 12 }}>{error}</p>
-          <Button danger onClick={load}>Tekrar Dene</Button>
+        <div className="gs-state">
+          <p className="gs-state__error">{error}</p>
+          <button type="button" className="gs-btn gs-btn--danger" onClick={load}>Tekrar Dene</button>
         </div>
       ) : ozet && viewTab === "rapor" ? (
         rapor ? (
           <OzetRaporView rapor={rapor} notlar={notlar} onNotlarChange={setNotlar} onNotlarBlur={load} />
         ) : (
-          <Card><Empty description="Rapor verisi alınamadı. Lütfen tekrar deneyin." /></Card>
+          <div className="gs-state"><p>Rapor verisi alınamadı. Lütfen tekrar deneyin.</p></div>
         )
       ) : viewTab === "detay" ? (
         detayLoading ? (
-          <div style={{ padding: 80, textAlign: "center" }}><Spin size="large" tip="Detay rapor yükleniyor…" /></div>
+          <div className="gs-state"><div className="gs-spinner" /><p>Detay rapor yükleniyor…</p></div>
         ) : detay ? (
           <GunSonuDetayView detay={detay} />
         ) : (
-          <div style={{ padding: 48, textAlign: "center" }}>
-            <p style={{ color: "#dc2626", fontWeight: 600, marginBottom: 12 }}>{detayError || "Detay rapor yüklenemedi."}</p>
-            <Button danger onClick={loadDetay}>Tekrar Dene</Button>
+          <div className="gs-state">
+            <p className="gs-state__error">{detayError || "Detay rapor yüklenemedi."}</p>
+            <button type="button" className="gs-btn gs-btn--danger" onClick={loadDetay}>Tekrar Dene</button>
           </div>
         )
       ) : ozet ? (
@@ -209,7 +220,7 @@ function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-/* ─── Özet Rapor (markalı PDF önizleme) ─────────────────────────── */
+/* ─── Özet Rapor ─────────────────────────────────────────────── */
 
 function OzetRaporView({
   rapor, notlar, onNotlarChange, onNotlarBlur,
@@ -221,212 +232,242 @@ function OzetRaporView({
 }) {
   const { meta, gunluk_ozet, tahsilat_dagilimi, islem_sayilari, kullanici_ozeti } = rapor;
 
+  const netSonuc = gunluk_ozet.net_gunluk_finansal_sonuc ?? (
+    (gunluk_ozet.toplam_alinan ?? gunluk_ozet.toplam_tahsilat) + gunluk_ozet.toplam_gelir
+    - gunluk_ozet.toplam_gider - gunluk_ozet.toplam_iade
+  );
+  const toplamAlinan = gunluk_ozet.toplam_alinan ?? gunluk_ozet.toplam_tahsilat;
+  // `tahsilat_dagilimi` son satırda zaten bir "Toplam" satırı içerir (tip === "toplam").
+  const dagilimSatirlari = tahsilat_dagilimi.filter((r) => r.tip !== "toplam");
+  const dagilimToplamSatiri = tahsilat_dagilimi.find((r) => r.tip === "toplam");
+  const dagilimToplam = dagilimToplamSatiri?.tutar ?? dagilimSatirlari.reduce((s, r) => s + (r.tutar || 0), 0);
+  const dagilimPaydasi = dagilimToplam || 1;
+
   return (
-    <Card styles={{ body: { padding: 0 } }} style={{ overflow: "hidden" }}>
-      <div style={{ padding: "20px 24px", borderBottom: "2px solid #1F3C88", background: "linear-gradient(90deg, #f8fafc, #eff6ff66)" }}>
-        <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/img/3k-logo.png" alt="3K Kampüs" style={{ width: 48, height: 48, objectFit: "contain" }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5 }}>{meta.marka}</div>
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: "#1F3C88", margin: "2px 0 0" }}>{meta.baslik}</h2>
-            {meta.kurum_ad && <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>{meta.kurum_ad}</div>}
-          </div>
-        </div>
-        <Row gutter={[12, 12]} style={{ marginTop: 16, padding: 12, background: "#ffffffb3", borderRadius: 12, border: "1px solid #f1f5f9" }}>
-          <MetaChip label="Tarih" value={meta.tarih} />
-          <MetaChip label="Şube" value={meta.sube} />
-          <MetaChip label="Hazırlayan" value={meta.hazirlayan} />
-          <MetaChip label="Oluşturulma" value={meta.olusturulma} />
-        </Row>
+    <div className="gs-page">
+      <div className="gs-meta">
+        <div className="gs-meta__item"><span className="gs-meta__label">Kurum</span><span className="gs-meta__value">{meta.kurum_ad || meta.marka}</span></div>
+        <div className="gs-meta__item"><span className="gs-meta__label">Şube</span><span className="gs-meta__value">{meta.sube}</span></div>
+        <div className="gs-meta__item"><span className="gs-meta__label">Tarih</span><span className="gs-meta__value">{meta.tarih}</span></div>
+        <div className="gs-meta__item"><span className="gs-meta__label">Hazırlayan</span><span className="gs-meta__value">{meta.hazirlayan}</span></div>
+        <div className="gs-meta__item"><span className="gs-meta__label">Oluşturulma</span><span className="gs-meta__value">{meta.olusturulma}</span></div>
       </div>
 
-      <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24 }}>
-        <ReportSection title="A. Günlük Özet">
-          <ReportTable
-            headers={["Bilgi", "Tutar"]}
-            rows={[
-              ["Toplam Tahsilat", fmtTL(gunluk_ozet.toplam_tahsilat)],
-              ["Toplam İade", fmtTL(gunluk_ozet.toplam_iade)],
-              ["Toplam Gelir", fmtTL(gunluk_ozet.toplam_gelir)],
-              ["Toplam Gider", fmtTL(gunluk_ozet.toplam_gider)],
-              ["Net Nakit Girişi", fmtTL(gunluk_ozet.net_nakit_girisi)],
-            ]}
-            highlightLast
-          />
-        </ReportSection>
+      <div className="gs-hero-grid">
+        <div className="gs-hero gs-hero--in">
+          <span className="gs-hero__label">Toplam Alınan</span>
+          <span className="gs-hero__value">{fmtTL(toplamAlinan)}</span>
+          <span className="gs-hero__hint">Sözleşme tahsilatı + serbest gelir + cari tahsilat</span>
+        </div>
+        <div className="gs-hero gs-hero--out">
+          <span className="gs-hero__label">Toplam Gider</span>
+          <span className="gs-hero__value">{fmtTL(gunluk_ozet.toplam_gider)}</span>
+          <span className="gs-hero__hint">Bugün ödenen giderler (+ iade {fmtTL(gunluk_ozet.toplam_iade)})</span>
+        </div>
+        <div className="gs-hero gs-hero--net">
+          <span className="gs-hero__label">Net Günlük Sonuç</span>
+          <span className="gs-hero__value">{fmtTL(netSonuc)}</span>
+          <span className="gs-hero__hint">Alınan − gider − iade</span>
+        </div>
+        <div className="gs-hero gs-hero--info">
+          <span className="gs-hero__label">Net Nakit Girişi (Kasa)</span>
+          <span className="gs-hero__value">{fmtTL(gunluk_ozet.net_nakit_girisi)}</span>
+          <span className="gs-hero__hint">Fiziksel kasa hesaplarındaki giriş − çıkış</span>
+        </div>
+      </div>
 
-        <ReportSection title="B. Tahsilat Dağılımı">
-          <ReportTable headers={["Ödeme Türü", "Tutar"]} rows={tahsilat_dagilimi.map((r) => [r.label, fmtTL(r.tutar)])} highlightLast />
-        </ReportSection>
-
-        <ReportSection title="C. İşlem Sayıları">
-          <ReportTable
-            headers={["İşlem", "Adet"]}
-            rows={[
-              ["Tahsilat", String(islem_sayilari.tahsilat)],
-              ["Gelir Kaydı", String(islem_sayilari.gelir_kaydi)],
-              ["Gider Kaydı", String(islem_sayilari.gider_kaydi)],
-              ["İade", String(islem_sayilari.iade)],
-              ["İptal", String(islem_sayilari.iptal)],
-            ]}
-          />
-        </ReportSection>
-
-        <ReportSection title="Kullanıcı Bazlı İşlem Özeti">
-          {kullanici_ozeti.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bugün personel bazlı işlem yok" />
+      <div className="gs-panel">
+        <div className="gs-panel__head">
+          <h3><span className="gs-panel__head-icon" />Tahsilat Dağılımı</h3>
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>Ödeme türüne göre</span>
+        </div>
+        <div className="gs-panel__body">
+          {dagilimSatirlari.length === 0 ? (
+            <p className="gs-table-empty">Bugün tahsilat kaydı yok.</p>
           ) : (
-            <ReportTable
-              headers={["Personel", "Tahsilat", "Gelir", "Gider"]}
-              rows={kullanici_ozeti.map((k) => [k.personel, fmtTL(k.tahsilat), fmtTL(k.gelir), fmtTL(k.gider)])}
-            />
+            <div className="gs-bars">
+              {dagilimSatirlari.map((r) => (
+                <div className="gs-bar-row" key={r.label}>
+                  <div className="gs-bar-row__top">
+                    <span className="gs-bar-row__label">{r.label}{r.adet != null && <span className="gs-bar-row__sub"> · {r.adet} işlem</span>}</span>
+                    <span className="gs-bar-row__value">{fmtTL(r.tutar)}</span>
+                  </div>
+                  <div className="gs-bar-track">
+                    <div className="gs-bar-fill" style={{ width: `${Math.min(100, (r.tutar / dagilimPaydasi) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+              <div className="gs-bar-total">
+                <span>Toplam</span>
+                <strong>{fmtTL(dagilimToplam)}</strong>
+              </div>
+            </div>
           )}
-        </ReportSection>
+        </div>
+      </div>
 
-        <ReportSection title="G. Notlar">
-          <Input.TextArea
+      <div className="gs-panel">
+        <div className="gs-panel__head"><h3><span className="gs-panel__head-icon" />İşlem Sayıları</h3></div>
+        <div className="gs-panel__body">
+          <div className="gs-stat-grid">
+            <div className="gs-stat"><div className="gs-stat__label">Tahsilat</div><div className="gs-stat__value">{islem_sayilari.tahsilat}</div></div>
+            <div className="gs-stat"><div className="gs-stat__label">Gelir Kaydı</div><div className="gs-stat__value">{islem_sayilari.gelir_kaydi}</div></div>
+            <div className="gs-stat"><div className="gs-stat__label">Gider Kaydı</div><div className="gs-stat__value">{islem_sayilari.gider_kaydi}</div></div>
+            <div className="gs-stat"><div className="gs-stat__label">İade</div><div className="gs-stat__value">{islem_sayilari.iade}</div></div>
+            <div className="gs-stat"><div className="gs-stat__label">İptal</div><div className="gs-stat__value">{islem_sayilari.iptal}</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="gs-panel">
+        <div className="gs-panel__head"><h3><span className="gs-panel__head-icon" />Kullanıcı Bazlı İşlem Özeti</h3></div>
+        <div className="gs-panel__body" style={{ padding: kullanici_ozeti.length === 0 ? 16 : 0 }}>
+          {kullanici_ozeti.length === 0 ? (
+            <p className="gs-table-empty">Bugün personel bazlı işlem yok.</p>
+          ) : (
+            <div className="gs-table-wrap">
+              <table className="gs-table">
+                <thead>
+                  <tr>
+                    <th>Personel</th>
+                    <th className="gs-num">Tahsilat</th>
+                    <th className="gs-num">Gelir</th>
+                    <th className="gs-num">Gider</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kullanici_ozeti.map((k) => (
+                    <tr key={k.personel}>
+                      <td>{k.personel}</td>
+                      <td className="gs-num">{fmtTL(k.tahsilat)}</td>
+                      <td className="gs-num">{fmtTL(k.gelir)}</td>
+                      <td className="gs-num">{fmtTL(k.gider)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="gs-panel">
+        <div className="gs-panel__head"><h3><span className="gs-panel__head-icon" />Notlar</h3></div>
+        <div className="gs-panel__body gs-notes">
+          <textarea
             value={notlar}
             onChange={(e) => onNotlarChange(e.target.value)}
             onBlur={onNotlarBlur}
             placeholder="Gün sonu notlarınızı buraya yazın…"
-            rows={4}
           />
-          <p style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Notlar rapor export ve WhatsApp gönderimine dahil edilir.</p>
-        </ReportSection>
+          <p className="gs-notes__hint">Notlar, PDF/Excel çıktısına ve WhatsApp gönderimine dahil edilir.</p>
+        </div>
       </div>
-    </Card>
-  );
-}
-
-function MetaChip({ label, value }: { label: string; value: string }) {
-  return (
-    <Col xs={12} sm={6}>
-      <div style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "#334155", marginTop: 2 }}>{value}</div>
-    </Col>
-  );
-}
-
-function ReportSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h3 style={{ fontSize: 14, fontWeight: 800, color: "#1F3C88", margin: "0 0 8px", paddingLeft: 12, borderLeft: "4px solid #3b82f6" }}>{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function ReportTable({ headers, rows, highlightLast }: { headers: string[]; rows: string[][]; highlightLast?: boolean }) {
-  return (
-    <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #f1f5f9" }}>
-      <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ background: "#1F3C88", color: "#fff" }}>
-            {headers.map((h) => (
-              <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => {
-            const isLast = highlightLast && i === rows.length - 1;
-            return (
-              <tr key={i} style={{ background: isLast ? "#eff6ff" : i % 2 === 1 ? "#f8fafc80" : "transparent", fontWeight: isLast ? 700 : 400, color: isLast ? "#1F3C88" : undefined }}>
-                {row.map((cell, j) => (
-                  <td key={j} style={{ padding: "8px 12px", textAlign: j > 0 ? "right" : "left", fontVariantNumeric: j > 0 ? "tabular-nums" : undefined, color: j === 0 && !isLast ? "#334155" : undefined, borderTop: "1px solid #f1f5f9" }}>
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }
 
-/* ─── Canlı Özet ─────────────────────────────────────────────────── */
+/* ─── Canlı Özet ─────────────────────────────────────────────── */
 
 function CanliOzetView({ ozet }: { ozet: GunSonuOzet }) {
-  const hesapColumns: ColumnsType<GunSonuOzet["hesap_bakiyeleri"][number]> = [
-    { title: "Hesap", dataIndex: "ad", key: "ad", render: (v: string) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{v}</span> },
-    { title: "Tip", dataIndex: "tip_label", key: "tip", render: (v: string) => v || "—" },
-    { title: "Şube", dataIndex: "sube_ad", key: "sube", render: (v: string) => v || "—" },
-    { title: "Bakiye", dataIndex: "bakiye", key: "bakiye", align: "right", render: (v: number) => <span style={{ fontWeight: 700 }}>{fmtTL(v)}</span> },
-  ];
-
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Row gutter={[12, 12]}>
-        <Col xs={12} lg={6}><Card size="small"><Statistic title="Toplam Tahsilat" value={fmtTL(ozet.tahsilatlar.toplam)} valueStyle={{ color: "#059669", fontWeight: 800, fontSize: 18 }} /><div style={{ fontSize: 11, color: "#94a3b8" }}>{ozet.tahsilatlar.adet} işlem</div></Card></Col>
-        <Col xs={12} lg={6}><Card size="small"><Statistic title="Toplam Ödeme" value={fmtTL(ozet.odemeler.toplam)} valueStyle={{ color: "#dc2626", fontWeight: 800, fontSize: 18 }} /><div style={{ fontSize: 11, color: "#94a3b8" }}>{ozet.odemeler.adet} işlem</div></Card></Col>
-        <Col xs={12} lg={6}><Card size="small"><Statistic title="İade" value={fmtTL(ozet.iade_toplam)} valueStyle={{ color: "#d97706", fontWeight: 800, fontSize: 18 }} /></Card></Col>
-        <Col xs={12} lg={6}><Card size="small"><Statistic title="Net" value={fmtTL(ozet.net)} valueStyle={{ color: ozet.net >= 0 ? "#059669" : "#dc2626", fontWeight: 800, fontSize: 18 }} /></Card></Col>
-      </Row>
-
-      <Row gutter={[12, 12]}>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Tahsilatlar">
-            {ozet.tahsilatlar.kirilim.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bugün tahsilat yok" />
-            ) : (
-              <>
-                {ozet.tahsilatlar.kirilim.map((k) => <RowLine key={k.tip} label={k.label} value={fmtTL(k.toplam)} sub={`${k.adet} işlem`} />)}
-                <TotalLine label="TOPLAM" value={fmtTL(ozet.tahsilatlar.toplam)} color="#059669" />
-              </>
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Ödemeler">
-            {ozet.odemeler.kirilim.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Bugün ödeme yok" />
-            ) : (
-              <>
-                {ozet.odemeler.kirilim.map((k) => <RowLine key={k.tip} label={k.label} value={fmtTL(k.toplam)} sub={`${k.adet} işlem`} />)}
-                <TotalLine label="TOPLAM" value={fmtTL(ozet.odemeler.toplam)} color="#dc2626" />
-              </>
-            )}
-          </Card>
-        </Col>
-      </Row>
-
-      <Row gutter={[12, 12]}>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title="Kasada Beklenen" value={fmtTL(ozet.kasada_beklenen)} valueStyle={{ color: "#0891b2", fontWeight: 800, fontSize: 17 }} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title="Banka Bakiye" value={fmtTL(ozet.banka_bakiye)} valueStyle={{ color: "#2563eb", fontWeight: 800, fontSize: 17 }} /></Card></Col>
-        <Col xs={24} sm={8}><Card size="small"><Statistic title="Kart Bekleyen (POS)" value={fmtTL(ozet.kart_bekleyen)} valueStyle={{ color: "#7c3aed", fontWeight: 800, fontSize: 17 }} /></Card></Col>
-      </Row>
-
-      <Card size="small" title="Hesap Bakiyeleri (Anlık)" styles={{ body: { padding: ozet.hesap_bakiyeleri.length === 0 ? 24 : 0 } }}>
-        {ozet.hesap_bakiyeleri.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Tanımlı mali hesap yok" />
-        ) : (
-          <Table rowKey="id" size="small" columns={hesapColumns} dataSource={ozet.hesap_bakiyeleri} pagination={false} />
-        )}
-      </Card>
-    </Space>
-  );
-}
-
-function RowLine({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}>
-      <span style={{ fontSize: 13, color: "#475569" }}>{label}</span>
-      <div style={{ textAlign: "right" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{value}</div>
-        {sub && <div style={{ fontSize: 10, color: "#94a3b8" }}>{sub}</div>}
+    <div className="gs-page">
+      <div className="gs-hero-grid">
+        <div className="gs-hero gs-hero--in">
+          <span className="gs-hero__label">Toplam Tahsilat</span>
+          <span className="gs-hero__value">{fmtTL(ozet.tahsilatlar.toplam)}</span>
+          <span className="gs-hero__hint">{ozet.tahsilatlar.adet} işlem</span>
+        </div>
+        <div className="gs-hero gs-hero--out">
+          <span className="gs-hero__label">Toplam Ödeme</span>
+          <span className="gs-hero__value">{fmtTL(ozet.odemeler.toplam)}</span>
+          <span className="gs-hero__hint">{ozet.odemeler.adet} işlem</span>
+        </div>
+        <div className="gs-hero gs-hero--info">
+          <span className="gs-hero__label">İade</span>
+          <span className="gs-hero__value">{fmtTL(ozet.iade_toplam)}</span>
+        </div>
+        <div className={`gs-hero ${ozet.net >= 0 ? "gs-hero--in" : "gs-hero--out"}`}>
+          <span className="gs-hero__label">Net</span>
+          <span className="gs-hero__value">{fmtTL(ozet.net)}</span>
+        </div>
       </div>
-    </div>
-  );
-}
 
-function TotalLine({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, marginTop: 4, borderTop: `2px solid ${color}` }}>
-      <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{label}</span>
-      <span style={{ fontSize: 16, fontWeight: 800, color }}>{value}</span>
+      <div className="gs-chart-grid">
+        <div className="gs-panel">
+          <div className="gs-panel__head"><h3><span className="gs-panel__head-icon" />Tahsilatlar</h3></div>
+          <div className="gs-panel__body">
+            {ozet.tahsilatlar.kirilim.length === 0 ? (
+              <p className="gs-table-empty">Bugün tahsilat yok.</p>
+            ) : (
+              <div className="gs-bars">
+                {ozet.tahsilatlar.kirilim.map((k) => (
+                  <div className="gs-bar-row" key={k.tip}>
+                    <div className="gs-bar-row__top">
+                      <span className="gs-bar-row__label">{k.label} <span className="gs-bar-row__sub">· {k.adet} işlem</span></span>
+                      <span className="gs-bar-row__value">{fmtTL(k.toplam)}</span>
+                    </div>
+                  </div>
+                ))}
+                <div className="gs-bar-total"><span>Toplam</span><strong>{fmtTL(ozet.tahsilatlar.toplam)}</strong></div>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="gs-panel">
+          <div className="gs-panel__head"><h3><span className="gs-panel__head-icon" />Ödemeler</h3></div>
+          <div className="gs-panel__body">
+            {ozet.odemeler.kirilim.length === 0 ? (
+              <p className="gs-table-empty">Bugün ödeme yok.</p>
+            ) : (
+              <div className="gs-bars">
+                {ozet.odemeler.kirilim.map((k) => (
+                  <div className="gs-bar-row" key={k.tip}>
+                    <div className="gs-bar-row__top">
+                      <span className="gs-bar-row__label">{k.label} <span className="gs-bar-row__sub">· {k.adet} işlem</span></span>
+                      <span className="gs-bar-row__value">{fmtTL(k.toplam)}</span>
+                    </div>
+                  </div>
+                ))}
+                <div className="gs-bar-total"><span>Toplam</span><strong>{fmtTL(ozet.odemeler.toplam)}</strong></div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="gs-stat-grid">
+        <div className="gs-stat"><div className="gs-stat__label">Kasada Beklenen</div><div className="gs-stat__value">{fmtTL(ozet.kasada_beklenen)}</div></div>
+        <div className="gs-stat"><div className="gs-stat__label">Banka Bakiye</div><div className="gs-stat__value">{fmtTL(ozet.banka_bakiye)}</div></div>
+        <div className="gs-stat"><div className="gs-stat__label">Kart Bekleyen (POS)</div><div className="gs-stat__value">{fmtTL(ozet.kart_bekleyen)}</div></div>
+      </div>
+
+      <div className="gs-panel">
+        <div className="gs-panel__head"><h3><span className="gs-panel__head-icon" />Hesap Bakiyeleri (Anlık)</h3></div>
+        <div className="gs-panel__body" style={{ padding: ozet.hesap_bakiyeleri.length === 0 ? 16 : 0 }}>
+          {ozet.hesap_bakiyeleri.length === 0 ? (
+            <p className="gs-table-empty">Tanımlı mali hesap yok.</p>
+          ) : (
+            <div className="gs-table-wrap">
+              <table className="gs-table">
+                <thead>
+                  <tr><th>Hesap</th><th>Tip</th><th>Şube</th><th className="gs-num">Bakiye</th></tr>
+                </thead>
+                <tbody>
+                  {ozet.hesap_bakiyeleri.map((h) => (
+                    <tr key={h.id}>
+                      <td style={{ fontWeight: 700, color: "#0f172a" }}>{h.ad}</td>
+                      <td>{h.tip_label || "—"}</td>
+                      <td>{h.sube_ad || "—"}</td>
+                      <td className="gs-num" style={{ fontWeight: 700 }}>{fmtTL(h.bakiye)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

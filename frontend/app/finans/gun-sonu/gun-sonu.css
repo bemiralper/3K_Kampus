@@ -1,0 +1,318 @@
+/* ═══════════════════════════════════════════════════════════
+   Gün Sonu Finans Raporu
+   Önek: gs-  (cari-v2 / finans-dashboard ile aynı tasarım dili)
+   ═══════════════════════════════════════════════════════════ */
+
+.gs-page {
+  --gs-primary: #0262a7;
+  --gs-border: #e5e7eb;
+  --gs-muted: #64748b;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: #0f172a;
+}
+
+/* ── Başlık ─────────────────────────────── */
+.gs-head {
+  background: linear-gradient(120deg, #0262a70d, #ffffff);
+  border: 1px solid #eef2f7;
+  border-radius: 16px;
+  padding: 18px 22px;
+}
+.gs-head h1 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; }
+.gs-head p { margin: 4px 0 0; color: var(--gs-muted); font-size: 13px; max-width: 640px; line-height: 1.45; }
+
+/* ── Araç çubuğu ────────────────────────── */
+.gs-toolbar {
+  background: #fff;
+  border: 1px solid var(--gs-border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.gs-toolbar__group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gs-toolbar__label { font-size: 12px; font-weight: 700; color: var(--gs-muted); }
+.gs-toolbar input[type="date"] {
+  padding: 8px 10px;
+  border: 1px solid #dbe2ea;
+  border-radius: 9px;
+  font-size: 13px;
+  color: #0f172a;
+  outline: none;
+  font-weight: 600;
+}
+.gs-toolbar input[type="date"]:focus { border-color: var(--gs-primary); }
+
+.gs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border-radius: 9px;
+  border: 1px solid #dbe2ea;
+  background: #fff;
+  color: #334155;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.gs-btn:hover { border-color: var(--gs-primary); color: var(--gs-primary); }
+.gs-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.gs-btn--active { background: var(--gs-primary); border-color: var(--gs-primary); color: #fff; }
+.gs-btn--active:hover { color: #fff; }
+.gs-btn--whatsapp { color: #059669; border-color: #a7f3d0; }
+.gs-btn--whatsapp:hover { border-color: #059669; color: #047857; }
+.gs-btn--danger { color: #dc2626; border-color: #fecaca; }
+
+/* Sekme geçişi (Özet / Detay / Canlı) */
+.gs-tabs { display: inline-flex; border: 1px solid #dbe2ea; border-radius: 10px; overflow: hidden; background: #fff; }
+.gs-tabs button {
+  padding: 9px 16px;
+  border: none;
+  background: #fff;
+  color: var(--gs-muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border-right: 1px solid #eef2f6;
+  transition: all 0.15s;
+}
+.gs-tabs button:last-child { border-right: none; }
+.gs-tabs button:hover { color: var(--gs-primary); background: #f8fbff; }
+.gs-tabs button.active { background: var(--gs-primary); color: #fff; }
+
+/* ── Durum (yükleniyor / hata / boş) ────── */
+.gs-state {
+  background: #fff;
+  border: 1px solid var(--gs-border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 56px 24px;
+  gap: 12px;
+}
+.gs-state p { margin: 0; font-size: 13.5px; color: var(--gs-muted); }
+.gs-state p.gs-state__error { color: #dc2626; font-weight: 700; }
+.gs-spinner {
+  width: 30px; height: 30px;
+  border: 2.5px solid #e5e7eb;
+  border-top-color: var(--gs-primary);
+  border-radius: 50%;
+  animation: gs-spin 0.7s linear infinite;
+}
+@keyframes gs-spin { to { transform: rotate(360deg); } }
+
+/* ── Meta şeridi ────────────────────────── */
+.gs-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  background: #fff;
+  border: 1px solid var(--gs-border);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+.gs-meta__item { display: flex; flex-direction: column; gap: 2px; }
+.gs-meta__label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+.gs-meta__value { font-size: 13px; font-weight: 700; color: #1e293b; }
+
+/* ── Hero KPI kartları ──────────────────── */
+.gs-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+@media (max-width: 1000px) { .gs-hero-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .gs-hero-grid { grid-template-columns: 1fr; } }
+
+.gs-hero {
+  background: #fff;
+  border: 1px solid var(--gs-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gs-hero::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+.gs-hero--in::before { background: #059669; }
+.gs-hero--out::before { background: #dc2626; }
+.gs-hero--net::before { background: #0262a7; }
+.gs-hero--info::before { background: #7c3aed; }
+.gs-hero__label { font-size: 11.5px; font-weight: 700; color: var(--gs-muted); display: flex; align-items: center; gap: 6px; }
+.gs-hero__value { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: #0f172a; }
+.gs-hero--in .gs-hero__value { color: #059669; }
+.gs-hero--out .gs-hero__value { color: #dc2626; }
+.gs-hero--net .gs-hero__value { color: #0262a7; }
+.gs-hero--info .gs-hero__value { color: #7c3aed; }
+.gs-hero__hint { font-size: 11px; color: #94a3b8; line-height: 1.4; }
+
+/* ── Uyarı şeridi ───────────────────────── */
+.gs-alert {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gs-alert--kritik { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.gs-alert--uyari { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.gs-alert--bilgi { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+
+/* ── Panel (bölüm kartı) ────────────────── */
+.gs-panel {
+  background: #fff;
+  border: 1px solid var(--gs-border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.gs-panel__head {
+  padding: 13px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.gs-panel__head h3 { margin: 0; font-size: 14px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px; }
+.gs-panel__head-icon { width: 8px; height: 8px; border-radius: 999px; background: var(--gs-primary); flex-shrink: 0; }
+.gs-panel__body { padding: 16px; }
+.gs-panel__foot { padding: 10px 16px; border-top: 1px solid #f8fafc; background: #fafbfc; font-size: 11px; color: #94a3b8; }
+
+/* Grup başlığı (Detay sayfasındaki kategori grupları) */
+.gs-group { display: flex; flex-direction: column; gap: 10px; }
+.gs-group__head { display: flex; align-items: baseline; gap: 8px; margin: 4px 2px 0; }
+.gs-group__title { font-size: 13px; font-weight: 800; color: #0262a7; text-transform: uppercase; letter-spacing: 0.04em; }
+.gs-group__desc { font-size: 12px; color: #94a3b8; }
+
+/* ── Katlanır bölüm (accordion) ─────────── */
+.gs-accordion { border: 1px solid #f1f5f9; border-radius: 12px; overflow: hidden; background: #fff; }
+.gs-accordion + .gs-accordion { margin-top: 8px; }
+.gs-accordion__trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.gs-accordion__trigger:hover { background: #f8fbff; }
+.gs-accordion__title { font-size: 13px; font-weight: 700; color: #1e293b; }
+.gs-accordion__meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #94a3b8; }
+.gs-accordion__count { background: #f1f5f9; color: #64748b; border-radius: 999px; padding: 2px 8px; font-weight: 700; }
+.gs-accordion__chevron { transition: transform 0.15s; color: #94a3b8; }
+.gs-accordion__chevron.open { transform: rotate(180deg); }
+.gs-accordion__body { padding: 0 14px 14px; overflow-x: auto; border-top: 1px solid #f8fafc; }
+
+/* ── Tablo ──────────────────────────────── */
+.gs-table-wrap { overflow-x: auto; border-radius: 10px; }
+.gs-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.gs-table th {
+  text-align: left;
+  padding: 9px 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #eef2f6;
+  white-space: nowrap;
+}
+.gs-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid #f5f7fa;
+  color: #334155;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.gs-table tbody tr:last-child td { border-bottom: none; }
+.gs-table tbody tr:hover { background: #f8fbff; }
+.gs-table td.gs-num, .gs-table th.gs-num { text-align: right; font-variant-numeric: tabular-nums; }
+.gs-table tr.gs-total-row td { font-weight: 800; color: #0262a7; background: #eff6ff; border-top: 2px solid #bfdbfe; }
+.gs-table-empty { padding: 22px; text-align: center; font-size: 12.5px; color: #94a3b8; }
+
+/* ── Dağılım çubuğu (yatay yüzde bar) ───── */
+.gs-bars { display: flex; flex-direction: column; gap: 10px; }
+.gs-bar-row { display: flex; flex-direction: column; gap: 4px; }
+.gs-bar-row__top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.gs-bar-row__label { font-size: 12.5px; font-weight: 600; color: #334155; }
+.gs-bar-row__value { font-size: 13px; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
+.gs-bar-row__sub { font-size: 11px; color: #94a3b8; }
+.gs-bar-track { height: 8px; border-radius: 999px; background: #f1f5f9; overflow: hidden; }
+.gs-bar-fill { height: 100%; border-radius: 999px; background: var(--gs-primary); transition: width 0.3s ease; }
+.gs-bar-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  margin-top: 4px;
+  border-top: 2px solid #0262a7;
+}
+.gs-bar-total span { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+.gs-bar-total strong { font-size: 16px; font-weight: 800; color: #0262a7; }
+
+/* ── Mini istatistik ipuçları ──────────── */
+.gs-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.gs-stat {
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+.gs-stat__label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.03em; }
+.gs-stat__value { font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* ── Kasa hikâyesi (adım adım akış) ─────── */
+.gs-flow { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
+.gs-flow__step { flex: 1; min-width: 110px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 10px; padding: 10px 12px; text-align: center; }
+.gs-flow__op { display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; color: #cbd5e1; padding: 0 2px; }
+.gs-flow__label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #94a3b8; }
+.gs-flow__value { font-size: 14px; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; color: #0f172a; }
+.gs-flow__step--in .gs-flow__value { color: #059669; }
+.gs-flow__step--out .gs-flow__value { color: #dc2626; }
+.gs-flow__step--result { background: #eff6ff; border-color: #bfdbfe; }
+.gs-flow__step--result .gs-flow__value { color: #0262a7; }
+
+/* ── Notlar ─────────────────────────────── */
+.gs-notes textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: 10px 12px;
+  border: 1px solid #dbe2ea;
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+}
+.gs-notes textarea:focus { border-color: var(--gs-primary); }
+.gs-notes__hint { font-size: 11px; color: #94a3b8; margin-top: 6px; }
+
+/* ── Grafik kartları ────────────────────── */
+.gs-chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+@media (max-width: 760px) { .gs-chart-grid { grid-template-columns: 1fr; } }
+.gs-chart-card { background: #fff; border: 1px solid var(--gs-border); border-radius: 14px; padding: 12px 14px; }
+.gs-chart-card__title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px; }
+
+/* ── Şube bilgi çipi ────────────────────── */
+.gs-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 12px; font-weight: 700; }
