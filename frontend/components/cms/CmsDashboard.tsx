@@ -9,6 +9,7 @@ import {
   HEALTH_ITEMS,
   type HealthKey,
   explainSeoWarning,
+  seoWarningSeverity,
 } from '@/lib/cms/dashboard-guides';
 import { pageStatusLabel, statusBadgeClass } from '@/lib/cms/cms-labels';
 
@@ -105,7 +106,11 @@ export default function CmsDashboard({ onOpenPages, onOpenSeo, onNavigate, onMes
     return { key, ok, meta: HEALTH_ITEMS[key] };
   });
   const missingCount = healthEntries.filter((h) => !h.ok).length;
-  const warnCount = (data.seo_warnings || []).length;
+  const seoWarnings = data.seo_warnings || [];
+  const actionableSeoCount = seoWarnings.filter(
+    (w) => seoWarningSeverity(w.code, w.severity) === 'warn',
+  ).length;
+  const infoSeoCount = seoWarnings.length - actionableSeoCount;
 
   return (
     <div className="cms-dash">
@@ -133,14 +138,26 @@ export default function CmsDashboard({ onOpenPages, onOpenSeo, onNavigate, onMes
         </div>
       </header>
 
-      {(missingCount > 0 || warnCount > 0) && (
-        <div className="cms-callout">
+      {missingCount > 0 && (
+        <div className="cms-callout cms-callout--warn">
           <div>
-            <strong>Dikkat edilmesi gerekenler</strong>
+            <strong>Site sağlığı eksik</strong>
             <p>
-              {missingCount > 0 && `${missingCount} site sağlık maddesi eksik. `}
-              {warnCount > 0 && `${warnCount} SEO uyarısı var. `}
-              Aşağıdaki kartlara tıklayarak ne anlama geldiğini ve nasıl tamamlayacağınızı görebilirsiniz.
+              {missingCount} madde tamamlanmadı. Aşağıdaki &quot;Site sağlığı&quot; kartlarına tıklayarak
+              ne anlama geldiğini ve nasıl düzelteceğinizi görebilirsiniz.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {actionableSeoCount > 0 && (
+        <div className="cms-callout cms-callout--info">
+          <div>
+            <strong>SEO iyileştirmeleri</strong>
+            <p>
+              {actionableSeoCount} öneri var — sayfa sağlığı kartlarından bağımsızdır.
+              Aşağıdaki &quot;SEO uyarıları&quot; bölümünden detayları inceleyin.
+              {infoSeoCount > 0 ? ` (${infoSeoCount} bilgi notu)` : ''}
             </p>
           </div>
         </div>
@@ -242,23 +259,31 @@ export default function CmsDashboard({ onOpenPages, onOpenSeo, onNavigate, onMes
           <div className="cms-panel-head">
             <div>
               <h3>SEO uyarıları</h3>
-              <p>Tıklayınca açıklama ve çözüm adımı açılır</p>
+              <p>
+                {actionableSeoCount > 0
+                  ? `${actionableSeoCount} iyileştirme önerisi`
+                  : 'Sayfa meta ve medya kontrolleri'}
+              </p>
             </div>
             <button type="button" className="cms-btn cms-btn-ghost cms-btn-sm" onClick={onOpenSeo}>
               SEO Merkezi
             </button>
           </div>
           {(data.seo_warnings || []).length === 0 ? (
-            <div className="cms-empty-state">Şimdilik SEO uyarısı yok.</div>
+            <div className="cms-empty-state">Şimdilik SEO önerisi yok.</div>
           ) : (
             <ul className="cms-warn-accordion">
               {data.seo_warnings.slice(0, 8).map((w, i) => {
                 const help = explainSeoWarning(w.code, w.message);
+                const severity = seoWarningSeverity(w.code, w.severity);
                 const open = openWarn === i;
                 return (
-                  <li key={i} className={open ? 'is-open' : ''}>
+                  <li key={i} className={`${open ? 'is-open' : ''} severity-${severity}`}>
                     <button type="button" className="cms-warn-toggle" onClick={() => setOpenWarn(open ? null : i)}>
                       <span className="cms-warn-code">{help.title}</span>
+                      {severity === 'info' ? (
+                        <span className="cms-pill info">Bilgi</span>
+                      ) : null}
                       <span className="cms-warn-chevron">{open ? '−' : '+'}</span>
                     </button>
                     {open && (

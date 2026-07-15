@@ -90,21 +90,13 @@ def _blocks_for_spec(
 
 
 def _sync_page_meta(page: WebPage, spec: SystemDefaultPageSpec, base_url: str) -> bool:
+    """Mevcut sayfada yalnızca boş meta alanlarını tamamlar; durum/yayın ezilmez."""
     dirty = False
     if not getattr(page, 'is_system_default', False):
         page.is_system_default = True
         dirty = True
-    if page.status != WebPage.STATUS_PUBLISHED:
-        page.status = WebPage.STATUS_PUBLISHED
-        dirty = True
-    if not page.sitemap_include:
-        page.sitemap_include = True
-        dirty = True
     if spec.is_homepage and not page.is_homepage:
         page.is_homepage = True
-        dirty = True
-    if page.show_in_menu != spec.show_in_menu:
-        page.show_in_menu = spec.show_in_menu
         dirty = True
     if not (page.meta_title or '').strip():
         page.meta_title = spec.title[:70]

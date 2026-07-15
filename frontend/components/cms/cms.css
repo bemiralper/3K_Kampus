@@ -268,6 +268,31 @@
   color: #c2410c;
 }
 
+.cms-callout--warn {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.cms-callout--warn strong,
+.cms-callout--warn p {
+  color: inherit;
+}
+
+.cms-callout--info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
+.cms-callout--info strong {
+  color: #1e3a8a;
+}
+
+.cms-callout--info p {
+  color: #1d4ed8;
+}
+
 .cms-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -429,6 +454,14 @@
 .cms-pill.bad {
   background: #ffedd5;
   color: #9a3412;
+}
+
+.cms-pill.info {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 10px;
+  margin-left: auto;
+  margin-right: 0.35rem;
 }
 
 .cms-two-col {
@@ -1072,6 +1105,11 @@
 .cms-badge.draft {
   background: #fef3c7;
   color: #92400e;
+}
+
+.cms-badge.archived {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .cms-public-page {

@@ -88,37 +88,66 @@ def score_page(page: WebPage, blocks: list[dict] | None = None) -> dict[str, Any
 
 
 def site_seo_warnings(kurum_id: int) -> list[dict[str, Any]]:
+    """Yayında sayfalar ve medya için SEO uyarıları (robots.txt → site sağlığı kartında)."""
     warnings: list[dict[str, Any]] = []
-    pages = list(WebPage.objects.filter(kurum_id=kurum_id))
+    pages = list(
+        WebPage.objects.filter(kurum_id=kurum_id, status=WebPage.STATUS_PUBLISHED),
+    )
     titles: dict[str, list[int]] = {}
     descs: dict[str, list[int]] = {}
     for p in pages:
         mt = (p.meta_title or p.title or '').strip().lower()
         md = (p.meta_description or '').strip().lower()
         if not (p.meta_title or p.title):
-            warnings.append({'code': 'page_missing_meta_title', 'page_id': p.id, 'message': f'Eksik meta title: {p.slug}'})
+            warnings.append({
+                'code': 'page_missing_meta_title',
+                'severity': 'warn',
+                'page_id': p.id,
+                'message': f'Eksik meta title: {p.slug}',
+            })
         if not p.meta_description:
-            warnings.append({'code': 'page_missing_meta_description', 'page_id': p.id, 'message': f'Eksik meta description: {p.slug}'})
+            warnings.append({
+                'code': 'page_missing_meta_description',
+                'severity': 'warn',
+                'page_id': p.id,
+                'message': f'Eksik meta description: {p.slug}',
+            })
         if mt:
             titles.setdefault(mt, []).append(p.id)
         if md:
             descs.setdefault(md, []).append(p.id)
-        if not p.canonical_url and p.status == WebPage.STATUS_PUBLISHED and not p.is_homepage:
-            warnings.append({'code': 'missing_canonical', 'page_id': p.id, 'message': f'Canonical eksik: {p.slug}'})
+        if not p.canonical_url and not p.is_homepage:
+            warnings.append({
+                'code': 'missing_canonical',
+                'severity': 'warn',
+                'page_id': p.id,
+                'message': f'Canonical eksik: {p.slug}',
+            })
 
     for key, ids in titles.items():
         if key and len(ids) > 1:
-            warnings.append({'code': 'duplicate_title', 'page_ids': ids, 'message': 'Yinelenen meta başlık'})
+            warnings.append({
+                'code': 'duplicate_title',
+                'severity': 'warn',
+                'page_ids': ids,
+                'message': 'Yinelenen meta başlık',
+            })
     for key, ids in descs.items():
         if key and len(ids) > 1:
-            warnings.append({'code': 'duplicate_description', 'page_ids': ids, 'message': 'Yinelenen meta açıklama'})
+            warnings.append({
+                'code': 'duplicate_description',
+                'severity': 'warn',
+                'page_ids': ids,
+                'message': 'Yinelenen meta açıklama',
+            })
 
     missing_alt = MediaAsset.objects.filter(kurum_id=kurum_id, kind=MediaAsset.KIND_IMAGE, alt_text='').count()
     if missing_alt:
-        warnings.append({'code': 'media_missing_alt', 'count': missing_alt, 'message': f'{missing_alt} görselde alt text yok'})
-
-    integ = IntegrationSettings.objects.filter(kurum_id=kurum_id).first()
-    if not integ or not (integ.robots_txt or '').strip():
-        warnings.append({'code': 'robots_default', 'message': 'Özel robots.txt tanımlı değil (varsayılan kullanılacak)'})
+        warnings.append({
+            'code': 'media_missing_alt',
+            'severity': 'warn',
+            'count': missing_alt,
+            'message': f'{missing_alt} görselde alt text yok',
+        })
 
     return warnings

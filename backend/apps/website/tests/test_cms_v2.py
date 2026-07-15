@@ -140,6 +140,29 @@ class SystemDefaultPagesTests(TestCase):
         with self.assertRaises(ValueError):
             svc.delete_page(page)
 
+    def test_ensure_does_not_republish_archived_page(self):
+        ensure_system_default_pages(self.kurum.id)
+        page = WebPage.objects.get(kurum=self.kurum, slug='programlar')
+        page.status = WebPage.STATUS_ARCHIVED
+        page.sitemap_include = False
+        page.save()
+        ensure_system_default_pages(self.kurum.id)
+        page.refresh_from_db()
+        self.assertEqual(page.status, WebPage.STATUS_ARCHIVED)
+        self.assertFalse(page.sitemap_include)
+
+    def test_seo_warnings_skip_robots_and_draft_pages(self):
+        from apps.website.application.seo_service import site_seo_warnings
+
+        ensure_system_default_pages(self.kurum.id)
+        WebPage.objects.filter(kurum=self.kurum, slug='programlar').update(
+            status=WebPage.STATUS_DRAFT,
+            meta_description='',
+        )
+        codes = {w['code'] for w in site_seo_warnings(self.kurum.id)}
+        self.assertNotIn('robots_default', codes)
+        self.assertNotIn('page_missing_meta_description', codes)
+
 
 class CmsV2ApiTests(TestCase):
     def setUp(self):

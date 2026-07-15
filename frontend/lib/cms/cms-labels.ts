@@ -41,5 +41,9 @@ export const contentKindLabel = (v?: string | null) => label(CONTENT_KIND, v);
 export const mediaKindLabel = (v?: string | null) => label(MEDIA_KIND, v);
 export const menuLocationLabel = (v?: string | null) => label(MENU_LOCATION, v);
 
-/** Yayın durumuna göre rozet CSS sınıfı (published/draft). */
-export const statusBadgeClass = (v?: string | null) => (v === 'published' ? 'published' : 'draft');
+/** Yayın durumuna göre rozet CSS sınıfı. */
+export const statusBadgeClass = (v?: string | null) => {
+  if (v === 'published') return 'published';
+  if (v === 'archived') return 'archived';
+  return 'draft';
+};

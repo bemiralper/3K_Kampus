@@ -399,7 +399,7 @@ export type CmsPage = {
 export type CmsDashboard = {
   totals: Record<string, number>;
   recent_pages: CmsPage[];
-  seo_warnings: Array<{ level?: string; message: string; page_id?: number; code?: string }>;
+  seo_warnings: Array<{ level?: string; severity?: 'info' | 'warn'; message: string; page_id?: number; code?: string }>;
   health: Record<string, boolean>;
 };
 

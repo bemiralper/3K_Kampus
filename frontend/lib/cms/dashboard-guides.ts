@@ -101,6 +101,14 @@ export const SEO_CODE_HELP: Record<
   },
 };
 
+/** Site sağlığı kartında zaten gösterilen kodlar — üst banner sayımına dahil edilmez. */
+export const SEO_INFO_ONLY_CODES = new Set(['robots_default']);
+
+export function seoWarningSeverity(code?: string, level?: string): 'info' | 'warn' {
+  if (level === 'info' || (code && SEO_INFO_ONLY_CODES.has(code))) return 'info';
+  return 'warn';
+}
+
 export function explainSeoWarning(code?: string, fallbackMessage?: string) {
   if (code && SEO_CODE_HELP[code]) return SEO_CODE_HELP[code];
   return {
