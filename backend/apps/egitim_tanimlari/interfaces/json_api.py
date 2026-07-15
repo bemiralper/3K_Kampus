@@ -47,7 +47,7 @@ def legacy_tanimlar_api(request):
     branslar = brans_service.get_all_branslar(sube_id)
     active_tab = request.GET.get('tab', 'sinif_seviyeleri')
 
-    return JsonResponse({
+    response = JsonResponse({
         'success': True,
         'data': {
             'active_tab': active_tab,
@@ -76,6 +76,9 @@ def legacy_tanimlar_api(request):
             ],
         },
     })
+    response['Cache-Control'] = 'no-store'
+    response['Vary'] = 'X-Sube-ID'
+    return response
 
 
 @csrf_exempt

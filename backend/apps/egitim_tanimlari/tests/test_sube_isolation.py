@@ -80,3 +80,40 @@ class EgitimTanimlariSubeIsolationTest(TestCase):
         ids = {row['id'] for row in res.json()['data']}
         self.assertIn(self.brans_b.id, ids)
         self.assertNotIn(self.brans_a.id, ids)
+
+    def test_legacy_tanimlar_brans_scoped_via_query_param(self):
+        res = self.client.get(
+            '/egitim-tanimlari/api/legacy/tanimlar/?sube_id=%s' % self.sube_b.id,
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+        )
+        self.assertEqual(res.status_code, 200)
+        ids = {row['id'] for row in res.json()['data']['branslar']}
+        self.assertIn(self.brans_b.id, ids)
+        self.assertNotIn(self.brans_a.id, ids)
+
+    def test_brans_create_scoped_to_active_sube(self):
+        res = self.client.post(
+            '/egitim-tanimlari/api/brans/',
+            data='{"ad": "Kimya B", "kod": "KIM-B", "aktif_mi": true}',
+            content_type='application/json',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_b.id),
+        )
+        self.assertEqual(res.status_code, 200)
+        created_id = res.json()['data']['id']
+
+        list_b = self.client.get(
+            '/egitim-tanimlari/api/brans/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_b.id),
+        )
+        ids_b = {row['id'] for row in list_b.json()['data']}
+        self.assertIn(created_id, ids_b)
+
+        list_a = self.client.get(
+            '/egitim-tanimlari/api/brans/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_a.id),
+        )
+        ids_a = {row['id'] for row in list_a.json()['data']}
+        self.assertNotIn(created_id, ids_a)
