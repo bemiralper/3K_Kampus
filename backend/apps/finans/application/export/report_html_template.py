@@ -35,20 +35,45 @@ def finans_report_footer_template(meta: dict[str, Any] | None = None) -> str:
 """
 
 
+def _normalize_media_relative_path(path_or_url: str) -> str:
+    raw = path_or_url.split('?', 1)[0].split('#', 1)[0].lstrip('/')
+    if raw.startswith('media/'):
+        raw = raw[6:]
+    return raw
+
+
+def _read_storage_bytes(name: str) -> bytes | None:
+    if not name:
+        return None
+    rel = _normalize_media_relative_path(name)
+    try:
+        from django.core.files.storage import default_storage
+        if default_storage.exists(rel):
+            with default_storage.open(rel, 'rb') as fh:
+                return fh.read()
+    except Exception:
+        pass
+    path = Path(settings.MEDIA_ROOT) / rel
+    if path.is_file():
+        return path.read_bytes()
+    return None
+
+
 def _image_field_data_uri(field) -> str | None:
     """ImageField / FileField içeriğini data URI olarak döner (storage uyumlu)."""
     if not field:
         return None
     try:
         name = getattr(field, 'name', '') or 'logo.png'
+        raw = None
         if hasattr(field, 'open'):
-            with field.open('rb') as fh:
-                raw = fh.read()
-        else:
-            path = Path(field.path)
-            if not path.is_file():
-                return None
-            raw = path.read_bytes()
+            try:
+                with field.open('rb') as fh:
+                    raw = fh.read()
+            except Exception:
+                raw = None
+        if not raw:
+            raw = _read_storage_bytes(name)
         if not raw:
             return None
         encoded = base64.b64encode(raw).decode('ascii')
@@ -60,23 +85,11 @@ def _image_field_data_uri(field) -> str | None:
 def _media_path_to_data_uri(relative_path: str) -> str | None:
     if not relative_path:
         return None
-    rel = relative_path.lstrip('/')
-    if rel.startswith('media/'):
-        rel = rel[6:]
-    try:
-        from django.core.files.storage import default_storage
-        if default_storage.exists(rel):
-            with default_storage.open(rel, 'rb') as fh:
-                raw = fh.read()
-            if raw:
-                encoded = base64.b64encode(raw).decode('ascii')
-                return f'data:{_mime_for(Path(rel))};base64,{encoded}'
-    except Exception:
-        pass
-    path = Path(settings.MEDIA_ROOT) / rel
-    if path.is_file():
-        encoded = base64.b64encode(path.read_bytes()).decode('ascii')
-        return f'data:{_mime_for(path)};base64,{encoded}'
+    rel = _normalize_media_relative_path(relative_path)
+    raw = _read_storage_bytes(rel)
+    if raw:
+        encoded = base64.b64encode(raw).decode('ascii')
+        return f'data:{_mime_for(Path(rel))};base64,{encoded}'
     return None
 
 
@@ -92,15 +105,47 @@ def _url_to_data_uri(url: str | None) -> str | None:
 
 def _logo_data_uri() -> str | None:
     candidates = [
+        Path(settings.BASE_DIR) / "static" / "img" / "beyaz-logo.png",
         Path(settings.BASE_DIR).parent / "frontend" / "public" / "img" / "beyaz-logo.png",
-        Path(settings.BASE_DIR).parent / "frontend" / "public" / "img" / "3k-logo.png",
         Path(settings.BASE_DIR) / "static" / "img" / "3k-logo.png",
+        Path(settings.BASE_DIR).parent / "frontend" / "public" / "img" / "3k-logo.png",
     ]
     for path in candidates:
         if path.is_file():
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             return f"data:image/png;base64,{encoded}"
     return None
+
+
+def _sube_banner_logo_data_uri(sube_id) -> str | None:
+    """Şube login_logo → app_logo (PDF koyu banner)."""
+    if not sube_id:
+        return None
+    try:
+        from apps.sube.domain.models import Sube
+        sube = Sube.objects.filter(id=sube_id).first()
+    except Exception:
+        return None
+    if not sube:
+        return None
+    for field in ("login_logo", "app_logo"):
+        uri = _image_field_data_uri(getattr(sube, field, None))
+        if uri:
+            return uri
+    return None
+
+
+def resolve_sube_banner_logo(
+    sube_id=None,
+    login_logo_url: str | None = None,
+) -> str:
+    """Sözleşme PDF — şube logosu; her zaman data URI döner."""
+    logo = _sube_banner_logo_data_uri(sube_id)
+    if not logo and login_logo_url:
+        logo = _url_to_data_uri(login_logo_url)
+    if not logo:
+        logo = _logo_data_uri()
+    return logo or ''
 
 
 def _mime_for(path: Path) -> str:
@@ -181,6 +226,76 @@ def resolve_login_banner_logo(
     if logo:
         return logo
     return _logo_data_uri()
+
+
+def _app_logo_static_data_uri() -> str | None:
+    """Açık zemin belgeler için koyu 3K logosu (beyaz logo değil)."""
+    candidates = [
+        Path(settings.BASE_DIR).parent / "frontend" / "public" / "img" / "3k-logo.png",
+        Path(settings.BASE_DIR) / "static" / "img" / "3k-logo.png",
+    ]
+    for path in candidates:
+        if path.is_file():
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            return f"data:image/png;base64,{encoded}"
+    return _logo_data_uri()
+
+
+def resolve_sube_print_logo(
+    sube_id=None,
+    *,
+    app_logo_url: str | None = None,
+    login_logo_url: str | None = None,
+    login_bg: str | None = None,
+    login_bg_2: str | None = None,
+) -> tuple[str | None, bool, str, str]:
+    """Şube yazdırma logosu: app_logo → login_logo (koyu zemin) → statik 3K.
+
+    Returns: (data_uri, on_dark_background, bg1, bg2)
+    """
+    bg1 = (login_bg or "").strip() or "#1e3a5f"
+    bg2 = (login_bg_2 or "").strip() or "#2d5a87"
+    on_dark = False
+    logo = None
+
+    if sube_id:
+        try:
+            from apps.sube.domain.models import Sube
+            sube = Sube.objects.filter(id=sube_id).first()
+        except Exception:
+            sube = None
+        if sube:
+            logo = _image_field_data_uri(getattr(sube, "app_logo", None))
+            if not logo:
+                logo = _image_field_data_uri(getattr(sube, "login_logo", None))
+                if logo:
+                    on_dark = True
+            bg1 = (getattr(sube, "login_arkaplan_rengi", None) or "").strip() or bg1
+            bg2 = (getattr(sube, "login_arkaplan_rengi_2", None) or "").strip() or bg2
+
+    if not logo:
+        logo = _url_to_data_uri(app_logo_url)
+    if not logo and login_logo_url:
+        logo = _url_to_data_uri(login_logo_url)
+        if logo:
+            on_dark = True
+    if not logo:
+        logo = _app_logo_static_data_uri()
+        on_dark = False
+
+    return logo, on_dark, bg1, bg2
+
+
+def resolve_document_logo(
+    kurum_id,
+    sube_id=None,
+    app_logo_url: str | None = None,
+) -> str | None:
+    """Açık arka plan PDF/belge: şube app_logo, yoksa koyu 3K logosu."""
+    logo, _, _, _ = resolve_sube_print_logo(sube_id, app_logo_url=app_logo_url)
+    if logo:
+        return logo
+    return _app_logo_static_data_uri()
 
 
 def _resolve_logo(filters_meta: dict | None) -> str | None:

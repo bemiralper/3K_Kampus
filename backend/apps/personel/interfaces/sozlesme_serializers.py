@@ -12,6 +12,7 @@ from apps.personel.application.contract_calc_service import (
     sozlesme_belge_basligi,
 )
 from apps.personel.domain.sozlesme_models import UcretTipi
+from apps.kurum.branding import _media_url
 
 
 def _dogrulama_kodu(sozlesme_no: str, sozlesme_id: int) -> str:
@@ -30,16 +31,42 @@ def _time_str(t):
     return t.strftime('%H:%M')
 
 
+def _effective_sube_id(s) -> int | None:
+    if getattr(s, 'sube_id', None):
+        return s.sube_id
+    gorev = getattr(s, 'gorevlendirme', None)
+    if gorev and getattr(gorev, 'gorev_sube_id', None):
+        return gorev.gorev_sube_id
+    personel = getattr(s, 'personel', None)
+    if personel and getattr(personel, 'sube_id', None):
+        return personel.sube_id
+    return None
+
+
+def _sube_for_logo(s):
+    sube = getattr(s, 'sube', None)
+    if sube:
+        return sube
+    sube_id = _effective_sube_id(s)
+    if not sube_id:
+        return None
+    try:
+        from apps.sube.domain.models import Sube
+        return Sube.objects.filter(id=sube_id).first()
+    except Exception:
+        return None
+
+
 def _login_logo_url(s) -> str | None:
-    for entity in (getattr(s, 'sube', None), getattr(s, 'kurum', None)):
-        if not entity:
-            continue
-        logo = getattr(entity, 'login_logo', None)
-        if logo:
-            try:
-                return logo.url
-            except Exception:
-                continue
+    """Yalnızca şube logosu — login_logo, yoksa app_logo."""
+    sube = _sube_for_logo(s)
+    if not sube:
+        return None
+    version = int(sube.updated_at.timestamp()) if getattr(sube, 'updated_at', None) else None
+    for field in ('login_logo', 'app_logo'):
+        url = _media_url(None, getattr(sube, field, None), cache_bust=version)
+        if url:
+            return url
     return None
 
 
@@ -110,8 +137,10 @@ def serialize_sozlesme(s):
         'departman_snapshot': s.departman_snapshot,
         'egitim_yili_id': s.egitim_yili_id,
         'egitim_yili_display': str(s.egitim_yili),
-        'sube_id': s.sube_id,
-        'sube_ad': s.sube.ad if s.sube_id else None,
+        'sube_id': s.sube_id or _effective_sube_id(s),
+        'sube_ad': (s.sube.ad if s.sube_id else None) or (
+            getattr(_sube_for_logo(s), 'ad', None)
+        ),
         'gorevlendirme_id': s.gorevlendirme_id,
         'rol_kodu': rol_kodu,
         'rol_ad': rol_ad,

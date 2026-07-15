@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from apps.personel.application.contract_calc_service import format_calisma_suresi_ay, sozlesme_belge_basligi
-from apps.finans.application.export.report_html_template import resolve_login_banner_logo
+from apps.finans.application.export.report_html_template import resolve_sube_banner_logo
 
 INK = '#0f172a'
 MUTED = '#64748b'
@@ -81,16 +81,11 @@ def build_personel_sozlesme_html(data: dict) -> str:
             rol_ad=data.get('rol_ad') or '',
         )
     )
-    logo = resolve_login_banner_logo(
-        data.get('kurum_id'),
+    logo = resolve_sube_banner_logo(
         data.get('sube_id'),
         login_logo_url=data.get('login_logo_url'),
     )
-    logo_html = (
-        f'<img src="{logo}" alt="" class="logo" />'
-        if logo
-        else '<div class="logo-mark">3K</div>'
-    )
+    logo_html = f'<img src="{logo}" alt="Logo" class="logo" />'
 
     maas_rows = ''
     for row in data.get('maas_plani') or []:
@@ -209,34 +204,30 @@ def build_personel_sozlesme_html(data: dict) -> str:
   }}
   .sheet {{ max-width: 190mm; margin: 0 auto; }}
 
-  /* Header — flat, compact */
+  /* Header — koyu banner (şube login logosu beyaz; açık zeminde kaybolmasın) */
   .top {{
     display: grid;
     grid-template-columns: auto 1fr auto;
     gap: 12px;
     align-items: center;
-    padding-bottom: 10px;
-    border-bottom: 2.5px solid {ACCENT};
+    padding: 14px 16px;
     margin-bottom: 14px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, {ACCENT} 0%, #2563eb 100%);
+    color: #fff;
   }}
-  .logo {{ height: 36px; width: auto; object-fit: contain; }}
-  .logo-mark {{
-    width: 36px; height: 36px; border-radius: 6px;
-    background: {ACCENT}; color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 11pt;
-  }}
+  .logo {{ height: 44px; width: auto; max-width: 160px; object-fit: contain; }}
   .brand h1 {{
-    margin: 0; font-size: 13pt; font-weight: 700; letter-spacing: -0.02em;
+    margin: 0; font-size: 13pt; font-weight: 700; letter-spacing: -0.02em; color: #fff;
   }}
   .brand p {{
-    margin: 2px 0 0; font-size: 8pt; color: {MUTED};
+    margin: 2px 0 0; font-size: 8pt; color: rgba(255,255,255,.8);
   }}
   .doc-id {{
-    text-align: right; font-size: 8pt; color: {MUTED}; line-height: 1.35;
+    text-align: right; font-size: 8pt; color: rgba(255,255,255,.8); line-height: 1.35;
   }}
   .doc-id strong {{
-    display: block; color: {ACCENT}; font-size: 11pt; font-weight: 700;
+    display: block; color: #fff; font-size: 11pt; font-weight: 700;
     letter-spacing: 0.02em;
   }}
 

@@ -45,7 +45,7 @@ class SozlesmeRepository:
 
     _base_qs = PersonelSozlesme.objects.select_related(
         'personel', 'egitim_yili', 'kurum', 'sube', 'gorevlendirme',
-        'gorevlendirme__brans', 'gorevlendirme__rol',
+        'gorevlendirme__brans', 'gorevlendirme__rol', 'gorevlendirme__gorev_sube',
     ).prefetch_related(*_prefetch)
 
     def get_all(self, kurum_id, egitim_yili_id=None, filters=None):

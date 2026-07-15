@@ -128,7 +128,18 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
   const kurumAd = data.kurum?.ad || data.sube_ad || "Kurum";
   const belgeBasligi =
     data.belge_basligi || (data.is_ogretmen ? "Öğretmen İş Sözleşmesi" : "Personel İş Sözleşmesi");
-  const logoSrc = data.login_logo_url || "/img/beyaz-logo.png";
+  const logoSrc = (() => {
+    const raw = data.login_logo_url;
+    if (!raw) return "/img/beyaz-logo.png";
+    if (raw.startsWith("/media/")) return raw;
+    try {
+      const u = new URL(raw, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+      if (u.pathname.startsWith("/media/")) return `${u.pathname}${u.search}`;
+    } catch {
+      /* ignore */
+    }
+    return raw.startsWith("/") ? raw : "/img/beyaz-logo.png";
+  })();
   const turLabel = data.sozlesme_turu_display || data.sozlesme_turu;
   const qrValue = `${data.sozlesme_no}|${data.dogrulama_kodu || ""}`;
   const duzenlemeTarihi = fmtTarih(data.duzenlenme_tarihi || data.baslangic_tarihi);
@@ -172,32 +183,40 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
         }
       `}</style>
 
-      {/* Header */}
+      {/* Header — koyu banner: şube login logosu burada görünür */}
       <header
         style={{
           display: "grid",
           gridTemplateColumns: "auto 1fr auto",
           gap: 12,
           alignItems: "center",
-          paddingBottom: 10,
-          borderBottom: `2.5px solid ${ACCENT}`,
+          padding: "14px 16px",
           marginBottom: 14,
+          borderRadius: 8,
+          background: `linear-gradient(135deg, ${ACCENT} 0%, #2563eb 100%)`,
+          color: "#fff",
         }}
       >
-        <img src={logoSrc} alt="" style={{ height: 36, width: "auto", objectFit: "contain" }} />
+        <img
+          src={logoSrc}
+          alt="Logo"
+          style={{ height: 44, width: "auto", maxWidth: 160, objectFit: "contain" }}
+        />
         <div>
-          <h1 style={{ margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em" }}>
+          <h1 style={{ margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff" }}>
             {kurumAd}
           </h1>
           {brandBits.length > 0 && (
-            <p style={{ margin: "2px 0 0", fontSize: 8, color: MUTED }}>{brandBits.join(" · ")}</p>
+            <p style={{ margin: "2px 0 0", fontSize: 8, color: "rgba(255,255,255,.8)" }}>
+              {brandBits.join(" · ")}
+            </p>
           )}
         </div>
-        <div style={{ textAlign: "right", fontSize: 8, color: MUTED, lineHeight: 1.35 }}>
+        <div style={{ textAlign: "right", fontSize: 8, color: "rgba(255,255,255,.8)", lineHeight: 1.35 }}>
           <strong
             style={{
               display: "block",
-              color: ACCENT,
+              color: "#fff",
               fontSize: 11,
               fontWeight: 700,
               letterSpacing: "0.02em",
@@ -207,7 +226,7 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
           </strong>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
             <span>Doğrulama: {data.dogrulama_kodu}</span>
-            <QRCode value={qrValue} size={40} bordered={false} color={ACCENT} bgColor="transparent" />
+            <QRCode value={qrValue} size={40} bordered={false} color="#fff" bgColor="transparent" />
           </div>
         </div>
       </header>

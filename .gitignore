@@ -66,6 +66,9 @@ library-module/
 
 # Static (üretilmiş dosyalar)
 static/
+!backend/static/
+!backend/static/img/
+!backend/static/img/**
 
 # Responsive template
 Responsive Sidebar With Collapsing/

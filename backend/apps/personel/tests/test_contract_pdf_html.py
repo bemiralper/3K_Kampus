@@ -54,3 +54,13 @@ class ContractPdfHtmlTests(SimpleTestCase):
         self.assertIn('3K Kampüs ·', html)
         self.assertNotIn('3K Kampüs LMS', html)
         self.assertIn('10 ay', html)
+        self.assertIn('<img src="data:image/', html)
+
+    def test_logo_from_sube_media_url_with_cache_bust(self):
+        from apps.finans.application.export.report_html_template import resolve_sube_banner_logo
+
+        logo = resolve_sube_banner_logo(
+            None,
+            login_logo_url='/media/sube_branding/2/login_logo.png?v=1710000000',
+        )
+        self.assertTrue(logo.startswith('data:image/'), logo[:40])
