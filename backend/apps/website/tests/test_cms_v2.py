@@ -6,6 +6,8 @@ from apps.kurum.domain.models import Kurum
 from apps.website.application.migrate_service import migrate_kurum_to_pages
 from apps.website.application.page_service import PageService
 from apps.website.application.seo_service import score_page
+from apps.website.application.system_default_pages import ensure_system_default_pages
+from apps.website.application.system_default_specs import SYSTEM_DEFAULT_SLUGS
 from apps.website.blocks.registry import new_block, validate_blocks, ALLOWED_BLOCK_TYPES
 from apps.website.cms_models import WebPage, WebPageVersion
 from apps.website.models import Duyuru, HeroSlide, SiteSettings
@@ -109,6 +111,36 @@ class MigrateServiceTests(TestCase):
         self.assertEqual(WebPage.objects.filter(kurum=self.kurum, is_homepage=True).count(), 1)
 
 
+class SystemDefaultPagesTests(TestCase):
+    def setUp(self):
+        self.kurum = Kurum.objects.create(ad='3K Kampüs', kod='3K')
+
+    def test_ensure_creates_all_default_pages(self):
+        result = ensure_system_default_pages(self.kurum.id)
+        self.assertTrue(result['ok'])
+        slugs = set(WebPage.objects.filter(kurum=self.kurum).values_list('slug', flat=True))
+        self.assertTrue(SYSTEM_DEFAULT_SLUGS.issubset(slugs))
+        for page in WebPage.objects.filter(kurum=self.kurum, slug__in=SYSTEM_DEFAULT_SLUGS):
+            self.assertTrue(page.is_system_default)
+            self.assertEqual(page.status, WebPage.STATUS_PUBLISHED)
+            self.assertTrue(page.sitemap_include)
+            self.assertTrue(page.versions.exists())
+
+    def test_ensure_idempotent(self):
+        ensure_system_default_pages(self.kurum.id)
+        second = ensure_system_default_pages(self.kurum.id)
+        self.assertTrue(second['ok'])
+        self.assertEqual(second['created'], [])
+        self.assertEqual(WebPage.objects.filter(kurum=self.kurum).count(), len(SYSTEM_DEFAULT_SLUGS))
+
+    def test_system_page_cannot_be_deleted(self):
+        ensure_system_default_pages(self.kurum.id)
+        page = WebPage.objects.get(kurum=self.kurum, slug='hakkimizda')
+        svc = PageService()
+        with self.assertRaises(ValueError):
+            svc.delete_page(page)
+
+
 class CmsV2ApiTests(TestCase):
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='API Kurum', kod='API')
@@ -152,7 +184,20 @@ class CmsV2ApiTests(TestCase):
     def test_dashboard(self):
         res = self.client.get('/website-yonetimi/api/v2/dashboard/')
         self.assertEqual(res.status_code, 200)
-        self.assertIn('totals', res.json()['data'])
+        body = res.json()['data']
+        self.assertIn('totals', body)
+        self.assertGreaterEqual(body['totals']['pages'], len(SYSTEM_DEFAULT_SLUGS))
+        self.assertTrue(body['health']['sitemap_ok'])
+
+    def test_pages_list_includes_system_defaults(self):
+        res = self.client.get('/website-yonetimi/api/v2/pages/')
+        self.assertEqual(res.status_code, 200)
+        slugs = {p['slug'] for p in res.json()['data']}
+        self.assertIn('hakkimizda', slugs)
+        self.assertIn('duyurular', slugs)
+        hakk = next(p for p in res.json()['data'] if p['slug'] == 'hakkimizda')
+        self.assertTrue(hakk['is_system_default'])
+        self.assertEqual(hakk['public_path'], '/hakkimizda')
 
     def test_backup_resources_registered(self):
         from apps.website.backup_resources import RESOURCES

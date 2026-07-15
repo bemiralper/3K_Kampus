@@ -369,6 +369,8 @@ export type CmsPage = {
   show_in_menu?: boolean;
   show_breadcrumb?: boolean;
   is_homepage?: boolean;
+  is_system_default?: boolean;
+  public_path?: string | null;
   publish_at?: string | null;
   unpublish_at?: string | null;
   parent_id?: number | null;

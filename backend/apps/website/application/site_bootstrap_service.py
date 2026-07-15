@@ -34,6 +34,7 @@ def _publish_page(
     meta_description: str = '',
     label: str = 'Bootstrap içerik',
     force: bool = False,
+    is_system_default: bool = True,
 ) -> tuple[WebPage, bool]:
     """Sayfa yoksa oluşturur; force ise blokları yeniler. Dönüş: (page, created_or_updated)."""
     page = WebPage.objects.filter(kurum_id=kurum_id, locale='tr', slug=slug).first()
@@ -45,6 +46,7 @@ def _publish_page(
             slug=slug,
             status=WebPage.STATUS_PUBLISHED,
             is_homepage=is_homepage,
+            is_system_default=is_system_default,
             show_in_menu=show_in_menu,
             meta_title=(meta_title or title)[:70],
             meta_description=(meta_description or '')[:320],
@@ -65,6 +67,7 @@ def _publish_page(
         if meta_description:
             page.meta_description = meta_description[:320]
         page.sitemap_include = True
+        page.is_system_default = is_system_default or page.is_system_default
         page.save()
 
     next_ver = (page.versions.count() or 0) + 1
@@ -301,6 +304,21 @@ def build_sistem_blocks() -> list[dict]:
             'buttonLabel': '3K Sistemine git',
             'buttonUrl': '/3k-sistemi',
         }),
+    ]
+
+
+def build_duyurular_blocks() -> list[dict]:
+    return [
+        new_block('heading', {'text': 'Duyurular', 'level': 1, 'align': 'center'}),
+        new_block('richText', {
+            'html': (
+                '<p style="text-align:center;color:#475569">'
+                'Kurum duyuru ve haberleri. Asıl liste '
+                '<a href="/duyurular">/duyurular</a> sayfasında gösterilir.'
+                '</p>'
+            ),
+        }),
+        new_block('duyurularList', {'limit': 24, 'kind': 'duyuru'}),
     ]
 
 
@@ -544,6 +562,12 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
         ('hakkimizda', 'Hakkımızda', lambda: build_hakkimizda_blocks(kurum), 'Kurum hakkında bilgi.'),
         ('3k-sistemi', '3K Sistemi', build_sistem_blocks, '3K dijital eğitim sistemi.'),
         ('programlar', 'Programlar', build_programlar_blocks, 'LGS, YKS ve okul destek programları.'),
+        (
+            'duyurular',
+            'Duyurular',
+            build_duyurular_blocks,
+            'Güncel duyuru ve haberler.',
+        ),
         (
             'iletisim',
             'İletişim',

@@ -6,6 +6,7 @@ import os
 from django.conf import settings as django_settings
 
 from apps.kurum.domain.models import Kurum
+from apps.website.application.system_default_specs import public_path_for_slug
 from apps.website.cms_models import IntegrationSettings, SiteTheme, WebPage
 from apps.website.models import SiteSettings
 
@@ -186,9 +187,13 @@ def ensure_website_health(kurum_id: int, *, ga4_id: str | None = None) -> dict:
             page.canonical_url = ''
             dirty = True
         if not (page.canonical_url or '').strip():
-            path = '/' if page.is_homepage or page.slug == 'home' else f'/sayfa/{page.slug}'
-            if page.slug in ('kvkk', 'gizlilik', 'kullanim', 'cerez'):
+            dedicated = public_path_for_slug(page.slug)
+            if dedicated:
+                path = dedicated
+            elif page.slug in ('kvkk', 'gizlilik', 'kullanim', 'cerez'):
                 path = f'/yasal/{page.slug}'
+            else:
+                path = '/' if page.is_homepage or page.slug == 'home' else f'/sayfa/{page.slug}'
             page.canonical_url = f'{base}{path}'
             dirty = True
         if not page.sitemap_include and page.status == WebPage.STATUS_PUBLISHED:

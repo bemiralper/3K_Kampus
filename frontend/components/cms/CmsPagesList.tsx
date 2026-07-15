@@ -98,6 +98,7 @@ export default function CmsPagesList({ onOpenBuilder, onMessage }: Props) {
             <thead>
               <tr>
                 <th>Başlık</th>
+                <th>Adres</th>
                 <th>Slug</th>
                 <th>Durum</th>
                 <th>Güncelleme</th>
@@ -110,6 +111,14 @@ export default function CmsPagesList({ onOpenBuilder, onMessage }: Props) {
                   <td>
                     {p.title}
                     {p.is_homepage ? ' ★' : ''}
+                    {p.is_system_default ? (
+                      <span className="cms-badge cms-badge--system" title="Sistem varsayılan sayfa">
+                        Sistem
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="muted" style={{ fontSize: 12 }}>
+                    {p.public_path || (p.slug === 'home' ? '/' : `/sayfa/${p.slug}`)}
                   </td>
                   <td><code>{p.slug}</code></td>
                   <td>

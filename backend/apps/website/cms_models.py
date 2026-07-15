@@ -59,6 +59,11 @@ class WebPage(models.Model):
     show_in_menu = models.BooleanField('Menüde Göster', default=False)
     show_breadcrumb = models.BooleanField('Breadcrumb', default=True)
     is_homepage = models.BooleanField('Anasayfa', default=False)
+    is_system_default = models.BooleanField(
+        'Sistem varsayılanı',
+        default=False,
+        help_text='Kurumsal sitenin hazır sayfaları; silinemez, slug değiştirilmesi önerilmez.',
+    )
     publish_at = models.DateTimeField('Yayın Tarihi', null=True, blank=True)
     unpublish_at = models.DateTimeField('Yayından Kalkma', null=True, blank=True)
 

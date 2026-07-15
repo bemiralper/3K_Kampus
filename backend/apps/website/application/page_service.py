@@ -6,6 +6,7 @@ from django.db.models import Max
 from django.utils import timezone
 from django.utils.text import slugify
 
+from apps.website.application.system_default_specs import public_path_for_slug
 from apps.website.blocks.registry import validate_blocks
 from apps.website.cms_models import RedirectRule, SlugHistory, WebPage, WebPageVersion
 
@@ -21,6 +22,8 @@ def serialize_page(page: WebPage, *, include_blocks: bool = False, version: WebP
         'show_in_menu': page.show_in_menu,
         'show_breadcrumb': page.show_breadcrumb,
         'is_homepage': page.is_homepage,
+        'is_system_default': page.is_system_default,
+        'public_path': public_path_for_slug(page.slug),
         'publish_at': page.publish_at.isoformat() if page.publish_at else None,
         'unpublish_at': page.unpublish_at.isoformat() if page.unpublish_at else None,
         'parent_id': page.parent_id,
@@ -188,6 +191,8 @@ class PageService:
         return page
 
     def delete_page(self, page: WebPage):
+        if page.is_system_default:
+            raise ValueError('Sistem varsayılan sayfalar silinemez.')
         page.delete()
 
     def _apply_seo_fields(self, page: WebPage, data: dict):

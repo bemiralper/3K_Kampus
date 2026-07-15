@@ -27,6 +27,7 @@ from apps.website.application.media_service import create_media_asset, serialize
 from apps.website.application.migrate_service import migrate_kurum_to_pages
 from apps.website.application.page_service import PageService, serialize_page
 from apps.website.application.seo_service import score_page, site_seo_warnings
+from apps.website.application.system_default_pages import ensure_system_default_pages, system_default_sort_key
 from apps.website.blocks.registry import list_block_types, validate_blocks
 from apps.website.cms_models import (
     ContentEntry,
@@ -103,6 +104,8 @@ def api_v2_dashboard(request):
     kurum_id = _kurum_id(request)
     if not kurum_id:
         return _err('Kurum seçilmedi', 400)
+
+    ensure_system_default_pages(kurum_id)
 
     try:
         pages = WebPage.objects.filter(kurum_id=kurum_id)
@@ -185,8 +188,9 @@ def api_v2_pages(request):
     svc = PageService()
 
     if request.method == 'GET':
+        ensure_system_default_pages(kurum_id)
         status = request.GET.get('status')
-        pages = svc.list_pages(kurum_id, status=status)
+        pages = sorted(svc.list_pages(kurum_id, status=status), key=system_default_sort_key)
         return _ok([serialize_page(p) for p in pages])
 
     body = _parse_json(request)
@@ -219,7 +223,10 @@ def api_v2_page_detail(request, pk: int):
         return _ok(serialize_page(page, include_blocks=True, version=version))
 
     if request.method == 'DELETE':
-        svc.delete_page(page)
+        try:
+            svc.delete_page(page)
+        except ValueError as exc:
+            return _err(str(exc), 400)
         return _ok({'deleted': True})
 
     body = _parse_json(request)

@@ -6,8 +6,6 @@ export type StatusFilter = 'all' | 'aktif' | 'pasif';
 export type SortOption = 'name_asc' | 'name_desc' | 'kayit_tarihi_desc' | 'kayit_tarihi_asc' | 'created_at_desc';
 
 interface OgrenciListToolbarProps {
-  title: string;
-  subtitle?: string;
   searchInput: string;
   onSearchInputChange: (value: string) => void;
   onSearchClear: () => void;
@@ -32,8 +30,6 @@ interface OgrenciListToolbarProps {
 }
 
 export default function OgrenciListToolbar({
-  title,
-  subtitle,
   searchInput,
   onSearchInputChange,
   onSearchClear,
@@ -81,21 +77,6 @@ export default function OgrenciListToolbar({
   return (
     <>
       <div className="ogrenci-list-card-header">
-        <div className="ogrenci-list-card-header-top">
-          <div>
-            <h3 className="ogrenci-list-card-title">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-              {title}
-            </h3>
-            {subtitle && <p className="ogrenci-list-card-subtitle">{subtitle}</p>}
-          </div>
-        </div>
-
         <div className={`ogrenci-search-shell${loading ? ' is-searching' : ''}`}>
           <span className="ogrenci-search-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

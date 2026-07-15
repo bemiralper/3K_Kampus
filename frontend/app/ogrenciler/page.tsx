@@ -475,16 +475,6 @@ export default function OgrenciListesiPage() {
 
   const displayedOgrenciler = ogrenciler;
 
-  const listTitle = filterMode === "yillik"
-    ? `${activeEgitimYili?.baslangic_yil}-${activeEgitimYili?.bitis_yil} Öğrenci Kayıtları`
-    : "Öğrenci Listesi";
-
-  const listSubtitle = searchQuery
-    ? "Sunucuda arama yapılıyor; sonuçlar anlık filtreleniyor"
-    : filterMode === "yillik"
-      ? "Seçili eğitim yılına kayıtlı öğrenciler"
-      : "Kurumdaki tüm öğrenci kayıtları";
-
   const hasActiveFilters =
     Boolean(searchInput.trim()) ||
     statusFilter !== "all" ||
@@ -650,26 +640,6 @@ export default function OgrenciListesiPage() {
         </div>
       </div>
 
-      {/* Context Banner */}
-      {activeKurum && activeSube && (
-        <div className="context-banner">
-          <div className="context-banner-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            </svg>
-          </div>
-          <div className="context-banner-content">
-            <span className="context-banner-label">Görüntülenen bağlam</span>
-            <span className="context-banner-value">
-              {activeKurum.ad} · {activeSube.ad}
-              {activeEgitimYili
-                ? ` · ${activeEgitimYili.baslangic_yil}-${activeEgitimYili.bitis_yil}`
-                : ""}
-            </span>
-          </div>
-        </div>
-      )}
-
       {allYearsCount != null && allYearsCount > 0 && !filters.all_years && (
         <div className="ogrenci-all-years-banner">
           <span>
@@ -699,8 +669,6 @@ export default function OgrenciListesiPage() {
       {/* Student List */}
       <div className="ogrenci-list-card">
         <OgrenciListToolbar
-          title={listTitle}
-          subtitle={listSubtitle}
           searchInput={searchInput}
           onSearchInputChange={setSearchInput}
           onSearchClear={handleSearchClear}
@@ -868,46 +836,6 @@ export default function OgrenciListesiPage() {
       )}
 
       <style jsx>{`
-        .context-banner {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px 16px;
-          background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-          border: 1px solid rgba(59, 130, 246, 0.2);
-          border-radius: 10px;
-          margin-bottom: 20px;
-        }
-        
-        .context-banner-icon {
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
-          background: rgba(59, 130, 246, 0.15);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #3b82f6;
-        }
-        
-        .context-banner-content {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-        
-        .context-banner-label {
-          font-size: 12px;
-          color: var(--text-secondary);
-          font-weight: 500;
-        }
-        
-        .context-banner-value {
-          font-size: 14px;
-          color: var(--text-primary);
-          font-weight: 600;
-        }
-        
         .loading-state {
           display: flex;
           flex-direction: column;

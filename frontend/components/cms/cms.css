@@ -1920,6 +1920,14 @@
   color: #0369a1;
 }
 
+.cms-badge--system {
+  margin-left: 6px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 10px;
+  vertical-align: middle;
+}
+
 .cms-drawer--content {
   width: min(880px, 100vw);
 }
