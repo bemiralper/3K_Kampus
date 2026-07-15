@@ -14,7 +14,6 @@ import {
   statusBadgeClass,
   NON_SUBMISSION_LABELS,
 } from "@/components/odev/statusTokens";
-import "./odev-kontrol.css";
 
 interface Assignment {
   id: number;

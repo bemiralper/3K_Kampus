@@ -7,8 +7,6 @@ import { useVectorPrint } from "@/lib/useVectorPrint";
 import { fetchAssignmentReport } from "@/lib/resources-api";
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
-import "./odev-kontrol.css";
-
 /** Backend completion_utils ile aynı mantık */
 function effectiveTaskCompletionPercent(task: {
   completion_status: string;

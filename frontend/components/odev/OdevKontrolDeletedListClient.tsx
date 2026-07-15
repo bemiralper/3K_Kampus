@@ -3,8 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { fetchDeletedAssignments, type DeletedAssignmentRow } from "@/lib/resources-api";
-import "./odev-kontrol.css";
-
 const formatDatetime = (d: string | null) => {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("tr-TR", {

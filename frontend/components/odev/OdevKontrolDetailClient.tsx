@@ -20,8 +20,6 @@ import {
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { getRiskColor, isOverdue } from "@/components/odev/statusTokens";
-import "./odev-kontrol.css";
-
 // ─── Types ───
 interface AssignmentTask {
   id: number;
