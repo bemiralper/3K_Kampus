@@ -17,6 +17,11 @@ def pg_dumpall_binary() -> str:
     return path
 
 
+def psql_binary() -> str:
+    path = os.environ.get('PSQL') or shutil.which('psql') or 'psql'
+    return path
+
+
 def pg_env(db: dict) -> dict:
     env = os.environ.copy()
     password = db.get('PASSWORD', '')

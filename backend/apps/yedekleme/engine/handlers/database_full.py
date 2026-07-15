@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -20,7 +21,87 @@ from apps.yedekleme.infrastructure.pg_tools import (
     pg_dumpall_binary,
     pg_env,
     pg_restore_binary,
+    psql_binary,
 )
+
+
+# export() bu tabloyu bilerek dump dışı bırakır (aktif oturumları korumak
+# için); _recreate_public_schema bu yüzden onu CASCADE'den önce taşıyıp
+# sonra geri koyar — aksi halde şema sıfırlamasıyla kalıcı olarak kaybolur.
+_SCHEMA_RESET_PRESERVE_TABLES = ('django_session',)
+_SCHEMA_RESET_SCRATCH = '_yedekleme_scratch'
+
+
+def _schema_reset_preamble_sql() -> str:
+    """`public` şemasını DROP+CREATE ile sıfırlayan SQL bloğunu üretir.
+
+    Bu SQL, restore edilecek asıl verinin ÖNÜNE eklenip TEK bir psql
+    --single-transaction script'i olarak çalıştırılır (bkz. restore()).
+    Böylece şema sıfırlama + veri geri yükleme tek bir atomik transaction
+    içinde olur: diğer eşzamanlı bağlantılar restore bitene kadar ESKİ
+    şemayı/veriyi görmeye devam eder, COMMIT anında aniden YENİ veriye
+    geçer — "boş şema" görünür hiçbir ara durum oluşmaz.
+
+    pg_restore --clean, DROP komutlarını dump'ın TOC bağımlılık sırasına göre
+    üretir. Ancak bir tablonun PK/UNIQUE index'ine BAŞKA tablo(lar)ın FK'si
+    bağımlıysa (örn. yayin_paketi_pkey ← yayin_paketi_dahil_denemeler,
+    yayin_paketi_dahil_ek_hizmetler), pg_restore bu çapraz-tablo bağımlılığını
+    her zaman doğru sıralayamaz ve:
+        "cannot drop constraint X on table Y because other objects depend on it"
+    hatasıyla DROP başarısız olur. Kalıcı çözüm: DROP/CLEAN'e hiç güvenmemek —
+    şemayı CASCADE ile tamamen silip boş olarak yeniden oluşturmak. Restore
+    SQL'i (pg_restore -f ile üretilen düz metin) --clean İÇERMEDİĞİNDEN artık
+    hiç DROP komutu çalışmaz; bağımlılık sıralaması sorunu kökten ortadan kalkar.
+
+    django_session gibi dump'a dahil edilmeyen tablolar CASCADE ile şemadan
+    silinip bir daha GERİ GELMEZ (pg_restore'un arşivinde yoklar). Bu yüzden
+    CASCADE'den önce bunları ayrı bir scratch şemaya taşıyıp, public şema
+    yeniden oluşturulduktan sonra geri koyuyoruz — fiziksel tablo/veri hiç
+    silinmez, sadece geçici olarak yer değiştirir.
+    """
+    preserve_out = ''.join(
+        f"""
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = '{table}'
+    ) THEN
+        ALTER TABLE public."{table}" SET SCHEMA "{_SCHEMA_RESET_SCRATCH}";
+    END IF;
+END $$;
+"""
+        for table in _SCHEMA_RESET_PRESERVE_TABLES
+    )
+    restore_in = ''.join(
+        f"""
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = '{_SCHEMA_RESET_SCRATCH}' AND table_name = '{table}'
+    ) THEN
+        ALTER TABLE "{_SCHEMA_RESET_SCRATCH}"."{table}" SET SCHEMA public;
+    END IF;
+END $$;
+"""
+        for table in _SCHEMA_RESET_PRESERVE_TABLES
+    )
+    return f"""-- yedekleme: public şema sıfırlama (otomatik üretildi)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = '{_SCHEMA_RESET_SCRATCH}') THEN
+        RAISE EXCEPTION 'scratch şema zaten var - önceki restore yarim kalmis olabilir, manuel kontrol gerekli';
+    END IF;
+END $$;
+CREATE SCHEMA "{_SCHEMA_RESET_SCRATCH}";
+{preserve_out}
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;
+{restore_in}
+DROP SCHEMA IF EXISTS "{_SCHEMA_RESET_SCRATCH}" CASCADE;
+-- yedekleme: asıl restore SQL'i aşağıda başlar
+"""
 
 
 def reset_all_sequences(log=None) -> str | None:
@@ -200,7 +281,7 @@ class DatabaseFullHandler:
             present=True,
             size_bytes=size,
             estimated_seconds=max(5.0, size / (5 * 1024 * 1024)),
-            conflicts=['Tam dump geri yükleme mevcut veritabanını --clean ile değiştirir'],
+            conflicts=['Tam dump geri yükleme mevcut veritabanını şema sıfırlayarak değiştirir'],
             details={'toc_table_count': len(toc_tables), 'toc_sample': toc_tables[:40]},
         )
 
@@ -212,7 +293,7 @@ class DatabaseFullHandler:
             tables_changed=list(tables)[:100],
             notes=[
                 'Tam dump dry-run: satır bazlı sayım yapılamaz; TOC analizi gösterilir.',
-                'Gerçek restore pg_restore --clean --if-exists kullanır.',
+                'Gerçek restore public şemayı sıfırlayıp pg_restore ile yeniden kurar.',
             ],
             details=analysis.details,
         )
@@ -225,40 +306,69 @@ class DatabaseFullHandler:
         if not dump.exists():
             return RestoreResult(ok=False, message='database.dump eksik')
         db = settings.DATABASES['default']
-        cmd = [
+
+        # 1) Custom-format dump'ı düz SQL'e çevir. --clean KULLANILMAZ; çıktı
+        # sadece CREATE + COPY/INSERT içerir, hiç DROP komutu üretilmez.
+        sql_path = payload_dir / '_database_restore.sql'
+        connections.close_all()
+        convert_cmd = [
             pg_restore_binary(),
-            '--clean',
-            '--if-exists',
             '--no-owner',
             '--no-acl',
+            '-f', str(sql_path),
+            str(dump),
+        ]
+        conv = subprocess.run(convert_cmd, env=pg_env(db), capture_output=True, text=True)
+        conv_stderr = conv.stderr or ''
+        if conv.returncode not in (0, 1) or 'ERROR:' in conv_stderr.upper():
+            return RestoreResult(
+                ok=False,
+                message=f'pg_restore (SQL dönüşümü) başarısız: {(conv_stderr or conv.stdout)[-2000:]}',
+                meta={'returncode': conv.returncode},
+            )
+
+        # 2) Şema sıfırlama SQL'ini üretilen restore SQL'inin ÖNÜNE ekle; tek
+        # dosya olarak psql --single-transaction ile ATOMİK biçimde çalıştır.
+        # Böylece diğer bağlantılar COMMIT anına kadar ESKİ veriyi görür —
+        # ara adımda "boş şema" görünen bir kesinti penceresi oluşmaz.
+        combined_path = payload_dir / '_database_restore_combined.sql'
+        try:
+            with combined_path.open('w', encoding='utf-8') as out_f:
+                out_f.write(_schema_reset_preamble_sql())
+                out_f.write('\n')
+                with sql_path.open('r', encoding='utf-8', errors='replace') as in_f:
+                    shutil.copyfileobj(in_f, out_f)
+        finally:
+            try:
+                sql_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        cmd = [
+            psql_binary(),
+            '-v', 'ON_ERROR_STOP=1',
             '--single-transaction',
             '-h', str(db.get('HOST') or 'localhost'),
             '-p', str(db.get('PORT') or '5432'),
             '-U', str(db.get('USER') or ''),
             '-d', str(db.get('NAME') or ''),
-            str(dump),
+            '-f', str(combined_path),
         ]
-        # --single-transaction: tüm restore tek transaction içinde çalışır; bu sayede
-        # DEFERRABLE FK'ler (örn. auth_user'a referanslar) yalnızca COMMIT anında
-        # kontrol edilir. Aksi halde pg_dump'ın tablo sıralaması bağımlılık grafiğini
-        # tam çözemediğinde ("errors ignored on restore: N") ara adımlarda FK ihlali
-        # oluşur ve restore YARIM veri ile "başarılı" görünebilir. Tek transaction
-        # ayrıca atomiklik sağlar: hata olursa DB baştaki (--clean öncesi) haline
-        # değil ama en azından tutarlı/rollback edilmiş haline döner, yarım yamalak
-        # veri kalmaz.
-        # Açık bağlantılar pg_restore --clean sırasında kilit/session sorununa yol açar.
         connections.close_all()
         proc = subprocess.run(cmd, env=pg_env(db), capture_output=True, text=True)
         connections.close_all()
+        try:
+            combined_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         stderr = proc.stderr or ''
         stdout = proc.stdout or ''
         combined_upper = f'{stderr}\n{stdout}'.upper()
         has_error = 'ERROR:' in combined_upper or 'FATAL:' in combined_upper
-        # pg_restore: 0 = ok, 1 = warnings; >1 veya ERROR satırı = başarısız
-        if has_error or proc.returncode not in (0, 1):
+        if has_error or proc.returncode != 0:
             return RestoreResult(
                 ok=False,
-                message=(stderr or stdout or f'pg_restore exit={proc.returncode}')[-2000:],
+                message=(stderr or stdout or f'psql exit={proc.returncode}')[-2000:],
                 meta={'returncode': proc.returncode},
             )
         seq_error = reset_all_sequences()

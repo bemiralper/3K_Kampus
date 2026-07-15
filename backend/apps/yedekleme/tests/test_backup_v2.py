@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
+import unittest
 from pathlib import Path
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 
 from apps.yedekleme.domain.models import (
@@ -887,3 +890,72 @@ class TenantScopedBackupTests(TransactionTestCase):
         finally:
             with connection.cursor() as cur:
                 cur.execute('DROP TABLE IF EXISTS _tenant_test')
+
+
+class DatabaseFullHandlerRealRestoreTests(TransactionTestCase):
+    """system.database (tam DB dump/restore) — GERÇEK pg_dump/psql alt süreçleriyle.
+
+    Kritik regresyon testi: yayin_paketi tablosunun PK'sine (yayin_paketi_pkey)
+    başka tabloların (yayin_paketi_dahil_denemeler, yayin_paketi_dahil_ek_hizmetler)
+    FK'si bağımlıdır. pg_restore --clean bu tür çapraz-tablo bağımlılıklarında DROP
+    sırasını her zaman doğru çözemeyip canlıda görülen şu hatayla restore'u
+    tamamen durdurabiliyordu:
+        "cannot drop constraint yayin_paketi_pkey ... because other objects
+         depend on it" (HINT: Use DROP ... CASCADE).
+    Bu test, gerçek şemadaki bu tabloları kullanarak tam dump+restore döngüsünün
+    hatasız tamamlandığını VE django_session'ın (dump dışı tutulan tablo) restore
+    sonrası hâlâ var olduğunu doğrular.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        if not (shutil.which('pg_dump') and shutil.which('pg_restore') and shutil.which('psql')):
+            raise unittest.SkipTest('pg_dump/pg_restore/psql PATH üzerinde bulunamadı')
+
+    def test_full_restore_survives_yayin_paketi_fk_on_pk_dependency(self):
+        from django.utils import timezone
+
+        from apps.yedekleme.engine.handlers.database_full import DatabaseFullHandler
+
+        marker_username = '_yedekleme_restore_marker_user'
+        marker_session_key = '_yedekleme_restore_marker_session'
+        User.objects.filter(username=marker_username).delete()
+        marker_user = User.objects.create(username=marker_username)
+        with connection.cursor() as cur:
+            cur.execute('DELETE FROM django_session WHERE session_key = %s', [marker_session_key])
+            cur.execute(
+                "INSERT INTO django_session (session_key, session_data, expire_date) "
+                "VALUES (%s, 'e30=', %s)",
+                [marker_session_key, timezone.now() + timezone.timedelta(days=1)],
+            )
+
+        handler = DatabaseFullHandler()
+
+        class _Resource:
+            code = 'system.database'
+            config = {}
+
+        class _Log:
+            def info(self, *a, **k):
+                pass
+
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                work = Path(td)
+                handler.export(_Resource(), work, _Log())
+                self.assertTrue((work / 'database.dump').exists())
+
+                result = handler.restore(_Resource(), work, dry_run=False)
+                self.assertTrue(result.ok, result.message)
+
+            self.assertTrue(User.objects.filter(pk=marker_user.pk).exists())
+            with connection.cursor() as cur:
+                cur.execute(
+                    'SELECT 1 FROM django_session WHERE session_key = %s', [marker_session_key]
+                )
+                self.assertIsNotNone(cur.fetchone(), 'django_session restore sonrası korunmalı')
+        finally:
+            User.objects.filter(username=marker_username).delete()
+            with connection.cursor() as cur:
+                cur.execute('DELETE FROM django_session WHERE session_key = %s', [marker_session_key])
