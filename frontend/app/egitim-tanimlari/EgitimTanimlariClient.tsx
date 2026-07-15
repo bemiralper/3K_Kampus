@@ -6,14 +6,30 @@ import { useKurum } from "@/lib/contexts/KurumContext";
 import OdalarSiniflarSection from "./OdalarSiniflarSection";
 import { TermTabPage } from "./terms";
 
-function ctxFetch(path: string, init?: RequestInit) {
-  return fetch(resolveApiUrl(path), {
+type CtxFetchOptions = {
+  subeId?: number;
+  kurumId?: number;
+};
+
+function withSubeQuery(path: string, subeId?: number): string {
+  if (!subeId) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}sube_id=${subeId}`;
+}
+
+function ctxFetch(path: string, init?: RequestInit, ctx?: CtxFetchOptions) {
+  const headers: Record<string, string> = {
+    ...getContextHeaders(),
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (ctx?.kurumId) headers["X-Kurum-ID"] = String(ctx.kurumId);
+  if (ctx?.subeId) headers["X-Sube-ID"] = String(ctx.subeId);
+
+  return fetch(resolveApiUrl(withSubeQuery(path, ctx?.subeId)), {
     credentials: "include",
+    cache: "no-store",
     ...init,
-    headers: {
-      ...getContextHeaders(),
-      ...(init?.headers as Record<string, string> | undefined),
-    },
+    headers,
   });
 }
 
@@ -40,7 +56,7 @@ interface EgitimTanimlariClientProps {
 }
 
 export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariClientProps) {
-  const { activeSube } = useKurum();
+  const { activeSube, activeKurum, initialized } = useKurum();
   const [activeTab, setActiveTab] = useState<TabType>("sinif_seviyeleri");
   const [data, setData] = useState<TanimlarResponse>(initialData);
   const [loading, setLoading] = useState(false);
@@ -72,12 +88,27 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
     aktif_mi: true,
   });
 
-  // Fetch data
+  const requestCtx = useCallback(
+    (): CtxFetchOptions => ({
+      subeId: activeSube?.id,
+      kurumId: activeKurum?.id,
+    }),
+    [activeSube?.id, activeKurum?.id],
+  );
+
+  // Fetch data — şube bağlamını header + query ile zorunlu kıl (cache karışmasını önler)
   const fetchData = useCallback(async () => {
+    if (!activeSube?.id) return;
+
     setLoading(true);
     setError(null);
+    setData({});
     try {
-      const response = await ctxFetch("/egitim-tanimlari/api/legacy/tanimlar/");
+      const response = await ctxFetch(
+        "/egitim-tanimlari/api/legacy/tanimlar/",
+        undefined,
+        requestCtx(),
+      );
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -90,12 +121,12 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeSube?.id, requestCtx]);
 
   useEffect(() => {
-    if (!activeSube?.id) return;
+    if (!initialized || !activeSube?.id) return;
     fetchData();
-  }, [fetchData, activeSube?.id]);
+  }, [fetchData, initialized, activeSube?.id]);
 
   // Reset form
   const resetForm = () => {
@@ -137,7 +168,7 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
     
     try {
       const endpoint = getApiEndpoint(activeTab, id);
-      const response = await ctxFetch(endpoint);
+      const response = await ctxFetch(endpoint, undefined, requestCtx());
       const result = await response.json();
       
       if (result.success) {
@@ -168,11 +199,15 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
         ? getApiEndpoint(activeTab) 
         : getApiEndpoint(activeTab, editingId!);
       
-      const response = await ctxFetch(endpoint, {
-        method: drawerMode === "create" ? "POST" : "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
+      const response = await ctxFetch(
+        endpoint,
+        {
+          method: drawerMode === "create" ? "POST" : "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        },
+        requestCtx(),
+      );
 
       const result = await response.json();
 
@@ -196,7 +231,7 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
     try {
       // Get delete info from backend
       const endpoint = getApiEndpoint(type, id);
-      const response = await ctxFetch(`${endpoint}delete-info/`);
+      const response = await ctxFetch(`${endpoint}delete-info/`, undefined, requestCtx());
       const result = await response.json();
       
       let kullanim_sayisi = 0;
@@ -223,7 +258,7 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
 
     try {
       const endpoint = getApiEndpoint(deletingItem.type, deletingItem.id);
-      const response = await ctxFetch(endpoint, { method: "DELETE" });
+      const response = await ctxFetch(endpoint, { method: "DELETE" }, requestCtx());
       const result = await response.json();
 
       if (result.success) {
