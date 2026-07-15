@@ -14,6 +14,7 @@ import {
   createAvans,
   deleteAvans,
 } from '../../services/api';
+import AppDatePicker from '@/components/ui/AppDatePicker';
 
 /* ═══════════════════════════════════════════
    Personel Detay — Ödeme Geçmişi Sayfası
@@ -313,11 +314,10 @@ export default function PersonelDetayClient({ personelId }: Props) {
                 )}
                 <div>
                   <label className="text-[10px] text-gray-500 block mb-1">Tarih</label>
-                  <input
-                    type="date"
-                    className="w-full px-2 py-1.5 text-xs border border-purple-200 rounded-lg"
+                  <AppDatePicker
+                    size="small"
                     value={avansForm.tarih}
-                    onChange={e => setAvansForm({ ...avansForm, tarih: e.target.value })}
+                    onChange={(iso) => setAvansForm({ ...avansForm, tarih: iso })}
                   />
                 </div>
                 <div>

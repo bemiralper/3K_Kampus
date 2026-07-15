@@ -17,7 +17,6 @@ import {
   Dropdown,
   Avatar,
   Modal,
-  DatePicker,
   Typography,
   Tooltip,
   Checkbox,
@@ -59,6 +58,7 @@ import {
 import type { Sozlesme, SozlesmeStats, HelperData, FesihData, SozlesmeDurumu } from './types';
 import { DURUM_LABELS } from './types';
 import { contractNetMaas } from './lib/contractCalc';
+import AppDatePicker from '@/components/ui/AppDatePicker';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -111,7 +111,7 @@ export default function SozlesmelerClient() {
 
   const [fesihItem, setFesihItem] = useState<Sozlesme | null>(null);
   const [fesihSebebi, setFesihSebebi] = useState('');
-  const [fesihTarihi, setFesihTarihi] = useState(dayjs());
+  const [fesihTarihi, setFesihTarihi] = useState(dayjs().format('YYYY-MM-DD'));
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -184,7 +184,7 @@ export default function SozlesmelerClient() {
     }
     const data: FesihData = {
       fesih_sebebi: fesihSebebi.trim(),
-      fesih_tarihi: fesihTarihi.format('YYYY-MM-DD'),
+      fesih_tarihi: fesihTarihi,
     };
     const res = await changeSozlesmeDurum(fesihItem.id, 'FESHEDILDI', data);
     if (res.success) {
@@ -243,7 +243,7 @@ export default function SozlesmelerClient() {
       else if (key === 'terminate') {
         setFesihItem(s);
         setFesihSebebi('');
-        setFesihTarihi(dayjs());
+        setFesihTarihi(dayjs().format('YYYY-MM-DD'));
       }
       else if (key === 'delete') handleDelete(s.id);
     },
@@ -601,11 +601,10 @@ export default function SozlesmelerClient() {
             </Text>
             <div>
               <Text style={{ display: 'block', marginBottom: 6, fontSize: 12 }}>Fesih Tarihi</Text>
-              <DatePicker
+              <AppDatePicker
                 value={fesihTarihi}
-                onChange={(d) => d && setFesihTarihi(d)}
-                style={{ width: '100%' }}
-                format="DD.MM.YYYY"
+                onChange={(iso) => setFesihTarihi(iso || dayjs().format('YYYY-MM-DD'))}
+                allowClear={false}
               />
             </div>
             <div>

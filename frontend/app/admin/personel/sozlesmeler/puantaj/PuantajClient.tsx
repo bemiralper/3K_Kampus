@@ -10,6 +10,7 @@ import {
 } from '../services/api';
 import type { Hakedis, HakedisStats, AvansKaydi } from '../types';
 import { HAKEDIS_DURUM_COLORS, AY_ADLARI } from '../types';
+import AppDatePicker from '@/components/ui/AppDatePicker';
 
 /* ─── CSS ─── */
 const inp = 'w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10';
@@ -437,11 +438,11 @@ export default function MaasBordrosuClient() {
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-[11px] text-gray-500 mb-1">Tarih</label>
-                    <input
-                      type="date"
-                      className={inp + ' !text-[12px] !py-2'}
+                    <AppDatePicker
+                      size="small"
+                      className={inp + ' !text-[12px]'}
                       value={avansForm.tarih}
-                      onChange={e => setAvansForm(p => ({ ...p, tarih: e.target.value }))}
+                      onChange={(iso) => setAvansForm(p => ({ ...p, tarih: iso }))}
                     />
                   </div>
                   <div>

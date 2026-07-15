@@ -44,6 +44,7 @@ import {
 import { useMaasPlaniChainFill } from '../hooks/useMaasPlaniChainFill';
 import { useSozlesmeHesap } from '../hooks/useSozlesmeHesap';
 import { useSozlesmeForm } from '../hooks/useSozlesmeForm';
+import AppDatePicker from '@/components/ui/AppDatePicker';
 import '../sozlesme-editor.css';
 
 type EditorTab =
@@ -265,19 +266,21 @@ function MaasPlaniGrid({
               <tr key={idx}>
                 <td>{row.sira_no}</td>
                 <td>
-                  <input
-                    type="date"
+                  <AppDatePicker
+                    size="small"
                     className="se-input"
                     value={row.baslangic_tarihi}
-                    onChange={(e) => updateRow(idx, 'baslangic_tarihi', e.target.value)}
+                    onChange={(iso) => updateRow(idx, 'baslangic_tarihi', iso)}
+                    allowClear={false}
                   />
                 </td>
                 <td>
-                  <input
-                    type="date"
+                  <AppDatePicker
+                    size="small"
                     className="se-input"
                     value={row.bitis_tarihi}
-                    onChange={(e) => updateRow(idx, 'bitis_tarihi', e.target.value)}
+                    onChange={(iso) => updateRow(idx, 'bitis_tarihi', iso)}
+                    allowClear={false}
                   />
                 </td>
                 <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.calisilan_gun}</td>
@@ -866,31 +869,30 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
                   </div>
                   <div className="se-field">
                     <label>Düzenlenme Tarihi</label>
-                    <input
-                      type="date"
+                    <AppDatePicker
                       className="se-input"
                       value={form.duzenlenme_tarihi || ''}
-                      onChange={(e) => patchForm({ duzenlenme_tarihi: e.target.value })}
+                      onChange={(iso) => patchForm({ duzenlenme_tarihi: iso })}
                     />
                   </div>
                 </div>
                 <div className="se-grid-2">
                   <div className="se-field">
                     <label>Başlangıç Tarihi *</label>
-                    <input
-                      type="date"
+                    <AppDatePicker
                       className="se-input"
                       value={form.baslangic_tarihi}
-                      onChange={(e) => handleTarihChange('baslangic_tarihi', e.target.value)}
+                      onChange={(iso) => handleTarihChange('baslangic_tarihi', iso)}
+                      allowClear={false}
                     />
                   </div>
                   <div className="se-field">
                     <label>Bitiş Tarihi *</label>
-                    <input
-                      type="date"
+                    <AppDatePicker
                       className="se-input"
                       value={form.bitis_tarihi}
-                      onChange={(e) => handleTarihChange('bitis_tarihi', e.target.value)}
+                      onChange={(iso) => handleTarihChange('bitis_tarihi', iso)}
+                      allowClear={false}
                     />
                   </div>
                 </div>

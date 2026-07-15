@@ -13,6 +13,7 @@ import {
   kimlikFieldClass,
   tcReadonlyClass,
 } from "@/lib/kimlik-form-utils";
+import AppDatePicker from "@/components/ui/AppDatePicker";
 
 // Tip tanımları
 type PersonelData = {
@@ -1176,11 +1177,12 @@ export default function PersonelListesiPage() {
                   <label className="field-label">
                     <span className="label-text">Doğum Tarihi</span>
                   </label>
-                  <input
-                    type="date"
+                  <AppDatePicker
                     className="field-input"
+                    style={{ height: 42 }}
                     value={formData.dogum_tarihi}
-                    onChange={(e) => setFormData({ ...formData, dogum_tarihi: e.target.value })}
+                    onChange={(iso) => setFormData({ ...formData, dogum_tarihi: iso })}
+                    disableFuture
                   />
                 </div>
                 <div className="form-field full-width">

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { usePersonelPath } from "@/components/personel/PersonelPathProvider";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import AppDatePicker from "@/components/ui/AppDatePicker";
 
 // Types
 interface Gorevlendirme {
@@ -676,20 +677,20 @@ export default function GorevlendirmelerClient() {
               <div className="gv-form-row">
                 <div className="gv-form-group">
                   <label className="gv-form-label">Başlangıç Tarihi</label>
-                  <input
-                    type="date"
+                  <AppDatePicker
                     className="gv-form-input"
+                    style={{ height: 40 }}
                     value={formData.gorev_baslangic}
-                    onChange={(e) => setFormData({ ...formData, gorev_baslangic: e.target.value })}
+                    onChange={(iso) => setFormData({ ...formData, gorev_baslangic: iso })}
                   />
                 </div>
                 <div className="gv-form-group">
                   <label className="gv-form-label">Bitiş Tarihi</label>
-                  <input
-                    type="date"
+                  <AppDatePicker
                     className="gv-form-input"
+                    style={{ height: 40 }}
                     value={formData.gorev_bitis}
-                    onChange={(e) => setFormData({ ...formData, gorev_bitis: e.target.value })}
+                    onChange={(iso) => setFormData({ ...formData, gorev_bitis: iso })}
                   />
                 </div>
               </div>
