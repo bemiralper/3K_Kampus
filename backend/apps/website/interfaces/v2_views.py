@@ -93,6 +93,33 @@ def _err(message: str, status: int = 400, **extra):
     return JsonResponse(payload, status=status)
 
 
+_MIGRATE_MSG = (
+    'Veritabanı şeması güncel değil. Çalıştırın: python manage.py migrate website '
+    '(Docker: docker compose -f docker-compose.dev.yml exec backend python manage.py migrate website)'
+)
+
+
+def _handle_db_schema_error(exc: Exception):
+    from django.db.utils import OperationalError, ProgrammingError
+    if isinstance(exc, (ProgrammingError, OperationalError)):
+        return _err(_MIGRATE_MSG, 503)
+    return None
+
+
+def _safe_ensure_system_defaults(kurum_id: int) -> None:
+    """Sistem sayfalarını seed eder; beklenmeyen hatalarda dashboard'u düşürmez."""
+    import logging
+    try:
+        ensure_system_default_pages(kurum_id)
+    except Exception as exc:
+        schema_err = _handle_db_schema_error(exc)
+        if schema_err:
+            raise exc
+        logging.getLogger(__name__).exception(
+            'ensure_system_default_pages failed kurum_id=%s', kurum_id,
+        )
+
+
 # ─── Dashboard ───────────────────────────────────────────────
 
 @csrf_exempt
@@ -105,9 +132,8 @@ def api_v2_dashboard(request):
     if not kurum_id:
         return _err('Kurum seçilmedi', 400)
 
-    ensure_system_default_pages(kurum_id)
-
     try:
+        _safe_ensure_system_defaults(kurum_id)
         pages = WebPage.objects.filter(kurum_id=kurum_id)
         media_count = MediaAsset.objects.filter(kurum_id=kurum_id).count()
         form_subs = FormSubmission.objects.filter(form__kurum_id=kurum_id).count()
@@ -153,14 +179,12 @@ def api_v2_dashboard(request):
             },
         })
     except Exception as exc:
-        from django.db.utils import OperationalError, ProgrammingError
-        if isinstance(exc, (ProgrammingError, OperationalError)):
-            return _err(
-                'Veritabanı şeması güncel değil. Çalıştırın: python manage.py migrate website '
-                '(Docker: docker compose -f docker-compose.dev.yml exec backend python manage.py migrate website)',
-                503,
-            )
-        raise
+        schema_err = _handle_db_schema_error(exc)
+        if schema_err:
+            return schema_err
+        import logging
+        logging.getLogger(__name__).exception('api_v2_dashboard failed kurum_id=%s', kurum_id)
+        return _err('Dashboard yüklenemedi. Lütfen sayfayı yenileyin veya yöneticinize bildirin.', 500)
 
 
 # ─── Block types ─────────────────────────────────────────────
@@ -188,10 +212,18 @@ def api_v2_pages(request):
     svc = PageService()
 
     if request.method == 'GET':
-        ensure_system_default_pages(kurum_id)
-        status = request.GET.get('status')
-        pages = sorted(svc.list_pages(kurum_id, status=status), key=system_default_sort_key)
-        return _ok([serialize_page(p) for p in pages])
+        try:
+            _safe_ensure_system_defaults(kurum_id)
+            status = request.GET.get('status')
+            pages = sorted(svc.list_pages(kurum_id, status=status), key=system_default_sort_key)
+            return _ok([serialize_page(p) for p in pages])
+        except Exception as exc:
+            schema_err = _handle_db_schema_error(exc)
+            if schema_err:
+                return schema_err
+            import logging
+            logging.getLogger(__name__).exception('api_v2_pages list failed kurum_id=%s', kurum_id)
+            return _err('Sayfalar yüklenemedi. Lütfen sayfayı yenileyin veya yöneticinize bildirin.', 500)
 
     body = _parse_json(request)
     if body is None:

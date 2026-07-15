@@ -1,8 +1,10 @@
 """Kurumsal sitedeki hazır sayfalar — CMS kaydı olarak otomatik oluşturulur."""
 from __future__ import annotations
 
+import logging
 from typing import Callable
 
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.kurum.domain.models import Kurum
@@ -25,6 +27,8 @@ from apps.website.application.system_default_specs import (
 from apps.website.blocks.registry import new_block
 from apps.website.cms_models import WebPage, WebPageVersion
 from apps.website.models import SiteSettings, YasalMetin
+
+logger = logging.getLogger(__name__)
 
 BlockBuilder = Callable[[Kurum, SiteSettings | None, str], list[dict]]
 
@@ -87,7 +91,7 @@ def _blocks_for_spec(
 
 def _sync_page_meta(page: WebPage, spec: SystemDefaultPageSpec, base_url: str) -> bool:
     dirty = False
-    if not page.is_system_default:
+    if not getattr(page, 'is_system_default', False):
         page.is_system_default = True
         dirty = True
     if page.status != WebPage.STATUS_PUBLISHED:
@@ -119,6 +123,79 @@ def _sync_page_meta(page: WebPage, spec: SystemDefaultPageSpec, base_url: str) -
     return dirty
 
 
+def _get_or_create_page(
+    kurum_id: int,
+    spec: SystemDefaultPageSpec,
+    base_url: str,
+) -> tuple[WebPage, bool]:
+    page = WebPage.objects.filter(kurum_id=kurum_id, locale='tr', slug=spec.slug).first()
+    if page:
+        return page, False
+    try:
+        with transaction.atomic():
+            page = WebPage.objects.create(
+                kurum_id=kurum_id,
+                locale='tr',
+                slug=spec.slug,
+                title=spec.title[:200],
+                status=WebPage.STATUS_PUBLISHED,
+                is_homepage=spec.is_homepage,
+                is_system_default=True,
+                show_in_menu=spec.show_in_menu,
+                meta_title=spec.title[:70],
+                meta_description=spec.meta_description[:320],
+                canonical_url=f'{base_url}{spec.public_path}',
+                sitemap_include=True,
+                publish_at=timezone.now(),
+                published_version=0,
+            )
+            return page, True
+    except IntegrityError:
+        page = WebPage.objects.filter(kurum_id=kurum_id, locale='tr', slug=spec.slug).first()
+        if not page:
+            raise
+        return page, False
+
+
+def _ensure_one_page(
+    kurum: Kurum,
+    spec: SystemDefaultPageSpec,
+    settings: SiteSettings | None,
+    form_slug: str,
+    base_url: str,
+) -> tuple[str | None, str | None, int | None]:
+    """Dönüş: (created_slug, updated_slug, homepage_id)."""
+    page, page_created = _get_or_create_page(kurum.id, spec, base_url)
+    created_slug = spec.slug if page_created else None
+    updated_slug = None
+
+    dirty = _sync_page_meta(page, spec, base_url)
+    if dirty and not page_created:
+        page.save()
+        updated_slug = spec.slug
+    elif page_created:
+        page.save()
+
+    homepage_id = page.id if spec.is_homepage else None
+
+    if not page.versions.exists():
+        blocks = _blocks_for_spec(spec, kurum, settings, form_slug)
+        next_ver = (page.versions.count() or 0) + 1
+        WebPageVersion.objects.create(
+            page=page,
+            version=next_ver,
+            label='Sistem varsayılan sayfa',
+            blocks=blocks,
+            is_autosave=False,
+        )
+        page.published_version = next_ver
+        page.save(update_fields=['published_version', 'updated_at'])
+        if not page_created:
+            updated_slug = spec.slug
+
+    return created_slug, updated_slug, homepage_id
+
+
 def ensure_system_default_pages(kurum_id: int) -> dict:
     """
     Kamu sitedeki hazır sayfaları CMS WebPage kaydı olarak oluşturur (idempotent).
@@ -136,52 +213,20 @@ def ensure_system_default_pages(kurum_id: int) -> dict:
     homepage_id: int | None = None
 
     for spec in SYSTEM_DEFAULT_PAGE_SPECS:
-        page = WebPage.objects.filter(kurum_id=kurum_id, locale='tr', slug=spec.slug).first()
-        page_created = False
-        if not page:
-            page = WebPage.objects.create(
-                kurum_id=kurum_id,
-                locale='tr',
-                slug=spec.slug,
-                title=spec.title[:200],
-                status=WebPage.STATUS_PUBLISHED,
-                is_homepage=spec.is_homepage,
-                is_system_default=True,
-                show_in_menu=spec.show_in_menu,
-                meta_title=spec.title[:70],
-                meta_description=spec.meta_description[:320],
-                canonical_url=f'{base_url}{spec.public_path}',
-                sitemap_include=True,
-                publish_at=timezone.now(),
-                published_version=0,
+        try:
+            created_slug, updated_slug, spec_home_id = _ensure_one_page(
+                kurum, spec, settings, form_slug, base_url,
             )
-            page_created = True
-            created.append(spec.slug)
-
-        dirty = _sync_page_meta(page, spec, base_url)
-        if dirty and not page_created:
-            page.save()
-            updated.append(spec.slug)
-        elif page_created:
-            page.save()
-
-        if spec.is_homepage:
-            homepage_id = page.id
-
-        if not page.versions.exists():
-            blocks = _blocks_for_spec(spec, kurum, settings, form_slug)
-            next_ver = (page.versions.count() or 0) + 1
-            WebPageVersion.objects.create(
-                page=page,
-                version=next_ver,
-                label='Sistem varsayılan sayfa',
-                blocks=blocks,
-                is_autosave=False,
+            if created_slug:
+                created.append(created_slug)
+            if updated_slug:
+                updated.append(updated_slug)
+            if spec_home_id:
+                homepage_id = spec_home_id
+        except Exception:
+            logger.exception(
+                'system default page failed kurum_id=%s slug=%s', kurum_id, spec.slug,
             )
-            page.published_version = next_ver
-            page.save(update_fields=['published_version', 'updated_at'])
-            if spec.slug not in created:
-                updated.append(spec.slug)
 
     if homepage_id:
         WebPage.objects.filter(kurum_id=kurum_id, is_homepage=True).exclude(pk=homepage_id).update(
@@ -190,7 +235,10 @@ def ensure_system_default_pages(kurum_id: int) -> dict:
 
     health = None
     if created or updated:
-        health = ensure_website_health(kurum_id)
+        try:
+            health = ensure_website_health(kurum_id)
+        except Exception:
+            logger.exception('ensure_website_health failed kurum_id=%s', kurum_id)
 
     return {
         'ok': True,

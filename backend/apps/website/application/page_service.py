@@ -22,7 +22,7 @@ def serialize_page(page: WebPage, *, include_blocks: bool = False, version: WebP
         'show_in_menu': page.show_in_menu,
         'show_breadcrumb': page.show_breadcrumb,
         'is_homepage': page.is_homepage,
-        'is_system_default': page.is_system_default,
+        'is_system_default': getattr(page, 'is_system_default', False),
         'public_path': public_path_for_slug(page.slug),
         'publish_at': page.publish_at.isoformat() if page.publish_at else None,
         'unpublish_at': page.unpublish_at.isoformat() if page.unpublish_at else None,

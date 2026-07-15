@@ -48,16 +48,25 @@ def _site_base_url() -> str:
         or ''
     ).strip()
     if public:
-        return public.rstrip('/')
+        return _normalize_public_url(public)
 
     frontend = (getattr(django_settings, 'FRONTEND_URL', None) or '').strip().rstrip('/')
     # LMS app host'unu kamu site sanma
     if frontend and 'localhost' not in frontend and '127.0.0.1' not in frontend:
         if 'app.' in frontend:
             return DEFAULT_PUBLIC_SITE_URL
-        return frontend
+        return _normalize_public_url(frontend)
 
     return DEFAULT_PUBLIC_SITE_URL
+
+
+def _normalize_public_url(url: str) -> str:
+    u = (url or '').strip().rstrip('/')
+    if not u:
+        return DEFAULT_PUBLIC_SITE_URL
+    if not u.startswith('http://') and not u.startswith('https://'):
+        u = f'https://{u.lstrip("/")}'
+    return u
 
 
 def _media_url(path: str | None) -> str:
