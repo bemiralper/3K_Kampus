@@ -16,8 +16,14 @@ from apps.odeme_takip.domain.models import Sozlesme, Taksit, Tahsilat
 from apps.odeme_takip.domain.enums import (
     SozlesmeDurum, TaksitDurum, TahsilatDurum, TahsilatTuru,
 )
+from apps.finans.application.cari_balance import cari_bagimsiz_tahsilat_q
+from apps.finans.application.dashboard_overview_service import _gider_odeme_qs, _gider_odeme_toplam
 from apps.finans.application.selectors.donem_bakiye_selector import DonemBakiyeSelector
 from apps.finans.application.selectors.bakiye_hareketi_selector import BakiyeHareketiSelector
+from apps.finans.constants.cari_types import CariHareketTuru
+from apps.finans.constants.gider_types import OdemeDurum as GiderOdemeDurum
+from apps.finans.domain.cari_hareket import CariHareket
+from apps.finans.domain.gelir_tahsilat import GelirTahsilat
 
 AY_ISIMLERI = {
     1: 'Ocak', 2: 'Şubat', 3: 'Mart', 4: 'Nisan',
@@ -136,14 +142,33 @@ class GelirGiderRaporView(ExportFormatMixin, APIView):
         tahsilat_gelir = tahsilat_base & ~Q(tahsilat_turu=TahsilatTuru.IADE)
         tahsilat_iade = tahsilat_base & Q(tahsilat_turu=TahsilatTuru.IADE)
 
-        # ─── Gider Filtresi (GiderKaydi — taslak/iptal hariç) ──
-        from apps.finans.domain.gider_kaydi import GiderKaydi
-        from apps.finans.constants.gider_types import GiderDurum
-
-        gider_base = Q(kurum_id=kurum_id, sube_id=sube_id)
+        # ─── Gelir Kaydı (serbest gelir) Filtresi ──────────────
+        # Finans dashboard (PeriodService) ve Gün Sonu ile AYNI kaynaklar:
+        # sözleşme tahsilatı + serbest gelir tahsilatı + bağımsız cari tahsilatı.
+        # Önceki sürüm SADECE sözleşme tahsilatını sayıyordu (Vakıfbank/QNB gibi
+        # sözleşme dışı gelirler rapordan tamamen düşüyordu).
+        gelir_tahsilat_q = Q(
+            gelir_kaydi__kurum_id=kurum_id,
+            durum=GiderOdemeDurum.TAMAMLANDI,
+        )
+        if sube_id:
+            gelir_tahsilat_q &= Q(gelir_kaydi__sube_id=sube_id)
         if egitim_yili_id:
-            gider_base &= Q(egitim_yili_id=egitim_yili_id)
-        gider_base &= ~Q(durum__in=[GiderDurum.TASLAK, GiderDurum.IPTAL])
+            gelir_tahsilat_q &= Q(gelir_kaydi__egitim_yili_id=egitim_yili_id)
+
+        cari_tahsilat_q = Q(
+            kurum_id=kurum_id,
+            islem_turu=CariHareketTuru.TAHSILAT,
+        ) & cari_bagimsiz_tahsilat_q()
+        if sube_id:
+            cari_tahsilat_q &= Q(sube_id=sube_id)
+        if egitim_yili_id:
+            cari_tahsilat_q &= Q(egitim_yili_id=egitim_yili_id)
+
+        # ─── Gider — nakit bazlı (GiderOdeme, ödeme tarihi) ───
+        # Finans dashboard ve Gün Sonu ile AYNI kaynak. Önceki sürüm GiderKaydi
+        # (fatura tarihi — tahakkuk) kullanıyordu; bu, ödeme henüz yapılmamış
+        # faturaları da "gider" olarak gösterip nakit akışıyla uyuşmuyordu.
 
         # ─── Aylık Gelir (son 12 ay) ─────────────────────────
         bugun = timezone.localdate()
@@ -157,11 +182,29 @@ class GelirGiderRaporView(ExportFormatMixin, APIView):
             else:
                 m_sonu = t.replace(month=t.month + 1, day=1) - timedelta(days=1)
 
-            gelir = Tahsilat.objects.filter(
+            sozlesme_gelir = Tahsilat.objects.filter(
                 tahsilat_gelir,
                 tahsilat_tarihi__gte=m_basi,
                 tahsilat_tarihi__lte=m_sonu,
             ).aggregate(t=Sum('tutar'))['t'] or 0
+
+            serbest_gelir = int(
+                GelirTahsilat.objects.filter(
+                    gelir_tahsilat_q,
+                    tahsilat_tarihi__gte=m_basi,
+                    tahsilat_tarihi__lte=m_sonu,
+                ).aggregate(t=Sum('tutar'))['t'] or 0
+            )
+
+            cari_gelir = int(
+                CariHareket.objects.filter(
+                    cari_tahsilat_q,
+                    islem_tarihi__gte=m_basi,
+                    islem_tarihi__lte=m_sonu,
+                ).aggregate(t=Sum('tutar'))['t'] or 0
+            )
+
+            gelir = int(sozlesme_gelir) + serbest_gelir + cari_gelir
 
             iade = Tahsilat.objects.filter(
                 tahsilat_iade,
@@ -169,12 +212,8 @@ class GelirGiderRaporView(ExportFormatMixin, APIView):
                 tahsilat_tarihi__lte=m_sonu,
             ).aggregate(t=Sum('tutar'))['t'] or 0
 
-            gider = int(
-                GiderKaydi.objects.filter(
-                    gider_base,
-                    fatura_tarihi__gte=m_basi,
-                    fatura_tarihi__lte=m_sonu,
-                ).aggregate(t=Sum('net_tutar'))['t'] or 0
+            gider = _gider_odeme_toplam(
+                _gider_odeme_qs(kurum_id, m_basi, m_sonu, sube_id, egitim_yili_id)
             )
 
             aylik.append({
@@ -191,13 +230,40 @@ class GelirGiderRaporView(ExportFormatMixin, APIView):
         toplam_iade = sum(a['iade'] for a in aylik)
         toplam_gider = sum(a['gider'] for a in aylik)
 
-        # ─── Ödeme Yöntemi Bazlı Gelir Dağılımı ─────────────
-        yontem_dagilimi = list(
-            Tahsilat.objects.filter(tahsilat_gelir)
+        # ─── Ödeme Yöntemi Bazlı Gelir Dağılımı (aynı 12 aylık pencere) ──
+        rapor_basi = aylik[0]['ay'] + '-01' if aylik else bugun.isoformat()
+        rapor_basi_tarih = date.fromisoformat(rapor_basi)
+
+        yontem_map: dict[str, dict] = {}
+
+        def _yontem_ekle(ad, toplam, adet):
+            key = ad or 'Belirtilmemiş'
+            row = yontem_map.setdefault(key, {'toplam': 0, 'adet': 0})
+            row['toplam'] += int(toplam or 0)
+            row['adet'] += int(adet or 0)
+
+        for row in (
+            Tahsilat.objects.filter(
+                tahsilat_gelir, tahsilat_tarihi__gte=rapor_basi_tarih,
+            )
             .values('odeme_yontemi__ad')
             .annotate(toplam=Sum('tutar'), adet=Count('id'))
-            .order_by('-toplam')
-        )
+        ):
+            _yontem_ekle(row['odeme_yontemi__ad'], row['toplam'], row['adet'])
+
+        for row in (
+            GelirTahsilat.objects.filter(
+                gelir_tahsilat_q, tahsilat_tarihi__gte=rapor_basi_tarih,
+            )
+            .values('odeme_yontemi__ad')
+            .annotate(toplam=Sum('tutar'), adet=Count('id'))
+        ):
+            _yontem_ekle(row['odeme_yontemi__ad'], row['toplam'], row['adet'])
+
+        yontem_dagilimi = [
+            {'odeme_yontemi__ad': ad, 'toplam': v['toplam'], 'adet': v['adet']}
+            for ad, v in sorted(yontem_map.items(), key=lambda kv: -kv[1]['toplam'])
+        ]
 
         fmt = _rapor_format(request, self)
         if fmt != 'json':

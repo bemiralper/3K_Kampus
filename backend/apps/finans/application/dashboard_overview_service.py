@@ -257,7 +257,7 @@ def _mali_hesap_bloklari(kurum_id, sube_id, egitim_yili_id) -> tuple[list[dict],
     return kasa, banka, kasa_toplam, banka_toplam
 
 
-def _mali_hesap_canli_bakiyeler(kurum_id, sube_id) -> list[dict]:
+def _mali_hesap_canli_bakiyeler(kurum_id, sube_id, tipler=None) -> list[dict]:
     """Aktif mali hesaplar + son BakiyeHareketi bakiyesi (dönem bağımsız)."""
     from apps.finans.application.selectors.bakiye_hareketi_selector import BakiyeHareketiSelector
     from apps.finans.domain.financial_account import MaliHesap
@@ -266,7 +266,7 @@ def _mali_hesap_canli_bakiyeler(kurum_id, sube_id) -> list[dict]:
         sube__kurum_id=kurum_id,
         aktif_mi=True,
         silindi_mi=False,
-        tip__in=[MaliHesapTipi.KASA, MaliHesapTipi.BANKA],
+        tip__in=list(tipler) if tipler else [MaliHesapTipi.KASA, MaliHesapTipi.BANKA],
     )
     if sube_id:
         qs = qs.filter(sube_id=sube_id)

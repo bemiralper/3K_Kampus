@@ -889,3 +889,180 @@ class DonemBakiyeSenkronizeTest(TestCase):
         self.assertIn('Vakıfbank', by_ad)
         self.assertEqual(by_ad['Vakıfbank']['donem_sonu_bakiye'], 252_000)
         self.assertIn('Nakit', by_ad)
+
+
+class AdminDashboardKasaDagilimiTest(TestCase):
+    """Admin dashboard 'Kasa Dağılımı' grafiği KPI kartıyla AYNI canlı kaynağı kullanmalı."""
+
+    def setUp(self):
+        from apps.finans.constants.account_types import MaliHesapTipi
+        from apps.finans.constants.hareket_types import HareketKaynagi, HareketYonu
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+        from apps.finans.domain.donem_bakiye import DonemBakiye
+
+        self.kurum = Kurum.objects.create(ad='Admin Dash Kurum', kod='ADK')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='ADK')
+        self.ey = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
+        self.kasa = MaliHesap.objects.create(sube=self.sube, ad='Nakit', tip=MaliHesapTipi.KASA)
+        self.banka = MaliHesap.objects.create(
+            sube=self.sube, ad='Vakıfbank', tip=MaliHesapTipi.BANKA, banka='vakifbank',
+        )
+        self.pos = MaliHesap.objects.create(
+            sube=self.sube, ad='Garanti POS', tip=MaliHesapTipi.POS, banka='garanti',
+        )
+        today = timezone.localdate()
+        BakiyeHareketi.objects.create(
+            mali_hesap=self.kasa, kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+            yon=HareketYonu.GIRIS, tutar=10_000, kaynak=HareketKaynagi.TAHSILAT,
+            bakiye_oncesi=0, bakiye_sonrasi=10_000, islem_tarihi=today,
+        )
+        BakiyeHareketi.objects.create(
+            mali_hesap=self.banka, kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+            yon=HareketYonu.GIRIS, tutar=50_000, kaynak=HareketKaynagi.TAHSILAT,
+            bakiye_oncesi=0, bakiye_sonrasi=50_000, islem_tarihi=today,
+        )
+        BakiyeHareketi.objects.create(
+            mali_hesap=self.pos, kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+            yon=HareketYonu.GIRIS, tutar=7_500, kaynak=HareketKaynagi.TAHSILAT,
+            bakiye_oncesi=0, bakiye_sonrasi=7_500, islem_tarihi=today,
+        )
+        # Eski/stale dönem satırı — KPI ile aynı canlı kaynağa geçtiğimizi doğrular.
+        DonemBakiye.objects.create(
+            mali_hesap=self.banka, kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+            donem_basi_bakiye=999_999, toplam_gelir=0, toplam_gider=0, donem_sonu_bakiye=999_999,
+        )
+
+    def test_kasa_dagilimi_matches_live_kpi_and_includes_pos(self):
+        from apps.dashboard.application.admin_dashboard_service import AdminDashboardService
+        from apps.finans.application.dashboard_overview_service import _mali_hesap_bloklari
+
+        kasa, banka, kasa_toplam, banka_toplam = _mali_hesap_bloklari(
+            self.kurum.id, self.sube.id, self.ey.id,
+        )
+        dagilim = AdminDashboardService._kasa_dagilimi(
+            kasa, banka, self.kurum.id, self.sube.id, self.ey.id,
+        )
+        by_label = {d['label']: d['value'] for d in dagilim}
+
+        # Grafikteki Nakit + Banka KPI'daki kasa_banka_toplam ile birebir eşleşmeli
+        # (eski sürümde DonemBakiye'nin stale 999.999 değeri görünüyordu).
+        self.assertEqual(by_label['Nakit'], 10_000)
+        self.assertEqual(by_label['Nakit'], kasa_toplam)
+        self.assertEqual(by_label['Banka Hesapları'], 50_000)
+        self.assertEqual(by_label['Banka Hesapları'], banka_toplam)
+        # POS artık Mali Hesaplar ağacındaki gibi canlı bakiyeden görünür.
+        self.assertEqual(by_label['POS Hesapları'], 7_500)
+
+
+class GelirGiderRaporCompletenessTest(TestCase):
+    """Raporlama → Gelir-Gider: tüm gelir kaynakları + nakit bazlı gider."""
+
+    def setUp(self):
+        from apps.finans.application.cari_hareket_service import CariHareketService
+        from apps.finans.application.gelir_service import GelirService
+        from apps.finans.application.gelir_tahsilat_service import GelirTahsilatService
+        from apps.finans.application.gider_odeme_service import GiderOdemeService
+        from apps.finans.application.gider_service import GiderService
+        from apps.finans.constants.account_types import MaliHesapTipi
+        from apps.finans.constants.cari_types import CariHareketTuru, CariHareketYonu
+        from apps.finans.domain.cari_hesap import CariHesap
+        from apps.finans.domain.gelir_kategorisi import GelirKategorisi
+        from apps.finans.domain.gider_kategorisi import GiderKategorisi
+
+        self.client = APIClient()
+        self.kurum = Kurum.objects.create(ad='Rapor Tam Kurum', kod='RTK')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='RTK')
+        self.ey = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
+        self.user = User.objects.create_user(username='rapor_tam', password='test')
+        _assign_perms(self.user, 'finans.read')
+        self.client.force_authenticate(user=self.user)
+        self.today = timezone.localdate()
+
+        mali_hesap = MaliHesap.objects.create(sube=self.sube, ad='Kasa', tip=MaliHesapTipi.KASA)
+        yontem = OdemeYontemi.objects.create(
+            mali_hesap=mali_hesap, kurum=self.kurum, ad='Nakit',
+            tip=OdemeYontemiTipi.NAKIT, komisyon_orani=Decimal('0'),
+        )
+        gelir_kat = GelirKategorisi.objects.create(kurum=self.kurum, sube=self.sube, ad='Diğer Gelir')
+        gider_kat = GiderKategorisi.objects.create(kurum=self.kurum, sube=self.sube, ad='Kira')
+        musteri = CariHesap.objects.create(
+            kurum=self.kurum, sube=self.sube, unvan='Serbest Müşteri', hesap_turu='musteri',
+        )
+        tedarikci = CariHesap.objects.create(
+            kurum=self.kurum, sube=self.sube, unvan='Kira Tedarikçi', hesap_turu='tedarikci',
+        )
+
+        # 1) Sözleşme dışı "serbest gelir" — önceki sürümde rapora HİÇ girmiyordu.
+        gelir, err = GelirService().create({
+            'kurum_id': self.kurum.id, 'sube_id': self.sube.id, 'egitim_yili_id': self.ey.id,
+            'cari_hesap_id': musteri.id, 'gelir_kategorisi_id': gelir_kat.id,
+            'fatura_tarihi': self.today, 'vade_tarihi': self.today,
+            'brut_tutar': Decimal('5000'), 'kdv_orani': 0, 'olusturan': self.user,
+        })
+        self.assertIsNone(err, err)
+        _, err = GelirTahsilatService().tahsilat_yap({
+            'gelir_kaydi_id': gelir.id, 'tutar': Decimal('2000'),
+            'tahsilat_tarihi': self.today, 'mali_hesap_id': mali_hesap.id,
+            'odeme_yontemi_id': yontem.id, 'islem_yapan': self.user,
+        })
+        self.assertIsNone(err, err)
+        self.serbest_gelir_tutari = 2000
+
+        # 2) Bağımsız (sözleşme/gelir kaydına bağlı olmayan) cari tahsilatı.
+        CariHareketService().hareket_olustur(
+            cari_hesap_id=musteri.id, kurum_id=self.kurum.id, sube_id=self.sube.id,
+            egitim_yili_id=self.ey.id, tutar=Decimal('1500'),
+            yon=CariHareketYonu.ALACAK, islem_turu=CariHareketTuru.TAHSILAT,
+            islem_tarihi=self.today, aciklama='Bağımsız tahsilat',
+        )
+        self.cari_gelir_tutari = 1500
+
+        # 3) Gider: 8000 tutarında fatura, sadece 3000'i ÖDENDİ.
+        # Eski rapor GiderKaydi.net_tutar (fatura tarihi) kullanıyordu → 8000 gösterirdi.
+        gider, err = GiderService().create({
+            'kurum_id': self.kurum.id, 'sube_id': self.sube.id, 'egitim_yili_id': self.ey.id,
+            'cari_hesap_id': tedarikci.id, 'gider_kategorisi_id': gider_kat.id,
+            'fatura_tarihi': self.today, 'vade_tarihi': self.today,
+            'brut_tutar': Decimal('8000'), 'kdv_orani': 0, 'olusturan': self.user,
+        })
+        self.assertIsNone(err, err)
+        _, err = GiderOdemeService().odeme_yap({
+            'gider_kaydi_id': gider.id, 'tutar': Decimal('3000'),
+            'odeme_tarihi': self.today, 'mali_hesap_id': mali_hesap.id,
+            'odeme_yontemi_id': yontem.id, 'islem_yapan': self.user,
+        })
+        self.assertIsNone(err, err)
+        self.odenen_gider_tutari = 3000
+        self.tahakkuk_gider_tutari = 8000
+
+    def _bu_ay_satiri(self, body):
+        bu_ay = self.today.strftime('%Y-%m')
+        for a in body['aylik']:
+            if a['ay'] == bu_ay:
+                return a
+        self.fail('Bu ayın satırı bulunamadı')
+
+    def test_gelir_includes_serbest_gelir_and_cari_tahsilat(self):
+        res = self.client.get(
+            '/finans/api/raporlar/gelir-gider/',
+            {'kurum_id': self.kurum.id, 'egitim_yili_id': self.ey.id},
+            HTTP_X_SUBE_ID=str(self.sube.id),
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        body = res.json()
+        satir = self._bu_ay_satiri(body)
+        self.assertEqual(
+            satir['gelir'], self.serbest_gelir_tutari + self.cari_gelir_tutari,
+        )
+
+    def test_gider_uses_cash_basis_not_accrual(self):
+        res = self.client.get(
+            '/finans/api/raporlar/gelir-gider/',
+            {'kurum_id': self.kurum.id, 'egitim_yili_id': self.ey.id},
+            HTTP_X_SUBE_ID=str(self.sube.id),
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        body = res.json()
+        satir = self._bu_ay_satiri(body)
+        self.assertEqual(satir['gider'], self.odenen_gider_tutari)
+        self.assertNotEqual(satir['gider'], self.tahakkuk_gider_tutari)

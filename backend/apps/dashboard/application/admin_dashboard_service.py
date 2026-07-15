@@ -578,31 +578,32 @@ class AdminDashboardService:
         sube_id: int,
         egitim_yili_id,
     ) -> list[dict]:
-        from apps.finans.application.selectors.donem_bakiye_selector import DonemBakiyeSelector
+        """
+        Kasa/banka/POS bakiye dağılımı — hepsi CANLI BakiyeHareketi bakiyesinden.
 
-        if not egitim_yili_id:
-            return []
-
-        selector = DonemBakiyeSelector()
-        ozet = selector.get_sube_ozet(int(sube_id), int(egitim_yili_id))
-        hesaplar = ozet.get('hesaplar', [])
+        Önceki sürüm burada DonemBakiye'ye geri dönüyordu; bu, üstteki KPI kartı
+        (_mali_hesap_bloklari → canlı bakiye) ile bu grafiği farklı kaynaklardan
+        besleyip aynı ekranda iki farklı toplam göstermeye sebep oluyordu. Nakit +
+        Banka toplamı artık KPI'daki kasa_banka_toplam ile birebir eşleşir; POS/
+        Diğer, Mali Hesaplar ağacındaki gibi ayrıca canlı okunur (bilgi amaçlı,
+        KPI toplamına dahil değildir).
+        """
+        from apps.finans.application.dashboard_overview_service import _mali_hesap_canli_bakiyeler
 
         groups = {
-            'Nakit': 0,
-            'Banka Hesapları': 0,
+            'Nakit': sum(int(h.get('donem_sonu_bakiye') or 0) for h in kasa_hesaplari),
+            'Banka Hesapları': sum(int(h.get('donem_sonu_bakiye') or 0) for h in banka_hesaplari),
             'POS Hesapları': 0,
             'Diğer Hesaplar': 0,
         }
-        for h in hesaplar:
+
+        diger_tipler = [MaliHesapTipi.POS, MaliHesapTipi.SANAL_POS, MaliHesapTipi.E_CUZDAN, MaliHesapTipi.DIGER]
+        for h in _mali_hesap_canli_bakiyeler(kurum_id, sube_id, tipler=diger_tipler):
             tip = h.get('mali_hesap_tip') or ''
             bakiye = _int_val(h.get('donem_sonu_bakiye'))
-            if tip == MaliHesapTipi.KASA:
-                groups['Nakit'] += bakiye
-            elif tip == MaliHesapTipi.BANKA:
-                groups['Banka Hesapları'] += bakiye
-            elif tip in (MaliHesapTipi.POS, MaliHesapTipi.SANAL_POS):
+            if tip in (MaliHesapTipi.POS, MaliHesapTipi.SANAL_POS):
                 groups['POS Hesapları'] += bakiye
             else:
                 groups['Diğer Hesaplar'] += bakiye
 
-        return [{'label': k, 'value': v} for k, v in groups.items() if v > 0]
+        return [{'label': k, 'value': v} for k, v in groups.items() if v]
