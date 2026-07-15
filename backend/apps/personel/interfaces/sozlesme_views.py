@@ -362,9 +362,18 @@ def api_sozlesme_helper_data(request):
                 'sube_ad': g.gorev_sube.ad if g.gorev_sube_id else '',
             })
 
-    branslar = list(
-        Brans.objects.filter(aktif_mi=True).order_by('ad').values('id', 'ad', 'kod')
-    )
+    sube_id = request.headers.get('X-Sube-ID') or request.session.get('active_sube_id')
+    try:
+        sube_id = int(sube_id) if sube_id else None
+    except (TypeError, ValueError):
+        sube_id = None
+
+    brans_qs = Brans.objects.filter(aktif_mi=True)
+    if sube_id:
+        brans_qs = brans_qs.filter(sube_id=sube_id)
+    elif kurum_id:
+        brans_qs = brans_qs.filter(kurum_id=kurum_id)
+    branslar = list(brans_qs.order_by('ad').values('id', 'ad', 'kod'))
 
     tur_labels = {
         'TAM_ZAMANLI': 'Tam Zamanlı',

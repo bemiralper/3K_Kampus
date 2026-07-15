@@ -1091,12 +1091,13 @@ def gorevlendirme_helper_data_api(request):
         is_active=True
     ).order_by('level', 'name').values('id', 'code', 'name', 'level', 'is_system_role')
     
-    # Branşlar - Global model, kurum_id yok
+    # Branşlar — aktif şubeye özel
     try:
         branslar = Brans.objects.filter(
-            aktif_mi=True
+            aktif_mi=True,
+            sube_id=sube_id,
         ).order_by('ad').values('id', 'ad', 'kod')
-    except:
+    except Exception:
         branslar = []
     
     return JsonResponse({
