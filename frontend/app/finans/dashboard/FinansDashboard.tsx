@@ -123,6 +123,7 @@ export default function FinansDashboard() {
         referansTarih={data.tarih}
         kasaHesaplari={data.kasa_hesaplari}
         bankaHesaplari={data.banka_hesaplari}
+        posHesaplari={data.pos_hesaplari}
       />
 
       <section className="fdash-block">

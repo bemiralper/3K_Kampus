@@ -257,6 +257,23 @@ def _mali_hesap_bloklari(kurum_id, sube_id, egitim_yili_id) -> tuple[list[dict],
     return kasa, banka, kasa_toplam, banka_toplam
 
 
+def _pos_hesap_bloklari(kurum_id, sube_id) -> tuple[list[dict], int]:
+    """
+    POS/Sanal POS/diğer hesap bakiyeleri (canlı).
+
+    "Kasa & banka bakiyeleri" widget'ı sadece KASA+BANKA tiplerini kapsar; POS
+    hesapları (örn. kart tahsilatının biriktiği hesap) bu yüzden dashboard'da
+    HİÇ görünmüyordu — hesapta gerçek para olsa da widget'tan tamamen düşüyordu.
+    Bu fonksiyon aynı canlı BakiyeHareketi kaynağından POS/sanal_pos/e_cüzdan/
+    diğer tiplerini ayrıca döner (ayrı grup — kasa_toplam/banka_toplam'a dahil
+    edilmez, başlıktaki "Kasa & Banka" anlamı bozulmasın).
+    """
+    tipler = [MaliHesapTipi.POS, MaliHesapTipi.SANAL_POS, MaliHesapTipi.E_CUZDAN, MaliHesapTipi.DIGER]
+    pos = _mali_hesap_canli_bakiyeler(kurum_id, sube_id, tipler=tipler)
+    pos_toplam = sum(int(h.get('donem_sonu_bakiye') or 0) for h in pos)
+    return pos, pos_toplam
+
+
 def _mali_hesap_canli_bakiyeler(kurum_id, sube_id, tipler=None) -> list[dict]:
     """Aktif mali hesaplar + son BakiyeHareketi bakiyesi (dönem bağımsız)."""
     from apps.finans.application.selectors.bakiye_hareketi_selector import BakiyeHareketiSelector
@@ -662,6 +679,7 @@ class DashboardOverviewService:
         kasa_hesaplari, banka_hesaplari, kasa_toplam, banka_toplam = _mali_hesap_bloklari(
             kurum_id, sube_id, egitim_yili_id,
         )
+        pos_hesaplari, pos_toplam = _pos_hesap_bloklari(kurum_id, sube_id)
 
         bugunku_islemler = _bugun_islem_satirlari(kurum_id, bugun, sube_id, egitim_yili_id)
 
@@ -722,6 +740,7 @@ class DashboardOverviewService:
                 'bu_ay_net': bu_ay_alinan_tutar - bu_ay_gider,
                 'kasa_toplam': kasa_toplam,
                 'banka_toplam': banka_toplam,
+                'pos_toplam': pos_toplam,
             },
             'bugunku_islemler': bugunku_islemler,
             'yaklasan_odemeler': yaklasan_odemeler,
@@ -731,6 +750,7 @@ class DashboardOverviewService:
             'son_giderler': son_giderler,
             'kasa_hesaplari': kasa_hesaplari,
             'banka_hesaplari': banka_hesaplari,
+            'pos_hesaplari': pos_hesaplari,
             'tahsilat_dagilimi': bu_ay_alinan['ozet'].get('yontem_dagilimi', []),
             'gelir_kaynak_kirilimi': bu_ay_alinan['ozet'].get('kaynak_kirilimi', []),
             'gider_kategori_dagilimi': _gider_kategori_dagilimi(

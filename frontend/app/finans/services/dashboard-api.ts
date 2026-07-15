@@ -99,6 +99,7 @@ export interface OverviewOzetKartlar {
   bu_ay_net: number;
   kasa_toplam: number;
   banka_toplam: number;
+  pos_toplam: number;
 }
 
 export interface OverviewTransaction {
@@ -203,6 +204,7 @@ export interface DashboardOverview {
   son_giderler: OverviewGiderItem[];
   kasa_hesaplari: OverviewMaliHesap[];
   banka_hesaplari: OverviewMaliHesap[];
+  pos_hesaplari: OverviewMaliHesap[];
   tahsilat_dagilimi: OverviewDagilimItem[];
   gelir_kaynak_kirilimi: OverviewDagilimItem[];
   gider_kategori_dagilimi: OverviewDagilimItem[];

@@ -891,6 +891,40 @@ class DonemBakiyeSenkronizeTest(TestCase):
         self.assertIn('Nakit', by_ad)
 
 
+class DashboardPosHesaplariTest(TestCase):
+    """Finans dashboard'daki 'Kasa & Banka' widget'ı POS hesaplarını da göstermeli.
+
+    Önceki sürümde _mali_hesap_bloklari sadece KASA+BANKA tiplerini döndürüyordu;
+    POS tipindeki hesaplar (gerçek parası olsa da) widget'tan tamamen düşüyordu.
+    """
+
+    def setUp(self):
+        from apps.finans.constants.account_types import MaliHesapTipi
+        from apps.finans.constants.hareket_types import HareketKaynagi, HareketYonu
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+
+        self.kurum = Kurum.objects.create(ad='Pos Dash Kurum', kod='PDK')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='PDK')
+        self.ey = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
+        self.pos = MaliHesap.objects.create(
+            sube=self.sube, ad='Vakıfbank POS', tip=MaliHesapTipi.POS, banka='vakifbank',
+        )
+        BakiyeHareketi.objects.create(
+            mali_hesap=self.pos, kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+            yon=HareketYonu.GIRIS, tutar=252_000, kaynak=HareketKaynagi.TAHSILAT,
+            bakiye_oncesi=0, bakiye_sonrasi=252_000, islem_tarihi=timezone.localdate(),
+        )
+
+    def test_pos_hesap_bloklari_returns_live_balance(self):
+        from apps.finans.application.dashboard_overview_service import _pos_hesap_bloklari
+
+        pos, pos_toplam = _pos_hesap_bloklari(self.kurum.id, self.sube.id)
+        self.assertEqual(pos_toplam, 252_000)
+        self.assertEqual(len(pos), 1)
+        self.assertEqual(pos[0]['mali_hesap_ad'], 'Vakıfbank POS')
+        self.assertEqual(pos[0]['donem_sonu_bakiye'], 252_000)
+
+
 class AdminDashboardKasaDagilimiTest(TestCase):
     """Admin dashboard 'Kasa Dağılımı' grafiği KPI kartıyla AYNI canlı kaynağı kullanmalı."""
 
@@ -1066,3 +1100,67 @@ class GelirGiderRaporCompletenessTest(TestCase):
         satir = self._bu_ay_satiri(body)
         self.assertEqual(satir['gider'], self.odenen_gider_tutari)
         self.assertNotEqual(satir['gider'], self.tahakkuk_gider_tutari)
+
+
+class SonBakiyeChainCorruptionTest(TestCase):
+    """
+    son_bakiye() zincir bozulmasına karşı dayanıklı olmalı.
+
+    Canlıda görülen gerçek senaryo: toplu içe aktarma sırasında her BakiyeHareketi
+    satırı servis kilidi (select_for_update + son_bakiye okuma) DIŞINDA doğrudan
+    repository.create ile yazılmış; bu yüzden her satırın bakiye_oncesi'si 0'dan
+    başlamış, kümülatif zincir kopmuş. Sonuç: hesabın son satırı bakiye_sonrasi=0
+    gösterirken gerçek toplam giriş−çıkış 78.500 idi (Mali Hesaplar ekranı 0,
+    Hareketler sekmesindeki Toplam Giriş/Çıkış/Net kartı 78.500 gösteriyordu).
+    """
+
+    def setUp(self):
+        from apps.finans.constants.account_types import MaliHesapTipi
+        from apps.finans.constants.hareket_types import HareketKaynagi, HareketYonu
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+
+        self.kurum = Kurum.objects.create(ad='Zincir Kurum', kod='ZNC')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='ZNC')
+        self.ey = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
+        self.hesap = MaliHesap.objects.create(sube=self.sube, ad='Ziraat', tip=MaliHesapTipi.BANKA)
+
+        def _row(gun, yon, tutar, bakiye_oncesi, bakiye_sonrasi):
+            return BakiyeHareketi.objects.create(
+                mali_hesap=self.hesap, kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+                yon=yon, tutar=tutar, kaynak=HareketKaynagi.TAHSILAT,
+                bakiye_oncesi=bakiye_oncesi, bakiye_sonrasi=bakiye_sonrasi,
+                islem_tarihi=date(2026, 5, 4) + timedelta(days=gun),
+            )
+
+        # Her satır kendi bakiye_oncesi'ni 0 kabul ediyor — gerçek toplu
+        # aktarım hatasının aynısı (bkz. yukarıdaki docstring).
+        _row(0, HareketYonu.GIRIS, 5_000, 0, 5_000)
+        _row(45, HareketYonu.GIRIS, 19_500, 0, 19_500)
+        _row(51, HareketYonu.GIRIS, 25_000, 0, 25_000)
+        _row(53, HareketYonu.GIRIS, 10_000, 5_000, 15_000)
+        _row(57, HareketYonu.GIRIS, 19_000, 0, 19_000)
+        _row(69, HareketYonu.GIRIS, 5_000, 0, 5_000)
+        _row(69, HareketYonu.CIKIS, 5_000, 5_000, 0)  # zincirdeki son satır
+
+    def test_son_bakiye_sum_bazli_dogru_toplami_verir(self):
+        from apps.finans.application.selectors.bakiye_hareketi_selector import BakiyeHareketiSelector
+
+        selector = BakiyeHareketiSelector()
+        # Zincir (son satırın bakiye_sonrasi'si) 0 derdi; gerçek net 78.500.
+        self.assertEqual(selector.get_son_bakiye(self.hesap.id), 78_500)
+        ozet = selector.get_ozet(self.hesap.id, self.ey.id)
+        self.assertEqual(ozet['net'], 78_500)
+        # Mali Hesaplar ağacı ile Hareketler sekmesi artık aynı sayıyı göstermeli.
+        self.assertEqual(selector.get_son_bakiye(self.hesap.id), ozet['net'])
+
+    def test_yeni_hareket_dogru_bakiye_oncesi_ile_zinciri_onarir(self):
+        from apps.finans.application.bakiye_hareketi_service import BakiyeHareketiService
+
+        yeni = BakiyeHareketiService().hareket_olustur(
+            mali_hesap_id=self.hesap.id, kurum_id=self.kurum.id, sube_id=self.sube.id,
+            egitim_yili_id=self.ey.id, yon='giris', tutar=1_000,
+            kaynak='tahsilat', islem_tarihi=date(2026, 7, 20),
+        )
+        # Bozuk zincirden (0) değil, gerçek toplamdan (78.500) devam etmeli.
+        self.assertEqual(yeni.bakiye_oncesi, 78_500)
+        self.assertEqual(yeni.bakiye_sonrasi, 79_500)

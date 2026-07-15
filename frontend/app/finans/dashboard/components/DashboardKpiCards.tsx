@@ -9,6 +9,7 @@ interface Props {
   referansTarih?: string;
   kasaHesaplari?: OverviewMaliHesap[];
   bankaHesaplari?: OverviewMaliHesap[];
+  posHesaplari?: OverviewMaliHesap[];
 }
 
 type CardKey = keyof OverviewOzetKartlar;
@@ -96,6 +97,7 @@ export default function DashboardKpiCards({
   referansTarih,
   kasaHesaplari = [],
   bankaHesaplari = [],
+  posHesaplari = [],
 }: Props) {
   const bugun = hideGelirGider
     ? BUGUN_CARDS.filter((d) => !GELIR_ONLY_KEYS.has(d.key))
@@ -148,6 +150,14 @@ export default function DashboardKpiCards({
               accounts={bankaHesaplari}
               emptyText="Henüz banka hesabı yok."
             />
+            {posHesaplari.length > 0 && (
+              <AccountList
+                title="POS / Diğer"
+                total={cards.pos_toplam}
+                accounts={posHesaplari}
+                emptyText="Henüz POS hesabı yok."
+              />
+            )}
           </div>
         </div>
       </div>
