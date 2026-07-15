@@ -93,6 +93,30 @@ class ContractCalcTests(SimpleTestCase):
         out = derive_month_dates(rows, '2026-09-01')
         self.assertEqual(out[0]['bitis_tarihi'], '2026-09-30')
 
+    def test_derive_month_dates_preserves_partial_last_month(self):
+        """Son ay kısmi çalışma (ör. 15 gün) kullanıcı bitiş tarihini korumalı."""
+        rows = [
+            {'sira_no': 1, 'baslangic_tarihi': '2026-09-01', 'bitis_tarihi': '2026-09-30', 'maas': 50000},
+            {'sira_no': 2, 'baslangic_tarihi': '2026-10-01', 'bitis_tarihi': '2026-10-31', 'maas': 50000},
+            {'sira_no': 3, 'baslangic_tarihi': '2026-11-01', 'bitis_tarihi': '2026-11-15', 'maas': 25000},
+        ]
+        out = derive_month_dates(rows, '2026-09-01')
+        self.assertEqual(out[2]['baslangic_tarihi'], '2026-11-01')
+        self.assertEqual(out[2]['bitis_tarihi'], '2026-11-15')
+        self.assertEqual(out[2]['calisilan_gun'], 15)
+
+    def test_derive_month_dates_chains_after_shortened_middle_month(self):
+        rows = [
+            {'sira_no': 1, 'baslangic_tarihi': '2026-09-01', 'bitis_tarihi': '2026-09-15', 'maas': 50000},
+            {'sira_no': 2, 'baslangic_tarihi': '2026-10-01', 'bitis_tarihi': '2026-10-31', 'maas': 50000},
+        ]
+        out = derive_month_dates(rows, '2026-09-01')
+        self.assertEqual(out[0]['bitis_tarihi'], '2026-09-15')
+        self.assertEqual(out[1]['baslangic_tarihi'], '2026-09-16')
+        # Başlangıç Eylül'e kaydığı için eski Ekim bitişi sıfırlanır → ay sonu
+        self.assertEqual(out[1]['bitis_tarihi'], '2026-09-30')
+        self.assertEqual(out[1]['calisilan_gun'], 15)
+
     def test_derive_month_dates_sequential_after_chain_fill(self):
         rows = [
             {'sira_no': 1, 'baslangic_tarihi': '2026-09-01', 'bitis_tarihi': '2026-09-30', 'maas': 50000},

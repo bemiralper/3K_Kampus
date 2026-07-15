@@ -48,7 +48,11 @@ def month_end(d: date) -> date:
 
 
 def derive_month_dates(rows: list[dict], contract_start: date | str | None) -> list[dict]:
-    """1. ay başlangıcından itibaren sonraki ayların tarihlerini türet."""
+    """1. ay başlangıcından itibaren sonraki ayların tarihlerini türet.
+
+    Aynı ay içindeki kullanıcı bitiş tarihini korur (ör. son ay 15 gün).
+    Bitiş boşsa, başlangıçtan önceyse veya başka aydaysa ay sonuna tamamlanır.
+    """
     if not rows:
         return rows
     start = _parse_date(contract_start) or _parse_date(rows[0].get('baslangic_tarihi'))
@@ -62,8 +66,7 @@ def derive_month_dates(rows: list[dict], contract_start: date | str | None) -> l
             if not r.get('baslangic_tarihi'):
                 r['baslangic_tarihi'] = start.isoformat()
             b = _parse_date(r['baslangic_tarihi']) or start
-            if not r.get('bitis_tarihi'):
-                r['bitis_tarihi'] = month_end(b).isoformat()
+            r['baslangic_tarihi'] = b.isoformat()
         else:
             prev_end = _parse_date(out[i - 1].get('bitis_tarihi'))
             if prev_end:
@@ -71,7 +74,16 @@ def derive_month_dates(rows: list[dict], contract_start: date | str | None) -> l
             else:
                 b = add_months(start, i)
             r['baslangic_tarihi'] = b.isoformat()
+
+        existing_end = _parse_date(r.get('bitis_tarihi'))
+        same_month = (
+            existing_end is not None
+            and existing_end.year == b.year
+            and existing_end.month == b.month
+        )
+        if not existing_end or existing_end < b or not same_month:
             r['bitis_tarihi'] = month_end(b).isoformat()
+
         r['calisilan_gun'] = calc_calisilan_gun(r['baslangic_tarihi'], r['bitis_tarihi'])
         out.append(r)
     return out
