@@ -2,7 +2,7 @@
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 
-from apps.egitim_tanimlari.models import SinifSeviyesi
+from apps.egitim_tanimlari.models import SinifSeviyesi, Brans
 from apps.kurum.domain.models import Kurum
 from apps.sube.domain.models import Sube
 
@@ -23,6 +23,12 @@ class EgitimTanimlariSubeIsolationTest(TestCase):
         )
         self.seviye_b = SinifSeviyesi.objects.create(
             kurum=self.kurum, sube=self.sube_b, ad='9. Sınıf B', kod='9B', sira=1,
+        )
+        self.brans_a = Brans.objects.create(
+            kurum=self.kurum, sube=self.sube_a, ad='Matematik A', kod='MAT-A',
+        )
+        self.brans_b = Brans.objects.create(
+            kurum=self.kurum, sube=self.sube_b, ad='Fizik B', kod='FIZ-B',
         )
 
     def test_ders_list_requires_sube(self):
@@ -51,3 +57,26 @@ class EgitimTanimlariSubeIsolationTest(TestCase):
             HTTP_X_SUBE_ID=str(self.sube_a.id),
         )
         self.assertIn(res.status_code, (403, 404))
+
+    def test_legacy_tanimlar_brans_scoped(self):
+        res = self.client.get(
+            '/egitim-tanimlari/api/legacy/tanimlar/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_a.id),
+        )
+        self.assertEqual(res.status_code, 200)
+        branslar = res.json()['data']['branslar']
+        ids = {row['id'] for row in branslar}
+        self.assertIn(self.brans_a.id, ids)
+        self.assertNotIn(self.brans_b.id, ids)
+
+    def test_brans_list_scoped(self):
+        res = self.client.get(
+            '/egitim-tanimlari/api/brans/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_b.id),
+        )
+        self.assertEqual(res.status_code, 200)
+        ids = {row['id'] for row in res.json()['data']}
+        self.assertIn(self.brans_b.id, ids)
+        self.assertNotIn(self.brans_a.id, ids)

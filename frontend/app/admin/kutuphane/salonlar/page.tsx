@@ -77,18 +77,16 @@ export default function SalonlarListPage() {
   });
 
   return (
-    <div style={{ padding: 0, animation: 'fadeIn 0.4s ease both' }}>
+    <div style={{ padding: 0 }}>
       <style>{`
-        @keyframes salonFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .salon-summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 24px; }
-        .salon-summary-card { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: 16px; background: #fff; border: 1.5px solid #e5e7eb; transition: all 0.2s; animation: salonFadeIn 0.35s ease both; cursor: default; }
-        .salon-summary-card:hover { border-color: #c7d2fe; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.06); }
+        .salon-summary-card { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: 16px; background: #fff; border: 1.5px solid #e5e7eb; transition: border-color 0.2s, box-shadow 0.2s; cursor: default; }
+        .salon-summary-card:hover { border-color: #c7d2fe; box-shadow: 0 6px 20px rgba(0,0,0,0.06); }
         .salon-summary-icon { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); flex-shrink: 0; }
         .salon-summary-value { font-size: 26px; font-weight: 800; color: #111827; line-height: 1.1; }
         .salon-summary-label { font-size: 12px; font-weight: 600; color: #6b7280; margin-top: 2px; }
-        .salon-card { background: #fff; border-radius: 16px; border: 1.5px solid #e5e7eb; overflow: hidden; transition: all 0.25s cubic-bezier(0.4,0,0.2,1); text-decoration: none; color: inherit; display: block; animation: salonFadeIn 0.4s ease both; }
-        .salon-card:hover { border-color: #93c5fd; box-shadow: 0 10px 30px rgba(0,0,0,0.08); transform: translateY(-3px); }
+        .salon-card { background: #fff; border-radius: 16px; border: 1.5px solid #e5e7eb; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s; text-decoration: none; color: inherit; display: block; }
+        .salon-card:hover { border-color: #93c5fd; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
         .salon-card-stripe { height: 4px; width: 100%; }
         .salon-card-body { padding: 22px; }
         .salon-card-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
@@ -168,8 +166,8 @@ export default function SalonlarListPage() {
             { label: 'Toplam Masa', value: toplamMasa, icon: '🪑', gradient: 'linear-gradient(135deg, #3b82f6, #2563eb)' },
             { label: 'Aktif Atama', value: toplamAtama, icon: '👤', gradient: 'linear-gradient(135deg, #f59e0b, #d97706)' },
             { label: 'Doluluk', value: `%${genelDoluluk}`, icon: '📊', gradient: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' },
-          ].map((c, i) => (
-            <div key={c.label} className="salon-summary-card" style={{ animationDelay: `${i * 0.06}s` }}>
+          ].map((c) => (
+            <div key={c.label} className="salon-summary-card">
               <div className="salon-summary-icon" style={{ background: c.gradient, color: '#fff' }}>{c.icon}</div>
               <div>
                 <div className="salon-summary-value">{c.value}</div>
@@ -199,12 +197,12 @@ export default function SalonlarListPage() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '20px' }}>
-          {sortedLibraries.map((lib, i) => {
+          {sortedLibraries.map((lib) => {
             const doluluk = lib.doluluk_orani || 0;
             const st = STATUS_COLORS[lib.durum] || STATUS_COLORS.INACTIVE;
             const barColor = doluluk > 90 ? '#ef4444' : doluluk > 70 ? '#f59e0b' : '#22c55e';
             return (
-              <Link key={lib.id} href={href(`salonlar/${lib.id}`)} className="salon-card" style={{ animationDelay: `${i * 0.05}s` }}>
+              <Link key={lib.id} href={href(`salonlar/${lib.id}`)} className="salon-card">
                 <div className="salon-card-stripe" style={{ background: st.gradient }} />
                 <div className="salon-card-body">
                   {/* Header */}

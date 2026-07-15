@@ -354,7 +354,7 @@ export default function SalonDetayPage() {
   const doluluk = library.doluluk_orani ?? library.doluluk_yuzde ?? 0;
 
   return (
-    <div style={{ padding: 0, animation: 'pageEnter 0.4s ease both' }}>
+    <div style={{ padding: 0 }}>
       {/* Toast */}
       {toast && (
         <div style={{
@@ -362,15 +362,10 @@ export default function SalonDetayPage() {
           padding: '12px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
           color: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
           backgroundColor: toast.type === 'success' ? '#059669' : '#dc2626',
-          animation: 'slideIn 0.3s ease',
         }}>
           {toast.type === 'success' ? '✓' : '✕'} {toast.msg}
         </div>
       )}
-      <style>{`
-        @keyframes slideIn { from { transform: translateX(100px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
-        @keyframes pageEnter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-      `}</style>
 
       {/* ════ HEADER ════ */}
       <div className="hero-header" style={{ marginBottom: '24px' }}>

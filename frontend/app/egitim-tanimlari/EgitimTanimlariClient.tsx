@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { getContextHeaders, resolveApiUrl } from "@/lib/api";
+import { useKurum } from "@/lib/contexts/KurumContext";
 import OdalarSiniflarSection from "./OdalarSiniflarSection";
 import { TermTabPage } from "./terms";
 
@@ -39,6 +40,7 @@ interface EgitimTanimlariClientProps {
 }
 
 export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariClientProps) {
+  const { activeSube } = useKurum();
   const [activeTab, setActiveTab] = useState<TabType>("sinif_seviyeleri");
   const [data, setData] = useState<TanimlarResponse>(initialData);
   const [loading, setLoading] = useState(false);
@@ -91,8 +93,9 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
   }, []);
 
   useEffect(() => {
+    if (!activeSube?.id) return;
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, activeSube?.id]);
 
   // Reset form
   const resetForm = () => {
@@ -465,6 +468,20 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
         </button>
         )}
       </div>
+
+      {activeSube && (
+        <div style={{
+          marginBottom: 16,
+          padding: '10px 14px',
+          borderRadius: 10,
+          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.08))',
+          border: '1px solid rgba(59, 130, 246, 0.2)',
+          fontSize: 13,
+          color: '#1e40af',
+        }}>
+          <strong>Şube:</strong> {activeSube.ad} — tanımlar yalnızca bu şubeye özel listelenir.
+        </div>
+      )}
 
       {/* Error Message */}
       {error && (
