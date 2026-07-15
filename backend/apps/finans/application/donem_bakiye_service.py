@@ -246,6 +246,76 @@ class DonemBakiyeService:
 
     # ─── Bakiye Yeniden Hesaplama ────────────────
 
+    def _hesap_donem_satirini_hareketlerden_guncelle(self, donem, mali_hesap_id, egitim_yili_id):
+        """Açık dönem satırının gelir/gider/bakiye alanlarını hareketlerden yazar."""
+        gelir = self.hareket_repo.toplam_giris(mali_hesap_id, egitim_yili_id, devir_haric=True)
+        gider = self.hareket_repo.toplam_cikis(mali_hesap_id, egitim_yili_id, devir_haric=True)
+        donem.toplam_gelir = gelir
+        donem.toplam_gider = gider
+        donem.hesapla_bakiye()
+        donem.save(update_fields=['toplam_gelir', 'toplam_gider', 'donem_sonu_bakiye', 'updated_at'])
+
+    @transaction.atomic
+    def senkronize_acik_donem(self, kurum_id, sube_id, egitim_yili_id):
+        """Açık dönem kayıtlarını hareketlerden yeniden hesaplar; eksik hesap satırlarını oluşturur.
+
+        Dönem raporları ve dashboard metadata'sı DonemBakiye tablosunu okur. Hareketler
+        repair/import yoluyla oluşturulduysa veya hesap dönem açılmadan sonra eklendiyse
+        satırlar eksik/kalıcı olabilir — okuma öncesi bu metot self-heal yapar.
+        Kapalı/devredilmiş dönem snapshot'larına dokunulmaz.
+        """
+        from apps.finans.domain.financial_account import MaliHesap
+
+        olusturulan = 0
+        guncellenen = 0
+
+        for hesap in MaliHesap.objects.filter(sube_id=sube_id, aktif_mi=True):
+            donem = self.repo.get_by_mali_hesap_ve_yil(hesap.id, egitim_yili_id)
+            if not donem:
+                devir = self._onceki_yil_devir(hesap.id, egitim_yili_id)
+                donem = self.repo.create({
+                    'mali_hesap_id': hesap.id,
+                    'kurum_id': kurum_id,
+                    'sube_id': sube_id,
+                    'egitim_yili_id': egitim_yili_id,
+                    'donem_basi_bakiye': devir if devir is not None else int(hesap.baslangic_bakiye or 0),
+                    'durum': DonemDurum.ACIK,
+                })
+                olusturulan += 1
+
+            if donem.durum != DonemDurum.ACIK:
+                continue
+
+            eski = (donem.toplam_gelir, donem.toplam_gider, donem.donem_sonu_bakiye)
+            self._hesap_donem_satirini_hareketlerden_guncelle(donem, hesap.id, egitim_yili_id)
+            donem.refresh_from_db()
+            yeni = (donem.toplam_gelir, donem.toplam_gider, donem.donem_sonu_bakiye)
+            if eski != yeni:
+                guncellenen += 1
+
+        return {'olusturulan': olusturulan, 'guncellenen': guncellenen}
+
+    @transaction.atomic
+    def senkronize_kurum_acik_donemler(self, kurum_id):
+        """Kurumdaki tüm açık dönem (şube × yıl) kombinasyonlarını senkronize eder."""
+        from apps.sube.domain.models import Sube
+
+        from apps.finans.domain.donem_bakiye import DonemBakiye
+
+        yil_ids = set(
+            DonemBakiye.objects.filter(kurum_id=kurum_id, durum=DonemDurum.ACIK)
+            .values_list('egitim_yili_id', flat=True)
+        )
+        sube_ids = list(Sube.objects.filter(kurum_id=kurum_id).values_list('id', flat=True))
+        toplam = {'olusturulan': 0, 'guncellenen': 0}
+        for sube_id in sube_ids:
+            for ey_id in yil_ids:
+                if ey_id:
+                    r = self.senkronize_acik_donem(kurum_id, sube_id, ey_id)
+                    toplam['olusturulan'] += r['olusturulan']
+                    toplam['guncellenen'] += r['guncellenen']
+        return toplam
+
     @transaction.atomic
     def bakiye_yeniden_hesapla(self, mali_hesap_id, egitim_yili_id):
         """
@@ -259,14 +329,9 @@ class DonemBakiyeService:
         if donem.durum != DonemDurum.ACIK:
             raise ValueError('Sadece açık dönemlerin bakiyesi yeniden hesaplanabilir.')
 
-        gelir = self.hareket_repo.toplam_giris(mali_hesap_id, egitim_yili_id, devir_haric=True)
-        gider = self.hareket_repo.toplam_cikis(mali_hesap_id, egitim_yili_id, devir_haric=True)
-
         eski_bakiye = donem.donem_sonu_bakiye
-        donem.toplam_gelir = gelir
-        donem.toplam_gider = gider
-        donem.hesapla_bakiye()
-        donem.save(update_fields=['toplam_gelir', 'toplam_gider', 'donem_sonu_bakiye', 'updated_at'])
+        self._hesap_donem_satirini_hareketlerden_guncelle(donem, mali_hesap_id, egitim_yili_id)
+        donem.refresh_from_db()
 
         return {
             'eski_bakiye': eski_bakiye,

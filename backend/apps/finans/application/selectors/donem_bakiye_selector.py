@@ -2,6 +2,7 @@
 Dönem Bakiye Selector
 Read-only sorgular — dönem bazlı bakiye ve yıllar arası karşılaştırma.
 """
+from apps.finans.application.donem_bakiye_service import DonemBakiyeService
 from apps.finans.infrastructure.donem_bakiye_repository import DonemBakiyeRepository
 from apps.finans.constants.hareket_types import DonemDurum
 
@@ -12,20 +13,38 @@ class DonemBakiyeSelector:
     def __init__(self):
         self.repo = DonemBakiyeRepository()
 
+    def _senkronize_sube_ozet(self, kurum_id, sube_id, egitim_yili_id) -> None:
+        DonemBakiyeService().senkronize_acik_donem(kurum_id, sube_id, egitim_yili_id)
+
     def get_by_id(self, pk):
         """Tek bir dönem bakiye kaydı getirir."""
-        return self.repo.get_by_id(pk)
+        donem = self.repo.get_by_id(pk)
+        if donem and donem.durum == DonemDurum.ACIK and donem.sube_id and donem.egitim_yili_id:
+            self._senkronize_sube_ozet(donem.kurum_id, donem.sube_id, donem.egitim_yili_id)
+            donem.refresh_from_db()
+        return donem
 
     def get_by_mali_hesap_ve_yil(self, mali_hesap_id, egitim_yili_id):
         """Mali hesap + eğitim yılı çifti ile kayıt getirir."""
-        return self.repo.get_by_mali_hesap_ve_yil(mali_hesap_id, egitim_yili_id)
+        donem = self.repo.get_by_mali_hesap_ve_yil(mali_hesap_id, egitim_yili_id)
+        if donem and donem.durum == DonemDurum.ACIK and donem.sube_id:
+            self._senkronize_sube_ozet(donem.kurum_id, donem.sube_id, egitim_yili_id)
+            donem = self.repo.get_by_mali_hesap_ve_yil(mali_hesap_id, egitim_yili_id)
+        return donem
 
-    def get_sube_ozet(self, sube_id, egitim_yili_id):
+    def get_sube_ozet(self, sube_id, egitim_yili_id, *, kurum_id=None):
         """
         Şubenin dönem özeti — tüm mali hesaplar konsolide.
         Returns:
             dict: { hesaplar: [...], toplam_gelir, toplam_gider, toplam_bakiye, donem_basi }
         """
+        if kurum_id is None:
+            from apps.sube.domain.models import Sube
+            row = Sube.objects.filter(pk=sube_id).values('kurum_id').first()
+            kurum_id = row['kurum_id'] if row else None
+        if kurum_id:
+            self._senkronize_sube_ozet(kurum_id, sube_id, egitim_yili_id)
+
         donemler = self.repo.get_by_sube_ve_yil(sube_id, egitim_yili_id)
         hesaplar = []
         toplam_donem_basi = 0
@@ -64,6 +83,11 @@ class DonemBakiyeSelector:
         """
         Kurumun dönem özeti — tüm şubeler konsolide.
         """
+        from apps.sube.domain.models import Sube
+
+        for sube_id in Sube.objects.filter(kurum_id=kurum_id).values_list('id', flat=True):
+            self._senkronize_sube_ozet(kurum_id, sube_id, egitim_yili_id)
+
         donemler = self.repo.get_by_kurum_ve_yil(kurum_id, egitim_yili_id)
         sube_map = {}
 
@@ -101,6 +125,7 @@ class DonemBakiyeSelector:
         Returns:
             list: [{ yil: '2024-2025', gelir, gider, net, bakiye, degisim_yuzde }, ...]
         """
+        DonemBakiyeService().senkronize_kurum_acik_donemler(kurum_id)
         rows = self.repo.get_kurum_yillar_arasi(kurum_id)
         sonuc = []
         onceki_net = None

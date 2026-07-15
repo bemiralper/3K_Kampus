@@ -198,46 +198,57 @@ def _gunluk_gelir_gider_net(
     return days
 
 
+def _donem_hesap_metadata(kurum_id, sube_id, egitim_yili_id) -> dict[int, dict]:
+    """DonemBakiye satırlarını mali_hesap_id → metadata map olarak döner."""
+    if not egitim_yili_id:
+        return {}
+
+    selector = DonemBakiyeSelector()
+    if sube_id:
+        ozet = selector.get_sube_ozet(int(sube_id), int(egitim_yili_id))
+        rows = ozet.get('hesaplar', [])
+    else:
+        donemler = selector.repo.get_by_kurum_ve_yil(int(kurum_id), int(egitim_yili_id))
+        hesap_map: dict[int, dict] = {}
+        for d in donemler:
+            hid = d.mali_hesap_id
+            if hid not in hesap_map:
+                hesap_map[hid] = {
+                    'id': d.id,
+                    'mali_hesap_id': hid,
+                    'donem_basi_bakiye': 0,
+                    'toplam_gelir': 0,
+                    'toplam_gider': 0,
+                    'donem_sonu_bakiye': 0,
+                }
+            hesap_map[hid]['donem_basi_bakiye'] += d.donem_basi_bakiye
+            hesap_map[hid]['toplam_gelir'] += d.toplam_gelir
+            hesap_map[hid]['toplam_gider'] += d.toplam_gider
+            hesap_map[hid]['donem_sonu_bakiye'] += d.donem_sonu_bakiye
+        rows = list(hesap_map.values())
+
+    return {int(r['mali_hesap_id']): r for r in rows}
+
+
 def _mali_hesap_bloklari(kurum_id, sube_id, egitim_yili_id) -> tuple[list[dict], list[dict], int, int]:
     """
     Kasa/banka bakiyeleri.
 
-    Öncelik: DonemBakiye (eğitim yılı seçiliyse).
-    Yedek: aktif MaliHesap + BakiyeHareketi son bakiye — böylece yeni eklenen
-    banka hesapları dönem satırı olmasa da dashboard'da görünür.
+    Gösterilen bakiye: canlı BakiyeHareketi son bakiyesi (Mali Hesaplar ile aynı kaynak).
+    Eğitim yılı seçiliyse dönem metadata (dönem başı, gelir, gider) DonemBakiye'den
+    eklenir; eksik veya güncel olmayan dönem satırları bakiye tutarını etkilemez.
     """
-    hesaplar: list[dict] = []
-
-    if egitim_yili_id:
-        selector = DonemBakiyeSelector()
-        if sube_id:
-            ozet = selector.get_sube_ozet(int(sube_id), int(egitim_yili_id))
-            hesaplar = ozet.get('hesaplar', [])
-        else:
-            donemler = selector.repo.get_by_kurum_ve_yil(int(kurum_id), int(egitim_yili_id))
-            hesap_map: dict[int, dict] = {}
-            for d in donemler:
-                hid = d.mali_hesap_id
-                if hid not in hesap_map:
-                    hesap_map[hid] = {
-                        'id': d.id,
-                        'mali_hesap_id': hid,
-                        'mali_hesap_ad': d.mali_hesap.ad,
-                        'mali_hesap_tip': d.mali_hesap.tip,
-                        'donem_basi_bakiye': 0,
-                        'toplam_gelir': 0,
-                        'toplam_gider': 0,
-                        'donem_sonu_bakiye': 0,
-                    }
-                hesap_map[hid]['donem_basi_bakiye'] += d.donem_basi_bakiye
-                hesap_map[hid]['toplam_gelir'] += d.toplam_gelir
-                hesap_map[hid]['toplam_gider'] += d.toplam_gider
-                hesap_map[hid]['donem_sonu_bakiye'] += d.donem_sonu_bakiye
-            hesaplar = list(hesap_map.values())
-
-    # Dönem satırı yoksa veya eğitim yılı gelmediyse canlı bakiyeye düş
-    if not hesaplar:
-        hesaplar = _mali_hesap_canli_bakiyeler(kurum_id, sube_id)
+    hesaplar = _mali_hesap_canli_bakiyeler(kurum_id, sube_id)
+    donem_by_id = _donem_hesap_metadata(kurum_id, sube_id, egitim_yili_id)
+    for h in hesaplar:
+        d = donem_by_id.get(int(h['mali_hesap_id']))
+        if not d:
+            continue
+        h['donem_basi_bakiye'] = d.get('donem_basi_bakiye', 0)
+        h['toplam_gelir'] = d.get('toplam_gelir', 0)
+        h['toplam_gider'] = d.get('toplam_gider', 0)
+        if d.get('id') is not None:
+            h['id'] = d['id']
 
     kasa = [h for h in hesaplar if h.get('mali_hesap_tip') == MaliHesapTipi.KASA]
     banka = [h for h in hesaplar if h.get('mali_hesap_tip') == MaliHesapTipi.BANKA]

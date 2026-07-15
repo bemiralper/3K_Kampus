@@ -743,3 +743,149 @@ class FinansExpansionTest(TestCase):
         self.assertIn('Tahsilatlar', text)
         self.assertIn('Kasa Özeti', text)
         self.assertTrue(response.content.startswith(b'\xef\xbb\xbf'))
+
+
+class DashboardMaliHesapBloklariTest(TestCase):
+    """Dashboard kasa/banka widget'ı canlı BakiyeHareketi bakiyesini kullanmalı."""
+
+    def setUp(self):
+        from apps.finans.constants.account_types import MaliHesapTipi
+        from apps.finans.constants.hareket_types import HareketKaynagi, HareketYonu
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+        from apps.finans.domain.donem_bakiye import DonemBakiye
+
+        self.kurum = Kurum.objects.create(ad='Dash Mali Kurum', kod='DMK')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='DMK')
+        self.ey = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
+        self.kasa = MaliHesap.objects.create(
+            sube=self.sube, ad='Nakit', tip=MaliHesapTipi.KASA,
+        )
+        self.banka_eski = MaliHesap.objects.create(
+            sube=self.sube, ad='Ziraat Bankası (İ.K)', tip=MaliHesapTipi.BANKA, banka='ziraat',
+        )
+        self.banka_yeni = MaliHesap.objects.create(
+            sube=self.sube, ad='Vakıfbank', tip=MaliHesapTipi.BANKA, banka='vakifbank',
+        )
+        today = timezone.localdate()
+        BakiyeHareketi.objects.create(
+            mali_hesap=self.kasa,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            yon=HareketYonu.GIRIS,
+            tutar=249_031,
+            kaynak=HareketKaynagi.TAHSILAT,
+            bakiye_oncesi=0,
+            bakiye_sonrasi=249_031,
+            islem_tarihi=today,
+        )
+        BakiyeHareketi.objects.create(
+            mali_hesap=self.banka_yeni,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            yon=HareketYonu.GIRIS,
+            tutar=252_000,
+            kaynak=HareketKaynagi.TAHSILAT,
+            bakiye_oncesi=0,
+            bakiye_sonrasi=252_000,
+            islem_tarihi=today,
+        )
+        # Dönem satırı var ama canlı bakiye 0 — eski dashboard burada 78.500 gösteriyordu
+        DonemBakiye.objects.create(
+            mali_hesap=self.banka_eski,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            donem_basi_bakiye=78_500,
+            toplam_gelir=0,
+            toplam_gider=0,
+            donem_sonu_bakiye=78_500,
+        )
+        # Vakıfbank için dönem satırı yok — eski dashboard bu hesabı hiç listelemiyordu
+
+    def test_dashboard_uses_live_balances_not_stale_donem_rows(self):
+        from apps.finans.application.dashboard_overview_service import _mali_hesap_bloklari
+
+        kasa, banka, kasa_toplam, banka_toplam = _mali_hesap_bloklari(
+            self.kurum.id, self.sube.id, self.ey.id,
+        )
+        kasa_map = {h['mali_hesap_ad']: h['donem_sonu_bakiye'] for h in kasa}
+        banka_map = {h['mali_hesap_ad']: h['donem_sonu_bakiye'] for h in banka}
+
+        self.assertEqual(kasa_map['Nakit'], 249_031)
+        self.assertEqual(kasa_toplam, 249_031)
+        self.assertEqual(banka_map['Ziraat Bankası (İ.K)'], 0)
+        self.assertEqual(banka_map['Vakıfbank'], 252_000)
+        self.assertEqual(banka_toplam, 252_000)
+        self.assertIn('Vakıfbank', banka_map)
+
+
+class DonemBakiyeSenkronizeTest(TestCase):
+    """DonemBakiye okuma öncesi hareketlerden self-heal senkronizasyonu."""
+
+    def setUp(self):
+        from apps.finans.constants.account_types import MaliHesapTipi
+        from apps.finans.constants.hareket_types import HareketKaynagi, HareketYonu
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+        from apps.finans.domain.donem_bakiye import DonemBakiye
+
+        self.kurum = Kurum.objects.create(ad='Donem Sync Kurum', kod='DSK')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='DSK')
+        self.ey = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
+        self.kasa = MaliHesap.objects.create(
+            sube=self.sube, ad='Nakit', tip=MaliHesapTipi.KASA,
+        )
+        self.banka_eski = MaliHesap.objects.create(
+            sube=self.sube, ad='Ziraat Bankası (İ.K)', tip=MaliHesapTipi.BANKA, banka='ziraat',
+        )
+        self.banka_yeni = MaliHesap.objects.create(
+            sube=self.sube, ad='Vakıfbank', tip=MaliHesapTipi.BANKA, banka='vakifbank',
+        )
+        today = timezone.localdate()
+        BakiyeHareketi.objects.create(
+            mali_hesap=self.banka_eski,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            yon=HareketYonu.CIKIS,
+            tutar=78_500,
+            kaynak=HareketKaynagi.GIDER,
+            bakiye_oncesi=78_500,
+            bakiye_sonrasi=0,
+            islem_tarihi=today,
+        )
+        BakiyeHareketi.objects.create(
+            mali_hesap=self.banka_yeni,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            yon=HareketYonu.GIRIS,
+            tutar=252_000,
+            kaynak=HareketKaynagi.TAHSILAT,
+            bakiye_oncesi=0,
+            bakiye_sonrasi=252_000,
+            islem_tarihi=today,
+        )
+        DonemBakiye.objects.create(
+            mali_hesap=self.banka_eski,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            donem_basi_bakiye=78_500,
+            toplam_gelir=0,
+            toplam_gider=0,
+            donem_sonu_bakiye=78_500,
+        )
+
+    def test_get_sube_ozet_senkronize_stale_and_missing_accounts(self):
+        from apps.finans.application.selectors.donem_bakiye_selector import DonemBakiyeSelector
+
+        ozet = DonemBakiyeSelector().get_sube_ozet(self.sube.id, self.ey.id)
+        by_ad = {h['mali_hesap_ad']: h for h in ozet['hesaplar']}
+
+        self.assertEqual(by_ad['Ziraat Bankası (İ.K)']['donem_sonu_bakiye'], 0)
+        self.assertEqual(by_ad['Ziraat Bankası (İ.K)']['toplam_gider'], 78_500)
+        self.assertIn('Vakıfbank', by_ad)
+        self.assertEqual(by_ad['Vakıfbank']['donem_sonu_bakiye'], 252_000)
+        self.assertIn('Nakit', by_ad)
