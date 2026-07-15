@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useKurum } from '@/lib/contexts/KurumContext';
 import {
   fetchSozlesme,
   fetchHelperData,
@@ -16,6 +17,7 @@ import type {
   Sozlesme,
   SozlesmeFormData,
   HelperData,
+  HelperPersonel,
   MaasPlaniSatiri,
   MesaiSaati,
   SozlesmeMadde,
@@ -492,6 +494,7 @@ export interface SozlesmeEditorClientProps {
 export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEditorClientProps) {
   const router = useRouter();
   const isEdit = mode === 'edit';
+  const { activeSube, activeEgitimYili, initialized } = useKurum();
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -546,6 +549,7 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
   );
 
   useEffect(() => {
+    if (!initialized || !activeSube?.id) return;
     (async () => {
       const hRes = await fetchHelperData(isEdit && sozlesmeId ? sozlesmeId : undefined);
       if (hRes.success && hRes.data) setHelper(hRes.data);
@@ -565,26 +569,31 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
         setLoading(false);
       }
     })();
-  }, [isEdit, sozlesmeId, markClean]);
+  }, [isEdit, sozlesmeId, markClean, initialized, activeSube?.id, activeEgitimYili?.id]);
 
   const selectedPersonel = helper?.personeller.find((p) => p.id === form.personel_id);
   const personelAd = sozlesme?.personel_ad || selectedPersonel?.tam_ad || 'Yeni Sözleşme';
   const personelFoto = sozlesme?.personel_foto || selectedPersonel?.fotograf || null;
+  const crossSubeUyari = !isEdit ? selectedPersonel?.uyari || null : null;
 
   const showDersUcreti =
     form.sozlesme_turu === 'DERS_UCRETLI' || form.sozlesme_turu === 'KARMA';
 
   const handlePersonelChange = (personelId: number) => {
     const p = helper?.personeller.find((x) => x.id === personelId);
-    const g = helper?.gorevlendirmeler?.find((x) => x.personel_id === personelId);
+    const currentSubeId = activeSube?.id ?? helper?.sube_id;
+    const g =
+      helper?.gorevlendirmeler?.find(
+        (x) => x.personel_id === personelId && (!currentSubeId || x.sube_id === currentSubeId),
+      ) || helper?.gorevlendirmeler?.find((x) => x.personel_id === personelId);
     patchForm({
       personel_id: personelId,
       personel_no_snapshot: p?.personel_no || '',
-      sube_id: g?.sube_id ?? p?.sube_id ?? null,
+      sube_id: currentSubeId ?? g?.sube_id ?? p?.sube_id ?? null,
       gorevlendirme_id: g?.id ?? null,
       brans_snapshot: g?.brans_ad || '',
       gorev_snapshot: g?.gorev_ad || '',
-      departman_snapshot: g?.sube_ad || '',
+      departman_snapshot: g?.sube_ad || activeSube?.ad || '',
     });
   };
 
@@ -610,8 +619,18 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
       return;
     }
 
+    if (!isEdit && crossSubeUyari) {
+      const ok = window.confirm(
+        `${crossSubeUyari}\n\nBu şubede yine de yeni sözleşme oluşturmak istiyor musunuz?`,
+      );
+      if (!ok) return;
+    }
+
     setSaving(true);
     const payload = buildPayload(asTaslak ? 'TASLAK' : 'AKTIF');
+    if (activeSube?.id) {
+      payload.sube_id = activeSube.id;
+    }
 
     try {
       let res;
@@ -785,6 +804,19 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
                 <h2 className="sozlesme-editor__section-title">📋 Genel Bilgiler</h2>
                 <div className="se-field">
                   <label>Personel *</label>
+                  {activeSube && !isEdit && (
+                    <div style={{
+                      marginBottom: 8,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      background: 'rgba(59, 130, 246, 0.08)',
+                      border: '1px solid rgba(59, 130, 246, 0.2)',
+                      fontSize: 12,
+                      color: '#1e40af',
+                    }}>
+                      Şube: <strong>{activeSube.ad}</strong> — yalnızca bu şubede görevli personeller listelenir.
+                    </div>
+                  )}
                   <select
                     className="se-select"
                     value={form.personel_id || ''}
@@ -792,10 +824,26 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
                     disabled={isEdit}
                   >
                     <option value="">Seçiniz...</option>
-                    {helper?.personeller.map((p) => (
-                      <option key={p.id} value={p.id}>{p.tam_ad}</option>
+                    {helper?.personeller.map((p: HelperPersonel) => (
+                      <option key={p.id} value={p.id}>
+                        {p.uyari ? `⚠ ${p.tam_ad} — ${p.diger_sube_sozlesme?.sube_ad || 'diğer şube'} sözleşmesi var` : p.tam_ad}
+                      </option>
                     ))}
                   </select>
+                  {crossSubeUyari && (
+                    <div style={{
+                      marginTop: 8,
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      fontSize: 13,
+                      color: '#92400e',
+                      lineHeight: 1.45,
+                    }}>
+                      {crossSubeUyari} Bu şubede de sözleşme oluşturabilirsiniz; kayıt sırasında onay istenecektir.
+                    </div>
+                  )}
                 </div>
                 <div className="se-grid-2">
                   <div className="se-field">

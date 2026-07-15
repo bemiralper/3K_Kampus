@@ -140,3 +140,50 @@ def allowed_subeler_for_request(request, kurum_id):
         from apps.sube.domain.models import Sube
         qs = Sube.objects.filter(kurum_id=kurum_id, aktif_mi=True).order_by('ad')
     return [serialize_sube(s) for s in qs]
+
+
+def personel_queryset_for_gorev_sube(kurum_id, sube_id, egitim_yili_id=None, *, aktif_only=True):
+    """
+    Yalnızca bu şubede aktif görevlendirmesi olan personeller.
+
+    Sözleşme oluşturma için kullanılır (ana şube fallback yok).
+    """
+    gorev_base = _gorevlendirme_exists_filter(kurum_id, egitim_yili_id)
+    has_gorev = PersonelGorevlendirme.objects.filter(
+        **gorev_base,
+        gorev_sube_id=sube_id,
+    )
+    qs = Personel.objects.filter(kurum_id=kurum_id)
+    if aktif_only:
+        qs = qs.filter(aktif_mi=True)
+    return qs.filter(Exists(has_gorev)).select_related('kurum', 'sube', 'user').order_by('soyad', 'ad')
+
+
+def personel_has_gorev_in_sube(personel_id, kurum_id, sube_id, egitim_yili_id=None):
+    filt = {
+        'personel_id': personel_id,
+        'kurum_id': kurum_id,
+        'gorev_sube_id': sube_id,
+        'aktif_mi': True,
+    }
+    if egitim_yili_id:
+        filt['egitim_yili_id'] = egitim_yili_id
+    return PersonelGorevlendirme.objects.filter(**filt).exists()
+
+
+def resolve_gorevlendirme_for_sube(personel_id, kurum_id, sube_id, egitim_yili_id=None):
+    """Aktif şubedeki görevlendirme kaydı (varsa)."""
+    filt = {
+        'personel_id': personel_id,
+        'kurum_id': kurum_id,
+        'gorev_sube_id': sube_id,
+        'aktif_mi': True,
+    }
+    if egitim_yili_id:
+        filt['egitim_yili_id'] = egitim_yili_id
+    return (
+        PersonelGorevlendirme.objects.filter(**filt)
+        .select_related('brans', 'rol', 'gorev_sube')
+        .order_by('id')
+        .first()
+    )

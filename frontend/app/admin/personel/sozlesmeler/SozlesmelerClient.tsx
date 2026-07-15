@@ -95,7 +95,7 @@ const turTagColor = (tur: string): string => {
 
 export default function SozlesmelerClient() {
   const router = useRouter();
-  const { activeKurum, activeEgitimYili, initialized } = useKurum();
+  const { activeKurum, activeEgitimYili, activeSube, initialized } = useKurum();
 
   const [sozlesmeler, setSozlesmeler] = useState<Sozlesme[]>([]);
   const [stats, setStats] = useState<SozlesmeStats | null>(null);
@@ -143,7 +143,7 @@ export default function SozlesmelerClient() {
     if (stRes.success && stRes.data) setStats(stRes.data);
     if (hRes.success && hRes.data) setHelper(hRes.data);
     setLoading(false);
-  }, [initialized, activeKurum, activeEgitimYili?.id, debouncedSearch, durumFiltre, turFiltre, tumYillar]);
+  }, [initialized, activeKurum, activeSube?.id, activeEgitimYili?.id, debouncedSearch, durumFiltre, turFiltre, tumYillar]);
 
   useEffect(() => { load(); }, [load]);
 

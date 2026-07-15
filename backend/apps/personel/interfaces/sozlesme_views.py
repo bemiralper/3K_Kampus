@@ -109,11 +109,22 @@ def api_sozlesme_list_create(request):
     kurum_id, ey_id = _ctx(request)
     svc = SozlesmeService()
 
+    from apps.personel.interfaces.sube_context import (
+        mandatory_personel_context,
+        personel_has_gorev_in_sube,
+        resolve_gorevlendirme_for_sube,
+    )
+    from apps.personel.domain.sozlesme_models import PersonelSozlesme, SozlesmeDurumu
+
     if request.method == 'GET':
+        ctx, err = mandatory_personel_context(request)
+        if err:
+            return err
         filters = {
             'durum': request.GET.get('durum', ''),
             'sozlesme_turu': request.GET.get('sozlesme_turu', ''),
             'search': request.GET.get('search', ''),
+            'sube_id': ctx['sube_id'],
         }
         list_ey_id = ey_id
         if request.GET.get('tum_yillar') in ('1', 'true', 'yes'):
@@ -130,7 +141,43 @@ def api_sozlesme_list_create(request):
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
 
+    ctx, err = mandatory_personel_context(request)
+    if err:
+        return err
+
+    sube_id = ctx['sube_id']
     data = parse_sozlesme_body(body, kurum_id, ey_id)
+    data['sube_id'] = sube_id
+
+    personel_id = data.get('personel_id')
+    if not personel_id:
+        return JsonResponse({'success': False, 'error': 'Personel seçimi zorunludur.'}, status=400)
+
+    if not personel_has_gorev_in_sube(personel_id, kurum_id, sube_id, ey_id):
+        return JsonResponse({
+            'success': False,
+            'error': 'Seçilen personelin bu şubede aktif görevlendirmesi yok.',
+        }, status=400)
+
+    # Aynı şubede mevcut sözleşme?
+    aktif_durumlar = (
+        SozlesmeDurumu.TASLAK, SozlesmeDurumu.AKTIF,
+        SozlesmeDurumu.PASIF, SozlesmeDurumu.ASKIDA,
+    )
+    if ey_id and PersonelSozlesme.objects.filter(
+        personel_id=personel_id,
+        egitim_yili_id=ey_id,
+        sube_id=sube_id,
+        durum__in=aktif_durumlar,
+    ).exists():
+        return JsonResponse({
+            'success': False,
+            'error': 'Bu personelin bu şubede bu eğitim yılı için zaten bir sözleşmesi var.',
+        }, status=400)
+
+    gorev = resolve_gorevlendirme_for_sube(personel_id, kurum_id, sube_id, ey_id)
+    if gorev and not data.get('gorevlendirme_id'):
+        data['gorevlendirme_id'] = gorev.id
 
     try:
         sozlesme = svc.create(data)
@@ -299,8 +346,12 @@ def api_sozlesme_pdf(request, pk):
 @require_http_methods(['GET'])
 def api_sozlesme_stats(request):
     kurum_id, ey_id = _ctx(request)
+    from apps.personel.interfaces.sube_context import mandatory_personel_context
+    ctx, err = mandatory_personel_context(request)
+    if err:
+        return err
     svc = SozlesmeService()
-    stats = svc.stats(kurum_id, ey_id)
+    stats = svc.stats(kurum_id, ey_id, sube_id=ctx['sube_id'])
     return JsonResponse({'success': True, 'data': stats})
 
 
@@ -308,72 +359,111 @@ def api_sozlesme_stats(request):
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_sozlesme_helper_data(request):
-    """Dropdown verilerini döndür: personeller, branşlar, enum'lar."""
-    kurum_id, ey_id = _ctx(request)
+    """Dropdown: bu şubede görevli personeller + diğer şube sözleşme uyarıları."""
     exclude_sozlesme_id = request.GET.get('exclude_sozlesme_id')
 
-    from apps.personel.domain.models import Personel, PersonelGorevlendirme
+    from apps.personel.domain.models import PersonelGorevlendirme
     from apps.personel.domain.sozlesme_models import DersUcretTipi, PersonelSozlesme, SozlesmeDurumu
     from apps.egitim_tanimlari.models import Brans
     from apps.personel.application.contract_calc_service import personel_no_from_id
+    from apps.personel.interfaces.sube_context import (
+        mandatory_personel_context,
+        personel_queryset_for_gorev_sube,
+    )
 
-    blocked_personel_ids: set[int] = set()
+    ctx, err = mandatory_personel_context(request)
+    if err:
+        return err
+
+    kurum_id = ctx['kurum_id']
+    sube_id = ctx['sube_id']
+    ey_id = ctx.get('egitim_yili_id')
+
+    aktif_durumlar = (
+        SozlesmeDurumu.TASLAK,
+        SozlesmeDurumu.AKTIF,
+        SozlesmeDurumu.PASIF,
+        SozlesmeDurumu.ASKIDA,
+    )
+
+    existing_qs = PersonelSozlesme.objects.none()
     if ey_id:
-        blocked_qs = PersonelSozlesme.objects.filter(
+        existing_qs = PersonelSozlesme.objects.filter(
             kurum_id=kurum_id,
             egitim_yili_id=ey_id,
-            durum__in=(
-                SozlesmeDurumu.TASLAK,
-                SozlesmeDurumu.AKTIF,
-                SozlesmeDurumu.PASIF,
-                SozlesmeDurumu.ASKIDA,
-            ),
-        )
+            durum__in=aktif_durumlar,
+        ).select_related('sube')
         if exclude_sozlesme_id:
             try:
-                blocked_qs = blocked_qs.exclude(pk=int(exclude_sozlesme_id))
+                existing_qs = existing_qs.exclude(pk=int(exclude_sozlesme_id))
             except (TypeError, ValueError):
                 pass
-        blocked_personel_ids = set(blocked_qs.values_list('personel_id', flat=True))
 
-    personeller = list(
-        Personel.objects.filter(kurum_id=kurum_id, aktif_mi=True)
-        .exclude(id__in=blocked_personel_ids)
-        .select_related('sube')
-        .order_by('soyad', 'ad')
-        .values('id', 'ad', 'soyad', 'tc_kimlik_no', 'sube_id', 'fotograf')
-    )
-    for p in personeller:
-        p['tam_ad'] = f"{p['ad']} {p['soyad']}"
-        p['personel_no'] = personel_no_from_id(p['id'])
+    same_sube_blocked: set[int] = set()
+    other_sube_by_personel: dict[int, dict] = {}
+    for s in existing_qs:
+        if s.sube_id == sube_id or s.sube_id is None:
+            # Aynı şube veya şubesiz eski kayıt → bu şubede yeniden oluşturma engeli
+            same_sube_blocked.add(s.personel_id)
+        elif s.personel_id not in other_sube_by_personel:
+            other_sube_by_personel[s.personel_id] = {
+                'sozlesme_id': s.id,
+                'sube_id': s.sube_id,
+                'sube_ad': s.sube.ad if s.sube_id else 'Diğer şube',
+                'durum': s.durum,
+                'durum_label': s.get_durum_display() if hasattr(s, 'get_durum_display') else s.durum,
+            }
+
+    personel_qs = personel_queryset_for_gorev_sube(
+        kurum_id, sube_id, ey_id, aktif_only=True,
+    ).exclude(id__in=same_sube_blocked)
+
+    personeller = []
+    for p in personel_qs:
+        other = other_sube_by_personel.get(p.id)
+        row = {
+            'id': p.id,
+            'ad': p.ad,
+            'soyad': p.soyad,
+            'tam_ad': f'{p.ad} {p.soyad}',
+            'tc_kimlik_no': p.tc_kimlik_no or '',
+            'sube_id': p.sube_id,
+            'fotograf': p.fotograf.url if p.fotograf else None,
+            'personel_no': personel_no_from_id(p.id),
+            'diger_sube_sozlesme': other,
+            'uyari': (
+                f"Bu personelin {other['sube_ad']} şubesinde aktif sözleşmesi var."
+                if other else None
+            ),
+        }
+        personeller.append(row)
 
     gorevlendirmeler = []
+    gorev_filt = {
+        'kurum_id': kurum_id,
+        'gorev_sube_id': sube_id,
+        'aktif_mi': True,
+    }
     if ey_id:
-        for g in PersonelGorevlendirme.objects.filter(
-            kurum_id=kurum_id, egitim_yili_id=ey_id, aktif_mi=True,
-        ).select_related('personel', 'brans', 'rol', 'gorev_sube'):
-            gorevlendirmeler.append({
-                'id': g.id,
-                'personel_id': g.personel_id,
-                'brans_id': g.brans_id,
-                'brans_ad': g.brans.ad if g.brans_id else '',
-                'gorev_ad': g.rol.name if g.rol_id else '',
-                'sube_id': g.gorev_sube_id,
-                'sube_ad': g.gorev_sube.ad if g.gorev_sube_id else '',
-            })
+        gorev_filt['egitim_yili_id'] = ey_id
+    for g in PersonelGorevlendirme.objects.filter(**gorev_filt).select_related(
+        'personel', 'brans', 'rol', 'gorev_sube',
+    ):
+        gorevlendirmeler.append({
+            'id': g.id,
+            'personel_id': g.personel_id,
+            'brans_id': g.brans_id,
+            'brans_ad': g.brans.ad if g.brans_id else '',
+            'gorev_ad': g.rol.name if g.rol_id else '',
+            'sube_id': g.gorev_sube_id,
+            'sube_ad': g.gorev_sube.ad if g.gorev_sube_id else '',
+        })
 
-    sube_id = request.headers.get('X-Sube-ID') or request.session.get('active_sube_id')
-    try:
-        sube_id = int(sube_id) if sube_id else None
-    except (TypeError, ValueError):
-        sube_id = None
-
-    brans_qs = Brans.objects.filter(aktif_mi=True)
-    if sube_id:
-        brans_qs = brans_qs.filter(sube_id=sube_id)
-    elif kurum_id:
-        brans_qs = brans_qs.filter(kurum_id=kurum_id)
-    branslar = list(brans_qs.order_by('ad').values('id', 'ad', 'kod'))
+    branslar = list(
+        Brans.objects.filter(aktif_mi=True, sube_id=sube_id)
+        .order_by('ad')
+        .values('id', 'ad', 'kod')
+    )
 
     tur_labels = {
         'TAM_ZAMANLI': 'Tam Zamanlı',
@@ -384,6 +474,7 @@ def api_sozlesme_helper_data(request):
     return JsonResponse({
         'success': True,
         'data': {
+            'sube_id': sube_id,
             'personeller': personeller,
             'gorevlendirmeler': gorevlendirmeler,
             'branslar': branslar,
@@ -391,7 +482,11 @@ def api_sozlesme_helper_data(request):
                 {'value': v, 'label': tur_labels.get(v, l)}
                 for v, l in SozlesmeTuru.choices
             ],
-            'sozlesme_durumlari': [{'value': v, 'label': l} for v, l in SozlesmeDurumu.choices if v not in ('ASKIDA', 'SONA_ERDI')],
+            'sozlesme_durumlari': [
+                {'value': v, 'label': l}
+                for v, l in SozlesmeDurumu.choices
+                if v not in ('ASKIDA', 'SONA_ERDI')
+            ],
             'ucret_tipleri': [{'value': v, 'label': l} for v, l in UcretTipi.choices],
             'ders_ucret_tipleri': [{'value': v, 'label': l} for v, l in DersUcretTipi.choices],
         },

@@ -59,7 +59,8 @@ class PersonelSozlesme(models.Model):
     Her personel için eğitim yılı bazlı sözleşme kaydı.
 
     İş kuralları:
-    - Bir personelin aynı eğitim yılında en fazla 1 aktif sözleşmesi olabilir.
+    - Bir personelin aynı eğitim yılında aynı şubede en fazla 1 aktif sözleşmesi olabilir.
+    - Farklı şubelerde (çoklu görevlendirme) ayrı sözleşme açılabilir.
     - Ders Ücretli türde brüt maaş 0 olabilir.
     - Karma türde hem brüt maaş hem ders ücreti tanımı olur.
     """
@@ -233,9 +234,9 @@ class PersonelSozlesme(models.Model):
         ordering = ['-egitim_yili__baslangic_yil', 'personel__soyad']
         constraints = [
             models.UniqueConstraint(
-                fields=['personel', 'egitim_yili'],
+                fields=['personel', 'egitim_yili', 'sube'],
                 condition=models.Q(durum__in=['TASLAK', 'AKTIF', 'PASIF', 'ASKIDA']),
-                name='unique_aktif_sozlesme_per_yil',
+                name='unique_aktif_sozlesme_per_yil_sube',
             )
         ]
         indexes = [

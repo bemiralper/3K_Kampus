@@ -65,6 +65,8 @@ class SozlesmeRepository:
                     | Q(personel__tc_kimlik_no__icontains=s)
                     | Q(sozlesme_no__icontains=s)
                 )
+            if filters.get('sube_id'):
+                qs = qs.filter(sube_id=filters['sube_id'])
         return qs.order_by('-id')
 
     def get_by_id(self, pk):
@@ -188,10 +190,12 @@ class SozlesmeRepository:
             return True
         return False
 
-    def get_stats(self, kurum_id, egitim_yili_id):
+    def get_stats(self, kurum_id, egitim_yili_id, sube_id=None):
         qs = PersonelSozlesme.objects.filter(
             kurum_id=kurum_id, egitim_yili_id=egitim_yili_id,
         )
+        if sube_id:
+            qs = qs.filter(sube_id=sube_id)
         toplam = qs.count()
         aktif = qs.filter(durum=SozlesmeDurumu.AKTIF).count()
         taslak = qs.filter(durum=SozlesmeDurumu.TASLAK).count()

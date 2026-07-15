@@ -67,8 +67,8 @@ class SozlesmeService:
 
         return self.repo.update(pk, update_data), None
 
-    def stats(self, kurum_id, egitim_yili_id):
-        return self.repo.get_stats(kurum_id, egitim_yili_id)
+    def stats(self, kurum_id, egitim_yili_id, sube_id=None):
+        return self.repo.get_stats(kurum_id, egitim_yili_id, sube_id=sube_id)
 
 
 class HakedisService:

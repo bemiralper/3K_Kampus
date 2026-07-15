@@ -217,6 +217,15 @@ export interface HelperPersonel {
   sube_id?: number;
   fotograf?: string;
   personel_no?: string;
+  /** Diğer şubede aktif sözleşme varsa uyarı bilgisi */
+  diger_sube_sozlesme?: {
+    sozlesme_id: number;
+    sube_id: number | null;
+    sube_ad: string;
+    durum: string;
+    durum_label?: string;
+  } | null;
+  uyari?: string | null;
 }
 
 export interface HelperData {
@@ -227,6 +236,7 @@ export interface HelperData {
   sozlesme_durumlari: { value: string; label: string }[];
   ucret_tipleri: { value: string; label: string }[];
   ders_ucret_tipleri?: { value: string; label: string }[];
+  sube_id?: number;
 }
 
 // ── Sabitler ──
