@@ -314,11 +314,19 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='import-template')
     def import_template(self, request):
-        """Excel şablon indir."""
+        """Excel şablon indir — aktif şubedeki ders/sınıf + kitap türü açılır listeleri."""
         from django.http import HttpResponse
         from apps.resources.application.bulk_import import build_excel_template
 
-        data = build_excel_template()
+        kurum_id = get_request_kurum_id(request)
+        sube_id = get_request_sube_id(request, kurum_id=kurum_id)
+        if not kurum_id or not sube_id:
+            return Response(
+                {'success': False, 'error': 'Kurum ve şube bağlamı gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = build_excel_template(kurum_id=kurum_id, sube_id=sube_id)
         resp = HttpResponse(
             data,
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

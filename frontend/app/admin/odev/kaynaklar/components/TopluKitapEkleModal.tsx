@@ -110,8 +110,10 @@ export default function TopluKitapEkleModal({ open, onClose, onComplete }: Props
         </div>
 
         <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-          Şablonu indirin, kitapları Excel&apos;e girin, aktif şubeye yükleyin.
-          Ders ve sınıf alanları bu şubedeki kod veya ad ile eşleşmelidir.
+          Güncel şablonu indirin. <strong>Kitap Türü</strong>, <strong>Ders</strong>,{" "}
+          <strong>Sınıf</strong> ve <strong>Zorluk</strong> sütunlarında hücreye tıklayınca
+          sistemdeki değerler açılır listeden seçilir (aktif şube). Kitap adı ve kod ayrı
+          sütunlardır — türü listeden seçmeyi unutmayın. Örnek satırı silip yükleyin.
         </p>
 
         <button
