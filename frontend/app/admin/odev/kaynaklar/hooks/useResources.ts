@@ -3,6 +3,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useKurum } from "@/lib/contexts/KurumContext";
 import {
   fetchBooks,
   fetchDersler,
@@ -16,6 +17,8 @@ import {
   updateBook,
   deleteBook,
   duplicateBook,
+  uploadBookKapak,
+  deleteBookKapak,
   fetchNextTestBatch,
   createUnit,
   updateUnit,
@@ -96,6 +99,7 @@ function syncBulkTestRows(
 }
 
 export function useResources() {
+  const { activeSube } = useKurum();
   // ───── Core data ─────
   const [books, setBooks] = useState<ResourceBook[]>([]);
   const [dersler, setDersler] = useState<Ders[]>([]);
@@ -230,6 +234,13 @@ export function useResources() {
   }, []);
 
   useEffect(() => { fetchBooksList(); fetchMetadata(); }, [fetchBooksList, fetchMetadata]);
+  useEffect(() => {
+    // Şube değişince listeyi yenile (aktif şube kataloğu)
+    setSelectedBook(null);
+    setBookStructure(null);
+    fetchBooksList();
+    fetchMetadata();
+  }, [activeSube?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedBook) fetchBookStructureData(selectedBook.id); }, [selectedBook, fetchBookStructureData]);
 
   // ═══════ TOGGLE ═══════
@@ -275,6 +286,8 @@ export function useResources() {
   };
 
   // ═══════ DRAWER OPEN ═══════
+  const pendingKapakRef = useRef<File | null>(null);
+
   const resetBookForm = () => {
     setBookForm({ ...INITIAL_BOOK_FORM, yayin_yili: String(CURRENT_YEAR) });
     setEditingId(null);
@@ -285,6 +298,7 @@ export function useResources() {
 
   const openBookDrawer = (action: "create" | "edit", book?: ResourceBook) => {
     setDrawerMode("book"); setDrawerAction(action); setDrawerError(null);
+    pendingKapakRef.current = null;
     if (action === "edit" && book) {
       setEditingId(book.id);
       const levels = book.sinif_seviyeleri?.length
@@ -298,8 +312,8 @@ export function useResources() {
         yayinevi: book.yayinevi || "", yazar: book.yazar || "",
         yayin_yili: book.yayin_yili ? String(book.yayin_yili) : String(CURRENT_YEAR),
         toplam_sayfa: book.toplam_sayfa ? String(book.toplam_sayfa) : "",
-        zorluk_min: book.zorluk_min ? String(book.zorluk_min) : "",
-        zorluk_max: book.zorluk_max ? String(book.zorluk_max) : "",
+        zorluk_min: book.zorluk_min != null ? String(book.zorluk_min) : "",
+        zorluk_max: book.zorluk_max != null ? String(book.zorluk_max) : "",
         isbn: "", kapak_url: book.kapak_url || "", aciklama: book.aciklama || "",
         aktif_mi: book.aktif_mi, sira: 0,
       });
@@ -343,6 +357,43 @@ export function useResources() {
   };
 
   // ═══════ SAVE HANDLERS ═══════
+  const setPendingKapakFile = (file: File | null) => {
+    pendingKapakRef.current = file;
+  };
+
+  const handleUploadKapak = async (file: File): Promise<string | null> => {
+    if (!editingId) return null;
+    const result = await uploadBookKapak(editingId, file);
+    if (!result.success) {
+      setDrawerError(result.error || "Kapak yüklenemedi");
+      showToast(`❌ ${result.error || "Kapak yüklenemedi"}`, "error");
+      return null;
+    }
+    // apiPostForm { success, data: { kapak_url } } veya düz gövde
+    const payload = result.data as { kapak_url?: string } | undefined;
+    const url =
+      payload?.kapak_url
+      || (result as { kapak_url?: string }).kapak_url
+      || "";
+    const withBust = url ? `${url.split("?")[0]}?t=${Date.now()}` : "";
+    await fetchBooksList();
+    showToast("✅ Kapak yüklendi");
+    return withBust || url || null;
+  };
+
+  const handleDeleteKapak = async (): Promise<boolean> => {
+    if (!editingId) return false;
+    const result = await deleteBookKapak(editingId);
+    if (!result.success) {
+      setDrawerError(result.error || "Kapak silinemedi");
+      showToast(`❌ ${result.error || "Kapak silinemedi"}`, "error");
+      return false;
+    }
+    fetchBooksList();
+    showToast("✅ Kapak kaldırıldı");
+    return true;
+  };
+
   const handleSaveBook = async () => {
     setDrawerLoading(true); setDrawerError(null);
     try {
@@ -361,10 +412,9 @@ export function useResources() {
         yazar: bookForm.yazar,
         yayin_yili: bookForm.yayin_yili ? parseInt(bookForm.yayin_yili) : null,
         toplam_sayfa: bookForm.toplam_sayfa ? parseInt(bookForm.toplam_sayfa) : null,
-        zorluk_min: bookForm.zorluk_min ? parseInt(bookForm.zorluk_min) : null,
-        zorluk_max: bookForm.zorluk_max ? parseInt(bookForm.zorluk_max) : null,
+        zorluk_min: bookForm.zorluk_min !== "" ? parseInt(bookForm.zorluk_min, 10) : null,
+        zorluk_max: bookForm.zorluk_max !== "" ? parseInt(bookForm.zorluk_max, 10) : null,
         isbn: bookForm.isbn,
-        kapak_url: bookForm.kapak_url,
         aciklama: bookForm.aciklama,
         aktif_mi: bookForm.aktif_mi,
         sira: bookForm.sira,
@@ -373,6 +423,15 @@ export function useResources() {
         ? await updateBook(editingId, body)
         : await createBook(body);
       if (result.success) {
+        const newId = editingId || result.data?.id;
+        const pending = pendingKapakRef.current;
+        if (newId && pending) {
+          const kapakResult = await uploadBookKapak(newId, pending);
+          pendingKapakRef.current = null;
+          if (!kapakResult.success) {
+            showToast(`⚠️ Kitap kaydedildi ancak kapak yüklenemedi: ${kapakResult.error || ""}`, "error");
+          }
+        }
         setDrawerOpen(false); fetchBooksList();
         if (selectedBook && editingId === selectedBook.id) fetchBookStructureData(selectedBook.id);
         showToast(`✅ Kitap ${editingId ? "güncellendi" : "oluşturuldu"}`);
@@ -836,6 +895,7 @@ export function useResources() {
     drawerOpen, setDrawerOpen, drawerMode, drawerAction, drawerLoading, drawerError, editingId,
     bookForm, setBookForm, unitForm, setUnitForm, topicForm, setTopicForm, contentForm, setContentForm,
     openBookDrawer, openUnitDrawer, openTopicDrawer, openContentDrawer, handleDrawerSave,
+    handleUploadKapak, handleDeleteKapak, setPendingKapakFile,
     // Book type
     bookTypeModalOpen, setBookTypeModalOpen, bookTypeForm, setBookTypeForm, bookTypeLoading,
     resetBookTypeForm, openBookTypeForEdit, saveBookType, deleteBookType: deleteBookTypeHandler,

@@ -40,6 +40,7 @@ class ProgressSyncTest(TestCase):
         self.sinif = SinifSeviyesi.objects.create(ad='10. Sınıf', kod='S10', sira=10)
         self.book_type = BookType.objects.create(kod='SB', ad='Soru Bankası')
         self.resource_book = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Mat Soru Bankası',
             kod='MSB001',
             kurum=self.kurum,

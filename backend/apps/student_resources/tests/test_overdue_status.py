@@ -26,10 +26,15 @@ class OverdueStatusTest(TestCase):
             soyad='Yılmaz',
             aktif_mi=True,
         )
-        self.ders = Ders.objects.create(ad='Fizik', kod='FIZ')
-        self.sinif = SinifSeviyesi.objects.create(ad='10. Sınıf', kod='S10', sira=10)
+        self.ders = Ders.objects.create(
+            sube=self.sube,
+            kurum=self.kurum, ad='Fizik', kod='FIZ')
+        self.sinif = SinifSeviyesi.objects.create(
+            sube=self.sube,
+            kurum=self.kurum, ad='10. Sınıf', kod='S10', sira=10)
         self.book_type = BookType.objects.create(kod='SB2', ad='Soru Bankası')
         self.resource_book = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Fizik Soru Bankası',
             kod='FSB002',
             kurum=self.kurum,
@@ -59,6 +64,7 @@ class OverdueStatusTest(TestCase):
             student=self.student,
             lesson=self.ders,
             resource_book=ResourceBook.objects.create(
+            sube=self.sube,
                 ad='Fizik Konu',
                 kod='FK002',
                 kurum=self.kurum,

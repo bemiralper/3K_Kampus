@@ -146,6 +146,7 @@ export interface StudentResourceAssignment {
   resource_type_renk: string;
   resource_yayin_yili: number | null;
   resource_yayinevi: string;
+  kapak_url?: string;
   difficulty_level_snapshot: string;
   status: string;
   status_display: string;
@@ -196,6 +197,7 @@ export type PurchaseListItemStatus = 'PENDING' | 'RECEIVED' | 'NOT_RECEIVED' | '
 export interface ActivePurchaseListItem {
   id: number;
   resource_name: string;
+  kapak_url?: string;
   item_status: PurchaseListItemStatus;
   item_status_display: string;
 }
@@ -223,6 +225,7 @@ export interface AvailableResource {
   zorluk_max: number | null;
   zorluk_display: string | null;
   toplam_sayfa: number | null;
+  kapak_url?: string;
   acquisition_status?: string | null;
   acquisition_label?: string | null;
   selectable?: boolean;
@@ -527,6 +530,137 @@ export async function duplicateBook(
   data: { ad: string; kod: string }
 ): Promise<ApiResponse<ResourceBook>> {
   return apiPost<ResourceBook>(`/api/resources/books/${id}/duplicate/`, data);
+}
+
+export type BookBulkImportResult = {
+  toplam_satir: number;
+  eklenen: number;
+  guncellenen: number;
+  atlanan: number;
+  hatali: number;
+  hatalar: { satir: number; ad: string; neden: string }[];
+};
+
+export async function downloadBookImportTemplate(): Promise<Blob> {
+  const { getContextHeaders } = await import('@/lib/api');
+  const res = await fetch('/api/resources/books/import-template/', {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) throw new Error('Şablon indirilemedi');
+  return res.blob();
+}
+
+export async function bulkImportBooksExcel(file: File): Promise<ApiResponse<BookBulkImportResult>> {
+  const { getContextHeaders } = await import('@/lib/api');
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/resources/books/bulk-import/', {
+    method: 'POST',
+    credentials: 'include',
+    headers: getContextHeaders(),
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) {
+    return { success: false, error: data.error || 'Toplu yükleme başarısız' };
+  }
+  return { success: true, data: data.data as BookBulkImportResult, message: data.message };
+}
+
+export async function uploadBookKapak(
+  bookId: number,
+  file: File,
+): Promise<ApiResponse<{ kapak_url: string }>> {
+  const form = new FormData();
+  form.append('kapak', file);
+  return apiPostForm<{ kapak_url: string }>(`/api/resources/books/${bookId}/upload-kapak/`, form);
+}
+
+export async function deleteBookKapak(
+  bookId: number,
+): Promise<ApiResponse<{ kapak_url: string }>> {
+  return apiDelete<{ kapak_url: string }>(`/api/resources/books/${bookId}/delete-kapak/`);
+}
+
+export const BOOK_EXPORT_COLUMNS = [
+  { key: 'ad', label: 'Kitap Adı' },
+  { key: 'kod', label: 'Kod' },
+  { key: 'book_type', label: 'Kitap Türü' },
+  { key: 'ders', label: 'Ders' },
+  { key: 'sinif', label: 'Sınıf' },
+  { key: 'yayinevi', label: 'Yayınevi' },
+  { key: 'yazar', label: 'Yazar' },
+  { key: 'yayin_yili', label: 'Yayın Yılı' },
+  { key: 'isbn', label: 'ISBN' },
+  { key: 'zorluk', label: 'Zorluk' },
+  { key: 'unit_count', label: 'Ünite' },
+  { key: 'topic_count', label: 'Konu' },
+  { key: 'content_count', label: 'İçerik' },
+  { key: 'aktif', label: 'Aktif' },
+  { key: 'aciklama', label: 'Açıklama' },
+] as const;
+
+export const DEFAULT_BOOK_EXPORT_KEYS = [
+  'ad', 'kod', 'book_type', 'ders', 'sinif', 'yayinevi', 'yazar', 'yayin_yili',
+];
+
+export type BookExportFilters = {
+  ders?: string;
+  sinif_seviyesi?: string;
+  book_type?: string;
+  yayin_yili?: string;
+  search?: string;
+};
+
+export async function fetchBookExportRows(
+  filters: BookExportFilters,
+  columnKeys: string[],
+): Promise<{ rows: Record<string, string>[]; columns: string[]; total: number }> {
+  const { getContextHeaders } = await import('@/lib/api');
+  const params = new URLSearchParams();
+  params.set('columns', columnKeys.join(','));
+  params.set('format', 'json');
+  if (filters.ders) params.set('ders', filters.ders);
+  if (filters.sinif_seviyesi) params.set('sinif_seviyesi', filters.sinif_seviyesi);
+  if (filters.book_type) params.set('book_type', filters.book_type);
+  if (filters.yayin_yili) params.set('yayin_yili', filters.yayin_yili);
+  if (filters.search) params.set('search', filters.search);
+
+  const res = await fetch(`/api/resources/books/export/?${params}`, {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) throw new Error('Dışa aktarma verisi alınamadı');
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Dışa aktarma başarısız');
+  return {
+    rows: data.rows || [],
+    columns: data.columns || columnKeys,
+    total: data.total ?? (data.rows?.length || 0),
+  };
+}
+
+export async function downloadBookExportCsv(
+  filters: BookExportFilters,
+  columnKeys: string[],
+): Promise<Blob> {
+  const { getContextHeaders } = await import('@/lib/api');
+  const params = new URLSearchParams();
+  params.set('columns', columnKeys.join(','));
+  params.set('format', 'csv');
+  if (filters.ders) params.set('ders', filters.ders);
+  if (filters.sinif_seviyesi) params.set('sinif_seviyesi', filters.sinif_seviyesi);
+  if (filters.book_type) params.set('book_type', filters.book_type);
+  if (filters.yayin_yili) params.set('yayin_yili', filters.yayin_yili);
+  if (filters.search) params.set('search', filters.search);
+
+  const res = await fetch(`/api/resources/books/export/?${params}`, {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) throw new Error('CSV dışa aktarma başarısız');
+  return res.blob();
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   type AvailableResource,
   type Ders,
 } from "@/lib/resources-api";
+import { BookCover } from "@/components/resources/BookCover";
 
 type ListType = "PURCHASE" | "INSTITUTION";
 
@@ -403,6 +404,7 @@ export default function PurchaseListModal({
                           }}>
                             <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
                               <input type="checkbox" checked={checked} onChange={() => toggleBook(book)} style={{ marginTop: 3 }} />
+                              <BookCover src={book.kapak_url} alt={book.ad} size="sm" />
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                                   <span style={{ fontWeight: 600, fontSize: 13 }}>{book.ad}</span>
@@ -448,6 +450,7 @@ export default function PurchaseListModal({
                               }}>
                                 <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                                   <input type="checkbox" checked disabled style={{ marginTop: 3 }} />
+                                  <BookCover src={book.kapak_url} alt={book.ad} size="sm" />
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
                                       <span style={{ fontWeight: 600, fontSize: 13, color: "#64748b" }}>{book.ad}</span>
@@ -503,6 +506,7 @@ export default function PurchaseListModal({
                     background: "white", border: "1px solid #c7d2fe", borderRadius: 999,
                     padding: "4px 6px 4px 10px", fontSize: 11, maxWidth: "100%",
                   }}>
+                    <BookCover src={book.kapak_url} alt={book.ad} size="sm" />
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {book.ders_ad}: {book.ad}
                     </span>

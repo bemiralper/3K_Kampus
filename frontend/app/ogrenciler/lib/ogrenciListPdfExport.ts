@@ -18,9 +18,13 @@ export interface OgrenciListPdfBranding {
 export interface OgrenciListPdfOptions {
   rows: Record<string, string>[];
   columnKeys: string[];
+  /** Verilirse EXPORT_COLUMNS yerine bu etiketler kullanılır */
+  columnLabels?: string[];
   branding: OgrenciListPdfBranding;
   orientation?: PdfOrientation;
   filterSummary?: string;
+  documentTitle?: string;
+  fileName?: string;
 }
 
 const DEFAULT_PRIMARY: [number, number, number] = [2, 98, 167];
@@ -174,12 +178,18 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
   const {
     rows,
     columnKeys,
+    columnLabels,
     branding,
     orientation = columnKeys.length > 6 ? 'landscape' : 'portrait',
     filterSummary = '',
+    documentTitle = 'Öğrenci Listesi',
+    fileName = 'ogrenciler.pdf',
   } = options;
 
-  const labels = columnKeys.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)?.label || k);
+  const labels =
+    columnLabels && columnLabels.length === columnKeys.length
+      ? columnLabels
+      : columnKeys.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)?.label || k);
   const body = rows.map((row, idx) => [
     String(idx + 1),
     ...columnKeys.map((k) => {
@@ -213,9 +223,9 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
     doc,
     primary,
     logoData,
-    branding.kurumAd || 'Öğrenci Listesi',
+    branding.kurumAd || documentTitle,
     branding.subeAd,
-    'Öğrenci Listesi',
+    documentTitle,
     `${rows.length} kayıt`,
   );
 
@@ -263,5 +273,5 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
   });
 
   addFooter(doc, brandLine);
-  await downloadJsPdf(doc, 'ogrenciler.pdf');
+  await downloadJsPdf(doc, fileName);
 }

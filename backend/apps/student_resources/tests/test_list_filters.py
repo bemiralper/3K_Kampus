@@ -24,11 +24,15 @@ class StudentResourceListFilterTest(TestCase):
             aktif_mi=True,
         )
         self.sinif_seviyesi = SinifSeviyesi.objects.create(
+            sube=self.sube,
+            kurum=self.kurum,
             ad='10. Sınıf',
             kod='S10',
             sira=10,
         )
-        self.ders = Ders.objects.create(ad='Fizik', kod='FIZ')
+        self.ders = Ders.objects.create(
+            sube=self.sube,
+            kurum=self.kurum, ad='Fizik', kod='FIZ')
 
         self.soru_bankasi_type = BookType.objects.create(
             kod='SORU_BANKASI',
@@ -40,6 +44,7 @@ class StudentResourceListFilterTest(TestCase):
         )
 
         self.soru_book = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Fizik Soru Bankası',
             kod='FSB001',
             book_type=self.soru_bankasi_type,
@@ -50,6 +55,7 @@ class StudentResourceListFilterTest(TestCase):
             aktif_mi=True,
         )
         self.konu_book = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Fizik Konu Anlatım',
             kod='FKA001',
             book_type=self.konu_anlatim_type,

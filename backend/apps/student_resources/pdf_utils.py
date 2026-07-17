@@ -40,12 +40,12 @@ def make_download_filename(purchase_list, student):
 
 
 def _difficulty_from_book(book):
-    if book.zorluk_min and book.zorluk_max:
+    if book.zorluk_min is not None and book.zorluk_max is not None:
         return f"{book.zorluk_min}-{book.zorluk_max}"
-    if book.zorluk_min:
+    if book.zorluk_min is not None:
         return f"{book.zorluk_min}+"
-    if book.zorluk_max:
-        return f"1-{book.zorluk_max}"
+    if book.zorluk_max is not None:
+        return f"0-{book.zorluk_max}"
     return '—'
 
 

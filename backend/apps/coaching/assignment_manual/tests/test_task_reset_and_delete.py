@@ -45,6 +45,7 @@ class TaskResetAndDeleteArchiveTest(TestCase):
         self.sinif = SinifSeviyesi.objects.create(ad='11. Sınıf', kod='S11', sira=11)
         self.book_type = BookType.objects.create(kod='SB_KTR', ad='Soru Bankası')
         self.resource_book = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Fiz Soru Bankası',
             kod='FSB-KTR',
             kurum=self.kurum,

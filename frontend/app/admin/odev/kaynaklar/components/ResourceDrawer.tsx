@@ -1,9 +1,16 @@
 // ========== Drawer (Book/Unit/Topic/Content Forms) ==========
 "use client";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { BookCover } from "@/components/resources/BookCover";
+import CmsCoverCropper, { type CoverAspectPreset } from "@/components/cms/CmsCoverCropper";
+import "@/components/cms/cms.css";
 import type { BookFormData, UnitFormData, TopicFormData, ContentFormData, Ders, SinifSeviyesi, BookType } from "../types";
 
 const CURRENT_YEAR = new Date().getFullYear();
+
+const BOOK_KAPAK_ASPECTS: CoverAspectPreset[] = [
+  { id: "1:1", label: "1:1", hint: "Kitap kapağı", width: 600, height: 600 },
+];
 
 interface DrawerProps {
   open: boolean;
@@ -24,6 +31,9 @@ interface DrawerProps {
   dersler: Ders[];
   sinifSeviyeleri: SinifSeviyesi[];
   bookTypes: BookType[];
+  onUploadKapak?: (file: File) => Promise<string | null>;
+  onDeleteKapak?: () => Promise<boolean>;
+  onPendingKapakChange?: (file: File | null) => void;
 }
 
 function YearStepper({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -43,16 +53,93 @@ export function ResourceDrawer(props: DrawerProps) {
     bookForm, setBookForm, unitForm, setUnitForm,
     topicForm, setTopicForm, contentForm, setContentForm,
     dersler, sinifSeviyeleri, bookTypes,
+    onUploadKapak, onDeleteKapak, onPendingKapakChange,
   } = props;
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [kapakBusy, setKapakBusy] = useState(false);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (cropSrc) {
+          setCropSrc(null);
+          return;
+        }
+        onClose();
+      }
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [open, onClose, cropSrc]);
+
+  useEffect(() => {
+    if (!open) {
+      setPendingPreview(null);
+      setKapakBusy(false);
+      setCropSrc(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [open, editingId]);
 
   if (!open) return null;
+
+  const coverSrc = pendingPreview || bookForm.kapak_url || "";
+
+  const handleKapakPick = (file: File | null) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const localUrl = URL.createObjectURL(file);
+    setCropSrc(localUrl);
+  };
+
+  const handleCropComplete = async (file: File) => {
+    setKapakBusy(true);
+    try {
+      if (editingId && onUploadKapak) {
+        const url = await onUploadKapak(file);
+        if (url != null) {
+          setBookForm({ ...bookForm, kapak_url: url });
+          setPendingPreview(null);
+          onPendingKapakChange?.(null);
+        }
+      } else {
+        if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+        const previewUrl = URL.createObjectURL(file);
+        setPendingPreview(previewUrl);
+        onPendingKapakChange?.(file);
+      }
+      if (cropSrc) URL.revokeObjectURL(cropSrc);
+      setCropSrc(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } finally {
+      setKapakBusy(false);
+    }
+  };
+
+  const handleCropCancel = () => {
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleKapakRemove = async () => {
+    if (editingId && onDeleteKapak) {
+      setKapakBusy(true);
+      try {
+        const ok = await onDeleteKapak();
+        if (ok) setBookForm({ ...bookForm, kapak_url: "" });
+      } finally {
+        setKapakBusy(false);
+      }
+    }
+    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    setPendingPreview(null);
+    onPendingKapakChange?.(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const title = {
     book: editingId ? "Kitap Düzenle" : "Yeni Kitap",
@@ -147,15 +234,54 @@ export function ResourceDrawer(props: DrawerProps) {
               </div>
 
               <div className="kk-difficulty-box">
-                <label className="kk-label">Zorluk Seviyesi (1-10)</label>
+                <label className="kk-label">Zorluk Seviyesi (0-10)</label>
                 <div className="kk-form-grid">
                   <div className="kk-field">
                     <label className="kk-hint">Minimum</label>
-                    <input type="number" min={1} max={10} className="kk-input" value={bookForm.zorluk_min} onChange={(e) => setBookForm({ ...bookForm, zorluk_min: e.target.value })} placeholder="1" />
+                    <input type="number" min={0} max={10} className="kk-input" value={bookForm.zorluk_min} onChange={(e) => setBookForm({ ...bookForm, zorluk_min: e.target.value })} placeholder="0" />
                   </div>
                   <div className="kk-field">
                     <label className="kk-hint">Maksimum</label>
-                    <input type="number" min={1} max={10} className="kk-input" value={bookForm.zorluk_max} onChange={(e) => setBookForm({ ...bookForm, zorluk_max: e.target.value })} placeholder="10" />
+                    <input type="number" min={0} max={10} className="kk-input" value={bookForm.zorluk_max} onChange={(e) => setBookForm({ ...bookForm, zorluk_max: e.target.value })} placeholder="10" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="kk-field">
+                <label className="kk-label">Kapak Görseli</label>
+                <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                  <BookCover src={coverSrc} alt={bookForm.ad || "Kapak"} size="lg" zoomable={!!coverSrc} />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 200 }}>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      style={{ display: "none" }}
+                      onChange={(e) => handleKapakPick(e.target.files?.[0] || null)}
+                    />
+                    <button
+                      type="button"
+                      className="kk-btn kk-btn-secondary"
+                      disabled={kapakBusy || loading}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {kapakBusy ? "Yükleniyor…" : coverSrc ? "📷 Kapak Değiştir" : "📷 Kapak Görseli Ekle"}
+                    </button>
+                    {coverSrc && (
+                      <button
+                        type="button"
+                        className="kk-btn kk-btn-secondary"
+                        disabled={kapakBusy || loading}
+                        onClick={handleKapakRemove}
+                        style={{ color: "#b91c1c", borderColor: "#fecaca", background: "#fef2f2" }}
+                      >
+                        Kapağı Kaldır
+                      </button>
+                    )}
+                    <span className="kk-hint">
+                      Varsayılan çıktı 600×600. Kırpma, büyütme ve küçültme ekranda manuel yapılır.
+                      {!editingId ? " Kitap kaydedilince kapak yüklenir." : ""}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -284,6 +410,21 @@ export function ResourceDrawer(props: DrawerProps) {
           </button>
         </div>
       </div>
+
+      {cropSrc && (
+        <CmsCoverCropper
+          imageSrc={cropSrc}
+          onCancel={handleCropCancel}
+          onComplete={handleCropComplete}
+          busy={kapakBusy}
+          initialAspect="1:1"
+          aspects={BOOK_KAPAK_ASPECTS}
+          hideAspectPicker
+          title="Kapak görselini ayarla"
+          subtitle="Sürükleyin; +/- veya kaydırıcı ile büyütün/küçültün. Varsayılan çıktı: 600×600"
+          confirmLabel="Kırp ve uygula"
+        />
+      )}
     </>
   );
 }

@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 from apps.egitim_tanimlari.models import Ders, SinifSeviyesi
 from apps.kurum.domain.models import Kurum
 from apps.resources.models import BookType, ResourceBook
+from apps.sube.domain.models import Sube
 
 User = get_user_model()
 
@@ -12,14 +13,22 @@ BOOKS_URL = '/api/resources/books/'
 
 
 class ResourceBookCrudTest(TestCase):
-    """Kitap CRUD API — kurum header ile oluşturma, listeleme, güncelleme."""
+    """Kitap CRUD API — kurum + şube header ile oluşturma, listeleme, güncelleme."""
 
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='CRUD Kurum', kod='CRUD', aktif_mi=True)
         self.other_kurum = Kurum.objects.create(ad='Diğer Kurum', kod='OTHER', aktif_mi=True)
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='CRUD Şube', kod='CS', aktif_mi=True)
+        self.other_sube = Sube.objects.create(
+            kurum=self.other_kurum, ad='Diğer Şube', kod='DS', aktif_mi=True,
+        )
 
-        self.sinif_seviyesi = SinifSeviyesi.objects.create(ad='11. Sınıf', kod='S11', sira=11)
-        self.ders = Ders.objects.create(ad='Fizik', kod='FIZ')
+        self.sinif_seviyesi = SinifSeviyesi.objects.create(
+            ad='11. Sınıf', kod='S11', sira=11, kurum=self.kurum, sube=self.sube,
+        )
+        self.ders = Ders.objects.create(
+            ad='Fizik', kod='FIZ', kurum=self.kurum, sube=self.sube,
+        )
         self.book_type = BookType.objects.create(kod='SB_CRUD', ad='Soru Bankası')
 
         self.user = User.objects.create_user(
@@ -40,6 +49,10 @@ class ResourceBookCrudTest(TestCase):
             'yayinevi': 'Palme',
             'aktif_mi': True,
         }
+        self.headers = {
+            'HTTP_X_KURUM_ID': str(self.kurum.id),
+            'HTTP_X_SUBE_ID': str(self.sube.id),
+        }
 
     def _book_url(self, book_id):
         return f'{BOOKS_URL}{book_id}/'
@@ -49,7 +62,7 @@ class ResourceBookCrudTest(TestCase):
             BOOKS_URL,
             self.create_payload,
             format='json',
-            HTTP_X_KURUM_ID=str(self.kurum.id),
+            **self.headers,
         )
 
         self.assertEqual(response.status_code, 201)
@@ -58,13 +71,15 @@ class ResourceBookCrudTest(TestCase):
 
         book = ResourceBook.objects.get(kod='FSB_CRUD')
         self.assertEqual(book.kurum_id, self.kurum.id)
+        self.assertEqual(book.sube_id, self.sube.id)
         self.assertEqual(book.ad, 'Fizik Soru Bankası')
 
-    def test_list_includes_only_kurum_scoped_books(self):
+    def test_list_includes_only_sube_scoped_books(self):
         own_book = ResourceBook.objects.create(
             ad='Kendi Kitabım',
             kod='OWN-001',
             kurum=self.kurum,
+            sube=self.sube,
             book_type=self.book_type,
             ders=self.ders,
             sinif_seviyesi=self.sinif_seviyesi,
@@ -74,16 +89,14 @@ class ResourceBookCrudTest(TestCase):
             ad='Başka Kurum Kitabı',
             kod='OTHER-001',
             kurum=self.other_kurum,
+            sube=self.other_sube,
             book_type=self.book_type,
             ders=self.ders,
             sinif_seviyesi=self.sinif_seviyesi,
             aktif_mi=True,
         )
 
-        response = self.client.get(
-            BOOKS_URL,
-            HTTP_X_KURUM_ID=str(self.kurum.id),
-        )
+        response = self.client.get(BOOKS_URL, **self.headers)
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['success'])
@@ -95,14 +108,11 @@ class ResourceBookCrudTest(TestCase):
             BOOKS_URL,
             self.create_payload,
             format='json',
-            HTTP_X_KURUM_ID=str(self.kurum.id),
+            **self.headers,
         )
         book_id = create_response.data['data']['id']
 
-        retrieve_response = self.client.get(
-            self._book_url(book_id),
-            HTTP_X_KURUM_ID=str(self.kurum.id),
-        )
+        retrieve_response = self.client.get(self._book_url(book_id), **self.headers)
         self.assertEqual(retrieve_response.status_code, 200)
         self.assertEqual(retrieve_response.data['data']['kod'], 'FSB_CRUD')
 
@@ -110,7 +120,7 @@ class ResourceBookCrudTest(TestCase):
             self._book_url(book_id),
             {'kod': 'FSB_UPDATED'},
             format='json',
-            HTTP_X_KURUM_ID=str(self.kurum.id),
+            **self.headers,
         )
         self.assertEqual(patch_response.status_code, 200)
         self.assertTrue(patch_response.data['success'])
@@ -124,6 +134,7 @@ class ResourceBookCrudTest(TestCase):
             ad='Gizli Kitap',
             kod='HIDDEN-001',
             kurum=self.kurum,
+            sube=self.sube,
             book_type=self.book_type,
             ders=self.ders,
             sinif_seviyesi=self.sinif_seviyesi,
@@ -133,5 +144,6 @@ class ResourceBookCrudTest(TestCase):
         response = self.client.get(
             self._book_url(book.id),
             HTTP_X_KURUM_ID=str(self.other_kurum.id),
+            HTTP_X_SUBE_ID=str(self.other_sube.id),
         )
         self.assertEqual(response.status_code, 404)

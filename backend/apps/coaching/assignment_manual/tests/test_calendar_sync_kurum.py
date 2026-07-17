@@ -38,6 +38,7 @@ class AssignmentCalendarSyncKurumTest(TestCase):
         self.sinif = SinifSeviyesi.objects.create(ad='12. Sınıf', kod='S12', sira=12)
         self.book_type = BookType.objects.create(kod='SB_TKV', ad='Soru Bankası')
         self.resource_book = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Mat Soru Bankası',
             kod='MSB-TKV',
             kurum=self.kurum,

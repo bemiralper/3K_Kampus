@@ -28,16 +28,21 @@ class StudentResourceAssignmentSoftDeleteTest(TestCase):
             aktif_mi=True,
         )
         self.sinif_seviyesi = SinifSeviyesi.objects.create(
+            sube=self.sube,
+            kurum=self.kurum,
             ad='9. Sınıf',
             kod='S9',
             sira=9,
         )
-        self.ders = Ders.objects.create(ad='Matematik', kod='MAT')
+        self.ders = Ders.objects.create(
+            sube=self.sube,
+            kurum=self.kurum, ad='Matematik', kod='MAT')
         self.book_type, _ = BookType.objects.get_or_create(
             kod='TEST_BOOK',
             defaults={'ad': 'Test Kitabı'},
         )
         self.resource_book = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Test Kaynak',
             kod='TK001',
             book_type=self.book_type,
@@ -54,6 +59,7 @@ class StudentResourceAssignmentSoftDeleteTest(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
 
     def _create_assignment(self, **kwargs):
         defaults = {

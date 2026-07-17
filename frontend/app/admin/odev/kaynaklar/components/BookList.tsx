@@ -1,6 +1,7 @@
 // ========== Book List Panel ==========
 "use client";
 import React from "react";
+import { BookCover } from "@/components/resources/BookCover";
 import type { ResourceBook } from "../types";
 import { BookListSkeleton } from "./Skeletons";
 
@@ -34,7 +35,8 @@ export function BookList({ filteredBooks, selectedBook, loading, onSelectBook, g
               className={`kk-book-item${selectedBook?.id === book.id ? " is-selected" : ""}`}
               onClick={() => onSelectBook(book)}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}>
+                <BookCover src={book.kapak_url} alt={book.ad} size="sm" />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="kk-book-title">{book.ad}</div>
                   <div className="kk-book-meta">

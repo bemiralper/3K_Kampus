@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export type CoverAspectId = '16:9' | '1:1' | '4:5';
 
@@ -29,6 +30,12 @@ type Props = {
   onComplete: (file: File) => void | Promise<void>;
   busy?: boolean;
   initialAspect?: CoverAspectId;
+  /** Varsayılan COVER_ASPECTS; kitap kapağı için tek 600×600 oran verilebilir */
+  aspects?: CoverAspectPreset[];
+  hideAspectPicker?: boolean;
+  title?: string;
+  subtitle?: string;
+  confirmLabel?: string;
 };
 
 /** cover baseScale * userScale, merkez + position offset */
@@ -55,10 +62,16 @@ export default function CmsCoverCropper({
   onComplete,
   busy,
   initialAspect = '16:9',
+  aspects = COVER_ASPECTS,
+  hideAspectPicker = false,
+  title = 'Kapak fotoğrafını ayarla',
+  subtitle,
+  confirmLabel = 'Kırp ve yükle',
 }: Props) {
   const imgRef = useRef<HTMLImageElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const aspectList = aspects?.length ? aspects : COVER_ASPECTS;
   const [aspectId, setAspectId] = useState<CoverAspectId>(initialAspect);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
@@ -66,11 +79,24 @@ export default function CmsCoverCropper({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [ready, setReady] = useState(false);
   const [previewSize, setPreviewSize] = useState({ w: DEFAULT_PREVIEW_W, h: Math.round(DEFAULT_PREVIEW_W * 9 / 16) });
+  const [mounted, setMounted] = useState(false);
 
   const aspect = useMemo(
-    () => COVER_ASPECTS.find((a) => a.id === aspectId) || DEFAULT_COVER_ASPECT,
-    [aspectId],
+    () => aspectList.find((a) => a.id === aspectId) || aspectList[0] || DEFAULT_COVER_ASPECT,
+    [aspectId, aspectList],
   );
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   useEffect(() => {
     setReady(false);
@@ -170,21 +196,27 @@ export default function CmsCoverCropper({
     });
   };
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div className="cms-cover-crop-overlay" role="dialog" aria-modal="true" aria-label="Kapak kırp">
       <div className="cms-cover-crop-modal" onClick={(e) => e.stopPropagation()}>
         <div className="cms-cover-crop-head">
           <div>
-            <h3>Kapak fotoğrafını ayarla</h3>
+            <h3>{title}</h3>
             <p>
-              Oran seçin, sürükleyip yakınlaştırın. Çıktı: {aspect.width}×{aspect.height} ({aspect.label})
+              {subtitle
+                || (hideAspectPicker
+                  ? `Sürükleyin, yakınlaştırın/uzaklaştırın. Çıktı: ${aspect.width}×${aspect.height}`
+                  : `Oran seçin, sürükleyip yakınlaştırın. Çıktı: ${aspect.width}×${aspect.height} (${aspect.label})`)}
             </p>
           </div>
           <button type="button" className="cms-drawer-close" onClick={onCancel} aria-label="Kapat">✕</button>
         </div>
 
+        {!hideAspectPicker && (
         <div className="cms-cover-aspect-row" role="radiogroup" aria-label="Kapak oranı">
-          {COVER_ASPECTS.map((a) => (
+          {aspectList.map((a) => (
             <button
               key={a.id}
               type="button"
@@ -198,6 +230,7 @@ export default function CmsCoverCropper({
             </button>
           ))}
         </div>
+        )}
 
         <div
           ref={areaRef}
@@ -251,11 +284,12 @@ export default function CmsCoverCropper({
             onClick={() => void applyCrop()}
             disabled={busy || !ready}
           >
-            {busy ? 'Yükleniyor…' : 'Kırp ve yükle'}
+            {busy ? 'Yükleniyor…' : confirmLabel}
           </button>
         </div>
         <canvas ref={canvasRef} hidden />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

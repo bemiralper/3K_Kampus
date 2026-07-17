@@ -131,12 +131,12 @@ class StudentResourceAssignment(models.Model):
     def save(self, *args, **kwargs):
         # Snapshot zorluk seviyesini kaydet
         if not self.difficulty_level_snapshot and self.resource_book:
-            if self.resource_book.zorluk_min and self.resource_book.zorluk_max:
+            if self.resource_book.zorluk_min is not None and self.resource_book.zorluk_max is not None:
                 self.difficulty_level_snapshot = f"{self.resource_book.zorluk_min}-{self.resource_book.zorluk_max}"
-            elif self.resource_book.zorluk_min:
+            elif self.resource_book.zorluk_min is not None:
                 self.difficulty_level_snapshot = f"{self.resource_book.zorluk_min}+"
-            elif self.resource_book.zorluk_max:
-                self.difficulty_level_snapshot = f"1-{self.resource_book.zorluk_max}"
+            elif self.resource_book.zorluk_max is not None:
+                self.difficulty_level_snapshot = f"0-{self.resource_book.zorluk_max}"
         super().save(*args, **kwargs)
     
     @property
@@ -350,10 +350,10 @@ class ResourcePurchaseListItem(models.Model):
 
 
 def _book_difficulty_display(book):
-    if book.zorluk_min and book.zorluk_max:
+    if book.zorluk_min is not None and book.zorluk_max is not None:
         return f"{book.zorluk_min}-{book.zorluk_max}"
-    if book.zorluk_min:
+    if book.zorluk_min is not None:
         return f"{book.zorluk_min}+"
-    if book.zorluk_max:
-        return f"1-{book.zorluk_max}"
+    if book.zorluk_max is not None:
+        return f"0-{book.zorluk_max}"
     return ''

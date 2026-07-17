@@ -16,6 +16,7 @@ from .scoping import (
     filter_books_for_request,
     filter_by_book_kurum_for_request,
     get_request_kurum_id,
+    get_request_sube_id,
 )
 from .utils import generate_book_kod, generate_topic_kod, generate_unit_kod, build_test_batch
 from .serializers import (
@@ -117,7 +118,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
     authentication_classes = [CsrfExemptSessionAuthentication]
     permission_classes = [IsAuthenticated, IsAuthenticatedResourceReadOrAdminWrite]
     queryset = ResourceBook.objects.select_related(
-        'ders', 'sinif_seviyesi', 'book_type', 'kurum'
+        'ders', 'sinif_seviyesi', 'book_type', 'kurum', 'sube'
     ).prefetch_related('sinif_seviyeleri')
     
     def get_serializer_class(self):
@@ -173,8 +174,12 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
     def suggest_kod(self, request):
         """Önerilen kitap kodu — GET /api/resources/books/suggest-kod/?book_type=&ders="""
         kurum_id = get_request_kurum_id(request)
-        if not kurum_id:
-            return Response({'success': False, 'error': 'Kurum bağlamı gerekli.'}, status=status.HTTP_400_BAD_REQUEST)
+        sube_id = get_request_sube_id(request, kurum_id=kurum_id)
+        if not kurum_id or not sube_id:
+            return Response(
+                {'success': False, 'error': 'Kurum ve şube bağlamı gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         book_type_id = request.query_params.get('book_type')
         ders_id = request.query_params.get('ders')
@@ -198,8 +203,167 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
             book_type,
             ders,
             exclude_id=int(exclude_id) if exclude_id else None,
+            sube_id=sube_id,
         )
         return Response({'success': True, 'data': {'kod': kod}})
+
+    @action(detail=True, methods=['post'], url_path='upload-kapak')
+    def upload_kapak(self, request, pk=None):
+        """Kitap kapağı yükle — 600x600 JPEG. POST multipart field: kapak"""
+        from apps.resources.application.kapak import (
+            process_kapak_image,
+            resolve_book_kapak_url,
+            validate_kapak_upload,
+        )
+
+        book = self.get_object()
+        uploaded = request.FILES.get('kapak') or request.FILES.get('file')
+        err = validate_kapak_upload(uploaded)
+        if err:
+            return Response({'success': False, 'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            processed = process_kapak_image(uploaded)
+        except Exception:
+            return Response(
+                {'success': False, 'error': 'Görsel işlenemedi. Geçerli bir resim dosyası seçin.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if book.kapak:
+            book.kapak.delete(save=False)
+        book.kapak.save(f'book_{book.id}_kapak.jpg', processed, save=False)
+        book.kapak_url = ''
+        book.save(update_fields=['kapak', 'kapak_url', 'updated_at'])
+
+        return Response({
+            'success': True,
+            'message': 'Kapak görseli yüklendi.',
+            'data': {'kapak_url': resolve_book_kapak_url(book)},
+        })
+
+    @action(detail=True, methods=['delete'], url_path='delete-kapak')
+    def delete_kapak(self, request, pk=None):
+        """Kitap kapağını kaldır."""
+        from apps.resources.application.kapak import resolve_book_kapak_url
+
+        book = self.get_object()
+        if book.kapak:
+            book.kapak.delete(save=False)
+            book.kapak = None
+        book.kapak_url = ''
+        book.save(update_fields=['kapak', 'kapak_url', 'updated_at'])
+        return Response({
+            'success': True,
+            'message': 'Kapak görseli silindi.',
+            'data': {'kapak_url': resolve_book_kapak_url(book)},
+        })
+
+    @action(detail=False, methods=['get'], url_path='export')
+    def export_books(self, request):
+        """Filtrelenmiş kitap listesi — kolon seçimi/sıra ile JSON veya CSV."""
+        from django.http import HttpResponse
+        import csv
+        from io import StringIO
+
+        from apps.resources.application.export import (
+            EXPORT_COLUMNS,
+            build_export_rows,
+            parse_column_keys,
+        )
+
+        kurum_id = get_request_kurum_id(request)
+        sube_id = get_request_sube_id(request, kurum_id=kurum_id)
+        if not kurum_id or not sube_id:
+            return Response(
+                {'success': False, 'error': 'Kurum ve şube bağlamı gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        column_keys = parse_column_keys(request.query_params.get('columns'))
+        qs = self.filter_queryset(self.get_queryset()).order_by('sira', 'ad')
+        ids_raw = request.query_params.get('ids')
+        if ids_raw:
+            try:
+                id_list = [int(x) for x in ids_raw.split(',') if x.strip()]
+                qs = qs.filter(id__in=id_list)
+            except ValueError:
+                pass
+
+        books = list(qs[:5000])
+        rows = build_export_rows(books, column_keys)
+        fmt = (request.query_params.get('format') or 'json').lower()
+
+        if fmt == 'csv':
+            buf = StringIO()
+            writer = csv.writer(buf)
+            writer.writerow([EXPORT_COLUMNS[k] for k in column_keys])
+            for row in rows:
+                writer.writerow([row.get(k, '') for k in column_keys])
+            resp = HttpResponse(buf.getvalue(), content_type='text/csv; charset=utf-8')
+            resp['Content-Disposition'] = 'attachment; filename="kaynak_kitaplar.csv"'
+            return resp
+
+        return Response({
+            'success': True,
+            'columns': column_keys,
+            'column_labels': [EXPORT_COLUMNS[k] for k in column_keys],
+            'rows': rows,
+            'total': len(rows),
+        })
+
+    @action(detail=False, methods=['get'], url_path='import-template')
+    def import_template(self, request):
+        """Excel şablon indir."""
+        from django.http import HttpResponse
+        from apps.resources.application.bulk_import import build_excel_template
+
+        data = build_excel_template()
+        resp = HttpResponse(
+            data,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        resp['Content-Disposition'] = 'attachment; filename="kaynak_kitap_sablonu.xlsx"'
+        return resp
+
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        """Excel dosyasından toplu kitap yükleme."""
+        from apps.resources.application.bulk_import import BulkBookImportService
+
+        kurum_id = get_request_kurum_id(request)
+        sube_id = get_request_sube_id(request, kurum_id=kurum_id)
+        if not kurum_id or not sube_id:
+            return Response(
+                {'success': False, 'error': 'Kurum ve şube bağlamı gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        upload = request.FILES.get('file') or request.FILES.get('excel')
+        if not upload:
+            return Response(
+                {'success': False, 'error': 'Excel dosyası gerekli (file).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        svc = BulkBookImportService(kurum_id=kurum_id, sube_id=sube_id)
+        try:
+            result = svc.import_excel(upload)
+        except Exception as exc:
+            return Response(
+                {'success': False, 'error': f'Dosya okunamadı: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({
+            'success': True,
+            'data': result.to_dict(),
+            'message': (
+                f"{result.eklenen} kitap eklendi"
+                + (f", {result.atlanan} atlandı" if result.atlanan else '')
+                + (f", {result.hatali} hatalı" if result.hatali else '')
+            ),
+        })
 
     @action(detail=True, methods=['get'])
     def structure(self, request, pk=None):
@@ -266,6 +430,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
                 ad=new_ad,
                 kod=new_kod,
                 kurum=source.kurum,
+                sube=source.sube,
                 book_type=source.book_type,
                 ders=source.ders,
                 sinif_seviyesi=source.sinif_seviyesi,
@@ -281,6 +446,16 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
                 aktif_mi=True,
                 sira=source.sira,
             )
+            if source.kapak:
+                try:
+                    source.kapak.open('rb')
+                    new_book.kapak.save(
+                        f'book_{new_book.id}_kapak.jpg',
+                        source.kapak,
+                        save=True,
+                    )
+                except Exception:
+                    pass
             source_levels = list(source.sinif_seviyeleri.all())
             if source_levels:
                 new_book.sinif_seviyeleri.set(source_levels)
@@ -343,11 +518,16 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
     
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)
-        return Response({
+        data = response.data
+        count = len(data) if isinstance(data, list) else 0
+        resp = Response({
             'success': True,
-            'data': response.data,
-            'count': len(response.data)
+            'data': data,
+            'count': count,
         })
+        resp['Cache-Control'] = 'no-store'
+        resp['Vary'] = 'X-Sube-ID, X-Kurum-ID'
+        return resp
     
     def retrieve(self, request, *args, **kwargs):
         response = super().retrieve(request, *args, **kwargs)

@@ -24,11 +24,15 @@ class AvailableResourcesSinifSeviyesiTest(TestCase):
         )
 
         self.sinif_seviyesi_10 = SinifSeviyesi.objects.create(
+            sube=self.sube,
+            kurum=self.kurum,
             ad='10. Sınıf',
             kod='S10',
             sira=10,
         )
         self.sinif_seviyesi_11 = SinifSeviyesi.objects.create(
+            sube=self.sube,
+            kurum=self.kurum,
             ad='11. Sınıf',
             kod='S11',
             sira=11,
@@ -100,13 +104,16 @@ class AvailableResourcesSinifSeviyesiTest(TestCase):
             aktif_mi=True,
         )
 
-        self.ders = Ders.objects.create(ad='Fizik', kod='FIZ')
+        self.ders = Ders.objects.create(
+            sube=self.sube,
+            kurum=self.kurum, ad='Fizik', kod='FIZ')
         self.book_type = BookType.objects.create(
             kod='SORU_BANKASI',
             ad='Soru Bankası',
         )
 
         self.book_10 = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Fizik 10 Soru Bankası',
             kod='FSB10',
             book_type=self.book_type,
@@ -116,6 +123,7 @@ class AvailableResourcesSinifSeviyesiTest(TestCase):
             aktif_mi=True,
         )
         self.book_11 = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Fizik 11 Soru Bankası',
             kod='FSB11',
             book_type=self.book_type,
@@ -133,6 +141,7 @@ class AvailableResourcesSinifSeviyesiTest(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
 
         self.url = '/api/student-resources/assignments/available_resources/'
 

@@ -13,13 +13,24 @@ def normalize_kod(value: str) -> str:
     return re.sub(r'_+', '_', cleaned).strip('_')
 
 
-def generate_book_kod(kurum_id: int, book_type, ders, exclude_id: int | None = None) -> str:
-    """Kurum + tür + ders bazlı benzersiz kitap kodu üretir."""
+def generate_book_kod(
+    kurum_id: int,
+    book_type,
+    ders,
+    exclude_id: int | None = None,
+    *,
+    sube_id: int | None = None,
+) -> str:
+    """Şube + tür + ders bazlı benzersiz kitap kodu üretir."""
     type_part = normalize_kod(getattr(book_type, 'kod', None) or 'KITAP')[:12] or 'KITAP'
     ders_part = normalize_kod(getattr(ders, 'kod', None) or 'DERS')[:12] or 'DERS'
     prefix = f'{type_part}_{ders_part}_'
 
-    qs = ResourceBook.objects.filter(kurum_id=kurum_id, kod__startswith=prefix)
+    qs = ResourceBook.objects.filter(kod__startswith=prefix)
+    if sube_id:
+        qs = qs.filter(sube_id=sube_id)
+    elif kurum_id:
+        qs = qs.filter(kurum_id=kurum_id)
     if exclude_id:
         qs = qs.exclude(pk=exclude_id)
 
@@ -30,7 +41,6 @@ def generate_book_kod(kurum_id: int, book_type, ders, exclude_id: int | None = N
             max_num = max(max_num, int(suffix))
 
     return f'{prefix}{max_num + 1:03d}'
-
 
 def generate_unit_kod(book, exclude_id: int | None = None) -> str:
     """Kitap koduna bağlı benzersiz ünite kodu üretir."""

@@ -5,7 +5,7 @@ DRF Serializers for Book-based Content Library
 from rest_framework import serializers
 from apps.egitim_tanimlari.models import SinifSeviyesi
 from .models import BookType, ResourceBook, ResourceUnit, ResourceTopic, ResourceContent
-from .scoping import get_request_kurum_id
+from .scoping import get_request_kurum_id, get_request_sube_id
 from .utils import generate_book_kod, generate_topic_kod, generate_unit_kod, normalize_kod
 
 
@@ -102,6 +102,11 @@ class ResourceUnitDetailSerializer(serializers.ModelSerializer):
         ]
 
 
+def _serialize_kapak_url(obj):
+    from apps.resources.application.kapak import resolve_book_kapak_url
+    return resolve_book_kapak_url(obj)
+
+
 class ResourceBookSerializer(serializers.ModelSerializer):
     """Kitap serializer"""
     book_type_display = serializers.CharField(source='book_type.ad', read_only=True)
@@ -117,11 +122,12 @@ class ResourceBookSerializer(serializers.ModelSerializer):
     content_count = serializers.IntegerField(source='db_content_count', read_only=True, default=0)
     
     zorluk_display = serializers.SerializerMethodField()
+    kapak_url = serializers.SerializerMethodField()
     
     class Meta:
         model = ResourceBook
         fields = [
-            'id', 'ad', 'kod', 'kurum_id', 'book_type', 'book_type_display', 'book_type_renk',
+            'id', 'ad', 'kod', 'kurum_id', 'sube_id', 'book_type', 'book_type_display', 'book_type_renk',
             'ders', 'ders_ad', 'sinif_seviyesi', 'sinif_seviyesi_ad',
             'sinif_seviyeleri', 'sinif_seviyeleri_ad',
             'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
@@ -138,13 +144,16 @@ class ResourceBookSerializer(serializers.ModelSerializer):
         return _sinif_seviyeleri_ad(obj)
     
     def get_zorluk_display(self, obj):
-        if obj.zorluk_min and obj.zorluk_max:
+        if obj.zorluk_min is not None and obj.zorluk_max is not None:
             return f"{obj.zorluk_min}-{obj.zorluk_max}"
-        elif obj.zorluk_min:
+        elif obj.zorluk_min is not None:
             return f"{obj.zorluk_min}+"
-        elif obj.zorluk_max:
-            return f"1-{obj.zorluk_max}"
+        elif obj.zorluk_max is not None:
+            return f"0-{obj.zorluk_max}"
         return None
+
+    def get_kapak_url(self, obj):
+        return _serialize_kapak_url(obj)
 
 
 class ResourceBookDetailSerializer(serializers.ModelSerializer):
@@ -160,11 +169,12 @@ class ResourceBookDetailSerializer(serializers.ModelSerializer):
     topic_count = serializers.IntegerField(read_only=True)
     content_count = serializers.IntegerField(read_only=True)
     zorluk_display = serializers.SerializerMethodField()
+    kapak_url = serializers.SerializerMethodField()
     
     class Meta:
         model = ResourceBook
         fields = [
-            'id', 'ad', 'kod', 'kurum_id', 'book_type', 'book_type_display', 'book_type_renk',
+            'id', 'ad', 'kod', 'kurum_id', 'sube_id', 'book_type', 'book_type_display', 'book_type_renk',
             'ders', 'ders_ad', 'sinif_seviyesi', 'sinif_seviyesi_ad',
             'sinif_seviyeleri', 'sinif_seviyeleri_ad',
             'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
@@ -181,13 +191,16 @@ class ResourceBookDetailSerializer(serializers.ModelSerializer):
         return _sinif_seviyeleri_ad(obj)
     
     def get_zorluk_display(self, obj):
-        if obj.zorluk_min and obj.zorluk_max:
+        if obj.zorluk_min is not None and obj.zorluk_max is not None:
             return f"{obj.zorluk_min}-{obj.zorluk_max}"
-        elif obj.zorluk_min:
+        elif obj.zorluk_min is not None:
             return f"{obj.zorluk_min}+"
-        elif obj.zorluk_max:
-            return f"1-{obj.zorluk_max}"
+        elif obj.zorluk_max is not None:
+            return f"0-{obj.zorluk_max}"
         return None
+
+    def get_kapak_url(self, obj):
+        return _serialize_kapak_url(obj)
 
 
 class ResourceBookStructureSerializer(serializers.ModelSerializer):
@@ -326,14 +339,14 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
         zorluk_max = data.get('zorluk_max')
         
         if zorluk_min is not None:
-            if zorluk_min < 1 or zorluk_min > 10:
-                raise serializers.ValidationError({'zorluk_min': 'Zorluk seviyesi 1-10 arasında olmalıdır.'})
+            if zorluk_min < 0 or zorluk_min > 10:
+                raise serializers.ValidationError({'zorluk_min': 'Zorluk seviyesi 0-10 arasında olmalıdır.'})
         
         if zorluk_max is not None:
-            if zorluk_max < 1 or zorluk_max > 10:
-                raise serializers.ValidationError({'zorluk_max': 'Zorluk seviyesi 1-10 arasında olmalıdır.'})
+            if zorluk_max < 0 or zorluk_max > 10:
+                raise serializers.ValidationError({'zorluk_max': 'Zorluk seviyesi 0-10 arasında olmalıdır.'})
         
-        if zorluk_min and zorluk_max and zorluk_min > zorluk_max:
+        if zorluk_min is not None and zorluk_max is not None and zorluk_min > zorluk_max:
             raise serializers.ValidationError({'zorluk_max': 'Maksimum zorluk, minimum zorluktan küçük olamaz.'})
 
         if self.instance is None or 'sinif_seviyeleri' in data or 'sinif_seviyesi' in data:
@@ -346,10 +359,13 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
             elif self.instance is None:
                 request = self.context.get('request')
                 kurum_id = get_request_kurum_id(request) if request else None
+                sube_id = get_request_sube_id(request, kurum_id=kurum_id) if request else None
                 book_type = data.get('book_type')
                 ders = data.get('ders')
                 if kurum_id and book_type and ders:
-                    data['kod'] = generate_book_kod(kurum_id, book_type, ders)
+                    data['kod'] = generate_book_kod(
+                        kurum_id, book_type, ders, sube_id=sube_id,
+                    )
                 else:
                     raise serializers.ValidationError({'kod': 'Ders ve kitap türü seçin.'})
             else:
@@ -361,9 +377,13 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
         sinif_list = validated_data.pop('sinif_seviyeleri', [])
         request = self.context.get('request')
         kurum_id = get_request_kurum_id(request) if request else None
+        sube_id = get_request_sube_id(request, kurum_id=kurum_id) if request else None
         if not kurum_id:
             raise serializers.ValidationError({'kurum': 'Kurum bağlamı gerekli.'})
+        if not sube_id:
+            raise serializers.ValidationError({'sube': 'Şube bağlamı gerekli.'})
         validated_data['kurum_id'] = kurum_id
+        validated_data['sube_id'] = sube_id
         book = super().create(validated_data)
         if sinif_list:
             book.sinif_seviyeleri.set(sinif_list)

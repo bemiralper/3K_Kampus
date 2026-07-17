@@ -20,6 +20,7 @@ import {
   type ActivePurchaseList,
 } from "@/lib/resources-api";
 import PurchaseListModal, { formatDifficulty, difficultyStyle } from "../PurchaseListModal";
+import { BookCover } from "@/components/resources/BookCover";
 
 function getPhotoUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
@@ -529,7 +530,10 @@ export default function StudentResourceDetailPage() {
                         borderBottom: "1px solid #f1f5f9",
                       }}
                     >
-                      <span style={{ fontWeight: 500, fontSize: 14 }}>{item.resource_name}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                        <BookCover src={item.kapak_url} alt={item.resource_name} size="sm" />
+                        <span style={{ fontWeight: 500, fontSize: 14 }}>{item.resource_name}</span>
+                      </div>
                       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                         {(["RECEIVED", "NOT_RECEIVED", "CANCELLED"] as const).map(status => {
                           const labels = { RECEIVED: "Alındı", NOT_RECEIVED: "Alınmadı", CANCELLED: "İptal" };
@@ -677,12 +681,17 @@ export default function StudentResourceDetailPage() {
                         return (
                           <tr key={resource.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                             <td style={{ padding: "12px 8px" }}>
-                              <div style={{ fontWeight: 500 }}>{resource.resource_name}</div>
-                              {resource.resource_yayin_yili && (
-                                <div style={{ fontSize: "11px", color: "#94a3b8" }}>
-                                  {resource.resource_yayinevi} • {resource.resource_yayin_yili}
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <BookCover src={resource.kapak_url} alt={resource.resource_name} size="sm" />
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontWeight: 500 }}>{resource.resource_name}</div>
+                                  {resource.resource_yayin_yili && (
+                                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                                      {resource.resource_yayinevi} • {resource.resource_yayin_yili}
+                                    </div>
+                                  )}
                                 </div>
-                              )}
+                              </div>
                             </td>
                             <td style={{ padding: "12px 8px" }}>
                               <span style={{
@@ -968,7 +977,8 @@ export default function StudentResourceDetailPage() {
                           }}
                           style={{ marginRight: "12px" }}
                         />
-                        <div style={{ flex: 1 }}>
+                        <BookCover src={resource.kapak_url} alt={resource.ad} size="sm" />
+                        <div style={{ flex: 1, marginLeft: 10 }}>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                               <span style={{ fontWeight: 500 }}>{resource.ad}</span>

@@ -164,12 +164,12 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
 
 
 def _resource_book_zorluk_display(resource):
-    if resource.zorluk_min and resource.zorluk_max:
+    if resource.zorluk_min is not None and resource.zorluk_max is not None:
         return f"{resource.zorluk_min}-{resource.zorluk_max}"
-    if resource.zorluk_min:
+    if resource.zorluk_min is not None:
         return f"{resource.zorluk_min}+"
-    if resource.zorluk_max:
-        return f"1-{resource.zorluk_max}"
+    if resource.zorluk_max is not None:
+        return f"0-{resource.zorluk_max}"
     return None
 
 

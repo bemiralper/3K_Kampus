@@ -26,7 +26,9 @@ class PurchaseListWorkflowTest(TestCase):
         self.egitim_yili = EgitimYili.objects.create(
             baslangic_yil=2025, bitis_yil=2026, aktif_mi=True,
         )
-        self.sinif_seviyesi = SinifSeviyesi.objects.create(ad='12. Sınıf', kod='S12', sira=12)
+        self.sinif_seviyesi = SinifSeviyesi.objects.create(
+            sube=self.sube,
+            kurum=self.kurum, ad='12. Sınıf', kod='S12', sira=12)
         self.sinif = Sinif.objects.create(
             kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
             ad='12-A', kod='12A', sinif_seviyesi=self.sinif_seviyesi, aktif_mi=True,
@@ -38,13 +40,17 @@ class PurchaseListWorkflowTest(TestCase):
             ogrenci=self.student, sinif=self.sinif, egitim_yili=self.egitim_yili,
             kurum=self.kurum, sube=self.sube, aktif_mi=True,
         )
-        self.ders = Ders.objects.create(ad='Matematik', kod='MAT')
+        self.ders = Ders.objects.create(
+            sube=self.sube,
+            kurum=self.kurum, ad='Matematik', kod='MAT')
         self.book_type = BookType.objects.create(kod='SORU_BANKASI', ad='Soru Bankası')
         self.book = ResourceBook.objects.create(
+            sube=self.sube,
             ad='Liste Kitabı', kod='PLB1', book_type=self.book_type,
             ders=self.ders, sinif_seviyesi=self.sinif_seviyesi, kurum=self.kurum, aktif_mi=True,
         )
         self.book2 = ResourceBook.objects.create(
+            sube=self.sube,
             ad='İkinci Kitap', kod='PLB2', book_type=self.book_type,
             ders=self.ders, sinif_seviyesi=self.sinif_seviyesi, kurum=self.kurum, aktif_mi=True,
         )

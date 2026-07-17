@@ -549,25 +549,28 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         if acquisition_info and len(student_ids) == 1:
             acquisition_map = get_student_book_acquisition_map(student_ids[0])
         
+        from apps.resources.application.kapak import resolve_book_kapak_url
+
         resources = queryset.values(
             'id', 'ad', 'kod',
             'ders_id', 'ders__ad',
             'book_type__ad', 'book_type__renk',
             'yayinevi', 'yayin_yili',
             'zorluk_min', 'zorluk_max',
-            'toplam_sayfa'
+            'toplam_sayfa',
+            'kapak', 'kapak_url',
         )[:200]
         
         # Format response
         data = []
         for r in resources:
             zorluk_display = None
-            if r['zorluk_min'] and r['zorluk_max']:
+            if r['zorluk_min'] is not None and r['zorluk_max'] is not None:
                 zorluk_display = f"{r['zorluk_min']}-{r['zorluk_max']}"
-            elif r['zorluk_min']:
+            elif r['zorluk_min'] is not None:
                 zorluk_display = f"{r['zorluk_min']}+"
-            elif r['zorluk_max']:
-                zorluk_display = f"1-{r['zorluk_max']}"
+            elif r['zorluk_max'] is not None:
+                zorluk_display = f"0-{r['zorluk_max']}"
             
             entry = {
                 'id': r['id'],
@@ -583,6 +586,10 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
                 'zorluk_max': r['zorluk_max'],
                 'zorluk_display': zorluk_display,
                 'toplam_sayfa': r['toplam_sayfa'],
+                'kapak_url': resolve_book_kapak_url(
+                    kapak_name=r.get('kapak') or None,
+                    kapak_url=r.get('kapak_url') or '',
+                ),
             }
             acq = acquisition_map.get(r['id'])
             if acq:
@@ -815,6 +822,8 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
             avg_progress = sum(a.progress_percent for a in assignments) / total
         
         # Ders bazlı gruplama
+        from apps.resources.application.kapak import resolve_book_kapak_url
+
         lessons_dict = {}
         for a in assignments:
             lesson_id = a.lesson_id
@@ -833,6 +842,7 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
                 'resource_type_renk': a.resource_book.book_type.renk if a.resource_book and a.resource_book.book_type else '#e2e8f0',
                 'resource_yayin_yili': a.resource_book.yayin_yili if a.resource_book else None,
                 'resource_yayinevi': a.resource_book.yayinevi if a.resource_book else '',
+                'kapak_url': resolve_book_kapak_url(a.resource_book) if a.resource_book else '',
                 'difficulty_level_snapshot': a.difficulty_level_snapshot,
                 'status': a.status,
                 'status_display': a.get_status_display(),
@@ -866,7 +876,11 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
                 ResourcePurchaseList.Status.DRAFT,
                 ResourcePurchaseList.Status.FINALIZED,
             ],
-        ).prefetch_related('items').order_by('-created_at')
+        ).prefetch_related(
+            'items',
+            'items__resource_book',
+            'items__assignment__resource_book',
+        ).order_by('-created_at')
         active_purchase_lists = []
         for pl in active_lists_qs:
             pending_items = [
@@ -888,6 +902,10 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
                             item.book_name_snapshot
                             or (item.resource_book.ad if item.resource_book_id else '')
                             or (item.assignment.resource_book.ad if item.assignment_id else '')
+                        ),
+                        'kapak_url': resolve_book_kapak_url(
+                            item.resource_book
+                            or (item.assignment.resource_book if item.assignment_id else None)
                         ),
                         'item_status': item.item_status,
                         'item_status_display': item.get_item_status_display(),

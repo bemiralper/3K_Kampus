@@ -48,6 +48,14 @@ class ResourceBook(models.Model):
         null=True,
         blank=True,
     )
+    sube = models.ForeignKey(
+        'sube.Sube',
+        on_delete=models.CASCADE,
+        related_name='resource_books',
+        verbose_name='Şube',
+        null=True,
+        blank=True,
+    )
     book_type = models.ForeignKey(
         BookType,
         on_delete=models.PROTECT,
@@ -83,21 +91,28 @@ class ResourceBook(models.Model):
     toplam_sayfa = models.PositiveIntegerField('Toplam Sayfa', null=True, blank=True)
     isbn = models.CharField('ISBN', max_length=20, blank=True)
     
-    # Zorluk Seviyesi (1-10 arası)
+    # Zorluk Seviyesi (0-10 arası)
     zorluk_min = models.PositiveSmallIntegerField(
         'Minimum Zorluk',
         null=True,
         blank=True,
-        help_text='1-10 arası minimum zorluk seviyesi'
+        help_text='0-10 arası minimum zorluk seviyesi'
     )
     zorluk_max = models.PositiveSmallIntegerField(
         'Maksimum Zorluk',
         null=True,
         blank=True,
-        help_text='1-10 arası maksimum zorluk seviyesi'
+        help_text='0-10 arası maksimum zorluk seviyesi'
     )
     
-    # Kapak Görseli
+    # Kapak Görseli (yüklenen dosya; kapak_url harici bağlantı için yedek)
+    kapak = models.ImageField(
+        'Kapak Görseli',
+        upload_to='resources/kapak/',
+        blank=True,
+        null=True,
+        help_text='Önerilen boyut 600x600 px',
+    )
     kapak_url = models.URLField('Kapak URL', blank=True)
     
     # Meta
@@ -115,8 +130,8 @@ class ResourceBook(models.Model):
         ordering = ['sira', 'ad']
         constraints = [
             models.UniqueConstraint(
-                fields=['kurum', 'kod'],
-                name='unique_resource_book_kod_per_kurum',
+                fields=['sube', 'kod'],
+                name='unique_resource_book_kod_per_sube',
             ),
         ]
         

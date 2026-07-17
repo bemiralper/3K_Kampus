@@ -26,8 +26,12 @@ class StudentResourcesSubeIsolationAPITest(TestCase):
         self.sube_b = Sube.objects.create(kurum=self.kurum, ad='Şube B', kod='RISO-B')
         self.user = User.objects.create_user(username='kaynakiso', password='test', is_staff=True)
         self.client.force_authenticate(user=self.user)
-        self.ders = Ders.objects.create(ad='Matematik', kod='MAT')
-        self.sinif_seviyesi = SinifSeviyesi.objects.create(ad='10. Sınıf', kod='S10', sira=10)
+        self.ders = Ders.objects.create(
+            sube=self.sube_a,
+            kurum=self.kurum, ad='Matematik', kod='MAT')
+        self.sinif_seviyesi = SinifSeviyesi.objects.create(
+            sube=self.sube_a,
+            kurum=self.kurum, ad='10. Sınıf', kod='S10', sira=10)
         self.book_type = BookType.objects.create(kod='SORU_BANKASI', ad='Soru Bankası')
 
         self.student_a = Ogrenci.objects.create(
@@ -45,6 +49,7 @@ class StudentResourcesSubeIsolationAPITest(TestCase):
             aktif_mi=True,
         )
         self.book = ResourceBook.objects.create(
+            sube=self.sube_a,
             kurum=self.kurum,
             ad='Test Kitap',
             kod='TK-1',
