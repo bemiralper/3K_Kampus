@@ -1,7 +1,7 @@
 // ─── Finans ⇄ Ödeme Takip Köprüsü ────────────────────────────────
 // Para Hareketleri hub'ındaki "Tahsilat Al / İade" hızlı işlemleri
 // doğrudan odeme_takip API'lerini kullanır (Sözleşme, Taksit, Tahsilat).
-import { API_BASE, postHeaders } from "@/app/odeme-takip/helpers";
+import { API_BASE, apiHeaders, postHeaders } from "@/app/odeme-takip/helpers";
 import type { Sozlesme, Taksit, OdemeYontemi, TahsilatItem } from "@/app/odeme-takip/types";
 import type { VadesiGelenlerDonem, VadesiGelenlerResponse } from "../types/para-hareketi-types";
 
@@ -16,7 +16,12 @@ export interface SozlesmeAramaSonuc {
 }
 
 async function odemeGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  // Kurum/şube zorunlu (X-Kurum-ID, X-Sube-ID) — yoksa /odeme-sekilleri/ 400 döner
+  // ve tahsilat drawer'da Ödeme Yöntemi listesi sessizce boş kalır.
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    headers: apiHeaders(),
+  });
   if (!res.ok) {
     let msg = "İstek başarısız oldu";
     try {
