@@ -110,10 +110,10 @@ export default function TopluKitapEkleModal({ open, onClose, onComplete }: Props
         </div>
 
         <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
-          Güncel şablonu indirin. <strong>Kitap Türü</strong>, <strong>Ders</strong>,{" "}
-          <strong>Sınıf</strong> ve <strong>Zorluk</strong> sütunlarında hücreye tıklayınca
-          sistemdeki değerler açılır listeden seçilir (aktif şube). Kitap adı ve kod ayrı
-          sütunlardır — türü listeden seçmeyi unutmayın. Örnek satırı silip yükleyin.
+          Güncel şablonu indirin. <strong>Kitaplar</strong> sayfasında 2. satırdan itibaren
+          doldurun. <strong>Kitap Türü</strong>, <strong>Ders</strong>, <strong>Sınıf</strong> ve{" "}
+          <strong>Zorluk</strong> hücrelerinde açılır listeden seçin. Kitap Adı zorunludur;
+          Kod boşsa otomatik üretilir. Kaydedip yükleyin.
         </p>
 
         <button
@@ -174,11 +174,19 @@ export default function TopluKitapEkleModal({ open, onClose, onComplete }: Props
               <strong>{result.eklenen}</strong> eklendi · <strong>{result.atlanan}</strong> atlandı ·{" "}
               <strong>{result.hatali}</strong> hatalı
             </div>
+            {result.eklenen === 0 && result.atlanan === 0 && result.hatalar.length === 0 && (
+              <p style={{ margin: "8px 0 0", color: "#b45309" }}>
+                Hiç satır işlenmedi. Verinin <strong>Kitaplar</strong> sayfasında olduğundan ve
+                Kitap Adı / Tür / Ders / Sınıf doldurulduğundan emin olun.
+              </p>
+            )}
             {result.hatalar.length > 0 && (
-              <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "#b91c1c", maxHeight: 140, overflow: "auto" }}>
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "#b91c1c", maxHeight: 160, overflow: "auto" }}>
                 {result.hatalar.slice(0, 20).map((h, i) => (
                   <li key={i}>
-                    Satır {h.satir}: {h.ad || "—"} — {h.neden}
+                    {h.satir ? `Satır ${h.satir}: ` : ""}
+                    {h.ad ? `${h.ad} — ` : ""}
+                    {h.neden}
                   </li>
                 ))}
               </ul>

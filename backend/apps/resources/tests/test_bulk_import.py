@@ -64,6 +64,26 @@ class BulkBookImportTemplateTest(TestCase):
         self.assertEqual(book.book_type_id, self.book_type.id)
         self.assertEqual(book.zorluk_min, 0)
 
+    def test_edited_row_not_skipped_when_aciklama_mentions_ornek(self):
+        """Eski şablonda Açıklama'da 'örnek satır' kalsa bile gerçek ad işlenmeli."""
+        svc = BulkBookImportService(kurum_id=self.kurum.id, sube_id=self.sube.id)
+        result = svc.import_rows([{
+            'ad': 'ABC Matematik',
+            'kod': 'ABCC1',
+            'book_type': 'ABCC',
+            'ders': 'MAT',
+            'sinif': 'S11',
+            'aciklama': 'Örnek satır — yüklemeden önce silin',
+        }])
+        self.assertEqual(result.eklenen, 1, result.hatalar)
+
+    def test_empty_import_returns_helpful_error(self):
+        svc = BulkBookImportService(kurum_id=self.kurum.id, sube_id=self.sube.id)
+        result = svc.import_rows([])
+        self.assertEqual(result.eklenen, 0)
+        self.assertEqual(result.hatali, 1)
+        self.assertTrue(any('İşlenecek satır' in h['neden'] for h in result.hatalar))
+
     def test_import_template_api_requires_sube(self):
         user = User.objects.create_user(
             username='bulkadmin', email='b@test.com', password='x', is_staff=True,

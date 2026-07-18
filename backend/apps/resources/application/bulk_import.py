@@ -207,9 +207,9 @@ class BulkBookImportService:
                     result.hatalar.append({'satir': idx, 'ad': '', 'neden': 'Kitap adı boş'})
                 continue
 
-            # Şablon örnek satırlarını yoksay
-            aciklama = str(raw.get('aciklama') or '')
-            if 'örnek satır' in aciklama.casefold() or ad.casefold().startswith('örnek '):
+            # Yalnızca şablonun varsayılan örnek satırını yoksay
+            # (kullanıcı örnek satırı düzenlediyse artık atlanmaz)
+            if _is_template_sample_row(ad, str(raw.get('aciklama') or '')):
                 continue
 
             result.toplam_satir += 1
@@ -330,14 +330,31 @@ class BulkBookImportService:
                         book.sinif_seviyeleri.set(sinif_list)
             result.eklenen = len(to_create)
 
+        if (
+            result.eklenen == 0
+            and result.atlanan == 0
+            and result.hatali == 0
+            and result.toplam_satir == 0
+        ):
+            result.hatalar.append({
+                'satir': 0,
+                'ad': '',
+                'neden': (
+                    'İşlenecek satır bulunamadı. Veriyi "Kitaplar" sayfasına girin; '
+                    'Kitap Adı, Kitap Türü, Ders ve Sınıf doldurulmalı. '
+                    'Şablondaki örnek satırı kullanıyorsanız Kitap Adı’nı değiştirin '
+                    '(“Örnek Kitap…” ile başlayan adlar yok sayılır).'
+                ),
+            })
+            result.hatali = 1
+
         return result
 
     def parse_excel(self, file_obj: BinaryIO) -> list[dict]:
         from openpyxl import load_workbook
 
         wb = load_workbook(file_obj, read_only=True, data_only=True)
-        # İlk veri sayfası: Kitaplar (yoksa active)
-        ws = wb['Kitaplar'] if 'Kitaplar' in wb.sheetnames else wb.active
+        ws = _pick_books_sheet(wb)
         rows_iter = ws.iter_rows(values_only=True)
         first_row = next(rows_iter, None)
         if not first_row:
@@ -345,7 +362,6 @@ class BulkBookImportService:
             return []
 
         headers = [_cell_str(c) for c in first_row]
-        # Talimat satırını atla (2. satır "Bu satırı silmeyin" vb. olabilir)
         col_map = _map_columns(headers)
         start_iter = rows_iter
 
@@ -353,6 +369,7 @@ class BulkBookImportService:
             col_map = {
                 'ad': 0, 'kod': 1, 'book_type': 2, 'ders': 3, 'sinif': 4,
                 'yayinevi': 5, 'yazar': 6, 'yayin_yili': 7,
+                'isbn': 8, 'zorluk_min': 9, 'zorluk_max': 10, 'aciklama': 11,
             }
             start_iter = _chain_first_row(first_row, rows_iter)
 
@@ -360,7 +377,6 @@ class BulkBookImportService:
         for row in start_iter:
             if not row or all(_cell_str(c) == '' for c in row):
                 continue
-            # Açıklama satırı / talimat
             first_cell = _cell_at(row, col_map.get('ad'))
             if first_cell.casefold().startswith('not:') or first_cell.casefold().startswith('açıklama:'):
                 continue
@@ -383,6 +399,32 @@ class BulkBookImportService:
 
     def import_excel(self, file_obj: BinaryIO) -> BulkImportResult:
         return self.import_rows(self.parse_excel(file_obj))
+
+
+def _is_template_sample_row(ad: str, aciklama: str = '') -> bool:
+    """Şablondaki varsayılan örnek satır mı? Yalnızca ad 'Örnek Kitap…' ise atlanır."""
+    ad_l = (ad or '').strip().casefold()
+    return ad_l.startswith('örnek kitap')
+
+
+def _pick_books_sheet(wb):
+    """Kitaplar sayfasını bul; yoksa 'Kitap Adı' başlıklı sayfayı ara."""
+    if 'Kitaplar' in wb.sheetnames:
+        return wb['Kitaplar']
+    for name in wb.sheetnames:
+        ws = wb[name]
+        if getattr(ws, 'sheet_state', 'visible') == 'hidden':
+            continue
+        try:
+            first = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+        except Exception:
+            continue
+        if not first:
+            continue
+        headers = ' '.join(_cell_str(c).casefold() for c in first)
+        if 'kitap adı' in headers or 'kitap adi' in headers:
+            return ws
+    return wb.active
 
 
 def _write_list_column(ws, col: int, header: str, values: list[str]) -> int:
@@ -438,7 +480,8 @@ def build_excel_template(*, kurum_id: int | None = None, sube_id: int | None = N
         '3. Kod boş bırakılırsa sistem otomatik üretir.',
         '4. Birden fazla sınıf için Sınıf hücresine virgülle ayırarak yazabilirsiniz (listeden seçtikten sonra düzenleyin).',
         '5. Zorluk Min / Max: 0–10 arası.',
-        '6. Örnek satırı silip kendi kitaplarınızı girin veya üzerine yazın.',
+        '6. "Kitaplar" sayfasında 2. satırdan itibaren doldurun (Kitap Adı zorunlu).',
+        '7. Dosyayı kaydedip sisteme yükleyin.',
         '',
         f'Kitap türü sayısı: {len(type_labels)}',
         f'Ders sayısı (aktif şube): {len(ders_labels)}',
@@ -472,23 +515,10 @@ def build_excel_template(*, kurum_id: int | None = None, sube_id: int | None = N
         cell.font = header_font
         cell.alignment = Alignment(horizontal='center')
 
-    sample_type = type_labels[0] if type_labels else ''
-    sample_ders = ders_labels[0] if ders_labels else ''
-    sample_sinif = sinif_labels[0] if sinif_labels else ''
-    ws.append([
-        'Örnek Kitap — silin veya üzerine yazın',
-        '',
-        sample_type,
-        sample_ders,
-        sample_sinif,
-        '',
-        '',
-        '2025',
-        '',
-        '0',
-        '5',
-        'Örnek satır — yüklemeden önce silin',
-    ])
+    # Boş veri satırları (açılır listeler hazır); örnek kitap satırı yok —
+    # kullanıcı doğrudan 2. satırdan doldurur.
+    for _ in range(5):
+        ws.append(['', '', '', '', '', '', '', '', '', '', '', ''])
 
     widths = [36, 16, 28, 22, 22, 16, 16, 12, 14, 12, 12, 36]
     for i, w in enumerate(widths, start=1):
