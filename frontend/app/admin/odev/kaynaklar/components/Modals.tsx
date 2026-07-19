@@ -1,6 +1,7 @@
 // ========== Modal Components (BookType, BulkTest, BulkUnit, BulkTopic, Import, Duplicate) ==========
 "use client";
 import React, { useEffect } from "react";
+import { toTitleCaseTr } from "@/lib/text-format";
 import type { BookType, BookTypeFormData, BulkTestFormState, BulkTestItemRow, BulkUnitRow, BulkTopicRow, ResourceBook } from "../types";
 
 // ───── Shared modal backdrop ─────
@@ -413,7 +414,17 @@ export function BulkItemModal({ open, onClose, title, subtitle, rows, setRows, l
               <tr key={row.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
                 <td style={{ padding: 8, fontSize: 14, color: "#64748b" }}>{i + 1}</td>
                 <td style={{ padding: 8 }}>
-                  <input type="text" value={row.ad} onChange={e => updateRow(row.id, "ad", e.target.value)} placeholder={placeholder} style={{ width: "100%", padding: 8, border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }} />
+                  <input
+                    type="text"
+                    value={row.ad}
+                    onChange={e => updateRow(row.id, "ad", e.target.value)}
+                    onBlur={() => {
+                      const titled = toTitleCaseTr(row.ad);
+                      if (titled !== row.ad) updateRow(row.id, "ad", titled);
+                    }}
+                    placeholder={placeholder}
+                    style={{ width: "100%", padding: 8, border: "1px solid #d1d5db", borderRadius: 6, fontSize: 14 }}
+                  />
                 </td>
                 <td style={{ padding: 8, textAlign: "center" }}>
                   {rows.length > 1 && <button onClick={() => removeRow(row.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 18 }}>×</button>}

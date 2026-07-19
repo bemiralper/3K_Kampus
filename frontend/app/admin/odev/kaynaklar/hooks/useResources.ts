@@ -33,6 +33,7 @@ import {
   reorderTopics,
   reorderContents,
 } from "@/lib/resources-api";
+import { toTitleCaseTr } from "@/lib/text-format";
 import type {
   ResourceBook, ResourceUnit, ResourceTopic, ResourceContent,
   Ders, SinifSeviyesi, BookType,
@@ -442,7 +443,7 @@ export function useResources() {
 
   const buildUnitPayload = () => {
     const { id, kod, book, ...rest } = unitForm;
-    return { ...rest, book: selectedBook?.id };
+    return { ...rest, ad: toTitleCaseTr(rest.ad || ""), book: selectedBook?.id };
   };
 
   const handleSaveUnit = async () => {
@@ -453,7 +454,9 @@ export function useResources() {
         setDrawerLoading(false);
         return;
       }
-      const payload = buildUnitPayload();
+      const titled = toTitleCaseTr(unitForm.ad || "");
+      if (titled !== unitForm.ad) setUnitForm({ ...unitForm, ad: titled });
+      const payload = { ...buildUnitPayload(), ad: titled };
       const result = unitForm.id
         ? await updateUnit(unitForm.id, payload)
         : await createUnit(payload as Parameters<typeof createUnit>[0]);
@@ -466,8 +469,10 @@ export function useResources() {
   const handleSaveTopic = async () => {
     setDrawerLoading(true); setDrawerError(null);
     try {
+      const titled = toTitleCaseTr(topicForm.ad || "");
+      if (titled !== topicForm.ad) setTopicForm({ ...topicForm, ad: titled });
       const { id, kod, unit, ...rest } = topicForm;
-      const topicPayload = { ...rest, unit: unit ?? undefined };
+      const topicPayload = { ...rest, ad: titled, unit: unit ?? undefined };
       const result = topicForm.id
         ? await updateTopic(topicForm.id, topicPayload)
         : await createTopic(topicPayload as Parameters<typeof createTopic>[0]);
@@ -764,7 +769,7 @@ export function useResources() {
         const row = valid[i];
         const result = await createUnit({
           book: selectedBook.id,
-          ad: row.ad.trim(),
+          ad: toTitleCaseTr(row.ad),
           sira: existing + i + 1,
           aktif_mi: true,
         });
@@ -797,7 +802,7 @@ export function useResources() {
         const row = valid[i];
         const result = await createTopic({
           unit: bulkTopicUnitId,
-          ad: row.ad.trim(),
+          ad: toTitleCaseTr(row.ad),
           sira: existing + i + 1,
           aktif_mi: true,
         });
@@ -835,7 +840,7 @@ export function useResources() {
         if (level === 0) {
           const result = await createUnit({
             book: selectedBook.id,
-            ad: name,
+            ad: toTitleCaseTr(name),
             sira: unitOrder,
             aktif_mi: true,
           });
@@ -845,7 +850,7 @@ export function useResources() {
           if (!currentUnitId) { setImportError(`"${name}" konusu için üst ünite bulunamadı.`); return; }
           const result = await createTopic({
             unit: currentUnitId,
-            ad: name,
+            ad: toTitleCaseTr(name),
             sira: topicOrder,
             aktif_mi: true,
           });

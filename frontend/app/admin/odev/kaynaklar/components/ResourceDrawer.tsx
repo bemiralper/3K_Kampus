@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { BookCover } from "@/components/resources/BookCover";
 import CmsCoverCropper, { type CoverAspectPreset } from "@/components/cms/CmsCoverCropper";
 import "@/components/cms/cms.css";
+import { toTitleCaseTr } from "@/lib/text-format";
 import type { BookFormData, UnitFormData, TopicFormData, ContentFormData, Ders, SinifSeviyesi, BookType } from "../types";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -298,7 +299,16 @@ export function ResourceDrawer(props: DrawerProps) {
               <div className="kk-form-grid">
                 <div className="kk-field" style={{ gridColumn: "1 / -1" }}>
                   <label className="kk-label">Ünite Adı *</label>
-                  <input type="text" className="kk-input" value={unitForm.ad} onChange={(e) => setUnitForm({ ...unitForm, ad: e.target.value })} />
+                  <input
+                    type="text"
+                    className="kk-input"
+                    value={unitForm.ad}
+                    onChange={(e) => setUnitForm({ ...unitForm, ad: e.target.value })}
+                    onBlur={() => {
+                      const titled = toTitleCaseTr(unitForm.ad);
+                      if (titled !== unitForm.ad) setUnitForm({ ...unitForm, ad: titled });
+                    }}
+                  />
                 </div>
                 <div className="kk-field">
                   <label className="kk-label">Sıra</label>
@@ -317,7 +327,16 @@ export function ResourceDrawer(props: DrawerProps) {
               <div className="kk-form-grid">
                 <div className="kk-field" style={{ gridColumn: "1 / -1" }}>
                   <label className="kk-label">Konu Adı *</label>
-                  <input type="text" className="kk-input" value={topicForm.ad} onChange={(e) => setTopicForm({ ...topicForm, ad: e.target.value })} />
+                  <input
+                    type="text"
+                    className="kk-input"
+                    value={topicForm.ad}
+                    onChange={(e) => setTopicForm({ ...topicForm, ad: e.target.value })}
+                    onBlur={() => {
+                      const titled = toTitleCaseTr(topicForm.ad);
+                      if (titled !== topicForm.ad) setTopicForm({ ...topicForm, ad: titled });
+                    }}
+                  />
                 </div>
                 <div className="kk-field">
                   <label className="kk-label">Sıra</label>

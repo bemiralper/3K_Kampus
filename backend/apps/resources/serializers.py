@@ -6,7 +6,13 @@ from rest_framework import serializers
 from apps.egitim_tanimlari.models import SinifSeviyesi
 from .models import BookType, ResourceBook, ResourceUnit, ResourceTopic, ResourceContent
 from .scoping import get_request_kurum_id, get_request_sube_id
-from .utils import generate_book_kod, generate_topic_kod, generate_unit_kod, normalize_kod
+from .utils import (
+    generate_book_kod,
+    generate_topic_kod,
+    generate_unit_kod,
+    normalize_kod,
+    to_title_case_tr,
+)
 
 
 class AutoKodWriteMixin:
@@ -265,6 +271,8 @@ class ResourceTopicWriteSerializer(AutoKodWriteMixin, serializers.ModelSerialize
         fields = ['id', 'unit', 'ad', 'kod', 'sira', 'aciklama', 'aktif_mi']
 
     def validate(self, data):
+        if 'ad' in data and data['ad'] is not None:
+            data['ad'] = to_title_case_tr(data['ad'])
         if self.instance is None or 'kod' in data:
             kod = (data.get('kod') or '').strip()
             if kod:
@@ -289,6 +297,8 @@ class ResourceUnitWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
         fields = ['id', 'book', 'ad', 'kod', 'sira', 'aciklama', 'aktif_mi']
 
     def validate(self, data):
+        if 'ad' in data and data['ad'] is not None:
+            data['ad'] = to_title_case_tr(data['ad'])
         if self.instance is None or 'kod' in data:
             kod = (data.get('kod') or '').strip()
             if kod:

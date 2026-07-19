@@ -7,6 +7,46 @@ from .models import ResourceBook, ResourceContent, ResourceTopic, ResourceUnit
 
 NUMBERED_TEST_PREFIX = 'Test'
 
+_TR_LOWER_MAP = str.maketrans({
+    'I': 'ı',
+    'İ': 'i',
+    'Ş': 'ş',
+    'Ğ': 'ğ',
+    'Ü': 'ü',
+    'Ö': 'ö',
+    'Ç': 'ç',
+})
+_TR_UPPER_FIRST = {
+    'i': 'İ',
+    'ı': 'I',
+    'ş': 'Ş',
+    'ğ': 'Ğ',
+    'ü': 'Ü',
+    'ö': 'Ö',
+    'ç': 'Ç',
+}
+
+
+def to_title_case_tr(value: str) -> str:
+    """Her kelimenin ilk harfini büyük, kalanını küçük yapar (Türkçe)."""
+    text = re.sub(r'\s+', ' ', (value or '').strip())
+    if not text:
+        return ''
+
+    def _word(token: str) -> str:
+        parts = re.split(r'([-–—/])', token)
+        out = []
+        for part in parts:
+            if not part or part in '-–—/':
+                out.append(part)
+                continue
+            lower = part.translate(_TR_LOWER_MAP).lower()
+            first = _TR_UPPER_FIRST.get(lower[0], lower[0].upper())
+            out.append(first + lower[1:])
+        return ''.join(out)
+
+    return ' '.join(_word(w) for w in text.split(' '))
+
 
 def normalize_kod(value: str) -> str:
     cleaned = re.sub(r'[^A-Za-z0-9_]+', '_', (value or '').strip().upper())
