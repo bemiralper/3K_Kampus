@@ -17,6 +17,7 @@ from .scoping import (
     filter_by_book_kurum_for_request,
     get_request_kurum_id,
     get_request_sube_id,
+    resolve_book_for_structure,
 )
 from .utils import generate_book_kod, generate_topic_kod, generate_unit_kod, build_test_batch
 from .serializers import (
@@ -378,8 +379,22 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
         """
         Kitabın tam yapısını getir (units → topics → contents)
         GET /api/resources/books/{id}/structure/
+        Opsiyonel: ?student_id= — ödev verirken atama üzerinden okuma
         """
-        book = self.get_queryset().prefetch_related(
+        book = resolve_book_for_structure(request, pk)
+        if not book:
+            return Response(
+                {
+                    'success': False,
+                    'error': (
+                        'Kitap bulunamadı veya bu şube bağlamında görüntülenemiyor. '
+                        'Üst bardaki şube seçimini kontrol edin.'
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        book = ResourceBook.objects.filter(pk=book.pk).prefetch_related(
             Prefetch(
                 'units',
                 queryset=ResourceUnit.objects.filter(aktif_mi=True).order_by('sira').prefetch_related(
@@ -394,10 +409,8 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
                     )
                 )
             )
-        ).filter(pk=pk).first()
-        if not book:
-            return Response({'success': False, 'error': 'Kitap bulunamadı'}, status=status.HTTP_404_NOT_FOUND)
-        
+        ).first()
+
         serializer = self.get_serializer(book)
         return Response({
             'success': True,

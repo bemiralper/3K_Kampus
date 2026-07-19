@@ -18,6 +18,7 @@ import { islemMasrafiGoster } from "../../utils/islem-masrafi-eligibility";
 const fmtTL = (v: number) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v || 0);
 const today = () => todayIsoLocal();
+const isCekSenetTip = (tip?: string) => tip === "cek" || tip === "senet";
 
 interface OdemeYapModalProps {
   onClose: () => void;
@@ -37,6 +38,9 @@ export default function OdemeYapModal({ onClose, onSuccess }: OdemeYapModalProps
   const [odemeYontemiId, setOdemeYontemiId] = useState("");
   const [maliHesapId, setMaliHesapId] = useState("");
   const [aciklama, setAciklama] = useState("");
+  const [vadeTarihi, setVadeTarihi] = useState("");
+  const [cekSenetNo, setCekSenetNo] = useState("");
+  const [bankaAdi, setBankaAdi] = useState("");
   const [masrafForm, setMasrafForm] = useState({ ...EMPTY_ISLEM_MASRAFI });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,43 +55,53 @@ export default function OdemeYapModal({ onClose, onSuccess }: OdemeYapModalProps
       .dropdownByKurum(activeKurum.id, activeSube?.id)
       .then((res) => setMaliHesaplar(res.mali_hesaplar || []))
       .catch(() => setMaliHesaplar([]));
-  }, [activeKurum?.id, activeSube?.id]);
-
-  useEffect(() => {
-    if (!activeKurum?.id) return;
     paymentMethodService
-      .dropdown(activeKurum.id, maliHesapId ? Number(maliHesapId) : null)
+      .dropdown(activeKurum.id, null)
       .then((res) => setOdemeYontemleri(res.odeme_yontemleri || []))
       .catch(() => setOdemeYontemleri([]));
-  }, [activeKurum?.id, maliHesapId]);
+  }, [activeKurum?.id, activeSube?.id]);
 
   const selectedCari = useMemo(() => cariler.find((c) => String(c.id) === cariHesapId) || null, [cariler, cariHesapId]);
   const selectedYontem = odemeYontemleri.find((y) => String(y.id) === odemeYontemiId);
+  const isCekPath = isCekSenetTip(selectedYontem?.tip);
   const selectedHesap = maliHesaplar.find((h) => String(h.id) === maliHesapId);
-  const masrafVisible = islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
+  const masrafVisible = !isCekPath && islemMasrafiGoster(selectedYontem?.tip, selectedHesap?.tip);
 
   const handleSubmit = async () => {
     setError(null);
     if (!activeKurum?.id) { setError("Kurum seçilmedi."); return; }
     if (!cariHesapId) { setError("Lütfen ödeme yapılacak cariyi seçin."); return; }
-    if (!maliHesapId) { setError("Lütfen paranın çıkacağı mali hesabı seçin."); return; }
+    if (!isCekPath && !maliHesapId) { setError("Lütfen paranın çıkacağı mali hesabı seçin."); return; }
+    if (isCekPath && !odemeYontemiId) { setError("Çek/senet için ödeme yöntemi seçin."); return; }
+    if (isCekPath && !vadeTarihi) { setError("Çek/senet için vade tarihi zorunludur."); return; }
     const tutarNum = Number(tutar);
     if (!tutarNum || tutarNum <= 0) { setError("Geçerli bir tutar girin."); return; }
 
     setSaving(true);
     try {
-      const masraf = buildIslemMasrafiPayload(masrafForm);
+      const masraf = isCekPath ? {} : buildIslemMasrafiPayload(masrafForm);
       await cariHesapService.serbestOdeme({
         cari_hesap_id: Number(cariHesapId),
         kurum_id: activeKurum.id,
         tutar: tutarNum,
         odeme_tarihi: tarih,
-        mali_hesap_id: Number(maliHesapId),
+        mali_hesap_id: maliHesapId ? Number(maliHesapId) : undefined,
         odeme_yontemi_id: odemeYontemiId ? Number(odemeYontemiId) : undefined,
         aciklama,
+        ...(isCekPath
+          ? {
+              vade_tarihi: vadeTarihi,
+              cek_senet_no: cekSenetNo || undefined,
+              banka_adi: bankaAdi || undefined,
+            }
+          : {}),
         ...masraf,
       });
-      onSuccess(`${fmtTL(tutarNum)} ödeme kaydedildi.`);
+      onSuccess(
+        isCekPath
+          ? `${fmtTL(tutarNum)} çek/senet portföyüne kaydedildi.`
+          : `${fmtTL(tutarNum)} ödeme kaydedildi.`,
+      );
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ödeme kaydedilemedi.");
@@ -141,28 +155,56 @@ export default function OdemeYapModal({ onClose, onSuccess }: OdemeYapModalProps
         </FinansModalField>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <FinansModalField label="Mali Hesap (Kasa / Banka)">
-          <select
-            value={maliHesapId}
-            onChange={(e) => { setMaliHesapId(e.target.value); setOdemeYontemiId(""); }}
-            style={finansModalInputStyle}
-          >
-            <option value="">Seçiniz…</option>
-            {maliHesaplar.map((m) => (
-              <option key={m.id} value={m.id}>{m.ad} ({m.tip === "kasa" ? "Kasa" : m.tip === "banka" ? "Banka" : m.tip})</option>
-            ))}
-          </select>
-        </FinansModalField>
-        <FinansModalField label="Ödeme Yöntemi (opsiyonel)">
-          <select value={odemeYontemiId} onChange={(e) => setOdemeYontemiId(e.target.value)} style={finansModalInputStyle} disabled={!maliHesapId}>
-            <option value="">{maliHesapId ? "Seçiniz…" : "Önce mali hesap seçin"}</option>
-            {odemeYontemleri.map((o) => (
-              <option key={o.id} value={o.id}>{o.ad}</option>
-            ))}
-          </select>
-        </FinansModalField>
-      </div>
+      <FinansModalField label="Ödeme Yöntemi (opsiyonel)">
+        <select
+          value={odemeYontemiId}
+          onChange={(e) => {
+            setOdemeYontemiId(e.target.value);
+            setMasrafForm({ ...EMPTY_ISLEM_MASRAFI });
+          }}
+          style={finansModalInputStyle}
+        >
+          <option value="">Seçiniz…</option>
+          {odemeYontemleri.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.ad}
+              {isCekSenetTip(o.tip) ? ` (${o.tip === "senet" ? "Senet" : "Çek"})` : ""}
+            </option>
+          ))}
+        </select>
+      </FinansModalField>
+
+      <FinansModalField label={isCekPath ? "Ödeme Hesabı (çek ödenince)" : "Mali Hesap (Kasa / Banka)"}>
+        <select
+          value={maliHesapId}
+          onChange={(e) => { setMaliHesapId(e.target.value); setMasrafForm({ ...EMPTY_ISLEM_MASRAFI }); }}
+          style={finansModalInputStyle}
+        >
+          <option value="">{isCekPath ? "Sonra seçilebilir" : "Seçiniz…"}</option>
+          {maliHesaplar.map((m) => (
+            <option key={m.id} value={m.id}>{m.ad} ({m.tip === "kasa" ? "Kasa" : m.tip === "banka" ? "Banka" : m.tip})</option>
+          ))}
+        </select>
+      </FinansModalField>
+
+      {isCekPath && (
+        <>
+          <div style={{ fontSize: 12, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: 10, marginBottom: 8 }}>
+            Çek/senet portföyüne kaydedilir; kasa çıkışı Ödendi anında yapılır.
+          </div>
+          <FinansModalField label="Vade Tarihi">
+            <input type="date" value={vadeTarihi} onChange={(e) => setVadeTarihi(e.target.value)} style={finansModalInputStyle} />
+          </FinansModalField>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <FinansModalField label="Çek/Senet No">
+              <input type="text" value={cekSenetNo} onChange={(e) => setCekSenetNo(e.target.value)} style={finansModalInputStyle} />
+            </FinansModalField>
+            <FinansModalField label="Banka">
+              <input type="text" value={bankaAdi} onChange={(e) => setBankaAdi(e.target.value)} style={finansModalInputStyle} />
+            </FinansModalField>
+          </div>
+        </>
+      )}
 
       <FinansModalField label="Açıklama (opsiyonel)">
         <input type="text" value={aciklama} onChange={(e) => setAciklama(e.target.value)} style={finansModalInputStyle} />

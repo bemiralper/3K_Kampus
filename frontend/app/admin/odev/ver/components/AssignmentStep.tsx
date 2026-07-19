@@ -5,6 +5,7 @@ import type {
   StudentResource, BookDetails, Unit, Topic, Content, SelectedContent,
   ResourcesByLesson, CartLessonGroup, ContentTaskHistory,
 } from '../types';
+import '../odev-ver.css';
 
 interface AssignmentStepProps {
   resources: StudentResource[];
@@ -119,22 +120,9 @@ export default function AssignmentStep({
       </div>
 
       {/* 3-Column Layout */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '260px 1fr 320px',
-        gap: 16,
-        minHeight: 500,
-      }}>
+      <div className="odev-assign-grid">
         {/* ─── LEFT: Accordion Menu ─── */}
-        <div style={{
-          background: 'var(--card-bg)',
-          borderRadius: 12,
-          border: '1px solid var(--border-color)',
-          overflow: 'hidden',
-          maxHeight: 600,
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
+        <div className="odev-assign-panel">
           <div style={{
             padding: '14px 16px',
             borderBottom: '1px solid var(--border-color)',
@@ -253,15 +241,7 @@ export default function AssignmentStep({
         </div>
 
         {/* ─── CENTER: Content Tree ─── */}
-        <div style={{
-          background: 'var(--card-bg)',
-          borderRadius: 12,
-          border: '1px solid var(--border-color)',
-          overflow: 'hidden',
-          maxHeight: 600,
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
+        <div className="odev-assign-panel">
           <div style={{
             padding: '14px 16px',
             borderBottom: '1px solid var(--border-color)',
@@ -537,15 +517,7 @@ export default function AssignmentStep({
         </div>
 
         {/* ─── RIGHT: Cart ─── */}
-        <div style={{
-          background: 'var(--card-bg)',
-          borderRadius: 12,
-          border: '1px solid var(--border-color)',
-          overflow: 'hidden',
-          maxHeight: 600,
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
+        <div className="odev-assign-panel">
           <div style={{
             padding: '14px 16px',
             borderBottom: '1px solid var(--border-color)',
@@ -710,15 +682,6 @@ export default function AssignmentStep({
           )}
         </div>
       </div>
-
-      {/* Responsive override */}
-      <style jsx>{`
-        @media (max-width: 1100px) {
-          div > div:first-child {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

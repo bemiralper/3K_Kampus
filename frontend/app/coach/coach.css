@@ -5269,6 +5269,44 @@
   }
 }
 
+/* Ödev / Kaynak sayfaları — coach shell içinde çift padding & overflow düzelt */
+.coach-content:has(.kk-page),
+.coach-content:has(.kh-page),
+.coach-content:has(.ok-root),
+.coach-content:has(.odev-assign-grid),
+.coach-content:has(.wizard-steps-nav) {
+  max-width: 1400px;
+}
+
+.coach-content .kk-page,
+.coach-content .kh-page {
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0;
+  background: transparent;
+  min-height: auto;
+}
+
+@media (max-width: 991px) {
+  .coach-content .kk-page,
+  .coach-content .kh-page {
+    padding-bottom: 8px;
+  }
+
+  .coach-content .wizard-footer {
+    margin-bottom: 8px;
+  }
+
+  .coach-content .hero-header {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .coach-content .ok-root {
+    overflow-x: hidden;
+  }
+}
+
 @media (min-width: 992px) {
   .coach-students-page {
     padding-bottom: 0;

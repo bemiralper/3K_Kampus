@@ -21,6 +21,7 @@ import {
 } from "@/lib/resources-api";
 import PurchaseListModal, { formatDifficulty, difficultyStyle } from "../PurchaseListModal";
 import { BookCover } from "@/components/resources/BookCover";
+import "../kaynak-havuzu.css";
 
 function getPhotoUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
@@ -262,7 +263,7 @@ export default function StudentResourceDetailPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: "24px", background: "#f8fafc", minHeight: "100vh" }}>
+      <div className="kh-page">
         <div style={{ textAlign: "center", padding: "60px", color: "#64748b" }}>
           Yükleniyor...
         </div>
@@ -272,7 +273,7 @@ export default function StudentResourceDetailPage() {
 
   if (!data) {
     return (
-      <div style={{ padding: "24px", background: "#f8fafc", minHeight: "100vh" }}>
+      <div className="kh-page">
         <div style={{ textAlign: "center", padding: "60px", color: "#64748b" }}>
           Öğrenci bulunamadı
         </div>
@@ -281,7 +282,7 @@ export default function StudentResourceDetailPage() {
   }
 
   return (
-    <div style={{ padding: "24px", background: "#f8fafc", minHeight: "100vh" }}>
+    <div className="kh-page">
       {/* Header */}
       <div style={{ marginBottom: "24px" }}>
         <Link
@@ -298,8 +299,8 @@ export default function StudentResourceDetailPage() {
         >
           ← Öğrenci Listesine Dön
         </Link>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+        <div className="kh-header-row">
+        <div className="kh-header-identity">
           {/* Profil Foto */}
           <div style={{
             width: "64px",
@@ -325,8 +326,8 @@ export default function StudentResourceDetailPage() {
               </span>
             )}
           </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 700 }}>
+          <div style={{ minWidth: 0 }}>
+            <h1>
               {data.student.full_name}
             </h1>
             <p style={{ margin: "4px 0 0", color: "#64748b" }}>
@@ -340,23 +341,7 @@ export default function StudentResourceDetailPage() {
               ? `/coach/odev/ver?student=${studentId}&locked=1&return=${encodeURIComponent(`/coach/odev/kaynak-havuzu/${studentId}`)}`
               : `/admin/odev/ver?student=${studentId}`
           }
-          style={{
-            padding: "12px 24px",
-            background: "linear-gradient(135deg, #667eea, #764ba2)",
-            color: "white",
-            border: "none",
-            borderRadius: "10px",
-            cursor: "pointer",
-            fontWeight: 600,
-            fontSize: "14px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            textDecoration: "none",
-            boxShadow: "0 4px 14px rgba(102,126,234,0.4)",
-            transition: "transform 0.15s, box-shadow 0.15s",
-            whiteSpace: "nowrap"
-          }}
+          className="kh-odev-btn"
         >
           📝 Bu Öğrenciye Ödev Ver
         </Link>
@@ -416,8 +401,8 @@ export default function StudentResourceDetailPage() {
       </div>
 
       {/* Action Buttons */}
-      <div style={{ marginBottom: "24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", gap: "12px" }}>
+      <div className="kh-actions-bar">
+        <div className="kh-actions-bar-left">
           <button
             onClick={() => setListModalType("PURCHASE")}
             style={{
@@ -666,8 +651,8 @@ export default function StudentResourceDetailPage() {
 
               {/* Resources */}
               {expandedLessons.includes(lesson.lesson_id) && (
-                <div style={{ padding: "16px 20px" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <div style={{ padding: "16px 20px" }} className="kh-table-wrap">
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
                     <thead>
                       <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
                         <th style={{ textAlign: "left", padding: "10px 8px", fontSize: "12px", color: "#64748b", fontWeight: 500 }}>Kaynak</th>
@@ -878,19 +863,8 @@ export default function StudentResourceDetailPage() {
 
       {/* Select Lesson Modal */}
       {selectLessonModalOpen && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000
-        }}>
-          <div style={{ background: "white", borderRadius: "12px", width: "400px", maxHeight: "70vh", display: "flex", flexDirection: "column" }}>
+        <div className="kh-modal-shell" style={{ zIndex: 1000 }}>
+          <div className="kh-modal is-sm">
             <div style={{ padding: "20px 24px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>📖 Ders Seçin</h3>
               <button onClick={() => setSelectLessonModalOpen(false)} style={{ background: "none", border: "none", fontSize: "24px", cursor: "pointer", color: "#64748b" }}>×</button>
@@ -923,19 +897,8 @@ export default function StudentResourceDetailPage() {
 
       {/* Add Resource Modal */}
       {addResourceModalOpen && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1001
-        }}>
-          <div style={{ background: "white", borderRadius: "12px", width: "600px", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+        <div className="kh-modal-shell" style={{ zIndex: 1001 }}>
+          <div className="kh-modal is-md">
             <div style={{ padding: "20px 24px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>📚 {addResourceLessonName} - Kaynak Ekle</h3>

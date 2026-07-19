@@ -244,6 +244,7 @@ EXPORT_COLUMNS = {
     'cinsiyet': 'Cinsiyet',
     'dogum_tarihi': 'Doğum Tarihi',
     'veli_ad_soyad': 'Veli Ad Soyad',
+    'veli_tc_kimlik_no': 'Veli TC Kimlik No',
     'veli_telefon': 'Veli Telefon',
     'veli_yakinlik_display': 'Veli Yakınlık',
     'sinif_ad': 'Sınıf',
@@ -305,6 +306,7 @@ def parse_list_params(request):
         'sinif_ids': sinif_ids,
         'school_ids': parse_int_list_param(p.get('school_ids') or ''),
         'alan_ids': parse_int_list_param(p.get('alan_ids') or ''),
+        'coach_ids': parse_int_list_param(p.get('coach_ids') or ''),
         'kayit_tarihi_bas': parse_date_param(p.get('kayit_tarihi_bas')),
         'kayit_tarihi_bit': parse_date_param(p.get('kayit_tarihi_bit')),
         'sort': p.get('sort', 'created_at_desc') if p.get('sort') in SORT_MAP else 'created_at_desc',
@@ -465,6 +467,15 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
 
     if params.get('alan_ids'):
         qs = qs.filter(alan_id__in=params['alan_ids'])
+
+    if params.get('coach_ids'):
+        from apps.coaching.models import CoachStudentAssignment
+
+        assigned_ogrenci_ids = CoachStudentAssignment.objects.filter(
+            coach_id__in=params['coach_ids'],
+            end_date__isnull=True,
+        ).values_list('student_id', flat=True)
+        qs = qs.filter(ogrenci_id__in=assigned_ogrenci_ids)
 
     if params['giris_turu']:
         qs = qs.filter(giris_turu=params['giris_turu'])
@@ -639,6 +650,7 @@ def serialize_kayit_row(kayit, include_egitim_yili=False, kalem_ozet='', egitim_
         'email': ogrenci.email or '',
         'veli_ad_soyad': f"{veli.ad} {veli.soyad}" if veli else (ogrenci.veli_ad_soyad or ''),
         'veli_id': veli.id if veli else None,
+        'veli_tc_kimlik_no': (veli.tc_kimlik_no or '') if veli else '',
         'veli_telefon': (
             (veli.telefon or ogrenci.veli_telefon or '') if veli else (ogrenci.veli_telefon or '')
         ),

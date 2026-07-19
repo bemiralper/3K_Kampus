@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import type { Student, SelectedContent, CartLessonGroup, ContentTaskHistory } from '../types';
+import '../odev-ver.css';
 
 interface ReviewStepProps {
   student: Student;
@@ -107,7 +108,7 @@ export default function ReviewStep({
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
+      <div className="odev-review-grid">
         {/* ─── LEFT: Form + Preview ─── */}
         <div>
           {/* Assignment Info Card */}
@@ -122,7 +123,7 @@ export default function ReviewStep({
               📝 Ödev Bilgileri
             </h4>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div className="odev-review-form-row">
               {/* Title */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 4 }}>
@@ -644,15 +645,6 @@ export default function ReviewStep({
           </div>
         </div>
       </div>
-
-      {/* Responsive */}
-      <style jsx>{`
-        @media (max-width: 900px) {
-          div > div:nth-child(2) {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

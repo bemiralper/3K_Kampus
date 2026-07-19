@@ -10,6 +10,7 @@ import OgrenciKocAtama from "./OgrenciKocAtama";
 interface OgrenciProfilKartProps {
   data: OgrenciDetay;
   onEditClick?: () => void;
+  onSchoolEditClick?: () => void;
   onPhotoUpdate?: (newPhotoUrl: string | null) => void;
   showEkHizmetler?: boolean;
 }
@@ -17,11 +18,17 @@ interface OgrenciProfilKartProps {
 export default function OgrenciProfilKart({
   data,
   onEditClick,
+  onSchoolEditClick,
   onPhotoUpdate,
   showEkHizmetler = true,
 }: OgrenciProfilKartProps) {
   const age = calculateAge(data.dogum_tarihi);
   const [showLightbox, setShowLightbox] = useState(false);
+  const isMezun =
+    data.sinif_seviyesi?.ad?.toLowerCase().includes("mezun") ||
+    data.sinif_seviyesi?.kod?.toLowerCase().includes("mezun");
+  const schoolLabel = isMezun ? "Mezun Olduğu Okul" : "Geldiği Okul";
+  const schoolDisplay = data.school_ad || data.geldigi_okul || "-";
 
   // Fotoğraf URL'ini oluştur - next.config.js rewrite ile /media/* backend'e yönlendirilir
   const getFullPhotoUrl = (photoUrl: string | null | undefined) => {
@@ -308,6 +315,44 @@ export default function OgrenciProfilKart({
             <div className="detail-content">
               <span className="detail-label">Sınıf Seviyesi</span>
               <span className="detail-value">{data.sinif_seviyesi?.ad || '-'}</span>
+            </div>
+          </div>
+
+          {/* Geldiği / Mezun Olduğu Okul */}
+          <div
+            className="detail-item"
+            role={onSchoolEditClick ? "button" : undefined}
+            tabIndex={onSchoolEditClick ? 0 : undefined}
+            onClick={onSchoolEditClick}
+            onKeyDown={
+              onSchoolEditClick
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSchoolEditClick();
+                    }
+                  }
+                : undefined
+            }
+            title={onSchoolEditClick ? "Okul bilgisini düzenle" : undefined}
+            style={onSchoolEditClick ? { cursor: "pointer" } : undefined}
+          >
+            <div className="detail-icon green">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <polyline points="9 22 9 12 15 12 15 22" />
+              </svg>
+            </div>
+            <div className="detail-content">
+              <span className="detail-label">{schoolLabel}</span>
+              <span className="detail-value with-action">
+                {schoolDisplay}
+                {onSchoolEditClick && (
+                  <span style={{ marginLeft: 6, fontSize: 12, color: "#3b82f6", fontWeight: 600 }}>
+                    {schoolDisplay === "-" ? "Ekle" : "Düzenle"}
+                  </span>
+                )}
+              </span>
             </div>
           </div>
 

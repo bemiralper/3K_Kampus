@@ -17,15 +17,25 @@ class CariSerbestOdemeSerializer(IslemMasrafiInputSerializer):
     kurum_id = serializers.IntegerField()
     tutar = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0.01)
     odeme_tarihi = serializers.DateField()
-    mali_hesap_id = serializers.IntegerField()
+    mali_hesap_id = serializers.IntegerField(required=False, allow_null=True)
     odeme_yontemi_id = serializers.IntegerField(required=False, allow_null=True)
     aciklama = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    # Çek/senet alanları (ödeme yöntemi tip=cek/senet iken vade zorunlu — servis doğrular)
+    vade_tarihi = serializers.DateField(required=False, allow_null=True)
+    cek_senet_no = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    seri_no = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    banka_adi = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    sube_adi = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    hesap_no = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    keside_eden = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    keside_tarihi = serializers.DateField(required=False, allow_null=True)
 
 
 class CariSerbestOdemeView(APIView):
     """
     POST → Gider kaydına bağlı olmadan doğrudan cari hesaba ödeme yapar.
     Erken ödeme, avans, serbest ödeme gibi durumlarda kullanılır.
+    Çek/senet seçilirse verilen çek portföy kaydı oluşturulur.
     """
 
     def post(self, request):

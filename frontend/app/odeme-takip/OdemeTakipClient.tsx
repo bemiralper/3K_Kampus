@@ -683,6 +683,7 @@ export default function OdemeTakipClient() {
           tahsilatlar={tahsilatlar}
           onTahsilatCancel={handleTahsilatCancelOpen}
           onMakbuz={(id) => setMakbuzTahsilatId(id)}
+          onSelectSozlesme={openSozlesmeDetail}
         />
       )}
       {activeTab === "raporlar" && (

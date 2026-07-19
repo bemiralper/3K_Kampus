@@ -159,12 +159,16 @@ export default function AkademikTab({ ogrenciId }: AkademikTabProps) {
                     <span className="akademik-info-label">Giriş Türü</span>
                     <span className="akademik-info-value">{kayit.giris_turu_display || "—"}</span>
                   </div>
-                  {(kayit.school_ad || kayit.geldigi_okul) && (
-                    <div className="akademik-info-field">
-                      <span className="akademik-info-label">Okul</span>
-                      <span className="akademik-info-value">{kayit.school_ad || kayit.geldigi_okul}</span>
-                    </div>
-                  )}
+                  <div className="akademik-info-field">
+                    <span className="akademik-info-label">
+                      {kayit.sinif_seviyesi?.toLowerCase().includes("mezun")
+                        ? "Mezun Olduğu Okul"
+                        : "Geldiği Okul"}
+                    </span>
+                    <span className="akademik-info-value">
+                      {kayit.school_ad || kayit.geldigi_okul || "—"}
+                    </span>
+                  </div>
                 </div>
 
                 {kayit.kalemler.length > 0 && (

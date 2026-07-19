@@ -496,9 +496,14 @@ export async function fetchNextTestBatch(params: {
 
 /**
  * Kitap detayını (yapısıyla birlikte) getir
+ * studentId: ödev verirken atama üzerinden yapı okuma (şube uyumsuzluğunda fallback)
  */
-export async function fetchBookStructure(bookId: number): Promise<ApiResponse<BookStructure>> {
-  return apiGet<BookStructure>(`/api/resources/books/${bookId}/structure/`);
+export async function fetchBookStructure(
+  bookId: number,
+  options?: { studentId?: number }
+): Promise<ApiResponse<BookStructure>> {
+  const qs = options?.studentId ? `?student_id=${options.studentId}` : '';
+  return apiGet<BookStructure>(`/api/resources/books/${bookId}/structure/${qs}`);
 }
 
 /**

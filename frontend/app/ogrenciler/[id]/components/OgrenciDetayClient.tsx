@@ -102,6 +102,11 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
   const [activeTab, setActiveTab] = useState<TabType>('veli');
   const [data, setData] = useState<OgrenciDetay>(initialData);
   const [showEditDrawer, setShowEditDrawer] = useState(searchParams.get('edit') === '1');
+  const [editDrawerStep, setEditDrawerStep] = useState<'kisisel' | 'iletisim' | 'egitim'>('kisisel');
+  const openEditDrawer = (step: 'kisisel' | 'iletisim' | 'egitim' = 'kisisel') => {
+    setEditDrawerStep(step);
+    setShowEditDrawer(true);
+  };
 
   useEffect(() => {
     if (searchParams.get('edit') === '1') {
@@ -144,7 +149,7 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
             Geri Dön
           </Link>
           <button 
-            onClick={() => setShowEditDrawer(true)} 
+            onClick={() => openEditDrawer('kisisel')} 
             className="btn-modern btn-primary"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -159,7 +164,8 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
       {/* Student Profile Card */}
       <OgrenciProfilKart 
         data={data} 
-        onEditClick={() => setShowEditDrawer(true)} 
+        onEditClick={() => openEditDrawer('kisisel')}
+        onSchoolEditClick={() => openEditDrawer('egitim')}
         onPhotoUpdate={handlePhotoUpdate}
       />
 
@@ -190,6 +196,7 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
         onClose={() => setShowEditDrawer(false)}
         data={data}
         onSuccess={handleUpdateSuccess}
+        initialStep={editDrawerStep}
       />
     </div>
   );

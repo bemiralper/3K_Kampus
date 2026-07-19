@@ -100,7 +100,7 @@ function syncBulkTestRows(
 }
 
 export function useResources() {
-  const { activeSube } = useKurum();
+  const { activeSube, initialized } = useKurum();
   // ───── Core data ─────
   const [books, setBooks] = useState<ResourceBook[]>([]);
   const [dersler, setDersler] = useState<Ders[]>([]);
@@ -108,6 +108,7 @@ export function useResources() {
   const [bookTypes, setBookTypes] = useState<BookType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const structureRequestRef = useRef(0);
 
   // ───── Filters ─────
   const [searchTerm, setSearchTerm] = useState("");
@@ -223,26 +224,54 @@ export function useResources() {
   }, []);
 
   const fetchBookStructureData = useCallback(async (bookId: number) => {
+    const reqId = ++structureRequestRef.current;
     setLoadingStructure(true);
     try {
       const result = await fetchBookStructure(bookId);
-      if (result.success && result.data) setBookStructure(result.data as unknown as ResourceBook);
+      if (reqId !== structureRequestRef.current) return;
+      if (result.success && result.data) {
+        const structure = result.data as unknown as ResourceBook;
+        setBookStructure(structure);
+        const unitIds = (structure.units || []).map((u) => u.id);
+        const topicIds = (structure.units || []).flatMap((u) => (u.topics || []).map((t) => t.id));
+        setExpandedUnits(unitIds);
+        setExpandedTopics(topicIds);
+      } else {
+        setBookStructure(null);
+        setExpandedUnits([]);
+        setExpandedTopics([]);
+        showToast(
+          `❌ ${result.error || "Kitap yapısı yüklenemedi. Şube seçimini kontrol edin."}`,
+          "error"
+        );
+      }
     } catch {
-      console.error("Kitap yapısı yüklenemedi");
+      if (reqId !== structureRequestRef.current) return;
+      setBookStructure(null);
+      showToast("❌ Kitap yapısı yüklenemedi", "error");
     } finally {
-      setLoadingStructure(false);
+      if (reqId === structureRequestRef.current) setLoadingStructure(false);
     }
-  }, []);
+  }, [showToast]);
 
-  useEffect(() => { fetchBooksList(); fetchMetadata(); }, [fetchBooksList, fetchMetadata]);
   useEffect(() => {
-    // Şube değişince listeyi yenile (aktif şube kataloğu)
-    setSelectedBook(null);
-    setBookStructure(null);
+    if (!initialized || !activeSube?.id) return;
     fetchBooksList();
     fetchMetadata();
-  }, [activeSube?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (selectedBook) fetchBookStructureData(selectedBook.id); }, [selectedBook, fetchBookStructureData]);
+  }, [initialized, activeSube?.id, fetchBooksList, fetchMetadata]);
+
+  useEffect(() => {
+    // Şube değişince seçimi temizle (eski şube kitabı/yapısı kalmasın)
+    setSelectedBook(null);
+    setBookStructure(null);
+    setExpandedUnits([]);
+    setExpandedTopics([]);
+    structureRequestRef.current += 1;
+  }, [activeSube?.id]);
+
+  useEffect(() => {
+    if (selectedBook) fetchBookStructureData(selectedBook.id);
+  }, [selectedBook, fetchBookStructureData]);
 
   // ═══════ TOGGLE ═══════
   const toggleUnit = (id: number) => setExpandedUnits(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);

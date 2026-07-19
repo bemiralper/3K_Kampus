@@ -70,10 +70,21 @@ export const cariHesapService = {
     kurum_id: number;
     tutar: number;
     odeme_tarihi: string;
-    mali_hesap_id: number;
+    mali_hesap_id?: number;
     odeme_yontemi_id?: number;
     aciklama?: string;
-  }): Promise<{ detail: string; tutar: string; yeni_bakiye: string }> {
+    vade_tarihi?: string;
+    cek_senet_no?: string;
+    banka_adi?: string;
+    seri_no?: string;
+    keside_tarihi?: string;
+  }): Promise<{
+    detail: string;
+    tutar: string;
+    yeni_bakiye: string;
+    cek_senet_id?: number;
+    cari_hareket_id?: number;
+  }> {
     return request(`/cari-odemeler/serbest/`, {
       method: "POST",
       body: JSON.stringify(payload),

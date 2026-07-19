@@ -361,6 +361,28 @@ def ogrenci_filter_options_api(request):
         ).order_by('sira', 'ad')
     ]
 
+    from django.db.models import Q
+    from apps.coaching.models import CoachProfile, CoachStudentAssignment
+    from apps.personel.domain.models import PersonelGorevlendirme
+
+    coach_ids_in_sube = CoachStudentAssignment.objects.filter(
+        end_date__isnull=True,
+        student__kurum_id=ctx['kurum_id'],
+        student__sube_id=ctx['sube_id'],
+    ).values_list('coach_id', flat=True)
+    personel_ids = PersonelGorevlendirme.objects.filter(
+        kurum_id=ctx['kurum_id'],
+        gorev_sube_id=ctx['sube_id'],
+        aktif_mi=True,
+    ).values_list('personel_id', flat=True)
+    rehberler = [
+        {'id': c.id, 'ad': c.teacher.tam_ad}
+        for c in CoachProfile.objects.filter(is_active=True)
+        .filter(Q(id__in=coach_ids_in_sube) | Q(teacher_id__in=personel_ids))
+        .select_related('teacher')
+        .order_by('teacher__ad', 'teacher__soyad')
+    ]
+
     return JsonResponse({
         'success': True,
         'sinif_seviyeleri': sinif_seviyeleri,
@@ -372,6 +394,7 @@ def ogrenci_filter_options_api(request):
         'siniflar': siniflar,
         'okullar': okullar,
         'alanlar': alanlar,
+        'rehberler': rehberler,
     })
 
 
@@ -621,7 +644,7 @@ def ogrenci_api(request, pk):
         if errors:
             return JsonResponse({'success': False, 'errors': errors}, status=400)
 
-        # Yıllık kayıt — sınıf / seviye güncellemesi
+        # Yıllık kayıt — sınıf / seviye / okul güncellemesi
         kayit_updates = {}
         if 'sinif_id' in data:
             sinif_val = data.get('sinif_id')
@@ -633,20 +656,42 @@ def ogrenci_api(request, pk):
             alan_val = data.get('alan_id')
             kayit_updates['alan_id'] = int(alan_val) if alan_val not in (None, '', 0) else None
 
+        school_requested = 'school_id' in data
+        if school_requested:
+            from apps.okul.application.enrollment import resolve_school_for_enrollment
+
+            school_val = data.get('school_id')
+            if school_val in (None, '', 0, '0'):
+                kayit_updates['school_id'] = None
+            else:
+                okul, school_err = resolve_school_for_enrollment(
+                    school_val, ogrenci.kurum_id, ogrenci.sube_id,
+                )
+                if school_err:
+                    return JsonResponse({'success': False, 'errors': {'school_id': school_err}}, status=400)
+                kayit_updates['school_id'] = okul.id if okul else None
+
         if kayit_updates:
             aktif_kayit = OgrenciKayit.objects.filter(
                 ogrenci_id=pk, aktif_mi=True,
             ).order_by('-egitim_yili__baslangic_yil', '-created_at').first()
             if aktif_kayit:
+                update_fields = []
                 if 'sinif_id' in kayit_updates:
                     aktif_kayit.sinif_id = kayit_updates['sinif_id']
+                    update_fields.append('sinif_id')
                 if 'sinif_seviyesi_id' in kayit_updates:
                     aktif_kayit.sinif_seviyesi_id = kayit_updates['sinif_seviyesi_id']
+                    update_fields.append('sinif_seviyesi_id')
                 if 'alan_id' in kayit_updates:
                     aktif_kayit.alan_id = kayit_updates['alan_id']
-                aktif_kayit.save(update_fields=[
-                    f for f in ('sinif_id', 'sinif_seviyesi_id', 'alan_id') if f in kayit_updates
-                ])
+                    update_fields.append('alan_id')
+                if 'school_id' in kayit_updates:
+                    aktif_kayit.school_id = kayit_updates['school_id']
+                    aktif_kayit.geldigi_okul = ''
+                    update_fields.extend(['school_id', 'geldigi_okul'])
+                if update_fields:
+                    aktif_kayit.save(update_fields=update_fields)
 
         return JsonResponse({
             'success': True,
@@ -669,7 +714,7 @@ def ogrenci_api(request, pk):
         ogrenci=ogrenci,
         aktif_mi=True,
     ).select_related(
-        'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili', 'alan'
+        'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili', 'alan', 'school'
     ).order_by('-egitim_yili__baslangic_yil', '-created_at').first()
     
     # Sınıf ve eğitim yılı bilgileri
@@ -678,10 +723,16 @@ def ogrenci_api(request, pk):
     sinif_seviyesi_bilgi = None
     alan_bilgi = None
     okul_no = ''
+    school_id = None
+    school_ad = ''
+    geldigi_okul = ''
     
     kayit_tarihi = ''
     if aktif_kayit:
         okul_no = aktif_kayit.okul_no or ''
+        school_id = aktif_kayit.school_id
+        school_ad = aktif_kayit.school.ad if aktif_kayit.school else ''
+        geldigi_okul = school_ad or (aktif_kayit.geldigi_okul or '')
         kayit_tarihi = format_date(aktif_kayit.kayit_tarihi) if aktif_kayit.kayit_tarihi else ''
         if aktif_kayit.sinif:
             sinif_bilgi = {
@@ -695,6 +746,7 @@ def ogrenci_api(request, pk):
             sinif_seviyesi_bilgi = {
                 'id': seviye_obj.id,
                 'ad': seviye_obj.ad,
+                'kod': getattr(seviye_obj, 'kod', '') or '',
                 'seviye': seviye_obj.seviye if hasattr(seviye_obj, 'seviye') else None,
             }
         if aktif_kayit.alan_id:
@@ -808,6 +860,9 @@ def ogrenci_api(request, pk):
         } if ogrenci.sube_id else None,
         # Yeni alanlar
         'okul_no': okul_no,
+        'school_id': school_id,
+        'school_ad': school_ad,
+        'geldigi_okul': geldigi_okul,
         'sinif': sinif_bilgi,
         'sinif_seviyesi': sinif_seviyesi_bilgi,
         'alan': alan_bilgi,

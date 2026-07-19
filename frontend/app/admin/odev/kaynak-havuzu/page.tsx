@@ -8,6 +8,7 @@ import {
   type StudentWithResources,
   type StudentResourceKPI,
 } from "@/lib/resources-api";
+import "./kaynak-havuzu.css";
 
 type FilterType = "all" | "with_resources" | "without_resources" | "with_overdue" | "with_incomplete";
 
@@ -128,7 +129,7 @@ export default function StudentResourcePoolPage() {
   );
 
   return (
-    <div style={{ padding: "24px", background: "#f8fafc", minHeight: "100vh" }}>
+    <div className="kh-page">
       {/* Header */}
       <div style={{ marginBottom: "24px" }}>
         <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 700 }}>📚 Öğrenci Kaynak Havuzu</h1>
@@ -276,173 +277,244 @@ export default function StudentResourcePoolPage() {
             Öğrenci bulunamadı
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                <th style={{ textAlign: "left", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Öğrenci</th>
-                <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Toplam Kaynak</th>
-                <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Tamamlanan</th>
-                <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Devam Eden</th>
-                <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Geciken</th>
-                <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>İlerleme</th>
-                <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Risk</th>
-                <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>İşlem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedStudents.map((student, index) => {
-                const riskStyle = getRiskColor(student.risk_score);
-                return (
-                  <tr
-                    key={student.id}
-                    style={{
-                      borderBottom: "1px solid #f1f5f9",
-                      background: index % 2 === 0 ? "white" : "#fafafa"
-                    }}
-                  >
-                    <td style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        {/* Profil Foto */}
-                        <div style={{
-                          width: "40px",
-                          height: "40px",
-                          borderRadius: "50%",
-                          background: student.profil_foto ? "transparent" : "#e2e8f0",
-                          overflow: "hidden",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0
-                        }}>
-                          {student.profil_foto ? (
-                            <img
-                              src={getPhotoUrl(student.profil_foto)}
-                              alt={`${student.ad} ${student.soyad}`}
-                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                            />
-                          ) : (
-                            <span style={{ fontSize: "16px", color: "#94a3b8" }}>
-                              {student.ad.charAt(0)}{student.soyad.charAt(0)}
-                            </span>
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 500 }}>{student.ad} {student.soyad}</div>
-                          <div style={{ fontSize: "12px", color: "#94a3b8" }}>{student.ogrenci_no}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: "14px 16px", textAlign: "center" }}>
-                      <span style={{
-                        background: student.total_resources > 0 ? "#dbeafe" : "#f1f5f9",
-                        color: student.total_resources > 0 ? "#2563eb" : "#64748b",
-                        padding: "4px 12px",
-                        borderRadius: "12px",
-                        fontSize: "13px",
-                        fontWeight: 500
-                      }}>
-                        {student.total_resources}
-                      </span>
-                    </td>
-                    <td style={{ padding: "14px 16px", textAlign: "center" }}>
-                      <span style={{
-                        background: "#d1fae5",
-                        color: "#059669",
-                        padding: "4px 12px",
-                        borderRadius: "12px",
-                        fontSize: "13px",
-                        fontWeight: 500
-                      }}>
-                        {student.completed}
-                      </span>
-                    </td>
-                    <td style={{ padding: "14px 16px", textAlign: "center" }}>
-                      <span style={{
-                        background: "#fef3c7",
-                        color: "#d97706",
-                        padding: "4px 12px",
-                        borderRadius: "12px",
-                        fontSize: "13px",
-                        fontWeight: 500
-                      }}>
-                        {student.in_progress}
-                      </span>
-                    </td>
-                    <td style={{ padding: "14px 16px", textAlign: "center" }}>
-                      {student.overdue > 0 ? (
-                        <span style={{
-                          background: "#fee2e2",
-                          color: "#dc2626",
-                          padding: "4px 12px",
-                          borderRadius: "12px",
-                          fontSize: "13px",
-                          fontWeight: 500
-                        }}>
-                          ⚠️ {student.overdue}
-                        </span>
-                      ) : (
-                        <span style={{ color: "#94a3b8" }}>-</span>
-                      )}
-                    </td>
-                    <td style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "center" }}>
-                        <div style={{
-                          width: "80px",
-                          height: "8px",
-                          background: "#e2e8f0",
-                          borderRadius: "4px",
-                          overflow: "hidden"
-                        }}>
-                          <div style={{
-                            height: "100%",
-                            width: `${student.avg_progress}%`,
-                            background: student.avg_progress === 100 ? "#10b981" : student.avg_progress >= 50 ? "#3b82f6" : "#f59e0b",
-                            borderRadius: "4px"
-                          }} />
-                        </div>
-                        <span style={{ fontSize: "12px", fontWeight: 500, minWidth: "35px" }}>{student.avg_progress}%</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: "14px 16px", textAlign: "center" }}>
-                      {student.has_resources ? (
-                        <span style={{
-                          background: riskStyle.bg,
-                          color: riskStyle.color,
-                          padding: "4px 10px",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: 500
-                        }}>
-                          {student.risk_score === 0 ? "İyi" : student.risk_score}
-                        </span>
-                      ) : (
-                        <span style={{ color: "#94a3b8", fontSize: "12px" }}>-</span>
-                      )}
-                    </td>
-                    <td style={{ padding: "14px 16px", textAlign: "center" }}>
-                      <Link
-                        href={havuzHref(String(student.id))}
+          <>
+            <div className="kh-list-desktop kh-table-wrap">
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                    <th style={{ textAlign: "left", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Öğrenci</th>
+                    <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Toplam Kaynak</th>
+                    <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Tamamlanan</th>
+                    <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Devam Eden</th>
+                    <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Geciken</th>
+                    <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>İlerleme</th>
+                    <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>Risk</th>
+                    <th style={{ textAlign: "center", padding: "14px 16px", fontSize: "13px", color: "#64748b", fontWeight: 500 }}>İşlem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedStudents.map((student, index) => {
+                    const riskStyle = getRiskColor(student.risk_score);
+                    return (
+                      <tr
+                        key={student.id}
                         style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "4px",
-                          padding: "8px 16px",
-                          background: "#3b82f6",
-                          color: "white",
-                          textDecoration: "none",
-                          borderRadius: "6px",
-                          fontSize: "13px",
-                          fontWeight: 500
+                          borderBottom: "1px solid #f1f5f9",
+                          background: index % 2 === 0 ? "white" : "#fafafa"
                         }}
                       >
-                        Detay →
-                      </Link>
-                    </td>
-                  </tr>
+                        <td style={{ padding: "14px 16px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                            <div style={{
+                              width: "40px",
+                              height: "40px",
+                              borderRadius: "50%",
+                              background: student.profil_foto ? "transparent" : "#e2e8f0",
+                              overflow: "hidden",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0
+                            }}>
+                              {student.profil_foto ? (
+                                <img
+                                  src={getPhotoUrl(student.profil_foto)}
+                                  alt={`${student.ad} ${student.soyad}`}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                />
+                              ) : (
+                                <span style={{ fontSize: "16px", color: "#94a3b8" }}>
+                                  {student.ad.charAt(0)}{student.soyad.charAt(0)}
+                                </span>
+                              )}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 500 }}>{student.ad} {student.soyad}</div>
+                              <div style={{ fontSize: "12px", color: "#94a3b8" }}>{student.ogrenci_no}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                          <span style={{
+                            background: student.total_resources > 0 ? "#dbeafe" : "#f1f5f9",
+                            color: student.total_resources > 0 ? "#2563eb" : "#64748b",
+                            padding: "4px 12px",
+                            borderRadius: "12px",
+                            fontSize: "13px",
+                            fontWeight: 500
+                          }}>
+                            {student.total_resources}
+                          </span>
+                        </td>
+                        <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                          <span style={{
+                            background: "#d1fae5",
+                            color: "#059669",
+                            padding: "4px 12px",
+                            borderRadius: "12px",
+                            fontSize: "13px",
+                            fontWeight: 500
+                          }}>
+                            {student.completed}
+                          </span>
+                        </td>
+                        <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                          <span style={{
+                            background: "#fef3c7",
+                            color: "#d97706",
+                            padding: "4px 12px",
+                            borderRadius: "12px",
+                            fontSize: "13px",
+                            fontWeight: 500
+                          }}>
+                            {student.in_progress}
+                          </span>
+                        </td>
+                        <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                          {student.overdue > 0 ? (
+                            <span style={{
+                              background: "#fee2e2",
+                              color: "#dc2626",
+                              padding: "4px 12px",
+                              borderRadius: "12px",
+                              fontSize: "13px",
+                              fontWeight: 500
+                            }}>
+                              ⚠️ {student.overdue}
+                            </span>
+                          ) : (
+                            <span style={{ color: "#94a3b8" }}>-</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "14px 16px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "center" }}>
+                            <div style={{
+                              width: "80px",
+                              height: "8px",
+                              background: "#e2e8f0",
+                              borderRadius: "4px",
+                              overflow: "hidden"
+                            }}>
+                              <div style={{
+                                height: "100%",
+                                width: `${student.avg_progress}%`,
+                                background: student.avg_progress === 100 ? "#10b981" : student.avg_progress >= 50 ? "#3b82f6" : "#f59e0b",
+                                borderRadius: "4px"
+                              }} />
+                            </div>
+                            <span style={{ fontSize: "12px", fontWeight: 500, minWidth: "35px" }}>{student.avg_progress}%</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                          {student.has_resources ? (
+                            <span style={{
+                              background: riskStyle.bg,
+                              color: riskStyle.color,
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              fontWeight: 500
+                            }}>
+                              {student.risk_score === 0 ? "İyi" : student.risk_score}
+                            </span>
+                          ) : (
+                            <span style={{ color: "#94a3b8", fontSize: "12px" }}>-</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                          <Link
+                            href={havuzHref(String(student.id))}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: "8px 16px",
+                              background: "#3b82f6",
+                              color: "white",
+                              textDecoration: "none",
+                              borderRadius: "6px",
+                              fontSize: "13px",
+                              fontWeight: 500
+                            }}
+                          >
+                            Detay →
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="kh-list-mobile">
+              {sortedStudents.map((student) => {
+                const riskStyle = getRiskColor(student.risk_score);
+                return (
+                  <Link
+                    key={student.id}
+                    href={havuzHref(String(student.id))}
+                    className="kh-mobile-card"
+                  >
+                    <div className="kh-mobile-card-top">
+                      <div style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: "50%",
+                        background: student.profil_foto ? "transparent" : "#e2e8f0",
+                        overflow: "hidden",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}>
+                        {student.profil_foto ? (
+                          <img
+                            src={getPhotoUrl(student.profil_foto)}
+                            alt={`${student.ad} ${student.soyad}`}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 14, color: "#94a3b8", fontWeight: 600 }}>
+                            {student.ad.charAt(0)}{student.soyad.charAt(0)}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 15, color: "#1e293b" }}>
+                          {student.ad} {student.soyad}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#94a3b8" }}>{student.ogrenci_no}</div>
+                      </div>
+                      <span style={{ fontSize: 18, color: "#94a3b8" }}>›</span>
+                    </div>
+                    <div className="kh-mobile-card-meta">
+                      <span className="kh-mobile-chip" style={{
+                        background: student.total_resources > 0 ? "#dbeafe" : "#f1f5f9",
+                        color: student.total_resources > 0 ? "#2563eb" : "#64748b",
+                      }}>
+                        {student.total_resources} kaynak
+                      </span>
+                      <span className="kh-mobile-chip" style={{ background: "#d1fae5", color: "#059669" }}>
+                        {student.completed} tamam
+                      </span>
+                      {student.overdue > 0 && (
+                        <span className="kh-mobile-chip" style={{ background: "#fee2e2", color: "#dc2626" }}>
+                          ⚠️ {student.overdue} geciken
+                        </span>
+                      )}
+                      <span className="kh-mobile-chip">%{student.avg_progress}</span>
+                      {student.has_resources && (
+                        <span className="kh-mobile-chip" style={{ background: riskStyle.bg, color: riskStyle.color }}>
+                          {student.risk_score === 0 ? "İyi" : `Risk ${student.risk_score}`}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
       </div>
     </div>

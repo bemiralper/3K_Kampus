@@ -18,7 +18,8 @@ type KalemGrup = {
   kalemler: { kalem_id: number; kalem_adi: string }[];
 };
 
-type FilterSection = 'paketler' | 'sinif' | 'okul' | 'alan' | 'kayit';
+type FilterSection = 'paketler' | 'sinif' | 'okul' | 'alan' | 'rehber' | 'kayit';
+type RehberOption = { id: number; ad: string };
 
 interface OgrenciFilterDrawerProps {
   open: boolean;
@@ -33,6 +34,7 @@ const SECTIONS: { id: FilterSection; label: string; hint: string }[] = [
   { id: 'sinif', label: 'Sınıf', hint: 'Seviye ve şube sınıfları' },
   { id: 'alan', label: 'Alan', hint: 'Sayısal, sözel, eşit ağırlık…' },
   { id: 'okul', label: 'Okul', hint: 'Geldiği / mezun olduğu okul' },
+  { id: 'rehber', label: 'Rehber Öğretmen', hint: 'Koç / rehber ataması' },
   { id: 'kayit', label: 'Kayıt & Demografi', hint: 'Tür, cinsiyet, tarih' },
 ];
 
@@ -56,6 +58,7 @@ function countActiveFilters(local: OgrenciListFilters): number {
   n += local.sinif_ids?.length || 0;
   n += local.school_ids?.length || 0;
   n += local.alan_ids?.length || 0;
+  n += local.coach_ids?.length || 0;
   if (local.kayit_turu) n += 1;
   if (local.giris_turu) n += 1;
   if (local.cinsiyet) n += 1;
@@ -82,6 +85,7 @@ export default function OgrenciFilterDrawer({
   const [siniflar, setSiniflar] = useState<SinifOption[]>([]);
   const [okullar, setOkullar] = useState<OkulOption[]>([]);
   const [alanlar, setAlanlar] = useState<AlanOption[]>([]);
+  const [rehberler, setRehberler] = useState<RehberOption[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [optionsLoading, setOptionsLoading] = useState(false);
 
@@ -105,6 +109,7 @@ export default function OgrenciFilterDrawer({
       siniflar?: SinifOption[];
       okullar?: OkulOption[];
       alanlar?: AlanOption[];
+      rehberler?: RehberOption[];
     }>('/ogrenciler/api/filter-options/')
       .then((res) => {
         const data = (res.data || res) as {
@@ -116,6 +121,7 @@ export default function OgrenciFilterDrawer({
           siniflar?: SinifOption[];
           okullar?: OkulOption[];
           alanlar?: AlanOption[];
+          rehberler?: RehberOption[];
         };
         setSinifSeviyeleri(data.sinif_seviyeleri || []);
         setGirisTuru(data.giris_turu || []);
@@ -125,6 +131,7 @@ export default function OgrenciFilterDrawer({
         setSiniflar(data.siniflar || []);
         setOkullar(data.okullar || []);
         setAlanlar(data.alanlar || []);
+        setRehberler(data.rehberler || []);
       })
       .finally(() => setOptionsLoading(false));
   }, [open]);
@@ -145,6 +152,10 @@ export default function OgrenciFilterDrawer({
     () => new Set(local.alan_ids || []),
     [local.alan_ids],
   );
+  const selectedCoachIds = useMemo(
+    () => new Set(local.coach_ids || []),
+    [local.coach_ids],
+  );
   const selectedKalemKeys = useMemo(
     () => new Set((local.kalemler || []).map(kalemKey)),
     [local.kalemler],
@@ -158,6 +169,7 @@ export default function OgrenciFilterDrawer({
       sinif: (local.sinif_seviyesi_ids?.length || 0) + (local.sinif_ids?.length || 0),
       okul: local.school_ids?.length || 0,
       alan: local.alan_ids?.length || 0,
+      rehber: local.coach_ids?.length || 0,
       kayit:
         (local.kayit_turu ? 1 : 0) +
         (local.giris_turu ? 1 : 0) +
@@ -222,6 +234,11 @@ export default function OgrenciFilterDrawer({
     [alanlar],
   );
 
+  const rehberItems: FilterListItem[] = useMemo(
+    () => rehberler.map((r) => ({ id: r.id, label: r.ad })),
+    [rehberler],
+  );
+
   const activeChips = useMemo(() => {
     const chips: { key: string; label: string; section: FilterSection }[] = [];
 
@@ -260,6 +277,11 @@ export default function OgrenciFilterDrawer({
       chips.push({ key: `alan:${alanId}`, label: `Alan: ${ad}`, section: 'alan' });
     }
 
+    for (const coachId of local.coach_ids || []) {
+      const ad = rehberler.find((r) => r.id === coachId)?.ad || String(coachId);
+      chips.push({ key: `coach:${coachId}`, label: `Rehber: ${ad}`, section: 'rehber' });
+    }
+
     if (local.kayit_turu) {
       const label =
         kayitTurleri.find((k) => k.value === local.kayit_turu)?.label || local.kayit_turu;
@@ -294,6 +316,7 @@ export default function OgrenciFilterDrawer({
     siniflar,
     okullar,
     alanlar,
+    rehberler,
     kayitTurleri,
     girisTuru,
     cinsiyetOpts,
@@ -401,6 +424,14 @@ export default function OgrenciFilterDrawer({
     });
   };
 
+  const toggleCoach = (id: number) => {
+    const current = local.coach_ids || [];
+    const exists = selectedCoachIds.has(id);
+    update({
+      coach_ids: exists ? current.filter((x) => x !== id) : [...current, id],
+    });
+  };
+
   const removeChip = (key: string) => {
     if (key.startsWith('kalem:')) {
       const token = key.slice('kalem:'.length);
@@ -427,6 +458,11 @@ export default function OgrenciFilterDrawer({
     if (key.startsWith('alan:')) {
       const id = parseInt(key.slice('alan:'.length), 10);
       toggleAlan(id);
+      return;
+    }
+    if (key.startsWith('coach:')) {
+      const id = parseInt(key.slice('coach:'.length), 10);
+      toggleCoach(id);
       return;
     }
     if (key === 'kayit_turu') update({ kayit_turu: '' });
@@ -680,6 +716,33 @@ export default function OgrenciFilterDrawer({
                   onClearVisible={(ids) =>
                     clearIdsAsNumbers(ids, local.school_ids || [], (next) =>
                       update({ school_ids: next }),
+                    )
+                  }
+                />
+              </div>
+            )}
+
+            {section === 'rehber' && (
+              <div className="ogrenci-filter-pane-inner">
+                <div className="ogrenci-filter-pane-head">
+                  <h4>Rehber Öğretmen</h4>
+                  <p>Seçilen rehber / koça atanmış öğrencileri listeleyin.</p>
+                </div>
+                <FilterSearchableList
+                  items={rehberItems}
+                  selectedIds={selectedCoachIds}
+                  onToggle={(id) => toggleCoach(Number(id))}
+                  searchPlaceholder="Rehber öğretmen adı ile ara…"
+                  emptyLabel="Bu şubede aktif rehber öğretmen bulunamadı."
+                  maxHeight={420}
+                  onSelectVisible={(ids) =>
+                    selectIdsAsNumbers(ids, local.coach_ids || [], (next) =>
+                      update({ coach_ids: next }),
+                    )
+                  }
+                  onClearVisible={(ids) =>
+                    clearIdsAsNumbers(ids, local.coach_ids || [], (next) =>
+                      update({ coach_ids: next }),
                     )
                   }
                 />

@@ -5,18 +5,20 @@ import DatePicker, { registerLocale } from "react-datepicker";
 import { tr } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import { dateToIsoLocal, isoToLocalDate } from "@/lib/date-utils";
+import SchoolAutocomplete from "@/components/okul/SchoolAutocomplete";
 import { OgrenciDetay } from "../types";
 
 registerLocale("tr", tr);
+
+type FormStep = 'kisisel' | 'iletisim' | 'egitim';
 
 interface OgrenciBilgiDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   data: OgrenciDetay;
   onSuccess: (updatedData: OgrenciDetay) => void;
+  initialStep?: FormStep;
 }
-
-type FormStep = 'kisisel' | 'iletisim' | 'egitim';
 
 interface KayitTuru {
   value: string;
@@ -28,8 +30,14 @@ interface CinsiyetSecenegi {
   label: string;
 }
 
-export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }: OgrenciBilgiDrawerProps) {
-  const [activeStep, setActiveStep] = useState<FormStep>('kisisel');
+export default function OgrenciBilgiDrawer({
+  isOpen,
+  onClose,
+  data,
+  onSuccess,
+  initialStep = 'kisisel',
+}: OgrenciBilgiDrawerProps) {
+  const [activeStep, setActiveStep] = useState<FormStep>(initialStep);
   const [formData, setFormData] = useState({
     ad: '',
     soyad: '',
@@ -44,8 +52,10 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
     sinif_seviyesi_id: '' as number | '',
     sinif_id: '' as number | '',
     alan_id: '' as number | '',
+    school_id: null as number | null,
+    school_ad: '',
   });
-  const [sinifSeviyeleri, setSinifSeviyeleri] = useState<{ id: number; ad: string }[]>([]);
+  const [sinifSeviyeleri, setSinifSeviyeleri] = useState<{ id: number; ad: string; kod?: string }[]>([]);
   const [siniflar, setSiniflar] = useState<{ id: number; ad: string; sinif_seviyesi_id: number | null }[]>([]);
   const [alanlar, setAlanlar] = useState<{ id: number; ad: string; kod?: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -145,12 +155,14 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
         sinif_seviyesi_id: data.sinif_seviyesi?.id ?? '',
         sinif_id: data.sinif?.id ?? '',
         alan_id: data.alan?.id ?? '',
+        school_id: data.school_id ?? null,
+        school_ad: data.school_ad || data.geldigi_okul || '',
       });
       setError('');
       setSuccess('');
-      setActiveStep('kisisel');
+      setActiveStep(initialStep);
     }
-  }, [isOpen, data]);
+  }, [isOpen, data, initialStep]);
 
   // ESC key handler
   useEffect(() => {
@@ -183,6 +195,7 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
           sinif_seviyesi_id: formData.sinif_seviyesi_id || null,
           sinif_id: formData.sinif_id || null,
           alan_id: formData.alan_id || null,
+          school_id: formData.school_id,
         }),
       });
 
@@ -195,6 +208,9 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
         cinsiyetSecenekleri.forEach(c => { cinsiyetMap[c.value] = c.label; });
         const kayitTuruMap: Record<string, string> = {};
         kayitTurleri.forEach(k => { kayitTuruMap[k.value] = k.label; });
+        const selectedSeviye = sinifSeviyeleri.find(
+          (s) => s.id === Number(formData.sinif_seviyesi_id),
+        );
         
         const updatedData = { 
           ...data, 
@@ -203,10 +219,14 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
           cinsiyet_display: cinsiyetMap[formData.cinsiyet] || data.cinsiyet_display,
           kayit_turu_display: kayitTuruMap[formData.kayit_turu] || data.kayit_turu_display,
           dogum_tarihi_iso: formData.dogum_tarihi,
+          school_id: formData.school_id,
+          school_ad: formData.school_ad,
+          geldigi_okul: formData.school_ad,
           sinif_seviyesi: formData.sinif_seviyesi_id
             ? {
                 id: Number(formData.sinif_seviyesi_id),
-                ad: sinifSeviyeleri.find((s) => s.id === Number(formData.sinif_seviyesi_id))?.ad || data.sinif_seviyesi?.ad || '',
+                ad: selectedSeviye?.ad || data.sinif_seviyesi?.ad || '',
+                kod: selectedSeviye?.kod || data.sinif_seviyesi?.kod,
               }
             : data.sinif_seviyesi,
           sinif: formData.sinif_id
@@ -884,6 +904,34 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
                   </div>
 
                   <div className="form-field">
+                    {(() => {
+                      const selectedSeviye = sinifSeviyeleri.find(
+                        (s) => s.id === Number(formData.sinif_seviyesi_id),
+                      );
+                      const isMezun =
+                        selectedSeviye?.ad?.toLowerCase().includes('mezun') ||
+                        selectedSeviye?.kod?.toLowerCase().includes('mezun') ||
+                        data.sinif_seviyesi?.ad?.toLowerCase().includes('mezun') ||
+                        data.sinif_seviyesi?.kod?.toLowerCase().includes('mezun');
+                      return (
+                        <SchoolAutocomplete
+                          label={isMezun ? 'Mezun Olduğu Okul' : 'Geldiği Okul'}
+                          value={formData.school_id}
+                          displayValue={formData.school_ad}
+                          placeholder="Okul adı yazarak arayın"
+                          onChange={(schoolId, schoolAd) =>
+                            setFormData({
+                              ...formData,
+                              school_id: schoolId,
+                              school_ad: schoolAd,
+                            })
+                          }
+                        />
+                      );
+                    })()}
+                  </div>
+
+                  <div className="form-field">
                     <label style={{ display: 'block', marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
                       Durum
                     </label>
@@ -967,7 +1015,7 @@ export default function OgrenciBilgiDrawer({ isOpen, onClose, data, onSuccess }:
                           Bilgilendirme
                         </div>
                         <div style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5 }}>
-                          Sınıf ve seviye bilgileri bu ekrandan güncellenebilir. Değişiklikler aktif eğitim yılı kaydına uygulanır.
+                          Sınıf, seviye ve geldiği / mezun olduğu okul bilgileri bu ekrandan güncellenebilir. Değişiklikler aktif eğitim yılı kaydına uygulanır.
                         </div>
                       </div>
                     </div>

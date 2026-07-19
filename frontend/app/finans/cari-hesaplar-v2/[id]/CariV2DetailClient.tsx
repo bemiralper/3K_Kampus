@@ -14,6 +14,7 @@ import {
   RISK_META,
   turMeta,
 } from "../../types/cari-v2-types";
+import SerbestOdemeModal from "../SerbestOdemeModal";
 import "../cari-v2.css";
 
 const TL = (n: number) =>
@@ -102,6 +103,18 @@ export default function CariV2DetailClient({ cariId }: { cariId: number }) {
   const [panel, setPanel] = useState<CariV2Panel | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("genel");
+  const [showSerbestOdeme, setShowSerbestOdeme] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const [d, p] = await Promise.all([cariV2Service.get(cariId), cariV2Service.panel(cariId)]);
+      setDetail(d);
+      setPanel(p);
+    } catch {
+      /* keep existing */
+    }
+  }, [cariId]);
 
   useEffect(() => {
     (async () => {
@@ -114,6 +127,12 @@ export default function CariV2DetailClient({ cariId }: { cariId: number }) {
       } finally { setLoading(false); }
     })();
   }, [cariId]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   if (loading) return <div className="cv2-loading"><div className="cv2-spinner" />Cari yükleniyor…</div>;
   if (!detail) return <div className="cv2-empty">Cari hesap bulunamadı.</div>;
@@ -137,7 +156,38 @@ export default function CariV2DetailClient({ cariId }: { cariId: number }) {
 
   return (
     <div className="cv2-page">
-      <button className="cv2-btn cv2-btn--sm" style={{ alignSelf: "flex-start" }} onClick={() => router.push(href("cari-hesaplar-v2"))}>← Cari Listesi</button>
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            top: 20,
+            right: 20,
+            zIndex: 3000,
+            background: "#059669",
+            color: "white",
+            padding: "12px 18px",
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 600,
+            boxShadow: "0 8px 24px rgba(5, 150, 105, 0.35)",
+          }}
+        >
+          {toast}
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <button className="cv2-btn cv2-btn--sm" onClick={() => router.push(href("cari-hesaplar-v2"))}>
+          ← Cari Listesi
+        </button>
+        <button
+          type="button"
+          className="cv2-btn cv2-btn--primary"
+          onClick={() => setShowSerbestOdeme(true)}
+        >
+          Serbest Ödeme
+        </button>
+      </div>
 
       {/* Üst özet */}
       <div className="cv2-detail-head">
@@ -189,6 +239,19 @@ export default function CariV2DetailClient({ cariId }: { cariId: number }) {
           {tab === "yetkiler" && <YetkilerTab />}
         </div>
       </div>
+
+      {showSerbestOdeme && (
+        <SerbestOdemeModal
+          cariHesapId={detail.id}
+          cariHesapAdi={detail.gorunen_ad}
+          bakiye={detail.bakiye}
+          onClose={() => setShowSerbestOdeme(false)}
+          onSuccess={(msg) => {
+            setToast(msg);
+            void reload();
+          }}
+        />
+      )}
     </div>
   );
 }

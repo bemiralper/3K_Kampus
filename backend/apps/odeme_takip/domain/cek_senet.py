@@ -182,6 +182,15 @@ class CekSenetDetay(models.Model):
         null=True,
         blank=True,
     )
+    cari_hareket = models.OneToOneField(
+        'finans.CariHareket',
+        on_delete=models.SET_NULL,
+        related_name='cek_senet_detay',
+        null=True,
+        blank=True,
+        verbose_name='Bağlı Cari Hareket',
+        help_text='Serbest ödeme ile oluşturulan verilen çek/senet için cari hareket bağlantısı',
+    )
     tahsilat_mali_hesap = models.ForeignKey(
         'finans.MaliHesap',
         on_delete=models.SET_NULL,

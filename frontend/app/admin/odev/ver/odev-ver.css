@@ -1,0 +1,90 @@
+/* Ödev Ver wizard — responsive layouts */
+
+.odev-assign-grid {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 320px;
+  gap: 16px;
+  min-height: 500px;
+}
+
+.odev-assign-panel {
+  background: var(--card-bg);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  max-height: 600px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.odev-review-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+}
+
+.odev-review-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.odev-step-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1100px) {
+  .odev-assign-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .odev-assign-grid > .odev-assign-panel:last-child {
+    grid-column: 1 / -1;
+    max-height: 360px;
+  }
+
+  .odev-assign-panel {
+    max-height: 480px;
+  }
+}
+
+@media (max-width: 768px) {
+  .odev-assign-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .odev-assign-grid > .odev-assign-panel:last-child {
+    grid-column: auto;
+    max-height: 320px;
+    order: -1; /* Sepet üstte — mobilde seçimleri görmek kolay */
+  }
+
+  .odev-assign-panel {
+    max-height: 380px;
+  }
+
+  .odev-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .odev-review-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .odev-step-header-row {
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 480px) {
+  .odev-assign-panel {
+    max-height: 320px;
+  }
+}

@@ -496,10 +496,10 @@ export default function OdevKontrolDetailClient() {
       </div>
 
       {/* Main 2-Column Layout */}
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+      <div className="ok-detail-layout">
 
         {/* LEFT: Görev Kontrol Alanı */}
-        <div style={{ flex: "1 1 0", minWidth: 0 }}>
+        <div className="ok-detail-main">
           {/* Tarih bilgisi bar */}
           <div style={{ background: "white", borderRadius: 14, padding: "16px 22px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.05)", border: "1px solid #f1f5f9", display: "flex", gap: 24, flexWrap: "wrap", fontSize: 13 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ color: "#94a3b8", fontSize: 12 }}>📅 Atanma:</span><strong style={{ color: "#334155" }}>{formatDate(assignment.assigned_date)}</strong></div>
@@ -1033,7 +1033,7 @@ export default function OdevKontrolDetailClient() {
         </div>
 
         {/* RIGHT: Canlı Özet Paneli */}
-        <div style={{ flex: "0 0 340px", position: "sticky", top: 24 }}>
+        <div className="ok-detail-aside">
           {liveSummary && (
             <div className="ok-summary-panel">
               <div className="ok-summary-header">
@@ -1144,7 +1144,7 @@ export default function OdevKontrolDetailClient() {
       {showPostponeModal && (
         <>
           <div onClick={() => setShowPostponeModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 1000 }} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 20, padding: 32, zIndex: 1001, width: 460, boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}>
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 20, padding: 24, zIndex: 1001, width: "min(460px, calc(100vw - 32px))", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}>
             <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 800, color: "#1e293b" }}>📅 Ödev Ertele</h2>
             <p style={{ margin: "0 0 20px", fontSize: 13, color: "#64748b" }}>
               Mevcut teslim: <strong>{formatDate(assignment.due_date)}</strong>

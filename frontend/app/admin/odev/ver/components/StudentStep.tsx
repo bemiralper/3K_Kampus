@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import type { Student } from '../types';
+import '../odev-ver.css';
 
 interface StudentStepProps {
   students: Student[];
@@ -37,8 +38,8 @@ export default function StudentStep({ students, selectedStudent, selectedStudent
   return (
     <div>
       {/* Step Header */}
-      <div className="step-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div className="step-header odev-step-header-row">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
           <div className="step-icon blue">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -107,7 +108,7 @@ export default function StudentStep({ students, selectedStudent, selectedStudent
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))',
           gap: 12,
         }}>
           {filtered.map(s => {

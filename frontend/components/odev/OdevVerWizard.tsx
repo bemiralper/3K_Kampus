@@ -273,10 +273,15 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   };
   const fetchBook = async (bookId: number) => {
     setBookLoading(true);
+    setBookDetails(null);
     try {
-      const result = await fetchBookStructure(bookId);
+      const result = await fetchBookStructure(bookId, {
+        studentId: selectedStudent?.id || (preselectedStudentId ? parseInt(preselectedStudentId, 10) : undefined),
+      });
       if (result.success && result.data) {
         setBookDetails(result.data as BookDetails);
+      } else {
+        flash(result.error || 'Kitap yapısı yüklenemedi — şube seçimini kontrol edin');
       }
     } catch { flash('❌ Kitap yapısı yüklenemedi'); }
     setBookLoading(false);
@@ -730,7 +735,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       </div>
 
       {/* Step Content */}
-      <div className="wizard-content" style={{ minHeight: 500 }}>
+      <div className="wizard-content" style={{ minHeight: 280 }}>
         <div className="wizard-step-content">
           {/* Step 1: Student */}
           {currentStep === 1 && !studentLocked && (

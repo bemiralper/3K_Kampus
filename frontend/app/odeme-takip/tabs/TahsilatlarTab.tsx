@@ -23,9 +23,15 @@ interface Props {
   tahsilatlar: TahsilatItem[];
   onTahsilatCancel: (tahsilatId: number) => void;
   onMakbuz: (tahsilatId: number) => void;
+  onSelectSozlesme?: (sozlesmeId: number) => void;
 }
 
-export default function TahsilatlarTab({ tahsilatlar: initialTahsilatlar, onTahsilatCancel, onMakbuz }: Props) {
+export default function TahsilatlarTab({
+  tahsilatlar: initialTahsilatlar,
+  onTahsilatCancel,
+  onMakbuz,
+  onSelectSozlesme,
+}: Props) {
   const { activeKurum, activeSube } = useKurum();
   const kurumId = activeKurum?.id;
   const [tahsilatlar, setTahsilatlar] = useState<TahsilatItem[]>(initialTahsilatlar);
@@ -264,8 +270,52 @@ export default function TahsilatlarTab({ tahsilatlar: initialTahsilatlar, onTahs
                 {paginateList(tahsilatlar, currentPage, pageSize).map((th) => (
                   <tr key={th.id} style={{ opacity: th.durum === "iptal_edildi" ? 0.5 : 1 }}>
                     <td style={cellStyle}>{formatDate(th.tahsilat_tarihi)}</td>
-                    <td style={{ ...cellStyle, fontWeight: 700, color: KURUM_COLOR }}>{th.sozlesme_no}</td>
-                    <td style={cellStyle}>{th.ogrenci_adi}</td>
+                    <td style={{ ...cellStyle, fontWeight: 700, color: KURUM_COLOR }}>
+                      {onSelectSozlesme && th.sozlesme_id ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectSozlesme(th.sozlesme_id)}
+                          style={{
+                            border: "none",
+                            background: "none",
+                            padding: 0,
+                            color: KURUM_COLOR,
+                            fontWeight: 700,
+                            fontSize: 13,
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                            textUnderlineOffset: 2,
+                          }}
+                        >
+                          {th.sozlesme_no}
+                        </button>
+                      ) : (
+                        th.sozlesme_no
+                      )}
+                    </td>
+                    <td style={cellStyle}>
+                      {onSelectSozlesme && th.sozlesme_id ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectSozlesme(th.sozlesme_id)}
+                          style={{
+                            border: "none",
+                            background: "none",
+                            padding: 0,
+                            color: KURUM_COLOR,
+                            fontWeight: 600,
+                            fontSize: 13,
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                            textUnderlineOffset: 2,
+                          }}
+                        >
+                          {th.ogrenci_adi}
+                        </button>
+                      ) : (
+                        th.ogrenci_adi
+                      )}
+                    </td>
                     <td style={{ ...cellStyle, textAlign: "center", fontWeight: 600 }}>
                       {th.dagitim && th.dagitim.length > 1
                         ? th.dagitim.map(d => `#${d.taksit_no}`).join(", ")

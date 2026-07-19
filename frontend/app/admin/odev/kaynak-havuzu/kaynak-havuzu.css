@@ -1,0 +1,211 @@
+/* Kaynak Havuzu / Atama — responsive */
+
+.kh-page {
+  padding: 24px;
+  background: #f8fafc;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.kh-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.kh-header-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.kh-header-identity h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.kh-odev-btn {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(102, 126, 234, 0.4);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.kh-actions-bar {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.kh-actions-bar-left {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.kh-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.kh-list-desktop {
+  display: block;
+}
+
+.kh-list-mobile {
+  display: none;
+}
+
+.kh-mobile-card {
+  display: block;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+}
+
+.kh-mobile-card:active {
+  background: #f8fafc;
+}
+
+.kh-mobile-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.kh-mobile-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.kh-mobile-chip {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.kh-modal-shell {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  padding: 0;
+}
+
+.kh-modal {
+  background: white;
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(85vh, 720px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.kh-modal.is-sm {
+  max-width: 500px;
+}
+
+.kh-modal.is-md {
+  max-width: 600px;
+}
+
+@media (min-width: 640px) {
+  .kh-modal-shell {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .kh-modal {
+    border-radius: 16px;
+    width: min(100%, 600px);
+  }
+
+  .kh-modal.is-sm {
+    width: min(100%, 400px);
+  }
+}
+
+@media (max-width: 900px) {
+  .kh-list-desktop {
+    display: none;
+  }
+
+  .kh-list-mobile {
+    display: block;
+  }
+}
+
+@media (max-width: 768px) {
+  .kh-page {
+    padding: 12px;
+  }
+
+  .kh-header-identity {
+    gap: 12px;
+  }
+
+  .kh-header-identity h1 {
+    font-size: 18px;
+  }
+
+  .kh-odev-btn {
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .kh-actions-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .kh-actions-bar-left {
+    flex-direction: column;
+  }
+
+  .kh-actions-bar button,
+  .kh-actions-bar-left button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .kh-page {
+    padding: 8px;
+  }
+}

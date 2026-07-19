@@ -415,16 +415,101 @@
 
   .kk-panel {
     height: auto;
-    max-height: 420px;
+    max-height: min(52vh, 480px);
+  }
+}
+
+@media (max-width: 768px) {
+  .kk-page {
+    padding: 12px;
+    min-height: auto;
+  }
+
+  .kk-hero {
+    padding: 18px 16px;
+    border-radius: 16px;
+    margin-bottom: 16px;
+  }
+
+  .kk-hero h1 {
+    font-size: 22px;
+  }
+
+  .kk-hero p {
+    font-size: 13px;
+  }
+
+  .kk-hero-actions {
+    width: 100%;
+  }
+
+  .kk-hero-actions .kk-btn {
+    flex: 1 1 calc(50% - 6px);
+    text-align: center;
+    justify-content: center;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .kk-filters {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .kk-search,
+  .kk-input,
+  .kk-select {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .kk-panel {
+    max-height: min(48vh, 400px);
+    border-radius: 12px;
+  }
+
+  .kk-drawer {
+    width: 100vw !important;
+    max-width: 100vw;
+  }
+
+  .kk-drawer-header,
+  .kk-drawer-body,
+  .kk-drawer-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .kk-drawer-footer {
+    flex-wrap: wrap;
+  }
+
+  .kk-drawer-footer .kk-btn {
+    flex: 1 1 auto;
   }
 }
 
 @media (max-width: 640px) {
   .kk-page {
-    padding: 16px;
+    padding: 8px;
   }
 
   .kk-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .kk-stats {
+    gap: 8px;
+  }
+
+  .kk-stat {
+    padding: 8px 12px;
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  .kk-stat strong {
+    font-size: 16px;
   }
 }
