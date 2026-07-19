@@ -219,7 +219,7 @@ export default function SerbestOdemeModal({
         )}
       </div>
 
-      <FinansModalField label="Ödeme Yöntemi" required={isCekPath}>
+      <FinansModalField label={isCekPath ? "Ödeme Yöntemi *" : "Ödeme Yöntemi"}>
         <select
           style={finansModalInputStyle}
           value={odemeYontemiId}
@@ -228,7 +228,7 @@ export default function SerbestOdemeModal({
             setMasrafForm({ ...EMPTY_ISLEM_MASRAFI });
           }}
         >
-          <option value="">Seçiniz (opsiyonel)</option>
+          <option value="">{isCekPath ? "Seçiniz" : "Seçiniz (opsiyonel)"}</option>
           {odemeYontemleri.map((o) => (
             <option key={o.id} value={o.id}>
               {o.ad}
@@ -239,8 +239,11 @@ export default function SerbestOdemeModal({
       </FinansModalField>
 
       <FinansModalField
-        label={isCekPath ? "Ödeme Hesabı (çek ödenince)" : "Mali Hesap (Kasa/Banka)"}
-        required={!isCekPath}
+        label={
+          isCekPath
+            ? "Ödeme Hesabı (çek ödenince)"
+            : "Mali Hesap (Kasa/Banka) *"
+        }
       >
         <select
           style={finansModalInputStyle}
@@ -261,7 +264,7 @@ export default function SerbestOdemeModal({
 
       {isCekPath && (
         <>
-          <FinansModalField label="Vade Tarihi" required>
+          <FinansModalField label="Vade Tarihi *">
             <input
               type="date"
               style={finansModalInputStyle}

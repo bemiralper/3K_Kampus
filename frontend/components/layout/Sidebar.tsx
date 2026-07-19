@@ -498,7 +498,6 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
-  const userPermissions = user?.permissions || [];
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
   const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
@@ -512,11 +511,12 @@ export default function Sidebar({
   const { reorder, getOrdered } = useMenuOrder(navItems);
 
   const visibleNavItems = useMemo(() => {
+    const userPermissions = user?.permissions || [];
     return navItems.filter((item) => {
       if (!item.requiredPermissions?.length) return true;
       return PermissionChecks.hasAnyPermission(userPermissions, item.requiredPermissions);
     });
-  }, [userPermissions]);
+  }, [user?.permissions]);
 
   const submenuParents = useMemo(
     () =>
