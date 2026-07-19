@@ -192,6 +192,11 @@ class GelirKaydi(models.Model):
         return False
 
     @property
+    def tahsil_edilebilir_mi(self):
+        """Bu gelirden tahsilat yapılabilir mi?"""
+        return self.durum in GelirDurum.TAHSIL_EDILEBILIR and self.kalan_tutar > Decimal('0')
+
+    @property
     def iptal_edilebilir_mi(self):
         return self.durum not in [GelirDurum.IPTAL, GelirDurum.TAHSIL_EDILDI]
 

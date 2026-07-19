@@ -48,6 +48,7 @@ export interface GGListItem {
   duzenlenebilir_mi: boolean;
   iptal_edilebilir_mi: boolean;
   odenebilir_mi?: boolean;
+  tahsil_edilebilir_mi?: boolean;
   created_at: string | null;
 }
 
@@ -66,6 +67,24 @@ export interface GGOdeme {
   durum: string;
   durum_display: string;
   bakiyeden_mahsup: boolean;
+  islem_yapan_adi: string | null;
+  created_at: string | null;
+}
+
+export interface GGTahsilat {
+  id: number;
+  gelir_kaydi_id: number;
+  cari_hesap_adi: string;
+  fatura_no: string | null;
+  odeme_yontemi_id: number | null;
+  odeme_yontemi_adi: string | null;
+  mali_hesap_id: number | null;
+  mali_hesap_adi: string | null;
+  tutar: string | number;
+  tahsilat_tarihi: string;
+  aciklama: string;
+  durum: string;
+  durum_display: string;
   islem_yapan_adi: string | null;
   created_at: string | null;
 }

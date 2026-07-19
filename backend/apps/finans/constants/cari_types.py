@@ -89,3 +89,5 @@ class GelirDurum:
         (TAHSIL_EDILDI, 'Tahsil Edildi'),
         (IPTAL, 'İptal'),
     ]
+
+    TAHSIL_EDILEBILIR = {ONAYLANDI, KISMI_TAHSIL}

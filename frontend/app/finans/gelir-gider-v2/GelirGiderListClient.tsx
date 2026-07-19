@@ -64,6 +64,7 @@ import {
 import { ModulConfig, getConfig, ikinciTanimOf, kategoriOf } from "./gg-config";
 import GelirGiderFormDrawer from "./GelirGiderFormDrawer";
 import GiderOdemeDrawer from "./GiderOdemeDrawer";
+import GelirTahsilatDrawer from "./GelirTahsilatDrawer";
 import { FinansHttpError } from "../services/finans-http";
 import { DollarOutlined } from "@ant-design/icons";
 
@@ -379,6 +380,11 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
                 <Button size="small" type="text" style={{ color: "#16a34a" }} icon={<DollarOutlined />} onClick={() => openOdeme(r)} />
               </Tooltip>
             )}
+            {modul === "gelir" && r.tahsil_edilebilir_mi && (
+              <Tooltip title="Tahsil et">
+                <Button size="small" type="text" style={{ color: "#16a34a" }} icon={<DollarOutlined />} onClick={() => openOdeme(r)} />
+              </Tooltip>
+            )}
             <Tooltip title="Düzenle">
               <Button size="small" type="text" icon={<EditOutlined />} disabled={!r.duzenlenebilir_mi} onClick={() => openEdit(r)} />
             </Tooltip>
@@ -670,6 +676,9 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
               {modul === "gider" && ctxMenu.row.odenebilir_mi && (
                 <Button type="text" block style={{ textAlign: "left", color: "#16a34a" }} icon={<DollarOutlined />} onClick={() => { openOdeme(ctxMenu.row); setCtxMenu(null); }}>Öde</Button>
               )}
+              {modul === "gelir" && ctxMenu.row.tahsil_edilebilir_mi && (
+                <Button type="text" block style={{ textAlign: "left", color: "#16a34a" }} icon={<DollarOutlined />} onClick={() => { openOdeme(ctxMenu.row); setCtxMenu(null); }}>Tahsil et</Button>
+              )}
               <Button type="text" block style={{ textAlign: "left" }} icon={<EditOutlined />} onClick={() => { openEdit(ctxMenu.row); setCtxMenu(null); }}>Düzenle</Button>
               {ctxMenu.row.iptal_edilebilir_mi && (
                 <Button type="text" block danger style={{ textAlign: "left" }} icon={<StopOutlined />} onClick={() => { onIptal(ctxMenu.row); setCtxMenu(null); }}>İptal Et</Button>
@@ -703,9 +712,18 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
         onSaved={() => { setDrawerOpen(false); reload(); }}
       />
 
-      {/* Gider ödeme çekmecesi */}
+      {/* Gider ödeme / gelir tahsilat çekmecesi */}
       {modul === "gider" && (
         <GiderOdemeDrawer
+          open={!!odemeRow}
+          row={odemeRow}
+          dropdown={dropdown}
+          onClose={() => setOdemeRow(null)}
+          onSaved={reload}
+        />
+      )}
+      {modul === "gelir" && (
+        <GelirTahsilatDrawer
           open={!!odemeRow}
           row={odemeRow}
           dropdown={dropdown}

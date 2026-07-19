@@ -9,6 +9,7 @@ import {
   GGLogItem,
   GGModul,
   GGOdeme,
+  GGTahsilat,
   GGTaksit,
   GGReport,
   GGTanim,
@@ -108,6 +109,22 @@ export const ggService = {
 
   giderTaksitler(giderId: number): Promise<GGTaksit[]> {
     return request<GGTaksit[]>(`/giderler/${giderId}/taksitler/`);
+  },
+
+  // ─── Gelir tahsilat (mevcut v1 uçları) ────────────────────────
+  gelirTahsilatlar(gelirId: number): Promise<GGTahsilat[]> {
+    return request<GGTahsilat[]>(`/gelirler/${gelirId}/tahsilatlar/`);
+  },
+
+  gelirTahsilatYap(gelirId: number, body: Record<string, unknown>): Promise<GGTahsilat> {
+    return request<GGTahsilat>(`/gelirler/${gelirId}/tahsilatlar/`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  gelirTahsilatIptal(tahsilatId: number): Promise<{ detail: string; durum: string }> {
+    return request(`/gelir-tahsilatlar/${tahsilatId}/iptal/`, { method: "POST" });
   },
 
   // ─── Ortak ────────────────────────────────────────────────────

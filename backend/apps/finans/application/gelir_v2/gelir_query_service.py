@@ -175,6 +175,7 @@ class GelirQueryService:
                 else None
             ),
             'duzenlenebilir_mi': g.duzenlenebilir_mi,
+            'tahsil_edilebilir_mi': g.tahsil_edilebilir_mi,
             'iptal_edilebilir_mi': g.iptal_edilebilir_mi,
             'created_at': g.created_at.isoformat() if g.created_at else None,
         }
