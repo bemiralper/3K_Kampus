@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface CoachActionSheetProps {
   title: string;
@@ -41,12 +42,14 @@ export default function CoachActionSheet({
     return () => window.removeEventListener('keydown', handleEsc);
   }, [handleClose]);
 
+  if (typeof document === 'undefined') return null;
+
   const sheetClass =
     size === 'full'
       ? 'coach-action-sheet coach-action-sheet-full'
       : 'coach-action-sheet';
 
-  return (
+  return createPortal(
     <div className="coach-action-sheet-overlay" onClick={handleClose} role="presentation">
       <div
         className={sheetClass}
@@ -81,6 +84,7 @@ export default function CoachActionSheet({
 
         {footer && <div className="coach-action-sheet-footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

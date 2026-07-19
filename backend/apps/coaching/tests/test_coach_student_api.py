@@ -23,6 +23,10 @@ RISK_REPORT_URL = '/api/coaching/students/{}/risk-report/'
 GORUSME_DETAIL_URL = '/api/coaching/gorusmeler/{}/'
 PROGRAMS_URL = '/api/coaching/study-program/programs/'
 EXAMS_URL = '/api/coaching/olcme-degerlendirme/student-exams/{}/'
+MANUAL_ASSIGNMENTS_URL = '/api/coaching/manual-assignments/assignments/'
+COACHES_URL = '/api/coaching/coaches/'
+COACH_STUDENTS_URL = '/api/coaching/coaches/{}/students/'
+PREDICTIVE_SCORES_URL = '/api/coaching/predictive/student/{}/scores/'
 
 
 class CoachStudentApiTest(TestCase):
@@ -344,3 +348,82 @@ class CoachStudentApiTest(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(response.data['success'])
         self.assertEqual(CoachingEvent.objects.filter(event_source='risk_report').count(), 0)
+
+    def test_manual_assignment_create_forbidden_for_unassigned_student(self):
+        self.client.force_authenticate(user=self.coach_user)
+        response = self.client.post(
+            MANUAL_ASSIGNMENTS_URL,
+            {
+                'student': self.other_student.id,
+                'title': 'Yetkisiz ödev',
+                'due_date': '2026-08-01',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            ManualAssignment.objects.filter(
+                student=self.other_student, title='Yetkisiz ödev'
+            ).exists()
+        )
+
+    def test_gorusme_mutate_forbidden_for_unassigned_user(self):
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.put(
+            GORUSME_DETAIL_URL.format(self.gorusme.id),
+            {
+                'konu': 'Hack attempt',
+                'gorusme_turu': 'ogrenci',
+                'durum': 'planlandi',
+                'gorusme_tarihi': '2026-07-20',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+        self.gorusme.refresh_from_db()
+        self.assertEqual(self.gorusme.konu, 'Motivasyon görüşmesi')
+
+        response = self.client.delete(GORUSME_DETAIL_URL.format(self.gorusme.id))
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(GorusmeKaydi.objects.filter(pk=self.gorusme.id).exists())
+
+    def test_coach_list_scoped_to_self(self):
+        other_personel = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Ayşe',
+            soyad='Koç',
+            tc_kimlik_no='22222222222',
+            user=self.other_user,
+        )
+        other_cp = CoachProfile.objects.create(
+            teacher=other_personel,
+            capacity=10,
+            is_active=True,
+            is_coach=True,
+        )
+        CoachStudentAssignment.objects.create(
+            coach=other_cp,
+            student=self.other_student,
+            start_date=date(2026, 1, 1),
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(user=self.coach_user)
+        response = self.client.get(COACHES_URL)
+        self.assertEqual(response.status_code, 200)
+        ids = {row['id'] for row in response.data['data']}
+        self.assertEqual(ids, {self.coach_profile.id})
+
+        response = self.client.get(COACH_STUDENTS_URL.format(other_cp.id))
+        self.assertIn(response.status_code, (403, 404))
+
+    def test_predictive_scores_requires_student_access(self):
+        self.client.force_authenticate(user=self.coach_user)
+        response = self.client.get(PREDICTIVE_SCORES_URL.format(self.other_student.id))
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.get(PREDICTIVE_SCORES_URL.format(self.student.id))
+        self.assertIn(response.status_code, (200, 404, 500))
+        if response.status_code == 200:
+            self.assertTrue(response.data.get('success', True))

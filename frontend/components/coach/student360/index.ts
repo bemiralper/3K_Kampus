@@ -1,4 +1,6 @@
 export { default as GenelBakisTab } from './GenelBakisTab';
+export { default as OzetTab } from './OzetTab';
+export { default as BilgiTab } from './BilgiTab';
 export { default as OdevlerTab } from './OdevlerTab';
 export { default as SinavlarTab } from './SinavlarTab';
 export { default as GorusmelerTab } from './GorusmelerTab';

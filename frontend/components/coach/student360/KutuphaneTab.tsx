@@ -33,10 +33,7 @@ export default function KutuphaneTab({ studentId, studentName }: KutuphaneTabPro
     try {
       const res = await fetchStudentResources({ search: studentName || String(studentId) });
       if (res.success && res.data?.students) {
-        const match =
-          res.data.students.find((s) => s.ogrenci_id === studentId) ??
-          res.data.students[0] ??
-          null;
+        const match = res.data.students.find((s) => s.ogrenci_id === studentId) ?? null;
         setResource(match);
         if (!match) setUnavailable(true);
       } else {

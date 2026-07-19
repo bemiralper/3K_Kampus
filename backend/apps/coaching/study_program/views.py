@@ -26,7 +26,7 @@ from .serializers import (
     SplitBlockRequestSerializer,
 )
 from . import services
-from apps.coaching.services.coach_access import user_can_access_student
+from apps.coaching.services.coach_access import filter_by_student_scope, user_can_access_student
 from apps.coaching.interfaces.sube_context import (
     assert_coaching_student_sube_access,
     filter_queryset_by_student_sube,
@@ -59,6 +59,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         ctx = getattr(self, '_coaching_ctx', None)
         if ctx:
             qs = filter_queryset_by_student_sube(qs, ctx['sube_id'])
+        qs = filter_by_student_scope(qs, self.request.user, student_field='student_id')
         # Filtreler
         student_id = self.request.query_params.get('student_id')
         if student_id:
@@ -99,6 +100,9 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         if gate:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied(detail=gate.data.get('error', 'Forbidden'))
+        if not user_can_access_student(self.request.user, obj.student_id):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(detail='Bu öğrenciye erişim yetkiniz yok.')
         return obj
 
     def list(self, request, *args, **kwargs):
@@ -129,6 +133,11 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         gate = assert_coaching_student_sube_access(request, student.kurum_id, student.sube_id)
         if gate:
             return gate
+        if not user_can_access_student(request.user, student.id):
+            return Response(
+                {'detail': 'Bu öğrenciye erişim yetkiniz yok.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         # Aynı öğrenci + hafta zaten varsa mevcut programı dön
         week_start = create_ser.validated_data['week_start']

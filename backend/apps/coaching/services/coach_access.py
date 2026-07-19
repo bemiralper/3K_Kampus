@@ -19,8 +19,15 @@ def get_coach_profile(user):
 
 
 def is_resource_admin(user):
-    """Kurum yöneticisi / admin — tüm öğrencilere erişim."""
+    """
+    Kurum yöneticisi / admin — tüm öğrencilere erişim.
+
+    Aktif koç profili varsa False döner: is_staff olan rehberler kurum geneli
+    öğrenci listesi görmemeli; koç kapsamı (scoped_student_ids) uygulanır.
+    """
     if not user or not user.is_authenticated:
+        return False
+    if get_coach_profile(user) is not None:
         return False
     if user.is_superuser or user.is_staff:
         return True
@@ -44,15 +51,28 @@ def scoped_student_ids(user):
     """
     Erişilebilir öğrenci ID'leri.
     None → admin, filtre yok.
+    Koç → yalnızca atandığı (ve ilişkili ödev/kaynak) öğrenciler.
     """
+    coach_profile = get_coach_profile(user)
+    if coach_profile is not None:
+        allowed = set(get_active_coach_student_ids(coach_profile))
+        from apps.student_resources.models import StudentResourceAssignment
+        from apps.coaching.assignment_manual.models import ManualAssignment
+
+        allowed.update(
+            StudentResourceAssignment.objects.filter(coach=user, is_active=True)
+            .values_list('student_id', flat=True)
+        )
+        allowed.update(
+            ManualAssignment.objects.filter(coach=user, is_active=True)
+            .values_list('student_id', flat=True)
+        )
+        return allowed
+
     if is_resource_admin(user):
         return None
 
     allowed = set()
-    coach_profile = get_coach_profile(user)
-    if coach_profile:
-        allowed.update(get_active_coach_student_ids(coach_profile))
-
     from apps.student_resources.models import StudentResourceAssignment
 
     allowed.update(
@@ -71,9 +91,9 @@ def scoped_student_ids(user):
 
 
 def user_can_access_student(user, student_id):
-    if is_resource_admin(user):
-        return True
     allowed = scoped_student_ids(user)
+    if allowed is None:
+        return True
     return int(student_id) in allowed
 
 

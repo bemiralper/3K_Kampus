@@ -53,10 +53,22 @@ export default function CoachStudentQuickActions({
           veliId={veliId}
           contactLabel={ogrenciAd ? `${ogrenciAd} velisi` : 'Veli'}
           className="coach-student-action-btn coach-student-action-btn--whatsapp"
-          title="Veliye mesaj gönder"
+          title="Veliye WhatsApp mesajı — uygulama içinde açılır"
           size={16}
+          variant={compact ? 'icon' : 'pill'}
+          label="Mesaj"
         />
-      ) : null}
+      ) : (
+        <button
+          type="button"
+          className="coach-student-action-btn is-disabled"
+          disabled
+          title="Veli telefonu yok — öğrenci kartından Mesajlar sekmesini kullanın"
+        >
+          💬
+          {!compact && <span>Mesaj</span>}
+        </button>
+      )}
       <button
         type="button"
         className="coach-student-action-btn is-primary"

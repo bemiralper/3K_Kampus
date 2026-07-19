@@ -20,7 +20,7 @@ export const ADMIN_ODEV_PATHS: OdevKontrolPaths = {
 
 export const COACH_ODEV_PATHS: OdevKontrolPaths = {
   list: "/coach/odev/kontrol",
-  newAssignment: null,
+  newAssignment: "/coach/odev/ver",
   detail: (id) => `/coach/odev/kontrol/${id}`,
   report: (id) => `/coach/odev/kontrol/${id}/rapor`,
   studentProfile: (id) => `/coach/ogrenciler/${id}`,

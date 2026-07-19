@@ -576,6 +576,48 @@ export async function fetchRiskList(params?: {
   return apiGet(url);
 }
 
+/** Koç Risk Bildir + otomatik RISK olayları (admin / müdür) */
+export interface CoachRiskReport {
+  id: number;
+  student_id: number;
+  student_name: string;
+  student_sube_id?: number | null;
+  coach_id?: number | null;
+  coach_name?: string;
+  title: string;
+  description?: string;
+  reason?: string;
+  notes?: string;
+  event_source?: string;
+  status: string;
+  event_date?: string | null;
+  created_at?: string | null;
+  meeting_draft_id?: number | null;
+}
+
+export async function fetchCoachRiskReports(params?: {
+  status?: string;
+  source?: string;
+  limit?: number;
+}): Promise<ApiResponse<CoachRiskReport[]> & { kpi?: { pending: number; shown: number } }> {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.source) searchParams.set('source', params.source);
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const qs = searchParams.toString();
+  return apiGet(`/api/coaching/risk-reports/${qs ? `?${qs}` : ''}`);
+}
+
+export async function patchCoachRiskReport(
+  eventId: number,
+  status: string,
+): Promise<ApiResponse<CoachRiskReport>> {
+  return apiFetch(`/api/coaching/risk-reports/${eventId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
 
 // =====================
 // PREDICTIVE API

@@ -120,6 +120,10 @@ class CoachStudentRiskReportView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, student_id):
+        ctx, err = mandatory_coaching_context(request)
+        if err:
+            return err
+
         if not user_can_access_student(request.user, student_id):
             return Response(
                 {'success': False, 'error': 'Bu öğrenciye erişim yetkiniz yok.'},
@@ -133,6 +137,10 @@ class CoachStudentRiskReportView(APIView):
                 {'success': False, 'error': 'Öğrenci bulunamadı.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        gate = assert_coaching_student_sube_access(request, student.kurum_id, student.sube_id)
+        if gate:
+            return gate
 
         coach_profile = _resolve_coach_for_risk_report(request.user, student_id)
         if not coach_profile:
@@ -192,11 +200,26 @@ class CoachStudentRiskReportView(APIView):
             event.metadata['meeting_draft_id'] = meeting_draft_id
             event.save(update_fields=['reference_id', 'metadata'])
 
+        kurum_id = get_secili_kurum_id(request) or student.kurum_id
+        try:
+            from apps.coaching.services.risk_notification import CoachingRiskNotificationService
+            CoachingRiskNotificationService().notify_admins_of_risk_report(
+                event,
+                kurum_id=int(kurum_id),
+                reported_by_user_id=request.user.id,
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'Risk bildirimi admin notifikasyonu gönderilemedi (event_id=%s)',
+                event.id,
+            )
+
         return Response({
             'success': True,
             'data': {
                 'event_id': event.id,
                 'meeting_draft_id': meeting_draft_id,
-                'detail': 'Risk bildirimi kaydedildi.',
+                'detail': 'Risk bildirimi kaydedildi. Yönetici bilgilendirildi.',
             },
         }, status=status.HTTP_201_CREATED)

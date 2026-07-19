@@ -39,10 +39,8 @@ from .list_assignment_sync import (
 )
 from apps.coaching.services.coach_access import (
     filter_by_student_scope,
-    is_resource_admin,
+    scoped_student_ids,
     user_can_access_student,
-    get_active_coach_student_ids,
-    get_coach_profile,
 )
 from apps.student_resources.interfaces.sube_context import (
     assert_student_resource_record_sube_access,
@@ -204,6 +202,11 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     def update(self, request, *args, **kwargs):
+        ctx, err = mandatory_student_resources_context(request)
+        if err:
+            return err
+        self._student_resources_ctx = ctx
+
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
@@ -227,6 +230,11 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     def destroy(self, request, *args, **kwargs):
+        ctx, err = mandatory_student_resources_context(request)
+        if err:
+            return err
+        self._student_resources_ctx = ctx
+
         instance = self.get_object()
         # Soft delete
         instance.is_active = False
@@ -251,6 +259,11 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
             "notes": "Haftalık ödev"
         }
         """
+        ctx, err = mandatory_student_resources_context(request)
+        if err:
+            return err
+        self._student_resources_ctx = ctx
+
         serializer = BulkAssignmentSerializer(data=request.data)
         if not serializer.is_valid():
             return Response({
@@ -271,21 +284,25 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         from apps.ogrenci.domain.models import Ogrenci
         from apps.resources.models import ResourceBook
         
-        # Validate students
-        students = Ogrenci.objects.filter(id__in=student_ids, aktif_mi=True)
+        # Validate students (aktif şube + koç kapsamı)
+        students = Ogrenci.objects.filter(
+            id__in=student_ids,
+            aktif_mi=True,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+        )
         if students.count() != len(student_ids):
             return Response({
                 'success': False,
-                'error': 'Bazı öğrenciler bulunamadı veya aktif değil.'
+                'error': 'Bazı öğrenciler bulunamadı, aktif değil veya bu şubeye ait değil.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        if not is_resource_admin(request.user):
-            for sid in student_ids:
-                if not user_can_access_student(request.user, sid):
-                    return Response({
-                        'success': False,
-                        'error': 'Bu öğrencilere kaynak atama yetkiniz yok.'
-                    }, status=status.HTTP_403_FORBIDDEN)
+        for sid in student_ids:
+            if not user_can_access_student(request.user, sid):
+                return Response({
+                    'success': False,
+                    'error': 'Bu öğrencilere kaynak atama yetkiniz yok.'
+                }, status=status.HTTP_403_FORBIDDEN)
         
         # Validate resources
         from apps.resources.scoping import filter_books_for_request
@@ -443,27 +460,22 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         """
         from apps.ogrenci.domain.models import Ogrenci
 
-        if is_resource_admin(request.user):
-            students = Ogrenci.objects.filter(aktif_mi=True).values(
-                'id', 'ad', 'soyad', 'tc_kimlik_no'
-            ).order_by('ad', 'soyad')[:200]
-        else:
-            coach_profile = get_coach_profile(request.user)
-            if coach_profile:
-                student_ids = get_active_coach_student_ids(coach_profile)
-                students = Ogrenci.objects.filter(
-                    id__in=student_ids,
-                    aktif_mi=True,
-                ).values('id', 'ad', 'soyad', 'tc_kimlik_no').order_by('ad', 'soyad')
-            else:
-                student_ids = StudentResourceAssignment.objects.filter(
-                    coach=request.user,
-                    is_active=True,
-                ).values_list('student_id', flat=True).distinct()
-                students = Ogrenci.objects.filter(
-                    id__in=student_ids,
-                    aktif_mi=True,
-                ).values('id', 'ad', 'soyad', 'tc_kimlik_no').order_by('ad', 'soyad')
+        ctx, err = mandatory_student_resources_context(request)
+        if err:
+            return err
+
+        students_qs = Ogrenci.objects.filter(
+            aktif_mi=True,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+        )
+        allowed = scoped_student_ids(request.user)
+        if allowed is not None:
+            students_qs = students_qs.filter(id__in=allowed)
+
+        students = students_qs.values(
+            'id', 'ad', 'soyad', 'tc_kimlik_no'
+        ).order_by('ad', 'soyad')[:200]
 
         data = [
             {
@@ -643,8 +655,8 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         Öğrenci Listesi (KPI kartları ve grid için)
         GET /api/student-resources/assignments/student_list/
         
-        Admin: Tüm öğrenciler
-        Koç: Sadece kendi öğrencileri
+        Admin: Aktif şubedeki tüm öğrenciler
+        Koç: Yalnızca kendi öğrencileri (aynı şube)
         """
         from django.db.models import Count, Avg, Case, When, IntegerField, F
         from apps.ogrenci.domain.models import Ogrenci
@@ -652,13 +664,32 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
             refresh_student_resource_overdue,
         )
 
+        ctx, err = mandatory_student_resources_context(request)
+        if err:
+            return err
+
         refresh_student_resource_overdue()
         today = timezone.now().date()
-        
+
+        allowed = scoped_student_ids(request.user)
+        students_qs = Ogrenci.objects.filter(
+            aktif_mi=True,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+        )
+        if allowed is not None:
+            students_qs = students_qs.filter(id__in=allowed)
+
+        assignment_qs = StudentResourceAssignment.objects.filter(
+            is_active=True,
+            student__kurum_id=ctx['kurum_id'],
+            student__sube_id=ctx['sube_id'],
+        )
+        if allowed is not None:
+            assignment_qs = assignment_qs.filter(student_id__in=allowed)
+
         # Öğrenci bazlı atama istatistikleri
-        student_stats = StudentResourceAssignment.objects.filter(
-            is_active=True
-        ).values('student_id').annotate(
+        student_stats = assignment_qs.values('student_id').annotate(
             total_resources=Count('id'),
             completed=Count('id', filter=Q(status='COMPLETED')),
             in_progress=Count('id', filter=Q(status='IN_PROGRESS')),
@@ -669,21 +700,6 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         )
         
         stats_dict = {s['student_id']: s for s in student_stats}
-
-        if is_resource_admin(request.user):
-            students_qs = Ogrenci.objects.filter(aktif_mi=True)
-        else:
-            coach_profile = get_coach_profile(request.user)
-            if coach_profile:
-                student_ids = list(get_active_coach_student_ids(coach_profile))
-            else:
-                student_ids = list(
-                    StudentResourceAssignment.objects.filter(
-                        coach=request.user,
-                        is_active=True,
-                    ).values_list('student_id', flat=True).distinct()
-                )
-            students_qs = Ogrenci.objects.filter(id__in=student_ids, aktif_mi=True)
 
         students = students_qs.values(
             'id', 'ad', 'soyad', 'tc_kimlik_no', 'profil_foto'
@@ -768,6 +784,11 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         """
         from django.db.models import Count, Avg
         
+        ctx, err = mandatory_student_resources_context(request)
+        if err:
+            return err
+        self._student_resources_ctx = ctx
+
         student_id = request.query_params.get('student_id')
         if not student_id:
             return Response({
@@ -784,12 +805,21 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         from apps.ogrenci.domain.models import Ogrenci
         
         try:
-            student = Ogrenci.objects.get(id=student_id, aktif_mi=True)
+            student = Ogrenci.objects.get(
+                id=student_id,
+                aktif_mi=True,
+                kurum_id=ctx['kurum_id'],
+                sube_id=ctx['sube_id'],
+            )
         except Ogrenci.DoesNotExist:
             return Response({
                 'success': False,
                 'error': 'Öğrenci bulunamadı'
             }, status=status.HTTP_404_NOT_FOUND)
+
+        gate = assert_student_resource_record_sube_access(request, student)
+        if gate:
+            return gate
         
         # Öğrenci atamaları
         assignments = StudentResourceAssignment.objects.filter(

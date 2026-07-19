@@ -2,11 +2,14 @@
 
 Bu belge Koç Portalı MVP backend kararlarını özetler. Uygulama planı dosyası değildir.
 
-## Risk Bildir (MVP)
+## Risk Bildir
 
 - **Aksiyon:** Koç “Risk Bildir” dediğinde `CoachingEvent` kaydı `event_type=RISK` olarak oluşturulur.
+- **Bildirim:** Aynı anda kurumdaki admin / müdür / yönetici rollerine `AppNotification` (🔔 çan) gönderilir; tıklanınca `/admin/coaching/risk`.
+- **Takip UI:** Admin Risk Merkezi — `GET/PATCH /api/coaching/risk-reports/` (durum: pending → in_progress → completed).
 - **Opsiyonel:** Aynı akışta görüşme taslağı (`GorusmeKaydi`, `durum=planlandi`) oluşturulabilir; MVP’de zorunlu değil.
 - **Kaynak:** `event_source=risk_report`, koç profili ve öğrenci atamasından türetilir.
+- **İleri:** Riskli öğrenciler için otomatik aksiyonlar bu olay kuyruğuna bağlanacak.
 
 ## Hedef (Hedef) alanı
 

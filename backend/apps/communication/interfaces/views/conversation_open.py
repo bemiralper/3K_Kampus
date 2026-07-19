@@ -136,6 +136,33 @@ class ConversationOpenView(CommunicationAPIView):
                 conversation.save(update_fields=['sube_id', 'updated_at'])
             conversation = sync_conversation_linked_phone(conversation)
 
+        from apps.coaching.services.coach_access import get_coach_profile, user_can_access_student
+        from apps.communication.application.coach_scope import user_can_access_conversation
+
+        coach_profile = get_coach_profile(request.user)
+        if coach_profile is not None:
+            sid = conversation.ogrenci_id or ogrenci_id
+            if sid and not user_can_access_student(request.user, int(sid)):
+                return Response(
+                    {'error': 'Bu öğrenciye mesaj gönderme yetkiniz yok.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            update_fields = []
+            if sid and not conversation.ogrenci_id:
+                conversation.ogrenci_id = int(sid)
+                update_fields.append('ogrenci_id')
+            if not conversation.assigned_coach_id:
+                conversation.assigned_coach = coach_profile
+                update_fields.append('assigned_coach')
+            if update_fields:
+                update_fields.append('updated_at')
+                conversation.save(update_fields=update_fields)
+            elif not user_can_access_conversation(request.user, conversation):
+                return Response(
+                    {'error': 'Bu konuşmaya erişim yetkiniz yok.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         debug_trace(
             'A',
             'conversation_open.py:post',

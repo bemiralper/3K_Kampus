@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   fetchCoachStudentProfile,
-  STUDENT360_TABS,
+  normalizeStudent360Tab,
   type CoachStudentProfileData,
   type Student360ActionId,
   type Student360TabId,
@@ -12,14 +12,15 @@ import {
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { recordRecentVisit, togglePinnedStudent, isPinnedStudent } from '@/lib/coach-students-prefs';
 import Student360Header, { Student360HeaderSkeleton } from '@/components/coach/Student360Header';
+import Student360GroupNav from '@/components/coach/Student360GroupNav';
 import QuickActionBar from '@/components/coach/QuickActionBar';
 import GorusmeEkleDrawer from '@/components/coach/GorusmeEkleDrawer';
 import RiskBildirDrawer from '@/components/coach/RiskBildirDrawer';
-import CoachOdevVerSheet from '@/components/coach/CoachOdevVerSheet';
 import CoachProgramSheet from '@/components/coach/CoachProgramSheet';
 import CoachStudentInfoDrawer from '@/components/coach/CoachStudentInfoDrawer';
 import {
-  GenelBakisTab,
+  OzetTab,
+  BilgiTab,
   OdevlerTab,
   SinavlarTab,
   GorusmelerTab,
@@ -31,13 +32,9 @@ import {
 } from '@/components/coach/student360';
 import '@/app/coach/coach.css';
 
-const VALID_TABS = new Set<string>(STUDENT360_TABS.map((t) => t.id));
-const VALID_ACTIONS = new Set<string>(['gorusme-ekle', 'odev-ver', 'program', 'risk']);
+const VALID_ACTIONS = new Set<string>(['gorusme-ekle', 'program', 'risk']);
 
-function parseTab(value: string | null): Student360TabId {
-  if (value && VALID_TABS.has(value)) return value as Student360TabId;
-  return 'genel';
-}
+type PanelId = Exclude<Student360TabId, 'genel'>;
 
 interface Student360ClientProps {
   studentId: number;
@@ -55,18 +52,14 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
   const [pinned, setPinned] = useState(false);
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [tabReloadKey, setTabReloadKey] = useState(0);
-  const tabsContainerRef = useRef<HTMLDivElement>(null);
-  const tabButtonRefs = useRef<Partial<Record<Student360TabId, HTMLButtonElement>>>({});
-  const [tabBubble, setTabBubble] = useState({ left: 0, width: 0, height: 0, opacity: 0 });
 
   const activeTab = useMemo(
-    () => parseTab(searchParams.get('tab')),
+    () => normalizeStudent360Tab(searchParams.get('tab')),
     [searchParams]
   );
 
   const activeAction = searchParams.get('action');
   const showGorusmeDrawer = activeAction === 'gorusme-ekle';
-  const showOdevSheet = activeAction === 'odev-ver';
   const showProgramSheet = activeAction === 'program';
   const showRiskDrawer = activeAction === 'risk';
 
@@ -137,48 +130,9 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
     [router, searchParams]
   );
 
-  const setTab = (tab: Student360TabId) => {
-    setQuery({ tab, action: null });
+  const setTab = (tab: PanelId) => {
+    setQuery({ tab: tab === 'ozet' ? null : tab, action: null });
   };
-
-  const updateTabBubble = useCallback(() => {
-    const container = tabsContainerRef.current;
-    const activeButton = tabButtonRefs.current[activeTab];
-    if (!container || !activeButton) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const buttonRect = activeButton.getBoundingClientRect();
-    setTabBubble({
-      left: buttonRect.left - containerRect.left + container.scrollLeft,
-      width: buttonRect.width,
-      height: buttonRect.height,
-      opacity: 1,
-    });
-  }, [activeTab]);
-
-  useLayoutEffect(() => {
-    updateTabBubble();
-  }, [updateTabBubble, loading]);
-
-  useEffect(() => {
-    const container = tabsContainerRef.current;
-    if (!container) return;
-
-    const handleResize = () => updateTabBubble();
-    container.addEventListener('scroll', handleResize, { passive: true });
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      container.removeEventListener('scroll', handleResize);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [updateTabBubble]);
-
-  useEffect(() => {
-    const activeButton = tabButtonRefs.current[activeTab];
-    activeButton?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    updateTabBubble();
-  }, [activeTab, updateTabBubble]);
 
   const handlePhotoUpdate = useCallback(
     (url: string | null) => {
@@ -191,6 +145,13 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
   );
 
   const handleAction = (action: Student360ActionId) => {
+    if (action === 'odev-ver') {
+      const returnTo = `/coach/ogrenciler/${studentId}?tab=odevler`;
+      router.push(
+        `/coach/odev/ver?student=${studentId}&locked=1&return=${encodeURIComponent(returnTo)}`
+      );
+      return;
+    }
     setQuery({ action });
   };
 
@@ -202,25 +163,43 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
     if (activeTab !== 'gorusmeler') setTab('gorusmeler');
   };
 
-  const handleOdevSuccess = () => {
-    setTabReloadKey((k) => k + 1);
-    if (activeTab !== 'odevler') setTab('odevler');
-    else loadProfile({ silent: true });
-  };
-
   const handleProgramOpen = () => setQuery({ action: 'program' });
 
   useEffect(() => {
+    if (activeAction === 'odev-ver') {
+      const returnTo = `/coach/ogrenciler/${studentId}?tab=odevler`;
+      router.replace(
+        `/coach/odev/ver?student=${studentId}&locked=1&return=${encodeURIComponent(returnTo)}`
+      );
+      return;
+    }
     if (activeAction && !VALID_ACTIONS.has(activeAction)) {
       setQuery({ action: null });
     }
-  }, [activeAction, setQuery]);
+  }, [activeAction, setQuery, router, studentId]);
+
+  // Legacy ?tab=genel → temiz URL
+  useEffect(() => {
+    if (searchParams.get('tab') === 'genel') {
+      setQuery({ tab: null });
+    }
+  }, [searchParams, setQuery]);
 
   const renderTab = () => {
     if (!profile) return null;
     switch (activeTab) {
-      case 'genel':
-        return <GenelBakisTab profile={profile} onNavigateTab={setTab} />;
+      case 'ozet':
+        return (
+          <OzetTab profile={profile} onNavigateTab={setTab} onAction={handleAction} />
+        );
+      case 'bilgi':
+        return (
+          <BilgiTab
+            student={profile.student}
+            onPhotoUpdate={handlePhotoUpdate}
+            onNavigateVeli={() => setTab('veli')}
+          />
+        );
       case 'odevler':
         return <OdevlerTab key={`odevler-${tabReloadKey}`} studentId={studentId} />;
       case 'sinavlar':
@@ -239,6 +218,8 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
             key={`mesajlar-${tabReloadKey}`}
             studentId={studentId}
             studentName={profile.student.full_name}
+            veliTelefon={profile.student.veli_telefon || profile.student.veli?.telefon}
+            veliId={profile.student.veli?.id}
           />
         );
       case 'program':
@@ -265,20 +246,17 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
   if (loading) {
     return (
       <div className="student360-page">
-        <div className="student360-main">
+        <aside className="s360-context-rail" aria-label="Öğrenci özeti yükleniyor">
           <Student360HeaderSkeleton />
-          <div className="student360-tabs-wrap">
-            <div className="student360-tabs">
-              {STUDENT360_TABS.map((t) => (
-                <button key={t.id} type="button" className="student360-tab" disabled>
-                  <span className="student360-tab-icon">{t.icon}</span>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <Student360GroupNav activeTab="ozet" onTabChange={() => {}} disabled />
+        </aside>
+        <div className="student360-main">
           <div className="student360-content">
-            <div className="coach-skeleton" style={{ height: 120, borderRadius: 14 }} />
+            <div className="s360-loading-grid">
+              <div className="coach-skeleton" style={{ height: 104, borderRadius: 16 }} />
+              <div className="coach-skeleton" style={{ height: 104, borderRadius: 16 }} />
+              <div className="coach-skeleton" style={{ height: 280, borderRadius: 18 }} />
+            </div>
           </div>
         </div>
       </div>
@@ -304,7 +282,7 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
 
   return (
     <div className="student360-page">
-      <div className="student360-main">
+      <aside className="s360-context-rail" aria-label="Öğrenci gezinme ve bilgileri">
         <Student360Header
           profile={profile}
           pinned={pinned}
@@ -312,51 +290,19 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
           onShowInfo={() => setShowInfoDrawer(true)}
           onRefresh={() => loadProfile({ silent: true })}
           refreshing={refreshing}
+          onAction={handleAction}
+          onMesaj={() => setTab('mesajlar')}
         />
+        <Student360GroupNav activeTab={activeTab} onTabChange={setTab} />
+      </aside>
 
-        <div className="student360-tabs-wrap">
-          <div
-            ref={tabsContainerRef}
-            className="student360-tabs"
-            role="tablist"
-            aria-label="Öğrenci sekmeleri"
-          >
-            <div
-              className="student360-tab-bubble"
-              aria-hidden="true"
-              style={{
-                width: tabBubble.width,
-                height: tabBubble.height,
-                transform: `translateX(${tabBubble.left}px)`,
-                opacity: tabBubble.opacity,
-              }}
-            />
-            {STUDENT360_TABS.map((t) => (
-              <button
-                key={t.id}
-                ref={(el) => {
-                  if (el) tabButtonRefs.current[t.id] = el;
-                  else delete tabButtonRefs.current[t.id];
-                }}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === t.id}
-                className={`student360-tab${activeTab === t.id ? ' active' : ''}`}
-                onClick={() => setTab(t.id)}
-              >
-                <span className="student360-tab-icon">{t.icon}</span>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
+      <main className="student360-main">
         <div className="student360-content" role="tabpanel" key={activeTab}>
           {renderTab()}
         </div>
-      </div>
+      </main>
 
-      <QuickActionBar onAction={handleAction} />
+      <QuickActionBar onAction={handleAction} onMesaj={() => setTab('mesajlar')} />
 
       {showGorusmeDrawer && (
         <GorusmeEkleDrawer
@@ -365,15 +311,6 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
           coachId={user?.coach_profile_id ?? undefined}
           onClose={closeDrawer}
           onSuccess={handleGorusmeSuccess}
-        />
-      )}
-
-      {showOdevSheet && (
-        <CoachOdevVerSheet
-          studentId={studentId}
-          studentName={studentDisplayName}
-          onClose={closeDrawer}
-          onSuccess={handleOdevSuccess}
         />
       )}
 

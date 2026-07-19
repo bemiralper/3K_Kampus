@@ -36,9 +36,9 @@ def filter_conversations_for_user(qs, user):
         return qs
     if user_has_any_permission(user, 'communication.manage'):
         return qs
-    if _has_staff_messaging_access(user):
-        return qs
 
+    # Koç profili staff messaging izinlerinden önce uygulanır — aksi halde
+    # ogrenci.read + communication.read olan koçlar kurum geneli görürdü.
     coach_profile = get_coach_profile(user)
     if coach_profile:
         allowed = scoped_student_ids(user)
@@ -49,6 +49,9 @@ def filter_conversations_for_user(qs, user):
         return qs.filter(
             Q(assigned_coach=coach_profile) | Q(ogrenci_id__in=allowed)
         )
+
+    if _has_staff_messaging_access(user):
+        return qs
 
     allowed = scoped_student_ids(user)
     if allowed is None:
@@ -63,12 +66,20 @@ def user_can_access_conversation(user, conversation) -> bool:
         return True
     if user_has_any_permission(user, 'communication.manage'):
         return True
-    if _has_staff_messaging_access(user):
-        return bool(conversation.ogrenci_id or conversation.veli_id)
 
     coach_profile = get_coach_profile(user)
-    if coach_profile and conversation.assigned_coach_id == coach_profile.id:
-        return True
+    if coach_profile:
+        if conversation.assigned_coach_id == coach_profile.id:
+            return True
+        if conversation.ogrenci_id:
+            allowed = scoped_student_ids(user)
+            if allowed is None:
+                return True
+            return conversation.ogrenci_id in allowed
+        return False
+
+    if _has_staff_messaging_access(user):
+        return bool(conversation.ogrenci_id or conversation.veli_id)
 
     if conversation.ogrenci_id:
         allowed = scoped_student_ids(user)

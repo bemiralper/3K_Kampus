@@ -15,7 +15,7 @@ import {
 import { exportCoachStudentsCsv } from "@/lib/coach-students-export";
 import {
   getPinnedStudentIds,
-  getRecentVisits,
+  pruneCoachPrefsToStudentIds,
   togglePinnedStudent,
   type CoachRecentVisit,
 } from "@/lib/coach-students-prefs";
@@ -309,7 +309,6 @@ export default function CoachOgrencilerPage() {
   useEffect(() => {
     if (!userId) return;
     setPinnedIds(getPinnedStudentIds(userId));
-    setRecentVisits(getRecentVisits(userId));
   }, [userId]);
 
   const loadStudents = useCallback(async () => {
@@ -321,12 +320,21 @@ export default function CoachOgrencilerPage() {
     });
     if (res.success && res.data) {
       setStudents(res.data);
+      // Arama sonuçlarıyla prune etme — yalnızca tam listede eski ziyaretleri temizle
+      if (userId && !searchQuery) {
+        const { recent, pinned } = pruneCoachPrefsToStudentIds(
+          userId,
+          res.data.map((s) => s.id)
+        );
+        setRecentVisits(recent);
+        setPinnedIds(pinned);
+      }
     } else {
       setError(res.error || "Öğrenci listesi yüklenemedi.");
       setStudents([]);
     }
     setLoading(false);
-  }, [searchQuery]);
+  }, [searchQuery, userId]);
 
   useEffect(() => {
     loadStudents();

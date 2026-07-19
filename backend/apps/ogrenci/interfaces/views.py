@@ -1231,10 +1231,14 @@ def ogrenci_profil_foto_api(request, pk):
     Öğrenci profil fotoğrafı API
     POST: Fotoğraf yükle
     DELETE: Fotoğrafı sil
+
+    Şube gate sonrası: aktif koç yalnızca erişebildiği öğrencinin fotosunu
+    değiştirebilir; admin / kaynak admin için mevcut şube davranışı korunur.
     """
     from apps.ogrenci.domain.models import Ogrenci
     import os
     from django.conf import settings
+    from apps.coaching.services.coach_access import get_coach_profile, user_can_access_student
     
     try:
         ogrenci = Ogrenci.objects.get(pk=pk)
@@ -1244,6 +1248,14 @@ def ogrenci_profil_foto_api(request, pk):
     gate = _ogrenci_sube_gate(request, ogrenci)
     if gate:
         return gate
+
+    user = getattr(request, 'user', None)
+    if user and getattr(user, 'is_authenticated', False) and get_coach_profile(user) is not None:
+        if not user_can_access_student(user, pk):
+            return JsonResponse(
+                {'error': 'Bu öğrencinin profil fotoğrafını değiştirme yetkiniz yok.'},
+                status=403,
+            )
     
     if request.method == 'POST':
         if 'foto' not in request.FILES:

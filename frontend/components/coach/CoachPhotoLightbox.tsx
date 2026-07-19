@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface CoachPhotoLightboxProps {
   photoUrl: string;
@@ -13,15 +14,18 @@ export default function CoachPhotoLightbox({ photoUrl, alt, onClose }: CoachPhot
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', onKey);
     };
   }, [onClose]);
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       className="coach-photo-lightbox"
       onClick={onClose}
@@ -40,6 +44,7 @@ export default function CoachPhotoLightbox({ photoUrl, alt, onClose }: CoachPhot
         <img src={photoUrl} alt={alt} />
       </div>
       <p className="coach-photo-lightbox-caption">{alt}</p>
-    </div>
+    </div>,
+    document.body
   );
 }

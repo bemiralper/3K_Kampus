@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchCoachStudents, type CoachPortalStudent, type RiskSeviyesi } from "@/lib/coach-api";
+import { exportCoachStudentsCsv } from "@/lib/coach-students-export";
 
 function countByRisk(students: CoachPortalStudent[], level: RiskSeviyesi) {
   return students.filter((s) => s.risk_seviyesi === level).length;
@@ -94,8 +95,13 @@ export default function CoachRaporlarPage() {
           </section>
 
           <div className="coach-report-export">
-            <button type="button" className="coach-btn coach-btn-secondary" disabled title="Yakında">
-              Dışa aktar (yakında)
+            <button
+              type="button"
+              className="coach-btn coach-btn-secondary"
+              disabled={students.length === 0}
+              onClick={() => exportCoachStudentsCsv(students, "koc-rapor-ogrenciler.csv")}
+            >
+              CSV dışa aktar
             </button>
           </div>
         </>

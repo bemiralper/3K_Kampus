@@ -1,9 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { useRouter } from 'next/navigation';
 import {
-  CoachOverviewCard,
   CoachStudentProfileData,
   Student360TabId,
 } from '@/lib/coach-api';
@@ -23,16 +21,23 @@ interface GenelBakisTabProps {
   onNavigateTab?: (tab: Student360TabId) => void;
 }
 
+type OverviewCardModel = {
+  key: string;
+  title: string;
+  value: string | number;
+  subtitle?: string | null;
+  accent?: string;
+  tab?: Student360TabId;
+};
+
 function OverviewCard({
   card,
   onClick,
 }: {
-  card: CoachOverviewCard;
+  card: OverviewCardModel;
   onClick?: () => void;
 }) {
   const accent = card.accent ? ACCENT_MAP[card.accent] || card.accent : undefined;
-  const trendIcon =
-    card.trend === 'up' ? '↑' : card.trend === 'down' ? '↓' : card.trend === 'flat' ? '→' : null;
 
   return (
     <div
@@ -52,41 +57,93 @@ function OverviewCard({
       <div className="coach-overview-title">{card.title}</div>
       <div className="coach-overview-value">{card.value}</div>
       {card.subtitle && <div className="coach-overview-sub">{card.subtitle}</div>}
-      {card.trend && trendIcon && (
-        <span className={`coach-overview-trend ${card.trend}`}>
-          {trendIcon} {card.trend_label || ''}
-        </span>
-      )}
     </div>
   );
 }
 
-const TAB_FROM_KEY: Partial<Record<string, Student360TabId>> = {
-  homework: 'odevler',
-  odevler: 'odevler',
-  exams: 'sinavlar',
-  sinavlar: 'sinavlar',
-  meetings: 'gorusmeler',
-  gorusmeler: 'gorusmeler',
-  program: 'program',
-  library: 'kutuphane',
-  kutuphane: 'kutuphane',
-  risk: 'genel',
-};
+function asOverviewRecord(overview: CoachStudentProfileData['overview']): Record<string, unknown> | null {
+  if (!overview || typeof overview !== 'object' || Array.isArray(overview)) return null;
+  return overview as unknown as Record<string, unknown>;
+}
+
+function buildCards(profile: CoachStudentProfileData): OverviewCardModel[] {
+  const qs = profile.quick_stats || {};
+  const ov = asOverviewRecord(profile.overview);
+  const exam = (ov?.exam_summary as Record<string, unknown> | undefined) || {};
+  const program = ov?.current_week_program as Record<string, unknown> | null | undefined;
+  const pending =
+    Number(qs.pending_manual_assignments ?? ov?.pending_manual_assignments ?? qs.open_assignments ?? 0) || 0;
+  const overdue =
+    Number(qs.overdue_homework_count ?? qs.overdue_homework ?? qs.overdue_manual_assignments ?? 0) || 0;
+  const programPct =
+    qs.program_completion_percent ?? qs.program_completion ?? program?.completion_percent;
+  const lastNet = qs.last_exam_net ?? exam.last_exam_net;
+  const lastExamName = (exam.last_exam_name as string | undefined) || null;
+  const lastExamDate = (qs.last_exam_date || exam.last_exam_date) as string | null | undefined;
+  const totalMeetings =
+    Number(
+      (profile.coach_context as { total_meeting_count?: number })?.total_meeting_count ??
+        qs.total_meetings ??
+        0
+    ) || 0;
+
+  const cards: OverviewCardModel[] = [
+    {
+      key: 'odevler',
+      title: 'Bekleyen ödev',
+      value: pending,
+      subtitle: overdue > 0 ? `${overdue} gecikmiş` : 'Aktif ödevler',
+      accent: overdue > 0 ? 'red' : 'blue',
+      tab: 'odevler',
+    },
+    {
+      key: 'gorusmeler',
+      title: 'Görüşmeler',
+      value: totalMeetings,
+      subtitle: qs.last_meeting_date
+        ? `Son: ${new Date(String(qs.last_meeting_date)).toLocaleDateString('tr-TR')}`
+        : 'Kayıt yok',
+      accent: 'purple',
+      tab: 'gorusmeler',
+    },
+    {
+      key: 'program',
+      title: 'Haftalık program',
+      value: programPct != null ? `%${Math.round(Number(programPct))}` : '—',
+      subtitle: program ? 'Bu hafta' : 'Program yok',
+      accent: 'teal',
+      tab: 'program',
+    },
+    {
+      key: 'sinavlar',
+      title: 'Son sınav net',
+      value: lastNet != null ? Number(lastNet).toFixed(1) : '—',
+      subtitle: lastExamName || (lastExamDate ? String(lastExamDate) : 'Sınav yok'),
+      accent: 'amber',
+      tab: 'sinavlar',
+    },
+  ];
+
+  return cards;
+}
 
 export default function GenelBakisTab({ profile, onNavigateTab }: GenelBakisTabProps) {
-  const router = useRouter();
-  const { overview, risk, last_meeting } = profile;
+  const { risk } = profile;
   const riskLevel = normalizeCoachRiskLevel(risk?.level ?? risk?.label);
-
-  const handleCardClick = (card: CoachOverviewCard) => {
-    if (card.href) {
-      router.push(card.href);
-      return;
-    }
-    const tab = TAB_FROM_KEY[card.key];
-    if (tab && onNavigateTab) onNavigateTab(tab);
-  };
+  const cards = buildCards(profile);
+  const ov = asOverviewRecord(profile.overview);
+  const hedef = ov?.hedef as { text?: string; source?: string } | null | undefined;
+  const recentMeetings = Array.isArray(ov?.recent_meetings)
+    ? (ov!.recent_meetings as Array<{ id?: number; tarih?: string; gorusme_tarihi?: string; konu?: string }>)
+    : [];
+  const lastMeetingDate =
+    profile.last_meeting?.date ||
+    profile.quick_stats?.last_meeting_date ||
+    recentMeetings[0]?.gorusme_tarihi ||
+    recentMeetings[0]?.tarih ||
+    null;
+  const lastMeetingKonu =
+    profile.last_meeting?.konu || recentMeetings[0]?.konu || null;
 
   return (
     <div className="student360-panel">
@@ -111,18 +168,27 @@ export default function GenelBakisTab({ profile, onNavigateTab }: GenelBakisTabP
         </div>
       )}
 
-      {last_meeting?.date && (
+      {hedef?.text && (
+        <div className="student360-last-meeting-card" style={{ marginBottom: 12 }}>
+          <div className="student360-last-meeting-label">Hedef</div>
+          <div className="student360-last-meeting-body">
+            <strong>{hedef.text}</strong>
+          </div>
+        </div>
+      )}
+
+      {lastMeetingDate && (
         <div className="student360-last-meeting-card">
           <div className="student360-last-meeting-label">Son görüşme</div>
           <div className="student360-last-meeting-body">
             <strong>
-              {new Date(last_meeting.date).toLocaleDateString('tr-TR', {
+              {new Date(String(lastMeetingDate)).toLocaleDateString('tr-TR', {
                 day: 'numeric',
                 month: 'long',
                 year: 'numeric',
               })}
             </strong>
-            {last_meeting.konu ? <span> — {last_meeting.konu}</span> : null}
+            {lastMeetingKonu ? <span> — {lastMeetingKonu}</span> : null}
           </div>
           {onNavigateTab && (
             <button
@@ -136,30 +202,54 @@ export default function GenelBakisTab({ profile, onNavigateTab }: GenelBakisTabP
         </div>
       )}
 
-      {overview.length > 0 ? (
-        <section className="student360-overview-section">
-          <h3 className="coach-section-title">Özet</h3>
-          <div className="coach-overview-grid">
-            {overview.map((card) => (
-              <OverviewCard
-                key={card.key}
-                card={card}
-                onClick={
-                  card.href || TAB_FROM_KEY[card.key]
-                    ? () => handleCardClick(card)
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-        </section>
-      ) : (
-        <div className="coach-empty-state">
-          <div className="coach-empty-icon">📊</div>
-          <h4>Genel bakış verisi henüz yok</h4>
-          <p>Özet kartlar veri geldikçe burada görünecek.</p>
+      <section className="student360-overview-section">
+        <h3 className="coach-section-title">Özet</h3>
+        <div className="coach-overview-grid">
+          {cards.map((card) => (
+            <OverviewCard
+              key={card.key}
+              card={card}
+              onClick={
+                card.tab && onNavigateTab ? () => onNavigateTab(card.tab!) : undefined
+              }
+            />
+          ))}
         </div>
+      </section>
+
+      {recentMeetings.length > 0 && (
+        <section className="student360-overview-section" style={{ marginTop: 20 }}>
+          <h3 className="coach-section-title">Son görüşmeler</h3>
+          <ul className="mesajlar-tab-list">
+            {recentMeetings.slice(0, 5).map((m, idx) => {
+              const d = m.gorusme_tarihi || m.tarih;
+              return (
+                <li key={m.id ?? idx} className="mesajlar-tab-item" style={{ cursor: 'default' }}>
+                  <div className="mesajlar-tab-item-top">
+                    <strong>{m.konu || 'Görüşme'}</strong>
+                    <span>
+                      {d
+                        ? new Date(String(d)).toLocaleDateString('tr-TR')
+                        : '—'}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {onNavigateTab && (
+            <button
+              type="button"
+              className="coach-link-btn"
+              style={{ marginTop: 8 }}
+              onClick={() => onNavigateTab('gorusmeler')}
+            >
+              Görüşme sekmesine git →
+            </button>
+          )}
+        </section>
       )}
+
     </div>
   );
 }

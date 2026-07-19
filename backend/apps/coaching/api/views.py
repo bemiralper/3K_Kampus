@@ -29,6 +29,7 @@ from apps.coaching.interfaces.sube_context import (
     filter_queryset_by_student_sube,
     mandatory_coaching_context,
 )
+from apps.coaching.services.coach_access import get_coach_profile, is_resource_admin
 from apps.personel.domain.models import PersonelGorevlendirme
 
 
@@ -130,6 +131,14 @@ class CoachViewSet(viewsets.ModelViewSet):
         if is_coach is not None:
             is_coach_bool = is_coach.lower() in ['true', '1', 'yes']
             queryset = queryset.filter(is_coach=is_coach_bool)
+
+        # Non-admin koç yalnızca kendi profilini okuyabilir
+        if not is_resource_admin(self.request.user):
+            cp = get_coach_profile(self.request.user)
+            if cp:
+                queryset = queryset.filter(pk=cp.pk)
+            else:
+                queryset = queryset.none()
         
         return queryset
     
@@ -149,19 +158,20 @@ class CoachViewSet(viewsets.ModelViewSet):
         )
 
         queryset = self.filter_queryset(self.get_queryset())
-        coach_ids_in_sube = CoachStudentAssignment.objects.filter(
-            end_date__isnull=True,
-            student__kurum_id=ctx['kurum_id'],
-            student__sube_id=ctx['sube_id'],
-        ).values_list('coach_id', flat=True)
-        personel_ids = PersonelGorevlendirme.objects.filter(
-            kurum_id=ctx['kurum_id'],
-            gorev_sube_id=ctx['sube_id'],
-            aktif_mi=True,
-        ).values_list('personel_id', flat=True)
-        queryset = queryset.filter(
-            Q(id__in=coach_ids_in_sube) | Q(teacher_id__in=personel_ids)
-        )
+        if is_resource_admin(request.user):
+            coach_ids_in_sube = CoachStudentAssignment.objects.filter(
+                end_date__isnull=True,
+                student__kurum_id=ctx['kurum_id'],
+                student__sube_id=ctx['sube_id'],
+            ).values_list('coach_id', flat=True)
+            personel_ids = PersonelGorevlendirme.objects.filter(
+                kurum_id=ctx['kurum_id'],
+                gorev_sube_id=ctx['sube_id'],
+                aktif_mi=True,
+            ).values_list('personel_id', flat=True)
+            queryset = queryset.filter(
+                Q(id__in=coach_ids_in_sube) | Q(teacher_id__in=personel_ids)
+            )
 
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -525,6 +535,14 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         if is_primary is not None:
             is_primary_bool = is_primary.lower() in ['true', '1', 'yes']
             queryset = queryset.filter(is_primary=is_primary_bool)
+
+        # Non-admin koç yalnızca kendi atamalarını okuyabilir
+        if not is_resource_admin(self.request.user):
+            cp = get_coach_profile(self.request.user)
+            if cp:
+                queryset = queryset.filter(coach=cp)
+            else:
+                queryset = queryset.none()
         
         return queryset
 

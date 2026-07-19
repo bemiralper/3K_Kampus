@@ -20,6 +20,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/profil": "Profilim",
   "/coach/profil/istatistikler": "İstatistiklerim",
   "/coach/odev/kontrol": "Ödev Kontrol",
+  "/coach/odev/ver": "Ödev Oluştur",
   "/coach/odev/kaynaklar": "Kaynak Kütüphanesi",
   "/coach/odev/kaynak-havuzu": "Kaynak Havuzu",
   "/coach/kutuphane": "Kütüphane",
@@ -27,6 +28,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/gorevler": "Görevler",
   "/coach/takvim": "Takvim",
   "/coach/mesajlar": "Mesajlar",
+  "/coach/toplu-gonder": "Toplu Gönder",
   "/coach/raporlar": "Raporlar",
 };
 

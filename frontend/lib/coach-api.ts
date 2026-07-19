@@ -135,6 +135,7 @@ export interface CoachStudentProfileStudent {
   veli_telefon?: string | null;
   veli_adi?: string | null;
   veli?: {
+    id?: number;
     ad?: string;
     telefon?: string;
     tel_link?: string | null;
@@ -145,7 +146,7 @@ export interface CoachStudentProfileStudent {
   kurum?: { id: number; ad: string } | null;
   sube?: { id: number; ad: string } | null;
   sinif?: { id: number; ad: string } | null;
-  sinif_seviyesi?: { id: number; ad: string; seviye?: number | null } | null;
+  sinif_seviyesi?: { id: number; ad: string } | null;
   egitim_yili?: { id: number; ad: string } | null;
   kayit_tarihi?: string;
   okul_no?: string | null;
@@ -203,10 +204,15 @@ export interface CoachOverviewCard {
 
 export interface CoachStudentQuickStats {
   overdue_homework?: number;
+  overdue_homework_count?: number;
+  overdue_manual_assignments?: number;
+  pending_manual_assignments?: number;
   pending_meetings?: number;
   last_exam_net?: number | null;
   last_exam_date?: string | null;
+  last_meeting_date?: string | null;
   program_completion?: number | null;
+  program_completion_percent?: number | null;
   total_meetings?: number;
   open_assignments?: number;
 }
@@ -228,8 +234,11 @@ export interface CoachStudentProfileData {
   last_meeting?: CoachLastMeeting | null;
 }
 
+/** İçerik paneli (URL ?tab=) */
 export type Student360TabId =
-  | 'genel'
+  | 'ozet'
+  | 'genel' // legacy alias → ozet
+  | 'bilgi'
   | 'odevler'
   | 'sinavlar'
   | 'gorusmeler'
@@ -239,7 +248,66 @@ export type Student360TabId =
   | 'veli'
   | 'belgeler';
 
+/** Üst gezinme: Özet + 3 modül grubu */
+export type Student360GroupId = 'ozet' | 'akademik' | 'iletisim' | 'kayit';
+
 export type Student360ActionId = 'gorusme-ekle' | 'odev-ver' | 'program' | 'risk';
+
+export const STUDENT360_GROUPS: {
+  id: Student360GroupId;
+  label: string;
+  shortLabel: string;
+  panels: Exclude<Student360TabId, 'genel'>[];
+}[] = [
+  { id: 'ozet', label: 'Özet', shortLabel: 'Özet', panels: ['ozet'] },
+  {
+    id: 'akademik',
+    label: 'Akademik',
+    shortLabel: 'Akademik',
+    panels: ['odevler', 'sinavlar', 'program'],
+  },
+  {
+    id: 'iletisim',
+    label: 'İletişim',
+    shortLabel: 'İletişim',
+    panels: ['gorusmeler', 'mesajlar', 'veli'],
+  },
+  {
+    id: 'kayit',
+    label: 'Kayıt',
+    shortLabel: 'Kayıt',
+    panels: ['bilgi', 'kutuphane', 'belgeler'],
+  },
+];
+
+export const STUDENT360_PANEL_LABELS: Record<Exclude<Student360TabId, 'genel'>, string> = {
+  ozet: 'Özet',
+  bilgi: 'Profil',
+  odevler: 'Ödevler',
+  sinavlar: 'Sınavlar',
+  gorusmeler: 'Görüşme',
+  mesajlar: 'Mesajlar',
+  program: 'Program',
+  kutuphane: 'Kütüphane',
+  veli: 'Veli',
+  belgeler: 'Belgeler',
+};
+
+export function normalizeStudent360Tab(tab: string | null | undefined): Exclude<Student360TabId, 'genel'> {
+  if (!tab) return 'ozet';
+  if (tab === 'genel') return 'ozet';
+  const known = STUDENT360_GROUPS.flatMap((g) => g.panels) as string[];
+  if (known.includes(tab)) return tab as Exclude<Student360TabId, 'genel'>;
+  return 'ozet';
+}
+
+export function groupForStudent360Tab(tab: Student360TabId): Student360GroupId {
+  const normalized = normalizeStudent360Tab(tab);
+  for (const g of STUDENT360_GROUPS) {
+    if (g.panels.includes(normalized)) return g.id;
+  }
+  return 'ozet';
+}
 
 function normalizeProfilePayload(raw: unknown): CoachStudentProfileData | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -283,8 +351,10 @@ export async function reportStudentRisk(
   return apiPost(`/api/coaching/students/${studentId}/risk-report/`, payload);
 }
 
+/** @deprecated Yatay 10-pill menü kaldırıldı — STUDENT360_GROUPS kullanın */
 export const STUDENT360_TABS: { id: Student360TabId; label: string; icon: string }[] = [
-  { id: 'genel', label: 'Genel', icon: '📊' },
+  { id: 'ozet', label: 'Özet', icon: '📊' },
+  { id: 'bilgi', label: 'Profil', icon: '🪪' },
   { id: 'odevler', label: 'Ödevler', icon: '📝' },
   { id: 'sinavlar', label: 'Sınavlar', icon: '🎯' },
   { id: 'gorusmeler', label: 'Görüşme', icon: '💬' },

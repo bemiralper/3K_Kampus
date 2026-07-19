@@ -313,6 +313,11 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             gate = assert_coaching_student_sube_access(request, student.kurum_id, student.sube_id)
             if gate:
                 return gate
+            if not user_can_access_student(request.user, student.id):
+                return Response({
+                    'success': False,
+                    'error': 'Bu öğrenciye erişim yetkiniz yok.',
+                }, status=status.HTTP_403_FORBIDDEN)
         assignment = serializer.save()
         
         # Detay serializer ile dön

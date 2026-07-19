@@ -273,9 +273,12 @@ def _get_active_kayit_detail(student_id, request):
     qs = OgrenciKayit.objects.filter(
         ogrenci_id=student_id,
         aktif_mi=True,
-    ).select_related('sinif', 'sinif__sinif_seviyesi', 'egitim_yili')
+    ).select_related('sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili')
     if egitim_yili_id:
-        qs = qs.filter(egitim_yili_id=egitim_yili_id)
+        kayit = qs.filter(egitim_yili_id=egitim_yili_id).order_by('-id').first()
+        if kayit:
+            return kayit
+    # Seçili yılda kayıt yoksa en güncel aktif kayıttan kimlik alanlarını doldur
     return qs.order_by('-egitim_yili_id', '-id').first()
 
 
@@ -297,13 +300,15 @@ def _build_coach_student_identity(student, kayit, veli_contact):
                 'id': kayit.sinif.id,
                 'ad': kayit.sinif.ad,
             }
-            if kayit.sinif.sinif_seviyesi:
-                seviye = kayit.sinif.sinif_seviyesi
-                sinif_seviyesi_bilgi = {
-                    'id': seviye.id,
-                    'ad': seviye.ad,
-                    'seviye': getattr(seviye, 'seviye', None),
-                }
+        # Admin ogrenci_api ile aynı: kayıt FK veya sınıf.sinif_seviyesi (ad örn. "11. Sınıf")
+        seviye_obj = kayit.sinif_seviyesi or (
+            kayit.sinif.sinif_seviyesi if kayit.sinif else None
+        )
+        if seviye_obj:
+            sinif_seviyesi_bilgi = {
+                'id': seviye_obj.id,
+                'ad': seviye_obj.ad,
+            }
         if kayit.egitim_yili:
             egitim_yili_bilgi = {
                 'id': kayit.egitim_yili.id,
@@ -546,6 +551,14 @@ def build_coach_student_profile(user, request, student_id):
 
     veli_contact = _veli_contact(student_id)
 
+    hedef = _resolve_hedef(student_id)
+    total_meeting_count = GorusmeKaydi.objects.filter(ogrenci_id=student_id).count()
+    coach_name = (
+        f'{primary_assignment.coach.teacher.ad} {primary_assignment.coach.teacher.soyad}'
+        if primary_assignment and primary_assignment.coach and primary_assignment.coach.teacher
+        else None
+    )
+
     return {
         'student': _build_coach_student_identity(student, kayit, veli_contact),
         'coach_context': {
@@ -553,21 +566,19 @@ def build_coach_student_profile(user, request, student_id):
             'is_coach': coach_profile is not None,
             'coach_profile_id': coach_profile.id if coach_profile else None,
             'is_primary_coach': is_my_primary,
-            'primary_coach_name': (
-                f'{primary_assignment.coach.teacher.ad} {primary_assignment.coach.teacher.soyad}'
-                if primary_assignment and primary_assignment.coach and primary_assignment.coach.teacher
-                else None
-            ),
+            'coach_name': coach_name,
+            'primary_coach_name': coach_name,
+            'hedef': (hedef or {}).get('text') if isinstance(hedef, dict) else None,
             'assignment_start_date': (
                 primary_assignment.start_date.isoformat()
                 if primary_assignment and primary_assignment.start_date else None
             ),
             'can_edit_all_meetings': is_resource_admin(user),
-            'total_meeting_count': GorusmeKaydi.objects.filter(ogrenci_id=student_id).count(),
+            'total_meeting_count': total_meeting_count,
         },
         'risk': risk_data,
         'overview': {
-            'hedef': _resolve_hedef(student_id),
+            'hedef': hedef,
             'recent_meetings': meeting_rows,
             'current_week_program': current_program,
             'exam_summary': exam_summary,
@@ -575,12 +586,22 @@ def build_coach_student_profile(user, request, student_id):
         },
         'quick_stats': {
             'overdue_homework_count': overdue_total,
+            'overdue_homework': overdue_total,
             'last_meeting_date': last_meeting.isoformat() if last_meeting else None,
             'program_completion_percent': (
                 current_program['completion_percent'] if current_program else None
             ),
             'pending_manual_assignments': manual_stats.get('pending', 0),
             'overdue_manual_assignments': manual_stats.get('overdue', 0),
+            'total_meetings': total_meeting_count,
             **exam_summary,
         },
+        'last_meeting': (
+            {
+                'date': last_meeting.isoformat(),
+                'konu': meeting_rows[0]['konu'] if meeting_rows else None,
+            }
+            if last_meeting
+            else None
+        ),
     }

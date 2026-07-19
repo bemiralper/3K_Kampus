@@ -14,9 +14,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.permissions import IsAuthenticated
 
 from django.utils import timezone
 from django.db.models import Count, Avg, Q
+
+from apps.coaching.services.coach_access import is_resource_admin, user_can_access_student
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +30,36 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
         return
 
 
+def _deny_if_not_admin(request):
+    if not is_resource_admin(request.user):
+        return Response({
+            'success': False,
+            'error': 'Bu işlem için yönetici yetkisi gerekli.',
+        }, status=status.HTTP_403_FORBIDDEN)
+    return None
+
+
+def _deny_if_no_student_access(request, student_id):
+    if not user_can_access_student(request.user, student_id):
+        return Response({
+            'success': False,
+            'error': 'Bu öğrenciye erişim yetkiniz yok.',
+        }, status=status.HTTP_403_FORBIDDEN)
+    return None
+
+
 class PredictiveDashboardView(APIView):
     """
     GET /api/coaching/predictive/dashboard/
     Predictive analytics dashboard verileri
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        denied = _deny_if_not_admin(request)
+        if denied:
+            return denied
         try:
             from apps.coaching.predictive.models import PredictiveCache, StudentFeatureSnapshot
             from apps.coaching.predictive.features.student_features import StudentFeatureExtractor
@@ -164,10 +189,14 @@ class StudentScoresView(APIView):
     Öğrenci skorları
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, student_id):
+        denied = _deny_if_no_student_access(request, student_id)
+        if denied:
+            return denied
         try:
-            from apps.ogrenci.models import Ogrenci
+            from apps.ogrenci.domain.models import Ogrenci
             from apps.coaching.predictive.models import PredictiveCache, StudentFeatureSnapshot
             from apps.coaching.models import CoachStudentAssignment
             
@@ -258,10 +287,14 @@ class StudentWeeklyPlanView(APIView):
     Öğrenci haftalık plan önerisi
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, student_id):
+        denied = _deny_if_no_student_access(request, student_id)
+        if denied:
+            return denied
         try:
-            from apps.ogrenci.models import Ogrenci
+            from apps.ogrenci.domain.models import Ogrenci
             from apps.coaching.predictive.models import PredictiveCache
             from apps.coaching.models import CoachStudentAssignment
             from apps.coaching.predictive.features.student_features import StudentFeatureExtractor
@@ -328,10 +361,14 @@ class CoachMatchView(APIView):
     Öğrenci için koç eşleştirme önerileri
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, student_id):
+        denied = _deny_if_no_student_access(request, student_id)
+        if denied:
+            return denied
         try:
-            from apps.ogrenci.models import Ogrenci
+            from apps.ogrenci.domain.models import Ogrenci
             from apps.coaching.predictive.models import PredictiveCache
             from apps.coaching.predictive.scoring import CoachMatchScorer
             
@@ -404,8 +441,12 @@ class HighRiskView(APIView):
     Yüksek riskli öğrenciler listesi
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        denied = _deny_if_not_admin(request)
+        if denied:
+            return denied
         try:
             from apps.coaching.predictive.models import PredictiveCache
             
@@ -470,11 +511,12 @@ class RunPredictiveCycleView(APIView):
     Predictive döngüsünü manuel tetikle (admin only)
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         try:
-            # Sadece superuser çalıştırabilir
-            if not request.user.is_superuser:
+            # Sadece superuser / resource admin çalıştırabilir
+            if not (request.user.is_superuser or is_resource_admin(request.user)):
                 return Response({
                     'success': False,
                     'error': 'Bu işlem için yetkiniz yok'

@@ -7,23 +7,34 @@ from shared.permissions import user_has_any_permission, user_has_permission
 
 
 class CommunicationModulePermission(BasePermission):
-    """GET → communication.read/manage; yazma → communication.write/manage."""
+    """GET → communication.read/manage; yazma → communication.write/manage.
+
+    Aktif koç profili olan kullanıcılar, rolünde communication.* olmasa da
+    kendi öğrencileriyle mesajlaşabilir (kapsam coach_scope ile uygulanır).
+    """
 
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
         if request.method in SAFE_METHODS:
-            return user_has_any_permission(
+            if user_has_any_permission(
                 request.user,
                 'communication.read',
                 'communication.write',
                 'communication.manage',
-            )
-        return user_has_any_permission(
+            ):
+                return True
+            from apps.coaching.services.coach_access import get_coach_profile
+            return get_coach_profile(request.user) is not None
+
+        if user_has_any_permission(
             request.user,
             'communication.write',
             'communication.manage',
-        )
+        ):
+            return True
+        from apps.coaching.services.coach_access import get_coach_profile
+        return get_coach_profile(request.user) is not None
 
 
 class CommunicationConfigPermission(BasePermission):

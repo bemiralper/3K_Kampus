@@ -64,6 +64,27 @@ def _is_admin(user):
         return False
 
 
+def _student_access_denied(request, student_id):
+    if user_can_access_student(request.user, student_id):
+        return None
+    return Response(
+        {'error': 'Bu öğrenciye erişim yetkiniz yok.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+def _gorusme_sube_gate(request, gorusme):
+    ctx, err = mandatory_coaching_context(request)
+    if err:
+        return None, err
+    gate = assert_coaching_student_sube_access(
+        request, gorusme.ogrenci.kurum_id, gorusme.ogrenci.sube_id,
+    )
+    if gate:
+        return None, gate
+    return ctx, None
+
+
 # ═══════════════════════════════════════════════════════════════
 # GÖRÜŞME KAYDI — Liste + Oluşturma
 # ═══════════════════════════════════════════════════════════════
@@ -166,17 +187,6 @@ class GorusmeListCreateView(APIView):
 
         if coach_profile and not is_admin:
             data['koc_id'] = coach_profile.id
-            # Koç, sadece kendisine atanmış öğrenciyle görüşme oluşturabilir
-            assigned_student_ids = list(
-                CoachStudentAssignment.objects.filter(
-                    coach=coach_profile, end_date__isnull=True
-                ).values_list('student_id', flat=True)
-            )
-            if data['ogrenci_id'] not in assigned_student_ids:
-                return Response(
-                    {'error': 'Bu öğrenci size atanmamış. Sadece size atanmış öğrencilerle görüşme oluşturabilirsiniz.'},
-                    status=400,
-                )
 
         # Doğrulamalar
         from apps.ogrenci.domain.models import Ogrenci
@@ -188,6 +198,10 @@ class GorusmeListCreateView(APIView):
         gate = assert_coaching_student_sube_access(request, ogrenci.kurum_id, ogrenci.sube_id)
         if gate:
             return gate
+
+        denied = _student_access_denied(request, ogrenci.id)
+        if denied:
+            return denied
 
         try:
             koc = CoachProfile.objects.get(id=data['koc_id'])
@@ -292,30 +306,17 @@ class GorusmeDetailView(APIView):
         except GorusmeKaydi.DoesNotExist:
             return None
 
-    def _sube_gate(self, request, gorusme):
-        ctx, err = mandatory_coaching_context(request)
-        if err:
-            return None, err
-        gate = assert_coaching_student_sube_access(
-            request, gorusme.ogrenci.kurum_id, gorusme.ogrenci.sube_id,
-        )
-        if gate:
-            return None, gate
-        return ctx, None
-
     def get(self, request, pk):
         """Görüşme detayı"""
         gorusme = self._get_gorusme(pk)
         if not gorusme:
             return Response({'error': 'Görüşme bulunamadı.'}, status=404)
-        _, err = self._sube_gate(request, gorusme)
+        _, err = _gorusme_sube_gate(request, gorusme)
         if err:
             return err
-        if not user_can_access_student(request.user, gorusme.ogrenci_id):
-            return Response(
-                {'error': 'Bu öğrenciye erişim yetkiniz yok.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        denied = _student_access_denied(request, gorusme.ogrenci_id)
+        if denied:
+            return denied
         serializer = GorusmeKaydiDetailSerializer(gorusme)
         return Response(serializer.data)
 
@@ -325,9 +326,12 @@ class GorusmeDetailView(APIView):
         if not gorusme:
             return Response({'error': 'Görüşme bulunamadı.'}, status=404)
 
-        _, err = self._sube_gate(request, gorusme)
+        _, err = _gorusme_sube_gate(request, gorusme)
         if err:
             return err
+        denied = _student_access_denied(request, gorusme.ogrenci_id)
+        if denied:
+            return denied
 
         ser = GorusmeKaydiCreateSerializer(data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
@@ -355,9 +359,13 @@ class GorusmeDetailView(APIView):
         if 'ogrenci_id' in data:
             from apps.ogrenci.domain.models import Ogrenci
             try:
-                gorusme.ogrenci = Ogrenci.objects.get(id=data['ogrenci_id'])
+                new_ogrenci = Ogrenci.objects.get(id=data['ogrenci_id'])
             except Ogrenci.DoesNotExist:
                 return Response({'error': 'Öğrenci bulunamadı.'}, status=400)
+            denied_new = _student_access_denied(request, new_ogrenci.id)
+            if denied_new:
+                return denied_new
+            gorusme.ogrenci = new_ogrenci
 
         gorusme.save()
 
@@ -377,9 +385,12 @@ class GorusmeDetailView(APIView):
         if not gorusme:
             return Response({'error': 'Görüşme bulunamadı.'}, status=404)
 
-        _, err = self._sube_gate(request, gorusme)
+        _, err = _gorusme_sube_gate(request, gorusme)
         if err:
             return err
+        denied = _student_access_denied(request, gorusme.ogrenci_id)
+        if denied:
+            return denied
 
         # ── Takvimden kaldır ──
         try:
@@ -405,9 +416,16 @@ class GorusmeDurumView(APIView):
     def post(self, request, pk):
         """Görüşme durumunu güncelle"""
         try:
-            gorusme = GorusmeKaydi.objects.get(id=pk)
+            gorusme = GorusmeKaydi.objects.select_related('ogrenci').get(id=pk)
         except GorusmeKaydi.DoesNotExist:
             return Response({'error': 'Görüşme bulunamadı.'}, status=404)
+
+        _, err = _gorusme_sube_gate(request, gorusme)
+        if err:
+            return err
+        denied = _student_access_denied(request, gorusme.ogrenci_id)
+        if denied:
+            return denied
 
         ser = GorusmeDurumGuncelleSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -434,15 +452,26 @@ class GorusmeAksiyonListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, gorusme_id):
+        try:
+            gorusme = GorusmeKaydi.objects.select_related('ogrenci').get(id=gorusme_id)
+        except GorusmeKaydi.DoesNotExist:
+            return Response({'error': 'Görüşme bulunamadı.'}, status=404)
+        denied = _student_access_denied(request, gorusme.ogrenci_id)
+        if denied:
+            return denied
         aksiyonlar = GorusmeAksiyon.objects.filter(gorusme_id=gorusme_id)
         serializer = GorusmeAksiyonSerializer(aksiyonlar, many=True)
         return Response(serializer.data)
 
     def post(self, request, gorusme_id):
         try:
-            gorusme = GorusmeKaydi.objects.get(id=gorusme_id)
+            gorusme = GorusmeKaydi.objects.select_related('ogrenci').get(id=gorusme_id)
         except GorusmeKaydi.DoesNotExist:
             return Response({'error': 'Görüşme bulunamadı.'}, status=404)
+
+        denied = _student_access_denied(request, gorusme.ogrenci_id)
+        if denied:
+            return denied
 
         ser = GorusmeAksiyonCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -467,9 +496,13 @@ class GorusmeAksiyonDetailView(APIView):
     def patch(self, request, pk):
         """Aksiyon güncelle (tamamla / düzenle)"""
         try:
-            aksiyon = GorusmeAksiyon.objects.get(id=pk)
+            aksiyon = GorusmeAksiyon.objects.select_related('gorusme').get(id=pk)
         except GorusmeAksiyon.DoesNotExist:
             return Response({'error': 'Aksiyon bulunamadı.'}, status=404)
+
+        denied = _student_access_denied(request, aksiyon.gorusme.ogrenci_id)
+        if denied:
+            return denied
 
         if 'tamamlandi' in request.data:
             aksiyon.tamamlandi = request.data['tamamlandi']
@@ -489,9 +522,12 @@ class GorusmeAksiyonDetailView(APIView):
 
     def delete(self, request, pk):
         try:
-            aksiyon = GorusmeAksiyon.objects.get(id=pk)
+            aksiyon = GorusmeAksiyon.objects.select_related('gorusme').get(id=pk)
         except GorusmeAksiyon.DoesNotExist:
             return Response({'error': 'Aksiyon bulunamadı.'}, status=404)
+        denied = _student_access_denied(request, aksiyon.gorusme.ogrenci_id)
+        if denied:
+            return denied
         aksiyon.delete()
         return Response({'detail': 'Aksiyon silindi.'}, status=204)
 
@@ -506,9 +542,13 @@ class GorusmeHatirlatmaListCreateView(APIView):
 
     def post(self, request, gorusme_id):
         try:
-            gorusme = GorusmeKaydi.objects.get(id=gorusme_id)
+            gorusme = GorusmeKaydi.objects.select_related('ogrenci').get(id=gorusme_id)
         except GorusmeKaydi.DoesNotExist:
             return Response({'error': 'Görüşme bulunamadı.'}, status=404)
+
+        denied = _student_access_denied(request, gorusme.ogrenci_id)
+        if denied:
+            return denied
 
         ser = GorusmeHatirlatmaCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -532,9 +572,12 @@ class GorusmeHatirlatmaDeleteView(APIView):
 
     def delete(self, request, pk):
         try:
-            h = GorusmeHatirlatma.objects.get(id=pk)
+            h = GorusmeHatirlatma.objects.select_related('gorusme').get(id=pk)
         except GorusmeHatirlatma.DoesNotExist:
             return Response({'error': 'Hatırlatma bulunamadı.'}, status=404)
+        denied = _student_access_denied(request, h.gorusme.ogrenci_id)
+        if denied:
+            return denied
         h.delete()
         return Response({'detail': 'Hatırlatma silindi.'}, status=204)
 

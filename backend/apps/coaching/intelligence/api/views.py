@@ -6,8 +6,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.permissions import IsAuthenticated
 
 from apps.coaching.models import CoachProfile, CoachStudentAssignment, CoachingEvent
+from apps.coaching.services.coach_access import is_resource_admin, user_can_access_student
 from apps.coaching.intelligence.services import (
     RiskEngine,
     EngagementEngine,
@@ -24,14 +26,36 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
         return
 
 
+def _deny_if_not_admin(request):
+    if not is_resource_admin(request.user):
+        return Response({
+            'success': False,
+            'error': 'Bu işlem için yönetici yetkisi gerekli.',
+        }, status=status.HTTP_403_FORBIDDEN)
+    return None
+
+
+def _deny_if_no_student_access(request, student_id):
+    if not user_can_access_student(request.user, student_id):
+        return Response({
+            'success': False,
+            'error': 'Bu öğrenciye erişim yetkiniz yok.',
+        }, status=status.HTTP_403_FORBIDDEN)
+    return None
+
+
 class IntelligenceDashboardView(APIView):
     """
     GET /api/coaching/intelligence/dashboard/
     Dashboard özet metrikleri
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        denied = _deny_if_not_admin(request)
+        if denied:
+            return denied
         try:
             metrics_service = CoachMetricsService()
             dashboard = metrics_service.get_dashboard_metrics()
@@ -90,8 +114,18 @@ class CoachMetricsView(APIView):
     Belirli koç için detaylı metrikler
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, coach_id):
+        from apps.coaching.services.coach_access import get_coach_profile
+        # Admin tüm koçları; koç yalnızca kendi metriklerini görür
+        if not is_resource_admin(request.user):
+            own = get_coach_profile(request.user)
+            if not own or own.id != int(coach_id):
+                return Response({
+                    'success': False,
+                    'error': 'Bu koç metriklerine erişim yetkiniz yok.',
+                }, status=status.HTTP_403_FORBIDDEN)
         try:
             try:
                 coach = CoachProfile.objects.get(id=coach_id)
@@ -216,10 +250,14 @@ class StudentTimelineView(APIView):
     Öğrenci coaching timeline'ı
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, student_id):
+        denied = _deny_if_no_student_access(request, student_id)
+        if denied:
+            return denied
         try:
-            from apps.ogrenci.models import Ogrenci
+            from apps.ogrenci.domain.models import Ogrenci
             
             try:
                 student = Ogrenci.objects.get(id=student_id)
@@ -314,8 +352,12 @@ class RiskListView(APIView):
     Tüm yüksek riskli öğrenciler
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        denied = _deny_if_not_admin(request)
+        if denied:
+            return denied
         try:
             coach_id = request.query_params.get('coach_id')
             limit = int(request.query_params.get('limit', 50))
@@ -364,11 +406,11 @@ class RunIntelligenceCycleView(APIView):
     Intelligence döngüsünü manuel tetikle (admin only)
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         try:
-            # Sadece superuser çalıştırabilir
-            if not request.user.is_superuser:
+            if not (request.user.is_superuser or is_resource_admin(request.user)):
                 return Response({
                     'success': False,
                     'error': 'Bu işlem için yetkiniz yok'

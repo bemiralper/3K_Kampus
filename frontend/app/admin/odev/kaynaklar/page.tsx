@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { useKaynakPath } from "@/components/kaynak/KaynakPathProvider";
 import { useResources } from "./hooks/useResources";
 import { BookList } from "./components/BookList";
 import { BookStructure } from "./components/BookStructure";
@@ -25,7 +24,6 @@ function getBookTypeBadgeClass(renk?: string): string {
 }
 
 export default function KaynaklarPage() {
-  const { isCoachMode } = useKaynakPath();
   const r = useResources();
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -47,25 +45,21 @@ export default function KaynaklarPage() {
         <div className="kk-hero-inner">
           <div>
             <h1>Kaynak Kütüphanesi</h1>
-            <p>{isCoachMode ? "Şube kaynak kataloğunu görüntüleyin" : "Şube bazlı kitap, ünite, konu ve içerik yönetimi"}</p>
+            <p>Şube bazlı kitap, ünite, konu ve içerik yönetimi</p>
           </div>
           <div className="kk-hero-actions">
             <button type="button" className="kk-btn kk-btn-ghost" onClick={() => setExportOpen(true)}>
               Dışa Aktar
             </button>
-            {!isCoachMode && (
-              <>
-                <button type="button" className="kk-btn kk-btn-ghost" onClick={() => setBulkImportOpen(true)}>
-                  Excel Yükle
-                </button>
-                <button type="button" className="kk-btn kk-btn-ghost" onClick={() => r.setBookTypeModalOpen(true)}>
-                  Kitap Türleri
-                </button>
-                <button type="button" className="kk-btn kk-btn-primary" onClick={() => r.openBookDrawer("create")}>
-                  + Yeni Kitap
-                </button>
-              </>
-            )}
+            <button type="button" className="kk-btn kk-btn-ghost" onClick={() => setBulkImportOpen(true)}>
+              Excel Yükle
+            </button>
+            <button type="button" className="kk-btn kk-btn-ghost" onClick={() => r.setBookTypeModalOpen(true)}>
+              Kitap Türleri
+            </button>
+            <button type="button" className="kk-btn kk-btn-primary" onClick={() => r.openBookDrawer("create")}>
+              + Yeni Kitap
+            </button>
           </div>
         </div>
 
@@ -167,13 +161,11 @@ export default function KaynaklarPage() {
               reorderTopics={r.reorderTopics}
               reorderContents={r.reorderContents}
               getBookTypeBadgeClass={getBookTypeBadgeClass}
-              readOnly={isCoachMode}
             />
           )}
         </div>
       )}
 
-      {!isCoachMode && (
       <ResourceDrawer
         open={r.drawerOpen}
         onClose={() => r.setDrawerOpen(false)}
@@ -197,9 +189,7 @@ export default function KaynaklarPage() {
         onDeleteKapak={r.handleDeleteKapak}
         onPendingKapakChange={r.setPendingKapakFile}
       />
-      )}
 
-      {!isCoachMode && (
       <BookTypeModal
         open={r.bookTypeModalOpen}
         onClose={() => r.setBookTypeModalOpen(false)}
@@ -212,10 +202,7 @@ export default function KaynaklarPage() {
         onDelete={r.deleteBookType}
         onReset={r.resetBookTypeForm}
       />
-      )}
 
-      {!isCoachMode && (
-      <>
       <BulkTestModal
         open={r.bulkTestOpen}
         onClose={() => r.setBulkTestOpen(false)}
@@ -279,16 +266,12 @@ export default function KaynaklarPage() {
         loading={r.duplicateLoading}
         onSubmit={r.handleDuplicateBook}
       />
-      </>
-      )}
 
-      {!isCoachMode && (
-        <TopluKitapEkleModal
-          open={bulkImportOpen}
-          onClose={() => setBulkImportOpen(false)}
-          onComplete={() => r.fetchBooks()}
-        />
-      )}
+      <TopluKitapEkleModal
+        open={bulkImportOpen}
+        onClose={() => setBulkImportOpen(false)}
+        onComplete={() => r.fetchBooks()}
+      />
 
       <KaynakExportModal
         open={exportOpen}

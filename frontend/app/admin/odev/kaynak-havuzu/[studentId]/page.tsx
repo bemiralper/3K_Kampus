@@ -154,7 +154,7 @@ export default function StudentResourceDetailPage() {
         setEditModalOpen(false);
         fetchData();
       } else {
-        alert("Güncelleme hatası");
+        alert(result.error || result.message || "Güncelleme hatası");
       }
     } catch {
       alert("Güncelleme hatası");
@@ -169,9 +169,12 @@ export default function StudentResourceDetailPage() {
       const result = await deleteStudentResourceAssignment(resourceId);
       if (result.success) {
         fetchData();
+      } else {
+        alert(result.error || result.message || "Silme işlemi başarısız");
       }
     } catch (error) {
       console.error("Delete error:", error);
+      alert("Silme işlemi başarısız");
     }
   };
 
@@ -331,9 +334,12 @@ export default function StudentResourceDetailPage() {
             </p>
           </div>
         </div>
-        {!isCoachMode && (
         <Link
-          href={`/admin/odev/ver?student=${studentId}`}
+          href={
+            isCoachMode
+              ? `/coach/odev/ver?student=${studentId}&locked=1&return=${encodeURIComponent(`/coach/odev/kaynak-havuzu/${studentId}`)}`
+              : `/admin/odev/ver?student=${studentId}`
+          }
           style={{
             padding: "12px 24px",
             background: "linear-gradient(135deg, #667eea, #764ba2)",
@@ -354,7 +360,6 @@ export default function StudentResourceDetailPage() {
         >
           📝 Bu Öğrenciye Ödev Ver
         </Link>
-        )}
         </div>
       </div>
 

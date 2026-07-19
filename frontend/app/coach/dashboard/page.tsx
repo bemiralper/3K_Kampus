@@ -1,26 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { fetchKontrolBadge } from "@/lib/resources-api";
 import { fetchGorevDashboardOzet, type GorevDashboardOzet } from "@/lib/gorev-api";
+import { fetchCoachStudents, type CoachPortalStudent } from "@/lib/coach-api";
+import { pruneCoachPrefsToStudentIds, type CoachRecentVisit } from "@/lib/coach-students-prefs";
 
-const PLACEHOLDER_ITEMS = [
-  { label: "Riskli öğrenci kaydı yok", tone: "muted" },
-  { label: "Takip edilecek risk öğrencisi bulunmuyor", tone: "muted" },
-];
+function greetingFor(name?: string | null): string {
+  const hour = new Date().getHours();
+  const part =
+    hour < 12 ? "Günaydın" : hour < 18 ? "İyi günler" : "İyi akşamlar";
+  return name ? `${part}, ${name}` : part;
+}
 
 export default function CoachDashboardPage() {
   const { user } = useAuth();
-  const greeting = user?.first_name ? `Günaydın, ${user.first_name}` : "Bugün";
+  const greeting = greetingFor(user?.first_name);
   const [overdueCount, setOverdueCount] = useState(0);
   const [gorevOzet, setGorevOzet] = useState<GorevDashboardOzet | null>(null);
+  const [students, setStudents] = useState<CoachPortalStudent[]>([]);
+  const [recentVisits, setRecentVisits] = useState<CoachRecentVisit[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const loadBadge = useCallback(async () => {
-    const [kontrolRes, gorevRes] = await Promise.all([
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [kontrolRes, gorevRes, studentsRes] = await Promise.all([
       fetchKontrolBadge(),
       fetchGorevDashboardOzet(),
+      fetchCoachStudents(),
     ]);
     if (kontrolRes.success && kontrolRes.data) {
       setOverdueCount(kontrolRes.data.overdue ?? 0);
@@ -28,11 +37,50 @@ export default function CoachDashboardPage() {
     if (gorevRes.success && gorevRes.data) {
       setGorevOzet(gorevRes.data);
     }
-  }, []);
+    const nextStudents =
+      studentsRes.success && studentsRes.data ? studentsRes.data : [];
+    setStudents(nextStudents);
+    if (user?.id) {
+      // Eski atamalardan kalan ziyaret geçmişini (localStorage) temizle
+      const { recent } = pruneCoachPrefsToStudentIds(
+        user.id,
+        nextStudents.map((s) => s.id)
+      );
+      setRecentVisits(recent);
+    }
+    setLoading(false);
+  }, [user?.id]);
 
   useEffect(() => {
-    loadBadge();
-  }, [loadBadge]);
+    load();
+  }, [load]);
+
+  const riskStudents = useMemo(
+    () =>
+      students
+        .filter((s) => s.risk_seviyesi === "high" || s.risk_seviyesi === "medium")
+        .sort((a, b) => (b.risk_score ?? 0) - (a.risk_score ?? 0))
+        .slice(0, 5),
+    [students]
+  );
+
+  const meetingTodayStudents = useMemo(
+    () => students.filter((s) => (s.meeting_today_count ?? 0) > 0).slice(0, 5),
+    [students]
+  );
+
+  const meetingTodayCount = useMemo(
+    () =>
+      students.reduce((sum, s) => sum + (s.meeting_today_count ?? 0), 0) ||
+      (gorevOzet?.tip_sayaclari?.OGRENCI_GORUSME ?? 0) +
+        (gorevOzet?.tip_sayaclari?.HAFTALIK_GORUSME ?? 0),
+    [students, gorevOzet]
+  );
+
+  const needsMeetingCount = useMemo(
+    () => students.filter((s) => s.needs_meeting).length,
+    [students]
+  );
 
   return (
     <div>
@@ -51,13 +99,10 @@ export default function CoachDashboardPage() {
             </div>
             <div className="coach-hero-stat-label">Geciken görev</div>
           </Link>
-          <div className="coach-hero-stat">
-            <div className="coach-hero-stat-value">
-              {(gorevOzet?.tip_sayaclari?.OGRENCI_GORUSME ?? 0) +
-                (gorevOzet?.tip_sayaclari?.HAFTALIK_GORUSME ?? 0)}
-            </div>
+          <Link href="/coach/gorusmeler" className="coach-hero-stat" style={{ textDecoration: "none", color: "inherit" }}>
+            <div className="coach-hero-stat-value">{meetingTodayCount}</div>
             <div className="coach-hero-stat-label">Bugün görüşme</div>
-          </div>
+          </Link>
         </div>
       </section>
 
@@ -66,26 +111,37 @@ export default function CoachDashboardPage() {
         <p>Atanmış öğrencileriniz ve günlük takip alanları</p>
       </header>
 
+      {loading && <div className="coach-loading">Özet yükleniyor…</div>}
+
       <div className="coach-dashboard-grid">
         <section className="coach-widget">
           <div className="coach-widget-header">
             <h3 className="coach-widget-title">
               <span aria-hidden>⚠️</span> Riskli Öğrenciler
             </h3>
-            <Link href="/coach/ogrenciler" className="coach-link-btn">
+            <Link href="/coach/ogrenciler?filter=risk" className="coach-link-btn">
               Tümü →
             </Link>
           </div>
-          <ul className="coach-widget-list">
-            {PLACEHOLDER_ITEMS.map((item) => (
-              <li key={item.label}>
-                <div className="coach-placeholder-item">
-                  <span className="coach-placeholder-dot" />
-                  {item.label}
-                </div>
-              </li>
-            ))}
-          </ul>
+          {riskStudents.length === 0 ? (
+            <p className="coach-widget-empty">
+              {needsMeetingCount > 0
+                ? `${needsMeetingCount} öğrenci görüşme bekliyor (risk skoru düşük).`
+                : "Takip edilecek risk öğrencisi bulunmuyor."}
+            </p>
+          ) : (
+            <ul className="coach-widget-list">
+              {riskStudents.map((s) => (
+                <li key={s.id}>
+                  <Link href={`/coach/ogrenciler/${s.id}`} className="coach-placeholder-item" style={{ textDecoration: "none", color: "inherit" }}>
+                    <span className="coach-placeholder-dot" />
+                    {s.tam_ad}
+                    {s.risk_seviyesi ? ` · ${s.risk_seviyesi === "high" ? "Yüksek" : "Orta"}` : ""}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="coach-widget">
@@ -138,7 +194,24 @@ export default function CoachDashboardPage() {
               Görüşmeler →
             </Link>
           </div>
-          <p className="coach-widget-empty">Bugün planlanmış görüşme bulunmuyor.</p>
+          {meetingTodayStudents.length === 0 ? (
+            <p className="coach-widget-empty">
+              {meetingTodayCount > 0
+                ? `Bugün ${meetingTodayCount} görüşme planlanmış.`
+                : "Bugün planlanmış görüşme bulunmuyor."}
+            </p>
+          ) : (
+            <ul className="coach-widget-list">
+              {meetingTodayStudents.map((s) => (
+                <li key={s.id}>
+                  <Link href={`/coach/ogrenciler/${s.id}?tab=gorusmeler`} className="coach-placeholder-item" style={{ textDecoration: "none", color: "inherit" }}>
+                    <span className="coach-placeholder-dot" />
+                    {s.tam_ad} · {s.meeting_today_count} görüşme
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className="coach-widget">
@@ -147,14 +220,21 @@ export default function CoachDashboardPage() {
               <span aria-hidden>🕐</span> Son Ziyaret Edilenler
             </h3>
           </div>
-          <ul className="coach-widget-list">
-            <li>
-              <div className="coach-placeholder-item">
-                <span className="coach-placeholder-dot" />
-                Henüz ziyaret geçmişi yok
-              </div>
-            </li>
-          </ul>
+          {recentVisits.length === 0 ? (
+            <p className="coach-widget-empty">Henüz ziyaret geçmişi yok</p>
+          ) : (
+            <ul className="coach-widget-list">
+              {recentVisits.slice(0, 4).map((v) => (
+                <li key={v.id}>
+                  <Link href={`/coach/ogrenciler/${v.id}`} className="coach-placeholder-item" style={{ textDecoration: "none", color: "inherit" }}>
+                    <span className="coach-placeholder-dot" />
+                    {v.tam_ad}
+                    {v.sinif ? ` · ${v.sinif}` : ""}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </div>
     </div>

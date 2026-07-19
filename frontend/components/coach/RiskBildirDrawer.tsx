@@ -73,7 +73,7 @@ export default function RiskBildirDrawer({
   return (
     <CoachActionSheet
       title="Risk Bildir"
-      subtitle="CoachingEvent RISK kaydı oluşturulur."
+      subtitle="Yönetici ve müdüre bildirim gider; Risk Merkezi’nde takip edilir."
       studentName={studentName}
       onClose={onClose}
       footer={footer}

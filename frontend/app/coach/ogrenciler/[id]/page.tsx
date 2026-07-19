@@ -9,8 +9,17 @@ interface PageProps {
 function Student360Fallback() {
   return (
     <div className="student360-page">
-      <div className="student360-main">
+      <aside className="s360-context-rail" aria-label="Öğrenci bilgileri yükleniyor">
         <Student360HeaderSkeleton />
+        <div className="coach-skeleton" style={{ height: 188, borderRadius: 17 }} />
+      </aside>
+      <div className="student360-main">
+        <div className="student360-content">
+          <div className="s360-loading-grid">
+            <div className="coach-skeleton" style={{ height: 104, borderRadius: 16 }} />
+            <div className="coach-skeleton" style={{ height: 280, borderRadius: 18 }} />
+          </div>
+        </div>
       </div>
     </div>
   );

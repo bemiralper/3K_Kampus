@@ -6,7 +6,7 @@ export interface CoachRecentVisit {
   visited_at: string;
 }
 
-const MAX_RECENT = 8;
+const MAX_RECENT = 4;
 
 function key(userId: number, suffix: string): string {
   return `3k_coach_${suffix}_${userId}`;
@@ -63,6 +63,29 @@ export function recordRecentVisit(
 
 export function getRecentVisits(userId: number): CoachRecentVisit[] {
   return readJson<CoachRecentVisit[]>(key(userId, 'recent'), []);
+}
+
+/**
+ * Son ziyaret / sabitleme localStorage geçmişidir.
+ * Artık koça atanmayan (veya listede olmayan) öğrencileri temizler.
+ */
+export function pruneCoachPrefsToStudentIds(
+  userId: number,
+  allowedStudentIds: Iterable<number>
+): { recent: CoachRecentVisit[]; pinned: number[] } {
+  const allowed = new Set(
+    [...allowedStudentIds].map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+  );
+
+  const recent = getRecentVisits(userId)
+    .filter((v) => allowed.has(Number(v.id)))
+    .slice(0, MAX_RECENT);
+  const pinned = getPinnedStudentIds(userId).filter((id) => allowed.has(Number(id)));
+
+  writeJson(key(userId, 'recent'), recent);
+  writeJson(key(userId, 'pinned'), pinned);
+
+  return { recent, pinned };
 }
 
 const SNOOZE_MS = 24 * 60 * 60 * 1000;
