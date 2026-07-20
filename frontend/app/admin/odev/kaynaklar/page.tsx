@@ -159,6 +159,7 @@ export default function KaynaklarPage() {
               onBulkTopic={r.openBulkTopicModal}
               onAddContent={(topicId) => r.openContentDrawer("create", topicId)}
               onEditContent={(topicId, content) => r.openContentDrawer("edit", topicId, content)}
+              onDuplicateContent={r.handleDuplicateContent}
               onDeleteContent={r.handleDeleteContent}
               onBulkTest={r.openBulkTestModal}
               reorderUnits={r.reorderUnits}

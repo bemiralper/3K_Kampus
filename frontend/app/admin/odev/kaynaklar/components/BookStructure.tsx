@@ -32,6 +32,7 @@ interface BookStructureProps {
   onBulkTopic: (unitId: number, unitName: string) => void;
   onAddContent: (topicId: number) => void;
   onEditContent: (topicId: number, content: ResourceContent) => void;
+  onDuplicateContent: (topicId: number, content: ResourceContent) => void;
   onDeleteContent: (id: number) => void;
   onBulkTest: (topicId: number, topicName: string) => void;
   reorderUnits: (ids: number[]) => void;
@@ -57,7 +58,7 @@ export function BookStructure(props: BookStructureProps) {
     onEditBook, onDeleteBook, onDuplicateBook, onClose,
     onAddUnit, onEditUnit, onDuplicateUnit, onDeleteUnit, onBulkUnit, onImport,
     onAddTopic, onEditTopic, onDuplicateTopic, onDeleteTopic, onBulkTopic,
-    onAddContent, onEditContent, onDeleteContent, onBulkTest,
+    onAddContent, onEditContent, onDuplicateContent, onDeleteContent, onBulkTest,
     reorderUnits, reorderTopics, reorderContents,
     getBookTypeBadgeClass,
     readOnly = false,
@@ -321,6 +322,15 @@ export function BookStructure(props: BookStructureProps) {
                                             {content.page_start && content.page_end && <span style={{ fontSize: 11, color: "#64748b" }}>s.{content.page_start}-{content.page_end}</span>}
                                             {!readOnly && (
                                               <>
+                                                {content.content_type === "TEST_SET" && (
+                                                  <button
+                                                    onClick={() => onDuplicateContent(topic.id, content)}
+                                                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }}
+                                                    title="Testi çoğalt (numara +1)"
+                                                  >
+                                                    📋
+                                                  </button>
+                                                )}
                                                 <button onClick={() => onEditContent(topic.id, content)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }}>✏️</button>
                                                 <button onClick={() => onDeleteContent(content.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.6 }}>🗑️</button>
                                               </>

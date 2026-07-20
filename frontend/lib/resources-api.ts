@@ -553,6 +553,14 @@ export async function duplicateTopic(
   return apiPost(`/api/resources/topics/${id}/duplicate/`, data);
 }
 
+/** İçeriği (test) hemen altına çoğalt — ad numarası +1 */
+export async function duplicateContent(
+  id: number,
+  data?: { ad?: string }
+): Promise<ApiResponse<ResourceContent>> {
+  return apiPost(`/api/resources/contents/${id}/duplicate/`, data || {});
+}
+
 export type BookBulkImportResult = {
   toplam_satir: number;
   eklenen: number;

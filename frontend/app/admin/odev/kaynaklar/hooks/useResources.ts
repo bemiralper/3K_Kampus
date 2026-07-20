@@ -19,6 +19,7 @@ import {
   duplicateBook,
   duplicateUnit,
   duplicateTopic,
+  duplicateContent,
   uploadBookKapak,
   deleteBookKapak,
   fetchNextTestBatch,
@@ -698,6 +699,29 @@ export function useResources() {
     setStructureDupOpen(true);
   };
 
+  const handleDuplicateContent = async (topicId: number, content: ResourceContent) => {
+    if (!selectedBook) return;
+    try {
+      const result = await duplicateContent(content.id);
+      if (result.success) {
+        const unitId = bookStructure?.units?.find((u) =>
+          (u.topics || []).some((t) => t.id === topicId),
+        )?.id;
+        await fetchBookStructureData(selectedBook.id, {
+          ensureUnitId: unitId,
+          ensureTopicId: topicId,
+        });
+        showToast(`✅ ${result.message || "Çoğaltıldı"}`);
+      } else {
+        const err =
+          typeof result.error === "string" ? result.error : "Çoğaltma hatası";
+        showToast(`❌ ${err}`, "error");
+      }
+    } catch {
+      showToast("❌ Çoğaltma sırasında hata oluştu", "error");
+    }
+  };
+
   const handleStructureDuplicate = async () => {
     if (!structureDupKind || !structureDupId || !structureDupForm.ad.trim()) return;
     setStructureDupLoading(true);
@@ -1105,6 +1129,7 @@ export function useResources() {
     structureDupOpen, setStructureDupOpen, structureDupKind, structureDupSourceName, structureDupHint,
     structureDupForm, setStructureDupForm, structureDupLoading,
     openDuplicateUnitModal, openDuplicateTopicModal, handleStructureDuplicate,
+    handleDuplicateContent,
     // Delete
     handleDeleteBook, handleDeleteUnit, handleDeleteTopic, handleDeleteContent,
     // Reorder

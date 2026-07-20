@@ -134,6 +134,25 @@ def format_series_name(prefix: str, n: int) -> str:
     return f'{_normalize_prefix(prefix)}-{n}'
 
 
+def next_incremented_content_name(ad: str) -> str:
+    """
+    'Test-1' → 'Test-2', 'Test 7' → 'Test 8'.
+    Sonda numara yoksa '-2' ekler: 'Deneme' → 'Deneme-2'.
+    """
+    ad = (ad or '').strip()
+    if not ad:
+        return f'{NUMBERED_TEST_PREFIX}-2'
+
+    match = re.match(r'^(.*?)([\s\-]+)(\d+)\s*$', ad)
+    if match:
+        prefix, sep, n = match.group(1), match.group(2), int(match.group(3))
+        if prefix.strip():
+            return f'{prefix}{sep}{n + 1}'
+        return f'{NUMBERED_TEST_PREFIX}-{n + 1}'
+
+    return f'{ad}-2'
+
+
 def parse_series_index(ad: str, prefix: str) -> int | None:
     """'{prefix}-{n}' veya '{prefix} {n}' deseninden n çıkarır (prefix case-insensitive)."""
     ad = (ad or '').strip()

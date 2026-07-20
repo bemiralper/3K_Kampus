@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsAuthenticatedResourceReadOrAdminWrite
-from django.db.models import Prefetch, Count, Q, Max
+from django.db.models import Prefetch, Count, Q, Max, F
 from django.db import transaction
 
 from .models import BookType, ResourceBook, ResourceUnit, ResourceTopic, ResourceContent
@@ -19,7 +19,13 @@ from .scoping import (
     get_request_sube_id,
     resolve_book_for_structure,
 )
-from .utils import generate_book_kod, generate_topic_kod, generate_unit_kod, build_test_batch
+from .utils import (
+    generate_book_kod,
+    generate_topic_kod,
+    generate_unit_kod,
+    build_test_batch,
+    next_incremented_content_name,
+)
 from .serializers import (
     BookTypeSerializer,
     ResourceBookSerializer, ResourceBookDetailSerializer,
@@ -1121,6 +1127,61 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
             'success': True,
             'message': 'İçerik başarıyla silindi.'
         })
+
+    @action(detail=True, methods=['post'])
+    def duplicate(self, request, pk=None):
+        """
+        İçeriği (test vb.) hemen altına kopyala; ad numarasını +1 yap.
+        POST /api/resources/contents/{id}/duplicate/
+        Body opsiyonel: { "ad": "Test-2" }
+        """
+        with transaction.atomic():
+            source = (
+                self.get_queryset()
+                .select_for_update()
+                .filter(pk=pk)
+                .first()
+            )
+            if not source:
+                return Response(
+                    {'success': False, 'error': 'İçerik bulunamadı'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            new_ad = (request.data.get('ad') or '').strip()
+            if not new_ad:
+                new_ad = next_incremented_content_name(source.ad)
+
+            # Kaynakın altındaki tüm içerikleri bir sıra kaydır
+            ResourceContent.objects.filter(
+                topic_id=source.topic_id,
+                sira__gt=source.sira,
+            ).update(sira=F('sira') + 1)
+
+            new_content = ResourceContent.objects.create(
+                topic=source.topic,
+                ad=new_ad,
+                content_type=source.content_type,
+                sira=source.sira + 1,
+                question_count=source.question_count,
+                difficulty=source.difficulty,
+                page_start=source.page_start,
+                page_end=source.page_end,
+                estimated_minutes=source.estimated_minutes,
+                video_url=source.video_url,
+                video_duration=source.video_duration,
+                aciklama=source.aciklama,
+                aktif_mi=source.aktif_mi,
+            )
+
+        return Response(
+            {
+                'success': True,
+                'data': ResourceContentSerializer(new_content).data,
+                'message': f'Çoğaltıldı: {new_content.ad}',
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=['get'], url_path='next-test-batch')
     def next_test_batch(self, request):
