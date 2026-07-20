@@ -29,14 +29,14 @@ export default function GunSonuWhatsappModal({
   const [message, setMessage] = useState("");
   const [sentCount, setSentCount] = useState<number | null>(null);
 
-  const defaultMessage = `📊 *${meta?.baslik || "Gün Sonu Finans Raporu"}*
+  useEffect(() => {
+    setMessage(
+      `📊 *${meta?.baslik || "Gün Sonu Finans Raporu"}*
 Tarih: ${meta?.tarih || gun}
 Şube: ${meta?.sube || ""}
 
-Detaylı özet rapor ekte yer almaktadır.`;
-
-  useEffect(() => {
-    setMessage(defaultMessage);
+Detaylı özet rapor ekte yer almaktadır.`,
+    );
   }, [meta?.baslik, meta?.tarih, meta?.sube, gun]);
 
   const loadPreview = useCallback(async () => {

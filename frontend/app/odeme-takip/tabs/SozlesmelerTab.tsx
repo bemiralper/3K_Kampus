@@ -18,12 +18,20 @@ import {
 } from "../types";
 import {
   formatCurrency, formatDate, durumLabel, taksitDurumLabel, tahsilatTuruLabel,
-  DurumBadge, API_BASE, postHeaders, egitimTuruLabel, kalemTuruLabel, odemeTuruLabel,
+  DurumBadge, API_BASE, postHeaders, fetchWithTimeout, egitimTuruLabel, kalemTuruLabel, odemeTuruLabel,
   taksitPeriyoduLabel, tahsilatDurumLabel, gecmisIslemTuruText, islemYapanText,
 } from "../helpers";
 import Pagination, { paginateList } from "../components/Pagination";
 import { extractApiError } from "@/lib/api";
-import { parseNotlarJson } from "@/lib/sozlesme-notlar";
+import {
+  SozlesmeNot,
+  SozlesmeNotTip,
+  createEmptyNote,
+  parseNotlarJson,
+  serializeNotlarForApi,
+  formatNoteDate,
+} from "@/lib/sozlesme-notlar";
+import { useAuth } from "@/lib/contexts/AuthContext";
 import { buildTaksitOdemeYontemleri, isCekSenetYontem as isCekSenetYontemTip } from "@/lib/finans/paymentMethodUtils";
 
 // ─── Props ──────────────────────────────────────────────────
@@ -125,7 +133,9 @@ export default function SozlesmelerTab({
   const pagedSozlesmeler = paginateList(filteredSozlesmeler, currentPage, pageSize);
 
   useEffect(() => {
-    const allowed: SozlesmeSubTab[] = ["genel", "kalemler", "odeme-plani", "tahsilatlar", "belgeler"];
+    const allowed: SozlesmeSubTab[] = [
+      "genel", "kalemler", "odeme-plani", "tahsilatlar", "belgeler", "notlar",
+    ];
     if (initialSubTab && allowed.includes(initialSubTab)) {
       setSubTab(initialSubTab);
     } else {
@@ -430,11 +440,13 @@ export default function SozlesmelerTab({
   // ═══════════════════════════════════════════════════════════
 
   const s = selectedSozlesme;
+  const notlarCount = parseNotlarJson(s.notlar_json, s.notlar).length;
   const subTabs: { key: SozlesmeSubTab; label: string; icon: string }[] = [
     { key: "genel", label: "Genel Bilgiler", icon: "📋" },
     { key: "kalemler", label: `Kalemler (${s.kalemler?.length || 0})`, icon: "📦" },
     { key: "odeme-plani", label: `Ödeme Planı (${s.taksitler?.length || 0})`, icon: "📅" },
     { key: "tahsilatlar", label: `Tahsilatlar (${s.tahsilatlar?.length || 0})`, icon: "💰" },
+    { key: "notlar", label: `Notlar (${notlarCount})`, icon: "📝" },
     { key: "belgeler", label: "Belgeler", icon: "📄" },
   ];
 
@@ -587,6 +599,9 @@ export default function SozlesmelerTab({
                 s.ogrenci ? `${s.ogrenci.ad} ${s.ogrenci.soyad}`.trim() : undefined,
               )}
             />
+          )}
+          {subTab === "notlar" && (
+            <NotlarSubTab sozlesme={s} onSaved={onKalemChanged} />
           )}
           {subTab === "belgeler" && (
             <BelgelerSubTab
@@ -971,6 +986,322 @@ export default function SozlesmelerTab({
 // SUB-TAB COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 
+// ─── NOTLAR ─────────────────────────────────────────────────
+
+function NotlarSubTab({
+  sozlesme: s,
+  onSaved,
+}: {
+  sozlesme: Sozlesme;
+  onSaved: () => void;
+}) {
+  const { user } = useAuth();
+  const createdByName =
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim()
+    || user?.username
+    || undefined;
+
+  const [notes, setNotes] = useState<SozlesmeNot[]>(() =>
+    parseNotlarJson(s.notlar_json, s.notlar),
+  );
+  /** Düzenlenen mevcut not id'si; yeni ekleme için "__new__" */
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<SozlesmeNot | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNotes(parseNotlarJson(s.notlar_json, s.notlar));
+    setActiveId(null);
+    setDraft(null);
+    setError(null);
+  }, [s.id, s.notlar_json, s.notlar]);
+
+  const upcoming = notes
+    .filter((n) => n.soz_verilen_tarih)
+    .map((n) => n.soz_verilen_tarih as string)
+    .sort();
+
+  const persist = async (next: SozlesmeNot[]) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = serializeNotlarForApi(next, { forceKurumIci: true });
+      const res = await fetchWithTimeout(
+        `${API_BASE}/sozlesmeler/${s.id}/update/`,
+        {
+          method: "PUT",
+          headers: postHeaders(),
+          credentials: "include",
+          body: JSON.stringify(payload),
+        },
+        45_000,
+      );
+      if (!res.ok) {
+        let errBody: unknown = null;
+        try {
+          errBody = await res.json();
+        } catch {
+          /* ignore */
+        }
+        setError(extractApiError(errBody, res, "Not kaydedilemedi."));
+        return false;
+      }
+      setNotes(parseNotlarJson(payload.notlar_json));
+      setActiveId(null);
+      setDraft(null);
+      onSaved();
+      return true;
+    } catch {
+      setError("Not kaydedilemedi.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startAdd = () => {
+    const blank = createEmptyNote({
+      tip: "odeme_gorusmesi",
+      created_by_name: createdByName,
+    });
+    blank.veli_ile_paylas = false;
+    setActiveId("__new__");
+    setDraft(blank);
+    setError(null);
+  };
+
+  const startEdit = (note: SozlesmeNot) => {
+    setActiveId(note.id);
+    setDraft({ ...note, veli_ile_paylas: false });
+    setError(null);
+  };
+
+  const cancelForm = () => {
+    setActiveId(null);
+    setDraft(null);
+    setError(null);
+  };
+
+  const saveDraft = async () => {
+    if (!draft) return;
+    const text = draft.text.trim();
+    if (!text) {
+      setError("Not metni zorunludur.");
+      return;
+    }
+    const saved: SozlesmeNot = {
+      ...draft,
+      text,
+      veli_ile_paylas: false,
+      tip: draft.tip || "odeme_gorusmesi",
+    };
+    const next =
+      activeId === "__new__"
+        ? [...notes, saved]
+        : notes.map((n) => (n.id === saved.id ? saved : n));
+    await persist(next);
+  };
+
+  const deleteNote = async (id: string) => {
+    if (!window.confirm("Bu not silinsin mi?")) return;
+    setDeletingId(id);
+    try {
+      await persist(notes.filter((n) => n.id !== id));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const formOpen = !!draft && activeId != null;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <div>
+          <h4 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700 }}>Tahsilat & sözleşme notları</h4>
+          <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>
+            Her not ayrı düzenlenir / silinir. Tüm notlar yalnızca kurum içidir.
+          </p>
+          {upcoming[0] && (
+            <div
+              style={{
+                marginTop: 10,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 10px",
+                borderRadius: 8,
+                background: "#fff7ed",
+                border: "1px solid #fed7aa",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "#c2410c",
+              }}
+            >
+              En yakın söz: {formatNoteDate(upcoming[0])}
+            </div>
+          )}
+        </div>
+        {!formOpen && (
+          <button type="button" className="btn-modern btn-primary" onClick={startAdd} disabled={saving}>
+            + Not Ekle
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "#fef2f2", color: "#b91c1c", fontSize: 13 }}>
+          {error}
+        </div>
+      )}
+
+      {formOpen && draft && (
+        <div
+          style={{
+            marginBottom: 14,
+            padding: 14,
+            borderRadius: 10,
+            border: "1px solid #bfdbfe",
+            background: "#eff6ff",
+          }}
+        >
+          <strong style={{ display: "block", fontSize: 13, marginBottom: 10, color: "#1e40af" }}>
+            {activeId === "__new__" ? "Yeni not" : "Notu düzenle"}
+          </strong>
+          <textarea
+            value={draft.text}
+            onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+            rows={3}
+            placeholder="Örn: Veli ile görüşüldü, 20 Ağustos’ta EFT ile ödeyecekler…"
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 8,
+              border: "1px solid #e2e8f0",
+              fontSize: 14,
+              resize: "vertical",
+              marginBottom: 10,
+            }}
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+                Söz verilen ödeme tarihi
+              </label>
+              <input
+                type="date"
+                value={draft.soz_verilen_tarih || ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    soz_verilen_tarih: e.target.value || null,
+                    tip: draft.tip || "odeme_gorusmesi",
+                  })
+                }
+                style={{
+                  width: "100%",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  fontSize: 13,
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 4 }}>Tip</label>
+              <select
+                value={draft.tip || "odeme_gorusmesi"}
+                onChange={(e) => setDraft({ ...draft, tip: e.target.value as SozlesmeNotTip })}
+                style={{
+                  width: "100%",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  fontSize: 13,
+                }}
+              >
+                <option value="odeme_gorusmesi">Ödeme görüşmesi</option>
+                <option value="genel">Genel not</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 12 }}>Kurum içi — veli/PDF’de görünmez</div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" className="btn-modern btn-secondary" onClick={cancelForm} disabled={saving}>
+              Vazgeç
+            </button>
+            <button type="button" className="btn-modern btn-primary" onClick={saveDraft} disabled={saving}>
+              {saving ? "Kaydediliyor…" : "Kaydet"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {notes.length === 0 && !formOpen ? (
+        <p style={{ margin: 0, fontSize: 13, color: "#94a3b8" }}>
+          Henüz not yok. İstediğiniz kadar not ekleyebilirsiniz.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {notes.map((note) => {
+            const isEditingThis = activeId === note.id;
+            if (isEditingThis) return null;
+            return (
+              <div
+                key={note.id}
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  background: note.tip === "odeme_gorusmesi" ? "#fffbeb" : "#f8fafc",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                  <strong style={{ fontSize: 13, color: "#334155" }}>
+                    {note.tip === "odeme_gorusmesi" ? "Ödeme görüşmesi" : "Not"}
+                  </strong>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                    {[formatNoteDate(note.created_at), note.created_by_name].filter(Boolean).join(" · ")}
+                  </span>
+                </div>
+                <div style={{ fontSize: 13, color: "#0f172a", whiteSpace: "pre-wrap" }}>{note.text}</div>
+                {note.soz_verilen_tarih && (
+                  <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#c2410c" }}>
+                    Söz verilen ödeme: {formatNoteDate(note.soz_verilen_tarih)}
+                  </div>
+                )}
+                <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, color: "#94a3b8", marginRight: "auto" }}>Kurum içi</span>
+                  <button
+                    type="button"
+                    className="btn-modern btn-secondary"
+                    style={{ padding: "4px 10px", fontSize: 12 }}
+                    disabled={formOpen || saving || deletingId === note.id}
+                    onClick={() => startEdit(note)}
+                  >
+                    Düzenle
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-modern"
+                    style={{ padding: "4px 10px", fontSize: 12, color: "#dc2626", borderColor: "#fecaca" }}
+                    disabled={formOpen || saving || deletingId === note.id}
+                    onClick={() => deleteNote(note.id)}
+                  >
+                    {deletingId === note.id ? "Siliniyor…" : "Sil"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── GENEL BİLGİLER ─────────────────────────────────────────
 
 function GenelSubTab({ sozlesme: s }: { sozlesme: Sozlesme }) {
@@ -1021,32 +1352,12 @@ function GenelSubTab({ sozlesme: s }: { sozlesme: Sozlesme }) {
           {s.yetkili_personel && <InfoRow label="Yetkili Personel" value={s.yetkili_personel} />}
         </div>
 
-        {(s.notlar_json && s.notlar_json.length > 0) || s.notlar ? (
-          <div className="odeme-preview" style={{ marginTop: 16 }}>
-            <div className="odeme-preview-title">📝 Notlar</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {(s.notlar_json && s.notlar_json.length > 0
-                ? parseNotlarJson(s.notlar_json)
-                : parseNotlarJson(undefined, s.notlar)
-              ).map((note) => (
-                <div
-                  key={note.id}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    background: note.veli_ile_paylas ? "#f0fdf4" : "#f8fafc",
-                    border: `1px solid ${note.veli_ile_paylas ? "#bbf7d0" : "#e2e8f0"}`,
-                  }}
-                >
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>
-                    {note.veli_ile_paylas ? "Veli ile paylaşılan" : "Kurum içi"}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-color)", whiteSpace: "pre-wrap" }}>{note.text}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        <div className="odeme-preview" style={{ marginTop: 16 }}>
+          <div className="odeme-preview-title">📝 Notlar</div>
+          <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>
+            Kurum içi tahsilat notları için üstteki <strong>Notlar</strong> sekmesini kullanın.
+          </p>
+        </div>
       </div>
 
       {/* İndirimler */}

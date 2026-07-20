@@ -302,7 +302,7 @@ export default function SerbestOdemeModal({
         fieldErrors={{}}
       />
 
-      <FinansModalField label="Tutar (₺)" required>
+      <FinansModalField label="Tutar (₺) *">
         <input
           type="number"
           step="any"
@@ -314,7 +314,7 @@ export default function SerbestOdemeModal({
         />
       </FinansModalField>
 
-      <FinansModalField label="Ödeme Tarihi" required>
+      <FinansModalField label="Ödeme Tarihi *">
         <input
           type="date"
           style={finansModalInputStyle}

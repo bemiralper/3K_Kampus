@@ -501,42 +501,6 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
         ))}
       </Row>
 
-      {cekPortfoy && ((cekPortfoy.tahsil_bekleyen?.adet ?? 0) > 0 || (cekPortfoy.odeme_bekleyen?.adet ?? 0) > 0) && (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="Çek / Senet portföyü"
-          description={
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", justifyContent: "space-between" }}>
-              <span>
-                {modul === "gelir" ? (
-                  <>
-                    Tahsil bekleyen: <strong>{cekPortfoy.tahsil_bekleyen.adet}</strong>
-                    {" · "}
-                    {fmtTL(cekPortfoy.tahsil_bekleyen.tutar)}
-                  </>
-                ) : (
-                  <>
-                    Ödeme bekleyen (verilen): <strong>{cekPortfoy.odeme_bekleyen.adet}</strong>
-                    {" · "}
-                    {fmtTL(cekPortfoy.odeme_bekleyen.tutar)}
-                    {(cekPortfoy.tahsil_bekleyen?.adet ?? 0) > 0 && (
-                      <>
-                        {" · "}Alınan portföy: {cekPortfoy.tahsil_bekleyen.adet} / {fmtTL(cekPortfoy.tahsil_bekleyen.tutar)}
-                      </>
-                    )}
-                  </>
-                )}
-              </span>
-              <Link href={`${homeHref}/cek-senet-v2`}>
-                <Button size="small" type="primary">Çek/Senet’e git</Button>
-              </Link>
-            </div>
-          }
-        />
-      )}
-
       {/* En büyük kalemler */}
       {dashboard?.en_buyuk_kalemler?.length ? (
         <Card size="small" title={cfg.enBuyukBaslik} style={{ marginBottom: 16 }} styles={{ body: { padding: "8px 16px" } }}>
@@ -574,6 +538,31 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
                 { value: "card", icon: <AppstoreOutlined />, title: "Kart" },
               ]}
             />
+            {(() => {
+              const adet = modul === "gelir"
+                ? (cekPortfoy?.tahsil_bekleyen?.adet ?? 0)
+                : (cekPortfoy?.odeme_bekleyen?.adet ?? 0);
+              const tutar = modul === "gelir"
+                ? (cekPortfoy?.tahsil_bekleyen?.tutar ?? 0)
+                : (cekPortfoy?.odeme_bekleyen?.tutar ?? 0);
+              if (adet <= 0) return null;
+              return (
+                <Link href={`${homeHref}/cek-senet-v2`}>
+                  <Tag
+                    color="blue"
+                    style={{
+                      margin: 0,
+                      cursor: "pointer",
+                      padding: "4px 10px",
+                      fontSize: 12,
+                      lineHeight: "20px",
+                    }}
+                  >
+                    Çek/Senet · {adet} bekleyen · {fmtTL(tutar)}
+                  </Tag>
+                </Link>
+              );
+            })()}
           </Space>
           <Space wrap>
             <Button

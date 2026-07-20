@@ -50,7 +50,7 @@ export interface Sozlesme {
   ilk_odeme_tarihi?: string | null;
   taksit_periyodu?: string;
   notlar?: string;
-  notlar_json?: { id: string; text: string; veli_ile_paylas: boolean }[];
+  notlar_json?: import("@/lib/sozlesme-notlar").SozlesmeNot[];
   ogrenci_kayit_id?: number | null;
   egitim_yili_id?: number | null;
   kurum_id?: number | null;
@@ -185,7 +185,7 @@ export interface DashboardOzet {
 
 export type TabType = "sozlesmeler" | "tahsilatlar" | "raporlar";
 
-export type SozlesmeSubTab = "genel" | "kalemler" | "odeme-plani" | "tahsilatlar" | "belgeler";
+export type SozlesmeSubTab = "genel" | "kalemler" | "odeme-plani" | "tahsilatlar" | "belgeler" | "notlar";
 
 export interface TahsilatFormData {
   sozlesme_id: string;

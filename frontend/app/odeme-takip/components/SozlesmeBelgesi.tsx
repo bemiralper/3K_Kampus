@@ -66,7 +66,7 @@ interface SozlesmeData {
   ilk_odeme_tarihi: string | null;
   durum: string;
   notlar: string;
-  notlar_json?: { id: string; text: string; veli_ile_paylas: boolean }[];
+  notlar_json?: import("@/lib/sozlesme-notlar").SozlesmeNot[];
   kurum?: {
     ad: string;
     adres: string;
