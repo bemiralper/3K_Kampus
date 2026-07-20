@@ -856,6 +856,14 @@ export async function updateContent(id: number, data: Partial<ResourceContent>):
   return apiPut<ResourceContent>(`/api/resources/contents/${id}/`, data);
 }
 
+/** İçerik kısmi güncelle (ör. yalnızca soru sayısı) */
+export async function patchContent(
+  id: number,
+  data: Partial<ResourceContent>
+): Promise<ApiResponse<ResourceContent>> {
+  return apiPatch<ResourceContent>(`/api/resources/contents/${id}/`, data);
+}
+
 /**
  * İçerik sil
  */

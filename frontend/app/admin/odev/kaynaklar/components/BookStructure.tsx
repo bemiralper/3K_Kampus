@@ -1,6 +1,6 @@
 // ========== Book Structure Panel (Tree View) ==========
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ResourceBook, ResourceUnit, ResourceTopic, ResourceContent } from "../types";
 import { DragSortList, DragHandle } from "./DragSortList";
 import { StructureSkeleton } from "./Skeletons";
@@ -33,6 +33,7 @@ interface BookStructureProps {
   onAddContent: (topicId: number) => void;
   onEditContent: (topicId: number, content: ResourceContent) => void;
   onDuplicateContent: (topicId: number, content: ResourceContent) => void;
+  onUpdateQuestionCount: (contentId: number, questionCount: number) => Promise<boolean>;
   onDeleteContent: (id: number) => void;
   onBulkTest: (topicId: number, topicName: string) => void;
   reorderUnits: (ids: number[]) => void;
@@ -40,6 +41,111 @@ interface BookStructureProps {
   reorderContents: (ids: number[]) => void;
   getBookTypeBadgeClass: (renk?: string) => string;
   readOnly?: boolean;
+}
+
+function InlineQuestionCount({
+  contentId,
+  value,
+  readOnly,
+  onSave,
+}: {
+  contentId: number;
+  value: number | null;
+  readOnly?: boolean;
+  onSave: (contentId: number, questionCount: number) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    setDraft(value != null ? String(value) : "");
+    const t = window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [editing, value]);
+
+  const commit = async () => {
+    const n = parseInt(draft, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setEditing(false);
+      return;
+    }
+    if (n === value) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const ok = await onSave(contentId, n);
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+
+  if (readOnly) {
+    return value != null ? (
+      <span style={{ fontSize: 11, color: "#64748b" }}>{value} soru</span>
+    ) : null;
+  }
+
+  if (editing) {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <input
+          ref={inputRef}
+          type="number"
+          min={1}
+          value={draft}
+          disabled={saving}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => { void commit(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void commit();
+            }
+            if (e.key === "Escape") setEditing(false);
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          style={{
+            width: 56,
+            padding: "2px 6px",
+            fontSize: 12,
+            border: "1px solid #8b5cf6",
+            borderRadius: 6,
+            outline: "none",
+          }}
+        />
+        <span style={{ fontSize: 11, color: "#64748b" }}>soru</span>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setEditing(true);
+      }}
+      title="Çift tıkla: soru sayısını düzenle"
+      style={{
+        fontSize: 11,
+        color: value != null ? "#64748b" : "#94a3b8",
+        cursor: "text",
+        padding: "2px 6px",
+        borderRadius: 4,
+        userSelect: "none",
+        borderBottom: "1px dashed #cbd5e1",
+      }}
+    >
+      {value != null ? `${value} soru` : "soru sayısı"}
+    </span>
+  );
 }
 
 const CONTENT_TYPE_ICON: Record<string, string> = {
@@ -58,7 +164,7 @@ export function BookStructure(props: BookStructureProps) {
     onEditBook, onDeleteBook, onDuplicateBook, onClose,
     onAddUnit, onEditUnit, onDuplicateUnit, onDeleteUnit, onBulkUnit, onImport,
     onAddTopic, onEditTopic, onDuplicateTopic, onDeleteTopic, onBulkTopic,
-    onAddContent, onEditContent, onDuplicateContent, onDeleteContent, onBulkTest,
+    onAddContent, onEditContent, onDuplicateContent, onUpdateQuestionCount, onDeleteContent, onBulkTest,
     reorderUnits, reorderTopics, reorderContents,
     getBookTypeBadgeClass,
     readOnly = false,
@@ -66,6 +172,15 @@ export function BookStructure(props: BookStructureProps) {
 
   // Structure search
   const [structureSearch, setStructureSearch] = useState("");
+  const treeScrollRef = useRef<HTMLDivElement>(null);
+  const treeScrollTopRef = useRef(0);
+
+  // Yapı yenilenince panel scroll konumunu koru
+  useLayoutEffect(() => {
+    const el = treeScrollRef.current;
+    if (!el || loadingStructure) return;
+    el.scrollTop = treeScrollTopRef.current;
+  }, [bookStructure, loadingStructure]);
 
   const matchesSearch = (text: string) =>
     !structureSearch || text.toLowerCase().includes(structureSearch.toLowerCase());
@@ -174,7 +289,11 @@ export function BookStructure(props: BookStructureProps) {
       </div>
 
       {/* Tree Content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+      <div
+        ref={treeScrollRef}
+        onScroll={(e) => { treeScrollTopRef.current = e.currentTarget.scrollTop; }}
+        style={{ flex: 1, overflowY: "auto", padding: 20 }}
+      >
         {loadingStructure ? (
           <StructureSkeleton />
         ) : !sortedUnits.length ? (
@@ -318,7 +437,18 @@ export function BookStructure(props: BookStructureProps) {
                                             <span style={{ fontSize: 11, color: "#64748b" }}>({content.content_type_display})</span>
                                           </div>
                                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                            {content.question_count && <span style={{ fontSize: 11, color: "#64748b" }}>{content.question_count} soru</span>}
+                                            {content.content_type === "TEST_SET" ? (
+                                              <InlineQuestionCount
+                                                contentId={content.id}
+                                                value={content.question_count}
+                                                readOnly={readOnly}
+                                                onSave={onUpdateQuestionCount}
+                                              />
+                                            ) : (
+                                              content.question_count != null && content.question_count > 0 && (
+                                                <span style={{ fontSize: 11, color: "#64748b" }}>{content.question_count} soru</span>
+                                              )
+                                            )}
                                             {content.page_start && content.page_end && <span style={{ fontSize: 11, color: "#64748b" }}>s.{content.page_start}-{content.page_end}</span>}
                                             {!readOnly && (
                                               <>

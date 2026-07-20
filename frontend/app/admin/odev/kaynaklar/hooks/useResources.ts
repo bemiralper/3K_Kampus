@@ -31,6 +31,7 @@ import {
   deleteTopic,
   createContent,
   updateContent,
+  patchContent,
   deleteContent,
   reorderUnits,
   reorderTopics,
@@ -238,7 +239,10 @@ export function useResources() {
     },
   ) => {
     const reqId = ++structureRequestRef.current;
-    setLoadingStructure(true);
+    // İlk açılışta skeleton; yenilemede skeleton gösterme (scroll sıfırlanmasın)
+    const showLoading = opts?.resetExpand === true;
+    if (showLoading) setLoadingStructure(true);
+    const windowScrollY = typeof window !== "undefined" ? window.scrollY : 0;
     try {
       const result = await fetchBookStructure(bookId);
       if (reqId !== structureRequestRef.current) return;
@@ -281,7 +285,15 @@ export function useResources() {
       setBookStructure(null);
       showToast("❌ Kitap yapısı yüklenemedi", "error");
     } finally {
-      if (reqId === structureRequestRef.current) setLoadingStructure(false);
+      if (reqId === structureRequestRef.current) {
+        if (showLoading) setLoadingStructure(false);
+        // Drawer/modal kapanınca pencere kaymasını geri al
+        if (!showLoading && typeof window !== "undefined") {
+          requestAnimationFrame(() => {
+            window.scrollTo(window.scrollX, windowScrollY);
+          });
+        }
+      }
     }
   }, [showToast]);
 
@@ -722,6 +734,46 @@ export function useResources() {
     }
   };
 
+  const handleUpdateQuestionCount = async (contentId: number, questionCount: number) => {
+    const prev = bookStructure;
+    // Optimistic UI
+    setBookStructure((current) => {
+      if (!current?.units) return current;
+      return {
+        ...current,
+        units: current.units.map((u) => ({
+          ...u,
+          topics: (u.topics || []).map((t) => ({
+            ...t,
+            contents: (t.contents || []).map((c) =>
+              c.id === contentId ? { ...c, question_count: questionCount } : c,
+            ),
+          })),
+        })),
+      };
+    });
+    try {
+      const result = await patchContent(contentId, { question_count: questionCount });
+      if (result.success) {
+        showToast(`✅ Soru sayısı: ${questionCount}`);
+        return true;
+      }
+      setBookStructure(prev);
+      const err =
+        typeof result.error === "string"
+          ? result.error
+          : typeof result.error === "object" && result.error
+            ? JSON.stringify(result.error)
+            : "Güncellenemedi";
+      showToast(`❌ ${err}`, "error");
+      return false;
+    } catch {
+      setBookStructure(prev);
+      showToast("❌ Soru sayısı güncellenemedi", "error");
+      return false;
+    }
+  };
+
   const handleStructureDuplicate = async () => {
     if (!structureDupKind || !structureDupId || !structureDupForm.ad.trim()) return;
     setStructureDupLoading(true);
@@ -1130,6 +1182,7 @@ export function useResources() {
     structureDupForm, setStructureDupForm, structureDupLoading,
     openDuplicateUnitModal, openDuplicateTopicModal, handleStructureDuplicate,
     handleDuplicateContent,
+    handleUpdateQuestionCount,
     // Delete
     handleDeleteBook, handleDeleteUnit, handleDeleteTopic, handleDeleteContent,
     // Reorder

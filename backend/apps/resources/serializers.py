@@ -236,25 +236,43 @@ class ResourceContentWriteSerializer(serializers.ModelSerializer):
         ]
     
     def validate(self, data):
-        """İçerik tipine göre alan doğrulama"""
-        content_type = data.get('content_type')
-        
+        """İçerik tipine göre alan doğrulama (partial update'te instance alanlarını kullan)"""
+        instance = getattr(self, 'instance', None)
+        content_type = data.get(
+            'content_type',
+            getattr(instance, 'content_type', None),
+        )
+
         if content_type == 'TEST_SET':
-            if not data.get('question_count'):
+            question_count = data.get(
+                'question_count',
+                getattr(instance, 'question_count', None),
+            )
+            if not question_count:
                 raise serializers.ValidationError({
                     'question_count': 'Test seti için soru sayısı zorunludur.'
                 })
-        
+
         if content_type == 'PAGE_RANGE':
-            page_start = data.get('page_start')
-            page_end = data.get('page_end')
+            page_start = data.get(
+                'page_start',
+                getattr(instance, 'page_start', None),
+            )
+            page_end = data.get(
+                'page_end',
+                getattr(instance, 'page_end', None),
+            )
             if page_start and page_end and page_start > page_end:
                 raise serializers.ValidationError({
                     'page_end': 'Bitiş sayfası başlangıç sayfasından küçük olamaz.'
                 })
-        
+
         if content_type == 'VIDEO':
-            if not data.get('video_url'):
+            video_url = data.get(
+                'video_url',
+                getattr(instance, 'video_url', None),
+            )
+            if not video_url:
                 raise serializers.ValidationError({
                     'video_url': 'Video içeriği için URL zorunludur.'
                 })
