@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
 from .permissions import IsAuthenticatedResourceReadOrAdminWrite
-from django.db.models import Prefetch, Count, Q
+from django.db.models import Prefetch, Count, Q, Max
 from django.db import transaction
 
 from .models import BookType, ResourceBook, ResourceUnit, ResourceTopic, ResourceContent
@@ -721,6 +721,101 @@ class ResourceUnitViewSet(viewsets.ModelViewSet):
         )
         return Response({'success': True, 'data': {'kod': kod}})
 
+    @action(detail=True, methods=['post'])
+    def duplicate(self, request, pk=None):
+        """
+        Üniteyi tüm konuları ve içerikleriyle kopyala.
+        POST /api/resources/units/{id}/duplicate/
+        Body: { "ad": "...", "kod": "..." }  (kod opsiyonel)
+        """
+        source = self.get_queryset().prefetch_related(
+            Prefetch(
+                'topics',
+                queryset=ResourceTopic.objects.order_by('sira').prefetch_related(
+                    Prefetch(
+                        'contents',
+                        queryset=ResourceContent.objects.order_by('sira'),
+                    )
+                ),
+            )
+        ).filter(pk=pk).first()
+        if not source:
+            return Response(
+                {'success': False, 'error': 'Ünite bulunamadı'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_ad = (request.data.get('ad') or f'{source.ad} (Kopya)').strip()
+        if not new_ad:
+            return Response(
+                {'success': False, 'error': 'Ünite adı zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        new_kod = (request.data.get('kod') or '').strip() or generate_unit_kod(source.book)
+
+        if ResourceUnit.objects.filter(book=source.book, kod=new_kod).exists():
+            return Response(
+                {'success': False, 'error': f'Bu kitapta "{new_kod}" kodu zaten var.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        max_sira = (
+            ResourceUnit.objects.filter(book=source.book)
+            .aggregate(m=Max('sira'))
+            .get('m')
+            or 0
+        )
+
+        with transaction.atomic():
+            new_unit = ResourceUnit.objects.create(
+                book=source.book,
+                ad=new_ad,
+                kod=new_kod,
+                sira=max_sira + 1,
+                aciklama=source.aciklama,
+                aktif_mi=source.aktif_mi,
+            )
+            topic_count = 0
+            content_count = 0
+            for topic in source.topics.all():
+                new_topic = ResourceTopic.objects.create(
+                    unit=new_unit,
+                    ad=topic.ad,
+                    kod=topic.kod,
+                    sira=topic.sira,
+                    aciklama=topic.aciklama,
+                    aktif_mi=topic.aktif_mi,
+                )
+                topic_count += 1
+                for content in topic.contents.all():
+                    ResourceContent.objects.create(
+                        topic=new_topic,
+                        ad=content.ad,
+                        content_type=content.content_type,
+                        sira=content.sira,
+                        question_count=content.question_count,
+                        difficulty=content.difficulty,
+                        page_start=content.page_start,
+                        page_end=content.page_end,
+                        estimated_minutes=content.estimated_minutes,
+                        video_url=content.video_url,
+                        video_duration=content.video_duration,
+                        aciklama=content.aciklama,
+                        aktif_mi=content.aktif_mi,
+                    )
+                    content_count += 1
+
+        return Response(
+            {
+                'success': True,
+                'data': {'id': new_unit.id, 'ad': new_unit.ad, 'kod': new_unit.kod},
+                'message': (
+                    f'Ünite kopyalandı: {topic_count} konu, {content_count} içerik.'
+                ),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class ResourceTopicViewSet(viewsets.ModelViewSet):
     """
@@ -851,6 +946,83 @@ class ResourceTopicViewSet(viewsets.ModelViewSet):
             exclude_id=int(exclude_id) if exclude_id else None,
         )
         return Response({'success': True, 'data': {'kod': kod}})
+
+    @action(detail=True, methods=['post'])
+    def duplicate(self, request, pk=None):
+        """
+        Konuyu tüm içerikleriyle kopyala.
+        POST /api/resources/topics/{id}/duplicate/
+        Body: { "ad": "...", "kod": "..." }  (kod opsiyonel)
+        """
+        source = self.get_queryset().prefetch_related(
+            Prefetch(
+                'contents',
+                queryset=ResourceContent.objects.order_by('sira'),
+            )
+        ).filter(pk=pk).first()
+        if not source:
+            return Response(
+                {'success': False, 'error': 'Konu bulunamadı'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_ad = (request.data.get('ad') or f'{source.ad} (Kopya)').strip()
+        if not new_ad:
+            return Response(
+                {'success': False, 'error': 'Konu adı zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        new_kod = (request.data.get('kod') or '').strip() or generate_topic_kod(source.unit)
+
+        if ResourceTopic.objects.filter(unit=source.unit, kod=new_kod).exists():
+            return Response(
+                {'success': False, 'error': f'Bu ünitede "{new_kod}" kodu zaten var.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        max_sira = (
+            ResourceTopic.objects.filter(unit=source.unit)
+            .aggregate(m=Max('sira'))
+            .get('m')
+            or 0
+        )
+
+        with transaction.atomic():
+            new_topic = ResourceTopic.objects.create(
+                unit=source.unit,
+                ad=new_ad,
+                kod=new_kod,
+                sira=max_sira + 1,
+                aciklama=source.aciklama,
+                aktif_mi=source.aktif_mi,
+            )
+            content_count = 0
+            for content in source.contents.all():
+                ResourceContent.objects.create(
+                    topic=new_topic,
+                    ad=content.ad,
+                    content_type=content.content_type,
+                    sira=content.sira,
+                    question_count=content.question_count,
+                    difficulty=content.difficulty,
+                    page_start=content.page_start,
+                    page_end=content.page_end,
+                    estimated_minutes=content.estimated_minutes,
+                    video_url=content.video_url,
+                    video_duration=content.video_duration,
+                    aciklama=content.aciklama,
+                    aktif_mi=content.aktif_mi,
+                )
+                content_count += 1
+
+        return Response(
+            {
+                'success': True,
+                'data': {'id': new_topic.id, 'ad': new_topic.ad, 'kod': new_topic.kod},
+                'message': f'Konu kopyalandı: {content_count} içerik.',
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ResourceContentViewSet(viewsets.ModelViewSet):

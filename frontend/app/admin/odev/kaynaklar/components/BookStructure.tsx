@@ -21,11 +21,13 @@ interface BookStructureProps {
   onClose: () => void;
   onAddUnit: () => void;
   onEditUnit: (unit: ResourceUnit) => void;
+  onDuplicateUnit: (unit: ResourceUnit) => void;
   onDeleteUnit: (id: number) => void;
   onBulkUnit: () => void;
   onImport: () => void;
   onAddTopic: (unitId: number) => void;
   onEditTopic: (unitId: number, topic: ResourceTopic) => void;
+  onDuplicateTopic: (topic: ResourceTopic) => void;
   onDeleteTopic: (id: number) => void;
   onBulkTopic: (unitId: number, unitName: string) => void;
   onAddContent: (topicId: number) => void;
@@ -53,8 +55,8 @@ export function BookStructure(props: BookStructureProps) {
     selectedBook, bookStructure, loadingStructure,
     expandedUnits, expandedTopics, toggleUnit, toggleTopic, expandAll, collapseAll,
     onEditBook, onDeleteBook, onDuplicateBook, onClose,
-    onAddUnit, onEditUnit, onDeleteUnit, onBulkUnit, onImport,
-    onAddTopic, onEditTopic, onDeleteTopic, onBulkTopic,
+    onAddUnit, onEditUnit, onDuplicateUnit, onDeleteUnit, onBulkUnit, onImport,
+    onAddTopic, onEditTopic, onDuplicateTopic, onDeleteTopic, onBulkTopic,
     onAddContent, onEditContent, onDeleteContent, onBulkTest,
     reorderUnits, reorderTopics, reorderContents,
     getBookTypeBadgeClass,
@@ -212,8 +214,9 @@ export function BookStructure(props: BookStructureProps) {
                       <span style={{ fontSize: 12, color: "#64748b" }}>{unit.topic_count || (unit.topics?.length || 0)} konu</span>
                       {!readOnly && (
                         <>
-                          <button onClick={(e) => { e.stopPropagation(); onEditUnit(unit); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
-                          <button onClick={(e) => { e.stopPropagation(); onDeleteUnit(unit.id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.6 }}>🗑️</button>
+                          <button onClick={(e) => { e.stopPropagation(); onEditUnit(unit); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }} title="Düzenle">✏️</button>
+                          <button onClick={(e) => { e.stopPropagation(); onDuplicateUnit(unit); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }} title="Üniteyi kopyala">📋</button>
+                          <button onClick={(e) => { e.stopPropagation(); onDeleteUnit(unit.id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.6 }} title="Sil">🗑️</button>
                         </>
                       )}
                     </div>
@@ -264,8 +267,9 @@ export function BookStructure(props: BookStructureProps) {
                                   <span style={{ fontSize: 11, color: "#64748b" }}>{topic.content_count || (topic.contents?.length || 0)} içerik</span>
                                   {!readOnly && (
                                     <>
-                                      <button onClick={(e) => { e.stopPropagation(); onEditTopic(unit.id, topic); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }}>✏️</button>
-                                      <button onClick={(e) => { e.stopPropagation(); onDeleteTopic(topic.id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.6 }}>🗑️</button>
+                                      <button onClick={(e) => { e.stopPropagation(); onEditTopic(unit.id, topic); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }} title="Düzenle">✏️</button>
+                                      <button onClick={(e) => { e.stopPropagation(); onDuplicateTopic(topic); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }} title="Konuyu kopyala">📋</button>
+                                      <button onClick={(e) => { e.stopPropagation(); onDeleteTopic(topic.id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.6 }} title="Sil">🗑️</button>
                                     </>
                                   )}
                                 </div>

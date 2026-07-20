@@ -545,3 +545,76 @@ export function DuplicateModal({ open, onClose, selectedBook, form, setForm, loa
     </ModalBackdrop>
   );
 }
+
+// ────────────── UNIT / TOPIC DUPLICATE MODAL ──────────────
+interface StructureDuplicateModalProps {
+  open: boolean;
+  onClose: () => void;
+  kind: "unit" | "topic" | null;
+  sourceName: string;
+  hint: string;
+  form: { ad: string; kod: string };
+  setForm: (f: { ad: string; kod: string }) => void;
+  loading: boolean;
+  onSubmit: () => void;
+}
+
+export function StructureDuplicateModal({
+  open, onClose, kind, sourceName, hint, form, setForm, loading, onSubmit,
+}: StructureDuplicateModalProps) {
+  if (!open || !kind) return null;
+  const title = kind === "unit" ? "Ünite Kopyala" : "Konu Kopyala";
+  const nameLabel = kind === "unit" ? "Yeni Ünite Adı *" : "Yeni Konu Adı *";
+  const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14 };
+  return (
+    <ModalBackdrop onClose={onClose}>
+      <div style={{ width: 480 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>📋 {title}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#64748b" }}>×</button>
+        </div>
+        <div style={{ marginBottom: 16, padding: 12, background: "#f0f9ff", borderRadius: 8, fontSize: 14 }}>
+          <strong>Kaynak:</strong> {sourceName}
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>{hint}</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 20 }}>
+          <div>
+            <label style={{ display: "block", marginBottom: 6, fontWeight: 500, fontSize: 14 }}>{nameLabel}</label>
+            <input
+              type="text"
+              value={form.ad}
+              onChange={(e) => setForm({ ...form, ad: e.target.value })}
+              style={inputStyle}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", marginBottom: 6, fontWeight: 500, fontSize: 14 }}>Yeni Kod (opsiyonel)</label>
+            <input
+              type="text"
+              value={form.kod}
+              onChange={(e) => setForm({ ...form, kod: e.target.value })}
+              placeholder="Boş bırakılırsa otomatik üretilir"
+              style={inputStyle}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", border: "1px solid #d1d5db", borderRadius: 8, background: "white", cursor: "pointer", fontSize: 14 }}>İptal</button>
+          <button
+            onClick={onSubmit}
+            disabled={loading || !form.ad.trim()}
+            style={{
+              padding: "10px 24px", border: "none", borderRadius: 8,
+              background: loading || !form.ad.trim() ? "#94a3b8" : "#667eea",
+              color: "white", cursor: loading || !form.ad.trim() ? "not-allowed" : "pointer",
+              fontSize: 14, fontWeight: 600,
+            }}
+          >
+            {loading ? "Kopyalanıyor..." : "📋 Kopyala"}
+          </button>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+}

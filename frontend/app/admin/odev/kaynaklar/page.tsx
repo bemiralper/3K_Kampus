@@ -5,7 +5,9 @@ import { useResources } from "./hooks/useResources";
 import { BookList } from "./components/BookList";
 import { BookStructure } from "./components/BookStructure";
 import { ResourceDrawer } from "./components/ResourceDrawer";
-import { BookTypeModal, BulkTestModal, BulkItemModal, ImportModal, DuplicateModal } from "./components/Modals";
+import {
+  BookTypeModal, BulkTestModal, BulkItemModal, ImportModal, DuplicateModal, StructureDuplicateModal,
+} from "./components/Modals";
 import { ToastNotification } from "./components/ToastNotification";
 import TopluKitapEkleModal from "./components/TopluKitapEkleModal";
 import KaynakExportModal from "./components/KaynakExportModal";
@@ -146,11 +148,13 @@ export default function KaynaklarPage() {
               onClose={() => { r.setSelectedBook(null); r.setBookStructure(null); }}
               onAddUnit={() => r.openUnitDrawer("create")}
               onEditUnit={(unit) => r.openUnitDrawer("edit", unit)}
+              onDuplicateUnit={r.openDuplicateUnitModal}
               onDeleteUnit={r.handleDeleteUnit}
               onBulkUnit={r.openBulkUnitModal}
               onImport={() => r.setImportModalOpen(true)}
               onAddTopic={(unitId) => r.openTopicDrawer("create", unitId)}
               onEditTopic={(unitId, topic) => r.openTopicDrawer("edit", unitId, topic)}
+              onDuplicateTopic={r.openDuplicateTopicModal}
               onDeleteTopic={r.handleDeleteTopic}
               onBulkTopic={r.openBulkTopicModal}
               onAddContent={(topicId) => r.openContentDrawer("create", topicId)}
@@ -265,6 +269,18 @@ export default function KaynaklarPage() {
         setForm={r.setDuplicateForm}
         loading={r.duplicateLoading}
         onSubmit={r.handleDuplicateBook}
+      />
+
+      <StructureDuplicateModal
+        open={r.structureDupOpen}
+        onClose={() => r.setStructureDupOpen(false)}
+        kind={r.structureDupKind}
+        sourceName={r.structureDupSourceName}
+        hint={r.structureDupHint}
+        form={r.structureDupForm}
+        setForm={r.setStructureDupForm}
+        loading={r.structureDupLoading}
+        onSubmit={r.handleStructureDuplicate}
       />
 
       <TopluKitapEkleModal

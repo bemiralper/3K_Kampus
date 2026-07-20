@@ -537,6 +537,22 @@ export async function duplicateBook(
   return apiPost<ResourceBook>(`/api/resources/books/${id}/duplicate/`, data);
 }
 
+/** Üniteyi konuları ve içerikleriyle kopyala */
+export async function duplicateUnit(
+  id: number,
+  data: { ad: string; kod?: string }
+): Promise<ApiResponse<{ id: number; ad: string; kod: string }>> {
+  return apiPost(`/api/resources/units/${id}/duplicate/`, data);
+}
+
+/** Konuyu içerikleriyle kopyala */
+export async function duplicateTopic(
+  id: number,
+  data: { ad: string; kod?: string }
+): Promise<ApiResponse<{ id: number; ad: string; kod: string }>> {
+  return apiPost(`/api/resources/topics/${id}/duplicate/`, data);
+}
+
 export type BookBulkImportResult = {
   toplam_satir: number;
   eklenen: number;

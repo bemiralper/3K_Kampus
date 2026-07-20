@@ -17,6 +17,8 @@ import {
   updateBook,
   deleteBook,
   duplicateBook,
+  duplicateUnit,
+  duplicateTopic,
   uploadBookKapak,
   deleteBookKapak,
   fetchNextTestBatch,
@@ -598,6 +600,73 @@ export function useResources() {
     finally { setDuplicateLoading(false); }
   };
 
+  // ═══════ DUPLICATE UNIT / TOPIC ═══════
+  const [structureDupOpen, setStructureDupOpen] = useState(false);
+  const [structureDupKind, setStructureDupKind] = useState<"unit" | "topic" | null>(null);
+  const [structureDupId, setStructureDupId] = useState<number | null>(null);
+  const [structureDupSourceName, setStructureDupSourceName] = useState("");
+  const [structureDupHint, setStructureDupHint] = useState("");
+  const [structureDupForm, setStructureDupForm] = useState({ ad: "", kod: "" });
+  const [structureDupLoading, setStructureDupLoading] = useState(false);
+
+  const openDuplicateUnitModal = (unit: ResourceUnit) => {
+    const topicN = unit.topic_count ?? unit.topics?.length ?? 0;
+    const contentN = (unit.topics || []).reduce(
+      (sum, t) => sum + (t.content_count ?? t.contents?.length ?? 0),
+      0,
+    );
+    setStructureDupKind("unit");
+    setStructureDupId(unit.id);
+    setStructureDupSourceName(unit.ad);
+    setStructureDupHint(
+      contentN > 0
+        ? `${topicN} konu, ${contentN} içerik kopyalanacak`
+        : `${topicN} konu ve altındaki içerikler kopyalanacak`,
+    );
+    setStructureDupForm({ ad: `${unit.ad} (Kopya)`, kod: "" });
+    setStructureDupOpen(true);
+  };
+
+  const openDuplicateTopicModal = (topic: ResourceTopic) => {
+    const contentN = topic.content_count ?? topic.contents?.length ?? 0;
+    setStructureDupKind("topic");
+    setStructureDupId(topic.id);
+    setStructureDupSourceName(topic.ad);
+    setStructureDupHint(`${contentN} içerik kopyalanacak`);
+    setStructureDupForm({ ad: `${topic.ad} (Kopya)`, kod: "" });
+    setStructureDupOpen(true);
+  };
+
+  const handleStructureDuplicate = async () => {
+    if (!structureDupKind || !structureDupId || !structureDupForm.ad.trim()) return;
+    setStructureDupLoading(true);
+    try {
+      const payload = {
+        ad: structureDupForm.ad.trim(),
+        ...(structureDupForm.kod.trim() ? { kod: structureDupForm.kod.trim() } : {}),
+      };
+      const result =
+        structureDupKind === "unit"
+          ? await duplicateUnit(structureDupId, payload)
+          : await duplicateTopic(structureDupId, payload);
+      if (result.success) {
+        setStructureDupOpen(false);
+        if (selectedBook) fetchBookStructureData(selectedBook.id);
+        showToast(`✅ ${result.message || "Kopyalandı"}`);
+      } else {
+        const err =
+          typeof result.error === "string"
+            ? result.error
+            : "Kopyalama hatası";
+        showToast(`❌ ${err}`, "error");
+      }
+    } catch {
+      showToast("❌ Kopyalama sırasında hata oluştu", "error");
+    } finally {
+      setStructureDupLoading(false);
+    }
+  };
+
   // ═══════ REORDER (drag-drop) ═══════
   const reorderUnitsHandler = async (orderedIds: number[]) => {
     try {
@@ -946,6 +1015,9 @@ export function useResources() {
     importModalOpen, setImportModalOpen, importText, setImportText, importLoading, importError, importResult, handleImportStructure,
     // Duplicate
     duplicateModalOpen, setDuplicateModalOpen, duplicateForm, setDuplicateForm, duplicateLoading, openDuplicateModal, handleDuplicateBook,
+    structureDupOpen, setStructureDupOpen, structureDupKind, structureDupSourceName, structureDupHint,
+    structureDupForm, setStructureDupForm, structureDupLoading,
+    openDuplicateUnitModal, openDuplicateTopicModal, handleStructureDuplicate,
     // Delete
     handleDeleteBook, handleDeleteUnit, handleDeleteTopic, handleDeleteContent,
     // Reorder
