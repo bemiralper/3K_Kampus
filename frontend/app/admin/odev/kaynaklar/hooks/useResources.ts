@@ -225,7 +225,17 @@ export function useResources() {
     }
   }, []);
 
-  const fetchBookStructureData = useCallback(async (bookId: number) => {
+  const fetchBookStructureData = useCallback(async (
+    bookId: number,
+    opts?: {
+      /** true: kitap ilk açılışta tümünü aç; false/undefined: mevcut açık/kapalı durumunu koru */
+      resetExpand?: boolean;
+      /** Yenileme sonrası açık tutulacak ünite */
+      ensureUnitId?: number;
+      /** Yenileme sonrası açık tutulacak konu */
+      ensureTopicId?: number;
+    },
+  ) => {
     const reqId = ++structureRequestRef.current;
     setLoadingStructure(true);
     try {
@@ -236,8 +246,26 @@ export function useResources() {
         setBookStructure(structure);
         const unitIds = (structure.units || []).map((u) => u.id);
         const topicIds = (structure.units || []).flatMap((u) => (u.topics || []).map((t) => t.id));
-        setExpandedUnits(unitIds);
-        setExpandedTopics(topicIds);
+        if (opts?.resetExpand) {
+          setExpandedUnits(unitIds);
+          setExpandedTopics(topicIds);
+        } else {
+          // Kapalı sekmeleri yeniden açma; silinen id'leri temizle
+          setExpandedUnits((prev) => {
+            const next = prev.filter((id) => unitIds.includes(id));
+            if (opts?.ensureUnitId && unitIds.includes(opts.ensureUnitId) && !next.includes(opts.ensureUnitId)) {
+              next.push(opts.ensureUnitId);
+            }
+            return next;
+          });
+          setExpandedTopics((prev) => {
+            const next = prev.filter((id) => topicIds.includes(id));
+            if (opts?.ensureTopicId && topicIds.includes(opts.ensureTopicId) && !next.includes(opts.ensureTopicId)) {
+              next.push(opts.ensureTopicId);
+            }
+            return next;
+          });
+        }
       } else {
         setBookStructure(null);
         setExpandedUnits([]);
@@ -272,8 +300,10 @@ export function useResources() {
   }, [activeSube?.id]);
 
   useEffect(() => {
-    if (selectedBook) fetchBookStructureData(selectedBook.id);
-  }, [selectedBook, fetchBookStructureData]);
+    if (selectedBook?.id) fetchBookStructureData(selectedBook.id, { resetExpand: true });
+    // Yalnızca kitap değişince tümünü aç; yapı yenilemede resetExpand kullanılmaz
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBook?.id]);
 
   // ═══════ TOGGLE ═══════
   const toggleUnit = (id: number) => setExpandedUnits(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
@@ -491,7 +521,16 @@ export function useResources() {
       const result = unitForm.id
         ? await updateUnit(unitForm.id, payload)
         : await createUnit(payload as Parameters<typeof createUnit>[0]);
-      if (result.success) { setDrawerOpen(false); if (selectedBook) fetchBookStructureData(selectedBook.id); showToast("✅ Ünite kaydedildi"); }
+      if (result.success) {
+        setDrawerOpen(false);
+        if (selectedBook) {
+          const newUnitId = result.data?.id;
+          fetchBookStructureData(selectedBook.id, {
+            ensureUnitId: typeof newUnitId === "number" ? newUnitId : undefined,
+          });
+        }
+        showToast("✅ Ünite kaydedildi");
+      }
       else setDrawerError(typeof result.error === "object" ? JSON.stringify(result.error) : (result.error ?? "Hata"));
     } catch { setDrawerError("Kayıt sırasında hata oluştu"); }
     finally { setDrawerLoading(false); }
@@ -507,7 +546,16 @@ export function useResources() {
       const result = topicForm.id
         ? await updateTopic(topicForm.id, topicPayload)
         : await createTopic(topicPayload as Parameters<typeof createTopic>[0]);
-      if (result.success) { setDrawerOpen(false); if (selectedBook) fetchBookStructureData(selectedBook.id); showToast("✅ Konu kaydedildi"); }
+      if (result.success) {
+        setDrawerOpen(false);
+        if (selectedBook) {
+          fetchBookStructureData(selectedBook.id, {
+            ensureUnitId: unit ?? undefined,
+            ensureTopicId: typeof result.data?.id === "number" ? result.data.id : undefined,
+          });
+        }
+        showToast("✅ Konu kaydedildi");
+      }
       else setDrawerError(typeof result.error === "object" ? JSON.stringify(result.error) : (result.error ?? "Hata"));
     } catch { setDrawerError("Kayıt sırasında hata oluştu"); }
     finally { setDrawerLoading(false); }
@@ -527,7 +575,20 @@ export function useResources() {
       const result = contentForm.id
         ? await updateContent(contentForm.id, body)
         : await createContent(body as Parameters<typeof createContent>[0]);
-      if (result.success) { setDrawerOpen(false); if (selectedBook) fetchBookStructureData(selectedBook.id); showToast("✅ İçerik kaydedildi"); }
+      if (result.success) {
+        setDrawerOpen(false);
+        if (selectedBook) {
+          const topicId = contentForm.topic ?? undefined;
+          const unitId = topicId
+            ? bookStructure?.units?.find((u) => (u.topics || []).some((t) => t.id === topicId))?.id
+            : undefined;
+          fetchBookStructureData(selectedBook.id, {
+            ensureUnitId: unitId,
+            ensureTopicId: topicId,
+          });
+        }
+        showToast("✅ İçerik kaydedildi");
+      }
       else setDrawerError(typeof result.error === "object" ? JSON.stringify(result.error) : (result.error ?? "Hata"));
     } catch { setDrawerError("Kayıt sırasında hata oluştu"); }
     finally { setDrawerLoading(false); }
@@ -651,7 +712,21 @@ export function useResources() {
           : await duplicateTopic(structureDupId, payload);
       if (result.success) {
         setStructureDupOpen(false);
-        if (selectedBook) fetchBookStructureData(selectedBook.id);
+        if (selectedBook) {
+          const ensureUnitId =
+            structureDupKind === "topic"
+              ? bookStructure?.units?.find((u) =>
+                  (u.topics || []).some((t) => t.id === structureDupId),
+                )?.id
+              : typeof result.data?.id === "number"
+                ? result.data.id
+                : undefined;
+          const ensureTopicId =
+            structureDupKind === "topic" && typeof result.data?.id === "number"
+              ? result.data.id
+              : undefined;
+          fetchBookStructureData(selectedBook.id, { ensureUnitId, ensureTopicId });
+        }
         showToast(`✅ ${result.message || "Kopyalandı"}`);
       } else {
         const err =
@@ -837,7 +912,15 @@ export function useResources() {
       ));
       if (results.every((r) => r.success)) {
         setBulkTestOpen(false);
-        if (selectedBook) await fetchBookStructureData(selectedBook.id);
+        if (selectedBook) {
+          const unitId = bookStructure?.units?.find((u) =>
+            (u.topics || []).some((t) => t.id === bulkTestTopicId),
+          )?.id;
+          await fetchBookStructureData(selectedBook.id, {
+            ensureUnitId: unitId,
+            ensureTopicId: bulkTestTopicId,
+          });
+        }
         showToast(`✅ ${bulkTestRows.length} test eklendi`);
       } else {
         setBulkTestError("Bazı testler eklenemedi");
@@ -874,7 +957,8 @@ export function useResources() {
         if (!result.success) failed++;
       }
       if (failed === 0) {
-        setBulkUnitOpen(false); await fetchBookStructureData(selectedBook.id);
+        setBulkUnitOpen(false);
+        await fetchBookStructureData(selectedBook.id);
         showToast(`✅ ${valid.length} ünite eklendi`);
       } else setBulkUnitError(`${failed} ünite eklenemedi`);
     } catch { setBulkUnitError("Üniteler eklenirken hata oluştu"); }
@@ -907,7 +991,10 @@ export function useResources() {
         if (!result.success) failed++;
       }
       if (failed === 0) {
-        setBulkTopicOpen(false); await fetchBookStructureData(selectedBook.id);
+        setBulkTopicOpen(false);
+        await fetchBookStructureData(selectedBook.id, {
+          ensureUnitId: bulkTopicUnitId,
+        });
         showToast(`✅ ${valid.length} konu eklendi`);
       } else setBulkTopicError(`${failed} konu eklenemedi`);
     } catch { setBulkTopicError("Konular eklenirken hata oluştu"); }
