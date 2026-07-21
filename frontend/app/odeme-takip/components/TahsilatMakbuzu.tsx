@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
-import { API_BASE } from "../helpers";
+import { API_BASE, apiHeaders } from "../helpers";
 import { generateMakbuzPdf, type MakbuzPdfData } from "./makbuzPdfGenerator";
 
 interface MakbuzData {
@@ -142,23 +142,34 @@ export default function TahsilatMakbuzu({ tahsilatId, onClose, printMode, printT
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
+      setError(null);
+      setData(null);
       try {
-        const headers: Record<string, string> = {};
-        if (printToken) headers["X-Print-Token"] = printToken;
+        const headers = apiHeaders(
+          printToken ? { "X-Print-Token": printToken } : undefined,
+        );
         const res = await fetch(`${API_BASE}/tahsilatlar/${tahsilatId}/makbuz/`, {
           credentials: "include",
           headers,
         });
         if (!res.ok) {
-          const err = await res.json();
-          setError(err.error || "Makbuz yüklenemedi");
+          let msg = "Makbuz yüklenemedi";
+          try {
+            const err = await res.json();
+            msg = err.error || err.detail || msg;
+          } catch {
+            msg = `Makbuz yüklenemedi (${res.status})`;
+          }
+          setError(msg);
           return;
         }
         setData(await res.json());
       } catch {
         setError("Bağlantı hatası");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     load();
   }, [tahsilatId, printToken]);
@@ -255,13 +266,12 @@ export default function TahsilatMakbuzu({ tahsilatId, onClose, printMode, printT
     return (
       <>
         <div
-          onClick={onClose}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 2000 }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 4200 }}
         />
         <div
           style={{
             position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-            background: "#fff", borderRadius: 16, padding: 40, zIndex: 2001, textAlign: "center",
+            background: "#fff", borderRadius: 16, padding: 40, zIndex: 4201, textAlign: "center",
           }}
         >
           <p>Makbuz yükleniyor...</p>
@@ -282,12 +292,12 @@ export default function TahsilatMakbuzu({ tahsilatId, onClose, printMode, printT
       <>
         <div
           onClick={onClose}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 2000 }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 4200 }}
         />
         <div
           style={{
             position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-            background: "#fff", borderRadius: 16, padding: 40, zIndex: 2001, textAlign: "center",
+            background: "#fff", borderRadius: 16, padding: 40, zIndex: 4201, textAlign: "center",
           }}
         >
           <p style={{ color: "#dc2626" }}>{error || "Bir hata oluştu"}</p>
@@ -306,7 +316,7 @@ export default function TahsilatMakbuzu({ tahsilatId, onClose, printMode, printT
         onClick={onClose}
         className="makbuz-overlay"
         style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 2000,
+          position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 4200,
         }}
       />
       )}
@@ -317,7 +327,7 @@ export default function TahsilatMakbuzu({ tahsilatId, onClose, printMode, printT
           position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
           width: 680, maxHeight: "90vh", overflowY: "auto",
           background: "#fff", borderRadius: 16, boxShadow: "0 25px 80px rgba(0,0,0,.2)",
-          zIndex: 2001,
+          zIndex: 4201,
         }}
       >
         {!printMode && (

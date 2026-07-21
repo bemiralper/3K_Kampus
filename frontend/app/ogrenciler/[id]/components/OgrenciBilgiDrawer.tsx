@@ -6,6 +6,7 @@ import { tr } from "date-fns/locale";
 import "react-datepicker/dist/react-datepicker.css";
 import { dateToIsoLocal, isoToLocalDate } from "@/lib/date-utils";
 import SchoolAutocomplete from "@/components/okul/SchoolAutocomplete";
+import { apiPut } from "@/lib/api";
 import { OgrenciDetay } from "../types";
 
 registerLocale("tr", tr);
@@ -183,26 +184,16 @@ export default function OgrenciBilgiDrawer({
     setLoading(true);
 
     try {
-      // Proxy üzerinden API çağrısı
-      const response = await fetch(`/api/ogrenciler/api/${data.id}/`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          ...formData,
-          sinif_seviyesi_id: formData.sinif_seviyesi_id || null,
-          sinif_id: formData.sinif_id || null,
-          alan_id: formData.alan_id || null,
-          school_id: formData.school_id,
-        }),
+      const response = await apiPut(`/ogrenciler/api/${data.id}/`, {
+        ...formData,
+        sinif_seviyesi_id: formData.sinif_seviyesi_id || null,
+        sinif_id: formData.sinif_id || null,
+        alan_id: formData.alan_id || null,
+        school_id: formData.school_id,
       });
 
-      const result = await response.json();
-
-      if (result.success) {
-        setSuccess(result.message || 'Öğrenci bilgileri güncellendi');
+      if (response.success) {
+        setSuccess(response.message || 'Öğrenci bilgileri güncellendi');
         // Update parent with new data - display alanlarını da güncelle
         const cinsiyetMap: Record<string, string> = {};
         cinsiyetSecenekleri.forEach(c => { cinsiyetMap[c.value] = c.label; });
@@ -248,7 +239,10 @@ export default function OgrenciBilgiDrawer({
           onClose();
         }, 1500);
       } else {
-        setError(result.errors ? Object.values(result.errors).join(', ') : 'Güncelleme başarısız');
+        const errs = response.errors
+          ? Object.values(response.errors).flat().join(", ")
+          : response.error;
+        setError(errs || "Güncelleme başarısız");
       }
     } catch (err) {
       setError('Sunucu hatası oluştu');

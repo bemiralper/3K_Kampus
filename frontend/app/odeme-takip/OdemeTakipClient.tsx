@@ -497,20 +497,31 @@ export default function OdemeTakipClient() {
           sozlesme_id: "", taksit_id: "", odeme_yontemi_id: "", tutar: "", tahsilat_tarihi: "", referans_no: "", aciklama: "",
           cek_senet_no: "", banka_adi: "", cek_senet_vade: "", cek_senet_durum: "portfoyde",
         });
-        await fetchTahsilatlar();
-        if (selectedSozlesme) await fetchSozlesmeDetail(selectedSozlesme.id);
-        await fetchSozlesmeler();
 
-        if (tahsilatData?.dagitim && tahsilatData.dagitim.length > 1) {
-          setDagitimSonuc({
-            toplam: Number(tahsilatForm.tutar),
-            dagitim: tahsilatData.dagitim,
-            tahsilatId: tahsilatData.id || null,
-          });
-        } else {
-          if (tahsilatData?.id) {
-            setMakbuzTahsilatId(tahsilatData.id);
-          }
+        const newTahsilatId = tahsilatData?.id ?? null;
+        const multiDagitim =
+          tahsilatData?.dagitim && tahsilatData.dagitim.length > 1
+            ? {
+                toplam: Number(tahsilatForm.tutar),
+                dagitim: tahsilatData.dagitim,
+                tahsilatId: newTahsilatId,
+              }
+            : null;
+
+        // Liste yenileme makbuz açılışını engellemesin
+        try {
+          await fetchTahsilatlar();
+          if (selectedSozlesme) await fetchSozlesmeDetail(selectedSozlesme.id);
+          await fetchSozlesmeler();
+        } catch {
+          /* yenileme hatası tahsilatı iptal etmez */
+        }
+
+        if (multiDagitim) {
+          // Çoklu dağıtım: özet modal; makbuz "Makbuz Yazdır" ile açılır
+          setDagitimSonuc(multiDagitim);
+        } else if (newTahsilatId) {
+          setMakbuzTahsilatId(newTahsilatId);
         }
       } else {
         const err = await res.json();

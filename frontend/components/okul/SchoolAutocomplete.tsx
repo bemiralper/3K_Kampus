@@ -250,6 +250,7 @@ function SchoolAutocompleteInner({
         open={showQuickAdd}
         onClose={closeQuickAdd}
         destroyOnClose
+        zIndex={2100}
         styles={{
           body: { padding: "20px 24px 24px", background: "#f8fafc" },
           header: { display: "none" },
