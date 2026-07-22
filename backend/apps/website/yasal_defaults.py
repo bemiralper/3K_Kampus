@@ -35,7 +35,7 @@ def is_placeholder_yasal_content(icerik: str | None) -> bool:
         return True
     text = icerik.strip()
     if text.startswith('{') and '"v":1' in text and '"sections"' in text:
-        return False
+        return True
     lowered = text.lower()
     if len(text) < 400:
         return True
@@ -43,8 +43,10 @@ def is_placeholder_yasal_content(icerik: str | None) -> bool:
 
 
 def cms_preview_html(icerik: str, baslik: str) -> str:
-    """CMS richText önizlemesi — yapılandırılmış JSON içeriği kısa HTML'e çevirir."""
+    """CMS richText önizlemesi — HTML içeriği doğrudan kullanılır."""
     text = (icerik or '').strip()
+    if text.startswith('<') and 'yasal-section' in text:
+        return icerik
     if text.startswith('{'):
         try:
             data = json.loads(text)
@@ -56,7 +58,7 @@ def cms_preview_html(icerik: str, baslik: str) -> str:
         return (
             f'<h2>{title}</h2>'
             f'<p>{intro}</p>'
-            f'<p><em>Güncel ve tam metin sitede yapılandırılmış yasal sayfa olarak yayınlanır.</em></p>'
+            f'<p><em>Güncel metin yasal sayfa olarak yayınlanır — sync_yasal_content çalıştırın.</em></p>'
         )
     return icerik
 

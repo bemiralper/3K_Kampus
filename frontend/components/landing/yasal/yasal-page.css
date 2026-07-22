@@ -248,6 +248,7 @@
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.15s;
+  text-decoration: none;
 }
 
 .yasal-cta-btn:hover {

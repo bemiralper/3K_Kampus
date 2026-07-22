@@ -22,7 +22,7 @@ export async function buildYasalTurMetadata(tur: string): Promise<Metadata> {
   const base = buildLandingMetadata(data, `/yasal/${tur}`);
   const metin = await fetchYasalDetail(LANDING_KURUM_KOD, tur);
   const fallback = getYasalContentSpec(tur);
-  const description = metin?.baslik ?? fallback?.baslik ?? fallback?.structured.meta.intro;
+  const description = metin?.baslik ?? fallback?.baslik ?? fallback?.meta.intro;
   if (!description) return { ...base, title: SITE_TAB_TITLE };
   return { ...base, title: SITE_TAB_TITLE, description };
 }

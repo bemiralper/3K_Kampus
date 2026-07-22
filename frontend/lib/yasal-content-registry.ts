@@ -2,32 +2,27 @@ import { CEREZ_META, CEREZ_SECTIONS } from '@/lib/cerez-content';
 import { GIZLILIK_META, GIZLILIK_SECTIONS } from '@/lib/gizlilik-content';
 import { KULLANIM_META, KULLANIM_SECTIONS } from '@/lib/kullanim-content';
 import { KVKK_META, KVKK_SECTIONS } from '@/lib/kvkk-content';
-import {
-  buildYasalStructuredContent,
-  serializeYasalStructured,
-  type YasalStructuredContent,
-} from '@/lib/yasal-sections-to-json';
-import { buildYasalNav } from '@/lib/yasal-metin-types';
+import { buildYasalPageHtml } from '@/lib/yasal-sections-to-html';
+import { buildYasalNav, type YasalMetinMeta, type YasalSection } from '@/lib/yasal-metin-types';
 
 export type YasalTur = 'kvkk' | 'gizlilik' | 'kullanim' | 'cerez';
 
 export type YasalContentSpec = {
   tur: YasalTur;
   baslik: string;
-  structured: YasalStructuredContent;
+  html: string;
+  meta: YasalMetinMeta;
+  sections: YasalSection[];
   nav: { id: string; label: string }[];
 };
 
-function spec(
-  tur: YasalTur,
-  meta: YasalStructuredContent['meta'],
-  sections: YasalStructuredContent['sections'],
-): YasalContentSpec {
-  const structured = buildYasalStructuredContent(meta, sections);
+function spec(tur: YasalTur, meta: YasalMetinMeta, sections: YasalSection[]): YasalContentSpec {
   return {
     tur,
     baslik: meta.title,
-    structured,
+    html: buildYasalPageHtml(meta, sections),
+    meta,
+    sections,
     nav: buildYasalNav(sections),
   };
 }
@@ -54,7 +49,7 @@ export function buildYasalDefaultsPayload(): Record<
     const item = YASAL_CONTENT_REGISTRY[tur];
     out[tur] = {
       baslik: item.baslik,
-      icerik: serializeYasalStructured(item.structured),
+      icerik: item.html,
       aktif: true,
     };
   }

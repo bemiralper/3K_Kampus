@@ -23,7 +23,8 @@ class EnsureYasalMetinlerTest(TestCase):
             set(load_yasal_metin_defaults().keys()),
         )
         sample = YasalMetin.objects.get(kurum=self.kurum, tur='kvkk')
-        self.assertTrue(sample.icerik.strip().startswith('{'))
+        self.assertTrue(sample.icerik.strip().startswith('<section'))
+        self.assertIn('yasal-section', sample.icerik)
         self.assertFalse(is_placeholder_yasal_content(sample.icerik))
 
     def test_upgrades_placeholder_content(self):
@@ -38,7 +39,8 @@ class EnsureYasalMetinlerTest(TestCase):
         self.assertEqual(stats['created'], 3)
         self.assertEqual(stats['upgraded'], 1)
         metin = YasalMetin.objects.get(kurum=self.kurum, tur='cerez')
-        self.assertTrue(metin.icerik.strip().startswith('{'))
+        self.assertTrue(metin.icerik.strip().startswith('<section'))
+        self.assertIn('yasal-section', metin.icerik)
 
 
 class SeedWebsiteDefaultsYasalTest(TestCase):

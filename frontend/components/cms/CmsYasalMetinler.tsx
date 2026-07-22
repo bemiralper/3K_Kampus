@@ -8,7 +8,7 @@ import {
   type YasalMetin,
 } from '@/lib/website-api';
 import { buildYasalDefaultsPayload } from '@/lib/yasal-content-registry';
-import { isPlaceholderYasalContent } from '@/lib/yasal-sections-to-json';
+import { isPlaceholderYasalHtml } from '@/lib/yasal-sections-to-html';
 
 type Props = {
   onMessage: (msg: string, type?: 'success' | 'error') => void;
@@ -133,7 +133,7 @@ export default function CmsYasalMetinler({ onMessage }: Props) {
     let upgraded = 0;
     for (const spec of YASAL_TURLER) {
       const existing = itemForTur(spec.tur);
-      if (!existing || !isPlaceholderYasalContent(existing.icerik)) continue;
+      if (!existing || !isPlaceholderYasalHtml(existing.icerik)) continue;
       const payload = defaults[spec.tur as keyof typeof defaults];
       const res = await websiteAdminApi.update<YasalMetin>('yasal-metinler', existing.id, {
         tur: spec.tur,
@@ -155,7 +155,7 @@ export default function CmsYasalMetinler({ onMessage }: Props) {
 
   const placeholderCount = YASAL_TURLER.filter((s) => {
     const item = itemForTur(s.tur);
-    return item && isPlaceholderYasalContent(item.icerik);
+    return item && isPlaceholderYasalHtml(item.icerik);
   }).length;
 
   const missingCount = YASAL_TURLER.filter((s) => !itemForTur(s.tur)).length;
@@ -179,8 +179,7 @@ export default function CmsYasalMetinler({ onMessage }: Props) {
           <p className="cms-eyebrow">Yasal</p>
           <h2 className="cms-dash-title">Yasal Metinler</h2>
           <p className="cms-dash-sub">
-            Dört yasal sayfa aynı sistemden yayınlanır. İçerik yapılandırılmış JSON olarak saklanır;
-            sitede bölümlü resmi şablonla gösterilir.
+            KVKK, gizlilik, kullanım koşulları ve çerez metinleri HTML olarak saklanır; sitede aynı şablonla yayınlanır.
           </p>
         </div>
         <div className="cms-dash-actions">
@@ -241,12 +240,12 @@ export default function CmsYasalMetinler({ onMessage }: Props) {
           </label>
 
           <label className="cms-field">
-            <span>İçerik (yapılandırılmış JSON)</span>
+            <span>İçerik (HTML)</span>
             <textarea
               rows={16}
               value={activeForm.icerik}
               onChange={(e) => patchForm(activeTur, { icerik: e.target.value })}
-              placeholder='{"v":1,"meta":{...},"sections":[...]}'
+              placeholder="<section class=&quot;yasal-hero&quot;>…</section>"
               spellCheck={false}
             />
           </label>
