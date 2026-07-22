@@ -14,6 +14,7 @@ from apps.website.seed_defaults import (
     ensure_website_defaults,
     resolve_landing_kurum,
 )
+from apps.website.yasal_defaults import ensure_yasal_metinler, upgrade_yasal_metin_if_needed
 from apps.website.models import (
     SiteSettings, SiteSocialLink, SiteFooterLink, HeroSlide, Duyuru,
     SinavTakvim, NedenKart, BasariIstatistik, OgrenciYorumu, SSS,
@@ -130,7 +131,15 @@ def api_public_yasal_detail(request, kod, tur):
     kurum = _resolve_public_kurum(kod)
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
-    metin = YasalMetin.objects.filter(kurum=kurum, tur=tur, aktif=True).first()
+    metin = YasalMetin.objects.filter(kurum=kurum, tur=tur).first()
+    if metin:
+        if not metin.aktif:
+            return JsonResponse({'success': False, 'error': 'Yasal metin bulunamadı'}, status=404)
+        if upgrade_yasal_metin_if_needed(metin):
+            metin.refresh_from_db()
+    else:
+        ensure_yasal_metinler(kurum, upgrade_placeholders=True)
+        metin = YasalMetin.objects.filter(kurum=kurum, tur=tur, aktif=True).first()
     if not metin:
         return JsonResponse({'success': False, 'error': 'Yasal metin bulunamadı'}, status=404)
     return JsonResponse({'success': True, 'data': serialize_yasal(metin)})
@@ -647,6 +656,7 @@ def api_admin_yasal_metinler(request):
     if err:
         return err
     if request.method == 'GET':
+        ensure_yasal_metinler(kurum, upgrade_placeholders=True)
         data = [serialize_yasal(y) for y in YasalMetin.objects.filter(kurum=kurum)]
         return JsonResponse({'success': True, 'data': data})
     if request.method == 'POST':

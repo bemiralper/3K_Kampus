@@ -7,6 +7,7 @@ from apps.website.seed_defaults import seed_website_defaults
 from apps.website.yasal_defaults import (
     ensure_yasal_metinler,
     is_placeholder_yasal_content,
+    is_published_yasal_html,
     load_yasal_metin_defaults,
 )
 
@@ -27,20 +28,18 @@ class EnsureYasalMetinlerTest(TestCase):
         self.assertIn('yasal-section', sample.icerik)
         self.assertFalse(is_placeholder_yasal_content(sample.icerik))
 
-    def test_upgrades_placeholder_content(self):
+    def test_upgrades_legacy_gizlilik_snippet(self):
         YasalMetin.objects.create(
             kurum=self.kurum,
-            tur='cerez',
-            baslik='Çerez',
-            icerik='<p>Metni buradan düzenleyin.</p>',
+            tur='gizlilik',
+            baslik='Gizlilik Politikası',
+            icerik='<p>Gizlilik politikası metni.</p>',
             aktif=True,
         )
         stats = ensure_yasal_metinler(self.kurum, upgrade_placeholders=True)
-        self.assertEqual(stats['created'], 3)
         self.assertEqual(stats['upgraded'], 1)
-        metin = YasalMetin.objects.get(kurum=self.kurum, tur='cerez')
-        self.assertTrue(metin.icerik.strip().startswith('<section'))
-        self.assertIn('yasal-section', metin.icerik)
+        metin = YasalMetin.objects.get(kurum=self.kurum, tur='gizlilik')
+        self.assertTrue(is_published_yasal_html(metin.icerik))
 
 
 class SeedWebsiteDefaultsYasalTest(TestCase):

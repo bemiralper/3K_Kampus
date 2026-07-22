@@ -99,22 +99,33 @@ export function buildYasalPageHtml(meta: YasalMetinMeta, sections: YasalSection[
   return parts.join('');
 }
 
+export function isPublishedYasalHtml(raw: string | null | undefined): boolean {
+  const text = raw?.trim() ?? '';
+  return text.includes('yasal-section') && text.includes('yasal-hero');
+}
+
 export function isLegacyJsonYasalContent(raw: string | null | undefined): boolean {
   if (!raw?.trim()) return false;
   const text = raw.trim();
-  return text.startsWith('{') && text.includes('"v":1') && text.includes('"sections"');
+  return text.startsWith('{') && text.includes('"sections"');
 }
 
 export function isPlaceholderYasalHtml(raw: string | null | undefined): boolean {
   if (!raw?.trim()) return true;
+  if isPublishedYasalHtml(raw)) return false;
   if (isLegacyJsonYasalContent(raw)) return true;
   const text = raw.toLowerCase();
-  if (raw.length < 400) return true;
-  return (
-    text.includes('metni buradan düzenleyin')
+  if (
+    text.includes('gizlilik politikası metni.')
+    || text.includes('kvkk aydınlatma metni.')
+    || text.includes('platform kullanım koşulları.')
+    || text.includes('metni buradan düzenleyin')
     || text.includes('örnek bir kvkk')
     || text.includes('örnek metindir')
     || text.includes('bu metni güncelleyin')
     || text.includes('bu metni kurum')
-  );
+  ) {
+    return true;
+  }
+  return raw.length < 2000;
 }
