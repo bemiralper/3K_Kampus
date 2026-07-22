@@ -6,7 +6,7 @@ from apps.website.models import (
     SiteSettings, SiteSocialLink, SiteFooterLink, HeroSlide, Duyuru,
     SinavTakvim, NedenKart, BasariIstatistik, OgrenciYorumu, SSS,
 )
-from apps.website.yasal_defaults import YASAL_METIN_DEFAULTS, ensure_yasal_metinler
+from apps.website.yasal_defaults import ensure_yasal_metinler, load_yasal_metin_defaults
 
 LANDING_KURUM_KOD = '3K'
 
@@ -224,8 +224,10 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
         )
     counts['sss'] = SSS.objects.filter(kurum=kurum).count()
 
-    counts['yasal_created'] = ensure_yasal_metinler(kurum)
-    counts['yasal'] = len(YASAL_METIN_DEFAULTS)
+    yasal_stats = ensure_yasal_metinler(kurum, upgrade_placeholders=True)
+    counts['yasal_created'] = yasal_stats['created']
+    counts['yasal_upgraded'] = yasal_stats['upgraded']
+    counts['yasal'] = len(load_yasal_metin_defaults())
 
     return {'kurum_id': kurum.id, 'kurum_kod': kurum.kod, 'counts': counts}
 

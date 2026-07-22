@@ -7,6 +7,8 @@ import {
   invalidateLandingCache,
   type YasalMetin,
 } from '@/lib/website-api';
+import { buildYasalDefaultsPayload } from '@/lib/yasal-content-registry';
+import { isPlaceholderYasalContent } from '@/lib/yasal-sections-to-json';
 
 type Props = {
   onMessage: (msg: string, type?: 'success' | 'error') => void;
@@ -95,17 +97,19 @@ export default function CmsYasalMetinler({ onMessage }: Props) {
   };
 
   const seedMissing = async () => {
-    if (!confirm('Eksik yasal metinler örnek içerikle oluşturulsun mu?\n\nMevcut metinler değiştirilmez.')) {
+    if (!confirm('Eksik yasal metinler resmi içerikle oluşturulsun mu?\n\nMevcut kayıtlar değiştirilmez.')) {
       return;
     }
     setSeeding(true);
+    const defaults = buildYasalDefaultsPayload();
     let created = 0;
     for (const spec of YASAL_TURLER) {
       if (itemForTur(spec.tur)) continue;
+      const payload = defaults[spec.tur as keyof typeof defaults];
       const res = await websiteAdminApi.create<YasalMetin>('yasal-metinler', {
         tur: spec.tur,
-        baslik: spec.label,
-        icerik: `<h2>${spec.label}</h2><p>Metni buradan düzenleyin.</p>`,
+        baslik: payload.baslik,
+        icerik: payload.icerik,
         aktif: true,
       });
       if (res.success) created += 1;
@@ -119,6 +123,40 @@ export default function CmsYasalMetinler({ onMessage }: Props) {
       onMessage('Tüm yasal metinler zaten mevcut');
     }
   };
+
+  const upgradePlaceholders = async () => {
+    if (!confirm('Örnek / boş metinler resmi içerikle güncellensin mi?\n\nDaha önce düzenlediğiniz metinler korunur.')) {
+      return;
+    }
+    setSeeding(true);
+    const defaults = buildYasalDefaultsPayload();
+    let upgraded = 0;
+    for (const spec of YASAL_TURLER) {
+      const existing = itemForTur(spec.tur);
+      if (!existing || !isPlaceholderYasalContent(existing.icerik)) continue;
+      const payload = defaults[spec.tur as keyof typeof defaults];
+      const res = await websiteAdminApi.update<YasalMetin>('yasal-metinler', existing.id, {
+        tur: spec.tur,
+        baslik: payload.baslik,
+        icerik: payload.icerik,
+        aktif: true,
+      });
+      if (res.success) upgraded += 1;
+    }
+    setSeeding(false);
+    if (upgraded > 0) {
+      onMessage(`${upgraded} yasal metin resmi içerikle güncellendi`);
+      await invalidateLandingCache();
+      await reload();
+    } else {
+      onMessage('Güncellenecek örnek metin bulunamadı');
+    }
+  };
+
+  const placeholderCount = YASAL_TURLER.filter((s) => {
+    const item = itemForTur(s.tur);
+    return item && isPlaceholderYasalContent(item.icerik);
+  }).length;
 
   const missingCount = YASAL_TURLER.filter((s) => !itemForTur(s.tur)).length;
   const activeSpec = YASAL_TURLER.find((s) => s.tur === activeTur) ?? YASAL_TURLER[0];
@@ -141,14 +179,19 @@ export default function CmsYasalMetinler({ onMessage }: Props) {
           <p className="cms-eyebrow">Yasal</p>
           <h2 className="cms-dash-title">Yasal Metinler</h2>
           <p className="cms-dash-sub">
-            KVKK, gizlilik, kullanım koşulları ve çerez politikası. Kullanım ve çerez sayfaları bu metinlerden
-            yayınlanır; KVKK ve gizlilik sayfalarında statik şablon da kullanılır.
+            Dört yasal sayfa aynı sistemden yayınlanır. İçerik yapılandırılmış JSON olarak saklanır;
+            sitede bölümlü resmi şablonla gösterilir.
           </p>
         </div>
         <div className="cms-dash-actions">
           {missingCount > 0 && (
             <button type="button" className="cms-btn cms-btn-ghost" disabled={seeding} onClick={() => void seedMissing()}>
               {seeding ? 'Oluşturuluyor…' : `Eksikleri oluştur (${missingCount})`}
+            </button>
+          )}
+          {placeholderCount > 0 && (
+            <button type="button" className="cms-btn cms-btn-ghost" disabled={seeding} onClick={() => void upgradePlaceholders()}>
+              {seeding ? 'Güncelleniyor…' : `Örnek metinleri doldur (${placeholderCount})`}
             </button>
           )}
           <Link href={activeSpec.path} target="_blank" rel="noopener noreferrer" className="cms-btn cms-btn-ghost">
@@ -198,12 +241,12 @@ export default function CmsYasalMetinler({ onMessage }: Props) {
           </label>
 
           <label className="cms-field">
-            <span>İçerik (HTML)</span>
+            <span>İçerik (yapılandırılmış JSON)</span>
             <textarea
               rows={16}
               value={activeForm.icerik}
               onChange={(e) => patchForm(activeTur, { icerik: e.target.value })}
-              placeholder="<h2>Başlık</h2><p>Metin…</p>"
+              placeholder='{"v":1,"meta":{...},"sections":[...]}'
               spellCheck={false}
             />
           </label>

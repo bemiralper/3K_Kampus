@@ -4,31 +4,41 @@ from django.test import TestCase
 from apps.kurum.domain.models import Kurum
 from apps.website.models import SiteFooterLink, YasalMetin
 from apps.website.seed_defaults import seed_website_defaults
-from apps.website.yasal_defaults import YASAL_METIN_DEFAULTS, ensure_yasal_metinler
+from apps.website.yasal_defaults import (
+    ensure_yasal_metinler,
+    is_placeholder_yasal_content,
+    load_yasal_metin_defaults,
+)
 
 
 class EnsureYasalMetinlerTest(TestCase):
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='Test Kurum', kod='YASAL2')
 
-    def test_creates_all_four_types(self):
-        created = ensure_yasal_metinler(self.kurum)
-        self.assertEqual(created, 4)
+    def test_creates_all_four_types_with_structured_json(self):
+        stats = ensure_yasal_metinler(self.kurum)
+        self.assertEqual(stats['created'], 4)
         self.assertEqual(
             set(YasalMetin.objects.filter(kurum=self.kurum).values_list('tur', flat=True)),
-            set(YASAL_METIN_DEFAULTS.keys()),
+            set(load_yasal_metin_defaults().keys()),
         )
+        sample = YasalMetin.objects.get(kurum=self.kurum, tur='kvkk')
+        self.assertTrue(sample.icerik.strip().startswith('{'))
+        self.assertFalse(is_placeholder_yasal_content(sample.icerik))
 
-    def test_idempotent_does_not_overwrite(self):
-        ensure_yasal_metinler(self.kurum)
+    def test_upgrades_placeholder_content(self):
+        YasalMetin.objects.create(
+            kurum=self.kurum,
+            tur='cerez',
+            baslik='Çerez',
+            icerik='<p>Metni buradan düzenleyin.</p>',
+            aktif=True,
+        )
+        stats = ensure_yasal_metinler(self.kurum, upgrade_placeholders=True)
+        self.assertEqual(stats['created'], 3)
+        self.assertEqual(stats['upgraded'], 1)
         metin = YasalMetin.objects.get(kurum=self.kurum, tur='cerez')
-        metin.icerik = '<p>Özel çerez metni</p>'
-        metin.save(update_fields=['icerik'])
-
-        created = ensure_yasal_metinler(self.kurum)
-        self.assertEqual(created, 0)
-        metin.refresh_from_db()
-        self.assertEqual(metin.icerik, '<p>Özel çerez metni</p>')
+        self.assertTrue(metin.icerik.strip().startswith('{'))
 
 
 class SeedWebsiteDefaultsYasalTest(TestCase):

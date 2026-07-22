@@ -1,17 +1,15 @@
-import { GIZLILIK_META } from '@/lib/gizlilik-content';
-import GizlilikContent from '@/components/landing/yasal/GizlilikContent';
 import {
-  buildYasalStaticMetadata,
-  renderYasalStaticPage,
-} from '@/lib/yasal-static-page';
+  buildYasalTurMetadata,
+  renderYasalTurPage,
+} from '@/lib/yasal-tur-page';
 import { landingPageDynamic } from '@/lib/landing-page-data';
 
 export const dynamic = landingPageDynamic;
 
 export async function generateMetadata() {
-  return buildYasalStaticMetadata('/yasal/gizlilik', GIZLILIK_META.intro);
+  return buildYasalTurMetadata('gizlilik');
 }
 
 export default async function GizlilikPage() {
-  return renderYasalStaticPage(GizlilikContent);
+  return renderYasalTurPage('gizlilik');
 }

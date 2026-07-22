@@ -15,7 +15,7 @@ from apps.website.cms_models import (
     WebPageVersion,
 )
 from apps.website.models import SiteSettings, YasalMetin
-from apps.website.yasal_defaults import YASAL_METIN_DEFAULTS, ensure_yasal_metinler
+from apps.website.yasal_defaults import ensure_yasal_metinler, load_yasal_metin_defaults
 
 # Public static assets (frontend/public/cms/)
 IMG_HERO = '/cms/hero-campus.jpg'
@@ -476,18 +476,22 @@ def _ensure_menus(kurum_id: int) -> None:
 
 def _ensure_legal_pages(kurum_id: int, force: bool) -> dict:
     kurum = Kurum.objects.filter(pk=kurum_id).first()
-    yasal_created = ensure_yasal_metinler(kurum) if kurum else 0
+    yasal_stats = ensure_yasal_metinler(kurum, upgrade_placeholders=True) if kurum else {'created': 0, 'upgraded': 0}
+    yasal_created = yasal_stats['created'] + yasal_stats['upgraded']
     count = 0
-    defaults = YASAL_METIN_DEFAULTS
-    for slug, (title, html) in defaults.items():
+    defaults = load_yasal_metin_defaults()
+    for slug, payload in defaults.items():
+        title = str(payload.get('baslik') or '')
+        default_body = str(payload.get('icerik') or '')
         yasal = YasalMetin.objects.filter(kurum_id=kurum_id, tur=slug).first()
-        body = (yasal.icerik if yasal and yasal.icerik else html)
+        body = (yasal.icerik if yasal and yasal.icerik else default_body)
         title_use = (yasal.baslik if yasal and yasal.baslik else title)
+        cms_html = cms_preview_html(body, title_use)
         _, changed = _publish_page(
             kurum_id,
             slug=slug,
             title=title_use,
-            blocks=[new_block('richText', {'html': body})],
+            blocks=[new_block('richText', {'html': cms_html})],
             is_homepage=False,
             show_in_menu=False,
             meta_title=title_use,

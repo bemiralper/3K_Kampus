@@ -1,17 +1,15 @@
-import { KVKK_META } from '@/lib/kvkk-content';
-import KvkkContent from '@/components/landing/yasal/KvkkContent';
 import {
-  buildYasalStaticMetadata,
-  renderYasalStaticPage,
-} from '@/lib/yasal-static-page';
+  buildYasalTurMetadata,
+  renderYasalTurPage,
+} from '@/lib/yasal-tur-page';
 import { landingPageDynamic } from '@/lib/landing-page-data';
 
 export const dynamic = landingPageDynamic;
 
 export async function generateMetadata() {
-  return buildYasalStaticMetadata('/yasal/kvkk', KVKK_META.intro);
+  return buildYasalTurMetadata('kvkk');
 }
 
 export default async function KvkkPage() {
-  return renderYasalStaticPage(KvkkContent);
+  return renderYasalTurPage('kvkk');
 }

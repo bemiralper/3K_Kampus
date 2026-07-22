@@ -1,0 +1,262 @@
+.yasal-page {
+  --yasal-navy: #1e3a5f;
+  --yasal-navy-light: #2d5a87;
+  --yasal-accent: #0262a7;
+  background: #f8fafc;
+}
+
+.yasal-hero {
+  background: linear-gradient(
+    145deg,
+    var(--yasal-navy) 0%,
+    var(--yasal-navy-light) 55%,
+    var(--yasal-accent) 100%
+  );
+  color: #fff;
+}
+
+.yasal-brand {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.yasal-title {
+  margin: 0.75rem 0 0;
+  font-size: clamp(1.65rem, 4vw, 2.35rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.yasal-date {
+  margin: 1rem 0 0;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.yasal-date span {
+  font-weight: 600;
+}
+
+.yasal-intro {
+  margin: 1rem 0 0;
+  max-width: 36rem;
+  font-size: 15px;
+  line-height: 1.65;
+  opacity: 0.88;
+}
+
+.yasal-subnav-link {
+  flex-shrink: 0;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.yasal-subnav-link:hover {
+  background: #f1f5f9;
+  color: var(--yasal-accent);
+}
+
+.yasal-section {
+  padding: 1.75rem;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.yasal-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.yasal-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(2, 98, 167, 0.1);
+  color: var(--yasal-accent);
+  font-size: 14px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.yasal-section-head h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--yasal-navy);
+  letter-spacing: -0.02em;
+}
+
+.yasal-p {
+  margin: 0 0 0.75rem;
+  font-size: 15px;
+  line-height: 1.75;
+  color: #475569;
+}
+
+.yasal-p-after-list {
+  margin-top: 0.5rem;
+  font-weight: 500;
+  color: var(--yasal-navy);
+}
+
+.yasal-inline-link {
+  color: var(--yasal-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.yasal-cat-grid {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .yasal-cat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.yasal-cat-card {
+  padding: 1rem 1.15rem;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.yasal-cat-card h3 {
+  margin: 0 0 0.65rem;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--yasal-navy);
+}
+
+.yasal-cat-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.yasal-cat-card li {
+  position: relative;
+  padding: 0.2rem 0 0.2rem 0.9rem;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.yasal-cat-card li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--yasal-accent);
+}
+
+.yasal-cat-note {
+  margin: 0.65rem 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #64748b;
+  font-style: italic;
+}
+
+.yasal-bullets {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+}
+
+@media (min-width: 640px) {
+  .yasal-bullets {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.yasal-bullets li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.yasal-bullets li::before {
+  content: '✓';
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--yasal-accent);
+  margin-top: 1px;
+}
+
+.yasal-footer-cta {
+  margin-top: 2.5rem;
+  padding: 1.75rem;
+  border-radius: 20px;
+  text-align: center;
+  background: linear-gradient(135deg, var(--yasal-navy), var(--yasal-accent));
+  color: #fff;
+}
+
+.yasal-footer-cta p {
+  margin: 0;
+  font-size: 15px;
+  opacity: 0.92;
+}
+
+.yasal-cta-btn {
+  display: inline-flex;
+  margin-top: 1rem;
+  padding: 0.65rem 1.35rem;
+  border-radius: 999px;
+  border: none;
+  background: #fff;
+  color: var(--yasal-navy);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.yasal-cta-btn:hover {
+  transform: translateY(-1px);
+}
+
+.yasal-html-body {
+  padding: 1.75rem;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
