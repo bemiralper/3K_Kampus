@@ -653,6 +653,55 @@ def personel_stats_api(request):
     })
 
 
+@require_module_permission("personel")
+def personel_export_api(request):
+    """Personel listesi — kurumsal Excel/CSV dışa aktarma."""
+    from apps.personel.application.export import (
+        build_export_columns,
+        build_export_meta,
+        build_export_rows,
+        build_export_stats,
+    )
+    from apps.personel.interfaces.sube_context import mandatory_personel_context
+    from shared.export import CsvExportService, ExcelExportService
+
+    ctx, err = mandatory_personel_context(request)
+    if err:
+        return err
+
+    search_query = request.GET.get('q', '')
+    show_inactive = request.GET.get('show_inactive', 'false') == 'true'
+    export_format = (request.GET.get('format') or 'csv').lower()
+
+    service = PersonelService()
+    sube_kw = {
+        'kurum_id': ctx['kurum_id'],
+        'sube_id': ctx['sube_id'],
+        'egitim_yili_id': ctx.get('egitim_yili_id'),
+    }
+
+    if search_query:
+        personeller = service.search(search_query, **sube_kw)
+    else:
+        personeller = service.get_all(**sube_kw, aktif_only=not show_inactive)
+
+    rows = build_export_rows(
+        personeller,
+        kurum_id=ctx['kurum_id'],
+        sube_id=ctx['sube_id'],
+        egitim_yili_id=ctx.get('egitim_yili_id'),
+    )
+    columns = build_export_columns()
+    meta = build_export_meta(request, ctx)
+    stats = build_export_stats(rows)
+
+    if export_format == 'xlsx':
+        return ExcelExportService.export(
+            rows, columns, meta=meta, stats=stats, filename='personel_listesi',
+        )
+    return CsvExportService.export(rows, columns, meta=meta, filename='personel_listesi')
+
+
 # ==================== GÖREVLENDİRME API ====================
 
 @csrf_exempt

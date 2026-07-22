@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Oda, Sinif, OdaTur, SinifSeviyesi } from './types';
 import { 
   getOdalar, 
@@ -8,10 +8,13 @@ import {
   deleteOda, 
   deleteSinif, 
   getOdaTurleri,
-  getSinifSeviyeleri
+  getSinifSeviyeleri,
+  downloadSinifExportCsv,
+  downloadSinifExportXlsx,
 } from './services';
 import { OdaDrawer, SinifDrawer, OdaTable, SinifTable } from './components';
 import { useKurum } from '@/lib/contexts/KurumContext';
+import { downloadBlob } from '@/lib/download-file';
 
 interface OdalarSiniflarSectionProps {
   activeTab: 'odalar' | 'siniflar';
@@ -40,6 +43,10 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
   const [deletingItem, setDeletingItem] = useState<{ type: 'oda' | 'sinif'; item: Oda | Sinif } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Data fetching
   const fetchOdalar = useCallback(async () => {
@@ -89,6 +96,33 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
     fetchOdalar();
     fetchSiniflar();
   }, [activeSube?.id, fetchOdalar, fetchSiniflar]);
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [exportOpen]);
+
+  async function handleSinifExport(format: 'csv' | 'xlsx') {
+    setExportOpen(false);
+    setExporting(true);
+    setExportError(null);
+    try {
+      const blob = format === 'csv'
+        ? await downloadSinifExportCsv()
+        : await downloadSinifExportXlsx();
+      downloadBlob(blob, `sinif_listesi.${format}`);
+    } catch (err: unknown) {
+      setExportError(err instanceof Error ? err.message : 'Dışa aktarma başarısız.');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // Handlers
   const handleAddNew = () => {
@@ -203,6 +237,81 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
             }}
           />
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {activeTab === 'siniflar' && (
+            <div style={{ position: 'relative' }} ref={exportMenuRef}>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => setExportOpen((v) => !v)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 16px',
+                  background: 'white',
+                  color: '#334155',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: exporting ? 'not-allowed' : 'pointer',
+                  opacity: exporting ? 0.6 : 1,
+                }}
+              >
+                {exporting ? 'Hazırlanıyor…' : 'Dışa Aktar'}
+              </button>
+              {exportOpen && (
+                <div style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 8px)',
+                  minWidth: '160px',
+                  background: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+                  padding: '6px',
+                  zIndex: 20,
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSinifExport('xlsx')}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '10px 12px',
+                      border: 'none',
+                      background: 'transparent',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Excel (.xlsx)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSinifExport('csv')}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '10px 12px',
+                      border: 'none',
+                      background: 'transparent',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    CSV
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         <button 
           onClick={handleAddNew}
           style={{
@@ -226,7 +335,22 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
           </svg>
           {activeTab === 'odalar' ? 'Yeni Oda' : 'Yeni Sınıf'}
         </button>
+        </div>
       </div>
+
+      {exportError && activeTab === 'siniflar' && (
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px 16px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          color: '#dc2626',
+          fontSize: '14px',
+        }}>
+          {exportError}
+        </div>
+      )}
 
       {/* Content Card */}
       <div className="card-modern">

@@ -12,6 +12,7 @@ urlpatterns = [
     
     # API Endpoints
     path('api/list/', views.personel_list_api, name='personel_list_api'),
+    path('api/export/', views.personel_export_api, name='personel_export_api'),
     path('api/stats/', views.personel_stats_api, name='personel_stats_api'),
     path('api/create/', views.personel_create_api, name='personel_create_api'),
     path('api/<int:pk>/', views.personel_detail_api, name='personel_detail_api'),

@@ -169,6 +169,70 @@ def sinif_list_api(request):
     return JsonResponse({'siniflar': data})
 
 
+@require_http_methods(["GET"])
+def sinif_list_export_api(request):
+    """Sınıf/Şube listesi — kurumsal Excel/CSV/JSON dışa aktarma."""
+    from apps.sinif.application.export import (
+        EXPORT_COLUMNS,
+        MAX_EXPORT_ROWS,
+        build_export_columns,
+        build_export_meta,
+        build_export_rows,
+        build_export_stats,
+        parse_column_keys,
+    )
+    from shared.export import CsvExportService, ExcelExportService
+
+    kurum_id = get_kurum_id(request)
+    if not kurum_id:
+        return JsonResponse({'error': 'Kurum bilgisi bulunamadı'}, status=400)
+
+    sube_id, sube_err = resolve_mandatory_sube(request, kurum_id)
+    if sube_err:
+        return JsonResponse({'error': sube_err['error']}, status=sube_err['status'])
+
+    siniflar = Sinif.objects.filter(kurum_id=kurum_id, sube_id=sube_id).select_related(
+        'sube', 'egitim_yili', 'oda', 'sinif_seviyesi',
+    )
+
+    egitim_yili_id = get_egitim_yili_id(request)
+    egitim_yili = None
+    if egitim_yili_id:
+        siniflar = siniflar.filter(egitim_yili_id=egitim_yili_id)
+        egitim_yili = EgitimYili.objects.filter(id=egitim_yili_id).first()
+
+    aktif = request.GET.get('aktif')
+    if aktif == 'true':
+        siniflar = siniflar.filter(aktif_mi=True)
+    elif aktif == 'false':
+        siniflar = siniflar.filter(aktif_mi=False)
+
+    column_keys = parse_column_keys(request.GET.get('columns'))
+    sinif_list = list(siniflar.order_by('ad')[:MAX_EXPORT_ROWS])
+    rows = build_export_rows(sinif_list, column_keys)
+    export_format = (request.GET.get('format') or 'csv').lower()
+
+    if export_format == 'json':
+        return JsonResponse({
+            'success': True,
+            'columns': column_keys,
+            'column_labels': [EXPORT_COLUMNS[k] for k in column_keys],
+            'rows': rows,
+            'total': len(rows),
+        })
+
+    columns = build_export_columns(column_keys)
+    meta = build_export_meta(
+        request, kurum_id=kurum_id, sube_id=sube_id, egitim_yili=egitim_yili,
+    )
+
+    if export_format == 'xlsx':
+        stats = build_export_stats(sinif_list)
+        return ExcelExportService.export(
+            rows, columns, meta=meta, stats=stats, filename='sinif_listesi',
+        )
+    return CsvExportService.export(rows, columns, meta=meta, filename='sinif_listesi')
+
 
 @require_http_methods(["GET"])
 def sinif_detail_api(request, sinif_id):

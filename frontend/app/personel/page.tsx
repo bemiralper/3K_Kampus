@@ -14,6 +14,8 @@ import {
   tcReadonlyClass,
 } from "@/lib/kimlik-form-utils";
 import AppDatePicker from "@/components/ui/AppDatePicker";
+import { downloadPersonelExportCsv, downloadPersonelExportXlsx } from "@/lib/personel-api";
+import { downloadBlob } from "@/lib/download-file";
 
 // Tip tanımları
 type PersonelData = {
@@ -81,6 +83,9 @@ export default function PersonelListesiPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [stats, setStats] = useState({ toplam: 0, aktif: 0, pasif: 0 });
   const [listError, setListError] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   
   // Drawer states
   const [showDrawer, setShowDrawer] = useState(false);
@@ -228,6 +233,37 @@ export default function PersonelListesiPage() {
       );
     }
   }, [searchQuery, personeller]);
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [exportOpen]);
+
+  async function handleExport(format: "csv" | "xlsx") {
+    setExportOpen(false);
+    setExporting(true);
+    try {
+      const filters = {
+        q: searchQuery.trim() || undefined,
+        show_inactive: showInactive,
+      };
+      const blob = format === "csv"
+        ? await downloadPersonelExportCsv(filters)
+        : await downloadPersonelExportXlsx(filters);
+      downloadBlob(blob, `personel_listesi.${format}`);
+    } catch (err) {
+      console.error("Personel export hatası:", err);
+      setListError("Dışa aktarma başarısız.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // ESC tuşu ile drawer kapatma
   useEffect(() => {
@@ -693,6 +729,27 @@ export default function PersonelListesiPage() {
           </span>
           <span className="toggle-label">Pasif kayıtlar</span>
         </label>
+        <div className="export-wrap" ref={exportMenuRef}>
+          <button
+            type="button"
+            className="btn-export"
+            disabled={exporting}
+            onClick={() => setExportOpen((v) => !v)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            {exporting ? "Hazırlanıyor…" : "Dışa Aktar"}
+          </button>
+          {exportOpen && (
+            <div className="export-menu">
+              <button type="button" onClick={() => handleExport("xlsx")}>Excel (.xlsx)</button>
+              <button type="button" onClick={() => handleExport("csv")}>CSV</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Data Grid */}
@@ -1538,6 +1595,67 @@ export default function PersonelListesiPage() {
           align-items: center;
           gap: 16px;
           margin-bottom: 24px;
+        }
+
+        .export-wrap {
+          position: relative;
+          margin-left: auto;
+        }
+
+        .btn-export {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 18px;
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          font-size: 14px;
+          font-weight: 500;
+          color: #334155;
+          cursor: pointer;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+          transition: all 0.2s ease;
+        }
+
+        .btn-export:hover:not(:disabled) {
+          border-color: #0061A6;
+          color: #0061A6;
+        }
+
+        .btn-export:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .export-menu {
+          position: absolute;
+          right: 0;
+          top: calc(100% + 8px);
+          min-width: 160px;
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+          padding: 6px;
+          z-index: 20;
+        }
+
+        .export-menu button {
+          display: block;
+          width: 100%;
+          text-align: left;
+          padding: 10px 12px;
+          border: none;
+          background: transparent;
+          border-radius: 8px;
+          font-size: 13px;
+          color: #334155;
+          cursor: pointer;
+        }
+
+        .export-menu button:hover {
+          background: #f8fafc;
         }
 
         .search-container {

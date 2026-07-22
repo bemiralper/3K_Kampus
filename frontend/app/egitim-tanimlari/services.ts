@@ -284,3 +284,38 @@ export async function getSinifSeviyeleri(): Promise<{ id: number; ad: string }[]
     return [];
   }
 }
+
+// ============ SINIF EXPORT ============
+
+export type SinifExportFilters = {
+  egitim_yili_id?: number;
+  aktif?: "true" | "false";
+};
+
+function buildSinifExportParams(filters: SinifExportFilters, format: "csv" | "xlsx"): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set("format", format);
+  if (filters.egitim_yili_id) params.set("egitim_yili_id", String(filters.egitim_yili_id));
+  if (filters.aktif) params.set("aktif", filters.aktif);
+  return params;
+}
+
+async function downloadSinifExport(filters: SinifExportFilters, format: "csv" | "xlsx"): Promise<Blob> {
+  const params = buildSinifExportParams(filters, format);
+  const res = await fetch(`${API_BASE}/siniflar/api/export/?${params.toString()}`, {
+    credentials: "include",
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(format === "xlsx" ? "Excel dışa aktarma başarısız" : "CSV dışa aktarma başarısız");
+  }
+  return res.blob();
+}
+
+export async function downloadSinifExportCsv(filters: SinifExportFilters = {}): Promise<Blob> {
+  return downloadSinifExport(filters, "csv");
+}
+
+export async function downloadSinifExportXlsx(filters: SinifExportFilters = {}): Promise<Blob> {
+  return downloadSinifExport(filters, "xlsx");
+}
