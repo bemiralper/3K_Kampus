@@ -2,6 +2,7 @@
 from datetime import date, time
 
 from apps.kurum.domain.models import Kurum
+from apps.website.footer_defaults import ensure_site_footer_links
 from apps.website.models import (
     SiteSettings, SiteSocialLink, SiteFooterLink, HeroSlide, Duyuru,
     SinavTakvim, NedenKart, BasariIstatistik, OgrenciYorumu, SSS,
@@ -130,21 +131,7 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
         )
     counts['social_links'] = SiteSocialLink.objects.filter(kurum=kurum).count()
 
-    for kolon, etiket, url, sira in [
-        ('kurumsal', 'Hakkımızda', '/hakkimizda', 0),
-        ('kurumsal', '3K Sistemi', '/3k-sistemi', 1),
-        ('hizli', 'Duyurular', '#duyurular', 0),
-        ('hizli', 'Sınav Takvimi', '#sinav-takvimi', 1),
-        ('hizli', 'İletişim', '/iletisim', 2),
-        ('yasal', 'KVKK', '/yasal/kvkk', 0),
-        ('yasal', 'Gizlilik Politikası', '/yasal/gizlilik', 1),
-        ('yasal', 'Kullanım Koşulları', '/yasal/kullanim', 2),
-        ('yasal', 'Çerez Politikası', '/yasal/cerez', 3),
-    ]:
-        SiteFooterLink.objects.update_or_create(
-            kurum=kurum, kolon=kolon, etiket=etiket,
-            defaults={'url': url, 'sira': sira, 'aktif': True},
-        )
+    ensure_site_footer_links(kurum)
     counts['footer_links'] = SiteFooterLink.objects.filter(kurum=kurum).count()
 
     if not HeroSlide.objects.filter(kurum=kurum).exists():

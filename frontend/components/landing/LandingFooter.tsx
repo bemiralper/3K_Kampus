@@ -8,6 +8,7 @@ import { LANDING_COLORS } from '@/lib/landing-theme';
 import { handleLandingNav } from '@/lib/landing-nav';
 import { formatPhoneDisplay, phoneDigits } from '@/lib/phone-format';
 import { visibleSocialLinks } from '@/lib/landing-social';
+import { mergeFooterLinks } from '@/lib/landing-footer-links';
 
 type LandingFooterProps = {
   settings: SiteSettings | null;
@@ -116,7 +117,9 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
     || 'LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz.';
   const markaMetni = settings?.footer_marka_metni || '3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.';
 
-  const visibleFooterLinks = footerLinks.filter(l => l.aktif !== false && !shouldHideFooterLink(l));
+  const visibleFooterLinks = mergeFooterLinks(
+    footerLinks.filter(l => l.aktif !== false && !shouldHideFooterLink(l)),
+  );
   const visibleSocial = visibleSocialLinks(socialLinks);
 
   return (

@@ -14,6 +14,7 @@ from apps.website.seed_defaults import (
     ensure_website_defaults,
     resolve_landing_kurum,
 )
+from apps.website.footer_defaults import ensure_site_footer_links
 from apps.website.yasal_defaults import ensure_yasal_metinler, upgrade_yasal_metin_if_needed
 from apps.website.models import (
     SiteSettings, SiteSocialLink, SiteFooterLink, HeroSlide, Duyuru,
@@ -95,6 +96,8 @@ def api_public_landing(request, kod):
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
     ensure_website_defaults(kurum)
+    ensure_site_footer_links(kurum)
+    ensure_yasal_metinler(kurum, upgrade_placeholders=True)
     return JsonResponse({'success': True, 'data': build_landing_payload(kurum, request)})
 
 
@@ -258,6 +261,8 @@ def api_admin_landing_data(request):
         if request.method != 'GET':
             return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
         ensure_website_defaults(kurum)
+        ensure_site_footer_links(kurum)
+        ensure_yasal_metinler(kurum, upgrade_placeholders=True)
         return JsonResponse({
             'success': True,
             'data': build_landing_payload(kurum, request),

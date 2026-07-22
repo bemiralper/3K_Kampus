@@ -40,6 +40,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: absoluteSiteUrl('/duyurular'), lastModified: now, changeFrequency: 'weekly', priority: 0.8 },
     { url: absoluteSiteUrl('/3k-sistemi'), lastModified: now, changeFrequency: 'monthly', priority: 0.7 },
     { url: absoluteSiteUrl('/hakkimizda'), lastModified: now, changeFrequency: 'monthly', priority: 0.7 },
+    { url: absoluteSiteUrl('/yasal/kvkk'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
+    { url: absoluteSiteUrl('/yasal/gizlilik'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
+    { url: absoluteSiteUrl('/yasal/kullanim'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
+    { url: absoluteSiteUrl('/yasal/cerez'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
   ];
 
   const cmsEntries: MetadataRoute.Sitemap = cmsPages

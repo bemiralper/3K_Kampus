@@ -1,12 +1,13 @@
 """Yasal metin içeriklerini varsayılan JSON ile senkronize eder."""
 from django.core.management.base import BaseCommand
 
+from apps.website.footer_defaults import ensure_site_footer_links
 from apps.website.seed_defaults import resolve_landing_kurum
 from apps.website.yasal_defaults import ensure_yasal_metinler
 
 
 class Command(BaseCommand):
-    help = 'KVKK, gizlilik, kullanım ve çerez metinlerini varsayılan içerikle senkronize eder'
+    help = 'Yasal metinleri ve anasayfa footer yasal linklerini senkronize eder'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -31,7 +32,9 @@ class Command(BaseCommand):
             upgrade_placeholders=not options['force_all'],
             force=options['force_all'],
         )
+        footer_added = ensure_site_footer_links(kurum)
         self.stdout.write(self.style.SUCCESS(
-            f"Yasal metinler senkronize edildi (kurum: {kurum.kod}) — "
-            f"oluşturulan: {stats['created']}, güncellenen: {stats['upgraded']}"
+            f"Senkron tamam (kurum: {kurum.kod}) — "
+            f"yasal oluşturulan: {stats['created']}, güncellenen: {stats['upgraded']}, "
+            f"footer eklenen: {footer_added}"
         ))

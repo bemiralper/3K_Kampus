@@ -472,6 +472,14 @@ def _ensure_menus(kurum_id: int) -> None:
     if not footer.items.exists():
         for i, (label, url) in enumerate(footer_items):
             NavItem.objects.create(menu=footer, label=label, url=url, sira=i, aktif=True)
+    else:
+        existing_urls = set(footer.items.values_list('url', flat=True))
+        sira = footer.items.count()
+        for label, url in footer_items:
+            if url not in existing_urls and not footer.items.filter(label=label).exists():
+                NavItem.objects.create(menu=footer, label=label, url=url, sira=sira, aktif=True)
+                sira += 1
+                existing_urls.add(url)
 
 
 def _ensure_legal_pages(kurum_id: int, force: bool) -> dict:
