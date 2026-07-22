@@ -189,9 +189,11 @@ BACKUP_RETENTION_MONTHLY=12
 ```
 
 ```bash
-sudo chmod 600 /etc/lms/env
-sudo chown root:root /etc/lms/env
+sudo chown root:lms /etc/lms/env
+sudo chmod 640 /etc/lms/env
 ```
+
+`640` + grup `lms`: systemd `EnvironmentFile` ile okur; cron (`User=lms`) da `source /etc/lms/env` yapabilir. `600 root:root` yalnızca root okur — cron job'ları **Permission denied** ile düşer.
 
 **SECRET_KEY üret:**
 

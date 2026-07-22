@@ -555,7 +555,7 @@ def schedule_view(request):
         schedule.auto_delete_old = bool(data['auto_delete_old'])
     if 'encrypt' in data:
         schedule.encrypt = bool(data['encrypt']) and enc.encryption_key_available()
-        schedule.save()
+    schedule.save()
     _engine(request)._log(  # noqa: SLF001
         action=BackupOperationAction.SCHEDULE_UPDATE,
         step='Zamanlama güncellendi',

@@ -40,6 +40,12 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "Uyarı: Ortam dosyası yok ($ENV_FILE). Cron env yükleyemez." >&2
 fi
 
+if [[ -f "$ENV_FILE" ]]; then
+  chown root:"$RUN_USER" "$ENV_FILE"
+  chmod 640 "$ENV_FILE"
+  echo "Ortam dosyası cron için: root:$RUN_USER 640 ($ENV_FILE)"
+fi
+
 if ! id "$RUN_USER" &>/dev/null; then
   echo "Kullanıcı yok: $RUN_USER" >&2
   exit 1

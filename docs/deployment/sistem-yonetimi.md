@@ -26,6 +26,15 @@ sudo chmod 644 /etc/cron.d/lms-sistem
 
 Komut: `collect_system_metrics` → CPU/RAM/disk/PG örnekleri.
 
+**Önkoşul:** `/etc/lms/env` cron kullanıcısı (`lms`) tarafından okunabilir olmalı:
+
+```bash
+sudo chown root:lms /etc/lms/env
+sudo chmod 640 /etc/lms/env
+```
+
+(`600 root:root` ise `sudo -u lms ... . /etc/lms/env` → Permission denied; cron da çalışmaz.)
+
 ## Servis kontrolü (bare-metal)
 
 1. Helper kur:
