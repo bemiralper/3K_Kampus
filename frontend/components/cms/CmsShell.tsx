@@ -14,6 +14,7 @@ import CmsContentPanel from './CmsContentPanel';
 import CmsSiteSettings from './CmsSiteSettings';
 import CmsLandingSections from './CmsLandingSections';
 import CmsHomeContent from './CmsHomeContent';
+import CmsYasalMetinler from './CmsYasalMetinler';
 import './cms.css';
 
 export type CmsNavId =
@@ -27,6 +28,7 @@ export type CmsNavId =
   | 'media'
   | 'content'
   | 'forms'
+  | 'legal'
   | 'seo'
   | 'integrations'
   | 'theme';
@@ -42,6 +44,7 @@ const NAV: { id: CmsNavId; label: string; desc: string; needsPage?: boolean }[] 
   { id: 'media', label: 'Medya', desc: 'Görsel kütüphanesi' },
   { id: 'content', label: 'İçerik', desc: 'Duyuru / haber' },
   { id: 'forms', label: 'Formlar', desc: 'Başvuru formları' },
+  { id: 'legal', label: 'Yasal Metinler', desc: 'KVKK, gizlilik, çerez' },
   { id: 'seo', label: 'SEO', desc: 'Arama görünürlüğü' },
   { id: 'integrations', label: 'Entegrasyonlar', desc: 'GA4, kodlar' },
   { id: 'theme', label: 'Görünüm', desc: 'Logo ve renkler' },
@@ -123,6 +126,7 @@ export default function CmsShell({ onMessage }: Props) {
         {nav === 'media' && <CmsMediaLibrary onMessage={flash} />}
         {nav === 'content' && <CmsContentPanel onMessage={flash} />}
         {nav === 'forms' && <CmsFormsPanel onMessage={flash} />}
+        {nav === 'legal' && <CmsYasalMetinler onMessage={flash} />}
         {nav === 'seo' && (
           <CmsSeoCenter onOpenBuilder={openBuilder} onMessage={flash} />
         )}

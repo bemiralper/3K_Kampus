@@ -15,6 +15,7 @@ from apps.website.cms_models import (
     WebPageVersion,
 )
 from apps.website.models import SiteSettings, YasalMetin
+from apps.website.yasal_defaults import YASAL_METIN_DEFAULTS, ensure_yasal_metinler
 
 # Public static assets (frontend/public/cms/)
 IMG_HERO = '/cms/hero-campus.jpg'
@@ -473,38 +474,11 @@ def _ensure_menus(kurum_id: int) -> None:
             NavItem.objects.create(menu=footer, label=label, url=url, sira=i, aktif=True)
 
 
-def _ensure_legal_pages(kurum_id: int, force: bool) -> int:
+def _ensure_legal_pages(kurum_id: int, force: bool) -> dict:
+    kurum = Kurum.objects.filter(pk=kurum_id).first()
+    yasal_created = ensure_yasal_metinler(kurum) if kurum else 0
     count = 0
-    defaults = {
-        'kvkk': (
-            'KVKK Aydınlatma Metni',
-            '<h2>Kişisel Verilerin Korunması</h2>'
-            '<p>Bu metin örnek bir KVKK aydınlatma metnidir. Kurumunuza özel metni buraya yapıştırın '
-            'veya hukuki danışmanınızdan aldığınız metinle değiştirin.</p>'
-            '<p><strong>Veri sorumlusu:</strong> Kurum unvanı · <strong>İletişim:</strong> info@3kkampus.com</p>'
-            '<ul><li>İşlenen veriler: kimlik, iletişim, eğitim bilgileri</li>'
-            '<li>Amaç: eğitim hizmeti sunumu ve veli bilgilendirme</li>'
-            '<li>Haklarınız: erişim, düzeltme, silme, itiraz</li></ul>',
-        ),
-        'gizlilik': (
-            'Gizlilik Politikası',
-            '<h2>Gizlilik Politikası</h2>'
-            '<p>Web sitemizi ziyaret ettiğinizde toplanan bilgiler, hizmet kalitesini artırmak '
-            've yasal yükümlülükleri yerine getirmek amacıyla kullanılır. Bu metni kurum politikalarınızla güncelleyin.</p>',
-        ),
-        'kullanim': (
-            'Kullanım Koşulları',
-            '<h2>Kullanım Koşulları</h2>'
-            '<p>Siteye erişerek bu koşulları kabul etmiş sayılırsınız. İçeriklerin izinsiz kopyalanması yasaktır. '
-            'Örnek metindir — kendi koşullarınızla değiştirin.</p>',
-        ),
-        'cerez': (
-            'Çerez Politikası',
-            '<h2>Çerez Politikası</h2>'
-            '<p>Sitemiz, deneyimi iyileştirmek için zorunlu ve analitik çerezler kullanabilir. '
-            'GA4 / reklam çerezlerini Entegrasyonlar üzerinden yönetebilirsiniz. Bu metni güncelleyin.</p>',
-        ),
-    }
+    defaults = YASAL_METIN_DEFAULTS
     for slug, (title, html) in defaults.items():
         yasal = YasalMetin.objects.filter(kurum_id=kurum_id, tur=slug).first()
         body = (yasal.icerik if yasal and yasal.icerik else html)
@@ -523,7 +497,7 @@ def _ensure_legal_pages(kurum_id: int, force: bool) -> int:
         )
         if changed:
             count += 1
-    return count
+    return {'pages': count, 'yasal_metinler_created': yasal_created}
 
 
 def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict:
@@ -590,7 +564,7 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
         if changed:
             pages_changed.append(slug)
 
-    legal_n = _ensure_legal_pages(kurum_id, force=False)
+    legal = _ensure_legal_pages(kurum_id, force=False)
 
     # Tema: kurum logosunu çek + örnek footer
     theme, _ = SiteTheme.objects.get_or_create(kurum_id=kurum_id)
@@ -618,7 +592,8 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
         'homepage_id': home.id,
         'homepage_updated': home_changed,
         'pages_updated': pages_changed,
-        'legal_pages': legal_n,
+        'legal_pages': legal.get('pages', 0),
+        'yasal_metinler_created': legal.get('yasal_metinler_created', 0),
         'form_slug': form_slug,
         'health': health,
     }

@@ -184,6 +184,7 @@ def serialize_yasal(metin):
         'tur': metin.tur,
         'baslik': metin.baslik,
         'icerik': metin.icerik,
+        'aktif': metin.aktif,
         'updated_at': metin.updated_at.isoformat(),
     }
 

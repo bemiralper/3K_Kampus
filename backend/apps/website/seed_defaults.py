@@ -4,8 +4,9 @@ from datetime import date, time
 from apps.kurum.domain.models import Kurum
 from apps.website.models import (
     SiteSettings, SiteSocialLink, SiteFooterLink, HeroSlide, Duyuru,
-    SinavTakvim, NedenKart, BasariIstatistik, OgrenciYorumu, SSS, YasalMetin,
+    SinavTakvim, NedenKart, BasariIstatistik, OgrenciYorumu, SSS,
 )
+from apps.website.yasal_defaults import YASAL_METIN_DEFAULTS, ensure_yasal_metinler
 
 LANDING_KURUM_KOD = '3K'
 
@@ -137,6 +138,8 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
         ('hizli', 'İletişim', '/iletisim', 2),
         ('yasal', 'KVKK', '/yasal/kvkk', 0),
         ('yasal', 'Gizlilik Politikası', '/yasal/gizlilik', 1),
+        ('yasal', 'Kullanım Koşulları', '/yasal/kullanim', 2),
+        ('yasal', 'Çerez Politikası', '/yasal/cerez', 3),
     ]:
         SiteFooterLink.objects.update_or_create(
             kurum=kurum, kolon=kolon, etiket=etiket,
@@ -221,16 +224,8 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
         )
     counts['sss'] = SSS.objects.filter(kurum=kurum).count()
 
-    for tur, baslik, icerik in [
-        ('kvkk', 'Kişisel Verilerin Korunması Aydınlatma Metni', '<p>KVKK aydınlatma metni.</p>'),
-        ('gizlilik', 'Gizlilik Politikası', '<p>Gizlilik politikası metni.</p>'),
-        ('kullanim', 'Kullanım Koşulları', '<p>Platform kullanım koşulları.</p>'),
-    ]:
-        YasalMetin.objects.get_or_create(
-            kurum=kurum, tur=tur,
-            defaults={'baslik': baslik, 'icerik': icerik, 'aktif': True},
-        )
-    counts['yasal'] = YasalMetin.objects.filter(kurum=kurum).count()
+    counts['yasal_created'] = ensure_yasal_metinler(kurum)
+    counts['yasal'] = len(YASAL_METIN_DEFAULTS)
 
     return {'kurum_id': kurum.id, 'kurum_kod': kurum.kod, 'counts': counts}
 

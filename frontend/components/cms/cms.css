@@ -2181,3 +2181,121 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* Yasal metinler paneli */
+.cms-yasal-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 900px) {
+  .cms-yasal-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cms-yasal-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cms-yasal-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--cms-line);
+  border-radius: 12px;
+  background: var(--cms-card);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.cms-yasal-tab.active {
+  border-color: var(--cms-brand);
+  box-shadow: 0 0 0 1px rgba(11, 107, 203, 0.12);
+}
+
+.cms-yasal-tab-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.cms-yasal-tab-badge.ok {
+  color: var(--cms-ok);
+  background: rgba(5, 150, 105, 0.1);
+}
+
+.cms-yasal-tab-badge.missing {
+  color: var(--cms-warn);
+  background: rgba(217, 119, 6, 0.12);
+}
+
+.cms-yasal-editor {
+  padding: 1.25rem;
+}
+
+.cms-yasal-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.cms-yasal-editor-head h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.cms-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.cms-field span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cms-ink);
+}
+
+.cms-field input,
+.cms-field textarea {
+  width: 100%;
+  border: 1px solid var(--cms-line);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  background: #fff;
+}
+
+.cms-field textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.cms-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 14px;
+}
+
+.cms-yasal-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+

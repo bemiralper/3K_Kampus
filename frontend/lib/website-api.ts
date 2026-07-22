@@ -161,7 +161,7 @@ export type BasariIstatistik = { id: number; etiket: string; deger: string; sira
 export type OgrenciYorumu = { id: number; ad: string; rol: string; puan: number; yorum: string; sira: number };
 export type SSSItem = { id: number; soru: string; cevap: string; sira: number };
 export type YasalOzet = { tur: string; baslik: string };
-export type YasalMetin = { id: number; tur: string; baslik: string; icerik: string; updated_at: string };
+export type YasalMetin = { id: number; tur: string; baslik: string; icerik: string; aktif?: boolean; updated_at: string };
 
 export type LandingData = {
   kurum: KurumBranding & { id?: number; kod?: string; ad?: string };
