@@ -130,7 +130,9 @@ def api_public_yasal_detail(request, kod, tur):
     kurum = _resolve_public_kurum(kod)
     if not kurum:
         return JsonResponse({'success': False, 'error': 'Kurum bulunamadı'}, status=404)
-    metin = get_object_or_404(YasalMetin, kurum=kurum, tur=tur, aktif=True)
+    metin = YasalMetin.objects.filter(kurum=kurum, tur=tur, aktif=True).first()
+    if not metin:
+        return JsonResponse({'success': False, 'error': 'Yasal metin bulunamadı'}, status=404)
     return JsonResponse({'success': True, 'data': serialize_yasal(metin)})
 
 
