@@ -19,17 +19,18 @@ export default function RecipientsSummaryPanel({
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
 
-  const recipients = preview?.recipients ?? [];
   const filtered = useMemo(() => {
+    const recipients = preview?.recipients ?? [];
     if (!search.trim()) return recipients;
     const q = search.toLowerCase();
     return recipients.filter(
       (r) => r.display_name?.toLowerCase().includes(q) || r.e164.includes(q),
     );
-  }, [recipients, search]);
+  }, [preview?.recipients, search]);
 
   const visible = showAll ? filtered : filtered.slice(0, 10);
   const remaining = filtered.length - visible.length;
+  const recipientCount = preview?.recipients?.length ?? 0;
 
   return (
     <aside className="comm-studio-left">
@@ -53,12 +54,12 @@ export default function RecipientsSummaryPanel({
         placeholder="Alıcı ara…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        disabled={!recipients.length}
+        disabled={!recipientCount}
       />
 
       {loading ? (
         <p className="comm-studio-muted">Yükleniyor…</p>
-      ) : recipients.length === 0 ? (
+      ) : recipientCount === 0 ? (
         <p className="comm-studio-muted">Alıcı listesi önizlemede gösterilir.</p>
       ) : (
         <ul className="comm-recipient-chips">

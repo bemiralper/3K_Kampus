@@ -2,7 +2,7 @@
  * Coach Portal API — öğrenci listesi, 360 BFF ve ilgili uçlar
  */
 
-import { apiGet, apiPost, ApiResponse } from './api';
+import { apiGet, apiPost, ApiResponse, getContextHeaders } from './api';
 import {
   COACH_MEETING_FOLLOWUP_DAYS,
   normalizeCoachRiskLevel,
@@ -111,6 +111,30 @@ export async function fetchCoachStudents(
   }
 
   return { success: true, data: students };
+}
+
+/**
+ * Koç öğrenci listesi — kurumsal Excel/CSV (GET /api/coaching/students/export/).
+ */
+export async function downloadCoachStudentsExport(
+  format: 'csv' | 'xlsx',
+  studentIds?: number[],
+): Promise<Blob> {
+  const params = new URLSearchParams();
+  params.set('format', format);
+  if (studentIds?.length) {
+    params.set('ids', studentIds.join(','));
+  }
+  const res = await fetch(`/api/coaching/students/export/?${params}`, {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(
+      format === 'xlsx' ? 'Excel dışa aktarma başarısız' : 'CSV dışa aktarma başarısız',
+    );
+  }
+  return res.blob();
 }
 
 // ─── Profile BFF types (Track A: GET /api/coaching/students/{id}/profile/) ───
