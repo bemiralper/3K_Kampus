@@ -136,6 +136,24 @@ Notlar:
 - Yerel retention (`purge_expired_backups`) ile Drive’daki eski dosyalar otomatik silinmez — Drive tarafında ayrı yaşam döngüsü/manuel temizlik gerekir.
 - Native “Drive’a doğrudan API upload” provider henüz yok; ihtiyaç halinde ayrı faz olarak eklenebilir.
 
+## E-posta bildirimleri
+
+Panel: **Yedekleme → Ayarlar** — bildirimleri açın, adresleri girin, **Başarılı yedekte bildir** işaretleyin, **Test maili gönder** ile doğrulayın.
+
+Sunucuda SMTP (`/etc/lms/env`):
+
+```bash
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=your@gmail.com
+EMAIL_HOST_PASSWORD=uygulama-sifresi
+DEFAULT_FROM_EMAIL=your@gmail.com
+```
+
+Değişiklikten sonra: `sudo systemctl restart lms-backend`
+
+Otomatik ve manuel yedekler tamamlandığında (veya hata olduğunda) ayarlara göre mail gider.
+
 ## API
 
 Base: `/yedekleme/api/`
@@ -147,7 +165,7 @@ Base: `/yedekleme/api/`
 | `GET/POST backups/`, `POST backups/upload/` | read / create (+restore upload) |
 | `.../preview/`, `.../download/` | read |
 | `.../verify/`, `.../analyze/`, `.../dry-run/`, `.../restore/` | restore |
-| `DELETE .../delete/`, `GET/PUT schedule/`, `POST schedule/run/`, `GET/PUT settings/`, `POST purge/` | manage / create |
+| `DELETE .../delete/`, `GET/PUT schedule/`, `POST schedule/run/`, `GET/PUT settings/`, `POST settings/test-email/`, `POST purge/` | manage / create |
 | `GET logs/`, `GET jobs/<id>/` | read |
 
 İzin kodları: `yedekleme.read`, `yedekleme.create`, `yedekleme.restore`, `yedekleme.manage`.

@@ -109,6 +109,8 @@ export interface BackupSettingsData {
   local_root: string;
   format_version: string;
   legacy_format_supported: boolean;
+  email_configured?: boolean;
+  default_from_email?: string;
 }
 
 export interface BackupJob {
@@ -275,6 +277,12 @@ export function fetchSettings(): Promise<ApiResponse<BackupSettingsData>> {
 
 export function updateSettings(data: Partial<BackupSettingsData>): Promise<ApiResponse<{ updated: boolean }>> {
   return apiPut(`${BASE}/settings/`, data);
+}
+
+export function sendTestNotificationEmail(recipients?: string): Promise<
+  ApiResponse<{ sent: boolean; count: number; recipients: string[] }>
+> {
+  return apiPost(`${BASE}/settings/test-email/`, recipients ? { recipients } : {});
 }
 
 export function fetchLogs(params?: Record<string, string | number>): Promise<

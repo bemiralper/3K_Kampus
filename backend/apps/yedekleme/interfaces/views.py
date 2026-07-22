@@ -26,6 +26,12 @@ from apps.yedekleme.domain.models import (
 )
 from apps.yedekleme.engine import BackupEngine, RetentionService
 from apps.yedekleme.engine import encryption as enc
+from apps.yedekleme.engine.notifications import (
+    default_from_email,
+    parse_recipients,
+    send_backup_notification,
+    smtp_configured,
+)
 from apps.yedekleme.engine.storage import fetch_file, local_root
 from apps.yedekleme.registry import sync_registered_resources
 from shared.permissions import api_permission_required
@@ -636,6 +642,8 @@ def settings_view(request):
             'local_root': str(local_root()),
             'format_version': '2.0',
             'legacy_format_supported': False,
+            'email_configured': smtp_configured(),
+            'default_from_email': default_from_email(),
         })
     data = _body(request)
     for field in ('encryption_enabled', 'default_encrypt', 'default_compress',
@@ -652,6 +660,47 @@ def settings_view(request):
         step='Ayarlar güncellendi',
     )
     return JsonResponse({'updated': True})
+
+
+@require_http_methods(['POST'])
+@api_permission_required('yedekleme.manage', write_codes=['yedekleme.manage'])
+def settings_test_email_view(request):
+    """Bildirim ayarlarındaki adreslere test maili gönderir."""
+    s = BackupSettings.get_singleton()
+    data = _body(request)
+    recipients = parse_recipients(data.get('recipients') or s.notify_emails)
+    if not recipients:
+        return JsonResponse(
+            {'error': 'Bildirim e-postası tanımlı değil. Ayarlara en az bir adres girin.'},
+            status=400,
+        )
+    if not smtp_configured():
+        return JsonResponse(
+            {
+                'error': 'SMTP yapılandırılmadı. Sunucuda EMAIL_HOST ve EMAIL_HOST_USER tanımlayın (/etc/lms/env).',
+                'email_configured': False,
+            },
+            status=400,
+        )
+    try:
+        sent = send_backup_notification(
+            subject='[3K Yedekleme] Test bildirimi',
+            body=(
+                'Bu bir test e-postasıdır.\n'
+                'Yedekleme bildirimleri bu kanaldan gönderilecektir.\n'
+                f'Gönderen: {default_from_email()}'
+            ),
+            recipients=recipients,
+            fail_silently=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JsonResponse({'error': str(exc), 'email_configured': True}, status=502)
+    _engine(request)._log(  # noqa: SLF001
+        action=BackupOperationAction.SETTINGS_UPDATE,
+        step='Test bildirim maili gönderildi',
+        metadata={'recipients': recipients},
+    )
+    return JsonResponse({'sent': True, 'count': sent, 'recipients': recipients})
 
 
 @require_http_methods(['GET'])

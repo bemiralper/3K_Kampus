@@ -136,11 +136,14 @@ class BackupEngine:
             recipients = [e.strip() for e in (s.notify_emails or '').replace(';', ',').split(',') if e.strip()]
             if not recipients:
                 return
-            from django.conf import settings as dj_settings
-            from django.core.mail import send_mail
+            from apps.yedekleme.engine.notifications import send_backup_notification
 
-            from_email = getattr(dj_settings, 'DEFAULT_FROM_EMAIL', None) or 'no-reply@3kkampus'
-            send_mail(subject, body, from_email, recipients, fail_silently=True)
+            send_backup_notification(
+                subject=subject,
+                body=body,
+                recipients=recipients,
+                fail_silently=True,
+            )
         except Exception:  # noqa: BLE001
             pass
 

@@ -24,6 +24,7 @@ import {
   previewBackup,
   restoreBackup,
   runScheduleNow,
+  sendTestNotificationEmail,
   syncResources,
   updateSchedule,
   updateSettings,
@@ -559,6 +560,24 @@ export default function YedeklemeClient() {
       void loadSettings();
     } else {
       setNotice({ type: 'error', text: errorText('Ayarlar kaydedilemedi.', res.error) });
+    }
+  };
+
+  const handleTestNotificationEmail = async () => {
+    if (!settings?.notify_emails?.trim()) {
+      setNotice({ type: 'error', text: 'Önce bildirim e-postası girin ve kaydedin.' });
+      return;
+    }
+    setBusyKey('settings-test-email');
+    const res = await sendTestNotificationEmail(settings.notify_emails);
+    setBusyKey(null);
+    if (res.success && res.data?.sent) {
+      setNotice({
+        type: 'success',
+        text: `Test maili gönderildi: ${(res.data.recipients || []).join(', ')}`,
+      });
+    } else {
+      setNotice({ type: 'error', text: errorText('Test maili gönderilemedi.', res.error) });
     }
   };
 
@@ -1398,8 +1417,30 @@ export default function YedeklemeClient() {
                     <label className="yedekleme-check"><input type="checkbox" checked={settings.notify_on_success} disabled={!settings.notify_enabled} onChange={(event) => setSettings({ ...settings, notify_on_success: event.target.checked })} /> Başarılı yedek/geri yüklemede bildir</label>
                     <label className="yedekleme-check"><input type="checkbox" checked={settings.notify_on_failure} disabled={!settings.notify_enabled} onChange={(event) => setSettings({ ...settings, notify_on_failure: event.target.checked })} /> Hatada bildir</label>
                     <label className="yedekleme-field"><span>Bildirim e-postaları (virgülle ayır)</span><input type="text" value={settings.notify_emails} disabled={!settings.notify_enabled} onChange={(event) => setSettings({ ...settings, notify_emails: event.target.value })} placeholder="admin@ornek.com, bt@ornek.com" /></label>
+                    {settings.notify_enabled && settings.email_configured === false && (
+                      <div className="yedekleme-callout yedekleme-callout--danger">
+                        SMTP yapılandırılmadı. Sunucuda <code>/etc/lms/env</code> içine EMAIL_HOST, EMAIL_HOST_USER ve EMAIL_HOST_PASSWORD ekleyin; ardından backend servisini yeniden başlatın.
+                      </div>
+                    )}
+                    {settings.notify_enabled && settings.email_configured && (
+                      <div className="yedekleme-callout yedekleme-callout--muted">
+                        Gönderen: {settings.default_from_email || '-'}
+                      </div>
+                    )}
                     <label className="yedekleme-field"><span>Notlar</span><textarea value={settings.notes} onChange={(event) => setSettings({ ...settings, notes: event.target.value })} rows={5} /></label>
-                    <button className="yedekleme-btn yedekleme-btn--primary" onClick={handleSaveSettings} disabled={busyKey === 'settings'}>Ayarları Kaydet</button>
+                    <div className="yedekleme-toolbar">
+                      <button className="yedekleme-btn yedekleme-btn--primary" onClick={handleSaveSettings} disabled={busyKey === 'settings'}>
+                        {busyKey === 'settings' ? 'Kaydediliyor...' : 'Ayarları Kaydet'}
+                      </button>
+                      <button
+                        className="yedekleme-btn"
+                        type="button"
+                        onClick={handleTestNotificationEmail}
+                        disabled={!settings.notify_enabled || busyKey === 'settings-test-email'}
+                      >
+                        {busyKey === 'settings-test-email' ? 'Gönderiliyor...' : 'Test maili gönder'}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <EmptyState text="Ayarlar yüklenemedi." />
