@@ -112,7 +112,7 @@ export function isLegacyJsonYasalContent(raw: string | null | undefined): boolea
 
 export function isPlaceholderYasalHtml(raw: string | null | undefined): boolean {
   if (!raw?.trim()) return true;
-  if isPublishedYasalHtml(raw)) return false;
+  if (isPublishedYasalHtml(raw)) return false;
   if (isLegacyJsonYasalContent(raw)) return true;
   const text = raw.toLowerCase();
   if (
