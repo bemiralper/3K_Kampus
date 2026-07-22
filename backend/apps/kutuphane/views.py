@@ -2547,6 +2547,97 @@ def api_attendance_sheet_data(request, library_id):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
+_ATTENDANCE_STATUS_LABELS = ['Var', 'Yok', 'Geç', 'İzinli', 'Masada Değil']
+
+
+def _get_kurum_adi(kurum_id):
+    try:
+        from apps.kurum.domain.models import Kurum
+        kurum = Kurum.objects.filter(id=kurum_id).values('ad').first()
+        if kurum:
+            return kurum['ad']
+    except Exception:
+        pass
+    return ''
+
+
+@csrf_exempt
+def api_attendance_sheet_export(request, library_id):
+    """
+    POST /kutuphane/api/salon/<library_id>/yoklama-export/
+    Yoklama kağıdı (günlük/haftalık pivot tablo) — kurumsal CSV/Excel dışa aktarma.
+    Frontend, ekrandaki tabloyu (dinamik gün/periyot kolonları) zaten hesaplayıp
+    {columns, rows} olarak gönderir; bu uç yalnızca kurumsal şablonla dosyayı üretir.
+    Body: { columns: [{key, label}], rows: [{...}], meta: {tarih, mode}, format: 'csv'|'xlsx' }
+    """
+    ctx, library, err = _resolve_library(request, library_id)
+    if err:
+        return err
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı.'}, status=400)
+
+    raw_columns = body.get('columns') or []
+    raw_rows = body.get('rows') or []
+    meta_in = body.get('meta') or {}
+    fmt = (body.get('format') or 'xlsx').lower()
+
+    if not raw_columns or not raw_rows:
+        return JsonResponse({'success': False, 'error': 'Dışa aktarılacak veri yok.'}, status=400)
+
+    from shared.export.style_manager import ExportColumn, ExportStat, ReportMeta
+
+    columns = [
+        ExportColumn(key=c.get('key'), label=c.get('label') or c.get('key'), type='text')
+        for c in raw_columns if c.get('key')
+    ]
+
+    user = getattr(request, 'user', None)
+    generated_by = ''
+    if user and getattr(user, 'is_authenticated', False):
+        generated_by = user.get_full_name() or user.get_username()
+
+    tarih_label = meta_in.get('tarih') or ''
+    mode_label = 'Haftalık' if meta_in.get('mode') == 'weekly' else 'Günlük'
+    report_title = f'SALON YOKLAMA LİSTESİ — {tarih_label}' if tarih_label else 'SALON YOKLAMA LİSTESİ'
+
+    sube_adi = _get_sube_adi(library.sube_id)
+    sube_display = ' — '.join(p for p in [sube_adi, f'{library.ad} ({mode_label})'] if p)
+
+    meta = ReportMeta(
+        report_title=report_title,
+        kurum_ad=_get_kurum_adi(library.kurum_id),
+        sube_ad=sube_display,
+        generated_by=generated_by,
+    )
+
+    status_counts = {label: 0 for label in _ATTENDANCE_STATUS_LABELS}
+    for row in raw_rows:
+        for value in row.values():
+            if value in status_counts:
+                status_counts[value] += 1
+
+    stats = [ExportStat(label='Toplam Öğrenci', value=len(raw_rows), type='integer')]
+    for label in _ATTENDANCE_STATUS_LABELS:
+        if status_counts[label]:
+            stats.append(ExportStat(label=label, value=status_counts[label], type='integer'))
+
+    filename_tarih = (tarih_label or '').replace(' ', '_').replace('/', '-')
+    filename = f"yoklama_{'haftalik' if meta_in.get('mode') == 'weekly' else 'gunluk'}_{filename_tarih or 'liste'}"
+
+    if fmt == 'csv':
+        from shared.export import CsvExportService
+        return CsvExportService.export(raw_rows, columns, meta=meta, filename=filename)
+
+    from shared.export import ExcelExportService
+    return ExcelExportService.export(raw_rows, columns, meta=meta, stats=stats, filename=filename)
+
+
 @csrf_exempt
 def api_attendance_weekly_summary(request, library_id):
     """

@@ -30,7 +30,6 @@ import {
   createSlotGenerator,
   createTimeSlot,
   deleteTimeSlot,
-  exportSlotsCsv,
   fetchScheduleTemplate,
   previewSlotGenerator,
   shiftTemplateSlots,

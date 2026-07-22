@@ -7,7 +7,11 @@ from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
 import json
 
-from apps.academic.interfaces.sube_context import assert_academic_sube_access, mandatory_academic_context
+from apps.academic.interfaces.sube_context import (
+    assert_academic_sube_access,
+    gate_schedule_template,
+    mandatory_academic_context,
+)
 from apps.academic.domain.schedule_template import ScheduleTemplate
 from apps.academic.interfaces.serializers.schedule_template import (
     ScheduleTemplateListSerializer,
@@ -252,3 +256,64 @@ def schedule_template_usage_api(request, template_id):
         return JsonResponse({'success': False, 'error': 'Zaman şablonu bulunamadı.'}, status=404)
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def schedule_template_export_api(request, template_id):
+    """GET /api/academic/schedule-templates/<id>/export/?format=csv|xlsx — kurumsal dışa aktarma."""
+    from shared.export.style_manager import ExportColumn, ExportStat, ReportMeta
+
+    ctx, template, err = gate_schedule_template(request, template_id, is_active=False)
+    if err:
+        return err
+
+    slots = list(template.time_slots.filter(is_active=True).order_by('order'))
+
+    rows = [{
+        'order': slot.order,
+        'name': slot.name,
+        'start_time': slot.start_time.strftime('%H:%M') if slot.start_time else '',
+        'end_time': slot.end_time.strftime('%H:%M') if slot.end_time else '',
+        'duration': slot.duration,
+        'slot_type_display': slot.slot_type_display,
+    } for slot in slots]
+
+    columns = [
+        ExportColumn(key='order', label='Sıra', type='integer'),
+        ExportColumn(key='name', label='Ad', type='text'),
+        ExportColumn(key='start_time', label='Başlangıç', type='text'),
+        ExportColumn(key='end_time', label='Bitiş', type='text'),
+        ExportColumn(key='duration', label='Süre (dk)', type='integer'),
+        ExportColumn(key='slot_type_display', label='Tip', type='text'),
+    ]
+
+    user = request.user
+    generated_by = ''
+    if user and getattr(user, 'is_authenticated', False):
+        generated_by = user.get_full_name() or user.get_username()
+
+    meta = ReportMeta(
+        report_title='DERS SAATLERİ LİSTESİ',
+        kurum_ad=template.kurum.ad if template.kurum_id else '',
+        sube_ad=template.sube.ad if template.sube_id else '',
+        generated_by=generated_by,
+        extra={'template_name': template.name},
+    )
+
+    lesson_count = sum(1 for slot in slots if not slot.is_break)
+    break_count = len(slots) - lesson_count
+    stats = [
+        ExportStat(label='Toplam Slot', value=len(slots), type='integer'),
+        ExportStat(label='Ders', value=lesson_count, type='integer'),
+        ExportStat(label='Mola', value=break_count, type='integer'),
+    ]
+
+    fmt = (request.GET.get('format') or 'xlsx').lower()
+    filename = f'{template.name}_ders_saatleri'
+    if fmt == 'csv':
+        from shared.export import CsvExportService
+        return CsvExportService.export(rows, columns, meta=meta, filename=filename)
+
+    from shared.export import ExcelExportService
+    return ExcelExportService.export(rows, columns, meta=meta, stats=stats, filename=filename, orientation='portrait')

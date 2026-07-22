@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import {
+  downloadCoachStudentsExport,
   fetchCoachStudents,
   type CoachPortalStudent,
   type RiskSeviyesi,
@@ -12,7 +13,7 @@ import {
   COACH_RISK_LABELS,
   coachRiskCssClass,
 } from "@/lib/coach-constants";
-import { exportCoachStudentsCsv } from "@/lib/coach-students-export";
+import { downloadBlob } from "@/lib/download-file";
 import {
   getPinnedStudentIds,
   pruneCoachPrefsToStudentIds,
@@ -403,6 +404,26 @@ export default function CoachOgrencilerPage() {
     setSelectedIds([]);
   };
 
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "xlsx" | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExport = async (format: "csv" | "xlsx") => {
+    if (displayedStudents.length === 0) return;
+    setExportingFormat(format);
+    setExportError(null);
+    try {
+      const blob = await downloadCoachStudentsExport(
+        format,
+        displayedStudents.map((s) => s.id)
+      );
+      downloadBlob(blob, `ogrencilerim.${format}`);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "Dışa aktarma başarısız");
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
   return (
     <div className="coach-students-page">
       <header className="coach-page-header">
@@ -517,10 +538,18 @@ export default function CoachOgrencilerPage() {
           <button
             type="button"
             className="coach-link-btn"
-            onClick={() => exportCoachStudentsCsv(displayedStudents)}
-            disabled={displayedStudents.length === 0}
+            onClick={() => handleExport("csv")}
+            disabled={displayedStudents.length === 0 || exportingFormat !== null}
           >
-            CSV ↓
+            {exportingFormat === "csv" ? "Hazırlanıyor…" : "CSV ↓"}
+          </button>
+          <button
+            type="button"
+            className="coach-link-btn"
+            onClick={() => handleExport("xlsx")}
+            disabled={displayedStudents.length === 0 || exportingFormat !== null}
+          >
+            {exportingFormat === "xlsx" ? "Hazırlanıyor…" : "Excel ↓"}
           </button>
           <button
             type="button"
@@ -531,6 +560,8 @@ export default function CoachOgrencilerPage() {
           </button>
         </div>
       </section>
+
+      {exportError && <div className="coach-error">{exportError}</div>}
 
       <div className="coach-students-filters" role="tablist" aria-label="Hızlı filtreler">
         {FILTER_OPTIONS.map((f) => (

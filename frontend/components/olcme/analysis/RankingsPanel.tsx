@@ -4,6 +4,8 @@ import { useState } from 'react';
 import InfoTip from './InfoTip';
 import PdfExportModal from '../PdfExportModal';
 import { ALAN_LABELS } from '../pdfExport';
+import { analysisApi } from '../api';
+import { downloadBlob } from '@/lib/download-file';
 import type { RankingItem, RankingSectionInfo } from '../types';
 import s from '../../../app/admin/olcme-degerlendirme/olcme.module.css';
 
@@ -14,12 +16,14 @@ const ALAN_TO_PT: Record<string, string> = {
   SOZEL: 'SOZ',
 };
 
-export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYearChange, sections, examName, examType, sectionAvgs, avgNet, puanTurleriAvgs, sinifAvgs }: {
+export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYearChange, sections, examId, sessionId, examName, examType, sectionAvgs, avgNet, puanTurleriAvgs, sinifAvgs }: {
   rankings: RankingItem[];
   meta: { top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number };
   rankingYear: number;
   onRankingYearChange: (y: number) => void;
   sections: RankingSectionInfo[];
+  examId: number;
+  sessionId?: number;
   examName: string;
   examType: string;
   sectionAvgs?: Record<string, { avg_correct: number; avg_wrong: number; avg_net: number }>;
@@ -30,6 +34,20 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
   const [showSubSections, setShowSubSections] = useState(true);
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [alanViewFilter, setAlanViewFilter] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<'xlsx' | 'csv' | null>(null);
+
+  const handleTableExport = async (format: 'xlsx' | 'csv') => {
+    setExporting(format);
+    try {
+      const blob = await analysisApi.exportRankings(format, examId, sessionId, rankingYear);
+      downloadBlob(blob, `${examName}_Siralama.${format}`.replace(/\s+/g, '_'));
+    } catch (err) {
+      console.error('Sıralama dışa aktarma hatası:', err);
+      alert('Dışa aktarma sırasında bir hata oluştu.');
+    } finally {
+      setExporting(null);
+    }
+  };
 
   if (!rankings.length) return <div className={s.analysisEmpty}>Sıralama verisi yok.</div>;
 
@@ -197,6 +215,23 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
               <option value={2023}>2023 YKS</option>
             </select>
           </div>
+          {/* Excel / CSV Dışa Aktar Butonları */}
+          <button
+            className={s.analysisBtnSmall}
+            onClick={() => handleTableExport('xlsx')}
+            disabled={exporting !== null}
+            style={{ background: '#16a34a', color: '#fff', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: exporting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: exporting ? 0.7 : 1 }}
+          >
+            📊 {exporting === 'xlsx' ? 'Hazırlanıyor…' : 'Excel'}
+          </button>
+          <button
+            className={s.analysisBtnSmall}
+            onClick={() => handleTableExport('csv')}
+            disabled={exporting !== null}
+            style={{ background: '#475569', color: '#fff', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: exporting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: exporting ? 0.7 : 1 }}
+          >
+            🧾 {exporting === 'csv' ? 'Hazırlanıyor…' : 'CSV'}
+          </button>
           {/* PDF Dışa Aktar Butonu */}
           <button
             className={s.analysisBtnSmall}

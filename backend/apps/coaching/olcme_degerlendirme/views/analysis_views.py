@@ -22,9 +22,12 @@ from django.db.models import (
 from django.db.models.functions import Concat, Cast
 
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes, renderer_classes
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
+
+from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
 
 from ..models import (
     Exam, ExamSection, ExamSession,
@@ -890,6 +893,7 @@ def exam_analysis_classes(request, exam_pk):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @api_view(['GET'])
+@renderer_classes([JSONRenderer, XlsxRenderer, CsvRenderer])
 @authentication_classes([CsrfExemptSessionAuthentication])
 @permission_classes([IsAuthenticated])
 def exam_analysis_rankings(request, exam_pk):
@@ -897,6 +901,7 @@ def exam_analysis_rankings(request, exam_pk):
     Sıralama ve yüzdelik dilim analizi.
 
     GET /exams/{exam_pk}/analysis/rankings/?session_id=X
+    Excel/CSV dışa aktarma: ?format=xlsx veya ?format=csv
     """
     exam, err = _get_exam_or_404(request, exam_pk)
     if err:
@@ -975,6 +980,9 @@ def exam_analysis_rankings(request, exam_pk):
             'student_name': f'{a.student.ad} {a.student.soyad}' if a.student else (a.raw_student_name or a.raw_student_id),
             'raw_student_id': a.raw_student_id or '',
             'toplam_net': _safe_float(a.total_net),
+            'total_correct': a.total_correct,
+            'total_wrong': a.total_wrong,
+            'total_empty': a.total_empty,
             'puan': score_data['puan'],
             'puan_turleri': puan_turleri_r,
             'tahmini_siralama': est.get('tahmini_siralama'),
@@ -1063,14 +1071,36 @@ def exam_analysis_rankings(request, exam_pk):
             'puan_turleri_avgs': pt_avgs,
         }
 
+    avg_net_val = round(sum(r['toplam_net'] for r in ranking_list) / total, 2) if total else 0
+    avg_score_val = round(sum(all_scores) / len(all_scores), 2) if all_scores else 0
+
+    export_format = (request.query_params.get('format') or '').lower()
+    if export_format in ('csv', 'xlsx'):
+        from apps.coaching.application.olcme_rankings_export import (
+            build_export_columns,
+            build_export_meta,
+            build_export_rows,
+            build_export_stats,
+        )
+        from shared.export import CsvExportService, ExcelExportService
+
+        rows = build_export_rows(ranking_list, is_ayt=is_ayt)
+        columns = build_export_columns(is_ayt=is_ayt)
+        meta = build_export_meta(request, exam, report_title=f'{exam.name} — Sıralama Sonuçları')
+        filename = f'{exam.name}_siralama'
+        if export_format == 'xlsx':
+            stats = build_export_stats(ranking_list, avg_net=avg_net_val, avg_score=avg_score_val)
+            return ExcelExportService.export(rows, columns, meta=meta, stats=stats, filename=filename)
+        return CsvExportService.export(rows, columns, meta=meta, filename=filename)
+
     return Response({
         'rankings': ranking_list,
         'sections': sections_info,
         'total_students': total,
         'top_10_count': top_10_count,
         'bottom_10_count': bottom_10_count,
-        'avg_score': round(sum(all_scores) / len(all_scores), 2) if all_scores else 0,
-        'avg_net': round(sum(r['toplam_net'] for r in ranking_list) / total, 2) if total else 0,
+        'avg_score': avg_score_val,
+        'avg_net': avg_net_val,
         'section_avgs': section_avgs,
         'puan_turleri_avgs': puan_turleri_avgs,
         'sinif_avgs': sinif_avgs,

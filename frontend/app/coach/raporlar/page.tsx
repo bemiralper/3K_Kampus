@@ -1,8 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchCoachStudents, type CoachPortalStudent, type RiskSeviyesi } from "@/lib/coach-api";
-import { exportCoachStudentsCsv } from "@/lib/coach-students-export";
+import {
+  downloadCoachStudentsExport,
+  fetchCoachStudents,
+  type CoachPortalStudent,
+  type RiskSeviyesi,
+} from "@/lib/coach-api";
+import { downloadBlob } from "@/lib/download-file";
 
 function countByRisk(students: CoachPortalStudent[], level: RiskSeviyesi) {
   return students.filter((s) => s.risk_seviyesi === level).length;
@@ -12,6 +17,8 @@ export default function CoachRaporlarPage() {
   const [students, setStudents] = useState<CoachPortalStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "xlsx" | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,6 +51,20 @@ export default function CoachRaporlarPage() {
       riskUnknown: students.filter((s) => !s.risk_seviyesi).length,
     };
   }, [students]);
+
+  const handleExport = async (format: "csv" | "xlsx") => {
+    if (students.length === 0) return;
+    setExportingFormat(format);
+    setExportError(null);
+    try {
+      const blob = await downloadCoachStudentsExport(format);
+      downloadBlob(blob, `koc-rapor-ogrenciler.${format}`);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "Dışa aktarma başarısız");
+    } finally {
+      setExportingFormat(null);
+    }
+  };
 
   return (
     <div>
@@ -94,14 +115,24 @@ export default function CoachRaporlarPage() {
             </ul>
           </section>
 
+          {exportError && <div className="coach-error">{exportError}</div>}
+
           <div className="coach-report-export">
             <button
               type="button"
               className="coach-btn coach-btn-secondary"
-              disabled={students.length === 0}
-              onClick={() => exportCoachStudentsCsv(students, "koc-rapor-ogrenciler.csv")}
+              disabled={students.length === 0 || exportingFormat !== null}
+              onClick={() => handleExport("csv")}
             >
-              CSV dışa aktar
+              {exportingFormat === "csv" ? "Hazırlanıyor…" : "CSV dışa aktar"}
+            </button>
+            <button
+              type="button"
+              className="coach-btn coach-btn-secondary"
+              disabled={students.length === 0 || exportingFormat !== null}
+              onClick={() => handleExport("xlsx")}
+            >
+              {exportingFormat === "xlsx" ? "Hazırlanıyor…" : "Excel dışa aktar"}
             </button>
           </div>
         </>

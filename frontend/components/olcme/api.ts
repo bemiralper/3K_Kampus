@@ -447,6 +447,26 @@ export const analysisApi = {
   /** Karşılaştırmalı analiz */
   comparison: (examId: number) =>
     request<{ comparisons: ComparisonItem[] }>(`${BASE}/${examId}/analysis/comparison/`),
+
+  /** Sıralama listesini Excel/CSV olarak indir */
+  exportRankings: async (
+    format: 'xlsx' | 'csv',
+    examId: number,
+    sessionId?: number,
+    rankingYear?: number,
+  ): Promise<Blob> => {
+    const params = new URLSearchParams();
+    params.set('format', format);
+    if (sessionId) params.set('session_id', String(sessionId));
+    if (rankingYear) params.set('ranking_year', String(rankingYear));
+    const res = await fetch(`${BASE}/${examId}/analysis/rankings/?${params}`, {
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      throw new Error(format === 'xlsx' ? 'Excel dışa aktarma başarısız' : 'CSV dışa aktarma başarısız');
+    }
+    return res.blob();
+  },
 };
 
 // ── Öğrenci Sınav Sekmesi API ───────────────────────────────────────────────

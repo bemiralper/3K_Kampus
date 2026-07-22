@@ -66,6 +66,7 @@ urlpatterns = [
     # Gelişmiş Yoklama (Ders Bazlı)
     path("salon/<uuid:library_id>/yoklama/ders-bazli-ac/", views.api_attendance_open_lessons, name="yoklama_ders_bazli_ac"),
     path("salon/<uuid:library_id>/yoklama-kagidi/", views.api_attendance_sheet_data, name="yoklama_kagidi"),
+    path("salon/<uuid:library_id>/yoklama-export/", views.api_attendance_sheet_export, name="yoklama_export"),
     path("salon/<uuid:library_id>/yoklama-ozet/", views.api_attendance_weekly_summary, name="yoklama_ozet"),
 
     # Temporary Seating (Geçici Oturma)

@@ -5,6 +5,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from apps.coaching.api.views import CoachViewSet, AssignmentViewSet
 from apps.coaching.api.coach_student_views import (
+    CoachStudentExportView,
     CoachStudentListView,
     CoachStudentProfileView,
     CoachStudentRiskReportView,
@@ -22,6 +23,7 @@ from apps.coaching.api.gorusme_views import (
     GorusmeHatirlatmaListCreateView,
     GorusmeHatirlatmaDeleteView,
     GorusmeOzetView,
+    GorusmeExportView,
     GorusmeKullaniciBilgiView,
 )
 
@@ -34,6 +36,7 @@ router.register(r'assignments', AssignmentViewSet, basename='assignment')
 urlpatterns = [
     path('', include(router.urls)),
     path('students/', CoachStudentListView.as_view(), name='coach-student-list'),
+    path('students/export/', CoachStudentExportView.as_view(), name='coach-student-export'),
     path('students/<int:student_id>/profile/', CoachStudentProfileView.as_view(), name='coach-student-profile'),
     path('students/<int:student_id>/risk-report/', CoachStudentRiskReportView.as_view(), name='coach-student-risk-report'),
     path('risk-reports/', CoachRiskReportListView.as_view(), name='coach-risk-report-list'),
@@ -44,6 +47,7 @@ urlpatterns = [
     # ─── Görüşme Yönetimi ────────────────────────────────────
     path('gorusmeler/', GorusmeListCreateView.as_view(), name='gorusme-list-create'),
     path('gorusmeler/ozet/', GorusmeOzetView.as_view(), name='gorusme-ozet'),
+    path('gorusmeler/export/', GorusmeExportView.as_view(), name='gorusme-export'),
     path('gorusmeler/kullanici-bilgi/', GorusmeKullaniciBilgiView.as_view(), name='gorusme-kullanici-bilgi'),
     path('gorusmeler/<int:pk>/', GorusmeDetailView.as_view(), name='gorusme-detail'),
     path('gorusmeler/<int:pk>/durum/', GorusmeDurumView.as_view(), name='gorusme-durum'),

@@ -12,6 +12,7 @@ from apps.academic.interfaces.views import (
     schedule_template_delete_api,
     schedule_template_copy_api,
     schedule_template_usage_api,
+    schedule_template_export_api,
     # TimeSlot
     timeslot_list_api,
     timeslot_create_api,
@@ -135,6 +136,7 @@ urlpatterns = [
     path('schedule-templates/<int:template_id>/delete/', schedule_template_delete_api, name='schedule-template-delete'),
     path('schedule-templates/<int:template_id>/copy/', schedule_template_copy_api, name='schedule-template-copy'),
     path('schedule-templates/<int:template_id>/usage/', schedule_template_usage_api, name='schedule-template-usage'),
+    path('schedule-templates/<int:template_id>/export/', schedule_template_export_api, name='schedule-template-export'),
     path('schedule-templates/<int:template_id>/timeslots/', timeslot_by_template_api, name='schedule-template-timeslots'),
     path('schedule-templates/<int:template_id>/timeslots/bulk-delete/', timeslot_bulk_delete_api, name='timeslot-bulk-delete'),
     

@@ -12,7 +12,7 @@ import {
   fetchAttendanceSessions, openAttendanceSession,
   fetchAttendanceSessionDetail, closeAttendanceSession, reopenAttendanceSession,
   saveAttendanceRecords, openLessonAttendanceSessions,
-  fetchAttendanceSheetData, fetchWeeklyAttendanceSummary,
+  fetchAttendanceSheetData, fetchWeeklyAttendanceSummary, downloadAttendanceSheetExport,
   fetchAttendanceNotifyStatus, fetchAttendanceNotifyConfig,
   fetchSubeler,
   type Library, type Seat,
@@ -42,6 +42,7 @@ import {
   type WeekDayBlock,
 } from '@/lib/yoklama-sheet-print';
 import { buildSeatStudentListPrintHtml, openKutuphanePrintWindow } from '@/lib/kutuphane-list-print';
+import { downloadBlob } from '@/lib/download-file';
 import '@/components/kutuphane/yoklama/yoklama-sheet.css';
 
 /* ════════════════════════════════════════════════════════════
@@ -1334,71 +1335,84 @@ function YoklamaTab({
     openYoklamaPrintWindow(html);
   };
 
-  // Excel indirme
-  const handleDownloadExcel = () => {
+  // Kurumsal CSV/Excel indirme (backend-driven — shared.export)
+  const [sheetExportFormat, setSheetExportFormat] = useState<'csv' | 'xlsx' | null>(null);
+
+  const handleDownloadAttendanceExport = async (format: 'csv' | 'xlsx') => {
     if (!sheetData || sheetData.students.length === 0) return;
     const isWeekly = sheetMode === 'weekly';
     const weeklySD = sheetData as any;
     const sorted = sortStudents(sheetData.students);
-    const STATUS_SHORT: Record<string, string> = { PRESENT: 'V', ABSENT: 'Y', LATE: 'G', EXCUSED: 'İ', NOT_AT_DESK: 'MD' };
 
-    let csvRows: string[][] = [];
+    const columns: { key: string; label: string }[] = [
+      { key: 'sira', label: '#' },
+      { key: 'ogrenci', label: 'Öğrenci' },
+      { key: 'masa', label: 'Masa' },
+    ];
+
+    const statusLabel = (yk: { izinli_mi?: boolean; durum?: string | null } | undefined, durumKapali: boolean) => {
+      if (!yk) return '';
+      if (yk.izinli_mi) return 'İzinli';
+      if (durumKapali && yk.durum) return ATTENDANCE_STATUS_LABELS[yk.durum]?.label || yk.durum;
+      return '';
+    };
+
+    const rows: Record<string, string>[] = [];
+
     if (isWeekly && weeklySD.weekDays) {
-      // Header row 1: #, Öğrenci, Masa, ...günler (colspan)
-      const h1 = ['#', 'Öğrenci', 'Masa'];
-      const h2 = ['', '', ''];
+      const P: Record<string, string> = { MORNING: 'Sabah', AFTERNOON: 'Öğle', EVENING: 'Akşam' };
       (weeklySD.weekDays as any[]).forEach((day: any) => {
+        const gunLabel = day.gunAdi.charAt(0).toUpperCase() + day.gunAdi.slice(1);
         if (day.columns.length > 0) {
-          h1.push(day.gunAdi.charAt(0).toUpperCase() + day.gunAdi.slice(1));
-          for (let i = 1; i < day.columns.length; i++) h1.push('');
           day.columns.forEach((col: any) => {
-            const P: Record<string,string> = { MORNING:'S', AFTERNOON:'Ö', EVENING:'A' };
-            h2.push(P[col.periyot] || col.label?.substring(0,3) || '');
+            columns.push({
+              key: `${day.tarih}_${col.id}`,
+              label: `${gunLabel} - ${P[col.periyot] || col.label || ''}`,
+            });
           });
         } else {
-          h1.push(day.gunAdi); h2.push('—');
+          columns.push({ key: `${day.tarih}_empty`, label: gunLabel });
         }
       });
-      csvRows.push(h1, h2);
       sorted.forEach((stu, idx) => {
-        const row = [String(idx + 1), stu.ogrenci_adi, stu.masa_no || ''];
+        const row: Record<string, string> = { sira: String(idx + 1), ogrenci: stu.ogrenci_adi, masa: stu.masa_no || '' };
         (weeklySD.weekDays as any[]).forEach((day: any) => {
           if (day.columns.length > 0) {
             day.columns.forEach((col: any) => {
-              const yk = stu.yoklamalar[col.id];
-              if (yk?.izinli_mi) { row.push('İ'); }
-              else if (col.durum === 'CLOSED' && yk?.durum) { row.push(STATUS_SHORT[yk.durum] || yk.durum); }
-              else { row.push(''); }
+              row[`${day.tarih}_${col.id}`] = statusLabel(stu.yoklamalar[col.id], col.durum === 'CLOSED');
             });
-          } else { row.push(''); }
+          } else {
+            row[`${day.tarih}_empty`] = '';
+          }
         });
-        csvRows.push(row);
+        rows.push(row);
       });
     } else {
-      const header = ['#', 'Öğrenci', 'Masa', ...sheetData.columns.map(c => c.label)];
-      csvRows.push(header);
+      sheetData.columns.forEach((col) => columns.push({ key: col.id, label: col.label }));
       sorted.forEach((stu, idx) => {
-        const row = [String(idx + 1), stu.ogrenci_adi, stu.masa_no || ''];
-        sheetData.columns.forEach(col => {
-          const yk = stu.yoklamalar[col.id];
-          if (yk?.izinli_mi) { row.push('İ'); }
-          else if (col.durum === 'CLOSED' && yk?.durum) { row.push(STATUS_SHORT[yk.durum] || yk.durum); }
-          else { row.push(''); }
+        const row: Record<string, string> = { sira: String(idx + 1), ogrenci: stu.ogrenci_adi, masa: stu.masa_no || '' };
+        sheetData.columns.forEach((col) => {
+          row[col.id] = statusLabel(stu.yoklamalar[col.id], col.durum === 'CLOSED');
         });
-        csvRows.push(row);
+        rows.push(row);
       });
     }
 
-    // BOM + CSV
-    const csvContent = '\uFEFF' + csvRows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(';')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `yoklama_${isWeekly ? 'haftalik' : 'gunluk'}_${sheetData.tarih?.replace(/\s/g, '_') || 'liste'}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToastMsg('success', 'Excel dosyası indirildi');
+    setSheetExportFormat(format);
+    try {
+      const blob = await downloadAttendanceSheetExport(libraryId, {
+        columns,
+        rows,
+        meta: { tarih: sheetData.tarih || '', mode: isWeekly ? 'weekly' : 'daily' },
+        format,
+      });
+      downloadBlob(blob, `yoklama_${isWeekly ? 'haftalik' : 'gunluk'}_${sheetData.tarih?.replace(/\s/g, '_') || 'liste'}.${format}`);
+      showToastMsg('success', `${format === 'xlsx' ? 'Excel' : 'CSV'} dosyası indirildi`);
+    } catch (e) {
+      showToastMsg('error', e instanceof Error ? e.message : 'Dışa aktarma başarısız');
+    } finally {
+      setSheetExportFormat(null);
+    }
   };
 
   // PDF indirme (yazdır dialogu ile)
@@ -1743,7 +1757,12 @@ function YoklamaTab({
                       </button>
                     ))}
                   </div>
-                  <button onClick={handleDownloadExcel} style={actionBtn('#15803d', '#f0fdf4')}>📥 Excel</button>
+                  <button onClick={() => handleDownloadAttendanceExport('xlsx')} disabled={sheetExportFormat !== null} style={actionBtn('#15803d', '#f0fdf4')}>
+                    {sheetExportFormat === 'xlsx' ? '⏳ Hazırlanıyor…' : '📥 Excel'}
+                  </button>
+                  <button onClick={() => handleDownloadAttendanceExport('csv')} disabled={sheetExportFormat !== null} style={actionBtn('#15803d', '#f0fdf4')}>
+                    {sheetExportFormat === 'csv' ? '⏳ Hazırlanıyor…' : '📥 CSV'}
+                  </button>
                   <button onClick={handleDownloadPDF} style={actionBtn('#0369a1', '#f0f9ff')}>📄 PDF / Yazdır</button>
                   <button onClick={() => { setShowSheet(false); setSheetData(null); }} style={closeBtnStyle}>✕</button>
                 </div>

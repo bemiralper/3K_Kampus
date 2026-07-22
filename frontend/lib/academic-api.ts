@@ -204,26 +204,24 @@ export async function bulkUpdateLessonDuration(
   return unwrap(res);
 }
 
-export function exportSlotsCsv(templateName: string, slots: TimeSlot[]) {
-  const header = ['Sıra', 'Ad', 'Başlangıç', 'Bitiş', 'Süre (dk)', 'Tip'];
-  const rows = slots.map((s) => [
-    s.order,
-    s.name,
-    s.start_time_display,
-    s.end_time_display,
-    s.duration,
-    s.slot_type_display,
-  ]);
-  const csv = [header, ...rows]
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${templateName.replace(/\s+/g, '_')}_ders_saatleri.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+/**
+ * Ders saati şablonunu kurumsal CSV/Excel olarak indir (backend-driven export).
+ * GET /api/academic/schedule-templates/<id>/export/?format=csv|xlsx
+ */
+export async function downloadScheduleTemplateExport(
+  templateId: number,
+  templateName: string,
+  format: 'csv' | 'xlsx' = 'xlsx',
+): Promise<void> {
+  const { getContextHeaders } = await import('@/lib/api');
+  const { downloadBlob } = await import('@/lib/download-file');
+  const res = await fetch(
+    `/api/academic/schedule-templates/${templateId}/export/?format=${format}`,
+    { credentials: 'include', headers: getContextHeaders() },
+  );
+  if (!res.ok) throw new Error('Dışa aktarma başarısız');
+  const blob = await res.blob();
+  downloadBlob(blob, `${templateName.replace(/\s+/g, '_')}_ders_saatleri.${format}`);
 }
 
 // ---- Çalışma Takvimi (Weekly Cycle) ----

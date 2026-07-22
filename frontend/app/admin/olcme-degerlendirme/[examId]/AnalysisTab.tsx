@@ -288,6 +288,8 @@ export default function AnalysisTab({ exam }: Props) {
           rankingYear={rankingYear}
           onRankingYearChange={(y: number) => { setRankingYear(y); }}
           sections={rankingSections}
+          examId={exam.id}
+          sessionId={sessionFilter}
           examName={exam.name}
           examType={exam.exam_type}
           sectionAvgs={rankingSectionAvgs}

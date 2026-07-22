@@ -89,6 +89,48 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// DIŞA AKTARMA (Excel / CSV)
+// ═══════════════════════════════════════════════════════════════
+
+export type GorusmeExportFilters = {
+  kurum_id?: string;
+  durum?: string;
+  gorusme_turu?: string;
+  search?: string;
+};
+
+function buildExportParams(filters: GorusmeExportFilters, format: 'csv' | 'xlsx'): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set('format', format);
+  if (filters.kurum_id) params.set('kurum_id', filters.kurum_id);
+  if (filters.durum) params.set('durum', filters.durum);
+  if (filters.gorusme_turu) params.set('gorusme_turu', filters.gorusme_turu);
+  if (filters.search) params.set('search', filters.search);
+  return params;
+}
+
+async function downloadGorusmeExport(filters: GorusmeExportFilters, format: 'csv' | 'xlsx'): Promise<Blob> {
+  const params = buildExportParams(filters, format);
+  const res = await fetch(coachingApiUrl(`/gorusmeler/export/?${params}`), {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(format === 'xlsx' ? 'Excel dışa aktarma başarısız' : 'CSV dışa aktarma başarısız');
+  }
+  return res.blob();
+}
+
+export const gorusmeExportService = {
+  downloadCsv(filters: GorusmeExportFilters): Promise<Blob> {
+    return downloadGorusmeExport(filters, 'csv');
+  },
+  downloadXlsx(filters: GorusmeExportFilters): Promise<Blob> {
+    return downloadGorusmeExport(filters, 'xlsx');
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════
 // GÖRÜŞME SERVİSİ
 // ═══════════════════════════════════════════════════════════════
 

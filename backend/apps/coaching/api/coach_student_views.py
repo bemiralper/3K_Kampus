@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -25,6 +26,7 @@ from apps.coaching.interfaces.sube_context import (
 )
 from apps.ogrenci.domain.models import Ogrenci
 from shared.context import get_secili_kurum_id
+from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
 
 
 class CsrfExemptSessionAuthentication(SessionAuthentication):
@@ -50,6 +52,62 @@ class CoachStudentListView(APIView):
             'success': True,
             'data': data,
             'count': len(data),
+        })
+
+
+class CoachStudentExportView(APIView):
+    """
+    GET /api/coaching/students/export/
+    Koç kapsamındaki öğrenci listesi — JSON, CSV veya Excel (?format=xlsx|csv).
+    """
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
+    renderer_classes = [JSONRenderer, XlsxRenderer, CsvRenderer]
+
+    def get(self, request):
+        ctx, err = mandatory_coaching_context(request)
+        if err:
+            return err
+
+        rows = build_coach_student_list(request.user, request, sube_id=ctx['sube_id'])
+
+        ids_raw = request.query_params.get('ids')
+        if ids_raw:
+            try:
+                id_set = {int(x) for x in ids_raw.split(',') if x.strip()}
+                rows = [r for r in rows if r['id'] in id_set]
+            except ValueError:
+                pass
+
+        fmt = (request.query_params.get('format') or 'json').lower()
+
+        if fmt in ('csv', 'xlsx'):
+            from apps.coaching.application.coach_student_export import (
+                build_export_columns,
+                build_export_meta,
+                build_export_rows,
+                build_export_stats,
+            )
+
+            export_rows = build_export_rows(rows)
+            columns = build_export_columns()
+            meta = build_export_meta(request)
+
+            if fmt == 'xlsx':
+                from shared.export import ExcelExportService
+
+                stats = build_export_stats(rows)
+                return ExcelExportService.export(
+                    export_rows, columns, meta=meta, stats=stats, filename='koc_ogrenci_listesi',
+                )
+            from shared.export import CsvExportService
+
+            return CsvExportService.export(export_rows, columns, meta=meta, filename='koc_ogrenci_listesi')
+
+        return Response({
+            'success': True,
+            'data': rows,
+            'count': len(rows),
         })
 
 

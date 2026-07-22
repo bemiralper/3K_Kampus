@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useKurum } from "@/lib/contexts/KurumContext";
-import { gorusmeService } from "./services/gorusme-api";
+import { gorusmeService, gorusmeExportService } from "./services/gorusme-api";
+import { downloadBlob } from "@/lib/download-file";
 import GorusmeFormDrawer from "@/components/coaching/meetings/GorusmeFormDrawer";
 import GorusmeDetailDrawer from "@/components/coaching/meetings/GorusmeDetailDrawer";
 import {
@@ -56,6 +57,11 @@ export default function MeetingsClient() {
   // Toast
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Dışa aktarma
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Dropdown data (kept for potential future use; form drawer loads its own)
   const [kullaniciBilgi, setKullaniciBilgi] = useState<KullaniciBilgi | null>(null);
@@ -113,6 +119,17 @@ export default function MeetingsClient() {
     }
   }, [error]);
 
+  useEffect(() => {
+    if (!exportOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [exportOpen]);
+
   /* ─── Handlers ───────────────────────────────── */
   function openNewForm() {
     setEditId(null);
@@ -147,6 +164,27 @@ export default function MeetingsClient() {
 
   function handleOpenDetail(id: number) {
     setDetailId(id);
+  }
+
+  async function handleExport(format: "csv" | "xlsx") {
+    setExportOpen(false);
+    setExporting(true);
+    try {
+      const filters = {
+        kurum_id: kurumId ? String(kurumId) : undefined,
+        durum: durumFiltre || undefined,
+        gorusme_turu: turFiltre || undefined,
+        search: aramaFiltre || undefined,
+      };
+      const blob = format === "csv"
+        ? await gorusmeExportService.downloadCsv(filters)
+        : await gorusmeExportService.downloadXlsx(filters);
+      downloadBlob(blob, `gorusmeler.${format}`);
+    } catch (err: any) {
+      setError(err.message || "Dışa aktarma başarısız.");
+    } finally {
+      setExporting(false);
+    }
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -284,6 +322,42 @@ export default function MeetingsClient() {
                 <option key={d.value} value={d.value}>{d.label}</option>
               ))}
             </select>
+          </div>
+
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              type="button"
+              onClick={() => setExportOpen((v) => !v)}
+              disabled={exporting}
+              className="flex items-center gap-2 px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-[13px] font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {exporting ? "Hazırlanıyor…" : "Dışa Aktar"}
+            </button>
+            {exportOpen && (
+              <div className="absolute right-0 top-full mt-2 w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1.5 z-20">
+                <button
+                  type="button"
+                  onClick={() => handleExport("xlsx")}
+                  className="w-full text-left px-4 py-2 text-[13px] text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Excel (.xlsx)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport("csv")}
+                  className="w-full text-left px-4 py-2 text-[13px] text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                  CSV
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

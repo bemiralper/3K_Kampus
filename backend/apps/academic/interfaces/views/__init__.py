@@ -10,6 +10,7 @@ from .schedule_template import (
     schedule_template_delete_api,
     schedule_template_copy_api,
     schedule_template_usage_api,
+    schedule_template_export_api,
 )
 from .timeslot import (
     timeslot_list_api,
@@ -111,6 +112,7 @@ __all__ = [
     'schedule_template_delete_api',
     'schedule_template_copy_api',
     'schedule_template_usage_api',
+    'schedule_template_export_api',
     # TimeSlot
     'timeslot_list_api',
     'timeslot_create_api',

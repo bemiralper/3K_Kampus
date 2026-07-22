@@ -30,7 +30,7 @@ import { useKurum } from '@/lib/contexts/KurumContext';
 import {
   copyScheduleTemplate,
   deleteScheduleTemplate,
-  exportSlotsCsv,
+  downloadScheduleTemplateExport,
   fetchScheduleTemplate,
   fetchScheduleTemplates,
   fetchTemplateUsage,
@@ -137,10 +137,9 @@ export default function DersSaatleriClient() {
     });
   };
 
-  const handleExport = async (row: ScheduleTemplate) => {
+  const handleExport = async (row: ScheduleTemplate, format: 'csv' | 'xlsx') => {
     try {
-      const detail = await fetchScheduleTemplate(row.id);
-      exportSlotsCsv(row.name, detail.time_slots);
+      await downloadScheduleTemplateExport(row.id, row.name, format);
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Dışa aktarma başarısız');
     }
@@ -179,7 +178,8 @@ export default function DersSaatleriClient() {
     { key: 'copy', icon: <CopyOutlined />, label: 'Şablonu Kopyala', onClick: () => handleCopy(row) },
     { key: 'usage', icon: <UnorderedListOutlined />, label: 'Kullanıldığı Programlar', onClick: () => showUsage(row) },
     { type: 'divider' },
-    { key: 'export', icon: <ExportOutlined />, label: 'Excel Aktar', onClick: () => handleExport(row) },
+    { key: 'export-xlsx', icon: <ExportOutlined />, label: 'Excel Aktar', onClick: () => handleExport(row, 'xlsx') },
+    { key: 'export-csv', icon: <ExportOutlined />, label: 'CSV Aktar', onClick: () => handleExport(row, 'csv') },
     { key: 'print', icon: <PrinterOutlined />, label: 'Yazdır', onClick: () => handlePrint(row) },
     { type: 'divider' },
     { key: 'delete', icon: <DeleteOutlined />, label: row.is_active ? 'Pasif Yap' : 'Kalıcı Sil', danger: true, onClick: () => handleDelete(row) },

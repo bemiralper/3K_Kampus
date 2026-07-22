@@ -906,6 +906,36 @@ export async function fetchAttendanceSheetData(libraryId: string, params?: {
   return apiGet<AttendanceSheetData>(`${BASE}/salon/${libraryId}/yoklama-kagidi/${qs ? '?' + qs : ''}`);
 }
 
+export interface AttendanceExportColumn {
+  key: string;
+  label: string;
+}
+
+/**
+ * Yoklama kağıdı (günlük/haftalık pivot tablo) — kurumsal CSV/Excel dışa aktarma.
+ * Ekranda zaten hesaplanmış {columns, rows} backend'e gönderilir; dosya kurumsal
+ * şablonla (letterhead, istatistik özeti) backend'de üretilir.
+ */
+export async function downloadAttendanceSheetExport(
+  libraryId: string,
+  data: {
+    columns: AttendanceExportColumn[];
+    rows: Record<string, string>[];
+    meta: { tarih: string; mode: 'daily' | 'weekly' };
+    format: 'csv' | 'xlsx';
+  },
+): Promise<Blob> {
+  const { getContextHeaders } = await import('@/lib/api');
+  const res = await fetch(`${BASE}/salon/${libraryId}/yoklama-export/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...getContextHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Dışa aktarma başarısız');
+  return res.blob();
+}
+
 export interface WeeklyGun {
   tarih: string;
   gun_adi: string;

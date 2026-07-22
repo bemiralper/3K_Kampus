@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.renderers import JSONRenderer
 from django.db.models import Q, Count
 from django.utils import timezone
 from datetime import timedelta
@@ -20,6 +21,7 @@ from apps.coaching.interfaces.sube_context import (
     assert_coaching_student_sube_access,
     mandatory_coaching_context,
 )
+from shared.export.drf_renderers import XlsxRenderer, CsvRenderer
 from apps.coaching.api.gorusme_serializers import (
     GorusmeKaydiListSerializer,
     GorusmeKaydiDetailSerializer,
@@ -89,6 +91,80 @@ def _gorusme_sube_gate(request, gorusme):
 # GÖRÜŞME KAYDI — Liste + Oluşturma
 # ═══════════════════════════════════════════════════════════════
 
+def _build_gorusme_queryset(request, ctx):
+    """Görüşme listesi + export ortak filtre mantığı — Koç ise sadece kendi görüşmeleri."""
+    qs = GorusmeKaydi.objects.select_related(
+        'ogrenci', 'koc__teacher', 'olusturan'
+    ).prefetch_related('aksiyonlar').filter(ogrenci__sube_id=ctx['sube_id'])
+
+    # ─── Rol bazlı filtreleme ───
+    coach_profile = _get_coach_profile(request.user)
+    is_admin = _is_admin(request.user)
+
+    if coach_profile and not is_admin:
+        ogrenci_id = request.query_params.get('ogrenci_id')
+        if ogrenci_id:
+            is_assigned = CoachStudentAssignment.objects.filter(
+                coach=coach_profile,
+                student_id=ogrenci_id,
+                end_date__isnull=True,
+            ).exists()
+            if is_assigned:
+                # Öğrenci bana atanmışsa tüm görüşme geçmişini göster (önceki koçlar dahil)
+                qs = qs.filter(ogrenci_id=ogrenci_id)
+            else:
+                qs = qs.filter(koc=coach_profile)
+        else:
+            qs = qs.filter(koc=coach_profile)
+    # Admin: tüm görüşmeleri görür (ek filtre uygulanmaz)
+
+    # Filtreler
+    kurum_id = request.query_params.get('kurum_id')
+    if kurum_id:
+        qs = qs.filter(kurum_id=kurum_id)
+
+    ogrenci_id = request.query_params.get('ogrenci_id')
+    if ogrenci_id:
+        qs = qs.filter(ogrenci_id=ogrenci_id)
+
+    koc_id = request.query_params.get('koc_id')
+    if koc_id:
+        qs = qs.filter(koc_id=koc_id)
+
+    durum = request.query_params.get('durum')
+    if durum:
+        qs = qs.filter(durum=durum)
+
+    gorusme_turu = request.query_params.get('gorusme_turu')
+    if gorusme_turu:
+        qs = qs.filter(gorusme_turu=gorusme_turu)
+
+    oncelik = request.query_params.get('oncelik')
+    if oncelik:
+        qs = qs.filter(oncelik=oncelik)
+
+    # Tarih aralığı filtresi
+    tarih_baslangic = request.query_params.get('tarih_baslangic')
+    if tarih_baslangic:
+        qs = qs.filter(gorusme_tarihi__gte=tarih_baslangic)
+
+    tarih_bitis = request.query_params.get('tarih_bitis')
+    if tarih_bitis:
+        qs = qs.filter(gorusme_tarihi__lte=tarih_bitis)
+
+    # Arama
+    search = request.query_params.get('search')
+    if search:
+        qs = qs.filter(
+            Q(konu__icontains=search) |
+            Q(ogrenci__ad__icontains=search) |
+            Q(ogrenci__soyad__icontains=search) |
+            Q(etiketler__icontains=search)
+        )
+
+    return qs
+
+
 class GorusmeListCreateView(APIView):
     authentication_classes = [CsrfExemptSessionAuthentication]
     permission_classes = [IsAuthenticated]
@@ -99,75 +175,7 @@ class GorusmeListCreateView(APIView):
         if err:
             return err
 
-        qs = GorusmeKaydi.objects.select_related(
-            'ogrenci', 'koc__teacher', 'olusturan'
-        ).prefetch_related('aksiyonlar').filter(ogrenci__sube_id=ctx['sube_id'])
-
-        # ─── Rol bazlı filtreleme ───
-        coach_profile = _get_coach_profile(request.user)
-        is_admin = _is_admin(request.user)
-
-        if coach_profile and not is_admin:
-            ogrenci_id = request.query_params.get('ogrenci_id')
-            if ogrenci_id:
-                is_assigned = CoachStudentAssignment.objects.filter(
-                    coach=coach_profile,
-                    student_id=ogrenci_id,
-                    end_date__isnull=True,
-                ).exists()
-                if is_assigned:
-                    # Öğrenci bana atanmışsa tüm görüşme geçmişini göster (önceki koçlar dahil)
-                    qs = qs.filter(ogrenci_id=ogrenci_id)
-                else:
-                    qs = qs.filter(koc=coach_profile)
-            else:
-                qs = qs.filter(koc=coach_profile)
-        # Admin: tüm görüşmeleri görür (ek filtre uygulanmaz)
-
-        # Filtreler
-        kurum_id = request.query_params.get('kurum_id')
-        if kurum_id:
-            qs = qs.filter(kurum_id=kurum_id)
-
-        ogrenci_id = request.query_params.get('ogrenci_id')
-        if ogrenci_id:
-            qs = qs.filter(ogrenci_id=ogrenci_id)
-
-        koc_id = request.query_params.get('koc_id')
-        if koc_id:
-            qs = qs.filter(koc_id=koc_id)
-
-        durum = request.query_params.get('durum')
-        if durum:
-            qs = qs.filter(durum=durum)
-
-        gorusme_turu = request.query_params.get('gorusme_turu')
-        if gorusme_turu:
-            qs = qs.filter(gorusme_turu=gorusme_turu)
-
-        oncelik = request.query_params.get('oncelik')
-        if oncelik:
-            qs = qs.filter(oncelik=oncelik)
-
-        # Tarih aralığı filtresi
-        tarih_baslangic = request.query_params.get('tarih_baslangic')
-        if tarih_baslangic:
-            qs = qs.filter(gorusme_tarihi__gte=tarih_baslangic)
-
-        tarih_bitis = request.query_params.get('tarih_bitis')
-        if tarih_bitis:
-            qs = qs.filter(gorusme_tarihi__lte=tarih_bitis)
-
-        # Arama
-        search = request.query_params.get('search')
-        if search:
-            qs = qs.filter(
-                Q(konu__icontains=search) |
-                Q(ogrenci__ad__icontains=search) |
-                Q(ogrenci__soyad__icontains=search) |
-                Q(etiketler__icontains=search)
-            )
-
+        qs = _build_gorusme_queryset(request, ctx)
         serializer = GorusmeKaydiListSerializer(qs[:200], many=True)
         return Response(serializer.data)
 
@@ -629,6 +637,56 @@ class GorusmeOzetView(APIView):
             'iptal': iptal,
             'ertelenen': ertelenen,
             'bu_hafta': bu_hafta,
+        })
+
+
+# ═══════════════════════════════════════════════════════════════
+# DIŞA AKTARMA (Excel / CSV)
+# ═══════════════════════════════════════════════════════════════
+
+class GorusmeExportView(APIView):
+    """Filtrelenmiş görüşme listesi — JSON, CSV veya Excel (?format=xlsx|csv)."""
+
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
+    renderer_classes = [JSONRenderer, XlsxRenderer, CsvRenderer]
+
+    def get(self, request):
+        ctx, err = mandatory_coaching_context(request)
+        if err:
+            return err
+
+        qs = _build_gorusme_queryset(request, ctx).order_by('-gorusme_tarihi', '-gorusme_saati')
+        gorusmeler = list(qs[:5000])
+
+        from apps.coaching.application.gorusme_export import (
+            build_export_columns,
+            build_export_meta,
+            build_export_rows,
+            build_export_stats,
+        )
+
+        rows = build_export_rows(gorusmeler)
+        fmt = (request.query_params.get('format') or 'json').lower()
+
+        if fmt in ('csv', 'xlsx'):
+            meta = build_export_meta(request, ctx)
+            columns = build_export_columns()
+            if fmt == 'xlsx':
+                from shared.export import ExcelExportService
+
+                stats = build_export_stats(gorusmeler)
+                return ExcelExportService.export(
+                    rows, columns, meta=meta, stats=stats, filename='gorusmeler',
+                )
+            from shared.export import CsvExportService
+
+            return CsvExportService.export(rows, columns, meta=meta, filename='gorusmeler')
+
+        return Response({
+            'success': True,
+            'rows': rows,
+            'total': len(rows),
         })
 
 
