@@ -31,6 +31,22 @@ def default_from_email() -> str:
     )
 
 
+def friendly_smtp_error(exc: BaseException) -> str:
+    raw = str(exc)
+    lower = raw.lower()
+    if 'application-specific password' in lower or '5.7.9' in lower:
+        return (
+            'Gmail normal hesap şifresi kabul etmez. Google Hesabınızda 2 adımlı doğrulama açın, '
+            'sonra Uygulama şifresi oluşturup EMAIL_HOST_PASSWORD olarak onu kullanın: '
+            'https://myaccount.google.com/apppasswords'
+        )
+    if 'authentication failed' in lower or '535' in lower:
+        return 'SMTP kimlik doğrulama başarısız. Kullanıcı adı/şifreyi kontrol edin (Gmail: uygulama şifresi).'
+    if 'connection refused' in lower or 'timed out' in lower:
+        return f'SMTP sunucusuna bağlanılamadı: {raw}'
+    return raw
+
+
 def send_backup_notification(
     *,
     subject: str,

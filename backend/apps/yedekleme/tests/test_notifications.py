@@ -1,6 +1,6 @@
 from django.test import TestCase, override_settings
 
-from apps.yedekleme.engine.notifications import parse_recipients, send_backup_notification, smtp_configured
+from apps.yedekleme.engine.notifications import friendly_smtp_error, parse_recipients, send_backup_notification, smtp_configured
 
 
 class BackupNotificationTests(TestCase):

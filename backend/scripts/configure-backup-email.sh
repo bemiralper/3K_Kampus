@@ -47,7 +47,7 @@ DEFAULT_FROM_EMAIL="${DEFAULT_FROM_EMAIL:-}"
 prompt EMAIL_HOST "SMTP sunucu (ör. smtp.gmail.com)" "smtp.gmail.com"
 prompt EMAIL_PORT "SMTP port" "587"
 prompt EMAIL_HOST_USER "SMTP kullanıcı (e-posta)"
-prompt EMAIL_HOST_PASSWORD "SMTP şifre (Gmail: uygulama şifresi)" "" true
+prompt EMAIL_HOST_PASSWORD "SMTP şifre (Gmail: uygulama şifresi — normal şifre çalışmaz)" "" true
 DEFAULT_FROM_EMAIL="${DEFAULT_FROM_EMAIL:-$EMAIL_HOST_USER}"
 
 if [[ -z "$EMAIL_HOST" || -z "$EMAIL_HOST_USER" || -z "$EMAIL_HOST_PASSWORD" ]]; then

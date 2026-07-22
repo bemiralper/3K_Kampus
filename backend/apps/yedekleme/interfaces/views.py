@@ -28,6 +28,7 @@ from apps.yedekleme.engine import BackupEngine, RetentionService
 from apps.yedekleme.engine import encryption as enc
 from apps.yedekleme.engine.notifications import (
     default_from_email,
+    friendly_smtp_error,
     parse_recipients,
     send_backup_notification,
     smtp_configured,
@@ -694,7 +695,7 @@ def settings_test_email_view(request):
             fail_silently=False,
         )
     except Exception as exc:  # noqa: BLE001
-        return JsonResponse({'error': str(exc), 'email_configured': True}, status=502)
+        return JsonResponse({'error': friendly_smtp_error(exc), 'email_configured': True}, status=502)
     _engine(request)._log(  # noqa: SLF001
         action=BackupOperationAction.SETTINGS_UPDATE,
         step='Test bildirim maili gönderildi',
