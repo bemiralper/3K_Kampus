@@ -32,6 +32,7 @@ Script `/etc/lms/env` dosyasını otomatik yükler (`set -a` + `source`). Manuel
 
 Script sırasıyla:
 
+0. **Bakım modu aç** — kullanıcılar "Sistem güncelleniyor" sayfası görür (Internal Server Error yerine)
 1. `git pull` (dal: `main`, `LMS_GIT_BRANCH` ile değiştirilebilir)
 2. `pip install -r requirements.txt`
 3. `migrate --noinput`
@@ -39,6 +40,25 @@ Script sırasıyla:
 5. `setup_roles` (yeni izinler — idempotent)
 6. `npm ci` + `npm run build` (frontend)
 7. `systemctl restart` veya `pm2 reload`
+8. **Bakım modu kapat** (script bitince otomatik)
+
+### Deploy sırasında bilgilendirme sayfası (bir kez kurulum)
+
+Nginx'in de bakım sayfası göstermesi için (frontend kapalıyken bile):
+
+```bash
+sudo ./backend/scripts/install-maintenance-nginx.sh
+```
+
+Deploy script `/var/lib/3k/maintenance.enable` flag dosyası ile bakım modunu açar/kapatır.
+
+### Yedekleme e-posta (SMTP)
+
+```bash
+sudo ./backend/scripts/configure-backup-email.sh
+```
+
+Panel: **Yedekleme → Ayarlar → Test maili gönder**
 
 ### Bayraklar
 

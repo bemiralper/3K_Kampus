@@ -1,0 +1,15 @@
+# 3K LMS maintenance mode — server { } bloğuna include edilir.
+# Kurulum: sudo ./backend/scripts/install-maintenance-nginx.sh
+
+error_page 503 /maintenance.html;
+
+location = /maintenance.html {
+    root /var/www/lms/deploy;
+    internal;
+    default_type text/html;
+    add_header Retry-After 120 always;
+}
+
+if (-f /var/lib/3k/maintenance.enable) {
+    return 503;
+}

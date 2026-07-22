@@ -115,6 +115,7 @@ AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'shared.maintenance_middleware.MaintenanceMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'shared.middleware.restore_session_guard.RestoreSessionGuardMiddleware',
     'django.middleware.common.CommonMiddleware',

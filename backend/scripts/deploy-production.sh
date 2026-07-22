@@ -69,6 +69,30 @@ done
 
 log() { printf '[deploy] %s\n' "$*"; }
 
+MAINTENANCE_FLAG="${LMS_MAINTENANCE_FLAG:-/var/lib/3k/maintenance.enable}"
+
+maintenance_on() {
+  mkdir -p "$(dirname "$MAINTENANCE_FLAG")"
+  touch "$MAINTENANCE_FLAG"
+  log "Bakım modu AÇIK (kullanıcılar bilgilendirme sayfası görür): $MAINTENANCE_FLAG"
+  if command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx 2>/dev/null || true
+  fi
+}
+
+maintenance_off() {
+  rm -f "$MAINTENANCE_FLAG"
+  log "Bakım modu KAPALI"
+  if command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx 2>/dev/null || true
+  fi
+}
+
+deploy_cleanup() {
+  maintenance_off
+}
+trap deploy_cleanup EXIT
+
 # systemd User=lms ile çalışır; root olarak npm build .next'i root sahipli bırakır → EACCES
 run_as_app_user() {
   if [[ "$(id -u)" -eq 0 ]] && id "$LMS_RUN_USER" &>/dev/null 2>&1; then
@@ -126,6 +150,8 @@ log "APP_ROOT=$APP_ROOT"
 log "BACKEND=$BACKEND_DIR"
 log "PYTHON=$PYTHON"
 log "DJANGO_ENV=$DJANGO_ENV"
+
+maintenance_on
 
 cd "$APP_ROOT"
 
