@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import { brandingFromKurum, getAppLogo } from '@/lib/kurum-branding';
 import {
@@ -70,20 +69,6 @@ async function fetchExportRows(
     columns: data.columns || columnKeys,
     total: data.total ?? (data.rows?.length || 0),
   };
-}
-
-function cellValue(row: Record<string, string>, key: string): string {
-  const val = row[key];
-  return val != null ? String(val) : '';
-}
-
-function exportXlsx(rows: Record<string, string>[], keys: string[]) {
-  const labels = keys.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)?.label || k);
-  const data = rows.map((row) => keys.map((k) => cellValue(row, k)));
-  const ws = XLSX.utils.aoa_to_sheet([labels, ...data]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Öğrenciler');
-  XLSX.writeFile(wb, 'ogrenciler.xlsx');
 }
 
 const ORIENTATION_OPTIONS: { id: PdfOrientation; label: string; desc: string }[] = [
@@ -164,16 +149,17 @@ export default function OgrenciExportModal({
     setError(null);
 
     try {
-      if (format === 'csv') {
+      if (format === 'csv' || format === 'xlsx') {
         const params = buildExportParams(filters, selectedKeys, selectedIdList, false);
+        params.set('format', format);
         const headers = getContextHeadersFromStorage();
         const res = await fetch(`/api/ogrenciler/api/export/?${params}`, {
           credentials: 'include',
           headers,
         });
-        if (!res.ok) throw new Error('CSV dışa aktarma başarısız');
+        if (!res.ok) throw new Error(`${format.toUpperCase()} dışa aktarma başarısız`);
         const blob = await res.blob();
-        downloadBlob(blob, 'ogrenciler.csv');
+        downloadBlob(blob, `ogrenciler.${format}`);
       } else {
         const { rows } = await fetchExportRows(filters, selectedKeys, selectedIdList);
 
@@ -181,21 +167,17 @@ export default function OgrenciExportModal({
           throw new Error('Dışa aktarılacak kayıt bulunamadı');
         }
 
-        if (format === 'xlsx') {
-          exportXlsx(rows, selectedKeys);
-        } else {
-          await exportOgrenciListPdf({
-            rows,
-            columnKeys: selectedKeys,
-            orientation,
-            branding: {
-              kurumAd: activeKurum?.ad || 'Kurum',
-              subeAd: activeSube?.ad,
-              logoUrl: branding ? getAppLogo(branding) : '/img/3k-logo.png',
-              temaRengi: branding?.tema_rengi,
-            },
-          });
-        }
+        await exportOgrenciListPdf({
+          rows,
+          columnKeys: selectedKeys,
+          orientation,
+          branding: {
+            kurumAd: activeKurum?.ad || 'Kurum',
+            subeAd: activeSube?.ad,
+            logoUrl: branding ? getAppLogo(branding) : '/img/3k-logo.png',
+            temaRengi: branding?.tema_rengi,
+          },
+        });
       }
 
       onClose();

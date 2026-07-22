@@ -111,9 +111,23 @@ def get_secili_sube_id(request, kurum_id=None):
     return _default_sube_id(kurum_id)
 
 
-def require_mandatory_sube_id(request, kurum_id=None, *, allow_query_param=True):
+def _request_payload_get(request, key):
+    """DRF request.data veya Django POST/form gövdesinden alan okur."""
+    data = getattr(request, 'data', None)
+    if data is not None and hasattr(data, 'get'):
+        val = data.get(key)
+        if val not in (None, ''):
+            return val
+    if request.method in ('POST', 'PUT', 'PATCH') and hasattr(request, 'POST'):
+        val = request.POST.get(key)
+        if val not in (None, ''):
+            return val
+    return None
+
+
+def require_mandatory_sube_id(request, kurum_id=None, *, allow_query_param=True, allow_body_param=True):
     """
-    Şube bağlamı zorunlu — header veya session (opsiyonel query param).
+    Şube bağlamı zorunlu — header, session, query param veya (POST) gövde.
     Varsayılan şube kullanılmaz; eksikse None döner.
     """
     if kurum_id is None:
@@ -139,6 +153,17 @@ def require_mandatory_sube_id(request, kurum_id=None, *, allow_query_param=True)
         valid = _valid_sube_id(candidate, kurum_id)
         if valid:
             return valid
+
+    if allow_body_param:
+        raw = _request_payload_get(request, 'sube_id')
+        if raw is not None:
+            try:
+                valid = _valid_sube_id(int(raw), kurum_id)
+                if valid:
+                    return valid
+            except (TypeError, ValueError):
+                pass
+
     return None
 
 

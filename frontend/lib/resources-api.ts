@@ -642,19 +642,28 @@ export type BookExportFilters = {
   search?: string;
 };
 
-export async function fetchBookExportRows(
+function buildBookExportParams(
   filters: BookExportFilters,
   columnKeys: string[],
-): Promise<{ rows: Record<string, string>[]; columns: string[]; total: number }> {
-  const { getContextHeaders } = await import('@/lib/api');
+  format: 'json' | 'csv' | 'xlsx',
+): URLSearchParams {
   const params = new URLSearchParams();
   params.set('columns', columnKeys.join(','));
-  params.set('format', 'json');
+  params.set('format', format);
   if (filters.ders) params.set('ders', filters.ders);
   if (filters.sinif_seviyesi) params.set('sinif_seviyesi', filters.sinif_seviyesi);
   if (filters.book_type) params.set('book_type', filters.book_type);
   if (filters.yayin_yili) params.set('yayin_yili', filters.yayin_yili);
   if (filters.search) params.set('search', filters.search);
+  return params;
+}
+
+export async function fetchBookExportRows(
+  filters: BookExportFilters,
+  columnKeys: string[],
+): Promise<{ rows: Record<string, string>[]; columns: string[]; total: number }> {
+  const { getContextHeaders } = await import('@/lib/api');
+  const params = buildBookExportParams(filters, columnKeys, 'json');
 
   const res = await fetch(`/api/resources/books/export/?${params}`, {
     credentials: 'include',
@@ -675,20 +684,28 @@ export async function downloadBookExportCsv(
   columnKeys: string[],
 ): Promise<Blob> {
   const { getContextHeaders } = await import('@/lib/api');
-  const params = new URLSearchParams();
-  params.set('columns', columnKeys.join(','));
-  params.set('format', 'csv');
-  if (filters.ders) params.set('ders', filters.ders);
-  if (filters.sinif_seviyesi) params.set('sinif_seviyesi', filters.sinif_seviyesi);
-  if (filters.book_type) params.set('book_type', filters.book_type);
-  if (filters.yayin_yili) params.set('yayin_yili', filters.yayin_yili);
-  if (filters.search) params.set('search', filters.search);
+  const params = buildBookExportParams(filters, columnKeys, 'csv');
 
   const res = await fetch(`/api/resources/books/export/?${params}`, {
     credentials: 'include',
     headers: getContextHeaders(),
   });
   if (!res.ok) throw new Error('CSV dışa aktarma başarısız');
+  return res.blob();
+}
+
+export async function downloadBookExportXlsx(
+  filters: BookExportFilters,
+  columnKeys: string[],
+): Promise<Blob> {
+  const { getContextHeaders } = await import('@/lib/api');
+  const params = buildBookExportParams(filters, columnKeys, 'xlsx');
+
+  const res = await fetch(`/api/resources/books/export/?${params}`, {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) throw new Error('Excel dışa aktarma başarısız');
   return res.blob();
 }
 

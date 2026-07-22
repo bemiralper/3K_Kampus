@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import { resolvePostLoginRedirect } from '@/lib/post-login-routing';
+import { resolvePostLoginRedirect, STORAGE_POST_LOGIN_ROUTING } from '@/lib/post-login-routing';
 import { mergeBranding, type KurumBranding } from '@/lib/kurum-branding';
 
 type LoginFormProps = {
@@ -34,8 +34,21 @@ export default function LoginForm({ branding, kurumKod = '3K', onSuccess, compac
       setIsRedirecting(true);
       onSuccess?.();
       const loggedInUser = result.user ?? user;
-      const nextPath = await resolvePostLoginRedirect(loggedInUser);
-      router.replace(nextPath);
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(STORAGE_POST_LOGIN_ROUTING, '1');
+      }
+      try {
+        const nextPath = await resolvePostLoginRedirect(loggedInUser);
+        if (typeof window !== 'undefined') {
+          window.location.replace(nextPath);
+        } else {
+          router.replace(nextPath);
+        }
+      } finally {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(STORAGE_POST_LOGIN_ROUTING);
+        }
+      }
     } else {
       setError(result.error || 'Giriş başarısız');
       setIsSubmitting(false);

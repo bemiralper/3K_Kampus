@@ -1718,12 +1718,16 @@ export default function SozlesmeOlusturClient() {
     const anaPayload = anaKalem ? finalizeKalemPayload(anaKalem) : null;
     const anaKey = anaKalem?.key ?? null;
 
+    const resolvedSubeId =
+      activeSube?.id ?? paketData.kayit.islem_sube_id ?? paketData.kayit.sube_id;
+    const resolvedKurumId = paketData.kayit.kurum_id;
+
     const body: any = {
       ogrenci_id: selectedOgrenci.id,
       ogrenci_kayit_id: paketData.kayit.id,
       egitim_yili_id: paketData.kayit.egitim_yili_id,
-      kurum_id: paketData.kayit.kurum_id,
-      sube_id: activeSube?.id ?? paketData.kayit.islem_sube_id ?? paketData.kayit.sube_id,
+      kurum_id: resolvedKurumId,
+      sube_id: resolvedSubeId,
       baslangic_tarihi: baslangicTarihi,
       bitis_tarihi: bitisTarihi,
       paket_turu: anaKalem ? normalizePaketTuru(anaKalem.paket_turu || "") : "ek_hizmet",
@@ -1764,11 +1768,17 @@ export default function SozlesmeOlusturClient() {
     try {
       const url = isEditMode ? `${API_BASE}/sozlesmeler/${editId}/update/` : `${API_BASE}/sozlesmeler/create/`;
       const method = isEditMode ? "PUT" : "POST";
+      const contextHeaders: Record<string, string> = {};
+      if (resolvedKurumId) contextHeaders["X-Kurum-ID"] = String(resolvedKurumId);
+      if (resolvedSubeId) contextHeaders["X-Sube-ID"] = String(resolvedSubeId);
+      if (paketData.kayit.egitim_yili_id) {
+        contextHeaders["X-EgitimYili-ID"] = String(paketData.kayit.egitim_yili_id);
+      }
       const r = await fetchWithTimeout(
         url,
         {
           method,
-          headers: postHeaders(),
+          headers: { ...postHeaders(), ...contextHeaders },
           credentials: "include",
           body: JSON.stringify(body),
         },

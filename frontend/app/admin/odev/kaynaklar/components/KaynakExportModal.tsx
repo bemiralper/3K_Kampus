@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { brandingFromKurum, getAppLogo } from "@/lib/kurum-branding";
 import { downloadBlob } from "@/lib/download-file";
@@ -9,6 +8,7 @@ import {
   BOOK_EXPORT_COLUMNS,
   DEFAULT_BOOK_EXPORT_KEYS,
   downloadBookExportCsv,
+  downloadBookExportXlsx,
   fetchBookExportRows,
   type BookExportFilters,
 } from "@/lib/resources-api";
@@ -72,20 +72,13 @@ export default function KaynakExportModal({ open, onClose, filters }: Props) {
       if (format === "csv") {
         const blob = await downloadBookExportCsv(filters, selectedKeys);
         downloadBlob(blob, "kaynak_kitaplar.csv");
+      } else if (format === "xlsx") {
+        const blob = await downloadBookExportXlsx(filters, selectedKeys);
+        downloadBlob(blob, "kaynak_kitaplar.xlsx");
       } else {
         const { rows } = await fetchBookExportRows(filters, selectedKeys);
         if (rows.length === 0) throw new Error("Dışa aktarılacak kayıt bulunamadı");
-        if (format === "xlsx") {
-          const labels = selectedKeys.map(
-            (k) => BOOK_EXPORT_COLUMNS.find((c) => c.key === k)?.label || k,
-          );
-          const data = rows.map((row) => selectedKeys.map((k) => row[k] ?? ""));
-          const ws = XLSX.utils.aoa_to_sheet([labels, ...data]);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Kitaplar");
-          XLSX.writeFile(wb, "kaynak_kitaplar.xlsx");
-        } else {
-          await exportOgrenciListPdf({
+        await exportOgrenciListPdf({
             rows,
             columnKeys: selectedKeys,
             columnLabels: selectedKeys.map(
@@ -102,7 +95,6 @@ export default function KaynakExportModal({ open, onClose, filters }: Props) {
               temaRengi: branding?.tema_rengi,
             },
           });
-        }
       }
       onClose();
     } catch (e) {

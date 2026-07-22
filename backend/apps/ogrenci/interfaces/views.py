@@ -231,6 +231,8 @@ def ogrenci_list_export_api(request):
         build_kayit_queryset,
         serialize_kayit_row,
         build_csv_response,
+        build_excel_response,
+        build_export_meta,
         build_json_export_response,
         build_ogrenci_kalemler_map,
         MAX_EXPORT_ROWS,
@@ -267,9 +269,14 @@ def ogrenci_list_export_api(request):
         )
         for k in kayitlar
     ]
-    if request.GET.get('format') == 'json':
+    export_format = (request.GET.get('format') or 'csv').lower()
+    if export_format == 'json':
         return build_json_export_response(rows, column_keys)
-    return build_csv_response(rows, column_keys)
+
+    meta = build_export_meta(request, ctx)
+    if export_format == 'xlsx':
+        return build_excel_response(rows, column_keys, meta=meta)
+    return build_csv_response(rows, column_keys, meta=meta)
 
 
 def ogrenci_filter_options_api(request):

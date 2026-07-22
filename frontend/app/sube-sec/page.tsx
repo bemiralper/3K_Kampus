@@ -40,7 +40,7 @@ export default function SubeSecPage() {
     const kurumId = readStoredKurumId();
 
     personelAccessService
-      .mySubeler(kurumId ? { kurum_id: kurumId } : undefined)
+      .mySubeler(kurumId ? { kurum_id: kurumId } : undefined, { omitContextHeaders: true })
       .then((res) => {
         const mustSelectSube =
           res.requires_login_sube_selection || res.needs_sube_picker;

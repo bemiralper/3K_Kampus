@@ -4,9 +4,11 @@ DRF ViewSets for Book-based Content Library API
 """
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
+from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
 from .permissions import IsAuthenticatedResourceReadOrAdminWrite
 from django.db.models import Prefetch, Count, Q, Max, F
 from django.db import transaction
@@ -266,16 +268,20 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
             'data': {'kapak_url': resolve_book_kapak_url(book)},
         })
 
-    @action(detail=False, methods=['get'], url_path='export')
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path='export',
+        renderer_classes=[JSONRenderer, XlsxRenderer, CsvRenderer],
+    )
     def export_books(self, request):
-        """Filtrelenmiş kitap listesi — kolon seçimi/sıra ile JSON veya CSV."""
-        from django.http import HttpResponse
-        import csv
-        from io import StringIO
-
+        """Filtrelenmiş kitap listesi — kolon seçimi/sıra ile JSON, CSV veya Excel."""
         from apps.resources.application.export import (
             EXPORT_COLUMNS,
+            build_export_columns,
+            build_export_meta,
             build_export_rows,
+            build_export_stats,
             parse_column_keys,
         )
 
@@ -300,16 +306,22 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
         books = list(qs[:5000])
         rows = build_export_rows(books, column_keys)
         fmt = (request.query_params.get('format') or 'json').lower()
+        meta = build_export_meta(request, kurum_id=kurum_id, sube_id=sube_id)
 
         if fmt == 'csv':
-            buf = StringIO()
-            writer = csv.writer(buf)
-            writer.writerow([EXPORT_COLUMNS[k] for k in column_keys])
-            for row in rows:
-                writer.writerow([row.get(k, '') for k in column_keys])
-            resp = HttpResponse(buf.getvalue(), content_type='text/csv; charset=utf-8')
-            resp['Content-Disposition'] = 'attachment; filename="kaynak_kitaplar.csv"'
-            return resp
+            from shared.export import CsvExportService
+
+            columns = build_export_columns(column_keys)
+            return CsvExportService.export(rows, columns, meta=meta, filename='kaynak_kitaplar')
+
+        if fmt == 'xlsx':
+            from shared.export import ExcelExportService
+
+            columns = build_export_columns(column_keys)
+            stats = build_export_stats(rows)
+            return ExcelExportService.export(
+                rows, columns, meta=meta, stats=stats, filename='kaynak_kitaplar',
+            )
 
         return Response({
             'success': True,

@@ -184,3 +184,15 @@ class OdemeTakipSubeIsolationAPITest(TestCase):
         body = res.json()
         self.assertEqual(body['toplam_sozlesme'], 1)
         self.assertEqual(body['geciken_taksit_sayisi'], 1)
+
+    def test_sozlesme_create_accepts_body_sube_when_header_missing(self):
+        """Header/session yokken POST gövdesindeki sube_id bağlam hatasına düşmez."""
+        payload = {
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube_a.id,
+            'egitim_yili_id': self.egitim_yili.id,
+        }
+        res = self.client.post(f'{API}/sozlesmeler/create/', payload, format='json')
+        err = res.json().get('error', '')
+        self.assertNotIn('sube_id parametresi', err)
+        self.assertNotIn('aktif şube bağlamı', err)

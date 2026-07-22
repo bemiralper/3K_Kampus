@@ -2,7 +2,7 @@
 from rest_framework import status
 from rest_framework.response import Response
 
-from shared.context import get_secili_kurum_id, get_secili_egitim_yili_id
+from shared.context import get_secili_kurum_id, get_secili_egitim_yili_id, _request_payload_get
 from shared.sube_context import assert_record_sube_access, resolve_mandatory_sube
 
 
@@ -13,7 +13,12 @@ def resolve_mandatory_odeme_context(request, *, kurum_id=None):
     Returns:
         (kurum_id, sube_id, egitim_yili_id, None) veya (None, None, None, Response)
     """
-    resolved_kurum = kurum_id or get_secili_kurum_id(request) or request.GET.get('kurum_id')
+    resolved_kurum = (
+        kurum_id
+        or get_secili_kurum_id(request)
+        or request.GET.get('kurum_id')
+        or _request_payload_get(request, 'kurum_id')
+    )
     if not resolved_kurum:
         return None, None, None, Response(
             {'error': 'kurum_id parametresi veya aktif kurum bağlamı zorunludur.'},

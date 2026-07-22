@@ -10,9 +10,9 @@ function personelApiUrl(path: string): string {
   return `${backend}/personel${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function readContextHeaders(): Record<string, string> {
+function readContextHeaders(options?: { omitContextHeaders?: boolean }): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (typeof window === "undefined") return headers;
+  if (options?.omitContextHeaders || typeof window === "undefined") return headers;
   for (const [key, storageKey] of [
     ["X-Kurum-ID", "3k_active_kurum"],
     ["X-Sube-ID", "3k_active_sube"],
@@ -77,10 +77,10 @@ export interface FinansYetkiliPersonel {
 }
 
 export const personelAccessService = {
-  async myKurumlar(): Promise<MyKurumlarResponse> {
+  async myKurumlar(options?: { omitContextHeaders?: boolean }): Promise<MyKurumlarResponse> {
     const res = await fetch(personelApiUrl("/api/my-kurumlar/"), {
       credentials: "include",
-      headers: readContextHeaders(),
+      headers: readContextHeaders(options),
     });
     const data = await res.json();
     if (!res.ok || !data.success) {
@@ -89,14 +89,17 @@ export const personelAccessService = {
     return data;
   },
 
-  async mySubeler(params?: { kurum_id?: number; egitim_yili_id?: number }): Promise<MySubelerResponse> {
+  async mySubeler(
+    params?: { kurum_id?: number; egitim_yili_id?: number },
+    options?: { omitContextHeaders?: boolean },
+  ): Promise<MySubelerResponse> {
     const qs = new URLSearchParams();
     if (params?.kurum_id) qs.set("kurum_id", String(params.kurum_id));
     if (params?.egitim_yili_id) qs.set("egitim_yili_id", String(params.egitim_yili_id));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     const res = await fetch(personelApiUrl(`/api/my-subeler/${suffix}`), {
       credentials: "include",
-      headers: readContextHeaders(),
+      headers: readContextHeaders(options),
     });
     const data = await res.json();
     if (!res.ok || !data.success) {

@@ -1,14 +1,12 @@
 """
 Öğrenci listesi API — paylaşılan filtre, arama, serileştirme ve sayfalama.
 """
-import csv
-import io
 import re
 from datetime import datetime
 
 from django.db import models
 from django.db.models import Func, Value, CharField
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
 
 from apps.ogrenci.domain.models import OgrenciKayit, OgrenciVeli, OgrenciEgitimPaketi
 
@@ -256,6 +254,15 @@ EXPORT_COLUMNS = {
     'egitim_yili': 'Eğitim Yılı',
     'kalem_ozet': 'Eğitim Kalemleri',
     'geldigi_okul': 'Geldiği / Mezun Olduğu Okul',
+}
+
+EXPORT_COLUMN_TYPES = {
+    'tc_kimlik_no': 'tc',
+    'veli_tc_kimlik_no': 'tc',
+    'telefon': 'phone',
+    'veli_telefon': 'phone',
+    'dogum_tarihi': 'date',
+    'kayit_tarihi': 'date',
 }
 
 
@@ -693,32 +700,97 @@ def serialize_kayit_row(kayit, include_egitim_yili=False, kalem_ozet='', egitim_
     return row
 
 
-def build_csv_response(rows, column_keys):
+def _normalize_export_keys(column_keys):
     keys = [k for k in column_keys if k in EXPORT_COLUMNS]
     if not keys:
         keys = ['tam_ad', 'okul_no', 'sinif_seviyesi', 'veli_telefon', 'aktif_mi']
+    return keys
 
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=';')
-    writer.writerow([EXPORT_COLUMNS[k] for k in keys])
 
-    for row in rows:
-        values = []
-        for key in keys:
-            val = row.get(key, '')
-            if key == 'aktif_mi':
-                val = 'Aktif' if val else 'Pasif'
-            elif key == 'cinsiyet':
-                if val == 'E':
-                    val = 'Erkek'
-                elif val == 'K':
-                    val = 'Kadın'
-            values.append(val if val is not None else '')
-        writer.writerow(values)
+def _prepare_export_rows(rows, column_keys):
+    keys = _normalize_export_keys(column_keys)
+    return [format_export_row(row, keys) for row in rows]
 
-    response = HttpResponse(output.getvalue(), content_type='text/csv; charset=utf-8-sig')
-    response['Content-Disposition'] = 'attachment; filename="ogrenciler.csv"'
-    return response
+
+def build_export_columns(column_keys):
+    from shared.export.style_manager import ExportColumn
+
+    keys = _normalize_export_keys(column_keys)
+    return [
+        ExportColumn(key=k, label=EXPORT_COLUMNS[k], type=EXPORT_COLUMN_TYPES.get(k, 'text'))
+        for k in keys
+    ]
+
+
+def build_export_meta(request, ctx, *, report_title='ÖĞRENCİ LİSTESİ'):
+    from shared.export.style_manager import ReportMeta
+
+    kurum_ad = ''
+    sube_ad = ''
+    try:
+        if ctx.get('kurum_id'):
+            from apps.kurum.domain.models import Kurum
+            kurum = Kurum.objects.filter(id=ctx['kurum_id']).first()
+            kurum_ad = kurum.ad if kurum else ''
+    except Exception:
+        kurum_ad = ''
+    try:
+        if ctx.get('sube_id'):
+            from apps.sube.domain.models import Sube
+            sube = Sube.objects.filter(id=ctx['sube_id']).first()
+            sube_ad = sube.ad if sube else ''
+    except Exception:
+        sube_ad = ''
+
+    egitim_yili = ctx.get('egitim_yili')
+    user = getattr(request, 'user', None)
+    generated_by = ''
+    if user and getattr(user, 'is_authenticated', False):
+        generated_by = user.get_full_name() or user.get_username()
+
+    return ReportMeta(
+        report_title=report_title,
+        kurum_ad=kurum_ad,
+        sube_ad=sube_ad,
+        egitim_yili=egitim_yili.yil_str if egitim_yili else '',
+        generated_by=generated_by,
+    )
+
+
+def build_export_stats(rows):
+    from shared.export.style_manager import ExportStat
+
+    toplam = len(rows)
+    aktif = sum(1 for r in rows if r.get('aktif_mi') == 'Aktif')
+    pasif = toplam - aktif
+    erkek = sum(1 for r in rows if r.get('cinsiyet') == 'Erkek')
+    kadin = sum(1 for r in rows if r.get('cinsiyet') == 'Kadın')
+    return [
+        ExportStat(label='Toplam Öğrenci', value=toplam, type='integer'),
+        ExportStat(label='Aktif', value=aktif, type='integer'),
+        ExportStat(label='Pasif', value=pasif, type='integer'),
+        ExportStat(label='Erkek', value=erkek, type='integer'),
+        ExportStat(label='Kadın', value=kadin, type='integer'),
+    ]
+
+
+def build_csv_response(rows, column_keys, *, meta=None):
+    from shared.export import CsvExportService
+
+    export_rows = _prepare_export_rows(rows, column_keys)
+    columns = build_export_columns(column_keys)
+    return CsvExportService.export(export_rows, columns, meta=meta, filename='ogrenciler')
+
+
+def build_excel_response(rows, column_keys, *, meta):
+    from shared.export import ExcelExportService
+
+    export_rows = _prepare_export_rows(rows, column_keys)
+    columns = build_export_columns(column_keys)
+    stats = build_export_stats(export_rows)
+    return ExcelExportService.export(
+        export_rows, columns, meta=meta, stats=stats, filename='ogrenciler',
+    )
 
 
 def format_export_row(row, keys):

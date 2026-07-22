@@ -20,6 +20,10 @@ import { personelAccessService } from "@/lib/personel-access-api";
 export const STORAGE_KURUM = "3k_active_kurum";
 export const STORAGE_SUBE = "3k_active_sube";
 export const STORAGE_CONTEXT_GATE = "3k_context_gate";
+/** LoginForm yönlendirmesi bitene kadar AppShell'in ana sayfaya atlamasını engeller */
+export const STORAGE_POST_LOGIN_ROUTING = "3k_post_login_routing";
+
+const LOGIN_FETCH = { omitContextHeaders: true } as const;
 
 export type ContextGate = "kurum" | "sube";
 
@@ -56,7 +60,7 @@ async function ensureContextForPortalUser(_user: User): Promise<void> {
   const storedKurumId = storedKurumRaw ? parseInt(storedKurumRaw, 10) : NaN;
   const hasStoredKurum = Number.isFinite(storedKurumId);
 
-  const kurumRes = await personelAccessService.myKurumlar();
+  const kurumRes = await personelAccessService.myKurumlar(LOGIN_FETCH);
   const kurumId =
     kurumRes.kurumlar.length === 1
       ? kurumRes.kurumlar[0].id
@@ -70,6 +74,7 @@ async function ensureContextForPortalUser(_user: User): Promise<void> {
 
   const subeRes = await personelAccessService.mySubeler(
     kurumId ? { kurum_id: kurumId } : undefined,
+    LOGIN_FETCH,
   );
 
   if (subeRes.subeler.length === 1) {
@@ -103,11 +108,14 @@ export async function resolvePostLoginRedirect(user: User | null): Promise<strin
   }
 
   try {
+    // Önceki oturumdan kalan şube; picker kararını ve session'ı bozmasın
+    localStorage.removeItem(STORAGE_SUBE);
+
     const storedKurumRaw = localStorage.getItem(STORAGE_KURUM);
     const storedKurumId = storedKurumRaw ? parseInt(storedKurumRaw, 10) : NaN;
     const hasStoredKurum = Number.isFinite(storedKurumId);
 
-    const kurumRes = await personelAccessService.myKurumlar();
+    const kurumRes = await personelAccessService.myKurumlar(LOGIN_FETCH);
 
     if (kurumRes.needs_kurum_picker && kurumRes.kurumlar.length > 1) {
       localStorage.removeItem(STORAGE_SUBE);
@@ -124,10 +132,16 @@ export async function resolvePostLoginRedirect(user: User | null): Promise<strin
 
     if (kurumId) {
       localStorage.setItem(STORAGE_KURUM, String(kurumId));
+      try {
+        await setActiveContext(kurumId, null, null);
+      } catch {
+        /* session şube temizliği — picker kararı için */
+      }
     }
 
     const subeRes = await personelAccessService.mySubeler(
       kurumId ? { kurum_id: kurumId } : undefined,
+      LOGIN_FETCH,
     );
 
     const mustSelectSube =
@@ -158,9 +172,10 @@ export async function resolvePostKurumRedirect(
   if (!user) return "/login";
 
   localStorage.setItem(STORAGE_KURUM, String(kurumId));
+  localStorage.removeItem(STORAGE_SUBE);
 
   try {
-    const subeRes = await personelAccessService.mySubeler({ kurum_id: kurumId });
+    const subeRes = await personelAccessService.mySubeler({ kurum_id: kurumId }, LOGIN_FETCH);
 
     const mustSelectSube =
       subeRes.requires_login_sube_selection || subeRes.needs_sube_picker;

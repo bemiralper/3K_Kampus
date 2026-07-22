@@ -23,6 +23,13 @@ DEFAULT_EXPORT_KEYS = [
     'ad', 'kod', 'book_type', 'ders', 'sinif', 'yayinevi', 'yazar', 'yayin_yili',
 ]
 
+EXPORT_COLUMN_TYPES = {
+    'yayin_yili': 'year',
+    'unit_count': 'integer',
+    'topic_count': 'integer',
+    'content_count': 'integer',
+}
+
 
 def _sinif_label(book) -> str:
     levels = list(book.sinif_seviyeleri.all())
@@ -90,3 +97,58 @@ def parse_column_keys(raw: str | None) -> list[str]:
         return list(DEFAULT_EXPORT_KEYS)
     keys = [k.strip() for k in raw.split(',') if k.strip()]
     return [k for k in keys if k in EXPORT_COLUMNS] or list(DEFAULT_EXPORT_KEYS)
+
+
+def build_export_columns(column_keys: list[str]):
+    from shared.export.style_manager import ExportColumn
+
+    keys = [k for k in column_keys if k in EXPORT_COLUMNS]
+    return [
+        ExportColumn(key=k, label=EXPORT_COLUMNS[k], type=EXPORT_COLUMN_TYPES.get(k, 'text'))
+        for k in keys
+    ]
+
+
+def build_export_meta(request, *, kurum_id, sube_id, report_title='KAYNAK KİTAP LİSTESİ'):
+    from shared.export.style_manager import ReportMeta
+
+    kurum_ad = ''
+    sube_ad = ''
+    try:
+        if kurum_id:
+            from apps.kurum.domain.models import Kurum
+            kurum = Kurum.objects.filter(id=kurum_id).first()
+            kurum_ad = kurum.ad if kurum else ''
+    except Exception:
+        kurum_ad = ''
+    try:
+        if sube_id:
+            from apps.sube.domain.models import Sube
+            sube = Sube.objects.filter(id=sube_id).first()
+            sube_ad = sube.ad if sube else ''
+    except Exception:
+        sube_ad = ''
+
+    user = getattr(request, 'user', None)
+    generated_by = ''
+    if user and getattr(user, 'is_authenticated', False):
+        generated_by = user.get_full_name() or user.get_username()
+
+    return ReportMeta(
+        report_title=report_title,
+        kurum_ad=kurum_ad,
+        sube_ad=sube_ad,
+        generated_by=generated_by,
+    )
+
+
+def build_export_stats(rows):
+    from shared.export.style_manager import ExportStat
+
+    toplam = len(rows)
+    aktif = sum(1 for r in rows if r.get('aktif') == 'Evet')
+    return [
+        ExportStat(label='Toplam Kitap', value=toplam, type='integer'),
+        ExportStat(label='Aktif', value=aktif, type='integer'),
+        ExportStat(label='Pasif', value=toplam - aktif, type='integer'),
+    ]
