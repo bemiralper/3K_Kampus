@@ -174,6 +174,152 @@ function fontSizeForColumns(colCount: number, orientation: PdfOrientation): numb
   return orientation === 'landscape' ? 8 : 7.5;
 }
 
+export async function exportGroupedOgrenciListPdf(options: {
+  sections: { title: string; rows: Record<string, string>[]; emptyMessage?: string }[];
+  columnKeys: string[];
+  columnLabels?: string[];
+  branding: OgrenciListPdfBranding;
+  orientation?: PdfOrientation;
+  filterSummary?: string;
+  documentTitle?: string;
+  fileName?: string;
+  totalRecordsLabel?: string;
+}): Promise<void> {
+  const {
+    sections,
+    columnKeys,
+    columnLabels,
+    branding,
+    orientation = columnKeys.length > 6 ? 'landscape' : 'portrait',
+    filterSummary = '',
+    documentTitle = 'Öğrenci Listesi',
+    fileName = 'ogrenciler.pdf',
+    totalRecordsLabel,
+  } = options;
+
+  const labels =
+    columnLabels && columnLabels.length === columnKeys.length
+      ? columnLabels
+      : columnKeys.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)?.label || k);
+
+  const totalRows = sections.reduce((n, s) => n + s.rows.length, 0);
+  const metaCount = totalRecordsLabel ?? `${totalRows} kayıt`;
+
+  const [fonts, logoData] = await Promise.all([
+    loadFonts(),
+    loadLogoDataUri(branding.logoUrl || '/img/3k-logo.png'),
+  ]);
+
+  const primary = hexToRgb(branding.temaRengi);
+  const brandLine = [branding.kurumAd, branding.subeAd].filter(Boolean).join(' · ');
+
+  const doc = new jsPDF({
+    orientation,
+    unit: 'mm',
+    format: 'a4',
+  });
+  registerFonts(doc, fonts);
+
+  const tableWidth = doc.internal.pageSize.getWidth() - 20;
+  const columnStyles = buildColumnStyles(doc, labels.length);
+  const tableFontSize = fontSizeForColumns(labels.length + 1, orientation);
+
+  let startY = drawHeader(
+    doc,
+    primary,
+    logoData,
+    branding.kurumAd || documentTitle,
+    branding.subeAd,
+    documentTitle,
+    metaCount,
+  );
+
+  if (filterSummary) {
+    doc.setFont('Roboto', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...GRAY);
+    doc.text(filterSummary, 10, startY - 2);
+    startY += 4;
+  }
+
+  const tableOptions = {
+    tableWidth,
+    showHead: 'firstPage' as const,
+    rowPageBreak: 'auto' as const,
+    styles: {
+      font: 'Roboto',
+      fontSize: tableFontSize,
+      cellPadding: { top: 2, right: 1.5, bottom: 2, left: 1.5 },
+      overflow: 'linebreak' as const,
+      valign: 'middle' as const,
+      textColor: DARK,
+      lineColor: [226, 232, 240] as [number, number, number],
+      lineWidth: 0.2,
+    },
+    headStyles: {
+      fillColor: primary,
+      textColor: WHITE,
+      fontStyle: 'bold' as const,
+      fontSize: tableFontSize,
+      halign: 'center' as const,
+      valign: 'middle' as const,
+      overflow: 'linebreak' as const,
+      minCellHeight: tableFontSize + 4,
+    },
+    bodyStyles: {
+      overflow: 'linebreak' as const,
+      valign: 'middle' as const,
+    },
+    alternateRowStyles: { fillColor: ROW_ALT },
+    columnStyles,
+    margin: { left: 10, right: 10, top: 28, bottom: 14 },
+  };
+
+  for (let si = 0; si < sections.length; si++) {
+    const section = sections[si];
+    const pageH = doc.internal.pageSize.getHeight();
+    if (startY > pageH - 40) {
+      doc.addPage();
+      startY = 28;
+    }
+
+    doc.setFont('Roboto', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...primary);
+    doc.text(section.title, 10, startY);
+    startY += 5;
+
+    if (section.rows.length === 0) {
+      doc.setFont('Roboto', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...GRAY);
+      doc.text(section.emptyMessage || '(Bu sınıfta yerleşmiş öğrenci yok)', 10, startY);
+      startY += 10;
+      continue;
+    }
+
+    const body = section.rows.map((row, idx) => [
+      String(idx + 1),
+      ...columnKeys.map((k) => {
+        const val = row[k] != null ? String(row[k]) : '—';
+        return val.length > 120 ? `${val.slice(0, 117)}…` : val;
+      }),
+    ]);
+
+    autoTable(doc, {
+      ...tableOptions,
+      startY,
+      head: [['#', ...labels]],
+      body,
+    });
+
+    startY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  }
+
+  addFooter(doc, brandLine);
+  await downloadJsPdf(doc, fileName);
+}
+
 export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Promise<void> {
   const {
     rows,

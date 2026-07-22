@@ -1,6 +1,6 @@
 // Şube Tanımları API Services
 
-import { Oda, Sinif, OdaTur, OdaFormData, SinifFormData } from './types';
+import { Oda, Sinif, OdaTur, OdaFormData, SinifFormData, AktifDonem, AtanmamisOgrenci, SinifListResult } from './types';
 import { parseJsonResponse } from '@/lib/api';
 
 const API_BASE = '/api';
@@ -127,19 +127,90 @@ export async function deleteOda(id: number) {
 
 // ============ SINIF API'leri ============
 
-export async function getSiniflar(subeId?: number): Promise<Sinif[]> {
-  let url = `${API_BASE}/siniflar/api/`;
-  if (subeId) {
-    url += `?sube_id=${subeId}`;
-  }
-  
-  const res = await fetch(url, { 
+export async function getSiniflar(subeId?: number, termId?: number): Promise<SinifListResult> {
+  const params = new URLSearchParams();
+  if (subeId) params.set('sube_id', String(subeId));
+  if (termId) params.set('term_id', String(termId));
+  const qs = params.toString();
+  const url = `${API_BASE}/siniflar/api/${qs ? `?${qs}` : ''}`;
+
+  const res = await fetch(url, {
     credentials: 'include',
     headers: getContextHeaders(),
   });
   if (!res.ok) throw new Error('Sınıflar yüklenemedi');
   const data = await res.json();
-  return data.siniflar || [];
+  return {
+    siniflar: data.siniflar || [],
+    aktif_donem: data.aktif_donem || null,
+  };
+}
+
+export async function getAktifDonem(): Promise<AktifDonem | null> {
+  const res = await fetch(`${API_BASE}/siniflar/api/aktif-donem/`, {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.aktif_donem || null;
+}
+
+export async function getSinifOgrenciRoster(
+  sinifId: number,
+  termId?: number,
+): Promise<{
+  ogrenciler: AtanmamisOgrenci[];
+  aktif_donem: AktifDonem | null;
+  sinif: { id: number; ad: string; kapasite: number; mevcutluk: number };
+}> {
+  const url = termId
+    ? `${API_BASE}/siniflar/api/${sinifId}/atanmamis-ogrenciler/?term_id=${termId}`
+    : `${API_BASE}/siniflar/api/${sinifId}/atanmamis-ogrenciler/`;
+  const res = await fetch(url, { credentials: 'include', headers: getContextHeaders() });
+  const data = await parseJsonResponse(res, 'Öğrenci listesi yüklenemedi');
+  return {
+    ogrenciler: data.ogrenciler || [],
+    aktif_donem: data.aktif_donem || null,
+    sinif: data.sinif,
+  };
+}
+
+/** @deprecated getSinifOgrenciRoster kullanın */
+export const getAtanmamisOgrenciler = getSinifOgrenciRoster;
+
+export async function removeOgrenciFromSinif(
+  sinifId: number,
+  studentIds: number[],
+  termId?: number,
+) {
+  const body: Record<string, unknown> = { student_ids: studentIds };
+  if (termId) body.term_id = termId;
+
+  const res = await fetch(`${API_BASE}/siniflar/api/${sinifId}/ogrenci-cikar/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: getContextHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parseJsonResponse(res, 'Öğrenci çıkarma başarısız');
+}
+
+export async function assignOgrencilerToSinif(
+  sinifId: number,
+  studentIds: number[],
+  termId?: number,
+) {
+  const body: Record<string, unknown> = { student_ids: studentIds };
+  if (termId) body.term_id = termId;
+
+  const res = await fetch(`${API_BASE}/siniflar/api/${sinifId}/ogrenci-ata/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: getContextHeaders(),
+    body: JSON.stringify(body),
+  });
+  return parseJsonResponse(res, 'Öğrenci ataması başarısız');
 }
 
 export async function createSinif(formData: SinifFormData) {

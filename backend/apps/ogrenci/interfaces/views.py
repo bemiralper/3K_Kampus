@@ -767,6 +767,22 @@ def ogrenci_api(request, pk):
                 'id': aktif_kayit.egitim_yili.id,
                 'ad': aktif_kayit.egitim_yili.yil_str,
             }
+
+    donem_sinif_bilgi = None
+    aktif_donem_bilgi = None
+    if ogrenci.kurum_id and ogrenci.sube_id:
+        from apps.academic.services.active_term import get_active_term_or_none, term_to_dict
+        from apps.sinif.application.placement_helpers import get_student_term_classroom
+
+        aktif_donem = get_active_term_or_none(kurum_id=ogrenci.kurum_id, sube_id=ogrenci.sube_id)
+        if aktif_donem:
+            aktif_donem_bilgi = term_to_dict(aktif_donem)
+            donem_sinif = get_student_term_classroom(
+                student_id=ogrenci.id,
+                term_id=aktif_donem.id,
+            )
+            if donem_sinif:
+                donem_sinif_bilgi = {'id': donem_sinif.id, 'ad': donem_sinif.ad}
     
     # Adres bilgileri - OgrenciAdres tablosundan
     adresler = []
@@ -871,6 +887,8 @@ def ogrenci_api(request, pk):
         'school_ad': school_ad,
         'geldigi_okul': geldigi_okul,
         'sinif': sinif_bilgi,
+        'donem_sinif': donem_sinif_bilgi,
+        'aktif_donem': aktif_donem_bilgi,
         'sinif_seviyesi': sinif_seviyesi_bilgi,
         'alan': alan_bilgi,
         'egitim_yili': egitim_yili_bilgi,

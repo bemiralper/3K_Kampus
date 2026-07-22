@@ -25,7 +25,7 @@ EXPORT_COLUMN_TYPES = {
 DEFAULT_EXPORT_KEYS = list(EXPORT_COLUMNS.keys())
 
 
-def sinif_export_cell(sinif, key: str) -> object:
+def sinif_export_cell(sinif, key: str, *, mevcutluk_override: int | None = None) -> object:
     from shared.export.style_manager import format_number_display
 
     if key == 'ad':
@@ -41,20 +41,37 @@ def sinif_export_cell(sinif, key: str) -> object:
     if key == 'oda':
         return sinif.oda.ad if sinif.oda else ''
     if key == 'ogrenci_sayisi':
+        if mevcutluk_override is not None:
+            return mevcutluk_override
         return sinif.mevcutluk
     if key == 'kapasite':
         return sinif.kapasite
     if key == 'doluluk_orani':
-        return f'{format_number_display(sinif.doluluk_orani, decimals=1)}%'
+        mevcut = mevcutluk_override if mevcutluk_override is not None else sinif.mevcutluk
+        oran = (mevcut / sinif.kapasite * 100) if sinif.kapasite else 0
+        return f'{format_number_display(oran, decimals=1)}%'
     if key == 'aktif':
         return 'Aktif' if sinif.aktif_mi else 'Pasif'
     return ''
 
 
-def build_export_rows(siniflar, column_keys: list[str]) -> list[dict[str, object]]:
+def build_export_rows(
+    siniflar,
+    column_keys: list[str],
+    *,
+    mevcutluk_map: dict[int, int] | None = None,
+) -> list[dict[str, object]]:
     keys = [k for k in column_keys if k in EXPORT_COLUMNS]
+    mevcutluk_map = mevcutluk_map or {}
     return [
-        {k: sinif_export_cell(sinif, k) for k in keys}
+        {
+            k: sinif_export_cell(
+                sinif,
+                k,
+                mevcutluk_override=mevcutluk_map.get(sinif.id),
+            )
+            for k in keys
+        }
         for sinif in siniflar
     ]
 
@@ -110,11 +127,12 @@ def build_export_meta(request, *, kurum_id=None, sube_id=None, egitim_yili=None,
     )
 
 
-def build_export_stats(siniflar):
+def build_export_stats(siniflar, *, mevcutluk_map: dict[int, int] | None = None):
     from shared.export.style_manager import ExportStat, format_number_display
 
+    mevcutluk_map = mevcutluk_map or {}
     toplam_sinif = len(siniflar)
-    toplam_ogrenci = sum(s.mevcutluk for s in siniflar)
+    toplam_ogrenci = sum(mevcutluk_map.get(s.id, s.mevcutluk) for s in siniflar)
     toplam_kapasite = sum(s.kapasite for s in siniflar)
     ortalama_doluluk = (toplam_ogrenci / toplam_kapasite * 100) if toplam_kapasite else 0
 

@@ -54,7 +54,7 @@ export interface Sinif {
   ad: string;
   kod: string;
   kapasite: number;
-  ogrenci_sayisi: number;
+  ogrenci_sayisi?: number;
   mevcutluk: number;
   doluluk_orani: number;
   aktif_mi: boolean;
@@ -63,6 +63,32 @@ export interface Sinif {
   oda: { id: number; ad: string } | null;
   sinif_seviyesi: SinifSeviyesi | null;
   created_at: string | null;
+}
+
+export interface AktifDonem {
+  id: number;
+  name: string;
+  code?: string;
+  term_type?: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  is_active?: boolean;
+}
+
+export interface AtanmamisOgrenci {
+  id: number;
+  ad: string;
+  soyad: string;
+  tam_ad: string;
+  okul_no: string;
+  alan?: { id: number; ad: string } | null;
+  sinif_yerlesim?: { id: number; ad: string } | null;
+  bu_sinifta?: boolean;
+}
+
+export interface SinifListResult {
+  siniflar: Sinif[];
+  aktif_donem: AktifDonem | null;
 }
 
 export interface SinifFormData {

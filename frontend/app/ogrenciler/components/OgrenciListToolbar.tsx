@@ -27,6 +27,7 @@ interface OgrenciListToolbarProps {
   advancedFilterCount?: number;
   activeFilterChips?: { key: string; label: string }[];
   onRemoveFilter?: (key: string) => void;
+  rosterExport?: React.ReactNode;
 }
 
 export default function OgrenciListToolbar({
@@ -51,6 +52,7 @@ export default function OgrenciListToolbar({
   advancedFilterCount = 0,
   activeFilterChips = [],
   onRemoveFilter,
+  rosterExport,
 }: OgrenciListToolbarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -160,6 +162,7 @@ export default function OgrenciListToolbar({
               )}
             </button>
           )}
+          {rosterExport}
           {onOpenExport && (
             <button type="button" className="ogrenci-toolbar-btn primary" onClick={onOpenExport}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

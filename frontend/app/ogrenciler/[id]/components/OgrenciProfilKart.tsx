@@ -367,8 +367,13 @@ export default function OgrenciProfilKart({
               </svg>
             </div>
             <div className="detail-content">
-              <span className="detail-label">Sınıfı</span>
-              <span className="detail-value">{data.sinif?.ad || '-'}</span>
+              <span className="detail-label">
+                Sınıfı
+                {data.aktif_donem?.name ? ` (${data.aktif_donem.name})` : ''}
+              </span>
+              <span className="detail-value">
+                {data.donem_sinif?.ad || data.sinif?.ad || '-'}
+              </span>
             </div>
           </div>
 

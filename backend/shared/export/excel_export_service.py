@@ -216,7 +216,8 @@ class ExcelExportService:
     # Veri tablosu
     # ------------------------------------------------------------------
     @classmethod
-    def _write_table(cls, ws, rows: Sequence[dict[str, Any]], cols: list[ExportColumn], *, header_row: int):
+    def _write_table(cls, ws, rows: Sequence[dict[str, Any]], cols: list[ExportColumn], *, header_row: int,
+                     auto_filter: bool = True):
         from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
         thin = Side(style="thin", color=sm.BORDER_COLOR_HEX)
@@ -287,7 +288,8 @@ class ExcelExportService:
 
         from openpyxl.utils import get_column_letter
         last_col_letter = get_column_letter(max(len(cols), 1))
-        ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{max(last_row, header_row)}"
+        if auto_filter:
+            ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{max(last_row, header_row)}"
 
         return last_row, len(cols), col_widths, col_needs_wrap
 

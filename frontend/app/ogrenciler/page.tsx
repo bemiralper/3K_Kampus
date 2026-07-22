@@ -10,7 +10,7 @@ import Pagination from "../odeme-takip/components/Pagination";
 import OgrenciListToolbar, { type StatusFilter, type SortOption } from "./components/OgrenciListToolbar";
 import OgrenciListResults, { type OgrenciRow } from "./components/OgrenciListResults";
 import OgrenciFilterDrawer from "./components/OgrenciFilterDrawer";
-import OgrenciExportModal from "./components/OgrenciExportModal";
+import OgrenciSinifRosterExportButton from "./components/OgrenciSinifRosterExportButton";
 import OgrenciBelgesiModal from "./components/OgrenciBelgesiModal";
 import OgrenciIzinBelgesiModal from "./components/OgrenciIzinBelgesiModal";
 import type { OgrenciBelgeTipi } from "./components/OgrenciBelgeMenu";
@@ -721,6 +721,7 @@ export default function OgrenciListesiPage() {
           advancedFilterCount={advancedFilterCount}
           activeFilterChips={activeFilterChips}
           onRemoveFilter={handleRemoveFilter}
+          rosterExport={<OgrenciSinifRosterExportButton filters={filters} />}
         />
         <OgrenciListResults
           loading={loading}

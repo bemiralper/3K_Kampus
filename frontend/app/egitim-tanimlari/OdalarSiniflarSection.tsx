@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Oda, Sinif, OdaTur, SinifSeviyesi } from './types';
+import { Oda, Sinif, OdaTur, SinifSeviyesi, AktifDonem } from './types';
 import { 
   getOdalar, 
   getSiniflar, 
@@ -12,7 +12,7 @@ import {
   downloadSinifExportCsv,
   downloadSinifExportXlsx,
 } from './services';
-import { OdaDrawer, SinifDrawer, OdaTable, SinifTable } from './components';
+import { OdaDrawer, SinifDrawer, OdaTable, SinifTable, SinifOgrenciAtamaModal, SinifRosterExportModal } from './components';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import { downloadBlob } from '@/lib/download-file';
 
@@ -26,6 +26,8 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
   // State
   const [odalar, setOdalar] = useState<Oda[]>([]);
   const [siniflar, setSiniflar] = useState<Sinif[]>([]);
+  const [aktifDonem, setAktifDonem] = useState<AktifDonem | null>(null);
+  const [assignSinif, setAssignSinif] = useState<Sinif | null>(null);
   const [odaTurleri, setOdaTurleri] = useState<OdaTur[]>([]);
   const [sinifSeviyeleri, setSinifSeviyeleri] = useState<SinifSeviyesi[]>([]);
   
@@ -44,6 +46,7 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [rosterExportOpen, setRosterExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -67,7 +70,8 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
     try {
       const subeId = activeSube?.id;
       const data = await getSiniflar(subeId);
-      setSiniflar(data);
+      setSiniflar(data.siniflar);
+      setAktifDonem(data.aktif_donem);
     } catch (error) {
       console.error('Sınıflar yüklenemedi:', error);
     } finally {
@@ -266,7 +270,7 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
                   position: 'absolute',
                   right: 0,
                   top: 'calc(100% + 8px)',
-                  minWidth: '160px',
+                  minWidth: '220px',
                   background: 'white',
                   border: '1px solid #e2e8f0',
                   borderRadius: '8px',
@@ -274,6 +278,29 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
                   padding: '6px',
                   zIndex: 20,
                 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExportOpen(false);
+                      setRosterExportOpen(true);
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '10px 12px',
+                      border: 'none',
+                      background: 'transparent',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      color: '#047857',
+                    }}
+                  >
+                    Sınıf Öğrenci Listeleri…
+                  </button>
+                  <div style={{ height: 1, background: '#f1f5f9', margin: '4px 0' }} />
                   <button
                     type="button"
                     onClick={() => handleSinifExport('xlsx')}
@@ -308,6 +335,9 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
                   >
                     CSV
                   </button>
+                  <div style={{ padding: '6px 12px 4px', fontSize: '11px', color: '#94a3b8' }}>
+                    Sınıf tablosu (meta)
+                  </div>
                 </div>
               )}
             </div>
@@ -357,7 +387,26 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
         <div className="card-modern-header">
           <h3>
             {activeTab === 'odalar' && <>{odaIcon} Odalar Listesi ({filteredOdalar.length})</>}
-            {activeTab === 'siniflar' && <>{sinifIcon} Sınıflar Listesi ({filteredSiniflar.length})</>}
+            {activeTab === 'siniflar' && (
+              <>
+                {sinifIcon} Sınıflar Listesi ({filteredSiniflar.length})
+                {aktifDonem && (
+                  <span style={{
+                    marginLeft: '12px',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    padding: '4px 10px',
+                    borderRadius: '20px',
+                    background: '#ecfdf5',
+                    color: '#047857',
+                    border: '1px solid #a7f3d0',
+                    verticalAlign: 'middle',
+                  }}>
+                    {aktifDonem.name}
+                  </span>
+                )}
+              </>
+            )}
           </h3>
         </div>
         <div className="card-modern-body" style={{ padding: 0 }}>
@@ -375,6 +424,7 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
               loading={loading}
               onEdit={handleEditSinif}
               onDelete={handleDeleteSinif}
+              onAssignStudents={aktifDonem ? setAssignSinif : undefined}
               sinifSeviyeleri={sinifSeviyeleri}
             />
           )}
@@ -395,6 +445,21 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
         onClose={() => { setShowSinifDrawer(false); setEditingSinif(null); }}
         onSuccess={() => { fetchSiniflar(); setShowSinifDrawer(false); setEditingSinif(null); }}
         editingSinif={editingSinif}
+      />
+
+      <SinifOgrenciAtamaModal
+        sinif={assignSinif}
+        aktifDonem={aktifDonem}
+        onClose={() => setAssignSinif(null)}
+        onSuccess={fetchSiniflar}
+      />
+
+      <SinifRosterExportModal
+        open={rosterExportOpen}
+        onClose={() => setRosterExportOpen(false)}
+        siniflar={siniflar}
+        sinifSeviyeleri={sinifSeviyeleri}
+        aktifDonem={aktifDonem}
       />
 
       {/* Delete Modal */}

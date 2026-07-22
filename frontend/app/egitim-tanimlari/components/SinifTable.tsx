@@ -7,6 +7,7 @@ interface SinifTableProps {
   loading: boolean;
   onEdit: (sinif: Sinif) => void;
   onDelete: (sinif: Sinif) => void;
+  onAssignStudents?: (sinif: Sinif) => void;
   sinifSeviyeleri: SinifSeviyesi[];
 }
 
@@ -20,7 +21,7 @@ const defaultColors = [
   { bg: '#f0f9ff', text: '#0369a1', border: '#bae6fd' },
 ];
 
-export default function SinifTable({ siniflar, loading, onEdit, onDelete, sinifSeviyeleri }: SinifTableProps) {
+export default function SinifTable({ siniflar, loading, onEdit, onDelete, onAssignStudents, sinifSeviyeleri }: SinifTableProps) {
   // Sınıf seviyesi adından renk al
   const getSeviyeStyle = (seviyeId: number | null | undefined) => {
     if (!seviyeId) return { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' };
@@ -290,11 +291,41 @@ export default function SinifTable({ siniflar, loading, onEdit, onDelete, sinifS
                   )}
                 </td>
                 <td style={{ padding: '14px 16px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => onAssignStudents?.(sinif)}
+                    disabled={!onAssignStudents || !sinif.sinif_seviyesi}
+                    title={
+                      !sinif.sinif_seviyesi
+                        ? 'Önce sınıf seviyesi tanımlayın'
+                        : 'Öğrenci ata'
+                    }
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '4px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: onAssignStudents && sinif.sinif_seviyesi ? 'pointer' : 'default',
+                      padding: '4px 8px',
+                      borderRadius: '8px',
+                      width: '100%',
+                    }}
+                    onMouseOver={(e) => {
+                      if (onAssignStudents && sinif.sinif_seviyesi) {
+                        e.currentTarget.style.background = '#f0fdf4';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
                     <span style={{
                       fontSize: '0.8125rem',
                       fontWeight: 500,
-                      color: '#1e293b',
+                      color: onAssignStudents ? '#059669' : '#1e293b',
+                      textDecoration: onAssignStudents ? 'underline' : 'none',
                     }}>
                       {ogrenciSayisi} / {sinif.kapasite}
                     </span>
@@ -309,15 +340,15 @@ export default function SinifTable({ siniflar, loading, onEdit, onDelete, sinifS
                         width: `${Math.min(dolulukOrani, 100)}%`,
                         height: '100%',
                         borderRadius: '2px',
-                        background: dolulukOrani >= 90 
-                          ? '#ef4444' 
-                          : dolulukOrani >= 70 
-                            ? '#f59e0b' 
+                        background: dolulukOrani >= 90
+                          ? '#ef4444'
+                          : dolulukOrani >= 70
+                            ? '#f59e0b'
                             : '#10b981',
                         transition: 'width 0.3s ease',
                       }} />
                     </div>
-                  </div>
+                  </button>
                 </td>
                 <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                   <span style={{

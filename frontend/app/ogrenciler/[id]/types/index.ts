@@ -67,6 +67,8 @@ export type OgrenciDetay = {
   school_ad?: string;
   geldigi_okul?: string;
   sinif?: { id: number; ad: string };
+  donem_sinif?: { id: number; ad: string } | null;
+  aktif_donem?: { id: number; name: string } | null;
   sinif_seviyesi?: { id: number; ad: string; seviye?: number; kod?: string };
   alan?: { id: number; ad: string; kod?: string } | null;
   egitim_yili?: { id: number; ad: string };
