@@ -49,6 +49,22 @@ mkdir -p "$LOG_DIR"
 touch "$LOG_FILE"
 chown "$RUN_USER":"${LMS_RUN_GROUP:-www-data}" "$LOG_FILE" 2>/dev/null || chown "$RUN_USER" "$LOG_FILE"
 
+BACKUP_ROOT="/var/lib/3k/backups"
+if [[ -f "$ENV_FILE" ]]; then
+  backup_line="$(grep -E '^BACKUP_LOCAL_ROOT=' "$ENV_FILE" | tail -1 || true)"
+  if [[ -n "$backup_line" ]]; then
+    BACKUP_ROOT="${backup_line#BACKUP_LOCAL_ROOT=}"
+    BACKUP_ROOT="${BACKUP_ROOT%\"}"
+    BACKUP_ROOT="${BACKUP_ROOT#\"}"
+    BACKUP_ROOT="${BACKUP_ROOT%\'}"
+    BACKUP_ROOT="${BACKUP_ROOT#\'}"
+  fi
+fi
+mkdir -p "$BACKUP_ROOT"
+chown -R "$RUN_USER":"${LMS_RUN_GROUP:-www-data}" "$BACKUP_ROOT"
+chmod -R u+rwX,g+rwX "$BACKUP_ROOT"
+echo "Yedek depo: $BACKUP_ROOT (sahip: $RUN_USER)"
+
 # Şablondaki yolları ortam değişkenleriyle özelleştir
 tmp="$(mktemp)"
 sed \

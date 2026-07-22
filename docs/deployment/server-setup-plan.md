@@ -82,7 +82,7 @@ adduser --disabled-password --gecos "" lms
 usermod -aG www-data lms
 
 mkdir -p /var/www/lms /var/log/lms /var/lib/3k/backups
-chown -R lms:www-data /var/www/lms /var/log/lms
+chown -R lms:www-data /var/www/lms /var/log/lms /var/lib/3k/backups
 mkdir -p /etc/lms
 chmod 755 /etc/lms
 ```

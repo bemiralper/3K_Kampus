@@ -202,6 +202,14 @@ if [[ "${media_files:-0}" -eq 0 ]]; then
   log "Uyarı: backend/media boş — nginx /media/ 404 verebilir; verify-production-media.sh ile kontrol edin"
 fi
 
+BACKUP_DIR="${BACKUP_LOCAL_ROOT:-/var/lib/3k/backups}"
+log "yedek depo dizini hazırlanıyor: $BACKUP_DIR"
+mkdir -p "$BACKUP_DIR"
+if [[ "$(id -u)" -eq 0 ]] && id "$LMS_RUN_USER" &>/dev/null 2>&1; then
+  chown -R "$LMS_RUN_USER:$LMS_RUN_GROUP" "$BACKUP_DIR"
+  chmod -R u+rwX,g+rwX "$BACKUP_DIR"
+fi
+
 log "setup_roles (izin seed — idempotent)"
 "$PYTHON" manage.py setup_roles
 
