@@ -150,13 +150,18 @@ def _serialize_library(lib, include_stats=False):
 
 def _serialize_seat(seat):
     active_assignment = None
+    atanan_ogrenci = None
+    atama_id = None
     try:
         a = seat.atamalar.filter(durum=AssignmentStatus.ACTIVE).first()
         if a:
+            ogrenci_adi = _get_ogrenci_adi(a.ogrenci_id)
+            atanan_ogrenci = ogrenci_adi
+            atama_id = str(a.id)
             active_assignment = {
                 'id': str(a.id),
                 'ogrenci_id': a.ogrenci_id,
-                'ogrenci_adi': _get_ogrenci_adi(a.ogrenci_id),
+                'ogrenci_adi': ogrenci_adi,
                 'atama_tipi': a.atama_tipi,
                 'baslangic_tarihi': a.baslangic_tarihi.isoformat() if a.baslangic_tarihi else '',
             }
@@ -178,6 +183,8 @@ def _serialize_seat(seat):
         'pozisyon_y': float(seat.pozisyon_y) if seat.pozisyon_y else None,
         'notlar': seat.notlar,
         'sira': seat.sira,
+        'atanan_ogrenci': atanan_ogrenci,
+        'atama_id': atama_id,
         'aktif_atama': active_assignment,
     }
 
@@ -397,6 +404,25 @@ def api_all_assignments(request):
     })
 
 
+def _student_resource_matches_filter(filtre, has_masa, has_dolap):
+    """Öğrenci kaynak genel görünümü filtre eşleşmesi."""
+    if filtre in ('', 'all'):
+        return True
+    if filtre == 'masa_yok':
+        return not has_masa
+    if filtre == 'dolap_yok':
+        return not has_dolap
+    if filtre == 'ikisi_yok':
+        return not has_masa and not has_dolap
+    if filtre == 'masa_var':
+        return has_masa
+    if filtre == 'dolap_var':
+        return has_dolap
+    if filtre == 'ikisi_var':
+        return has_masa and has_dolap
+    return True
+
+
 def api_student_resource_overview(request):
     """Tüm öğrencilerin masa ve dolap bilgilerini listele"""
     ctx, err = _mandatory_ctx(request)
@@ -406,7 +432,7 @@ def api_student_resource_overview(request):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
-    filtre = request.GET.get('filtre', 'all')  # all, masa_yok, dolap_yok, ikisi_yok
+    filtre = request.GET.get('filtre', 'all')
     search = request.GET.get('search', '').strip()
 
     salon_ids = list(_salon_qs(ctx).values_list('id', flat=True))
@@ -481,8 +507,8 @@ def api_student_resource_overview(request):
         logging.getLogger(__name__).error(f"Öğrenci listesi alınamadı: {e}")
         ogrenci_map = {}
 
-    # Sonuç listesi oluştur
-    results = []
+    # Önce arama uygulanmış tam liste; özet kartları bu listeden hesaplanır
+    all_records = []
     for sid in all_student_ids:
         oinfo = ogrenci_map.get(sid, {})
         ad = oinfo.get('ad', '')
@@ -490,29 +516,17 @@ def api_student_resource_overview(request):
         tam_ad = f"{ad} {soyad}".strip() if ad else _get_ogrenci_adi(sid)
         sinif_adi = oinfo.get('sube__ad', '') or ''
 
-        masa = seat_by_student.get(sid)
-        dolap = locker_by_student.get(sid)
-
-        has_masa = masa is not None
-        has_dolap = dolap is not None
-
-        # Filtreleme
-        if filtre == 'masa_yok' and has_masa:
-            continue
-        elif filtre == 'dolap_yok' and has_dolap:
-            continue
-        elif filtre == 'ikisi_yok' and (has_masa or has_dolap):
-            continue
-
-        # Arama (isme göre)
         if search and search.lower() not in tam_ad.lower():
             continue
+
+        masa = seat_by_student.get(sid)
+        dolap = locker_by_student.get(sid)
 
         # profil_foto: ImageField'den gelen değer dosya yolu olabilir, URL oluştur
         profil_foto_raw = oinfo.get('profil_foto') or ''
         profil_foto_url = f'/media/{profil_foto_raw}' if profil_foto_raw else None
 
-        results.append({
+        all_records.append({
             'ogrenci_id': sid,
             'ogrenci_adi': tam_ad,
             'sinif_adi': sinif_adi,
@@ -521,15 +535,23 @@ def api_student_resource_overview(request):
             'dolap': dolap,
         })
 
-    # İsme göre sırala
-    results.sort(key=lambda x: x['ogrenci_adi'])
+    all_records.sort(key=lambda x: x['ogrenci_adi'])
 
     summary = {
-        'toplam': len(results),
-        'masa_var': sum(1 for r in results if r['masa']),
-        'dolap_var': sum(1 for r in results if r['dolap']),
-        'ikisi_var': sum(1 for r in results if r['masa'] and r['dolap']),
+        'toplam': len(all_records),
+        'masa_var': sum(1 for r in all_records if r['masa']),
+        'dolap_var': sum(1 for r in all_records if r['dolap']),
+        'ikisi_var': sum(1 for r in all_records if r['masa'] and r['dolap']),
     }
+
+    results = [
+        r for r in all_records
+        if _student_resource_matches_filter(
+            filtre,
+            bool(r['masa']),
+            bool(r['dolap']),
+        )
+    ]
 
     return JsonResponse({
         'success': True,
@@ -2116,6 +2138,75 @@ def api_ders_programi_list_create(request):
 
 
 @csrf_exempt
+def api_ders_programi_export(request):
+    """
+    POST /kutuphane/api/ders-programi/export/
+    Haftalık çalışma saatleri (ders programı) — kurumsal CSV/Excel dışa aktarma.
+    Frontend, ekrandaki pivot tabloyu ({columns, rows}) hesaplayıp gönderir;
+    bu uç yalnızca kurumsal şablonla (logo, kurum/şube başlığı) dosyayı üretir.
+    Body: { columns: [{key, label}], rows: [{...}], meta: {program_ad, sube_id?, sube_adi?, aktif_gun?, toplam_periyot?, toplam_ders?}, format: 'csv'|'xlsx' }
+    """
+    kurum_id = _get_kurum_id(request)
+    if not kurum_id:
+        return JsonResponse({'success': False, 'error': 'Kurum ID gerekli'}, status=400)
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı.'}, status=400)
+
+    raw_columns = body.get('columns') or []
+    raw_rows = body.get('rows') or []
+    meta_in = body.get('meta') or {}
+    fmt = (body.get('format') or 'xlsx').lower()
+
+    if not raw_columns or not raw_rows:
+        return JsonResponse({'success': False, 'error': 'Dışa aktarılacak veri yok.'}, status=400)
+
+    from shared.export.style_manager import ExportColumn, ExportStat, ReportMeta
+
+    columns = [
+        ExportColumn(key=c.get('key'), label=c.get('label') or c.get('key'), type='text')
+        for c in raw_columns if c.get('key')
+    ]
+
+    user = getattr(request, 'user', None)
+    generated_by = ''
+    if user and getattr(user, 'is_authenticated', False):
+        generated_by = user.get_full_name() or user.get_username()
+
+    program_ad = (meta_in.get('program_ad') or 'Ders Programı').strip()
+    sube_id = meta_in.get('sube_id')
+    sube_adi = _get_sube_adi(sube_id) if sube_id else (meta_in.get('sube_adi') or '')
+
+    meta = ReportMeta(
+        report_title=f'{program_ad} — HAFTALIK ÇALIŞMA SAATLERİ',
+        kurum_ad=_get_kurum_adi(kurum_id),
+        sube_ad=sube_adi,
+        generated_by=generated_by,
+    )
+
+    stats = [
+        ExportStat(label='Aktif Gün', value=meta_in.get('aktif_gun') or 0, type='integer'),
+        ExportStat(label='Haftalık Oturum', value=meta_in.get('toplam_periyot') or 0, type='integer'),
+        ExportStat(label='Toplam Etüt', value=meta_in.get('toplam_ders') or 0, type='integer'),
+    ]
+    stats = [s for s in stats if s.value]
+
+    filename = f"ders_programi_{program_ad.replace(' ', '_')}"
+
+    if fmt == 'csv':
+        from shared.export import CsvExportService
+        return CsvExportService.export(raw_rows, columns, meta=meta, filename=filename)
+
+    from shared.export import ExcelExportService
+    return ExcelExportService.export(raw_rows, columns, meta=meta, stats=stats, filename=filename)
+
+
+@csrf_exempt
 def api_ders_programi_detail(request, pk):
     """
     GET    /kutuphane/api/ders-programi/<pk>/ — Detay
@@ -2629,6 +2720,87 @@ def api_attendance_sheet_export(request, library_id):
 
     filename_tarih = (tarih_label or '').replace(' ', '_').replace('/', '-')
     filename = f"yoklama_{'haftalik' if meta_in.get('mode') == 'weekly' else 'gunluk'}_{filename_tarih or 'liste'}"
+
+    if fmt == 'csv':
+        from shared.export import CsvExportService
+        return CsvExportService.export(raw_rows, columns, meta=meta, filename=filename)
+
+    from shared.export import ExcelExportService
+    return ExcelExportService.export(raw_rows, columns, meta=meta, stats=stats, filename=filename)
+
+
+_SEAT_STATUS_LABELS = {
+    'AVAILABLE': 'Müsait',
+    'OCCUPIED': 'Dolu',
+    'RESERVED': 'Rezerve',
+    'OUT_OF_SERVICE': 'Hizmet Dışı',
+}
+
+
+@csrf_exempt
+def api_seat_list_export(request, library_id):
+    """
+    POST /kutuphane/api/salon/<library_id>/masa-export/
+    Salon oturma planı — kurumsal CSV/Excel dışa aktarma (shared.export şablonu).
+    Body: { columns: [{key, label}], rows: [{...}], format: 'csv'|'xlsx' }
+    """
+    ctx, library, err = _resolve_library(request, library_id)
+    if err:
+        return err
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı.'}, status=400)
+
+    raw_columns = body.get('columns') or []
+    raw_rows = body.get('rows') or []
+    fmt = (body.get('format') or 'xlsx').lower()
+
+    if not raw_columns or not raw_rows:
+        return JsonResponse({'success': False, 'error': 'Dışa aktarılacak veri yok.'}, status=400)
+
+    from shared.export.style_manager import ExportColumn, ExportStat, ReportMeta
+
+    columns = [
+        ExportColumn(key=c.get('key'), label=c.get('label') or c.get('key'), type='text')
+        for c in raw_columns if c.get('key')
+    ]
+
+    user = getattr(request, 'user', None)
+    generated_by = ''
+    if user and getattr(user, 'is_authenticated', False):
+        generated_by = user.get_full_name() or user.get_username()
+
+    sube_adi = _get_sube_adi(library.sube_id)
+    meta = ReportMeta(
+        report_title=f'{library.ad} — OTURMA PLANI',
+        kurum_ad=_get_kurum_adi(library.kurum_id),
+        sube_ad=sube_adi,
+        generated_by=generated_by,
+    )
+
+    status_counts = {label: 0 for label in _SEAT_STATUS_LABELS.values()}
+    assigned_count = 0
+    for row in raw_rows:
+        durum = row.get('durum') or ''
+        if durum in status_counts:
+            status_counts[durum] += 1
+        if (row.get('ogrenci') or '').strip():
+            assigned_count += 1
+
+    stats = [
+        ExportStat(label='Toplam Masa', value=len(raw_rows), type='integer'),
+        ExportStat(label='Atanmış Öğrenci', value=assigned_count, type='integer'),
+    ]
+    for label in _SEAT_STATUS_LABELS.values():
+        if status_counts[label]:
+            stats.append(ExportStat(label=label, value=status_counts[label], type='integer'))
+
+    filename = f"oturma_plani_{(library.ad or 'salon').replace(' ', '_')}"
 
     if fmt == 'csv':
         from shared.export import CsvExportService

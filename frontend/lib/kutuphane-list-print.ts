@@ -1,9 +1,11 @@
 import { brandingFromKurum, getAppLogo, DEFAULT_BRANDING } from './kurum-branding';
 import type { DaySchedule, GunAktiflik, PeriyotDersler, DaySessionCode } from './kutuphane-api';
 import {
-  DAY_DEFS,
   PERIOD_DEFS,
+  SESSION_BREAK_DEFS,
   deriveGunAktiflik,
+  getActiveDayDefs,
+  getSessionBreak,
   normalizeGunlukDersSaatleri,
   type GunlukDersSaatleri,
 } from './ders-programi-utils';
@@ -35,7 +37,6 @@ export type LockerStudentRow = {
   durum?: string;
 };
 
-const DAYS = DAY_DEFS.map((d) => ({ key: d.key, short: d.short, label: d.label }));
 const PERIODS: { code: DaySessionCode; label: string; color: string }[] = PERIOD_DEFS.map((p) => ({
   code: p.code,
   label: p.label,
@@ -154,12 +155,10 @@ export function buildDersProgramiPrintHtml(options: {
   const logo = logoSrc(branding, origin);
   const printedAt = new Date().toLocaleString('tr-TR');
 
-  const dayColumns = DAYS.map((d) => {
-    const dayInfo = gunAktiflik[d.key];
-    if (!dayInfo?.aktif) {
-      return `<td class="dp-day closed"><span class="dp-closed-label">Kapalı</span></td>`;
-    }
+  const activeDays = getActiveDayDefs(gunAktiflik);
+  const activeDayHeaders = activeDays.map((d) => ({ key: d.key, short: d.short, label: d.label }));
 
+  const dayColumns = activeDayHeaders.map((d) => {
     const daySchedule = gunluk[d.key];
     const sessionBlocks = PERIODS.map((p) => {
       const pd = daySchedule?.[p.code];
@@ -169,14 +168,23 @@ export function buildDersProgramiPrintHtml(options: {
         const end = (ders.bitis || '').slice(0, 5);
         return `<div class="dp-slot">
           <span class="dp-slot-no">${ders.ders_no}. Etüt</span>
-          <span class="dp-slot-time">${escapeHtml(start)} – ${escapeHtml(end)}</span>
+          <span class="dp-slot-time">${escapeHtml(start)}<span class="dp-slot-sep">–</span>${escapeHtml(end)}</span>
         </div>`;
       }).join('');
       const icon = p.code === 'MORNING' ? '☀' : p.code === 'AFTERNOON' ? '◐' : '☾';
-      return `<div class="dp-session" style="--session-color:${p.color}">
+      const sessionBlock = `<div class="dp-session" style="--session-color:${p.color}">
         <div class="dp-session-head">${icon} ${escapeHtml(p.label)}</div>
         ${lines}
       </div>`;
+      const breakDef = SESSION_BREAK_DEFS.find((b) => b.afterCode === p.code);
+      const brk = breakDef ? getSessionBreak(daySchedule, breakDef.afterCode, breakDef.beforeCode) : null;
+      const breakBlock = brk
+        ? `<div class="dp-break">
+            <span class="dp-break-label">${breakDef!.icon} ${escapeHtml(breakDef!.label)}</span>
+            <span class="dp-break-time">${escapeHtml(brk.baslangic)}<span class="dp-slot-sep">–</span>${escapeHtml(brk.bitis)}</span>
+          </div>`
+        : '';
+      return sessionBlock + breakBlock;
     }).filter(Boolean).join('');
 
     if (!sessionBlocks) {
@@ -186,7 +194,7 @@ export function buildDersProgramiPrintHtml(options: {
     return `<td class="dp-day">${sessionBlocks}</td>`;
   }).join('');
 
-  const activeDayCount = DAYS.filter((d) => gunAktiflik[d.key]?.aktif).length;
+  const activeDayCount = activeDays.length;
   const totalDers = Object.values(gunluk).reduce(
     (s, day) => s + PERIODS.reduce((ps, p) => ps + (day[p.code]?.dersler?.length || 0), 0),
     0,
@@ -196,17 +204,17 @@ export function buildDersProgramiPrintHtml(options: {
 <title>${escapeHtml(meta.title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
   :root { --theme: ${theme}; --ink: #0f172a; --muted: #64748b; --line: #dbe3ef; --soft: #f8fafc; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  @page { size: A4 landscape; margin: 6mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; overflow-wrap: break-word; word-break: break-word; }
+  @page { size: A4 landscape; margin: 5mm; }
   body {
-    font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
-    color: var(--ink); background: #fff; font-size: 10px; line-height: 1.35;
+    font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+    color: var(--ink); background: #fff; font-size: 11.5px; line-height: 1.35;
     padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  .dp-wrap { width: 100%; max-width: 285mm; margin: 0 auto; }
+  .dp-wrap { width: 100%; max-width: 287mm; margin: 0 auto; }
   .dp-header {
     display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
     padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px;
@@ -217,53 +225,69 @@ export function buildDersProgramiPrintHtml(options: {
     width: 52px; height: 52px; object-fit: contain; border-radius: 10px;
     border: 1px solid var(--line); background: #fff; padding: 4px;
   }
-  .dp-title { font-size: 20px; font-weight: 800; color: var(--theme); letter-spacing: -0.03em; }
-  .dp-sub { font-size: 11px; font-weight: 600; color: #334155; margin-top: 2px; }
-  .dp-meta { font-size: 9px; color: var(--muted); margin-top: 4px; }
+  .dp-title { font-family: 'Sora', 'Manrope', sans-serif; font-size: 22px; font-weight: 800; color: var(--theme); letter-spacing: -0.02em; }
+  .dp-sub { font-size: 12px; font-weight: 700; color: #334155; margin-top: 3px; }
+  .dp-meta { font-size: 10px; color: var(--muted); margin-top: 4px; font-weight: 500; }
   .dp-badges { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
   .dp-badge {
-    font-size: 9px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 10px; font-weight: 700; padding: 4px 11px; border-radius: 999px;
     border: 1px solid var(--line); background: #fff; color: #334155; white-space: nowrap;
   }
   .dp-badge strong { color: var(--theme); }
   .dp-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
   .dp-table thead th {
-    font-size: 11px; font-weight: 800; color: #fff; background: var(--theme);
-    padding: 8px 4px; border: 1px solid color-mix(in srgb, var(--theme) 80%, #000);
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 13.5px; font-weight: 800; color: #fff; background: var(--theme);
+    padding: 9px 4px; border: 1px solid color-mix(in srgb, var(--theme) 80%, #000);
     text-align: center; vertical-align: middle;
   }
   .dp-table thead th .dp-day-full {
-    display: block; font-size: 8px; font-weight: 600; opacity: 0.9; margin-top: 1px;
+    display: block; font-size: 9px; font-weight: 600; opacity: 0.92; margin-top: 2px;
   }
   .dp-table tbody td.dp-day {
     vertical-align: top; border: 1px solid var(--line); background: #fff;
-    padding: 6px 5px; min-height: 72px;
+    padding: 7px 5px; min-height: 72px;
   }
   .dp-table tbody td.dp-day.closed { background: #f1f5f9; }
   .dp-closed-label { display: block; text-align: center; color: #94a3b8; font-style: italic; font-weight: 600; padding: 16px 2px; }
   .dp-session {
-    margin-bottom: 6px; padding: 5px 6px; border-radius: 8px;
+    margin-bottom: 6px; padding: 6px 6px; border-radius: 8px;
     border: 1px solid color-mix(in srgb, var(--session-color) 25%, var(--line));
     background: color-mix(in srgb, var(--session-color) 6%, #fff);
   }
   .dp-session:last-child { margin-bottom: 0; }
   .dp-session-head {
-    font-size: 9.5px; font-weight: 800; color: var(--session-color);
-    margin-bottom: 4px; letter-spacing: 0.01em;
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 11.5px; font-weight: 800; color: var(--session-color);
+    margin-bottom: 5px; letter-spacing: 0.01em;
   }
   .dp-slot {
-    display: flex; justify-content: space-between; align-items: baseline; gap: 4px;
-    padding: 3px 0; border-bottom: 1px dashed #e8edf3;
+    display: flex; flex-direction: column; gap: 1px;
+    padding: 4px 0; border-bottom: 1px dashed #e8edf3;
   }
   .dp-slot:last-child { border-bottom: none; padding-bottom: 0; }
-  .dp-slot-no { font-size: 9px; font-weight: 700; color: #475569; }
+  .dp-slot-no { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.02em; }
   .dp-slot-time {
-    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-    font-size: 10px; font-weight: 700; color: var(--ink); white-space: nowrap;
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 14px; font-weight: 700; color: var(--ink);
+    white-space: nowrap; letter-spacing: -0.01em;
+  }
+  .dp-slot-sep { color: var(--theme); font-weight: 600; margin: 0 3px; }
+  .dp-break {
+    margin-bottom: 6px; padding: 5px 6px; border-radius: 8px; text-align: center;
+    background: repeating-linear-gradient(135deg, #f8fafc, #f8fafc 6px, #eef2f7 6px, #eef2f7 12px);
+    border: 1px dashed #cbd5e1; color: #475569;
+  }
+  .dp-break:last-child { margin-bottom: 0; }
+  .dp-break-label { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.01em; }
+  .dp-break-time {
+    display: block; font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 12px; font-weight: 700; color: #334155; margin-top: 1px;
   }
   .dp-footer {
     margin-top: 6px; display: flex; justify-content: space-between; align-items: center;
-    font-size: 8px; color: #94a3b8; padding: 0 2px;
+    font-size: 9px; color: #94a3b8; padding: 0 2px;
   }
   @media print {
     body { padding: 0; }
@@ -286,7 +310,7 @@ export function buildDersProgramiPrintHtml(options: {
       </div>
     </header>
     <table class="dp-table">
-      <thead><tr>${DAYS.map((d) => `<th>${escapeHtml(d.short)}<span class="dp-day-full">${escapeHtml(d.label)}</span></th>`).join('')}</tr></thead>
+      <thead><tr>${activeDayHeaders.map((d) => `<th>${escapeHtml(d.short)}<span class="dp-day-full">${escapeHtml(d.label)}</span></th>`).join('')}</tr></thead>
       <tbody><tr>${dayColumns}</tr></tbody>
     </table>
     <div class="dp-footer">

@@ -68,6 +68,11 @@ export function getLoginLogo(branding: KurumBranding): string {
   return resolveBrandingAssetUrl(branding.login_logo_url, DEFAULT_LOGIN_LOGO);
 }
 
+/** Mavi/koyu PDF başlığı — beyaz login logosu */
+export function getPdfHeaderLogo(branding: KurumBranding): string {
+  return getLoginLogo(branding);
+}
+
 export function getAppLogo(branding: KurumBranding): string {
   return resolveBrandingAssetUrl(branding.app_logo_url, DEFAULT_APP_LOGO);
 }

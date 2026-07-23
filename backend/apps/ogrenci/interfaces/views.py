@@ -322,7 +322,10 @@ def ogrenci_list_export_api(request):
     if export_format == 'json':
         return build_json_export_response(rows, column_keys)
 
-    meta = build_export_meta(request, ctx)
+    report_title = (request.GET.get('report_title') or '').strip() or 'ÖĞRENCİ LİSTESİ'
+    if len(report_title) > 120:
+        report_title = report_title[:120]
+    meta = build_export_meta(request, ctx, report_title=report_title)
     if export_format == 'xlsx':
         return build_excel_response(rows, column_keys, meta=meta)
     return build_csv_response(rows, column_keys, meta=meta)

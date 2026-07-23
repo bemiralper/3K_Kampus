@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useKurum } from '@/lib/contexts/KurumContext';
-import { brandingFromKurum, getAppLogo } from '@/lib/kurum-branding';
+import { brandingFromContext, getPdfHeaderLogo } from '@/lib/kurum-branding';
 import {
   EXPORT_COLUMNS,
   DEFAULT_EXPORT_KEYS,
@@ -16,12 +16,23 @@ import { exportOgrenciListPdf, type PdfOrientation } from '../lib/ogrenciListPdf
 
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
 
+export interface OgrenciExportContext {
+  title?: string;
+  subtitle?: string;
+  fileNamePrefix?: string;
+  documentTitle?: string;
+  filterSummary?: string;
+  /** Kurumsal Excel/CSV başlığı (backend report_title) */
+  reportTitle?: string;
+}
+
 interface OgrenciExportModalProps {
   open: boolean;
   onClose: () => void;
   filters: OgrenciListFilters;
   selectedIds?: Set<number>;
   mode?: 'all' | 'selected';
+  exportContext?: OgrenciExportContext;
 }
 
 const FORMAT_OPTIONS: {
@@ -39,37 +50,16 @@ function buildExportParams(
   filters: OgrenciListFilters,
   columnKeys: string[],
   selectedIds?: number[],
-  asJson = false
+  asJson = false,
+  reportTitle?: string,
 ): URLSearchParams {
   const query = buildListApiQuery({ ...filters, page: 1, page_size: 5000 });
   const params = new URLSearchParams(query.replace('?', ''));
   params.set('columns', columnKeys.join(','));
   if (asJson) params.set('format', 'json');
   if (selectedIds?.length) params.set('ids', selectedIds.join(','));
+  if (reportTitle?.trim()) params.set('report_title', reportTitle.trim());
   return params;
-}
-
-async function fetchExportRows(
-  filters: OgrenciListFilters,
-  columnKeys: string[],
-  selectedIds?: number[]
-): Promise<{ rows: Record<string, string>[]; columns: string[]; total: number }> {
-  const params = buildExportParams(filters, columnKeys, selectedIds, true);
-  const headers = getContextHeadersFromStorage();
-  const res = await fetch(`/api/ogrenciler/api/export/?${params}`, {
-    credentials: 'include',
-    headers,
-  });
-  if (!res.ok) throw new Error('Dışa aktarma verisi alınamadı');
-
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Dışa aktarma başarısız');
-
-  return {
-    rows: data.rows || [],
-    columns: data.columns || columnKeys,
-    total: data.total ?? (data.rows?.length || 0),
-  };
 }
 
 const ORIENTATION_OPTIONS: { id: PdfOrientation; label: string; desc: string }[] = [
@@ -83,11 +73,12 @@ export default function OgrenciExportModal({
   filters,
   selectedIds,
   mode = 'all',
+  exportContext,
 }: OgrenciExportModalProps) {
   const { activeKurum, activeSube } = useKurum();
   const branding = useMemo(
-    () => (activeKurum ? brandingFromKurum(activeKurum) : null),
-    [activeKurum],
+    () => brandingFromContext(activeKurum, activeSube),
+    [activeKurum, activeSube],
   );
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>('csv');
@@ -126,6 +117,13 @@ export default function OgrenciExportModal({
   const selectedCount = selectedIdList?.length ?? 0;
 
   const formatMeta = FORMAT_OPTIONS.find((f) => f.id === format)!;
+  const fileNamePrefix = exportContext?.fileNamePrefix || 'ogrenciler';
+  const modalTitle = exportContext?.title
+    ?? (mode === 'selected' ? 'Seçili Öğrencileri Dışa Aktar' : 'Listeyi Dışa Aktar');
+  const modalSubtitle = exportContext?.subtitle
+    ?? (mode === 'selected'
+      ? `${selectedCount} öğrenci · aktif filtreler uygulanır`
+      : 'Filtrelenmiş listenin tamamını indirin');
 
   if (!open) return null;
 
@@ -153,7 +151,13 @@ export default function OgrenciExportModal({
 
     try {
       if (format === 'csv' || format === 'xlsx') {
-        const params = buildExportParams(filters, selectedKeys, selectedIdList, false);
+        const params = buildExportParams(
+          filters,
+          selectedKeys,
+          selectedIdList,
+          false,
+          exportContext?.reportTitle,
+        );
         params.set('format', format);
         const headers = getContextHeadersFromStorage();
         const res = await fetch(`/api/ogrenciler/api/export/?${params}`, {
@@ -162,9 +166,24 @@ export default function OgrenciExportModal({
         });
         if (!res.ok) throw new Error(`${format.toUpperCase()} dışa aktarma başarısız`);
         const blob = await res.blob();
-        downloadBlob(blob, `ogrenciler.${format}`);
+        downloadBlob(blob, `${fileNamePrefix}.${format}`);
       } else {
-        const { rows } = await fetchExportRows(filters, selectedKeys, selectedIdList);
+        const params = buildExportParams(
+          filters,
+          selectedKeys,
+          selectedIdList,
+          true,
+          exportContext?.reportTitle,
+        );
+        const headers = getContextHeadersFromStorage();
+        const res = await fetch(`/api/ogrenciler/api/export/?${params}`, {
+          credentials: 'include',
+          headers,
+        });
+        if (!res.ok) throw new Error('Dışa aktarma verisi alınamadı');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Dışa aktarma başarısız');
+        const rows = data.rows || [];
 
         if (rows.length === 0) {
           throw new Error('Dışa aktarılacak kayıt bulunamadı');
@@ -175,11 +194,14 @@ export default function OgrenciExportModal({
           columnKeys: selectedKeys,
           orientation,
           branding: {
-            kurumAd: activeKurum?.ad || 'Kurum',
+            kurumAd: branding.gorunen_ad || activeKurum?.ad || 'Kurum',
             subeAd: activeSube?.ad,
-            logoUrl: branding ? getAppLogo(branding) : '/img/3k-logo.png',
-            temaRengi: branding?.tema_rengi,
+            logoUrl: getPdfHeaderLogo(branding),
+            temaRengi: branding.tema_rengi,
           },
+          documentTitle: exportContext?.documentTitle,
+          filterSummary: exportContext?.filterSummary,
+          fileName: `${fileNamePrefix}.pdf`,
         });
       }
 
@@ -202,14 +224,8 @@ export default function OgrenciExportModal({
       >
         <div className="ogrenci-filter-drawer-header">
           <div>
-            <h3 id="export-modal-title">
-              {mode === 'selected' ? 'Seçili Öğrencileri Dışa Aktar' : 'Listeyi Dışa Aktar'}
-            </h3>
-            <p className="ogrenci-filter-drawer-subtitle">
-              {mode === 'selected'
-                ? `${selectedCount} öğrenci · aktif filtreler uygulanır`
-                : 'Filtrelenmiş listenin tamamını indirin'}
-            </p>
+            <h3 id="export-modal-title">{modalTitle}</h3>
+            <p className="ogrenci-filter-drawer-subtitle">{modalSubtitle}</p>
           </div>
           <button type="button" className="ogrenci-drawer-close" onClick={onClose} aria-label="Kapat">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -313,7 +329,7 @@ export default function OgrenciExportModal({
                 </div>
                 <div className="ogrenci-export-summary-row">
                   <span>Çıktı</span>
-                  <strong>ogrenciler{formatMeta.ext}</strong>
+                  <strong>{fileNamePrefix}{formatMeta.ext}</strong>
                 </div>
               </div>
             </section>

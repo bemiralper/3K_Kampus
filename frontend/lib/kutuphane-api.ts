@@ -54,6 +54,14 @@ export interface Library {
   doluluk_orani?: number;
 }
 
+export interface SeatAktifAtama {
+  id: string;
+  ogrenci_id: number;
+  ogrenci_adi: string;
+  atama_tipi: string;
+  baslangic_tarihi: string;
+}
+
 export interface Seat {
   id: string;
   kutuphane_id: string;
@@ -72,6 +80,12 @@ export interface Seat {
   // Assignment info
   atanan_ogrenci?: string;
   atama_id?: string;
+  aktif_atama?: SeatAktifAtama | null;
+}
+
+/** Masa kaydındaki öğrenci adını döndürür (API flat veya nested alan). */
+export function getSeatStudentName(seat: Pick<Seat, 'atanan_ogrenci' | 'aktif_atama'>): string {
+  return seat.atanan_ogrenci?.trim() || seat.aktif_atama?.ogrenci_adi?.trim() || '';
 }
 
 export interface Locker {
@@ -925,14 +939,72 @@ export async function downloadAttendanceSheetExport(
     format: 'csv' | 'xlsx';
   },
 ): Promise<Blob> {
-  const { getContextHeaders } = await import('@/lib/api');
-  const res = await fetch(`${BASE}/salon/${libraryId}/yoklama-export/`, {
+  const { getContextHeaders, resolveApiUrl } = await import('@/lib/api');
+  const res = await fetch(resolveApiUrl(`${BASE}/salon/${libraryId}/yoklama-export/`), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...getContextHeaders() },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error('Dışa aktarma başarısız');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Dışa aktarma başarısız');
+  }
+  return res.blob();
+}
+
+/**
+ * Salon oturma planı — kurumsal CSV/Excel dışa aktarma (shared.export şablonu).
+ */
+export async function downloadSeatListExport(
+  libraryId: string,
+  data: {
+    columns: AttendanceExportColumn[];
+    rows: Record<string, string>[];
+    format: 'csv' | 'xlsx';
+  },
+): Promise<Blob> {
+  const { getContextHeaders, resolveApiUrl } = await import('@/lib/api');
+  const res = await fetch(resolveApiUrl(`${BASE}/salon/${libraryId}/masa-export/`), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...getContextHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Dışa aktarma başarısız');
+  }
+  return res.blob();
+}
+
+/**
+ * Ders programı (haftalık çalışma saatleri) — kurumsal CSV/Excel dışa aktarma.
+ */
+export async function downloadDersProgramiExport(data: {
+  columns: AttendanceExportColumn[];
+  rows: Record<string, string>[];
+  meta: {
+    program_ad: string;
+    sube_id?: number | string;
+    sube_adi?: string;
+    aktif_gun?: number;
+    toplam_periyot?: number;
+    toplam_ders?: number;
+  };
+  format: 'csv' | 'xlsx';
+}): Promise<Blob> {
+  const { getContextHeaders, resolveApiUrl } = await import('@/lib/api');
+  const res = await fetch(resolveApiUrl(`${BASE}/ders-programi/export/`), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...getContextHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Dışa aktarma başarısız');
+  }
   return res.blob();
 }
 

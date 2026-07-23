@@ -135,6 +135,51 @@ export function deriveGunAktiflik(gunluk: GunlukDersSaatleri): Record<string, Gu
   return result;
 }
 
+/** Sadece aktif (kapalı olmayan) günleri döner — salt-okunur tablo/dışa aktarma görünümleri için. */
+export function getActiveDayDefs(
+  gunAktiflik: Record<string, GunAktiflik>,
+): (typeof DAY_DEFS)[number][] {
+  return DAY_DEFS.filter((d) => gunAktiflik[d.key]?.aktif);
+}
+
+/** İki oturum arasındaki boşluk (örn. Sabah bitişi → Öğle başlangıcı = öğle arası). */
+export interface SessionBreakDef {
+  afterCode: DaySessionCode;
+  beforeCode: DaySessionCode;
+  label: string;
+  icon: string;
+}
+
+export const SESSION_BREAK_DEFS: SessionBreakDef[] = [
+  { afterCode: 'MORNING', beforeCode: 'AFTERNOON', label: 'Öğle Arası', icon: '🍽' },
+  { afterCode: 'AFTERNOON', beforeCode: 'EVENING', label: 'Akşam Arası', icon: '☕' },
+];
+
+export interface SessionBreak {
+  baslangic: string;
+  bitis: string;
+  dakika: number;
+}
+
+/** Bir günün iki oturumu arasındaki boşluğu hesaplar (son etüt bitişi → ilk etüt başlangıcı). */
+export function getSessionBreak(
+  daySchedule: DaySchedule | undefined,
+  afterCode: DaySessionCode,
+  beforeCode: DaySessionCode,
+): SessionBreak | null {
+  const afterDersler = daySchedule?.[afterCode]?.dersler;
+  const beforeDersler = daySchedule?.[beforeCode]?.dersler;
+  if (!afterDersler?.length || !beforeDersler?.length) return null;
+  const baslangic = afterDersler[afterDersler.length - 1]?.bitis?.slice(0, 5);
+  const bitis = beforeDersler[0]?.baslangic?.slice(0, 5);
+  if (!baslangic || !bitis) return null;
+  const [bh, bm] = baslangic.split(':').map(Number);
+  const [eh, em] = bitis.split(':').map(Number);
+  const dakika = (eh * 60 + em) - (bh * 60 + bm);
+  if (dakika <= 0) return null;
+  return { baslangic, bitis, dakika };
+}
+
 export function copyDaySchedule(
   gunluk: GunlukDersSaatleri,
   fromKey: string,
@@ -173,9 +218,10 @@ function weekdayBlock(
   };
 }
 
-const STD_MORNING: [string, string][] = [['09:00', '10:30'], ['10:45', '12:15']];
-const STD_AFTERNOON: [string, string][] = [['13:00', '14:30'], ['14:45', '16:15']];
-const STD_EVENING: [string, string][] = [['18:00', '19:30'], ['19:45', '21:15']];
+// Oturumlar arasında tam 1 saatlik ara (öğle yemeği / akşam arası) bırakılacak şekilde ayarlanmıştır.
+const STD_MORNING: [string, string][] = [['09:00', '10:30'], ['10:45', '12:00']];
+const STD_AFTERNOON: [string, string][] = [['13:00', '14:30'], ['14:45', '16:00']];
+const STD_EVENING: [string, string][] = [['17:00', '18:30'], ['18:45', '20:00']];
 
 function cloneDaySchedule(day: DaySchedule): DaySchedule {
   return {
@@ -264,6 +310,67 @@ export function updatePeriodBlock(
   const normalized = normalizePeriodBlock(block);
   day[periodCode] = normalized;
   return { ...gunluk, [dayKey]: day };
+}
+
+export interface DersProgramiExportColumn {
+  key: string;
+  label: string;
+}
+
+/**
+ * Haftalık çalışma saatleri — kurumsal Excel/CSV dışa aktarma için pivot tablo.
+ * Satırlar: oturum + etüt no (örn. "Sabah — 1. Etüt") ve oturumlar arası aralar
+ * (örn. "🍽 Öğle Arası"); sütunlar: sadece aktif (kapalı olmayan) günler.
+ */
+export function buildDersProgramiExportTable(
+  gunluk: GunlukDersSaatleri,
+  gunAktiflik: Record<string, GunAktiflik>,
+): { columns: DersProgramiExportColumn[]; rows: Record<string, string>[] } {
+  const activeDays = getActiveDayDefs(gunAktiflik);
+  const columns: DersProgramiExportColumn[] = [
+    { key: 'periyot', label: 'Oturum' },
+    ...activeDays.map((d) => ({ key: d.key, label: d.label })),
+  ];
+
+  const rows: Record<string, string>[] = [];
+
+  PERIOD_DEFS.forEach((period, periodIdx) => {
+    const maxCount = activeDays.reduce(
+      (max, d) => Math.max(max, gunluk[d.key]?.[period.code]?.dersler?.length || 0),
+      0,
+    );
+    for (let i = 0; i < maxCount; i++) {
+      const row: Record<string, string> = {
+        periyot: `${period.icon} ${period.label} — ${i + 1}. Etüt`,
+      };
+      for (const day of activeDays) {
+        const ders = gunluk[day.key]?.[period.code]?.dersler?.[i];
+        row[day.key] = ders
+          ? `${(ders.baslangic || '').slice(0, 5)} – ${(ders.bitis || '').slice(0, 5)}`
+          : '—';
+      }
+      rows.push(row);
+    }
+
+    const breakDef = SESSION_BREAK_DEFS.find((b) => b.afterCode === period.code);
+    const nextPeriod = PERIOD_DEFS[periodIdx + 1];
+    if (breakDef && nextPeriod) {
+      const breakRow: Record<string, string> = { periyot: `${breakDef.icon} ${breakDef.label}` };
+      let hasAnyBreak = false;
+      for (const day of activeDays) {
+        const brk = getSessionBreak(gunluk[day.key], breakDef.afterCode, breakDef.beforeCode);
+        if (brk) {
+          hasAnyBreak = true;
+          breakRow[day.key] = `${brk.baslangic} – ${brk.bitis}`;
+        } else {
+          breakRow[day.key] = '—';
+        }
+      }
+      if (hasAnyBreak) rows.push(breakRow);
+    }
+  });
+
+  return { columns, rows };
 }
 
 export function addMinutes(time: string, minutes: number): string {

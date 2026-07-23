@@ -32,6 +32,9 @@ const WHITE: [number, number, number] = [255, 255, 255];
 const DARK: [number, number, number] = [15, 23, 42];
 const GRAY: [number, number, number] = [100, 116, 139];
 const ROW_ALT: [number, number, number] = [248, 250, 252];
+const LIGHT_ON_PRIMARY: [number, number, number] = [214, 228, 242];
+const MUTED_ON_PRIMARY: [number, number, number] = [175, 196, 218];
+const DEFAULT_PDF_LOGO = '/img/beyaz-logo.png';
 
 let fontPromise: Promise<{ regular: string; bold: string }> | null = null;
 
@@ -67,6 +70,47 @@ async function loadLogoDataUri(url: string | null | undefined): Promise<string |
   }
 }
 
+interface LogoAsset {
+  dataUri: string;
+  width: number;
+  height: number;
+}
+
+function getImageDimensions(dataUri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth || img.width || 1,
+        height: img.naturalHeight || img.height || 1,
+      });
+    };
+    img.onerror = () => resolve({ width: 1, height: 1 });
+    img.src = dataUri;
+  });
+}
+
+async function loadLogoAsset(url: string | null | undefined): Promise<LogoAsset | null> {
+  const dataUri = await loadLogoDataUri(url);
+  if (!dataUri) return null;
+  const { width, height } = await getImageDimensions(dataUri);
+  return { dataUri, width, height };
+}
+
+function fitLogoBox(
+  naturalW: number,
+  naturalH: number,
+  maxW: number,
+  maxH: number,
+): { width: number; height: number } {
+  if (naturalW <= 0 || naturalH <= 0) return { width: maxH, height: maxH };
+  const scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
+  return {
+    width: naturalW * scale,
+    height: naturalH * scale,
+  };
+}
+
 function hexToRgb(hex: string | undefined): [number, number, number] {
   if (!hex) return DEFAULT_PRIMARY;
   const h = hex.replace('#', '').trim();
@@ -74,6 +118,19 @@ function hexToRgb(hex: string | undefined): [number, number, number] {
   const n = parseInt(h, 16);
   if (Number.isNaN(n)) return DEFAULT_PRIMARY;
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function darkenRgb([r, g, b]: [number, number, number], amount = 0.2): [number, number, number] {
+  return [
+    Math.max(0, Math.round(r * (1 - amount))),
+    Math.max(0, Math.round(g * (1 - amount))),
+    Math.max(0, Math.round(b * (1 - amount))),
+  ];
+}
+
+function imageFormatFromDataUri(uri: string): 'PNG' | 'JPEG' {
+  if (/^data:image\/jpe?g/i.test(uri)) return 'JPEG';
+  return 'PNG';
 }
 
 function registerFonts(doc: jsPDF, fonts: { regular: string; bold: string }) {
@@ -102,52 +159,108 @@ function addFooter(doc: jsPDF, brandLine: string) {
   doc.setTextColor(...DARK);
 }
 
+interface PdfHeaderOptions {
+  documentTitle: string;
+  kurumAd: string;
+  subeAd?: string;
+  filterSummary?: string;
+  meta: string;
+}
+
 function drawHeader(
   doc: jsPDF,
   primary: [number, number, number],
-  logo: string | null,
-  kurumAd: string,
-  subeAd: string | undefined,
-  subtitle: string,
-  meta: string,
+  logo: LogoAsset | null,
+  options: PdfHeaderOptions,
 ): number {
   const pw = doc.internal.pageSize.getWidth();
-  const barH = 22;
-  doc.setFillColor(...primary);
-  doc.rect(0, 0, pw, barH, 'F');
+  const bandH = 30;
+  const primaryDark = darkenRgb(primary, 0.22);
+  const textRight = pw - 12;
 
-  let textX = 12;
+  doc.setFillColor(...primaryDark);
+  doc.rect(0, 0, pw, bandH, 'F');
+  doc.setFillColor(...primary);
+  doc.rect(0, 0, pw * 0.68, bandH, 'F');
+
+  const logoX = 12;
+  const maxLogoW = 34;
+  const maxLogoH = 18;
+  let logoW = maxLogoH;
+  let logoH = maxLogoH;
   if (logo) {
+    const fitted = fitLogoBox(logo.width, logo.height, maxLogoW, maxLogoH);
+    logoW = fitted.width;
+    logoH = fitted.height;
+    const logoY = (bandH - logoH) / 2;
     try {
-      doc.addImage(logo, 'PNG', 10, 3, 16, 16);
-      textX = 30;
+      doc.addImage(
+        logo.dataUri,
+        imageFormatFromDataUri(logo.dataUri),
+        logoX,
+        logoY,
+        logoW,
+        logoH,
+      );
     } catch {
       /* logo yüklenemedi */
     }
   }
 
+  const textX = logoX + logoW + 8;
+  const textBlockMaxW = Math.max(48, pw - textX - 46);
+  const title = options.documentTitle.toLocaleUpperCase('tr-TR');
+
   doc.setFont('Roboto', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(12.5);
   doc.setTextColor(...WHITE);
-  doc.text(kurumAd, textX, 9);
+  doc.text(title, textX, 12, { maxWidth: textBlockMaxW });
 
   doc.setFont('Roboto', 'normal');
-  doc.setFontSize(8);
-  const subLine = [subeAd, subtitle].filter(Boolean).join(' · ');
-  doc.text(subLine, textX, 15);
+  doc.setFontSize(8.5);
+  doc.setTextColor(...LIGHT_ON_PRIMARY);
+  const orgLine = [options.kurumAd, options.subeAd].filter(Boolean).join(' · ');
+  if (orgLine) {
+    doc.text(orgLine, textX, 18, { maxWidth: textBlockMaxW });
+  }
+
+  if (options.filterSummary) {
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED_ON_PRIMARY);
+    doc.text(options.filterSummary, textX, 23.5, { maxWidth: textBlockMaxW });
+  }
 
   const now = new Date();
+  const dateStr = now.toLocaleDateString('tr-TR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+  const timeStr = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+
+  doc.setFont('Roboto', 'normal');
   doc.setFontSize(7.5);
-  doc.text(
-    now.toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' }),
-    pw - 10,
-    9,
-    { align: 'right' },
-  );
-  doc.text(`${meta}`, pw - 10, 15, { align: 'right' });
+  doc.setTextColor(...LIGHT_ON_PRIMARY);
+  doc.text(dateStr, textRight, 11.5, { align: 'right' });
+  doc.text(timeStr, textRight, 16, { align: 'right' });
+
+  const badgeText = options.meta;
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(8);
+  const badgeW = Math.min(Math.max(doc.getTextWidth(badgeText) + 10, 22), 42);
+  const badgeH = 6.5;
+  const badgeX = textRight - badgeW;
+  const badgeY = 19;
+  doc.setFillColor(...WHITE);
+  doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 2, 2, 'F');
+  doc.setTextColor(...primary);
+  doc.text(badgeText, badgeX + badgeW / 2, badgeY + 4.4, { align: 'center' });
+
+  doc.setFillColor(...primary);
+  doc.rect(0, bandH, pw, 1.4, 'F');
 
   doc.setTextColor(...DARK);
-  return barH + 6;
+  return bandH + 7;
 }
 
 function buildColumnStyles(
@@ -207,7 +320,7 @@ export async function exportGroupedOgrenciListPdf(options: {
 
   const [fonts, logoData] = await Promise.all([
     loadFonts(),
-    loadLogoDataUri(branding.logoUrl || '/img/3k-logo.png'),
+    loadLogoAsset(branding.logoUrl || DEFAULT_PDF_LOGO),
   ]);
 
   const primary = hexToRgb(branding.temaRengi);
@@ -224,23 +337,13 @@ export async function exportGroupedOgrenciListPdf(options: {
   const columnStyles = buildColumnStyles(doc, labels.length);
   const tableFontSize = fontSizeForColumns(labels.length + 1, orientation);
 
-  let startY = drawHeader(
-    doc,
-    primary,
-    logoData,
-    branding.kurumAd || documentTitle,
-    branding.subeAd,
+  let startY = drawHeader(doc, primary, logoData, {
     documentTitle,
-    metaCount,
-  );
-
-  if (filterSummary) {
-    doc.setFont('Roboto', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...GRAY);
-    doc.text(filterSummary, 10, startY - 2);
-    startY += 4;
-  }
+    kurumAd: branding.kurumAd || 'Kurum',
+    subeAd: branding.subeAd,
+    filterSummary,
+    meta: metaCount,
+  });
 
   const tableOptions = {
     tableWidth,
@@ -272,7 +375,7 @@ export async function exportGroupedOgrenciListPdf(options: {
     },
     alternateRowStyles: { fillColor: ROW_ALT },
     columnStyles,
-    margin: { left: 10, right: 10, top: 28, bottom: 14 },
+    margin: { left: 10, right: 10, top: 36, bottom: 14 },
   };
 
   for (let si = 0; si < sections.length; si++) {
@@ -280,7 +383,7 @@ export async function exportGroupedOgrenciListPdf(options: {
     const pageH = doc.internal.pageSize.getHeight();
     if (startY > pageH - 40) {
       doc.addPage();
-      startY = 28;
+      startY = 36;
     }
 
     doc.setFont('Roboto', 'bold');
@@ -349,7 +452,7 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
 
   const [fonts, logoData] = await Promise.all([
     loadFonts(),
-    loadLogoDataUri(branding.logoUrl || '/img/3k-logo.png'),
+    loadLogoAsset(branding.logoUrl || DEFAULT_PDF_LOGO),
   ]);
 
   const primary = hexToRgb(branding.temaRengi);
@@ -365,25 +468,16 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
   const tableWidth = doc.internal.pageSize.getWidth() - 20;
   const columnStyles = buildColumnStyles(doc, labels.length);
 
-  const startY = drawHeader(
-    doc,
-    primary,
-    logoData,
-    branding.kurumAd || documentTitle,
-    branding.subeAd,
+  const startY = drawHeader(doc, primary, logoData, {
     documentTitle,
-    `${rows.length} kayıt`,
-  );
-
-  if (filterSummary) {
-    doc.setFont('Roboto', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...GRAY);
-    doc.text(filterSummary, 10, startY - 2);
-  }
+    kurumAd: branding.kurumAd || 'Kurum',
+    subeAd: branding.subeAd,
+    filterSummary,
+    meta: `${rows.length} kayıt`,
+  });
 
   autoTable(doc, {
-    startY: filterSummary ? startY + 2 : startY,
+    startY,
     tableWidth,
     head: [['#', ...labels]],
     body,
@@ -415,7 +509,7 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
     },
     alternateRowStyles: { fillColor: ROW_ALT },
     columnStyles,
-    margin: { left: 10, right: 10, top: 28, bottom: 14 },
+    margin: { left: 10, right: 10, top: 36, bottom: 14 },
   });
 
   addFooter(doc, brandLine);

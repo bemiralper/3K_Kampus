@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   fetchCoaches,
   fetchAssignments,
@@ -14,6 +14,19 @@ import {
 import CoachCapacityBar from '@/components/admin/coaching/CoachCapacityBar';
 import CoachAvatar from '@/components/admin/coaching/CoachAvatar';
 import CoachChangeModal, { type CoachChangeTarget } from '@/components/admin/coaching/CoachChangeModal';
+import OgrenciExportModal, { type OgrenciExportContext } from '@/app/ogrenciler/components/OgrenciExportModal';
+import type { OgrenciListFilters } from '@/app/ogrenciler/lib/ogrenci-list-utils';
+import '@/app/ogrenciler/ogrenci-list.css';
+
+function coachExportFilePrefix(coach: Coach): string {
+  const slug = coach.teacher_full_name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 40);
+  return slug ? `koc_${slug}_ogrenciler` : `koc_${coach.id}_ogrenciler`;
+}
 
 // Toast type
 interface Toast {
@@ -44,6 +57,7 @@ export default function AssignmentsPage() {
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changeTarget, setChangeTarget] = useState<CoachChangeTarget | null>(null);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   
   // Toast
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -220,6 +234,27 @@ export default function AssignmentsPage() {
     }
   };
 
+  const coachExportFilters = useMemo<OgrenciListFilters | null>(() => {
+    if (!selectedCoach) return null;
+    return {
+      coach_ids: [selectedCoach.id],
+      durum: 'aktif',
+    };
+  }, [selectedCoach]);
+
+  const coachExportContext = useMemo<OgrenciExportContext | undefined>(() => {
+    if (!selectedCoach) return undefined;
+    const coachName = selectedCoach.teacher_full_name;
+    return {
+      title: 'Koç Öğrenci Listesini Dışa Aktar',
+      subtitle: `${coachName} · ${assignments.length} öğrenci`,
+      fileNamePrefix: coachExportFilePrefix(selectedCoach),
+      documentTitle: 'KOÇ ÖĞRENCİ LİSTESİ',
+      filterSummary: `Koç: ${coachName}`,
+      reportTitle: `KOÇ ÖĞRENCİ LİSTESİ — ${coachName}`,
+    };
+  }, [selectedCoach, assignments.length]);
+
   return (
     <div style={{ padding: 0 }}>
       {/* Toast Container */}
@@ -354,38 +389,57 @@ export default function AssignmentsPage() {
           ) : (
             <>
               {/* Header */}
-              <div style={{ padding: 16, borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ padding: 16, borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#111827' }}>
                     {selectedCoach.teacher_full_name}
                   </h3>
                   <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
                     Müsait kapasite: <strong>{selectedCoach.available_capacity}</strong>
+                    {assignments.length > 0 && (
+                      <> · <strong>{assignments.length}</strong> atanmış öğrenci</>
+                    )}
                   </div>
                 </div>
-                <button
-                  onClick={handleOpenBulkDrawer}
-                  disabled={selectedCoach.available_capacity === 0}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: selectedCoach.available_capacity > 0 ? '#3b82f6' : '#9ca3af',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 6,
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: selectedCoach.available_capacity > 0 ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  Öğrenci Ata
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    className="ogrenci-toolbar-btn"
+                    onClick={() => setExportModalOpen(true)}
+                    disabled={loadingAssignments || assignments.length === 0}
+                    title={assignments.length === 0 ? 'Dışa aktarılacak öğrenci yok' : 'Koç öğrenci listesini indir'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Dışa Aktar
+                  </button>
+                  <button
+                    onClick={handleOpenBulkDrawer}
+                    disabled={selectedCoach.available_capacity === 0}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: selectedCoach.available_capacity > 0 ? '#3b82f6' : '#9ca3af',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      fontSize: 14,
+                      fontWeight: 500,
+                      cursor: selectedCoach.available_capacity > 0 ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Öğrenci Ata
+                  </button>
+                </div>
               </div>
 
               {/* Students Table */}
@@ -725,6 +779,16 @@ export default function AssignmentsPage() {
           loadCoaches();
         }}
       />
+
+      {coachExportFilters && coachExportContext && (
+        <OgrenciExportModal
+          open={exportModalOpen}
+          onClose={() => setExportModalOpen(false)}
+          filters={coachExportFilters}
+          mode="all"
+          exportContext={coachExportContext}
+        />
+      )}
     </div>
   );
 }

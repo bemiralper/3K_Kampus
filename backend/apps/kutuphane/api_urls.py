@@ -35,6 +35,7 @@ urlpatterns = [
 
     # Şube Ders Programı
     path("ders-programi/", views.api_ders_programi_list_create, name="ders_programi_list_create"),
+    path("ders-programi/export/", views.api_ders_programi_export, name="ders_programi_export"),
     path("ders-programi/<uuid:pk>/", views.api_ders_programi_detail, name="ders_programi_detail"),
     path("subeler/", views.api_subeler_with_program, name="subeler_with_program"),
 
@@ -67,6 +68,7 @@ urlpatterns = [
     path("salon/<uuid:library_id>/yoklama/ders-bazli-ac/", views.api_attendance_open_lessons, name="yoklama_ders_bazli_ac"),
     path("salon/<uuid:library_id>/yoklama-kagidi/", views.api_attendance_sheet_data, name="yoklama_kagidi"),
     path("salon/<uuid:library_id>/yoklama-export/", views.api_attendance_sheet_export, name="yoklama_export"),
+    path("salon/<uuid:library_id>/masa-export/", views.api_seat_list_export, name="masa_export"),
     path("salon/<uuid:library_id>/yoklama-ozet/", views.api_attendance_weekly_summary, name="yoklama_ozet"),
 
     # Temporary Seating (Geçici Oturma)

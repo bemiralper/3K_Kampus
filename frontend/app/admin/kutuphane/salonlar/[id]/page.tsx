@@ -23,6 +23,8 @@ import {
   type WeeklySummary, type SubeInfo,
   type AttendanceNotifyStatusResponse, type AttendanceNotifyConfig,
   type AttendanceNotifyEventType, type AttendancePendingNotification,
+  getSeatStudentName,
+  downloadSeatListExport,
 } from '@/lib/kutuphane-api';
 import YoklamaSessionDrawer from '@/components/kutuphane/yoklama/YoklamaSessionDrawer';
 import AttendanceNotifyPreviewModal from '@/components/kutuphane/yoklama/AttendanceNotifyPreviewModal';
@@ -476,6 +478,7 @@ export default function SalonDetayPage() {
           {activeTab === 'genel' && <GenelTab library={library} onSave={loadLibrary} showToast={showToast} />}
           {activeTab === 'masalar' && (
             <MasalarTab
+              libraryId={libraryId}
               seats={seats}
               salonAdi={library.ad}
               subeAdi={library.sube_adi}
@@ -639,7 +642,61 @@ const saveBtnStyle: React.CSSProperties = {
 /* ════════════════════════════════════════════════════════════
    TAB: MASALAR
    ════════════════════════════════════════════════════════════ */
-function MasalarTab({ seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onToggleBulkForm, onBulkCreate, onStatusChange, readOnly = false }: {
+const MASA_TIPI_LABELS: Record<string, string> = {
+  STANDARD: 'Standart',
+  COMPUTER: 'Bilgisayar',
+  GROUP: 'Grup',
+};
+
+function buildSeatExportRows(seats: Seat[]) {
+  return seats.map((seat) => {
+    const ogrenci = getSeatStudentName(seat);
+    const ozellikler = [seat.priz_var_mi && 'Priz', seat.lamba_var_mi && 'Lamba'].filter(Boolean).join(', ');
+    return {
+      masaNo: seat.masa_no || seat.id,
+      tip: MASA_TIPI_LABELS[seat.masa_tipi] || seat.masa_tipi,
+      durum: SEAT_STATUS_LABELS[seat.durum] || seat.durum,
+      ogrenci,
+      ozellikler,
+      baslangic: seat.aktif_atama?.baslangic_tarihi
+        ? new Date(seat.aktif_atama.baslangic_tarihi).toLocaleDateString('tr-TR')
+        : '',
+    };
+  });
+}
+
+async function downloadSeatListExportFile(
+  libraryId: string,
+  salonAdi: string,
+  filtered: Seat[],
+  format: 'csv' | 'xlsx',
+) {
+  const exportRows = buildSeatExportRows(filtered);
+  const columns = [
+    { key: 'sira', label: '#' },
+    { key: 'masa_no', label: 'Masa No' },
+    { key: 'tip', label: 'Tip' },
+    { key: 'durum', label: 'Durum' },
+    { key: 'ogrenci', label: 'Öğrenci' },
+    { key: 'baslangic', label: 'Başlangıç' },
+    { key: 'ozellikler', label: 'Özellikler' },
+  ];
+  const rows = exportRows.map((row, idx) => ({
+    sira: String(idx + 1),
+    masa_no: row.masaNo,
+    tip: row.tip,
+    durum: row.durum,
+    ogrenci: row.ogrenci,
+    baslangic: row.baslangic,
+    ozellikler: row.ozellikler,
+  }));
+  const blob = await downloadSeatListExport(libraryId, { columns, rows, format });
+  const safeName = salonAdi.replace(/[^\w\-]+/g, '_').replace(/_+/g, '_') || 'salon';
+  downloadBlob(blob, `${safeName}_oturma_plani.${format}`);
+}
+
+function MasalarTab({ libraryId, seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onToggleBulkForm, onBulkCreate, onStatusChange, readOnly = false }: {
+  libraryId: string;
   seats: Seat[];
   salonAdi: string;
   subeAdi?: string;
@@ -652,6 +709,7 @@ function MasalarTab({ seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onT
 }) {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
+  const [exporting, setExporting] = useState<'csv' | 'xlsx' | 'pdf' | null>(null);
 
   const filtered = filterStatus === 'ALL' ? seats : seats.filter(s => s.durum === filterStatus);
 
@@ -666,26 +724,64 @@ function MasalarTab({ seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onT
     return s;
   }, [seats]);
 
+  const exportMeta = useMemo(
+    () => ({
+      title: 'Oturma Planı',
+      subtitle: salonAdi,
+      subeAdi,
+      kurumBranding,
+    }),
+    [salonAdi, subeAdi, kurumBranding],
+  );
+
+  const handleDownloadExport = async (format: 'csv' | 'xlsx') => {
+    if (filtered.length === 0) {
+      alert('Dışa aktarılacak masa bulunamadı.');
+      return;
+    }
+    setExporting(format);
+    try {
+      await downloadSeatListExportFile(libraryId, salonAdi, filtered, format);
+    } catch (err) {
+      const detail = err instanceof Error && err.message ? `: ${err.message}` : '';
+      alert(`${format === 'xlsx' ? 'Excel' : 'CSV'} dosyası oluşturulurken hata oluştu${detail}`);
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const handlePrintList = () => {
-    const rows = seats
-      .filter((seat) => seat.atanan_ogrenci)
-      .map((seat) => ({
-        no: seat.masa_no || seat.id,
-        ogrenci: seat.atanan_ogrenci || '',
-        tip: seat.masa_tipi,
-        durum: SEAT_STATUS_LABELS[seat.durum] || seat.durum,
+    const assignedRows = buildSeatExportRows(filtered)
+      .filter((row) => row.ogrenci)
+      .map((row) => ({
+        no: row.masaNo,
+        ogrenci: row.ogrenci,
+        tip: row.tip,
+        baslangic: row.baslangic,
+        durum: row.durum,
       }));
-    const html = buildSeatStudentListPrintHtml({
-      meta: {
-        title: 'Oturma Planı',
-        subtitle: salonAdi,
-        subeAdi,
-        kurumBranding,
-      },
-      rows,
-      salonAdi,
-    });
-    openKutuphanePrintWindow(html);
+
+    if (assignedRows.length === 0) {
+      alert('PDF listesi için atanmış öğrenci bulunamadı.');
+      return;
+    }
+
+    setExporting('pdf');
+    try {
+      const html = buildSeatStudentListPrintHtml({
+        meta: exportMeta,
+        rows: assignedRows,
+        salonAdi,
+      });
+      const opened = openKutuphanePrintWindow(html);
+      if (!opened) {
+        alert('Yazdırma penceresi açıldı. Pop-up engellendi ise yeni sekmeden yazdırın veya PDF olarak kaydedin.');
+      }
+    } catch {
+      alert('PDF listesi oluşturulurken hata oluştu.');
+    } finally {
+      setExporting(null);
+    }
   };
 
   return (
@@ -711,12 +807,24 @@ function MasalarTab({ seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onT
               ))}
             </select>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={handlePrintList} style={{
-              padding: '6px 14px', backgroundColor: '#f0fdf4', color: '#059669',
-              borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button onClick={() => handleDownloadExport('xlsx')} disabled={exporting !== null} style={{
+              padding: '6px 14px', backgroundColor: '#f0fdf4', color: '#15803d',
+              borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', fontWeight: 600, cursor: exporting ? 'wait' : 'pointer',
             }}>
-              📄 PDF Listesi
+              {exporting === 'xlsx' ? '⏳ Hazırlanıyor…' : '📥 Excel'}
+            </button>
+            <button onClick={() => handleDownloadExport('csv')} disabled={exporting !== null} style={{
+              padding: '6px 14px', backgroundColor: '#f0fdf4', color: '#15803d',
+              borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', fontWeight: 600, cursor: exporting ? 'wait' : 'pointer',
+            }}>
+              {exporting === 'csv' ? '⏳ Hazırlanıyor…' : '📥 CSV'}
+            </button>
+            <button onClick={handlePrintList} disabled={exporting !== null} style={{
+              padding: '6px 14px', backgroundColor: '#f0f9ff', color: '#0369a1',
+              borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '12px', fontWeight: 600, cursor: exporting ? 'wait' : 'pointer',
+            }}>
+              {exporting === 'pdf' ? '⏳ Hazırlanıyor…' : '📄 PDF / Yazdır'}
             </button>
             <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
               {(['grid', 'table'] as const).map(m => (
@@ -777,12 +885,13 @@ function MasalarTab({ seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onT
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px' }}>
           {filtered.map(seat => {
             const sc = SEAT_STATUS_COLORS[seat.durum] || SEAT_STATUS_COLORS.AVAILABLE;
+            const ogrenciAdi = getSeatStudentName(seat);
             return (
               <Card key={seat.id} hover style={{ padding: '14px', textAlign: 'center', borderColor: sc.border }}>
                 <div style={{ fontSize: '18px', fontWeight: 800, color: '#111827', marginBottom: '4px' }}>{seat.masa_no}</div>
                 <Badge label={SEAT_STATUS_LABELS[seat.durum] || seat.durum} color={sc.color} bg={sc.bg} border={sc.border} />
-                {seat.atanan_ogrenci && (
-                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>👤 {seat.atanan_ogrenci}</div>
+                {ogrenciAdi && (
+                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>👤 {ogrenciAdi}</div>
                 )}
                 <div style={{ display: 'flex', gap: '4px', marginTop: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
                   {seat.priz_var_mi && <span title="Priz" style={{ fontSize: '14px' }}>🔌</span>}
@@ -820,12 +929,13 @@ function MasalarTab({ seats, salonAdi, subeAdi, kurumBranding, showBulkForm, onT
             <tbody>
               {filtered.map(seat => {
                 const sc = SEAT_STATUS_COLORS[seat.durum] || SEAT_STATUS_COLORS.AVAILABLE;
+                const ogrenciAdi = getSeatStudentName(seat);
                 return (
                   <tr key={seat.id}>
                     <td style={tdStyle}><span style={{ fontWeight: 700 }}>{seat.masa_no}</span></td>
-                    <td style={tdStyle}>{seat.masa_tipi}</td>
+                    <td style={tdStyle}>{MASA_TIPI_LABELS[seat.masa_tipi] || seat.masa_tipi}</td>
                     <td style={tdStyle}><Badge label={SEAT_STATUS_LABELS[seat.durum] || seat.durum} color={sc.color} bg={sc.bg} border={sc.border} /></td>
-                    <td style={tdStyle}>{seat.atanan_ogrenci || '—'}</td>
+                    <td style={tdStyle}>{ogrenciAdi || '—'}</td>
                     <td style={tdStyle}>
                       {seat.priz_var_mi && '🔌 '}
                       {seat.lamba_var_mi && '💡 '}
