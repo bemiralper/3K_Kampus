@@ -29,7 +29,7 @@ from apps.coaching.interfaces.sube_context import (
     filter_queryset_by_student_sube,
     mandatory_coaching_context,
 )
-from apps.coaching.services.coach_access import get_coach_profile, is_resource_admin
+from apps.coaching.services.coach_access import get_coach_profile, is_resource_admin, can_access_all_coaches
 from apps.personel.domain.models import PersonelGorevlendirme
 
 
@@ -111,9 +111,9 @@ class CoachViewSet(viewsets.ModelViewSet):
         return CoachProfileSerializer
     
     def get_permissions(self):
-        """Write işlemleri için admin yetkisi gerekli"""
+        """Write işlemleri — admin veya muhasebe (koç atama yetkisi)."""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAuthenticated(), IsAdminUser()]
+            return [IsAuthenticated(), CoachAssignmentManagePermission()]
         return [IsAuthenticated()]
     
     def get_queryset(self):
@@ -133,7 +133,7 @@ class CoachViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_coach=is_coach_bool)
 
         # Non-admin koç yalnızca kendi profilini okuyabilir
-        if not is_resource_admin(self.request.user):
+        if not can_access_all_coaches(self.request.user):
             cp = get_coach_profile(self.request.user)
             if cp:
                 queryset = queryset.filter(pk=cp.pk)
@@ -158,7 +158,7 @@ class CoachViewSet(viewsets.ModelViewSet):
         )
 
         queryset = self.filter_queryset(self.get_queryset())
-        if is_resource_admin(request.user):
+        if can_access_all_coaches(request.user):
             coach_ids_in_sube = CoachStudentAssignment.objects.filter(
                 end_date__isnull=True,
                 student__kurum_id=ctx['kurum_id'],
@@ -537,7 +537,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_primary=is_primary_bool)
 
         # Non-admin koç yalnızca kendi atamalarını okuyabilir
-        if not is_resource_admin(self.request.user):
+        if not can_access_all_coaches(self.request.user):
             cp = get_coach_profile(self.request.user)
             if cp:
                 queryset = queryset.filter(coach=cp)

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { fetchCoaches, type Coach } from '@/lib/coaching-api';
 import CoachEditDrawer from '@/components/admin/coaching/CoachEditDrawer';
 import CoachAvatar from '@/components/admin/coaching/CoachAvatar';
+import { useCoachingPath } from '@/components/coaching/CoachingPathProvider';
 
 /* ───── Renk paleti: her karta farklı gradient ───── */
 const CARD_GRADIENTS = [
@@ -32,6 +33,7 @@ function getCapacityColor(pct: number) {
 }
 
 export default function CoachesListPage() {
+  const { portalHomeHref, portalHomeLabel, personelGorevlendirmeHref, coachDetailHref } = useCoachingPath();
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,11 +88,11 @@ export default function CoachesListPage() {
           <div className="hero-text">
             <h1>Koç Yönetimi</h1>
             <div className="hero-breadcrumb">
-              <a href="/dashboard">Ana Sayfa</a><span>/</span><span>Koçluk</span><span>/</span><span>Koç Yönetimi</span>
+              <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span><span>Koçluk</span><span>/</span><span>Koç Yönetimi</span>
             </div>
           </div>
         </div>
-        <a href="/personel/gorevlendirmeler" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: '#f3f4f6', color: '#374151', borderRadius: '8px', textDecoration: 'none', fontSize: '14px', fontWeight: 500 }}>
+        <a href={personelGorevlendirmeHref} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: '#f3f4f6', color: '#374151', borderRadius: '8px', textDecoration: 'none', fontSize: '14px', fontWeight: 500 }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" /></svg>
           <span>Koç Ataması Yap</span>
         </a>
@@ -217,7 +219,7 @@ export default function CoachesListPage() {
                   </div>
                   {/* Butonlar */}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <Link href={`/admin/coaching/coaches/${coach.id}`} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '9px 0', backgroundColor: '#3b82f6', color: '#fff', borderRadius: '8px', fontSize: '13px', fontWeight: 600, textDecoration: 'none', transition: 'background .2s' }}
+                    <Link href={coachDetailHref(coach.id)} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '9px 0', backgroundColor: '#3b82f6', color: '#fff', borderRadius: '8px', fontSize: '13px', fontWeight: 600, textDecoration: 'none', transition: 'background .2s' }}
                       onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#2563eb')}
                       onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#3b82f6')}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
@@ -279,7 +281,7 @@ export default function CoachesListPage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                  <Link href={`/admin/coaching/coaches/${coach.id}`} style={{ padding: '7px 14px', backgroundColor: '#eff6ff', color: '#3b82f6', borderRadius: '7px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>Detay</Link>
+                  <Link href={coachDetailHref(coach.id)} style={{ padding: '7px 14px', backgroundColor: '#eff6ff', color: '#3b82f6', borderRadius: '7px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>Detay</Link>
                   <button onClick={() => openEditDrawer(coach.id)} style={{ padding: '7px 14px', backgroundColor: '#f3f4f6', color: '#374151', borderRadius: '7px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Düzenle</button>
                 </div>
               </div>

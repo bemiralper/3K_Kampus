@@ -254,6 +254,7 @@ EXPORT_COLUMNS = {
     'egitim_yili': 'Eğitim Yılı',
     'kalem_ozet': 'Eğitim Kalemleri',
     'geldigi_okul': 'Geldiği / Mezun Olduğu Okul',
+    'koc_adi': 'Koç',
 }
 
 EXPORT_COLUMN_TYPES = {
@@ -641,7 +642,32 @@ def build_kalem_ozet_map(kayit_list, filter_kalemler=None):
     }
 
 
-def serialize_kayit_row(kayit, include_egitim_yili=False, kalem_ozet='', egitim_kalemleri=None):
+def build_primary_coach_name_map(student_ids: list[int]) -> dict[int, str]:
+    """Aktif birincil koç adları — export için toplu lookup."""
+    if not student_ids:
+        return {}
+    from apps.coaching.models import CoachStudentAssignment
+
+    result: dict[int, str] = {}
+    rows = CoachStudentAssignment.objects.filter(
+        student_id__in=student_ids,
+        is_primary=True,
+        end_date__isnull=True,
+    ).select_related('coach', 'coach__teacher')
+    for row in rows:
+        teacher = row.coach.teacher if row.coach_id and row.coach else None
+        if teacher:
+            result[row.student_id] = f'{teacher.ad} {teacher.soyad}'.strip()
+    return result
+
+
+def serialize_kayit_row(
+    kayit,
+    include_egitim_yili=False,
+    kalem_ozet='',
+    egitim_kalemleri=None,
+    koc_adi='',
+):
     ogrenci = kayit.ogrenci
     veli = get_varsayilan_veli(ogrenci)
 
@@ -683,6 +709,7 @@ def serialize_kayit_row(kayit, include_egitim_yili=False, kalem_ozet='', egitim_
         'geldigi_okul': (
             kayit.school.ad if kayit.school else (kayit.geldigi_okul or '')
         ),
+        'koc_adi': koc_adi or '',
         'profil_foto': ogrenci.profil_foto.url if ogrenci.profil_foto else None,
     }
 

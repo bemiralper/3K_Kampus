@@ -48,6 +48,7 @@ export const EXPORT_COLUMNS: ExportColumnDef[] = [
   { key: 'tc_kimlik_no', label: 'TC Kimlik No' },
   { key: 'sinif_seviyesi', label: 'Sınıf Seviyesi', default: true },
   { key: 'sinif_ad', label: 'Sınıf' },
+  { key: 'koc_adi', label: 'Koç', default: true },
   { key: 'geldigi_okul', label: 'Geldiği / Mezun Olduğu Okul' },
   { key: 'sube_ad', label: 'Şube' },
   { key: 'kalem_ozet', label: 'Eğitim Kalemleri' },

@@ -38,6 +38,15 @@ def is_resource_admin(user):
         return False
 
 
+def can_access_all_coaches(user) -> bool:
+    """Admin veya muhasebe — koç yönetimi/atama ekranlarında tam koç listesi."""
+    if is_resource_admin(user):
+        return True
+    from shared.permissions import user_can_manage_coach_assignment
+
+    return user_can_manage_coach_assignment(user) and get_coach_profile(user) is None
+
+
 def get_active_coach_student_ids(coach_profile):
     from apps.coaching.models import CoachStudentAssignment
 

@@ -5,6 +5,11 @@ import {
   MUHASEBE_KUTUPHANE_BASE,
   kutuphaneHref,
 } from "@/lib/kutuphane-routes";
+import {
+  COACHING_NAV_ITEMS,
+  MUHASEBE_COACHING_BASE,
+  coachingHref,
+} from "@/lib/coaching-routes";
 
 export const MUHASEBE_FINANS_BASE = "/muhasebe/finans";
 export { MUHASEBE_KURUM_BASE };
@@ -94,6 +99,12 @@ const KUTUPHANE_ICON = (
   </svg>
 );
 
+const COACHING_ICON = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
+
 export const MUHASEBE_KURUM_CHILDREN: MuhasebeNavChildDef[] = [
   {
     id: "egitim-tanimlari",
@@ -119,6 +130,16 @@ export const MUHASEBE_KUTUPHANE_CHILDREN: MuhasebeNavChildDef[] = KUTUPHANE_NAV_
   const href = kutuphaneHref(MUHASEBE_KUTUPHANE_BASE, item.segment);
   return {
     id: `kutuphane-${item.segment || "dashboard"}`,
+    href,
+    label: item.label,
+    matchPrefix: href,
+  };
+});
+
+export const MUHASEBE_COACHING_CHILDREN: MuhasebeNavChildDef[] = COACHING_NAV_ITEMS.map((item) => {
+  const href = coachingHref(MUHASEBE_COACHING_BASE, item.segment);
+  return {
+    id: `coaching-${item.segment}`,
     href,
     label: item.label,
     matchPrefix: href,
@@ -215,6 +236,14 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
     matchPrefix: MUHASEBE_KUTUPHANE_BASE,
     icon: KUTUPHANE_ICON,
     children: MUHASEBE_KUTUPHANE_CHILDREN,
+  },
+  {
+    id: "kocluk",
+    href: `${MUHASEBE_COACHING_BASE}/coaches`,
+    label: "Koçluk",
+    matchPrefix: MUHASEBE_COACHING_BASE,
+    icon: COACHING_ICON,
+    children: MUHASEBE_COACHING_CHILDREN,
   },
   {
     id: "personel",

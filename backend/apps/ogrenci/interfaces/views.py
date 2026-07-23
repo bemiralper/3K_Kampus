@@ -281,6 +281,7 @@ def ogrenci_list_export_api(request):
         build_export_meta,
         build_json_export_response,
         build_ogrenci_kalemler_map,
+        build_primary_coach_name_map,
         MAX_EXPORT_ROWS,
     )
 
@@ -306,12 +307,14 @@ def ogrenci_list_export_api(request):
     kalemler_map = build_ogrenci_kalemler_map(
         kayitlar, filter_kalemler=filter_kalemler or None,
     )
+    coach_map = build_primary_coach_name_map([k.ogrenci_id for k in kayitlar])
     column_keys = [c.strip() for c in request.GET.get('columns', '').split(',') if c.strip()]
     rows = [
         serialize_kayit_row(
             k,
             include_egitim_yili=True,
             egitim_kalemleri=kalemler_map.get(k.id, []),
+            koc_adi=coach_map.get(k.ogrenci_id, ''),
         )
         for k in kayitlar
     ]

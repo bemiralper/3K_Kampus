@@ -18,6 +18,7 @@ import CoachRecentActivity from '@/components/admin/coaching/tabs/CoachRecentAct
 import CoachGoalTracking from '@/components/admin/coaching/tabs/CoachGoalTracking';
 import CoachRiskStudents from '@/components/admin/coaching/tabs/CoachRiskStudents';
 import CoachQuickNotes from '@/components/admin/coaching/tabs/CoachQuickNotes';
+import { useCoachingPath } from '@/components/coaching/CoachingPathProvider';
 
 type TabKey = 'students' | 'stats' | 'calendar' | 'performance' | 'activity' | 'goals' | 'risk' | 'notes';
 
@@ -38,6 +39,7 @@ interface Toast {
 export default function CoachDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { portalHomeHref, portalHomeLabel, href: coachingHrefFn } = useCoachingPath();
   const coachId = params?.coachId ? parseInt(params.coachId as string) : null;
 
   const [coach, setCoach] = useState<Coach | null>(null);
@@ -214,12 +216,12 @@ export default function CoachDetailPage() {
           <div className="hero-text">
             <h1>Koç Detayı</h1>
             <div className="hero-breadcrumb">
-              <Link href="/dashboard">Ana Sayfa</Link><span>/</span><span>Koçluk</span><span>/</span><Link href="/admin/coaching/coaches">Koç Yönetimi</Link><span>/</span><span>{coach.teacher_full_name}</span>
+              <Link href={portalHomeHref}>{portalHomeLabel}</Link><span>/</span><span>Koçluk</span><span>/</span><Link href={coachingHrefFn('coaches')}>Koç Yönetimi</Link><span>/</span><span>{coach.teacher_full_name}</span>
             </div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button onClick={() => router.push('/admin/coaching/coaches')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}>
+          <button onClick={() => router.push(coachingHrefFn('coaches'))} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
             Geri Dön
           </button>

@@ -10,6 +10,7 @@ from apps.ogrenci.interfaces.list_helpers import (
     EXPORT_COLUMN_TYPES as OGRENCI_EXPORT_COLUMN_TYPES,
     EXPORT_COLUMNS as OGRENCI_EXPORT_COLUMNS,
     build_kalem_ozet_map,
+    build_primary_coach_name_map,
     format_export_row,
     get_varsayilan_veli,
     serialize_kayit_row,
@@ -40,6 +41,7 @@ DEFAULT_ROSTER_KEYS = [
     'tam_ad',
     'okul_no',
     'alan',
+    'koc_adi',
     'telefon',
     'veli_ad_soyad',
     'veli_tc_kimlik_no',
@@ -147,6 +149,7 @@ def build_roster_groups(siniflar: list[Sinif], term_id: int) -> list[dict[str, A
 
         kayit_list = list(kayit_map.values())
         kalem_ozet_map = build_kalem_ozet_map(kayit_list) if kayit_list else {}
+        coach_map = build_primary_coach_name_map(student_ids) if student_ids else {}
 
         rows: list[dict[str, Any]] = []
         for idx, placement in enumerate(placements, start=1):
@@ -157,6 +160,7 @@ def build_roster_groups(siniflar: list[Sinif], term_id: int) -> list[dict[str, A
                     kayit,
                     include_egitim_yili=True,
                     kalem_ozet=kalem_ozet_map.get(kayit.id, ''),
+                    koc_adi=coach_map.get(student.id, ''),
                 )
             else:
                 veli = get_varsayilan_veli(student)
@@ -185,6 +189,7 @@ def build_roster_groups(siniflar: list[Sinif], term_id: int) -> list[dict[str, A
                     'egitim_yili': '',
                     'kalem_ozet': '',
                     'geldigi_okul': '',
+                    'koc_adi': coach_map.get(student.id, ''),
                 }
 
             row['sira'] = idx
