@@ -91,6 +91,39 @@ export interface SinifListResult {
   aktif_donem: AktifDonem | null;
 }
 
+export interface SinifPlacementSkip {
+  student_id: number;
+  reason: string;
+}
+
+export interface SinifPlacementResult {
+  created?: number[];
+  updated?: number[];
+  removed?: number[];
+  skipped?: SinifPlacementSkip[];
+  errors?: SinifPlacementSkip[];
+}
+
+export interface SinifOgrenciAtamaResponse {
+  success: boolean;
+  message?: string;
+  mevcutluk: number;
+  result?: SinifPlacementResult;
+}
+
+export interface SinifOgrenciCikarResponse {
+  success: boolean;
+  message?: string;
+  mevcutluk: number;
+  result?: SinifPlacementResult;
+}
+
+export interface SinifOgrenciRosterResponse {
+  ogrenciler?: AtanmamisOgrenci[];
+  aktif_donem?: AktifDonem | null;
+  sinif?: { id: number; ad: string; kapasite: number; mevcutluk: number };
+}
+
 export interface SinifFormData {
   sube_id: string;
   egitim_yili_id: string;

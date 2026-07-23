@@ -1,6 +1,6 @@
 // Şube Tanımları API Services
 
-import { Oda, Sinif, OdaTur, OdaFormData, SinifFormData, AktifDonem, AtanmamisOgrenci, SinifListResult } from './types';
+import { Oda, Sinif, OdaTur, OdaFormData, SinifFormData, AktifDonem, AtanmamisOgrenci, SinifListResult, SinifOgrenciAtamaResponse, SinifOgrenciCikarResponse, SinifOgrenciRosterResponse } from './types';
 import { parseJsonResponse } from '@/lib/api';
 
 const API_BASE = '/api';
@@ -168,11 +168,11 @@ export async function getSinifOgrenciRoster(
     ? `${API_BASE}/siniflar/api/${sinifId}/atanmamis-ogrenciler/?term_id=${termId}`
     : `${API_BASE}/siniflar/api/${sinifId}/atanmamis-ogrenciler/`;
   const res = await fetch(url, { credentials: 'include', headers: getContextHeaders() });
-  const data = await parseJsonResponse(res, 'Öğrenci listesi yüklenemedi');
+  const data = await parseJsonResponse<SinifOgrenciRosterResponse>(res, 'Öğrenci listesi yüklenemedi');
   return {
     ogrenciler: data.ogrenciler || [],
     aktif_donem: data.aktif_donem || null,
-    sinif: data.sinif,
+    sinif: data.sinif!,
   };
 }
 
@@ -183,7 +183,7 @@ export async function removeOgrenciFromSinif(
   sinifId: number,
   studentIds: number[],
   termId?: number,
-) {
+): Promise<SinifOgrenciCikarResponse> {
   const body: Record<string, unknown> = { student_ids: studentIds };
   if (termId) body.term_id = termId;
 
@@ -193,14 +193,14 @@ export async function removeOgrenciFromSinif(
     headers: getContextHeaders(),
     body: JSON.stringify(body),
   });
-  return parseJsonResponse(res, 'Öğrenci çıkarma başarısız');
+  return parseJsonResponse<SinifOgrenciCikarResponse>(res, 'Öğrenci çıkarma başarısız');
 }
 
 export async function assignOgrencilerToSinif(
   sinifId: number,
   studentIds: number[],
   termId?: number,
-) {
+): Promise<SinifOgrenciAtamaResponse> {
   const body: Record<string, unknown> = { student_ids: studentIds };
   if (termId) body.term_id = termId;
 
@@ -210,7 +210,7 @@ export async function assignOgrencilerToSinif(
     headers: getContextHeaders(),
     body: JSON.stringify(body),
   });
-  return parseJsonResponse(res, 'Öğrenci ataması başarısız');
+  return parseJsonResponse<SinifOgrenciAtamaResponse>(res, 'Öğrenci ataması başarısız');
 }
 
 export async function createSinif(formData: SinifFormData) {
