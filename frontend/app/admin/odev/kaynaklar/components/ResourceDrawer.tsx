@@ -291,6 +291,23 @@ export function ResourceDrawer(props: DrawerProps) {
                 <label className="kk-label">Açıklama</label>
                 <textarea className="kk-input" value={bookForm.aciklama} onChange={(e) => setBookForm({ ...bookForm, aciklama: e.target.value })} rows={3} style={{ resize: "vertical" }} />
               </div>
+
+              <div className="kk-field">
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={bookForm.icerik_tamamlandi_mi}
+                    onChange={(e) => setBookForm({ ...bookForm, icerik_tamamlandi_mi: e.target.checked })}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <strong>İçerik tamamlandı</strong>
+                    <span className="kk-hint" style={{ display: "block", marginTop: 4 }}>
+                      Ünite/konu/içerik girişi bitti; kitap ödev havuzunda kullanıma hazır.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </div>
           )}
 

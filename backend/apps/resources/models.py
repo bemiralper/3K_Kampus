@@ -118,6 +118,7 @@ class ResourceBook(models.Model):
     # Meta
     aciklama = models.TextField('Açıklama', blank=True)
     aktif_mi = models.BooleanField('Aktif', default=True)
+    icerik_tamamlandi_mi = models.BooleanField('İçerik Tamamlandı', default=False)
     sira = models.PositiveIntegerField('Sıra', default=0)
     
     created_at = models.DateTimeField('Oluşturma Tarihi', auto_now_add=True)

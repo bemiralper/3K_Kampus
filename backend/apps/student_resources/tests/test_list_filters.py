@@ -53,6 +53,7 @@ class StudentResourceListFilterTest(TestCase):
             kurum=self.kurum,
             yayinevi='Palme Yayınları',
             aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
         self.konu_book = ResourceBook.objects.create(
             sube=self.sube,
@@ -64,6 +65,7 @@ class StudentResourceListFilterTest(TestCase):
             kurum=self.kurum,
             yayinevi='Karekök Yayınları',
             aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
 
         self.soru_assignment = StudentResourceAssignment.objects.create(

@@ -313,7 +313,7 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         if resources.count() != len(resource_book_ids):
             return Response({
                 'success': False,
-                'error': 'Bazı kaynaklar bulunamadı veya aktif değil.'
+                'error': 'Bazı kaynaklar bulunamadı veya aktif değil.',
             }, status=status.HTTP_400_BAD_REQUEST)
         
         created_count = 0
@@ -571,6 +571,7 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
             'zorluk_min', 'zorluk_max',
             'toplam_sayfa',
             'kapak', 'kapak_url',
+            'icerik_tamamlandi_mi',
         )[:200]
         
         # Format response
@@ -602,6 +603,7 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
                     kapak_name=r.get('kapak') or None,
                     kapak_url=r.get('kapak_url') or '',
                 ),
+                'icerik_tamamlandi_mi': bool(r.get('icerik_tamamlandi_mi')),
             }
             acq = acquisition_map.get(r['id'])
             if acq:

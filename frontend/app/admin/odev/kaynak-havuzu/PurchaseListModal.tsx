@@ -9,6 +9,7 @@ import {
   type Ders,
 } from "@/lib/resources-api";
 import { BookCover } from "@/components/resources/BookCover";
+import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
 
 type ListType = "PURCHASE" | "INSTITUTION";
 
@@ -415,8 +416,11 @@ export default function PurchaseListModal({
                                     {diff || "—"}
                                   </span>
                                 </div>
-                                <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>
-                                  {book.book_type}{book.yayinevi ? ` · ${book.yayinevi}` : ""}{book.yayin_yili ? ` · ${book.yayin_yili}` : ""}
+                                <div style={{ fontSize: 11, color: "#64748b", marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                  <span>
+                                    {book.book_type}{book.yayinevi ? ` · ${book.yayinevi}` : ""}{book.yayin_yili ? ` · ${book.yayin_yili}` : ""}
+                                  </span>
+                                  {book.icerik_tamamlandi_mi && <BookContentCompleteBadge style={{ fontSize: 10 }} />}
                                 </div>
                                 {checked && !isPurchase && (
                                   <input

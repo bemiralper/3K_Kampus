@@ -48,11 +48,13 @@ class PurchaseListWorkflowTest(TestCase):
             sube=self.sube,
             ad='Liste Kitabı', kod='PLB1', book_type=self.book_type,
             ders=self.ders, sinif_seviyesi=self.sinif_seviyesi, kurum=self.kurum, aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
         self.book2 = ResourceBook.objects.create(
             sube=self.sube,
             ad='İkinci Kitap', kod='PLB2', book_type=self.book_type,
             ders=self.ders, sinif_seviyesi=self.sinif_seviyesi, kurum=self.kurum, aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
 
         self.admin = User.objects.create_superuser(

@@ -147,3 +147,90 @@ class ResourceBookCrudTest(TestCase):
             HTTP_X_SUBE_ID=str(self.other_sube.id),
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_patch_icerik_tamamlandi_mi(self):
+        book = ResourceBook.objects.create(
+            ad='Tamamlanacak Kitap',
+            kod='COMPLETE-001',
+            kurum=self.kurum,
+            sube=self.sube,
+            book_type=self.book_type,
+            ders=self.ders,
+            sinif_seviyesi=self.sinif_seviyesi,
+            aktif_mi=True,
+            icerik_tamamlandi_mi=False,
+        )
+
+        patch_response = self.client.patch(
+            self._book_url(book.id),
+            {'icerik_tamamlandi_mi': True},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertTrue(patch_response.data['success'])
+        self.assertTrue(patch_response.data['data']['icerik_tamamlandi_mi'])
+
+        list_response = self.client.get(BOOKS_URL, **self.headers)
+        self.assertTrue(list_response.data['data'][0]['icerik_tamamlandi_mi'])
+
+        book.refresh_from_db()
+        self.assertTrue(book.icerik_tamamlandi_mi)
+
+    def test_list_filter_icerik_tamamlandi(self):
+        complete = ResourceBook.objects.create(
+            ad='Tamamlanan',
+            kod='DONE-001',
+            kurum=self.kurum,
+            sube=self.sube,
+            book_type=self.book_type,
+            ders=self.ders,
+            sinif_seviyesi=self.sinif_seviyesi,
+            aktif_mi=True,
+            icerik_tamamlandi_mi=True,
+        )
+        ResourceBook.objects.create(
+            ad='Eksik',
+            kod='PEND-001',
+            kurum=self.kurum,
+            sube=self.sube,
+            book_type=self.book_type,
+            ders=self.ders,
+            sinif_seviyesi=self.sinif_seviyesi,
+            aktif_mi=True,
+            icerik_tamamlandi_mi=False,
+        )
+
+        response = self.client.get(
+            BOOKS_URL,
+            {'icerik_tamamlandi': 'true'},
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        ids = [item['id'] for item in response.data['data']]
+        self.assertEqual(ids, [complete.id])
+
+    def test_duplicate_resets_icerik_tamamlandi_mi(self):
+        source = ResourceBook.objects.create(
+            ad='Kaynak Kitap',
+            kod='SRC-001',
+            kurum=self.kurum,
+            sube=self.sube,
+            book_type=self.book_type,
+            ders=self.ders,
+            sinif_seviyesi=self.sinif_seviyesi,
+            aktif_mi=True,
+            icerik_tamamlandi_mi=True,
+        )
+
+        response = self.client.post(
+            f'{BOOKS_URL}{source.id}/duplicate/',
+            {'ad': 'Kopya Kitap', 'kod': 'COPY-001'},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data['success'])
+
+        copy = ResourceBook.objects.get(kod='COPY-001')
+        self.assertFalse(copy.icerik_tamamlandi_mi)

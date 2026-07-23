@@ -138,7 +138,7 @@ class ResourceBookSerializer(serializers.ModelSerializer):
             'sinif_seviyeleri', 'sinif_seviyeleri_ad',
             'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
             'zorluk_min', 'zorluk_max', 'zorluk_display',
-            'kapak_url', 'aciklama', 'aktif_mi', 'sira',
+            'kapak_url', 'aciklama', 'aktif_mi', 'icerik_tamamlandi_mi', 'sira',
             'unit_count', 'topic_count', 'content_count',
             'created_at', 'updated_at'
         ]
@@ -185,7 +185,7 @@ class ResourceBookDetailSerializer(serializers.ModelSerializer):
             'sinif_seviyeleri', 'sinif_seviyeleri_ad',
             'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
             'zorluk_min', 'zorluk_max', 'zorluk_display',
-            'kapak_url', 'aciklama', 'aktif_mi', 'sira',
+            'kapak_url', 'aciklama', 'aktif_mi', 'icerik_tamamlandi_mi', 'sira',
             'unit_count', 'topic_count', 'content_count', 'units',
             'created_at', 'updated_at'
         ]
@@ -218,7 +218,7 @@ class ResourceBookStructureSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = ResourceBook
-        fields = ['id', 'ad', 'kod', 'units']
+        fields = ['id', 'ad', 'kod', 'icerik_tamamlandi_mi', 'units']
 
 
 # Write serializers
@@ -348,7 +348,7 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
             'ders', 'sinif_seviyesi', 'sinif_seviyeleri',
             'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
             'zorluk_min', 'zorluk_max',
-            'kapak_url', 'aciklama', 'aktif_mi', 'sira'
+            'kapak_url', 'aciklama', 'aktif_mi', 'icerik_tamamlandi_mi', 'sira'
         ]
     
     def _resolve_sinif_seviyeleri(self, data):

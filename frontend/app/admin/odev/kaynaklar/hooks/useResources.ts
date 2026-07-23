@@ -52,7 +52,7 @@ const INITIAL_BOOK_FORM: BookFormData = {
   ad: "", kod: "", book_type: "", ders: "", sinif_seviyeleri: [],
   yayinevi: "", yazar: "", yayin_yili: String(CURRENT_YEAR), toplam_sayfa: "",
   zorluk_min: "", zorluk_max: "", isbn: "", kapak_url: "",
-  aciklama: "", aktif_mi: true, sira: 0,
+  aciklama: "", aktif_mi: true, icerik_tamamlandi_mi: false, sira: 0,
 };
 
 const INITIAL_UNIT_FORM: UnitFormData = {
@@ -120,6 +120,7 @@ export function useResources() {
   const [filterSinif, setFilterSinif] = useState("");
   const [filterBookType, setFilterBookType] = useState("");
   const [filterYayinYili, setFilterYayinYili] = useState("");
+  const [filterIcerikTamamlandi, setFilterIcerikTamamlandi] = useState("");
 
   // ───── Selected book ─────
   const [selectedBook, setSelectedBook] = useState<ResourceBook | null>(null);
@@ -202,15 +203,20 @@ export function useResources() {
         book_type: filterBookType || undefined,
         yayin_yili: filterYayinYili || undefined,
         search: searchTerm || undefined,
+        icerik_tamamlandi: filterIcerikTamamlandi || undefined,
       });
-      if (result.success && result.data) setBooks(result.data as ResourceBook[]);
+      if (result.success && result.data) {
+        const list = result.data as ResourceBook[];
+        setBooks(list);
+        setSelectedBook((prev) => (prev ? list.find((b) => b.id === prev.id) ?? prev : null));
+      }
       else setError(result.error || "Kitaplar yüklenemedi");
     } catch {
       setError("Kitaplar yüklenirken hata oluştu");
     } finally {
       setLoading(false);
     }
-  }, [filterDers, filterSinif, filterBookType, filterYayinYili, searchTerm]);
+  }, [filterDers, filterSinif, filterBookType, filterYayinYili, filterIcerikTamamlandi, searchTerm]);
 
   const fetchMetadata = useCallback(async () => {
     try {
@@ -390,7 +396,7 @@ export function useResources() {
         zorluk_min: book.zorluk_min != null ? String(book.zorluk_min) : "",
         zorluk_max: book.zorluk_max != null ? String(book.zorluk_max) : "",
         isbn: "", kapak_url: book.kapak_url || "", aciklama: book.aciklama || "",
-        aktif_mi: book.aktif_mi, sira: 0,
+        aktif_mi: book.aktif_mi, icerik_tamamlandi_mi: book.icerik_tamamlandi_mi ?? false, sira: 0,
       });
     } else {
       resetBookForm();
@@ -492,6 +498,7 @@ export function useResources() {
         isbn: bookForm.isbn,
         aciklama: bookForm.aciklama,
         aktif_mi: bookForm.aktif_mi,
+        icerik_tamamlandi_mi: bookForm.icerik_tamamlandi_mi,
         sira: bookForm.sira,
       };
       const result = editingId
@@ -1154,7 +1161,7 @@ export function useResources() {
     // Filters
     searchTerm, setSearchTerm, filterDers, setFilterDers,
     filterSinif, setFilterSinif, filterBookType, setFilterBookType,
-    filterYayinYili, setFilterYayinYili,
+    filterYayinYili, setFilterYayinYili, filterIcerikTamamlandi, setFilterIcerikTamamlandi,
     // Expand
     expandedUnits, expandedTopics, toggleUnit, toggleTopic, expandAll, collapseAll,
     // Drawer

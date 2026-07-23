@@ -50,6 +50,7 @@ class StudentResourceAssignmentSoftDeleteTest(TestCase):
             sinif_seviyesi=self.sinif_seviyesi,
             kurum=self.kurum,
             aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
         self.admin = User.objects.create_superuser(
             username='admin',

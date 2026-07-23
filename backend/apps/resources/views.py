@@ -155,6 +155,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
         book_type_id = self.request.query_params.get('book_type')
         yayin_yili = self.request.query_params.get('yayin_yili')
         aktif = self.request.query_params.get('aktif')
+        icerik_tamamlandi = self.request.query_params.get('icerik_tamamlandi')
         search = self.request.query_params.get('search')
         
         if ders_id:
@@ -169,6 +170,8 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(yayin_yili=yayin_yili)
         if aktif is not None:
             queryset = queryset.filter(aktif_mi=aktif.lower() == 'true')
+        if icerik_tamamlandi is not None:
+            queryset = queryset.filter(icerik_tamamlandi_mi=icerik_tamamlandi.lower() == 'true')
         if search:
             queryset = queryset.filter(ad__icontains=search)
         
@@ -483,6 +486,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
                 kapak_url=source.kapak_url,
                 aciklama=source.aciklama,
                 aktif_mi=True,
+                icerik_tamamlandi_mi=False,
                 sira=source.sira,
             )
             if source.kapak:

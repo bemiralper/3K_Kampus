@@ -2,6 +2,7 @@
 "use client";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ResourceBook, ResourceUnit, ResourceTopic, ResourceContent } from "../types";
+import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
 import { DragSortList, DragHandle } from "./DragSortList";
 import { StructureSkeleton } from "./Skeletons";
 
@@ -234,6 +235,7 @@ export function BookStructure(props: BookStructureProps) {
                 </span>
               )}
               {selectedBook.yayinevi && <span className="badge badge-light">{selectedBook.yayinevi}</span>}
+              {selectedBook.icerik_tamamlandi_mi && <BookContentCompleteBadge />}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>

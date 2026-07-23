@@ -21,6 +21,7 @@ import {
 } from "@/lib/resources-api";
 import PurchaseListModal, { formatDifficulty, difficultyStyle } from "../PurchaseListModal";
 import { BookCover } from "@/components/resources/BookCover";
+import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
 import "../kaynak-havuzu.css";
 
 function getPhotoUrl(path?: string | null): string | undefined {
@@ -955,6 +956,7 @@ export default function StudentResourceDetailPage() {
                                   {resource.book_type}
                                 </span>
                               )}
+                              {resource.icerik_tamamlandi_mi && <BookContentCompleteBadge />}
                             </div>
                             <span style={{
                               background: diffStyle.bg,

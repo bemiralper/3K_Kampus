@@ -2,6 +2,7 @@
 "use client";
 import React from "react";
 import { BookCover } from "@/components/resources/BookCover";
+import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
 import type { ResourceBook } from "../types";
 import { BookListSkeleton } from "./Skeletons";
 
@@ -46,6 +47,7 @@ export function BookList({ filteredBooks, selectedBook, loading, onSelectBook, g
                 <span className={`badge ${getBookTypeBadgeClass(book.book_type_renk)}`} style={{ fontSize: 11, flexShrink: 0 }}>
                   {book.book_type_display}
                 </span>
+                {book.icerik_tamamlandi_mi && <BookContentCompleteBadge />}
               </div>
               <div className="kk-book-stats">
                 {book.yayin_yili && <span>📅 {book.yayin_yili}</span>}

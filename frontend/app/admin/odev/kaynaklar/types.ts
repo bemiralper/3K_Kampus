@@ -82,6 +82,7 @@ export interface ResourceBook {
   kapak_url: string;
   aciklama: string;
   aktif_mi: boolean;
+  icerik_tamamlandi_mi: boolean;
   sira: number;
   unit_count: number;
   topic_count: number;
@@ -108,6 +109,7 @@ export interface BookFormData {
   kapak_url: string;
   aciklama: string;
   aktif_mi: boolean;
+  icerik_tamamlandi_mi: boolean;
   sira: number;
 }
 

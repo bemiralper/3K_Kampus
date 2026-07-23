@@ -48,16 +48,19 @@ class BookAcquisitionInfoTest(TestCase):
             sube=self.sube,
             ad='Sahip Olunan', kod='OWN1', book_type=self.book_type,
             ders=self.ders, sinif_seviyesi=self.sinif_seviyesi, kurum=self.kurum, aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
         self.book_on_list = ResourceBook.objects.create(
             sube=self.sube,
             ad='Listedeki', kod='LST1', book_type=self.book_type,
             ders=self.ders, sinif_seviyesi=self.sinif_seviyesi, kurum=self.kurum, aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
         self.book_free = ResourceBook.objects.create(
             sube=self.sube,
             ad='Serbest', kod='FRE1', book_type=self.book_type,
             ders=self.ders, sinif_seviyesi=self.sinif_seviyesi, kurum=self.kurum, aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
 
         StudentResourceAssignment.objects.create(
@@ -108,6 +111,7 @@ class BookAcquisitionInfoTest(TestCase):
         by_id = {item['id']: item for item in response.data['data']}
         self.assertFalse(by_id[self.book_owned.id]['selectable'])
         self.assertTrue(by_id[self.book_owned.id]['hidden'])
+        self.assertTrue(by_id[self.book_free.id]['icerik_tamamlandi_mi'])
         self.assertFalse(by_id[self.book_on_list.id]['selectable'])
         self.assertEqual(by_id[self.book_on_list.id]['acquisition_label'], 'Listede')
         self.assertTrue(by_id[self.book_free.id]['selectable'])

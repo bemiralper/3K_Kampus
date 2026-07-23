@@ -98,6 +98,7 @@ export interface ResourceBook {
   kapak_url: string;
   aciklama: string;
   aktif_mi: boolean;
+  icerik_tamamlandi_mi: boolean;
   isbn: string;
   sira: number;
   unit_count: number;
@@ -226,6 +227,7 @@ export interface AvailableResource {
   zorluk_display: string | null;
   toplam_sayfa: number | null;
   kapak_url?: string;
+  icerik_tamamlandi_mi?: boolean;
   acquisition_status?: string | null;
   acquisition_label?: string | null;
   selectable?: boolean;
@@ -418,6 +420,7 @@ export async function fetchBooks(params?: {
   book_type?: string;
   yayin_yili?: string;
   search?: string;
+  icerik_tamamlandi?: string;
 }): Promise<ApiResponse<ResourceBook[]>> {
   const searchParams = new URLSearchParams();
   if (params?.ders) searchParams.append('ders', params.ders);
@@ -425,6 +428,7 @@ export async function fetchBooks(params?: {
   if (params?.book_type) searchParams.append('book_type', params.book_type);
   if (params?.yayin_yili) searchParams.append('yayin_yili', params.yayin_yili);
   if (params?.search) searchParams.append('search', params.search);
+  if (params?.icerik_tamamlandi) searchParams.append('icerik_tamamlandi', params.icerik_tamamlandi);
 
   const qs = searchParams.toString();
   return apiGet<ResourceBook[]>(`/api/resources/books/${qs ? `?${qs}` : ''}`);

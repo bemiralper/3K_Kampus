@@ -121,6 +121,7 @@ class AvailableResourcesSinifSeviyesiTest(TestCase):
             sinif_seviyesi=self.sinif_seviyesi_10,
             kurum=self.kurum,
             aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
         self.book_11 = ResourceBook.objects.create(
             sube=self.sube,
@@ -131,6 +132,7 @@ class AvailableResourcesSinifSeviyesiTest(TestCase):
             sinif_seviyesi=self.sinif_seviyesi_11,
             kurum=self.kurum,
             aktif_mi=True,
+            icerik_tamamlandi_mi=True,
         )
 
         self.admin = User.objects.create_superuser(

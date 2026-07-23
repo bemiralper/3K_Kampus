@@ -97,7 +97,12 @@ export default function KaynaklarPage() {
           <option value="">Tüm Yıllar</option>
           {yayinYillari.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
-        {(r.filterDers || r.filterSinif || r.filterBookType || r.filterYayinYili) && (
+        <select className="kk-select" value={r.filterIcerikTamamlandi} onChange={(e) => r.setFilterIcerikTamamlandi(e.target.value)}>
+          <option value="">Tüm Durumlar</option>
+          <option value="true">İçerik Tamamlanan</option>
+          <option value="false">İçerik Eksik</option>
+        </select>
+        {(r.filterDers || r.filterSinif || r.filterBookType || r.filterYayinYili || r.filterIcerikTamamlandi) && (
           <button
             type="button"
             className="kk-btn"
@@ -107,6 +112,7 @@ export default function KaynaklarPage() {
               r.setFilterSinif("");
               r.setFilterBookType("");
               r.setFilterYayinYili("");
+              r.setFilterIcerikTamamlandi("");
             }}
           >
             Filtreleri Temizle
