@@ -1721,6 +1721,7 @@
 .ogrenci-export-columns-actions {
   display: flex;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .ogrenci-export-link-btn {
@@ -1735,55 +1736,6 @@
 
 .ogrenci-export-link-btn:hover {
   text-decoration: underline;
-}
-
-.ogrenci-export-columns-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  max-height: 340px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-@media (min-width: 640px) {
-  .ogrenci-export-columns-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-.ogrenci-export-column-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  background: #fff;
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.ogrenci-export-column-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.ogrenci-export-column-order {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: #0262a7;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
 }
 
 .ogrenci-export-orientation-cards {
@@ -1806,6 +1758,68 @@
   line-height: 1.4;
 }
 
+.ogrenci-export-columns-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ogrenci-export-column-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ogrenci-export-column-group-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+
+.ogrenci-export-columns-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ogrenci-export-column-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.ogrenci-export-column-label {
+  white-space: nowrap;
+}
+
+.ogrenci-export-column-order {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #0262a7;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .ogrenci-export-column-chip:hover {
   border-color: #cbd5e1;
 }
@@ -1816,8 +1830,9 @@
 }
 
 .ogrenci-export-column-chip input {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
   accent-color: #0262a7;
   cursor: pointer;
 }

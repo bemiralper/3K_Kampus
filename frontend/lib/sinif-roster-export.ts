@@ -7,7 +7,11 @@ import {
   exportOgrenciListPdf,
   type OgrenciListPdfBranding,
 } from '@/app/ogrenciler/lib/ogrenciListPdfExport';
-import { EXPORT_COLUMNS, type ExportColumnDef } from '@/app/ogrenciler/lib/ogrenci-list-utils';
+import {
+  EXPORT_COLUMNS,
+  EXPORT_COLUMN_GROUPS,
+  type ExportColumnDef,
+} from '@/app/ogrenciler/lib/ogrenci-list-utils';
 
 export type SinifRosterScope = 'sinif' | 'seviye' | 'all' | 'custom';
 
@@ -41,9 +45,9 @@ export type SinifRosterJsonResponse = {
 
 /** Öğrenci listesi export sütunları + sınıf listesine özel alanlar. */
 export const ROSTER_EXPORT_COLUMN_OPTIONS: ExportColumnDef[] = [
-  { key: 'sira', label: 'Sıra', default: true },
+  { key: 'sira', label: 'Sıra', default: true, group: EXPORT_COLUMN_GROUPS.ogrenci },
   ...EXPORT_COLUMNS,
-  { key: 'alan', label: 'Alan', default: true },
+  { key: 'alan', label: 'Alan', default: true, group: EXPORT_COLUMN_GROUPS.egitim },
 ];
 
 export const ROSTER_EXPORT_COLUMNS: Record<string, string> = Object.fromEntries(

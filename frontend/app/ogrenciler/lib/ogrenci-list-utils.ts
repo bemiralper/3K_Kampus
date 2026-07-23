@@ -31,6 +31,7 @@ export type ExportColumnDef = {
   key: string;
   label: string;
   default?: boolean;
+  group?: string;
 };
 
 export const KALEM_GRUP_LABELS: Record<string, string> = {
@@ -42,31 +43,54 @@ export const KALEM_GRUP_LABELS: Record<string, string> = {
   ek_hizmet: 'Ek Hizmetler',
 };
 
+export const EXPORT_COLUMN_GROUPS = {
+  ogrenci: 'Öğrenci Bilgileri',
+  egitim: 'Eğitim Bilgileri',
+  veli: 'Veli Bilgileri',
+} as const;
+
 export const EXPORT_COLUMNS: ExportColumnDef[] = [
-  { key: 'tam_ad', label: 'Ad Soyad', default: true },
-  { key: 'okul_no', label: 'Okul No', default: true },
-  { key: 'tc_kimlik_no', label: 'TC Kimlik No' },
-  { key: 'sinif_seviyesi', label: 'Sınıf Seviyesi', default: true },
-  { key: 'sinif_ad', label: 'Sınıf' },
-  { key: 'koc_adi', label: 'Koç', default: true },
-  { key: 'geldigi_okul', label: 'Geldiği / Mezun Olduğu Okul' },
-  { key: 'sube_ad', label: 'Şube' },
-  { key: 'kalem_ozet', label: 'Eğitim Kalemleri' },
-  { key: 'telefon', label: 'Telefon' },
-  { key: 'email', label: 'E-posta' },
-  { key: 'veli_ad_soyad', label: 'Veli Ad Soyad', default: true },
-  { key: 'veli_tc_kimlik_no', label: 'Veli TC Kimlik No', default: true },
-  { key: 'veli_telefon', label: 'Veli Telefon', default: true },
-  { key: 'veli_yakinlik_display', label: 'Veli Yakınlık' },
-  { key: 'kayit_tarihi', label: 'Kayıt Tarihi' },
-  { key: 'giris_turu_display', label: 'Giriş Türü' },
-  { key: 'cinsiyet', label: 'Cinsiyet' },
-  { key: 'dogum_tarihi', label: 'Doğum Tarihi' },
-  { key: 'egitim_yili', label: 'Eğitim Yılı' },
-  { key: 'aktif_mi', label: 'Durum', default: true },
+  { key: 'tam_ad', label: 'Ad Soyad', default: true, group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'okul_no', label: 'Okul No', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'tc_kimlik_no', label: 'TC Kimlik No', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'telefon', label: 'Telefon', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'email', label: 'E-posta', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'cinsiyet', label: 'Cinsiyet', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'dogum_tarihi', label: 'Doğum Tarihi', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'giris_turu_display', label: 'Giriş Türü', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'kayit_tarihi', label: 'Kayıt Tarihi', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'aktif_mi', label: 'Durum', group: EXPORT_COLUMN_GROUPS.ogrenci },
+  { key: 'sinif_seviyesi', label: 'Sınıf Seviyesi', default: true, group: EXPORT_COLUMN_GROUPS.egitim },
+  { key: 'sinif_ad', label: 'Sınıf', group: EXPORT_COLUMN_GROUPS.egitim },
+  { key: 'sube_ad', label: 'Şube', group: EXPORT_COLUMN_GROUPS.egitim },
+  { key: 'koc_adi', label: 'Koç', default: true, group: EXPORT_COLUMN_GROUPS.egitim },
+  { key: 'geldigi_okul', label: 'Geldiği / Mezun Olduğu Okul', group: EXPORT_COLUMN_GROUPS.egitim },
+  { key: 'kalem_ozet', label: 'Eğitim Kalemleri', group: EXPORT_COLUMN_GROUPS.egitim },
+  { key: 'egitim_yili', label: 'Eğitim Yılı', group: EXPORT_COLUMN_GROUPS.egitim },
+  { key: 'veli_ad_soyad', label: 'Veli Ad Soyad', group: EXPORT_COLUMN_GROUPS.veli },
+  { key: 'veli_tc_kimlik_no', label: 'Veli TC Kimlik No', group: EXPORT_COLUMN_GROUPS.veli },
+  { key: 'veli_telefon', label: 'Veli Telefon', group: EXPORT_COLUMN_GROUPS.veli },
+  { key: 'veli_yakinlik_display', label: 'Veli Yakınlık', group: EXPORT_COLUMN_GROUPS.veli },
 ];
 
 export const DEFAULT_EXPORT_KEYS = EXPORT_COLUMNS.filter((c) => c.default).map((c) => c.key);
+
+/** Sütunları tanım sırasını koruyarak grup adına göre kümeler. */
+export function groupExportColumns(
+  columns: ExportColumnDef[],
+): { group: string; columns: ExportColumnDef[] }[] {
+  const order: string[] = [];
+  const map = new Map<string, ExportColumnDef[]>();
+  columns.forEach((col) => {
+    const key = col.group || 'Diğer';
+    if (!map.has(key)) {
+      map.set(key, []);
+      order.push(key);
+    }
+    map.get(key)!.push(col);
+  });
+  return order.map((group) => ({ group, columns: map.get(group)! }));
+}
 
 export function kalemKey(k: KalemFilter): string {
   return `${k.tur}:${k.id}`;

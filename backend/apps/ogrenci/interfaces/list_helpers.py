@@ -730,7 +730,7 @@ def serialize_kayit_row(
 def _normalize_export_keys(column_keys):
     keys = [k for k in column_keys if k in EXPORT_COLUMNS]
     if not keys:
-        keys = ['tam_ad', 'okul_no', 'sinif_seviyesi', 'veli_telefon', 'aktif_mi']
+        keys = ['tam_ad', 'sinif_seviyesi', 'koc_adi']
     return keys
 
 
@@ -839,7 +839,7 @@ def format_export_row(row, keys):
 def build_json_export_response(rows, column_keys):
     keys = [k for k in column_keys if k in EXPORT_COLUMNS]
     if not keys:
-        keys = ['tam_ad', 'okul_no', 'sinif_seviyesi', 'veli_telefon', 'aktif_mi']
+        keys = ['tam_ad', 'sinif_seviyesi', 'koc_adi']
 
     formatted = [format_export_row(row, keys) for row in rows]
     return JsonResponse({

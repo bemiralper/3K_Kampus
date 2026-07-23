@@ -39,13 +39,9 @@ ROSTER_COLUMN_TYPES = {
 DEFAULT_ROSTER_KEYS = [
     'sira',
     'tam_ad',
-    'okul_no',
-    'alan',
+    'sinif_seviyesi',
     'koc_adi',
-    'telefon',
-    'veli_ad_soyad',
-    'veli_tc_kimlik_no',
-    'veli_telefon',
+    'alan',
 ]
 
 # Tek tabloda sınıf sütunları (geriye dönük / düz liste)

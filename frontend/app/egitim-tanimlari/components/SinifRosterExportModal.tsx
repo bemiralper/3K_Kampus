@@ -9,6 +9,7 @@ import {
   runSinifRosterExport,
   type SinifRosterScope,
 } from "@/lib/sinif-roster-export";
+import { groupExportColumns } from "@/app/ogrenciler/lib/ogrenci-list-utils";
 import { useKurum } from "@/lib/contexts/KurumContext";
 
 type ExportFormat = "csv" | "xlsx" | "pdf";
@@ -108,6 +109,11 @@ export default function SinifRosterExportModal({
     selectedKeys.forEach((key, index) => map.set(key, index + 1));
     return map;
   }, [selectedKeys]);
+
+  const groupedColumns = useMemo(
+    () => groupExportColumns(ROSTER_EXPORT_COLUMN_OPTIONS),
+    [],
+  );
 
   const orderedColumnLabels = useMemo(
     () =>
@@ -447,31 +453,38 @@ export default function SinifRosterExportModal({
                   </button>
                 </div>
               </div>
-              <div className="ogrenci-export-columns-grid">
-                {ROSTER_EXPORT_COLUMN_OPTIONS.map((col) => {
-                  const order = columnOrderMap.get(col.key);
-                  return (
-                    <label
-                      key={col.key}
-                      className={`ogrenci-export-column-chip${order ? " selected" : ""}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={Boolean(order)}
-                        onChange={() => toggleKey(col.key)}
-                      />
-                      <span className="ogrenci-export-column-label">{col.label}</span>
-                      {order ? (
-                        <span
-                          className="ogrenci-export-column-order"
-                          aria-label={`Sütun sırası ${order}`}
-                        >
-                          {order}
-                        </span>
-                      ) : null}
-                    </label>
-                  );
-                })}
+              <div className="ogrenci-export-columns-groups">
+                {groupedColumns.map(({ group, columns }) => (
+                  <div className="ogrenci-export-column-group" key={group}>
+                    <span className="ogrenci-export-column-group-label">{group}</span>
+                    <div className="ogrenci-export-columns-grid">
+                      {columns.map((col) => {
+                        const order = columnOrderMap.get(col.key);
+                        return (
+                          <label
+                            key={col.key}
+                            className={`ogrenci-export-column-chip${order ? " selected" : ""}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(order)}
+                              onChange={() => toggleKey(col.key)}
+                            />
+                            <span className="ogrenci-export-column-label">{col.label}</span>
+                            {order ? (
+                              <span
+                                className="ogrenci-export-column-order"
+                                aria-label={`Sütun sırası ${order}`}
+                              >
+                                {order}
+                              </span>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
           </div>

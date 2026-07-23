@@ -8,6 +8,7 @@ import {
   DEFAULT_EXPORT_KEYS,
   buildListApiQuery,
   getContextHeadersFromStorage,
+  groupExportColumns,
   type OgrenciListFilters,
 } from '../lib/ogrenci-list-utils';
 import { downloadBlob } from '@/lib/download-file';
@@ -106,6 +107,8 @@ export default function OgrenciExportModal({
     selectedKeys.forEach((key, index) => map.set(key, index + 1));
     return map;
   }, [selectedKeys]);
+
+  const groupedColumns = useMemo(() => groupExportColumns(EXPORT_COLUMNS), []);
 
   const orderedColumnLabels = useMemo(
     () =>
@@ -332,28 +335,35 @@ export default function OgrenciExportModal({
                   </button>
                 </div>
               </div>
-              <div className="ogrenci-export-columns-grid">
-                {EXPORT_COLUMNS.map((col) => {
-                  const order = columnOrderMap.get(col.key);
-                  return (
-                    <label
-                      key={col.key}
-                      className={`ogrenci-export-column-chip${order ? ' selected' : ''}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={Boolean(order)}
-                        onChange={() => toggleKey(col.key)}
-                      />
-                      <span className="ogrenci-export-column-label">{col.label}</span>
-                      {order ? (
-                        <span className="ogrenci-export-column-order" aria-label={`Sütun sırası ${order}`}>
-                          {order}
-                        </span>
-                      ) : null}
-                    </label>
-                  );
-                })}
+              <div className="ogrenci-export-columns-groups">
+                {groupedColumns.map(({ group, columns }) => (
+                  <div className="ogrenci-export-column-group" key={group}>
+                    <span className="ogrenci-export-column-group-label">{group}</span>
+                    <div className="ogrenci-export-columns-grid">
+                      {columns.map((col) => {
+                        const order = columnOrderMap.get(col.key);
+                        return (
+                          <label
+                            key={col.key}
+                            className={`ogrenci-export-column-chip${order ? ' selected' : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(order)}
+                              onChange={() => toggleKey(col.key)}
+                            />
+                            <span className="ogrenci-export-column-label">{col.label}</span>
+                            {order ? (
+                              <span className="ogrenci-export-column-order" aria-label={`Sütun sırası ${order}`}>
+                                {order}
+                              </span>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
           </div>
