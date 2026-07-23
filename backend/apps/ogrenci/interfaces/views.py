@@ -3,6 +3,7 @@ Ogrenci Views
 DDD Pattern - Interfaces
 """
 import json
+import logging
 import re
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -17,6 +18,8 @@ from apps.ogrenci.application.services import OgrenciService
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
 from apps.egitim_yili.domain.models import EgitimYili
 
+logger = logging.getLogger(__name__)
+
 
 def _json_str(data: dict, key: str, default: str = '') -> str:
     value = data.get(key, default)
@@ -26,6 +29,49 @@ def _json_str(data: dict, key: str, default: str = '') -> str:
 
 
 VELI_SMS_CATEGORIES = frozenset({'duyuru', 'devamsizlik', 'odeme'})
+
+
+def _sync_term_placement_from_kayit(ogrenci, sinif_id):
+    """Öğrenci detay sayfasından yapılan sınıf değişikliğini aktif döneme
+    ait StudentClassPlacement kaydına da yansıtır.
+
+    Eğitim Tanımları > Sınıflar sekmesindeki "Öğrenci" ataması dönem bazlı
+    yerleşim (StudentClassPlacement) üzerinden çalışır; buradan (öğrenci
+    detay sayfası) yapılan sınıf değişikliği de aynı tabloya yazılmazsa iki
+    ekran arasında tutarsızlık oluşur. Bu senkron en iyi çaba (best-effort)
+    prensibiyle çalışır — başarısız olsa da öğrenci güncellemesini bloklamaz.
+    """
+    if not ogrenci.kurum_id or not ogrenci.sube_id:
+        return
+    try:
+        from apps.academic.services.active_term import get_active_term_or_none
+        from apps.sinif.application.placement_helpers import (
+            assign_students_to_sinif,
+            remove_students_from_sinif,
+            get_student_term_classroom,
+        )
+        from apps.sinif.domain.models import Sinif
+
+        aktif_donem = get_active_term_or_none(kurum_id=ogrenci.kurum_id, sube_id=ogrenci.sube_id)
+        if not aktif_donem:
+            return
+
+        if sinif_id:
+            try:
+                sinif = Sinif.objects.get(id=sinif_id)
+            except Sinif.DoesNotExist:
+                return
+            assign_students_to_sinif(sinif=sinif, term_id=aktif_donem.id, student_ids=[ogrenci.id])
+        else:
+            mevcut_sinif = get_student_term_classroom(student_id=ogrenci.id, term_id=aktif_donem.id)
+            if mevcut_sinif:
+                remove_students_from_sinif(
+                    sinif=mevcut_sinif, term_id=aktif_donem.id, student_ids=[ogrenci.id],
+                )
+    except Exception:
+        logger.exception(
+            'Öğrenci #%s için dönem bazlı sınıf yerleşimi senkronize edilemedi', ogrenci.id,
+        )
 
 
 def _normalize_sms_bildirimleri(raw, *, default_on_create: bool = False) -> list[str]:
@@ -699,6 +745,9 @@ def ogrenci_api(request, pk):
                     update_fields.extend(['school_id', 'geldigi_okul'])
                 if update_fields:
                     aktif_kayit.save(update_fields=update_fields)
+
+                if 'sinif_id' in kayit_updates:
+                    _sync_term_placement_from_kayit(ogrenci, kayit_updates['sinif_id'])
 
         return JsonResponse({
             'success': True,

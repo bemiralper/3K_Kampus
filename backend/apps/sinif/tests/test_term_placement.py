@@ -222,3 +222,89 @@ class SinifTermPlacementApiTest(TestCase):
         body = res.json()
         self.assertEqual(body['donem_sinif']['ad'], '9-A')
         self.assertEqual(body['aktif_donem']['id'], self.term.id)
+
+    def test_ogrenci_put_sinif_creates_placement(self):
+        """Öğrenci detay drawer'ından sınıf ataması, dönem bazlı yerleşime de yansımalı."""
+        import json
+
+        res = self.client.put(
+            f'/ogrenciler/api/{self.ogrenci1.id}/',
+            data=json.dumps({'ad': 'Ali', 'soyad': 'Veli', 'sinif_id': self.sinif.id}),
+            content_type='application/json',
+            **self._headers(),
+        )
+        self.assertEqual(res.status_code, 200)
+
+        kayit = OgrenciKayit.objects.get(ogrenci=self.ogrenci1, egitim_yili=self.egitim_yili)
+        self.assertEqual(kayit.sinif_id, self.sinif.id)
+
+        placement = StudentClassPlacement.objects.get(
+            term=self.term, student=self.ogrenci1, is_active=True,
+        )
+        self.assertEqual(placement.classroom_id, self.sinif.id)
+
+        roster = self.client.get(
+            f'/siniflar/api/{self.sinif.id}/atanmamis-ogrenciler/?term_id={self.term.id}',
+            **self._headers(),
+        ).json()
+        row = next(o for o in roster['ogrenciler'] if o['id'] == self.ogrenci1.id)
+        self.assertTrue(row['bu_sinifta'])
+        self.assertEqual(roster['sinif']['mevcutluk'], 1)
+
+    def test_ogrenci_put_sinif_transfer_updates_placement(self):
+        """Öğrenci drawer'ından farklı bir sınıfa taşındığında eski yerleşim güncellenmeli."""
+        import json
+
+        StudentClassPlacement.objects.create(
+            academic_year=self.egitim_yili,
+            term=self.term,
+            student=self.ogrenci1,
+            classroom=self.sinif,
+            is_active=True,
+        )
+        OgrenciKayit.objects.filter(ogrenci=self.ogrenci1).update(sinif=self.sinif)
+
+        res = self.client.put(
+            f'/ogrenciler/api/{self.ogrenci1.id}/',
+            data=json.dumps({'ad': 'Ali', 'soyad': 'Veli', 'sinif_id': self.sinif_b.id}),
+            content_type='application/json',
+            **self._headers(),
+        )
+        self.assertEqual(res.status_code, 200)
+
+        placement = StudentClassPlacement.objects.get(
+            term=self.term, student=self.ogrenci1, is_active=True,
+        )
+        self.assertEqual(placement.classroom_id, self.sinif_b.id)
+
+        kayit = OgrenciKayit.objects.get(ogrenci=self.ogrenci1, egitim_yili=self.egitim_yili)
+        self.assertEqual(kayit.sinif_id, self.sinif_b.id)
+
+    def test_ogrenci_put_sinif_clear_removes_placement(self):
+        """Öğrenci drawer'ından sınıf boşaltıldığında dönem yerleşimi de silinmeli."""
+        import json
+
+        StudentClassPlacement.objects.create(
+            academic_year=self.egitim_yili,
+            term=self.term,
+            student=self.ogrenci1,
+            classroom=self.sinif,
+            is_active=True,
+        )
+        OgrenciKayit.objects.filter(ogrenci=self.ogrenci1).update(sinif=self.sinif)
+
+        res = self.client.put(
+            f'/ogrenciler/api/{self.ogrenci1.id}/',
+            data=json.dumps({'ad': 'Ali', 'soyad': 'Veli', 'sinif_id': None}),
+            content_type='application/json',
+            **self._headers(),
+        )
+        self.assertEqual(res.status_code, 200)
+
+        self.assertFalse(
+            StudentClassPlacement.objects.filter(
+                term=self.term, student=self.ogrenci1, is_active=True,
+            ).exists()
+        )
+        kayit = OgrenciKayit.objects.get(ogrenci=self.ogrenci1, egitim_yili=self.egitim_yili)
+        self.assertIsNone(kayit.sinif_id)
