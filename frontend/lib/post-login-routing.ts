@@ -1,19 +1,15 @@
 /**
  * Giriş sonrası kurum / şube seçim yönlendirmesi.
  *
- * Akış:
+ * Tüm kullanıcılar (admin, muhasebe, koç) aynı kuralları izler:
  * 1. Birden fazla kurum → /kurum-sec
- * 2. Tek kurum → localStorage'a yaz, şube adımına geç
+ * 2. Tek kurum → otomatik kurum bağlamı
  * 3. kurum_yoneticisi / süper kullanıcı veya çok şubeli personel → /sube-sec
- * 4. Tek şube → otomatik seç, ana sayfaya git
+ * 4. Tek şube → otomatik seç + getDefaultHomePath (dashboard / muhasebe / coach)
  */
 
 import type { User } from "@/lib/contexts/AuthContext";
-import {
-  getDefaultHomePath,
-  isCoachOnlyUser,
-  isMuhasebeOnlyUser,
-} from "@/lib/auth-routes";
+import { getDefaultHomePath } from "@/lib/auth-routes";
 import { setActiveContext } from "@/lib/api";
 import { personelAccessService } from "@/lib/personel-access-api";
 
@@ -54,61 +50,12 @@ async function persistSingleSube(
   await setActiveContext(sube.kurum_id, sube.id, null);
 }
 
-/** Koç / muhasebe portalı: finans API'leri için kurum+şube bağlamını oturum açılışında yaz. */
-async function ensureContextForPortalUser(_user: User): Promise<void> {
-  const storedKurumRaw = localStorage.getItem(STORAGE_KURUM);
-  const storedKurumId = storedKurumRaw ? parseInt(storedKurumRaw, 10) : NaN;
-  const hasStoredKurum = Number.isFinite(storedKurumId);
-
-  const kurumRes = await personelAccessService.myKurumlar(LOGIN_FETCH);
-  const kurumId =
-    kurumRes.kurumlar.length === 1
-      ? kurumRes.kurumlar[0].id
-      : hasStoredKurum && kurumRes.kurumlar.some((k) => k.id === storedKurumId)
-        ? storedKurumId
-        : kurumRes.kurumlar[0]?.id;
-
-  if (kurumId) {
-    localStorage.setItem(STORAGE_KURUM, String(kurumId));
-  }
-
-  const subeRes = await personelAccessService.mySubeler(
-    kurumId ? { kurum_id: kurumId } : undefined,
-    LOGIN_FETCH,
-  );
-
-  if (subeRes.subeler.length === 1) {
-    await persistSingleSube(subeRes.subeler[0]);
-    return;
-  }
-
-  const storedSubeRaw = localStorage.getItem(STORAGE_SUBE);
-  const storedSubeId = storedSubeRaw ? parseInt(storedSubeRaw, 10) : NaN;
-  const matched = Number.isFinite(storedSubeId)
-    ? subeRes.subeler.find((s) => s.id === storedSubeId)
-    : undefined;
-  if (matched) {
-    await persistSingleSube(matched);
-  }
-}
-
 /** Giriş başarılı olduktan sonra gidilecek path. */
 export async function resolvePostLoginRedirect(user: User | null): Promise<string> {
   if (!user) return "/?giris=1";
 
-  const home = getDefaultHomePath(user);
-
-  if (isCoachOnlyUser(user) || isMuhasebeOnlyUser(user)) {
-    try {
-      await ensureContextForPortalUser(user);
-    } catch {
-      /* portal home yine de açılır */
-    }
-    return home;
-  }
-
   try {
-    // Önceki oturumdan kalan şube; picker kararını ve session'ı bozmasın
+    // Önceki oturumdan kalan şube; çok şubeli kullanıcıda picker kararını bozmasın
     localStorage.removeItem(STORAGE_SUBE);
 
     const storedKurumRaw = localStorage.getItem(STORAGE_KURUM);
