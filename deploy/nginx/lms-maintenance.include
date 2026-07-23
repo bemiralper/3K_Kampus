@@ -1,5 +1,8 @@
 # 3K LMS maintenance mode — server { } bloğuna include edilir.
 # Kurulum: sudo ./backend/scripts/install-maintenance-nginx.sh
+#
+# Ziyaretçilere 503 + bilgi sayfası; /admin, /api, /auth ve sistem API'si
+# çalışmaya devam eder (panelden bakım modu kapatılabilsin diye).
 
 error_page 503 /maintenance.html;
 
@@ -10,6 +13,13 @@ location = /maintenance.html {
     add_header Retry-After 120 always;
 }
 
+set $lms_maintenance 0;
 if (-f /var/lib/3k/maintenance.enable) {
+    set $lms_maintenance 1;
+}
+if ($uri ~ ^/(admin|api|auth|sistem-yonetimi)(/|$)) {
+    set $lms_maintenance 0;
+}
+if ($lms_maintenance = 1) {
     return 503;
 }

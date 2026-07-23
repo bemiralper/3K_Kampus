@@ -19,4 +19,5 @@ urlpatterns = [
     path('performance/', views.performance_view, name='sistem-performance'),
     path('storage/', views.storage_view, name='sistem-storage'),
     path('settings/', views.settings_view, name='sistem-settings'),
+    path('maintenance/', views.maintenance_view, name='sistem-maintenance'),
 ]

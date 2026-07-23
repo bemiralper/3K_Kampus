@@ -6,6 +6,12 @@ from django.http import HttpResponse, JsonResponse
 
 from shared.maintenance import is_maintenance_mode, maintenance_html_path
 
+# Bakım modunda bile erişilebilir (panelden kapatma, giriş)
+_MAINTENANCE_EXEMPT_PREFIXES = (
+    '/auth/',
+    '/sistem-yonetimi/api/',
+)
+
 
 class MaintenanceMiddleware:
     def __init__(self, get_response):
@@ -13,6 +19,10 @@ class MaintenanceMiddleware:
 
     def __call__(self, request):
         if not is_maintenance_mode():
+            return self.get_response(request)
+
+        path = request.path or ''
+        if any(path.startswith(prefix) for prefix in _MAINTENANCE_EXEMPT_PREFIXES):
             return self.get_response(request)
 
         accept = request.headers.get('Accept', '')

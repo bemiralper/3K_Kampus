@@ -21,6 +21,7 @@ from apps.sistem_yonetimi.services import dashboard as dash
 from apps.sistem_yonetimi.services.alerts import evaluate_alerts
 from apps.sistem_yonetimi.services.audit import write_audit
 from apps.sistem_yonetimi.services.jobs import get_run, list_jobs_with_runs, start_job
+from apps.sistem_yonetimi.services.maintenance_control import get_maintenance_panel_status, set_maintenance_mode
 from apps.sistem_yonetimi.services.service_control import control_service
 from shared.permissions import api_permission_required
 
@@ -349,3 +350,27 @@ def settings_view(request):
     obj.save()
     write_audit(request=request, module='sistem_yonetimi', action='settings_update', description='Sistem paneli ayarları güncellendi')
     return JsonResponse({'updated': True, 'settings': _settings_json(obj)})
+
+
+@require_http_methods(['GET', 'POST'])
+@api_permission_required(
+    'sistem_yonetimi.read', 'sistem_yonetimi.manage', 'sistem.admin',
+    write_codes=['sistem_yonetimi.ops', 'sistem.admin'],
+)
+def maintenance_view(request):
+    if request.method == 'GET':
+        return JsonResponse(get_maintenance_panel_status())
+
+    data = _body(request)
+    enabled = data.get('enabled')
+    if not isinstance(enabled, bool):
+        return JsonResponse({'error': 'enabled alanı boolean olmalıdır'}, status=400)
+    try:
+        result = set_maintenance_mode(
+            enabled=enabled,
+            confirm=str(data.get('confirm') or ''),
+            request=request,
+        )
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    return JsonResponse({'success': True, **result})

@@ -111,6 +111,18 @@ def build_dashboard() -> dict:
         'docker_mode': bool(cfg.get('docker_mode')),
         'poll_interval_sec': settings_obj.poll_interval_sec,
         'collected_at': _now().isoformat(),
+        'maintenance_mode': _maintenance_dashboard(),
+    }
+
+
+def _maintenance_dashboard() -> dict:
+    from shared.maintenance import maintenance_status
+
+    st = maintenance_status()
+    return {
+        'enabled': st['enabled'],
+        'can_control': st['can_control'],
+        'nginx_snippet_installed': st['nginx_snippet_installed'],
     }
 
 

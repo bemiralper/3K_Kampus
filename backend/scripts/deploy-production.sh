@@ -116,6 +116,38 @@ fix_frontend_tree_permissions() {
   chown -R "$LMS_RUN_USER:$LMS_RUN_GROUP" "$FRONTEND_DIR/node_modules" 2>/dev/null || true
 }
 
+resolve_backend_runtime_user() {
+  local user="$LMS_RUN_USER"
+  if [[ -n "${LMS_BACKEND_SERVICE:-}" ]] && command -v systemctl >/dev/null 2>&1; then
+    local unit_user
+    unit_user="$(systemctl show "$LMS_BACKEND_SERVICE" -p User --value 2>/dev/null || true)"
+    if [[ -n "$unit_user" && "$unit_user" != "root" ]]; then
+      user="$unit_user"
+    fi
+  fi
+  printf '%s' "$user"
+}
+
+ensure_var_lib_3k_permissions() {
+  local state_dir backend_user
+  state_dir="$(dirname "$MAINTENANCE_FLAG")"
+  backend_user="$(resolve_backend_runtime_user)"
+  mkdir -p "$state_dir"
+  if [[ "$(id -u)" -ne 0 ]]; then
+    return 0
+  fi
+  if ! id "$backend_user" &>/dev/null 2>&1; then
+    log "Uyarı: $backend_user yok — $state_dir sahipliği düzeltilmedi"
+    return 0
+  fi
+  chown "$backend_user:$LMS_RUN_GROUP" "$state_dir"
+  chmod 775 "$state_dir"
+  if [[ -f "$MAINTENANCE_FLAG" ]]; then
+    chown "$backend_user:$LMS_RUN_GROUP" "$MAINTENANCE_FLAG" 2>/dev/null || true
+  fi
+  log "State/bakım dizini: $state_dir ($backend_user:$LMS_RUN_GROUP, 775)"
+}
+
 # systemd EnvironmentFile gibi: set -a ile tüm değişkenleri export et
 LMS_ENV_FILE="${LMS_ENV_FILE:-/etc/lms/env}"
 LMS_RUN_USER="${LMS_RUN_USER:-lms}"
@@ -150,6 +182,8 @@ log "APP_ROOT=$APP_ROOT"
 log "BACKEND=$BACKEND_DIR"
 log "PYTHON=$PYTHON"
 log "DJANGO_ENV=$DJANGO_ENV"
+
+ensure_var_lib_3k_permissions
 
 maintenance_on
 

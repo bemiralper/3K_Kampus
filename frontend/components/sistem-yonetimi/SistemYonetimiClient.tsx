@@ -16,12 +16,14 @@ import {
   fetchPerformance,
   fetchServices,
   fetchSettings,
+  fetchMaintenance,
   fetchStorage,
   fetchTimeline,
   formatBytes,
   formatUptime,
   patchError,
   runJob,
+  setMaintenanceMode,
   updateSettings,
   type AlertItem,
   type AuditItem,
@@ -32,6 +34,7 @@ import {
   type JobRun,
   type LogLine,
   type LogSource,
+  type MaintenanceStatus,
   type ServiceItem,
   type SettingsData,
   type TimelineItem,
@@ -130,6 +133,7 @@ export default function SistemYonetimiClient() {
   const [perf, setPerf] = useState<{ points: Array<Record<string, number | string>>; live: Record<string, unknown> } | null>(null);
   const [storage, setStorage] = useState<Awaited<ReturnType<typeof fetchStorage>>['data'] | null>(null);
   const [settings, setSettings] = useState<SettingsData | null>(null);
+  const [maintenance, setMaintenance] = useState<MaintenanceStatus | null>(null);
 
   const switchTab = (tab: TabKey) => {
     setActiveTab(tab);
@@ -223,12 +227,15 @@ export default function SistemYonetimiClient() {
       return res.error || 'Depolama verisi yüklenemedi.';
     }
     if (tab === 'settings') {
-      const res = await fetchSettings();
-      if (res.success && res.data) {
-        setSettings(res.data);
-        return null;
+      const [settingsRes, maintenanceRes] = await Promise.all([fetchSettings(), fetchMaintenance()]);
+      if (settingsRes.success && settingsRes.data) {
+        setSettings(settingsRes.data);
       }
-      return res.error || 'Ayarlar yüklenemedi.';
+      if (maintenanceRes.success && maintenanceRes.data) {
+        setMaintenance(maintenanceRes.data);
+      }
+      if (settingsRes.success && settingsRes.data) return null;
+      return settingsRes.error || 'Ayarlar yüklenemedi.';
     }
     return null;
   }, [loadOverview, perfRange]);
@@ -345,6 +352,32 @@ export default function SistemYonetimiClient() {
     }
   };
 
+  const handleMaintenanceToggle = async (enabled: boolean) => {
+    const confirmText = enabled ? 'BAKIM_AC' : 'BAKIM_KAPAT';
+    const typed = window.prompt(
+      enabled
+        ? `Bakım modunu AÇMAK için yazın: ${confirmText}\n\nZiyaretçiler "Sistem güncelleniyor" sayfasını görür.`
+        : `Bakım modunu KAPATMAK için yazın: ${confirmText}`,
+    );
+    if (typed !== confirmText) {
+      setNotice({ type: 'error', text: 'Onay iptal edildi veya hatalı.' });
+      return;
+    }
+    setBusy('maintenance');
+    const res = await setMaintenanceMode(enabled, confirmText);
+    setBusy(null);
+    if (res.success && res.data) {
+      setMaintenance(res.data);
+      setNotice({
+        type: 'success',
+        text: enabled ? 'Bakım modu açıldı' : 'Bakım modu kapatıldı',
+      });
+      if (activeTab === 'overview') void loadTabData('overview');
+    } else {
+      setNotice({ type: 'error', text: res.error || 'Bakım modu değiştirilemedi' });
+    }
+  };
+
   const spark = useMemo(() => {
     const pts = perf?.points || [];
     const take = pts.slice(-40);
@@ -369,6 +402,18 @@ export default function SistemYonetimiClient() {
           </div>
         </div>
       </div>
+
+      {dashboard?.maintenance_mode?.enabled && (
+        <div className="sistem-notice sistem-notice--error">
+          <div>
+            <strong>Bakım modu açık</strong>
+            <div>Ziyaretçiler güncelleme sayfası görüyor. Deploy veya bakım işlemi bitince kapatın.</div>
+          </div>
+          <button className="sistem-btn" type="button" onClick={() => switchTab('settings')}>
+            Ayarlara git
+          </button>
+        </div>
+      )}
 
       {alerts.length > 0 && (
         <div className="sistem-notice sistem-notice--error">
@@ -419,6 +464,11 @@ export default function SistemYonetimiClient() {
                 <Metric label="Gunicorn" value={STATUS_LABELS[String(dashboard.gunicorn?.status || 'unknown')] || '-'} tone={statusTone(String(dashboard.gunicorn?.status))} />
                 <Metric label="Aktif oturum" value={String(dashboard.active_users)} />
                 <Metric label="Çalışan görev" value={String(dashboard.running_jobs)} />
+                <Metric
+                  label="Bakım modu"
+                  value={dashboard.maintenance_mode?.enabled ? 'Açık' : 'Kapalı'}
+                  tone={dashboard.maintenance_mode?.enabled ? 'danger' : 'muted'}
+                />
               </div>
               <Panel title="Sağlık özeti" description={`Son yenileme: ${formatDate(dashboard.collected_at)}`}>
                 <div className="sistem-table-wrap">
@@ -752,7 +802,69 @@ export default function SistemYonetimiClient() {
           )}
 
           {activeTab === 'settings' && settings && (
-            <Panel title="Ayarlar" description="Eşikler ve ops">
+            <>
+              <Panel title="Bakım modu" description="Deploy veya güncelleme sırasında ziyaretçilere bilgilendirme sayfası gösterir">
+                {maintenance ? (
+                  <div className="sistem-stack">
+                    <div className="sistem-kv">
+                      <span>Durum</span>
+                      <strong>{maintenance.enabled ? 'Açık' : 'Kapalı'}</strong>
+                    </div>
+                    <div className="sistem-kv">
+                      <span>Flag dosyası</span>
+                      <strong>{maintenance.flag_path}</strong>
+                    </div>
+                    <div className="sistem-kv">
+                      <span>Nginx snippet</span>
+                      <strong>{maintenance.nginx_snippet_installed ? 'Kurulu' : 'Kurulu değil'}</strong>
+                    </div>
+                    {maintenance.env_override && (
+                      <div className="sistem-notice sistem-notice--error">
+                        LMS_MAINTENANCE ortam değişkeni aktif — panelden kontrol devre dışı. /etc/lms/env dosyasını kontrol edin.
+                      </div>
+                    )}
+                    {!maintenance.nginx_snippet_installed && (
+                      <div className="sistem-notice sistem-notice--info">
+                        Nginx bakım snippet kurulu değil. Sunucuda bir kez:{' '}
+                        <code>sudo ./backend/scripts/install-maintenance-nginx.sh</code>
+                      </div>
+                    )}
+                    {!maintenance.can_control && !maintenance.env_override && (
+                      <div className="sistem-notice sistem-notice--error">
+                        Flag dosyası yazılamıyor. Sunucuda root ile bir kez çalıştırın:{' '}
+                        <code>
+                          sudo LMS_BACKEND_SERVICE=lms-backend ./backend/scripts/install-maintenance-state-dir.sh
+                        </code>
+                      </div>
+                    )}
+                    <div className="sistem-toolbar">
+                      <button
+                        className="sistem-btn sistem-btn--danger"
+                        type="button"
+                        disabled={busy === 'maintenance' || !maintenance.can_control || maintenance.enabled}
+                        onClick={() => handleMaintenanceToggle(true)}
+                      >
+                        Bakım modunu aç
+                      </button>
+                      <button
+                        className="sistem-btn sistem-btn--primary"
+                        type="button"
+                        disabled={busy === 'maintenance' || !maintenance.can_control || !maintenance.enabled}
+                        onClick={() => handleMaintenanceToggle(false)}
+                      >
+                        Bakım modunu kapat
+                      </button>
+                    </div>
+                    <p className="sistem-card-header p" style={{ margin: 0 }}>
+                      Onay metinleri: açmak için <strong>BAKIM_AC</strong>, kapatmak için <strong>BAKIM_KAPAT</strong>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="sistem-empty">Bakım durumu yüklenemedi</div>
+                )}
+              </Panel>
+
+              <Panel title="Ayarlar" description="Eşikler ve ops">
               <div className="sistem-toolbar">
                 <label>Poll (sn)<input type="number" value={settings.poll_interval_sec} onChange={(e) => setSettings({ ...settings, poll_interval_sec: Number(e.target.value) })} /></label>
                 <label>Disk uyarı %<input type="number" value={settings.disk_warn_percent} onChange={(e) => setSettings({ ...settings, disk_warn_percent: Number(e.target.value) })} /></label>
@@ -772,6 +884,7 @@ export default function SistemYonetimiClient() {
                 ))}
               </div>
             </Panel>
+            </>
           )}
         </>
       )}

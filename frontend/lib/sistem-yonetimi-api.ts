@@ -24,6 +24,11 @@ export interface DashboardData {
   docker_mode: boolean;
   poll_interval_sec: number;
   collected_at: string;
+  maintenance_mode?: {
+    enabled: boolean;
+    can_control: boolean;
+    nginx_snippet_installed: boolean;
+  };
 }
 
 export interface HealthItem {
@@ -155,6 +160,18 @@ export interface SettingsData {
   updated_at: string | null;
 }
 
+export interface MaintenanceStatus {
+  enabled: boolean;
+  env_override: boolean;
+  flag_path: string;
+  flag_exists: boolean;
+  flag_writable: boolean;
+  nginx_snippet_installed: boolean;
+  can_control: boolean;
+  nginx_reloaded?: boolean;
+  nginx_reload_error?: string | null;
+}
+
 export function formatBytes(n: number): string {
   if (!n || n <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -238,5 +255,8 @@ export const fetchStorage = () =>
 export const fetchSettings = () => apiGet<SettingsData>(`${BASE}/settings/`);
 export const updateSettings = (data: Partial<SettingsData>) =>
   apiPut<{ updated: boolean; settings: SettingsData }>(`${BASE}/settings/`, data);
+export const fetchMaintenance = () => apiGet<MaintenanceStatus>(`${BASE}/maintenance/`);
+export const setMaintenanceMode = (enabled: boolean, confirm: string) =>
+  apiPost<MaintenanceStatus & { success: boolean }>(`${BASE}/maintenance/`, { enabled, confirm });
 
 export type { ApiResponse };
