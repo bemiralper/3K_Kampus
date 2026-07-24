@@ -202,8 +202,7 @@ export async function exportSchedulePdf(
   },
 ): Promise<void> {
   const { default: jsPDF } = await import('jspdf');
-  const autoTableMod = await import('jspdf-autotable');
-  const autoTable = (autoTableMod as { default?: unknown }).default || autoTableMod;
+  const { default: autoTable } = await import('jspdf-autotable');
 
   const [fonts, logo] = await Promise.all([loadRobotoFonts(), loadLogoAsset()]);
 
@@ -291,8 +290,7 @@ export async function exportSchedulePdf(
       }),
     ]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (autoTable as any)(doc, {
+    autoTable(doc, {
       startY,
       head,
       body,
@@ -326,8 +324,7 @@ export async function exportSchedulePdf(
         },
       },
       margin: { left: margin, right: margin, bottom: 12 },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      didParseCell: (data: any) => {
+      didParseCell: (data) => {
         if (options.colorBy === 'none') return;
         if (data.section !== 'body' || data.column.index === 0) return;
         const cell = group.rows[data.row.index]?.cells[data.column.index - 1];
