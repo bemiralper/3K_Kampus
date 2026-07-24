@@ -13,7 +13,7 @@ import {
 import Link from "next/link";
 import { useOdemePath } from "@/components/odeme-takip/OdemePathProvider";
 import {
-  Sozlesme, Taksit, TahsilatItem, TahsilatFormData, OdemeYontemi,
+  Sozlesme, Ogrenci, Taksit, TahsilatItem, TahsilatFormData, OdemeYontemi,
   Kalem, Indirim, Gecmis, KalemSecenegi, KalemTuruOption, SozlesmeSubTab,
 } from "../types";
 import {
@@ -33,6 +33,55 @@ import {
 } from "@/lib/sozlesme-notlar";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { buildTaksitOdemeYontemleri, isCekSenetYontem as isCekSenetYontemTip } from "@/lib/finans/paymentMethodUtils";
+import { resolveMediaUrl } from "@/lib/resolve-media-url";
+
+function OgrenciListAvatar({ ogrenci }: { ogrenci: Ogrenci | null }) {
+  const photo = resolveMediaUrl(ogrenci?.profil_foto);
+  const initials = `${(ogrenci?.ad || "").trim()[0] || ""}${(ogrenci?.soyad || "").trim()[0] || ""}`.toUpperCase() || "?";
+  const label = ogrenci ? `${ogrenci.ad} ${ogrenci.soyad}`.trim() : "Öğrenci";
+
+  if (photo) {
+    return (
+      <img
+        src={photo}
+        alt={label}
+        title={label}
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: "50%",
+          objectFit: "cover",
+          display: "block",
+          border: "1px solid #e2e8f0",
+          background: "#f1f5f9",
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      title={label}
+      aria-label={label}
+      style={{
+        width: 36,
+        height: 36,
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#e8f1f8",
+        color: "#0262a7",
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: 0.02,
+        border: "1px solid #dbeafe",
+      }}
+    >
+      {initials}
+    </div>
+  );
+}
 
 // ─── Props ──────────────────────────────────────────────────
 
@@ -59,6 +108,10 @@ interface Props {
   onWhatsAppSozlesme: (sozlesmeId: number, studentName?: string) => void;
   onWhatsAppMakbuz: (tahsilatId: number, studentName?: string) => void;
   initialSubTab?: SozlesmeSubTab;
+  /** URL kısayolu: ?durum=taslak|aktif|... */
+  initialDurum?: string;
+  /** URL kısayolu: ?odemesiz=1 — tahsilatı olmayan sözleşmeler */
+  initialOdemesiz?: boolean;
 }
 
 // ─── Badge Helper ───────────────────────────────────────────
@@ -86,14 +139,25 @@ export default function SozlesmelerTab({
   onTahsilatStart, onTahsilatCancel, onDelete, onMakbuz, onOdemePlani, onSozlesmeBelgesi, onFesihBelgesi, onEdit, onKalemChanged,
   onWhatsAppPlan, onWhatsAppSozlesme, onWhatsAppMakbuz,
   initialSubTab,
+  initialDurum = "",
+  initialOdemesiz = false,
 }: Props) {
   const { href } = useOdemePath();
   const [subTab, setSubTab] = useState<SozlesmeSubTab>(initialSubTab || "genel");
-  const [durumFilter, setDurumFilter] = useState(""); // ← Tüm durumlar
+  const [durumFilter, setDurumFilter] = useState(initialDurum);
+  const [odemesizOnly, setOdemesizOnly] = useState(initialOdemesiz);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setDurumFilter(initialDurum || "");
+  }, [initialDurum]);
+
+  useEffect(() => {
+    setOdemesizOnly(!!initialOdemesiz);
+  }, [initialOdemesiz]);
 
   // Kalem ekleme state
   const [showKalemDrawer, setShowKalemDrawer] = useState(false);
@@ -116,7 +180,7 @@ export default function SozlesmelerTab({
   const [removeKalemId, setRemoveKalemId] = useState<number | null>(null);
   const [removeSaving, setRemoveSaving] = useState(false);
 
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, durumFilter]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, durumFilter, odemesizOnly]);
 
   // Filtreleme
   const filteredSozlesmeler = sozlesmeler.filter((s) => {
@@ -127,7 +191,8 @@ export default function SozlesmelerTab({
       s.paket_adi.toLowerCase().includes(term)
     );
     const matchDurum = !durumFilter || s.durum === durumFilter;
-    return matchSearch && matchDurum;
+    const matchOdemesiz = !odemesizOnly || Number(s.toplam_odenen || 0) === 0;
+    return matchSearch && matchDurum && matchOdemesiz;
   });
 
   const pagedSozlesmeler = paginateList(filteredSozlesmeler, currentPage, pageSize);
@@ -348,6 +413,25 @@ export default function SozlesmelerTab({
                   <option key={key} value={key}>{val.label}</option>
                 ))}
               </select>
+              <label
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 13,
+                  color: "#475569",
+                  whiteSpace: "nowrap",
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={odemesizOnly}
+                  onChange={(e) => setOdemesizOnly(e.target.checked)}
+                />
+                Ödemesiz
+              </label>
               <Link href={href("sozlesme-olustur")} className="btn-modern btn-primary">
                 <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -369,7 +453,7 @@ export default function SozlesmelerTab({
                 <table className="table-modern">
                   <thead>
                     <tr>
-                      <th>Sözleşme No</th>
+                      <th style={{ width: 56, textAlign: "center" }}>Foto</th>
                       <th>Öğrenci</th>
                       <th>Paket</th>
                       <th>Durum</th>
@@ -383,8 +467,10 @@ export default function SozlesmelerTab({
                   <tbody>
                     {pagedSozlesmeler.map((s) => (
                       <tr key={s.id} onClick={() => onSelectSozlesme(s.id)} style={{ cursor: "pointer" }}>
-                        <td>
-                          <span style={{ fontWeight: 700, color: "var(--primary)" }}>{s.sozlesme_no}</span>
+                        <td style={{ textAlign: "center", width: 56 }}>
+                          <div style={{ display: "flex", justifyContent: "center" }}>
+                            <OgrenciListAvatar ogrenci={s.ogrenci} />
+                          </div>
                         </td>
                         <td>
                           <div className="cell-info">

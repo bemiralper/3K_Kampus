@@ -13,9 +13,14 @@ class ClassLessonPlanListSerializer(serializers.ModelSerializer):
     """
     ders_ad = serializers.CharField(source='ders.ad', read_only=True)
     ders_kod = serializers.CharField(source='ders.kod', read_only=True)
+    ders_kisa_ad = serializers.CharField(source='ders.kisa_ad', read_only=True)
+    ders_gorunen_ad = serializers.SerializerMethodField()
     sinif_ad = serializers.CharField(source='sinif.ad', read_only=True)
+    sinif_seviyesi_ad = serializers.SerializerMethodField()
+    alan_ad = serializers.SerializerMethodField()
     ogretmen_ad = serializers.SerializerMethodField()
     term_ad = serializers.CharField(source='term.name', read_only=True)
+    schedule_locked = serializers.BooleanField(source='term.schedule_locked', read_only=True)
     egitim_yili_str = serializers.CharField(source='egitim_yili.yil_str', read_only=True)
     lesson_type_display = serializers.CharField(read_only=True)
     block_type_display = serializers.CharField(read_only=True)
@@ -28,11 +33,17 @@ class ClassLessonPlanListSerializer(serializers.ModelSerializer):
             'egitim_yili_str',
             'term',
             'term_ad',
+            'schedule_locked',
             'sinif',
             'sinif_ad',
+            'sinif_seviyesi_ad',
+            'alan_ad',
             'ders',
             'ders_ad',
             'ders_kod',
+            'ders_kisa_ad',
+            'ders_gorunen_ad',
+            'gorunen_ad',
             'ogretmen',
             'ogretmen_ad',
             'weekly_hours',
@@ -55,6 +66,17 @@ class ClassLessonPlanListSerializer(serializers.ModelSerializer):
             return f"{obj.ogretmen.ad} {obj.ogretmen.soyad}"
         return None
 
+    def get_sinif_seviyesi_ad(self, obj):
+        seviye = getattr(obj.sinif, 'sinif_seviyesi', None)
+        return seviye.ad if seviye else None
+
+    def get_alan_ad(self, obj):
+        alan = getattr(obj.sinif, 'alan', None)
+        return alan.ad if alan else None
+
+    def get_ders_gorunen_ad(self, obj):
+        return obj.display_name
+
 
 class ClassLessonPlanCreateSerializer(serializers.ModelSerializer):
     """
@@ -74,6 +96,7 @@ class ClassLessonPlanCreateSerializer(serializers.ModelSerializer):
             'is_double_block',
             'priority',
             'preferred_room_type',
+            'gorunen_ad',
             'notes',
         ]
     
@@ -107,6 +130,7 @@ class ClassLessonPlanUpdateSerializer(serializers.ModelSerializer):
             'is_double_block',
             'priority',
             'preferred_room_type',
+            'gorunen_ad',
             'notes',
         ]
     
@@ -161,6 +185,7 @@ class ClassLessonPlanDetailSerializer(serializers.ModelSerializer):
             'block_type_display',
             'priority',
             'preferred_room_type',
+            'gorunen_ad',
             'notes',
             'is_active',
             'created_at',
@@ -172,6 +197,8 @@ class ClassLessonPlanDetailSerializer(serializers.ModelSerializer):
             'id': obj.ders.id,
             'ad': obj.ders.ad,
             'kod': obj.ders.kod,
+            'kisa_ad': obj.ders.kisa_ad or '',
+            'gorunen_ad': obj.display_name,
         }
     
     def get_sinif_detail(self, obj):

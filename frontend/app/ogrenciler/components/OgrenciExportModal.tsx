@@ -12,9 +12,16 @@ import {
   type OgrenciListFilters,
 } from '../lib/ogrenci-list-utils';
 import { downloadBlob } from '@/lib/download-file';
-import { exportOgrenciListPdf, type PdfOrientation } from '../lib/ogrenciListPdfExport';
+import {
+  exportGroupedOgrenciListPdf,
+  exportOgrenciListPdf,
+  type PdfOrientation,
+} from '../lib/ogrenciListPdfExport';
 
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
+/** sinif = eğitim tanımlarındaki ders sınıfı (şube sınıfı); kurum şubesi değil */
+type PageMode = 'single' | 'sinif' | 'sinif_seviyesi';
+type ExportSort = 'name_asc' | 'okul_no_asc' | 'sinif_asc';
 
 export interface OgrenciExportContext {
   title?: string;
@@ -26,6 +33,12 @@ export interface OgrenciExportContext {
   reportTitle?: string;
 }
 
+/** Filtre tanımlarında bu boyutlar varsa sayfalama/sıralama seçenekleri çıkar */
+export interface OgrenciExportFilterDimensions {
+  hasSinif?: boolean;
+  hasSinifSeviyesi?: boolean;
+}
+
 interface OgrenciExportModalProps {
   open: boolean;
   onClose: () => void;
@@ -33,17 +46,17 @@ interface OgrenciExportModalProps {
   selectedIds?: Set<number>;
   mode?: 'all' | 'selected';
   exportContext?: OgrenciExportContext;
+  filterDimensions?: OgrenciExportFilterDimensions;
 }
 
 const FORMAT_OPTIONS: {
   id: ExportFormat;
   label: string;
-  desc: string;
   ext: string;
 }[] = [
-  { id: 'csv', label: 'CSV', desc: 'Virgül ayracı, Excel uyumlu', ext: '.csv' },
-  { id: 'xlsx', label: 'Excel', desc: 'XLSX çalışma kitabı', ext: '.xlsx' },
-  { id: 'pdf', label: 'PDF', desc: 'Yazdırılabilir tablo', ext: '.pdf' },
+  { id: 'csv', label: 'CSV', ext: '.csv' },
+  { id: 'xlsx', label: 'Excel', ext: '.xlsx' },
+  { id: 'pdf', label: 'PDF', ext: '.pdf' },
 ];
 
 function buildExportParams(
@@ -52,19 +65,28 @@ function buildExportParams(
   selectedIds?: number[],
   asJson = false,
   reportTitle?: string,
+  extra?: { sort?: string; group_by?: string },
 ): URLSearchParams {
-  const query = buildListApiQuery({ ...filters, page: 1, page_size: 5000 });
+  const query = buildListApiQuery({
+    ...filters,
+    page: 1,
+    page_size: 5000,
+    ...(extra?.sort ? { sort: extra.sort } : {}),
+  });
   const params = new URLSearchParams(query.replace('?', ''));
   params.set('columns', columnKeys.join(','));
   if (asJson) params.set('format', 'json');
   if (selectedIds?.length) params.set('ids', selectedIds.join(','));
   if (reportTitle?.trim()) params.set('report_title', reportTitle.trim());
+  if (extra?.group_by && extra.group_by !== 'none') {
+    params.set('group_by', extra.group_by);
+  }
   return params;
 }
 
-const ORIENTATION_OPTIONS: { id: PdfOrientation; label: string; desc: string }[] = [
-  { id: 'portrait', label: 'Dikey', desc: 'A4 dikey — az sütun' },
-  { id: 'landscape', label: 'Yatay', desc: 'A4 yatay — çok sütun' },
+const ORIENTATION_OPTIONS: { id: PdfOrientation; label: string }[] = [
+  { id: 'portrait', label: 'Dikey' },
+  { id: 'landscape', label: 'Yatay' },
 ];
 
 export default function OgrenciExportModal({
@@ -74,6 +96,7 @@ export default function OgrenciExportModal({
   selectedIds,
   mode = 'all',
   exportContext,
+  filterDimensions,
 }: OgrenciExportModalProps) {
   const { activeKurum, activeSube } = useKurum();
   const branding = useMemo(
@@ -83,15 +106,60 @@ export default function OgrenciExportModal({
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>('csv');
   const [orientation, setOrientation] = useState<PdfOrientation>('landscape');
+  const [pageMode, setPageMode] = useState<PageMode>('single');
+  const [exportSort, setExportSort] = useState<ExportSort>('name_asc');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Filtre tanımlarında sınıf / seviye varsa göster (seçili olması şart değil)
+  const showSinifOptions = filterDimensions?.hasSinif ?? true;
+  const showSeviyeOptions = filterDimensions?.hasSinifSeviyesi ?? true;
+
+  const pageModeOptions = useMemo(() => {
+    const opts: { id: PageMode; label: string }[] = [
+      { id: 'single', label: 'Tek sayfa' },
+    ];
+    if (showSinifOptions) {
+      opts.push({ id: 'sinif', label: 'Her şube ayrı sayfa' });
+    }
+    if (showSeviyeOptions) {
+      opts.push({ id: 'sinif_seviyesi', label: 'Her sınıf seviyesi ayrı sayfa' });
+    }
+    return opts;
+  }, [showSinifOptions, showSeviyeOptions]);
+
+  const sortOptions = useMemo(() => {
+    const opts: { id: ExportSort; label: string }[] = [
+      { id: 'name_asc', label: 'Ad' },
+      { id: 'okul_no_asc', label: 'Numara' },
+    ];
+    if (showSinifOptions) {
+      opts.push({ id: 'sinif_asc', label: 'Şube' });
+    }
+    return opts;
+  }, [showSinifOptions]);
 
   useEffect(() => {
     if (open) {
       setSelectedKeys([...DEFAULT_EXPORT_KEYS]);
+      setPageMode('single');
+      setExportSort('name_asc');
       setError(null);
     }
   }, [open]);
+
+  // Görünür olmayan seçenekler seçili kalmasın
+  useEffect(() => {
+    if (!pageModeOptions.some((o) => o.id === pageMode)) {
+      setPageMode('single');
+    }
+  }, [pageModeOptions, pageMode]);
+
+  useEffect(() => {
+    if (!sortOptions.some((o) => o.id === exportSort)) {
+      setExportSort('name_asc');
+    }
+  }, [sortOptions, exportSort]);
 
   const columnOrderMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -100,14 +168,6 @@ export default function OgrenciExportModal({
   }, [selectedKeys]);
 
   const groupedColumns = useMemo(() => groupExportColumns(EXPORT_COLUMNS), []);
-
-  const orderedColumnLabels = useMemo(
-    () =>
-      selectedKeys.map(
-        (key) => EXPORT_COLUMNS.find((c) => c.key === key)?.label || key
-      ),
-    [selectedKeys]
-  );
 
   const selectedIdList = useMemo(
     () => (mode === 'selected' && selectedIds ? Array.from(selectedIds) : undefined),
@@ -136,6 +196,9 @@ export default function OgrenciExportModal({
   const selectAllColumns = () => setSelectedKeys(EXPORT_COLUMNS.map((c) => c.key));
   const clearColumns = () => setSelectedKeys([]);
 
+  const groupByParam =
+    pageMode === 'sinif' || pageMode === 'sinif_seviyesi' ? pageMode : 'none';
+
   const handleExport = async () => {
     if (selectedKeys.length === 0) {
       setError('En az bir sütun seçin');
@@ -150,6 +213,8 @@ export default function OgrenciExportModal({
     setError(null);
 
     try {
+      const extra = { sort: exportSort, group_by: groupByParam };
+
       if (format === 'csv' || format === 'xlsx') {
         const params = buildExportParams(
           filters,
@@ -157,6 +222,7 @@ export default function OgrenciExportModal({
           selectedIdList,
           false,
           exportContext?.reportTitle,
+          extra,
         );
         params.set('format', format);
         const headers = getContextHeadersFromStorage();
@@ -174,6 +240,7 @@ export default function OgrenciExportModal({
           selectedIdList,
           true,
           exportContext?.reportTitle,
+          extra,
         );
         const headers = getContextHeadersFromStorage();
         const res = await fetch(`/api/ogrenciler/api/export/?${params}`, {
@@ -183,26 +250,52 @@ export default function OgrenciExportModal({
         if (!res.ok) throw new Error('Dışa aktarma verisi alınamadı');
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Dışa aktarma başarısız');
-        const rows = data.rows || [];
 
-        if (rows.length === 0) {
-          throw new Error('Dışa aktarılacak kayıt bulunamadı');
+        const brandingPayload = {
+          kurumAd: branding.gorunen_ad || activeKurum?.ad || 'Kurum',
+          subeAd: activeSube?.ad,
+          logoUrl: getPdfHeaderLogo(branding),
+          temaRengi: branding.tema_rengi,
+        };
+
+        if (groupByParam !== 'none' && Array.isArray(data.groups) && data.groups.length > 0) {
+          const sections = data.groups.map(
+            (g: { title: string; rows: Record<string, string>[] }) => ({
+              title: g.title,
+              rows: g.rows || [],
+            }),
+          );
+          const total = sections.reduce(
+            (n: number, s: { rows: unknown[] }) => n + s.rows.length,
+            0,
+          );
+          if (total === 0) throw new Error('Dışa aktarılacak kayıt bulunamadı');
+
+          await exportGroupedOgrenciListPdf({
+            sections,
+            columnKeys: selectedKeys,
+            orientation,
+            branding: brandingPayload,
+            documentTitle: exportContext?.documentTitle,
+            filterSummary: exportContext?.filterSummary,
+            fileName: `${fileNamePrefix}.pdf`,
+            pageBreakBetweenSections: true,
+          });
+        } else {
+          const rows = data.rows || [];
+          if (rows.length === 0) {
+            throw new Error('Dışa aktarılacak kayıt bulunamadı');
+          }
+          await exportOgrenciListPdf({
+            rows,
+            columnKeys: selectedKeys,
+            orientation,
+            branding: brandingPayload,
+            documentTitle: exportContext?.documentTitle,
+            filterSummary: exportContext?.filterSummary,
+            fileName: `${fileNamePrefix}.pdf`,
+          });
         }
-
-        await exportOgrenciListPdf({
-          rows,
-          columnKeys: selectedKeys,
-          orientation,
-          branding: {
-            kurumAd: branding.gorunen_ad || activeKurum?.ad || 'Kurum',
-            subeAd: activeSube?.ad,
-            logoUrl: getPdfHeaderLogo(branding),
-            temaRengi: branding.tema_rengi,
-          },
-          documentTitle: exportContext?.documentTitle,
-          filterSummary: exportContext?.filterSummary,
-          fileName: `${fileNamePrefix}.pdf`,
-        });
       }
 
       onClose();
@@ -237,91 +330,77 @@ export default function OgrenciExportModal({
 
         <div className="ogrenci-filter-drawer-body">
           <div className="ogrenci-export-layout">
-            <section className="ogrenci-export-section">
-              <h4 className="ogrenci-filter-subsection-title">Dosya Formatı</h4>
-              <div className="ogrenci-export-format-cards">
-                {FORMAT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    className={`ogrenci-export-format-card${format === opt.id ? ' active' : ''}`}
-                    onClick={() => setFormat(opt.id)}
-                  >
-                    <span className="ogrenci-export-format-icon">
-                      {opt.id === 'csv' && (
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="8" y1="13" x2="16" y2="13" />
-                          <line x1="8" y1="17" x2="16" y2="17" />
-                        </svg>
-                      )}
-                      {opt.id === 'xlsx' && (
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                          <rect x="3" y="3" width="18" height="18" rx="2" />
-                          <line x1="3" y1="9" x2="21" y2="9" />
-                          <line x1="3" y1="15" x2="21" y2="15" />
-                          <line x1="9" y1="3" x2="9" y2="21" />
-                        </svg>
-                      )}
-                      {opt.id === 'pdf' && (
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <path d="M10 12h4M10 16h4" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="ogrenci-export-format-label">{opt.label}</span>
-                    <span className="ogrenci-export-format-desc">{opt.desc}</span>
-                  </button>
-                ))}
+            <section className="ogrenci-export-section ogrenci-export-section--options">
+              <div className="ogrenci-export-option-block">
+                <h4 className="ogrenci-filter-subsection-title">Dosya Formatı</h4>
+                <div className="ogrenci-export-seg" role="group" aria-label="Dosya formatı">
+                  {FORMAT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`ogrenci-export-seg-btn${format === opt.id ? ' active' : ''}`}
+                      onClick={() => setFormat(opt.id)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {format === 'pdf' && (
-                <>
-                  <h4 className="ogrenci-filter-subsection-title" style={{ marginTop: 16 }}>
-                    Sayfa Yönü
-                  </h4>
-                  <div className="ogrenci-export-format-cards ogrenci-export-orientation-cards">
+                <div className="ogrenci-export-option-block">
+                  <h4 className="ogrenci-filter-subsection-title">Sayfa Yönü</h4>
+                  <div className="ogrenci-export-seg" role="group" aria-label="Sayfa yönü">
                     {ORIENTATION_OPTIONS.map((opt) => (
                       <button
                         key={opt.id}
                         type="button"
-                        className={`ogrenci-export-format-card${orientation === opt.id ? ' active' : ''}`}
+                        className={`ogrenci-export-seg-btn${orientation === opt.id ? ' active' : ''}`}
                         onClick={() => setOrientation(opt.id)}
                       >
-                        <span className="ogrenci-export-format-icon">
-                          {opt.id === 'portrait' ? (
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                              <rect x="5" y="3" width="14" height="18" rx="2" />
-                            </svg>
-                          ) : (
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-                              <rect x="3" y="5" width="18" height="14" rx="2" />
-                            </svg>
-                          )}
-                        </span>
-                        <span className="ogrenci-export-format-label">{opt.label}</span>
-                        <span className="ogrenci-export-format-desc">{opt.desc}</span>
+                        {opt.label}
                       </button>
                     ))}
                   </div>
-                </>
+                </div>
               )}
 
-              <div className="ogrenci-export-summary">
+              <div className="ogrenci-export-option-block">
+                <h4 className="ogrenci-filter-subsection-title">Sayfalama</h4>
+                <div className="ogrenci-export-choice-list" role="group" aria-label="Sayfalama">
+                  {pageModeOptions.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`ogrenci-export-choice${pageMode === opt.id ? ' active' : ''}`}
+                      onClick={() => setPageMode(opt.id)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="ogrenci-export-option-block">
+                <h4 className="ogrenci-filter-subsection-title">Sıralama</h4>
+                <div className="ogrenci-export-seg" role="group" aria-label="Sıralama ölçütü">
+                  {sortOptions.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`ogrenci-export-seg-btn${exportSort === opt.id ? ' active' : ''}`}
+                      onClick={() => setExportSort(opt.id)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="ogrenci-export-summary ogrenci-export-summary--compact">
                 <div className="ogrenci-export-summary-row">
                   <span>Kapsam</span>
                   <strong>{mode === 'selected' ? `${selectedCount} seçili` : 'Tüm liste'}</strong>
-                </div>
-                <div className="ogrenci-export-summary-row">
-                  <span>Sütun sırası</span>
-                  <strong className="ogrenci-export-order-preview">
-                    {orderedColumnLabels.length > 0
-                      ? orderedColumnLabels.join(' → ')
-                      : 'Henüz seçilmedi'}
-                  </strong>
                 </div>
                 <div className="ogrenci-export-summary-row">
                   <span>Sütun</span>

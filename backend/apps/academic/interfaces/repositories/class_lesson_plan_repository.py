@@ -31,7 +31,9 @@ class ClassLessonPlanRepository:
             ClassLessonPlan veya None
         """
         try:
-            return ClassLessonPlan.objects.get(id=plan_id, is_active=True)
+            return ClassLessonPlan.objects.select_related(
+                'term', 'sinif', 'ders', 'ogretmen',
+            ).get(id=plan_id, is_active=True)
         except ClassLessonPlan.DoesNotExist:
             return None
     
@@ -56,7 +58,10 @@ class ClassLessonPlanRepository:
             sinif_id=classroom_id,
             egitim_yili=active_year,
             is_active=True
-        ).select_related('ders', 'ogretmen', 'term', 'sinif')
+        ).select_related(
+            'ders', 'ogretmen', 'term', 'sinif',
+            'sinif__sinif_seviyesi', 'sinif__alan',
+        )
     
     @staticmethod
     def filter_by_term(term_id: int) -> QuerySet[ClassLessonPlan]:
@@ -74,7 +79,10 @@ class ClassLessonPlanRepository:
             term_id=term_id,
             egitim_yili=active_year,
             is_active=True
-        ).select_related('ders', 'ogretmen', 'term', 'sinif')
+        ).select_related(
+            'ders', 'ogretmen', 'term', 'sinif',
+            'sinif__sinif_seviyesi', 'sinif__alan',
+        )
     
     @staticmethod
     def filter_by_classroom_and_term(
@@ -97,7 +105,10 @@ class ClassLessonPlanRepository:
             term_id=term_id,
             egitim_yili=active_year,
             is_active=True
-        ).select_related('ders', 'ogretmen', 'term', 'sinif').order_by('ders__ad')
+        ).select_related(
+            'ders', 'ogretmen', 'term', 'sinif',
+            'sinif__sinif_seviyesi', 'sinif__alan',
+        ).order_by('ders__ad')
     
     @staticmethod
     def filter_by_teacher(teacher_id: int) -> QuerySet[ClassLessonPlan]:
@@ -115,7 +126,10 @@ class ClassLessonPlanRepository:
             ogretmen_id=teacher_id,
             egitim_yili=active_year,
             is_active=True
-        ).select_related('ders', 'ogretmen', 'term', 'sinif')
+        ).select_related(
+            'ders', 'ogretmen', 'term', 'sinif',
+            'sinif__sinif_seviyesi', 'sinif__alan',
+        )
     
     @staticmethod
     def list_all_for_active_year() -> QuerySet[ClassLessonPlan]:
@@ -129,7 +143,10 @@ class ClassLessonPlanRepository:
         return ClassLessonPlan.objects.filter(
             egitim_yili=active_year,
             is_active=True
-        ).select_related('ders', 'ogretmen', 'term', 'sinif').order_by('sinif__ad', 'ders__ad')
+        ).select_related(
+            'ders', 'ogretmen', 'term', 'sinif',
+            'sinif__sinif_seviyesi', 'sinif__alan',
+        ).order_by('sinif__ad', 'ders__ad')
     
     @staticmethod
     def check_duplicate(

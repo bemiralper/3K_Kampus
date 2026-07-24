@@ -127,6 +127,15 @@ class WeeklyCycle(models.Model):
         )
         return ScheduleTemplate.objects.filter(id__in=ids, is_active=True).order_by('name')
 
+    def primary_schedule_template(self):
+        """
+        Program versiyonu / legacy grid için birincil şablon.
+        Önce cycle.schedule_template (eski bağ), yoksa ilk aktif gün şablonu.
+        """
+        if self.schedule_template_id and self.schedule_template and self.schedule_template.is_active:
+            return self.schedule_template
+        return self.used_schedule_templates().first()
+
     def total_lesson_count(self):
         total = 0
         for day in self.weekly_days.filter(is_active=True, schedule_template_id__isnull=False):

@@ -37,6 +37,7 @@ class ClassLessonTeacherAssignmentRepository:
             return ClassLessonTeacherAssignment.objects.select_related(
                 'class_lesson_plan__sinif',
                 'class_lesson_plan__ders',
+                'class_lesson_plan__term',
                 'ogretmen',
                 'egitim_yili'
             ).get(id=assignment_id, is_active=True)
@@ -53,7 +54,8 @@ class ClassLessonTeacherAssignmentRepository:
         ).select_related(
             'class_lesson_plan__sinif',
             'class_lesson_plan__ders',
-            'ogretmen'
+            'class_lesson_plan__term',
+            'ogretmen',
         ).order_by('class_lesson_plan__sinif__ad', 'class_lesson_plan__ders__ad', 'priority')
     
     @staticmethod
@@ -72,7 +74,12 @@ class ClassLessonTeacherAssignmentRepository:
             class_lesson_plan_id=plan_id,
             egitim_yili=active_year,
             is_active=True
-        ).select_related('ogretmen').order_by('priority', 'role')
+        ).select_related(
+            'ogretmen',
+            'class_lesson_plan__sinif',
+            'class_lesson_plan__ders',
+            'class_lesson_plan__term',
+        ).order_by('priority', 'role')
     
     @staticmethod
     def filter_by_teacher(teacher_id: int) -> QuerySet[ClassLessonTeacherAssignment]:
@@ -114,7 +121,8 @@ class ClassLessonTeacherAssignmentRepository:
         ).select_related(
             'class_lesson_plan__sinif',
             'class_lesson_plan__ders',
-            'ogretmen'
+            'class_lesson_plan__term',
+            'ogretmen',
         ).order_by('class_lesson_plan__ders__ad', 'priority')
     
     @staticmethod

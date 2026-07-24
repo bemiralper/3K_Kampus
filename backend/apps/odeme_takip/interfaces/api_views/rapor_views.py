@@ -3,7 +3,7 @@ Rapor API Views — Dashboard istatistikleri & Öğrenci Risk Skoru
 """
 from datetime import date, timedelta
 
-from django.db.models import Sum, Avg, Count, F, Q, ExpressionWrapper, DurationField
+from django.db.models import Sum, Avg, Count, F, Q, ExpressionWrapper, DurationField, Exists, OuterRef
 from django.utils import timezone
 
 from rest_framework.decorators import api_view, permission_classes
@@ -21,9 +21,41 @@ from apps.odeme_takip.domain.models import Sozlesme, Tahsilat, Taksit
 from apps.odeme_takip.domain.enums import (
     SozlesmeDurum, TahsilatDurum, TahsilatTuru, TaksitDurum,
 )
+from apps.ogrenci.domain.models import OgrenciKayit
 
 from shared.context import get_secili_egitim_yili_id
 from apps.odeme_takip.interfaces.sube_context import resolve_mandatory_odeme_context
+
+
+def _sozlesmesiz_kayit_qs(kurum_id, sube_id, egitim_yili_id):
+    """Aktif kaydı olup iptal dışı sözleşmesi olmayan öğrenciler."""
+    with_contract = Sozlesme.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili_id=egitim_yili_id,
+    ).exclude(durum=SozlesmeDurum.IPTAL).values_list('ogrenci_id', flat=True)
+    return OgrenciKayit.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili_id=egitim_yili_id,
+        aktif_mi=True,
+    ).exclude(ogrenci_id__in=with_contract).select_related(
+        'ogrenci', 'sinif', 'sinif_seviyesi',
+    )
+
+
+def _odemesiz_aktif_sozlesme_qs(kurum_id, sube_id, egitim_yili_id):
+    """Aktif (tamamlanmış) sözleşmelerden henüz tahsilatı olmayanlar."""
+    has_payment = Tahsilat.objects.filter(
+        sozlesme_id=OuterRef('pk'),
+        durum=TahsilatDurum.AKTIF,
+    ).exclude(tahsilat_turu=TahsilatTuru.IADE)
+    return Sozlesme.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili_id=egitim_yili_id,
+        durum=SozlesmeDurum.AKTIF,
+    ).annotate(has_odeme=Exists(has_payment)).filter(has_odeme=False)
 
 
 @api_view(['GET'])
@@ -34,6 +66,7 @@ def dashboard_ozet(request):
     - Brüt toplam, indirim, net tutar, tahsilat, kalan, gecikmiş
     - Bu ay tahsilat
     - Ortalama tahsil süresi (gün)
+    - Sözleşmesiz öğrenci / taslak / ödemesiz aktif sözleşme sayıları
     """
     sozlesme_service = SozlesmeService()
     taksit_service = TaksitService()
@@ -88,6 +121,17 @@ def dashboard_ozet(request):
 
     ort_tahsil_suresi = round(toplam_gun / tahsil_sayisi, 1) if tahsil_sayisi > 0 else 0
 
+    taslak_sozlesme_sayisi = Sozlesme.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili_id=egitim_yili_id,
+        durum=SozlesmeDurum.TASLAK,
+    ).count()
+    sozlesmesiz_ogrenci_sayisi = _sozlesmesiz_kayit_qs(kurum_id, sube_id, egitim_yili_id).count()
+    odemesiz_sozlesme_sayisi = _odemesiz_aktif_sozlesme_qs(
+        kurum_id, sube_id, egitim_yili_id
+    ).count()
+
     ozet = {
         'toplam_sozlesme': ozet_raw.get('sozlesme_sayisi', 0),
         'brut_toplam': brut_toplam,
@@ -99,9 +143,54 @@ def dashboard_ozet(request):
         'geciken_taksit_sayisi': geciken_sayi,
         'bu_ay_tahsilat': bu_ay_tahsilat,
         'ort_tahsil_suresi': ort_tahsil_suresi,
+        'sozlesmesiz_ogrenci_sayisi': sozlesmesiz_ogrenci_sayisi,
+        'taslak_sozlesme_sayisi': taslak_sozlesme_sayisi,
+        'odemesiz_sozlesme_sayisi': odemesiz_sozlesme_sayisi,
     }
 
     return Response(ozet)
+
+
+@api_view(['GET'])
+@permission_classes(ODEME_TAKIP_PERMISSIONS)
+def sozlesmesiz_ogrenciler(request):
+    """
+    GET /api/odeme-takip/api/sozlesmesiz-ogrenciler/
+    Kayıtlı olup iptal dışı sözleşmesi olmayan öğrenciler.
+    """
+    kurum_id, sube_id, egitim_yili_id, err = resolve_mandatory_odeme_context(request)
+    if err:
+        return err
+
+    q = (request.query_params.get('q') or '').strip()
+    qs = _sozlesmesiz_kayit_qs(kurum_id, sube_id, egitim_yili_id).order_by(
+        'ogrenci__soyad', 'ogrenci__ad',
+    )
+    if q:
+        qs = qs.filter(
+            Q(ogrenci__ad__icontains=q)
+            | Q(ogrenci__soyad__icontains=q)
+            | Q(okul_no__icontains=q)
+            | Q(ogrenci__tc_kimlik_no__icontains=q)
+        )
+
+    results = []
+    for kayit in qs[:200]:
+        o = kayit.ogrenci
+        results.append({
+            'id': o.id,
+            'ad': o.ad,
+            'soyad': o.soyad,
+            'tam_ad': o.tam_ad,
+            'ogrenci_no': kayit.okul_no or '',
+            'tc_kimlik_no': o.tc_kimlik_no or '',
+            'sinif': kayit.sinif.ad if kayit.sinif_id else (
+                kayit.sinif_seviyesi.ad if kayit.sinif_seviyesi_id else ''
+            ),
+            'kayit_id': kayit.id,
+        })
+
+    return Response({'count': len(results), 'results': results})
 
 
 @api_view(['GET'])

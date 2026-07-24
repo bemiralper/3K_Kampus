@@ -1,4 +1,5 @@
 export const AKADEMIK_BASE = '/akademik-planlama';
+export const MUHASEBE_AKADEMIK_BASE = '/muhasebe/akademik-planlama';
 
 export const AKADEMIK_MODULE_LABEL = 'Akademik Operasyon';
 
@@ -36,7 +37,6 @@ export const AKADEMIK_GROUPS: AkademikGroupDef[] = [
     label: 'Planlama',
     tabs: [
       { segment: 'sinif-ders-planlari', label: 'Sınıf Ders Planları' },
-      { segment: 'ogretmen-atamalari', label: 'Öğretmen Atamaları' },
       { segment: 'ders-programi', label: 'Ders Programı' },
       { segment: 'otomatik-program-olusturucu', label: 'Otomatik Program Oluşturucu' },
       { segment: 'cakisma-merkezi', label: 'Çakışma Merkezi' },
@@ -82,12 +82,25 @@ export const AKADEMIK_GROUPS: AkademikGroupDef[] = [
   },
 ];
 
-export function akademikGroupHref(groupSlug: string): string {
-  return `${AKADEMIK_BASE}/${groupSlug.replace(/^\//, '')}`;
+export function resolveAkademikBase(pathname?: string | null): string {
+  if (pathname?.startsWith(MUHASEBE_AKADEMIK_BASE)) return MUHASEBE_AKADEMIK_BASE;
+  return AKADEMIK_BASE;
 }
 
-export function akademikTabHref(groupSlug: string, tabSegment: string): string {
-  return `${akademikGroupHref(groupSlug)}/${tabSegment.replace(/^\//, '')}`;
+export function akademikPortalHomeHref(basePath: string = AKADEMIK_BASE): string {
+  return basePath.startsWith('/muhasebe') ? '/muhasebe/dashboard' : '/dashboard';
+}
+
+export function akademikGroupHref(groupSlug: string, basePath: string = AKADEMIK_BASE): string {
+  return `${basePath}/${groupSlug.replace(/^\//, '')}`;
+}
+
+export function akademikTabHref(
+  groupSlug: string,
+  tabSegment: string,
+  basePath: string = AKADEMIK_BASE,
+): string {
+  return `${akademikGroupHref(groupSlug, basePath)}/${tabSegment.replace(/^\//, '')}`;
 }
 
 export function findAkademikGroup(groupSlug: string): AkademikGroupDef | undefined {
@@ -105,12 +118,12 @@ export function findAkademikTab(
   return { group, tab };
 }
 
-export function akademikSidebarChildren() {
+export function akademikSidebarChildren(basePath: string = AKADEMIK_BASE) {
   return AKADEMIK_GROUPS.map((group) => ({
     label: group.label,
-    href: akademikTabHref(group.slug, group.tabs[0].segment),
+    href: akademikTabHref(group.slug, group.tabs[0].segment, basePath),
     /** Aktif menü eşlemesi — grup altındaki tüm sekmeler */
-    matchPrefix: akademikGroupHref(group.slug),
+    matchPrefix: akademikGroupHref(group.slug, basePath),
   }));
 }
 
@@ -127,19 +140,19 @@ export function akademikBreadcrumbMap(): Record<string, string> {
   return map;
 }
 
-export function akademikCommandPaletteItems() {
+export function akademikCommandPaletteItems(basePath: string = AKADEMIK_BASE) {
   const items: { label: string; href: string; section: string }[] = [];
 
   for (const group of AKADEMIK_GROUPS) {
     items.push({
       label: group.label,
-      href: akademikTabHref(group.slug, group.tabs[0].segment),
+      href: akademikTabHref(group.slug, group.tabs[0].segment, basePath),
       section: AKADEMIK_MODULE_LABEL,
     });
     for (const tab of group.tabs) {
       items.push({
         label: `${group.label} · ${tab.label}`,
-        href: akademikTabHref(group.slug, tab.segment),
+        href: akademikTabHref(group.slug, tab.segment, basePath),
         section: AKADEMIK_MODULE_LABEL,
       });
     }

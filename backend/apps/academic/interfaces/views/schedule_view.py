@@ -68,6 +68,26 @@ def _gate_loaded_version(request, version):
     return err
 
 
+def get_version_lesson_slots(version, days):
+    """
+    Program görünümü için LESSON slotları.
+    Versiyon şablonu + aktif günlerin gün bazlı şablonları (birleşik).
+    """
+    template_ids = set(
+        days.filter(schedule_template_id__isnull=False)
+        .values_list('schedule_template_id', flat=True)
+    )
+    if version.schedule_template_id:
+        template_ids.add(version.schedule_template_id)
+    if not template_ids:
+        return TimeSlot.objects.none()
+    return TimeSlot.objects.filter(
+        schedule_template_id__in=template_ids,
+        slot_type='LESSON',
+        is_active=True,
+    ).order_by('order', 'id')
+
+
 def serialize_grid_response(cells, days, slots):
     """
     Ortak grid response formatı.
@@ -111,6 +131,7 @@ def serialize_grid_response(cells, days, slots):
             "timeslot_id": c.timeslot_id,
             "status": c.status,
             "status_display": c.get_status_display(),
+            "class_lesson_plan_id": c.class_lesson_plan_id,
             "lesson": None,
             "teacher": None,
             "classroom": None,
@@ -119,13 +140,13 @@ def serialize_grid_response(cells, days, slots):
             "notes": c.notes
         }
         
-        # Ders bilgisi
+        # Ders bilgisi — görünen ad: plan.gorunen_ad → ders.kisa_ad → ders.ad
         if c.ders:
-            cell_data["lesson"] = {
-                "id": c.ders.id,
-                "name": c.ders.ad,
-                "code": getattr(c.ders, 'kod', None)
-            }
+            from apps.egitim_tanimlari.display import serialize_lesson_label
+            cell_data["lesson"] = serialize_lesson_label(
+                ders=c.ders,
+                plan=getattr(c, 'class_lesson_plan', None),
+            )
         
         # Öğretmen bilgisi
         if c.ogretmen:
@@ -216,18 +237,17 @@ def class_schedule_api(request):
         is_active=True
     ).order_by('order')
     
-    slots = TimeSlot.objects.filter(
-        schedule_template=version.schedule_template,
-        slot_type='LESSON',
-        is_active=True
-    ).order_by('order')
+    slots = get_version_lesson_slots(version, days)
     
     # Grid hücreleri
     cells = ProgramGridCell.objects.filter(
         schedule_version=version,
         sinif_id=classroom_id,
         is_active=True
-    ).select_related('ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot')
+    ).select_related(
+        'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot',
+        'class_lesson_plan', 'class_lesson_plan__ders',
+    )
     
     # Response
     data = serialize_grid_response(cells, days, slots)
@@ -241,6 +261,21 @@ def class_schedule_api(request):
         "id": egitim_yili.id,
         "display": f"{egitim_yili.baslangic_yil}-{egitim_yili.bitis_yil}"
     }
+    if not days.exists():
+        data["empty_reason"] = "no_days"
+        data["empty_message"] = (
+            "Çalışma takviminde aktif gün yok. "
+            "Tanımlar → Çalışma Takvimi’nden günleri aktifleştirin."
+        )
+    elif not slots.exists():
+        data["empty_reason"] = "no_slots"
+        data["empty_message"] = (
+            "Ders saati şablonunda saat yok. "
+            "Tanımlar → Ders Saatleri’nden ders saatleri oluşturun."
+        )
+    else:
+        data["empty_reason"] = None
+        data["empty_message"] = None
     
     return Response(data)
 
@@ -297,18 +332,17 @@ def teacher_schedule_api(request):
         is_active=True
     ).order_by('order')
     
-    slots = TimeSlot.objects.filter(
-        schedule_template=version.schedule_template,
-        slot_type='LESSON',
-        is_active=True
-    ).order_by('order')
+    slots = get_version_lesson_slots(version, days)
     
     # Öğretmenin derslerini getir
     cells = ProgramGridCell.objects.filter(
         schedule_version=version,
         ogretmen_id=teacher_id,
         is_active=True
-    ).select_related('ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot')
+    ).select_related(
+        'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot',
+        'class_lesson_plan', 'class_lesson_plan__ders',
+    )
     
     data = serialize_grid_response(cells, days, slots)
     data["version"] = {
@@ -398,18 +432,17 @@ def student_schedule_api(request):
         is_active=True
     ).order_by('order')
     
-    slots = TimeSlot.objects.filter(
-        schedule_template=version.schedule_template,
-        slot_type='LESSON',
-        is_active=True
-    ).order_by('order')
+    slots = get_version_lesson_slots(version, days)
     
     # Sınıfın programını getir
     cells = ProgramGridCell.objects.filter(
         schedule_version=version,
         sinif_id=placement.sinif_id,
         is_active=True
-    ).select_related('ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot')
+    ).select_related(
+        'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot',
+        'class_lesson_plan', 'class_lesson_plan__ders',
+    )
     
     data = serialize_grid_response(cells, days, slots)
     data["version"] = {
@@ -486,18 +519,17 @@ def room_schedule_api(request):
         is_active=True
     ).order_by('order')
     
-    slots = TimeSlot.objects.filter(
-        schedule_template=version.schedule_template,
-        slot_type='LESSON',
-        is_active=True
-    ).order_by('order')
+    slots = get_version_lesson_slots(version, days)
     
     # TODO: Oda bazlı filtreleme
     # cells = ProgramGridCell.objects.filter(
     #     schedule_version=version,
     #     room_id=room_id,
     #     is_active=True
-    # ).select_related('ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot')
+    # ).select_related(
+    #     'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot',
+    #     'class_lesson_plan', 'class_lesson_plan__ders',
+    # )
     
     cells = []  # Placeholder
     
@@ -609,7 +641,10 @@ def daily_flow_api(request):
         weekly_day=day,
         is_active=True,
         status__in=[CellStatus.FILLED, CellStatus.EXAM, CellStatus.HOLIDAY]
-    ).select_related('ders', 'ogretmen', 'sinif', 'timeslot').order_by('timeslot__order')
+    ).select_related(
+        'ders', 'ogretmen', 'sinif', 'timeslot',
+        'class_lesson_plan', 'class_lesson_plan__ders',
+    ).order_by('timeslot__order')
     
     if teacher_id:
         cells_qs = cells_qs.filter(ogretmen_id=teacher_id)
@@ -633,7 +668,11 @@ def daily_flow_api(request):
         }
         
         if c.ders:
-            item["lesson"] = {"id": c.ders.id, "name": c.ders.ad}
+            from apps.egitim_tanimlari.display import serialize_lesson_label
+            item["lesson"] = serialize_lesson_label(
+                ders=c.ders,
+                plan=getattr(c, 'class_lesson_plan', None),
+            )
         if c.ogretmen:
             item["teacher"] = {
                 "id": c.ogretmen.id,

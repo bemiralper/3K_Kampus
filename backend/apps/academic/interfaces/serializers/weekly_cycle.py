@@ -64,7 +64,7 @@ class WeeklyCycleSerializer(serializers.ModelSerializer):
 
     def get_used_templates(self, obj):
         return [
-            {'id': t.id, 'name': t.name}
+            {'id': t.id, 'name': t.name, 'lesson_count': t.lesson_count}
             for t in obj.used_schedule_templates()
         ]
 

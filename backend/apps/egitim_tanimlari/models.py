@@ -85,6 +85,14 @@ class Ders(_SubeScopedModel):
     """
     ad = models.CharField('Ders Adı', max_length=100)
     kod = models.CharField('Kod', max_length=20)
+    kisa_ad = models.CharField(
+        'Kısa / görünen ad',
+        max_length=100,
+        blank=True,
+        default='',
+        help_text='Program tablosunda gösterilecek ad. Boşsa ders adı kullanılır. '
+                  'Örn: Fizik-1 → Fizik',
+    )
 
     sinif_seviyeleri = models.ManyToManyField(
         SinifSeviyesi,
@@ -118,6 +126,11 @@ class Ders(_SubeScopedModel):
 
     def __str__(self):
         return self.ad
+
+    @property
+    def display_name(self) -> str:
+        """Program / dışa aktarma için varsayılan görünen ad."""
+        return (self.kisa_ad or '').strip() or self.ad
 
 
 class Brans(_SubeScopedModel):

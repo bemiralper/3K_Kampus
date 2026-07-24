@@ -52,7 +52,12 @@ def _serialize_sozlesme(s, detail=False):
             'id': s.ogrenci_id,
             'ad': s.ogrenci.ad if hasattr(s.ogrenci, 'ad') else '',
             'soyad': s.ogrenci.soyad if hasattr(s.ogrenci, 'soyad') else '',
-            'ogrenci_no': getattr(s.ogrenci, 'ogrenci_no', ''),
+            'ogrenci_no': getattr(s.ogrenci, 'ogrenci_no', '') or '',
+            'profil_foto': (
+                s.ogrenci.profil_foto.url
+                if getattr(s.ogrenci, 'profil_foto', None)
+                else None
+            ),
         } if s.ogrenci else None,
         'veli': {
             'id': s.veli_id,

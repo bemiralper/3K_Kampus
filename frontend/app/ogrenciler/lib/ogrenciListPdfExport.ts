@@ -297,6 +297,8 @@ export async function exportGroupedOgrenciListPdf(options: {
   documentTitle?: string;
   fileName?: string;
   totalRecordsLabel?: string;
+  /** true: her bölüm yeni sayfada başlar */
+  pageBreakBetweenSections?: boolean;
 }): Promise<void> {
   const {
     sections,
@@ -308,6 +310,7 @@ export async function exportGroupedOgrenciListPdf(options: {
     documentTitle = 'Öğrenci Listesi',
     fileName = 'ogrenciler.pdf',
     totalRecordsLabel,
+    pageBreakBetweenSections = false,
   } = options;
 
   const labels =
@@ -337,13 +340,16 @@ export async function exportGroupedOgrenciListPdf(options: {
   const columnStyles = buildColumnStyles(doc, labels.length);
   const tableFontSize = fontSizeForColumns(labels.length + 1, orientation);
 
-  let startY = drawHeader(doc, primary, logoData, {
-    documentTitle,
-    kurumAd: branding.kurumAd || 'Kurum',
-    subeAd: branding.subeAd,
-    filterSummary,
-    meta: metaCount,
-  });
+  // Ayrı sayfalarda her bölüm kendi başlığını çizer (ölçüt adı: 12. Sınıf / 12/Loca 4)
+  let startY = pageBreakBetweenSections
+    ? 0
+    : drawHeader(doc, primary, logoData, {
+        documentTitle,
+        kurumAd: branding.kurumAd || 'Kurum',
+        subeAd: branding.subeAd,
+        filterSummary,
+        meta: metaCount,
+      });
 
   const tableOptions = {
     tableWidth,
@@ -380,17 +386,31 @@ export async function exportGroupedOgrenciListPdf(options: {
 
   for (let si = 0; si < sections.length; si++) {
     const section = sections[si];
-    const pageH = doc.internal.pageSize.getHeight();
-    if (startY > pageH - 40) {
-      doc.addPage();
-      startY = 36;
-    }
+    const sectionTitle = (section.title || '').trim() || documentTitle;
+    const sectionCount = `${section.rows.length} kayıt`;
 
-    doc.setFont('Roboto', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(...primary);
-    doc.text(section.title, 10, startY);
-    startY += 5;
+    if (pageBreakBetweenSections) {
+      if (si > 0) doc.addPage();
+      // Başlık = grup ölçütü (örn. 12. Sınıf, 12/Loca 4)
+      startY = drawHeader(doc, primary, logoData, {
+        documentTitle: sectionTitle,
+        kurumAd: branding.kurumAd || 'Kurum',
+        subeAd: branding.subeAd,
+        filterSummary,
+        meta: sectionCount,
+      });
+    } else {
+      const pageH = doc.internal.pageSize.getHeight();
+      if (startY > pageH - 40) {
+        doc.addPage();
+        startY = 36;
+      }
+      doc.setFont('Roboto', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(...primary);
+      doc.text(sectionTitle, 10, startY);
+      startY += 5;
+    }
 
     if (section.rows.length === 0) {
       doc.setFont('Roboto', 'normal');

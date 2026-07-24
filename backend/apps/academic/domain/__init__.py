@@ -14,6 +14,14 @@ from .class_lesson_teacher_assignment import ClassLessonTeacherAssignment, Teach
 from .classroom_group import ClassroomGroup
 from .student_class_placement import StudentClassPlacement, PlacementType
 from .schedule_run import ScheduleRun, ScheduleRunStatus, ScheduleRunType
+from .lesson_session import (
+    LessonSession,
+    SessionKind,
+    SessionStatus,
+    TeacherAttendanceStatus,
+)
+from .lesson_attendance import LessonAttendanceRecord, StudentAttendanceStatus
+from .schedule_change_log import ScheduleChangeLog, ScheduleChangeAction
 
 __all__ = [
     'ScheduleTemplate', 
@@ -35,4 +43,12 @@ __all__ = [
     'ScheduleRun',
     'ScheduleRunStatus',
     'ScheduleRunType',
+    'LessonSession',
+    'SessionKind',
+    'SessionStatus',
+    'TeacherAttendanceStatus',
+    'LessonAttendanceRecord',
+    'StudentAttendanceStatus',
+    'ScheduleChangeLog',
+    'ScheduleChangeAction',
 ]

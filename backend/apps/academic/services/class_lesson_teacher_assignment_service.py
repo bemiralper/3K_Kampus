@@ -15,8 +15,10 @@ from apps.academic.interfaces.repositories.lesson_teacher_pool_repository import
 from apps.academic.services.active_academic_year import (
     get_active_academic_year,
     ActiveAcademicYearError,
-    NoActiveAcademicYearError,
-    MultipleActiveAcademicYearsError
+)
+from apps.academic.services.teacher_availability_service import (
+    get_teacher_gorevlendirme,
+    is_ogretmen_gorevlendirme,
 )
 
 
@@ -39,8 +41,9 @@ class ClassLessonTeacherAssignmentService:
     - Aynı plan+öğretmen kombinasyonu tekrar edemez
     - Her plan için sadece 1 PRIMARY rol olabilir
     - max_hours_for_class <= ClassLessonPlan.weekly_hours
-    - Öğretmen branş havuzunda olmalı (opsiyonel kontrol)
-    - Öğretmen aktif olmalı
+    - Öğretmen aktif + şube/yıl öğretmen görevlendirmesi zorunlu
+    - Dönem schedule_locked ise yazma yok
+    - PRIMARY atama ClassLessonPlan.ogretmen ile senkron tutulur
     """
     
     def __init__(self):
@@ -87,6 +90,8 @@ class ClassLessonTeacherAssignmentService:
                 'Sınıf ders planı bulunamadı.',
                 'class_lesson_plan_id'
             )
+
+        self._validate_plan_writable(plan)
         
         # Duplicate kontrolü
         if self.repository.check_duplicate(plan_id, teacher_id):
@@ -112,10 +117,11 @@ class ClassLessonTeacherAssignmentService:
                 'max_hours_for_class'
             )
         
-        # Öğretmen aktiflik kontrolü
+        # Öğretmen aktiflik + görevlendirme
         self._validate_teacher_active(teacher_id)
+        self._validate_teacher_gorevlendirme(teacher_id, plan)
         
-        # Branş havuzunda mı kontrolü (opsiyonel - uyarı verir)
+        # Branş havuzu zorunlu değil (havuz verisi dolmadan kilitlenmesin)
         # self._validate_teacher_in_pool(plan.ders_id, teacher_id)
     
     def validate_update(self, assignment_id: int, data: Dict[str, Any]) -> None:
@@ -132,6 +138,8 @@ class ClassLessonTeacherAssignmentService:
         assignment = self.repository.get_by_id(assignment_id)
         if not assignment:
             raise ClassLessonTeacherAssignmentValidationError('Atama kaydı bulunamadı.', 'id')
+
+        self._validate_plan_writable(assignment.class_lesson_plan)
         
         # PRIMARY rol kontrolü
         role = data.get('role')
@@ -159,9 +167,18 @@ class ClassLessonTeacherAssignmentService:
         """ClassLessonPlan getir"""
         from apps.academic.domain.class_lesson_plan import ClassLessonPlan
         try:
-            return ClassLessonPlan.objects.get(id=plan_id, is_active=True)
+            return ClassLessonPlan.objects.select_related(
+                'sinif', 'term', 'ders',
+            ).get(id=plan_id, is_active=True)
         except ClassLessonPlan.DoesNotExist:
             return None
+
+    def _validate_plan_writable(self, plan) -> None:
+        if plan.term_id and getattr(plan.term, 'schedule_locked', False):
+            raise ClassLessonTeacherAssignmentValidationError(
+                'Bu dönemin programı kilitli; öğretmen ataması değiştirilemez.',
+                'term',
+            )
     
     def _validate_teacher_active(self, teacher_id: int) -> None:
         """
@@ -186,6 +203,22 @@ class ClassLessonTeacherAssignmentService:
                 'Öğretmen bulunamadı.',
                 'ogretmen_id'
             )
+
+    def _validate_teacher_gorevlendirme(self, teacher_id: int, plan) -> None:
+        """Şube + aktif yıl öğretmen görevlendirmesi zorunlu."""
+        active_year = get_active_academic_year()
+        sinif = plan.sinif
+        gorev = get_teacher_gorevlendirme(
+            teacher_id,
+            kurum_id=sinif.kurum_id,
+            sube_id=sinif.sube_id,
+            egitim_yili_id=active_year.id,
+        )
+        if not gorev or not is_ogretmen_gorevlendirme(gorev):
+            raise ClassLessonTeacherAssignmentValidationError(
+                'Öğretmen bu şube ve eğitim yılında aktif öğretmen görevlendirmesine sahip değil.',
+                'ogretmen_id',
+            )
     
     def _validate_teacher_in_pool(self, lesson_id: int, teacher_id: int) -> None:
         """
@@ -203,6 +236,15 @@ class ClassLessonTeacherAssignmentService:
                 'Bu öğretmen ilgili dersin branş havuzunda değil. Önce havuza ekleyin.',
                 'ogretmen_id'
             )
+
+    def _sync_plan_primary_teacher(self, plan_id: int) -> None:
+        """PRIMARY atamayı ClassLessonPlan.ogretmen ile hizala (özet/UI tutarlılığı)."""
+        from apps.academic.domain.class_lesson_plan import ClassLessonPlan
+
+        primary = self.repository.get_primary_teacher(plan_id)
+        ClassLessonPlan.objects.filter(pk=plan_id, is_active=True).update(
+            ogretmen_id=primary.ogretmen_id if primary else None,
+        )
     
     # ==================== İŞ KATMANI ====================
     
@@ -220,15 +262,19 @@ class ClassLessonTeacherAssignmentService:
         
         plan_id = data.get('class_lesson_plan_id') or data.get('plan_id')
         teacher_id = data.get('ogretmen_id') or data.get('teacher_id')
+        role = data.get('role', TeacherRole.PRIMARY)
         
-        return self.repository.create(
+        assignment = self.repository.create(
             plan_id=plan_id,
             teacher_id=teacher_id,
-            role=data.get('role', TeacherRole.PRIMARY),
+            role=role,
             priority=data.get('priority', 1),
             max_hours_for_class=data.get('max_hours_for_class'),
             notes=data.get('notes')
         )
+        if role == TeacherRole.PRIMARY:
+            self._sync_plan_primary_teacher(plan_id)
+        return assignment
     
     def update(self, assignment_id: int, data: Dict[str, Any]) -> Optional[ClassLessonTeacherAssignment]:
         """
@@ -242,14 +288,22 @@ class ClassLessonTeacherAssignmentService:
             Güncellenen ClassLessonTeacherAssignment
         """
         self.validate_update(assignment_id, data)
+        before = self.repository.get_by_id(assignment_id)
         
-        return self.repository.update(
+        assignment = self.repository.update(
             assignment_id=assignment_id,
             role=data.get('role'),
             priority=data.get('priority'),
             max_hours_for_class=data.get('max_hours_for_class'),
             notes=data.get('notes')
         )
+        if assignment and before and (
+            data.get('role') is not None
+            or before.role == TeacherRole.PRIMARY
+            or assignment.role == TeacherRole.PRIMARY
+        ):
+            self._sync_plan_primary_teacher(assignment.class_lesson_plan_id)
+        return assignment
     
     def delete(self, assignment_id: int) -> bool:
         """
@@ -261,7 +315,16 @@ class ClassLessonTeacherAssignmentService:
         Returns:
             bool: İşlem başarılı mı
         """
-        return self.repository.soft_delete(assignment_id)
+        assignment = self.repository.get_by_id(assignment_id)
+        if not assignment:
+            return False
+        self._validate_plan_writable(assignment.class_lesson_plan)
+        plan_id = assignment.class_lesson_plan_id
+        was_primary = assignment.role == TeacherRole.PRIMARY
+        ok = self.repository.soft_delete(assignment_id)
+        if ok and was_primary:
+            self._sync_plan_primary_teacher(plan_id)
+        return ok
     
     def get_by_id(self, assignment_id: int) -> Optional[ClassLessonTeacherAssignment]:
         """ID ile atama getir"""

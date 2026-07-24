@@ -158,6 +158,9 @@ export default function OdemeTakipClient() {
 
   const sozlesmeParam = searchParams.get("sozlesme");
   const subParam = searchParams.get("sub");
+  const tabParam = searchParams.get("tab");
+  const durumParam = searchParams.get("durum") || "";
+  const odemesizParam = searchParams.get("odemesiz") === "1";
   const initialSubTab =
     subParam === "genel" ||
     subParam === "kalemler" ||
@@ -167,6 +170,12 @@ export default function OdemeTakipClient() {
       ? subParam
       : undefined;
   const prevSubeIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (tabParam === "sozlesmeler" || tabParam === "tahsilatlar" || tabParam === "raporlar") {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   // Şube değişince önceki şubenin tüm verilerini temizle (ilk yüklemede ?sozlesme= korunur)
   useEffect(() => {
@@ -687,6 +696,8 @@ export default function OdemeTakipClient() {
           onWhatsAppSozlesme={(id, name) => openWhatsAppNotify("sozlesme", { sozlesmeId: id }, name)}
           onWhatsAppMakbuz={(id, name) => openWhatsAppNotify("makbuz", { tahsilatId: id }, name)}
           initialSubTab={initialSubTab}
+          initialDurum={durumParam}
+          initialOdemesiz={odemesizParam}
         />
       )}
       {activeTab === "tahsilatlar" && (

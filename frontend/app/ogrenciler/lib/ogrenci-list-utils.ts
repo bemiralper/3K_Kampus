@@ -62,6 +62,7 @@ export const EXPORT_COLUMNS: ExportColumnDef[] = [
   { key: 'aktif_mi', label: 'Durum', group: EXPORT_COLUMN_GROUPS.ogrenci },
   { key: 'sinif_seviyesi', label: 'Sınıf Seviyesi', default: true, group: EXPORT_COLUMN_GROUPS.egitim },
   { key: 'sinif_ad', label: 'Sınıf', group: EXPORT_COLUMN_GROUPS.egitim },
+  { key: 'alan_ad', label: 'Alan', group: EXPORT_COLUMN_GROUPS.egitim },
   { key: 'sube_ad', label: 'Şube', group: EXPORT_COLUMN_GROUPS.egitim },
   { key: 'koc_adi', label: 'Koç', default: true, group: EXPORT_COLUMN_GROUPS.egitim },
   { key: 'geldigi_okul', label: 'Geldiği / Mezun Olduğu Okul', group: EXPORT_COLUMN_GROUPS.egitim },

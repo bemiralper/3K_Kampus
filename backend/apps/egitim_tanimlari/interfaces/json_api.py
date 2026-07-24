@@ -67,7 +67,14 @@ def legacy_tanimlar_api(request):
                 for a in alanlar
             ],
             'dersler': [
-                {'id': d.id, 'ad': d.ad, 'kod': d.kod, 'aciklama': d.aciklama or '', 'aktif_mi': d.aktif_mi}
+                {
+                    'id': d.id,
+                    'ad': d.ad,
+                    'kod': d.kod,
+                    'kisa_ad': d.kisa_ad or '',
+                    'aciklama': d.aciklama or '',
+                    'aktif_mi': d.aktif_mi,
+                }
                 for d in dersler
             ],
             'branslar': [
@@ -103,7 +110,15 @@ def dersler_list_api(request):
     dersler = DersService().get_all_dersler(ctx['sube_id'])
     return JsonResponse({
         'success': True,
-        'data': [{'id': d.id, 'ad': d.ad, 'kod': d.kod} for d in dersler if d.aktif_mi],
+        'data': [
+            {
+                'id': d.id,
+                'ad': d.ad,
+                'kod': d.kod,
+                'kisa_ad': d.kisa_ad or '',
+            }
+            for d in dersler if d.aktif_mi
+        ],
     })
 
 
@@ -296,17 +311,37 @@ def ders_list_create_api(request):
         items = service.get_all_dersler(ctx['sube_id'])
         return JsonResponse({
             'success': True,
-            'data': [{'id': d.id, 'ad': d.ad, 'kod': d.kod, 'aktif_mi': d.aktif_mi} for d in items],
+            'data': [
+                {
+                    'id': d.id,
+                    'ad': d.ad,
+                    'kod': d.kod,
+                    'kisa_ad': d.kisa_ad or '',
+                    'aktif_mi': d.aktif_mi,
+                }
+                for d in items
+            ],
         })
 
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             ders = service.create_ders({**_tenant_fields(ctx), **{
-                'ad': data.get('ad'), 'kod': data.get('kod'),
-                'aktif_mi': data.get('aktif_mi', True), 'aciklama': data.get('aciklama', ''),
+                'ad': data.get('ad'),
+                'kod': data.get('kod'),
+                'kisa_ad': (data.get('kisa_ad') or '').strip(),
+                'aktif_mi': data.get('aktif_mi', True),
+                'aciklama': data.get('aciklama', ''),
             }})
-            return JsonResponse({'success': True, 'data': {'id': ders.id, 'ad': ders.ad, 'kod': ders.kod}})
+            return JsonResponse({
+                'success': True,
+                'data': {
+                    'id': ders.id,
+                    'ad': ders.ad,
+                    'kod': ders.kod,
+                    'kisa_ad': ders.kisa_ad or '',
+                },
+            })
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
@@ -326,7 +361,16 @@ def ders_detail_api(request, ders_id):
         denied = _gate_record(request, ctx, ders)
         if denied:
             return denied
-        return JsonResponse({'success': True, 'data': {'id': ders.id, 'ad': ders.ad, 'kod': ders.kod, 'aktif_mi': ders.aktif_mi}})
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'id': ders.id,
+                'ad': ders.ad,
+                'kod': ders.kod,
+                'kisa_ad': ders.kisa_ad or '',
+                'aktif_mi': ders.aktif_mi,
+            },
+        })
 
     if request.method == 'PUT':
         try:
@@ -336,11 +380,21 @@ def ders_detail_api(request, ders_id):
                 return denied
             data = json.loads(request.body)
             updated = service.update_ders(ders_id, {
-                'ad': data.get('ad'), 'kod': data.get('kod'),
-                'aktif_mi': data.get('aktif_mi', True), 'aciklama': data.get('aciklama', ''),
+                'ad': data.get('ad'),
+                'kod': data.get('kod'),
+                'kisa_ad': (data.get('kisa_ad') or '').strip(),
+                'aktif_mi': data.get('aktif_mi', True),
+                'aciklama': data.get('aciklama', ''),
             }, sube_id)
             if updated:
-                return JsonResponse({'success': True, 'data': {'id': updated.id, 'ad': updated.ad}})
+                return JsonResponse({
+                    'success': True,
+                    'data': {
+                        'id': updated.id,
+                        'ad': updated.ad,
+                        'kisa_ad': updated.kisa_ad or '',
+                    },
+                })
             return JsonResponse({'success': False, 'error': 'Bulunamadı'}, status=404)
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)

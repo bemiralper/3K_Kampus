@@ -187,6 +187,27 @@ def gate_sinif_drf(request, sinif_id):
     return ctx, sinif, None
 
 
+def gate_term_drf(request, term_id):
+    from apps.term.domain.models import Term
+
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return None, None, err
+
+    try:
+        term = Term.objects.get(pk=term_id)
+    except Term.DoesNotExist:
+        return None, None, Response({'error': 'Dönem bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if term.kurum_id != ctx['kurum_id']:
+        return None, None, Response({'error': 'Dönem bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    gate = assert_academic_sube_access_drf(request, ctx['kurum_id'], term.sube_id)
+    if gate:
+        return None, None, gate
+    return ctx, term, None
+
+
 def gate_ders_drf(request, ders_id):
     from apps.egitim_tanimlari.models import Ders
 

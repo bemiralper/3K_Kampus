@@ -37,6 +37,7 @@ from .interfaces.api_views.tahsilat_views import (
 from .interfaces.api_views.rapor_views import (
     dashboard_ozet,
     ogrenci_risk_skorlari,
+    sozlesmesiz_ogrenciler,
 )
 from .interfaces.api_views.ogrenci_paket_views import (
     ogrenci_paketleri,
@@ -109,6 +110,7 @@ urlpatterns = [
     # Rapor / Dashboard
     path('dashboard/', dashboard_ozet, name='dashboard'),
     path('risk-skorlari/', ogrenci_risk_skorlari, name='risk-skorlari'),
+    path('sozlesmesiz-ogrenciler/', sozlesmesiz_ogrenciler, name='sozlesmesiz-ogrenciler'),
 
     # Öğrenci Paketleri (sözleşme oluşturma için)
     path('ogrenci/<int:ogrenci_id>/paketler/', ogrenci_paketleri, name='ogrenci-paketleri'),

@@ -5,6 +5,7 @@ export interface Ogrenci {
   ad: string;
   soyad: string;
   ogrenci_no: string;
+  profil_foto?: string | null;
 }
 
 export interface Veli {

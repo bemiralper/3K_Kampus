@@ -194,12 +194,23 @@ def version_create_api(request):
         template = ScheduleTemplate.objects.get(id=schedule_template_id)
     except ScheduleTemplate.DoesNotExist:
         return Response({"error": "Zaman şablonu bulunamadı"}, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    if template.lesson_count < 1:
+        return Response(
+            {
+                "error": (
+                    f'"{template.name}" ders saati şablonunda tanımlı ders saati (LESSON) yok. '
+                    'Tanımlar → Ders Saatleri’nden bu şablona saat ekleyin veya üretin.'
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     try:
         cycle = WeeklyCycle.objects.get(id=weekly_cycle_id)
     except WeeklyCycle.DoesNotExist:
         return Response({"error": "Haftalık döngü bulunamadı"}, status=status.HTTP_400_BAD_REQUEST)
-    
+
     # Oluştur
     version = ScheduleVersion.objects.create(
         egitim_yili=egitim_yili,

@@ -18,11 +18,21 @@ MAX_PAGE_SIZE = 100
 SORT_MAP = {
     'name_asc': ('ogrenci__ad', 'ogrenci__soyad'),
     'name_desc': ('-ogrenci__ad', '-ogrenci__soyad'),
+    'okul_no_asc': ('okul_no', 'ogrenci__ad', 'ogrenci__soyad'),
+    'okul_no_desc': ('-okul_no', 'ogrenci__ad', 'ogrenci__soyad'),
+    # "Şube" = eğitim tanımlarındaki sınıf (sinif.ad), kurum şubesi değil
+    'sinif_asc': ('sinif__ad', 'ogrenci__ad', 'ogrenci__soyad'),
+    'sinif_desc': ('-sinif__ad', 'ogrenci__ad', 'ogrenci__soyad'),
+    'sube_asc': ('sinif__ad', 'ogrenci__ad', 'ogrenci__soyad'),
+    'sube_desc': ('-sinif__ad', 'ogrenci__ad', 'ogrenci__soyad'),
     'kayit_tarihi_desc': ('-kayit_tarihi', '-id'),
     'kayit_tarihi_asc': ('kayit_tarihi', 'id'),
     'created_at_desc': ('-created_at', '-id'),
     'created_at_asc': ('created_at', 'id'),
 }
+
+# sinif = ders görülen sınıf (şube sınıfı); sinif_seviyesi = 12. Sınıf vb.
+EXPORT_GROUP_BY_VALUES = frozenset({'none', 'sinif', 'sinif_seviyesi'})
 
 FILTER_KALEM_TURLERI = [
     ('grup_dersi', 'Grup Dersi'),
@@ -247,6 +257,7 @@ EXPORT_COLUMNS = {
     'veli_yakinlik_display': 'Veli Yakınlık',
     'sinif_ad': 'Sınıf',
     'sinif_seviyesi': 'Sınıf Seviyesi',
+    'alan_ad': 'Alan',
     'sube_ad': 'Şube',
     'kayit_tarihi': 'Kayıt Tarihi',
     'giris_turu_display': 'Giriş Türü',
@@ -439,15 +450,18 @@ def get_ogrenci_ids_by_enrollment_kalem_filters(ctx, filter_specs, use_all_years
 
 
 def build_kayit_queryset(ctx, params, apply_durum=True):
-    """OgrenciKayit queryset — kurum/şube/yıl ve gelişmiş filtreler."""
+    """OgrenciKayit queryset — aktif kurum/şube/yıl ve gelişmiş filtreler.
+
+    Şubeler karıştırılmaz: her zaman ctx['sube_id'] ile sınırlıdır.
+    """
     use_all_years = params['all_years'] or not ctx.get('egitim_yili_id')
-    effective_sube_id = ctx['sube_id']
 
     qs = OgrenciKayit.objects.filter(
         kurum_id=ctx['kurum_id'],
-        sube_id=effective_sube_id,
+        sube_id=ctx['sube_id'],
     ).select_related(
-        'ogrenci', 'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'school', 'egitim_yili', 'sube'
+        'ogrenci', 'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi',
+        'alan', 'school', 'egitim_yili', 'sube',
     ).prefetch_related('ogrenci__veliler')
 
     if not use_all_years:
@@ -516,9 +530,10 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
 
         sozlesme_qs = Sozlesme.objects.filter(
             kurum_id=ctx['kurum_id'],
-            sube_id=effective_sube_id,
             durum__in=[SozlesmeDurum.AKTIF, SozlesmeDurum.TASLAK, SozlesmeDurum.TAMAMLANDI],
         )
+        if effective_sube_id:
+            sozlesme_qs = sozlesme_qs.filter(sube_id=effective_sube_id)
         if not use_all_years and ctx.get('egitim_yili_id'):
             sozlesme_qs = sozlesme_qs.filter(egitim_yili_id=ctx['egitim_yili_id'])
 
@@ -698,6 +713,7 @@ def serialize_kayit_row(
         'sinif_id': kayit.sinif.id if kayit.sinif else None,
         'sinif_ad': kayit.sinif.ad if kayit.sinif else '',
         'sinif_seviyesi': resolve_sinif_seviyesi_ad(kayit),
+        'alan_ad': kayit.alan.ad if getattr(kayit, 'alan_id', None) and kayit.alan else '',
         'sube_ad': kayit.sube.ad if kayit.sube else '',
         'kayit_tarihi': format_date(kayit.kayit_tarihi),
         'okul_no': kayit.okul_no or '',
@@ -836,16 +852,114 @@ def format_export_row(row, keys):
     return out
 
 
-def build_json_export_response(rows, column_keys):
+def build_json_export_response(rows, column_keys, *, group_by='none'):
     keys = [k for k in column_keys if k in EXPORT_COLUMNS]
     if not keys:
         keys = ['tam_ad', 'sinif_seviyesi', 'koc_adi']
 
     formatted = [format_export_row(row, keys) for row in rows]
+    groups = [
+        {
+            'key': g['key'],
+            'title': g['title'],
+            'rows': [format_export_row(r, keys) for r in g['rows']],
+        }
+        for g in group_export_rows(rows, group_by)
+    ]
+    normalized = group_by if group_by in ('sinif', 'sinif_seviyesi') else 'none'
     return JsonResponse({
         'success': True,
         'rows': formatted,
+        'groups': groups,
+        'group_by': normalized,
         'columns': keys,
         'column_labels': [EXPORT_COLUMNS[k] for k in keys],
         'total': len(formatted),
     })
+
+
+def group_export_rows(rows, group_by):
+    """Satırları ders sınıfı / sınıf seviyesi anahtarına göre grupla (sıra korunur).
+
+    Başlıklar ölçüt değerinin kendisidir (örn. ``12/Loca 4``, ``12. Sınıf``).
+    """
+    if group_by not in ('sinif', 'sinif_seviyesi'):
+        return [{'key': 'all', 'title': 'Tüm Liste', 'rows': rows}]
+
+    key_field = 'sinif_ad' if group_by == 'sinif' else 'sinif_seviyesi'
+    empty_label = 'Sınıf yok' if group_by == 'sinif' else 'Seviye yok'
+    groups = []
+    index = {}
+    for row in rows:
+        raw = (row.get(key_field) or '').strip()
+        title = raw or empty_label
+        if title not in index:
+            index[title] = len(groups)
+            groups.append({'key': title, 'title': title, 'rows': []})
+        groups[index[title]]['rows'].append(row)
+    return groups
+
+
+def build_excel_grouped_response(rows, column_keys, *, meta, group_by):
+    """Her grup ayrı Excel sayfası."""
+    import io
+
+    from django.http import HttpResponse
+    from openpyxl import Workbook
+
+    from shared.export import style_manager as sm
+    from shared.export.excel_export_service import ExcelExportService
+    from shared.export.style_manager import ReportMeta
+
+    groups = group_export_rows(rows, group_by)
+    columns = build_export_columns(column_keys)
+    cols = sm.normalize_columns(columns)
+
+    wb = Workbook()
+    default_ws = wb.active
+    wb.remove(default_ws)
+
+    for g in groups:
+        base = sm.safe_sheet_title(g['title'] or 'Liste')
+        title = base
+        n = 1
+        existing = {ws.title for ws in wb.worksheets}
+        while title in existing:
+            n += 1
+            title = sm.safe_sheet_title(f'{base[:25]} ({n})')
+        ws = wb.create_sheet(title=title)
+        export_rows = _prepare_export_rows(g['rows'], column_keys)
+        # Başlık = grup ölçütü (12. Sınıf / 12/Loca 4); kurum şubesi meta.sube_ad kalır
+        group_meta = ReportMeta(
+            report_title=g['title'] or meta.report_title,
+            kurum_ad=meta.kurum_ad,
+            sube_ad=meta.sube_ad,
+            egitim_yili=meta.egitim_yili,
+            generated_by=meta.generated_by,
+        )
+        header_row = ExcelExportService._write_letterhead(ws, group_meta, num_cols=len(cols))
+        stats = build_export_stats(export_rows)
+        stats_end = ExcelExportService._write_stats(
+            ws, sm.normalize_stats(stats), start_row=header_row, num_cols=len(cols),
+        )
+        last_row, last_col, col_widths, col_needs_wrap = ExcelExportService._write_table(
+            ws, export_rows, cols, header_row=stats_end,
+        )
+        ExcelExportService._apply_page_setup(
+            ws, orientation='landscape', header_row=stats_end, last_row=last_row,
+            last_col=last_col, report_title=group_meta.report_title,
+        )
+        ExcelExportService._apply_column_widths(ws, cols, col_widths, col_needs_wrap)
+        ws.freeze_panes = ws.cell(row=stats_end + 1, column=1).coordinate
+
+    if not wb.worksheets:
+        wb.create_sheet('Liste')
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{sm.safe_filename(meta.report_title)}.xlsx"'
+    return response

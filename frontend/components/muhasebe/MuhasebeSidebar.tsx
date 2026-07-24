@@ -3,7 +3,7 @@
 import Link from "next/link";
 import KurumLogo from "@/components/branding/KurumLogo";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MUHASEBE_NAV_ITEMS,
   isMuhasebeNavActive,
@@ -22,6 +22,31 @@ type MuhasebeSidebarProps = {
   onLogout: () => void;
 };
 
+const PIN_STORAGE = "muhasebe-sidebar-pinned";
+
+function usePinnedItems() {
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PIN_STORAGE);
+      if (saved) setPinnedIds(JSON.parse(saved));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const togglePin = (id: string) => {
+    setPinnedIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id];
+      localStorage.setItem(PIN_STORAGE, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  return { pinnedIds, togglePin };
+}
+
 function NavChevron({ expanded }: { expanded: boolean }) {
   return (
     <span className={`muhasebe-nav-chevron${expanded ? " is-expanded" : ""}`} aria-hidden>
@@ -31,6 +56,12 @@ function NavChevron({ expanded }: { expanded: boolean }) {
     </span>
   );
 }
+
+const PinIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden>
+    <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
+  </svg>
+);
 
 export default function MuhasebeSidebar({
   isOpen,
@@ -42,17 +73,28 @@ export default function MuhasebeSidebar({
 }: MuhasebeSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { getOrderedItems } = useMuhasebeMenuOrder();
+  const { getOrderedItems, reorder, reorderSubmenu } = useMuhasebeMenuOrder();
+  const { pinnedIds, togglePin } = usePinnedItems();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragPosition, setDragPosition] = useState<"before" | "after">("after");
+  const [subDrag, setSubDrag] = useState<{ parentId: string; id: string } | null>(null);
+  const [subDragOver, setSubDragOver] = useState<{ parentId: string; id: string } | null>(null);
+  const [subDragPosition, setSubDragPosition] = useState<"before" | "after">("after");
+  const pendingExpandRef = useRef<string | null>(null);
 
   const navItems = useMemo(() => getOrderedItems(), [getOrderedItems]);
 
-  // Yalnızca rota veya sidebar genişliği değişince senkronize et.
-  // navItems her render'da yeni dizi olduğu için dependency'ye eklenmez —
-  // aksi halde geniş menüde sonsuz re-render döngüsü oluşur ve tıklamalar kilitlenir.
   useEffect(() => {
     if (!isOpen) {
       setExpandedMenus([]);
+      return;
+    }
+    if (pendingExpandRef.current) {
+      setExpandedMenus([pendingExpandRef.current]);
+      pendingExpandRef.current = null;
       return;
     }
     const activeParent = MUHASEBE_NAV_ITEMS.find(
@@ -61,13 +103,27 @@ export default function MuhasebeSidebar({
     setExpandedMenus(activeParent ? [activeParent.id] : []);
   }, [isOpen, pathname]);
 
+  const filteredNavItems = useMemo(() => {
+    if (!searchQuery.trim()) return navItems;
+    const q = searchQuery.toLocaleLowerCase("tr-TR");
+    return navItems.filter((item) => {
+      if (item.label.toLocaleLowerCase("tr-TR").includes(q)) return true;
+      return item.children?.some((c) => c.label.toLocaleLowerCase("tr-TR").includes(q));
+    });
+  }, [navItems, searchQuery]);
+
+  const pinnedItems = useMemo(
+    () => navItems.filter((item) => pinnedIds.includes(item.id)),
+    [navItems, pinnedIds],
+  );
+
   const toggleSubmenu = (id: string) => {
     setExpandedMenus((prev) => (prev.includes(id) ? [] : [id]));
   };
 
-  const closeMobileIfNeeded = () => {
+  const closeMobileIfNeeded = useCallback(() => {
     if (!isDesktop && mobileDrawerOpen) onCloseMobile();
-  };
+  }, [isDesktop, mobileDrawerOpen, onCloseMobile]);
 
   const handleNavLinkClick = (
     e: React.MouseEvent<HTMLAnchorElement>,
@@ -85,10 +141,67 @@ export default function MuhasebeSidebar({
     closeMobileIfNeeded();
   };
 
-  const renderSubmenuLink = (child: MuhasebeNavChildDef) => {
-    const childActive = isMuhasebeNavChildActive(pathname, child);
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragEnd = () => {
+    if (dragId && dragOverId && dragId !== dragOverId) {
+      reorder(dragId, dragOverId, dragPosition);
+    }
+    setDragId(null);
+    setDragOverId(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (id === dragId) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragPosition(e.clientY < rect.top + rect.height / 2 ? "before" : "after");
+    setDragOverId(id);
+  };
+
+  const renderSubmenuLink = (child: MuhasebeNavChildDef, siblings: MuhasebeNavChildDef[], parentId: string) => {
+    const childActive = isMuhasebeNavChildActive(pathname, child, siblings);
+    const isSubOver =
+      subDragOver?.parentId === parentId &&
+      subDragOver.id === child.id &&
+      subDrag?.id !== child.id;
     return (
-      <li key={child.id} className="muhasebe-nav-subitem">
+      <li
+        key={child.id}
+        className={`muhasebe-nav-subitem${isSubOver ? ` drag-over-${subDragPosition}` : ""}${
+          subDrag?.parentId === parentId && subDrag.id === child.id ? " is-dragging" : ""
+        }`}
+        draggable={isOpen && !searchQuery}
+        onDragStart={(e) => {
+          e.stopPropagation();
+          setSubDrag({ parentId, id: child.id });
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragEnd={() => {
+          if (
+            subDrag &&
+            subDragOver &&
+            subDrag.parentId === subDragOver.parentId &&
+            subDrag.id !== subDragOver.id
+          ) {
+            reorderSubmenu(subDrag.parentId, subDrag.id, subDragOver.id, subDragPosition);
+          }
+          setSubDrag(null);
+          setSubDragOver(null);
+        }}
+        onDragOver={(e) => {
+          if (!isOpen || !subDrag || subDrag.parentId !== parentId || subDrag.id === child.id) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setSubDragPosition(e.clientY < rect.top + rect.height / 2 ? "before" : "after");
+          setSubDragOver({ parentId, id: child.id });
+        }}
+      >
         <Link
           href={child.href}
           className={`muhasebe-nav-sublink${childActive ? " is-active" : ""}`}
@@ -101,37 +214,92 @@ export default function MuhasebeSidebar({
     );
   };
 
+  const renderSubmenuItems = (item: MuhasebeNavItemDef) => {
+    const children = item.children || [];
+    const hasGroups = children.some((c) => c.group);
+    if (!hasGroups) {
+      return children.map((child) => renderSubmenuLink(child, children, item.id));
+    }
+    const groups: Record<string, MuhasebeNavChildDef[]> = {};
+    children.forEach((child) => {
+      const g = child.group || "Diğer";
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(child);
+    });
+    return Object.entries(groups).map(([groupName, groupChildren]) => (
+      <li key={groupName} className="muhasebe-nav-subgroup">
+        <div className="muhasebe-nav-subgroup-title">{groupName}</div>
+        <ul className="muhasebe-nav-subgroup-list">
+          {groupChildren.map((child) => renderSubmenuLink(child, children, item.id))}
+        </ul>
+      </li>
+    ));
+  };
+
   const renderNavItem = (item: MuhasebeNavItemDef) => {
     const hasChildren = !!item.children?.length;
     const active = isMuhasebeNavActive(pathname, item);
     const isExpanded = expandedMenus.includes(item.id);
+    const isPinned = pinnedIds.includes(item.id);
+    const isDragOver = dragOverId === item.id && dragId !== item.id;
 
     if (hasChildren) {
       return (
         <li
           key={item.id}
-          className={`muhasebe-nav-item muhasebe-nav-group${isExpanded ? " is-open" : ""}`}
+          className={`muhasebe-nav-item muhasebe-nav-group${isExpanded ? " is-open" : ""}${
+            dragId === item.id ? " is-dragging" : ""
+          }${isDragOver ? ` drag-over-${dragPosition === "before" ? "before" : "after"}` : ""}`}
+          draggable={isOpen && !searchQuery}
+          onDragStart={(e) => handleDragStart(e, item.id)}
+          onDragEnd={handleDragEnd}
+          onDragOver={(e) => handleDragOver(e, item.id)}
         >
-          <button
-            type="button"
-            className={`muhasebe-nav-link muhasebe-nav-group-toggle${active ? " is-active" : ""}`}
-            onClick={() => toggleSubmenu(item.id)}
-            aria-expanded={isExpanded}
-            title={!isOpen ? item.label : undefined}
-          >
-            {active && <span className="muhasebe-nav-active-bar" aria-hidden />}
-            <span className="muhasebe-nav-icon">{item.icon}</span>
+          <div className="muhasebe-nav-link-row">
+            <button
+              type="button"
+              className={`muhasebe-nav-link muhasebe-nav-group-toggle${active ? " is-active" : ""}`}
+              onClick={() => {
+                if (!isDesktop && !isOpen) {
+                  pendingExpandRef.current = item.id;
+                  onToggle();
+                  return;
+                }
+                if (!isOpen) {
+                  pendingExpandRef.current = item.id;
+                  onToggle();
+                  return;
+                }
+                toggleSubmenu(item.id);
+              }}
+              aria-expanded={isExpanded}
+              title={!isOpen ? item.label : undefined}
+            >
+              {active && <span className="muhasebe-nav-active-bar" aria-hidden />}
+              <span className="muhasebe-nav-icon">{item.icon}</span>
+              {isOpen && (
+                <>
+                  <span className="muhasebe-nav-label">{item.label}</span>
+                  <NavChevron expanded={isExpanded} />
+                </>
+              )}
+            </button>
             {isOpen && (
-              <>
-                <span className="muhasebe-nav-label">{item.label}</span>
-                <NavChevron expanded={isExpanded} />
-              </>
+              <button
+                type="button"
+                className={`muhasebe-pin-btn${isPinned ? " is-pinned" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePin(item.id);
+                }}
+                title={isPinned ? "Sabitliği kaldır" : "Menüyü sabitle"}
+              >
+                <PinIcon />
+              </button>
             )}
-          </button>
+          </div>
           {isOpen && isExpanded && (
-            <ul className="muhasebe-nav-submenu is-open">
-              {item.children!.map(renderSubmenuLink)}
-            </ul>
+            <ul className="muhasebe-nav-submenu is-open">{renderSubmenuItems(item)}</ul>
           )}
           {!isOpen && (
             <>
@@ -139,7 +307,7 @@ export default function MuhasebeSidebar({
               <div className="muhasebe-nav-submenu-tooltip">
                 <div className="muhasebe-nav-submenu-tooltip-title">{item.label}</div>
                 {item.children!.map((child) => {
-                  const childActive = isMuhasebeNavChildActive(pathname, child);
+                  const childActive = isMuhasebeNavChildActive(pathname, child, item.children);
                   return (
                     <Link
                       key={child.id}
@@ -159,18 +327,42 @@ export default function MuhasebeSidebar({
     }
 
     return (
-      <li key={item.id} className="muhasebe-nav-item">
-        <Link
-          href={item.href}
-          className={`muhasebe-nav-link${active ? " is-active" : ""}`}
-          aria-current={active ? "page" : undefined}
-          title={!isOpen ? item.label : undefined}
-          onClick={(e) => handleNavLinkClick(e, item)}
-        >
-          {active && <span className="muhasebe-nav-active-bar" aria-hidden />}
-          <span className="muhasebe-nav-icon">{item.icon}</span>
-          {isOpen && <span className="muhasebe-nav-label">{item.label}</span>}
-        </Link>
+      <li
+        key={item.id}
+        className={`muhasebe-nav-item${dragId === item.id ? " is-dragging" : ""}${
+          isDragOver ? ` drag-over-${dragPosition === "before" ? "before" : "after"}` : ""
+        }`}
+        draggable={isOpen && !searchQuery}
+        onDragStart={(e) => handleDragStart(e, item.id)}
+        onDragEnd={handleDragEnd}
+        onDragOver={(e) => handleDragOver(e, item.id)}
+      >
+        <div className="muhasebe-nav-link-row">
+          <Link
+            href={item.href}
+            className={`muhasebe-nav-link${active ? " is-active" : ""}`}
+            aria-current={active ? "page" : undefined}
+            title={!isOpen ? item.label : undefined}
+            onClick={(e) => handleNavLinkClick(e, item)}
+          >
+            {active && <span className="muhasebe-nav-active-bar" aria-hidden />}
+            <span className="muhasebe-nav-icon">{item.icon}</span>
+            {isOpen && <span className="muhasebe-nav-label">{item.label}</span>}
+          </Link>
+          {isOpen && (
+            <button
+              type="button"
+              className={`muhasebe-pin-btn${isPinned ? " is-pinned" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePin(item.id);
+              }}
+              title={isPinned ? "Sabitliği kaldır" : "Menüyü sabitle"}
+            >
+              <PinIcon />
+            </button>
+          )}
+        </div>
         {!isOpen && <span className="muhasebe-nav-tooltip">{item.label}</span>}
       </li>
     );
@@ -202,8 +394,60 @@ export default function MuhasebeSidebar({
         </button>
       </div>
 
+      {isOpen && (
+        <div className="muhasebe-sidebar-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Menüde ara..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="muhasebe-sidebar-search-input"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              className="muhasebe-sidebar-search-clear"
+              onClick={() => setSearchQuery("")}
+              aria-label="Aramayı temizle"
+            >
+              ✕
+            </button>
+          ) : null}
+        </div>
+      )}
+
       <nav className="muhasebe-nav-sidebar" aria-label="Muhasebe menüsü">
-        <ul className="muhasebe-nav-list">{navItems.map(renderNavItem)}</ul>
+        {isOpen && pinnedItems.length > 0 && !searchQuery ? (
+          <div className="muhasebe-pinned-section">
+            <div className="muhasebe-pinned-header">📌 Sabitlenmiş</div>
+            <ul className="muhasebe-nav-list muhasebe-pinned-list">
+              {pinnedItems.map((item) => {
+                const active = isMuhasebeNavActive(pathname, item);
+                const href = item.href || item.children?.[0]?.href || "#";
+                return (
+                  <li key={`pin-${item.id}`} className="muhasebe-nav-item">
+                    <Link
+                      href={href}
+                      className={`muhasebe-nav-link${active ? " is-active" : ""}`}
+                      onClick={closeMobileIfNeeded}
+                    >
+                      {active && <span className="muhasebe-nav-active-bar" aria-hidden />}
+                      <span className="muhasebe-nav-icon">{item.icon}</span>
+                      <span className="muhasebe-nav-label">{item.label}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="muhasebe-pinned-divider" />
+          </div>
+        ) : null}
+
+        <ul className="muhasebe-nav-list">{filteredNavItems.map(renderNavItem)}</ul>
       </nav>
 
       <div className="muhasebe-sidebar-footer">

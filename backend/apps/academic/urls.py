@@ -54,19 +54,28 @@ from apps.academic.interfaces.views import (
     grid_generate_create_api,
     grid_matrix_api,
     grid_clear_api,
+    grid_ensure_version_api,
     program_grid_cell_list_api,
     program_grid_cell_detail_api,
     program_grid_cell_update_api,
     program_grid_cell_bulk_update_api,
+    program_grid_cell_fill_api,
+    program_grid_cell_clear_api,
+    program_grid_cells_swap_api,
 )
 from apps.academic.interfaces.views.class_lesson_plan import (
     active_academic_year_api,
+    class_lesson_plan_context_api,
+    class_lesson_plan_ders_options_api,
     class_lesson_plan_list_api,
     class_lesson_plan_detail_api,
     class_lesson_plan_create_api,
     class_lesson_plan_update_api,
     class_lesson_plan_delete_api,
+    class_lesson_plan_bulk_delete_api,
     class_lesson_plan_summary_api,
+    class_lesson_plan_seed_from_alan_api,
+    class_lesson_plan_copy_api,
 )
 from apps.academic.interfaces.views.lesson_teacher_pool import (
     lesson_teacher_pool_list_api,
@@ -113,6 +122,7 @@ from apps.academic.interfaces.views.schedule_view import (
     room_schedule_api,
     daily_flow_api,
 )
+from apps.academic.interfaces.views.schedule_export import schedule_export_api
 from apps.academic.interfaces.views.schedule_version import (
     version_list_api as schedule_version_list_api,
     version_create_api as schedule_version_create_api,
@@ -123,6 +133,18 @@ from apps.academic.interfaces.views.schedule_version import (
     version_duplicate_api as schedule_version_duplicate_api,
     version_lock_api as schedule_version_lock_api,
     version_unlock_api as schedule_version_unlock_api,
+)
+from apps.academic.interfaces.views.lesson_operations import (
+    lesson_session_materialize_api,
+    lesson_session_list_api,
+    lesson_session_create_api,
+    lesson_session_detail_api,
+    lesson_session_action_api,
+    lesson_teacher_attendance_api,
+    lesson_student_attendance_api,
+    lesson_pay_summary_api,
+    schedule_revision_list_api,
+    lesson_operations_meta_api,
 )
 
 app_name = 'academic'
@@ -176,21 +198,30 @@ urlpatterns = [
     # Program Grid endpoints
     path('program-grid/generate-preview/', grid_generate_preview_api, name='grid-generate-preview'),
     path('program-grid/generate-create/', grid_generate_create_api, name='grid-generate-create'),
+    path('program-grid/ensure-version/', grid_ensure_version_api, name='grid-ensure-version'),
     path('program-grid/cycles/<int:cycle_pk>/matrix/', grid_matrix_api, name='grid-matrix'),
     path('program-grid/cycles/<int:cycle_pk>/clear/', grid_clear_api, name='grid-clear'),
     path('program-grid/cells/', program_grid_cell_list_api, name='program-grid-cell-list'),
+    path('program-grid/cells/bulk-update/', program_grid_cell_bulk_update_api, name='program-grid-cell-bulk-update'),
     path('program-grid/cells/<int:pk>/', program_grid_cell_detail_api, name='program-grid-cell-detail'),
     path('program-grid/cells/<int:pk>/update/', program_grid_cell_update_api, name='program-grid-cell-update'),
-    path('program-grid/cells/bulk-update/', program_grid_cell_bulk_update_api, name='program-grid-cell-bulk-update'),
+    path('program-grid/cells/<int:pk>/fill/', program_grid_cell_fill_api, name='program-grid-cell-fill'),
+    path('program-grid/cells/<int:pk>/clear/', program_grid_cell_clear_api, name='program-grid-cell-clear'),
+    path('program-grid/cells/swap/', program_grid_cells_swap_api, name='program-grid-cells-swap'),
     
     # Class Lesson Plan endpoints
     path('class-lesson-plan/', class_lesson_plan_list_api, name='class-lesson-plan-list'),
     path('class-lesson-plan/active-year/', active_academic_year_api, name='active-academic-year'),
+    path('class-lesson-plan/context/', class_lesson_plan_context_api, name='class-lesson-plan-context'),
+    path('class-lesson-plan/ders-options/', class_lesson_plan_ders_options_api, name='class-lesson-plan-ders-options'),
     path('class-lesson-plan/create/', class_lesson_plan_create_api, name='class-lesson-plan-create'),
+    path('class-lesson-plan/seed-from-alan/', class_lesson_plan_seed_from_alan_api, name='class-lesson-plan-seed-from-alan'),
+    path('class-lesson-plan/copy/', class_lesson_plan_copy_api, name='class-lesson-plan-copy'),
+    path('class-lesson-plan/bulk-delete/', class_lesson_plan_bulk_delete_api, name='class-lesson-plan-bulk-delete'),
+    path('class-lesson-plan/summary/<int:classroom_id>/<int:term_id>/', class_lesson_plan_summary_api, name='class-lesson-plan-summary'),
     path('class-lesson-plan/<int:plan_id>/', class_lesson_plan_detail_api, name='class-lesson-plan-detail'),
     path('class-lesson-plan/<int:plan_id>/update/', class_lesson_plan_update_api, name='class-lesson-plan-update'),
     path('class-lesson-plan/<int:plan_id>/delete/', class_lesson_plan_delete_api, name='class-lesson-plan-delete'),
-    path('class-lesson-plan/summary/<int:classroom_id>/<int:term_id>/', class_lesson_plan_summary_api, name='class-lesson-plan-summary'),
     
     # Lesson Teacher Pool endpoints (Branş Öğretmen Havuzu)
     path('lesson-teacher-pool/', lesson_teacher_pool_list_api, name='lesson-teacher-pool-list'),
@@ -236,6 +267,7 @@ urlpatterns = [
     path('schedule/student/', student_schedule_api, name='schedule-student'),
     path('schedule/room/', room_schedule_api, name='schedule-room'),
     path('schedule/daily-flow/', daily_flow_api, name='schedule-daily-flow'),
+    path('schedule/export/', schedule_export_api, name='schedule-export'),
     
     # Schedule Version endpoints (Program Versiyonu Yönetimi)
     path('schedule/versions/', schedule_version_list_api, name='schedule-version-list'),
@@ -254,4 +286,20 @@ urlpatterns = [
     path('teacher-availability/<int:personel_id>/grid/<int:calendar_id>/', teacher_availability_grid_api, name='teacher-availability-grid'),
     path('teacher-availability/<int:personel_id>/save/', teacher_availability_save_api, name='teacher-availability-save'),
     path('teacher-availability/<int:personel_id>/temporary/<int:set_id>/', teacher_availability_temp_delete_api, name='teacher-availability-temp-delete'),
+
+    # Ders Operasyonları
+    path('lesson-operations/meta/', lesson_operations_meta_api, name='lesson-operations-meta'),
+    path('lesson-sessions/materialize/', lesson_session_materialize_api, name='lesson-session-materialize'),
+    path('lesson-sessions/', lesson_session_list_api, name='lesson-session-list'),
+    path('lesson-sessions/create/', lesson_session_create_api, name='lesson-session-create'),
+    path('lesson-sessions/<int:pk>/', lesson_session_detail_api, name='lesson-session-detail'),
+    path('lesson-sessions/<int:pk>/teacher-attendance/', lesson_teacher_attendance_api, name='lesson-teacher-attendance'),
+    path('lesson-sessions/<int:pk>/student-attendance/', lesson_student_attendance_api, name='lesson-student-attendance'),
+    path(
+        'lesson-sessions/<int:pk>/<str:action>/',
+        lesson_session_action_api,
+        name='lesson-session-action',
+    ),
+    path('lesson-pay/summary/', lesson_pay_summary_api, name='lesson-pay-summary'),
+    path('schedule/revisions/', schedule_revision_list_api, name='schedule-revision-list'),
 ]

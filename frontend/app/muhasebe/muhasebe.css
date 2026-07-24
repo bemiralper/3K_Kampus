@@ -811,9 +811,139 @@
   display: none;
 }
 
+.muhasebe-sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 10px 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.muhasebe-sidebar-search > svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.muhasebe-sidebar-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+}
+
+.muhasebe-sidebar-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.muhasebe-sidebar-search-clear {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.muhasebe-sidebar-search-clear:hover {
+  color: #fff;
+}
+
+.muhasebe-nav-link-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
+.muhasebe-nav-link-row .muhasebe-nav-link {
+  flex: 1;
+  min-width: 0;
+}
+
+.muhasebe-pin-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.muhasebe-nav-item:hover .muhasebe-pin-btn,
+.muhasebe-pin-btn.is-pinned {
+  opacity: 1;
+}
+
+.muhasebe-pin-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.muhasebe-pin-btn.is-pinned {
+  color: #93c5fd;
+}
+
+.muhasebe-pinned-section {
+  margin-bottom: 6px;
+}
+
+.muhasebe-pinned-header {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.muhasebe-pinned-divider {
+  height: 1px;
+  margin: 8px 10px 10px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.muhasebe-nav-subgroup {
+  list-style: none;
+}
+
+.muhasebe-nav-subgroup-title {
+  padding: 8px 14px 4px 28px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.muhasebe-nav-subgroup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.muhasebe-shell.muhasebe-shell-collapsed .muhasebe-pin-btn,
+.muhasebe-shell.muhasebe-shell-collapsed .muhasebe-sidebar-search,
+.muhasebe-shell.muhasebe-shell-collapsed .muhasebe-pinned-section {
+  display: none;
+}
+
 .muhasebe-nav-item.is-dragging,
 .muhasebe-nav-subitem.is-dragging {
-  opacity: 1;
+  opacity: 0.45;
 }
 
 .muhasebe-nav-item.drag-over-before::before,

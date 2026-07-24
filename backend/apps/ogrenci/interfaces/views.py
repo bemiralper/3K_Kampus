@@ -270,7 +270,7 @@ def ogrenci_list_api(request):
 
 
 def ogrenci_list_export_api(request):
-    """CSV export — aynı filtreler, max 5000 satır."""
+    """CSV/XLSX/JSON export — aynı filtreler, max 5000 satır."""
     from apps.ogrenci.interfaces.list_helpers import (
         parse_list_params,
         parse_int_list_param,
@@ -278,10 +278,12 @@ def ogrenci_list_export_api(request):
         serialize_kayit_row,
         build_csv_response,
         build_excel_response,
+        build_excel_grouped_response,
         build_export_meta,
         build_json_export_response,
         build_ogrenci_kalemler_map,
         build_primary_coach_name_map,
+        EXPORT_GROUP_BY_VALUES,
         MAX_EXPORT_ROWS,
     )
 
@@ -294,6 +296,11 @@ def ogrenci_list_export_api(request):
     if err:
         return err
     params = parse_list_params(request)
+    group_by = (request.GET.get('group_by') or 'none').strip().lower()
+    if group_by not in EXPORT_GROUP_BY_VALUES:
+        group_by = 'none'
+
+    # Aktif kurum şubesinin dışına çıkılmaz (şubeler karıştırılmaz)
     qs, _ = build_kayit_queryset(ctx, params, apply_durum=True)
 
     ids = parse_int_list_param(request.GET.get('ids') or '')
@@ -320,13 +327,17 @@ def ogrenci_list_export_api(request):
     ]
     export_format = (request.GET.get('format') or 'csv').lower()
     if export_format == 'json':
-        return build_json_export_response(rows, column_keys)
+        return build_json_export_response(rows, column_keys, group_by=group_by)
 
     report_title = (request.GET.get('report_title') or '').strip() or 'ÖĞRENCİ LİSTESİ'
     if len(report_title) > 120:
         report_title = report_title[:120]
     meta = build_export_meta(request, ctx, report_title=report_title)
     if export_format == 'xlsx':
+        if group_by in ('sinif', 'sinif_seviyesi'):
+            return build_excel_grouped_response(
+                rows, column_keys, meta=meta, group_by=group_by,
+            )
         return build_excel_response(rows, column_keys, meta=meta)
     return build_csv_response(rows, column_keys, meta=meta)
 

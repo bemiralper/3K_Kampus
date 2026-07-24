@@ -39,6 +39,7 @@ interface TanimItem {
   id: number;
   ad: string;
   kod: string;
+  kisa_ad?: string;
   sira?: number;
   aktif_mi: boolean;
   kullanim_sayisi?: number;
@@ -84,6 +85,7 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
   const [formData, setFormData] = useState({
     ad: "",
     kod: "",
+    kisa_ad: "",
     sira: 0,
     aktif_mi: true,
   });
@@ -133,6 +135,7 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
     setFormData({
       ad: "",
       kod: "",
+      kisa_ad: "",
       sira: 0,
       aktif_mi: true,
     });
@@ -176,6 +179,7 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
         setFormData({
           ad: item.ad || "",
           kod: item.kod || "",
+          kisa_ad: item.kisa_ad || "",
           sira: item.sira ?? 0,
           aktif_mi: item.aktif_mi ?? true,
         });
@@ -368,7 +372,11 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
                   </div>
                   <div className="cell-info">
                     <span className="cell-primary">{item.ad}</span>
-                    <span className="cell-secondary">{subtitle}</span>
+                    <span className="cell-secondary">
+                      {type === "dersler" && item.kisa_ad
+                        ? `Programda: ${item.kisa_ad}`
+                        : subtitle}
+                    </span>
                   </div>
                 </div>
               </td>
@@ -725,6 +733,21 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
                     placeholder="Örn: S01, A01, D01, B01"
                   />
                 </div>
+                {activeTab === "dersler" && (
+                  <div className="form-group">
+                    <label>Kısa / görünen ad</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={formData.kisa_ad}
+                      onChange={(e) => setFormData({ ...formData, kisa_ad: e.target.value })}
+                      placeholder="Örn: Fizik (program tablosunda bu yazılır)"
+                    />
+                    <small style={{ color: "#64748b", display: "block", marginTop: 6 }}>
+                      Boş bırakılırsa ders adı kullanılır. Fizik-1 / Fizik-2 için “Fizik” yazabilirsiniz.
+                    </small>
+                  </div>
+                )}
                 {activeTab === "sinif_seviyeleri" && (
                   <div className="form-group">
                     <label>Sıra</label>

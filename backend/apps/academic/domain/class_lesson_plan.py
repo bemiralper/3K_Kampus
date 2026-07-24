@@ -136,6 +136,15 @@ class ClassLessonPlan(models.Model):
     )
     
     # ==================== EK BİLGİLER ====================
+
+    gorunen_ad = models.CharField(
+        'Görünen ad',
+        max_length=100,
+        blank=True,
+        default='',
+        help_text='Bu plan satırı için program tablosunda gösterilecek ad. '
+                  'Boşsa dersin kısa adı (yoksa tam adı) kullanılır.',
+    )
     
     notes = models.TextField(
         'Notlar',
@@ -184,6 +193,20 @@ class ClassLessonPlan(models.Model):
     def __str__(self):
         teacher_name = f" - {self.ogretmen.ad} {self.ogretmen.soyad}" if self.ogretmen else ""
         return f"{self.sinif.ad} | {self.ders.ad} ({self.weekly_hours} saat){teacher_name}"
+
+    @property
+    def display_name(self) -> str:
+        """
+        Program hücresinde gösterilecek ad:
+        plan.gorunen_ad → ders.kisa_ad → ders.ad
+        """
+        override = (self.gorunen_ad or '').strip()
+        if override:
+            return override
+        ders = getattr(self, 'ders', None)
+        if ders is not None:
+            return ders.display_name
+        return ''
     
     def clean(self):
         """Model validasyonları"""

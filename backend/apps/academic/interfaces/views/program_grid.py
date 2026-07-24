@@ -10,16 +10,25 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.academic.domain import WeeklyCycle, ProgramGridCell
+from apps.academic.domain import WeeklyCycle, ProgramGridCell, ScheduleVersion
 from apps.academic.interfaces.sube_context import (
+    gate_schedule_template_drf,
+    gate_sinif_drf,
     gate_weekly_cycle_drf,
     mandatory_academic_context_drf,
 )
 from apps.academic.services.grid_engine import (
     GridEngine,
+    ensure_version_classroom_grid,
     generate_preview,
     generate_cells,
     get_grid_matrix,
+)
+from apps.academic.services.manual_placement_service import (
+    ManualPlacementError,
+    clear_cell,
+    fill_cell,
+    swap_cells,
 )
 from apps.academic.interfaces.serializers import (
     ProgramGridCellSerializer,
@@ -114,7 +123,10 @@ def grid_generate_create_api(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     weekly_cycle_id = serializer.validated_data['weekly_cycle_id']
-    overwrite = serializer.validated_data.get('overwrite', False)
+    overwrite = serializer.validated_data.get(
+        'overwrite_existing',
+        serializer.validated_data.get('overwrite', False),
+    )
 
     _, _, gate_err = gate_weekly_cycle_drf(request, weekly_cycle_id)
     if gate_err:
@@ -189,6 +201,251 @@ def grid_clear_api(request, cycle_pk):
     return Response({
         'deleted_count': deleted_count,
         'message': f'{deleted_count} hücre silindi.'
+    })
+
+
+# ============================================
+# Versiyonlu sınıf grid iskeleti + elle yerleştirme
+# ============================================
+
+def _serialize_placement_cell(cell: ProgramGridCell) -> dict:
+    from apps.egitim_tanimlari.display import serialize_lesson_label
+
+    return {
+        'id': cell.id,
+        'day_id': cell.weekly_day_id,
+        'timeslot_id': cell.timeslot_id,
+        'status': cell.status,
+        'status_display': cell.get_status_display(),
+        'schedule_version_id': cell.schedule_version_id,
+        'classroom_id': cell.sinif_id,
+        'class_lesson_plan_id': cell.class_lesson_plan_id,
+        'lesson': serialize_lesson_label(
+            ders=cell.ders if cell.ders_id else None,
+            plan=getattr(cell, 'class_lesson_plan', None),
+        ),
+        'teacher': (
+            {
+                'id': cell.ogretmen.id,
+                'name': f'{cell.ogretmen.ad} {cell.ogretmen.soyad}',
+            }
+            if cell.ogretmen_id else None
+        ),
+        'is_double_block_start': cell.is_double_block_start,
+        'notes': cell.notes,
+    }
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def grid_ensure_version_api(request):
+    """
+    POST /api/academic/program-grid/ensure-version/
+
+    Body: { "version_id": 1, "classroom_id": 1 }
+    Versiyon + sınıf için EMPTY grid iskeleti oluşturur (mevcut hücrelere dokunmaz).
+    """
+    version_id = request.data.get('version_id')
+    classroom_id = request.data.get('classroom_id')
+    if not version_id or not classroom_id:
+        return Response(
+            {'error': 'version_id ve classroom_id zorunludur.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        version = ScheduleVersion.objects.select_related('schedule_template', 'term').get(
+            pk=int(version_id),
+        )
+    except ScheduleVersion.DoesNotExist:
+        return Response({'error': 'Program versiyonu bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    _, _, gate_err = gate_schedule_template_drf(request, version.schedule_template_id)
+    if gate_err:
+        return gate_err
+    _, _, gate_err = gate_sinif_drf(request, int(classroom_id))
+    if gate_err:
+        return gate_err
+
+    if version.is_locked:
+        return Response(
+            {'error': 'Program versiyonu kilitli; iskelet oluşturulamaz.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if version.term_id and version.term.schedule_locked:
+        return Response(
+            {'error': 'Dönem programı kilitli; iskelet oluşturulamaz.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        result = ensure_version_classroom_grid(
+            schedule_version_id=version.id,
+            classroom_id=int(classroom_id),
+        )
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({
+        'schedule_version_id': result.schedule_version_id,
+        'classroom_id': result.classroom_id,
+        'created_count': result.created_count,
+        'existing_count': result.existing_count,
+        'total_cells': result.total_cells,
+        'message': (
+            f'{result.created_count} hücre oluşturuldu, '
+            f'{result.existing_count} hücre zaten vardı.'
+        ),
+    }, status=status.HTTP_201_CREATED if result.created_count else status.HTTP_200_OK)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def program_grid_cell_fill_api(request, pk):
+    """
+    POST /api/academic/program-grid/cells/<id>/fill/
+
+    Body: { "class_lesson_plan_id": 1, "ogretmen_id": 1?, "notes": "..."? }
+    """
+    try:
+        cell = ProgramGridCell.objects.select_related(
+            'schedule_version__schedule_template',
+        ).get(pk=pk, is_active=True)
+    except ProgramGridCell.DoesNotExist:
+        return Response({'error': 'Hücre bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if cell.schedule_version_id:
+        _, _, gate_err = gate_schedule_template_drf(
+            request, cell.schedule_version.schedule_template_id,
+        )
+        if gate_err:
+            return gate_err
+    else:
+        _, _, gate_err = gate_weekly_cycle_drf(request, cell.weekly_cycle_id)
+        if gate_err:
+            return gate_err
+
+    plan_id = request.data.get('class_lesson_plan_id')
+    if not plan_id:
+        return Response(
+            {'error': 'class_lesson_plan_id zorunludur.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        updated = fill_cell(
+            cell_id=pk,
+            class_lesson_plan_id=int(plan_id),
+            ogretmen_id=request.data.get('ogretmen_id'),
+            notes=request.data.get('notes'),
+        )
+    except ManualPlacementError as e:
+        return Response(
+            {'error': e.message, 'field': e.field},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(_serialize_placement_cell(updated))
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def program_grid_cell_clear_api(request, pk):
+    """
+    POST /api/academic/program-grid/cells/<id>/clear/
+    """
+    try:
+        cell = ProgramGridCell.objects.select_related(
+            'schedule_version__schedule_template',
+        ).get(pk=pk, is_active=True)
+    except ProgramGridCell.DoesNotExist:
+        return Response({'error': 'Hücre bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if cell.schedule_version_id:
+        _, _, gate_err = gate_schedule_template_drf(
+            request, cell.schedule_version.schedule_template_id,
+        )
+        if gate_err:
+            return gate_err
+    else:
+        _, _, gate_err = gate_weekly_cycle_drf(request, cell.weekly_cycle_id)
+        if gate_err:
+            return gate_err
+
+    try:
+        updated = clear_cell(cell_id=pk)
+    except ManualPlacementError as e:
+        return Response(
+            {'error': e.message, 'field': e.field},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(_serialize_placement_cell(updated))
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def program_grid_cells_swap_api(request):
+    """
+    POST /api/academic/program-grid/cells/swap/
+    Body: { "source_cell_id": 1, "target_cell_id": 2 }
+    """
+    source_id = request.data.get('source_cell_id')
+    target_id = request.data.get('target_cell_id')
+    if not source_id or not target_id:
+        return Response(
+            {'error': 'source_cell_id ve target_cell_id zorunludur.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        source_id = int(source_id)
+        target_id = int(target_id)
+    except (TypeError, ValueError):
+        return Response({'error': 'Geçersiz hücre kimliği.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        source = ProgramGridCell.objects.select_related(
+            'schedule_version__schedule_template',
+        ).get(pk=source_id, is_active=True)
+    except ProgramGridCell.DoesNotExist:
+        return Response({'error': 'Kaynak hücre bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if source.schedule_version_id:
+        _, _, gate_err = gate_schedule_template_drf(
+            request, source.schedule_version.schedule_template_id,
+        )
+        if gate_err:
+            return gate_err
+    else:
+        _, _, gate_err = gate_weekly_cycle_drf(request, source.weekly_cycle_id)
+        if gate_err:
+            return gate_err
+
+    try:
+        source_cell, target_cell = swap_cells(
+            source_cell_id=source_id,
+            target_cell_id=target_id,
+        )
+    except ManualPlacementError as e:
+        return Response(
+            {'error': e.message, 'field': e.field},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response({
+        'source': _serialize_placement_cell(source_cell),
+        'target': _serialize_placement_cell(target_cell),
     })
 
 

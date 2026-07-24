@@ -399,6 +399,9 @@ export default function SozlesmeOlusturClient() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedOgrenci, setSelectedOgrenci] = useState<any>(null);
+  const [sozlesmesizList, setSozlesmesizList] = useState<any[]>([]);
+  const [sozlesmesizLoading, setSozlesmesizLoading] = useState(false);
+  const [sozlesmesizFilter, setSozlesmesizFilter] = useState("");
 
   // ─── Paket Data ───────────────────
   const [paketData, setPaketData] = useState<{
@@ -766,6 +769,39 @@ export default function SozlesmeOlusturClient() {
     }, 350);
     return () => window.clearTimeout(timer);
   }, [searchQuery, selectedOgrenci, searchOgrenci]);
+
+  const loadSozlesmesizOgrenciler = useCallback(async () => {
+    if (isEditMode) return;
+    setSozlesmesizLoading(true);
+    try {
+      const q = sozlesmesizFilter.trim();
+      const url = q
+        ? `${API_BASE}/sozlesmesiz-ogrenciler/?q=${encodeURIComponent(q)}`
+        : `${API_BASE}/sozlesmesiz-ogrenciler/`;
+      const res = await fetch(url, {
+        credentials: "include",
+        headers: apiHeaders(),
+      });
+      if (!res.ok) {
+        setSozlesmesizList([]);
+        return;
+      }
+      const data = await res.json();
+      setSozlesmesizList(Array.isArray(data?.results) ? data.results : []);
+    } catch {
+      setSozlesmesizList([]);
+    } finally {
+      setSozlesmesizLoading(false);
+    }
+  }, [isEditMode, sozlesmesizFilter]);
+
+  useEffect(() => {
+    if (isEditMode || selectedOgrenci) return;
+    const timer = window.setTimeout(() => {
+      void loadSozlesmesizOgrenciler();
+    }, sozlesmesizFilter.trim() ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [isEditMode, selectedOgrenci, sozlesmesizFilter, loadSozlesmesizOgrenciler, activeSube?.id, activeEgitimYili?.id]);
 
   // ═════════════════════════════════════════
   // Öğrenci seçilince paket bilgisi getir
@@ -1937,6 +1973,60 @@ export default function SozlesmeOlusturClient() {
                     ))}
                   </div>
                 )}
+
+                {/* Sözleşmesiz kayıtlı öğrenciler — listeden seçim */}
+                <div style={{ marginTop: 20, borderTop: "1px solid #e5e7eb", paddingTop: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a" }}>Sözleşmesiz öğrenciler</div>
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                        Bu eğitim yılında kayıtlı, henüz sözleşmesi olmayan öğrenciler
+                      </div>
+                    </div>
+                    <input
+                      value={sozlesmesizFilter}
+                      onChange={(e) => setSozlesmesizFilter(e.target.value)}
+                      placeholder="Listede filtrele…"
+                      style={{ ...inputStyle, maxWidth: 220, minHeight: 36, fontSize: 13 }}
+                    />
+                  </div>
+                  {sozlesmesizLoading ? (
+                    <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>Liste yükleniyor…</p>
+                  ) : sozlesmesizList.length === 0 ? (
+                    <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>
+                      Sözleşmesiz öğrenci bulunamadı.
+                    </p>
+                  ) : (
+                    <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, maxHeight: 320, overflow: "auto" }}>
+                      {sozlesmesizList.map((o: any) => (
+                        <div
+                          key={o.id}
+                          onClick={() => selectOgrenci(o)}
+                          style={{
+                            padding: "12px 14px",
+                            cursor: "pointer",
+                            borderBottom: "1px solid #f3f4f6",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            minHeight: 44,
+                          }}
+                          onMouseOver={(e) => (e.currentTarget.style.background = "#f0f9ff")}
+                          onMouseOut={(e) => (e.currentTarget.style.background = "")}
+                        >
+                          <span style={{ fontWeight: 600 }}>
+                            {o.tam_ad || `${o.ad || ""} ${o.soyad || ""}`.trim()}
+                          </span>
+                          <span style={{ color: "#6b7280", fontSize: 13 }}>
+                            {[o.ogrenci_no, o.sinif, o.tc_kimlik_no ? `${String(o.tc_kimlik_no).slice(0, 3)}***` : null]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, background: "#f0fdf4", borderRadius: 8 }}>

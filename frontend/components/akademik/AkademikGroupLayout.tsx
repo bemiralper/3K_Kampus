@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  AKADEMIK_BASE,
   AKADEMIK_MODULE_LABEL,
+  akademikPortalHomeHref,
   akademikTabHref,
+  resolveAkademikBase,
   type AkademikGroupDef,
 } from "@/lib/akademik-routes";
 import "./akademik-operasyon.css";
@@ -17,6 +18,8 @@ type Props = {
 
 export default function AkademikGroupLayout({ group, children }: Props) {
   const pathname = usePathname();
+  const basePath = resolveAkademikBase(pathname);
+  const homeHref = akademikPortalHomeHref(basePath);
 
   return (
     <div className="akademik-page">
@@ -24,9 +27,9 @@ export default function AkademikGroupLayout({ group, children }: Props) {
         <div>
           <h1>{group.label}</h1>
           <nav className="akademik-breadcrumb" aria-label="Breadcrumb">
-            <Link href="/dashboard">Ana Sayfa</Link>
+            <Link href={homeHref}>Ana Sayfa</Link>
             <span>/</span>
-            <Link href={AKADEMIK_BASE}>{AKADEMIK_MODULE_LABEL}</Link>
+            <Link href={basePath}>{AKADEMIK_MODULE_LABEL}</Link>
             <span>/</span>
             <span>{group.label}</span>
           </nav>
@@ -36,7 +39,7 @@ export default function AkademikGroupLayout({ group, children }: Props) {
       <nav className="akademik-tab-nav" aria-label={`${group.label} sekmeleri`}>
         <div className="akademik-tab-nav-scroll">
           {group.tabs.map((tab) => {
-            const href = akademikTabHref(group.slug, tab.segment);
+            const href = akademikTabHref(group.slug, tab.segment, basePath);
             const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
               <Link

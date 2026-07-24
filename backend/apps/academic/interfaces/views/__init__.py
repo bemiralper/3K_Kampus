@@ -56,10 +56,14 @@ from .program_grid import (
     grid_generate_create_api,
     grid_matrix_api,
     grid_clear_api,
+    grid_ensure_version_api,
     program_grid_cell_list_api,
     program_grid_cell_detail_api,
     program_grid_cell_update_api,
     program_grid_cell_bulk_update_api,
+    program_grid_cell_fill_api,
+    program_grid_cell_clear_api,
+    program_grid_cells_swap_api,
 )
 from .class_lesson_plan import (
     active_academic_year_api,
@@ -68,6 +72,7 @@ from .class_lesson_plan import (
     class_lesson_plan_create_api,
     class_lesson_plan_update_api,
     class_lesson_plan_delete_api,
+    class_lesson_plan_bulk_delete_api,
 )
 from .lesson_teacher_pool import (
     lesson_teacher_pool_list_api,
@@ -148,10 +153,14 @@ __all__ = [
     'grid_generate_create_api',
     'grid_matrix_api',
     'grid_clear_api',
+    'grid_ensure_version_api',
     'program_grid_cell_list_api',
     'program_grid_cell_detail_api',
     'program_grid_cell_update_api',
     'program_grid_cell_bulk_update_api',
+    'program_grid_cell_fill_api',
+    'program_grid_cell_clear_api',
+    'program_grid_cells_swap_api',
     # Class Lesson Plan
     'active_academic_year_api',
     'class_lesson_plan_list_api',
@@ -159,6 +168,7 @@ __all__ = [
     'class_lesson_plan_create_api',
     'class_lesson_plan_update_api',
     'class_lesson_plan_delete_api',
+    'class_lesson_plan_bulk_delete_api',
     # Lesson Teacher Pool
     'lesson_teacher_pool_list_api',
     'lesson_teacher_pool_detail_api',

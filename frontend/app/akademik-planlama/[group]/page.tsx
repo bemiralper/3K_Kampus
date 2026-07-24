@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { akademikTabHref, findAkademikGroup } from "@/lib/akademik-routes";
+import { AKADEMIK_BASE, akademikTabHref, findAkademikGroup } from "@/lib/akademik-routes";
 
 type PageProps = {
   params: { group: string };
@@ -11,5 +11,5 @@ export default function AkademikGroupIndexPage({ params }: PageProps) {
     notFound();
   }
 
-  redirect(akademikTabHref(group.slug, group.tabs[0].segment));
+  redirect(akademikTabHref(group.slug, group.tabs[0].segment, AKADEMIK_BASE));
 }

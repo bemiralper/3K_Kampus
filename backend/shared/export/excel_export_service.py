@@ -113,11 +113,18 @@ class ExcelExportService:
         if logo_path is not None:
             try:
                 img = XLImage(str(logo_path))
-                img.width = 56
-                img.height = 56
+                # Oranı koru — kareye zorlamak logoyu üstten/alttan basık gösterir
+                max_h, max_w = 48, 110
+                nat_w = float(img.width or 1)
+                nat_h = float(img.height or 1)
+                scale = min(max_w / nat_w, max_h / nat_h, 1.0)
+                img.width = max(1, int(nat_w * scale))
+                img.height = max(1, int(nat_h * scale))
                 ws.add_image(img, "A1")
-                ws.row_dimensions[1].height = 30
-                ws.row_dimensions[2].height = 30
+                # Excel satır yüksekliği point cinsinden (~0.75 px)
+                row_h = max(22, min(36, img.height * 0.75))
+                ws.row_dimensions[1].height = row_h
+                ws.row_dimensions[2].height = row_h
                 text_start_col = 2
             except Exception:
                 text_start_col = 1

@@ -14,6 +14,7 @@ from apps.academic.interfaces.sube_context import (
     gate_class_lesson_plan_drf,
     gate_ders_drf,
     gate_sinif_drf,
+    gate_term_drf,
     mandatory_academic_context_drf,
 )
 from apps.academic.services.class_lesson_plan_service import (
@@ -64,6 +65,80 @@ def active_academic_year_api(request):
             {'error': str(e)},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+# ==================== PLANLAMA BAĞLAMI ====================
+
+@csrf_exempt
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_lesson_plan_context_api(request):
+    """
+    GET /api/academic/class-lesson-plan/context/
+
+    Aktif eğitim yılı + şube için sınıf ve dönem listesi.
+    Eğitim paketleri / öğrenci paketleri buraya bağlanmaz.
+    """
+    try:
+        ctx, err = mandatory_academic_context_drf(request)
+        if err:
+            return err
+
+        service = ClassLessonPlanService()
+        data = service.build_planning_context(
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            context_egitim_yili_id=ctx.get('egitim_yili_id'),
+        )
+        return Response(data)
+    except ActiveAcademicYearError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@csrf_exempt
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_lesson_plan_ders_options_api(request):
+    """
+    GET /api/academic/class-lesson-plan/ders-options/?classroom_id=
+
+    Sınıf seviye/alanına göre Eğitim Tanımları ders adayları.
+    """
+    try:
+        ctx, err = mandatory_academic_context_drf(request)
+        if err:
+            return err
+
+        classroom_id = request.query_params.get('classroom_id')
+        if not classroom_id:
+            return Response(
+                {'error': 'classroom_id zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        _, _, gate_err = gate_sinif_drf(request, int(classroom_id))
+        if gate_err:
+            return gate_err
+
+        service = ClassLessonPlanService()
+        rows = service.list_ders_options_for_classroom(
+            classroom_id=int(classroom_id),
+            sube_id=ctx['sube_id'],
+        )
+        return Response({'count': len(rows), 'results': rows})
+    except ClassLessonPlanValidationError as e:
+        return Response(
+            {'error': e.message, 'field': e.field},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except ActiveAcademicYearError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== LİSTELEME ====================
@@ -207,8 +282,13 @@ def class_lesson_plan_create_api(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        term = serializer.validated_data.get('term')
         sinif = serializer.validated_data.get('sinif')
         ders = serializer.validated_data.get('ders')
+        if term:
+            _, _, gate_err = gate_term_drf(request, term.id)
+            if gate_err:
+                return gate_err
         if sinif:
             _, _, gate_err = gate_sinif_drf(request, sinif.id)
             if gate_err:
@@ -222,9 +302,9 @@ def class_lesson_plan_create_api(request):
         
         # Serializer validated_data'yı servise gönder
         data = {
-            'term_id': serializer.validated_data.get('term').id if serializer.validated_data.get('term') else None,
-            'sinif_id': serializer.validated_data.get('sinif').id if serializer.validated_data.get('sinif') else None,
-            'ders_id': serializer.validated_data.get('ders').id if serializer.validated_data.get('ders') else None,
+            'term_id': term.id if term else None,
+            'sinif_id': sinif.id if sinif else None,
+            'ders_id': ders.id if ders else None,
             'ogretmen_id': serializer.validated_data.get('ogretmen').id if serializer.validated_data.get('ogretmen') else None,
             'weekly_hours': serializer.validated_data.get('weekly_hours'),
             'credit': serializer.validated_data.get('credit', 0),
@@ -290,16 +370,19 @@ def class_lesson_plan_update_api(request, plan_id):
         service = ClassLessonPlanService()
         update_data = {}
         for field in ['ogretmen', 'weekly_hours', 'credit', 'is_mandatory',
-                      'is_double_block', 'priority', 'preferred_room_type', 'notes']:
+                      'is_double_block', 'priority', 'preferred_room_type',
+                      'gorunen_ad', 'notes']:
             if field in serializer.validated_data:
                 if field == 'ogretmen':
                     update_data['ogretmen_id'] = serializer.validated_data[field].id if serializer.validated_data[field] else None
                 else:
                     update_data[field] = serializer.validated_data[field]
         
-        updated_plan = service.update(plan_id, update_data)
+        service.update(plan_id, update_data)
+        updated_plan = service.get_by_id(plan_id)
         
-        response_serializer = ClassLessonPlanDetailSerializer(updated_plan)
+        # Liste alanlarıyla dön (ders_gorunen_ad vb.) — FE satırı yerinde günceller
+        response_serializer = ClassLessonPlanListSerializer(updated_plan)
         return Response(response_serializer.data)
         
     except ClassLessonPlanValidationError as e:
@@ -315,6 +398,41 @@ def class_lesson_plan_update_api(request, plan_id):
 
 
 # ==================== SİLME ====================
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_lesson_plan_bulk_delete_api(request):
+    """
+    POST /api/academic/class-lesson-plan/bulk-delete/
+    Body: { "ids": [1, 2, 3] }
+    """
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+
+    ids_raw = request.data.get('ids') or []
+    if not isinstance(ids_raw, list) or not ids_raw:
+        return Response({'error': 'ids listesi zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        plan_ids = [int(x) for x in ids_raw]
+    except (TypeError, ValueError):
+        return Response({'error': 'Geçersiz ids.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        deleted = ClassLessonPlanService().bulk_delete(
+            plan_ids, sube_id=ctx['sube_id'],
+        )
+        return Response({'deleted_count': deleted})
+    except ClassLessonPlanValidationError as e:
+        return Response(
+            {'error': e.message, 'field': e.field},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 @csrf_exempt
 @api_view(['DELETE'])
@@ -351,6 +469,147 @@ def class_lesson_plan_delete_api(request, plan_id):
         )
 
 
+# ==================== ALANDAN DOLDUR ====================
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_lesson_plan_seed_from_alan_api(request):
+    """
+    POST /api/academic/class-lesson-plan/seed-from-alan/
+    Body: { classroom_id, term_id, default_weekly_hours? }
+    """
+    try:
+        ctx, err = mandatory_academic_context_drf(request)
+        if err:
+            return err
+
+        try:
+            classroom_id = int(request.data.get('classroom_id'))
+            term_id = int(request.data.get('term_id'))
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'classroom_id ve term_id zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        _, _, gate_err = gate_sinif_drf(request, classroom_id)
+        if gate_err:
+            return gate_err
+        _, _, gate_err = gate_term_drf(request, term_id)
+        if gate_err:
+            return gate_err
+
+        hours = request.data.get('default_weekly_hours', 2)
+        try:
+            hours = int(hours)
+        except (TypeError, ValueError):
+            hours = 2
+
+        service = ClassLessonPlanService()
+        result = service.seed_from_alan(
+            classroom_id=classroom_id,
+            term_id=term_id,
+            sube_id=ctx['sube_id'],
+            default_weekly_hours=hours,
+        )
+        serializer = ClassLessonPlanListSerializer(result['plans'], many=True)
+        return Response({
+            'alan_id': result['alan_id'],
+            'alan_ad': result['alan_ad'],
+            'created_count': result['created_count'],
+            'skipped_existing': result['skipped_existing'],
+            'candidate_count': result['candidate_count'],
+            'plans': serializer.data,
+        }, status=status.HTTP_201_CREATED if result['created_count'] else status.HTTP_200_OK)
+
+    except ClassLessonPlanValidationError as e:
+        return Response(
+            {'error': e.message, 'field': e.field},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except ActiveAcademicYearError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==================== SINIFA KOPYALA ====================
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def class_lesson_plan_copy_api(request):
+    """
+    POST /api/academic/class-lesson-plan/copy/
+    Body: {
+      source_classroom_id, term_id, target_classroom_ids[],
+      copy_teachers?, mode?
+    }
+    """
+    try:
+        ctx, err = mandatory_academic_context_drf(request)
+        if err:
+            return err
+
+        try:
+            source_id = int(request.data.get('source_classroom_id'))
+            term_id = int(request.data.get('term_id'))
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'source_classroom_id ve term_id zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        targets_raw = request.data.get('target_classroom_ids') or []
+        if not isinstance(targets_raw, list) or not targets_raw:
+            return Response(
+                {'error': 'target_classroom_ids listesi gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            target_ids = [int(x) for x in targets_raw]
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'Geçersiz target_classroom_ids.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        _, _, gate_err = gate_sinif_drf(request, source_id)
+        if gate_err:
+            return gate_err
+        for tid in target_ids:
+            _, _, gate_err = gate_sinif_drf(request, tid)
+            if gate_err:
+                return gate_err
+        _, _, gate_err = gate_term_drf(request, term_id)
+        if gate_err:
+            return gate_err
+
+        service = ClassLessonPlanService()
+        result = service.copy_to_classrooms(
+            source_classroom_id=source_id,
+            term_id=term_id,
+            target_classroom_ids=target_ids,
+            sube_id=ctx['sube_id'],
+            copy_teachers=bool(request.data.get('copy_teachers')),
+            mode=str(request.data.get('mode') or 'skip_existing'),
+        )
+        return Response(result)
+
+    except ClassLessonPlanValidationError as e:
+        return Response(
+            {'error': e.message, 'field': e.field},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except ActiveAcademicYearError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # ==================== ÖZET ====================
 
 @csrf_exempt
@@ -380,7 +639,7 @@ def class_lesson_plan_summary_api(request, classroom_id, term_id):
         from apps.term.domain.models import Term
         
         try:
-            sinif = Sinif.objects.get(id=classroom_id)
+            sinif = Sinif.objects.select_related('sinif_seviyesi', 'alan').get(id=classroom_id)
             term = Term.objects.get(id=term_id)
         except (Sinif.DoesNotExist, Term.DoesNotExist):
             return Response(
@@ -391,8 +650,12 @@ def class_lesson_plan_summary_api(request, classroom_id, term_id):
         return Response({
             'classroom_id': classroom_id,
             'classroom_name': sinif.ad,
+            'classroom_seviye': sinif.sinif_seviyesi.ad if sinif.sinif_seviyesi_id else None,
+            'classroom_alan': sinif.alan.ad if sinif.alan_id else None,
+            'ogrenci_sayisi': sinif.mevcutluk,
             'term_id': term_id,
             'term_name': term.name,
+            'schedule_locked': term.schedule_locked,
             'total_lessons': plans.count(),
             'total_weekly_hours': total_hours,
             'lessons_with_teacher': lessons_with_teacher,

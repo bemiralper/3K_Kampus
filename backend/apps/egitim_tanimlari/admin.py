@@ -23,9 +23,9 @@ class AlanAdmin(admin.ModelAdmin):
 
 @admin.register(Ders)
 class DersAdmin(admin.ModelAdmin):
-    list_display = ('ad', 'kod', 'aktif_mi', 'created_at')
+    list_display = ('ad', 'kisa_ad', 'kod', 'aktif_mi', 'created_at')
     list_filter = ('aktif_mi',)
-    search_fields = ('ad', 'kod')
+    search_fields = ('ad', 'kisa_ad', 'kod')
     filter_horizontal = ('sinif_seviyeleri', 'alanlar')
     ordering = ('ad',)
 

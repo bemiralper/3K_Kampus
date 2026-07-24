@@ -16,14 +16,20 @@ class ClassLessonTeacherAssignmentListSerializer(serializers.ModelSerializer):
     Liste görünümü için serializer
     İlişkili alanların adlarını içerir
     """
+    sinif_id = serializers.IntegerField(source='class_lesson_plan.sinif_id', read_only=True)
     sinif_ad = serializers.CharField(source='class_lesson_plan.sinif.ad', read_only=True)
+    ders_id = serializers.IntegerField(source='class_lesson_plan.ders_id', read_only=True)
     ders_ad = serializers.CharField(source='class_lesson_plan.ders.ad', read_only=True)
     ders_kod = serializers.CharField(source='class_lesson_plan.ders.kod', read_only=True)
     ogretmen_ad = serializers.SerializerMethodField()
     egitim_yili_str = serializers.CharField(source='egitim_yili.yil_str', read_only=True)
     role_display = serializers.CharField(read_only=True)
     weekly_hours = serializers.IntegerField(source='class_lesson_plan.weekly_hours', read_only=True)
+    term_id = serializers.IntegerField(source='class_lesson_plan.term_id', read_only=True)
     term_ad = serializers.CharField(source='class_lesson_plan.term.name', read_only=True)
+    schedule_locked = serializers.BooleanField(
+        source='class_lesson_plan.term.schedule_locked', read_only=True,
+    )
     
     class Meta:
         model = ClassLessonTeacherAssignment
@@ -32,10 +38,14 @@ class ClassLessonTeacherAssignmentListSerializer(serializers.ModelSerializer):
             'egitim_yili',
             'egitim_yili_str',
             'class_lesson_plan',
+            'sinif_id',
             'sinif_ad',
+            'ders_id',
             'ders_ad',
             'ders_kod',
+            'term_id',
             'term_ad',
+            'schedule_locked',
             'weekly_hours',
             'ogretmen',
             'ogretmen_ad',
@@ -143,12 +153,14 @@ class ClassLessonTeacherAssignmentDetailSerializer(serializers.ModelSerializer):
     ders_ad = serializers.CharField(source='class_lesson_plan.ders.ad', read_only=True)
     ders_kod = serializers.CharField(source='class_lesson_plan.ders.kod', read_only=True)
     ogretmen_ad = serializers.SerializerMethodField()
-    ogretmen_brans = serializers.CharField(source='ogretmen.brans', read_only=True)
     egitim_yili_str = serializers.CharField(source='egitim_yili.yil_str', read_only=True)
     role_display = serializers.CharField(read_only=True)
     weekly_hours = serializers.IntegerField(source='class_lesson_plan.weekly_hours', read_only=True)
     term_id = serializers.IntegerField(source='class_lesson_plan.term.id', read_only=True)
     term_ad = serializers.CharField(source='class_lesson_plan.term.name', read_only=True)
+    schedule_locked = serializers.BooleanField(
+        source='class_lesson_plan.term.schedule_locked', read_only=True,
+    )
     
     class Meta:
         model = ClassLessonTeacherAssignment
@@ -164,10 +176,10 @@ class ClassLessonTeacherAssignmentDetailSerializer(serializers.ModelSerializer):
             'ders_kod',
             'term_id',
             'term_ad',
+            'schedule_locked',
             'weekly_hours',
             'ogretmen',
             'ogretmen_ad',
-            'ogretmen_brans',
             'role',
             'role_display',
             'priority',

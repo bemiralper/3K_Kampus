@@ -9,7 +9,6 @@ import {
   IconAlertTriangle,
   IconCalendarClock,
   IconCheckCircle,
-  IconClock,
   IconFileSignature,
   IconInbox,
   IconLayers,
@@ -37,6 +36,9 @@ type OdemeDashboardOzet = {
   geciken_tutar?: number;
   geciken_taksit_sayisi?: number;
   bu_ay_tahsilat?: number;
+  sozlesmesiz_ogrenci_sayisi?: number;
+  taslak_sozlesme_sayisi?: number;
+  odemesiz_sozlesme_sayisi?: number;
 };
 
 type Tone = "blue" | "rose" | "slate" | "emerald" | "amber" | "violet";
@@ -77,16 +79,18 @@ function StatCard({
   label,
   value,
   sub,
+  href,
 }: {
   icon: (p: { className?: string }) => JSX.Element;
   tone: Tone;
   label: string;
   value: string;
   sub?: string;
+  href?: string;
 }) {
   const t = TONE_STYLES[tone];
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-3">
+  const body = (
+    <>
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
         style={{ background: t.bg, color: t.fg }}
@@ -98,6 +102,21 @@ function StatCard({
         <div className="text-lg font-bold tabular-nums text-gray-900">{value}</div>
         {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
       </div>
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-3 hover:shadow-md hover:-translate-y-0.5 hover:border-blue-200 transition-all"
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-start gap-3">
+      {body}
     </div>
   );
 }
@@ -284,18 +303,35 @@ export default function MuhasebeDashboardPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <StatCard icon={IconUsers} tone="blue" label="Aktif Sözleşme" value={String(odemeOzet.toplam_sozlesme ?? 0)} />
               <StatCard
-                icon={IconArrowDownCircle}
-                tone="emerald"
-                label="Toplam Tahsilat"
-                value={fmtCurrency(Number(odemeOzet.toplam_tahsilat ?? 0))}
+                icon={IconUsers}
+                tone="blue"
+                label="Aktif Sözleşme"
+                value={String(odemeOzet.toplam_sozlesme ?? 0)}
+                href={`${MUHASEBE_ODEME_TAKIP_BASE}?tab=sozlesmeler&durum=aktif`}
+              />
+              <StatCard
+                icon={IconInbox}
+                tone="amber"
+                label="Sözleşmesiz Öğrenci"
+                value={String(odemeOzet.sozlesmesiz_ogrenci_sayisi ?? 0)}
+                sub="Kayıtlı, sözleşmesi yok"
+                href={`${MUHASEBE_ODEME_TAKIP_BASE}/sozlesme-olustur`}
+              />
+              <StatCard
+                icon={IconFileSignature}
+                tone="violet"
+                label="Taslak Sözleşme"
+                value={String(odemeOzet.taslak_sozlesme_sayisi ?? 0)}
+                href={`${MUHASEBE_ODEME_TAKIP_BASE}?tab=sozlesmeler&durum=taslak`}
               />
               <StatCard
                 icon={IconScale}
-                tone="amber"
-                label="Açık Alacak"
-                value={fmtCurrency(Number(odemeOzet.acik_alacak ?? 0))}
+                tone="emerald"
+                label="Ödemesiz Sözleşme"
+                value={String(odemeOzet.odemesiz_sozlesme_sayisi ?? 0)}
+                sub="Tamamlanmış, tahsilat yok"
+                href={`${MUHASEBE_ODEME_TAKIP_BASE}?tab=sozlesmeler&durum=aktif&odemesiz=1`}
               />
               <StatCard
                 icon={IconAlertTriangle}
@@ -303,12 +339,7 @@ export default function MuhasebeDashboardPage() {
                 label="Geciken Taksit"
                 value={String(odemeOzet.geciken_taksit_sayisi ?? 0)}
                 sub={fmtCurrency(Number(odemeOzet.geciken_tutar ?? 0))}
-              />
-              <StatCard
-                icon={IconClock}
-                tone="blue"
-                label="Bu Ay Tahsilat"
-                value={fmtCurrency(Number(odemeOzet.bu_ay_tahsilat ?? 0))}
+                href={`${MUHASEBE_ODEME_TAKIP_BASE}?tab=raporlar`}
               />
               <Link
                 href={MUHASEBE_ODEME_TAKIP_BASE}

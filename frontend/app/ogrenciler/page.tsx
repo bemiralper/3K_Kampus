@@ -774,6 +774,10 @@ export default function OgrenciListesiPage() {
         filters={filters}
         mode={exportMode}
         selectedIds={selectedIds}
+        filterDimensions={{
+          hasSinif: filterOptions.siniflar.length > 0,
+          hasSinifSeviyesi: filterOptions.sinif_seviyeleri.length > 0,
+        }}
       />
 
       {belgeTarget?.tip === 'ogrenci_belgesi' && (

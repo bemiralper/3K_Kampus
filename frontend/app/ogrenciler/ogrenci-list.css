@@ -1605,18 +1605,89 @@
 .ogrenci-export-layout {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 28px;
+  gap: 20px;
 }
 
 @media (min-width: 768px) {
   .ogrenci-export-layout {
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 260px 1fr;
     align-items: start;
   }
 }
 
 .ogrenci-export-section {
   min-width: 0;
+}
+
+.ogrenci-export-section--options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ogrenci-export-option-block .ogrenci-filter-subsection-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.ogrenci-export-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ogrenci-export-seg-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.ogrenci-export-seg-btn:hover {
+  border-color: #cbd5e1;
+}
+
+.ogrenci-export-seg-btn.active {
+  border-color: #0262a7;
+  background: rgba(2, 98, 167, 0.08);
+  color: #0262a7;
+}
+
+.ogrenci-export-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ogrenci-export-choice {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-color);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.ogrenci-export-choice:hover {
+  border-color: #cbd5e1;
+}
+
+.ogrenci-export-choice.active {
+  border-color: #0262a7;
+  background: rgba(2, 98, 167, 0.08);
+  color: #0262a7;
 }
 
 .ogrenci-export-format-cards {
@@ -1686,6 +1757,11 @@
   border-radius: 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
+}
+
+.ogrenci-export-summary--compact {
+  margin-top: 4px;
+  padding: 10px 12px;
 }
 
 .ogrenci-export-summary-row {

@@ -10,15 +10,21 @@ import {
   MUHASEBE_COACHING_BASE,
   coachingHref,
 } from "@/lib/coaching-routes";
+import {
+  AKADEMIK_MODULE_LABEL,
+  MUHASEBE_AKADEMIK_BASE,
+  akademikSidebarChildren,
+} from "@/lib/akademik-routes";
 
 export const MUHASEBE_FINANS_BASE = "/muhasebe/finans";
-export { MUHASEBE_KURUM_BASE };
+export { MUHASEBE_KURUM_BASE, MUHASEBE_AKADEMIK_BASE };
 
 export type MuhasebeNavChildDef = {
   id: string;
   href: string;
   label: string;
   matchPrefix?: string;
+  group?: string;
 };
 
 export type MuhasebeNavItemDef = {
@@ -146,6 +152,21 @@ export const MUHASEBE_COACHING_CHILDREN: MuhasebeNavChildDef[] = COACHING_NAV_IT
   };
 });
 
+export const MUHASEBE_AKADEMIK_CHILDREN: MuhasebeNavChildDef[] = akademikSidebarChildren(
+  MUHASEBE_AKADEMIK_BASE,
+).map((item) => ({
+  id: `akademik-${item.matchPrefix?.split("/").pop() || item.label}`,
+  href: item.href,
+  label: item.label,
+  matchPrefix: item.matchPrefix,
+}));
+
+const AKADEMIK_ICON = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+  </svg>
+);
+
 export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
   {
     id: "dashboard",
@@ -157,6 +178,14 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
       </svg>
     ),
+  },
+  {
+    id: "akademik",
+    href: MUHASEBE_AKADEMIK_CHILDREN[0]?.href || MUHASEBE_AKADEMIK_BASE,
+    label: AKADEMIK_MODULE_LABEL,
+    matchPrefix: MUHASEBE_AKADEMIK_BASE,
+    icon: AKADEMIK_ICON,
+    children: MUHASEBE_AKADEMIK_CHILDREN,
   },
   {
     id: "ogrenci-liste",
@@ -269,7 +298,32 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
   },
 ];
 
-export function isMuhasebeNavChildActive(pathname: string, child: MuhasebeNavChildDef): boolean {
+export function isMuhasebeNavChildActive(
+  pathname: string,
+  child: MuhasebeNavChildDef,
+  siblings?: MuhasebeNavChildDef[],
+): boolean {
+  if (siblings?.length) {
+    let best: MuhasebeNavChildDef | null = null;
+    let bestLen = -1;
+    for (const sibling of siblings) {
+      const prefix = sibling.matchPrefix || sibling.href;
+      const matches =
+        pathname === sibling.href ||
+        pathname === prefix ||
+        pathname.startsWith(`${prefix}/`);
+      if (!matches) continue;
+      if (sibling.id === "tahsilat-raporlar") {
+        if (!isTahsilatRaporlarFinansPath(pathname, MUHASEBE_FINANS_BASE)) continue;
+      }
+      if (prefix.length > bestLen) {
+        best = sibling;
+        bestLen = prefix.length;
+      }
+    }
+    return best?.id === child.id;
+  }
+
   const prefix = child.matchPrefix || child.href;
   if (prefix === MUHASEBE_FINANS_BASE) {
     return pathname === MUHASEBE_FINANS_BASE || pathname === `${MUHASEBE_FINANS_BASE}/`;
@@ -277,15 +331,18 @@ export function isMuhasebeNavChildActive(pathname: string, child: MuhasebeNavChi
   if (prefix === MUHASEBE_KUTUPHANE_BASE) {
     return pathname === MUHASEBE_KUTUPHANE_BASE || pathname === `${MUHASEBE_KUTUPHANE_BASE}/`;
   }
+  if (prefix === MUHASEBE_AKADEMIK_BASE) {
+    return pathname === MUHASEBE_AKADEMIK_BASE || pathname === `${MUHASEBE_AKADEMIK_BASE}/`;
+  }
   if (child.id === "tahsilat-raporlar") {
     return isTahsilatRaporlarFinansPath(pathname, MUHASEBE_FINANS_BASE);
   }
-  return pathname.startsWith(prefix);
+  return pathname === prefix || pathname.startsWith(`${prefix}/`) || pathname.startsWith(prefix);
 }
 
 export function isMuhasebeNavActive(pathname: string, item: MuhasebeNavItemDef): boolean {
   if (item.children?.length) {
-    return item.children.some((child) => isMuhasebeNavChildActive(pathname, child));
+    return item.children.some((child) => isMuhasebeNavChildActive(pathname, child, item.children));
   }
 
   const prefix = item.matchPrefix || item.href;
@@ -303,6 +360,9 @@ export function isMuhasebeNavActive(pathname: string, item: MuhasebeNavItemDef):
   }
   if (prefix === MUHASEBE_KUTUPHANE_BASE) {
     return pathname.startsWith(MUHASEBE_KUTUPHANE_BASE);
+  }
+  if (prefix === MUHASEBE_AKADEMIK_BASE) {
+    return pathname.startsWith(MUHASEBE_AKADEMIK_BASE);
   }
   return pathname.startsWith(prefix);
 }
