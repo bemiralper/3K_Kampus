@@ -136,3 +136,85 @@ class DersDisplayNameTest(TestCase):
         filled = [c for c in grid.json()['cells'] if c['status'] == 'FILLED']
         self.assertEqual(filled[0]['lesson']['name'], 'Fizik')
         self.assertEqual(filled[0]['lesson']['full_name'], 'Fizik-1')
+
+    def test_plan_teacher_change_syncs_grid_cells_and_api(self):
+        from apps.academic.services.class_lesson_plan_service import ClassLessonPlanService
+
+        client = Client()
+        user = User.objects.create_user(username='dnteach', password='test')
+        client.force_login(user)
+
+        template = ScheduleTemplate.objects.create(
+            kurum=self.kurum, sube=self.sube, name='Şablon T',
+        )
+        cycle = WeeklyCycle.objects.create(
+            kurum=self.kurum, sube=self.sube, schedule_template=template,
+            name='Takvim T', is_active=True,
+        )
+        WeeklyDay.objects.create(
+            weekly_cycle=cycle, day_of_week=DayOfWeek.MONDAY,
+            name='Pazartesi', order=1, is_active=True,
+        )
+        TimeSlot.objects.create(
+            schedule_template=template, name='1. Ders',
+            start_time=time(8, 0), end_time=time(8, 40),
+            order=1, slot_type=SlotType.LESSON, is_active=True,
+        )
+        version = ScheduleVersion.objects.create(
+            egitim_yili=self.year, term=self.term,
+            schedule_template=template, weekly_cycle=cycle,
+            name='Taslak', is_active=True,
+        )
+        role, _ = Role.objects.get_or_create(
+            code='ogretmen', defaults={'name': 'Öğretmen', 'is_system_role': True},
+        )
+        teacher1 = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Ali', soyad='Bir', aktif_mi=True,
+        )
+        teacher2 = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Ayşe', soyad='İki', aktif_mi=True,
+        )
+        for t in (teacher1, teacher2):
+            PersonelGorevlendirme.objects.create(
+                personel=t, egitim_yili=self.year, rol=role,
+                gorev_sube=self.sube, kurum=self.kurum, aktif_mi=True,
+            )
+        self.plan.ogretmen = teacher1
+        self.plan.save(update_fields=['ogretmen'])
+
+        headers = {
+            'HTTP_X_KURUM_ID': str(self.kurum.id),
+            'HTTP_X_SUBE_ID': str(self.sube.id),
+            'HTTP_X_EGITIMYILI_ID': str(self.year.id),
+        }
+        ensure = client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': version.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+        cell = ProgramGridCell.objects.get(schedule_version=version, sinif=self.sinif)
+        fill = client.post(
+            f'/api/academic/program-grid/cells/{cell.id}/fill/',
+            data={'class_lesson_plan_id': self.plan.id},
+            content_type='application/json',
+            **headers,
+        )
+        self.assertEqual(fill.status_code, 200, fill.content)
+        cell.refresh_from_db()
+        self.assertEqual(cell.ogretmen_id, teacher1.id)
+
+        ClassLessonPlanService().update(self.plan.id, {'ogretmen_id': teacher2.id})
+        cell.refresh_from_db()
+        self.assertEqual(cell.ogretmen_id, teacher2.id)
+
+        grid = client.get(
+            f'/api/academic/schedule/class/?classroom_id={self.sinif.id}'
+            f'&term_id={self.term.id}&version_id={version.id}',
+            **headers,
+        )
+        self.assertEqual(grid.status_code, 200, grid.content)
+        filled = [c for c in grid.json()['cells'] if c['status'] == 'FILLED']
+        self.assertEqual(filled[0]['teacher']['id'], teacher2.id)
+        self.assertIn('Ayşe', filled[0]['teacher']['name'])

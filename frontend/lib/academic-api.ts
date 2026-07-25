@@ -803,6 +803,24 @@ export async function updateClassLessonPlan(
   return unwrap(res);
 }
 
+/** SDP değişince ders programı sayfasının yenilemesi için */
+export const CLASS_LESSON_PLAN_CHANGED_EVENT = 'akademik:class-lesson-plan-changed';
+
+export type ClassLessonPlanChangedDetail = {
+  planId?: number;
+  classroomId?: number | null;
+  termId?: number | null;
+};
+
+export function emitClassLessonPlanChanged(detail?: ClassLessonPlanChangedDetail): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent<ClassLessonPlanChangedDetail>(CLASS_LESSON_PLAN_CHANGED_EVENT, {
+      detail: detail || {},
+    }),
+  );
+}
+
 export async function deleteClassLessonPlan(id: number): Promise<void> {
   const res = await apiFetch(`/api/academic/class-lesson-plan/${id}/delete/`, {
     method: 'DELETE',

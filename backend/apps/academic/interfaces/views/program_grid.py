@@ -211,6 +211,13 @@ def grid_clear_api(request, cycle_pk):
 def _serialize_placement_cell(cell: ProgramGridCell) -> dict:
     from apps.egitim_tanimlari.display import serialize_lesson_label
 
+    plan = getattr(cell, 'class_lesson_plan', None)
+    teacher = None
+    if plan is not None and getattr(plan, 'ogretmen_id', None):
+        teacher = plan.ogretmen
+    elif cell.ogretmen_id:
+        teacher = cell.ogretmen
+
     return {
         'id': cell.id,
         'day_id': cell.weekly_day_id,
@@ -222,14 +229,14 @@ def _serialize_placement_cell(cell: ProgramGridCell) -> dict:
         'class_lesson_plan_id': cell.class_lesson_plan_id,
         'lesson': serialize_lesson_label(
             ders=cell.ders if cell.ders_id else None,
-            plan=getattr(cell, 'class_lesson_plan', None),
+            plan=plan,
         ),
         'teacher': (
             {
-                'id': cell.ogretmen.id,
-                'name': f'{cell.ogretmen.ad} {cell.ogretmen.soyad}',
+                'id': teacher.id,
+                'name': f'{teacher.ad} {teacher.soyad}',
             }
-            if cell.ogretmen_id else None
+            if teacher else None
         ),
         'is_double_block_start': cell.is_double_block_start,
         'notes': cell.notes,

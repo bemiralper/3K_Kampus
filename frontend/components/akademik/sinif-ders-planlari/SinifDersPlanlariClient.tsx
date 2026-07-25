@@ -38,6 +38,7 @@ import {
   fetchClassLessonPlans,
   fetchTeachersForAvailability,
   seedClassLessonPlansFromAlan,
+  emitClassLessonPlanChanged,
   updateClassLessonPlan,
   type ClassLessonPlan,
   type ClassLessonPlanClassroom,
@@ -50,8 +51,6 @@ import {
 import './sinif-ders-planlari.css';
 
 const { Title, Text } = Typography;
-
-const MSG_CENTER = { marginTop: '38vh' };
 
 function planDisplayDefault(row: ClassLessonPlan): string {
   return (row.ders_kisa_ad || row.ders_ad || '').trim();
@@ -108,17 +107,6 @@ export default function SinifDersPlanlariClient() {
 
   const scheduleLocked = Boolean(selectedTerm?.schedule_locked);
 
-  useEffect(() => {
-    message.config({
-      top: typeof window !== 'undefined' ? Math.max(120, Math.round(window.innerHeight * 0.38)) : 240,
-      duration: 3.2,
-      maxCount: 2,
-    });
-    return () => {
-      message.config({ top: 24, duration: 3, maxCount: 3 });
-    };
-  }, []);
-
   const loadContext = useCallback(async () => {
     if (!initialized || !activeKurum || !activeSube) return;
     setContextLoading(true);
@@ -134,10 +122,7 @@ export default function SinifDersPlanlariClient() {
         return data.active_term_id ?? data.terms[0]?.id ?? null;
       });
     } catch (e) {
-      message.error({
-        content: e instanceof Error ? e.message : 'Planlama bağlamı yüklenemedi',
-        style: MSG_CENTER,
-      });
+      message.error(e instanceof Error ? e.message : 'Planlama bağlamı yüklenemedi');
     } finally {
       setContextLoading(false);
     }
@@ -180,10 +165,7 @@ export default function SinifDersPlanlariClient() {
     } catch (e) {
       setPlans([]);
       setSummary(null);
-      message.error({
-        content: e instanceof Error ? e.message : 'Planlar yüklenemedi',
-        style: MSG_CENTER,
-      });
+      message.error(e instanceof Error ? e.message : 'Planlar yüklenemedi');
     } finally {
       setPlansLoading(false);
     }
@@ -204,10 +186,7 @@ export default function SinifDersPlanlariClient() {
       setDersOptions(await fetchClassLessonPlanDersOptions(classroomId));
     } catch (e) {
       setDersOptions([]);
-      message.error({
-        content: e instanceof Error ? e.message : 'Ders listesi yüklenemedi',
-        style: MSG_CENTER,
-      });
+      message.error(e instanceof Error ? e.message : 'Ders listesi yüklenemedi');
     }
   }, []);
 
@@ -273,7 +252,7 @@ export default function SinifDersPlanlariClient() {
     patch: { weekly_hours?: number; ogretmen?: number | null; gorunen_ad?: string },
   ) => {
     if (scheduleLocked) {
-      message.warning({ content: 'Bu dönemin programı kilitli', style: MSG_CENTER });
+      message.warning('Bu dönemin programı kilitli');
       return;
     }
     setRowSavingId(row.id);
@@ -286,15 +265,19 @@ export default function SinifDersPlanlariClient() {
           delete next[row.id];
           return next;
         });
+      } else {
+        message.success('Kaydedildi');
       }
+      emitClassLessonPlanChanged({
+        planId: row.id,
+        classroomId: selectedClassroomId,
+        termId: selectedTermId,
+      });
       if (selectedClassroomId && selectedTermId) {
         setSummary(await fetchClassLessonPlanSummary(selectedClassroomId, selectedTermId));
       }
     } catch (e) {
-      message.error({
-        content: e instanceof Error ? e.message : 'Güncelleme başarısız',
-        style: MSG_CENTER,
-      });
+      message.error(e instanceof Error ? e.message : 'Güncelleme başarısız');
       loadPlans();
     } finally {
       setRowSavingId(null);
@@ -315,7 +298,7 @@ export default function SinifDersPlanlariClient() {
       return;
     }
     await patchRow(row, { gorunen_ad: toSave });
-    message.success({ content: 'Görünen ad kaydedildi', style: MSG_CENTER });
+    message.success('Görünen ad kaydedildi');
   };
 
   const openAddModal = () => {
@@ -328,7 +311,7 @@ export default function SinifDersPlanlariClient() {
 
   const handleAddDers = async () => {
     if (!selectedClassroomId || !selectedTermId || !addDersId) {
-      message.warning({ content: 'Ders seçin', style: MSG_CENTER });
+      message.warning('Ders seçin');
       return;
     }
     setAdding(true);
@@ -343,16 +326,13 @@ export default function SinifDersPlanlariClient() {
         is_double_block: false,
         priority: 1,
       });
-      message.success({ content: 'Ders eklendi', style: MSG_CENTER });
+      message.success('Ders eklendi');
       setAddOpen(false);
       setAddDersId(null);
       setAddHours(2);
       loadPlans();
     } catch (e) {
-      message.error({
-        content: e instanceof Error ? e.message : 'Ekleme başarısız',
-        style: MSG_CENTER,
-      });
+      message.error(e instanceof Error ? e.message : 'Ekleme başarısız');
     } finally {
       setAdding(false);
     }
@@ -361,7 +341,7 @@ export default function SinifDersPlanlariClient() {
   const handleSeed = async () => {
     if (!selectedClassroomId || !selectedTermId) return;
     if (!selectedClassroom?.alan_id) {
-      message.warning({ content: 'Bu sınıfa alan atanmamış', style: MSG_CENTER });
+      message.warning('Bu sınıfa alan atanmamış');
       return;
     }
     setSeeding(true);
@@ -375,14 +355,10 @@ export default function SinifDersPlanlariClient() {
         content: result.created_count
           ? `${result.alan_ad || 'Alan'}: ${result.created_count} ders eklendi`
           : `Yeni ders yok (${result.skipped_existing} zaten mevcut)`,
-        style: MSG_CENTER,
       });
       loadPlans();
     } catch (e) {
-      message.error({
-        content: e instanceof Error ? e.message : 'Alandan doldurma başarısız',
-        style: MSG_CENTER,
-      });
+      message.error(e instanceof Error ? e.message : 'Alandan doldurma başarısız');
     } finally {
       setSeeding(false);
     }
@@ -390,7 +366,7 @@ export default function SinifDersPlanlariClient() {
 
   const handleCopy = async () => {
     if (!selectedClassroomId || !selectedTermId || !copyTargets.length) {
-      message.warning({ content: 'Hedef sınıf seçin', style: MSG_CENTER });
+      message.warning('Hedef sınıf seçin');
       return;
     }
     setCopying(true);
@@ -404,17 +380,13 @@ export default function SinifDersPlanlariClient() {
       });
       message.success({
         content: `${result.created_count} eklendi, ${result.updated_count} güncellendi, ${result.skipped_count} atlandı`,
-        style: MSG_CENTER,
       });
       setCopyOpen(false);
       setCopyTargets([]);
       setCopyTeachers(false);
       setCopyOverwrite(false);
     } catch (e) {
-      message.error({
-        content: e instanceof Error ? e.message : 'Kopyalama başarısız',
-        style: MSG_CENTER,
-      });
+      message.error(e instanceof Error ? e.message : 'Kopyalama başarısız');
     } finally {
       setCopying(false);
     }
@@ -422,11 +394,11 @@ export default function SinifDersPlanlariClient() {
 
   const handleBulkDelete = () => {
     if (scheduleLocked) {
-      message.warning({ content: 'Bu dönemin programı kilitli', style: MSG_CENTER });
+      message.warning('Bu dönemin programı kilitli');
       return;
     }
     if (!selectedPlanIds.length) {
-      message.warning({ content: 'Silmek için ders seçin', style: MSG_CENTER });
+      message.warning('Silmek için ders seçin');
       return;
     }
     Modal.confirm({
@@ -439,14 +411,11 @@ export default function SinifDersPlanlariClient() {
         setBulkDeleting(true);
         try {
           const n = await bulkDeleteClassLessonPlans(selectedPlanIds);
-          message.success({ content: `${n} plan silindi`, style: MSG_CENTER });
+          message.success({ content: `${n} plan silindi` });
           setSelectedPlanIds([]);
           await loadPlans();
         } catch (e) {
-          message.error({
-            content: e instanceof Error ? e.message : 'Toplu silme başarısız',
-            style: MSG_CENTER,
-          });
+          message.error(e instanceof Error ? e.message : 'Toplu silme başarısız');
           throw e;
         } finally {
           setBulkDeleting(false);
@@ -457,7 +426,7 @@ export default function SinifDersPlanlariClient() {
 
   const handleDelete = (row: ClassLessonPlan) => {
     if (scheduleLocked) {
-      message.warning({ content: 'Bu dönemin programı kilitli', style: MSG_CENTER });
+      message.warning('Bu dönemin programı kilitli');
       return;
     }
     Modal.confirm({
@@ -469,14 +438,11 @@ export default function SinifDersPlanlariClient() {
       onOk: async () => {
         try {
           await deleteClassLessonPlan(row.id);
-          message.success({ content: 'Plan silindi', style: MSG_CENTER });
+          message.success('Plan silindi');
           setSelectedPlanIds((prev) => prev.filter((id) => id !== row.id));
           await loadPlans();
         } catch (e) {
-          message.error({
-            content: e instanceof Error ? e.message : 'Silme başarısız',
-            style: MSG_CENTER,
-          });
+          message.error(e instanceof Error ? e.message : 'Silme başarısız');
           throw e;
         }
       },

@@ -368,9 +368,28 @@ class ClassLessonPlanService:
         plan = self.repository.get_by_id(plan_id)
         if not plan:
             raise ClassLessonPlanValidationError('Plan bulunamadı.', 'id')
-        
+
+        prev_ogretmen_id = plan.ogretmen_id
         self.validate_update(plan, data)
-        return self.repository.update(plan, data)
+        updated = self.repository.update(plan, data)
+
+        # Ders programı hücreleri öğretmeni plan ile senkron tut (denormalize alan)
+        if 'ogretmen' in data or 'ogretmen_id' in data:
+            if updated.ogretmen_id != prev_ogretmen_id:
+                self._sync_grid_cells_teacher(updated)
+
+        return updated
+
+    @staticmethod
+    def _sync_grid_cells_teacher(plan: ClassLessonPlan) -> int:
+        """Plan öğretmeni değişince yerleştirilmiş hücrelerdeki öğretmeni güncelle."""
+        from apps.academic.domain.program_grid_cell import CellStatus, ProgramGridCell
+
+        return ProgramGridCell.objects.filter(
+            class_lesson_plan_id=plan.id,
+            is_active=True,
+            status=CellStatus.FILLED,
+        ).update(ogretmen_id=plan.ogretmen_id)
     
     def delete(self, plan_id: int) -> ClassLessonPlan:
         """

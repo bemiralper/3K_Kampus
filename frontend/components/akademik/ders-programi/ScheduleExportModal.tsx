@@ -69,13 +69,13 @@ export default function ScheduleExportModal({
 
   const runExport = async () => {
     if (!termId) {
-      message.warning({ content: 'Dönem seçin', style: { marginTop: '38vh' } });
+      message.warning({ content: 'Dönem seçin' });
       return;
     }
     if (!versionId) {
       message.warning({
         content: 'Program versiyonu seçin (Ders Programı filtreleri).',
-        style: { marginTop: '38vh' },
+        
       });
       return;
     }
@@ -86,13 +86,13 @@ export default function ScheduleExportModal({
       all = true;
     } else if (scope === 'current') {
       if (!currentClassroomId) {
-        message.warning({ content: 'Sınıf seçin', style: { marginTop: '38vh' } });
+        message.warning({ content: 'Sınıf seçin' });
         return;
       }
       classroom_ids = [currentClassroomId];
     } else {
       if (!selectedIds.length) {
-        message.warning({ content: 'En az bir sınıf seçin', style: { marginTop: '38vh' } });
+        message.warning({ content: 'En az bir sınıf seçin' });
         return;
       }
       classroom_ids = selectedIds;
@@ -124,12 +124,12 @@ export default function ScheduleExportModal({
           color_by: format === 'xlsx' ? getScheduleColorBy() : undefined,
         });
       }
-      message.success({ content: 'Dışa aktarma tamamlandı', style: { marginTop: '38vh' } });
+      message.success({ content: 'Dışa aktarma tamamlandı' });
       onClose();
     } catch (e) {
       message.error({
         content: e instanceof Error ? e.message : 'Dışa aktarma başarısız',
-        style: { marginTop: '38vh' },
+        
         duration: 5,
       });
     } finally {

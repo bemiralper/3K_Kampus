@@ -32,6 +32,7 @@ import { useKurum } from '@/lib/contexts/KurumContext';
 import { resolveAkademikBase } from '@/lib/akademik-routes';
 import { usePathname } from 'next/navigation';
 import {
+  CLASS_LESSON_PLAN_CHANGED_EVENT,
   activateAcademicScheduleVersion,
   clearScheduleCell,
   createAcademicScheduleVersion,
@@ -48,6 +49,7 @@ import {
   updateAcademicScheduleVersion,
   type AcademicScheduleVersion,
   type ClassLessonPlan,
+  type ClassLessonPlanChangedDetail,
   type ClassLessonPlanContext,
   type ClassScheduleGrid,
   type ScheduleGridCell,
@@ -161,19 +163,18 @@ export default function DersProgramiClient() {
   const dragRef = useRef<DragPayload | null>(null);
   /** Sürükleme sonrası sahte click ile temizleme modalını engelle */
   const suppressClickRef = useRef(false);
+  const scrollYRef = useRef(0);
 
   useEffect(() => {
     setColorBy(getScheduleColorBy());
-    // Yerleştirme uyarıları ekranın ortasında görünsün
-    message.config({
-      top: typeof window !== 'undefined' ? Math.max(120, Math.round(window.innerHeight * 0.38)) : 240,
-      duration: 3.2,
-      maxCount: 2,
-    });
-    return () => {
-      message.config({ top: 24, duration: 3, maxCount: 3 });
-    };
+    message.config({ top: 24, duration: 3, maxCount: 3 });
   }, []);
+
+  const plansById = useMemo(() => {
+    const map = new Map<number, ClassLessonPlan>();
+    plans.forEach((p) => map.set(p.id, p));
+    return map;
+  }, [plans]);
 
   const selectedCalendar = useMemo(
     () => calendars.find((c) => c.id === calendarId) || null,
@@ -296,16 +297,22 @@ export default function DersProgramiClient() {
     loadPlans();
   }, [loadPlans]);
 
-  const loadGrid = useCallback(async () => {
+  const loadGrid = useCallback(async (opts?: { silent?: boolean }) => {
     if (!classroomId || !termId || !versionId) {
       setGrid(null);
       setGridError(null);
       return;
     }
-    setLoading(true);
+    const silent = Boolean(opts?.silent);
+    if (!silent) setLoading(true);
     setGridError(null);
+    if (silent && typeof window !== 'undefined') {
+      scrollYRef.current = window.scrollY;
+    }
     try {
-      await ensureVersionClassroomGrid(versionId, classroomId);
+      if (!silent) {
+        await ensureVersionClassroomGrid(versionId, classroomId);
+      }
       const data = await fetchClassScheduleGrid({
         classroom_id: classroomId,
         term_id: termId,
@@ -319,13 +326,48 @@ export default function DersProgramiClient() {
       setGridError(msg);
       message.error(msg);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      if (silent && typeof window !== 'undefined') {
+        const y = scrollYRef.current;
+        requestAnimationFrame(() => window.scrollTo({ top: y, left: 0, behavior: 'auto' }));
+      }
     }
   }, [classroomId, termId, versionId]);
 
   useEffect(() => {
-    loadGrid();
+    void loadGrid();
   }, [loadGrid]);
+
+  // SDP'de öğretmen / görünen ad değişince grid + havuzu sessiz yenile
+  useEffect(() => {
+    const refreshFromPlan = () => {
+      void loadPlans();
+      void loadGrid({ silent: true });
+    };
+    const onPlanChanged = (ev: Event) => {
+      const detail = (ev as CustomEvent<ClassLessonPlanChangedDetail>).detail;
+      if (
+        detail?.classroomId != null &&
+        classroomId != null &&
+        detail.classroomId !== classroomId
+      ) {
+        return;
+      }
+      if (detail?.termId != null && termId != null && detail.termId !== termId) {
+        return;
+      }
+      refreshFromPlan();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshFromPlan();
+    };
+    window.addEventListener(CLASS_LESSON_PLAN_CHANGED_EVENT, onPlanChanged);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener(CLASS_LESSON_PLAN_CHANGED_EVENT, onPlanChanged);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [classroomId, loadGrid, loadPlans, termId]);
 
   const openCreateVersion = () => {
     const templateId = primaryTemplateId(selectedCalendar);
@@ -455,10 +497,10 @@ export default function DersProgramiClient() {
         try {
           await swapScheduleCells(sourceCellId, liveTarget.id);
           message.success('Dersler yer değiştirdi');
-          await loadGrid();
+          await loadGrid({ silent: true });
         } catch (e) {
           message.error(e instanceof Error ? e.message : 'Yer değiştirme başarısız');
-          await loadGrid();
+          await loadGrid({ silent: true });
         } finally {
           setSaving(false);
         }
@@ -503,10 +545,10 @@ export default function DersProgramiClient() {
             throw fillErr;
           }
           message.success(sourceCellId ? 'Ders taşındı' : 'Ders yerleştirildi');
-          await loadGrid();
+          await loadGrid({ silent: true });
         } catch (e) {
           message.error(e instanceof Error ? e.message : 'Yerleştirme başarısız');
-          await loadGrid();
+          await loadGrid({ silent: true });
         } finally {
           setSaving(false);
         }
@@ -525,7 +567,7 @@ export default function DersProgramiClient() {
             : 'Mevcut ders kaldırılıp yenisi konulacak.',
           okText: 'Üzerine yaz',
           okButtonProps: { danger: true },
-          centered: true,
+          centered: false,
           onOk: doPlace,
         });
         return;
@@ -544,12 +586,12 @@ export default function DersProgramiClient() {
         content: cell.lesson?.name || 'Dolu hücre boşaltılacak.',
         okText: 'Temizle',
         okButtonProps: { danger: true },
-        centered: true,
+        centered: false,
         onOk: async () => {
           try {
             await clearScheduleCell(cell.id);
             message.success('Hücre temizlendi');
-            await loadGrid();
+            await loadGrid({ silent: true });
           } catch (e) {
             message.error(e instanceof Error ? e.message : 'Temizleme başarısız');
             throw e;
@@ -662,10 +704,10 @@ export default function DersProgramiClient() {
     try {
       await clearScheduleCell(payload.cellId);
       message.success('Hücre temizlendi — ders havuza döndü');
-      await loadGrid();
+      await loadGrid({ silent: true });
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'Temizleme başarısız');
-      await loadGrid();
+      await loadGrid({ silent: true });
     } finally {
       setSaving(false);
     }
@@ -710,7 +752,7 @@ export default function DersProgramiClient() {
           >
             Dışa Aktar
           </Button>
-          <Button icon={<ReloadOutlined />} onClick={() => { boot(); loadGrid(); loadPlans(); }}>
+          <Button icon={<ReloadOutlined />} onClick={() => { boot(); void loadGrid(); void loadPlans(); }}>
             Yenile
           </Button>
         </Space>
@@ -919,7 +961,7 @@ export default function DersProgramiClient() {
             <div className="dp-pool-drop-hint">Buraya bırakarak hücreyi boşaltın</div>
           ) : null}
           <div className="dp-pool-body">
-            {bootLoading || loading ? (
+            {bootLoading && plans.length === 0 ? (
               <div className="dp-empty" style={{ padding: 24 }}>Yükleniyor…</div>
             ) : plans.length === 0 ? (
               <div className="dp-empty" style={{ padding: 24 }}>
@@ -1034,12 +1076,27 @@ export default function DersProgramiClient() {
                         }
                         const filled = cell.status === 'FILLED';
                         const isDropTarget = dropTargetKey === key;
+                        const livePlan = cell.class_lesson_plan_id
+                          ? plansById.get(cell.class_lesson_plan_id)
+                          : undefined;
+                        const lessonName =
+                          livePlan?.ders_gorunen_ad ||
+                          livePlan?.ders_ad ||
+                          cell.lesson?.name ||
+                          'Ders';
+                        const lessonFull =
+                          livePlan?.ders_ad || cell.lesson?.full_name || cell.lesson?.name;
+                        const teacherLabel =
+                          livePlan?.ogretmen_ad ||
+                          cell.teacher?.short_name ||
+                          cell.teacher?.name ||
+                          'Öğretmensiz';
                         const cellColorId =
                           colorBy === 'none'
                             ? null
                             : colorBy === 'ogretmen'
-                              ? cell.teacher?.id
-                              : cell.lesson?.id;
+                              ? livePlan?.ogretmen ?? cell.teacher?.id
+                              : livePlan?.ders ?? cell.lesson?.id;
                         const cellColor =
                           filled && colorBy !== 'none' ? colorForKey(cellColorId) : null;
                         return (
@@ -1088,17 +1145,14 @@ export default function DersProgramiClient() {
                                     className="dp-cell-lesson"
                                     style={cellColor ? { color: cellColor.text } : undefined}
                                     title={
-                                      cell.lesson?.full_name &&
-                                      cell.lesson.full_name !== cell.lesson.name
-                                        ? cell.lesson.full_name
+                                      lessonFull && lessonFull !== lessonName
+                                        ? lessonFull
                                         : undefined
                                     }
                                   >
-                                    {cell.lesson?.name || 'Ders'}
+                                    {lessonName}
                                   </div>
-                                  <div className="dp-cell-teacher">
-                                    {cell.teacher?.short_name || cell.teacher?.name || 'Öğretmensiz'}
-                                  </div>
+                                  <div className="dp-cell-teacher">{teacherLabel}</div>
                                   {!readOnly ? (
                                     <div className="dp-cell-hint">Sürükle · bırakarak yer değiştir</div>
                                   ) : null}

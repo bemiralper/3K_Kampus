@@ -141,19 +141,27 @@ def serialize_grid_response(cells, days, slots):
         }
         
         # Ders bilgisi — görünen ad: plan.gorunen_ad → ders.kisa_ad → ders.ad
+        plan = getattr(c, 'class_lesson_plan', None)
         if c.ders:
             from apps.egitim_tanimlari.display import serialize_lesson_label
             cell_data["lesson"] = serialize_lesson_label(
                 ders=c.ders,
-                plan=getattr(c, 'class_lesson_plan', None),
+                plan=plan,
             )
-        
-        # Öğretmen bilgisi
-        if c.ogretmen:
+
+        # Öğretmen: plandaki güncel öğretmen öncelikli (SDP değişince grid anında doğru)
+        teacher = None
+        if plan is not None and getattr(plan, 'ogretmen_id', None):
+            teacher = plan.ogretmen
+        elif c.ogretmen_id:
+            teacher = c.ogretmen
+        if teacher:
             cell_data["teacher"] = {
-                "id": c.ogretmen.id,
-                "name": f"{c.ogretmen.ad} {c.ogretmen.soyad}",
-                "short_name": f"{c.ogretmen.ad[0]}. {c.ogretmen.soyad}" if c.ogretmen.ad else c.ogretmen.soyad
+                "id": teacher.id,
+                "name": f"{teacher.ad} {teacher.soyad}",
+                "short_name": (
+                    f"{teacher.ad[0]}. {teacher.soyad}" if teacher.ad else teacher.soyad
+                ),
             }
         
         # Sınıf bilgisi
@@ -246,7 +254,7 @@ def class_schedule_api(request):
         is_active=True
     ).select_related(
         'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot',
-        'class_lesson_plan', 'class_lesson_plan__ders',
+        'class_lesson_plan', 'class_lesson_plan__ders', 'class_lesson_plan__ogretmen',
     )
     
     # Response
@@ -341,7 +349,7 @@ def teacher_schedule_api(request):
         is_active=True
     ).select_related(
         'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot',
-        'class_lesson_plan', 'class_lesson_plan__ders',
+        'class_lesson_plan', 'class_lesson_plan__ders', 'class_lesson_plan__ogretmen',
     )
     
     data = serialize_grid_response(cells, days, slots)
@@ -441,7 +449,7 @@ def student_schedule_api(request):
         is_active=True
     ).select_related(
         'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot',
-        'class_lesson_plan', 'class_lesson_plan__ders',
+        'class_lesson_plan', 'class_lesson_plan__ders', 'class_lesson_plan__ogretmen',
     )
     
     data = serialize_grid_response(cells, days, slots)
@@ -528,7 +536,7 @@ def room_schedule_api(request):
     #     is_active=True
     # ).select_related(
     #     'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot',
-    #     'class_lesson_plan', 'class_lesson_plan__ders',
+    #     'class_lesson_plan', 'class_lesson_plan__ders', 'class_lesson_plan__ogretmen',
     # )
     
     cells = []  # Placeholder
@@ -643,7 +651,7 @@ def daily_flow_api(request):
         status__in=[CellStatus.FILLED, CellStatus.EXAM, CellStatus.HOLIDAY]
     ).select_related(
         'ders', 'ogretmen', 'sinif', 'timeslot',
-        'class_lesson_plan', 'class_lesson_plan__ders',
+        'class_lesson_plan', 'class_lesson_plan__ders', 'class_lesson_plan__ogretmen',
     ).order_by('timeslot__order')
     
     if teacher_id:
