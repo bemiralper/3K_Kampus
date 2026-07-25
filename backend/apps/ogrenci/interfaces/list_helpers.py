@@ -530,10 +530,9 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
 
         sozlesme_qs = Sozlesme.objects.filter(
             kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
             durum__in=[SozlesmeDurum.AKTIF, SozlesmeDurum.TASLAK, SozlesmeDurum.TAMAMLANDI],
         )
-        if effective_sube_id:
-            sozlesme_qs = sozlesme_qs.filter(sube_id=effective_sube_id)
         if not use_all_years and ctx.get('egitim_yili_id'):
             sozlesme_qs = sozlesme_qs.filter(egitim_yili_id=ctx['egitim_yili_id'])
 
