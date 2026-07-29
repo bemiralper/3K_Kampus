@@ -13,7 +13,7 @@ import '../takvim.css';
 
 import {
   fetchEventsCompact, fetchEventDetail, createEvent, updateEvent, deleteEvent,
-  moveEvent, resizeEvent, fetchEventTypes,
+  moveEvent, resizeEvent, fetchEventTypes, ensureResmiTatiller,
   EVENT_CATEGORY_LABELS, EVENT_STATUS_LABELS,
   type FCEvent, type CalendarEvent, type EventType, type EventFilters,
 } from '@/lib/takvim-api';
@@ -164,6 +164,30 @@ export default function GenelTakvimClient() {
   }, [events, eventTypes]);
 
   useEffect(() => { loadEventTypes(); }, [loadEventTypes]);
+
+  // Resmi tatiller: günde bir otomatik senkron (arka plan, sessiz)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await ensureResmiTatiller();
+        if (cancelled || !res.success || !res.data || res.data.skipped) return;
+        const api = calRef.current?.getApi();
+        if (api) {
+          await loadEvents(
+            api.view.activeStart.toISOString(),
+            api.view.activeEnd.toISOString(),
+          );
+        }
+      } catch {
+        /* sessiz — cron / manuel sync yedeği */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Dönem (veya diğer filtreler) değişince event'leri yeniden yükle
   useEffect(() => {

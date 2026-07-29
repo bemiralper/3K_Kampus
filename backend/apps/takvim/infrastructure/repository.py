@@ -83,9 +83,21 @@ class EventRepository:
 
         # ── Context filtreleri (Şube / Eğitim Yılı / Dönem) ──
         # Strict: belirli bir değer seçildiğinde sadece eşleşenler döner.
-        # NULL kayıtlar yalnızca ilgili filtre verilmediğinde görünür.
+        # Resmi tatiller kurum geneli (sube_id NULL) — tüm şubelerde görünür.
         if filters.get('sube_id'):
-            qs = qs.filter(sube_id=filters['sube_id'])
+            from django.db.models import Q
+            from apps.takvim.application.integration_service import KaynakModul
+
+            qs = qs.filter(
+                Q(sube_id=filters['sube_id'])
+                | Q(
+                    sube_id__isnull=True,
+                    kaynak_modul__in=[
+                        KaynakModul.RESMI_TATIL,
+                        KaynakModul.OZEL_DERS_CEVRE,
+                    ],
+                )
+            )
         if filters.get('egitim_yili_id'):
             from django.db.models import Q
             qs = qs.filter(

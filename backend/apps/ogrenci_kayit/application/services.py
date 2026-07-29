@@ -745,7 +745,7 @@ def submit_draft(draft: WizardDraft, user):
             veli.save()
 
         for paket in draft.packages.all():
-            OgrenciEgitimPaketi.objects.create(
+            ep = OgrenciEgitimPaketi.objects.create(
                 ogrenci=ogrenci,
                 paket_turu=paket.paket_turu.code,
                 paket_id=paket.paket_id,
@@ -760,6 +760,20 @@ def submit_draft(draft: WizardDraft, user):
                 "alan_id": enrollment.alan_id if enrollment.alan_id else None,
             }
             paket_kod = paket.paket_turu.code
+
+            if paket_kod in ('ozel_ders', 'ozel_dersler', 'premium', 'premium_paketler'):
+                try:
+                    from apps.ozel_ders.services.sync_service import ensure_program_from_enrollment
+                    ensure_program_from_enrollment(
+                        ogrenci=ogrenci,
+                        egitim_yili_id=enrollment.egitim_yili_id,
+                        paket_turu=paket_kod,
+                        paket_id=paket.paket_id,
+                        ogrenci_egitim_paketi_id=ep.id,
+                        baslangic=getattr(enrollment, 'giris_tarihi', None),
+                    )
+                except Exception:
+                    pass
 
             # Seçilen paket GrupDersi ise, dahil ek hizmet/deneme/yayın paketlerini otomatik ekle
             if paket_kod in ('grup_dersleri', 'grup_dersi'):

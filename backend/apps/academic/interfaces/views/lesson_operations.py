@@ -315,7 +315,7 @@ def lesson_operations_meta_api(request):
             aktif_mi=True,
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
-        ).order_by('ad').values('id', 'ad', 'kod')[:500]
+        ).order_by('ad').values('id', 'ad', 'kod', 'kisa_ad')[:500]
     )
     return Response({
         'session_kinds': [{'value': v, 'label': l} for v, l in SessionKind.choices],
@@ -327,6 +327,12 @@ def lesson_operations_meta_api(request):
             {'id': t['id'], 'name': f"{t['ad']} {t['soyad']}".strip()} for t in teachers
         ],
         'dersler': [
-            {'id': d['id'], 'ad': d['ad'], 'kod': d['kod'] or ''} for d in dersler
+            {
+                'id': d['id'],
+                'ad': d['ad'],
+                'kod': d['kod'] or '',
+                'kisa_ad': (d.get('kisa_ad') or '').strip(),
+            }
+            for d in dersler
         ],
     })

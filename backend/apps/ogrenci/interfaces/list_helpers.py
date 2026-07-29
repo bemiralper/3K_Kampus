@@ -460,7 +460,7 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
         kurum_id=ctx['kurum_id'],
         sube_id=ctx['sube_id'],
     ).select_related(
-        'ogrenci', 'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi',
+        'ogrenci', 'sinif', 'sinif__sinif_seviyesi', 'sinif__alan', 'sinif_seviyesi',
         'alan', 'school', 'egitim_yili', 'sube',
     ).prefetch_related('ogrenci__veliler')
 
@@ -712,7 +712,10 @@ def serialize_kayit_row(
         'sinif_id': kayit.sinif.id if kayit.sinif else None,
         'sinif_ad': kayit.sinif.ad if kayit.sinif else '',
         'sinif_seviyesi': resolve_sinif_seviyesi_ad(kayit),
-        'alan_ad': kayit.alan.ad if getattr(kayit, 'alan_id', None) and kayit.alan else '',
+        'alan_ad': (
+            kayit.alan.ad if getattr(kayit, 'alan_id', None) and kayit.alan
+            else (kayit.sinif.alan.ad if kayit.sinif and getattr(kayit.sinif, 'alan_id', None) and kayit.sinif.alan else '')
+        ),
         'sube_ad': kayit.sube.ad if kayit.sube else '',
         'kayit_tarihi': format_date(kayit.kayit_tarihi),
         'okul_no': kayit.okul_no or '',

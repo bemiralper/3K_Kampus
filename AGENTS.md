@@ -66,6 +66,19 @@ Create an institution through the running backend and confirm it persists:
 `curl -X POST localhost:8000/kurum-yonetimi/api/kurum/ -H 'Content-Type: application/json' -d '{"ad":"Demo","kod":"DEMO"}'`
 then `curl localhost:8000/api/legacy/index/` should report an increased `total_kurumlar`.
 
+### Resmi tatiller (Takvim)
+
+Google “Türkiye'deki Tatiller” senkronu günde bir çalışır (kurum bazında 24s cache). Genel Takvim açılınca `POST /takvim/api/resmi-tatiller/ensure/` tetiklenir; ayrıca cron:
+
+```bash
+# günde bir, örn. 02:00
+cd backend && DJANGO_ENV=production python manage.py sync_resmi_tatiller --all
+```
+
+Docker: `docker compose exec backend python manage.py sync_resmi_tatiller --all`
+
+Ayar UI: `/admin/takvim/resmi-tatiller` (özel ders Tatil/Devam kararları burada).
+
 ### WhatsApp / İletişim cron (Faz 4–5)
 
 Background workers are management commands by default; optional Celery + Redis when `CELERY_BROKER_URL` is set.

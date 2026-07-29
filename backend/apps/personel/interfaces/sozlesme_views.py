@@ -67,6 +67,7 @@ def _serialize_hakedis(h):
         'toplam_ders_saati': float(h.toplam_ders_saati),
         'ders_basi_ucret': float(h.ders_basi_ucret),
         'ders_ucreti_toplam': float(h.ders_ucreti_toplam),
+        'ozel_ders_hakedis_toplam': float(getattr(h, 'ozel_ders_hakedis_toplam', 0) or 0),
         'prim': float(h.prim),
         'fazla_mesai': float(h.fazla_mesai),
         'ek_odeme': float(h.ek_odeme),

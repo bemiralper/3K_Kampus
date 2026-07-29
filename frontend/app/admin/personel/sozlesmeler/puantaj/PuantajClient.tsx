@@ -11,6 +11,7 @@ import {
 import type { Hakedis, HakedisStats, AvansKaydi } from '../types';
 import { HAKEDIS_DURUM_COLORS, AY_ADLARI } from '../types';
 import AppDatePicker from '@/components/ui/AppDatePicker';
+import { fetchHakedisForBordro, type BirebirHakedis } from '@/lib/ozel-ders-api';
 
 /* ─── CSS ─── */
 const inp = 'w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10';
@@ -45,6 +46,24 @@ export default function MaasBordrosuClient() {
   const showToast = (type: 'success' | 'error', msg: string) => {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3500);
+  };
+
+  // Özel ders hakediş detayı (salt okunur)
+  const [ozelDetayId, setOzelDetayId] = useState<number | null>(null);
+  const [ozelDetayRows, setOzelDetayRows] = useState<BirebirHakedis[]>([]);
+  const [ozelDetayLoading, setOzelDetayLoading] = useState(false);
+
+  const openOzelDetay = async (hakedisId: number) => {
+    setOzelDetayId(hakedisId);
+    setOzelDetayLoading(true);
+    try {
+      setOzelDetayRows(await fetchHakedisForBordro(hakedisId));
+    } catch {
+      setOzelDetayRows([]);
+      showToast('error', 'Özel ders hakedişleri yüklenemedi.');
+    } finally {
+      setOzelDetayLoading(false);
+    }
   };
 
   // ── Veri yükleme ──
@@ -295,6 +314,105 @@ export default function MaasBordrosuClient() {
           <div className="bg-white rounded-2xl border border-gray-100 p-4">
             <div className="text-[12px] text-gray-500 mb-1">🕐 Toplam Ders Saati</div>
             <div className="text-xl font-bold text-purple-600">{stats.toplam_ders_saat}</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Özel Ders Hakedişleri (salt okunur özet) ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-[15px] font-semibold text-gray-900">Özel Ders Hakedişleri</h2>
+            <p className="text-[12px] text-gray-500 mt-0.5">
+              Onaylanıp bordroya aktarılan birebir ders tutarları (yeniden hesaplanmaz)
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-[12px] text-gray-500">Bu ay toplam</div>
+            <div className="text-lg font-bold text-teal-700">
+              {fmtPara(hakedisler.reduce((a, h) => a + (h.ozel_ders_hakedis_toplam || 0), 0))}
+            </div>
+          </div>
+        </div>
+        {hakedisler.some((h) => (h.ozel_ders_hakedis_toplam || 0) > 0) ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-gray-400">
+                  <th className="py-2">Personel</th>
+                  <th className="py-2 text-right">Özel Ders</th>
+                  <th className="py-2 text-right">Detay</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hakedisler
+                  .filter((h) => (h.ozel_ders_hakedis_toplam || 0) > 0)
+                  .map((h) => (
+                    <tr key={h.id} className="border-t border-gray-50">
+                      <td className="py-2.5">{h.personel_ad}</td>
+                      <td className="py-2.5 text-right font-medium text-teal-700">
+                        {fmtPara(h.ozel_ders_hakedis_toplam || 0)}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <button
+                          type="button"
+                          className="text-indigo-600 hover:underline text-[12px]"
+                          onClick={() => openOzelDetay(h.id)}
+                        >
+                          Satırları gör
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-[13px] text-gray-400">Bu ay için aktarılmış özel ders hakedişi yok.</p>
+        )}
+      </div>
+
+      {ozelDetayId != null && (
+        <div
+          className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
+          onClick={() => setOzelDetayId(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-auto p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Özel Ders Hakediş Satırları</h3>
+              <button type="button" className={btnSecondary} onClick={() => setOzelDetayId(null)}>
+                Kapat
+              </button>
+            </div>
+            {ozelDetayLoading ? (
+              <p className="text-[13px] text-gray-500">Yükleniyor…</p>
+            ) : ozelDetayRows.length === 0 ? (
+              <p className="text-[13px] text-gray-500">Kayıt yok.</p>
+            ) : (
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-gray-400 text-[11px] uppercase">
+                    <th className="py-2">Tarih</th>
+                    <th className="py-2">Ders</th>
+                    <th className="py-2 text-right">Tutar</th>
+                    <th className="py-2">Durum</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ozelDetayRows.map((r) => (
+                    <tr key={r.id} className="border-t border-gray-50">
+                      <td className="py-2">{r.tarih}</td>
+                      <td className="py-2">{r.ders_ad}</td>
+                      <td className="py-2 text-right">{fmtPara(r.tutar)}</td>
+                      <td className="py-2">{r.durum_display}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}

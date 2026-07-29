@@ -49,6 +49,7 @@ type OgrenciData = {
   sinif_id?: number;
   sinif_ad?: string;
   sinif_seviyesi?: string;
+  alan_ad?: string;
   sube_ad?: string;
   kayit_tarihi?: string;
   okul_no?: string;
@@ -92,7 +93,6 @@ export default function OgrenciListesiPage() {
     parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString()))
   );
   const [ogrenciler, setOgrenciler] = useState<OgrenciData[]>([]);
-  const [toplamOgrenci, setToplamOgrenci] = useState(0);
   const [aktifOgrenci, setAktifOgrenci] = useState(0);
   const [pasifOgrenci, setPasifOgrenci] = useState(0);
   const [filterMode, setFilterMode] = useState<"yillik" | "tum" | "tum_yillar">("tum");
@@ -186,7 +186,6 @@ export default function OgrenciListesiPage() {
       if (response.success) {
         const data = (response.data || response) as OgrenciResponse;
         setOgrenciler(data.ogrenciler || []);
-        setToplamOgrenci(data.toplam_ogrenci || data.total_count || 0);
         setTotalCount(data.total_count || data.toplam_ogrenci || 0);
         setAktifOgrenci(data.filter_counts?.aktif ?? data.aktif_ogrenci ?? 0);
         setPasifOgrenci(data.filter_counts?.pasif ?? 0);
@@ -603,62 +602,6 @@ export default function OgrenciListesiPage() {
           </span>
           <span>Yeni Öğrenci</span>
         </Link>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="quick-stats">
-        <div className="quick-stat">
-          <div className="quick-stat-icon blue">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{toplamOgrenci}</h4>
-            <span>{filterMode === "yillik" ? "Kayıtlı Öğrenci" : "Toplam Öğrenci"}</span>
-          </div>
-        </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon green">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-              <polyline points="22 4 12 14.01 9 11.01" />
-            </svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{aktifOgrenci}</h4>
-            <span>Aktif Kayıt</span>
-          </div>
-        </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon orange">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{pasifOgrenci}</h4>
-            <span>Pasif Kayıt</span>
-          </div>
-        </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon purple">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="20" x2="18" y2="10" />
-              <line x1="12" y1="20" x2="12" y2="4" />
-              <line x1="6" y1="20" x2="6" y2="14" />
-            </svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>%{toplamOgrenci > 0 ? Math.round((aktifOgrenci / toplamOgrenci) * 100) : 0}</h4>
-            <span>Aktiflik Oranı</span>
-          </div>
-        </div>
       </div>
 
       {allYearsCount != null && allYearsCount > 0 && !filters.all_years && (

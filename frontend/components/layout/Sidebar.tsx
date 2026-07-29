@@ -276,6 +276,7 @@ const navItems: MenuItem[] = [
     icon: icons.calendar,
     children: [
       { label: "Genel Takvim", href: "/admin/takvim/genel" },
+      { label: "Resmi Tatiller", href: "/admin/takvim/resmi-tatiller" },
       { label: "Görevler", href: "/admin/gorevler" },
       { label: "Performans Analitiği", href: "/admin/gorevler/analitik" },
       { label: "Tekrarlayan Görevler", href: "/admin/gorevler/tekrar" },

@@ -12,6 +12,13 @@ import TelafiDersleriClient from '@/components/akademik/telafi-dersleri/TelafiDe
 import EkDerslerClient from '@/components/akademik/ek-dersler/EkDerslerClient';
 import DersUcretleriClient from '@/components/akademik/ders-ucretleri/DersUcretleriClient';
 import ProgramRevizyonlariClient from '@/components/akademik/program-revizyonlari/ProgramRevizyonlariClient';
+import OgrenciProgramlariClient from '@/components/akademik/ozel-ders-yonetimi/OgrenciProgramlariClient';
+import HaftalikSablonlariClient from '@/components/akademik/ozel-ders-yonetimi/HaftalikSablonlariClient';
+import BirebirOturumlarClient from '@/components/akademik/ozel-ders-yonetimi/BirebirOturumlarClient';
+import BirebirYoklamalarClient from '@/components/akademik/ozel-ders-yonetimi/BirebirYoklamalarClient';
+import BirebirTelafiClient from '@/components/akademik/ozel-ders-yonetimi/BirebirTelafiClient';
+import PremiumPaketlerClient from '@/components/akademik/ozel-ders-yonetimi/PremiumPaketlerClient';
+import HakedisTakibiClient from '@/components/akademik/ozel-ders-yonetimi/HakedisTakibiClient';
 import AkademikTabContent from '@/components/akademik/AkademikTabContent';
 import {
   AKADEMIK_GROUPS,
@@ -36,6 +43,13 @@ export const AKADEMIK_TAB_PAGES: Record<string, React.ComponentType> = {
   'ek-dersler': EkDerslerClient,
   'ders-ucretleri': DersUcretleriClient,
   'program-revizyonlari': ProgramRevizyonlariClient,
+  'ogrenci-programlari': OgrenciProgramlariClient,
+  'haftalik-program-sablonlari': HaftalikSablonlariClient,
+  'birebir-ders-oturumlari': BirebirOturumlarClient,
+  'birebir-yoklamalar': BirebirYoklamalarClient,
+  'birebir-telafi-dersleri': BirebirTelafiClient,
+  'premium-paketler': PremiumPaketlerClient,
+  'hakedis-takibi': HakedisTakibiClient,
 };
 
 export function generateAkademikStaticParams() {
@@ -66,6 +80,9 @@ export function renderAkademikTabPage(
 ) {
   if (params.group === 'planlama' && params.tab === 'ogretmen-atamalari') {
     redirect(akademikTabHref('planlama', 'sinif-ders-planlari', basePath));
+  }
+  if (params.group === 'ozel-ders-yonetimi' && params.tab === 'resmi-tatiller') {
+    redirect('/admin/takvim/resmi-tatiller');
   }
 
   const match = findAkademikTab(params.group, params.tab);

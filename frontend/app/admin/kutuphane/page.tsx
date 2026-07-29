@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { fetchDashboard, type DashboardData } from '@/lib/kutuphane-api';
+import { fetchDashboard, rememberLibrary, fetchLibrary, type DashboardData, type LibraryStatus } from '@/lib/kutuphane-api';
 import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
 import { useKurum } from '@/lib/contexts/KurumContext';
 
@@ -58,16 +58,15 @@ export default function KutuphaneDashboardPage() {
   return (
     <div style={{ padding: 0 }}>
       <style>{`
-        @keyframes dashFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .dash-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
-        .dash-kpi-card { background: #fff; border-radius: 12px; border: 1px solid #e5e7eb; padding: 12px 14px; display: flex; align-items: center; gap: 10px; position: relative; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s; animation: dashFadeIn 0.4s ease both; }
+        .dash-kpi-card { background: #fff; border-radius: 12px; border: 1px solid #e5e7eb; padding: 12px 14px; display: flex; align-items: center; gap: 10px; position: relative; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s; }
         .dash-kpi-card:hover { border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .dash-kpi-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
         .dash-kpi-value { font-size: 18px; font-weight: 700; color: #111827; line-height: 1.2; }
         .dash-kpi-label { font-size: 11px; font-weight: 600; color: #6b7280; margin-top: 2px; }
         .dash-kpi-sub { font-size: 10px; color: #9ca3af; margin-top: 1px; }
         .dash-kpi-deco { position: absolute; top: -16px; right: -16px; width: 56px; height: 56px; border-radius: 50%; opacity: 0.06; pointer-events: none; }
-        .dash-section { background: #fff; border-radius: 18px; border: 1.5px solid #e5e7eb; overflow: hidden; margin-bottom: 24px; animation: dashFadeIn 0.45s ease both; }
+        .dash-section { background: #fff; border-radius: 18px; border: 1.5px solid #e5e7eb; overflow: hidden; margin-bottom: 24px; }
         .dash-section-header { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
         .dash-section-title { font-size: 16px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 10px; }
         .dash-section-body { padding: 24px; }
@@ -75,18 +74,18 @@ export default function KutuphaneDashboardPage() {
         .dash-progress-label { font-size: 14px; font-weight: 600; color: #374151; }
         .dash-progress-value { font-size: 14px; font-weight: 700; }
         .dash-progress-bar { height: 10px; background: #f1f5f9; border-radius: 5px; overflow: hidden; }
-        .dash-progress-fill { height: 100%; border-radius: 5px; transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
+        .dash-progress-fill { height: 100%; border-radius: 5px; }
         .dash-progress-sub { font-size: 12px; color: #9ca3af; margin-top: 5px; }
         .dash-salon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
-        .dash-salon-card { background: #fff; border-radius: 16px; border: 1.5px solid #e5e7eb; overflow: hidden; transition: all 0.2s; text-decoration: none; color: inherit; display: block; }
-        .dash-salon-card:hover { border-color: #93c5fd; box-shadow: 0 8px 25px rgba(0,0,0,0.07); transform: translateY(-2px); }
+        .dash-salon-card { background: #fff; border-radius: 16px; border: 1.5px solid #e5e7eb; overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; text-decoration: none; color: inherit; display: block; }
+        .dash-salon-card:hover { border-color: #93c5fd; box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
         .dash-salon-stripe { height: 4px; width: 100%; }
         .dash-salon-body { padding: 20px; }
         .dash-salon-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
         .dash-salon-stat { text-align: center; padding: 10px 0; background: #f9fafb; border-radius: 10px; }
         .dash-salon-stat-value { font-size: 20px; font-weight: 800; color: #111827; }
         .dash-salon-stat-label { font-size: 11px; color: #6b7280; font-weight: 600; margin-top: 2px; }
-        .dash-skeleton { background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%); background-size: 200% 100%; animation: dashFadeIn 1.5s ease infinite; border-radius: 12px; }
+        .dash-skeleton { background: #f3f4f6; border-radius: 12px; }
         @media (max-width: 1024px) { .dash-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 640px) { .dash-kpi-grid { grid-template-columns: 1fr; } .dash-salon-grid { grid-template-columns: 1fr; } }
       `}</style>
@@ -152,8 +151,8 @@ export default function KutuphaneDashboardPage() {
               { icon: '🪑', label: 'Masa Doluluk', value: `${data.dolu_masa}/${data.toplam_masa}`, sub: `%${data.doluluk_orani} doluluk`, gradient: 'linear-gradient(135deg, #3b82f6, #2563eb)', deco: '#3b82f6' },
               { icon: '🔒', label: 'Dolap Kullanımı', value: `${data.dolu_dolap}/${data.toplam_dolap}`, sub: `${data.musait_dolap} müsait`, gradient: 'linear-gradient(135deg, #22c55e, #16a34a)', deco: '#22c55e' },
               { icon: '⏱️', label: 'Geçici Oturma', value: data.gecici_oturma, sub: 'Anlık aktif', gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', deco: '#f59e0b' },
-            ].map((kpi, i) => (
-              <div key={kpi.label} className="dash-kpi-card" style={{ animationDelay: `${i * 0.08}s` }}>
+            ].map((kpi) => (
+              <div key={kpi.label} className="dash-kpi-card">
                 <div className="dash-kpi-deco" style={{ background: kpi.deco }} />
                 <div className="dash-kpi-icon" style={{ background: kpi.gradient, color: '#fff' }}>{kpi.icon}</div>
                 <div>
@@ -204,12 +203,32 @@ export default function KutuphaneDashboardPage() {
             <div className="dash-section-body">
               {data.salonlar && data.salonlar.length > 0 ? (
                 <div className="dash-salon-grid">
-                  {data.salonlar.map((salon, i) => {
+                  {data.salonlar.map((salon) => {
                     const st = STATUS_COLORS[salon.durum] || STATUS_COLORS.INACTIVE;
                     const pct = salon.doluluk_orani || 0;
                     const barColor = pct > 90 ? '#ef4444' : pct > 70 ? '#f59e0b' : '#22c55e';
                     return (
-                      <Link key={salon.id} href={href(`salonlar/${salon.id}`)} className="dash-salon-card" style={{ animationDelay: `${i * 0.06}s` }}>
+                      <Link
+                        key={salon.id}
+                        href={href(`salonlar/${salon.id}`)}
+                        className="dash-salon-card"
+                        onMouseEnter={() => {
+                          rememberLibrary({
+                            id: salon.id,
+                            ad: salon.ad,
+                            kod: salon.kod,
+                            durum: salon.durum as LibraryStatus,
+                            kapasite: salon.kapasite,
+                            toplam_masa: salon.toplam_masa,
+                            aktif_masa: salon.aktif_masa,
+                            aktif_atama: salon.aktif_atama,
+                            dolu_masa: salon.dolu_masa,
+                            bos_masa: salon.bos_masa,
+                            doluluk_orani: salon.doluluk_orani,
+                          });
+                          void fetchLibrary(salon.id);
+                        }}
+                      >
                         <div className="dash-salon-stripe" style={{ background: st.gradient }} />
                         <div className="dash-salon-body">
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
@@ -244,7 +263,7 @@ export default function KutuphaneDashboardPage() {
                               <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>%{pct}</span>
                             </div>
                             <div style={{ height: 6, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
-                              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: barColor, transition: 'width 0.6s ease' }} />
+                              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: barColor }} />
                             </div>
                           </div>
                         </div>

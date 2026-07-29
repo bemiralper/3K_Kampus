@@ -755,7 +755,7 @@ class DirectRegistrationView(APIView):
                     if paket_turu and paket_adi:
                         # Ayrıca (ücretli) seçilen paketler dahil değildir. Grup/premiuma
                         # ücretsiz dahil yayın paketi, aşağıdaki attach ile ayrıca oluşturulur.
-                        OgrenciEgitimPaketi.objects.get_or_create(
+                        ep, _ep_created = OgrenciEgitimPaketi.objects.get_or_create(
                             ogrenci=ogrenci,
                             paket_turu=paket_turu,
                             paket_id=db_id,
@@ -766,6 +766,23 @@ class DirectRegistrationView(APIView):
                                 "baslangic_tarihi": giris_tarihi,
                             },
                         )
+                        if paket_turu in ("ozel_ders", "premium"):
+                            try:
+                                from apps.ozel_ders.services.sync_service import (
+                                    ensure_program_from_enrollment,
+                                )
+                                ensure_program_from_enrollment(
+                                    ogrenci=ogrenci,
+                                    egitim_yili_id=egitim_yili.id,
+                                    paket_turu=paket_turu,
+                                    paket_id=db_id,
+                                    ogrenci_egitim_paketi_id=ep.id,
+                                    baslangic=giris_tarihi,
+                                    user=request.user,
+                                )
+                            except Exception:
+                                # Kayıt akışını bozma; program senkronu manuel de çalıştırılabilir
+                                pass
                         
                         # GrupDersi ise dahil ek hizmet/deneme/yayın paketlerini otomatik ekle
                         if kategori == "grup_dersleri" and paket_obj:

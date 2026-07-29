@@ -327,8 +327,22 @@ export async function fetchLibraries(params?: { search?: string; durum?: string 
   return apiGet<Library[]>(`${BASE}/salon/${qs ? '?' + qs : ''}`);
 }
 
+/** Salon detayına geçerken kaybolup-gelme efektini önlemek için önbellek. */
+const libraryPreviewCache = new Map<string, Library>();
+
+export function rememberLibrary(lib: Partial<Library> & { id: string }): void {
+  const prev = libraryPreviewCache.get(lib.id);
+  libraryPreviewCache.set(lib.id, { ...(prev || ({} as Library)), ...lib } as Library);
+}
+
+export function peekLibrary(id: string): Library | undefined {
+  return libraryPreviewCache.get(id);
+}
+
 export async function fetchLibrary(id: string): Promise<ApiResponse<Library>> {
-  return apiGet<Library>(`${BASE}/salon/${id}/`);
+  const res = await apiGet<Library>(`${BASE}/salon/${id}/`);
+  if (res.success && res.data) rememberLibrary(res.data as Library);
+  return res;
 }
 
 export async function createLibrary(data: Partial<Library>): Promise<ApiResponse<Library>> {

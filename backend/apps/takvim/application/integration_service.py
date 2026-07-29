@@ -38,6 +38,8 @@ class KaynakModul:
     CALISMA_BLOK = 'calisma_blok'       # Çalışma programı tekil blok
     GOREV = 'gorev'                     # Görev modülü atamaları
     CEK_SENET = 'cek_senet'             # Verilen çek/senet vade ödemeleri
+    RESMI_TATIL = 'resmi_tatil'         # Türkiye resmi tatilleri (katalog sync)
+    OZEL_DERS_CEVRE = 'ozel_ders_cevre'  # Resmi tatil ±1 gün özel ders tatili
 
 
 # ═══════════════════════════════════════════════════════════

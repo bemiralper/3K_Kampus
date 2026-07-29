@@ -1,71 +1,90 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { apiGet } from "@/lib/api";
-import "../../ogrenci-akademik.css";
-
-type AkademikKalem = {
-  kalem_turu: string;
-  kalem_turu_display: string;
-  kalem_adi: string;
-  sozlesme_no: string;
-  durum: string;
-};
-
-type AkademikEkHizmet = {
-  ad: string;
-  aktif_mi: boolean;
-};
-
-type AkademikKayit = {
-  id: number;
-  egitim_yili: string;
-  sinif_ad: string;
-  sinif_seviyesi: string;
-  sube_ad: string;
-  okul_no: string;
-  kayit_tarihi: string;
-  giris_turu_display: string;
-  giris_tarihi: string;
-  geldigi_okul: string;
-  school_id?: number | null;
-  school_ad?: string;
-  aktif_mi: boolean;
-  kalemler: AkademikKalem[];
-  ek_hizmetler: AkademikEkHizmet[];
-};
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { apiGet } from '@/lib/api';
+import { fetchProgramlar } from '@/lib/ozel-ders-api';
+import '../../ogrenci-akademik.css';
+import '../akademik/ozel-ders-ogrenci.css';
+import AkademikSubNav from '../akademik/AkademikSubNav';
+import GenelBakisPanel from '../akademik/GenelBakisPanel';
+import OzelDerslerPanel from '../akademik/OzelDerslerPanel';
+import SinifDersleriPanel from '../akademik/SinifDersleriPanel';
+import AkademikPlaceholderPanel from '../akademik/AkademikPlaceholderPanel';
+import type {
+  AkademikKayit,
+  AkademikSubId,
+  OzelDersInnerTab,
+} from '../akademik/types';
 
 interface AkademikTabProps {
   ogrenciId: number;
+  onSwitchTopTab?: (tab: string) => void;
 }
 
-function kalemBadgeClass(tur: string): string {
-  const known = ["grup_dersi", "ozel_ders", "premium", "yayin", "deneme", "ek_hizmet", "ek_hizmet_satisi", "paket"];
-  return known.includes(tur) ? `akademik-kalem-badge--${tur}` : "akademik-kalem-badge--paket";
-}
+const VALID_SUB: AkademikSubId[] = [
+  'genel',
+  'ozel-dersler',
+  'sinif-dersleri',
+  'sinavlar',
+  'devamsizlik',
+  'odevler',
+  'analiz',
+];
 
-export default function AkademikTab({ ogrenciId }: AkademikTabProps) {
+const VALID_OD: OzelDersInnerTab[] = ['ozet', 'program', 'gecmis', 'paket'];
+
+export default function AkademikTab({ ogrenciId, onSwitchTopTab }: AkademikTabProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [kayitlar, setKayitlar] = useState<AkademikKayit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasOzelProgram, setHasOzelProgram] = useState(false);
+
+  const rawSub = searchParams.get('akademik') || 'genel';
+  const activeSub: AkademikSubId = VALID_SUB.includes(rawSub as AkademikSubId)
+    ? (rawSub as AkademikSubId)
+    : 'genel';
+
+  const rawOd = searchParams.get('od') || 'ozet';
+  const innerTab: OzelDersInnerTab = VALID_OD.includes(rawOd as OzelDersInnerTab)
+    ? (rawOd as OzelDersInnerTab)
+    : 'ozet';
+
+  const setQuery = useCallback(
+    (patch: { akademik?: AkademikSubId; od?: OzelDersInnerTab }) => {
+      const next = new URLSearchParams(searchParams.toString());
+      if (patch.akademik) next.set('akademik', patch.akademik);
+      if (patch.od) next.set('od', patch.od);
+      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    apiGet<{ kayitlar?: AkademikKayit[] }>(`/ogrenciler/api/${ogrenciId}/akademik/`)
-      .then((res) => {
+    Promise.all([
+      apiGet<{ kayitlar?: AkademikKayit[] }>(`/ogrenciler/api/${ogrenciId}/akademik/`),
+      fetchProgramlar({ ogrenci_id: ogrenciId }).catch(() => []),
+    ])
+      .then(([akRes, programs]) => {
         if (cancelled) return;
-        if (res.success) {
-          const data = (res.data || res) as { kayitlar?: AkademikKayit[] };
+        if (akRes.success) {
+          const data = (akRes.data || akRes) as { kayitlar?: AkademikKayit[] };
           setKayitlar(data.kayitlar || []);
         } else {
-          setError(res.error || "Akademik veriler yüklenemedi");
+          setError(akRes.error || 'Akademik veriler yüklenemedi');
         }
+        setHasOzelProgram(Array.isArray(programs) && programs.length > 0);
       })
       .catch(() => {
-        if (!cancelled) setError("Akademik veriler yüklenirken hata oluştu");
+        if (!cancelled) setError('Akademik veriler yüklenirken hata oluştu');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -76,139 +95,88 @@ export default function AkademikTab({ ogrenciId }: AkademikTabProps) {
     };
   }, [ogrenciId]);
 
-  if (loading) {
-    return (
-      <div className="tab-panel akademik-tab">
-        <div className="akademik-loading">
-          <div className="akademik-spinner" />
-          <p>Akademik bilgiler yükleniyor...</p>
-        </div>
-      </div>
+  const showOzelDersler = useMemo(() => {
+    if (hasOzelProgram) return true;
+    return kayitlar.some((k) =>
+      k.kalemler.some((kalem) => ['ozel_ders', 'premium'].includes(kalem.kalem_turu)),
     );
-  }
+  }, [hasOzelProgram, kayitlar]);
 
-  if (error) {
-    return (
-      <div className="tab-panel">
-        <div className="alert-modern alert-error">{error}</div>
-      </div>
+  const showSinifDersleri = useMemo(() => {
+    return kayitlar.some(
+      (k) =>
+        Boolean(k.sinif_ad) ||
+        k.kalemler.some((kalem) => kalem.kalem_turu === 'grup_dersi'),
     );
-  }
+  }, [kayitlar]);
 
-  if (kayitlar.length === 0) {
-    return (
-      <div className="tab-panel">
-        <div className="empty-tab-content">
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5">
-            <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-            <path d="M6 12v5c3 3 9 3 12 0v-5" />
-          </svg>
-          <h4>Akademik Bilgiler</h4>
-          <p>Bu öğrenciye ait akademik kayıt bulunmamaktadır.</p>
-        </div>
-      </div>
-    );
-  }
+  // Geçersiz seçili alt menüyü düzelt
+  useEffect(() => {
+    if (activeSub === 'ozel-dersler' && !showOzelDersler && !loading) {
+      setQuery({ akademik: 'genel' });
+    }
+    if (activeSub === 'sinif-dersleri' && !showSinifDersleri && !loading) {
+      setQuery({ akademik: 'genel' });
+    }
+  }, [activeSub, showOzelDersler, showSinifDersleri, loading, setQuery]);
 
   return (
-    <div className="tab-panel akademik-tab">
-      <div className="akademik-timeline">
-        {kayitlar.map((kayit) => (
-          <article
-            key={kayit.id}
-            className={`akademik-timeline-item${kayit.aktif_mi ? " is-active" : ""}`}
-          >
-            <span className="akademik-timeline-dot" aria-hidden />
-            <div className="akademik-card">
-              <header className="akademik-card-header">
-                <div className="akademik-card-year">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-                    <path d="M6 12v5c3 3 9 3 12 0v-5" />
-                  </svg>
-                  {kayit.egitim_yili}
-                </div>
-                <span className={`akademik-aktif-badge${kayit.aktif_mi ? "" : " pasif"}`}>
-                  {kayit.aktif_mi ? "Aktif Kayıt" : "Pasif"}
-                </span>
-              </header>
+    <div className="tab-panel akademik-tab akd-shell">
+      <AkademikSubNav
+        active={activeSub}
+        onChange={(id) => setQuery({ akademik: id })}
+        showOzelDersler={showOzelDersler || activeSub === 'ozel-dersler'}
+        showSinifDersleri={showSinifDersleri || activeSub === 'sinif-dersleri'}
+      />
 
-              <div className="akademik-card-body">
-                <div className="akademik-info-grid">
-                  <div className="akademik-info-field">
-                    <span className="akademik-info-label">Sınıf</span>
-                    <span className="akademik-info-value">{kayit.sinif_ad || "—"}</span>
-                  </div>
-                  <div className="akademik-info-field">
-                    <span className="akademik-info-label">Seviye</span>
-                    <span className="akademik-info-value">{kayit.sinif_seviyesi || "—"}</span>
-                  </div>
-                  <div className="akademik-info-field">
-                    <span className="akademik-info-label">Şube</span>
-                    <span className="akademik-info-value">{kayit.sube_ad || "—"}</span>
-                  </div>
-                  <div className="akademik-info-field">
-                    <span className="akademik-info-label">Okul No</span>
-                    <span className="akademik-info-value">{kayit.okul_no || "—"}</span>
-                  </div>
-                  <div className="akademik-info-field">
-                    <span className="akademik-info-label">Kayıt Tarihi</span>
-                    <span className="akademik-info-value">{kayit.kayit_tarihi || "—"}</span>
-                  </div>
-                  <div className="akademik-info-field">
-                    <span className="akademik-info-label">Giriş Türü</span>
-                    <span className="akademik-info-value">{kayit.giris_turu_display || "—"}</span>
-                  </div>
-                  <div className="akademik-info-field">
-                    <span className="akademik-info-label">
-                      {kayit.sinif_seviyesi?.toLowerCase().includes("mezun")
-                        ? "Mezun Olduğu Okul"
-                        : "Geldiği Okul"}
-                    </span>
-                    <span className="akademik-info-value">
-                      {kayit.school_ad || kayit.geldigi_okul || "—"}
-                    </span>
-                  </div>
-                </div>
+      <div className="akd-panel-body">
+        {activeSub === 'genel' && (
+          <GenelBakisPanel kayitlar={kayitlar} loading={loading} error={error} />
+        )}
 
-                {kayit.kalemler.length > 0 && (
-                  <div className="akademik-kalemler-section">
-                    <h5 className="akademik-kalemler-title">Eğitim Kalemleri</h5>
-                    <div className="akademik-kalem-badges">
-                      {kayit.kalemler.map((kalem, idx) => (
-                        <span
-                          key={`${kalem.sozlesme_no}-${kalem.kalem_adi}-${idx}`}
-                          className={`akademik-kalem-badge ${kalemBadgeClass(kalem.kalem_turu)}`}
-                          title={kalem.sozlesme_no}
-                        >
-                          <span className="akademik-kalem-badge-type">{kalem.kalem_turu_display}</span>
-                          {kalem.kalem_adi}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+        {activeSub === 'ozel-dersler' && (
+          <OzelDerslerPanel
+            ogrenciId={ogrenciId}
+            innerTab={innerTab}
+            onInnerTabChange={(od) => setQuery({ akademik: 'ozel-dersler', od })}
+          />
+        )}
 
-                {kayit.ek_hizmetler.length > 0 && (
-                  <div className="akademik-ek-hizmetler">
-                    <h5 className="akademik-kalemler-title">Ek Hizmetler</h5>
-                    <div className="akademik-ek-hizmet-list">
-                      {kayit.ek_hizmetler.map((eh, idx) => (
-                        <span
-                          key={`${eh.ad}-${idx}`}
-                          className={`akademik-ek-hizmet-chip${eh.aktif_mi ? "" : " inactive"}`}
-                        >
-                          {eh.ad}
-                          {!eh.aktif_mi && " (pasif)"}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </article>
-        ))}
+        {activeSub === 'sinif-dersleri' && <SinifDersleriPanel />}
+
+        {activeSub === 'sinavlar' && (
+          <AkademikPlaceholderPanel
+            title="Sınavlar"
+            description="Sınav sonuçları ve analiz için mevcut Sınav sekmesini kullanın. Bu alt sayfa ileride akademik özeti birleştirecek."
+            actionLabel="Sınav sekmesine geç"
+            onAction={() => onSwitchTopTab?.('sinav')}
+          />
+        )}
+
+        {activeSub === 'devamsizlik' && (
+          <AkademikPlaceholderPanel
+            title="Devamsızlık"
+            description="Sınıf ve özel ders devamsızlık özeti burada toplanacak. Özel ders tarafı için Özel Dersler → Geçmiş sekmesine bakabilirsiniz."
+            actionLabel="Özel Ders Geçmişi"
+            onAction={() => setQuery({ akademik: 'ozel-dersler', od: 'gecmis' })}
+          />
+        )}
+
+        {activeSub === 'odevler' && (
+          <AkademikPlaceholderPanel
+            title="Ödevler"
+            description="Öğrenci ödev listesi ve teslim durumu yakında bu alanda görünecek."
+          />
+        )}
+
+        {activeSub === 'analiz' && (
+          <AkademikPlaceholderPanel
+            title="Akademik Analiz"
+            description="Çok kaynaklı akademik performans özeti yakında eklenecek. Özel ders analizi için Paket & Analiz sekmesini kullanın."
+            actionLabel="Özel Ders Analizi"
+            onAction={() => setQuery({ akademik: 'ozel-dersler', od: 'paket' })}
+          />
+        )}
       </div>
     </div>
   );

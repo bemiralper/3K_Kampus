@@ -377,6 +377,13 @@ class SozlesmeService:
             'islem_yapan': user,
         })
 
+        # Özel ders / premium → birebir program (yalnızca ders listesi; öğretmen elle)
+        try:
+            from apps.ozel_ders.services.sync_service import ensure_program_from_sozlesme
+            ensure_program_from_sozlesme(sozlesme, user=user)
+        except Exception:
+            pass
+
         return sozlesme, None
 
     # ─── DELETE ──────────────────────────

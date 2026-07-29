@@ -562,6 +562,12 @@ class AylikHakedis(models.Model):
         default=Decimal('0.00'),
         help_text='İkramiye, yol yardımı vb.',
     )
+    ozel_ders_hakedis_toplam = models.DecimalField(
+        'Özel Ders Hakediş Toplamı (₺)',
+        max_digits=12, decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Onaylanmış birebir/özel ders hakedişlerinin bordroya aktarılan tutarı',
+    )
     avans = models.DecimalField(
         'Avans / Ön Ödeme (₺)',
         max_digits=12, decimal_places=2,
@@ -637,6 +643,7 @@ class AylikHakedis(models.Model):
             + self.prim
             + self.fazla_mesai
             + self.ek_odeme
+            + self.ozel_ders_hakedis_toplam
         )
         self.net_hakedis = self.brut_toplam - self.avans - self.kesintiler
         return self

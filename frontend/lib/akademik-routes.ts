@@ -7,6 +7,7 @@ export type AkademikNavGroup =
   | 'Tanımlar'
   | 'Planlama'
   | 'Ders Operasyonları'
+  | 'Özel Ders Yönetimi'
   | 'Görüntüleme'
   | 'Analiz';
 
@@ -55,6 +56,19 @@ export const AKADEMIK_GROUPS: AkademikGroupDef[] = [
       { segment: 'ek-dersler', label: 'Ek Dersler' },
       { segment: 'ders-ucretleri', label: 'Ders Ücretleri' },
       { segment: 'program-revizyonlari', label: 'Program Revizyonları' },
+    ],
+  },
+  {
+    slug: 'ozel-ders-yonetimi',
+    label: 'Özel Ders Yönetimi',
+    tabs: [
+      { segment: 'ogrenci-programlari', label: 'Öğrenci Programları' },
+      { segment: 'haftalik-program-sablonlari', label: 'Haftalık Program Şablonları' },
+      { segment: 'birebir-ders-oturumlari', label: 'Ders Oturumları' },
+      { segment: 'birebir-yoklamalar', label: 'Yoklamalar' },
+      { segment: 'birebir-telafi-dersleri', label: 'Telafi Dersleri' },
+      { segment: 'premium-paketler', label: 'Premium Paketler' },
+      { segment: 'hakedis-takibi', label: 'Hakediş Takibi' },
     ],
   },
   {

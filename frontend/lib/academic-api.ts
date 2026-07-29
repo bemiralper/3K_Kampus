@@ -1326,7 +1326,7 @@ export type LessonOpsMeta = {
   session_statuses: { value: string; label: string }[];
   student_attendance_statuses: { value: string; label: string }[];
   teachers: { id: number; name: string }[];
-  dersler?: { id: number; ad: string; kod: string }[];
+  dersler?: { id: number; ad: string; kod: string; kisa_ad?: string }[];
 };
 
 export type PaySummaryTeacher = {

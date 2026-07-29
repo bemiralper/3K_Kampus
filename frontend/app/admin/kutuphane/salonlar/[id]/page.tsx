@@ -5,7 +5,7 @@ import ReactDOM from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  fetchLibrary, updateLibrary, changeLibraryStatus, deleteLibrary,
+  fetchLibrary, peekLibrary, rememberLibrary, updateLibrary, changeLibraryStatus, deleteLibrary,
   fetchSeats, bulkCreateSeats, changeSeatStatus,
   fetchSeatAssignments, endSeatAssignment,
   fetchAuditLogs,
@@ -195,15 +195,14 @@ export default function SalonDetayPage() {
   const router = useRouter();
   const libraryId = params.id as string;
 
-  const [library, setLibrary] = useState<Library | null>(null);
+  const [library, setLibrary] = useState<Library | null>(() => peekLibrary(libraryId) || null);
   const [activeTab, setActiveTab] = useState('genel');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !peekLibrary(libraryId));
   const [error, setError] = useState<string | null>(null);
 
   const [seats, setSeats] = useState<Seat[]>([]);
   const [seatAssignments, setSeatAssignments] = useState<SeatAssignment[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [tabLoading, setTabLoading] = useState(false);
   const [showBulkSeatForm, setShowBulkSeatForm] = useState(false);
   const [endSeatConfirmId, setEndSeatConfirmId] = useState<string | null>(null);
   const [endingSeat, setEndingSeat] = useState(false);
@@ -218,17 +217,37 @@ export default function SalonDetayPage() {
   const loadLibrary = useCallback(async () => {
     try {
       const res = await fetchLibrary(libraryId);
-      if (res.success && res.data) setLibrary(res.data as Library);
-      else setError('Salon bulunamadı');
-    } catch { setError('Yükleme hatası'); }
-    setLoading(false);
+      if (res.success && res.data) {
+        const data = res.data as Library;
+        setLibrary(data);
+        rememberLibrary(data);
+        setError(null);
+      } else if (!peekLibrary(libraryId)) {
+        setError('Salon bulunamadı');
+      }
+    } catch {
+      if (!peekLibrary(libraryId)) setError('Yükleme hatası');
+    } finally {
+      setLoading(false);
+    }
   }, [libraryId]);
 
-  useEffect(() => { loadLibrary(); }, [loadLibrary]);
+  useEffect(() => {
+    const cached = peekLibrary(libraryId);
+    if (cached) {
+      setLibrary(cached);
+      setLoading(false);
+      setError(null);
+    } else {
+      setLibrary(null);
+      setLoading(true);
+    }
+    setActiveTab('genel');
+    loadLibrary();
+  }, [libraryId, loadLibrary]);
 
-  /* ─── Tab Verisi Yükle ─── */
+  /* ─── Tab Verisi Yükle (içeriği silmeden — kaybolup-gelme yok) ─── */
   const loadTabData = useCallback(async (tab: string) => {
-    setTabLoading(true);
     try {
       switch (tab) {
         case 'masalar': {
@@ -252,7 +271,6 @@ export default function SalonDetayPage() {
         }
       }
     } catch { /* ignore */ }
-    setTabLoading(false);
   }, [libraryId]);
 
   useEffect(() => { if (activeTab !== 'genel') loadTabData(activeTab); }, [activeTab, loadTabData]);
@@ -326,20 +344,11 @@ export default function SalonDetayPage() {
     }
   };
 
-  /* ─── Yükleniyor / Hata ─── */
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #e5e7eb', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <div style={{ fontSize: '14px', color: '#6b7280' }}>Yükleniyor...</div>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      </div>
-    );
-  }
-
-  if (error || !library) {
+  /* ─── Yükleniyor / Hata — skeleton/fade yok; önbellek varsa anında göster ─── */
+  if (!library) {
+    if (loading) {
+      return <div style={{ padding: 0, minHeight: 200 }} />;
+    }
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <Card style={{ padding: '32px', textAlign: 'center', maxWidth: 400 }}>
@@ -357,7 +366,8 @@ export default function SalonDetayPage() {
   const doluluk = library.doluluk_orani ?? library.doluluk_yuzde ?? 0;
 
   return (
-    <div style={{ padding: 0 }}>
+    <div className="kutuphane-salon-detail" style={{ padding: 0, animation: 'none', opacity: 1, transform: 'none' }}>
+      <style>{`.kutuphane-salon-detail { animation: none !important; opacity: 1 !important; transform: none !important; }`}</style>
       {/* Toast */}
       {toast && (
         <div style={{
@@ -467,48 +477,38 @@ export default function SalonDetayPage() {
       </div>
 
       {/* ════ TAB CONTENT ════ */}
-      {tabLoading ? (
-        <div style={{ padding: '48px', textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #e5e7eb', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <div style={{ fontSize: '13px', color: '#6b7280' }}>Veriler yükleniyor...</div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-        </div>
-      ) : (
-        <>
-          {activeTab === 'genel' && <GenelTab library={library} onSave={loadLibrary} showToast={showToast} />}
-          {activeTab === 'masalar' && (
-            <MasalarTab
-              libraryId={libraryId}
-              seats={seats}
-              salonAdi={library.ad}
-              subeAdi={library.sube_adi}
-              kurumBranding={activeKurum}
-              showBulkForm={showBulkSeatForm}
-              onToggleBulkForm={() => setShowBulkSeatForm(p => !p)}
-              onBulkCreate={handleBulkCreateSeats}
-              onStatusChange={handleSeatStatusChange}
-            />
-          )}
-          {activeTab === 'yoklama' && (
-            <YoklamaTab
-              libraryId={libraryId}
-              libraryName={library.ad}
-              librarySubeId={library.sube_id}
-              librarySubeAdi={library.sube_adi}
-            />
-          )}
-          {activeTab === 'atamalar' && (
-            <AtamalarTab
-              seatAssignments={seatAssignments}
-              salonAdi={library.ad}
-              subeAdi={library.sube_adi}
-              kurumBranding={activeKurum}
-              onEnd={handleEndSeatAssignment}
-            />
-          )}
-          {activeTab === 'loglar' && <LoglarTab logs={auditLogs} />}
-        </>
+      {activeTab === 'genel' && <GenelTab library={library} onSave={loadLibrary} showToast={showToast} />}
+      {activeTab === 'masalar' && (
+        <MasalarTab
+          libraryId={libraryId}
+          seats={seats}
+          salonAdi={library.ad}
+          subeAdi={library.sube_adi}
+          kurumBranding={activeKurum}
+          showBulkForm={showBulkSeatForm}
+          onToggleBulkForm={() => setShowBulkSeatForm(p => !p)}
+          onBulkCreate={handleBulkCreateSeats}
+          onStatusChange={handleSeatStatusChange}
+        />
       )}
+      {activeTab === 'yoklama' && (
+        <YoklamaTab
+          libraryId={libraryId}
+          libraryName={library.ad}
+          librarySubeId={library.sube_id}
+          librarySubeAdi={library.sube_adi}
+        />
+      )}
+      {activeTab === 'atamalar' && (
+        <AtamalarTab
+          seatAssignments={seatAssignments}
+          salonAdi={library.ad}
+          subeAdi={library.sube_adi}
+          kurumBranding={activeKurum}
+          onEnd={handleEndSeatAssignment}
+        />
+      )}
+      {activeTab === 'loglar' && <LoglarTab logs={auditLogs} />}
 
       <KutuphaneConfirmModal
         open={endSeatConfirmId !== null}

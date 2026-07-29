@@ -169,6 +169,7 @@ export interface Hakedis {
   toplam_ders_saati: number;
   ders_basi_ucret: number;
   ders_ucreti_toplam: number;
+  ozel_ders_hakedis_toplam?: number;
   prim: number;
   fazla_mesai: number;
   ek_odeme: number;

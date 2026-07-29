@@ -30,7 +30,19 @@ def _parse_datetime(val):
 
 
 def _event_sube_gate(request, event):
-    err = assert_takvim_record_sube_access(request, event.kurum_id, event.sube_id)
+    from apps.takvim.application.integration_service import KaynakModul
+
+    # Kurum geneli resmi tatiller tüm şubelerde görüntülenebilir
+    allow_null = (
+        event.sube_id is None
+        and (getattr(event, 'kaynak_modul', '') or '') == KaynakModul.RESMI_TATIL
+    )
+    err = assert_takvim_record_sube_access(
+        request,
+        event.kurum_id,
+        event.sube_id,
+        allow_null_sube=allow_null,
+    )
     if err:
         return err
     return None

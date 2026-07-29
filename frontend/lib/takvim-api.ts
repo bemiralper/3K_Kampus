@@ -3,7 +3,7 @@
  *
  * Backend: /takvim/api/
  */
-import { apiGet, apiPost, apiPut, apiDelete, type ApiResponse } from './api';
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete, type ApiResponse } from './api';
 
 const BASE = '/takvim/api';
 
@@ -398,4 +398,109 @@ export async function upsertNotificationPreference(data: Partial<UserNotificatio
 
 export async function deleteNotificationPreference(id: string): Promise<ApiResponse<void>> {
   return apiDelete<void>(`${BASE}/bildirim-tercihleri/${id}/`);
+}
+
+
+/* ════════════════════════════════════════════
+   RESMİ TATİLLER (Google sync + özel ders karar)
+   ════════════════════════════════════════════ */
+
+export type ResmiTatilGun = {
+  date: string;
+  title: string;
+  holiday_key: string;
+  year: number;
+  synced: boolean;
+  ozel_ders_aktif: boolean;
+  mode: 'tatil' | 'devam';
+  source?: 'resmi' | 'cevre' | string;
+  affected_count?: number;
+  cevre_prev?: boolean;
+  cevre_next?: boolean;
+};
+
+export type ResmiTatilYearData = {
+  year: number;
+  available_years: number[];
+  synced_count: number;
+  source: string;
+  days: ResmiTatilGun[];
+};
+
+export type EtkilenenDers = {
+  kind: 'planned' | 'oturum' | string;
+  oturum_id: number | null;
+  program_id: number | null;
+  slot_id: number | null;
+  ogrenci_id: number;
+  ogrenci_ad: string;
+  ders_id: number;
+  ders_ad: string;
+  ders_kisa_ad?: string;
+  ogretmen_id: number;
+  ogretmen_ad: string;
+  start_time: string;
+  end_time: string;
+  durum: string | null;
+  durum_display: string | null;
+  oturum_turu: string | null;
+  oturum_turu_display: string | null;
+  session_date: string;
+};
+
+export type EtkilenenDerslerData = {
+  date: string;
+  count: number;
+  items: EtkilenenDers[];
+};
+
+export type ResmiTatilSyncResult = {
+  created: number;
+  updated: number;
+  restored: number;
+  years?: number[];
+  source?: string;
+  skipped?: boolean;
+  reason?: string;
+  last_synced_at?: string;
+};
+
+export async function fetchResmiTatiller(year: number): Promise<ApiResponse<ResmiTatilYearData>> {
+  return apiGet<ResmiTatilYearData>(`${BASE}/resmi-tatiller/?year=${year}`);
+}
+
+export async function syncResmiTatiller(year?: number): Promise<ApiResponse<ResmiTatilSyncResult>> {
+  return apiPost<ResmiTatilSyncResult>(`${BASE}/resmi-tatiller/`, {
+    year: year || undefined,
+  });
+}
+
+export async function ensureResmiTatiller(opts?: {
+  year?: number;
+  force?: boolean;
+}): Promise<ApiResponse<ResmiTatilSyncResult>> {
+  return apiPost<ResmiTatilSyncResult>(`${BASE}/resmi-tatiller/ensure/`, {
+    year: opts?.year,
+    force: opts?.force || false,
+  });
+}
+
+export async function setResmiTatilKarar(body: {
+  holiday_key: string;
+  date: string;
+  ozel_ders_aktif: boolean;
+}): Promise<ApiResponse<ResmiTatilGun>> {
+  return apiPatch<ResmiTatilGun>(`${BASE}/resmi-tatiller/karar/`, body);
+}
+
+export async function fetchEtkilenenDersler(date: string): Promise<ApiResponse<EtkilenenDerslerData>> {
+  return apiGet<EtkilenenDerslerData>(`${BASE}/resmi-tatiller/etkilenen/?date=${date}`);
+}
+
+export async function setCevreTatil(body: {
+  date: string;
+  side: 'prev' | 'next';
+  aktif: boolean;
+}): Promise<ApiResponse<{ date: string; side: string; aktif: boolean; kaynak_id: string }>> {
+  return apiPost(`${BASE}/resmi-tatiller/cevre/`, body);
 }

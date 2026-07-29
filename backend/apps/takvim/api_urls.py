@@ -3,7 +3,14 @@ Takvim modülü — URL yapılandırması
 """
 from django.urls import path
 
-from . import views_event_type, views_event, views_reminder, views_notification, views_preference
+from . import (
+    views_event_type,
+    views_event,
+    views_reminder,
+    views_notification,
+    views_preference,
+    views_resmi_tatil,
+)
 
 urlpatterns = [
     # ── Etkinlik Türleri ──
@@ -37,4 +44,11 @@ urlpatterns = [
     # ── Kullanıcı Bildirim Tercihleri ──
     path('bildirim-tercihleri/', views_preference.api_preference_list_create, name='preference_list_create'),
     path('bildirim-tercihleri/<uuid:pk>/', views_preference.api_preference_delete, name='preference_delete'),
+
+    # ── Resmi tatiller (Google sync + özel ders Tatil/Devam) ──
+    path('resmi-tatiller/', views_resmi_tatil.api_resmi_tatil_list_sync, name='resmi_tatil_list_sync'),
+    path('resmi-tatiller/karar/', views_resmi_tatil.api_resmi_tatil_karar, name='resmi_tatil_karar'),
+    path('resmi-tatiller/ensure/', views_resmi_tatil.api_resmi_tatil_ensure, name='resmi_tatil_ensure'),
+    path('resmi-tatiller/etkilenen/', views_resmi_tatil.api_resmi_tatil_etkilenen, name='resmi_tatil_etkilenen'),
+    path('resmi-tatiller/cevre/', views_resmi_tatil.api_resmi_tatil_cevre, name='resmi_tatil_cevre'),
 ]

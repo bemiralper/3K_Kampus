@@ -72,14 +72,15 @@ export function formatAddress(value: string): string {
 export function validateTcKimlik(tc: string): boolean {
   if (!/^\d{11}$/.test(tc)) return false;
   if (tc[0] === '0') return false;
-  
+
   const digits = tc.split('').map(Number);
   const oddSum = digits[0] + digits[2] + digits[4] + digits[6] + digits[8];
   const evenSum = digits[1] + digits[3] + digits[5] + digits[7];
-  
-  const digit10 = (oddSum * 7 - evenSum) % 10;
-  const digit11 = (digits.slice(0, 10).reduce((a, b) => a + b, 0)) % 10;
-  
+
+  // JS'te % negatif sonuç verebilir; pozitif modulo gerekir ((a % 10) + 10) % 10
+  const digit10 = (((oddSum * 7 - evenSum) % 10) + 10) % 10;
+  const digit11 = digits.slice(0, 10).reduce((a, b) => a + b, 0) % 10;
+
   return digits[9] === digit10 && digits[10] === digit11;
 }
 

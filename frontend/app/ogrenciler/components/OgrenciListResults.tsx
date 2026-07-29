@@ -18,6 +18,9 @@ export type OgrenciRow = {
   okul_no?: string;
   profil_foto?: string | null;
   sube_ad?: string;
+  alan_ad?: string;
+  sinif_id?: number;
+  sinif_ad?: string;
   sinif_seviyesi?: string;
   kayit_tarihi?: string;
   giris_turu?: string;
@@ -144,11 +147,11 @@ export default function OgrenciListResults({
             <tr>
               <th style={{ width: 40 }} />
               <th>Öğrenci Bilgisi</th>
-              {filterMode === 'yillik' && <th>Şube</th>}
-              {filterMode === 'yillik' && <th>Sınıf</th>}
+              {filterMode === 'yillik' && <th>Alan</th>}
+              {filterMode === 'yillik' && <th>Sınıf Seviyesi</th>}
               <th>{hasKalemFilter ? 'Eşleşen Kalemler' : 'Eğitim Kalemleri'}</th>
               {filterMode === 'yillik' && <th>Giriş Tarihi</th>}
-              {filterMode === 'yillik' && <th>Giriş Türü</th>}
+              {filterMode === 'yillik' && <th>Sınıf</th>}
               {filterMode === 'tum_yillar' && <th>Eğitim Yılı</th>}
               <th>Durum</th>
               <th style={{ width: 148 }}>İşlemler</th>
@@ -254,7 +257,7 @@ export default function OgrenciListResults({
       </td>
       {filterMode === 'yillik' && (
         <td>
-          <span className="badge-modern info">{ogrenci.sube_ad || '-'}</span>
+          <span className="badge-modern info">{ogrenci.alan_ad || '-'}</span>
         </td>
       )}
       {filterMode === 'yillik' && (
@@ -270,9 +273,7 @@ export default function OgrenciListResults({
       )}
       {filterMode === 'yillik' && (
         <td>
-          <span className={`badge-modern ${ogrenci.giris_turu === 'yeni_kayit' ? 'success' : 'warning'}`}>
-            {ogrenci.giris_turu_display || '-'}
-          </span>
+          <span className="badge-modern info">{ogrenci.sinif_ad || '-'}</span>
         </td>
       )}
       {filterMode === 'tum_yillar' && (
@@ -339,7 +340,8 @@ export default function OgrenciListResults({
                 </Link>
                 <span className="ogrenci-mobile-meta">
                   {ogrenci.okul_no ? `No: ${ogrenci.okul_no}` : ''}
-                  {ogrenci.sinif_seviyesi ? ` · ${ogrenci.sinif_seviyesi}` : ''}
+                  {ogrenci.sinif_ad ? ` · ${ogrenci.sinif_ad}` : ogrenci.sinif_seviyesi ? ` · ${ogrenci.sinif_seviyesi}` : ''}
+                  {ogrenci.alan_ad ? ` · ${ogrenci.alan_ad}` : ''}
                 </span>
                 <div className="ogrenci-mobile-kalemler">{renderKalemChips(ogrenci)}</div>
               </div>
@@ -382,11 +384,11 @@ export default function OgrenciListResults({
                 )}
               </th>
               <th>Öğrenci Bilgisi</th>
-              {filterMode === 'yillik' && <th>Şube</th>}
+              {filterMode === 'yillik' && <th>Alan</th>}
               {filterMode === 'yillik' && <th>Sınıf Seviyesi</th>}
               <th>{hasKalemFilter ? 'Eşleşen Kalemler' : 'Eğitim Kalemleri'}</th>
               {filterMode === 'yillik' && <th>Giriş Tarihi</th>}
-              {filterMode === 'yillik' && <th>Giriş Türü</th>}
+              {filterMode === 'yillik' && <th>Sınıf</th>}
               {filterMode === 'tum_yillar' && <th>Eğitim Yılı</th>}
               <th>Durum</th>
               <th style={{ width: 148 }}>İşlemler</th>

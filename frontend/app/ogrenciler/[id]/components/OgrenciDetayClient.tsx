@@ -75,31 +75,17 @@ const tabs: TabConfig[] = [
   },
 ];
 
-// Tab content renderer
-function renderTabContent(activeTab: TabType, data: OgrenciDetay) {
-  switch (activeTab) {
-    case 'veli':
-      return <VeliTab data={data} />;
-    case 'akademik':
-      return <AkademikTab ogrenciId={data.id} />;
-    case 'sinav':
-      return <SinavTab ogrenciId={data.id} />;
-    case 'finans':
-      return <FinansTab ogrenciId={data.id} />;
-    case 'rehberlik':
-      return <RehberlikTab />;
-    case 'iletisim':
-      return <IletisimTab ogrenciId={data.id} ogrenciAd={data.tam_ad} />;
-    default:
-      return null;
-  }
-}
-
 export default function OgrenciDetayClient({ data: initialData }: { data: OgrenciDetay }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { listHref, portalHomeHref, href } = useOgrenciPath();
-  const [activeTab, setActiveTab] = useState<TabType>('veli');
+  const tabFromUrl = searchParams.get('tab') as TabType | null;
+  const hasAkademikQuery = Boolean(searchParams.get('akademik'));
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (tabFromUrl && tabs.some((t) => t.id === tabFromUrl)) return tabFromUrl;
+    if (hasAkademikQuery) return 'akademik';
+    return 'veli';
+  });
   const [data, setData] = useState<OgrenciDetay>(initialData);
   const [showEditDrawer, setShowEditDrawer] = useState(searchParams.get('edit') === '1');
   const [editDrawerStep, setEditDrawerStep] = useState<'kisisel' | 'iletisim' | 'egitim'>('kisisel');
@@ -112,7 +98,37 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
     if (searchParams.get('edit') === '1') {
       setShowEditDrawer(true);
     }
+    const t = searchParams.get('tab') as TabType | null;
+    if (t && tabs.some((x) => x.id === t)) {
+      setActiveTab(t);
+    } else if (searchParams.get('akademik')) {
+      setActiveTab('akademik');
+    }
   }, [searchParams]);
+
+  function renderTabContent(tab: TabType) {
+    switch (tab) {
+      case 'veli':
+        return <VeliTab data={data} />;
+      case 'akademik':
+        return (
+          <AkademikTab
+            ogrenciId={data.id}
+            onSwitchTopTab={(id) => setActiveTab(id as TabType)}
+          />
+        );
+      case 'sinav':
+        return <SinavTab ogrenciId={data.id} />;
+      case 'finans':
+        return <FinansTab ogrenciId={data.id} />;
+      case 'rehberlik':
+        return <RehberlikTab />;
+      case 'iletisim':
+        return <IletisimTab ogrenciId={data.id} ogrenciAd={data.tam_ad} />;
+      default:
+        return null;
+    }
+  }
 
   // Handle successful update
   const handleUpdateSuccess = (updatedData: OgrenciDetay) => {
@@ -187,7 +203,7 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
 
       {/* Tab Content */}
       <div className="student-tab-content">
-        {renderTabContent(activeTab, data)}
+        {renderTabContent(activeTab)}
       </div>
 
       {/* Edit Drawer */}

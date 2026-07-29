@@ -62,6 +62,10 @@ PERMISSIONS_DATA = [
     {'code': 'website.read', 'name': 'Kurumsal Site Görüntüleme', 'module': 'website', 'permission_type': 'read', 'description': 'Kurumsal web sitesi CMS içeriğini görüntüleyebilir'},
     {'code': 'website.write', 'name': 'Kurumsal Site Düzenleme', 'module': 'website', 'permission_type': 'write', 'description': 'Sayfa, blok, medya ve menü düzenleyebilir'},
     {'code': 'website.manage', 'name': 'Kurumsal Site Yönetimi', 'module': 'website', 'permission_type': 'manage', 'description': 'Kurumsal site CMS modülünün tüm yetkilerine sahip'},
+    {'code': 'ozel_ders.read', 'name': 'Özel Ders Görüntüleme', 'module': 'ozel_ders', 'permission_type': 'read', 'description': 'Özel ders programı, oturum ve hakedişleri görüntüleyebilir'},
+    {'code': 'ozel_ders.write', 'name': 'Özel Ders Düzenleme', 'module': 'ozel_ders', 'permission_type': 'write', 'description': 'Özel ders programı, yoklama ve oturum yönetebilir'},
+    {'code': 'ozel_ders.manage', 'name': 'Özel Ders Yönetimi', 'module': 'ozel_ders', 'permission_type': 'manage', 'description': 'Özel ders modülünün tüm yetkilerine sahip'},
+    {'code': 'ozel_ders.hakedis_approve', 'name': 'Özel Ders Hakediş Onayı', 'module': 'ozel_ders', 'permission_type': 'manage', 'description': 'Birebir ders hakedişlerini onaylayabilir'},
 ]
 
 ROLES_DATA = [
@@ -87,6 +91,7 @@ ROLES_DATA = [
             'gorev.manage', 'gorev.analytics',
             'demo.manage', 'yedekleme.read', 'yedekleme.create', 'yedekleme.manage',
             'website.manage',
+            'ozel_ders.manage', 'ozel_ders.hakedis_approve',
         ],
     },
     {
@@ -98,6 +103,7 @@ ROLES_DATA = [
         'permissions': [
             'sube.read', 'personel.manage', 'ogrenci.manage',
             'finans.read', 'egitim_tanimlari.read', 'egitim_paketleri.read',
+            'ozel_ders.manage', 'ozel_ders.hakedis_approve',
             'sinif.manage', 'rapor.read',
             'gorev.manage', 'gorev.analytics',
             'website.read',
@@ -112,6 +118,7 @@ ROLES_DATA = [
         'permissions': [
             'egitim_tanimlari.manage', 'egitim_paketleri.manage',
             'sinif.manage', 'ogrenci.read', 'personel.read', 'rapor.read',
+            'ozel_ders.manage',
         ],
     },
     {
@@ -123,6 +130,7 @@ ROLES_DATA = [
         'permissions': [
             'ogrenci.read', 'sinif.read', 'egitim_tanimlari.read',
             'egitim_paketleri.read', 'rapor.read',
+            'ozel_ders.read', 'ozel_ders.write',
         ],
     },
     {

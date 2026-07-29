@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { fetchLibraries, deleteLibrary, type Library } from '@/lib/kutuphane-api';
+import { fetchLibraries, deleteLibrary, rememberLibrary, fetchLibrary, type Library } from '@/lib/kutuphane-api';
 import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -33,6 +33,7 @@ export default function SalonlarListPage() {
       const res = await fetchLibraries(params);
       if (res.success && res.data) {
         const items = Array.isArray(res.data) ? res.data : [];
+        items.forEach((lib) => rememberLibrary(lib));
         setLibraries(items);
       } else {
         setError(res.error || 'Salonlar yüklenemedi');
@@ -202,7 +203,19 @@ export default function SalonlarListPage() {
             const st = STATUS_COLORS[lib.durum] || STATUS_COLORS.INACTIVE;
             const barColor = doluluk > 90 ? '#ef4444' : doluluk > 70 ? '#f59e0b' : '#22c55e';
             return (
-              <Link key={lib.id} href={href(`salonlar/${lib.id}`)} className="salon-card">
+              <Link
+                key={lib.id}
+                href={href(`salonlar/${lib.id}`)}
+                className="salon-card"
+                onMouseEnter={() => {
+                  rememberLibrary(lib);
+                  void fetchLibrary(lib.id);
+                }}
+                onFocus={() => {
+                  rememberLibrary(lib);
+                  void fetchLibrary(lib.id);
+                }}
+              >
                 <div className="salon-card-stripe" style={{ background: st.gradient }} />
                 <div className="salon-card-body">
                   {/* Header */}

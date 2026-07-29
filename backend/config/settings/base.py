@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'apps.roller',  # Rol Yönetimi - Birimlerden bağımsız yetki sistemi
     'apps.term',   # Eğitim Dönemleri
     'apps.academic',  # Akademik Planlama - Zaman Şablonları ve Ders Saatleri
+    'apps.ozel_ders',  # Özel Ders / Premium birebir operasyon
     'apps.coaching',  # Koçluk Yönetimi - Öğrenci koçluk ve mentörlük sistemi
     'apps.coaching.assignment_manual',  # Manuel Ödev Atama - Koç tarafından manuel ödev atama
     'apps.coaching.study_program',  # Çalışma Programı - Haftalık çalışma planlaması

@@ -57,6 +57,9 @@ urlpatterns = [
     
     # Academic (Akademik Planlama) URLs
     path('api/academic/', include('apps.academic.urls')),
+
+    # Özel Ders Yönetimi (birebir program / yoklama / hakediş)
+    path('api/ozel-ders/', include('apps.ozel_ders.urls')),
     
     # Coaching (Koçluk Yönetimi) URLs
     path('api/coaching/', include('apps.coaching.api.urls')),
