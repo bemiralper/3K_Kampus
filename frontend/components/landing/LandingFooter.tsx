@@ -9,6 +9,7 @@ import { handleLandingNav } from '@/lib/landing-nav';
 import { formatPhoneDisplay, phoneDigits } from '@/lib/phone-format';
 import { visibleSocialLinks } from '@/lib/landing-social';
 import { mergeFooterLinks } from '@/lib/landing-footer-links';
+import { resolveCompanyInfo } from '@/lib/company-info';
 
 type LandingFooterProps = {
   settings: SiteSettings | null;
@@ -116,6 +117,7 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
   const brandDesc = settings?.footer_aciklama?.trim()
     || 'LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz.';
   const markaMetni = settings?.footer_marka_metni || '3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.';
+  const company = resolveCompanyInfo(settings);
 
   const visibleFooterLinks = mergeFooterLinks(
     footerLinks.filter(l => l.aktif !== false && !shouldHideFooterLink(l)),
@@ -191,32 +193,30 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
           <dl className="footer-legal-grid">
             <div>
               <dt>Ticari unvan</dt>
-              <dd>{settings?.ticari_unvan || 'ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ'}</dd>
+              <dd>{company.ticari_unvan}</dd>
             </div>
             <div>
               <dt>MERSİS No</dt>
-              <dd>{settings?.mersis_no || '0692037476300018'}</dd>
+              <dd>{company.mersis_no}</dd>
             </div>
             <div>
               <dt>Vergi No</dt>
-              <dd>{settings?.vergi_no || '6920374763'}</dd>
+              <dd>{company.vergi_no}</dd>
             </div>
             <div>
               <dt>Ticaret Sicil No</dt>
-              <dd>{settings?.ticaret_sicil_no || '14305'}</dd>
+              <dd>{company.ticaret_sicil_no}</dd>
             </div>
             <div className="footer-legal-wide">
               <dt>Açık adres</dt>
-              <dd>{settings?.adres || 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM'}</dd>
+              <dd>{company.adres}</dd>
             </div>
             <div>
               <dt>Telefon</dt>
               <dd>
-                {settings?.telefon ? (
-                  <a href={`tel:${phoneDigits(settings.telefon)}`}>{formatPhoneDisplay(settings.telefon)}</a>
-                ) : (
-                  <a href="tel:04422331234">0442 233 1234</a>
-                )}
+                <a href={`tel:${phoneDigits(company.telefon)}`}>
+                  {formatPhoneDisplay(company.telefon)}
+                </a>
               </dd>
             </div>
           </dl>

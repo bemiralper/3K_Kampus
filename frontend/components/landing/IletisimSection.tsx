@@ -7,6 +7,7 @@ import { formatPhoneDisplay, formatPhoneInput, phoneDigits } from '@/lib/phone-f
 import { LANDING_COLORS, LANDING_KURUM_KOD } from '@/lib/landing-theme';
 
 import { parseMapEmbedUrl } from '@/lib/map-embed';
+import { resolveCompanyInfo } from '@/lib/company-info';
 
 type IletisimSectionProps = {
   settings: SiteSettings | null;
@@ -60,10 +61,14 @@ function ContactCard({
 
 export default function IletisimSection({ settings, hideHeader = false }: IletisimSectionProps) {
   const mapSrc = parseMapEmbedUrl(settings?.harita_embed_url);
+  const company = resolveCompanyInfo(settings);
   const [form, setForm] = useState<FormState>({ ad_soyad: '', telefon: '', mesaj: '' });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+
+  const displayTelefon = settings?.telefon?.trim() || company.telefon;
+  const displayAdres = settings?.adres?.trim() || company.adres;
 
   const whatsappHref = settings?.whatsapp
     ? `https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`
@@ -114,11 +119,11 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
         <div className="iletisim-grid">
           <div className="iletisim-info">
             <div className="iletisim-cards">
-              {settings?.telefon && (
+              {displayTelefon && (
                 <ContactCard
                   label="Telefon"
-                  value={formatPhoneDisplay(settings.telefon)}
-                  href={`tel:${phoneDigits(settings.telefon)}`}
+                  value={formatPhoneDisplay(displayTelefon)}
+                  href={`tel:${phoneDigits(displayTelefon)}`}
                   icon={
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
@@ -150,10 +155,10 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
                   }
                 />
               )}
-              {settings?.adres && (
+              {displayAdres && (
                 <ContactCard
                   label="Adres"
-                  value={settings.adres}
+                  value={displayAdres}
                   icon={
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" />
@@ -161,6 +166,40 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
                   }
                 />
               )}
+            </div>
+
+            <div className="iletisim-company">
+              <h3>Şirket Bilgileri</h3>
+              <dl>
+                <div>
+                  <dt>Ticari unvan</dt>
+                  <dd>{company.ticari_unvan}</dd>
+                </div>
+                <div>
+                  <dt>MERSİS No</dt>
+                  <dd>{company.mersis_no}</dd>
+                </div>
+                <div>
+                  <dt>Vergi No</dt>
+                  <dd>{company.vergi_no}</dd>
+                </div>
+                <div>
+                  <dt>Ticaret Sicil No</dt>
+                  <dd>{company.ticaret_sicil_no}</dd>
+                </div>
+                <div className="iletisim-company-wide">
+                  <dt>Açık adres</dt>
+                  <dd>{company.adres}</dd>
+                </div>
+                <div>
+                  <dt>Telefon</dt>
+                  <dd>
+                    <a href={`tel:${phoneDigits(company.telefon)}`}>
+                      {formatPhoneDisplay(company.telefon)}
+                    </a>
+                  </dd>
+                </div>
+              </dl>
             </div>
 
             {settings?.calisma_saatleri && (
@@ -357,6 +396,54 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
           line-height: 1.4;
           color: ${LANDING_COLORS.navy};
           word-break: break-word;
+        }
+        .iletisim-company {
+          margin-top: 1.25rem;
+          padding: 1.15rem 1.25rem;
+          border-radius: 16px;
+          border: 1px solid #e2e8f0;
+          background: #fff;
+        }
+        .iletisim-company h3 {
+          margin: 0 0 0.85rem;
+          font-size: 14px;
+          font-weight: 700;
+          color: ${LANDING_COLORS.navy};
+        }
+        .iletisim-company dl {
+          margin: 0;
+          display: grid;
+          gap: 0.75rem 1.25rem;
+        }
+        @media (min-width: 640px) {
+          .iletisim-company dl { grid-template-columns: 1fr 1fr; }
+        }
+        .iletisim-company-wide {
+          grid-column: 1 / -1;
+        }
+        .iletisim-company dt {
+          margin: 0;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #94a3b8;
+        }
+        .iletisim-company dd {
+          margin: 0.2rem 0 0;
+          font-size: 13px;
+          line-height: 1.5;
+          font-weight: 600;
+          color: ${LANDING_COLORS.navy};
+          word-break: break-word;
+        }
+        .iletisim-company a {
+          color: inherit;
+          text-decoration: none;
+        }
+        .iletisim-company a:hover {
+          color: ${LANDING_COLORS.accent};
+          text-decoration: underline;
         }
         .iletisim-hours {
           margin-top: 1.25rem;

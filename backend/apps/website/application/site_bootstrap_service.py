@@ -365,18 +365,41 @@ def build_programlar_blocks() -> list[dict]:
 
 
 def build_iletisim_blocks(kurum: Kurum, settings: SiteSettings | None, form_slug: str) -> list[dict]:
-    telefon = (settings.telefon if settings else '') or getattr(kurum, 'telefon_sabit', '') or ''
+    from apps.website.company_defaults import DEFAULT_COMPANY_INFO
+
+    telefon = (
+        (settings.telefon if settings else '')
+        or getattr(kurum, 'telefon_sabit', '')
+        or DEFAULT_COMPANY_INFO['telefon']
+    )
     eposta = (settings.eposta if settings else '') or 'info@3kkampus.com'
-    adres = (settings.adres if settings else '') or getattr(kurum, 'adres', '') or ''
+    adres = (
+        (settings.adres if settings else '')
+        or getattr(kurum, 'adres', '')
+        or DEFAULT_COMPANY_INFO['adres']
+    )
+    ticari = (settings.ticari_unvan if settings else '') or DEFAULT_COMPANY_INFO['ticari_unvan']
+    mersis = (settings.mersis_no if settings else '') or DEFAULT_COMPANY_INFO['mersis_no']
+    vergi = (settings.vergi_no if settings else '') or DEFAULT_COMPANY_INFO['vergi_no']
+    sicil = (settings.ticaret_sicil_no if settings else '') or DEFAULT_COMPANY_INFO['ticaret_sicil_no']
     return [
         new_block('heading', {'text': 'İletişim', 'level': 1, 'align': 'center'}),
         new_block('richText', {
             'html': (
                 f'<p style="text-align:center;color:#475569">Bize yazın veya arayın — '
                 f'en kısa sürede dönüş yapalım.</p>'
-                f'<p style="text-align:center"><strong>Telefon:</strong> {telefon or "—"}<br/>'
+                f'<p style="text-align:center"><strong>Telefon:</strong> {telefon}<br/>'
                 f'<strong>E-posta:</strong> {eposta}<br/>'
-                f'<strong>Adres:</strong> {adres or "—"}</p>'
+                f'<strong>Adres:</strong> {adres}</p>'
+                f'<h3 style="margin-top:1.5rem">Şirket Bilgileri</h3>'
+                f'<ul>'
+                f'<li><strong>Ticari unvan:</strong> {ticari}</li>'
+                f'<li><strong>MERSİS No:</strong> {mersis}</li>'
+                f'<li><strong>Vergi No:</strong> {vergi}</li>'
+                f'<li><strong>Ticaret Sicil No:</strong> {sicil}</li>'
+                f'<li><strong>Açık adres:</strong> {adres}</li>'
+                f'<li><strong>Telefon:</strong> {telefon}</li>'
+                f'</ul>'
             ),
         }),
         new_block('form', {

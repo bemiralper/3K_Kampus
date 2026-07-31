@@ -7,6 +7,7 @@ import { DEFAULT_APP_LOGO } from '@/lib/kurum-branding';
 import { BlocksRenderer } from '@/components/cms/BlockRenderer';
 import CmsPreloader from '@/components/cms/CmsPreloader';
 import FloatingDockNav, { cmsItemsToDock } from '@/components/cms/FloatingDockNav';
+import { resolveCompanyInfo } from '@/lib/company-info';
 import '@/components/cms/cms.css';
 import '@/components/cms/cms-public.css';
 
@@ -29,6 +30,7 @@ export default function CmsPublicPage({ payload }: Props) {
   const bodyEnd = integrations?.body_end_code?.trim();
   const footer = (theme?.footer_config || {}) as Record<string, string>;
   const brand = footer.title || '3K Kampüs';
+  const company = resolveCompanyInfo(footer);
 
   const { hero, rest } = useMemo(() => splitHero(page.blocks || []), [page.blocks]);
   const dockItems = useMemo(() => cmsItemsToDock(menu?.items), [menu?.items]);
@@ -90,27 +92,27 @@ export default function CmsPublicPage({ payload }: Props) {
           <dl>
             <div>
               <dt>Ticari unvan</dt>
-              <dd>{footer.ticari_unvan || 'ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ'}</dd>
+              <dd>{company.ticari_unvan}</dd>
             </div>
             <div>
               <dt>MERSİS No</dt>
-              <dd>{footer.mersis_no || '0692037476300018'}</dd>
+              <dd>{company.mersis_no}</dd>
             </div>
             <div>
               <dt>Vergi No</dt>
-              <dd>{footer.vergi_no || '6920374763'}</dd>
+              <dd>{company.vergi_no}</dd>
             </div>
             <div>
               <dt>Ticaret Sicil No</dt>
-              <dd>{footer.ticaret_sicil_no || '14305'}</dd>
+              <dd>{company.ticaret_sicil_no}</dd>
             </div>
             <div className="cms-pub-footer-legal-wide">
               <dt>Açık adres</dt>
-              <dd>{footer.adres || 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM'}</dd>
+              <dd>{company.adres}</dd>
             </div>
             <div>
               <dt>Telefon</dt>
-              <dd>{footer.telefon || '0442 233 1234'}</dd>
+              <dd>{company.telefon}</dd>
             </div>
           </dl>
         </div>
