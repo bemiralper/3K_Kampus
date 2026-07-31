@@ -551,7 +551,7 @@ def _ensure_menus(kurum_id: int) -> None:
         ('Gizlilik', '/yasal/gizlilik'),
         ('Çerez Politikası', '/yasal/cerez'),
         ('Kullanım Koşulları', '/yasal/kullanim'),
-        ('Veri Silme Talebi', '/sayfa/veri-silme'),
+        ('Veri Silme Talebi', '/veri-silme'),
         ('İletişim', '/sayfa/iletisim'),
     ]
     for item in footer.items.all():
@@ -560,6 +560,9 @@ def _ensure_menus(kurum_id: int) -> None:
             item.save(update_fields=['url'])
         if item.url == '/sayfa/3k-sistemi':
             item.url = '/3k-sistemi'
+            item.save(update_fields=['url'])
+        if item.url == '/sayfa/veri-silme':
+            item.url = '/veri-silme'
             item.save(update_fields=['url'])
     if not footer.items.exists():
         for i, (label, url) in enumerate(footer_items):

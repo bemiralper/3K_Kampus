@@ -24,6 +24,7 @@ Allow: /duyurular/
 Allow: /hakkimizda
 Allow: /3k-sistemi
 Allow: /yasal/
+Allow: /veri-silme
 Allow: /sayfa/
 
 Disallow: /admin/

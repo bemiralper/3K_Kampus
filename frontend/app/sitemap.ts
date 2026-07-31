@@ -45,7 +45,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: absoluteSiteUrl('/yasal/gizlilik'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
     { url: absoluteSiteUrl('/yasal/kullanim'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
     { url: absoluteSiteUrl('/yasal/cerez'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
-    { url: absoluteSiteUrl('/sayfa/veri-silme'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
+    { url: absoluteSiteUrl('/veri-silme'), lastModified: now, changeFrequency: 'yearly', priority: 0.4 },
   ];
 
   const cmsEntries: MetadataRoute.Sitemap = cmsPages

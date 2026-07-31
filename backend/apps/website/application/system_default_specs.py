@@ -120,6 +120,17 @@ SYSTEM_DEFAULT_PAGE_SPECS: tuple[SystemDefaultPageSpec, ...] = (
             'amaçları ve tercihlerinizi nasıl yöneteceğiniz.'
         ),
     ),
+    SystemDefaultPageSpec(
+        slug='veri-silme',
+        title='Veri Silme Talebi',
+        public_path='/veri-silme',
+        show_in_menu=False,
+        meta_title='Veri Silme Talebi | 3K Kampüs KVKK',
+        meta_description=(
+            'Kişisel verilerinizin silinmesini 3K Kampüs üzerinden nasıl talep '
+            'edebileceğinizi açıklayan başvuru sayfası.'
+        ),
+    ),
 )
 
 SYSTEM_DEFAULT_SLUGS: frozenset[str] = frozenset(s.slug for s in SYSTEM_DEFAULT_PAGE_SPECS)

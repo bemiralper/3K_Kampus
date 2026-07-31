@@ -17,6 +17,7 @@ from apps.website.application.site_bootstrap_service import (
     build_iletisim_blocks,
     build_programlar_blocks,
     build_sistem_blocks,
+    build_veri_silme_blocks,
 )
 from apps.website.application.system_default_specs import (
     SYSTEM_DEFAULT_ORDER,
@@ -39,6 +40,7 @@ BUILDERS: dict[str, BlockBuilder] = {
     'programlar': lambda _k, _s, _f: build_programlar_blocks(),
     'iletisim': lambda k, s, f: build_iletisim_blocks(k, s, f),
     'duyurular': lambda _k, _s, _f: build_duyurular_blocks(),
+    'veri-silme': lambda k, s, f: build_veri_silme_blocks(k, s, f),
 }
 
 

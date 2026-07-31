@@ -11,6 +11,7 @@ type YasalMetinContentProps = {
   nav: { id: string; label: string }[];
   sections: YasalSection[];
   ctaLabel?: string;
+  ctaHref?: string;
 };
 
 function SectionBody({ section }: { section: YasalSection }) {
@@ -67,6 +68,7 @@ export default function YasalMetinContent({
   nav,
   sections,
   ctaLabel = 'İletişim Bölümüne Git',
+  ctaHref = '/#iletisim',
 }: YasalMetinContentProps) {
   const pathname = usePathname();
 
@@ -111,7 +113,7 @@ export default function YasalMetinContent({
           <button
             type="button"
             className="yasal-cta-btn"
-            onClick={() => handleLandingNav('/#iletisim', pathname)}
+            onClick={() => handleLandingNav(ctaHref, pathname)}
           >
             {ctaLabel}
           </button>

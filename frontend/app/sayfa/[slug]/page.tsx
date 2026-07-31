@@ -10,6 +10,7 @@ export const revalidate = 60;
 const SLUG_REDIRECTS: Record<string, string> = {
   '3k-sistemi': '/3k-sistemi',
   hakkimizda: '/hakkimizda',
+  'veri-silme': '/veri-silme',
 };
 
 type Props = { params: { slug: string } };

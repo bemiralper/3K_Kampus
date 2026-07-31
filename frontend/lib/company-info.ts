@@ -70,6 +70,6 @@ export function companyIletisimParagraphs(purpose: string): string[] {
     `Adres: ${c.adres}`,
     `Telefon: ${c.telefon}`,
     `E-posta: ${c.eposta}`,
-    'Veri silme ve KVKK başvuruları için ayrıca https://www.3kkampus.com/sayfa/veri-silme adresindeki başvuru sürecini kullanabilirsiniz.',
+    'Veri silme ve KVKK başvuruları için ayrıca https://www.3kkampus.com/veri-silme adresindeki başvuru sürecini kullanabilirsiniz.',
   ];
 }

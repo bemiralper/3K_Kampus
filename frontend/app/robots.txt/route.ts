@@ -9,6 +9,7 @@ Allow: /duyurular
 Allow: /3k-sistemi
 Allow: /hakkimizda
 Allow: /yasal/
+Allow: /veri-silme
 Allow: /sayfa/
 Disallow: /admin/
 Disallow: /coach/

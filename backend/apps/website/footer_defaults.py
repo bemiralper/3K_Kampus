@@ -14,7 +14,7 @@ DEFAULT_FOOTER_LINKS: tuple[tuple[str, str, str, int], ...] = (
     ('yasal', 'Gizlilik Politikası', '/yasal/gizlilik', 1),
     ('yasal', 'Kullanım Koşulları', '/yasal/kullanim', 2),
     ('yasal', 'Çerez Politikası', '/yasal/cerez', 3),
-    ('yasal', 'Veri Silme Talebi', '/sayfa/veri-silme', 4),
+    ('yasal', 'Veri Silme Talebi', '/veri-silme', 4),
 )
 
 REQUIRED_YASAL_URLS = frozenset(
@@ -25,6 +25,8 @@ REQUIRED_YASAL_URLS = frozenset(
 def ensure_site_footer_links(kurum: Kurum) -> int:
     """Eksik footer linklerini ekler / günceller; mevcut özel linkleri silmez."""
     changed = 0
+    legacy = SiteFooterLink.objects.filter(kurum=kurum, url='/sayfa/veri-silme').update(url='/veri-silme')
+    changed += legacy
     for kolon, etiket, url, sira in DEFAULT_FOOTER_LINKS:
         _obj, created = SiteFooterLink.objects.update_or_create(
             kurum=kurum,
