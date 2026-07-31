@@ -18,7 +18,16 @@ function hardReplace(path: string) {
 }
 
 // Routes that don't require authentication
-const PUBLIC_ROUTE_PREFIXES = ["/login", "/yasal", "/duyurular", "/3k-sistemi", "/hakkimizda", "/sayfa", "/iletisim"];
+const PUBLIC_ROUTE_PREFIXES = [
+  "/login",
+  "/yasal",
+  "/duyurular",
+  "/3k-sistemi",
+  "/hakkimizda",
+  "/sayfa",
+  "/iletisim",
+  "/veri-silme",
+];
 const CONTEXT_PICKER_ROUTES = ["/kurum-sec", "/sube-sec"];
 const PRINT_ROUTES = ["/print"];
 
