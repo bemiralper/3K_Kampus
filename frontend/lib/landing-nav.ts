@@ -47,6 +47,11 @@ export function handleLandingNav(href: string, pathname: string) {
   }
 
   if (href.startsWith('#')) {
+    // Aynı sayfada hedef varsa oraya kaydır (ör. /veri-silme#basvuru)
+    if (typeof document !== 'undefined' && document.querySelector(href)) {
+      scrollToSection(href);
+      return;
+    }
     if (pathname === '/') scrollToSection(href);
     else {
       queueLandingScroll(href);
