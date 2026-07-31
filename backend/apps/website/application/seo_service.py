@@ -49,7 +49,10 @@ def score_page(page: WebPage, blocks: list[dict] | None = None) -> dict[str, Any
         props = block.get('props') or {}
         btype = block.get('type')
         if btype in ('richText', 'html'):
-            html_parts.append(props.get('html') or '')
+            html = props.get('html') or ''
+            html_parts.append(html)
+            # Yasal / CMS HTML içindeki <h1> de sayılır
+            h1_count += len(re.findall(r'<h1\b', html, flags=re.I))
         if btype == 'heading' and int(props.get('level') or 2) == 1:
             h1_count += 1
         if btype == 'hero' and props.get('title'):
@@ -65,7 +68,12 @@ def score_page(page: WebPage, blocks: list[dict] | None = None) -> dict[str, Any
     body = ' '.join(html_parts)
     text = _strip_html(body)
     word_count = len([w for w in text.split() if w])
-    if word_count and word_count < 50:
+    # Liste/form sayfalarında metin bloğu kısa olabilir — yalnızca saf richText ince ise cezala
+    has_substantial_block = any(
+        (b.get('type') in ('duyurularList', 'form', 'cards', 'iconBoxes', 'hero'))
+        for b in (blocks or [])
+    )
+    if word_count and word_count < 50 and not has_substantial_block:
         deduct(10, 'thin_content', 'İnce içerik (<50 kelime)')
     if h1_count == 0:
         deduct(8, 'missing_h1', 'H1 bulunamadı')

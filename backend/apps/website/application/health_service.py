@@ -6,7 +6,7 @@ import os
 from django.conf import settings as django_settings
 
 from apps.kurum.domain.models import Kurum
-from apps.website.application.system_default_specs import public_path_for_slug
+from apps.website.application.system_default_specs import public_path_for_slug, spec_for_slug
 from apps.website.cms_models import IntegrationSettings, SiteTheme, WebPage
 from apps.website.company_defaults import DEFAULT_COMPANY_INFO, apply_company_defaults
 from apps.website.models import SiteSettings
@@ -202,52 +202,90 @@ def ensure_website_health(kurum_id: int, *, ga4_id: str | None = None) -> dict:
     theme.save()
 
     # ── Page SEO (meta + canonical) ──
+    def _weak_title(value: str) -> bool:
+        text = (value or '').strip()
+        return not text or len(text) < 30 or len(text) > 60
+
+    def _weak_desc(value: str) -> bool:
+        text = (value or '').strip()
+        return not text or len(text) < 70 or len(text) > 160
+
+    def _abs_media(url: str) -> str:
+        url = (url or '').strip()
+        if not url:
+            return ''
+        if url.startswith('http://') or url.startswith('https://'):
+            return url
+        if url.startswith('/'):
+            return f'{base}{url}'
+        return f'{base}/{url.lstrip("/")}'
+
+    og_fallback = ''
+    if site and (getattr(site, 'seo_og_image_url', '') or '').strip():
+        og_fallback = _abs_media(site.seo_og_image_url)
+    if not og_fallback and (theme.logo_url or theme.favicon_url):
+        og_fallback = _abs_media(theme.logo_url or theme.favicon_url)
+
     pages_updated = 0
     for page in WebPage.objects.filter(kurum_id=kurum_id):
         dirty = False
-        if not (page.meta_title or '').strip():
-            page.meta_title = _clip(page.title, 70)
+        spec = spec_for_slug(page.slug)
+
+        if _weak_title(page.meta_title or ''):
+            if spec:
+                page.meta_title = _clip(spec.meta_title, 70)
+            elif page.is_homepage and site and (site.seo_baslik or '').strip() and not _weak_title(site.seo_baslik):
+                page.meta_title = _clip(site.seo_baslik, 70)
+            else:
+                brand = kurum.gorunen_ad or kurum.ad or '3K Kampüs'
+                page.meta_title = _clip(f'{page.title} | {brand}', 70)
             dirty = True
-        if not (page.meta_description or '').strip():
-            if page.is_homepage and site and (site.seo_aciklama or '').strip():
+
+        if _weak_desc(page.meta_description or ''):
+            if spec:
+                page.meta_description = _clip(spec.meta_description, 320)
+            elif page.is_homepage and site and (site.seo_aciklama or '').strip() and not _weak_desc(site.seo_aciklama):
                 page.meta_description = _clip(site.seo_aciklama, 320)
             else:
+                brand = kurum.gorunen_ad or kurum.ad or '3K Kampüs'
                 page.meta_description = _clip(
-                    f'{page.title} — {kurum.gorunen_ad or kurum.ad}. Detaylı bilgi için sayfamızı ziyaret edin.',
+                    f'{page.title} — {brand}. LGS, YKS ve okul destek programları hakkında '
+                    f'detaylı bilgi için sayfamızı ziyaret edin.',
                     320,
                 )
             dirty = True
-        # localhost canonical'ları düzelt
+
+        # localhost / boş / sistem sayfalarında yanlış canonical
         if (page.canonical_url or '').strip() and (
             'localhost' in page.canonical_url or '127.0.0.1' in page.canonical_url
         ):
             page.canonical_url = ''
             dirty = True
-        if not (page.canonical_url or '').strip():
-            dedicated = public_path_for_slug(page.slug)
-            if dedicated:
-                path = dedicated
-            elif page.slug in ('kvkk', 'gizlilik', 'kullanim', 'cerez'):
-                path = f'/yasal/{page.slug}'
+        dedicated = public_path_for_slug(page.slug)
+        desired_canon = ''
+        if dedicated is not None:
+            desired_canon = f'{base}{dedicated}'
+        elif not (page.canonical_url or '').strip():
+            if page.slug in ('kvkk', 'gizlilik', 'kullanim', 'cerez'):
+                desired_canon = f'{base}/yasal/{page.slug}'
             else:
                 path = '/' if page.is_homepage or page.slug == 'home' else f'/sayfa/{page.slug}'
-            page.canonical_url = f'{base}{path}'
+                desired_canon = f'{base}{path}'
+        if desired_canon and (page.canonical_url or '').strip() != desired_canon:
+            page.canonical_url = desired_canon
             dirty = True
+
         if not page.sitemap_include and page.status == WebPage.STATUS_PUBLISHED:
             page.sitemap_include = True
             dirty = True
-        if not (page.og_title or '').strip():
+        if not (page.og_title or '').strip() or _weak_title(page.og_title or ''):
             page.og_title = _clip(page.meta_title or page.title, 100)
             dirty = True
-        if not (page.og_description or '').strip():
+        if not (page.og_description or '').strip() or _weak_desc(page.og_description or ''):
             page.og_description = _clip(page.meta_description, 300)
             dirty = True
-        if not (page.og_image or '').strip() and (theme.logo_url or theme.favicon_url):
-            img = theme.logo_url or theme.favicon_url
-            if img.startswith('/'):
-                page.og_image = f'{base}{img}'
-            else:
-                page.og_image = img
+        if not (page.og_image or '').strip() and og_fallback:
+            page.og_image = og_fallback
             dirty = True
         if dirty:
             page.save()

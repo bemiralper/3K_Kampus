@@ -80,6 +80,25 @@ class PageServiceTests(TestCase):
         self.assertIn('missing_description', codes)
         self.assertTrue({'title_short', 'missing_title'} & codes)
 
+    def test_seo_score_counts_h1_in_richtext(self):
+        page = WebPage.objects.create(
+            kurum=self.kurum,
+            title='KVKK',
+            slug='kvkk-test',
+            meta_title='KVKK Aydınlatma Metni | 3K Kampüs',
+            meta_description=(
+                '6698 sayılı KVKK kapsamında 3K Kampüs kişisel veri aydınlatma metni. '
+                'Veri sorumlusu bilgileri ve haklarınız.'
+            ),
+            canonical_url='https://www.3kkampus.com/yasal/kvkk',
+            og_image='https://www.3kkampus.com/logo.png',
+        )
+        html = '<h1>KVKK</h1><p>' + ('kelime ' * 60) + '</p>'
+        result = score_page(page, [new_block('richText', {'html': html})])
+        codes = {c['code'] for c in result['checks']}
+        self.assertNotIn('missing_h1', codes)
+        self.assertGreaterEqual(result['score'], 95)
+
 
 class MigrateServiceTests(TestCase):
     def setUp(self):

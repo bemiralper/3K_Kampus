@@ -318,8 +318,9 @@ def build_duyurular_blocks() -> list[dict]:
         new_block('richText', {
             'html': (
                 '<p style="text-align:center;color:#475569">'
-                'Kurum duyuru ve haberleri. Asıl liste '
-                '<a href="/duyurular">/duyurular</a> sayfasında gösterilir.'
+                '3K Kampüs duyuru ve haberleri: sınav takvimleri, kayıt dönemleri, '
+                'etkinlikler ve kampüs gelişmeleri. Güncel içerikler aşağıda listelenir; '
+                'tüm arşive <a href="/duyurular">duyurular sayfasından</a> da ulaşabilirsiniz.'
                 '</p>'
             ),
         }),
@@ -574,6 +575,8 @@ def _ensure_menus(kurum_id: int) -> None:
 
 
 def _ensure_legal_pages(kurum_id: int, force: bool) -> dict:
+    from apps.website.application.system_default_specs import SPECS_BY_SLUG
+
     kurum = Kurum.objects.filter(pk=kurum_id).first()
     yasal_stats = ensure_yasal_metinler(kurum, upgrade_placeholders=True) if kurum else {'created': 0, 'upgraded': 0}
     yasal_created = yasal_stats['created'] + yasal_stats['upgraded']
@@ -586,6 +589,7 @@ def _ensure_legal_pages(kurum_id: int, force: bool) -> dict:
         body = (yasal.icerik if yasal and yasal.icerik else default_body)
         title_use = (yasal.baslik if yasal and yasal.baslik else title)
         cms_html = cms_preview_html(body, title_use)
+        spec = SPECS_BY_SLUG.get(slug)
         _, changed = _publish_page(
             kurum_id,
             slug=slug,
@@ -593,8 +597,12 @@ def _ensure_legal_pages(kurum_id: int, force: bool) -> dict:
             blocks=[new_block('richText', {'html': cms_html})],
             is_homepage=False,
             show_in_menu=False,
-            meta_title=title_use,
-            meta_description=f'{title_use} — yasal bilgilendirme sayfası.',
+            meta_title=(spec.meta_title if spec else title_use),
+            meta_description=(
+                spec.meta_description
+                if spec
+                else f'{title_use} — 3K Kampüs yasal bilgilendirme sayfası. Güncel metin ve iletişim bilgileri.'
+            ),
             label='Yasal sayfa bootstrap',
             force=force or not WebPage.objects.filter(kurum_id=kurum_id, slug=slug).exists(),
         )
@@ -616,6 +624,18 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
     form_slug = _ensure_contact_form(kurum_id)
     _ensure_menus(kurum_id)
 
+    from apps.website.application.system_default_specs import SPECS_BY_SLUG
+
+    home_spec = SPECS_BY_SLUG['home']
+    home_meta_title = f'{(kurum.gorunen_ad or kurum.ad)} | LGS ve YKS Eğitim Merkezi'
+    if len(home_meta_title) < 30 or len(home_meta_title) > 60:
+        home_meta_title = home_spec.meta_title
+    home_meta_desc = (
+        (settings.seo_aciklama if settings and settings.seo_aciklama else '') or home_spec.meta_description
+    )
+    if len(home_meta_desc.strip()) < 70:
+        home_meta_desc = home_spec.meta_description
+
     home, home_changed = _publish_page(
         kurum_id,
         slug='home',
@@ -623,11 +643,8 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
         blocks=build_homepage_blocks(kurum, settings),
         is_homepage=True,
         show_in_menu=True,
-        meta_title=f'{(kurum.gorunen_ad or kurum.ad)} — LGS & YKS Eğitim Merkezi',
-        meta_description=(
-            (settings.seo_aciklama if settings and settings.seo_aciklama else None)
-            or 'LGS, YKS ve okul destek programları. Akademik takip, koçluk ve deneme analizleri.'
-        ),
+        meta_title=home_meta_title,
+        meta_description=home_meta_desc,
         label='Anasayfa yerleşim v2',
         force=force_home,
     )
@@ -635,33 +652,25 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
     WebPage.objects.filter(kurum_id=kurum_id, is_homepage=True).exclude(pk=home.pk).update(is_homepage=False)
 
     pages_changed = []
-    for slug, title, builder, meta_desc in [
-        ('hakkimizda', 'Hakkımızda', lambda: build_hakkimizda_blocks(kurum), 'Kurum hakkında bilgi.'),
-        ('3k-sistemi', '3K Sistemi', build_sistem_blocks, '3K dijital eğitim sistemi.'),
-        ('programlar', 'Programlar', build_programlar_blocks, 'LGS, YKS ve okul destek programları.'),
-        (
-            'duyurular',
-            'Duyurular',
-            build_duyurular_blocks,
-            'Güncel duyuru ve haberler.',
-        ),
-        (
-            'iletisim',
-            'İletişim',
-            lambda: build_iletisim_blocks(kurum, settings, form_slug),
-            'İletişim bilgileri ve başvuru formu.',
-        ),
-    ]:
+    page_builders = {
+        'hakkimizda': lambda: build_hakkimizda_blocks(kurum),
+        '3k-sistemi': build_sistem_blocks,
+        'programlar': build_programlar_blocks,
+        'duyurular': build_duyurular_blocks,
+        'iletisim': lambda: build_iletisim_blocks(kurum, settings, form_slug),
+    }
+    for slug, builder in page_builders.items():
+        spec = SPECS_BY_SLUG[slug]
         force = not WebPage.objects.filter(kurum_id=kurum_id, slug=slug).exists()
         _, changed = _publish_page(
             kurum_id,
             slug=slug,
-            title=title,
+            title=spec.title,
             blocks=builder(),
             show_in_menu=True,
-            meta_title=title,
-            meta_description=meta_desc,
-            label=f'{title} bootstrap',
+            meta_title=spec.meta_title,
+            meta_description=spec.meta_description,
+            label=f'{spec.title} bootstrap',
             force=force or force_home and slug in ('hakkimizda', 'programlar', 'iletisim', '3k-sistemi'),
         )
         if changed:
@@ -674,8 +683,11 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
         title='Veri Silme Talebi',
         blocks=build_veri_silme_blocks(kurum, settings, form_slug),
         show_in_menu=False,
-        meta_title='Veri Silme Talebi',
-        meta_description='Kişisel verilerinizin silinmesini nasıl talep edebileceğinizi açıklayan sayfa.',
+        meta_title='Veri Silme Talebi | 3K Kampüs KVKK',
+        meta_description=(
+            'Kişisel verilerinizin silinmesini 3K Kampüs üzerinden nasıl talep edebileceğinizi '
+            'açıklayan başvuru sayfası.'
+        ),
         label='Veri silme talebi sayfası bootstrap',
         force=veri_silme_force,
     )

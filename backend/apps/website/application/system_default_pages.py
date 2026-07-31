@@ -89,8 +89,18 @@ def _blocks_for_spec(
     return _legal_blocks(kurum.id, spec.slug)
 
 
+def _weak_meta_title(value: str) -> bool:
+    text = (value or '').strip()
+    return not text or len(text) < 30 or len(text) > 60
+
+
+def _weak_meta_description(value: str) -> bool:
+    text = (value or '').strip()
+    return not text or len(text) < 70 or len(text) > 160
+
+
 def _sync_page_meta(page: WebPage, spec: SystemDefaultPageSpec, base_url: str) -> bool:
-    """Mevcut sayfada yalnızca boş meta alanlarını tamamlar; durum/yayın ezilmez."""
+    """Sistem sayfalarında boş/zayıf SEO alanlarını spec ile yükseltir; yayın durumu ezilmez."""
     dirty = False
     if not getattr(page, 'is_system_default', False):
         page.is_system_default = True
@@ -98,17 +108,23 @@ def _sync_page_meta(page: WebPage, spec: SystemDefaultPageSpec, base_url: str) -
     if spec.is_homepage and not page.is_homepage:
         page.is_homepage = True
         dirty = True
-    if not (page.meta_title or '').strip():
-        page.meta_title = spec.title[:70]
+    if _weak_meta_title(page.meta_title or ''):
+        page.meta_title = spec.meta_title[:70]
         dirty = True
-    if not (page.meta_description or '').strip():
+    if _weak_meta_description(page.meta_description or ''):
         page.meta_description = spec.meta_description[:320]
         dirty = True
     canonical = f'{base_url}{spec.public_path}'
-    if (page.canonical_url or '').strip() != canonical:
-        if not (page.canonical_url or '').strip() or 'localhost' in (page.canonical_url or ''):
-            page.canonical_url = canonical
-            dirty = True
+    current_canon = (page.canonical_url or '').strip()
+    if current_canon != canonical:
+        page.canonical_url = canonical
+        dirty = True
+    if not (page.og_title or '').strip() or _weak_meta_title(page.og_title or ''):
+        page.og_title = (page.meta_title or spec.meta_title)[:100]
+        dirty = True
+    if not (page.og_description or '').strip() or _weak_meta_description(page.og_description or ''):
+        page.og_description = (page.meta_description or spec.meta_description)[:300]
+        dirty = True
     if not page.publish_at:
         page.publish_at = timezone.now()
         dirty = True
@@ -134,9 +150,11 @@ def _get_or_create_page(
                 is_homepage=spec.is_homepage,
                 is_system_default=True,
                 show_in_menu=spec.show_in_menu,
-                meta_title=spec.title[:70],
+                meta_title=spec.meta_title[:70],
                 meta_description=spec.meta_description[:320],
                 canonical_url=f'{base_url}{spec.public_path}',
+                og_title=spec.meta_title[:100],
+                og_description=spec.meta_description[:300],
                 sitemap_include=True,
                 publish_at=timezone.now(),
                 published_version=0,
@@ -191,7 +209,7 @@ def _ensure_one_page(
 def ensure_system_default_pages(kurum_id: int) -> dict:
     """
     Kamu sitedeki hazır sayfaları CMS WebPage kaydı olarak oluşturur (idempotent).
-    Mevcut içeriği ezmez; yalnızca eksik kayıtları ekler ve meta/sitemap alanlarını tamamlar.
+    Mevcut blok içeriğini ezmez; meta/canonical/OG alanlarını spec ile yükseltir.
     """
     kurum = Kurum.objects.filter(pk=kurum_id).first()
     if not kurum:
@@ -225,12 +243,12 @@ def ensure_system_default_pages(kurum_id: int) -> dict:
             is_homepage=False,
         )
 
+    # Meta yükseltmesi olmasa bile OG görsel / site ayarları için health çalıştır
     health = None
-    if created or updated:
-        try:
-            health = ensure_website_health(kurum_id)
-        except Exception:
-            logger.exception('ensure_website_health failed kurum_id=%s', kurum_id)
+    try:
+        health = ensure_website_health(kurum_id)
+    except Exception:
+        logger.exception('ensure_website_health failed kurum_id=%s', kurum_id)
 
     return {
         'ok': True,
