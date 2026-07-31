@@ -134,11 +134,14 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
             <p className="footer-brand-desc">
               {brandDesc}
             </p>
-            {settings?.telefon && (
-              <a href={`tel:${phoneDigits(settings.telefon)}`} className="footer-contact-chip">
-                {formatPhoneDisplay(settings.telefon)}
+            <div className="footer-contact-chips">
+              <a href={`tel:${phoneDigits(company.telefon)}`} className="footer-contact-chip">
+                {formatPhoneDisplay(company.telefon)}
               </a>
-            )}
+              <a href={`mailto:${company.eposta}`} className="footer-contact-chip">
+                {company.eposta}
+              </a>
+            </div>
           </div>
 
           <div className="footer-columns">
@@ -219,6 +222,12 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
                 </a>
               </dd>
             </div>
+            <div>
+              <dt>E-posta</dt>
+              <dd>
+                <a href={`mailto:${company.eposta}`}>{company.eposta}</a>
+              </dd>
+            </div>
           </dl>
         </div>
 
@@ -264,9 +273,14 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
           line-height: 1.65;
           color: #cbd5e1;
         }
+        .footer-contact-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          margin-top: 1rem;
+        }
         .footer-contact-chip {
           display: inline-flex;
-          margin-top: 1rem;
           padding: 0.45rem 0.85rem;
           border-radius: 999px;
           background: rgba(255, 255, 255, 0.1);

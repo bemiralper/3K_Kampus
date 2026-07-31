@@ -695,7 +695,7 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
     if settings:
         footer['telefon'] = settings.telefon or DEFAULT_COMPANY_INFO['telefon']
         footer['whatsapp'] = settings.whatsapp or ''
-        footer['eposta'] = settings.eposta or ''
+        footer['eposta'] = settings.eposta or DEFAULT_COMPANY_INFO['eposta']
         footer['adres'] = settings.adres or DEFAULT_COMPANY_INFO['adres']
         footer['ticari_unvan'] = settings.ticari_unvan or DEFAULT_COMPANY_INFO['ticari_unvan']
         footer['mersis_no'] = settings.mersis_no or DEFAULT_COMPANY_INFO['mersis_no']

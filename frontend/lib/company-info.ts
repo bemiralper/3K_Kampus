@@ -10,6 +10,14 @@ export const DEFAULT_COMPANY_INFO = {
   marka: '3K Kampüs',
 } as const;
 
+/** Eski / geçici iletişim mailleri — kurumsal adrese yükseltilir */
+const LEGACY_EPOSTA = new Set([
+  '',
+  '3kkampus@gmail.com',
+  'info@example.com',
+  'ornek@email.com',
+]);
+
 export type CompanyInfoSource = {
   ticari_unvan?: string | null;
   mersis_no?: string | null;
@@ -20,6 +28,14 @@ export type CompanyInfoSource = {
   eposta?: string | null;
 };
 
+function resolveEposta(raw?: string | null): string {
+  const value = (raw || '').trim().toLowerCase();
+  if (!value || LEGACY_EPOSTA.has(value)) {
+    return DEFAULT_COMPANY_INFO.eposta;
+  }
+  return (raw || '').trim();
+}
+
 export function resolveCompanyInfo(source?: CompanyInfoSource | null) {
   return {
     ticari_unvan: source?.ticari_unvan?.trim() || DEFAULT_COMPANY_INFO.ticari_unvan,
@@ -28,7 +44,7 @@ export function resolveCompanyInfo(source?: CompanyInfoSource | null) {
     ticaret_sicil_no: source?.ticaret_sicil_no?.trim() || DEFAULT_COMPANY_INFO.ticaret_sicil_no,
     adres: source?.adres?.trim() || DEFAULT_COMPANY_INFO.adres,
     telefon: source?.telefon?.trim() || DEFAULT_COMPANY_INFO.telefon,
-    eposta: source?.eposta?.trim() || DEFAULT_COMPANY_INFO.eposta,
+    eposta: resolveEposta(source?.eposta),
     marka: DEFAULT_COMPANY_INFO.marka,
   };
 }

@@ -75,9 +75,11 @@ export default function CmsPublicPage({ payload }: Props) {
           <div>
             <strong>{brand}</strong>
             {footer.description ? <p>{footer.description}</p> : null}
-            {footer.telefon ? <p>Tel: {footer.telefon}</p> : null}
-            {footer.eposta ? <p>{footer.eposta}</p> : null}
-            {footer.adres ? <p>{footer.adres}</p> : null}
+            <p>Tel: {company.telefon}</p>
+            <p>
+              <a href={`mailto:${company.eposta}`}>{company.eposta}</a>
+            </p>
+            <p>{company.adres}</p>
           </div>
           {footer_menu?.items?.length ? (
             <nav aria-label="Footer">
@@ -113,6 +115,12 @@ export default function CmsPublicPage({ payload }: Props) {
             <div>
               <dt>Telefon</dt>
               <dd>{company.telefon}</dd>
+            </div>
+            <div>
+              <dt>E-posta</dt>
+              <dd>
+                <a href={`mailto:${company.eposta}`}>{company.eposta}</a>
+              </dd>
             </div>
           </dl>
         </div>

@@ -30,6 +30,12 @@ _PLACEHOLDER_TELEFON_DIGITS = frozenset({
     '02125550000',
     '04422331234',  # aynı numaranın farklı yazımlarını da normalize et
 })
+_LEGACY_EPOSTA = frozenset({
+    '',
+    '3kkampus@gmail.com',
+    'info@example.com',
+    'ornek@email.com',
+})
 
 
 def _norm(value: str) -> str:
@@ -38,6 +44,11 @@ def _norm(value: str) -> str:
 
 def _digits(value: str) -> str:
     return ''.join(ch for ch in (value or '') if ch.isdigit())
+
+
+def _should_replace_eposta(eposta: str) -> bool:
+    """Yalnızca bilinen eski 3K iletişim maillerini yükselt (çok kiracılı güvenli)."""
+    return _norm(eposta) in _LEGACY_EPOSTA
 
 
 def apply_company_defaults(settings, *, overwrite: bool = False) -> list[str]:
@@ -64,7 +75,9 @@ def apply_company_defaults(settings, *, overwrite: bool = False) -> list[str]:
         changed.append('telefon')
 
     eposta = (settings.eposta or '').strip()
-    if overwrite or not eposta:
-        settings.eposta = DEFAULT_COMPANY_INFO['eposta']
-        changed.append('eposta')
+    desired_mail = DEFAULT_COMPANY_INFO['eposta']
+    if overwrite or _should_replace_eposta(eposta):
+        if eposta != desired_mail:
+            settings.eposta = desired_mail
+            changed.append('eposta')
     return changed

@@ -3,6 +3,7 @@
 import type { LandingData } from '@/lib/website-api';
 import { mergeBranding } from '@/lib/kurum-branding';
 import { absoluteSiteUrl } from '@/lib/site-url';
+import { resolveCompanyInfo } from '@/lib/company-info';
 
 type Props = {
   data: LandingData | null;
@@ -12,6 +13,7 @@ type Props = {
 export default function LandingJsonLd({ data }: Props) {
   const branding = mergeBranding(data?.kurum);
   const settings = data?.settings;
+  const company = resolveCompanyInfo(settings);
   const siteUrl = settings?.seo_canonical_url || absoluteSiteUrl('/');
 
   const organization = {
@@ -20,17 +22,13 @@ export default function LandingJsonLd({ data }: Props) {
     name: branding.gorunen_ad,
     url: siteUrl,
     description: settings?.seo_aciklama || branding.slogan,
-    ...(settings?.telefon ? { telephone: settings.telefon } : {}),
-    ...(settings?.eposta ? { email: settings.eposta } : {}),
-    ...(settings?.adres
-      ? {
-          address: {
-            '@type': 'PostalAddress',
-            streetAddress: settings.adres,
-            addressCountry: 'TR',
-          },
-        }
-      : {}),
+    telephone: company.telefon,
+    email: company.eposta,
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: company.adres,
+      addressCountry: 'TR',
+    },
   };
 
   const website = {

@@ -4,6 +4,7 @@ import type { SiteSettings, SocialLink } from '@/lib/website-api';
 import { LANDING_COLORS } from '@/lib/landing-theme';
 import { formatPhoneDisplay, phoneDigits } from '@/lib/phone-format';
 import { topBarSocialLinks } from '@/lib/landing-social';
+import { resolveCompanyInfo } from '@/lib/company-info';
 
 type TopBarProps = {
   settings: SiteSettings | null;
@@ -11,10 +12,11 @@ type TopBarProps = {
 };
 
 export default function TopBar({ settings, socialLinks }: TopBarProps) {
-  const phoneRaw = settings?.telefon || '';
-  const phone = formatPhoneDisplay(settings?.telefon);
+  const company = resolveCompanyInfo(settings);
+  const phoneRaw = settings?.telefon || company.telefon;
+  const phone = formatPhoneDisplay(phoneRaw);
   const whatsapp = settings?.whatsapp || '';
-  const email = settings?.eposta || '';
+  const email = company.eposta;
 
   const social = topBarSocialLinks(socialLinks);
 
@@ -49,9 +51,11 @@ export default function TopBar({ settings, socialLinks }: TopBarProps) {
 }
 
 export function TopBarMobile({ settings }: { settings: SiteSettings | null }) {
-  const phone = formatPhoneDisplay(settings?.telefon);
-  const phoneRaw = settings?.telefon || '';
+  const company = resolveCompanyInfo(settings);
+  const phoneRaw = settings?.telefon || company.telefon;
+  const phone = formatPhoneDisplay(phoneRaw);
   const whatsapp = settings?.whatsapp || '';
+  const email = company.eposta;
   return (
     <div className="flex h-10 items-center justify-center gap-3 overflow-x-auto px-3 text-[11px] text-white sm:gap-6 sm:px-4 sm:text-xs md:hidden" style={{ backgroundColor: LANDING_COLORS.navy }}>
       {phone && (
@@ -62,6 +66,11 @@ export function TopBarMobile({ settings }: { settings: SiteSettings | null }) {
       {whatsapp && (
         <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <WhatsAppIcon /> WhatsApp
+        </a>
+      )}
+      {email && (
+        <a href={`mailto:${email}`} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+          <MailIcon /> {email}
         </a>
       )}
     </div>

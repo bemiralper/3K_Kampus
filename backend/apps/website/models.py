@@ -29,7 +29,7 @@ class SiteSettings(models.Model):
     )
     telefon = models.CharField('Telefon', max_length=30, blank=True, default='')
     whatsapp = models.CharField('WhatsApp', max_length=30, blank=True, default='')
-    eposta = models.EmailField('E-posta', blank=True, default='')
+    eposta = models.EmailField('E-posta', blank=True, default='info@3kkampus.com')
     adres = models.TextField('Adres', blank=True, default='')
     calisma_saatleri = models.TextField('Çalışma Saatleri', blank=True, default='')
     hero_baslik = models.CharField('Hero Başlık', max_length=200, blank=True, default='3K Kampüs')

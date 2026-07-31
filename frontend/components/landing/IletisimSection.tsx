@@ -69,6 +69,7 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
 
   const displayTelefon = settings?.telefon?.trim() || company.telefon;
   const displayAdres = settings?.adres?.trim() || company.adres;
+  const displayEposta = company.eposta;
 
   const whatsappHref = settings?.whatsapp
     ? `https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`
@@ -143,11 +144,11 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
                   }
                 />
               )}
-              {settings?.eposta && (
+              {displayEposta && (
                 <ContactCard
                   label="E-posta"
-                  value={settings.eposta}
-                  href={`mailto:${settings.eposta}`}
+                  value={displayEposta}
+                  href={`mailto:${displayEposta}`}
                   icon={
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
