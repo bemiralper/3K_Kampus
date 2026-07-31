@@ -1,5 +1,7 @@
 /** Hakkımızda sayfası içerik yapısı */
 
+import { DEFAULT_COMPANY_INFO } from '@/lib/company-info';
+
 export const HAKKIMIZDA_META = {
   brand: '3K KAMPÜS',
   title: 'Hakkımızda',
@@ -7,6 +9,18 @@ export const HAKKIMIZDA_META = {
   intro: [
     '3K Kampüs, her öğrencinin doğru rehberlik, planlı çalışma ve nitelikli eğitimle hedeflerine ulaşabileceğine inanan bir eğitim merkezidir.',
     'Eğitim anlayışımız; yalnızca sınavlara hazırlık sürecini değil, öğrencinin akademik gelişimini, çalışma disiplinini ve kişisel sorumluluk bilincini birlikte geliştirmeyi hedefler. Çünkü gerçek başarının, yalnızca bilgiyle değil; doğru planlama, istikrarlı çalışma ve sürekli rehberlikle mümkün olduğuna inanıyoruz.',
+  ],
+};
+
+/** Meta / kurumsal kimlik — markanın yasal sahibi */
+export const HAKKIMIZDA_LEGAL = {
+  title: 'Yasal Kimlik',
+  paragraphs: [
+    `${DEFAULT_COMPANY_INFO.marka}, ${DEFAULT_COMPANY_INFO.ticari_unvan} markasıdır.`,
+    `Ticari unvan: ${DEFAULT_COMPANY_INFO.ticari_unvan}`,
+    `MERSİS No: ${DEFAULT_COMPANY_INFO.mersis_no} · Vergi No: ${DEFAULT_COMPANY_INFO.vergi_no} · Ticaret Sicil No: ${DEFAULT_COMPANY_INFO.ticaret_sicil_no}`,
+    `Açık adres: ${DEFAULT_COMPANY_INFO.adres}`,
+    `Telefon: ${DEFAULT_COMPANY_INFO.telefon} · E-posta: ${DEFAULT_COMPANY_INFO.eposta}`,
   ],
 };
 
@@ -109,5 +123,6 @@ export const HAKKIMIZDA_NAV = [
   { id: 'gelisim', label: 'Sürekli Gelişim' },
   { id: 'vizyon', label: 'Vizyon & Misyon' },
   { id: 'degerler', label: 'Değerlerimiz' },
+  { id: 'yasal-kimlik', label: 'Yasal Kimlik' },
   { id: 'kapanis', label: 'Birlikte Başarıya' },
 ];

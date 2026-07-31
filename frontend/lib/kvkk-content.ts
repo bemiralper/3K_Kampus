@@ -1,11 +1,12 @@
 /** KVKK Aydınlatma Metni — yapılandırılmış içerik */
 
+import { companyIletisimParagraphs, companyVeriSorumlusuParagraphs } from '@/lib/company-info';
 import { buildYasalNav, type YasalMetinMeta, type YasalSection } from '@/lib/yasal-metin-types';
 
 export const KVKK_META: YasalMetinMeta = {
   brand: '3K KAMPÜS',
   title: 'Kişisel Verilerin Korunması Aydınlatma Metni',
-  lastUpdated: '01 / 07 / 2026',
+  lastUpdated: '31 / 07 / 2026',
   intro: '6698 sayılı Kişisel Verilerin Korunması Kanunu kapsamında hazırlanmış resmi aydınlatma metnidir.',
 };
 
@@ -23,10 +24,7 @@ export const KVKK_SECTIONS: YasalSection[] = [
     id: 'veri-sorumlusu',
     number: 2,
     title: 'Veri Sorumlusu',
-    paragraphs: [
-      '6698 sayılı KVKK kapsamında kişisel verileriniz, veri sorumlusu sıfatıyla 3K Kampüs tarafından işlenmektedir.',
-      'Kuruma ait iletişim bilgileri internet sitemizde yer alan "İletişim" bölümünde güncel olarak yayımlanmaktadır.',
-    ],
+    paragraphs: companyVeriSorumlusuParagraphs(),
   },
   {
     id: 'islenen-veriler',
@@ -174,8 +172,10 @@ export const KVKK_SECTIONS: YasalSection[] = [
     number: 10,
     title: 'Başvuru',
     paragraphs: [
-      'KVKK kapsamındaki taleplerinizi, kimliğinizi doğrulayacak bilgilerle birlikte 3K Kampüs\'e yazılı olarak veya ilgili mevzuatta belirtilen yöntemlerle iletebilirsiniz.',
-      'Başvurular, kanuni süreler içerisinde değerlendirilerek sonuçlandırılır.',
+      ...companyIletisimParagraphs(
+        'KVKK kapsamındaki taleplerinizi (erişim, düzeltme, silme vb.) kimliğinizi doğrulayacak bilgilerle birlikte',
+      ),
+      'Başvurular, KVKK\'nın 13. maddesi uyarınca en kısa sürede ve en geç 30 gün içinde değerlendirilerek sonuçlandırılır.',
     ],
   },
   {

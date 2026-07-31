@@ -51,7 +51,7 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
     if created_settings or overwrite_settings:
         settings.telefon = '0442 233 1234'
         settings.whatsapp = '905402331234'
-        settings.eposta = 'info@3kkampus.com'
+        settings.eposta = 'info@3kkampus.com'  # Meta doğrulama: kurumsal domain e-posta
         settings.adres = 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM'
         settings.ticari_unvan = 'ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ'
         settings.mersis_no = '0692037476300018'

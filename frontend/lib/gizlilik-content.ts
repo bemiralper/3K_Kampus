@@ -1,11 +1,12 @@
 /** Gizlilik Politikası — yapılandırılmış içerik */
 
+import { companyIletisimParagraphs, DEFAULT_COMPANY_INFO } from '@/lib/company-info';
 import { buildYasalNav, type YasalMetinMeta, type YasalSection } from '@/lib/yasal-metin-types';
 
 export const GIZLILIK_META: YasalMetinMeta = {
   brand: '3K KAMPÜS',
   title: 'Gizlilik Politikası',
-  lastUpdated: '01 / 07 / 2026',
+  lastUpdated: '31 / 07 / 2026',
   intro:
     'İnternet sitemizi ve dijital hizmetlerimizi kullanırken kişisel bilgilerinizin nasıl korunduğunu açıklayan resmi gizlilik politikasıdır.',
 };
@@ -216,8 +217,8 @@ export const GIZLILIK_SECTIONS: YasalSection[] = [
     number: 13,
     title: 'İletişim',
     paragraphs: [
-      'Gizlilik Politikası hakkında sorularınız veya talepleriniz için internet sitemizde yer alan iletişim kanallarımız üzerinden bizimle iletişime geçebilirsiniz.',
-      '3K Kampüs, kullanıcılarının gizliliğini korumayı ve kişisel verileri güvenli şekilde işlemeyi temel sorumluluklarından biri olarak kabul etmektedir.',
+      `${DEFAULT_COMPANY_INFO.marka} (${DEFAULT_COMPANY_INFO.ticari_unvan}), kullanıcılarının gizliliğini korumayı ve kişisel verileri güvenli şekilde işlemeyi temel sorumluluklarından biri olarak kabul etmektedir.`,
+      ...companyIletisimParagraphs('Gizlilik Politikası hakkındaki sorularınız veya kişisel veri talepleriniz için'),
     ],
   },
 ];

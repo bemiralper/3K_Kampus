@@ -262,7 +262,7 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
                     required
                     type="tel"
                     autoComplete="tel"
-                    placeholder="0212 555 00 00"
+                    placeholder="0442 233 1234"
                     value={form.telefon}
                     onChange={e => {
                       setForm(f => ({ ...f, telefon: formatPhoneInput(e.target.value) }));

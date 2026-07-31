@@ -8,6 +8,7 @@ DEFAULT_COMPANY_INFO = {
     'ticaret_sicil_no': '14305',
     'adres': 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM',
     'telefon': '0442 233 1234',
+    'eposta': 'info@3kkampus.com',
 }
 
 COMPANY_FIELD_NAMES = (
@@ -61,4 +62,9 @@ def apply_company_defaults(settings, *, overwrite: bool = False) -> list[str]:
     ):
         settings.telefon = desired_tel
         changed.append('telefon')
+
+    eposta = (settings.eposta or '').strip()
+    if overwrite or not eposta:
+        settings.eposta = DEFAULT_COMPANY_INFO['eposta']
+        changed.append('eposta')
     return changed

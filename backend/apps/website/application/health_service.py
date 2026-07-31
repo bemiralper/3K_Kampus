@@ -190,7 +190,7 @@ def ensure_website_health(kurum_id: int, *, ga4_id: str | None = None) -> dict:
         'ticaret_sicil_no': site.ticaret_sicil_no,
         'adres': site.adres or DEFAULT_COMPANY_INFO['adres'],
         'telefon': site.telefon or DEFAULT_COMPANY_INFO['telefon'],
-        'eposta': site.eposta or '',
+        'eposta': site.eposta or DEFAULT_COMPANY_INFO.get('eposta', ''),
     }.items():
         if value and footer.get(key) != value:
             footer[key] = value

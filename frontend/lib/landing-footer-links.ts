@@ -6,6 +6,7 @@ export const DEFAULT_YASAL_FOOTER_LINKS: FooterLink[] = [
   { id: -102, kolon: 'yasal', etiket: 'Gizlilik Politikası', url: '/yasal/gizlilik', sira: 1, aktif: true },
   { id: -103, kolon: 'yasal', etiket: 'Kullanım Koşulları', url: '/yasal/kullanim', sira: 2, aktif: true },
   { id: -104, kolon: 'yasal', etiket: 'Çerez Politikası', url: '/yasal/cerez', sira: 3, aktif: true },
+  { id: -105, kolon: 'yasal', etiket: 'Veri Silme Talebi', url: '/sayfa/veri-silme', sira: 4, aktif: true },
 ];
 
 export function mergeFooterLinks(links: FooterLink[]): FooterLink[] {

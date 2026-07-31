@@ -6,6 +6,7 @@ import { LANDING_COLORS } from '@/lib/landing-theme';
 import { handleLandingNav } from '@/lib/landing-nav';
 import {
   HAKKIMIZDA_CLOSING,
+  HAKKIMIZDA_LEGAL,
   HAKKIMIZDA_META,
   HAKKIMIZDA_NAV,
   HAKKIMIZDA_SECTIONS,
@@ -116,6 +117,16 @@ export default function HakkimizdaContent() {
                 <li key={v}>{v}</li>
               ))}
             </ul>
+          </section>
+
+          <section id="yasal-kimlik" className="hak-section hak-section-alt scroll-mt-36">
+            <div className="hak-section-head">
+              <span className="hak-num">6</span>
+              <h2>{HAKKIMIZDA_LEGAL.title}</h2>
+            </div>
+            {HAKKIMIZDA_LEGAL.paragraphs.map((p) => (
+              <p key={p.slice(0, 40)} className="hak-p">{p}</p>
+            ))}
           </section>
         </div>
 

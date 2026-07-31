@@ -109,7 +109,10 @@ export const KULLANIM_SECTIONS: YasalSection[] = [
     number: 9,
     title: 'İletişim',
     paragraphs: [
-      'Kullanım Koşulları hakkında sorularınız için internet sitemizdeki iletişim kanallarından bize ulaşabilirsiniz.',
+      'Kullanım Koşulları hakkında sorularınız için ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ (3K Kampüs) ile iletişime geçebilirsiniz.',
+      'Adres: LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM',
+      'Telefon: 0442 233 1234 · E-posta: info@3kkampus.com',
+      'İletişim formu: /iletisim',
     ],
   },
 ];
