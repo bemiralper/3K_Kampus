@@ -27,9 +27,14 @@ export default function SiteSettingsPanel({
   autoSaveOnGalleryUpload,
 }: SiteSettingsPanelProps) {
   const mediaCache = settings.settings_updated_at || String(Date.now());
-  const set = (key: keyof SiteSettings, value: string | string[] | SiteSettings['hero_gallery']) => {
+  const set = (
+    key: keyof SiteSettings,
+    value: string | boolean | string[] | SiteSettings['hero_gallery'],
+  ) => {
     onChange({ ...settings, [key]: value });
   };
+
+  const haritaAcik = settings.harita_goster !== false;
 
   return (
     <div className="wam-panel">
@@ -64,13 +69,26 @@ export default function SiteSettingsPanel({
           </div>
           <WamTextarea label="Adres" full value={settings.adres || ''} onChange={e => set('adres', e.target.value)} rows={2} />
           <WamTextarea label="Çalışma Saatleri" full value={settings.calisma_saatleri || ''} onChange={e => set('calisma_saatleri', e.target.value)} rows={2} placeholder="Pzt–Cum 09:00–18:00" />
+          <label className="wam-checkbox-row">
+            <input
+              type="checkbox"
+              checked={haritaAcik}
+              onChange={e => set('harita_goster', e.target.checked)}
+            />
+            <span>Google Harita’yı sitede göster</span>
+          </label>
           <WamTextarea
             label="Google Harita Embed URL"
-            hint="Google Maps → Paylaş → Harita Yerleştir → iframe src veya tam iframe HTML yapıştırın. Boş bırakırsanız adres kaydedilince otomatik üretilir."
+            hint={
+              haritaAcik
+                ? 'Google Maps → Paylaş → Harita Yerleştir → iframe src veya tam iframe HTML yapıştırın. Boş bırakırsanız adres kaydedilince otomatik üretilir.'
+                : 'Harita kapalı — URL saklanır, iletişim sayfasında görünmez. Açmak için yukarıdaki kutuyu işaretleyin.'
+            }
             full
             value={settings.harita_embed_url || ''}
             onChange={e => set('harita_embed_url', e.target.value)}
             onBlur={() => {
+              if (!haritaAcik) return;
               const parsed = parseMapEmbedUrl(settings.harita_embed_url);
               if (parsed !== (settings.harita_embed_url || '')) {
                 set('harita_embed_url', parsed);

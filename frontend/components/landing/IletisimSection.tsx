@@ -60,7 +60,10 @@ function ContactCard({
 }
 
 export default function IletisimSection({ settings, hideHeader = false }: IletisimSectionProps) {
-  const mapSrc = parseMapEmbedUrl(settings?.harita_embed_url);
+  const mapSrc =
+    settings?.harita_goster === false
+      ? ''
+      : parseMapEmbedUrl(settings?.harita_embed_url);
   const company = resolveCompanyInfo(settings);
   const [form, setForm] = useState<FormState>({ ad_soyad: '', telefon: '', mesaj: '' });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});

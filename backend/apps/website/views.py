@@ -319,7 +319,7 @@ def api_admin_settings(request):
                 'anasayfa_duyuru_limit',
                 'yorumlar_goster', 'sss_goster',
                 'tanitim_baslik', 'tanitim_icerik', 'youtube_video_id',
-                'harita_embed_url', 'footer_copyright', 'footer_baslik', 'footer_aciklama',
+                'harita_goster', 'harita_embed_url', 'footer_copyright', 'footer_baslik', 'footer_aciklama',
                 'footer_marka_metni',
                 'ticari_unvan', 'mersis_no', 'vergi_no', 'ticaret_sicil_no',
                 'seo_baslik', 'seo_aciklama',
@@ -334,9 +334,16 @@ def api_admin_settings(request):
                     settings.anasayfa_duyuru_limit = max(1, min(12, int(data['anasayfa_duyuru_limit'])))
                 except (TypeError, ValueError):
                     settings.anasayfa_duyuru_limit = 6
+            if 'harita_goster' in data:
+                settings.harita_goster = bool(data['harita_goster'])
             if 'harita_embed_url' in data:
                 settings.harita_embed_url = normalize_map_embed_url(settings.harita_embed_url)
-            elif 'adres' in data and (settings.harita_embed_url or '').strip() == '' and (settings.adres or '').strip():
+            elif (
+                settings.harita_goster
+                and 'adres' in data
+                and (settings.harita_embed_url or '').strip() == ''
+                and (settings.adres or '').strip()
+            ):
                 settings.harita_embed_url = build_map_embed_from_address(settings.adres)
             if 'landing_sections_hidden' in data:
                 hidden = settings.landing_sections_hidden or []

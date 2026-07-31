@@ -115,7 +115,11 @@ def migrate_kurum_to_pages(kurum_id: int, *, force: bool = False) -> dict:
     blocks.append(new_block('duyurularList', {'limit': 6, 'kind': 'duyuru'}))
     blocks.append(new_block('sinavTakvim', {'limit': 12}))
 
-    if settings and settings.harita_embed_url:
+    if (
+        settings
+        and getattr(settings, 'harita_goster', True)
+        and settings.harita_embed_url
+    ):
         blocks.append(new_block('map', {'embedUrl': settings.harita_embed_url}))
 
     blocks.append(new_block('cta', {

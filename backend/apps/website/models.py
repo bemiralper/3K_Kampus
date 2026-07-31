@@ -57,6 +57,11 @@ class SiteSettings(models.Model):
     tanitim_baslik = models.CharField('Tanıtım Başlık', max_length=200, blank=True, default='')
     tanitim_icerik = models.TextField('Tanıtım İçerik', blank=True, default='')
     youtube_video_id = models.CharField('YouTube Video ID', max_length=50, blank=True, default='')
+    harita_goster = models.BooleanField(
+        'Haritayı Göster',
+        default=True,
+        help_text='Kapalıyken iletişim sayfasında Google Harita gömülüsü gösterilmez; URL saklanır.',
+    )
     harita_embed_url = models.TextField('Harita Embed URL', blank=True, default='')
     footer_copyright = models.CharField(
         'Footer Telif', max_length=200, blank=True, default='© 2026 3K Kampüs',

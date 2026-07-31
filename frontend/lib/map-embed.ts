@@ -18,12 +18,12 @@ export function buildMapEmbedFromAddress(address: string | null | undefined): st
   return `https://maps.google.com/maps?q=${q}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
 }
 
-/** Kayıt öncesi harita alanını normalize eder; boşsa adresten üretir. */
+/** Kayıt öncesi harita alanını normalize eder; açıkken boşsa adresten üretir. */
 export function normalizeSiteMapSettings(
-  settings: { adres?: string; harita_embed_url?: string },
+  settings: { adres?: string; harita_embed_url?: string; harita_goster?: boolean },
 ): { harita_embed_url: string } {
   let harita = parseMapEmbedUrl(settings.harita_embed_url);
-  if (!harita && settings.adres?.trim()) {
+  if (settings.harita_goster !== false && !harita && settings.adres?.trim()) {
     harita = buildMapEmbedFromAddress(settings.adres);
   }
   return { harita_embed_url: harita };

@@ -84,6 +84,8 @@ export type SiteSettings = {
   tanitim_baslik?: string;
   tanitim_icerik?: string;
   youtube_video_id?: string;
+  /** false ise iletişim haritası gösterilmez (URL saklanır) */
+  harita_goster?: boolean;
   harita_embed_url?: string;
   footer_copyright?: string;
   footer_baslik?: string;

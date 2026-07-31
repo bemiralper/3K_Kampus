@@ -236,7 +236,11 @@ def build_homepage_blocks(kurum: Kurum, settings: SiteSettings | None) -> list[d
         new_block('map', {
             'title': 'Bizi ziyaret edin',
             'embedUrl': (settings.harita_embed_url if settings else '') or '',
-        }) if settings and settings.harita_embed_url else new_block('spacer', {'height': 8}),
+        }) if (
+            settings
+            and getattr(settings, 'harita_goster', True)
+            and settings.harita_embed_url
+        ) else new_block('spacer', {'height': 8}),
     ]
 
 
@@ -408,7 +412,11 @@ def build_iletisim_blocks(kurum: Kurum, settings: SiteSettings | None, form_slug
         }),
         new_block('map', {
             'embedUrl': (settings.harita_embed_url if settings else '') or '',
-        }) if settings and settings.harita_embed_url else new_block('spacer', {'height': 8}),
+        }) if (
+            settings
+            and getattr(settings, 'harita_goster', True)
+            and settings.harita_embed_url
+        ) else new_block('spacer', {'height': 8}),
     ]
 
 

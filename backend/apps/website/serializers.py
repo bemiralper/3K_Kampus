@@ -54,6 +54,7 @@ def serialize_site_settings(settings, request):
         'tanitim_baslik': settings.tanitim_baslik,
         'tanitim_icerik': settings.tanitim_icerik,
         'youtube_video_id': settings.youtube_video_id,
+        'harita_goster': getattr(settings, 'harita_goster', True),
         'harita_embed_url': settings.harita_embed_url,
         'footer_copyright': settings.footer_copyright,
         'footer_baslik': settings.footer_baslik,
