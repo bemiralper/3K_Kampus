@@ -9,10 +9,13 @@ import {
 } from "@/components/communication";
 import "@/components/communication/communication.css";
 import {
+  accountLabel,
   archiveConversation,
   ConversationFilter,
   ConversationListItem,
+  fetchAccessibleWhatsAppAccounts,
   fetchConversations,
+  WhatsAppAccount,
 } from "@/lib/communication-api";
 import { useCommunicationSSE } from "@/hooks/useCommunicationSSE";
 import { useConversationThread } from "@/hooks/useConversationThread";
@@ -21,15 +24,18 @@ const POLL_MS = 20_000;
 
 interface MesajlarClientProps {
   initialConversationId?: string | null;
+  showAccountFilter?: boolean;
 }
 
-export default function MesajlarClient({ initialConversationId }: MesajlarClientProps) {
+export default function MesajlarClient({ initialConversationId, showAccountFilter = false }: MesajlarClientProps) {
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId ?? null);
   const [filter, setFilter] = useState<ConversationFilter>("all");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
+  const [accountId, setAccountId] = useState<string>("");
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
@@ -59,12 +65,20 @@ export default function MesajlarClient({ initialConversationId }: MesajlarClient
     onConversationRead: handleConversationRead,
   });
 
+  useEffect(() => {
+    if (!showAccountFilter) return;
+    fetchAccessibleWhatsAppAccounts()
+      .then((res) => setAccounts(res.accounts || []))
+      .catch(() => setAccounts([]));
+  }, [showAccountFilter]);
+
   const loadConversations = useCallback(async () => {
     try {
       setError(null);
       const data = await fetchConversations({
         filter,
         search: search.trim() || undefined,
+        channel_config_id: accountId || undefined,
       });
       setConversations(data.conversations || []);
     } catch (err) {
@@ -72,7 +86,7 @@ export default function MesajlarClient({ initialConversationId }: MesajlarClient
     } finally {
       setLoading(false);
     }
-  }, [filter, search]);
+  }, [filter, search, accountId]);
 
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -159,6 +173,23 @@ export default function MesajlarClient({ initialConversationId }: MesajlarClient
         onSelect={handleSelect}
         error={displayError}
         className={showListMobile ? "" : "hidden-mobile"}
+        accountFilterSlot={
+          showAccountFilter && accounts.length > 0 ? (
+            <select
+              className="comm-inbox-account-select"
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              aria-label="Hesaba göre filtrele"
+            >
+              <option value="">Tüm hesaplar</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {accountLabel(acc)}
+                </option>
+              ))}
+            </select>
+          ) : undefined
+        }
       />
 
       <MessageThreadPanel

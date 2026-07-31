@@ -33,10 +33,32 @@ from apps.communication.interfaces.sube_context import filter_conversations_by_s
 class ChannelConfigRepository:
     @staticmethod
     def get_whatsapp_config(kurum_id: int) -> CommunicationChannelConfig | None:
-        return CommunicationChannelConfig.objects.filter(
+        """Geriye uyum: varsayılan veya ilk aktif WhatsApp hesabı."""
+        qs = CommunicationChannelConfig.objects.filter(
             kurum_id=kurum_id,
             channel=Channel.WHATSAPP,
-        ).first()
+        ).order_by('-is_default', '-is_active', 'created_at')
+        return qs.first()
+
+    @staticmethod
+    def get_by_id(kurum_id: int, config_id) -> CommunicationChannelConfig | None:
+        return CommunicationChannelConfig.objects.filter(
+            id=config_id,
+            kurum_id=kurum_id,
+            channel=Channel.WHATSAPP,
+        ).prefetch_related('allowed_subes', 'allowed_roles').first()
+
+    @staticmethod
+    def list_whatsapp(kurum_id: int, *, active_only: bool = False):
+        qs = CommunicationChannelConfig.objects.filter(
+            kurum_id=kurum_id,
+            channel=Channel.WHATSAPP,
+        ).prefetch_related('allowed_subes', 'allowed_roles').order_by(
+            '-is_default', 'name', 'created_at',
+        )
+        if active_only:
+            qs = qs.filter(is_active=True)
+        return qs
 
     @staticmethod
     def get_by_phone_number_id(phone_number_id: str) -> CommunicationChannelConfig | None:
@@ -45,6 +67,7 @@ class ChannelConfigRepository:
         return CommunicationChannelConfig.objects.filter(
             phone_number_id=phone_number_id,
             is_active=True,
+            channel=Channel.WHATSAPP,
         ).first()
 
     @staticmethod
@@ -57,13 +80,60 @@ class ChannelConfigRepository:
         ).exists()
 
     @staticmethod
+    def phone_number_id_taken(
+        phone_number_id: str,
+        *,
+        exclude_id=None,
+        only_active: bool = True,
+    ) -> bool:
+        if not phone_number_id:
+            return False
+        qs = CommunicationChannelConfig.objects.filter(
+            phone_number_id=phone_number_id,
+            channel=Channel.WHATSAPP,
+        )
+        if only_active:
+            qs = qs.filter(is_active=True)
+        if exclude_id:
+            qs = qs.exclude(id=exclude_id)
+        return qs.exists()
+
+    @staticmethod
     def upsert_whatsapp(kurum_id: int, data: dict) -> CommunicationChannelConfig:
-        config, _ = CommunicationChannelConfig.objects.update_or_create(
+        """Geriye uyum: mevcut varsayılan hesabı güncelle veya oluştur."""
+        existing = ChannelConfigRepository.get_whatsapp_config(kurum_id)
+        if existing:
+            for key, value in data.items():
+                setattr(existing, key, value)
+            existing.save()
+            return existing
+        return CommunicationChannelConfig.objects.create(
             kurum_id=kurum_id,
             channel=Channel.WHATSAPP,
-            defaults=data,
+            is_default=True,
+            **{k: v for k, v in data.items() if k != 'channel'},
         )
-        return config
+
+    @staticmethod
+    def create_whatsapp(kurum_id: int, data: dict) -> CommunicationChannelConfig:
+        payload = {k: v for k, v in data.items() if k != 'channel'}
+        payload['channel'] = Channel.WHATSAPP
+        has_default = CommunicationChannelConfig.objects.filter(
+            kurum_id=kurum_id,
+            channel=Channel.WHATSAPP,
+            is_default=True,
+        ).exists()
+        if not has_default:
+            payload.setdefault('is_default', True)
+        return CommunicationChannelConfig.objects.create(kurum_id=kurum_id, **payload)
+
+    @staticmethod
+    def clear_other_defaults(kurum_id: int, keep_id) -> None:
+        CommunicationChannelConfig.objects.filter(
+            kurum_id=kurum_id,
+            channel=Channel.WHATSAPP,
+            is_default=True,
+        ).exclude(id=keep_id).update(is_default=False)
 
 
 class ContactIdentityRepository:
@@ -140,9 +210,12 @@ class ConversationRepository:
                 | Q(veli__ad__icontains=search)
                 | Q(veli__soyad__icontains=search)
             )
+        channel_config_id = filters.get('channel_config_id')
+        if channel_config_id:
+            qs = qs.filter(channel_config_id=channel_config_id)
         return qs.select_related(
             'ogrenci', 'ogrenci__sube', 'veli', 'veli__ogrenci', 'kurum',
-            'assigned_coach', 'contact_identity', 'sube',
+            'assigned_coach', 'contact_identity', 'sube', 'channel_config',
         )
 
     @staticmethod
@@ -194,7 +267,10 @@ class ConversationRepository:
         contact_identity=None,
         ogrenci_id=None,
         veli_id=None,
+        channel_config=None,
+        channel_config_id=None,
     ) -> tuple[Conversation, bool]:
+        cfg_id = channel_config_id or getattr(channel_config, 'id', None)
         defaults = {
             'status': ConversationStatus.OPEN,
             'contact_type': contact_type,
@@ -205,32 +281,47 @@ class ConversationRepository:
             defaults['ogrenci_id'] = ogrenci_id
         if veli_id:
             defaults['veli_id'] = veli_id
+        if cfg_id:
+            defaults['channel_config_id'] = cfg_id
         sube_id = ConversationRepository._resolve_sube_id(ogrenci_id=ogrenci_id, veli_id=veli_id)
         if sube_id:
             defaults['sube_id'] = sube_id
 
+        def _scoped(qs):
+            if cfg_id:
+                return qs.filter(Q(channel_config_id=cfg_id) | Q(channel_config_id__isnull=True))
+            return qs
+
         existing = None
         if veli_id is not None:
-            existing = ConversationRepository.find_latest_for_veli(
-                kurum_id, veli_id, channel=channel,
-            )
-        elif ogrenci_id is not None:
-            existing = (
+            existing = _scoped(
                 Conversation.objects.filter(
                     kurum_id=kurum_id,
                     channel=channel,
-                    ogrenci_id=ogrenci_id,
-                    veli_id__isnull=True,
+                    veli_id=veli_id,
+                )
+            ).order_by('-last_message_at', '-updated_at', '-created_at').first()
+        elif ogrenci_id is not None:
+            existing = (
+                _scoped(
+                    Conversation.objects.filter(
+                        kurum_id=kurum_id,
+                        channel=channel,
+                        ogrenci_id=ogrenci_id,
+                        veli_id__isnull=True,
+                    )
                 )
                 .order_by('-last_message_at', '-updated_at', '-created_at')
                 .first()
             )
 
         if not existing:
-            base_qs = Conversation.objects.filter(
-                kurum_id=kurum_id,
-                channel=channel,
-                contact_phone=contact_phone,
+            base_qs = _scoped(
+                Conversation.objects.filter(
+                    kurum_id=kurum_id,
+                    channel=channel,
+                    contact_phone=contact_phone,
+                )
             )
             existing = ConversationRepository._pick_existing_conversation(
                 base_qs,
@@ -270,6 +361,9 @@ class ConversationRepository:
             if contact_type and conversation.contact_type != contact_type:
                 conversation.contact_type = contact_type
                 update_fields.append('contact_type')
+            if cfg_id and conversation.channel_config_id != cfg_id:
+                conversation.channel_config_id = cfg_id
+                update_fields.append('channel_config_id')
             if update_fields:
                 update_fields.append('updated_at')
                 conversation.save(update_fields=update_fields)
@@ -547,14 +641,14 @@ class OutboundCampaignRepository:
         )
         if sube_id is not None:
             qs = qs.filter(sube_id=sube_id)
-        return qs.select_related('created_by', 'sube').first()
+        return qs.select_related('created_by', 'sube', 'channel_config').first()
 
     @staticmethod
     def list_by_kurum_and_sube(kurum_id: int, sube_id: int):
         return OutboundCampaign.objects.filter(
             kurum_id=kurum_id,
             sube_id=sube_id,
-        ).select_related('created_by', 'sube')
+        ).select_related('created_by', 'sube', 'channel_config')
 
 
 class OutboundQueueRepositoryExtensions:

@@ -170,7 +170,7 @@ Deploy öncesi ortam dosyasını yükleyin:
   set -a && source /etc/lms/env && set +a
 
 Dosyada örnek satır:
-  ALLOWED_HOSTS=app.3kkampus.com,127.0.0.1,localhost
+  ALLOWED_HOSTS=www.3kkampus.com,3kkampus.com,127.0.0.1,localhost
 
 Sonra tekrar:
   ./backend/scripts/deploy-production.sh --no-git

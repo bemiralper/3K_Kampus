@@ -39,8 +39,7 @@ class CampaignPreviewView(CampaignBulkView):
             )
 
         recipient_filter = serializer.validated_data.get('recipient_filter') or {}
-        audience_type = recipient_filter.get('audience_type')
-        if sube_id and audience_type in ('all_veliler', 'all_ogrenciler'):
+        if sube_id and not recipient_filter.get('sube_id'):
             recipient_filter = {**recipient_filter, 'sube_id': sube_id}
 
         preview = CommunicationService().preview_campaign(
@@ -50,6 +49,21 @@ class CampaignPreviewView(CampaignBulkView):
             attachment_count=serializer.validated_data.get('attachment_count', 0),
             ai_used=serializer.validated_data.get('ai_used', False),
         )
+        include_recipients = request.query_params.get('include_recipients') in ('1', 'true', 'yes')
+        if include_recipients or request.data.get('include_recipients'):
+            resolved = CampaignService().resolve_recipients(
+                kurum_id, recipient_filter, user=request.user,
+            )
+            preview = {**preview, **resolved}
+            # sayfalama
+            page = int(request.data.get('page') or request.query_params.get('page') or 1)
+            page_size = min(100, max(1, int(request.data.get('page_size') or 25)))
+            recipients = preview.get('recipients') or []
+            start = (page - 1) * page_size
+            preview['recipients'] = recipients[start:start + page_size]
+            preview['page'] = page
+            preview['page_size'] = page_size
+            preview['recipients_total'] = len(recipients)
         return Response(preview)
 
 
@@ -95,6 +109,7 @@ class CampaignListCreateView(CampaignBulkView):
                 send_options=serializer.validated_data.get('send_options'),
                 save_as_template=serializer.validated_data.get('save_as_template', False),
                 template_category=serializer.validated_data.get('template_category', ''),
+                channel_config_id=serializer.validated_data.get('channel_config_id'),
             )
         except PermissionDenied as exc:
             return Response({'error': str(exc)}, status=status.HTTP_403_FORBIDDEN)

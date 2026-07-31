@@ -11,6 +11,11 @@ class Channel(models.TextChoices):
     PUSH = 'PUSH', 'Push Bildirim'
 
 
+class WhatsAppAccountScope(models.TextChoices):
+    ALL_SUBES = 'ALL_SUBES', 'Tüm şubeler'
+    SELECTED_SUBES = 'SELECTED_SUBES', 'Seçili şubeler'
+
+
 class MessageType(models.TextChoices):
     TEXT = 'TEXT', 'Metin'
     IMAGE = 'IMAGE', 'Görsel'

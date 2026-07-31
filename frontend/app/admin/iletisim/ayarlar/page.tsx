@@ -1,9 +1,5 @@
-import IletisimAyarlarClient from "./IletisimAyarlarClient";
-
-export const metadata = {
-  title: "İletişim Ayarları — 3K Kampüs",
-};
+import { redirect } from "next/navigation";
 
 export default function IletisimAyarlarPage() {
-  return <IletisimAyarlarClient />;
+  redirect("/admin/iletisim/whatsapp-hesaplari");
 }

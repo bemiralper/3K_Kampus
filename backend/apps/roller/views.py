@@ -193,12 +193,16 @@ def role_detail_api(request, pk):
         permissions = role.permissions.filter(is_active=True).values(
             'id', 'code', 'name', 'module', 'permission_type'
         )
+        whatsapp_account_ids = list(
+            role.whatsapp_accounts.values_list('id', flat=True)
+        )
         
         return JsonResponse({
             'success': True,
             'role': {
                 **_serialize_role(role),
                 'permissions': list(permissions),
+                'whatsapp_account_ids': [str(x) for x in whatsapp_account_ids],
             }
         })
     
@@ -255,6 +259,12 @@ def role_detail_api(request, pk):
                         permission=perm,
                         granted_by=request.user if request.user.is_authenticated else None
                     )
+
+            if 'whatsapp_account_ids' in data:
+                from apps.communication.domain.models import CommunicationChannelConfig
+                account_ids = data.get('whatsapp_account_ids') or []
+                accounts = CommunicationChannelConfig.objects.filter(id__in=account_ids)
+                role.whatsapp_accounts.set(accounts)
             
             return JsonResponse({
                 'success': True,

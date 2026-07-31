@@ -46,6 +46,7 @@ export interface Role {
   silinme_tarihi?: string | null;
   permission_count?: number;
   permissions?: Permission[];
+  whatsapp_account_ids?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -60,6 +61,7 @@ export interface RoleCreateRequest {
   level?: number;
   is_active?: boolean;
   permission_ids?: number[];
+  whatsapp_account_ids?: string[];
 }
 
 /**
@@ -72,6 +74,7 @@ export interface RoleUpdateRequest {
   level?: number;
   is_active?: boolean;
   permission_ids?: number[];
+  whatsapp_account_ids?: string[];
 }
 
 /**

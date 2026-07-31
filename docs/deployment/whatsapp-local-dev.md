@@ -23,11 +23,13 @@ Alternatif: [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one
 
 ### 3. LMS ayarları
 
-**İletişim → Ayarlar**:
+**İletişim → WhatsApp Hesapları** → hesabı düzenle (veya yeni hesap oluştur):
 
 - **Webhook Verify Token** — rastgele güçlü bir string (Meta'da da aynısı)
 - **Aktif** kutusu işaretli
 - Phone Number ID, WABA ID, Access Token dolu
+
+> Alternatif: `WHATSAPP_VERIFY_TOKEN` env değişkenini set edip tüm hesaplar için ortak bir doğrulama token'ı kullanabilirsiniz — webhook `hub.verify_token` kontrolü hem env değerini hem de aktif hesapların kendi token'larını kabul eder.
 
 ### 4. Meta Developer Console
 
@@ -48,7 +50,7 @@ curl "https://SIZIN-NGROK/api/communication/webhook/?hub.mode=subscribe&hub.veri
 # Beklenen: 12345
 ```
 
-LMS **İletişim → Ayarlar** sayfasında "Son webhook: …" görünmeli.
+LMS **İletişim → WhatsApp Hesapları** sayfasındaki "Webhook & genel bilgi" kartında "Son webhook: …" görünmeli.
 
 ### 6. Kuyruk (giden toplu / kampanya)
 

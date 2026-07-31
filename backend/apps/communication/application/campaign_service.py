@@ -84,6 +84,14 @@ class AudiencePreview:
         return data
 
 
+ADVANCED_FILTER_KEYS = frozenset({
+    'sinif_seviyesi_ids', 'sinif_ids', 'alan_ids', 'coach_ids', 'school_ids',
+    'kalemler', 'kalem_turu', 'kalem_id', 'giris_turu', 'kayit_turu', 'cinsiyet',
+    'durum', 'mali_durum', 'has_phone', 'whatsapp_default_only',
+    'contact_kinds', 'rehber_ids', 'ogretmen_ids',
+})
+
+
 class AudienceResolver:
     """Filtre JSON → alıcı listesi."""
 
@@ -106,7 +114,11 @@ class AudienceResolver:
 
         raw_entries: list[tuple[str, str, int | None, int | None, str]] = []
 
-        if audience_type == 'all_veliler':
+        if audience_type == 'advanced' or cls._has_advanced_filters(filter_json):
+            raw_entries.extend(
+                cls._collect_advanced(kurum_id, filter_json, allowed_student_ids)
+            )
+        elif audience_type == 'all_veliler':
             raw_entries.extend(cls._collect_veliler(kurum_id, allowed_student_ids))
         elif audience_type == 'all_ogrenciler':
             raw_entries.extend(cls._collect_ogrenciler(kurum_id, allowed_student_ids))
@@ -163,7 +175,201 @@ class AudienceResolver:
                 if filter_json.get('include_veliler'):
                     raw_entries.extend(cls._collect_veliler(kurum_id, allowed_student_ids))
 
+        raw_entries = cls._apply_manual_include_exclude(
+            kurum_id, raw_entries, filter_json, allowed_student_ids,
+        )
         return cls._dedupe_and_count(raw_entries, include_invalid=include_invalid)
+
+    @classmethod
+    def _has_advanced_filters(cls, filter_json: dict) -> bool:
+        return any(k in filter_json and filter_json[k] not in (None, '', [], {}) for k in ADVANCED_FILTER_KEYS)
+
+    @classmethod
+    def _collect_advanced(
+        cls,
+        kurum_id: int,
+        filter_json: dict,
+        allowed_student_ids,
+    ) -> list[tuple]:
+        from apps.ogrenci.domain.models import OgrenciVeli
+        from apps.ogrenci.interfaces.list_helpers import build_kayit_queryset, parse_kalem_filter_param
+
+        sube_id = filter_json.get('sube_id')
+        if not sube_id:
+            return []
+
+        egitim_yili_id = filter_json.get('egitim_yili_id')
+        sinif_ids = list(filter_json.get('sinif_ids') or [])
+        if filter_json.get('sinif_id') and int(filter_json['sinif_id']) not in sinif_ids:
+            sinif_ids.append(int(filter_json['sinif_id']))
+
+        kalemler = filter_json.get('kalemler') or []
+        if isinstance(kalemler, str):
+            kalemler = parse_kalem_filter_param(kalemler)
+        elif kalemler and isinstance(kalemler[0], dict):
+            kalemler = [(k['turu'], int(k['id'])) for k in kalemler if k.get('turu') and k.get('id')]
+        if not kalemler and filter_json.get('kalem_turu') and filter_json.get('kalem_id'):
+            kalemler = [(filter_json['kalem_turu'], int(filter_json['kalem_id']))]
+
+        coach_ids = list(filter_json.get('coach_ids') or [])
+        if filter_json.get('coach_id'):
+            coach_ids.append(int(filter_json['coach_id']))
+
+        params = {
+            'q': (filter_json.get('q') or '').strip(),
+            'all_years': bool(filter_json.get('all_years')),
+            'durum': filter_json.get('durum') or 'aktif',
+            'sinif_seviyesi_ids': list(filter_json.get('sinif_seviyesi_ids') or []),
+            'giris_turu': filter_json.get('giris_turu') or None,
+            'kayit_turu': filter_json.get('kayit_turu') or None,
+            'cinsiyet': filter_json.get('cinsiyet') or None,
+            'paket_id': filter_json.get('paket_id'),
+            'paket_turu': filter_json.get('paket_turu') or None,
+            'kalemler': kalemler,
+            'sinif_ids': sinif_ids,
+            'school_ids': list(filter_json.get('school_ids') or []),
+            'alan_ids': list(filter_json.get('alan_ids') or []),
+            'coach_ids': coach_ids,
+            'kayit_tarihi_bas': None,
+            'kayit_tarihi_bit': None,
+            'sort': 'created_at_desc',
+        }
+        ctx = {
+            'kurum_id': kurum_id,
+            'sube_id': int(sube_id),
+            'egitim_yili_id': int(egitim_yili_id) if egitim_yili_id else None,
+        }
+        qs, _ = build_kayit_queryset(ctx, params, apply_durum=True)
+        ogrenci_ids = list(qs.values_list('ogrenci_id', flat=True).distinct())
+        if allowed_student_ids is not None:
+            ogrenci_ids = [oid for oid in ogrenci_ids if oid in allowed_student_ids]
+
+        mali = filter_json.get('mali_durum')
+        if mali in ('borclu', 'borcu_yok', 'geciken'):
+            ogrenci_ids = cls._filter_by_mali(kurum_id, int(sube_id), ogrenci_ids, mali)
+
+        if not ogrenci_ids:
+            return []
+
+        contact_kinds = set(filter_json.get('contact_kinds') or ['ogrenci', 'anne', 'baba', 'vasi'])
+        entries: list[tuple] = []
+
+        if 'ogrenci' in contact_kinds:
+            from apps.ogrenci.domain.models import Ogrenci
+            oqs = Ogrenci.objects.filter(id__in=ogrenci_ids, kurum_id=kurum_id)
+            if filter_json.get('has_phone') is True:
+                oqs = oqs.exclude(telefon='')
+            elif filter_json.get('has_phone') is False:
+                oqs = oqs.filter(telefon='')
+            for o in oqs:
+                if not o.telefon and filter_json.get('has_phone') is not False:
+                    continue
+                if o.telefon:
+                    entries.append((o.telefon, RecipientType.OGRENCI, o.id, None, o.tam_ad))
+
+        veli_kinds = contact_kinds & {'anne', 'baba', 'vasi', 'veli'}
+        if veli_kinds:
+            veli_qs = OgrenciVeli.objects.filter(
+                ogrenci_id__in=ogrenci_ids,
+            ).exclude(telefon='').select_related('ogrenci')
+            if 'veli' not in veli_kinds:
+                veli_qs = veli_qs.filter(veli_turu__in=list(veli_kinds))
+            for veli in veli_qs:
+                if not ContactResolver.veli_allows_outbound(veli, OPT_IN_CATEGORY):
+                    continue
+                if filter_json.get('whatsapp_default_only'):
+                    telefonlar = getattr(veli, 'telefonlar', None) or []
+                    if telefonlar and not any(
+                        t.get('whatsapp_varsayilan') and t.get('numara') == veli.telefon
+                        for t in telefonlar if isinstance(t, dict)
+                    ):
+                        # telefon alanı zaten WA varsayılanı — atlama yok
+                        pass
+                entries.append((
+                    veli.telefon,
+                    RecipientType.VELI,
+                    veli.ogrenci_id,
+                    veli.id,
+                    veli.tam_ad,
+                ))
+        return entries
+
+    @classmethod
+    def _filter_by_mali(
+        cls,
+        kurum_id: int,
+        sube_id: int,
+        ogrenci_ids: list[int],
+        mali: str,
+    ) -> list[int]:
+        if not ogrenci_ids:
+            return []
+        try:
+            from apps.odeme_takip.domain.models import Sozlesme, Taksit
+            from apps.odeme_takip.domain.enums import SozlesmeDurum
+            from apps.odeme_takip.domain.overdue import overdue_base_q
+        except Exception:
+            return ogrenci_ids
+
+        soz = Sozlesme.objects.filter(
+            kurum_id=kurum_id,
+            sube_id=sube_id,
+            ogrenci_id__in=ogrenci_ids,
+            durum=SozlesmeDurum.AKTIF,
+        )
+        if mali == 'geciken':
+            overdue = (
+                Taksit.objects.filter(sozlesme__in=soz)
+                .filter(overdue_base_q())
+                .values_list('sozlesme__ogrenci_id', flat=True)
+                .distinct()
+            )
+            return list(set(overdue) & set(ogrenci_ids))
+
+        debt_ids = set()
+        for s in soz:
+            kalan = float(getattr(s, 'kalan_borc', 0) or 0)
+            if kalan > 0.01:
+                debt_ids.add(s.ogrenci_id)
+        if mali == 'borclu':
+            return [oid for oid in ogrenci_ids if oid in debt_ids]
+        if mali == 'borcu_yok':
+            return [oid for oid in ogrenci_ids if oid not in debt_ids]
+        return ogrenci_ids
+
+    @classmethod
+    def _apply_manual_include_exclude(
+        cls,
+        kurum_id: int,
+        raw_entries: list[tuple],
+        filter_json: dict,
+        allowed_student_ids,
+    ) -> list[tuple]:
+        excluded_ogrenci = set(int(x) for x in (filter_json.get('excluded_ogrenci_ids') or []))
+        excluded_veli = set(int(x) for x in (filter_json.get('excluded_veli_ids') or []))
+        # Legacy keys
+        excluded_ids = set(int(x) for x in (filter_json.get('excluded_ids') or []))
+
+        filtered = []
+        for phone, rtype, oid, vid, name in raw_entries:
+            if oid and (oid in excluded_ogrenci or oid in excluded_ids):
+                continue
+            if vid and (vid in excluded_veli or vid in excluded_ids):
+                continue
+            filtered.append((phone, rtype, oid, vid, name))
+
+        include_ogrenci = filter_json.get('included_ogrenci_ids') or filter_json.get('included_ids') or []
+        include_veli = filter_json.get('included_veli_ids') or []
+        if include_ogrenci or include_veli:
+            filtered.extend(
+                cls._collect_custom_ids(
+                    kurum_id,
+                    include_ogrenci if include_ogrenci else [],
+                    include_veli,
+                    allowed_student_ids,
+                )
+            )
+        return filtered
 
     @classmethod
     def _scope_student_ids(cls, user, kurum_id: int, filter_json: dict):
@@ -466,7 +672,9 @@ class CampaignService:
         send_options: dict | None = None,
         save_as_template: bool = False,
         template_category: str = '',
+        channel_config_id=None,
     ) -> OutboundCampaign:
+        from apps.communication.application.account_resolver import AccountResolveError, AccountResolver
         from apps.communication.application.cost_estimator import estimate_campaign_cost
         from apps.communication.application.template_service import TemplateService
         from apps.communication.domain.models import CampaignAttachment, MessageTemplate
@@ -474,12 +682,30 @@ class CampaignService:
         audience_filter = audience_filter or {}
         if sube_id:
             audience_type = audience_filter.get('audience_type')
-            if audience_type in ('all_veliler', 'all_ogrenciler'):
+            if audience_type in ('all_veliler', 'all_ogrenciler', 'advanced', 'filtered'):
+                audience_filter = {**audience_filter, 'sube_id': sube_id}
+            elif not audience_filter.get('sube_id'):
                 audience_filter = {**audience_filter, 'sube_id': sube_id}
         if not body and not template_name and not template_id:
             raise ValidationError('Mesaj metni veya şablon adı zorunludur.')
 
         self._validate_audience_scope(kurum_id, audience_filter, user)
+
+        from apps.communication.infrastructure.repository import ChannelConfigRepository
+
+        try:
+            channel_config = AccountResolver.resolve(
+                kurum_id=kurum_id,
+                user=user,
+                sube_id=sube_id,
+                preferred_id=channel_config_id,
+                raise_if_missing=bool(channel_config_id),
+            )
+        except AccountResolveError as exc:
+            raise ValidationError(exc.message) from exc
+        if channel_config is None:
+            # Geriye uyum: henüz hesap tanımlanmamış kurumlarda stub/env gönderim
+            channel_config = ChannelConfigRepository.get_whatsapp_config(kurum_id)
 
         attachment_ids = attachment_ids or []
         attachment_qs = CampaignAttachment.objects.filter(kurum_id=kurum_id, id__in=attachment_ids)
@@ -531,6 +757,7 @@ class CampaignService:
             created_by_id,
             {
                 'sube_id': sube_id,
+                'channel_config': channel_config,
                 'title': title or f'Toplu gönderim {timezone.now():%d.%m.%Y %H:%M}',
                 'body_template': body or template_name,
                 'recipient_filter_json': audience_filter,
@@ -637,6 +864,7 @@ class CampaignService:
                 contact_identity=resolved.identity,
                 ogrenci_id=recipient.ogrenci_id or resolved.ogrenci_id,
                 veli_id=recipient.veli_id or resolved.veli_id,
+                channel_config=campaign.channel_config,
             )
             msg_type = message_type
             if campaign_attachments and not template_name:
@@ -780,12 +1008,20 @@ class CampaignStatsService:
         ]).count()
         cancelled = msgs.filter(status=MessageStatus.CANCELLED).count()
 
+        replied = Message.objects.filter(
+            conversation_id__in=msgs.values_list('conversation_id', flat=True),
+            direction=MessageDirection.INBOUND,
+            created_at__gte=campaign.created_at,
+        ).values('conversation_id').distinct().count()
+
         campaign.sent_count = sent
         campaign.delivered_count = delivered
         campaign.read_count = read
         campaign.failed_count = failed
+        campaign.replied_count = replied
         campaign.save(update_fields=[
-            'sent_count', 'delivered_count', 'read_count', 'failed_count', 'updated_at',
+            'sent_count', 'delivered_count', 'read_count', 'failed_count',
+            'replied_count', 'updated_at',
         ])
 
         cls._update_campaign_status(campaign, pending, failed, cancelled)

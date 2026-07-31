@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Role, Permission, ModulePermissions, RoleUpdateRequest } from './role.types';
 import { MODULE_NAMES, PERMISSION_TYPE_NAMES } from './role.constants';
 import RoleService from './role.service';
+import { accountLabel, fetchWhatsAppAccounts, WhatsAppAccount } from '@/lib/communication-api';
 import styles from './styles/role-drawer.module.css';
 
 interface RoleEditDrawerProps {
@@ -23,6 +24,7 @@ export default function RoleEditDrawer({ isOpen, role, mode, onClose, onSuccess 
   const [modulePermissions, setModulePermissions] = useState<ModulePermissions>({});
   const [rolePermissions, setRolePermissions] = useState<Permission[]>([]);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
+  const [whatsappAccounts, setWhatsappAccounts] = useState<WhatsAppAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,16 +35,19 @@ export default function RoleEditDrawer({ isOpen, role, mode, onClose, onSuccess 
     try {
       setLoading(true);
       
-      // Paralel olarak yetkileri ve rol detayını yükle
-      const [permResponse, roleResponse] = await Promise.all([
+      // Paralel olarak yetkileri, WhatsApp hesaplarını ve rol detayını yükle
+      const [permResponse, roleResponse, accountsResponse] = await Promise.all([
         RoleService.listPermissions(),
         RoleService.getRole(role.id),
+        fetchWhatsAppAccounts().catch(() => ({ accounts: [], total: 0 })),
       ]);
       
       if (permResponse.success) {
         setPermissions(permResponse.permissions);
         setModulePermissions(permResponse.modules);
       }
+
+      setWhatsappAccounts(accountsResponse.accounts || []);
       
       if (roleResponse.success) {
         const roleData = roleResponse.role;
@@ -54,6 +59,7 @@ export default function RoleEditDrawer({ isOpen, role, mode, onClose, onSuccess 
           level: roleData.level,
           is_active: roleData.is_active,
           permission_ids: roleData.permissions?.map(p => p.id) || [],
+          whatsapp_account_ids: roleData.whatsapp_account_ids || [],
         });
       }
       
@@ -109,6 +115,18 @@ export default function RoleEditDrawer({ isOpen, role, mode, onClose, onSuccess 
         ? currentIds.filter(id => id !== permissionId)
         : [...currentIds, permissionId];
       return { ...prev, permission_ids: newIds };
+    });
+  };
+
+  const toggleWhatsAppAccount = (accountId: string) => {
+    if (mode === 'view') return;
+
+    setFormData(prev => {
+      const currentIds = prev.whatsapp_account_ids || [];
+      const newIds = currentIds.includes(accountId)
+        ? currentIds.filter(id => id !== accountId)
+        : [...currentIds, accountId];
+      return { ...prev, whatsapp_account_ids: newIds };
     });
   };
 
@@ -368,6 +386,46 @@ export default function RoleEditDrawer({ isOpen, role, mode, onClose, onSuccess 
                       </div>
                     );
                   })}
+                </div>
+
+                <div className={styles.permissionsSection}>
+                  <h3 className={styles.sectionTitle}>
+                    <svg className={styles.sectionIcon} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684L10.4 6.6a1 1 0 01-.263 1.048l-1.548 1.548a11.037 11.037 0 005.516 5.516l1.548-1.548a1 1 0 011.048-.263l3.916 1.172a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                    WhatsApp Hesapları ({formData.whatsapp_account_ids?.length || 0})
+                  </h3>
+                  <p style={{ fontSize: 13, color: '#64748b', marginTop: -8, marginBottom: 12 }}>
+                    Bu role atanan kullanıcıların erişebileceği WhatsApp hesapları. Hiçbiri seçilmezse
+                    tüm hesaplara erişebilir.
+                  </p>
+                  <div className={styles.moduleBody}>
+                    {whatsappAccounts.length === 0 ? (
+                      <p style={{ fontSize: 13, color: '#94a3b8' }}>Tanımlı WhatsApp hesabı yok.</p>
+                    ) : (
+                      whatsappAccounts.map((acc) => (
+                        <div
+                          key={acc.id}
+                          className={`${styles.permissionItem} ${formData.whatsapp_account_ids?.includes(acc.id) ? styles.selected : ''}`}
+                          onClick={() => toggleWhatsAppAccount(acc.id)}
+                          style={{ cursor: isViewMode ? 'default' : 'pointer' }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.whatsapp_account_ids?.includes(acc.id) || false}
+                            onChange={() => toggleWhatsAppAccount(acc.id)}
+                            className={styles.permissionCheckbox}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={isViewMode}
+                          />
+                          <div className={styles.permissionInfo}>
+                            <span className={styles.permissionName}>{accountLabel(acc)}</span>
+                            <span className={styles.permissionCode}>{acc.display_phone || acc.phone_number_id}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </form>
             </>

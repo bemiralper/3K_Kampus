@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
+from apps.communication.infrastructure.repository import ChannelConfigRepository
 from apps.communication.permissions import CommunicationConfigPermission
 
 
@@ -28,7 +29,11 @@ class WhatsAppMetaTemplatesView(APIView):
         if not kurum_id:
             return Response({'error': 'kurum_id zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        client = WhatsAppCloudClient()
+        account_id = request.query_params.get('account_id') or request.query_params.get('channel_config_id')
+        channel_config = None
+        if account_id:
+            channel_config = ChannelConfigRepository.get_by_id(kurum_id, account_id)
+        client = WhatsAppCloudClient(channel_config=channel_config)
         result = client.list_message_templates(kurum_id)
         templates = []
         for tpl in result.get('templates', []):

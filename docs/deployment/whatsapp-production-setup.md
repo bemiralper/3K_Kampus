@@ -67,7 +67,7 @@ DJANGO_ENV=production
 FRONTEND_URL=https://app.sizinkurum.com
 ```
 
-Kurum bazlı token/numara override: Admin panel → **İletişim → Ayarlar** (`CommunicationChannelConfig`).
+Kurum bazlı token/numara override (çoklu hesap): Admin panel → **İletişim → WhatsApp Hesapları** (`CommunicationChannelConfig`). Her hesabın kendi `phone_number_id`, `access_token`, `webhook_verify_token` değerleri olabilir; tek bir webhook URL'si tüm hesaplar için ortaktır (Meta, gelen olayı `phone_number_id`'ye göre yönlendirir).
 
 ---
 

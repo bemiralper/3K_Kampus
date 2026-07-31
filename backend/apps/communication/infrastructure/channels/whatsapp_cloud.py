@@ -31,8 +31,17 @@ META_ERROR_HINTS = {
 class WhatsAppCloudClient(BaseChannelClient):
     channel = Channel.WHATSAPP
 
-    def _resolve_config(self, kurum_id: int) -> dict[str, str]:
-        db_config = ChannelConfigRepository.get_whatsapp_config(kurum_id)
+    def __init__(self, channel_config=None):
+        self.channel_config = channel_config
+
+    def with_config(self, channel_config) -> 'WhatsAppCloudClient':
+        """Hesap bazlı client kopyası (paylaşılan dispatcher için)."""
+        return WhatsAppCloudClient(channel_config=channel_config)
+
+    def _resolve_config(self, kurum_id: int, channel_config=None) -> dict[str, str]:
+        db_config = channel_config or self.channel_config
+        if db_config is None:
+            db_config = ChannelConfigRepository.get_whatsapp_config(kurum_id)
         raw_token = (
             (db_config.access_token_encrypted if db_config else '')
             or settings.WHATSAPP_ACCESS_TOKEN

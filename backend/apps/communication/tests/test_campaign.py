@@ -2,6 +2,7 @@
 Faz 3 — Kampanya ve toplu gönderim testleri.
 """
 from datetime import date
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
@@ -157,7 +158,11 @@ class CampaignAudienceTest(TestCase):
                 'egitim_yili_id': self.egitim_yili.id,
             },
         )
-        service.confirm(campaign)
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            service.confirm(campaign)
         campaign.refresh_from_db()
         self.assertEqual(campaign.status, CampaignStatus.QUEUED)
         self.assertEqual(OutboundQueueItem.objects.filter(campaign=campaign).count(), 2)
@@ -176,7 +181,11 @@ class CampaignAudienceTest(TestCase):
                 'egitim_yili_id': self.egitim_yili.id,
             },
         )
-        service.confirm(campaign)
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            service.confirm(campaign)
         service.cancel(campaign)
         campaign.refresh_from_db()
         self.assertEqual(campaign.status, CampaignStatus.CANCELLED)
@@ -199,14 +208,22 @@ class CampaignAudienceTest(TestCase):
                 'ogrenci_ids': [self.student_a.id],
             },
         )
-        service.confirm(campaign)
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            service.confirm(campaign)
         msg = Message.objects.filter(campaign=campaign).first()
         msg.status = MessageStatus.FAILED
         msg.failed_reason = 'Test fail'
         msg.save()
         OutboundQueueItem.objects.filter(message=msg).delete()
 
-        result = service.retry_failed(campaign)
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            result = service.retry_failed(campaign)
         self.assertEqual(result['retried_count'], 1)
         msg.refresh_from_db()
         self.assertEqual(msg.status, MessageStatus.PENDING)

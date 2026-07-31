@@ -14,6 +14,7 @@ DEFAULT_FOOTER_LINKS: tuple[tuple[str, str, str, int], ...] = (
     ('yasal', 'Gizlilik Politikası', '/yasal/gizlilik', 1),
     ('yasal', 'Kullanım Koşulları', '/yasal/kullanim', 2),
     ('yasal', 'Çerez Politikası', '/yasal/cerez', 3),
+    ('yasal', 'Veri Silme Talebi', '/sayfa/veri-silme', 4),
 )
 
 REQUIRED_YASAL_URLS = frozenset(

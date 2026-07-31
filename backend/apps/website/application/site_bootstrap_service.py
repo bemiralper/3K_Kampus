@@ -15,7 +15,7 @@ from apps.website.cms_models import (
     WebPageVersion,
 )
 from apps.website.models import SiteSettings, YasalMetin
-from apps.website.yasal_defaults import ensure_yasal_metinler, load_yasal_metin_defaults
+from apps.website.yasal_defaults import cms_preview_html, ensure_yasal_metinler, load_yasal_metin_defaults
 
 # Public static assets (frontend/public/cms/)
 IMG_HERO = '/cms/hero-campus.jpg'
@@ -389,6 +389,65 @@ def build_iletisim_blocks(kurum: Kurum, settings: SiteSettings | None, form_slug
     ]
 
 
+def build_veri_silme_blocks(kurum: Kurum, settings: SiteSettings | None, form_slug: str) -> list[dict]:
+    ad = kurum.gorunen_ad or kurum.ad or '3K Kampüs'
+    eposta = (settings.eposta if settings else '') or 'info@3kkampus.com'
+    telefon = (settings.telefon if settings else '') or getattr(kurum, 'telefon_sabit', '') or ''
+    return [
+        new_block('hero', {
+            'kicker': 'Yasal',
+            'title': 'Veri Silme Talebi',
+            'subtitle': 'Kişisel Verilerinizin Silinmesini Talep Edin',
+            'description': (
+                '6698 sayılı KVKK kapsamında işlenen kişisel verilerinizin silinmesi, '
+                'yok edilmesi veya anonim hâle getirilmesi için başvuru süreciniz.'
+            ),
+            'imageUrl': IMG_ACCENT,
+            'button1': {'label': 'KVKK Aydınlatma Metni', 'url': '/yasal/kvkk'},
+            'button2': {'label': 'Gizlilik Politikası', 'url': '/yasal/gizlilik'},
+        }),
+        new_block('richText', {
+            'html': (
+                '<h2>Veri Silme Talebinde Bulunma Hakkınız</h2>'
+                f'<p>6698 sayılı Kişisel Verilerin Korunması Kanunu ("KVKK") uyarınca, {ad} '
+                'tarafından işlenen kişisel verilerinizin silinmesini, yok edilmesini veya anonim '
+                'hâle getirilmesini her zaman talep edebilirsiniz.</p>'
+                '<h3>Talebinizi Nasıl İletebilirsiniz?</h3>'
+                '<ul>'
+                '<li>Bu sayfanın altındaki başvuru formunu doldurarak,</li>'
+                f'<li><strong>E-posta:</strong> <a href="mailto:{eposta}">{eposta}</a> adresine '
+                '"Veri Silme Talebi" konu başlığıyla yazarak,</li>'
+                + (f'<li><strong>Telefon:</strong> {telefon}</li>' if telefon else '')
+                + '</ul>'
+                '<p>Başvurunuzda kimliğinizi doğrulayabilmemiz için ad-soyad, T.C. kimlik numarası '
+                '(veya öğrenci/veli kaydınıza ait bilgi) ve size dönüş yapabileceğimiz bir iletişim '
+                'bilgisi paylaşmanızı rica ederiz.</p>'
+                '<h3>Hangi Veriler Silinir?</h3>'
+                '<p>Talebiniz üzerine; iletişim bilgileriniz (telefon, e-posta, WhatsApp mesaj '
+                'geçmişi), platform kullanım kayıtlarınız ve sistemde tuttuğumuz diğer kişisel '
+                'verileriniz silinir veya anonim hâle getirilir.</p>'
+                '<h3>Saklanması Gereken Veriler</h3>'
+                '<p>Türk Ticaret Kanunu, Vergi Usul Kanunu ve ilgili mevzuat gereği; fatura, '
+                'tahsilat ve muhasebe kayıtları gibi belgeler yasal saklama süreleri boyunca '
+                '(genellikle 10 yıl) saklanmak zorundadır. Bu nitelikteki veriler, yasal süre '
+                'dolmadan silinemez; bu veriler için talebiniz "işlemenin durdurulması / erişimin '
+                'kısıtlanması" şeklinde uygulanır.</p>'
+                '<h3>Talebiniz Ne Kadar Sürede Sonuçlanır?</h3>'
+                '<p>Başvurunuz, KVKK\'nın 13. maddesi uyarınca en kısa sürede ve en geç '
+                '<strong>30 gün</strong> içinde ücretsiz olarak sonuçlandırılır. İşlemin ayrıca bir '
+                'maliyet gerektirmesi hâlinde, Kişisel Verileri Koruma Kurulu tarafından belirlenen '
+                'tarifedeki ücret talep edilebilir.</p>'
+                '<p>Detaylı bilgi için <a href="/yasal/kvkk">KVKK Aydınlatma Metni</a>\'ni '
+                'inceleyebilirsiniz.</p>'
+            ),
+        }),
+        new_block('form', {
+            'formSlug': form_slug,
+            'title': 'Veri Silme Başvuru Formu',
+        }),
+    ]
+
+
 def _ensure_contact_form(kurum_id: int) -> str:
     form, _ = FormDefinition.objects.get_or_create(
         kurum_id=kurum_id,
@@ -460,6 +519,7 @@ def _ensure_menus(kurum_id: int) -> None:
         ('Gizlilik', '/yasal/gizlilik'),
         ('Çerez Politikası', '/yasal/cerez'),
         ('Kullanım Koşulları', '/yasal/kullanim'),
+        ('Veri Silme Talebi', '/sayfa/veri-silme'),
         ('İletişim', '/sayfa/iletisim'),
     ]
     for item in footer.items.all():
@@ -575,6 +635,21 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
         )
         if changed:
             pages_changed.append(slug)
+
+    veri_silme_force = not WebPage.objects.filter(kurum_id=kurum_id, slug='veri-silme').exists()
+    _, veri_silme_changed = _publish_page(
+        kurum_id,
+        slug='veri-silme',
+        title='Veri Silme Talebi',
+        blocks=build_veri_silme_blocks(kurum, settings, form_slug),
+        show_in_menu=False,
+        meta_title='Veri Silme Talebi',
+        meta_description='Kişisel verilerinizin silinmesini nasıl talep edebileceğinizi açıklayan sayfa.',
+        label='Veri silme talebi sayfası bootstrap',
+        force=veri_silme_force,
+    )
+    if veri_silme_changed:
+        pages_changed.append('veri-silme')
 
     legal = _ensure_legal_pages(kurum_id, force=False)
 

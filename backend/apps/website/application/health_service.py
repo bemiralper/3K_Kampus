@@ -13,7 +13,7 @@ from apps.website.models import SiteSettings
 # UI / mevcut üretim izinden bilinen GA4 (kullanıcı panelden değiştirebilir)
 DEFAULT_GA4_ID = 'G-3NWSLBGCK8'
 
-# Kamu kurumsal site (LMS app.3kkampus.com değil)
+# Kamu kurumsal site / LMS — tek domain: www.3kkampus.com
 DEFAULT_PUBLIC_SITE_URL = 'https://www.3kkampus.com'
 
 DEFAULT_ROBOTS_TXT = """User-agent: *

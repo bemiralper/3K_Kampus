@@ -8,9 +8,9 @@ class WhatsAppConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunicationChannelConfig
         fields = [
-            'id', 'channel', 'phone_number_id', 'waba_id',
+            'id', 'channel', 'name', 'phone_number_id', 'waba_id',
             'webhook_verify_token', 'display_phone', 'is_active',
-            'created_at', 'updated_at',
+            'is_default', 'scope_type', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'channel', 'created_at', 'updated_at']
 
@@ -21,8 +21,9 @@ class WhatsAppConfigWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunicationChannelConfig
         fields = [
-            'phone_number_id', 'waba_id', 'access_token',
+            'name', 'phone_number_id', 'waba_id', 'access_token',
             'webhook_verify_token', 'display_phone', 'is_active',
+            'is_default', 'scope_type',
         ]
 
     def update(self, instance, validated_data):
@@ -38,6 +39,59 @@ class WhatsAppConfigWriteSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class WhatsAppAccountSerializer(serializers.ModelSerializer):
+    role_ids = serializers.SerializerMethodField()
+    sube_ids = serializers.SerializerMethodField()
+    role_names = serializers.SerializerMethodField()
+    sube_names = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CommunicationChannelConfig
+        fields = [
+            'id', 'channel', 'name', 'phone_number_id', 'waba_id',
+            'webhook_verify_token', 'display_phone', 'is_active', 'is_default',
+            'scope_type', 'quota_json', 'last_synced_at',
+            'role_ids', 'sube_ids', 'role_names', 'sube_names',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_role_ids(self, obj):
+        return list(obj.allowed_roles.values_list('id', flat=True))
+
+    def get_sube_ids(self, obj):
+        return list(obj.allowed_subes.values_list('id', flat=True))
+
+    def get_role_names(self, obj):
+        return list(obj.allowed_roles.values_list('name', flat=True))
+
+    def get_sube_names(self, obj):
+        return list(obj.allowed_subes.values_list('ad', flat=True))
+
+
+class WhatsAppAccountWriteSerializer(serializers.ModelSerializer):
+    access_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    app_secret = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    role_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True,
+    )
+    sube_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True,
+    )
+
+    class Meta:
+        model = CommunicationChannelConfig
+        fields = [
+            'name', 'phone_number_id', 'waba_id', 'access_token', 'app_secret',
+            'webhook_verify_token', 'display_phone', 'is_active', 'is_default',
+            'scope_type', 'quota_json', 'role_ids', 'sube_ids',
+        ]
+
+
 class ConversationListSerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
     veli_ad = serializers.SerializerMethodField()
@@ -45,15 +99,25 @@ class ConversationListSerializer(serializers.ModelSerializer):
     kurum_ad = serializers.SerializerMethodField()
     sube = serializers.SerializerMethodField()
 
+    channel_config_id = serializers.UUIDField(read_only=True, allow_null=True)
+    channel_config_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Conversation
         fields = [
-            'id', 'channel', 'contact_phone', 'contact_type', 'contact_name',
+            'id', 'channel', 'channel_config_id', 'channel_config_name',
+            'contact_phone', 'contact_type', 'contact_name',
             'veli_ad', 'ogrenci_ad', 'kurum_ad', 'sube',
             'status', 'subject', 'last_message_at', 'last_message_preview',
             'unread_count_coach', 'ogrenci_id', 'veli_id', 'assigned_coach_id',
             'created_at',
         ]
+
+    def get_channel_config_name(self, obj) -> str:
+        cfg = getattr(obj, 'channel_config', None)
+        if cfg:
+            return cfg.name or cfg.display_phone or ''
+        return ''
 
     def get_contact_name(self, obj) -> str:
         if obj.veli_id and obj.veli:

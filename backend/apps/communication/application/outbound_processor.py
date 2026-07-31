@@ -107,13 +107,40 @@ def _send_attachment_message(client, kurum_id, phone, message, attachment) -> di
     )
 
 
+def _resolve_channel_config(item):
+    message = item.message
+    conversation = getattr(message, 'conversation', None)
+    if item.campaign_id and getattr(item, 'campaign', None):
+        cfg = getattr(item.campaign, 'channel_config', None)
+        if cfg is not None:
+            return cfg
+        if item.campaign.channel_config_id:
+            from apps.communication.domain.models import CommunicationChannelConfig
+            return CommunicationChannelConfig.objects.filter(
+                id=item.campaign.channel_config_id,
+            ).first()
+    if conversation is not None:
+        cfg = getattr(conversation, 'channel_config', None)
+        if cfg is not None:
+            return cfg
+        if conversation.channel_config_id:
+            from apps.communication.domain.models import CommunicationChannelConfig
+            return CommunicationChannelConfig.objects.filter(
+                id=conversation.channel_config_id,
+            ).first()
+    return None
+
+
 def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
     """
     Tek kuyruk kaydını işler. Başarılıysa True döner.
     """
     if client is None:
         channel = getattr(item.message.conversation, 'channel', None)
-        client = ChannelDispatcher().get_client(channel)
+        client = ChannelDispatcher().get_client(
+            channel,
+            channel_config=_resolve_channel_config(item),
+        )
     OutboundQueueRepository.lock_item(item)
 
     if item.campaign_id and item.campaign:
@@ -224,7 +251,10 @@ def process_pending_batch(limit: int | None = None) -> dict[str, int]:
         if idx > 0 and throttle > 0:
             time.sleep(throttle / 1000.0)
         channel = getattr(item.message.conversation, 'channel', None)
-        client = dispatcher.get_client(channel)
+        client = dispatcher.get_client(
+            channel,
+            channel_config=_resolve_channel_config(item),
+        )
         if process_queue_item(item, client):
             sent += 1
         else:

@@ -24,6 +24,14 @@ import {
   updateTemplate,
 } from "@/lib/communication-api";
 
+const EMPTY_FORM: TemplateEditorForm = {
+  name: "",
+  body: "",
+  category: "ozel",
+  audience_scope: "admin",
+  odev_pdf_role: "",
+};
+
 export default function SablonlarClient() {
   const searchParams = useSearchParams();
   const initialCategory = searchParams.get("category") || "";
@@ -33,21 +41,17 @@ export default function SablonlarClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState(initialCategory);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<MessageTemplateItem | null>(null);
-  const [form, setForm] = useState<TemplateEditorForm>({
-    name: "",
-    body: "",
-    category: "ozel",
-    audience_scope: "admin",
-    odev_pdf_role: "",
-  });
+  const [form, setForm] = useState<TemplateEditorForm>(EMPTY_FORM);
   const [composerState, setComposerState] = useState<ComposerState>(createComposerState(""));
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
   const [newCategoryAudience, setNewCategoryAudience] = useState("admin");
   const [categorySaving, setCategorySaving] = useState(false);
+  const [search, setSearch] = useState("");
 
   const labels = useMemo(() => categoryLabelMap(categories), [categories]);
 
@@ -75,12 +79,16 @@ export default function SablonlarClient() {
     load();
   }, [load]);
 
+  const resetForm = (category?: string) => {
+    setForm({ ...EMPTY_FORM, category: category || categoryFilter || "ozel" });
+    setComposerState(createComposerState(""));
+  };
+
   const openCreate = () => {
     setEditing(null);
-    const defaultCat = categoryFilter || "ozel";
-    setForm({ name: "", body: "", category: defaultCat, audience_scope: "admin", odev_pdf_role: "" });
-    setComposerState(createComposerState(""));
+    resetForm();
     setSuccessMsg(null);
+    setDrawerOpen(true);
   };
 
   const openEdit = (t: MessageTemplateItem) => {
@@ -94,6 +102,12 @@ export default function SablonlarClient() {
     });
     setComposerState(templateFormToComposer(t.body));
     setSuccessMsg(null);
+    setDrawerOpen(true);
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setEditing(null);
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -107,9 +121,8 @@ export default function SablonlarClient() {
       } else {
         await createTemplate(payload);
       }
-      setEditing(null);
-      setForm({ name: "", body: "", category: categoryFilter || "ozel", audience_scope: "admin", odev_pdf_role: "" });
-      setComposerState(createComposerState(""));
+      closeDrawer();
+      resetForm();
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kayıt başarısız");
@@ -133,9 +146,8 @@ export default function SablonlarClient() {
         setSuccessMsg(res.warning);
       }
       if (editing?.id === tpl.id) {
-        setEditing(null);
-        setForm({ name: "", body: "", category: categoryFilter || "ozel", audience_scope: "admin", odev_pdf_role: "" });
-        setComposerState(createComposerState(""));
+        closeDrawer();
+        resetForm();
       }
       await load();
     } catch (err) {
@@ -149,10 +161,12 @@ export default function SablonlarClient() {
     setCategorySaving(true);
     setError(null);
     try {
-      await createTemplateCategory(newCategoryLabel.trim(), newCategoryAudience);
+      const created = await createTemplateCategory(newCategoryLabel.trim(), newCategoryAudience);
       setNewCategoryLabel("");
       setNewCategoryAudience("admin");
+      setShowCategoryForm(false);
       await loadCategories();
+      setCategoryFilter(created.slug);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kategori eklenemedi");
     } finally {
@@ -187,6 +201,14 @@ export default function SablonlarClient() {
     [activeCategories],
   );
 
+  const visibleTemplates = useMemo(() => {
+    if (!search.trim()) return templates;
+    const q = search.trim().toLowerCase();
+    return templates.filter(
+      (t) => t.name.toLowerCase().includes(q) || t.body.toLowerCase().includes(q),
+    );
+  }, [templates, search]);
+
   return (
     <CommunicationPageShell
       title="Mesaj Şablonları"
@@ -196,11 +218,16 @@ export default function SablonlarClient() {
         { label: "İletişim", href: "/admin/iletisim/kampanyalar" },
         { label: "Şablonlar" },
       ]}
+      actions={
+        <button type="button" className="comm-btn-primary" onClick={openCreate}>
+          + Yeni Şablon
+        </button>
+      }
     >
       {error && <div className="comm-alert comm-alert-danger">{error}</div>}
       {successMsg && <div className="comm-alert comm-alert-success">{successMsg}</div>}
 
-      <div className="comm-stat-grid" style={{ marginBottom: "1.5rem" }}>
+      <div className="comm-stat-grid" style={{ marginBottom: "1.25rem" }}>
         <div className="comm-stat-card">
           <span className="comm-stat-value">{templates.length}</span>
           <span className="comm-stat-label">Aktif şablon</span>
@@ -219,160 +246,176 @@ export default function SablonlarClient() {
         </div>
       </div>
 
-      <div className="comm-sablonlar-v2">
-        <aside className="comm-sablonlar-sidebar comm-card">
-          <div className="comm-sablonlar-sidebar-header">
-            <h3>Kategoriler</h3>
+      <div className="comm-tabbar">
+        <div className="comm-tabs" role="tablist" aria-label="Şablon kategorileri">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={categoryFilter === ""}
+            className={`comm-tab${categoryFilter === "" ? " active" : ""}`}
+            onClick={() => setCategoryFilter("")}
+          >
+            Tümü
+            <span className="comm-tab-count">{totalTemplateCount}</span>
+          </button>
+          {activeCategories.map((cat) => (
             <button
+              key={cat.id}
               type="button"
-              className="comm-link-btn"
-              onClick={() => setShowCategoryModal((v) => !v)}
+              role="tab"
+              aria-selected={categoryFilter === cat.slug}
+              className={`comm-tab${categoryFilter === cat.slug ? " active" : ""}`}
+              onClick={() => setCategoryFilter(cat.slug)}
+              title={TEMPLATE_AUDIENCE_LABELS[cat.audience_scope] || cat.audience_scope}
             >
-              {showCategoryModal ? "Kapat" : "+ Ekle"}
-            </button>
-          </div>
-
-          {showCategoryModal && (
-            <form className="comm-sablon-category-add-form" onSubmit={handleAddCategory}>
-              <input
-                type="text"
-                placeholder="Yeni kategori adı"
-                value={newCategoryLabel}
-                onChange={(e) => setNewCategoryLabel(e.target.value)}
-                aria-label="Yeni kategori adı"
-              />
-              <select
-                value={newCategoryAudience}
-                onChange={(e) => setNewCategoryAudience(e.target.value)}
-                aria-label="Hedef birim"
-              >
-                {Object.entries(TEMPLATE_AUDIENCE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-              <button type="submit" className="comm-btn-primary" disabled={categorySaving}>
-                Ekle
-              </button>
-            </form>
-          )}
-
-          <ul className="comm-sablon-category-list">
-            <li>
-              <button
-                type="button"
-                className={`comm-sablon-category-item${categoryFilter === "" ? " active" : ""}`}
-                onClick={() => setCategoryFilter("")}
-              >
-                Tümü
-                <span>{totalTemplateCount}</span>
-              </button>
-            </li>
-            {activeCategories.map((cat) => (
-              <li key={cat.id}>
-                <button
-                  type="button"
-                  className={`comm-sablon-category-item${categoryFilter === cat.slug ? " active" : ""}`}
-                  onClick={() => setCategoryFilter(cat.slug)}
+              {cat.label}
+              <span className="comm-tab-count">{cat.template_count ?? 0}</span>
+              {(cat.template_count ?? 0) === 0 && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="comm-tab-remove"
+                  aria-label={`${cat.label} kategorisini kaldır`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteCategory(cat);
+                  }}
                 >
-                  <span className="comm-sablon-category-item-label">
-                    {cat.label}
-                    <small>{TEMPLATE_AUDIENCE_LABELS[cat.audience_scope] || cat.audience_scope}</small>
-                  </span>
-                  <span>{cat.template_count ?? 0}</span>
-                </button>
-                {(cat.template_count ?? 0) === 0 && (
-                  <button
-                    type="button"
-                    className="comm-sablon-category-remove"
-                    aria-label={`${cat.label} kategorisini kaldır`}
-                    onClick={() => handleDeleteCategory(cat)}
-                  >
-                    ×
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </aside>
-
-        <section className="comm-sablonlar-list comm-card">
-          <div className="comm-sablonlar-toolbar">
-            <h3>{categoryFilter ? labels[categoryFilter] || categoryFilter : "Tüm şablonlar"}</h3>
-            <button type="button" className="comm-btn-primary" onClick={openCreate}>
-              Yeni Şablon
-            </button>
-          </div>
-
-          {loading ? (
-            <p className="comm-studio-muted">Yükleniyor…</p>
-          ) : (
-            <div className="comm-sablon-card-grid">
-              {templates.map((t) => (
-                <div
-                  key={t.id}
-                  className={`comm-sablon-card${editing?.id === t.id ? " selected" : ""}`}
-                >
-                  <button type="button" className="comm-sablon-card-main" onClick={() => openEdit(t)}>
-                    <div className="comm-sablon-card-head">
-                      <strong>{t.name}</strong>
-                      <div className="comm-sablon-card-badges">
-                        {t.is_system_active && (
-                          <span className="comm-sablon-card-badge comm-sablon-card-badge-active">
-                            Aktif
-                          </span>
-                        )}
-                        <span className="comm-sablon-card-badge">
-                          {t.category_label || labels[t.category] || t.category}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="comm-sablon-card-body">
-                      {t.body.slice(0, 100)}{t.body.length > 100 ? "…" : ""}
-                    </p>
-                    {t.is_system_active && t.system_usages?.length ? (
-                      <p className="comm-sablon-card-usage">
-                        {t.system_usages.map((u) => u.label).join(" · ")}
-                      </p>
-                    ) : null}
-                    <div className="comm-sablon-card-meta">
-                      <span>{TEMPLATE_AUDIENCE_LABELS[t.audience_scope || "genel"]}</span>
-                      <span>{t.usage_count} kullanım</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="comm-sablon-card-delete"
-                    aria-label={`${t.name} sil`}
-                    onClick={() => handleDelete(t)}
-                  >
-                    Sil
-                  </button>
-                </div>
-              ))}
-              {templates.length === 0 && (
-                <p className="comm-studio-muted">Henüz şablon yok. Yeni şablon ekleyin.</p>
+                  ×
+                </span>
               )}
-            </div>
-          )}
-        </section>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="comm-tab comm-tab-add"
+            onClick={() => setShowCategoryForm((v) => !v)}
+          >
+            + Kategori
+          </button>
+        </div>
 
-        <TemplateEditorPanel
-          editing={editing}
-          form={form}
-          categories={categories}
-          saving={saving}
-          onChange={setForm}
-          composerState={composerState}
-          onComposerChange={setComposerState}
-          onSubmit={handleSubmit}
-          onCancel={() => {
-            setEditing(null);
-            setForm({ name: "", body: "", category: categoryFilter || "ozel", audience_scope: "admin", odev_pdf_role: "" });
-            setComposerState(createComposerState(""));
-          }}
-          onDelete={editing ? () => handleDelete(editing) : undefined}
+        <input
+          type="search"
+          className="comm-tabbar-search"
+          placeholder="Şablon ara…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {showCategoryForm && (
+        <form className="comm-card comm-sablon-category-add-form" onSubmit={handleAddCategory}>
+          <input
+            type="text"
+            placeholder="Yeni kategori adı"
+            value={newCategoryLabel}
+            onChange={(e) => setNewCategoryLabel(e.target.value)}
+            aria-label="Yeni kategori adı"
+            autoFocus
+          />
+          <select
+            value={newCategoryAudience}
+            onChange={(e) => setNewCategoryAudience(e.target.value)}
+            aria-label="Hedef birim"
+          >
+            {Object.entries(TEMPLATE_AUDIENCE_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+          <button type="submit" className="comm-btn-primary" disabled={categorySaving}>
+            {categorySaving ? "Ekleniyor…" : "Ekle"}
+          </button>
+          <button type="button" className="comm-btn-secondary" onClick={() => setShowCategoryForm(false)}>
+            İptal
+          </button>
+        </form>
+      )}
+
+      {loading ? (
+        <p className="comm-studio-muted">Yükleniyor…</p>
+      ) : visibleTemplates.length === 0 ? (
+        <div className="comm-card" style={{ textAlign: "center", padding: "2.5rem" }}>
+          <span style={{ fontSize: "2.5rem", display: "block", marginBottom: "0.75rem" }}>📭</span>
+          <p className="comm-studio-muted" style={{ margin: "0 0 1rem" }}>
+            {search ? "Aramayla eşleşen şablon yok." : "Bu kategoride henüz şablon yok."}
+          </p>
+          {!search && (
+            <button type="button" className="comm-btn-primary" onClick={openCreate}>
+              Yeni şablon ekleyin
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="comm-sablon-card-grid">
+          {visibleTemplates.map((t) => (
+            <div key={t.id} className="comm-sablon-card">
+              <button type="button" className="comm-sablon-card-main" onClick={() => openEdit(t)}>
+                <div className="comm-sablon-card-head">
+                  <strong>{t.name}</strong>
+                  <div className="comm-sablon-card-badges">
+                    {t.is_system_active && (
+                      <span className="comm-sablon-card-badge comm-sablon-card-badge-active">
+                        Aktif
+                      </span>
+                    )}
+                    {!categoryFilter && (
+                      <span className="comm-sablon-card-badge">
+                        {t.category_label || labels[t.category] || t.category}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <p className="comm-sablon-card-body">
+                  {t.body.slice(0, 100)}{t.body.length > 100 ? "…" : ""}
+                </p>
+                {t.is_system_active && t.system_usages?.length ? (
+                  <p className="comm-sablon-card-usage">
+                    {t.system_usages.map((u) => u.label).join(" · ")}
+                  </p>
+                ) : null}
+                <div className="comm-sablon-card-meta">
+                  <span>{TEMPLATE_AUDIENCE_LABELS[t.audience_scope || "genel"]}</span>
+                  <span>{t.usage_count} kullanım</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="comm-sablon-card-delete"
+                aria-label={`${t.name} sil`}
+                onClick={() => handleDelete(t)}
+              >
+                Sil
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {drawerOpen && (
+        <>
+          <div className="comm-drawer-overlay" onClick={closeDrawer} role="presentation" />
+          <div
+            className="comm-drawer comm-sablon-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sablon-drawer-title"
+          >
+            <TemplateEditorPanel
+              editing={editing}
+              form={form}
+              categories={categories}
+              saving={saving}
+              onChange={setForm}
+              composerState={composerState}
+              onComposerChange={setComposerState}
+              onSubmit={handleSubmit}
+              onCancel={closeDrawer}
+              onDelete={editing ? () => handleDelete(editing) : undefined}
+            />
+          </div>
+        </>
+      )}
     </CommunicationPageShell>
   );
 }

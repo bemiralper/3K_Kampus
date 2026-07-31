@@ -18,7 +18,7 @@ export default function AdminMesajlarContent() {
       variant="inbox"
     >
       <div className="comm-admin-inbox">
-        <MesajlarClient initialConversationId={initialConversationId} />
+        <MesajlarClient initialConversationId={initialConversationId} showAccountFilter />
       </div>
     </CommunicationPageShell>
   );

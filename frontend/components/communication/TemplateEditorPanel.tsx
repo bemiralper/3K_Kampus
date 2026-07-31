@@ -76,7 +76,7 @@ export default function TemplateEditorPanel({
   return (
     <div className="comm-card comm-sablon-editor">
       <div className="comm-sablon-editor-header">
-        <h2>{editing ? "Şablon Düzenle" : "Yeni Şablon"}</h2>
+        <h2 id="sablon-drawer-title">{editing ? "Şablon Düzenle" : "Yeni Şablon"}</h2>
         {editing && onDelete && (
           <button type="button" className="comm-link-btn comm-link-danger" onClick={onDelete}>
             Sil

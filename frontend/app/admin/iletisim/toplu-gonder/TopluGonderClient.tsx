@@ -6,6 +6,7 @@ import {
   createComposerState,
   StepWizard,
   BulkSendStudio,
+  AdvancedFilterPanel,
 } from "@/components/communication";
 import "@/components/communication/communication.css";
 import { AudienceFilter, CampaignPreviewStats, previewCampaign } from "@/lib/communication-api";
@@ -30,7 +31,8 @@ export type BulkAudienceType =
   | "all_ogrenciler"
   | "sinif"
   | "coach_students"
-  | "coach_parents";
+  | "coach_parents"
+  | "advanced";
 
 export interface AudienceOption {
   value: BulkAudienceType;
@@ -45,6 +47,7 @@ export const ADMIN_AUDIENCE_OPTIONS: AudienceOption[] = [
   { value: "sinif", icon: "🏫", title: "Sınıf", description: "Belirli bir sınıfın velilerine gönder" },
   { value: "coach_students", icon: "🎯", title: "Koç öğrencileri", description: "Koçluk kapsamındaki öğrencilere gönder" },
   { value: "coach_parents", icon: "👪", title: "Koç velileri", description: "Koçluk kapsamındaki öğrenci velilerine gönder" },
+  { value: "advanced", icon: "🧭", title: "Gelişmiş filtre", description: "Sınıf, kalem, koç, mali durum gibi kriterlere göre özel kitle oluştur" },
 ];
 
 export const COACH_AUDIENCE_OPTIONS: AudienceOption[] = [
@@ -78,14 +81,18 @@ export default function TopluGonderClient({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [siniflar, setSiniflar] = useState<Array<{ id: number; ad: string }>>([]);
+  const [advancedFilter, setAdvancedFilter] = useState<AudienceFilter>({});
 
   const buildFilter = useCallback((): AudienceFilter => {
     const egitimYiliId = readEgitimYiliId();
     const filter: AudienceFilter = { audience_type: audienceType };
     if (egitimYiliId) filter.egitim_yili_id = egitimYiliId;
     if (audienceType === "sinif" && sinifId) filter.sinif_id = Number(sinifId);
+    if (audienceType === "advanced") {
+      Object.assign(filter, advancedFilter);
+    }
     return filter;
-  }, [audienceType, sinifId]);
+  }, [audienceType, sinifId, advancedFilter]);
 
   useEffect(() => {
     if (isCoach) return;
@@ -126,7 +133,7 @@ export default function TopluGonderClient({
 
   useEffect(() => {
     if (step === 0) refreshMiniPreview();
-  }, [step, audienceType, sinifId, refreshMiniPreview]);
+  }, [step, audienceType, sinifId, advancedFilter, refreshMiniPreview]);
 
   const handleNext = () => {
     if (step === 0 && audienceType === "sinif" && !sinifId) {
@@ -163,7 +170,7 @@ export default function TopluGonderClient({
 
       {step === 0 && (
         <div className="comm-step-panel comm-card">
-          <h2 style={{ margin: "0 0 1rem", fontSize: "1rem" }}>Hedef kitleyi seçin</h2>
+          <h2 className="comm-step-panel-title">Hedef kitleyi seçin</h2>
           <div className="comm-audience-grid">
             {audienceOptions.map((opt) => (
               <label
@@ -202,13 +209,27 @@ export default function TopluGonderClient({
             </div>
           )}
 
-          {miniPreview && (
-            <div className="comm-studio-mini-stats" style={{ marginTop: "1.25rem" }}>
-              <div><strong>{previewLoading ? "…" : miniPreview.total_recipients}</strong><span>Toplam</span></div>
-              <div><strong>{previewLoading ? "…" : miniPreview.veli_count}</strong><span>Veli</span></div>
-              <div><strong>{previewLoading ? "…" : miniPreview.ogrenci_count}</strong><span>Öğrenci</span></div>
+          {audienceType === "advanced" && !isCoach && (
+            <div style={{ marginTop: "1rem" }}>
+              <AdvancedFilterPanel
+                value={advancedFilter}
+                onChange={(patch) => setAdvancedFilter((prev) => ({ ...prev, ...patch }))}
+              />
             </div>
           )}
+
+          <div className="comm-audience-preview-banner">
+            <div className="comm-audience-preview-count">
+              <strong>
+                {previewLoading ? "…" : (miniPreview?.total_recipients ?? 0).toLocaleString("tr-TR")}
+              </strong>
+              <span>alıcıya gönderilecek</span>
+            </div>
+            <div className="comm-audience-preview-breakdown">
+              <span>{previewLoading ? "…" : miniPreview?.veli_count ?? 0} veli</span>
+              <span>{previewLoading ? "…" : miniPreview?.ogrenci_count ?? 0} öğrenci</span>
+            </div>
+          </div>
         </div>
       )}
 

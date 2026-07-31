@@ -91,7 +91,7 @@ class InboundProcessor:
                     continue
 
                 try:
-                    self._process_value(kurum_id, value)
+                    self._process_value(kurum_id, value, channel_config=config)
                     RawWebhookEventRepository.mark_processed(event, WebhookProcessingStatus.PROCESSED)
                     processed += 1
                 except Exception as exc:
@@ -113,13 +113,21 @@ class InboundProcessor:
 
         return {'processed': processed, 'errors': errors}
 
-    def _process_value(self, kurum_id: int | None, value: dict[str, Any]) -> None:
+    def _process_value(
+        self,
+        kurum_id: int | None,
+        value: dict[str, Any],
+        *,
+        channel_config=None,
+    ) -> None:
         for status in value.get('statuses', []):
             self._process_status(status)
 
         for msg in value.get('messages', []):
             if kurum_id:
-                self._process_inbound_message(kurum_id, msg, value)
+                self._process_inbound_message(
+                    kurum_id, msg, value, channel_config=channel_config,
+                )
 
     def _process_status(self, status: dict[str, Any]) -> None:
         provider_message_id = status.get('id', '')
@@ -164,6 +172,8 @@ class InboundProcessor:
         kurum_id: int,
         msg: dict[str, Any],
         value: dict[str, Any],
+        *,
+        channel_config=None,
     ) -> None:
         provider_message_id = msg.get('id', '')
         if not provider_message_id:
@@ -187,6 +197,7 @@ class InboundProcessor:
             contact_identity=resolved.identity,
             ogrenci_id=resolved.ogrenci_id,
             veli_id=resolved.veli_id,
+            channel_config=channel_config,
         )
 
         if not created:
@@ -199,6 +210,9 @@ class InboundProcessor:
                 updated = True
             if resolved.contact_type != conversation.contact_type and resolved.contact_type != 'RAW_PHONE':
                 conversation.contact_type = resolved.contact_type
+                updated = True
+            if channel_config and conversation.channel_config_id != channel_config.id:
+                conversation.channel_config = channel_config
                 updated = True
             if updated:
                 conversation.save()
@@ -233,7 +247,9 @@ class InboundProcessor:
         )
 
         if media_meta.get('media_id'):
-            self._save_inbound_media(kurum_id, message, media_meta)
+            self._save_inbound_media(
+                kurum_id, message, media_meta, channel_config=channel_config,
+            )
 
         ConversationRepository.update_on_message(
             conversation,
@@ -241,7 +257,37 @@ class InboundProcessor:
             direction=MessageDirection.INBOUND,
         )
 
-    def _save_inbound_media(self, kurum_id: int, message, media_meta: dict[str, Any]) -> None:
+        self._bump_campaign_reply_count(conversation)
+
+    def _bump_campaign_reply_count(self, conversation) -> None:
+        """Kampanya sonrası aynı konuşmadaki inbound yanıtları say."""
+        from apps.communication.domain.models import Message, OutboundCampaign
+        from django.db.models import F
+
+        last_campaign_msg = (
+            Message.objects.filter(
+                conversation_id=conversation.id,
+                direction=MessageDirection.OUTBOUND,
+                campaign_id__isnull=False,
+            )
+            .order_by('-created_at')
+            .first()
+        )
+        if not last_campaign_msg or not last_campaign_msg.campaign_id:
+            return
+        OutboundCampaign.objects.filter(id=last_campaign_msg.campaign_id).update(
+            replied_count=F('replied_count') + 1,
+            updated_at=timezone.now(),
+        )
+
+    def _save_inbound_media(
+        self,
+        kurum_id: int,
+        message,
+        media_meta: dict[str, Any],
+        *,
+        channel_config=None,
+    ) -> None:
         from django.core.files.base import ContentFile
 
         from apps.communication.domain.models import MessageAttachment
@@ -251,7 +297,9 @@ class InboundProcessor:
         if not media_id:
             return
 
-        client = ChannelDispatcher().get_client(Channel.WHATSAPP)
+        client = ChannelDispatcher().get_client(
+            Channel.WHATSAPP, channel_config=channel_config,
+        )
         downloaded = client.download_media(kurum_id, media_id)
         if not downloaded:
             MessageAttachment.objects.create(

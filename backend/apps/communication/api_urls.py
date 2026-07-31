@@ -11,7 +11,15 @@ from apps.communication.interfaces.views.campaigns import (
     CampaignPreviewView,
     CampaignRetryFailedView,
 )
+from apps.communication.interfaces.views.accounts import (
+    WhatsAppAccessibleAccountsView,
+    WhatsAppAccountDetailView,
+    WhatsAppAccountListCreateView,
+    WhatsAppAccountSyncTemplatesView,
+    WhatsAppAccountTestView,
+)
 from apps.communication.interfaces.views.config import WhatsAppConfigTestView, WhatsAppConfigView
+from apps.communication.interfaces.views.queue import OutboundQueueListView
 from apps.communication.interfaces.views.conversation_open import ConversationOpenView
 from apps.communication.interfaces.views.meta_templates import WhatsAppMetaTemplatesView
 from apps.communication.interfaces.views.conversations import (
@@ -50,6 +58,16 @@ urlpatterns = [
     path('config/whatsapp/', WhatsAppConfigView.as_view(), name='whatsapp-config'),
     path('config/whatsapp/test/', WhatsAppConfigTestView.as_view(), name='whatsapp-config-test'),
     path('config/whatsapp/templates/', WhatsAppMetaTemplatesView.as_view(), name='whatsapp-meta-templates'),
+    path('accounts/', WhatsAppAccountListCreateView.as_view(), name='whatsapp-accounts'),
+    path('accounts/accessible/', WhatsAppAccessibleAccountsView.as_view(), name='whatsapp-accounts-accessible'),
+    path('accounts/<uuid:account_id>/', WhatsAppAccountDetailView.as_view(), name='whatsapp-account-detail'),
+    path('accounts/<uuid:account_id>/test/', WhatsAppAccountTestView.as_view(), name='whatsapp-account-test'),
+    path(
+        'accounts/<uuid:account_id>/sync-templates/',
+        WhatsAppAccountSyncTemplatesView.as_view(),
+        name='whatsapp-account-sync-templates',
+    ),
+    path('queue/', OutboundQueueListView.as_view(), name='outbound-queue'),
     path('conversations/open/', ConversationOpenView.as_view(), name='conversation-open'),
     path('conversations/', ConversationListView.as_view(), name='conversation-list'),
     path('conversations/<uuid:conversation_id>/', ConversationDetailView.as_view(), name='conversation-detail'),

@@ -196,6 +196,8 @@ export async function fetchConversations(params?: {
   filter?: ConversationFilter;
   search?: string;
   ogrenci_id?: number;
+  channel_config_id?: string;
+  account_id?: string;
 }): Promise<ConversationsResponse> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const search = new URLSearchParams();
@@ -204,6 +206,8 @@ export async function fetchConversations(params?: {
   if (params?.filter === 'archived') search.set('archived', '1');
   if (params?.search) search.set('search', params.search);
   if (params?.ogrenci_id) search.set('ogrenci_id', String(params.ogrenci_id));
+  const accountId = params?.channel_config_id || params?.account_id;
+  if (accountId) search.set('channel_config_id', accountId);
   const qs = search.toString();
   return request<ConversationsResponse>(`/conversations/${qs ? `?${qs}` : ''}`);
 }
@@ -303,6 +307,172 @@ export async function archiveConversation(
   });
 }
 
+// ─── WhatsApp Accounts (multi-account, Faz B) ───
+
+export type WhatsAppAccountScope = 'ALL_SUBES' | 'SELECTED_SUBES';
+
+export interface WhatsAppAccount {
+  id: string;
+  channel: string;
+  name: string;
+  phone_number_id: string;
+  waba_id: string;
+  webhook_verify_token?: string;
+  display_phone: string;
+  is_active: boolean;
+  is_default: boolean;
+  scope_type: WhatsAppAccountScope;
+  quota_json?: Record<string, unknown>;
+  last_synced_at?: string | null;
+  role_ids: number[];
+  sube_ids: number[];
+  role_names: string[];
+  sube_names: string[];
+  configured?: boolean;
+  has_token?: boolean;
+  kurum_id?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WhatsAppAccountWritePayload {
+  name?: string;
+  phone_number_id?: string;
+  waba_id?: string;
+  access_token?: string;
+  app_secret?: string;
+  webhook_verify_token?: string;
+  display_phone?: string;
+  is_active?: boolean;
+  is_default?: boolean;
+  scope_type?: WhatsAppAccountScope;
+  quota_json?: Record<string, unknown>;
+  role_ids?: number[];
+  sube_ids?: number[];
+}
+
+export async function fetchWhatsAppAccounts(params?: {
+  accessible?: boolean;
+  activeOnly?: boolean;
+}): Promise<{ accounts: WhatsAppAccount[]; total: number }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const search = new URLSearchParams();
+  if (kurumId) search.set('kurum_id', kurumId);
+  if (params?.accessible) search.set('accessible', '1');
+  if (params?.activeOnly) search.set('active', '1');
+  const qs = search.toString();
+  return request(`/accounts/${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchAccessibleWhatsAppAccounts(): Promise<{
+  accounts: WhatsAppAccount[];
+  default_account_id: string | null;
+  total: number;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/accounts/accessible/${qs}`);
+}
+
+export async function fetchWhatsAppAccount(id: string): Promise<WhatsAppAccount> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/accounts/${id}/${qs}`);
+}
+
+export async function createWhatsAppAccount(
+  data: WhatsAppAccountWritePayload,
+): Promise<WhatsAppAccount> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/accounts/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+export async function updateWhatsAppAccount(
+  id: string,
+  data: WhatsAppAccountWritePayload,
+): Promise<WhatsAppAccount> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request(`/accounts/${id}/`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+export async function deleteWhatsAppAccount(id: string): Promise<{ success: boolean; id: string }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/accounts/${id}/${qs}`, { method: 'DELETE' });
+}
+
+export async function testWhatsAppAccount(
+  id: string,
+): Promise<{ success: boolean; message?: string }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request(`/accounts/${id}/test/`, {
+    method: 'POST',
+    body: JSON.stringify({ kurum_id: kurumId }),
+  });
+}
+
+export async function syncWhatsAppAccountTemplates(id: string): Promise<{
+  success: boolean;
+  templates?: MetaWhatsAppTemplate[];
+  error?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request(`/accounts/${id}/sync-templates/`, {
+    method: 'POST',
+    body: JSON.stringify({ kurum_id: kurumId }),
+  });
+}
+
+// ─── Outbound queue monitoring ───
+
+export interface OutboundQueueItem {
+  id: string;
+  message_id: string | null;
+  status: string | null;
+  attempt_count: number;
+  next_attempt_at: string | null;
+  last_error: string;
+  campaign_id: string | null;
+  campaign_title: string;
+  channel_config_id: string | null;
+  channel_config_name: string;
+  contact_phone: string;
+  body_preview: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function fetchOutboundQueue(params?: {
+  status?: string;
+  campaign_id?: string;
+  channel_config_id?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<{
+  items: OutboundQueueItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  status_counts: { pending: number; sending: number; failed: number };
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const search = new URLSearchParams();
+  if (kurumId) search.set('kurum_id', kurumId);
+  if (params?.status) search.set('status', params.status);
+  if (params?.campaign_id) search.set('campaign_id', params.campaign_id);
+  if (params?.channel_config_id) search.set('channel_config_id', params.channel_config_id);
+  if (params?.page) search.set('page', String(params.page));
+  if (params?.page_size) search.set('page_size', String(params.page_size));
+  const qs = search.toString();
+  return request(`/queue/${qs ? `?${qs}` : ''}`);
+}
+
 export async function fetchWhatsAppConfig(): Promise<WhatsAppConfig> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const qs = kurumId ? `?kurum_id=${kurumId}` : '';
@@ -393,6 +563,14 @@ export function formatMessageTime(iso: string | null | undefined): string {
 
 // ─── Campaign / Bulk Send ───
 
+export type ContactKind = 'ogrenci' | 'anne' | 'baba' | 'vasi';
+export type MaliDurumFilter = 'borclu' | 'borcu_yok' | 'geciken';
+
+export interface KalemFilterSpec {
+  turu: string;
+  id: number;
+}
+
 export interface AudienceFilter {
   audience_type?: string;
   sinif_id?: number;
@@ -402,6 +580,34 @@ export interface AudienceFilter {
   veli_ids?: number[];
   egitim_yili_id?: number;
   template_name?: string;
+
+  // Gelişmiş filtre alanları (Faz B)
+  sinif_ids?: number[];
+  sinif_seviyesi_ids?: number[];
+  alan_ids?: number[];
+  coach_ids?: number[];
+  school_ids?: number[];
+  kalemler?: KalemFilterSpec[];
+  giris_turu?: string;
+  kayit_turu?: string;
+  durum?: string;
+  mali_durum?: MaliDurumFilter | '';
+  has_phone?: boolean | null;
+  whatsapp_default_only?: boolean;
+  contact_kinds?: ContactKind[];
+  included_ogrenci_ids?: number[];
+  excluded_ogrenci_ids?: number[];
+  included_veli_ids?: number[];
+  excluded_veli_ids?: number[];
+  q?: string;
+}
+
+export interface CampaignPreviewRecipient {
+  e164: string;
+  recipient_type: string;
+  ogrenci_id?: number | null;
+  veli_id?: number | null;
+  display_name?: string;
 }
 
 export interface CampaignPreviewStats {
@@ -413,13 +619,10 @@ export interface CampaignPreviewStats {
   attachment_count?: number;
   estimated_cost_usd?: string;
   ai_used?: boolean;
-  recipients?: Array<{
-    e164: string;
-    recipient_type: string;
-    ogrenci_id?: number | null;
-    veli_id?: number | null;
-    display_name?: string;
-  }>;
+  recipients?: CampaignPreviewRecipient[];
+  recipients_total?: number;
+  page?: number;
+  page_size?: number;
 }
 
 export interface MessageTemplateItem {
@@ -455,6 +658,19 @@ export interface CampaignAttachmentItem {
 
 export type SendMode = 'now' | 'scheduled' | 'draft';
 
+export interface CampaignAnalytics {
+  total: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  replied: number;
+  delivery_rate: number;
+  read_rate: number;
+  fail_rate: number;
+  reply_rate: number;
+}
+
 export interface CampaignItem {
   id: string;
   title: string;
@@ -465,6 +681,11 @@ export interface CampaignItem {
   delivered_count: number;
   read_count: number;
   failed_count: number;
+  replied_count?: number;
+  delivery_rate?: number;
+  read_rate?: number;
+  channel_config_id?: string | null;
+  channel_config_name?: string;
   created_by?: number | null;
   created_by_name?: string;
   created_at: string;
@@ -473,11 +694,21 @@ export interface CampaignItem {
   recipient_filter_json?: AudienceFilter;
   preview_stats_json?: CampaignPreviewStats;
   retried_count?: number;
+  analytics?: CampaignAnalytics;
+  scheduled_at?: string | null;
+  estimated_cost_usd?: string;
 }
 
 export async function previewCampaign(
   audienceFilter: AudienceFilter,
-  options?: { attachmentCount?: number; aiUsed?: boolean },
+  options?: {
+    attachmentCount?: number;
+    aiUsed?: boolean;
+    channelConfigId?: string;
+    includeRecipients?: boolean;
+    page?: number;
+    pageSize?: number;
+  },
 ): Promise<CampaignPreviewStats> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request<CampaignPreviewStats>('/campaigns/preview/', {
@@ -487,6 +718,10 @@ export async function previewCampaign(
       recipient_filter: audienceFilter,
       attachment_count: options?.attachmentCount ?? 0,
       ai_used: options?.aiUsed ?? false,
+      channel_config_id: options?.channelConfigId,
+      include_recipients: options?.includeRecipients ?? false,
+      page: options?.page,
+      page_size: options?.pageSize,
     }),
   });
 }
@@ -504,6 +739,7 @@ export async function createCampaign(data: {
   save_as_template?: boolean;
   template_category?: string;
   draft_only?: boolean;
+  channel_config_id?: string;
 }): Promise<CampaignItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request<CampaignItem>('/campaigns/', {
@@ -577,7 +813,45 @@ export const AUDIENCE_TYPE_LABELS: Record<string, string> = {
   coach_parents: 'Koç velileri',
   custom_ids: 'Özel seçim',
   filtered: 'Filtre',
+  advanced: 'Gelişmiş filtre',
 };
+
+export const CONTACT_KIND_LABELS: Record<ContactKind, string> = {
+  ogrenci: 'Öğrenci',
+  anne: 'Anne',
+  baba: 'Baba',
+  vasi: 'Vasi',
+};
+
+export const MALI_DURUM_LABELS: Record<MaliDurumFilter, string> = {
+  borclu: 'Borçlu',
+  borcu_yok: 'Borcu yok',
+  geciken: 'Gecikmiş taksidi olan',
+};
+
+/** Hesap seçici / etiketleri için okunabilir isim. */
+export function accountLabel(account: WhatsAppAccount): string {
+  const base = account.name || account.display_phone || account.phone_number_id || 'WhatsApp Hesabı';
+  return account.is_default ? `${base} (Varsayılan)` : base;
+}
+
+/**
+ * Basit önizleme: gövde metnindeki {{veli_ad}} / {{ogrenci_ad}} belirteçlerini
+ * alıcının display_name'i ile değiştirir; diğer belirteçler örnek verilerle doldurulur.
+ */
+export function renderSampleMessage(
+  body: string,
+  recipient: { recipient_type?: string; display_name?: string },
+): string {
+  const name = recipient.display_name?.trim() || '';
+  const isVeli = (recipient.recipient_type || '').toUpperCase() === 'VELI';
+  let text = body;
+  if (name) {
+    text = text.replace(/\{\{veli_ad\}\}/g, isVeli ? name : recipient.display_name || '');
+    text = text.replace(/\{\{ogrenci_ad\}\}/g, !isVeli ? name : recipient.display_name || '');
+  }
+  return text;
+}
 
 export interface TemplateCategoryItem {
   id: string;

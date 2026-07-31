@@ -1,6 +1,7 @@
 "use client";
 
-import { CampaignPreviewStats } from "@/lib/communication-api";
+import { CampaignPreviewStats, renderSampleMessage } from "@/lib/communication-api";
+import { resolvePreviewVariables } from "./composer-utils";
 import WhatsAppPhonePreview from "./WhatsAppPhonePreview";
 import type { PreviewAttachment } from "./WhatsAppPhonePreview";
 
@@ -11,6 +12,7 @@ interface SendConfirmModalProps {
   body: string;
   attachments: PreviewAttachment[];
   aiUsed: boolean;
+  accountLabel?: string;
   submitting?: boolean;
   error?: string | null;
   onConfirm: () => void;
@@ -24,6 +26,7 @@ export default function SendConfirmModal({
   body,
   attachments,
   aiUsed,
+  accountLabel,
   submitting = false,
   error = null,
   onConfirm,
@@ -34,17 +37,31 @@ export default function SendConfirmModal({
   const pdfCount = attachments.filter((a) => a.mime_type.includes("pdf")).length;
   const imageCount = attachments.filter((a) => a.mime_type.startsWith("image/")).length;
   const cost = preview.estimated_cost_usd ?? "0";
+  const samples = (preview.recipients || []).slice(0, 3);
 
   return (
     <div className="comm-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
       <div className="comm-modal comm-confirm-modal">
         <h2 id="confirm-title">Gönderim Onayı</h2>
 
+        <div className="comm-breakdown-grid">
+          <div className="comm-breakdown-item">
+            <strong>{preview.total_recipients}</strong>
+            <span>Toplam alıcı</span>
+          </div>
+          <div className="comm-breakdown-item">
+            <strong>{preview.ogrenci_count}</strong>
+            <span>Öğrenci</span>
+          </div>
+          <div className="comm-breakdown-item">
+            <strong>{preview.veli_count}</strong>
+            <span>Veli</span>
+          </div>
+        </div>
+
         <table className="comm-confirm-table">
           <tbody>
-            <tr><th>Toplam alıcı</th><td>{preview.total_recipients}</td></tr>
-            <tr><th>Öğrenci</th><td>{preview.ogrenci_count}</td></tr>
-            <tr><th>Veli</th><td>{preview.veli_count}</td></tr>
+            {accountLabel && <tr><th>Gönderim hesabı</th><td>{accountLabel}</td></tr>}
             <tr><th>PDF</th><td>{pdfCount}</td></tr>
             <tr><th>Resim</th><td>{imageCount}</td></tr>
             <tr><th>Tahmini mesaj</th><td>{preview.estimated_messages}</td></tr>
@@ -53,6 +70,22 @@ export default function SendConfirmModal({
             {title && <tr><th>Başlık</th><td>{title}</td></tr>}
           </tbody>
         </table>
+
+        {samples.length > 0 && body && (
+          <div>
+            <p className="comm-drawer-subtitle" style={{ marginBottom: "0.35rem" }}>
+              Örnek mesajlar ({samples.length})
+            </p>
+            <div className="comm-sample-messages">
+              {samples.map((r, i) => (
+                <div key={`${r.e164}-${i}`} className="comm-sample-message">
+                  <strong>{r.display_name || r.e164} ({r.recipient_type})</strong>
+                  {resolvePreviewVariables(renderSampleMessage(body, r))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {body && (
           <div className="comm-confirm-preview">

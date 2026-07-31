@@ -67,7 +67,7 @@ Güncel `deploy-production.sh` `/etc/lms/env` dosyasını kendisi yükler.
 
 ## 4. Deploy sonrası kontrol
 
-1. https://app.3kkampus.com açılıyor mu (beyaz sayfa yok)
+1. https://www.3kkampus.com açılıyor mu (beyaz sayfa yok)
 2. Giriş yapılabiliyor mu
 3. Değiştirdiğiniz modül çalışıyor mu
 

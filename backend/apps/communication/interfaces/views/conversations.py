@@ -39,6 +39,9 @@ def _parse_filters(request) -> dict:
             filters['ogrenci_id'] = int(ogrenci_id)
         except (TypeError, ValueError):
             pass
+    channel_config_id = request.query_params.get('channel_config_id') or request.query_params.get('account_id')
+    if channel_config_id:
+        filters['channel_config_id'] = channel_config_id
     return filters
 
 

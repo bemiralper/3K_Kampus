@@ -100,9 +100,12 @@ export default function KampanyalarClient() {
             <thead>
               <tr>
                 <th>Başlık</th>
+                <th>Hesap</th>
                 <th>Durum</th>
                 <th>Alıcı</th>
                 <th>İlerleme</th>
+                <th>Teslim / Okunma</th>
+                <th>Yanıt</th>
                 <th>Başarısız</th>
                 <th>Tarih</th>
                 <th></th>
@@ -123,6 +126,9 @@ export default function KampanyalarClient() {
                         {c.title || c.id.slice(0, 8)}
                       </Link>
                     </td>
+                    <td style={{ fontSize: "0.8125rem", color: "#667781" }}>
+                      {c.channel_config_name || "—"}
+                    </td>
                     <td>
                       <span className={`comm-status-badge ${statusBadgeClass(c.status)}`}>
                         {CAMPAIGN_STATUS_LABELS[c.status] || c.status}
@@ -142,6 +148,11 @@ export default function KampanyalarClient() {
                         </div>
                       </div>
                     </td>
+                    <td style={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}>
+                      {c.delivery_rate != null ? `%${c.delivery_rate.toFixed(0)}` : "—"} /{" "}
+                      {c.read_rate != null ? `%${c.read_rate.toFixed(0)}` : "—"}
+                    </td>
+                    <td>{c.replied_count ?? 0}</td>
                     <td>
                       {c.failed_count > 0 ? (
                         <span style={{ color: "#dc2626", fontWeight: 600 }}>

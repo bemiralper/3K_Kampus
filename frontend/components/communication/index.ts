@@ -7,6 +7,7 @@ export { default as BulkSendStudio } from "./BulkSendStudio";
 export { default as RichMessageToolbar } from "./RichMessageToolbar";
 export { default as AttachmentDropZone } from "./AttachmentDropZone";
 export { default as RecipientsSummaryPanel } from "./RecipientsSummaryPanel";
+export { default as AdvancedFilterPanel } from "./AdvancedFilterPanel";
 export { default as SendOptionsBar } from "./SendOptionsBar";
 export { default as SendConfirmModal } from "./SendConfirmModal";
 export { default as TemplatePickerDrawer } from "./TemplatePickerDrawer";

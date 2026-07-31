@@ -1,5 +1,6 @@
 "use client";
 
+import { ReactNode } from "react";
 import { ConversationFilter, ConversationListItem, formatMessageTime } from "@/lib/communication-api";
 
 const FILTER_TABS: { id: ConversationFilter; label: string }[] = [
@@ -25,6 +26,7 @@ interface ConversationListPanelProps {
   onSelect: (conv: ConversationListItem) => void;
   error?: string | null;
   className?: string;
+  accountFilterSlot?: ReactNode;
 }
 
 export default function ConversationListPanel({
@@ -37,6 +39,7 @@ export default function ConversationListPanel({
   onSelect,
   error,
   className = "",
+  accountFilterSlot,
 }: ConversationListPanelProps) {
   return (
     <aside className={`comm-inbox-sidebar ${className}`}>
@@ -54,6 +57,10 @@ export default function ConversationListPanel({
           </button>
         ))}
       </div>
+
+      {accountFilterSlot && (
+        <div className="comm-inbox-account-filter">{accountFilterSlot}</div>
+      )}
 
       <div className="comm-inbox-search-wrap">
         <input

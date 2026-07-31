@@ -174,6 +174,37 @@ export default function KampanyaDetayClient() {
     >
       {error && <div className="comm-alert comm-alert-danger">{error}</div>}
 
+      <div className="comm-breakdown-grid" style={{ marginBottom: "1rem" }}>
+        <div className="comm-breakdown-item">
+          <strong>{campaign.channel_config_name || "—"}</strong>
+          <span>Gönderim hesabı</span>
+        </div>
+        <div className="comm-breakdown-item">
+          <strong>{campaign.analytics?.delivery_rate != null ? `%${campaign.analytics.delivery_rate.toFixed(0)}` : campaign.delivery_rate != null ? `%${campaign.delivery_rate.toFixed(0)}` : "—"}</strong>
+          <span>Teslim oranı</span>
+        </div>
+        <div className="comm-breakdown-item">
+          <strong>{campaign.analytics?.read_rate != null ? `%${campaign.analytics.read_rate.toFixed(0)}` : campaign.read_rate != null ? `%${campaign.read_rate.toFixed(0)}` : "—"}</strong>
+          <span>Okunma oranı</span>
+        </div>
+        <div className="comm-breakdown-item">
+          <strong>{campaign.analytics?.replied ?? campaign.replied_count ?? 0}</strong>
+          <span>Yanıt veren</span>
+        </div>
+        {campaign.estimated_cost_usd && (
+          <div className="comm-breakdown-item">
+            <strong>${campaign.estimated_cost_usd}</strong>
+            <span>Tahmini maliyet</span>
+          </div>
+        )}
+        {campaign.scheduled_at && (
+          <div className="comm-breakdown-item">
+            <strong>{new Date(campaign.scheduled_at).toLocaleString("tr-TR")}</strong>
+            <span>Planlanan gönderim</span>
+          </div>
+        )}
+      </div>
+
       <div className="comm-card" style={{ marginBottom: "1rem" }}>
         <h2 style={{ margin: "0 0 1.25rem", fontSize: "1rem" }}>Teslimat istatistikleri</h2>
         <StatBar label="Gönderildi" value={campaign.sent_count} total={total} color="#3b82f6" icon="📤" />

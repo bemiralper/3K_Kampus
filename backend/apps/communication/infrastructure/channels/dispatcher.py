@@ -21,7 +21,16 @@ class ChannelDispatcher:
         }
         self._default = self._clients[Channel.WHATSAPP]
 
-    def get_client(self, channel: str | None = None) -> BaseChannelClient:
+    def get_client(
+        self,
+        channel: str | None = None,
+        *,
+        channel_config=None,
+    ) -> BaseChannelClient:
         if not channel:
-            return self._default
-        return self._clients.get(channel, self._default)
+            client = self._default
+        else:
+            client = self._clients.get(channel, self._default)
+        if channel_config is not None and isinstance(client, WhatsAppCloudClient):
+            return client.with_config(channel_config)
+        return client

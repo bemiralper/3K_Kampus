@@ -18,11 +18,12 @@ from .enums import (
     TemplateCategory,
     TemplateAudienceScope,
     WebhookProcessingStatus,
+    WhatsAppAccountScope,
 )
 
 
 class CommunicationChannelConfig(models.Model):
-    """Kurum bazlı kanal yapılandırması (WhatsApp WABA)."""
+    """Kurum bazlı WhatsApp hesabı (çoklu WABA / hibrit şube+rol kapsamı)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     kurum = models.ForeignKey(
@@ -37,29 +38,58 @@ class CommunicationChannelConfig(models.Model):
         default=Channel.WHATSAPP,
         verbose_name='Kanal',
     )
+    name = models.CharField(max_length=120, blank=True, default='', verbose_name='Hesap Adı')
     phone_number_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Phone Number ID')
     waba_id = models.CharField(max_length=64, blank=True, default='', verbose_name='WABA ID')
     access_token_encrypted = models.TextField(blank=True, default='', verbose_name='Access Token (encrypted)')
     webhook_verify_token = models.CharField(max_length=128, blank=True, default='', verbose_name='Webhook Verify Token')
+    app_secret_encrypted = models.TextField(blank=True, default='', verbose_name='App Secret (encrypted)')
     display_phone = models.CharField(max_length=32, blank=True, default='', verbose_name='Görünen Numara')
     is_active = models.BooleanField(default=False, verbose_name='Aktif')
+    is_default = models.BooleanField(default=False, verbose_name='Varsayılan Hesap')
+    scope_type = models.CharField(
+        max_length=20,
+        choices=WhatsAppAccountScope.choices,
+        default=WhatsAppAccountScope.ALL_SUBES,
+        verbose_name='Şube Kapsamı',
+    )
+    allowed_subes = models.ManyToManyField(
+        'sube.Sube',
+        blank=True,
+        related_name='whatsapp_accounts',
+        verbose_name='İzinli Şubeler',
+    )
+    allowed_roles = models.ManyToManyField(
+        'roller.Role',
+        blank=True,
+        related_name='whatsapp_accounts',
+        verbose_name='İzinli Roller',
+    )
+    quota_json = models.JSONField(default=dict, blank=True, verbose_name='Kota')
+    last_synced_at = models.DateTimeField(null=True, blank=True, verbose_name='Son Senkronizasyon')
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'comm_channel_config'
-        verbose_name = 'Kanal Yapılandırması'
-        verbose_name_plural = 'Kanal Yapılandırmaları'
-        constraints = [
-            models.UniqueConstraint(
-                fields=['kurum', 'channel'],
-                name='unique_comm_channel_per_kurum',
-            ),
+        verbose_name = 'WhatsApp Hesabı'
+        verbose_name_plural = 'WhatsApp Hesapları'
+        indexes = [
+            models.Index(fields=['kurum', 'channel', 'is_active'], name='comm_cfg_kurum_ch_act_idx'),
+            models.Index(fields=['phone_number_id'], name='comm_cfg_phone_number_idx'),
         ]
 
     def __str__(self):
-        return f'{self.kurum_id} — {self.get_channel_display()}'
+        label = self.name or self.display_phone or self.phone_number_id or str(self.id)
+        return f'{self.kurum_id} — {label}'
+
+    def covers_sube(self, sube_id: int | None) -> bool:
+        if self.scope_type == WhatsAppAccountScope.ALL_SUBES:
+            return True
+        if sube_id is None:
+            return False
+        return self.allowed_subes.filter(id=sube_id).exists()
 
 
 class ContactIdentity(models.Model):
@@ -151,6 +181,14 @@ class Conversation(models.Model):
         choices=Channel.choices,
         default=Channel.WHATSAPP,
         verbose_name='Kanal',
+    )
+    channel_config = models.ForeignKey(
+        CommunicationChannelConfig,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='conversations',
+        verbose_name='WhatsApp Hesabı',
     )
     contact_phone = models.CharField(max_length=20, verbose_name='İletişim Telefonu')
     contact_type = models.CharField(
@@ -401,6 +439,14 @@ class OutboundCampaign(models.Model):
         choices=Channel.choices,
         default=Channel.WHATSAPP,
     )
+    channel_config = models.ForeignKey(
+        CommunicationChannelConfig,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='campaigns',
+        verbose_name='WhatsApp Hesabı',
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -425,6 +471,7 @@ class OutboundCampaign(models.Model):
     )
     recipient_filter_json = models.JSONField(default=dict, blank=True)
     preview_stats_json = models.JSONField(default=dict, blank=True)
+    replied_count = models.PositiveIntegerField(default=0, verbose_name='Yanıt Sayısı')
     send_options_json = models.JSONField(default=dict, blank=True)
     repeat_rule_json = models.JSONField(default=dict, blank=True)
     scheduled_at = models.DateTimeField(null=True, blank=True, verbose_name='Zamanlanmış Gönderim')
