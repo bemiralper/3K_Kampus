@@ -89,6 +89,10 @@ export type SiteSettings = {
   footer_baslik?: string;
   footer_aciklama?: string;
   footer_marka_metni?: string;
+  ticari_unvan?: string;
+  mersis_no?: string;
+  vergi_no?: string;
+  ticaret_sicil_no?: string;
   seo_baslik?: string;
   seo_aciklama?: string;
   seo_anahtar_kelimeler?: string;

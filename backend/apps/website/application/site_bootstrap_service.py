@@ -655,6 +655,13 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
 
     # Tema: kurum logosunu çek + örnek footer
     theme, _ = SiteTheme.objects.get_or_create(kurum_id=kurum_id)
+    from apps.website.company_defaults import DEFAULT_COMPANY_INFO, apply_company_defaults
+
+    if settings:
+        company_changed = apply_company_defaults(settings)
+        if company_changed:
+            settings.save(update_fields=[*company_changed, 'updated_at'])
+
     footer = dict(theme.footer_config or {})
     footer.setdefault('copyright', f'© {timezone.now().year} {kurum.gorunen_ad or kurum.ad}')
     footer.setdefault('title', kurum.gorunen_ad or kurum.ad)
@@ -663,10 +670,22 @@ def bootstrap_website_content(kurum_id: int, *, force_home: bool = True) -> dict
         'LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz.',
     )
     if settings:
-        footer.setdefault('telefon', settings.telefon or '')
-        footer.setdefault('whatsapp', settings.whatsapp or '')
-        footer.setdefault('eposta', settings.eposta or '')
-        footer.setdefault('adres', settings.adres or '')
+        footer['telefon'] = settings.telefon or DEFAULT_COMPANY_INFO['telefon']
+        footer['whatsapp'] = settings.whatsapp or ''
+        footer['eposta'] = settings.eposta or ''
+        footer['adres'] = settings.adres or DEFAULT_COMPANY_INFO['adres']
+        footer['ticari_unvan'] = settings.ticari_unvan or DEFAULT_COMPANY_INFO['ticari_unvan']
+        footer['mersis_no'] = settings.mersis_no or DEFAULT_COMPANY_INFO['mersis_no']
+        footer['vergi_no'] = settings.vergi_no or DEFAULT_COMPANY_INFO['vergi_no']
+        footer['ticaret_sicil_no'] = settings.ticaret_sicil_no or DEFAULT_COMPANY_INFO['ticaret_sicil_no']
+    else:
+        footer.update({
+            'telefon': DEFAULT_COMPANY_INFO['telefon'],
+            'adres': DEFAULT_COMPANY_INFO['adres'],
+            **{k: DEFAULT_COMPANY_INFO[k] for k in (
+                'ticari_unvan', 'mersis_no', 'vergi_no', 'ticaret_sicil_no',
+            )},
+        })
     theme.footer_config = footer
     if not (theme.custom_css or '').strip() or 'cms-public-page{font-family' in (theme.custom_css or ''):
         theme.custom_css = ''

@@ -426,6 +426,36 @@ export default function SiteSettingsPanel({
             onChange={e => set('footer_marka_metni', e.target.value)}
             placeholder="3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır."
           />
+          <div className="wam-form-grid" style={{ marginTop: '1rem' }}>
+            <WamInput
+              label="Ticari Unvan"
+              full
+              value={settings.ticari_unvan || ''}
+              onChange={e => set('ticari_unvan', e.target.value)}
+              placeholder="ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ"
+            />
+            <WamInput
+              label="MERSİS No"
+              value={settings.mersis_no || ''}
+              onChange={e => set('mersis_no', e.target.value)}
+              placeholder="0692037476300018"
+            />
+            <WamInput
+              label="Vergi No"
+              value={settings.vergi_no || ''}
+              onChange={e => set('vergi_no', e.target.value)}
+              placeholder="6920374763"
+            />
+            <WamInput
+              label="Ticaret Sicil No"
+              value={settings.ticaret_sicil_no || ''}
+              onChange={e => set('ticaret_sicil_no', e.target.value)}
+              placeholder="14305"
+            />
+          </div>
+          <p style={{ marginTop: '0.5rem', fontSize: 13, color: '#64748b' }}>
+            Açık adres ve telefon, yukarıdaki İletişim alanlarından (Adres / Telefon) footer&apos;a yansır.
+          </p>
         </section>
       </div>
     </div>

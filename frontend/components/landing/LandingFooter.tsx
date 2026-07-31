@@ -186,6 +186,42 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
           </div>
         </div>
 
+        <div className="footer-legal">
+          <h4 className="footer-legal-title">Şirket Bilgileri</h4>
+          <dl className="footer-legal-grid">
+            <div>
+              <dt>Ticari unvan</dt>
+              <dd>{settings?.ticari_unvan || 'ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ'}</dd>
+            </div>
+            <div>
+              <dt>MERSİS No</dt>
+              <dd>{settings?.mersis_no || '0692037476300018'}</dd>
+            </div>
+            <div>
+              <dt>Vergi No</dt>
+              <dd>{settings?.vergi_no || '6920374763'}</dd>
+            </div>
+            <div>
+              <dt>Ticaret Sicil No</dt>
+              <dd>{settings?.ticaret_sicil_no || '14305'}</dd>
+            </div>
+            <div className="footer-legal-wide">
+              <dt>Açık adres</dt>
+              <dd>{settings?.adres || 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM'}</dd>
+            </div>
+            <div>
+              <dt>Telefon</dt>
+              <dd>
+                {settings?.telefon ? (
+                  <a href={`tel:${phoneDigits(settings.telefon)}`}>{formatPhoneDisplay(settings.telefon)}</a>
+                ) : (
+                  <a href="tel:04422331234">0442 233 1234</a>
+                )}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
         <div className="footer-bottom">
           <p className="footer-brand-line">{markaMetni}</p>
           <p className="footer-copy">{copyright}</p>
@@ -324,10 +360,64 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
           color: #fff;
           transform: translateY(-2px);
         }
-        .footer-bottom {
+        .footer-legal {
           position: relative;
           margin-top: 2.5rem;
           padding-top: 1.75rem;
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .footer-legal-title {
+          margin: 0 0 1rem;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #94a3b8;
+        }
+        .footer-legal-grid {
+          margin: 0;
+          display: grid;
+          gap: 0.85rem 1.5rem;
+        }
+        @media (min-width: 640px) {
+          .footer-legal-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (min-width: 1024px) {
+          .footer-legal-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        .footer-legal-grid > div {
+          min-width: 0;
+        }
+        .footer-legal-wide {
+          grid-column: 1 / -1;
+        }
+        @media (min-width: 1024px) {
+          .footer-legal-wide { grid-column: span 2; }
+        }
+        .footer-legal-grid dt {
+          margin: 0;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #94a3b8;
+        }
+        .footer-legal-grid dd {
+          margin: 0.2rem 0 0;
+          font-size: 13px;
+          line-height: 1.5;
+          color: #e2e8f0;
+          word-break: break-word;
+        }
+        .footer-legal-grid a {
+          color: #f1f5f9;
+          text-decoration: none;
+        }
+        .footer-legal-grid a:hover { color: #fff; text-decoration: underline; }
+        .footer-bottom {
+          position: relative;
+          margin-top: 1.75rem;
+          padding-top: 1.25rem;
           border-top: 1px solid rgba(255, 255, 255, 0.1);
           text-align: center;
         }

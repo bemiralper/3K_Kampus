@@ -75,6 +75,17 @@ class SiteSettings(models.Model):
         blank=True,
         default='3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.',
     )
+    ticari_unvan = models.CharField(
+        'Ticari Unvan',
+        max_length=300,
+        blank=True,
+        default='ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ',
+    )
+    mersis_no = models.CharField('MERSİS No', max_length=32, blank=True, default='0692037476300018')
+    vergi_no = models.CharField('Vergi No', max_length=20, blank=True, default='6920374763')
+    ticaret_sicil_no = models.CharField(
+        'Ticaret Sicil No', max_length=32, blank=True, default='14305',
+    )
     seo_baslik = models.CharField('SEO Başlık', max_length=200, blank=True, default='')
     seo_aciklama = models.CharField('SEO Açıklama', max_length=400, blank=True, default='')
     seo_anahtar_kelimeler = models.CharField('SEO Anahtar Kelimeler', max_length=500, blank=True, default='')

@@ -85,6 +85,35 @@ export default function CmsPublicPage({ payload }: Props) {
             </nav>
           ) : null}
         </div>
+        <div className="cms-pub-footer-legal">
+          <strong>Şirket Bilgileri</strong>
+          <dl>
+            <div>
+              <dt>Ticari unvan</dt>
+              <dd>{footer.ticari_unvan || 'ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ'}</dd>
+            </div>
+            <div>
+              <dt>MERSİS No</dt>
+              <dd>{footer.mersis_no || '0692037476300018'}</dd>
+            </div>
+            <div>
+              <dt>Vergi No</dt>
+              <dd>{footer.vergi_no || '6920374763'}</dd>
+            </div>
+            <div>
+              <dt>Ticaret Sicil No</dt>
+              <dd>{footer.ticaret_sicil_no || '14305'}</dd>
+            </div>
+            <div className="cms-pub-footer-legal-wide">
+              <dt>Açık adres</dt>
+              <dd>{footer.adres || 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM'}</dd>
+            </div>
+            <div>
+              <dt>Telefon</dt>
+              <dd>{footer.telefon || '0442 233 1234'}</dd>
+            </div>
+          </dl>
+        </div>
         <p className="cms-pub-copy">{footer.copyright || `© ${new Date().getFullYear()} ${brand}`}</p>
       </footer>
 

@@ -8,6 +8,7 @@ from django.conf import settings as django_settings
 from apps.kurum.domain.models import Kurum
 from apps.website.application.system_default_specs import public_path_for_slug
 from apps.website.cms_models import IntegrationSettings, SiteTheme, WebPage
+from apps.website.company_defaults import DEFAULT_COMPANY_INFO, apply_company_defaults
 from apps.website.models import SiteSettings
 
 # UI / mevcut üretim izinden bilinen GA4 (kullanıcı panelden değiştirebilir)
@@ -108,6 +109,14 @@ def ensure_website_health(kurum_id: int, *, ga4_id: str | None = None) -> dict:
         return {'ok': False, 'error': 'Kurum bulunamadı', 'changes': []}
 
     site = SiteSettings.objects.filter(kurum_id=kurum_id).first()
+    if site is None:
+        site = SiteSettings.objects.create(kurum_id=kurum_id)
+        changes.append('site_settings_created')
+    company_changed = apply_company_defaults(site)
+    if company_changed:
+        site.save(update_fields=[*company_changed, 'updated_at'])
+        changes.append(f'company_info={",".join(company_changed)}')
+
     base = _site_base_url()
     sitemap_url = f'{base}/sitemap.xml'
 
@@ -170,6 +179,25 @@ def ensure_website_health(kurum_id: int, *, ga4_id: str | None = None) -> dict:
         tema = getattr(kurum, 'tema_rengi', None) or '#0262a7'
         theme.primary_color = tema
         changes.append(f'primary_color={tema}')
+
+    # CMS footer_config: ticari bilgiler + iletişim
+    footer = dict(theme.footer_config or {})
+    footer_dirty = False
+    for key, value in {
+        'ticari_unvan': site.ticari_unvan,
+        'mersis_no': site.mersis_no,
+        'vergi_no': site.vergi_no,
+        'ticaret_sicil_no': site.ticaret_sicil_no,
+        'adres': site.adres or DEFAULT_COMPANY_INFO['adres'],
+        'telefon': site.telefon or DEFAULT_COMPANY_INFO['telefon'],
+        'eposta': site.eposta or '',
+    }.items():
+        if value and footer.get(key) != value:
+            footer[key] = value
+            footer_dirty = True
+    if footer_dirty:
+        theme.footer_config = footer
+        changes.append('footer_config_company_synced')
 
     theme.save()
 

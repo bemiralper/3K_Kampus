@@ -49,10 +49,14 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
 
     settings, created_settings = SiteSettings.objects.get_or_create(kurum=kurum)
     if created_settings or overwrite_settings:
-        settings.telefon = '0212 555 00 00'
-        settings.whatsapp = '905325550000'
+        settings.telefon = '0442 233 1234'
+        settings.whatsapp = '905402331234'
         settings.eposta = 'info@3kkampus.com'
-        settings.adres = 'Ataşehir, İstanbul'
+        settings.adres = 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM'
+        settings.ticari_unvan = 'ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ'
+        settings.mersis_no = '0692037476300018'
+        settings.vergi_no = '6920374763'
+        settings.ticaret_sicil_no = '14305'
         settings.calisma_saatleri = 'Pazartesi – Cumartesi: 09:00 – 19:00\nPazar: Kapalı'
         settings.hero_baslik = '3K Kampüs'
         settings.hero_alt_baslik = 'LGS • YKS • Okul Destek Programları'
