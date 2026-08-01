@@ -38,6 +38,8 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
   const veliDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const phoneDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const phoneResolveSeqRef = useRef(0);
+  const suppressedPhoneByIndexRef = useRef<Record<number, string>>({});
 
   // Varsayılan ili bul (Erzurum)
   const defaultCity = metadata.cities?.find(c => c.is_default) || metadata.cities?.[0];
@@ -136,6 +138,7 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
     async (phone: string, index: number, excludeKisiId?: number) => {
       const digits = digitsOnlyPhone(phone);
       if (digits.length < 10) {
+        delete suppressedPhoneByIndexRef.current[index];
         setPhoneConflictByIndex((prev) => {
           const next = { ...prev };
           delete next[index];
@@ -143,6 +146,13 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
         });
         return;
       }
+      const suppressed = suppressedPhoneByIndexRef.current[index];
+      if (suppressed && digits !== suppressed) {
+        delete suppressedPhoneByIndexRef.current[index];
+      } else if (suppressed && digits === suppressed) {
+        return;
+      }
+      const seq = ++phoneResolveSeqRef.current;
       setVeliTcChecking(index);
       try {
         const res = await resolveKimlik({
@@ -150,7 +160,9 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
           context: "veli",
           exclude_kisi_id: excludeKisiId,
         });
+        if (seq !== phoneResolveSeqRef.current) return;
         if (res.success && res.data?.found) {
+          if (suppressedPhoneByIndexRef.current[index] === digits) return;
           setKimlikResult(res.data);
           setVeliModalIndex(index);
           setPhoneConflictByIndex((prev) => ({
@@ -166,7 +178,7 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
           });
         }
       } finally {
-        setVeliTcChecking(null);
+        if (seq === phoneResolveSeqRef.current) setVeliTcChecking(null);
       }
     },
     [],
@@ -212,6 +224,10 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
       [`g${idx}_ad`, `g${idx}_soyad`, `g${idx}_telefon`, `g${idx}_email`, `g${idx}_tc`],
       setHighlightedFields,
     );
+    if (phoneDebounceRef.current) clearTimeout(phoneDebounceRef.current);
+    phoneResolveSeqRef.current += 1;
+    const digits = digitsOnlyPhone(phone);
+    if (digits.length >= 10) suppressedPhoneByIndexRef.current[idx] = digits;
     setShowKimlikModal(false);
   };
 
@@ -951,7 +967,28 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
         context="veli"
         loading={veliTcChecking !== null}
         onApply={applyKimlikVeli}
-        onCancel={() => setShowKimlikModal(false)}
+        onCancel={() => {
+          const idx = veliModalIndex;
+          const phone = data.guardians[idx]?.telefon || "";
+          const digits = digitsOnlyPhone(phone);
+          if (phoneDebounceRef.current) clearTimeout(phoneDebounceRef.current);
+          phoneResolveSeqRef.current += 1;
+          if (digits.length >= 10) suppressedPhoneByIndexRef.current[idx] = digits;
+          const newGuardians = [...data.guardians];
+          newGuardians[idx] = {
+            ...newGuardians[idx],
+            telefon: "",
+            telefonlar: ensureTelefonlar(null, ""),
+          };
+          onChange({ ...data, guardians: newGuardians });
+          setPhoneConflictByIndex((prev) => {
+            const next = { ...prev };
+            delete next[idx];
+            return next;
+          });
+          setKimlikResult(null);
+          setShowKimlikModal(false);
+        }}
       />
     </div>
   );

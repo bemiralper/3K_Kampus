@@ -1130,9 +1130,9 @@ export default function OgrenciBilgiDrawer({
         context="ogrenci"
         loading={kimlik.checking}
         hideApply
-        onApply={() => kimlik.dismissModal()}
+        onApply={() => kimlik.acceptLookup(formData.telefon)}
         onCancel={() => {
-          kimlik.dismissModal();
+          kimlik.dismissForChangeNumber(formData.telefon);
           setFormData((prev) => ({ ...prev, telefon: "" }));
           setError("Bu telefon başka bir kişiye ait. Lütfen farklı bir numara girin.");
         }}

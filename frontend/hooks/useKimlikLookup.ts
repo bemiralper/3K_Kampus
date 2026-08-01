@@ -40,13 +40,27 @@ export function useKimlikLookup({
 
   const tcDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const phoneDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  /** Modal kapatıldıktan / kişi seçildikten sonra aynı numara için tekrar açma. */
+  const suppressedPhoneRef = useRef<string | null>(null);
+  const resolveSeqRef = useRef(0);
+
+  const clearPendingLookups = useCallback(() => {
+    if (tcDebounceRef.current) {
+      clearTimeout(tcDebounceRef.current);
+      tcDebounceRef.current = null;
+    }
+    if (phoneDebounceRef.current) {
+      clearTimeout(phoneDebounceRef.current);
+      phoneDebounceRef.current = null;
+    }
+    resolveSeqRef.current += 1;
+  }, []);
 
   useEffect(() => {
     return () => {
-      if (tcDebounceRef.current) clearTimeout(tcDebounceRef.current);
-      if (phoneDebounceRef.current) clearTimeout(phoneDebounceRef.current);
+      clearPendingLookups();
     };
-  }, []);
+  }, [clearPendingLookups]);
 
   const runResolve = useCallback(
     async (params: { tc?: string; telefon?: string; openModal?: boolean; phoneErrorMessage?: string }) => {
@@ -56,6 +70,17 @@ export function useKimlikLookup({
       const tcValid = tc.length === 11;
       if (!tcValid && telDigits.length < 10) return null;
 
+      // Kullanıcı numarayı değiştirmeyi seçtiyse / kişiyi kullandıysa aynı telefonu tekrar sorma
+      if (
+        params.openModal !== false &&
+        telDigits &&
+        suppressedPhoneRef.current &&
+        telDigits === suppressedPhoneRef.current
+      ) {
+        return null;
+      }
+
+      const seq = ++resolveSeqRef.current;
       setChecking(true);
       if (!params.phoneErrorMessage) setPhoneError("");
       setLookupError("");
@@ -66,6 +91,7 @@ export function useKimlikLookup({
           context,
           exclude_kisi_id: excludeKisiId,
         });
+        if (seq !== resolveSeqRef.current) return null;
         if (!res.success) {
           setLookupError(res.error || "Kimlik kontrolü yapılamadı. Kurum/şube seçimini kontrol edin.");
           return null;
@@ -73,7 +99,10 @@ export function useKimlikLookup({
         const data = res.data ?? null;
         if (data?.found) {
           setResult(data);
-          if (params.openModal !== false) setShowModal(true);
+          const shouldOpen =
+            params.openModal !== false &&
+            !(telDigits && suppressedPhoneRef.current === telDigits);
+          if (shouldOpen) setShowModal(true);
           if (data.engellenen) {
             setPhoneError(data.engellenen_mesaj || params.phoneErrorMessage || "Bu kayıt tamamlanamaz.");
           } else {
@@ -84,7 +113,7 @@ export function useKimlikLookup({
         }
         return data;
       } finally {
-        setChecking(false);
+        if (seq === resolveSeqRef.current) setChecking(false);
       }
     },
     [context, enabled, excludeKisiId],
@@ -106,6 +135,17 @@ export function useKimlikLookup({
       const digits = digitsOnlyPhone(telefon);
       if (!enabled || digits.length < 10) {
         setPhoneError("");
+        // Kısa/silinmiş numara → bastırmayı kaldır (yeni numara yazılabilsin)
+        if (!digits || digits.length < 10) {
+          suppressedPhoneRef.current = null;
+        }
+        return;
+      }
+      // Bastırılmış numaradan farklı bir şey yazıldıysa tekrar kontrol et
+      if (suppressedPhoneRef.current && digits !== suppressedPhoneRef.current) {
+        suppressedPhoneRef.current = null;
+      }
+      if (suppressedPhoneRef.current && digits === suppressedPhoneRef.current) {
         return;
       }
       if (phoneDebounceRef.current) clearTimeout(phoneDebounceRef.current);
@@ -118,21 +158,52 @@ export function useKimlikLookup({
 
   const openConflictLookup = useCallback(
     async (tc?: string, telefon?: string) => {
+      suppressedPhoneRef.current = null;
       const data = await runResolve({ tc, telefon, openModal: true });
       return data;
     },
     [runResolve],
   );
 
-  const dismissModal = useCallback(() => setShowModal(false), []);
+  const dismissModal = useCallback(() => {
+    clearPendingLookups();
+    setShowModal(false);
+  }, [clearPendingLookups]);
+
+  /** «Numarayı değiştir» — modalı kapat, aynı numarayı tekrar sorma. Formda telefonu temizleyin. */
+  const dismissForChangeNumber = useCallback(
+    (telefon?: string) => {
+      const digits = digitsOnlyPhone(telefon || "");
+      clearPendingLookups();
+      if (digits.length >= 10) suppressedPhoneRef.current = digits;
+      setShowModal(false);
+      setResult(null);
+      setPhoneError("");
+    },
+    [clearPendingLookups],
+  );
+
+  /** «Mevcut kişiyi kullan» sonrası blur ile modalın yeniden açılmasını engelle. */
+  const acceptLookup = useCallback(
+    (telefon?: string) => {
+      const digits = digitsOnlyPhone(telefon || "");
+      clearPendingLookups();
+      if (digits.length >= 10) suppressedPhoneRef.current = digits;
+      setShowModal(false);
+      setPhoneError("");
+    },
+    [clearPendingLookups],
+  );
 
   const resetKimlik = useCallback(() => {
+    clearPendingLookups();
+    suppressedPhoneRef.current = null;
     setResult(null);
     setShowModal(false);
     setPhoneError("");
     setLookupError("");
     setHighlightedFields(new Set());
-  }, []);
+  }, [clearPendingLookups]);
 
   const markHighlighted = useCallback((fields: string[]) => {
     flashHighlightedFields(fields, setHighlightedFields);
@@ -157,6 +228,8 @@ export function useKimlikLookup({
     runResolve,
     openConflictLookup,
     dismissModal,
+    dismissForChangeNumber,
+    acceptLookup,
     resetKimlik,
     markHighlighted,
   };

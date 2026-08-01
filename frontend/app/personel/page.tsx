@@ -455,7 +455,7 @@ export default function PersonelListesiPage() {
     setTcLocked(true);
     kimlik.setPhoneError("");
     kimlik.markHighlighted(filledFields);
-    kimlik.dismissModal();
+    kimlik.acceptLookup(ortak.telefon || formData.cep_telefon || formData.telefon);
     setFormError("");
   };
 
@@ -2916,15 +2916,13 @@ export default function PersonelListesiPage() {
         hideApply={Boolean(editingPersonel)}
         onApply={applyKimlikToForm}
         onCancel={() => {
-          kimlik.dismissModal();
+          kimlik.dismissForChangeNumber(formData.cep_telefon);
+          setFormData((prev) => ({ ...prev, cep_telefon: "" }));
           if (editingPersonel) {
-            setFormData((prev) => ({ ...prev, cep_telefon: "" }));
             setFormError("Bu telefon başka bir kişiye ait. Lütfen farklı bir numara girin.");
             return;
           }
-          if (pendingKimlikReuse) {
-            setFormError(KIMLIK_REUSE_MSG);
-          }
+          setFormError("");
         }}
       />
     </div>

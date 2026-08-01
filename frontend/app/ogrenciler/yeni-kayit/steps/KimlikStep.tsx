@@ -119,7 +119,7 @@ export default function KimlikStep({
   }, []);
 
   const handleApplyExisting = () => {
-    kimlik.dismissModal();
+    kimlik.acceptLookup(data.student.telefon);
     if (tcResult) {
       onUseExistingStudent(tcResult, kimlik.result);
       kimlik.markHighlighted(["ad", "soyad", "telefon", "email", "dogum_tarihi", "tc_kimlik_no"]);
@@ -376,7 +376,14 @@ export default function KimlikStep({
         loading={tcChecking || kimlik.checking}
         extraContent={<OgrenciKimlikEkPanel tcResult={tcResult} />}
         onApply={handleApplyExisting}
-        onCancel={kimlik.dismissModal}
+        onCancel={() => {
+          const phone = data.student.telefon;
+          kimlik.dismissForChangeNumber(phone);
+          onChange({
+            ...data,
+            student: { ...data.student, telefon: "" },
+          });
+        }}
       />
     </div>
   );
