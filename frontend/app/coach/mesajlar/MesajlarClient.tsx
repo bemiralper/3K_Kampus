@@ -36,6 +36,7 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
   const [error, setError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("");
+  const [threadRefreshToken, setThreadRefreshToken] = useState(0);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
@@ -63,6 +64,7 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
     enabled: !!selectedId,
     conversation: selected,
     onConversationRead: handleConversationRead,
+    refreshToken: threadRefreshToken,
   });
 
   useEffect(() => {
@@ -94,9 +96,11 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
   useCommunicationSSE({
     onUpdate: () => {
       loadConversations();
+      setThreadRefreshToken((n) => n + 1);
     },
     onFallbackPoll: () => {
       loadConversations();
+      setThreadRefreshToken((n) => n + 1);
     },
   });
 

@@ -11,7 +11,6 @@ import {
   sendConversationMessage,
   sendMessageReaction,
 } from "@/lib/communication-api";
-import { useCommunicationSSE } from "@/hooks/useCommunicationSSE";
 
 const POLL_MS = 20_000;
 
@@ -19,13 +18,20 @@ interface UseConversationThreadOptions {
   enabled?: boolean;
   conversation?: ConversationListItem | null;
   onConversationRead?: (conversationId: string) => void;
+  /** Dışarıdan (ör. inbox SSE) sessiz yenileme tetiklemek için */
+  refreshToken?: number;
 }
 
 export function useConversationThread(
   conversationId: string | null,
   options: UseConversationThreadOptions = {},
 ) {
-  const { enabled = true, conversation = null, onConversationRead } = options;
+  const {
+    enabled = true,
+    conversation = null,
+    onConversationRead,
+    refreshToken = 0,
+  } = options;
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [composerState, setComposerState] = useState<ComposerState>(createComposerState());
   const [replyTo, setReplyTo] = useState<MessageItem | null>(null);
@@ -33,47 +39,57 @@ export function useConversationThread(
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  const loadSeqRef = useRef(0);
+  const onConversationReadRef = useRef(onConversationRead);
+  onConversationReadRef.current = onConversationRead;
 
-  const loadMessages = useCallback(async (id: string) => {
-    setMessagesLoading(true);
+  const loadMessages = useCallback(async (id: string, opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    const seq = ++loadSeqRef.current;
+    if (!silent) setMessagesLoading(true);
     try {
-      setError(null);
+      if (!silent) setError(null);
       const data = await fetchConversationMessages(id);
+      if (seq !== loadSeqRef.current) return;
       setMessages(data.messages || []);
-      await markConversationRead(id).catch(() => {});
-      onConversationRead?.(id);
+      // Okundu işaretleme yüklemeyi bloklamasın
+      void markConversationRead(id)
+        .then(() => onConversationReadRef.current?.(id))
+        .catch(() => {});
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       setError(err instanceof Error ? err.message : "Mesajlar yüklenemedi");
     } finally {
-      setMessagesLoading(false);
+      if (!silent && seq === loadSeqRef.current) {
+        setMessagesLoading(false);
+      }
     }
-  }, [onConversationRead]);
-
-  const conversationIdRef = useRef(conversationId);
-  conversationIdRef.current = conversationId;
-
-  useCommunicationSSE({
-    enabled: enabled && !!conversationId,
-    onUpdate: () => {
-      const id = conversationIdRef.current;
-      if (id) loadMessages(id);
-    },
-    onFallbackPoll: () => {
-      const id = conversationIdRef.current;
-      if (id) loadMessages(id);
-    },
-  });
+  }, []);
 
   useEffect(() => {
     if (!enabled || !conversationId) {
+      loadSeqRef.current += 1;
       setMessages([]);
       setReplyTo(null);
+      setMessagesLoading(false);
       return;
     }
-    loadMessages(conversationId);
-    const interval = setInterval(() => loadMessages(conversationId), POLL_MS);
-    return () => clearInterval(interval);
+    loadMessages(conversationId, { silent: false });
+    const interval = setInterval(
+      () => loadMessages(conversationId, { silent: true }),
+      POLL_MS,
+    );
+    return () => {
+      clearInterval(interval);
+      loadSeqRef.current += 1;
+    };
   }, [enabled, conversationId, loadMessages]);
+
+  // Inbox SSE vb. dış tetik — sessiz yenile
+  useEffect(() => {
+    if (!enabled || !conversationId || !refreshToken) return;
+    loadMessages(conversationId, { silent: true });
+  }, [refreshToken, enabled, conversationId, loadMessages]);
 
   useEffect(() => {
     if (threadRef.current) {
@@ -104,7 +120,7 @@ export function useConversationThread(
     if (!conversationId) return;
     try {
       await sendMessageReaction(conversationId, msg.id, emoji);
-      await loadMessages(conversationId);
+      await loadMessages(conversationId, { silent: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Reaksiyon gönderilemedi");
     }

@@ -54,6 +54,8 @@ function communicationApiUrl(path: string): string {
   return `${BACKEND_URL}/api/communication${normalized}`;
 }
 
+const REQUEST_TIMEOUT_MS = 20_000;
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {
@@ -65,24 +67,44 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers['X-CSRFToken'] = csrf;
   }
 
-  const response = await fetch(communicationApiUrl(path), {
-    credentials: 'include',
-    ...options,
-    headers,
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    const errMsg =
-      (typeof body.error === 'string' && body.error) ||
-      (typeof body.detail === 'string' && body.detail) ||
-      (Array.isArray(body.error) ? body.error.join(', ') : '') ||
-      `HTTP ${response.status}`;
-    throw new Error(typeof errMsg === 'string' ? errMsg : `HTTP ${response.status}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const parentSignal = options.signal;
+  const onParentAbort = () => controller.abort();
+  if (parentSignal) {
+    if (parentSignal.aborted) controller.abort();
+    else parentSignal.addEventListener('abort', onParentAbort, { once: true });
   }
 
-  if (response.status === 204) return {} as T;
-  return response.json();
+  try {
+    const response = await fetch(communicationApiUrl(path), {
+      credentials: 'include',
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const errMsg =
+        (typeof body.error === 'string' && body.error) ||
+        (typeof body.detail === 'string' && body.detail) ||
+        (Array.isArray(body.error) ? body.error.join(', ') : '') ||
+        `HTTP ${response.status}`;
+      throw new Error(typeof errMsg === 'string' ? errMsg : `HTTP ${response.status}`);
+    }
+
+    if (response.status === 204) return {} as T;
+    return response.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('İstek zaman aşımına uğradı. Sayfayı yenileyip tekrar deneyin.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+    parentSignal?.removeEventListener('abort', onParentAbort);
+  }
 }
 
 export interface ConversationListItem {
