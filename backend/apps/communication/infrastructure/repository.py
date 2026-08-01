@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.communication.domain.enums import (
@@ -218,9 +218,15 @@ class ConversationRepository:
         channel_config_id = filters.get('channel_config_id')
         if channel_config_id:
             qs = qs.filter(channel_config_id=channel_config_id)
+        # NULL last_message_at Postgres DESC'te üste gelir; en yeni mesaj alta düşmesin.
         return qs.select_related(
             'ogrenci', 'ogrenci__sube', 'veli', 'veli__ogrenci', 'kurum',
-            'assigned_coach', 'contact_identity', 'sube', 'channel_config',
+            'assigned_coach', 'contact_identity', 'contact_identity__personel',
+            'sube', 'channel_config',
+        ).order_by(
+            F('last_message_at').desc(nulls_last=True),
+            '-updated_at',
+            '-created_at',
         )
 
     @staticmethod

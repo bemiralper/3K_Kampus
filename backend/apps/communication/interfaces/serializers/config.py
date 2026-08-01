@@ -124,7 +124,39 @@ class ConversationListSerializer(serializers.ModelSerializer):
             return obj.veli.tam_ad
         if obj.ogrenci_id and obj.ogrenci:
             return f'{obj.ogrenci.ad} {obj.ogrenci.soyad}'.strip()
+        identity = getattr(obj, 'contact_identity', None)
+        personel = getattr(identity, 'personel', None) if identity else None
+        if personel:
+            return (getattr(personel, 'tam_ad', None) or f'{personel.ad} {personel.soyad}').strip()
+        # Personel sohbeti — subject'e yazılan ad veya telefon eşlemesi
+        if getattr(obj, 'contact_type', '') == 'PERSONEL':
+            if obj.subject:
+                return obj.subject
+            name = self._personel_name_by_phone(obj)
+            if name:
+                return name
         return obj.contact_phone
+
+    def _personel_name_by_phone(self, obj) -> str:
+        phone = (obj.contact_phone or '').strip()
+        if not phone:
+            return ''
+        cache = self.context.setdefault('_personel_name_by_phone', {})
+        key = f'{obj.kurum_id}:{phone}'
+        if key in cache:
+            return cache[key]
+        from apps.communication.application.contact_resolver import ContactResolver
+        from apps.personel.domain.models import Personel
+
+        name = ''
+        for personel in Personel.objects.filter(kurum_id=obj.kurum_id).only('ad', 'soyad', 'telefon', 'cep_telefon'):
+            if ContactResolver._digits_match(personel.telefon, phone) or ContactResolver._digits_match(
+                personel.cep_telefon, phone,
+            ):
+                name = f'{personel.ad} {personel.soyad}'.strip()
+                break
+        cache[key] = name
+        return name
 
     def get_veli_ad(self, obj) -> str:
         if obj.veli_id and obj.veli:

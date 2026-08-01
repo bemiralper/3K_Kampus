@@ -349,4 +349,7 @@ class ConversationOpenPersonelThreadTest(TestCase):
             format='json',
         )
         self.assertEqual(ok.status_code, 200, ok.content)
-        self.assertEqual(ok.json()['contact_type'], 'PERSONEL')
+        data = ok.json()
+        self.assertEqual(data['contact_type'], 'PERSONEL')
+        self.assertIn('Pers', data.get('contact_name') or '')
+        self.assertNotEqual(data.get('contact_name'), data.get('contact_phone'))

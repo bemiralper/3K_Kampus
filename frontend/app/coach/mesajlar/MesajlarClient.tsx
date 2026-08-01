@@ -82,7 +82,15 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
         search: search.trim() || undefined,
         channel_config_id: accountId || undefined,
       });
-      setConversations(data.conversations || []);
+      const list = data.conversations || [];
+      // En yeni mesaj en üstte (null last_message_at alta)
+      list.sort((a, b) => {
+        const ta = a.last_message_at ? Date.parse(a.last_message_at) : 0;
+        const tb = b.last_message_at ? Date.parse(b.last_message_at) : 0;
+        if (tb !== ta) return tb - ta;
+        return (b.created_at || "").localeCompare(a.created_at || "");
+      });
+      setConversations(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Konuşmalar yüklenemedi");
     } finally {

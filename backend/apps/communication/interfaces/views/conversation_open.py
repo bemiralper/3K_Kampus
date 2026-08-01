@@ -38,6 +38,8 @@ class ConversationOpenView(CommunicationAPIView):
         # Personel detayından açılan sohbet: telefon veli/öğrenci ile çakışsa bile
         # öğrenci şube kapısı uygulanmaz (aynı numara sıkça paylaşılır).
         is_personel_thread = bool(req_personel_id)
+        personel = None
+        personel_display_name = ''
         if is_personel_thread:
             from apps.personel.domain.models import Personel
 
@@ -46,6 +48,20 @@ class ConversationOpenView(CommunicationAPIView):
             ).first()
             if not personel:
                 return Response({'error': 'Personel bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+            personel_display_name = (personel.tam_ad or f'{personel.ad} {personel.soyad}').strip()
+            from apps.communication.infrastructure.repository import ContactIdentityRepository
+            from apps.kimlik.application.kisi_service import KisiService
+
+            identity, _ = ContactIdentityRepository.update_or_create(
+                kurum_id,
+                e164,
+                defaults={
+                    'personel_id': personel.id,
+                    'label': personel_display_name,
+                    'kisi_id': KisiService.resolve_kisi_id_for_entity(personel_id=personel.id),
+                },
+            )
+            resolved.identity = identity
             veli_id = None
             ogrenci_id = None
             is_veli_thread = False
@@ -114,6 +130,12 @@ class ConversationOpenView(CommunicationAPIView):
                 if conversation.contact_type != RecipientType.PERSONEL:
                     conversation.contact_type = RecipientType.PERSONEL
                     update_fields.append('contact_type')
+                if personel_display_name and conversation.subject != personel_display_name:
+                    conversation.subject = personel_display_name
+                    update_fields.append('subject')
+                if resolved.identity and conversation.contact_identity_id != resolved.identity.id:
+                    conversation.contact_identity = resolved.identity
+                    update_fields.append('contact_identity')
             else:
                 if ogrenci_id and conversation.ogrenci_id != ogrenci_id:
                     conversation.ogrenci_id = ogrenci_id
@@ -153,7 +175,29 @@ class ConversationOpenView(CommunicationAPIView):
             if created and is_personel_thread:
                 conversation.contact_type = RecipientType.PERSONEL
                 conversation.sube_id = sube_id
-                conversation.save(update_fields=['contact_type', 'sube_id', 'updated_at'])
+                conversation.subject = personel_display_name
+                if resolved.identity:
+                    conversation.contact_identity = resolved.identity
+                conversation.save(update_fields=[
+                    'contact_type', 'sube_id', 'subject', 'contact_identity', 'updated_at',
+                ])
+            elif is_personel_thread:
+                update_fields = []
+                if conversation.contact_type != RecipientType.PERSONEL:
+                    conversation.contact_type = RecipientType.PERSONEL
+                    update_fields.append('contact_type')
+                if personel_display_name and conversation.subject != personel_display_name:
+                    conversation.subject = personel_display_name
+                    update_fields.append('subject')
+                if resolved.identity and conversation.contact_identity_id != getattr(resolved.identity, 'id', None):
+                    conversation.contact_identity = resolved.identity
+                    update_fields.append('contact_identity')
+                if conversation.sube_id != sube_id:
+                    conversation.sube_id = sube_id
+                    update_fields.append('sube_id')
+                if update_fields:
+                    update_fields.append('updated_at')
+                    conversation.save(update_fields=update_fields)
             elif created and req_ogrenci_id and not is_veli_thread:
                 conversation.veli_id = None
                 conversation.contact_type = RecipientType.OGRENCI
