@@ -1,14 +1,17 @@
 "use client";
 
 import { PersonelDetay } from "../types";
-import { formatPhoneNumber, getInitials, formatWhatsAppLink } from "../utils";
+import { formatPhoneNumber, getInitials } from "../utils";
 import { resolveMediaUrl } from "@/lib/resolve-media-url";
+import WhatsAppChatButton from "@/components/communication/WhatsAppChatButton";
 
 interface PersonelProfilKartProps {
   data: PersonelDetay;
 }
 
 export default function PersonelProfilKart({ data }: PersonelProfilKartProps) {
+  const whatsappPhone = (data.cep_telefon || data.telefon || "").trim();
+
   return (
     <div className="personel-profil-kart">
       {/* Üst Kısım - Avatar ve İsim */}
@@ -43,6 +46,18 @@ export default function PersonelProfilKart({ data }: PersonelProfilKartProps) {
             </span>
           )}
         </div>
+
+        {whatsappPhone ? (
+          <div className="profil-wa-actions">
+            <WhatsAppChatButton
+              phone={whatsappPhone}
+              contactLabel={data.tam_ad}
+              variant="pill"
+              label="WhatsApp Mesaj"
+              title={`${data.tam_ad} kişisine WhatsApp mesajı gönder`}
+            />
+          </div>
+        ) : null}
       </div>
 
       {/* Alt Kısım - İletişim Bilgileri */}
@@ -58,9 +73,16 @@ export default function PersonelProfilKart({ data }: PersonelProfilKartProps) {
             <div className="content">
               <label>Cep Telefonu</label>
               {data.cep_telefon ? (
-                <a href={formatWhatsAppLink(data.cep_telefon)} target="_blank" rel="noopener noreferrer">
-                  {formatPhoneNumber(data.cep_telefon)}
-                </a>
+                <span className="profil-phone-row">
+                  <span>{formatPhoneNumber(data.cep_telefon)}</span>
+                  <WhatsAppChatButton
+                    phone={data.cep_telefon}
+                    contactLabel={data.tam_ad}
+                    className="whatsapp-icon-btn"
+                    title="WhatsApp mesajı gönder"
+                    size={14}
+                  />
+                </span>
               ) : (
                 <span>-</span>
               )}

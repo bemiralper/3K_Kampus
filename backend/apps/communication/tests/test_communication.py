@@ -375,6 +375,41 @@ class ChannelConfigRepositoryTest(TestCase):
         fetched = ChannelConfigRepository.get_whatsapp_config(self.kurum.id)
         self.assertEqual(fetched.id, config.id)
 
+    def test_get_whatsapp_config_skips_inactive_default(self):
+        from apps.communication.domain.models import CommunicationChannelConfig
+
+        CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Pasif Default',
+            phone_number_id='old',
+            is_active=False,
+            is_default=True,
+        )
+        active = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Aktif',
+            phone_number_id='new',
+            is_active=True,
+            is_default=False,
+        )
+        fetched = ChannelConfigRepository.get_whatsapp_config(self.kurum.id)
+        self.assertEqual(fetched.id, active.id)
+
+    def test_get_whatsapp_config_none_when_only_inactive(self):
+        from apps.communication.domain.models import CommunicationChannelConfig
+
+        CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Pasif',
+            phone_number_id='old',
+            is_active=False,
+            is_default=True,
+        )
+        self.assertIsNone(ChannelConfigRepository.get_whatsapp_config(self.kurum.id))
+
 
 class InboundProcessorChallengeTest(TestCase):
     def test_verify_challenge(self):

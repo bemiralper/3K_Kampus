@@ -33,12 +33,17 @@ from apps.communication.interfaces.sube_context import filter_conversations_by_s
 class ChannelConfigRepository:
     @staticmethod
     def get_whatsapp_config(kurum_id: int) -> CommunicationChannelConfig | None:
-        """Geriye uyum: varsayılan veya ilk aktif WhatsApp hesabı."""
-        qs = CommunicationChannelConfig.objects.filter(
+        """Geriye uyum: varsayılan aktif WhatsApp hesabı (pasif default seçilmez)."""
+        active = CommunicationChannelConfig.objects.filter(
             kurum_id=kurum_id,
             channel=Channel.WHATSAPP,
-        ).order_by('-is_default', '-is_active', 'created_at')
-        return qs.first()
+            is_active=True,
+        ).order_by('-is_default', 'created_at')
+        config = active.first()
+        if config:
+            return config
+        # Aktif yoksa None — env (WHATSAPP_*) fallback kullanılsın.
+        return None
 
     @staticmethod
     def get_by_id(kurum_id: int, config_id) -> CommunicationChannelConfig | None:

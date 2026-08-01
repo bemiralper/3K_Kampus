@@ -194,6 +194,19 @@
   text-decoration: underline;
 }
 
+.profil-wa-actions {
+  margin-top: 0.85rem;
+  display: flex;
+  justify-content: center;
+}
+
+.profil-phone-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 /* Tab Panel */
 .personel-tab-panel {
   background: white;

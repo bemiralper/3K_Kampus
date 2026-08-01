@@ -222,8 +222,8 @@ class CommunicationService:
 
         provider_response: dict[str, Any] = {}
         if process_immediately:
-            client = self._dispatcher.get_client(channel)
-            success = process_queue_item(queue_item, client)
+            # client=None: conversation/campaign channel_config doğru çözülsün
+            success = process_queue_item(queue_item)
             message.refresh_from_db()
             if not success:
                 return SendResult(
