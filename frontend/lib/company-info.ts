@@ -1,4 +1,4 @@
-import { parsePhoneList } from '@/lib/phone-format';
+import { parsePhoneList, phoneDigits } from '@/lib/phone-format';
 
 /** 3K Kampüs ticari / yasal şirket bilgileri (footer + iletişim + yasal metinler). */
 export const DEFAULT_COMPANY_INFO = {
@@ -39,10 +39,18 @@ function resolveEposta(raw?: string | null): string {
   return (raw || '').trim();
 }
 
+function resolveTelefonler(raw?: string | null): string[] {
+  const fallback = parsePhoneList(DEFAULT_COMPANY_INFO.telefon);
+  const parsed = parsePhoneList(raw);
+  if (!parsed.length) return fallback;
+  const digits = new Set(parsed.map((p) => phoneDigits(p)));
+  // Eski tek sabit numara → sabit + cep listesi
+  if (digits.size === 1 && digits.has('04422331234')) return fallback;
+  return parsed;
+}
+
 export function resolveCompanyInfo(source?: CompanyInfoSource | null) {
-  const telefonRaw = source?.telefon?.trim() || DEFAULT_COMPANY_INFO.telefon;
-  const telefonler = parsePhoneList(telefonRaw);
-  const fallbackPhones = parsePhoneList(DEFAULT_COMPANY_INFO.telefon);
+  const telefonler = resolveTelefonler(source?.telefon);
   return {
     ticari_unvan: source?.ticari_unvan?.trim() || DEFAULT_COMPANY_INFO.ticari_unvan,
     mersis_no: source?.mersis_no?.trim() || DEFAULT_COMPANY_INFO.mersis_no,
@@ -50,8 +58,8 @@ export function resolveCompanyInfo(source?: CompanyInfoSource | null) {
     ticaret_sicil_no: source?.ticaret_sicil_no?.trim() || DEFAULT_COMPANY_INFO.ticaret_sicil_no,
     adres: source?.adres?.trim() || DEFAULT_COMPANY_INFO.adres,
     /** Geriye uyumluluk: ilk numara */
-    telefon: telefonler[0] || fallbackPhones[0] || '',
-    telefonler: telefonler.length ? telefonler : fallbackPhones,
+    telefon: telefonler[0] || '',
+    telefonler,
     eposta: resolveEposta(source?.eposta),
     marka: DEFAULT_COMPANY_INFO.marka,
   };

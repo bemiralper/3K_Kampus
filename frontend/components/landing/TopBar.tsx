@@ -11,6 +11,23 @@ type TopBarProps = {
   socialLinks: SocialLink[];
 };
 
+function PhoneStrip({ phones }: { phones: string[] }) {
+  if (!phones.length) return null;
+  return (
+    <div className="topbar-phones" aria-label="Telefon numaraları">
+      <PhoneIcon />
+      <div className="topbar-phones-list">
+        {phones.map((tel, i) => (
+          <span key={tel} className="topbar-phone-item">
+            {i > 0 ? <span className="topbar-phone-sep" aria-hidden>·</span> : null}
+            <a href={`tel:${phoneDigits(tel)}`}>{formatPhoneDisplay(tel)}</a>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function TopBar({ settings, socialLinks }: TopBarProps) {
   const company = resolveCompanyInfo(settings);
   const phones = company.telefonler;
@@ -19,31 +36,42 @@ export default function TopBar({ settings, socialLinks }: TopBarProps) {
   const social = topBarSocialLinks(socialLinks);
 
   return (
-    <div className="hidden h-10 items-center justify-between px-4 text-xs text-white md:flex lg:px-8" style={{ backgroundColor: LANDING_COLORS.navy }}>
-      <div className="flex items-center gap-3 lg:gap-4">
-        {phones.map((tel) => (
-          <a key={tel} href={`tel:${phoneDigits(tel)}`} className="flex items-center gap-1.5 hover:opacity-80">
-            <PhoneIcon /> {formatPhoneDisplay(tel)}
-          </a>
-        ))}
-        {whatsapp && (
-          <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:opacity-80">
-            <WhatsAppIcon /> WhatsApp
-          </a>
-        )}
-        {email && (
-          <a href={`mailto:${email}`} className="flex items-center gap-1.5 hover:opacity-80">
-            <MailIcon /> {email}
-          </a>
-        )}
+    <div className="topbar-desktop" style={{ backgroundColor: LANDING_COLORS.navy }}>
+      <div className="topbar-desktop-inner">
+        <div className="topbar-left">
+          <PhoneStrip phones={phones} />
+          {whatsapp ? (
+            <a
+              href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="topbar-chip"
+            >
+              <WhatsAppIcon /> WhatsApp
+            </a>
+          ) : null}
+          {email ? (
+            <a href={`mailto:${email}`} className="topbar-chip">
+              <MailIcon /> {email}
+            </a>
+          ) : null}
+        </div>
+        <div className="topbar-social">
+          {social.map((link) => (
+            <a
+              key={link.id}
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="topbar-social-link"
+              aria-label={link.platform}
+            >
+              <SocialIcon platform={link.platform} />
+            </a>
+          ))}
+        </div>
       </div>
-      <div className="flex items-center gap-3">
-        {social.map(link => (
-          <a key={link.id} href={link.url} target="_blank" rel="noopener noreferrer" className="hover:opacity-80" aria-label={link.platform}>
-            <SocialIcon platform={link.platform} />
-          </a>
-        ))}
-      </div>
+      <TopBarStyles />
     </div>
   );
 }
@@ -53,24 +81,155 @@ export function TopBarMobile({ settings }: { settings: SiteSettings | null }) {
   const phones = company.telefonler;
   const whatsapp = settings?.whatsapp || '';
   const email = company.eposta;
+
   return (
-    <div className="flex h-10 items-center justify-center gap-3 overflow-x-auto px-3 text-[11px] text-white sm:gap-5 sm:px-4 sm:text-xs md:hidden" style={{ backgroundColor: LANDING_COLORS.navy }}>
-      {phones.map((tel) => (
-        <a key={tel} href={`tel:${phoneDigits(tel)}`} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-          <PhoneIcon /> {formatPhoneDisplay(tel)}
-        </a>
-      ))}
-      {whatsapp && (
-        <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-          <WhatsAppIcon /> WhatsApp
-        </a>
-      )}
-      {email && (
-        <a href={`mailto:${email}`} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-          <MailIcon /> {email}
-        </a>
-      )}
+    <div className="topbar-mobile" style={{ backgroundColor: LANDING_COLORS.navy }}>
+      <div className="topbar-mobile-track">
+        {phones.map((tel) => (
+          <a key={tel} href={`tel:${phoneDigits(tel)}`} className="topbar-mobile-chip">
+            <PhoneIcon /> {formatPhoneDisplay(tel)}
+          </a>
+        ))}
+        {whatsapp ? (
+          <a
+            href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="topbar-mobile-chip"
+          >
+            <WhatsAppIcon /> WhatsApp
+          </a>
+        ) : null}
+        {email ? (
+          <a href={`mailto:${email}`} className="topbar-mobile-chip">
+            <MailIcon /> {email}
+          </a>
+        ) : null}
+      </div>
+      <TopBarStyles />
     </div>
+  );
+}
+
+function TopBarStyles() {
+  return (
+    <style jsx global>{`
+      .topbar-desktop {
+        display: none;
+        color: #fff;
+        font-size: 12px;
+      }
+      @media (min-width: 768px) {
+        .topbar-desktop { display: block; }
+      }
+      .topbar-desktop-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-height: 2.5rem;
+        padding: 0.35rem 1rem;
+      }
+      @media (min-width: 1024px) {
+        .topbar-desktop-inner { padding-left: 2rem; padding-right: 2rem; }
+      }
+      .topbar-left {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.65rem 1rem;
+        min-width: 0;
+      }
+      .topbar-phones {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 0;
+      }
+      .topbar-phones svg {
+        flex-shrink: 0;
+        opacity: 0.85;
+      }
+      .topbar-phones-list {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.15rem 0;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.01em;
+      }
+      .topbar-phone-item {
+        display: inline-flex;
+        align-items: center;
+      }
+      .topbar-phone-sep {
+        margin: 0 0.4rem;
+        opacity: 0.45;
+        font-weight: 400;
+      }
+      .topbar-phones a {
+        color: #fff;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .topbar-phones a:hover { opacity: 0.85; text-decoration: underline; }
+      .topbar-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        color: #e2e8f0;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .topbar-chip:hover { color: #fff; opacity: 0.95; }
+      .topbar-social {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-shrink: 0;
+      }
+      .topbar-social-link {
+        color: #fff;
+        opacity: 0.9;
+      }
+      .topbar-social-link:hover { opacity: 1; }
+
+      .topbar-mobile {
+        display: block;
+        color: #fff;
+        overflow: hidden;
+      }
+      @media (min-width: 768px) {
+        .topbar-mobile { display: none; }
+      }
+      .topbar-mobile-track {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.45rem 0.75rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .topbar-mobile-track::-webkit-scrollbar { display: none; }
+      .topbar-mobile-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        flex-shrink: 0;
+        padding: 0.3rem 0.65rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+    `}</style>
   );
 }
 
