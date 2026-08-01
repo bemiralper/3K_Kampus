@@ -515,7 +515,7 @@ export async function fetchMetaWhatsAppTemplates(): Promise<{
 
 export async function openConversationByPhone(
   phone: string,
-  options?: { ogrenci_id?: number; veli_id?: number },
+  options?: { ogrenci_id?: number; veli_id?: number; personel_id?: number },
 ): Promise<ConversationListItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request<ConversationListItem>('/conversations/open/', {

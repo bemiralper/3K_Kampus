@@ -7,6 +7,7 @@ interface WhatsAppChatButtonProps {
   contactLabel?: string;
   ogrenciId?: number;
   veliId?: number;
+  personelId?: number;
   className?: string;
   title?: string;
   size?: number;
@@ -28,6 +29,7 @@ export default function WhatsAppChatButton({
   contactLabel,
   ogrenciId,
   veliId,
+  personelId,
   className = '',
   title = 'Uygulama içi mesaj',
   size = 14,
@@ -42,7 +44,7 @@ export default function WhatsAppChatButton({
     e.stopPropagation();
 
     if (chat?.openChat) {
-      chat.openChat({ phone, contactLabel, ogrenciId, veliId });
+      chat.openChat({ phone, contactLabel, ogrenciId, veliId, personelId });
       return;
     }
 

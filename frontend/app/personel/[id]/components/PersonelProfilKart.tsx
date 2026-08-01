@@ -52,6 +52,7 @@ export default function PersonelProfilKart({ data }: PersonelProfilKartProps) {
             <WhatsAppChatButton
               phone={whatsappPhone}
               contactLabel={data.tam_ad}
+              personelId={data.id}
               variant="pill"
               label="WhatsApp Mesaj"
               title={`${data.tam_ad} kişisine WhatsApp mesajı gönder`}
@@ -78,6 +79,7 @@ export default function PersonelProfilKart({ data }: PersonelProfilKartProps) {
                   <WhatsAppChatButton
                     phone={data.cep_telefon}
                     contactLabel={data.tam_ad}
+                    personelId={data.id}
                     className="whatsapp-icon-btn"
                     title="WhatsApp mesajı gönder"
                     size={14}

@@ -33,32 +33,48 @@ class ConversationOpenView(CommunicationAPIView):
         resolved = ContactResolver.resolve_contact(kurum_id, e164)
         req_ogrenci_id = request.data.get('ogrenci_id')
         req_veli_id = request.data.get('veli_id')
+        req_personel_id = request.data.get('personel_id')
 
-        if req_veli_id:
-            veli_id = int(req_veli_id)
-        elif resolved.veli_id and resolved.contact_type == RecipientType.VELI:
-            veli_id = resolved.veli_id
-        else:
+        # Personel detayından açılan sohbet: telefon veli/öğrenci ile çakışsa bile
+        # öğrenci şube kapısı uygulanmaz (aynı numara sıkça paylaşılır).
+        is_personel_thread = bool(req_personel_id)
+        if is_personel_thread:
+            from apps.personel.domain.models import Personel
+
+            personel = Personel.objects.filter(
+                id=int(req_personel_id), kurum_id=kurum_id,
+            ).first()
+            if not personel:
+                return Response({'error': 'Personel bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
             veli_id = None
-
-        if veli_id:
-            from apps.ogrenci.domain.models import OgrenciVeli
-
-            veli = OgrenciVeli.objects.filter(id=veli_id).select_related('ogrenci').first()
-            ogrenci_id = veli.ogrenci_id if veli else resolved.ogrenci_id
-            if veli and veli.ogrenci and veli.ogrenci.sube_id != sube_id:
-                return Response({'error': 'Kayıt bu şubeye ait değil.'}, status=status.HTTP_403_FORBIDDEN)
+            ogrenci_id = None
+            is_veli_thread = False
         else:
-            ogrenci_id = int(req_ogrenci_id) if req_ogrenci_id else resolved.ogrenci_id
+            if req_veli_id:
+                veli_id = int(req_veli_id)
+            elif resolved.veli_id and resolved.contact_type == RecipientType.VELI:
+                veli_id = resolved.veli_id
+            else:
+                veli_id = None
 
-        if ogrenci_id:
-            from apps.ogrenci.domain.models import Ogrenci
+            if veli_id:
+                from apps.ogrenci.domain.models import OgrenciVeli
 
-            student_sube_id = Ogrenci.objects.filter(id=ogrenci_id).values_list('sube_id', flat=True).first()
-            if student_sube_id and int(student_sube_id) != int(sube_id):
-                return Response({'error': 'Kayıt bu şubeye ait değil.'}, status=status.HTTP_403_FORBIDDEN)
+                veli = OgrenciVeli.objects.filter(id=veli_id).select_related('ogrenci').first()
+                ogrenci_id = veli.ogrenci_id if veli else resolved.ogrenci_id
+                if veli and veli.ogrenci and veli.ogrenci.sube_id != sube_id:
+                    return Response({'error': 'Kayıt bu şubeye ait değil.'}, status=status.HTTP_403_FORBIDDEN)
+            else:
+                ogrenci_id = int(req_ogrenci_id) if req_ogrenci_id else resolved.ogrenci_id
 
-        is_veli_thread = bool(veli_id)
+            if ogrenci_id:
+                from apps.ogrenci.domain.models import Ogrenci
+
+                student_sube_id = Ogrenci.objects.filter(id=ogrenci_id).values_list('sube_id', flat=True).first()
+                if student_sube_id and int(student_sube_id) != int(sube_id):
+                    return Response({'error': 'Kayıt bu şubeye ait değil.'}, status=status.HTTP_403_FORBIDDEN)
+
+            is_veli_thread = bool(veli_id)
 
         from apps.communication.application.conversation_phone_sync import sync_conversation_linked_phone
         from apps.communication.application.debug_trace import debug_trace, mask_phone
@@ -87,22 +103,28 @@ class ConversationOpenView(CommunicationAPIView):
             )
 
         if conversation:
-            gate = assert_conversation_sube_access(request, kurum_id, conversation)
-            if gate:
-                return gate
+            if not is_personel_thread:
+                gate = assert_conversation_sube_access(request, kurum_id, conversation)
+                if gate:
+                    return gate
 
             conversation = sync_conversation_linked_phone(conversation)
             update_fields = []
-            if ogrenci_id and conversation.ogrenci_id != ogrenci_id:
-                conversation.ogrenci_id = ogrenci_id
-                update_fields.append('ogrenci_id')
-            elif ogrenci_id and not conversation.ogrenci_id:
-                conversation.ogrenci_id = ogrenci_id
-                update_fields.append('ogrenci_id')
-            if is_veli_thread and veli_id:
-                conversation.veli_id = veli_id
-                conversation.contact_type = RecipientType.VELI
-                update_fields.extend(['veli_id', 'contact_type'])
+            if is_personel_thread:
+                if conversation.contact_type != RecipientType.PERSONEL:
+                    conversation.contact_type = RecipientType.PERSONEL
+                    update_fields.append('contact_type')
+            else:
+                if ogrenci_id and conversation.ogrenci_id != ogrenci_id:
+                    conversation.ogrenci_id = ogrenci_id
+                    update_fields.append('ogrenci_id')
+                elif ogrenci_id and not conversation.ogrenci_id:
+                    conversation.ogrenci_id = ogrenci_id
+                    update_fields.append('ogrenci_id')
+                if is_veli_thread and veli_id:
+                    conversation.veli_id = veli_id
+                    conversation.contact_type = RecipientType.VELI
+                    update_fields.extend(['veli_id', 'contact_type'])
             if conversation.sube_id != sube_id:
                 conversation.sube_id = sube_id
                 update_fields.append('sube_id')
@@ -110,7 +132,9 @@ class ConversationOpenView(CommunicationAPIView):
                 update_fields.append('updated_at')
                 conversation.save(update_fields=update_fields)
         else:
-            if is_veli_thread:
+            if is_personel_thread:
+                contact_type = RecipientType.PERSONEL
+            elif is_veli_thread:
                 contact_type = RecipientType.VELI
             elif req_ogrenci_id or ogrenci_id:
                 contact_type = RecipientType.OGRENCI
@@ -123,10 +147,14 @@ class ConversationOpenView(CommunicationAPIView):
                 contact_phone=e164,
                 contact_type=contact_type,
                 contact_identity=resolved.identity,
-                ogrenci_id=ogrenci_id,
-                veli_id=veli_id,
+                ogrenci_id=None if is_personel_thread else ogrenci_id,
+                veli_id=None if is_personel_thread else veli_id,
             )
-            if created and req_ogrenci_id and not is_veli_thread:
+            if created and is_personel_thread:
+                conversation.contact_type = RecipientType.PERSONEL
+                conversation.sube_id = sube_id
+                conversation.save(update_fields=['contact_type', 'sube_id', 'updated_at'])
+            elif created and req_ogrenci_id and not is_veli_thread:
                 conversation.veli_id = None
                 conversation.contact_type = RecipientType.OGRENCI
                 conversation.sube_id = sube_id
@@ -140,7 +168,7 @@ class ConversationOpenView(CommunicationAPIView):
         from apps.communication.application.coach_scope import user_can_access_conversation
 
         coach_profile = get_coach_profile(request.user)
-        if coach_profile is not None:
+        if coach_profile is not None and not is_personel_thread:
             sid = conversation.ogrenci_id or ogrenci_id
             if sid and not user_can_access_student(request.user, int(sid)):
                 return Response(

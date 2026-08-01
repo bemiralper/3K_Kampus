@@ -282,3 +282,71 @@ class DuplicateConversationLookupTest(TestCase):
         self.assertFalse(created)
         self.assertEqual(conv.ogrenci_id, self.ogrenci.id)
         self.assertIsNone(conv.veli_id)
+
+
+class ConversationOpenPersonelThreadTest(TestCase):
+    """Personel telefonu veli/öğrenci ile çakışınca şube kapısı engellememeli."""
+
+    def setUp(self):
+        from apps.personel.domain.models import Personel
+        from apps.roller.models import Permission, Role, RolePermission, UserRole
+
+        self.kurum = Kurum.objects.create(ad='Pers Open', kod='POP')
+        self.sube_a = Sube.objects.create(kurum=self.kurum, ad='A', kod='POP-A')
+        self.sube_b = Sube.objects.create(kurum=self.kurum, ad='B', kod='POP-B')
+        self.user = User.objects.create_user(username='persopen', password='x')
+        role, _ = Role.objects.get_or_create(
+            code='admin',
+            defaults={'name': 'Admin', 'level': 100, 'is_system_role': True},
+        )
+        for code in ('communication.read', 'communication.write'):
+            perm, _ = Permission.objects.get_or_create(
+                code=code,
+                defaults={'name': code, 'module': 'communication', 'permission_type': 'read'},
+            )
+            RolePermission.objects.get_or_create(role=role, permission=perm)
+        UserRole.objects.update_or_create(user=self.user, defaults={'role': role})
+
+        shared_phone = '0533 444 55 66'
+        self.ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_b,
+            ad='Ogr',
+            soyad='B',
+            telefon=shared_phone,
+            aktif_mi=True,
+        )
+        self.personel = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            ad='Pers',
+            soyad='A',
+            cep_telefon=shared_phone,
+        )
+
+        from rest_framework.test import APIClient
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube_a.id)
+
+    def test_open_personel_skips_student_sube_gate(self):
+        # personel_id yokken aynı telefon öğrenciye bağlanır → şube B ≠ A → 403
+        blocked = self.client.post(
+            '/api/communication/conversations/open/',
+            {'phone': '0533 444 55 66', 'kurum_id': self.kurum.id},
+            format='json',
+        )
+        self.assertEqual(blocked.status_code, 403)
+
+        ok = self.client.post(
+            '/api/communication/conversations/open/',
+            {
+                'phone': '0533 444 55 66',
+                'kurum_id': self.kurum.id,
+                'personel_id': self.personel.id,
+            },
+            format='json',
+        )
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(ok.json()['contact_type'], 'PERSONEL')

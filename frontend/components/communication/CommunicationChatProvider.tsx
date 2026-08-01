@@ -14,6 +14,7 @@ export interface ChatOpenParams {
   contactLabel?: string;
   ogrenciId?: number;
   veliId?: number;
+  personelId?: number;
 }
 
 interface CommunicationChatContextValue {

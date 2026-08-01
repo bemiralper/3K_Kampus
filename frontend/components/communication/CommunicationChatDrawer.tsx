@@ -46,6 +46,7 @@ export default function CommunicationChatDrawer({
     openConversationByPhone(target.phone, {
       ogrenci_id: target.ogrenciId,
       veli_id: target.veliId,
+      personel_id: target.personelId,
     })
       .then((conv) => {
         if (!cancelled) setConversation(conv);
@@ -63,7 +64,7 @@ export default function CommunicationChatDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, target?.phone, target?.ogrenciId, target?.veliId]);
+  }, [open, target?.phone, target?.ogrenciId, target?.veliId, target?.personelId]);
 
   const displayConversation: ConversationListItem | null = conversation
     ? {
