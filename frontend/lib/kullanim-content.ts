@@ -1,6 +1,6 @@
 /** Kullanım Koşulları — yapılandırılmış içerik */
 
-import { DEFAULT_COMPANY_INFO } from '@/lib/company-info';
+import { companyIletisimParagraphs } from '@/lib/company-info';
 import { buildYasalNav, type YasalMetinMeta, type YasalSection } from '@/lib/yasal-metin-types';
 
 export const KULLANIM_META: YasalMetinMeta = {
@@ -110,9 +110,7 @@ export const KULLANIM_SECTIONS: YasalSection[] = [
     number: 9,
     title: 'İletişim',
     paragraphs: [
-      'Kullanım Koşulları hakkında sorularınız için ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ (3K Kampüs) ile iletişime geçebilirsiniz.',
-      'Adres: LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM',
-      `Telefon: ${DEFAULT_COMPANY_INFO.telefon} · E-posta: ${DEFAULT_COMPANY_INFO.eposta}`,
+      ...companyIletisimParagraphs('Kullanım Koşulları hakkında sorularınız için'),
       'İletişim formu: /iletisim',
     ],
   },

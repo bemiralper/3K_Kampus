@@ -27,7 +27,12 @@ class SiteSettings(models.Model):
     kurum = models.OneToOneField(
         'kurum.Kurum', on_delete=models.CASCADE, related_name='site_settings',
     )
-    telefon = models.CharField('Telefon', max_length=30, blank=True, default='')
+    telefon = models.TextField(
+        'Telefon(lar)',
+        blank=True,
+        default='',
+        help_text='Birden fazla numara için her satıra bir telefon yazın (sabit / cep).',
+    )
     whatsapp = models.CharField('WhatsApp', max_length=30, blank=True, default='')
     eposta = models.EmailField('E-posta', blank=True, default='info@3kkampus.com')
     adres = models.TextField('Adres', blank=True, default='')

@@ -49,7 +49,11 @@ def seed_website_defaults(kurum: Kurum | None = None, *, overwrite_settings: boo
 
     settings, created_settings = SiteSettings.objects.get_or_create(kurum=kurum)
     if created_settings or overwrite_settings:
-        settings.telefon = '0442 233 1234'
+        settings.telefon = (
+            '0442 233 12 34\n'
+            '0540 233 12 34\n'
+            '0530 944 99 25'
+        )
         settings.whatsapp = '905402331234'
         settings.eposta = 'info@3kkampus.com'  # Meta doğrulama: kurumsal domain e-posta
         settings.adres = 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM'

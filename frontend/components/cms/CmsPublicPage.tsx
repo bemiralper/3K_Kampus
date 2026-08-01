@@ -75,7 +75,14 @@ export default function CmsPublicPage({ payload }: Props) {
           <div>
             <strong>{brand}</strong>
             {footer.description ? <p>{footer.description}</p> : null}
-            <p>Tel: {company.telefon}</p>
+            <p>
+              {company.telefonler.map((tel, i) => (
+                <span key={tel}>
+                  {i > 0 ? ' · ' : ''}
+                  <a href={`tel:${tel.replace(/\D/g, '')}`}>{tel}</a>
+                </span>
+              ))}
+            </p>
             <p>
               <a href={`mailto:${company.eposta}`}>{company.eposta}</a>
             </p>
@@ -90,39 +97,13 @@ export default function CmsPublicPage({ payload }: Props) {
           ) : null}
         </div>
         <div className="cms-pub-footer-legal">
-          <strong>Şirket Bilgileri</strong>
-          <dl>
-            <div>
-              <dt>Ticari unvan</dt>
-              <dd>{company.ticari_unvan}</dd>
-            </div>
-            <div>
-              <dt>MERSİS No</dt>
-              <dd>{company.mersis_no}</dd>
-            </div>
-            <div>
-              <dt>Vergi No</dt>
-              <dd>{company.vergi_no}</dd>
-            </div>
-            <div>
-              <dt>Ticaret Sicil No</dt>
-              <dd>{company.ticaret_sicil_no}</dd>
-            </div>
-            <div className="cms-pub-footer-legal-wide">
-              <dt>Açık adres</dt>
-              <dd>{company.adres}</dd>
-            </div>
-            <div>
-              <dt>Telefon</dt>
-              <dd>{company.telefon}</dd>
-            </div>
-            <div>
-              <dt>E-posta</dt>
-              <dd>
-                <a href={`mailto:${company.eposta}`}>{company.eposta}</a>
-              </dd>
-            </div>
-          </dl>
+          <p>
+            <strong>{company.ticari_unvan}</strong>
+          </p>
+          <p>
+            MERSİS {company.mersis_no} · Vergi No {company.vergi_no} · Ticaret Sicil{' '}
+            {company.ticaret_sicil_no}
+          </p>
         </div>
         <p className="cms-pub-copy">{footer.copyright || `© ${new Date().getFullYear()} ${brand}`}</p>
       </footer>

@@ -4,7 +4,7 @@ import type { SiteSettings } from '@/lib/website-api';
 import { resolveMediaUrl, websiteCmsV2Api } from '@/lib/website-api';
 import { WamInput, WamTextarea } from './WamField';
 import CommaListInput from './CommaListInput';
-import { formatPhoneInput } from '@/lib/phone-format';
+import { formatPhoneListInput, parsePhoneList } from '@/lib/phone-format';
 import { parseMapEmbedUrl, buildMapEmbedFromAddress } from '@/lib/map-embed';
 
 type SiteSettingsPanelProps = {
@@ -57,16 +57,30 @@ export default function SiteSettingsPanel({
               <p>Top bar, footer ve iletişim bölümünde görünür</p>
             </div>
           </div>
+          <WamTextarea
+            label="Telefon(lar)"
+            hint="Sabit ve cep numaralarını her satıra bir tane yazın. Örn. 0442 233 12 34"
+            full
+            rows={3}
+            value={settings.telefon || ''}
+            onChange={e => set('telefon', e.target.value)}
+            onBlur={() => {
+              const normalized = formatPhoneListInput(settings.telefon);
+              if (normalized && normalized !== (settings.telefon || '').trim()) {
+                set('telefon', normalized);
+              }
+            }}
+            placeholder={'0442 233 12 34\n0540 233 12 34\n0530 944 99 25'}
+          />
           <div className="wam-form-grid">
-            <WamInput
-              label="Telefon"
-              value={settings.telefon || ''}
-              onChange={e => set('telefon', formatPhoneInput(e.target.value))}
-              placeholder="0212 555 00 00"
-            />
             <WamInput label="WhatsApp" value={settings.whatsapp || ''} onChange={e => set('whatsapp', e.target.value)} placeholder="+90 555 000 00 00" />
             <WamInput label="E-posta" type="email" value={settings.eposta || ''} onChange={e => set('eposta', e.target.value)} placeholder="info@3kkampus.com" />
           </div>
+          {parsePhoneList(settings.telefon).length > 0 ? (
+            <p className="wam-field-hint" style={{ marginTop: '-0.35rem' }}>
+              Kayıtlı: {parsePhoneList(settings.telefon).join(' · ')}
+            </p>
+          ) : null}
           <WamTextarea label="Adres" full value={settings.adres || ''} onChange={e => set('adres', e.target.value)} rows={2} />
           <WamTextarea label="Çalışma Saatleri" full value={settings.calisma_saatleri || ''} onChange={e => set('calisma_saatleri', e.target.value)} rows={2} placeholder="Pzt–Cum 09:00–18:00" />
           <label className="wam-checkbox-row">

@@ -70,7 +70,7 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
 
-  const displayTelefon = settings?.telefon?.trim() || company.telefon;
+  const displayTelefonler = company.telefonler;
   const displayAdres = settings?.adres?.trim() || company.adres;
   const displayEposta = company.eposta;
 
@@ -123,18 +123,19 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
         <div className="iletisim-grid">
           <div className="iletisim-info">
             <div className="iletisim-cards">
-              {displayTelefon && (
+              {displayTelefonler.map((tel, idx) => (
                 <ContactCard
-                  label="Telefon"
-                  value={formatPhoneDisplay(displayTelefon)}
-                  href={`tel:${phoneDigits(displayTelefon)}`}
+                  key={tel}
+                  label={idx === 0 ? 'Telefon' : `Telefon ${idx + 1}`}
+                  value={formatPhoneDisplay(tel)}
+                  href={`tel:${phoneDigits(tel)}`}
                   icon={
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
                     </svg>
                   }
                 />
-              )}
+              ))}
               {settings?.whatsapp && (
                 <ContactCard
                   label="WhatsApp"
@@ -195,12 +196,15 @@ export default function IletisimSection({ settings, hideHeader = false }: Iletis
                   <dt>Açık adres</dt>
                   <dd>{company.adres}</dd>
                 </div>
-                <div>
+                <div className="iletisim-company-wide">
                   <dt>Telefon</dt>
                   <dd>
-                    <a href={`tel:${phoneDigits(company.telefon)}`}>
-                      {formatPhoneDisplay(company.telefon)}
-                    </a>
+                    {company.telefonler.map((tel, i) => (
+                      <span key={tel}>
+                        {i > 0 ? ' · ' : ''}
+                        <a href={`tel:${phoneDigits(tel)}`}>{formatPhoneDisplay(tel)}</a>
+                      </span>
+                    ))}
                   </dd>
                 </div>
               </dl>

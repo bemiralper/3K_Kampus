@@ -22,7 +22,7 @@ export default function LandingJsonLd({ data }: Props) {
     name: branding.gorunen_ad,
     url: siteUrl,
     description: settings?.seo_aciklama || branding.slogan,
-    telephone: company.telefon,
+    telephone: company.telefonler.length === 1 ? company.telefonler[0] : company.telefonler,
     email: company.eposta,
     address: {
       '@type': 'PostalAddress',

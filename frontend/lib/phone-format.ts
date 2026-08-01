@@ -39,3 +39,30 @@ export function formatPhoneDisplay(phone: string | null | undefined): string {
 export function phoneDigits(phone: string): string {
   return phone.replace(/\D/g, '');
 }
+
+/**
+ * Birden fazla telefon — satır / virgül / noktalı virgül / tire ile ayrılmış.
+ * Örn. "0442…\n0540…" veya "0442…-0540…-0530…"
+ */
+export function parsePhoneList(raw: string | null | undefined): string[] {
+  if (!raw?.trim()) return [];
+  const parts = raw
+    .split(/[\n,;|]+|(?<=\d)\s*[-–—]\s*(?=\d)/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    const digits = phoneDigits(part);
+    if (digits.length < 10) continue;
+    if (seen.has(digits)) continue;
+    seen.add(digits);
+    out.push(formatPhoneDisplay(part) || part);
+  }
+  return out;
+}
+
+/** Admin kaydı için satır satır telefon listesi */
+export function formatPhoneListInput(raw: string | null | undefined): string {
+  return parsePhoneList(raw).join('\n');
+}

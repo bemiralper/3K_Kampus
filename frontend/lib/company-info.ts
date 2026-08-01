@@ -1,3 +1,5 @@
+import { parsePhoneList } from '@/lib/phone-format';
+
 /** 3K Kampüs ticari / yasal şirket bilgileri (footer + iletişim + yasal metinler). */
 export const DEFAULT_COMPANY_INFO = {
   ticari_unvan: 'ÖZGÜN SINAV ÖĞRETİM EĞİTİM ANONİM ŞİRKETİ',
@@ -5,7 +7,8 @@ export const DEFAULT_COMPANY_INFO = {
   vergi_no: '6920374763',
   ticaret_sicil_no: '14305',
   adres: 'LALAPAŞA MAH. MENDERES CAD. ERTURAN İNŞAAT NO: 23 YAKUTİYE/ ERZURUM',
-  telefon: '0442 233 1234',
+  /** Sabit + cep — satır satır saklanır */
+  telefon: '0442 233 12 34\n0540 233 12 34\n0530 944 99 25',
   eposta: 'info@3kkampus.com',
   marka: '3K Kampüs',
 } as const;
@@ -37,13 +40,18 @@ function resolveEposta(raw?: string | null): string {
 }
 
 export function resolveCompanyInfo(source?: CompanyInfoSource | null) {
+  const telefonRaw = source?.telefon?.trim() || DEFAULT_COMPANY_INFO.telefon;
+  const telefonler = parsePhoneList(telefonRaw);
+  const fallbackPhones = parsePhoneList(DEFAULT_COMPANY_INFO.telefon);
   return {
     ticari_unvan: source?.ticari_unvan?.trim() || DEFAULT_COMPANY_INFO.ticari_unvan,
     mersis_no: source?.mersis_no?.trim() || DEFAULT_COMPANY_INFO.mersis_no,
     vergi_no: source?.vergi_no?.trim() || DEFAULT_COMPANY_INFO.vergi_no,
     ticaret_sicil_no: source?.ticaret_sicil_no?.trim() || DEFAULT_COMPANY_INFO.ticaret_sicil_no,
     adres: source?.adres?.trim() || DEFAULT_COMPANY_INFO.adres,
-    telefon: source?.telefon?.trim() || DEFAULT_COMPANY_INFO.telefon,
+    /** Geriye uyumluluk: ilk numara */
+    telefon: telefonler[0] || fallbackPhones[0] || '',
+    telefonler: telefonler.length ? telefonler : fallbackPhones,
     eposta: resolveEposta(source?.eposta),
     marka: DEFAULT_COMPANY_INFO.marka,
   };
@@ -51,24 +59,24 @@ export function resolveCompanyInfo(source?: CompanyInfoSource | null) {
 
 /** KVKK / gizlilik metinlerinde ortak veri sorumlusu blokları */
 export function companyVeriSorumlusuParagraphs(): string[] {
-  const c = DEFAULT_COMPANY_INFO;
+  const c = resolveCompanyInfo(DEFAULT_COMPANY_INFO);
   return [
     `6698 sayılı KVKK kapsamında kişisel verileriniz, veri sorumlusu sıfatıyla ${c.ticari_unvan} ("${c.marka}") tarafından işlenmektedir.`,
     `${c.marka}, ${c.ticari_unvan} markasıdır.`,
     `Ticari unvan: ${c.ticari_unvan}`,
     `MERSİS No: ${c.mersis_no} · Vergi No: ${c.vergi_no} · Ticaret Sicil No: ${c.ticaret_sicil_no}`,
     `Açık adres: ${c.adres}`,
-    `Telefon: ${c.telefon} · E-posta: ${c.eposta}`,
+    `Telefon: ${c.telefonler.join(' · ')} · E-posta: ${c.eposta}`,
     'Güncel iletişim kanalları internet sitemizdeki İletişim sayfasında da yayımlanmaktadır.',
   ];
 }
 
 export function companyIletisimParagraphs(purpose: string): string[] {
-  const c = DEFAULT_COMPANY_INFO;
+  const c = resolveCompanyInfo(DEFAULT_COMPANY_INFO);
   return [
     `${purpose} ${c.ticari_unvan} (${c.marka}) ile aşağıdaki kanallardan iletişime geçebilirsiniz.`,
     `Adres: ${c.adres}`,
-    `Telefon: ${c.telefon}`,
+    `Telefon: ${c.telefonler.join(' · ')}`,
     `E-posta: ${c.eposta}`,
     'Veri silme ve KVKK başvuruları için ayrıca https://www.3kkampus.com/veri-silme adresindeki başvuru sürecini kullanabilirsiniz.',
   ];

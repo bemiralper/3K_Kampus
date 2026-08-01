@@ -1,6 +1,6 @@
 /** Hakkımızda sayfası içerik yapısı */
 
-import { DEFAULT_COMPANY_INFO } from '@/lib/company-info';
+import { DEFAULT_COMPANY_INFO, resolveCompanyInfo } from '@/lib/company-info';
 
 export const HAKKIMIZDA_META = {
   brand: '3K KAMPÜS',
@@ -20,7 +20,7 @@ export const HAKKIMIZDA_LEGAL = {
     `Ticari unvan: ${DEFAULT_COMPANY_INFO.ticari_unvan}`,
     `MERSİS No: ${DEFAULT_COMPANY_INFO.mersis_no} · Vergi No: ${DEFAULT_COMPANY_INFO.vergi_no} · Ticaret Sicil No: ${DEFAULT_COMPANY_INFO.ticaret_sicil_no}`,
     `Açık adres: ${DEFAULT_COMPANY_INFO.adres}`,
-    `Telefon: ${DEFAULT_COMPANY_INFO.telefon} · E-posta: ${DEFAULT_COMPANY_INFO.eposta}`,
+    `Telefon: ${resolveCompanyInfo().telefonler.join(' · ')} · E-posta: ${DEFAULT_COMPANY_INFO.eposta}`,
   ],
 };
 

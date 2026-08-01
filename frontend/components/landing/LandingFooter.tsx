@@ -20,9 +20,9 @@ type LandingFooterProps = {
 
 const COLUMN_TITLES: Record<string, string> = {
   kurumsal: 'Kurumsal',
-  hizli: 'Hızlı Bağlantılar',
+  hizli: 'Hızlı',
   yasal: 'Yasal',
-  sosyal: 'Bizi Takip Edin',
+  sosyal: 'Sosyal',
 };
 
 const SOCIAL_META: Record<string, { label: string; icon: ReactNode }> = {
@@ -86,8 +86,7 @@ function FooterNavLink({ link, pathname }: { link: FooterLink; pathname: string 
   if (item.url.startsWith('#') || item.url.startsWith('/#')) {
     return (
       <button type="button" className="footer-link-item" onClick={() => handleLandingNav(item.url, pathname)}>
-        <span>{item.etiket}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        {item.etiket}
       </button>
     );
   }
@@ -95,16 +94,14 @@ function FooterNavLink({ link, pathname }: { link: FooterLink; pathname: string 
   if (item.url.startsWith('/') && !item.url.startsWith('//')) {
     return (
       <Link href={item.url} className="footer-link-item">
-        <span>{item.etiket}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        {item.etiket}
       </Link>
     );
   }
 
   return (
     <a href={item.url} target="_blank" rel="noopener noreferrer" className="footer-link-item">
-      <span>{item.etiket}</span>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+      {item.etiket}
     </a>
   );
 }
@@ -112,12 +109,20 @@ function FooterNavLink({ link, pathname }: { link: FooterLink; pathname: string 
 export default function LandingFooter({ settings, footerLinks, socialLinks, brandName }: LandingFooterProps) {
   const pathname = usePathname();
   const columns = ['kurumsal', 'hizli', 'yasal', 'sosyal'] as const;
-  const copyright = settings?.footer_copyright || '© 2026 3K Kampüs — Tüm hakları saklıdır.';
-  const brandTitle = settings?.footer_baslik?.trim() || brandName || '3K Kampüs';
-  const brandDesc = settings?.footer_aciklama?.trim()
-    || 'LGS, YKS ve okul destek programları ile başarıya giden yolda dijital eğitim partneriniz.';
-  const markaMetni = settings?.footer_marka_metni || '3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.';
   const company = resolveCompanyInfo(settings);
+  const copyright = settings?.footer_copyright || '© 2026 3K Kampüs';
+  const markaMetni = settings?.footer_marka_metni || '3K Kampüs, Özgün Sınav Öğretim Eğitim A.Ş. markasıdır.';
+
+  // Ticari unvan yanlışlıkla marka başlığına yazılmışsa düzelt
+  const rawTitle = settings?.footer_baslik?.trim() || brandName || company.marka;
+  const brandTitle =
+    rawTitle.length > 36 ||
+    rawTitle.toLocaleUpperCase('tr-TR') === company.ticari_unvan.toLocaleUpperCase('tr-TR')
+      ? brandName || company.marka
+      : rawTitle;
+
+  const brandDesc = settings?.footer_aciklama?.trim()
+    || 'LGS, YKS ve okul destek — dijital eğitim partneriniz.';
 
   const visibleFooterLinks = mergeFooterLinks(
     footerLinks.filter(l => l.aktif !== false && !shouldHideFooterLink(l)),
@@ -127,21 +132,24 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
   return (
     <footer className="site-footer">
       <div className="site-footer-glow" aria-hidden />
-      <div className="mx-auto max-w-7xl px-4 py-14 lg:px-8 lg:py-16">
+      <div className="mx-auto max-w-7xl px-4 py-10 lg:px-8 lg:py-12">
         <div className="footer-top">
           <div className="footer-brand-block">
             <h3 className="footer-brand-title">{brandTitle}</h3>
-            <p className="footer-brand-desc">
-              {brandDesc}
-            </p>
-            <div className="footer-contact-chips">
-              <a href={`tel:${phoneDigits(company.telefon)}`} className="footer-contact-chip">
-                {formatPhoneDisplay(company.telefon)}
-              </a>
-              <a href={`mailto:${company.eposta}`} className="footer-contact-chip">
+            <p className="footer-brand-desc">{brandDesc}</p>
+
+            <div className="footer-contact">
+              {company.telefonler.map((tel) => (
+                <a key={tel} href={`tel:${phoneDigits(tel)}`} className="footer-contact-chip">
+                  {formatPhoneDisplay(tel)}
+                </a>
+              ))}
+              <a href={`mailto:${company.eposta}`} className="footer-contact-chip footer-contact-chip--mail">
                 {company.eposta}
               </a>
             </div>
+
+            <p className="footer-address">{company.adres}</p>
           </div>
 
           <div className="footer-columns">
@@ -168,7 +176,7 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
                             title={meta?.label || l.platform}
                           >
                             {meta?.icon ? (
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">{meta.icon}</svg>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">{meta.icon}</svg>
                             ) : (
                               <span>{meta?.label || l.platform}</span>
                             )}
@@ -191,44 +199,15 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
           </div>
         </div>
 
-        <div className="footer-legal">
-          <h4 className="footer-legal-title">Şirket Bilgileri</h4>
-          <dl className="footer-legal-grid">
-            <div>
-              <dt>Ticari unvan</dt>
-              <dd>{company.ticari_unvan}</dd>
-            </div>
-            <div>
-              <dt>MERSİS No</dt>
-              <dd>{company.mersis_no}</dd>
-            </div>
-            <div>
-              <dt>Vergi No</dt>
-              <dd>{company.vergi_no}</dd>
-            </div>
-            <div>
-              <dt>Ticaret Sicil No</dt>
-              <dd>{company.ticaret_sicil_no}</dd>
-            </div>
-            <div className="footer-legal-wide">
-              <dt>Açık adres</dt>
-              <dd>{company.adres}</dd>
-            </div>
-            <div>
-              <dt>Telefon</dt>
-              <dd>
-                <a href={`tel:${phoneDigits(company.telefon)}`}>
-                  {formatPhoneDisplay(company.telefon)}
-                </a>
-              </dd>
-            </div>
-            <div>
-              <dt>E-posta</dt>
-              <dd>
-                <a href={`mailto:${company.eposta}`}>{company.eposta}</a>
-              </dd>
-            </div>
-          </dl>
+        <div className="footer-imprint">
+          <p className="footer-imprint-unvan">{company.ticari_unvan}</p>
+          <p className="footer-imprint-meta">
+            MERSİS {company.mersis_no}
+            <span aria-hidden> · </span>
+            Vergi No {company.vergi_no}
+            <span aria-hidden> · </span>
+            Ticaret Sicil {company.ticaret_sicil_no}
+          </p>
         </div>
 
         <div className="footer-bottom">
@@ -249,66 +228,82 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
           position: absolute;
           inset: 0;
           background:
-            radial-gradient(ellipse 80% 50% at 50% -20%, rgba(2, 98, 167, 0.35), transparent),
-            radial-gradient(ellipse 40% 30% at 100% 100%, rgba(2, 98, 167, 0.15), transparent);
+            radial-gradient(ellipse 70% 45% at 20% -10%, rgba(2, 98, 167, 0.28), transparent),
+            radial-gradient(ellipse 40% 30% at 100% 100%, rgba(2, 98, 167, 0.12), transparent);
         }
         .footer-top {
           position: relative;
           display: grid;
-          gap: 2.5rem;
+          gap: 2rem;
         }
         @media (min-width: 1024px) {
-          .footer-top { grid-template-columns: 1.1fr 2fr; }
+          .footer-top {
+            grid-template-columns: minmax(16rem, 1.15fr) 2fr;
+            gap: 2.5rem;
+            align-items: start;
+          }
         }
         .footer-brand-title {
           margin: 0;
-          font-size: 1.35rem;
+          font-size: 1.4rem;
           font-weight: 800;
-          letter-spacing: -0.02em;
+          letter-spacing: -0.03em;
         }
         .footer-brand-desc {
-          margin: 0.65rem 0 0;
+          margin: 0.4rem 0 0;
           max-width: 22rem;
-          font-size: 14px;
-          line-height: 1.65;
-          color: #cbd5e1;
+          font-size: 13px;
+          line-height: 1.55;
+          color: #94a3b8;
         }
-        .footer-contact-chips {
+        .footer-contact {
           display: flex;
           flex-wrap: wrap;
-          gap: 0.5rem;
+          gap: 0.4rem;
           margin-top: 1rem;
         }
         .footer-contact-chip {
           display: inline-flex;
-          padding: 0.45rem 0.85rem;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.1);
-          border: 1px solid rgba(255, 255, 255, 0.15);
+          padding: 0.4rem 0.7rem;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.12);
           color: #f1f5f9;
-          font-size: 13px;
+          font-size: 12.5px;
           font-weight: 600;
+          font-variant-numeric: tabular-nums;
           text-decoration: none;
-          transition: background 0.15s;
+          transition: background 0.15s, border-color 0.15s;
         }
-        .footer-contact-chip:hover { background: rgba(255, 255, 255, 0.16); }
+        .footer-contact-chip:hover {
+          background: rgba(255, 255, 255, 0.14);
+          border-color: rgba(255, 255, 255, 0.22);
+        }
+        .footer-contact-chip--mail {
+          color: #bae6fd;
+        }
+        .footer-address {
+          margin: 0.85rem 0 0;
+          max-width: 22rem;
+          font-size: 12px;
+          line-height: 1.5;
+          color: #94a3b8;
+        }
         .footer-columns {
           display: grid;
-          gap: 1.75rem;
+          gap: 1.25rem 1.5rem;
+          grid-template-columns: repeat(2, 1fr);
         }
-        @media (min-width: 640px) {
-          .footer-columns { grid-template-columns: repeat(2, 1fr); }
-        }
-        @media (min-width: 1024px) {
+        @media (min-width: 768px) {
           .footer-columns { grid-template-columns: repeat(4, 1fr); }
         }
         .footer-col-title {
-          margin: 0 0 0.85rem;
-          font-size: 11px;
+          margin: 0 0 0.65rem;
+          font-size: 10px;
           font-weight: 700;
-          letter-spacing: 0.1em;
+          letter-spacing: 0.12em;
           text-transform: uppercase;
-          color: #94a3b8;
+          color: #64748b;
         }
         .footer-link-list {
           margin: 0;
@@ -316,138 +311,92 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
           list-style: none;
           display: flex;
           flex-direction: column;
-          gap: 0.35rem;
+          gap: 0.2rem;
         }
         .footer-link-item {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 0.5rem;
+          display: block;
           width: 100%;
-          padding: 0.5rem 0.65rem;
-          margin: 0 -0.65rem;
+          padding: 0.3rem 0;
           border: none;
-          border-radius: 10px;
           background: transparent;
-          color: #e2e8f0;
-          font-size: 14px;
+          color: #cbd5e1;
+          font-size: 13.5px;
           font-weight: 500;
           text-align: left;
           text-decoration: none;
           cursor: pointer;
-          transition: background 0.15s, color 0.15s, transform 0.15s;
+          transition: color 0.15s;
         }
-        .footer-link-item svg {
-          flex-shrink: 0;
-          opacity: 0.45;
-          transition: opacity 0.15s, transform 0.15s;
-        }
-        .footer-link-item:hover {
-          background: rgba(255, 255, 255, 0.08);
-          color: #fff;
-        }
-        .footer-link-item:hover svg {
-          opacity: 1;
-          transform: translateX(2px);
-        }
+        .footer-link-item:hover { color: #fff; }
         .footer-social-row {
           display: flex;
           flex-wrap: wrap;
-          gap: 0.5rem;
+          gap: 0.4rem;
         }
         .footer-social-btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 42px;
-          height: 42px;
-          border-radius: 12px;
-          background: rgba(255, 255, 255, 0.1);
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          color: #f1f5f9;
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #e2e8f0;
           text-decoration: none;
-          transition: background 0.15s, transform 0.15s, border-color 0.15s;
+          transition: background 0.15s, transform 0.15s;
         }
         .footer-social-btn:hover {
           background: ${LANDING_COLORS.accent};
           border-color: ${LANDING_COLORS.accent};
           color: #fff;
-          transform: translateY(-2px);
+          transform: translateY(-1px);
         }
-        .footer-legal {
-          position: relative;
-          margin-top: 2.5rem;
-          padding-top: 1.75rem;
-          border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .footer-legal-title {
-          margin: 0 0 1rem;
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          color: #94a3b8;
-        }
-        .footer-legal-grid {
-          margin: 0;
-          display: grid;
-          gap: 0.85rem 1.5rem;
-        }
-        @media (min-width: 640px) {
-          .footer-legal-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-        @media (min-width: 1024px) {
-          .footer-legal-grid { grid-template-columns: repeat(3, 1fr); }
-        }
-        .footer-legal-grid > div {
-          min-width: 0;
-        }
-        .footer-legal-wide {
-          grid-column: 1 / -1;
-        }
-        @media (min-width: 1024px) {
-          .footer-legal-wide { grid-column: span 2; }
-        }
-        .footer-legal-grid dt {
-          margin: 0;
-          font-size: 11px;
-          font-weight: 600;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          color: #94a3b8;
-        }
-        .footer-legal-grid dd {
-          margin: 0.2rem 0 0;
-          font-size: 13px;
-          line-height: 1.5;
-          color: #e2e8f0;
-          word-break: break-word;
-        }
-        .footer-legal-grid a {
-          color: #f1f5f9;
-          text-decoration: none;
-        }
-        .footer-legal-grid a:hover { color: #fff; text-decoration: underline; }
-        .footer-bottom {
+        .footer-imprint {
           position: relative;
           margin-top: 1.75rem;
-          padding-top: 1.25rem;
+          padding-top: 1.15rem;
           border-top: 1px solid rgba(255, 255, 255, 0.1);
-          text-align: center;
+        }
+        .footer-imprint-unvan {
+          margin: 0;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          color: #e2e8f0;
+          line-height: 1.4;
+        }
+        .footer-imprint-meta {
+          margin: 0.35rem 0 0;
+          font-size: 11.5px;
+          line-height: 1.5;
+          color: #94a3b8;
+        }
+        .footer-bottom {
+          position: relative;
+          margin-top: 1rem;
+          padding-top: 1rem;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+        @media (min-width: 640px) {
+          .footer-bottom {
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+          }
         }
         .footer-brand-line {
           margin: 0;
-          font-size: 14px;
-          color: #cbd5e1;
-        }
-        .footer-brand-line strong {
-          color: #f8fafc;
-          font-weight: 600;
+          font-size: 12.5px;
+          color: #94a3b8;
         }
         .footer-copy {
-          margin: 0.5rem 0 0;
-          font-size: 13px;
-          color: #94a3b8;
+          margin: 0;
+          font-size: 12px;
+          color: #64748b;
         }
       `}</style>
     </footer>
