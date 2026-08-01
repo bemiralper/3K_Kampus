@@ -20,6 +20,7 @@ import { downloadBlob } from "@/lib/download-file";
 // Tip tanımları
 type PersonelData = {
   id: number;
+  kisi_id?: number | null;
   tc_kimlik_no: string;
   ad: string;
   soyad: string;
@@ -136,8 +137,8 @@ export default function PersonelListesiPage() {
 
   const kimlik = useKimlikLookup({
     context: "personel",
-    enabled: !editingPersonel,
-    excludeKisiId: kimlikLink.kisi_id,
+    enabled: true,
+    excludeKisiId: editingPersonel?.kisi_id || kimlikLink.kisi_id,
   });
 
   const pendingKimlikReuse = useMemo(
@@ -1295,10 +1296,10 @@ export default function PersonelListesiPage() {
                       value={formData.cep_telefon}
                       onChange={(e) => {
                         setFormData({ ...formData, cep_telefon: e.target.value });
-                        if (!editingPersonel) kimlik.checkPhone(e.target.value);
+                        kimlik.checkPhone(e.target.value);
                       }}
                       onBlur={() => {
-                        if (!editingPersonel) kimlik.checkPhone(formData.cep_telefon);
+                        kimlik.checkPhone(formData.cep_telefon);
                       }}
                       placeholder="05XX XXX XX XX"
                     />
@@ -2911,10 +2912,16 @@ export default function PersonelListesiPage() {
         result={kimlik.result}
         context="personel"
         loading={kimlik.checking}
-        applyDisabled={kimlik.applyDisabled}
+        applyDisabled={kimlik.applyDisabled || Boolean(editingPersonel)}
+        hideApply={Boolean(editingPersonel)}
         onApply={applyKimlikToForm}
         onCancel={() => {
           kimlik.dismissModal();
+          if (editingPersonel) {
+            setFormData((prev) => ({ ...prev, cep_telefon: "" }));
+            setFormError("Bu telefon başka bir kişiye ait. Lütfen farklı bir numara girin.");
+            return;
+          }
           if (pendingKimlikReuse) {
             setFormError(KIMLIK_REUSE_MSG);
           }

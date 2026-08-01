@@ -11,6 +11,9 @@ type KisiBulunduModalProps = {
   loading?: boolean;
   applyDisabled?: boolean;
   applyLabel?: string;
+  /** Varsayılan: Numarayı değiştir */
+  cancelLabel?: string;
+  hideApply?: boolean;
   extraContent?: ReactNode;
   onApply: () => void;
   onCancel: () => void;
@@ -29,6 +32,8 @@ export default function KisiBulunduModal({
   loading = false,
   applyDisabled = false,
   applyLabel,
+  cancelLabel = "Numarayı değiştir",
+  hideApply = false,
   extraContent,
   onApply,
   onCancel,
@@ -71,7 +76,8 @@ export default function KisiBulunduModal({
                 Kişi Bulundu
               </h3>
               <p className="text-sm text-slate-600">
-                Girilen bilgilerle eşleşen bir kişi sistemde bulundu.
+                Bu telefon numarası sistemde kayıtlı. Mevcut kişiyi kullanabilir veya farklı
+                numara girebilirsiniz.
                 {result.eslesme === "telefon" && (
                   <span className="ml-1 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800">
                     Telefon eşleşmesi
@@ -163,8 +169,8 @@ export default function KisiBulunduModal({
           {extraContent}
 
           <p className="text-xs text-slate-500">
-            TC Kimlik Numarası değiştirilemez. Telefon ve diğer iletişim bilgilerini gerekirse formda
-            güncelleyebilirsiniz.
+            Mevcut kişiyi seçerseniz TC kilitlenir; iletişim bilgilerini formda güncelleyebilirsiniz.
+            Farklı bir numara kullanacaksanız «{cancelLabel}»e tıklayın.
           </p>
         </div>
 
@@ -174,17 +180,19 @@ export default function KisiBulunduModal({
             onClick={onCancel}
             className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            Vazgeç
+            {cancelLabel}
           </button>
-          <button
-            type="button"
-            disabled={loading || blocked}
-            onClick={onApply}
-            className="rounded-lg bg-[#1e3a5f] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#2d5a87] disabled:opacity-60"
-            title={blocked ? result.engellenen_mesaj || "Bu kayıt tamamlanamaz" : undefined}
-          >
-            {loading ? "Yükleniyor…" : primaryLabel}
-          </button>
+          {!hideApply && (
+            <button
+              type="button"
+              disabled={loading || blocked}
+              onClick={onApply}
+              className="rounded-lg bg-[#1e3a5f] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#2d5a87] disabled:opacity-60"
+              title={blocked ? result.engellenen_mesaj || "Bu kayıt tamamlanamaz" : undefined}
+            >
+              {loading ? "Yükleniyor…" : primaryLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>

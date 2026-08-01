@@ -148,6 +148,7 @@ def personel_list_api(request):
         linked_user = resolve_personel_user(p)
         personel_rows.append({
                 'id': p.id,
+                'kisi_id': p.kisi_id,
                 'tc_kimlik_no': p.tc_kimlik_no or '',
                 'ad': p.ad,
                 'soyad': p.soyad,
@@ -205,6 +206,7 @@ def personel_detail_api(request, pk):
         'success': True,
         'personel': {
             'id': personel.id,
+            'kisi_id': personel.kisi_id,
             'tc_kimlik_no': personel.tc_kimlik_no or '',
             'ad': personel.ad,
             'soyad': personel.soyad,
@@ -1333,6 +1335,7 @@ def personel_full_detail_api(request, pk):
         'success': True,
         'personel': {
             'id': personel.id,
+            'kisi_id': personel.kisi_id,
             'tc_kimlik_no': personel.tc_kimlik_no or '',
             'ad': personel.ad,
             'soyad': personel.soyad,

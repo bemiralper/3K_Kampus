@@ -7,6 +7,9 @@ import "react-datepicker/dist/react-datepicker.css";
 import { dateToIsoLocal, isoToLocalDate } from "@/lib/date-utils";
 import SchoolAutocomplete from "@/components/okul/SchoolAutocomplete";
 import { apiPut } from "@/lib/api";
+import KisiBulunduModal from "@/components/kimlik/KisiBulunduModal";
+import { useKimlikLookup } from "@/hooks/useKimlikLookup";
+import { pickOgrenciRol } from "@/lib/kimlik-api";
 import { OgrenciDetay } from "../types";
 
 registerLocale("tr", tr);
@@ -65,6 +68,7 @@ export default function OgrenciBilgiDrawer({
   const [kayitTurleri, setKayitTurleri] = useState<KayitTuru[]>([]);
   const [cinsiyetSecenekleri, setCinsiyetSecenekleri] = useState<CinsiyetSecenegi[]>([]);
   const drawerRef = useRef<HTMLDivElement>(null);
+  const kimlik = useKimlikLookup({ context: "ogrenci", enabled: isOpen });
 
   // Steps configuration
   const steps: { key: FormStep; label: string; icon: React.ReactNode }[] = [
@@ -175,6 +179,16 @@ export default function OgrenciBilgiDrawer({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [isOpen, onClose]);
+
+  // Kendi telefonu eşleşirse modal gösterme; başka kişi ise uyarı
+  useEffect(() => {
+    if (!kimlik.showModal || !kimlik.result?.found) return;
+    const ogrRol = pickOgrenciRol(kimlik.result.roller);
+    if (ogrRol?.id === data.id) {
+      kimlik.dismissModal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sadece eşleşme değişince
+  }, [kimlik.showModal, kimlik.result, data.id]);
 
   // Form submit
   const handleSubmit = async (e: React.FormEvent) => {
@@ -661,13 +675,16 @@ export default function OgrenciBilgiDrawer({
                       <input
                         type="tel"
                         value={formData.telefon}
-                        onChange={(e) => setFormData({ ...formData, telefon: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, telefon: e.target.value });
+                          kimlik.checkPhone(e.target.value);
+                        }}
                         placeholder="0532 123 45 67"
                         style={{
                           width: '100%',
                           padding: '12px 16px 12px 48px',
                           borderRadius: '10px',
-                          border: '1px solid #e2e8f0',
+                          border: kimlik.phoneError ? '1px solid #ef4444' : '1px solid #e2e8f0',
                           fontSize: '14px',
                           transition: 'all 0.2s',
                           outline: 'none',
@@ -677,11 +694,17 @@ export default function OgrenciBilgiDrawer({
                           e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
                         }}
                         onBlur={(e) => {
-                          e.target.style.borderColor = '#e2e8f0';
+                          e.target.style.borderColor = kimlik.phoneError ? '#ef4444' : '#e2e8f0';
                           e.target.style.boxShadow = 'none';
+                          kimlik.checkPhone(formData.telefon);
                         }}
                       />
                     </div>
+                    {kimlik.phoneError && (
+                      <span style={{ display: 'block', marginTop: 6, fontSize: 12, color: '#dc2626' }}>
+                        {kimlik.phoneError}
+                      </span>
+                    )}
                   </div>
                   <div className="form-field">
                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
@@ -1100,6 +1123,20 @@ export default function OgrenciBilgiDrawer({
           </div>
         </form>
       </div>
+
+      <KisiBulunduModal
+        open={kimlik.showModal}
+        result={kimlik.result}
+        context="ogrenci"
+        loading={kimlik.checking}
+        hideApply
+        onApply={() => kimlik.dismissModal()}
+        onCancel={() => {
+          kimlik.dismissModal();
+          setFormData((prev) => ({ ...prev, telefon: "" }));
+          setError("Bu telefon başka bir kişiye ait. Lütfen farklı bir numara girin.");
+        }}
+      />
 
       <style jsx>{`
         @keyframes slideIn {
