@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 from apps.communication.application.coach_scope import assign_coach_to_conversation
 from apps.communication.application.contact_resolver import ContactResolver
+from apps.communication.application.conversation_display import (
+    sync_conversation_display_name,
+)
 from apps.communication.domain.enums import (
     Channel,
     MessageDirection,
@@ -220,6 +223,9 @@ class InboundProcessor:
             if updated:
                 conversation.save()
 
+        wa_profile_name = self._extract_wa_profile_name(value, phone)
+        sync_conversation_display_name(conversation, wa_profile_name=wa_profile_name, save=True)
+
         if created or not conversation.assigned_coach_id:
             assign_coach_to_conversation(conversation)
 
@@ -336,6 +342,20 @@ class InboundProcessor:
             file_size=len(content),
         )
         attachment.file.save(filename, ContentFile(content), save=True)
+
+    @staticmethod
+    def _extract_wa_profile_name(value: dict[str, Any], phone: str) -> str:
+        """Meta webhook value.contacts[].profile.name eşleşen wa_id için."""
+        if not phone:
+            return ''
+        digits = ''.join(ch for ch in phone if ch.isdigit())
+        for contact in value.get('contacts', []) or []:
+            wa_id = ''.join(ch for ch in str(contact.get('wa_id', '')) if ch.isdigit())
+            if wa_id and (wa_id == digits or wa_id.lstrip('0') == digits.lstrip('0')):
+                name = (contact.get('profile', {}) or {}).get('name', '')
+                if name:
+                    return str(name).strip()
+        return ''
 
     def _extract_message_content(self, msg: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
         msg_type = msg.get('type', 'text')

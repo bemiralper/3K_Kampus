@@ -8,6 +8,10 @@ from __future__ import annotations
 from django.conf import settings
 from django.utils import timezone
 
+from apps.communication.application.conversation_display import (
+    looks_like_phone,
+    resolve_conversation_display_name,
+)
 from apps.communication.application.conversation_events import (
     log_conversation_event,
     log_status_change,
@@ -48,14 +52,7 @@ def resolve_primary_coach(ogrenci_id: int | None):
 
 
 def _contact_display_name(conversation: Conversation) -> str:
-    if conversation.contact_name:
-        return conversation.contact_name
-    if conversation.veli_id and getattr(conversation, 'veli', None):
-        return conversation.veli.tam_ad or ''
-    if conversation.ogrenci_id and getattr(conversation, 'ogrenci', None):
-        o = conversation.ogrenci
-        return f'{o.ad} {o.soyad}'.strip()
-    return conversation.contact_phone or ''
+    return resolve_conversation_display_name(conversation, allow_live_lookup=True)
 
 
 def _department_from_channel(conversation: Conversation, channel_config=None) -> str:
@@ -128,8 +125,13 @@ class ConversationRouter:
         has_coach = bool(conversation.assigned_coach_id)
 
         name = _contact_display_name(conversation)
-        if name and conversation.contact_name != name:
-            conversation.contact_name = name[:255]
+        if name and not looks_like_phone(name, conversation.contact_phone):
+            if conversation.contact_name != name:
+                conversation.contact_name = name[:255]
+                update_fields.append('contact_name')
+        elif looks_like_phone(conversation.contact_name, conversation.contact_phone) and conversation.contact_name:
+            # Eskiden telefona yazılmış contact_name'i temizle ki serializer tekrar çözümlesin
+            conversation.contact_name = ''
             update_fields.append('contact_name')
 
         conversation.last_customer_message_at = now

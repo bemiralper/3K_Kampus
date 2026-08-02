@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import logging
 
+from apps.communication.application.conversation_display import (
+    resolve_conversation_display_name,
+)
 from apps.takvim.domain.enums import RecipientType
 from apps.takvim.infrastructure.repository import AppNotificationRepository
 
@@ -89,11 +92,7 @@ def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
     if not user_ids:
         return 0
 
-    name = (
-        (conversation.contact_name or '').strip()
-        or conversation.contact_phone
-        or 'WhatsApp'
-    )
+    name = resolve_conversation_display_name(conversation, allow_live_lookup=True)
     body = (preview or conversation.last_message_preview or 'Yeni mesaj')[:200]
     url = f'/admin/iletisim/mesajlar?conversation={conversation.id}'
     repo = AppNotificationRepository()

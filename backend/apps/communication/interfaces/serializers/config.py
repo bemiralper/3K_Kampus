@@ -1,5 +1,8 @@
 from rest_framework import serializers
 
+from apps.communication.application.conversation_display import (
+    resolve_conversation_display_name,
+)
 from apps.communication.application.token_crypto import encrypt_access_token
 from apps.communication.domain.models import (
     CommunicationChannelConfig,
@@ -140,23 +143,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
         return ''
 
     def get_contact_name(self, obj) -> str:
-        if getattr(obj, 'contact_name', None):
-            return obj.contact_name
-        if obj.veli_id and obj.veli:
-            return obj.veli.tam_ad
-        if obj.ogrenci_id and obj.ogrenci:
-            return f'{obj.ogrenci.ad} {obj.ogrenci.soyad}'.strip()
-        identity = getattr(obj, 'contact_identity', None)
-        personel = getattr(identity, 'personel', None) if identity else None
-        if personel:
-            return (getattr(personel, 'tam_ad', None) or f'{personel.ad} {personel.soyad}').strip()
-        if getattr(obj, 'contact_type', '') == 'PERSONEL':
-            if obj.subject:
-                return obj.subject
-            name = self._personel_name_by_phone(obj)
-            if name:
-                return name
-        return obj.contact_phone
+        return resolve_conversation_display_name(obj, allow_live_lookup=True)
 
     def get_assigned_coach_name(self, obj) -> str:
         coach = getattr(obj, 'assigned_coach', None)
