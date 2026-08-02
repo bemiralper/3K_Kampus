@@ -1291,6 +1291,9 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'assignment_title': preview.assignment_title,
                 'student_name': preview.student_name,
                 'pdf_title': preview.pdf_title,
+                'send_mode': preview.send_mode,
+                'meta_template_veli': preview.meta_template_veli,
+                'meta_template_ogrenci': preview.meta_template_ogrenci,
                 'recipients': [
                     {
                         'recipient_type': r.recipient_type,

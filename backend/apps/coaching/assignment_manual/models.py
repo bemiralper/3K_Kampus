@@ -717,6 +717,39 @@ class AssignmentNotificationConfig(models.Model):
         related_name='+',
         verbose_name='Ödev raporu — öğrenci şablonu',
     )
+    # Meta DOCUMENT-header şablonları (WhatsApp'ta metin + PDF aynı mesaj)
+    plan_veli_meta_template = models.ForeignKey(
+        'communication.WhatsAppMetaTemplate',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='+',
+        verbose_name='Ödev planı — veli Meta şablonu',
+    )
+    plan_ogrenci_meta_template = models.ForeignKey(
+        'communication.WhatsAppMetaTemplate',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='+',
+        verbose_name='Ödev planı — öğrenci Meta şablonu',
+    )
+    report_veli_meta_template = models.ForeignKey(
+        'communication.WhatsAppMetaTemplate',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='+',
+        verbose_name='Ödev raporu — veli Meta şablonu',
+    )
+    report_ogrenci_meta_template = models.ForeignKey(
+        'communication.WhatsAppMetaTemplate',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='+',
+        verbose_name='Ödev raporu — öğrenci Meta şablonu',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -27,6 +27,11 @@ class MessageContent:
     attachment_filename: str = ''
     attachment_mime_type: str = ''
     reply_to_message_id: str | None = None
+    # Meta template gönderimi (kampanya olmadan)
+    template_name: str = ''
+    template_language: str = 'tr'
+    channel_config_id: str | None = None
+    template_context: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -78,7 +83,7 @@ class CommunicationService:
         content = content or MessageContent()
         source = source or MessageSource()
 
-        if not content.text and not content.attachment_path:
+        if not content.text and not content.attachment_path and not content.template_name:
             return SendResult(success=False, errors=['Mesaj içeriği boş olamaz.'])
 
         phone = recipients.phone
@@ -155,7 +160,9 @@ class CommunicationService:
             )
 
         message_type = content.message_type
-        if content.attachment_path and message_type == MessageType.TEXT:
+        if content.template_name:
+            message_type = MessageType.TEMPLATE
+        elif content.attachment_path and message_type == MessageType.TEXT:
             message_type = MessageType.DOCUMENT
 
         reply_to = None
@@ -196,8 +203,8 @@ class CommunicationService:
                 mime_type=mime,
             )
             if default_storage.exists(content.attachment_path):
-                with default_storage.open(content.attachment_path, 'rb') as source:
-                    data = source.read()
+                with default_storage.open(content.attachment_path, 'rb') as fh:
+                    data = fh.read()
                 attachment.file_size = len(data)
                 attachment.file.save(
                     os.path.basename(content.attachment_path),
@@ -210,14 +217,24 @@ class CommunicationService:
 
         ConversationRepository.update_on_message(
             conversation,
-            preview=content.text or f'[{content.message_type}]',
+            preview=content.text or f'[{message_type}]',
             direction=MessageDirection.OUTBOUND,
         )
+
+        send_options = {}
+        if content.template_name:
+            send_options = {
+                'template_name': content.template_name,
+                'template_language': content.template_language or 'tr',
+                'channel_config_id': content.channel_config_id or '',
+                'template_context': content.template_context or {},
+            }
 
         queue_item = OutboundQueueRepository.enqueue(
             kurum_id=kurum_id,
             message=message,
             next_attempt_at=timezone.now(),
+            send_options=send_options or None,
         )
 
         provider_response: dict[str, Any] = {}

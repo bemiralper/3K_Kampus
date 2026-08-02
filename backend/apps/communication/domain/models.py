@@ -968,6 +968,9 @@ class OutboundQueueItem(models.Model):
     next_attempt_at = models.DateTimeField(verbose_name='Sonraki Deneme')
     locked_at = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True, default='')
+    # Kampanya dışı şablon gönderimi: template_name, template_language,
+    # channel_config_id, template_context (hafta_no, odev_baslik, …)
+    send_options = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

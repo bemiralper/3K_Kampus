@@ -12,6 +12,11 @@ from apps.communication.application.campaign_service import CampaignStatsService
 from apps.communication.application.meta_template_mapper import build_send_body_parameters
 from apps.communication.application.meta_template_service import MetaTemplateService
 from apps.communication.application.template_component_builder import build_template_components
+from apps.communication.application.template_media_header import (
+    build_media_header_component,
+    meta_template_header_type,
+    strip_header_components,
+)
 from apps.communication.application.variable_resolver import build_recipient_context_from_conversation
 from apps.communication.domain.enums import CampaignStatus, MessageStatus, MessageType
 from apps.communication.infrastructure.channels.base import BaseChannelClient
@@ -55,7 +60,18 @@ def _resolve_media_id(client, kurum_id: int, attachment) -> tuple[str | None, st
     path = local_file_path(attachment.file)
     mime = attachment.mime_type or 'application/octet-stream'
     if path:
-        media_id = client.upload_media(kurum_id, path, mime)
+        upload_kwargs = {}
+        if hasattr(client, 'upload_media'):
+            # Dosya adı Meta için önemli (özellikle PDF DOCUMENT)
+            fname = getattr(attachment, 'original_name', '') or ''
+            try:
+                media_id = client.upload_media(
+                    kurum_id, path, mime, file_name=fname or None,
+                )
+            except TypeError:
+                media_id = client.upload_media(kurum_id, path, mime)
+        else:
+            media_id = None
         if media_id:
             attachment.provider_media_id = media_id
             attachment.save(update_fields=['provider_media_id'])
@@ -109,9 +125,21 @@ def _send_attachment_message(client, kurum_id, phone, message, attachment) -> di
     )
 
 
+def _send_options(item) -> dict:
+    opts = getattr(item, 'send_options', None) or {}
+    return opts if isinstance(opts, dict) else {}
+
+
 def _resolve_channel_config(item):
     message = item.message
     conversation = getattr(message, 'conversation', None)
+    opts = _send_options(item)
+    cfg_id = opts.get('channel_config_id') or opts.get('account_id')
+    if cfg_id:
+        from apps.communication.domain.models import CommunicationChannelConfig
+        cfg = CommunicationChannelConfig.objects.filter(id=cfg_id).first()
+        if cfg is not None:
+            return cfg
     if item.campaign_id and getattr(item, 'campaign', None):
         cfg = getattr(item.campaign, 'channel_config', None)
         if cfg is not None:
@@ -131,6 +159,23 @@ def _resolve_channel_config(item):
                 id=conversation.channel_config_id,
             ).first()
     return None
+
+
+def _build_template_media_header(client, kurum_id, message, meta_tpl) -> dict | None:
+    """TEMPLATE + ek varsa Meta DOCUMENT/IMAGE/VIDEO header bileşeni üret."""
+    header_type = meta_template_header_type(meta_tpl) if meta_tpl else ''
+    if header_type not in ('DOCUMENT', 'IMAGE', 'VIDEO'):
+        return None
+    attachment = message.attachments.first()
+    if not attachment or not attachment.file:
+        return None
+    media_id, link = _resolve_media_id(client, kurum_id, attachment)
+    return build_media_header_component(
+        header_type=header_type,
+        media_id=media_id,
+        link=link,
+        filename=attachment.original_name or '',
+    )
 
 
 def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
@@ -178,9 +223,16 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
     )
     try:
         filter_json = (item.campaign.recipient_filter_json or {}) if item.campaign_id else {}
-        template_name = filter_json.get('template_name', '')
-        template_language = filter_json.get('template_language', 'tr')
-        extra_components = filter_json.get('template_components_json') or []
+        opts = _send_options(item)
+        template_name = opts.get('template_name') or filter_json.get('template_name', '')
+        template_language = (
+            opts.get('template_language')
+            or filter_json.get('template_language')
+            or 'tr'
+        )
+        extra_components = list(filter_json.get('template_components_json') or [])
+        if opts.get('template_components_json'):
+            extra_components.extend(opts['template_components_json'])
 
         if message.message_type == MessageType.IMAGE:
             attachment = message.attachments.first()
@@ -196,13 +248,33 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 result = {'success': False, 'error': 'Belge eki bulunamadı.'}
         elif message.message_type == MessageType.TEMPLATE and template_name:
             context = _build_recipient_context_from_message(message)
-            channel_config_id = filter_json.get('channel_config_id') or filter_json.get('account_id')
+            extra_ctx = opts.get('template_context') or {}
+            if isinstance(extra_ctx, dict):
+                context = {**context, **{k: str(v) if v is not None else '' for k, v in extra_ctx.items()}}
+            channel_config_id = (
+                opts.get('channel_config_id')
+                or opts.get('account_id')
+                or filter_json.get('channel_config_id')
+                or filter_json.get('account_id')
+            )
             meta_tpl = MetaTemplateService.get_approved(
                 item.kurum_id,
                 name=template_name,
                 language=template_language or 'tr',
                 channel_config_id=channel_config_id,
             )
+            # Dil kodu birebir değilse (tr ↔ tr_TR) ada göre APPROVED şablonu bul
+            if meta_tpl is None:
+                from apps.communication.domain.models import WhatsAppMetaTemplate
+                from apps.communication.domain.enums import MetaTemplateStatus
+                qs = WhatsAppMetaTemplate.objects.filter(
+                    kurum_id=item.kurum_id,
+                    name=template_name,
+                    status=MetaTemplateStatus.APPROVED,
+                )
+                if channel_config_id:
+                    qs = qs.filter(channel_config_id=channel_config_id)
+                meta_tpl = qs.select_related('channel_config').first()
             if meta_tpl is None:
                 # Yerelde kayıt yoksa eski davranış (legacy body_template)
                 # ama yerel REJECTED/PAUSED kaydı varsa engelle
@@ -235,19 +307,46 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 )
             else:
                 vmap = MetaTemplateService.ensure_variable_map(meta_tpl)
-                body_params = build_send_body_parameters(vmap, context)
+                body_params = build_send_body_parameters(
+                    vmap,
+                    context,
+                    body_named=meta_tpl.body_named or '',
+                )
                 components = []
+                media_header = _build_template_media_header(
+                    client, item.kurum_id, message, meta_tpl,
+                )
+                if media_header:
+                    components.append(media_header)
+                    extra_components = strip_header_components(extra_components)
+                elif meta_template_header_type(meta_tpl) in ('DOCUMENT', 'IMAGE', 'VIDEO'):
+                    result = {
+                        'success': False,
+                        'error': (
+                            'Meta şablon DOCUMENT/IMAGE/VIDEO header bekliyor ancak '
+                            'PDF/medya Meta’ya yüklenemedi (media_id yok). '
+                            'WhatsApp hesabı token/phone_number_id ve sunucu dosya erişimini kontrol edin.'
+                        ),
+                    }
+                    OutboundQueueRepository.mark_failed(item, result['error'])
+                    if item.campaign_id:
+                        _safe_refresh_campaign_stats(item.campaign_id)
+                    return False
                 if body_params:
                     components.append({'type': 'body', 'parameters': body_params})
                 if extra_components:
                     components.extend(extra_components)
                 MetaTemplateService.increment_usage(meta_tpl)
 
+            # Dil kodu şablondakiyle birebir olmalı (tr ≠ tr_TR → Invalid parameter)
+            lang = template_language or 'tr'
+            if meta_tpl is not None and meta_tpl.language:
+                lang = meta_tpl.language
             result = client.send_template(
                 item.kurum_id,
                 phone,
                 template_name=template_name,
-                language_code=template_language,
+                language_code=lang,
                 components=components or None,
             )
         else:

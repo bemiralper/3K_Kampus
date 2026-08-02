@@ -198,7 +198,39 @@ SMS/EMAIL kanalları da log-only stub'dır (`SmsStubClient`, `EmailStubClient`).
 
 ---
 
-## 8. Sorun Giderme
+## 8. Haftalık ödev PDF — Meta Document Template
+
+Ödev planı / kontrol raporu WhatsApp’a gittiğinde veli veya öğrenci **aynı mesajda** hem metni hem PDF’yi görmeli. Bu, Meta’nın **DOCUMENT header**’lı message template’i ile yapılır.
+
+### Akış
+
+1. Sistem ödev plan/rapor PDF’ini sunucuda üretir (Playwright → React print route).
+2. PDF `communication/attachments/` altında saklanır, gönderimde Meta’ya `upload_media` ile yüklenir.
+3. Onaylı Meta şablonuna `header: DOCUMENT` + body değişkenleri ile `send_template` çağrılır.
+4. Meta şablon yoksa eski davranışa düşülür: 24 saatlik pencerede serbest `document` mesajı (caption + PDF).
+
+### Meta’da şablon oluşturma
+
+Admin → İletişim → **Meta Şablonlar** üzerinden (veya Meta Business Manager):
+
+| Alan | Öneri |
+|------|--------|
+| Ad | `odev_plani_veli` / `odev_plani_ogrenci` / `odev_raporu_veli` / `odev_raporu_ogrenci` |
+| Kategori | UTILITY |
+| Header | **DOCUMENT** (örnek PDF yükleyin) |
+| Body | örn. `{{ogrenci_ad}} — {{hafta}} ödev planı ektedir. Teslim: {{teslim_tarihi}}` |
+
+Desteklenen body değişkenleri: `ogrenci_ad`, `veli_ad`, `hafta`, `hafta_no`, `odev_baslik`, `teslim_tarihi`, `pdf_baslik`, `kurum_ad`.
+
+Onay sonrası sistem bu isimleri otomatik tanır. Alternatif: `AssignmentNotificationConfig` üzerinden Meta şablon FK’si bağlanır.
+
+### Kontrol
+
+Ödev → WhatsApp gönder önizlemesinde yeşil kutu: “Meta Document şablonu ile gönderilecek”. Yoksa serbest PDF yolu kullanılır (Meta şablon APPROVED + DOCUMENT header eksik demektir).
+
+---
+
+## 9. Sorun Giderme
 
 | Belirti | Olası neden | Çözüm |
 |---------|---------------|--------|
@@ -209,10 +241,11 @@ SMS/EMAIL kanalları da log-only stub'dır (`SmsStubClient`, `EmailStubClient`).
 | Koç inbox güncellenmiyor | SSE kopuk | `/api/communication/events/stream/` nginx buffering kapalı mı; fallback 20s polling devreye girer |
 | Ödeme hatırlatma 400 "zaten gönderildi" | Idempotency | Aynı taksit için tekrar gönderim engellenir (by design) |
 | Veli mesaj almıyor | Opt-out | Veli `sms_bildirimleri` içinde `odeme`/`duyuru` kategorisi açık mı |
+| Ödev PDF ayrı mesaj / sadece caption | Meta DOCUMENT şablonu yok | Bölüm 8: `odev_plani_veli` APPROVED + DOCUMENT header |
 
 ---
 
-## 9. Doğrulama Checklist
+## 10. Doğrulama Checklist
 
 - [ ] Meta webhook verify (GET) 200 + challenge
 - [ ] Test mesajı gönder → Meta dashboard'da delivered
@@ -224,7 +257,7 @@ SMS/EMAIL kanalları da log-only stub'dır (`SmsStubClient`, `EmailStubClient`).
 
 ---
 
-## 10. İlgili Dosyalar
+## 11. İlgili Dosyalar
 
 | Bileşen | Konum |
 |---------|--------|

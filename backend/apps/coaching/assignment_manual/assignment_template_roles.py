@@ -35,6 +35,21 @@ ROLE_CONFIG_FIELDS: dict[str, str] = {
     ROLE_REPORT_OGRENCI: 'report_ogrenci_template',
 }
 
+ROLE_META_CONFIG_FIELDS: dict[str, str] = {
+    ROLE_PLAN_VELI: 'plan_veli_meta_template',
+    ROLE_PLAN_OGRENCI: 'plan_ogrenci_meta_template',
+    ROLE_REPORT_VELI: 'report_veli_meta_template',
+    ROLE_REPORT_OGRENCI: 'report_ogrenci_meta_template',
+}
+
+# Meta şablon adı eşlemesi (APPROVED + DOCUMENT header otomatik keşif)
+ROLE_META_TEMPLATE_NAMES: dict[str, tuple[str, ...]] = {
+    ROLE_PLAN_VELI: ('odev_plani_veli', 'haftalik_odev_plani_veli'),
+    ROLE_PLAN_OGRENCI: ('odev_plani_ogrenci', 'haftalik_odev_plani_ogrenci'),
+    ROLE_REPORT_VELI: ('odev_raporu_veli', 'haftalik_odev_raporu_veli'),
+    ROLE_REPORT_OGRENCI: ('odev_raporu_ogrenci', 'haftalik_odev_raporu_ogrenci'),
+}
+
 DEFAULT_PDF_BODIES: dict[tuple[str, str], str] = {
     ('plan', 'veli'): '{{ogrenci_ad}} — Ödev planı ektedir.',
     ('plan', 'ogrenci'): 'Ödev planı ektedir.',
@@ -90,6 +105,70 @@ def set_config_template(
     setattr(config, field, template)
     config.save(update_fields=[field, 'updated_at'])
     return config
+
+
+def set_config_meta_template(
+    kurum_id: int,
+    role: str,
+    meta_template,
+) -> AssignmentNotificationConfig | None:
+    config = get_or_create_config(kurum_id)
+    if config is None:
+        return None
+    field = ROLE_META_CONFIG_FIELDS.get(role)
+    if not field or not hasattr(config, field):
+        return None
+    setattr(config, field, meta_template)
+    config.save(update_fields=[field, 'updated_at'])
+    return config
+
+
+def _meta_template_is_document_approved(tpl) -> bool:
+    from apps.communication.domain.enums import MetaTemplateStatus
+    from apps.communication.application.template_media_header import meta_template_header_type
+
+    if not tpl or tpl.status != MetaTemplateStatus.APPROVED:
+        return False
+    return meta_template_header_type(tpl) == 'DOCUMENT'
+
+
+def get_meta_template_for_notify(
+    kurum_id: int,
+    notify_type: str,
+    recipient_type: str,
+):
+    """
+    Haftalık ödev PDF için APPROVED Meta DOCUMENT-header şablonu.
+
+    Öncelik: config FK → isim eşlemesi (odev_plani_veli vb.).
+    """
+    from apps.communication.domain.enums import MetaTemplateStatus
+    from apps.communication.domain.models import WhatsAppMetaTemplate
+
+    role = NOTIFY_RECIPIENT_TO_ROLE.get((notify_type, recipient_type))
+    if not role:
+        return None
+
+    if _config_table_available():
+        config = AssignmentNotificationConfig.objects.filter(kurum_id=kurum_id).first()
+        field = ROLE_META_CONFIG_FIELDS.get(role)
+        if config and field and hasattr(config, field):
+            tpl = getattr(config, field, None)
+            if _meta_template_is_document_approved(tpl):
+                return tpl
+
+    names = ROLE_META_TEMPLATE_NAMES.get(role) or ()
+    if not names:
+        return None
+    candidates = WhatsAppMetaTemplate.objects.filter(
+        kurum_id=kurum_id,
+        status=MetaTemplateStatus.APPROVED,
+        name__in=names,
+    ).select_related('channel_config')
+    for tpl in candidates:
+        if _meta_template_is_document_approved(tpl):
+            return tpl
+    return None
 
 
 def get_active_template_for_notify(

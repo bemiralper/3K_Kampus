@@ -1553,6 +1553,10 @@ export interface AssignmentNotifyPreviewData {
   assignment_title: string;
   student_name: string;
   pdf_title: string;
+  /** document = serbest PDF; meta_template = Meta DOCUMENT-header şablonu */
+  send_mode?: 'document' | 'meta_template';
+  meta_template_veli?: string;
+  meta_template_ogrenci?: string;
   recipients: AssignmentNotifyRecipient[];
 }
 

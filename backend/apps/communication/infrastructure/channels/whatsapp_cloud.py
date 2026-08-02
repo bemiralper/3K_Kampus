@@ -26,7 +26,12 @@ UPLOAD_TIMEOUT = 120.0
 APP_ID_CACHE_TTL = 60 * 60 * 24
 
 META_ERROR_HINTS = {
+    100: (
+        'Geçersiz parametre — şablon değişken sayısı/adı, dil kodu (tr/tr_TR), '
+        'DOCUMENT header medyası veya boş body değeri kontrol edin.'
+    ),
     130429: 'Meta rate limit — gönderimi yavaşlatın.',
+    132012: 'Şablon bileşen formatı uyuşmuyor — DOCUMENT header bekleniyorsa PDF ekleyin.',
     132015: 'Şablon duraklatıldı — Meta Business Manager\'dan kontrol edin.',
     131026: 'Mesaj teslim edilemedi — alıcı numarası geçersiz olabilir.',
     131047: '24 saatlik oturum dışı — onaylı şablon kullanın.',
@@ -71,11 +76,22 @@ class WhatsAppCloudClient(BaseChannelClient):
     def _format_api_error(data: dict[str, Any], fallback: str) -> str:
         error = data.get('error', {})
         code = error.get('code')
-        message = error.get('message', fallback)
+        message = error.get('message', fallback) or fallback
+        details = ''
+        error_data = error.get('error_data') or {}
+        if isinstance(error_data, dict):
+            details = (error_data.get('details') or '').strip()
+        if not details:
+            details = (error.get('error_user_msg') or error.get('error_subcode') or '')
+            if details is not None:
+                details = str(details).strip()
         hint = META_ERROR_HINTS.get(code)
+        parts = [message]
+        if details:
+            parts.append(str(details))
         if hint:
-            return f'{message} ({hint})'
-        return message
+            parts.append(hint)
+        return ' — '.join(parts)
 
     def _post_message(self, kurum_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         config = self._resolve_config(kurum_id)
@@ -255,8 +271,17 @@ class WhatsAppCloudClient(BaseChannelClient):
         }
         return self._post_message(kurum_id, payload)
 
-    def upload_media(self, kurum_id: int, file_path: str, mime_type: str) -> str | None:
+    def upload_media(
+        self,
+        kurum_id: int,
+        file_path: str,
+        mime_type: str,
+        *,
+        file_name: str | None = None,
+    ) -> str | None:
         """Graph POST /{phone_number_id}/media — media_id döndürür."""
+        from apps.communication.application.template_media_header import sanitize_document_filename
+
         config = self._resolve_config(kurum_id)
         phone_number_id = config['phone_number_id']
         access_token = config['access_token']
@@ -268,6 +293,10 @@ class WhatsAppCloudClient(BaseChannelClient):
         url = f'{GRAPH_API_BASE}/{phone_number_id}/media'
         headers = {'Authorization': f'Bearer {access_token}'}
         guessed = mime_type or mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
+        upload_name = file_name or file_path.rsplit('/', 1)[-1]
+        if guessed == 'application/pdf' or (upload_name or '').lower().endswith('.pdf'):
+            upload_name = sanitize_document_filename(upload_name, default='document.pdf')
+            guessed = 'application/pdf'
 
         try:
             with open(file_path, 'rb') as fh, httpx.Client(timeout=REQUEST_TIMEOUT) as client:
@@ -275,7 +304,7 @@ class WhatsAppCloudClient(BaseChannelClient):
                     url,
                     headers=headers,
                     data={'messaging_product': 'whatsapp', 'type': guessed},
-                    files={'file': (file_path.rsplit('/', 1)[-1], fh, guessed)},
+                    files={'file': (upload_name, fh, guessed)},
                 )
                 data = response.json()
                 if response.is_success:

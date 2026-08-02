@@ -622,6 +622,7 @@ class OutboundQueueRepository:
         next_attempt_at=None,
         campaign: OutboundCampaign | None = None,
         priority: int = 100,
+        send_options: dict | None = None,
     ) -> OutboundQueueItem:
         return OutboundQueueItem.objects.create(
             kurum_id=kurum_id,
@@ -629,6 +630,7 @@ class OutboundQueueRepository:
             campaign=campaign,
             priority=priority,
             next_attempt_at=next_attempt_at or timezone.now(),
+            send_options=send_options or {},
         )
 
     @staticmethod

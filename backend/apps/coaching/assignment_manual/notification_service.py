@@ -14,16 +14,20 @@ from apps.communication.application.integration_hooks import (
     SOURCE_ODEV,
     send_document_to_ogrenci,
     send_document_to_veli,
+    send_template_document_to_ogrenci,
+    send_template_document_to_veli,
 )
 from apps.communication.application.pdf_render_service import PdfRenderService
 from apps.coaching.assignment_manual.models import AssignmentLesson, AssignmentTask, ManualAssignment
 from apps.ogrenci.application.veli_contact import list_outbound_veliler
 
 from .assignment_notify_utils import (
+    build_assignment_context,
     build_assignment_pdf_filename,
     build_pdf_attachment_message,
     pdf_title_label,
 )
+from .assignment_template_roles import get_meta_template_for_notify
 
 OPT_IN_CATEGORY = 'duyuru'
 
@@ -53,6 +57,9 @@ class AssignmentNotifyPreview:
     student_name: str
     recipients: list[AssignmentNotifyRecipient] = field(default_factory=list)
     pdf_title: str = ''
+    meta_template_veli: str = ''
+    meta_template_ogrenci: str = ''
+    send_mode: str = 'document'  # document | meta_template
 
 
 class AssignmentNotificationService:
@@ -289,6 +296,9 @@ class AssignmentNotificationService:
         ))
 
         pdf_title = pdf_title_label(notify_type)
+        meta_veli = get_meta_template_for_notify(kurum_id, notify_type, 'veli')
+        meta_ogrenci = get_meta_template_for_notify(kurum_id, notify_type, 'ogrenci')
+        send_mode = 'meta_template' if (meta_veli or meta_ogrenci) else 'document'
         return AssignmentNotifyPreview(
             notify_type=notify_type,
             assignment_id=assignment.id,
@@ -296,10 +306,107 @@ class AssignmentNotificationService:
             student_name=ogrenci_ad,
             recipients=recipients,
             pdf_title=pdf_title,
+            meta_template_veli=meta_veli.name if meta_veli else '',
+            meta_template_ogrenci=meta_ogrenci.name if meta_ogrenci else '',
+            send_mode=send_mode,
         )
 
     def _pdf_meta(self, assignment: ManualAssignment, notify_type: str) -> tuple[str, str]:
         return pdf_title_label(notify_type), build_assignment_pdf_filename(assignment, notify_type)
+
+    def _send_pdf_to_veli(
+        self,
+        *,
+        kurum_id: int,
+        assignment: ManualAssignment,
+        notify_type: str,
+        veli,
+        short_body: str,
+        pdf_bytes: bytes,
+        filename: str,
+        source_id: str,
+        sent_by_user_id: int | None,
+    ):
+        meta_tpl = get_meta_template_for_notify(kurum_id, notify_type, 'veli')
+        if meta_tpl:
+            ctx = build_assignment_context(
+                assignment=assignment,
+                notify_type=notify_type,
+                veli=veli,
+                kurum=getattr(assignment.student, 'kurum', None),
+            )
+            return send_template_document_to_veli(
+                kurum_id,
+                veli.id,
+                template_name=meta_tpl.name,
+                template_language=meta_tpl.language or 'tr',
+                template_context=ctx,
+                channel_config_id=str(meta_tpl.channel_config_id) if meta_tpl.channel_config_id else None,
+                preview_text=short_body,
+                category=OPT_IN_CATEGORY,
+                source_module=SOURCE_ODEV,
+                source_id=source_id,
+                file_bytes=pdf_bytes,
+                filename=filename,
+                sent_by_user_id=sent_by_user_id,
+            )
+        return send_document_to_veli(
+            kurum_id,
+            veli.id,
+            short_body,
+            OPT_IN_CATEGORY,
+            SOURCE_ODEV,
+            source_id,
+            file_bytes=pdf_bytes,
+            filename=filename,
+            sent_by_user_id=sent_by_user_id,
+        )
+
+    def _send_pdf_to_ogrenci(
+        self,
+        *,
+        kurum_id: int,
+        assignment: ManualAssignment,
+        notify_type: str,
+        short_body: str,
+        pdf_bytes: bytes,
+        filename: str,
+        source_id: str,
+        sent_by_user_id: int | None,
+    ):
+        meta_tpl = get_meta_template_for_notify(kurum_id, notify_type, 'ogrenci')
+        if meta_tpl:
+            ctx = build_assignment_context(
+                assignment=assignment,
+                notify_type=notify_type,
+                kurum=getattr(assignment.student, 'kurum', None),
+            )
+            return send_template_document_to_ogrenci(
+                kurum_id,
+                assignment.student_id,
+                template_name=meta_tpl.name,
+                template_language=meta_tpl.language or 'tr',
+                template_context=ctx,
+                channel_config_id=str(meta_tpl.channel_config_id) if meta_tpl.channel_config_id else None,
+                preview_text=short_body,
+                category=OPT_IN_CATEGORY,
+                source_module=SOURCE_ODEV,
+                source_id=source_id,
+                file_bytes=pdf_bytes,
+                filename=filename,
+                sent_by_user_id=sent_by_user_id,
+            )
+        return send_document_to_ogrenci(
+            kurum_id,
+            assignment.student_id,
+            short_body,
+            OPT_IN_CATEGORY,
+            SOURCE_ODEV,
+            source_id,
+            file_bytes=pdf_bytes,
+            filename=filename,
+            sent_by_user_id=sent_by_user_id,
+        )
 
     @transaction.atomic
     def send(
@@ -374,15 +481,19 @@ class AssignmentNotificationService:
                     veli=veli_obj,
                     kurum=getattr(assignment.student, 'kurum', None),
                 )
-                result = send_document_to_veli(
-                    kurum_id,
-                    item.veli_id,
-                    short_body,
-                    OPT_IN_CATEGORY,
-                    SOURCE_ODEV,
-                    self._source_id(notify_type, assignment.id, f'veli:{item.veli_id}'),
-                    file_bytes=pdf_bytes,
+                if not veli_obj:
+                    skipped += 1
+                    errors.append(f'{item.display_name}: Veli bulunamadı.')
+                    continue
+                result = self._send_pdf_to_veli(
+                    kurum_id=kurum_id,
+                    assignment=assignment,
+                    notify_type=notify_type,
+                    veli=veli_obj,
+                    short_body=short_body,
+                    pdf_bytes=pdf_bytes,
                     filename=filename,
+                    source_id=self._source_id(notify_type, assignment.id, f'veli:{item.veli_id}'),
                     sent_by_user_id=sent_by_user_id,
                 )
                 if result and result.success:
@@ -414,15 +525,14 @@ class AssignmentNotificationService:
                     for_veli=False,
                     kurum=getattr(assignment.student, 'kurum', None),
                 )
-                result = send_document_to_ogrenci(
-                    kurum_id,
-                    item.ogrenci_id,
-                    short_body,
-                    OPT_IN_CATEGORY,
-                    SOURCE_ODEV,
-                    self._source_id(notify_type, assignment.id, 'ogrenci'),
-                    file_bytes=pdf_bytes,
+                result = self._send_pdf_to_ogrenci(
+                    kurum_id=kurum_id,
+                    assignment=assignment,
+                    notify_type=notify_type,
+                    short_body=short_body,
+                    pdf_bytes=pdf_bytes,
                     filename=filename,
+                    source_id=self._source_id(notify_type, assignment.id, 'ogrenci'),
                     sent_by_user_id=sent_by_user_id,
                 )
                 if result and result.success:

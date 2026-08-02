@@ -67,6 +67,9 @@ export default function AssignmentNotifySendModal({
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState("");
   const [previewTitle, setPreviewTitle] = useState("");
+  const [sendMode, setSendMode] = useState<"document" | "meta_template">("document");
+  const [metaTplVeli, setMetaTplVeli] = useState("");
+  const [metaTplOgrenci, setMetaTplOgrenci] = useState("");
   const [recipients, setRecipients] = useState<AssignmentNotifyRecipient[]>([]);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
 
@@ -82,6 +85,9 @@ export default function AssignmentNotifySendModal({
         }
         if (!cancelled) {
           setPreviewTitle(res.data.assignment_title || "");
+          setSendMode(res.data.send_mode === "meta_template" ? "meta_template" : "document");
+          setMetaTplVeli(res.data.meta_template_veli || "");
+          setMetaTplOgrenci(res.data.meta_template_ogrenci || "");
           setRecipients(res.data.recipients || []);
           const initialExcluded = new Set<string>();
           for (const r of res.data.recipients || []) {
@@ -211,6 +217,22 @@ export default function AssignmentNotifySendModal({
           </div>
           <button type="button" onClick={onClose} disabled={sending} style={{ border: "none", background: "transparent", fontSize: 20, cursor: "pointer", color: "#64748b" }}>×</button>
         </div>
+
+        {!loading && sendMode === "meta_template" && (
+          <div style={{
+            margin: "12px 20px 0", padding: "10px 12px", borderRadius: 10,
+            background: "#ecfdf5", border: "1px solid #a7f3d0", fontSize: 12, color: "#065f46", lineHeight: 1.45,
+          }}>
+            Meta Document şablonu ile gönderilecek — veli/öğrenci WhatsApp’ta metin ve PDF’yi aynı mesajda görür.
+            {(metaTplVeli || metaTplOgrenci) && (
+              <div style={{ marginTop: 4, opacity: 0.9 }}>
+                {metaTplVeli ? `Veli: ${metaTplVeli}` : null}
+                {metaTplVeli && metaTplOgrenci ? " · " : null}
+                {metaTplOgrenci ? `Öğrenci: ${metaTplOgrenci}` : null}
+              </div>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "#64748b" }}>Alıcılar yükleniyor…</div>

@@ -235,20 +235,66 @@ def build_meta_components(
     return components, vmap
 
 
+def sanitize_template_param_text(value: Any) -> str:
+    """
+    Meta body/header text parametreleri boş veya satır sonu içeremez
+    (#100 Invalid parameter).
+    """
+    text = '' if value is None else str(value)
+    text = text.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+    text = ' '.join(text.split()).strip()
+    # Meta boş string'i reddeder
+    return text if text else '-'
+
+
 def build_send_body_parameters(
     variable_map: dict[str, str],
     context: dict[str, Any],
+    *,
+    body_named: str = '',
 ) -> list[dict[str, str]]:
-    """Gönderim anında sıralı body parameters (map sırasına göre)."""
-    if not variable_map:
+    """
+    Gönderim anında body parameters.
+
+    - Body hâlâ named (`{{ogrenci_ad}}`) ise Meta named format: parameter_name gerekir.
+    - Body numaralı (`{{1}}`) veya variable_map varsa positional parametreler.
+    - Yalnızca body'deki değişken sayısı kadar parametre gönderilir.
+    """
+    named_in_body = extract_named_variables_in_order(body_named)
+    numbered_in_body = [
+        int(m.group(1))
+        for m in VARIABLE_PATTERN.finditer(body_named or '')
+        if m.group(1).isdigit()
+    ]
+
+    # Named-format şablon (Business Manager / sync): parameter_name zorunlu
+    if named_in_body and not numbered_in_body:
+        return [
+            {
+                'type': 'text',
+                'parameter_name': key,
+                'text': sanitize_template_param_text(context.get(key)),
+            }
+            for key in named_in_body
+        ]
+
+    if numbered_in_body:
+        indices = sorted(set(numbered_in_body))
+    elif variable_map:
+        # Body metni yoksa map sırası; body named + map varsa yalnızca body anahtarları
+        if named_in_body:
+            reverse = {v: int(k) for k, v in variable_map.items() if str(k).isdigit()}
+            indices = sorted({reverse[k] for k in named_in_body if k in reverse})
+        else:
+            indices = sorted(int(k) for k in variable_map if str(k).isdigit())
+    else:
         return []
-    max_idx = max(int(k) for k in variable_map if str(k).isdigit())
+
     params: list[dict[str, str]] = []
-    for i in range(1, max_idx + 1):
-        name = variable_map.get(str(i), '')
-        value = context.get(name)
-        text = '' if value is None else str(value)
-        params.append({'type': 'text', 'text': text})
+    for i in indices:
+        name = (variable_map or {}).get(str(i), '')
+        value = context.get(name) if name else context.get(str(i))
+        params.append({'type': 'text', 'text': sanitize_template_param_text(value)})
     return params
 
 

@@ -229,6 +229,130 @@ def send_document_to_veli(
     )
 
 
+def _store_attachment_bytes(
+    *,
+    file_path: str | None,
+    file_bytes: bytes | None,
+    filename: str,
+) -> str | None:
+    if file_path:
+        return file_path
+    if file_bytes:
+        return default_storage.save(
+            f'communication/attachments/{filename}',
+            ContentFile(file_bytes),
+        )
+    return None
+
+
+def send_template_document_to_ogrenci(
+    kurum_id: int,
+    ogrenci_id: int,
+    *,
+    template_name: str,
+    template_language: str = 'tr',
+    template_context: dict | None = None,
+    channel_config_id: str | None = None,
+    preview_text: str = '',
+    category: str,
+    source_module: str,
+    source_id: str | int,
+    file_path: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str = 'document.pdf',
+    sent_by_user_id: int | None = None,
+) -> SendResult | None:
+    """Meta DOCUMENT-header template: metin + PDF aynı WhatsApp mesajında."""
+    from apps.ogrenci.domain.models import Ogrenci
+
+    ogrenci = Ogrenci.objects.filter(id=ogrenci_id, kurum_id=kurum_id).first()
+    if not ogrenci or not ogrenci.telefon:
+        return SendResult(success=False, errors=['Öğrenci telefonu bulunamadı.'])
+
+    storage_path = _store_attachment_bytes(
+        file_path=file_path, file_bytes=file_bytes, filename=filename,
+    )
+    if not storage_path:
+        return SendResult(success=False, errors=['Dosya bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=RecipientQuery(
+            phone=ogrenci.telefon,
+            ogrenci_id=ogrenci_id,
+            opt_in_category=category,
+        ),
+        content=MessageContent(
+            text=preview_text or f'[{template_name}]',
+            message_type=MessageType.TEMPLATE,
+            attachment_path=storage_path,
+            attachment_filename=filename,
+            attachment_mime_type='application/pdf',
+            template_name=template_name,
+            template_language=template_language or 'tr',
+            channel_config_id=channel_config_id,
+            template_context=template_context or {},
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_template_document_to_veli(
+    kurum_id: int,
+    veli_id: int,
+    *,
+    template_name: str,
+    template_language: str = 'tr',
+    template_context: dict | None = None,
+    channel_config_id: str | None = None,
+    preview_text: str = '',
+    category: str,
+    source_module: str,
+    source_id: str | int,
+    file_path: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str = 'document.pdf',
+    sent_by_user_id: int | None = None,
+) -> SendResult | None:
+    """Meta DOCUMENT-header template: metin + PDF aynı WhatsApp mesajında."""
+    from apps.ogrenci.domain.models import OgrenciVeli
+
+    veli = OgrenciVeli.objects.filter(id=veli_id, ogrenci__kurum_id=kurum_id).first()
+    if not veli:
+        return SendResult(success=False, errors=['Veli bulunamadı.'])
+    if not ContactResolver.veli_allows_outbound(veli, category):
+        return SendResult(success=False, errors=['Veli opt-out.'])
+
+    storage_path = _store_attachment_bytes(
+        file_path=file_path, file_bytes=file_bytes, filename=filename,
+    )
+    if not storage_path:
+        return SendResult(success=False, errors=['Dosya bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=_veli_recipient_query(veli, category=category),
+        content=MessageContent(
+            text=preview_text or f'[{template_name}]',
+            message_type=MessageType.TEMPLATE,
+            attachment_path=storage_path,
+            attachment_filename=filename,
+            attachment_mime_type='application/pdf',
+            template_name=template_name,
+            template_language=template_language or 'tr',
+            channel_config_id=channel_config_id,
+            template_context=template_context or {},
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
 def recently_sent_within_hours(
     kurum_id: int,
     source_module: str,
