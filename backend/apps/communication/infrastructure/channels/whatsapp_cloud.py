@@ -37,6 +37,29 @@ META_ERROR_HINTS = {
     131047: '24 saatlik oturum dışı — onaylı şablon kullanın.',
 }
 
+# Meta'nın İngilizce detay metinleri → uygulanabilir Türkçe açıklama.
+# Kod bazlı ipucundan (META_ERROR_HINTS) önce gelir.
+META_MESSAGE_HINTS = (
+    (
+        "variables can't be at the start or end",
+        'Mesaj metni değişkenle başlayamaz veya bitemez. Başına/sonuna sabit metin '
+        'ekleyin — örn. "Sayın {{veli_ad}}, …" veya "… bilgilerinize sunulur.".',
+    ),
+    (
+        'variables are not allowed next to each other',
+        'İki değişken yan yana olamaz; aralarına açıklayıcı metin ekleyin.',
+    ),
+    (
+        'template name already exists',
+        'Bu ad ve dilde şablon Meta tarafında zaten var. Farklı bir ad kullanın veya '
+        'Meta\'dan güncelleyin.',
+    ),
+    (
+        'invalid parameter format',
+        'Şablon değişken sayısı/sırası gönderilen parametrelerle uyuşmuyor.',
+    ),
+)
+
 
 class WhatsAppCloudClient(BaseChannelClient):
     channel = Channel.WHATSAPP
@@ -85,7 +108,11 @@ class WhatsAppCloudClient(BaseChannelClient):
             details = (error.get('error_user_msg') or error.get('error_subcode') or '')
             if details is not None:
                 details = str(details).strip()
-        hint = META_ERROR_HINTS.get(code)
+        haystack = f'{message} {details}'.lower()
+        hint = next(
+            (text for needle, text in META_MESSAGE_HINTS if needle in haystack),
+            None,
+        ) or META_ERROR_HINTS.get(code)
         parts = [message]
         if details:
             parts.append(str(details))

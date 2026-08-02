@@ -59,6 +59,52 @@ const HEADER_MEDIA_LABEL: Record<string, string> = {
   DOCUMENT: "📄 Belge başlık",
 };
 
+const VAR_TOKEN = /\{\{\s*\w+\s*\}\}/;
+
+const templateContentIssues = (
+  body: string,
+  header: MetaTemplateHeader,
+  footer: string,
+): string[] => {
+  const issues: string[] = [];
+  const text = (body || "").trim();
+  if (!text) return issues;
+
+  const tokens = Array.from(text.matchAll(new RegExp(VAR_TOKEN, "g")));
+  const last = tokens[tokens.length - 1];
+  if (text.search(VAR_TOKEN) === 0) {
+    issues.push(
+      'Mesaj bir değişkenle başlayamaz. Başına sabit metin ekleyin — örn. "Sayın {{veli_ad}}, …".',
+    );
+  }
+  if (last && (last.index ?? 0) + last[0].length === text.length) {
+    issues.push(
+      'Mesaj bir değişkenle bitemez. Sonuna sabit metin ekleyin — örn. "… bilgilerinize sunulur.".',
+    );
+  }
+  if (/\}\}\s*\{\{/.test(text)) {
+    issues.push("İki değişken yan yana olamaz; aralarına açıklayıcı metin ekleyin.");
+  }
+  if (text.length > 1024) {
+    issues.push(`Mesaj gövdesi en fazla 1024 karakter olabilir (şu an ${text.length}).`);
+  }
+
+  const headerText = ((header?.type || "").toUpperCase() === "TEXT" ? header?.text || "" : "").trim();
+  if (headerText) {
+    const headerTokens = headerText.match(new RegExp(VAR_TOKEN, "g")) || [];
+    if (headerTokens.length > 1) {
+      issues.push("Başlık metninde en fazla bir değişken kullanılabilir.");
+    }
+    if (headerText.length > 60) {
+      issues.push("Başlık metni en fazla 60 karakter olabilir.");
+    }
+  }
+  if (footer && VAR_TOKEN.test(footer)) {
+    issues.push("Alt bilgide değişken kullanılamaz.");
+  }
+  return issues;
+};
+
 const emptyForm = () => ({
   name: "",
   language: "tr",
@@ -312,6 +358,10 @@ export default function MetaSablonlarClient() {
     const found = (form.body_named || "").match(/\{\{(\w+)\}\}/g) || [];
     return Array.from(new Set(found));
   }, [form.body_named]);
+  const contentIssues = useMemo(
+    () => templateContentIssues(form.body_named, form.header, form.footer_text),
+    [form.body_named, form.header, form.footer_text],
+  );
   const counts = useMemo(() => {
     const base = { total: templates.length, approved: 0, pending: 0, rejected: 0, draft: 0 };
     templates.forEach((t) => {
@@ -707,6 +757,16 @@ export default function MetaSablonlarClient() {
                           Anlamlı değişkenler kullanın; Meta&apos;nın numaralı parametreleri arka planda
                           otomatik oluşturulur.
                         </p>
+                        {contentIssues.length > 0 && (
+                          <div className="comm-alert comm-alert-warning" style={{ marginTop: "0.5rem" }}>
+                            <strong>Meta bu şablonu reddeder:</strong>
+                            <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem" }}>
+                              {contentIssues.map((issue) => (
+                                <li key={issue}>{issue}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                       {!locked && <TemplateVariablePanel onInsert={insertVariable} />}
                     </div>
@@ -985,7 +1045,8 @@ export default function MetaSablonlarClient() {
                   <button
                     type="button"
                     className="comm-btn-primary"
-                    disabled={saving}
+                    disabled={saving || contentIssues.length > 0}
+                    title={contentIssues.length > 0 ? contentIssues.join(" ") : undefined}
                     onClick={() => runAction(
                       "Meta'ya gönderildi",
                       () => (editing.status === "REJECTED"

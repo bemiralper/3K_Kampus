@@ -227,6 +227,12 @@
   color: #1d4ed8;
 }
 
+.comm-alert-warning {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
+}
+
 /* Step wizard */
 .comm-wizard {
   margin-bottom: 1.75rem;

@@ -18,6 +18,9 @@ from apps.communication.application.meta_template_mapper import (
     map_meta_status,
     numbered_to_named,
 )
+from apps.communication.application.meta_template_validation import (
+    validate_template_content,
+)
 from apps.communication.domain.enums import MetaTemplateCategory, MetaTemplateStatus
 from apps.communication.domain.models import CommunicationChannelConfig, WhatsAppMetaTemplate
 from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
@@ -201,8 +204,14 @@ class MetaTemplateService:
 
     @classmethod
     def submit(cls, template: WhatsAppMetaTemplate) -> WhatsAppMetaTemplate:
-        if not (template.body_named or '').strip():
-            raise MetaTemplateServiceError('Mesaj gövdesi zorunludur.')
+        content_errors = validate_template_content(
+            body_named=template.body_named,
+            header_json=template.header_json or {},
+            footer_text=template.footer_text or '',
+            buttons_json=template.buttons_json or [],
+        )
+        if content_errors:
+            raise MetaTemplateServiceError(' '.join(content_errors))
 
         header = template.header_json or {}
         header_type = (header.get('type') or '').upper()

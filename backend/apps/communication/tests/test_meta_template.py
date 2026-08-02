@@ -100,7 +100,7 @@ class MetaTemplateServiceTest(TestCase):
             self.kurum.id,
             channel_config_id=self.account.id,
             name='odeme_hatirlat',
-            body_named='{{veli_ad}} taksit: {{taksit_tutar}}',
+            body_named='Sayın {{veli_ad}}, taksit tutarı {{taksit_tutar}} olarak görünüyor.',
         )
         tpl = MetaTemplateService.submit(tpl)
         self.assertEqual(tpl.meta_template_id, '123')
@@ -117,7 +117,7 @@ class MetaTemplateServiceTest(TestCase):
             self.kurum.id,
             channel_config_id=self.account.id,
             name='gorselli',
-            body_named='Merhaba {{ogrenci_ad}}',
+            body_named='Merhaba {{ogrenci_ad}}, görsel ektedir.',
             header_json={'type': 'IMAGE'},
         )
         with self.assertRaises(MetaTemplateServiceError):
@@ -131,7 +131,7 @@ class MetaTemplateServiceTest(TestCase):
             self.kurum.id,
             channel_config_id=self.account.id,
             name='gorselli_ok',
-            body_named='Merhaba {{ogrenci_ad}}',
+            body_named='Merhaba {{ogrenci_ad}}, görsel ektedir.',
             header_json={'type': 'IMAGE', 'example_handle': '4::aW1hZ2UvcG5n:ARZ'},
         )
         MetaTemplateService.submit(tpl)
@@ -139,6 +139,52 @@ class MetaTemplateServiceTest(TestCase):
         header = next(c for c in components if c['type'] == 'HEADER')
         self.assertEqual(header['format'], 'IMAGE')
         self.assertEqual(header['example']['header_handle'], ['4::aW1hZ2UvcG5n:ARZ'])
+
+    @patch.object(WhatsAppCloudClient, 'create_message_template')
+    def test_submit_rejects_body_starting_or_ending_with_variable(self, mock_create):
+        tpl = MetaTemplateService.create_draft(
+            self.kurum.id,
+            channel_config_id=self.account.id,
+            name='odev_plani_veli',
+            body_named='{{ogrenci_ad}} — {{hafta}} ödev planı ektedir. {{teslim_tarihi}}',
+            header_json={'type': 'DOCUMENT', 'example_handle': '4::YXBwbGljYXRpb24=:ARZ'},
+        )
+        with self.assertRaises(MetaTemplateServiceError) as ctx:
+            MetaTemplateService.submit(tpl)
+        self.assertIn('değişkenle başlayamaz', str(ctx.exception))
+        self.assertIn('değişkenle bitemez', str(ctx.exception))
+        mock_create.assert_not_called()
+
+    @patch.object(WhatsAppCloudClient, 'create_message_template')
+    def test_submit_rejects_adjacent_variables(self, mock_create):
+        tpl = MetaTemplateService.create_draft(
+            self.kurum.id,
+            channel_config_id=self.account.id,
+            name='yan_yana',
+            body_named='Sayın {{veli_ad}} {{ogrenci_ad}} için bilgilendirme.',
+        )
+        with self.assertRaises(MetaTemplateServiceError) as ctx:
+            MetaTemplateService.submit(tpl)
+        self.assertIn('yan yana', str(ctx.exception))
+        mock_create.assert_not_called()
+
+    @patch.object(WhatsAppCloudClient, 'create_message_template')
+    def test_submit_accepts_compliant_document_body(self, mock_create):
+        mock_create.return_value = {'success': True, 'id': '789', 'status': 'PENDING'}
+        tpl = MetaTemplateService.create_draft(
+            self.kurum.id,
+            channel_config_id=self.account.id,
+            name='odev_plani_veli_ok',
+            body_named=(
+                'Sayın {{veli_ad}}, {{ogrenci_ad}} için haftalık ödev planı ektedir. '
+                'Teslim tarihi: {{teslim_tarihi}}. İyi çalışmalar.'
+            ),
+            header_json={'type': 'DOCUMENT', 'example_handle': '4::YXBwbGljYXRpb24=:ARZ'},
+        )
+        MetaTemplateService.submit(tpl)
+        components = mock_create.call_args.kwargs['components']
+        header = next(c for c in components if c['type'] == 'HEADER')
+        self.assertEqual(header['format'], 'DOCUMENT')
 
     def test_approved_cannot_update(self):
         tpl = WhatsAppMetaTemplate.objects.create(

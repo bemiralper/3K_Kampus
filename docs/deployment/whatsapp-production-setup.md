@@ -218,9 +218,15 @@ Admin → İletişim → **Meta Şablonlar** üzerinden (veya Meta Business Mana
 | Ad | `odev_plani_veli` / `odev_plani_ogrenci` / `odev_raporu_veli` / `odev_raporu_ogrenci` |
 | Kategori | UTILITY |
 | Header | **DOCUMENT** (örnek PDF yükleyin) |
-| Body | örn. `{{ogrenci_ad}} — {{hafta}} ödev planı ektedir. Teslim: {{teslim_tarihi}}` |
+| Body | örn. `Sayın {{veli_ad}}, {{ogrenci_ad}} için {{hafta}} ödev planı ektedir. Teslim tarihi: {{teslim_tarihi}}. İyi çalışmalar dileriz.` |
 
 Desteklenen body değişkenleri: `ogrenci_ad`, `veli_ad`, `hafta`, `hafta_no`, `odev_baslik`, `teslim_tarihi`, `pdf_baslik`, `kurum_ad`.
+
+**Meta metin kuralları** (uymayan şablon `Invalid parameter` ile reddedilir; panel bunları göndermeden önce uyarır):
+
+- Body bir değişkenle **başlayamaz** ve **bitemez** — başına/sonuna sabit metin ekleyin.
+- İki değişken **yan yana** olamaz (`{{ogrenci_ad}} {{hafta}}` ✗ → `{{ogrenci_ad}} için {{hafta}}` ✓).
+- Alt bilgide (footer) değişken kullanılamaz; başlık metninde en fazla bir değişken olabilir.
 
 Onay sonrası sistem bu isimleri otomatik tanır. Alternatif: `AssignmentNotificationConfig` üzerinden Meta şablon FK’si bağlanır.
 
