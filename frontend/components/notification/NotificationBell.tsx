@@ -5,26 +5,52 @@ import {
   fetchNotificationSummary, markNotificationRead, markAllNotificationsRead,
   type AppNotification,
 } from '@/lib/takvim-api';
-import { fetchNotificationSummary as fetchWhatsAppNotificationSummary } from '@/lib/communication-api';
-import { playNotificationSound, isGorevNotification } from '@/lib/notification-sound';
+import {
+  fetchNotificationSummary as fetchWhatsAppNotificationSummary,
+  markConversationRead,
+} from '@/lib/communication-api';
+import {
+  playNotificationSound,
+  unlockNotificationAudio,
+  bindNotificationAudioUnlock,
+} from '@/lib/notification-sound';
+import { useCommunicationSSE } from '@/hooks/useCommunicationSSE';
 
 /* ════════════════════════════════════════════
    🔔 BİLDİRİM ÇANI (Header Badge + Dropdown)
    ════════════════════════════════════════════ */
 
 interface Props {
-  /** Polling aralığı (ms). Varsayılan 30 saniye */
+  /** Polling aralığı (ms). SSE yanında yedek; varsayılan 15 sn */
   pollInterval?: number;
 }
 
-export default function NotificationBell({ pollInterval = 30000 }: Props) {
+function notifFingerprint(n: AppNotification): string {
+  return `${n.id}|${n.created_at}|${n.mesaj}`;
+}
+
+function extractConversationId(n: AppNotification): string | null {
+  if (n.id.startsWith('wa-')) return n.id.slice(3);
+  if (!n.url) return null;
+  try {
+    const u = new URL(n.url, typeof window !== 'undefined' ? window.location.origin : 'http://local');
+    return u.searchParams.get('conversation');
+  } catch {
+    const m = n.url.match(/[?&]conversation=([^&]+)/);
+    return m?.[1] ? decodeURIComponent(m[1]) : null;
+  }
+}
+
+export default function NotificationBell({ pollInterval = 15000 }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [recent, setRecent] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
-  const knownUnreadIdsRef = useRef<Set<string>>(new Set());
+  const knownKeysRef = useRef<Set<string>>(new Set());
+  const recentRef = useRef<AppNotification[]>([]);
+  recentRef.current = recent;
 
   const load = useCallback(async () => {
     const [res, wa] = await Promise.all([
@@ -48,43 +74,53 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
     }));
     const waUnread = wa?.unread_conversations ?? wa?.unread_count ?? 0;
 
-    if (res.success && res.data) {
-      const baseRecent = res.data.recent || [];
-      const merged = [...waItems, ...baseRecent].slice(0, 15);
+    const baseRecent = res.success && res.data ? (res.data.recent || []) : [];
+    // Aynı sohbet için hem WA kartı hem AppNotification varsa tek satır göster
+    const waUrls = new Set(waItems.map((n) => n.url).filter(Boolean));
+    const filteredBase = baseRecent.filter((n) => !(n.url && waUrls.has(n.url)));
+    const merged = [...waItems, ...filteredBase].slice(0, 15);
 
-      if (initializedRef.current) {
-        const newGorevNotifs = baseRecent.filter(
-          n => !n.is_read
-            && !knownUnreadIdsRef.current.has(n.id)
-            && isGorevNotification(n.baslik, n.url),
-        );
-        const newWa = waItems.filter(n => !knownUnreadIdsRef.current.has(n.id));
-        if (newGorevNotifs.length > 0 || newWa.length > 0) {
-          playNotificationSound();
-        }
-      } else {
-        initializedRef.current = true;
+    const unreadKeys = merged.filter((n) => !n.is_read).map(notifFingerprint);
+    if (initializedRef.current) {
+      const fresh = unreadKeys.filter((k) => !knownKeysRef.current.has(k));
+      if (fresh.length > 0) {
+        playNotificationSound();
       }
-
-      knownUnreadIdsRef.current = new Set(
-        merged.filter(n => !n.is_read).map(n => n.id),
-      );
-      setUnreadCount((res.data.unread_count || 0) + (waUnread > 0 ? waUnread : waItems.length));
-      setRecent(merged);
-    } else if (waItems.length > 0) {
-      setUnreadCount(waUnread || waItems.length);
-      setRecent(waItems);
+    } else {
+      initializedRef.current = true;
     }
+    knownKeysRef.current = new Set(unreadKeys);
+
+    const takvimUnread = res.success && res.data ? (res.data.unread_count || 0) : 0;
+    const waDupInTakvim = baseRecent.filter(
+      (n) => !n.is_read && n.url && waUrls.has(n.url),
+    ).length;
+    setUnreadCount(Math.max(0, takvimUnread - waDupInTakvim) + (waUnread || 0));
+    setRecent(merged);
   }, []);
 
-  // İlk yükleme + polling
   useEffect(() => {
+    bindNotificationAudioUnlock();
     load();
     const id = setInterval(load, pollInterval);
-    return () => clearInterval(id);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    const onRefresh = () => { void load(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('lms:notifications-refresh', onRefresh);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('lms:notifications-refresh', onRefresh);
+    };
   }, [load, pollInterval]);
 
-  // Dışarı tıklama
+  useCommunicationSSE({
+    onUpdate: () => { void load(); },
+    onFallbackPoll: () => { void load(); },
+  });
+
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -93,31 +129,59 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  const handleMarkRead = async (id: string) => {
-    await markNotificationRead(id);
-    setRecent(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-    setUnreadCount(prev => Math.max(0, prev - 1));
-  };
-
   const handleMarkAllRead = async () => {
     setLoading(true);
-    await markAllNotificationsRead();
+    unlockNotificationAudio();
+    // Optimistic: badge hemen sıfırlansın
+    const snapshot = recentRef.current;
     setUnreadCount(0);
     setRecent([]);
-    knownUnreadIdsRef.current = new Set();
+    knownKeysRef.current = new Set();
+
+    const convIds = new Set<string>();
+    for (const n of snapshot) {
+      const cid = extractConversationId(n);
+      if (cid) convIds.add(cid);
+    }
+    await Promise.allSettled([
+      markAllNotificationsRead(),
+      ...[...convIds].map((id) => markConversationRead(id).catch(() => null)),
+    ]);
     setLoading(false);
+    void load();
   };
 
   const handleClick = async (n: AppNotification) => {
-    const isWa = n.id.startsWith('wa-');
-    if (!isWa && !n.is_read) {
-      await markNotificationRead(n.id);
-      setUnreadCount(prev => Math.max(0, prev - 1));
-      knownUnreadIdsRef.current.delete(n.id);
-    }
-    setRecent(prev => prev.filter(item => item.id !== n.id));
+    unlockNotificationAudio();
+    const convId = extractConversationId(n);
+    const sameThread = (item: AppNotification) =>
+      item.id === n.id || (n.url && item.url === n.url) ||
+      (convId != null && extractConversationId(item) === convId);
+
+    // Badge / listeyi hemen güncelle — sayfa yüklenmesini bekleme
+    const removedUnread = recentRef.current.filter((item) => sameThread(item) && !item.is_read).length;
+    setRecent((prev) => prev.filter((item) => !sameThread(item)));
+    setUnreadCount((prev) => Math.max(0, prev - Math.max(1, removedUnread)));
     setOpen(false);
-    if (n.url) window.location.href = n.url;
+    for (const item of recentRef.current) {
+      if (sameThread(item)) knownKeysRef.current.delete(notifFingerprint(item));
+    }
+
+    const tasks: Promise<unknown>[] = [];
+    for (const item of recentRef.current) {
+      if (!sameThread(item) || item.is_read) continue;
+      if (!item.id.startsWith('wa-')) {
+        tasks.push(markNotificationRead(item.id));
+      }
+    }
+    if (convId) {
+      tasks.push(markConversationRead(convId).catch(() => null));
+    }
+    await Promise.allSettled(tasks);
+
+    if (n.url) {
+      window.location.href = n.url;
+    }
   };
 
   const timeAgo = (dateStr: string) => {
@@ -133,9 +197,12 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      {/* Çan Butonu */}
       <button
-        onClick={() => setOpen(!open)}
+        type="button"
+        onClick={() => {
+          unlockNotificationAudio();
+          setOpen(!open);
+        }}
         style={{
           position: 'relative', background: 'none', border: 'none',
           cursor: 'pointer', padding: 8, fontSize: 20, lineHeight: 1,
@@ -160,7 +227,6 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
         )}
       </button>
 
-      {/* Dropdown Panel */}
       {open && (
         <div style={{
           position: 'absolute', top: '100%', right: 0, marginTop: 8,
@@ -170,7 +236,6 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
           zIndex: 9999, overflow: 'hidden',
           animation: 'notif-slideDown 0.2s ease-out',
         }}>
-          {/* Header */}
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '14px 16px', borderBottom: '1px solid #f3f4f6',
@@ -188,6 +253,7 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
             </span>
             {unreadCount > 0 && (
               <button
+                type="button"
                 onClick={handleMarkAllRead}
                 disabled={loading}
                 style={{
@@ -201,7 +267,6 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
             )}
           </div>
 
-          {/* Bildirim Listesi */}
           <div style={{ maxHeight: 380, overflowY: 'auto' }}>
             {recent.length === 0 ? (
               <div style={{ padding: 40, textAlign: 'center', color: '#9CA3AF' }}>
@@ -222,7 +287,6 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
                   onMouseEnter={e => (e.currentTarget.style.background = n.is_read ? '#f9fafb' : '#E0EFFF')}
                   onMouseLeave={e => (e.currentTarget.style.background = n.is_read ? 'transparent' : '#F0F7FF')}
                 >
-                  {/* İkon */}
                   <div style={{
                     width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
                     background: `${n.renk}15`, display: 'flex',
@@ -231,7 +295,6 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
                     {n.ikon}
                   </div>
 
-                  {/* İçerik */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
                       fontSize: 13, fontWeight: n.is_read ? 400 : 600,
@@ -251,7 +314,6 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
                     </div>
                   </div>
 
-                  {/* Okunmamış dot */}
                   {!n.is_read && (
                     <div style={{
                       width: 8, height: 8, borderRadius: '50%',
@@ -263,7 +325,6 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
             )}
           </div>
 
-          {/* Footer */}
           {recent.length > 0 && (
             <div style={{
               padding: '10px 16px', borderTop: '1px solid #f3f4f6',
@@ -282,7 +343,6 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
         </div>
       )}
 
-      {/* Pulse animasyonu */}
       <style>{`
         @keyframes notif-pulse {
           0%, 100% { transform: scale(1); }

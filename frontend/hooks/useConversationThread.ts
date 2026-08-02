@@ -54,7 +54,12 @@ export function useConversationThread(
       setMessages(data.messages || []);
       // Okundu işaretleme yüklemeyi bloklamasın
       void markConversationRead(id)
-        .then(() => onConversationReadRef.current?.(id))
+        .then(() => {
+          onConversationReadRef.current?.(id);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('lms:notifications-refresh'));
+          }
+        })
         .catch(() => {});
     } catch (err) {
       if (seq !== loadSeqRef.current) return;
