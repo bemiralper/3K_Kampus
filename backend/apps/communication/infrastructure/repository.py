@@ -177,10 +177,18 @@ class ConversationRepository:
         return qs.select_related('ogrenci', 'veli').order_by('-last_message_at', '-updated_at').first()
 
     @staticmethod
-    def find_latest_for_veli(kurum_id: int, veli_id: int, *, channel: str | None = None):
+    def find_latest_for_veli(
+        kurum_id: int,
+        veli_id: int,
+        *,
+        channel: str | None = None,
+        channel_config_id=None,
+    ):
         qs = Conversation.objects.filter(kurum_id=kurum_id, veli_id=veli_id)
         if channel:
             qs = qs.filter(channel=channel)
+        if channel_config_id:
+            qs = qs.filter(channel_config_id=channel_config_id)
         return qs.select_related('ogrenci', 'veli').order_by('-last_message_at', '-updated_at').first()
 
     @staticmethod
@@ -272,12 +280,23 @@ class ConversationRepository:
         return None
 
     @staticmethod
-    def find_by_phone(kurum_id: int, channel: str, contact_phone: str):
-        return Conversation.objects.filter(
+    def find_by_phone(
+        kurum_id: int,
+        channel: str,
+        contact_phone: str,
+        *,
+        channel_config_id=None,
+    ):
+        qs = Conversation.objects.filter(
             kurum_id=kurum_id,
             channel=channel,
             contact_phone=contact_phone,
-        ).select_related('ogrenci', 'ogrenci__sube', 'veli', 'kurum', 'contact_identity').first()
+        )
+        if channel_config_id:
+            qs = qs.filter(channel_config_id=channel_config_id)
+        return qs.select_related(
+            'ogrenci', 'ogrenci__sube', 'veli', 'kurum', 'contact_identity', 'channel_config',
+        ).order_by('-last_message_at', '-updated_at').first()
 
     @staticmethod
     def _pick_existing_conversation(
@@ -327,8 +346,9 @@ class ConversationRepository:
             defaults['sube_id'] = sube_id
 
         def _scoped(qs):
+            # Hesap bazlı izolasyon: başka numaranın / hesabın sohbetini yeniden kullanma
             if cfg_id:
-                return qs.filter(Q(channel_config_id=cfg_id) | Q(channel_config_id__isnull=True))
+                return qs.filter(channel_config_id=cfg_id)
             return qs
 
         existing = None

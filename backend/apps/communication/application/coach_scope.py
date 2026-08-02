@@ -64,7 +64,14 @@ def _legacy_filter_conversations_for_user(qs, user):
     return qs.filter(ogrenci_id__in=allowed)
 
 
-def filter_conversations_for_user(qs, user, *, inbox: str | None = None):
+def filter_conversations_for_user(
+    qs,
+    user,
+    *,
+    inbox: str | None = None,
+    kurum_id: int | None = None,
+    sube_id: int | None = None,
+):
     """
     Ticket routing açıkken koç görünürlüğü:
     - kendi assigned_coach sohbetleri
@@ -72,12 +79,20 @@ def filter_conversations_for_user(qs, user, *, inbox: str | None = None):
     - Yeni Gelenler (unclaimed + koçsuz/bilinmeyen, aynı department)
     - Destek Gerekiyor (NEEDS_SUPPORT + unclaimed veya kendi)
     Başkasının claim ettiği sohbetler (kendi assigned değilse) görünmez.
+
+    Ardından WhatsApp hesap (allowed_roles / şube) kapsamı uygulanır.
     """
     if not _ticket_routing_enabled():
-        return _legacy_filter_conversations_for_user(qs, user)
+        qs = _legacy_filter_conversations_for_user(qs, user)
+        return filter_by_accessible_whatsapp_accounts(
+            qs, user, kurum_id=kurum_id, sube_id=sube_id,
+        )
 
     if is_resource_admin(user) or user_has_any_permission(user, 'communication.manage'):
-        return _apply_inbox_filter(qs, inbox, coach_profile=None, user=user, is_admin=True)
+        qs = _apply_inbox_filter(qs, inbox, coach_profile=None, user=user, is_admin=True)
+        return filter_by_accessible_whatsapp_accounts(
+            qs, user, kurum_id=kurum_id, sube_id=sube_id,
+        )
 
     coach_profile = get_coach_profile(user)
     if coach_profile:
@@ -111,18 +126,78 @@ def filter_conversations_for_user(qs, user, *, inbox: str | None = None):
         # Başkasının claim ettiği ve kendi öğrencisi olmayan: visibility dışında
         other_claim_block = Q(claimed_by_user__isnull=False) & ~Q(claimed_by_user=user) & ~Q(assigned_coach=coach_profile)
         qs = qs.filter(visibility).exclude(other_claim_block)
-        # NEEDS_SUPPORT + başka biri claim etmiş + kendi assigned değil → exclude already via other_claim_block
-        return _apply_inbox_filter(qs, inbox, coach_profile=coach_profile, user=user, is_admin=False)
+        qs = _apply_inbox_filter(qs, inbox, coach_profile=coach_profile, user=user, is_admin=False)
+        return filter_by_accessible_whatsapp_accounts(
+            qs, user, kurum_id=kurum_id, sube_id=sube_id,
+        )
 
     if _has_staff_messaging_access(user):
-        return _apply_inbox_filter(qs, inbox, coach_profile=None, user=user, is_admin=True)
+        qs = _apply_inbox_filter(qs, inbox, coach_profile=None, user=user, is_admin=True)
+        return filter_by_accessible_whatsapp_accounts(
+            qs, user, kurum_id=kurum_id, sube_id=sube_id,
+        )
 
     allowed = scoped_student_ids(user)
     if allowed is None:
-        return qs
-    if not allowed:
+        qs = qs
+    elif not allowed:
+        qs = qs.none()
+    else:
+        qs = qs.filter(ogrenci_id__in=allowed)
+    return filter_by_accessible_whatsapp_accounts(
+        qs, user, kurum_id=kurum_id, sube_id=sube_id,
+    )
+
+
+def filter_by_accessible_whatsapp_accounts(
+    qs,
+    user,
+    *,
+    kurum_id: int | None = None,
+    sube_id: int | None = None,
+):
+    """
+    Sohbetleri kullanıcının rol/şube ile erişebildiği WhatsApp hesaplarıyla sınırla.
+    communication.manage / superuser / sistem.admin → filtre yok.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
         return qs.none()
-    return qs.filter(ogrenci_id__in=allowed)
+    # Django is_staff tek başına tüm WhatsApp hesaplarını açmaz — sadece manage/admin.
+    if getattr(user, 'is_superuser', False):
+        return qs
+    if user_has_any_permission(user, 'communication.manage', 'sistem.admin'):
+        return qs
+
+    if kurum_id is None:
+        # Çağıran kurum vermediyse güvenli tarafta kal
+        return qs
+
+    from apps.communication.application.account_resolver import AccountResolver
+    from apps.communication.domain.enums import Channel
+    from apps.communication.domain.models import CommunicationChannelConfig
+
+    # Hiç WhatsApp hesabı yoksa (test / eski kurulum) filtre uygulama
+    if not CommunicationChannelConfig.objects.filter(
+        kurum_id=kurum_id, channel=Channel.WHATSAPP, is_active=True,
+    ).exists():
+        return qs
+
+    accessible = AccountResolver.list_accessible(
+        kurum_id=kurum_id,
+        user=user,
+        sube_id=sube_id,
+        active_only=True,
+    )
+    if not accessible:
+        return qs.none()
+
+    ids = [cfg.id for cfg in accessible]
+    default_ids = {cfg.id for cfg in accessible if cfg.is_default}
+    account_q = Q(channel_config_id__in=ids)
+    # Hesap atanmamış eski sohbetler yalnızca erişilebilir varsayılan hesaba düşer
+    if default_ids:
+        account_q |= Q(channel_config_id__isnull=True)
+    return qs.filter(account_q)
 
 
 def _apply_inbox_filter(qs, inbox, *, coach_profile, user, is_admin: bool):
@@ -154,11 +229,47 @@ def _apply_inbox_filter(qs, inbox, *, coach_profile, user, is_admin: bool):
     return qs
 
 
+def _user_can_access_conversation_account(user, conversation) -> bool:
+    """WhatsApp hesabı rol/şube kapsamı — yönetici değilse zorunlu."""
+    if getattr(user, 'is_superuser', False):
+        return True
+    if user_has_any_permission(user, 'communication.manage', 'sistem.admin'):
+        return True
+
+    from apps.communication.application.account_resolver import AccountResolver
+    from apps.communication.domain.enums import Channel
+    from apps.communication.domain.models import CommunicationChannelConfig
+
+    if not CommunicationChannelConfig.objects.filter(
+        kurum_id=conversation.kurum_id, channel=Channel.WHATSAPP, is_active=True,
+    ).exists():
+        return True
+
+    cfg = getattr(conversation, 'channel_config', None)
+    if cfg is None and conversation.channel_config_id:
+        cfg = CommunicationChannelConfig.objects.filter(id=conversation.channel_config_id).first()
+
+    sube_id = getattr(conversation, 'sube_id', None)
+    if cfg is None:
+        # Legacy sohbet: yalnızca varsayılan hesaba erişimi olan görebilir
+        accessible = AccountResolver.list_accessible(
+            kurum_id=conversation.kurum_id,
+            user=user,
+            sube_id=sube_id,
+        )
+        return any(c.is_default for c in accessible)
+
+    return AccountResolver.user_can_access_account(user, cfg, sube_id)
+
+
 def user_can_access_conversation(user, conversation) -> bool:
     if is_resource_admin(user):
         return True
     if user_has_any_permission(user, 'communication.manage'):
         return True
+
+    if not _user_can_access_conversation_account(user, conversation):
+        return False
 
     if not _ticket_routing_enabled():
         coach_profile = get_coach_profile(user)

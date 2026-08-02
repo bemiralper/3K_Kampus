@@ -3,7 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { formatPhoneDisplay } from "@/app/ogrenciler/[id]/utils";
-import { conversationInboxPath, openConversationByPhone } from "@/lib/communication-api";
+import {
+  conversationInboxPath,
+  fetchAccessibleWhatsAppAccounts,
+  openConversationByPhone,
+} from "@/lib/communication-api";
 import { useCommunicationChat } from "@/components/communication/CommunicationChatProvider";
 
 interface PhoneContactLinksProps {
@@ -58,9 +62,12 @@ export default function PhoneContactLinks({
 
     setOpening(true);
     try {
+      const accessible = await fetchAccessibleWhatsAppAccounts().catch(() => null);
       const conv = await openConversationByPhone(phone, {
         ogrenci_id: ogrenciId,
         veli_id: veliId,
+        channel_config_id:
+          accessible?.default_account_id || accessible?.accounts?.[0]?.id || undefined,
       });
       router.push(conversationInboxPath(conv.id, adminInbox));
     } catch {

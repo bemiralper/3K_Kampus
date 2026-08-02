@@ -11,6 +11,7 @@ import { useConversationThread } from "@/hooks/useConversationThread";
 import {
   conversationInboxPath,
   ConversationListItem,
+  fetchAccessibleWhatsAppAccounts,
   openConversationByPhone,
 } from "@/lib/communication-api";
 import type { ChatOpenParams } from "./CommunicationChatProvider";
@@ -43,23 +44,29 @@ export default function CommunicationChatDrawer({
     setOpening(true);
     setOpenError(null);
 
-    openConversationByPhone(target.phone, {
-      ogrenci_id: target.ogrenciId,
-      veli_id: target.veliId,
-      personel_id: target.personelId,
-    })
-      .then((conv) => {
+    (async () => {
+      try {
+        const accessible = await fetchAccessibleWhatsAppAccounts().catch(() => null);
+        const channelConfigId =
+          accessible?.default_account_id
+          || accessible?.accounts?.[0]?.id
+          || undefined;
+        const conv = await openConversationByPhone(target.phone, {
+          ogrenci_id: target.ogrenciId,
+          veli_id: target.veliId,
+          personel_id: target.personelId,
+          channel_config_id: channelConfigId,
+        });
         if (!cancelled) setConversation(conv);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!cancelled) {
           setOpenError(err instanceof Error ? err.message : "Konuşma açılamadı");
           setConversation(null);
         }
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setOpening(false);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;

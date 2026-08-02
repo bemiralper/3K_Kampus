@@ -19,7 +19,9 @@ class NotificationSummaryView(CommunicationAPIView):
         qs = ConversationRepository.list_by_kurum_and_sube(
             kurum_id, sube_id, exclude_archived=True,
         )
-        qs = filter_conversations_for_user(qs, request.user)
+        qs = filter_conversations_for_user(
+            qs, request.user, kurum_id=kurum_id, sube_id=sube_id,
+        )
         unread_qs = qs.filter(unread_count_coach__gt=0)
         unread_count = ConversationRepository.unread_count_for_queryset(qs)
         unread_conversations = unread_qs.count()

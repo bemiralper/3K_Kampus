@@ -92,30 +92,54 @@ class ConversationOpenView(CommunicationAPIView):
 
             is_veli_thread = bool(veli_id)
 
+        from apps.communication.application.account_resolver import (
+            AccountResolveError,
+            AccountResolver,
+        )
         from apps.communication.application.conversation_phone_sync import sync_conversation_linked_phone
         from apps.communication.application.debug_trace import debug_trace, mask_phone
+        preferred_account_id = request.data.get('channel_config_id') or request.data.get('account_id')
+        from apps.communication.domain.models import CommunicationChannelConfig
+        has_accounts = CommunicationChannelConfig.objects.filter(
+            kurum_id=kurum_id, channel=Channel.WHATSAPP, is_active=True,
+        ).exists()
+        try:
+            channel_config = AccountResolver.resolve(
+                kurum_id=kurum_id,
+                user=request.user,
+                sube_id=sube_id,
+                preferred_id=preferred_account_id,
+                # Hesap tanımlıysa zorunlu; yoksa eski davranış (test / tek token)
+                raise_if_missing=has_accounts or bool(preferred_account_id),
+            )
+        except AccountResolveError as exc:
+            return Response(
+                {'error': exc.message, 'code': exc.code},
+                status=status.HTTP_403_FORBIDDEN if exc.code == 'forbidden_account' else status.HTTP_400_BAD_REQUEST,
+            )
+
+        cfg_id = channel_config.id if channel_config else None
 
         conversation = None
         if veli_id:
             conversation = ConversationRepository.find_latest_for_veli(
-                kurum_id, veli_id, channel=Channel.WHATSAPP,
+                kurum_id, veli_id, channel=Channel.WHATSAPP, channel_config_id=cfg_id,
             )
         elif req_ogrenci_id:
             from apps.communication.domain.models import Conversation
 
-            conversation = (
-                Conversation.objects.filter(
-                    kurum_id=kurum_id,
-                    channel=Channel.WHATSAPP,
-                    ogrenci_id=ogrenci_id,
-                    veli_id__isnull=True,
-                )
-                .order_by('-last_message_at', '-updated_at')
-                .first()
+            ogr_qs = Conversation.objects.filter(
+                kurum_id=kurum_id,
+                channel=Channel.WHATSAPP,
+                ogrenci_id=ogrenci_id,
+                veli_id__isnull=True,
             )
+            if cfg_id:
+                ogr_qs = ogr_qs.filter(channel_config_id=cfg_id)
+            conversation = ogr_qs.order_by('-last_message_at', '-updated_at').first()
         if not conversation:
             conversation = ConversationRepository.find_by_phone(
-                kurum_id, Channel.WHATSAPP, e164,
+                kurum_id, Channel.WHATSAPP, e164, channel_config_id=cfg_id,
             )
 
         if conversation:
@@ -126,6 +150,9 @@ class ConversationOpenView(CommunicationAPIView):
 
             conversation = sync_conversation_linked_phone(conversation)
             update_fields = []
+            if cfg_id and not conversation.channel_config_id:
+                conversation.channel_config_id = cfg_id
+                update_fields.append('channel_config_id')
             if is_personel_thread:
                 if conversation.contact_type != RecipientType.PERSONEL:
                     conversation.contact_type = RecipientType.PERSONEL
@@ -171,6 +198,7 @@ class ConversationOpenView(CommunicationAPIView):
                 contact_identity=resolved.identity,
                 ogrenci_id=None if is_personel_thread else ogrenci_id,
                 veli_id=None if is_personel_thread else veli_id,
+                channel_config=channel_config,
             )
             if created and is_personel_thread:
                 conversation.contact_type = RecipientType.PERSONEL
@@ -211,6 +239,12 @@ class ConversationOpenView(CommunicationAPIView):
         from apps.coaching.services.coach_access import get_coach_profile, user_can_access_student
         from apps.communication.application.coach_scope import user_can_access_conversation
 
+        if not user_can_access_conversation(request.user, conversation):
+            return Response(
+                {'error': 'Bu konuşmaya erişim yetkiniz yok.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         coach_profile = get_coach_profile(request.user)
         if coach_profile is not None and not is_personel_thread:
             sid = conversation.ogrenci_id or ogrenci_id
@@ -229,11 +263,6 @@ class ConversationOpenView(CommunicationAPIView):
             if update_fields:
                 update_fields.append('updated_at')
                 conversation.save(update_fields=update_fields)
-            elif not user_can_access_conversation(request.user, conversation):
-                return Response(
-                    {'error': 'Bu konuşmaya erişim yetkiniz yok.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
 
         debug_trace(
             'A',

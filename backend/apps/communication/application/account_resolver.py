@@ -58,8 +58,12 @@ class AccountResolver:
         if active_only:
             qs = qs.filter(is_active=True)
 
-        # Superuser / sistem.admin: tüm hesaplar
-        if user and (getattr(user, 'is_superuser', False) or _has_sistem_admin(user)):
+        # Superuser / sistem.admin / communication.manage: tüm hesaplar
+        if user and (
+            getattr(user, 'is_superuser', False)
+            or _has_sistem_admin(user)
+            or _has_comm_manage(user)
+        ):
             return list(qs.order_by('-is_default', 'name'))
 
         candidates = []
@@ -70,6 +74,30 @@ class AccountResolver:
                 continue
             candidates.append(cfg)
         return candidates
+
+    @staticmethod
+    def accessible_account_ids(
+        *,
+        kurum_id: int,
+        user,
+        sube_id: int | None,
+        active_only: bool = True,
+    ) -> set:
+        return {
+            cfg.id
+            for cfg in AccountResolver.list_accessible(
+                kurum_id=kurum_id,
+                user=user,
+                sube_id=sube_id,
+                active_only=active_only,
+            )
+        }
+
+    @staticmethod
+    def user_can_access_account(user, cfg, sube_id: int | None) -> bool:
+        if cfg is None:
+            return False
+        return _user_can_use(cfg, user, sube_id)
 
     @staticmethod
     def resolve(
@@ -171,11 +199,10 @@ def _has_sistem_admin(user) -> bool:
 
 
 def _has_comm_manage(user) -> bool:
+    """Hesap kapsamını aşan yönetim yetkisi (bulk/config tek başına yetmez)."""
     try:
         from shared.permissions import user_has_any_permission
-        return user_has_any_permission(
-            user, 'communication.manage', 'communication.config', 'communication.bulk',
-        )
+        return user_has_any_permission(user, 'communication.manage')
     except Exception:
         return False
 

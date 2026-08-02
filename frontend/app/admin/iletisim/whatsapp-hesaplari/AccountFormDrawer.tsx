@@ -314,7 +314,11 @@ export default function AccountFormDrawer({ open, account, onClose, onSaved }: A
           )}
 
           <div className="comm-form-field">
-            <label>Bu hesabı kullanabilecek roller (boş = herkes erişebilir)</label>
+            <label>Bu hesabı kullanabilecek roller (boş = tüm roller — dikkatli kullanın)</label>
+            <p className="comm-field-hint" style={{ margin: "0 0 8px", fontSize: 12, color: "#64748b" }}>
+              Seçili roller sohbetlerde yalnızca bu numarayı görür ve kullanır. Muhasebe hattı için yalnızca
+              muhasebe rolünü işaretleyin.
+            </p>
             <div className="comm-checkbox-grid">
               {roles.length === 0 ? (
                 <p className="comm-studio-muted">Rol bulunamadı.</p>

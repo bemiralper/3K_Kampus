@@ -78,11 +78,22 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
   });
 
   useEffect(() => {
-    if (!showAccountFilter) return;
     fetchAccessibleWhatsAppAccounts()
-      .then((res) => setAccounts(res.accounts || []))
+      .then((res) => {
+        const list = res.accounts || [];
+        setAccounts(list);
+        // Tek hesap → otomatik seç. Birden fazla → varsayılan; "Tüm hesaplar" yönetici için boş bırakılabilir.
+        if (!accountId) {
+          if (list.length === 1) {
+            setAccountId(list[0].id);
+          } else if (res.default_account_id) {
+            setAccountId(res.default_account_id);
+          }
+        }
+      })
       .catch(() => setAccounts([]));
-  }, [showAccountFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnızca mount'ta varsayılan hesap
+  }, []);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -220,14 +231,16 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
         error={displayError}
         className={showListMobile ? "" : "hidden-mobile"}
         accountFilterSlot={
-          showAccountFilter && accounts.length > 0 ? (
+          accounts.length > 0 ? (
             <select
               className="comm-inbox-account-select"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
-              aria-label="Hesaba göre filtrele"
+              aria-label="WhatsApp hesabı"
             >
-              <option value="">Tüm hesaplar</option>
+              {accounts.length > 1 && showAccountFilter ? (
+                <option value="">Erişebildiğim tüm hesaplar</option>
+              ) : null}
               {accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
                   {accountLabel(acc)}

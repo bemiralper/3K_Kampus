@@ -7,10 +7,19 @@ from apps.communication.application.inbound_processor import InboundProcessor
 from apps.communication.domain.enums import Channel, WhatsAppAccountScope
 from apps.communication.domain.models import CommunicationChannelConfig, Conversation
 from apps.kurum.domain.models import Kurum
-from apps.roller.models import Role, UserRole
+from apps.roller.models import Permission, Role, RolePermission, UserRole
 from apps.sube.domain.models import Sube
 
 User = get_user_model()
+
+
+def _grant(role, codes):
+    for code in codes:
+        perm, _ = Permission.objects.get_or_create(
+            code=code,
+            defaults={'name': code, 'category': 'test'},
+        )
+        RolePermission.objects.get_or_create(role=role, permission=perm)
 
 
 @override_settings(
@@ -31,6 +40,12 @@ class MultiWhatsAppAccountTests(TestCase):
             code='test_koc_wa',
             defaults={'name': 'Test Koç', 'level': 20, 'is_active': True},
         )
+        _grant(self.role_muhasebe, [
+            'communication.read', 'communication.write', 'finans.read',
+        ])
+        _grant(self.role_koc, [
+            'communication.read', 'communication.write', 'ogrenci.read',
+        ])
         self.user_m = User.objects.create_user(username='wa_muh', password='x')
         self.user_k = User.objects.create_user(username='wa_koc', password='x')
         UserRole.objects.create(user=self.user_m, role=self.role_muhasebe)
@@ -122,3 +137,49 @@ class MultiWhatsAppAccountTests(TestCase):
                 'pn_genel', exclude_id=self.acc_genel.id,
             )
         )
+
+    def test_conversation_list_respects_allowed_roles(self):
+        """Muhasebe rolü olmayan hesap sohbetleri muhasebe kullanıcısına görünmez."""
+        from apps.communication.application.coach_scope import (
+            filter_conversations_for_user,
+            user_can_access_conversation,
+        )
+        from apps.communication.domain.enums import ConversationStatus
+
+        # Genel hesaptan muhasebe rolünü çıkar — yalnızca koç
+        self.acc_genel.allowed_roles.set([self.role_koc])
+
+        conv_genel = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            channel=Channel.WHATSAPP,
+            contact_phone='905551110001',
+            status=ConversationStatus.OPEN,
+            channel_config=self.acc_genel,
+        )
+        conv_muh = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            channel=Channel.WHATSAPP,
+            contact_phone='905551110002',
+            status=ConversationStatus.OPEN,
+            channel_config=self.acc_kadikoy,
+        )
+
+        qs = Conversation.objects.filter(kurum=self.kurum)
+        muh_qs = filter_conversations_for_user(
+            qs, self.user_m, kurum_id=self.kurum.id, sube_id=self.sube_a.id,
+        )
+        muh_ids = set(muh_qs.values_list('id', flat=True))
+        self.assertIn(conv_muh.id, muh_ids)
+        self.assertNotIn(conv_genel.id, muh_ids)
+
+        self.assertTrue(user_can_access_conversation(self.user_m, conv_muh))
+        self.assertFalse(user_can_access_conversation(self.user_m, conv_genel))
+
+        koc_qs = filter_conversations_for_user(
+            qs, self.user_k, kurum_id=self.kurum.id, sube_id=self.sube_a.id,
+        )
+        koc_ids = set(koc_qs.values_list('id', flat=True))
+        self.assertIn(conv_genel.id, koc_ids)
+        self.assertNotIn(conv_muh.id, koc_ids)

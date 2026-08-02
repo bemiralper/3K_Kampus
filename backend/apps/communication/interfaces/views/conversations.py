@@ -63,7 +63,9 @@ class ConversationListView(CommunicationAPIView):
         filters = _parse_filters(request)
         inbox = filters.get('inbox')
         qs = ConversationRepository.list_by_kurum_and_sube(kurum_id, sube_id, **filters)
-        qs = filter_conversations_for_user(qs, request.user, inbox=inbox)
+        qs = filter_conversations_for_user(
+            qs, request.user, inbox=inbox, kurum_id=kurum_id, sube_id=sube_id,
+        )
         serializer = ConversationListSerializer(qs, many=True, context={'request': request})
         return Response({
             'conversations': serializer.data,
