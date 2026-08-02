@@ -148,7 +148,7 @@ export function clearResolvedWizardErrors(
   drop("ad", Boolean(data.student.ad.trim()));
   drop("soyad", Boolean(data.student.soyad.trim()));
   drop("dogum_tarihi", Boolean(data.student.dogum_tarihi));
-  drop("cinsiyet", data.student.cinsiyet != null && data.student.cinsiyet !== "");
+  drop("cinsiyet", data.student.cinsiyet != null);
 
   drop("ogrenci_no", Boolean(data.enrollment.ogrenci_no.trim()));
   drop("egitim_yili", data.enrollment.egitim_yili != null);
