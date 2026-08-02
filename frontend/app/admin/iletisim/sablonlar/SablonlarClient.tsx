@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CommunicationPageShell } from "@/components/communication";
 import TemplateEditorPanel, {
   composerToTemplateForm,
@@ -34,6 +34,8 @@ const EMPTY_FORM: TemplateEditorForm = {
 
 export default function SablonlarClient() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const initialCategory = searchParams.get("category") || "";
 
   const [templates, setTemplates] = useState<MessageTemplateItem[]>([]);
@@ -78,6 +80,21 @@ export default function SablonlarClient() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("category") || "";
+    if (fromUrl !== categoryFilter) {
+      setCategoryFilter(fromUrl);
+    }
+    // URL → state sync only when query changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const selectCategory = (slug: string) => {
+    setCategoryFilter(slug);
+    const qs = slug ? `?category=${encodeURIComponent(slug)}` : "";
+    router.replace(`${pathname}${qs}`, { scroll: false });
+  };
 
   const resetForm = (category?: string) => {
     setForm({ ...EMPTY_FORM, category: category || categoryFilter || "ozel" });
@@ -166,7 +183,7 @@ export default function SablonlarClient() {
       setNewCategoryAudience("admin");
       setShowCategoryForm(false);
       await loadCategories();
-      setCategoryFilter(created.slug);
+      selectCategory(created.slug);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kategori eklenemedi");
     } finally {
@@ -179,7 +196,7 @@ export default function SablonlarClient() {
     setError(null);
     try {
       await deleteTemplateCategory(cat.id);
-      if (categoryFilter === cat.slug) setCategoryFilter("");
+      if (categoryFilter === cat.slug) selectCategory("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kategori silinemedi");
@@ -211,11 +228,11 @@ export default function SablonlarClient() {
 
   return (
     <CommunicationPageShell
-      title="Mesaj Şablonları"
+      title="Şablonlar"
       subtitle="Hazır yanıtları kategorilere göre yönetin"
       icon="📋"
       breadcrumbs={[
-        { label: "İletişim", href: "/admin/iletisim/kampanyalar" },
+        { label: "İletişim", href: "/admin/iletisim/toplu-gonder" },
         { label: "Şablonlar" },
       ]}
       actions={
@@ -253,7 +270,7 @@ export default function SablonlarClient() {
             role="tab"
             aria-selected={categoryFilter === ""}
             className={`comm-tab${categoryFilter === "" ? " active" : ""}`}
-            onClick={() => setCategoryFilter("")}
+            onClick={() => selectCategory("")}
           >
             Tümü
             <span className="comm-tab-count">{totalTemplateCount}</span>
@@ -265,7 +282,7 @@ export default function SablonlarClient() {
               role="tab"
               aria-selected={categoryFilter === cat.slug}
               className={`comm-tab${categoryFilter === cat.slug ? " active" : ""}`}
-              onClick={() => setCategoryFilter(cat.slug)}
+              onClick={() => selectCategory(cat.slug)}
               title={TEMPLATE_AUDIENCE_LABELS[cat.audience_scope] || cat.audience_scope}
             >
               {cat.label}

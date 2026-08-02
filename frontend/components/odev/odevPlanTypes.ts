@@ -8,6 +8,10 @@ export interface PlanContentItemView {
   contentType: string;
   questionCount: number;
   pageCount: number;
+  /** Kayıtlı tekrar / eksik tamamlama görevi */
+  isCompletionTask?: boolean;
+  previousCompletionPercent?: number | null;
+  previousAssignmentTitle?: string;
 }
 
 export interface PlanTopicGroup {
@@ -66,6 +70,9 @@ export function buildPlanGroupsFromAssignment(assignment: ManualAssignment): Pla
           contentType: task.task_type,
           questionCount: q,
           pageCount: p,
+          isCompletionTask: Boolean(task.is_completion_task),
+          previousCompletionPercent: task.previous_task_completion_percent ?? null,
+          previousAssignmentTitle: task.previous_assignment_title || "",
         },
         note: task.description || lb.notes || "",
       });

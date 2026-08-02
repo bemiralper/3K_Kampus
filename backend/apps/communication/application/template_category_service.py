@@ -32,9 +32,12 @@ class TemplateCategoryService:
 
     @classmethod
     def ensure_defaults(cls, kurum_id: int, sube_id: int) -> None:
-        if MessageTemplateCategory.objects.filter(kurum_id=kurum_id, sube_id=sube_id).exists():
-            return
-        MessageTemplateCategory.objects.bulk_create([
+        """Eksik varsayılan kategorileri ekler; paralel isteklerde IntegrityError vermez."""
+        existing = set(
+            MessageTemplateCategory.objects.filter(kurum_id=kurum_id, sube_id=sube_id)
+            .values_list('slug', flat=True)
+        )
+        missing = [
             MessageTemplateCategory(
                 kurum_id=kurum_id,
                 sube_id=sube_id,
@@ -45,7 +48,10 @@ class TemplateCategoryService:
                 is_active=True,
             )
             for slug, label, order, scope in DEFAULT_CATEGORIES
-        ])
+            if slug not in existing
+        ]
+        if missing:
+            MessageTemplateCategory.objects.bulk_create(missing, ignore_conflicts=True)
 
     def list_categories(
         self,

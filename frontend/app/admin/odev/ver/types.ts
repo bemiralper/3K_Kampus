@@ -110,9 +110,21 @@ export interface ContentTaskHistoryItem {
   assignment_title: string;
   assignment_status: string;
   evaluated_at: string | null;
+  unit_id?: number | null;
+  book_id?: number | null;
 }
 
 export type ContentTaskHistory = Record<number, ContentTaskHistoryItem>;
+
+/** Ödev verilmiş kapsam için bitirme özeti (kitap / ünite) */
+export interface ScopeCompletionProgress {
+  assigned: number;
+  percent: number;
+  /** Kitapta: tüm içerik sayısı (yüzde buna göre) */
+  total?: number;
+}
+
+export type ScopeCompletionMap = Record<number, ScopeCompletionProgress>;
 
 /* ─── Cart Grouping ─── */
 export interface CartContentItem {

@@ -967,7 +967,17 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
         context="veli"
         loading={veliTcChecking !== null}
         onApply={applyKimlikVeli}
-        onCancel={() => {
+        onClose={() => {
+          const idx = veliModalIndex;
+          const phone = data.guardians[idx]?.telefon || "";
+          const digits = digitsOnlyPhone(phone);
+          if (phoneDebounceRef.current) clearTimeout(phoneDebounceRef.current);
+          phoneResolveSeqRef.current += 1;
+          if (digits.length >= 10) suppressedPhoneByIndexRef.current[idx] = digits;
+          setKimlikResult(null);
+          setShowKimlikModal(false);
+        }}
+        onChangeNumber={() => {
           const idx = veliModalIndex;
           const phone = data.guardians[idx]?.telefon || "";
           const digits = digitsOnlyPhone(phone);
@@ -975,10 +985,17 @@ export default function VeliStep({ data, metadata, errors, onChange, renewalStat
           phoneResolveSeqRef.current += 1;
           if (digits.length >= 10) suppressedPhoneByIndexRef.current[idx] = digits;
           const newGuardians = [...data.guardians];
+          const existing = ensureTelefonlar(newGuardians[idx].telefonlar, phone);
+          const matched = Boolean(digits && existing.some((row) => digitsOnlyPhone(row.numara) === digits));
+          const telefonlar = matched
+            ? existing.map((row) =>
+                digitsOnlyPhone(row.numara) === digits ? { ...row, numara: "" } : row,
+              )
+            : existing.map((row, i) => (i === 0 ? { ...row, numara: "" } : row));
           newGuardians[idx] = {
             ...newGuardians[idx],
             telefon: "",
-            telefonlar: ensureTelefonlar(null, ""),
+            telefonlar,
           };
           onChange({ ...data, guardians: newGuardians });
           setPhoneConflictByIndex((prev) => {

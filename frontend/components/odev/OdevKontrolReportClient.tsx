@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useVectorPrint } from "@/lib/useVectorPrint";
-import { fetchAssignmentReport } from "@/lib/resources-api";
+import { downloadAssignmentServerPdf, fetchAssignmentReport } from "@/lib/resources-api";
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
+import { MetaCol, assignmentTypeLabel } from "@/components/odev/odevPdfMeta";
 /** Backend completion_utils ile aynı mantık */
 function effectiveTaskCompletionPercent(task: {
   completion_status: string;
@@ -125,20 +126,6 @@ interface TopicCumulative {
   cumulative_completion_percent: number;
 }
 
-interface TrendItem {
-  id: number;
-  title: string;
-  assigned_date: string | null;
-  due_date: string | null;
-  status: string;
-  completion_percent: number;
-  total_tasks: number;
-  done_tasks: number;
-  total_questions: number;
-  completed_questions: number;
-  is_current: boolean;
-}
-
 interface ReportData {
   id: number;
   student_name: string;
@@ -172,18 +159,12 @@ interface FullReportData {
   data: ReportData;
   overall_stats: OverallStats;
   topic_cumulative: TopicCumulative[];
-  recent_trend: TrendItem[];
 }
 
 // ─── Helpers ───
 const formatDate = (d: string | null) => {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
-};
-
-const formatShortDate = (d: string | null) => {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" });
 };
 
 const getGrade = (pct: number): { label: string; color: string; bg: string; emoji: string } => {
@@ -203,16 +184,6 @@ const getCompletionBadge = (cs: string) => {
   }
 };
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "COMPLETED": return "#16a34a";
-    case "IN_PROGRESS": return "#2563eb";
-    case "OVERDUE": return "#dc2626";
-    case "ASSIGNED": return "#d97706";
-    default: return "#94a3b8";
-  }
-};
-
 // ─── Circular Progress ───
 function CircularProgress({ value, size = 120, strokeWidth = 10, color = "#0262a7", label, sublabel }: { value: number; size?: number; strokeWidth?: number; color?: string; label?: string; sublabel?: string }) {
   const radius = (size - strokeWidth) / 2;
@@ -229,30 +200,6 @@ function CircularProgress({ value, size = 120, strokeWidth = 10, color = "#0262a
         {label && <div style={{ fontSize: size * 0.1, color: "#94a3b8", fontWeight: 500 }}>{label}</div>}
         {sublabel && <div style={{ fontSize: size * 0.08, color: "#cbd5e1", fontWeight: 400, marginTop: 1 }}>{sublabel}</div>}
       </div>
-    </div>
-  );
-}
-
-// ─── Mini Bar Chart ───
-function MiniBarChart({ data, height = 120 }: { data: { label: string; value: number; maxValue: number; color: string; isCurrent?: boolean }[]; height?: number }) {
-  const maxVal = Math.max(...data.map(d => d.maxValue), 1);
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height, padding: "0 4px" }}>
-      {data.map((d, i) => {
-        const barH = Math.max((d.value / maxVal) * (height - 30), 4);
-        return (
-          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: d.color }}>%{d.value}</div>
-            <div style={{
-              width: "100%", maxWidth: 32, height: barH, background: d.color,
-              borderRadius: "4px 4px 0 0", opacity: d.isCurrent ? 1 : 0.6,
-              border: d.isCurrent ? "2px solid #1e293b" : "none",
-              transition: "height 0.5s ease-out"
-            }} />
-            <div style={{ fontSize: 8, color: "#94a3b8", textAlign: "center", lineHeight: 1.1 }}>{d.label}</div>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -293,7 +240,6 @@ export default function OdevKontrolReportClient({
           data: result.data as unknown as ReportData,
           overall_stats: (result.overall_stats || {}) as unknown as OverallStats,
           topic_cumulative: (result.topic_cumulative || []) as unknown as TopicCumulative[],
-          recent_trend: (result.recent_trend || []) as unknown as TrendItem[],
         });
       }
     } catch (e) {
@@ -357,7 +303,7 @@ export default function OdevKontrolReportClient({
   const { print: printVector } = useVectorPrint({
     title: `Ödev Rapor - ${fullReport?.data.student_name || 'rapor'}`,
     orientation,
-    marginMm: "8mm 10mm",
+    marginMm: "6mm 6mm",
     externalRef: printRef as React.RefObject<HTMLDivElement>,
   });
 
@@ -370,7 +316,19 @@ export default function OdevKontrolReportClient({
     }
   }, [printVector]);
 
-  const handleDownload = handlePDF;
+  const handleDownload = useCallback(async () => {
+    const id = Number(assignmentId);
+    if (!id) return;
+    setPdfBusy(true);
+    try {
+      await downloadAssignmentServerPdf(id, "report", orientation);
+    } catch (e) {
+      setSendToast(e instanceof Error ? e.message : "PDF indirilemedi");
+      window.setTimeout(() => setSendToast(null), 4000);
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [assignmentId, orientation]);
 
   if (loading) return (
     <div style={{ padding: printMode ? 24 : 60, textAlign: "center", fontFamily: "'Poppins', sans-serif", color: "#64748b" }}>
@@ -406,12 +364,12 @@ export default function OdevKontrolReportClient({
   const summary = report.report_summary;
   const overall = fullReport.overall_stats;
   const grade = getGrade(summary.overall_completion_percent);
-  const trend = fullReport.recent_trend;
 
   const hasQuestions = summary.total_questions > 0;
   const hasPages = summary.total_pages > 0;
 
-  const logoUrl = "/img/3k-logo.png";
+  const headerLogoUrl = "/img/beyaz-logo.png";
+  const footerLogoUrl = "/img/3k-logo.png";
   const currentYear = new Date().getFullYear();
   const todayStr = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
 
@@ -452,15 +410,16 @@ export default function OdevKontrolReportClient({
               {pdfBusy ? "Hazırlanıyor..." : "PDF Önizle"}
             </button>
             <button type="button" onClick={handleDownload} disabled={pdfBusy} className="ok-btn-secondary">
-              İndir
+              {pdfBusy ? "Hazırlanıyor..." : "PDF İndir"}
             </button>
             <button
               type="button"
               onClick={() => setShowSendModal(true)}
               className="ok-btn-secondary"
               style={{ background: "#ecfdf5", borderColor: "#6ee7b7", color: "#047857" }}
+              title="Veli ve öğrenciye ödev kontrol raporu PDF'ini WhatsApp ile gönder"
             >
-              WhatsApp Gönder
+              WhatsApp Gönder (PDF)
             </button>
           </div>
         </div>
@@ -469,59 +428,54 @@ export default function OdevKontrolReportClient({
 
         {/* A4 CONTENT */}
         <div ref={printRef} id="rapor-print-area" style={{
-          padding: orientation === "landscape" ? "18px 24px" : "22px 28px",
+          padding: orientation === "landscape" ? "12px 14px" : "14px 10px",
           fontFamily: "'Poppins', sans-serif",
           color: "#172b4c", lineHeight: 1.4,
-          maxWidth: orientation === "landscape" ? 1100 : 840,
+          maxWidth: orientation === "landscape" ? 1100 : 860,
           margin: "0 auto",
         }}>
-        {/* HEADER */}
+        {/* HEADER — plan PDF ile aynı kompakt dil */}
         <div className="ok-report-header">
-          {/* Decorative */}
-          <div style={{ position: "absolute", top: -30, right: -30, width: 100, height: 100, borderRadius: "50%", background: "rgba(255,255,255,0.08)" }} />
-          <div style={{ position: "absolute", bottom: -20, right: 60, width: 65, height: 65, borderRadius: "50%", background: "rgba(255,255,255,0.05)" }} />
+          <div style={{ position: "absolute", top: -24, right: -24, width: 80, height: 80, borderRadius: "50%", background: "rgba(255,255,255,0.08)" }} />
 
-          {/* Row 1: Logo + Title + Doc info */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{
-                width: 38, height: 38, borderRadius: 8,
-                background: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-              }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={logoUrl} alt="3K" crossOrigin="anonymous" style={{ width: 28, height: 28, objectFit: "contain" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 1 }}>3K KAMPÜS</div>
-                <div style={{ fontSize: 8, opacity: 0.75 }}>Koçluk &amp; Danışmanlık Merkezi</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={headerLogoUrl}
+                alt="3K"
+                crossOrigin="anonymous"
+                style={{ width: 36, height: 36, objectFit: "contain", flexShrink: 0 }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 0.6, lineHeight: 1.2 }}>3K KAMPÜS</div>
+                <div style={{
+                  marginTop: 3, display: "inline-block", padding: "1px 8px", borderRadius: 10,
+                  background: "rgba(255,255,255,0.16)", fontSize: 8, fontWeight: 600,
+                  letterSpacing: 1.2, textTransform: "uppercase",
+                }}>
+                  Ödev Sonuç Raporu
+                </div>
               </div>
             </div>
-            <div style={{ textAlign: "center" }}>
+            <div style={{ textAlign: "right", flex: 1, minWidth: 0 }}>
               <div style={{
-                display: "inline-block", padding: "2px 14px", borderRadius: 16,
-                background: "rgba(255,255,255,0.15)", fontSize: 8, fontWeight: 600,
-                letterSpacing: 2, textTransform: "uppercase", marginBottom: 3,
+                fontSize: 15, fontWeight: 700, margin: 0, lineHeight: 1.25,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}>
-                ÖDEV SONUÇ RAPORU
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>
                 {report.title || "İsimsiz Ödev"}
               </div>
-            </div>
-            <div style={{ textAlign: "right", fontSize: 8, opacity: 0.7, lineHeight: 1.7 }}>
-              <div>ÖSR-{new Date().getTime().toString(36).toUpperCase().slice(-6)}</div>
-              <div>{todayStr}</div>
+              <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>
+                ÖSR-{assignmentId} · {todayStr}
+              </div>
             </div>
           </div>
 
-          {/* Row 2: Student bar */}
           <div style={{
             display: "flex", alignItems: "center", gap: 12,
             background: "rgba(255,255,255,0.12)", borderRadius: 8,
-            padding: "8px 12px",
+            padding: "7px 12px",
           }}>
-            {/* Öğrenci Fotoğrafı */}
             {report.student_info?.profil_foto ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -529,65 +483,112 @@ export default function OdevKontrolReportClient({
                 alt={report.student_name}
                 crossOrigin="anonymous"
                 style={{
-                  width: 40, height: 40, borderRadius: "50%", objectFit: "cover",
-                  border: "2px solid rgba(255,255,255,0.5)", flexShrink: 0,
+                  width: 34, height: 34, borderRadius: "50%", objectFit: "cover",
+                  border: "1.5px solid rgba(255,255,255,0.5)", flexShrink: 0,
                 }}
               />
             ) : (
               <div style={{
-                width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+                width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
                 background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 14, fontWeight: 700,
+                fontSize: 12, fontWeight: 700,
               }}>
                 {report.student_name.split(" ").map(w => w.charAt(0)).join("").substring(0, 2)}
               </div>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>🎓 {report.student_name}</div>
-              <div style={{ fontSize: 8, opacity: 0.75 }}>
-                Öğrenci · {report.priority_display} Öncelik · {report.status_display}
+              <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {report.student_name}
+              </div>
+              <div style={{ fontSize: 9, opacity: 0.75 }}>
+                Öğrenci · {report.status_display} · {report.priority_display} öncelik
               </div>
             </div>
-
-            {/* Stats */}
-            <div style={{ display: "flex", gap: 12, fontSize: 9 }}>
+            <div style={{ display: "flex", gap: 12, fontSize: 10, opacity: 0.95, flexShrink: 0 }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Verilme</div>
+                <div style={{ fontWeight: 600, lineHeight: 1.2 }}>{formatDate(report.assigned_date)}</div>
+              </div>
+              <div style={{ width: 1, background: "rgba(255,255,255,0.3)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Teslim</div>
+                <div style={{ fontWeight: 600, color: "#fbbf24", lineHeight: 1.2 }}>{formatDate(report.due_date)}</div>
+              </div>
               {report.coach_name && (
                 <>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 7, opacity: 0.6, marginBottom: 1 }}>Maestro Koç</div>
-                    <div style={{ fontWeight: 600, fontSize: 10 }}>👨‍🏫 {report.coach_name}</div>
+                  <div style={{ width: 1, background: "rgba(255,255,255,0.3)" }} />
+                  <div style={{ textAlign: "center", maxWidth: 90 }}>
+                    <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Koç</div>
+                    <div style={{ fontWeight: 600, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{report.coach_name}</div>
                   </div>
-                  <div style={{ width: 1, background: "rgba(255,255,255,0.25)" }} />
                 </>
               )}
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 7, opacity: 0.6, marginBottom: 1 }}>Görev</div>
-                <div style={{ fontWeight: 700, fontSize: 12 }}>📋 {summary.total_tasks}</div>
-              </div>
-              <div style={{ width: 1, background: "rgba(255,255,255,0.25)" }} />
-              {hasQuestions && (
-                <>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 7, opacity: 0.6, marginBottom: 1 }}>Soru</div>
-                    <div style={{ fontWeight: 700, fontSize: 12, color: "#fbbf24" }}>✏️ {summary.total_questions}</div>
-                  </div>
-                  <div style={{ width: 1, background: "rgba(255,255,255,0.25)" }} />
-                </>
-              )}
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 7, opacity: 0.6, marginBottom: 1 }}>Değerlendirme</div>
-                <div style={{ fontWeight: 700, fontSize: 12, color: "#34d399" }}>%{summary.overall_completion_percent}</div>
-              </div>
             </div>
           </div>
+        </div>
 
-          {/* Date & tags row */}
-          <div style={{ display: "flex", gap: 4, marginTop: 8, fontSize: 8, flexWrap: "wrap" }}>
-            <span style={{ padding: "1px 8px", background: "rgba(255,255,255,0.15)", borderRadius: 12 }}>📅 {formatDate(report.assigned_date)} → {formatDate(report.due_date)}</span>
-            <span style={{ padding: "1px 8px", background: "rgba(255,255,255,0.15)", borderRadius: 12 }}>{report.status_display}</span>
-            <span style={{ padding: "1px 8px", background: "rgba(255,255,255,0.15)", borderRadius: 12 }}>{report.priority_display} Öncelik</span>
-            {report.postpone_count > 0 && <span style={{ padding: "1px 8px", background: "rgba(255,100,100,0.2)", borderRadius: 12 }}>📅 {report.postpone_count}x Ertelendi</span>}
-          </div>
+        {/* Özet sütun kutuları — plan PDF ile aynı dil */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
+          <MetaCol
+            label="Görev"
+            value={`${summary.done_tasks}/${summary.total_tasks}`}
+            minWidth={56}
+            valueColor="#4338ca"
+            borderColor="#c7d2fe"
+            background="#eef2ff"
+          />
+          {hasQuestions && (
+            <MetaCol
+              label="Soru"
+              value={`${summary.completed_questions}/${summary.total_questions}`}
+              minWidth={56}
+              valueColor="#ea580c"
+              borderColor="#fed7aa"
+              background="#fff7ed"
+            />
+          )}
+          {hasPages && (
+            <MetaCol
+              label="Sayfa"
+              value={`${summary.completed_pages}/${summary.total_pages}`}
+              minWidth={56}
+              valueColor="#be185d"
+              borderColor="#fbcfe8"
+              background="#fdf2f8"
+            />
+          )}
+          <MetaCol
+            label="Başarı"
+            value={`%${summary.overall_completion_percent}`}
+            minWidth={56}
+            valueColor={grade.color}
+            borderColor="#e2e8f0"
+            background="#fff"
+          />
+          <MetaCol
+            label="Yaptı"
+            value={String(summary.done_tasks)}
+            minWidth={48}
+            valueColor="#16a34a"
+            borderColor="#bbf7d0"
+            background="#f0fdf4"
+          />
+          <MetaCol
+            label="Eksik"
+            value={String(summary.partial_tasks)}
+            minWidth={48}
+            valueColor="#d97706"
+            borderColor="#fde68a"
+            background="#fffbeb"
+          />
+          <MetaCol
+            label="Yapmadı"
+            value={String(summary.not_done_tasks)}
+            minWidth={48}
+            valueColor="#dc2626"
+            borderColor="#fecaca"
+            background="#fef2f2"
+          />
         </div>
 
         {/* ====== GEÇ TESLİM / ERTELEME UYARI KUTUSU ====== */}
@@ -754,7 +755,7 @@ export default function OdevKontrolReportClient({
           </div>
           <div style={{ padding: 0 }}>
             {groupedLessonStats.map((group, gIdx) => (
-              <div key={group.subjectName} style={{ borderBottom: gIdx < groupedLessonStats.length - 1 ? "2px solid #e2e8f0" : "none" }}>
+              <div key={group.subjectName} className="ok-report-subject" style={{ borderBottom: gIdx < groupedLessonStats.length - 1 ? "2px solid #e2e8f0" : "none" }}>
                 {/* Ders Başlığı — Grup Header */}
                 <div style={{ padding: "12px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)" }}>
                   <div>
@@ -861,7 +862,7 @@ export default function OdevKontrolReportClient({
                       {topicSections.map((sec, secIdx) => {
                         const secAvg = weightedTaskAvg(sec.tasks);
                         return (
-                        <div key={sec.topicName || secIdx} style={{ padding: bg.bookName ? "6px 20px 12px 32px" : "8px 20px 12px", borderBottom: secIdx < topicSections.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                        <div key={sec.topicName || secIdx} className="ok-report-topic page-break-avoid" style={{ padding: bg.bookName ? "6px 20px 12px 32px" : "8px 20px 12px", borderBottom: secIdx < topicSections.length - 1 ? "1px solid #f1f5f9" : "none" }}>
                           {/* Konu Başlığı — birden fazla konu varsa veya tek konunun adı varsa göster */}
                           {(sec.topicName && (hasMultipleTopics || !bg.bookName)) ? (
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -879,53 +880,68 @@ export default function OdevKontrolReportClient({
                           ) : null}
 
                     {/* Görev Detayları Tablosu */}
-                    <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+                    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
-                          <th style={{ textAlign: "left", padding: "8px 10px", color: "#94a3b8", fontWeight: 500 }}>Görev</th>
-                          <th style={{ textAlign: "center", padding: "8px 10px", color: "#94a3b8", fontWeight: 500, width: 90 }}>Durum</th>
-                          <th style={{ textAlign: "center", padding: "8px 10px", color: "#94a3b8", fontWeight: 500, width: 60 }}>%</th>
-                          <th style={{ textAlign: "center", padding: "8px 10px", color: "#94a3b8", fontWeight: 500, width: 100 }}>Soru</th>
-                          <th style={{ textAlign: "center", padding: "8px 10px", color: "#94a3b8", fontWeight: 500, width: 100 }}>Sayfa</th>
+                          <th style={{ textAlign: "left", padding: "6px 8px", color: "#94a3b8", fontWeight: 500 }}>Görev</th>
+                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 52 }}>Tür</th>
+                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 72 }}>Durum</th>
+                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 44 }}>%</th>
+                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 56 }}>Soru</th>
+                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 56 }}>Sayfa</th>
                         </tr>
                       </thead>
                       <tbody>
                         {sec.tasks.map((task: any) => {
                           const badge = getCompletionBadge(task.completion_status);
+                          const typeKey = task.task_type || task.content_type || "";
                           return (
                             <tr key={task.id} style={{ borderBottom: "1px solid #f8fafc" }}>
-                              <td style={{ padding: "10px 10px", color: "#1e293b", fontWeight: 500 }}>
+                              <td style={{ padding: "6px 8px", color: "#1e293b", fontWeight: 500 }}>
                                 {task.title}
                                 {task.is_completion_task && (
-                                  <div style={{ fontSize: 11, color: "#2563eb", marginTop: 3, display: "flex", alignItems: "center", gap: 4 }}>
+                                  <div style={{ fontSize: 10, color: "#2563eb", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
                                     🔄 Eksik Tamamlama
                                     {task.previous_task_completion_percent != null && task.previous_task_completion_percent > 0 && (
                                       <span style={{ color: "#60a5fa" }}>(önceki: %{task.previous_task_completion_percent})</span>
                                     )}
                                   </div>
                                 )}
-                                {task.coach_evaluation_note && <div style={{ fontSize: 12, color: "#6d28d9", fontStyle: "italic", marginTop: 3 }}>💬 {task.coach_evaluation_note}</div>}
+                                {task.coach_evaluation_note && <div style={{ fontSize: 11, color: "#6d28d9", fontStyle: "italic", marginTop: 2 }}>💬 {task.coach_evaluation_note}</div>}
                               </td>
-                              <td style={{ padding: "10px 10px", textAlign: "center" }}>
-                                <span style={{ padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600, background: badge.bg, color: badge.text }}>{badge.label}</span>
+                              <td style={{ padding: "6px 4px", textAlign: "center" }}>
+                                <div style={{ display: "inline-flex", justifyContent: "center" }}>
+                                  <MetaCol label="Tür" value={assignmentTypeLabel(typeKey)} minWidth={40} />
+                                </div>
                               </td>
-                              <td style={{ padding: "10px 10px", textAlign: "center", fontWeight: 700, color: task.task_completion_percent >= 75 ? "#16a34a" : task.task_completion_percent >= 50 ? "#d97706" : "#dc2626" }}>
+                              <td style={{ padding: "6px 4px", textAlign: "center" }}>
+                                <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 600, background: badge.bg, color: badge.text }}>{badge.label}</span>
+                              </td>
+                              <td style={{ padding: "6px 4px", textAlign: "center", fontWeight: 700, color: task.task_completion_percent >= 75 ? "#16a34a" : task.task_completion_percent >= 50 ? "#d97706" : "#dc2626" }}>
                                 %{task.task_completion_percent}
                               </td>
-                              <td style={{ padding: "10px 10px", textAlign: "center", color: "#64748b" }}>
+                              <td style={{ padding: "6px 4px", textAlign: "center" }}>
                                 {task.question_count ? (
-                                  <span>
-                                    <strong style={{ color: "#1e293b" }}>{task.completed_question_count ?? 0}</strong>
-                                    <span style={{ color: "#94a3b8" }}>/{task.question_count}</span>
-                                  </span>
+                                  <div style={{ display: "inline-flex", justifyContent: "center" }}>
+                                    <MetaCol
+                                      label="Soru"
+                                      value={`${task.completed_question_count ?? 0}/${task.question_count}`}
+                                      minWidth={44}
+                                      valueColor="#ea580c"
+                                    />
+                                  </div>
                                 ) : <span style={{ color: "#cbd5e1" }}>—</span>}
                               </td>
-                              <td style={{ padding: "8px", textAlign: "center", color: "#64748b" }}>
+                              <td style={{ padding: "6px 4px", textAlign: "center" }}>
                                 {task.page_count ? (
-                                  <span>
-                                    <strong style={{ color: "#1e293b" }}>{task.completed_page_count ?? 0}</strong>
-                                    <span style={{ color: "#94a3b8" }}>/{task.page_count}</span>
-                                  </span>
+                                  <div style={{ display: "inline-flex", justifyContent: "center" }}>
+                                    <MetaCol
+                                      label="Sayfa"
+                                      value={`${task.completed_page_count ?? 0}/${task.page_count}`}
+                                      minWidth={44}
+                                      valueColor="#be185d"
+                                    />
+                                  </div>
                                 ) : <span style={{ color: "#cbd5e1" }}>—</span>}
                               </td>
                             </tr>
@@ -996,168 +1012,127 @@ export default function OdevKontrolReportClient({
           </div>
         </div>
 
-        {/* ====== BOLUM 5: ODEV TRENDI ====== */}
-        {trend.length > 1 && (
-          <div className="ok-report-card" style={{ marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-            <div style={{ padding: "14px 20px", borderBottom: "1px solid #e2e8f0", background: "linear-gradient(90deg, #f8fafc, #fff)" }}>
-              <h2 className="ok-report-section-title">📈 Ödev Tamamlanma Trendi</h2>
-              <div className="ok-report-section-sub">Son {trend.length} ödevin değerlendirme ortalaması</div>
-            </div>
-            <div style={{ padding: "12px 20px" }}>
-              <MiniBarChart
-                height={100}
-                data={trend.map(t => ({
-                  label: formatShortDate(t.assigned_date),
-                  value: t.completion_percent,
-                  maxValue: 100,
-                  color: t.is_current ? "#0262a7" : getStatusColor(t.status),
-                  isCurrent: t.is_current,
-                }))}
-              />
-              <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", marginTop: 10 }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ textAlign: "left", padding: "8px 10px", color: "#94a3b8", fontWeight: 500 }}>Ödev</th>
-                    <th style={{ textAlign: "center", padding: "8px 10px", color: "#94a3b8", fontWeight: 500, width: 90 }}>Tarih</th>
-                    <th style={{ textAlign: "center", padding: "8px 10px", color: "#94a3b8", fontWeight: 500, width: 90 }}>Görev</th>
-                    <th style={{ textAlign: "center", padding: "8px 10px", color: "#94a3b8", fontWeight: 500, width: 90 }}>Soru</th>
-                    <th style={{ textAlign: "center", padding: "8px 10px", color: "#94a3b8", fontWeight: 500, width: 70 }}>Oran</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trend.map(t => (
-                    <tr key={t.id} style={{ borderBottom: "1px solid #f8fafc", background: t.is_current ? "#ede9fe" : "transparent" }}>
-                      <td style={{ padding: "8px 10px", color: "#1e293b", fontWeight: t.is_current ? 700 : 500 }}>
-                        {t.is_current && "➤ "}{t.title}
-                      </td>
-                      <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b" }}>{formatShortDate(t.assigned_date)}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b" }}>{t.done_tasks}/{t.total_tasks}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b" }}>{t.completed_questions}/{t.total_questions}</td>
-                      <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 700, color: getStatusColor(t.status) }}>%{t.completion_percent}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ====== BOLUM 7: BUGÜNE KADAR ÖDEV GEÇMİŞİ ====== */}
-        {overall && overall.total_assignments > 0 && (
-          <div className="ok-report-history">
-            <div className="ok-report-history-header">
+        {/* ====== ÖDEV PERFORMANS ÖZETİ ====== */}
+        {overall && overall.total_assignments > 0 && (() => {
+          const odevPct = overall.assignment_success_percent || 0;
+          const gorevPct = overall.total_tasks_all > 0
+            ? Math.round((overall.done_tasks_all / overall.total_tasks_all) * 100)
+            : 0;
+          const soruPct = overall.question_completion_percent_all || 0;
+          const performans = overall.overall_completion_percent || 0;
+          const statusCards = [
+            { value: overall.full_assignments || 0, label: "Tam", color: "#16a34a", bg: "#f0fdf4", icon: "✅" },
+            { value: overall.partial_assignments || 0, label: "Eksik", color: "#d97706", bg: "#fffbeb", icon: "⚠️" },
+            { value: overall.not_brought_assignments || 0, label: "Getirmedi", color: "#dc2626", bg: "#fef2f2", icon: "🚫" },
+            { value: overall.not_done_assignments || 0, label: "Yapmadı", color: "#b91c1c", bg: "#fef2f2", icon: "❌" },
+          ];
+          const rateRows = [
+            { label: "Ödev Tamamlama", hint: "Tam ödev / tüm ödevler", pct: odevPct, color: "#16a34a" },
+            { label: "Görev Tamamlama", hint: "Yaptı / tüm görevler", pct: gorevPct, color: "#0262a7" },
+            { label: "Soru Tamamlama", hint: "Çözülen / toplam soru", pct: soruPct, color: "#ea580c", showBar: true },
+          ];
+          return (
+          <div className="ok-report-perf page-break-avoid">
+            <div className="ok-report-perf-header page-break-avoid">
               <div>
-                <h2>📋 Bugüne Kadar Ödev Geçmişi</h2>
-                <p>Öğrencinin koçluk sürecinde aldığı tüm ödevlerin özeti</p>
+                <h2 className="ok-report-perf-title">Ödev Performans Özeti</h2>
+                <p className="ok-report-perf-sub">
+                  {overall.total_assignments} ödev · koçluk sürecindeki birikimli özet
+                </p>
               </div>
-              <div className="ok-report-history-total">
-                <span className="ok-report-history-total-num">{overall.total_assignments}</span>
-                <span className="ok-report-history-total-label">toplam ödev</span>
+              <div className="ok-report-perf-score page-break-avoid" title="Tüm görevlerin ağırlıklı ortalaması (eksik ve yapmadı dahil)">
+                <div className="ok-report-perf-score-label">Performans Puanı</div>
+                <div className="ok-report-perf-score-value">
+                  <span className="ok-report-perf-score-num">{performans}</span>
+                  <span className="ok-report-perf-score-den">/ 100</span>
+                </div>
+                <div className="ok-report-perf-score-hint">Görev ağırlıklı ortalama</div>
               </div>
             </div>
 
-            {/* Dağılım çubuğu */}
-            {(() => {
-              const segments = [
-                { key: "full", count: overall.full_assignments || 0, label: "Tam", color: "#22c55e" },
-                { key: "partial", count: overall.partial_assignments || 0, label: "Eksik", color: "#f59e0b" },
-                { key: "not_brought", count: overall.not_brought_assignments || 0, label: "Getirmedi", color: "#ef4444" },
-                { key: "not_done", count: overall.not_done_assignments || 0, label: "Yapmadı", color: "#dc2626" },
-              ].filter(s => s.count > 0);
-              const segmentTotal = segments.reduce((sum, s) => sum + s.count, 0);
-              return segments.length > 0 ? (
-                <div className="ok-report-history-bar-wrap">
-                  <div className="ok-report-history-bar">
-                    {segments.map(s => (
-                      <div
-                        key={s.key}
-                        className="ok-report-history-bar-seg"
-                        style={{
-                          width: `${segmentTotal > 0 ? (s.count / segmentTotal) * 100 : 0}%`,
-                          background: s.color,
-                        }}
-                        title={`${s.label}: ${s.count}`}
-                      />
-                    ))}
-                  </div>
-                  <div className="ok-report-history-legend">
-                    {segments.map(s => (
-                      <span key={s.key} className="ok-report-history-legend-item">
-                        <span className="ok-report-history-dot" style={{ background: s.color }} />
-                        {s.label} <strong>{s.count}</strong>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null;
-            })()}
-
-            <div className="ok-report-history-grid">
-              {[
-                { value: overall.full_assignments || 0, label: "Tam", sub: "Tüm görevler yapıldı", color: "#16a34a", bg: "#f0fdf4", icon: "✅" },
-                { value: overall.partial_assignments || 0, label: "Eksik", sub: "Kısmen tamamlandı", color: "#d97706", bg: "#fffbeb", icon: "⚠️" },
-                { value: overall.not_brought_assignments || 0, label: "Getirmedi", sub: "Ödev getirilmedi", color: "#dc2626", bg: "#fef2f2", icon: "🚫" },
-                { value: overall.not_done_assignments || 0, label: "Yapmadı", sub: "Ödev yapılmadı", color: "#b91c1c", bg: "#fef2f2", icon: "❌" },
-              ].map(c => (
-                <div key={c.label} className="ok-report-history-card" style={{ background: c.bg, borderColor: `${c.color}33`, opacity: c.value > 0 ? 1 : 0.55 }}>
-                  <div className="ok-report-history-card-icon">{c.icon}</div>
-                  <div className="ok-report-history-card-value" style={{ color: c.color }}>{c.value}</div>
-                  <div className="ok-report-history-card-label" style={{ color: c.color }}>{c.label}</div>
-                  <div className="ok-report-history-card-sub">{c.sub}</div>
+            <div className="ok-report-perf-status page-break-avoid">
+              {statusCards.map((c) => (
+                <div
+                  key={c.label}
+                  className="ok-report-perf-status-card"
+                  style={{ background: c.bg, borderColor: `${c.color}40`, opacity: c.value > 0 ? 1 : 0.5 }}
+                >
+                  <span className="ok-report-perf-status-icon">{c.icon}</span>
+                  <span className="ok-report-perf-status-value" style={{ color: c.color }}>{c.value}</span>
+                  <span className="ok-report-perf-status-label" style={{ color: c.color }}>{c.label}</span>
                 </div>
               ))}
             </div>
 
-            {/* Görev & soru özeti */}
-            <div className="ok-report-history-footer">
-              <div className="ok-report-history-stat">
-                <span className="ok-report-history-stat-label">Tam ödev oranı</span>
-                <span className="ok-report-history-stat-value" style={{ color: "#22c55e" }}>%{overall.assignment_success_percent || 0}</span>
-              </div>
-              <div className="ok-report-history-stat">
-                <span className="ok-report-history-stat-label">Toplam görev</span>
-                <span className="ok-report-history-stat-value">
-                  {overall.done_tasks_all} yaptı · {overall.partial_tasks_all} eksik · {overall.not_done_tasks_all} yapmadı
-                </span>
+            <div className="ok-report-perf-rates page-break-avoid">
+              {rateRows.map((r) => (
+                <div key={r.label} className="ok-report-perf-rate-row">
+                  <div className="ok-report-perf-rate-text">
+                    <span className="ok-report-perf-rate-label">{r.label}</span>
+                    <span className="ok-report-perf-rate-hint">{r.hint}</span>
+                  </div>
+                  <div className="ok-report-perf-rate-right">
+                    <span className="ok-report-perf-rate-pct" style={{ color: r.color }}>%{r.pct}</span>
+                    {r.showBar && (
+                      <div className="ok-report-perf-mini-bar">
+                        <div className="ok-report-perf-mini-fill" style={{ width: `${r.pct}%`, background: r.color }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="ok-report-perf-details page-break-avoid">
+              <div className="ok-report-perf-detail">
+                <span className="ok-report-perf-detail-label">Toplam görev</span>
+                <div className="ok-report-perf-chips">
+                  <span className="ok-report-perf-chip is-done" title="Yaptı">🟢 {overall.done_tasks_all}</span>
+                  <span className="ok-report-perf-chip is-partial" title="Eksik">🟡 {overall.partial_tasks_all}</span>
+                  <span className="ok-report-perf-chip is-notdone" title="Yapmadı">🔴 {overall.not_done_tasks_all}</span>
+                </div>
               </div>
               {overall.total_questions_all > 0 && (
-                <div className="ok-report-history-stat">
-                  <span className="ok-report-history-stat-label">Toplam soru</span>
-                  <span className="ok-report-history-stat-value">
-                    {overall.completed_questions_all}/{overall.total_questions_all}
-                    <span style={{ color: "#64748b", fontWeight: 500 }}> (%{overall.question_completion_percent_all})</span>
-                  </span>
+                <div className="ok-report-perf-detail">
+                  <span className="ok-report-perf-detail-label">Toplam soru</span>
+                  <div className="ok-report-perf-qwrap">
+                    <span className="ok-report-perf-qnums">
+                      {overall.completed_questions_all}/{overall.total_questions_all}
+                      <span className="ok-report-perf-qpct"> (%{soruPct})</span>
+                    </span>
+                    <div className="ok-report-perf-qbar">
+                      <div className="ok-report-perf-qfill" style={{ width: `${soruPct}%` }} />
+                    </div>
+                  </div>
                 </div>
               )}
-              <div className="ok-report-history-stat">
-                <span className="ok-report-history-stat-label">Genel başarı</span>
-                <span className="ok-report-history-stat-value" style={{ color: "#7c3aed" }}>%{overall.overall_completion_percent}</span>
-              </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
-        {/* ═══ BOTTOM NOTICE ═══ */}
-        <div style={{
-          padding: "6px 12px", marginBottom: 8,
-          background: "#f0f7ff", borderRadius: 6, border: "1px solid #dbeafe",
-          fontSize: 8, color: "#1e40af", lineHeight: 1.6, textAlign: "center",
-        }}>
-          Bu ödev sonuç raporu{report.coach_name && <>, öğrenci maestro koçu <strong>{report.coach_name}</strong> tarafından</>} hazırlanmıştır. Öğrencinin gelişimi koçluk sürecinde takip edilmektedir.
-        </div>
-
-        {/* ═══ FOOTER ═══ */}
-        <div style={{
-          paddingTop: 6, borderTop: "2px solid #0061a6",
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          fontSize: 7, color: "#8c98a4",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoUrl} alt="3K" crossOrigin="anonymous" style={{ width: 10, height: 10, objectFit: "contain", opacity: 0.5 }} />
-            <span style={{ fontWeight: 600 }}>3K Kampüs Koçluk &amp; Danışmanlık Merkezi</span>
+        {/* ═══ BOTTOM NOTICE + FOOTER ═══ */}
+        <div className="ok-report-footer-block page-break-avoid">
+          <div style={{
+            padding: "6px 12px", marginBottom: 8,
+            background: "#f0f7ff", borderRadius: 6, border: "1px solid #dbeafe",
+            fontSize: 8, color: "#1e40af", lineHeight: 1.6, textAlign: "center",
+          }}>
+            Bu ödev sonuç raporu{report.coach_name && <>, öğrenci maestro koçu <strong>{report.coach_name}</strong> tarafından</>} hazırlanmıştır. Öğrencinin gelişimi koçluk sürecinde takip edilmektedir.
           </div>
-          <span>© {currentYear} Tüm hakları saklıdır.</span>
+
+          <div style={{
+            paddingTop: 6, borderTop: "2px solid #0061a6",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            fontSize: 7, color: "#8c98a4",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={footerLogoUrl} alt="3K" crossOrigin="anonymous" style={{ width: 10, height: 10, objectFit: "contain", opacity: 0.5 }} />
+              <span style={{ fontWeight: 600 }}>3K Kampüs Koçluk &amp; Danışmanlık Merkezi</span>
+            </div>
+            <span>© {currentYear} Tüm hakları saklıdır.</span>
+          </div>
         </div>
         </div>
       </div>

@@ -106,27 +106,45 @@ def _register_health():
         except Exception as exc:  # noqa: BLE001
             return {'status': 'warn', 'message': str(exc)}
 
-    def queue_check(name: str):
+    def queue_check(channel: str, name: str):
         def _inner():
             try:
-                from apps.communication.domain.models import OutboundMessage
-                # Best-effort; model name may differ
-                pending = OutboundMessage.objects.filter(status='pending').count()
-                failed = OutboundMessage.objects.filter(status='failed').count()
+                from apps.communication.domain.enums import MessageStatus
+                from apps.communication.domain.models import OutboundQueueItem
+
+                base = OutboundQueueItem.objects.filter(
+                    message__conversation__channel=channel,
+                )
+                pending = base.filter(
+                    message__status__in=[MessageStatus.PENDING, MessageStatus.SENDING],
+                ).count()
+                failed = base.filter(message__status=MessageStatus.FAILED).count()
                 status = 'up'
-                if failed > 20:
+                if failed > 20 or pending > 500:
                     status = 'warn'
-                if pending > 500:
-                    status = 'warn'
-                return {'status': status, 'message': f'Bekleyen {pending}, başarısız {failed}', 'detail': {'pending': pending, 'failed': failed}}
-            except Exception:
-                return {'status': 'unknown', 'message': f'{name} kuyruk modeli okunamadı'}
+                return {
+                    'status': status,
+                    'message': f'Bekleyen {pending}, başarısız {failed}',
+                    'detail': {'pending': pending, 'failed': failed, 'channel': channel},
+                }
+            except Exception as exc:  # noqa: BLE001
+                return {'status': 'unknown', 'message': f'{name} kuyruk kontrolü başarısız: {exc}'}
         return _inner
 
     register_health_check(HealthCheckSpec(code='scheduler', label='Scheduler', check=scheduler_check, category='scheduler'))
     register_health_check(HealthCheckSpec(code='backup', label='Backup', check=backup_check, category='backup'))
-    register_health_check(HealthCheckSpec(code='whatsapp', label='WhatsApp', check=queue_check('WhatsApp'), category='comm'))
-    register_health_check(HealthCheckSpec(code='sms', label='SMS', check=queue_check('SMS'), category='comm'))
+    register_health_check(HealthCheckSpec(
+        code='whatsapp',
+        label='WhatsApp',
+        check=queue_check('WHATSAPP', 'WhatsApp'),
+        category='comm',
+    ))
+    register_health_check(HealthCheckSpec(
+        code='sms',
+        label='SMS',
+        check=queue_check('SMS', 'SMS'),
+        category='comm',
+    ))
     register_health_check(HealthCheckSpec(
         code='mail',
         label='Mail',

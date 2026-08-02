@@ -185,18 +185,22 @@ class ConversationRepository:
 
     @staticmethod
     def list_by_kurum_and_sube(kurum_id: int, sube_id: int, **filters):
+        from datetime import timedelta
+
+        from django.utils import timezone as dj_tz
+
         qs = filter_conversations_by_sube(
             Conversation.objects.filter(kurum_id=kurum_id),
             sube_id,
         )
+        inbox = filters.get('inbox')
         status = filters.get('status')
         if status:
             qs = qs.filter(status=status)
-        elif filters.get('exclude_archived'):
-            qs = qs.exclude(status=ConversationStatus.ARCHIVED)
-        archived = filters.get('archived')
-        if archived:
+        elif inbox == 'archived' or filters.get('archived'):
             qs = qs.filter(status=ConversationStatus.ARCHIVED)
+        elif filters.get('exclude_archived') and inbox != 'archived':
+            qs = qs.exclude(status=ConversationStatus.ARCHIVED)
         unread = filters.get('unread')
         if unread:
             qs = qs.filter(unread_count_coach__gt=0)
@@ -210,6 +214,7 @@ class ConversationRepository:
             qs = qs.filter(
                 Q(contact_phone__icontains=search)
                 | Q(subject__icontains=search)
+                | Q(contact_name__icontains=search)
                 | Q(ogrenci__ad__icontains=search)
                 | Q(ogrenci__soyad__icontains=search)
                 | Q(veli__ad__icontains=search)
@@ -218,12 +223,35 @@ class ConversationRepository:
         channel_config_id = filters.get('channel_config_id')
         if channel_config_id:
             qs = qs.filter(channel_config_id=channel_config_id)
-        # NULL last_message_at Postgres DESC'te üste gelir; en yeni mesaj alta düşmesin.
+        department = filters.get('department')
+        if department:
+            qs = qs.filter(department=department)
+
+        period = filters.get('period')
+        if period and period != 'all':
+            now = dj_tz.now()
+            if period == '7d':
+                qs = qs.filter(
+                    Q(last_message_at__gte=now - timedelta(days=7))
+                    | Q(last_message_at__isnull=True, created_at__gte=now - timedelta(days=7))
+                )
+            elif period == '30d':
+                qs = qs.filter(
+                    Q(last_message_at__gte=now - timedelta(days=30))
+                    | Q(last_message_at__isnull=True, created_at__gte=now - timedelta(days=30))
+                )
+            elif period == 'year':
+                qs = qs.filter(
+                    Q(last_message_at__year=now.year)
+                    | Q(last_message_at__isnull=True, created_at__year=now.year)
+                )
+
         return qs.select_related(
             'ogrenci', 'ogrenci__sube', 'veli', 'veli__ogrenci', 'kurum',
-            'assigned_coach', 'contact_identity', 'contact_identity__personel',
+            'assigned_coach', 'assigned_coach__teacher', 'claimed_by_user',
+            'contact_identity', 'contact_identity__personel',
             'sube', 'channel_config',
-        ).order_by(
+        ).prefetch_related('tags').order_by(
             F('last_message_at').desc(nulls_last=True),
             '-updated_at',
             '-created_at',
@@ -389,37 +417,87 @@ class ConversationRepository:
         )
 
     @staticmethod
-    def update_on_message(conversation: Conversation, *, preview: str, direction: str) -> None:
+    def update_on_message(
+        conversation: Conversation,
+        *,
+        preview: str,
+        direction: str,
+        channel_config=None,
+        actor=None,
+    ) -> None:
+        from django.conf import settings
+
         conversation.last_message_at = timezone.now()
         conversation.last_message_preview = (preview or '')[:255]
         if direction == MessageDirection.INBOUND:
             conversation.unread_count_coach = (conversation.unread_count_coach or 0) + 1
-            if conversation.status == ConversationStatus.ARCHIVED:
-                conversation.status = ConversationStatus.OPEN
+            conversation.save(update_fields=[
+                'last_message_at',
+                'last_message_preview',
+                'unread_count_coach',
+                'updated_at',
+            ])
+            if getattr(settings, 'COMMUNICATION_TICKET_ROUTING', True):
+                from apps.communication.application.conversation_router import ConversationRouter
+                ConversationRouter.apply_after_inbound(
+                    conversation,
+                    channel_config=channel_config or getattr(conversation, 'channel_config', None),
+                    preview=preview,
+                )
+            else:
+                if conversation.status == ConversationStatus.ARCHIVED:
+                    conversation.status = ConversationStatus.OPEN
+                    conversation.save(update_fields=['status', 'updated_at'])
         elif direction == MessageDirection.OUTBOUND:
-            conversation.status = ConversationStatus.AWAITING_REPLY
-        conversation.save(update_fields=[
-            'last_message_at',
-            'last_message_preview',
-            'unread_count_coach',
-            'status',
-            'updated_at',
-        ])
+            conversation.save(update_fields=[
+                'last_message_at',
+                'last_message_preview',
+                'updated_at',
+            ])
+            if getattr(settings, 'COMMUNICATION_TICKET_ROUTING', True):
+                from apps.communication.application.conversation_router import ConversationRouter
+                ConversationRouter.apply_after_outbound(
+                    conversation, actor=actor, preview=preview,
+                )
+            else:
+                conversation.status = ConversationStatus.AWAITING_REPLY
+                conversation.save(update_fields=['status', 'updated_at'])
 
     @staticmethod
     def mark_read(conversation: Conversation) -> None:
+        from django.conf import settings
+
         conversation.unread_count_coach = 0
-        conversation.save(update_fields=['unread_count_coach', 'updated_at'])
+        fields = ['unread_count_coach', 'updated_at']
+        if getattr(settings, 'COMMUNICATION_TICKET_ROUTING', True):
+            if conversation.status in (
+                ConversationStatus.NEW,
+                ConversationStatus.WAITING,
+                ConversationStatus.OPEN,
+            ):
+                conversation.status = ConversationStatus.READ
+                fields.append('status')
+        conversation.save(update_fields=fields)
 
     @staticmethod
     def archive(conversation: Conversation) -> None:
+        from apps.communication.application.conversation_events import log_conversation_event
+        from apps.communication.domain.enums import ConversationEventType
+
         conversation.status = ConversationStatus.ARCHIVED
-        conversation.save(update_fields=['status', 'updated_at'])
+        conversation.archived_at = timezone.now()
+        conversation.save(update_fields=['status', 'archived_at', 'updated_at'])
+        log_conversation_event(conversation, ConversationEventType.ARCHIVED)
 
     @staticmethod
     def unarchive(conversation: Conversation) -> None:
+        from apps.communication.application.conversation_events import log_conversation_event
+        from apps.communication.domain.enums import ConversationEventType
+
         conversation.status = ConversationStatus.OPEN
-        conversation.save(update_fields=['status', 'updated_at'])
+        conversation.archived_at = None
+        conversation.save(update_fields=['status', 'archived_at', 'updated_at'])
+        log_conversation_event(conversation, ConversationEventType.UNARCHIVED)
 
     @staticmethod
     def unread_count_for_queryset(qs) -> int:

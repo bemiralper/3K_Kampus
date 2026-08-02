@@ -231,7 +231,7 @@ def render_url_to_pdf(
                     format='A4',
                     landscape=landscape,
                     print_background=True,
-                    margin={'top': '8mm', 'bottom': '8mm', 'left': '10mm', 'right': '10mm'},
+                    margin={'top': '6mm', 'bottom': '6mm', 'left': '6mm', 'right': '6mm'},
                 )
             finally:
                 browser.close()
@@ -244,6 +244,14 @@ def render_url_to_pdf(
             raise RuntimeError(
                 'Playwright tarayıcısı kurulu değil. '
                 'Terminalde çalıştırın: python3 -m playwright install chromium'
+            ) from exc
+        if 'ERR_CONNECTION_REFUSED' in msg or 'Connection refused' in msg:
+            raise RuntimeError(
+                'PDF oluşturulamadı: frontend print sayfasına erişilemedi. '
+                'Docker kullanıyorsanız backend ortamında '
+                'PDF_RENDER_BASE_URL=http://frontend:3000 ayarlayın '
+                '(FRONTEND_URL tarayıcı için localhost kalabilir). '
+                f'Hedef: {url}'
             ) from exc
         raise RuntimeError(f'PDF oluşturulamadı: {exc}') from exc
 

@@ -50,9 +50,41 @@ class RecipientType(models.TextChoices):
 
 
 class ConversationStatus(models.TextChoices):
+    # Legacy (geriye uyumlu)
     OPEN = 'OPEN', 'Açık'
     AWAITING_REPLY = 'AWAITING_REPLY', 'Cevap Bekliyor'
     ARCHIVED = 'ARCHIVED', 'Arşiv'
+    # Ticket / routing
+    NEW = 'NEW', 'Yeni'
+    READ = 'READ', 'Okundu'
+    REPLIED = 'REPLIED', 'Yanıtlandı'
+    WAITING = 'WAITING', 'Bekliyor'
+    NEEDS_SUPPORT = 'NEEDS_SUPPORT', 'Destek Gerekiyor'
+    CLOSED = 'CLOSED', 'Kapalı'
+
+
+class CommunicationDepartment(models.TextChoices):
+    COACHING = 'COACHING', 'Koçluk'
+    ACCOUNTING = 'ACCOUNTING', 'Muhasebe'
+    SECRETARIAT = 'SECRETARIAT', 'Sekreterya'
+    GUIDANCE = 'GUIDANCE', 'Rehberlik'
+    ADMISSIONS = 'ADMISSIONS', 'Kayıt Ofisi'
+    MANAGEMENT = 'MANAGEMENT', 'Yönetim'
+
+
+class ConversationEventType(models.TextChoices):
+    MESSAGE_IN = 'MESSAGE_IN', 'Gelen mesaj'
+    MESSAGE_OUT = 'MESSAGE_OUT', 'Giden mesaj'
+    CLAIMED = 'CLAIMED', 'Üstlenildi'
+    RELEASED = 'RELEASED', 'Bırakıldı'
+    TRANSFERRED = 'TRANSFERRED', 'Devredildi'
+    STATUS_CHANGED = 'STATUS_CHANGED', 'Durum değişti'
+    SLA_BREACH = 'SLA_BREACH', 'SLA ihlali'
+    ASSIGNED_COACH_SYNC = 'ASSIGNED_COACH_SYNC', 'Koç senkron'
+    NOTE_ADDED = 'NOTE_ADDED', 'İç not'
+    TAG_CHANGED = 'TAG_CHANGED', 'Etiket değişti'
+    ARCHIVED = 'ARCHIVED', 'Arşivlendi'
+    UNARCHIVED = 'UNARCHIVED', 'Arşivden çıkarıldı'
 
 
 class CampaignStatus(models.TextChoices):

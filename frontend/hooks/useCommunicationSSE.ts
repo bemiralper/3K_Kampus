@@ -124,7 +124,7 @@ export function useCommunicationSSE({
           stopFallback();
         });
 
-        es.addEventListener('new_message', (ev) => {
+        const handleInboxEvent = (ev: Event) => {
           if (closed) return;
           try {
             const data = JSON.parse((ev as MessageEvent).data) as CommunicationSSEPayload;
@@ -132,7 +132,11 @@ export function useCommunicationSSE({
           } catch {
             onFallbackPollRef.current?.();
           }
-        });
+        };
+        es.addEventListener('new_message', handleInboxEvent);
+        es.addEventListener('conversation_updated', handleInboxEvent);
+        es.addEventListener('conversation_claimed', handleInboxEvent);
+        es.addEventListener('sla_breach', handleInboxEvent);
 
         es.addEventListener('heartbeat', () => {
           if (closed) return;

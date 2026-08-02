@@ -312,14 +312,13 @@ const navItems: MenuItem[] = [
     icon: icons.message,
     children: [
       { label: "Sohbetler", href: "/admin/iletisim/mesajlar" },
+      { label: "İletişim Paneli", href: "/admin/iletisim/panel" },
       { label: "Toplu Gönderim", href: "/admin/iletisim/toplu-gonder" },
-      { label: "Kampanyalar", href: "/admin/iletisim/kampanyalar" },
+      { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
       { label: "Mesaj Kuyruğu", href: "/admin/iletisim/kuyruk" },
-      { label: "Mesaj Şablonları", href: "/admin/iletisim/sablonlar" },
-      { label: "Finans Şablonları", href: "/admin/iletisim/sablonlar?category=odeme_gecikme" },
-      { label: "Veli / Genel Şablonlar", href: "/admin/iletisim/sablonlar?category=genel" },
-      { label: "Ödev Şablonları", href: "/admin/iletisim/sablonlar?category=haftalik_odev" },
+      { label: "Şablonlar", href: "/admin/iletisim/sablonlar" },
       { label: "WhatsApp Hesapları", href: "/admin/iletisim/whatsapp-hesaplari" },
+      { label: "Yönlendirme Kuralları", href: "/admin/iletisim/yonlendirme" },
     ],
   },
   {

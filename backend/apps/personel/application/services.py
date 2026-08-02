@@ -218,7 +218,14 @@ class PersonelService:
             if existing and existing.id != pk:
                 raise ValueError(f"Bu TC Kimlik No ile kayıtlı başka personel var: {existing.tam_ad}")
         
-        return self.repository.update(pk, data)
+        personel = self.repository.update(pk, data)
+        if personel.kisi_id:
+            from apps.kimlik.application.kisi_service import KisiService
+
+            kisi = personel.kisi
+            if kisi:
+                KisiService.sync_from_profile(kisi, data, clear_empty=True)
+        return personel
     
     def delete(self, pk):
         """Personel sil (soft delete)"""

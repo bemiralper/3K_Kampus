@@ -32,6 +32,13 @@ export default function WebhookInfoCard({ config }: WebhookInfoCardProps) {
         <span aria-hidden="true">{open ? "▲" : "▼"}</span>
       </button>
 
+      {!config.webhook_event_count && (
+        <div className="comm-alert comm-alert-danger" style={{ margin: "0 0 10px" }}>
+          Meta&apos;dan henüz hiç webhook gelmemiş. Bu yüzden telefondan yazılan cevaplar sisteme
+          düşmez. Aşağıdaki Callback URL&apos;i Meta&apos;ya kaydedin; yerelde ngrok şart.
+        </div>
+      )}
+
       {open && (
         <div className="comm-webhook-card-body">
           <p>
@@ -74,7 +81,7 @@ export default function WebhookInfoCard({ config }: WebhookInfoCardProps) {
 
           {config.configured && (
             <div
-              className={`comm-alert ${config.webhook_event_count ? "comm-alert-success" : "comm-alert-info"}`}
+              className={`comm-alert ${config.webhook_event_count ? "comm-alert-success" : "comm-alert-danger"}`}
             >
               {config.webhook_event_count ? (
                 <>
@@ -86,8 +93,9 @@ export default function WebhookInfoCard({ config }: WebhookInfoCardProps) {
                 </>
               ) : (
                 <>
-                  Henüz webhook alınmadı — WhatsApp&apos;tan gelen cevaplar inbox&apos;a düşmez.
-                  Meta Developer Console&apos;da Callback URL ve verify token&apos;ı kontrol edin.
+                  Webhook kaydı yok. Meta → WhatsApp → Configuration → Callback URL örneği:{" "}
+                  <code>https://NGROK_ADRESI/api/communication/webhook/</code> · Abonelik:{" "}
+                  <code>messages</code>, <code>message_status</code>
                 </>
               )}
               {config.webhook_last_error ? (

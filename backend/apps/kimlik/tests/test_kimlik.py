@@ -75,6 +75,24 @@ class KimlikResolverTests(TestCase):
         self.assertIn('personel', tips)
         self.assertIn('veli', tips)
 
+    def test_personel_phone_blocked_for_ogrenci_context(self):
+        resolver = KimlikResolver(kurum_id=self.kurum.id)
+        result = resolver.resolve(telefon='05321234567', context='ogrenci')
+        self.assertTrue(result['found'])
+        self.assertTrue(result['engellenen'])
+        self.assertIn('personel', result['engellenen_mesaj'].lower())
+
+    def test_cleared_personel_phone_reusable(self):
+        from apps.personel.application.services import PersonelService
+
+        kisi = self.personel.kisi
+        self.assertEqual(normalize_phone(kisi.telefon), '05321234567')
+        PersonelService().update(self.personel.id, {'cep_telefon': '', 'telefon': ''})
+        kisi.refresh_from_db()
+        self.assertEqual(kisi.telefon, '')
+        # Artık aynı numara yeni kişiye verilebilir
+        KisiService.assert_unique(self.kurum.id, None, '05321234567')
+
 
 class KimlikApiTests(TestCase):
     def setUp(self):

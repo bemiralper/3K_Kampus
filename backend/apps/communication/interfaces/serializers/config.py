@@ -1,7 +1,15 @@
 from rest_framework import serializers
 
 from apps.communication.application.token_crypto import encrypt_access_token
-from apps.communication.domain.models import CommunicationChannelConfig, Conversation, Message, MessageAttachment, MessageReaction
+from apps.communication.domain.models import (
+    CommunicationChannelConfig,
+    Conversation,
+    ConversationNote,
+    ConversationTag,
+    Message,
+    MessageAttachment,
+    MessageReaction,
+)
 
 
 class WhatsAppConfigSerializer(serializers.ModelSerializer):
@@ -50,7 +58,7 @@ class WhatsAppAccountSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'channel', 'name', 'phone_number_id', 'waba_id',
             'webhook_verify_token', 'display_phone', 'is_active', 'is_default',
-            'scope_type', 'quota_json', 'last_synced_at',
+            'scope_type', 'department', 'quota_json', 'last_synced_at',
             'role_ids', 'sube_ids', 'role_names', 'sube_names',
             'created_at', 'updated_at',
         ]
@@ -88,7 +96,7 @@ class WhatsAppAccountWriteSerializer(serializers.ModelSerializer):
         fields = [
             'name', 'phone_number_id', 'waba_id', 'access_token', 'app_secret',
             'webhook_verify_token', 'display_phone', 'is_active', 'is_default',
-            'scope_type', 'quota_json', 'role_ids', 'sube_ids',
+            'scope_type', 'department', 'quota_json', 'role_ids', 'sube_ids',
         ]
 
 
@@ -101,15 +109,27 @@ class ConversationListSerializer(serializers.ModelSerializer):
 
     channel_config_id = serializers.UUIDField(read_only=True, allow_null=True)
     channel_config_name = serializers.SerializerMethodField()
+    assigned_coach_name = serializers.SerializerMethodField()
+    claimed_by_name = serializers.SerializerMethodField()
+    tags = serializers.SerializerMethodField()
+    sla = serializers.SerializerMethodField()
+    can_claim = serializers.SerializerMethodField()
+    profil_foto = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
         fields = [
             'id', 'channel', 'channel_config_id', 'channel_config_name',
             'contact_phone', 'contact_type', 'contact_name',
-            'veli_ad', 'ogrenci_ad', 'kurum_ad', 'sube',
-            'status', 'subject', 'last_message_at', 'last_message_preview',
-            'unread_count_coach', 'ogrenci_id', 'veli_id', 'assigned_coach_id',
+            'veli_ad', 'ogrenci_ad', 'kurum_ad', 'sube', 'profil_foto',
+            'status', 'subject', 'department',
+            'last_message_at', 'last_message_preview',
+            'unread_count_coach', 'ogrenci_id', 'veli_id',
+            'assigned_coach_id', 'assigned_coach_name',
+            'claimed_by_user_id', 'claimed_by_name', 'claim_version',
+            'first_unanswered_at', 'last_customer_message_at', 'last_reply_at',
+            'needs_support_at', 'archived_at',
+            'tags', 'sla', 'can_claim',
             'created_at',
         ]
 
@@ -120,6 +140,8 @@ class ConversationListSerializer(serializers.ModelSerializer):
         return ''
 
     def get_contact_name(self, obj) -> str:
+        if getattr(obj, 'contact_name', None):
+            return obj.contact_name
         if obj.veli_id and obj.veli:
             return obj.veli.tam_ad
         if obj.ogrenci_id and obj.ogrenci:
@@ -128,7 +150,6 @@ class ConversationListSerializer(serializers.ModelSerializer):
         personel = getattr(identity, 'personel', None) if identity else None
         if personel:
             return (getattr(personel, 'tam_ad', None) or f'{personel.ad} {personel.soyad}').strip()
-        # Personel sohbeti — subject'e yazılan ad veya telefon eşlemesi
         if getattr(obj, 'contact_type', '') == 'PERSONEL':
             if obj.subject:
                 return obj.subject
@@ -136,6 +157,73 @@ class ConversationListSerializer(serializers.ModelSerializer):
             if name:
                 return name
         return obj.contact_phone
+
+    def get_assigned_coach_name(self, obj) -> str:
+        coach = getattr(obj, 'assigned_coach', None)
+        if not coach:
+            return ''
+        teacher = getattr(coach, 'teacher', None)
+        if teacher:
+            return f'{teacher.ad} {teacher.soyad}'.strip()
+        return str(coach.id)
+
+    def get_claimed_by_name(self, obj) -> str:
+        u = getattr(obj, 'claimed_by_user', None)
+        if not u:
+            return ''
+        full = (getattr(u, 'get_full_name', lambda: '')() or '').strip()
+        return full or getattr(u, 'username', '') or str(u.id)
+
+    def get_tags(self, obj) -> list:
+        try:
+            return [
+                {'id': str(t.id), 'slug': t.slug, 'name': t.name, 'color': t.color}
+                for t in obj.tags.all()
+            ]
+        except Exception:
+            return []
+
+    def get_sla(self, obj) -> dict:
+        from django.utils import timezone
+        now = timezone.now()
+        first = obj.first_unanswered_at
+        last_cust = obj.last_customer_message_at
+        waiting_sec = None
+        if first:
+            waiting_sec = max(0, int((now - first).total_seconds()))
+        elif last_cust and obj.status not in ('REPLIED', 'ARCHIVED', 'CLOSED'):
+            waiting_sec = max(0, int((now - last_cust).total_seconds()))
+        return {
+            'first_unanswered_at': first.isoformat() if first else None,
+            'last_customer_message_at': last_cust.isoformat() if last_cust else None,
+            'last_reply_at': obj.last_reply_at.isoformat() if obj.last_reply_at else None,
+            'waiting_seconds': waiting_sec,
+            'breached': obj.status == 'NEEDS_SUPPORT' or bool(obj.needs_support_at),
+        }
+
+    def get_can_claim(self, obj) -> bool:
+        request = self.context.get('request')
+        if not request or not getattr(request, 'user', None):
+            return False
+        user = request.user
+        if obj.claimed_by_user_id and obj.claimed_by_user_id != user.id:
+            return False
+        if obj.status == 'ARCHIVED':
+            return False
+        # Kuyruk veya destek veya henüz claim yok
+        return not obj.claimed_by_user_id
+
+    def get_profil_foto(self, obj) -> str | None:
+        if obj.ogrenci_id and obj.ogrenci:
+            foto = getattr(obj.ogrenci, 'profil_foto', None)
+            if foto and hasattr(foto, 'url'):
+                try:
+                    return foto.url
+                except Exception:
+                    return None
+            if isinstance(foto, str) and foto:
+                return foto
+        return None
 
     def _personel_name_by_phone(self, obj) -> str:
         phone = (obj.contact_phone or '').strip()

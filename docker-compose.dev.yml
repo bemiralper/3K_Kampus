@@ -34,6 +34,8 @@ services:
     environment:
       DB_HOST: db
       DJANGO_ENV: development
+      # Playwright PDF: container içinden Next.js servisine (host localhost değil)
+      PDF_RENDER_BASE_URL: http://frontend:3000
     volumes:
       - ./backend:/app/backend
       # Host media ile aynı olsun (named volume host'taki dosyaları gizler)
@@ -82,6 +84,7 @@ services:
     environment:
       DB_HOST: db
       DJANGO_ENV: development
+      PDF_RENDER_BASE_URL: http://frontend:3000
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
     volumes:

@@ -7,6 +7,8 @@ import {
   StepWizard,
   BulkSendStudio,
   AdvancedFilterPanel,
+  RecipientPickerPanel,
+  CampaignHistoryPanel,
 } from "@/components/communication";
 import "@/components/communication/communication.css";
 import { AudienceFilter, CampaignPreviewStats, previewCampaign } from "@/lib/communication-api";
@@ -32,7 +34,8 @@ export type BulkAudienceType =
   | "sinif"
   | "coach_students"
   | "coach_parents"
-  | "advanced";
+  | "advanced"
+  | "custom_ids";
 
 export interface AudienceOption {
   value: BulkAudienceType;
@@ -42,6 +45,7 @@ export interface AudienceOption {
 }
 
 export const ADMIN_AUDIENCE_OPTIONS: AudienceOption[] = [
+  { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci ara; öğrenci ve velilerinden seçerek gönder" },
   { value: "all_veliler", icon: "👨‍👩‍👧", title: "Tüm veliler", description: "Duyuru opt-in vermiş tüm velilere gönder" },
   { value: "all_ogrenciler", icon: "🎓", title: "Tüm öğrenciler", description: "Aktif öğrencilere gönder" },
   { value: "sinif", icon: "🏫", title: "Sınıf", description: "Belirli bir sınıfın velilerine gönder" },
@@ -51,9 +55,12 @@ export const ADMIN_AUDIENCE_OPTIONS: AudienceOption[] = [
 ];
 
 export const COACH_AUDIENCE_OPTIONS: AudienceOption[] = [
+  { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci ara; öğrenci ve velilerinden seçerek gönder" },
   { value: "coach_students", icon: "🎯", title: "Öğrencilerim", description: "Koçluk kapsamındaki öğrencilere gönder" },
   { value: "coach_parents", icon: "👪", title: "Velilerim", description: "Koçluk kapsamındaki öğrenci velilerine gönder" },
 ];
+
+type PageTab = "compose" | "history";
 
 export interface TopluGonderClientProps {
   mode?: "admin" | "coach";
@@ -70,6 +77,7 @@ export default function TopluGonderClient({
   const audienceOptions = isCoach ? COACH_AUDIENCE_OPTIONS : ADMIN_AUDIENCE_OPTIONS;
   const defaultAudience = isCoach ? "coach_students" : "all_veliler";
 
+  const [pageTab, setPageTab] = useState<PageTab>("compose");
   const [step, setStep] = useState(0);
   const [audienceType, setAudienceType] = useState<BulkAudienceType>(defaultAudience as BulkAudienceType);
   const [sinifId, setSinifId] = useState("");
@@ -82,6 +90,9 @@ export default function TopluGonderClient({
   const [error, setError] = useState<string | null>(null);
   const [siniflar, setSiniflar] = useState<Array<{ id: number; ad: string }>>([]);
   const [advancedFilter, setAdvancedFilter] = useState<AudienceFilter>({});
+  const [pickedOgrenciIds, setPickedOgrenciIds] = useState<number[]>([]);
+  const [pickedVeliIds, setPickedVeliIds] = useState<number[]>([]);
+  const [historyKey, setHistoryKey] = useState(0);
 
   const buildFilter = useCallback((): AudienceFilter => {
     const egitimYiliId = readEgitimYiliId();
@@ -91,8 +102,12 @@ export default function TopluGonderClient({
     if (audienceType === "advanced") {
       Object.assign(filter, advancedFilter);
     }
+    if (audienceType === "custom_ids") {
+      filter.ogrenci_ids = pickedOgrenciIds;
+      filter.veli_ids = pickedVeliIds;
+    }
     return filter;
-  }, [audienceType, sinifId, advancedFilter]);
+  }, [audienceType, sinifId, advancedFilter, pickedOgrenciIds, pickedVeliIds]);
 
   useEffect(() => {
     if (isCoach) return;
@@ -132,12 +147,21 @@ export default function TopluGonderClient({
   }, [buildFilter]);
 
   useEffect(() => {
-    if (step === 0) refreshMiniPreview();
-  }, [step, audienceType, sinifId, advancedFilter, refreshMiniPreview]);
+    if (pageTab === "compose" && step === 0) refreshMiniPreview();
+  }, [pageTab, step, audienceType, sinifId, advancedFilter, pickedOgrenciIds, pickedVeliIds, refreshMiniPreview]);
 
   const handleNext = () => {
     if (step === 0 && audienceType === "sinif" && !sinifId) {
       setError("Lütfen bir sınıf seçin.");
+      return;
+    }
+    if (
+      step === 0 &&
+      audienceType === "custom_ids" &&
+      pickedOgrenciIds.length === 0 &&
+      pickedVeliIds.length === 0
+    ) {
+      setError("En az bir öğrenci veya veli seçin.");
       return;
     }
     setError(null);
@@ -147,121 +171,172 @@ export default function TopluGonderClient({
   const defaultBreadcrumbs = isCoach
     ? [{ label: "Koç Paneli", href: "/coach/dashboard" }, { label: "Toplu Gönder" }]
     : [
-        { label: "İletişim", href: "/admin/iletisim/kampanyalar" },
-        { label: "Kampanyalar", href: "/admin/iletisim/kampanyalar" },
+        { label: "İletişim", href: "/admin/iletisim/toplu-gonder" },
         { label: "Toplu Gönderim" },
       ];
 
   const detailPath =
     campaignDetailPath ||
-    ((id: string) =>
-      isCoach ? `/admin/iletisim/kampanyalar/${id}` : `/admin/iletisim/kampanyalar/${id}`);
+    ((id: string) => `/admin/iletisim/kampanyalar/${id}`);
 
   return (
     <CommunicationPageShell
       title="Toplu Gönderim"
-      subtitle={isCoach ? "Öğrenci ve velilerinize WhatsApp mesajı gönderin" : "WhatsApp toplu mesaj kampanyası oluşturun"}
+      subtitle={isCoach ? "Öğrenci ve velilerinize WhatsApp mesajı gönderin" : "WhatsApp toplu mesaj oluşturun ve geçmişi takip edin"}
       icon="📢"
       breadcrumbs={breadcrumbs || defaultBreadcrumbs}
     >
-      <StepWizard steps={["Kitle", "Stüdyo"]} currentStep={step} />
-
-      {error && <div className="comm-alert comm-alert-danger">{error}</div>}
-
-      {step === 0 && (
-        <div className="comm-step-panel comm-card">
-          <h2 className="comm-step-panel-title">Hedef kitleyi seçin</h2>
-          <div className="comm-audience-grid">
-            {audienceOptions.map((opt) => (
-              <label
-                key={opt.value}
-                className={`comm-audience-card${audienceType === opt.value ? " selected" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="audience"
-                  checked={audienceType === opt.value}
-                  onChange={() => setAudienceType(opt.value)}
-                />
-                <span className="comm-audience-icon" aria-hidden="true">{opt.icon}</span>
-                <span className="comm-audience-text">
-                  <strong>{opt.title}</strong>
-                  <span>{opt.description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-
-          {audienceType === "sinif" && !isCoach && (
-            <div className="comm-form-field" style={{ marginTop: "1rem" }}>
-              <label htmlFor="sinif-select">Sınıf</label>
-              <select
-                id="sinif-select"
-                className="form-control"
-                value={sinifId}
-                onChange={(e) => setSinifId(e.target.value)}
-              >
-                <option value="">Sınıf seçin</option>
-                {siniflar.map((s) => (
-                  <option key={s.id} value={s.id}>{s.ad}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {audienceType === "advanced" && !isCoach && (
-            <div style={{ marginTop: "1rem" }}>
-              <AdvancedFilterPanel
-                value={advancedFilter}
-                onChange={(patch) => setAdvancedFilter((prev) => ({ ...prev, ...patch }))}
-              />
-            </div>
-          )}
-
-          <div className="comm-audience-preview-banner">
-            <div className="comm-audience-preview-count">
-              <strong>
-                {previewLoading ? "…" : (miniPreview?.total_recipients ?? 0).toLocaleString("tr-TR")}
-              </strong>
-              <span>alıcıya gönderilecek</span>
-            </div>
-            <div className="comm-audience-preview-breakdown">
-              <span>{previewLoading ? "…" : miniPreview?.veli_count ?? 0} veli</span>
-              <span>{previewLoading ? "…" : miniPreview?.ogrenci_count ?? 0} öğrenci</span>
-            </div>
-          </div>
+      <div className="comm-tabbar" style={{ marginBottom: "1rem" }}>
+        <div className="comm-tabs" role="tablist" aria-label="Toplu gönderim sekmeleri">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pageTab === "compose"}
+            className={`comm-tab${pageTab === "compose" ? " active" : ""}`}
+            onClick={() => setPageTab("compose")}
+          >
+            Yeni gönderim
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={pageTab === "history"}
+            className={`comm-tab${pageTab === "history" ? " active" : ""}`}
+            onClick={() => {
+              setPageTab("history");
+              setHistoryKey((k) => k + 1);
+            }}
+          >
+            Son gönderimler
+          </button>
         </div>
-      )}
+      </div>
 
-      {step === 1 && (
-        <BulkSendStudio
-          audienceFilter={buildFilter()}
-          audienceType={audienceType}
-          title={title}
-          onTitleChange={setTitle}
-          composerState={composerState}
-          onComposerChange={setComposerState}
-          templateName={templateName}
-          onTemplateNameChange={setTemplateName}
-          templateLanguage={templateLanguage}
-          onTemplateLanguageChange={setTemplateLanguage}
-          campaignDetailPath={detailPath}
-          readOnlyTemplates={isCoach}
+      {pageTab === "history" && (
+        <CampaignHistoryPanel
+          key={historyKey}
+          limit={20}
+          detailPath={detailPath}
+          emptyHref="/admin/iletisim/toplu-gonder"
+          emptyActionLabel="Yeni gönderim oluştur"
         />
       )}
 
-      <div className="comm-step-actions">
-        {step > 0 && (
-          <button type="button" className="comm-btn-secondary" onClick={() => { setError(null); setStep(0); }}>
-            Geri
-          </button>
-        )}
-        {step === 0 && (
-          <button type="button" className="comm-btn-primary" onClick={handleNext}>
-            Stüdyoya Geç
-          </button>
-        )}
-      </div>
+      {pageTab === "compose" && (
+        <>
+          <StepWizard steps={["Kitle", "Stüdyo"]} currentStep={step} />
+
+          {error && <div className="comm-alert comm-alert-danger">{error}</div>}
+
+          {step === 0 && (
+            <div className="comm-step-panel comm-card">
+              <h2 className="comm-step-panel-title">Hedef kitleyi seçin</h2>
+              <div className="comm-audience-grid">
+                {audienceOptions.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`comm-audience-card${audienceType === opt.value ? " selected" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="audience"
+                      checked={audienceType === opt.value}
+                      onChange={() => setAudienceType(opt.value)}
+                    />
+                    <span className="comm-audience-icon" aria-hidden="true">{opt.icon}</span>
+                    <span className="comm-audience-text">
+                      <strong>{opt.title}</strong>
+                      <span>{opt.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {audienceType === "sinif" && !isCoach && (
+                <div className="comm-form-field" style={{ marginTop: "1rem" }}>
+                  <label htmlFor="sinif-select">Sınıf</label>
+                  <select
+                    id="sinif-select"
+                    className="form-control"
+                    value={sinifId}
+                    onChange={(e) => setSinifId(e.target.value)}
+                  >
+                    <option value="">Sınıf seçin</option>
+                    {siniflar.map((s) => (
+                      <option key={s.id} value={s.id}>{s.ad}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {audienceType === "advanced" && !isCoach && (
+                <div style={{ marginTop: "1rem" }}>
+                  <AdvancedFilterPanel
+                    value={advancedFilter}
+                    onChange={(patch) => setAdvancedFilter((prev) => ({ ...prev, ...patch }))}
+                  />
+                </div>
+              )}
+
+              {audienceType === "custom_ids" && (
+                <div style={{ marginTop: "1rem" }}>
+                  <RecipientPickerPanel
+                    ogrenciIds={pickedOgrenciIds}
+                    veliIds={pickedVeliIds}
+                    onChange={({ ogrenci_ids, veli_ids }) => {
+                      setPickedOgrenciIds(ogrenci_ids);
+                      setPickedVeliIds(veli_ids);
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="comm-audience-preview-banner">
+                <div className="comm-audience-preview-count">
+                  <strong>
+                    {previewLoading ? "…" : (miniPreview?.total_recipients ?? 0).toLocaleString("tr-TR")}
+                  </strong>
+                  <span>alıcıya gönderilecek</span>
+                </div>
+                <div className="comm-audience-preview-breakdown">
+                  <span>{previewLoading ? "…" : miniPreview?.veli_count ?? 0} veli</span>
+                  <span>{previewLoading ? "…" : miniPreview?.ogrenci_count ?? 0} öğrenci</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <BulkSendStudio
+              audienceFilter={buildFilter()}
+              audienceType={audienceType}
+              title={title}
+              onTitleChange={setTitle}
+              composerState={composerState}
+              onComposerChange={setComposerState}
+              templateName={templateName}
+              onTemplateNameChange={setTemplateName}
+              templateLanguage={templateLanguage}
+              onTemplateLanguageChange={setTemplateLanguage}
+              campaignDetailPath={detailPath}
+              readOnlyTemplates={isCoach}
+            />
+          )}
+
+          <div className="comm-step-actions">
+            {step > 0 && (
+              <button type="button" className="comm-btn-secondary" onClick={() => { setError(null); setStep(0); }}>
+                Geri
+              </button>
+            )}
+            {step === 0 && (
+              <button type="button" className="comm-btn-primary" onClick={handleNext}>
+                Stüdyoya Geç
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </CommunicationPageShell>
   );
 }

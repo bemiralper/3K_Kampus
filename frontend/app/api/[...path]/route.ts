@@ -54,15 +54,17 @@ async function proxyRequest(request: NextRequest, path: string) {
   // Get content type to determine how to handle body
   const contentType = request.headers.get('content-type') || '';
   
-  // Get request body for POST/PUT/PATCH
+  // Get request body for POST/PUT/PATCH/DELETE (silme sebebi vb. DELETE body ile gelir)
   let body: BodyInit | undefined;
-  if (['POST', 'PUT', 'PATCH'].includes(request.method)) {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
     // Check if it's a multipart form (file upload)
     if (contentType.includes('multipart/form-data')) {
       // For multipart, we need to forward the raw body
       body = await request.arrayBuffer();
     } else {
-      body = await request.text();
+      const text = await request.text();
+      // Boş DELETE gövdesini iletme (bazı fetch uygulamaları boş string ile sorun çıkarır)
+      body = text.length > 0 ? text : undefined;
     }
   }
 

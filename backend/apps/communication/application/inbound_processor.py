@@ -4,10 +4,13 @@ Gelen webhook mesajlarını işleme.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone as dt_timezone
 from typing import Any
 
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from apps.communication.application.coach_scope import assign_coach_to_conversation
 from apps.communication.application.contact_resolver import ContactResolver
@@ -255,7 +258,20 @@ class InboundProcessor:
             conversation,
             preview=body or f'[{message_type}]',
             direction=MessageDirection.INBOUND,
+            channel_config=channel_config,
         )
+
+        try:
+            from apps.communication.application.whatsapp_notifications import (
+                notify_inbound_whatsapp,
+            )
+            conversation.refresh_from_db()
+            notify_inbound_whatsapp(
+                conversation,
+                preview=body or f'[{message_type}]',
+            )
+        except Exception:
+            logger.exception('whatsapp inbound notification failed')
 
         self._bump_campaign_reply_count(conversation)
 

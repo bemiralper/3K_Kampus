@@ -302,6 +302,33 @@ class CoachScopeAPITest(TestCase):
             '+905322222222',
             ogrenci_id=self.student_b.id,
         )
+        # Başka koça atanmış sohbet — Yeni Gelenler kuyruğuna düşmemeli
+        other_user = User.objects.create_user(username='coach_b_scope', password='pass')
+        other_personel = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Koç',
+            soyad='B',
+            tc_kimlik_no='22222222222',
+            user=other_user,
+        )
+        other_profile = CoachProfile.objects.create(
+            teacher=other_personel,
+            capacity=20,
+            is_active=True,
+            is_coach=True,
+        )
+        CoachStudentAssignment.objects.create(
+            coach=other_profile,
+            student=self.student_b,
+            start_date=date(2026, 1, 1),
+            is_primary=True,
+        )
+        self.conv_a.assigned_coach = self.coach_profile
+        self.conv_a.save(update_fields=['assigned_coach'])
+        self.conv_b.assigned_coach = other_profile
+        self.conv_b.claimed_by_user = other_user
+        self.conv_b.save(update_fields=['assigned_coach', 'claimed_by_user'])
 
         self.client = APIClient()
         self.client.force_authenticate(user=self.coach_user)

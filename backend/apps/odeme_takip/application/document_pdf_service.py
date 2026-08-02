@@ -10,11 +10,17 @@ from apps.communication.application.html_to_pdf import render_url_to_pdf
 from .print_token import DOC_MAKBUZ, DOC_PLAN, DOC_SOZLESME, create_print_token
 
 
+def _pdf_base_url() -> str:
+    return (
+        getattr(settings, 'PDF_RENDER_BASE_URL', None)
+        or getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+    ).rstrip('/')
+
+
 def _print_url(path: str, entity_id: int, kurum_id: int, doc_type: str) -> str:
     token = create_print_token(entity_id, kurum_id, doc_type=doc_type)
     params = urlencode({'token': token})
-    base = settings.FRONTEND_URL.rstrip('/')
-    return f'{base}{path.format(entity_id=entity_id)}?{params}'
+    return f'{_pdf_base_url()}{path.format(entity_id=entity_id)}?{params}'
 
 
 def build_odeme_plan_print_url(sozlesme_id: int, kurum_id: int) -> str:

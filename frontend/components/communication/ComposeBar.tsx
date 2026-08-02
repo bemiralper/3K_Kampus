@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ComposerState } from "./composer-utils";
 import {
   plainTextFromComposer,
@@ -10,6 +10,10 @@ import MessageComposer, { createComposerState } from "./MessageComposer";
 import TemplatePickerDrawer from "./TemplatePickerDrawer";
 import type { ConversationListItem, MessageItem, MessageTemplateItem } from "@/lib/communication-api";
 import { recordTemplateUsage } from "@/lib/communication-api";
+
+const ACCEPT_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ACCEPT_EXT = new Set([".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".webp"]);
+const FILE_ACCEPT = "image/jpeg,image/png,image/webp,.pdf,.doc,.docx";
 
 interface ComposeBarProps {
   value: ComposerState;
@@ -32,6 +36,12 @@ function replyLabel(msg: MessageItem): string {
   return "Mesaj";
 }
 
+function isAcceptedFile(file: File): boolean {
+  if (ACCEPT_MIME.has(file.type)) return true;
+  const lower = file.name.toLowerCase();
+  return [...ACCEPT_EXT].some((ext) => lower.endsWith(ext));
+}
+
 export default function ComposeBar({
   value,
   onChange,
@@ -44,8 +54,15 @@ export default function ComposeBar({
   onClearReply,
 }: ComposeBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  const applyFile = useCallback((file: File | null | undefined) => {
+    if (!file || !isAcceptedFile(file)) return;
+    setAttachmentFile(file);
+  }, []);
 
   const handleSend = () => {
     const text = plainTextFromComposer(value);
@@ -63,9 +80,52 @@ export default function ComposeBar({
 
   const openFilePicker = () => fileInputRef.current?.click();
 
+  const onDragEnter = (e: React.DragEvent) => {
+    if (disabled || sending) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current += 1;
+    if (e.dataTransfer.types.includes("Files")) setDragOver(true);
+  };
+
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragOver(false);
+  };
+
+  const onDragOver = (e: React.DragEvent) => {
+    if (disabled || sending) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setDragOver(false);
+    if (disabled || sending) return;
+    const file = e.dataTransfer.files?.[0];
+    applyFile(file);
+  };
+
   return (
     <>
-      <footer className={`comm-compose-bar${inboxMode ? " comm-compose-bar--inbox" : ""}`}>
+      <footer
+        className={`comm-compose-bar${inboxMode ? " comm-compose-bar--inbox" : ""}${dragOver ? " comm-compose-bar--dragover" : ""}`}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+      >
+        {dragOver && (
+          <div className="comm-compose-drop-hint" aria-hidden="true">
+            Dosyayı buraya bırakın
+          </div>
+        )}
         {replyTo && (
           <div className="comm-compose-reply-bar">
             <div className="comm-compose-reply-content">
@@ -86,9 +146,9 @@ export default function ComposeBar({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,.pdf,.doc,.docx"
+          accept={FILE_ACCEPT}
           style={{ display: "none" }}
-          onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+          onChange={(e) => applyFile(e.target.files?.[0])}
         />
         <button
           type="button"
@@ -96,7 +156,7 @@ export default function ComposeBar({
           onClick={openFilePicker}
           disabled={sending || disabled}
           aria-label="Dosya ekle"
-          title="Dosya ekle"
+          title="Dosya ekle veya sürükleyip bırakın"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -130,7 +190,7 @@ export default function ComposeBar({
             showPreview={false}
             disabled={disabled}
             loading={sending}
-            placeholder="Mesaj yazın…"
+            placeholder="Mesaj yazın… (dosya sürükleyebilirsiniz)"
             onOpenTemplates={inboxMode ? () => setTemplatesOpen(true) : undefined}
             onAttachClick={openFilePicker}
             allowSendWithoutText={!!attachmentFile}

@@ -83,7 +83,7 @@ export default function KampanyaDetayClient() {
       const data = await fetchCampaign(campaignId);
       setCampaign(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Kampanya yüklenemedi");
+      setError(err instanceof Error ? err.message : "Gönderim yüklenemedi");
     } finally {
       setLoading(false);
     }
@@ -123,16 +123,16 @@ export default function KampanyaDetayClient() {
   if (loading) {
     return (
       <CommunicationPageShell
-        title="Kampanya"
+        title="Gönderim"
         subtitle="Yükleniyor…"
         icon="📊"
         breadcrumbs={[
           { label: "İletişim" },
-          { label: "Kampanyalar", href: "/admin/iletisim/kampanyalar" },
+          { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
           { label: "Detay" },
         ]}
       >
-        <p style={{ color: "#667781" }}>Kampanya yükleniyor…</p>
+        <p style={{ color: "#667781" }}>Gönderim yükleniyor…</p>
       </CommunicationPageShell>
     );
   }
@@ -140,14 +140,14 @@ export default function KampanyaDetayClient() {
   if (!campaign) {
     return (
       <CommunicationPageShell
-        title="Kampanya bulunamadı"
+        title="Gönderim bulunamadı"
         icon="📊"
         breadcrumbs={[
-          { label: "Kampanyalar", href: "/admin/iletisim/kampanyalar" },
+          { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
           { label: "Detay" },
         ]}
       >
-        <p>Bu kampanya mevcut değil.</p>
+        <p>Bu gönderim mevcut değil.</p>
       </CommunicationPageShell>
     );
   }
@@ -158,12 +158,12 @@ export default function KampanyaDetayClient() {
 
   return (
     <CommunicationPageShell
-      title={campaign.title || "Kampanya Raporu"}
+      title={campaign.title || "Gönderim Raporu"}
       subtitle={`Oluşturulma: ${new Date(campaign.created_at).toLocaleString("tr-TR")}`}
       icon="📊"
       breadcrumbs={[
         { label: "İletişim" },
-        { label: "Kampanyalar", href: "/admin/iletisim/kampanyalar" },
+        { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
         { label: campaign.title || "Detay" },
       ]}
       actions={
@@ -255,7 +255,7 @@ export default function KampanyaDetayClient() {
             disabled={actionLoading === "cancel"}
             onClick={handleCancel}
           >
-            {actionLoading === "cancel" ? "İptal ediliyor…" : "Kampanyayı İptal Et"}
+            {actionLoading === "cancel" ? "İptal ediliyor…" : "Gönderimi İptal Et"}
           </button>
         )}
       </div>

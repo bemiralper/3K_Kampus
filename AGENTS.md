@@ -86,6 +86,7 @@ Background workers are management commands by default; optional Celery + Redis w
 | Command | Purpose | Suggested cron |
 |---------|---------|----------------|
 | `python manage.py process_communication_queue` | Sends queued WhatsApp/SMS outbound messages | Every 1 min |
+| `python manage.py check_conversation_sla` | Marks unanswered coach threads as NEEDS_SUPPORT (default 30 min) | Every 1 min |
 | `python manage.py send_payment_reminders` | Enqueues overdue/upcoming taksit reminders (`--days-ahead=3`, `--dry-run`) | Daily 09:00 |
 
 Run from `backend/` with appropriate `DJANGO_ENV`. Module hooks (görüşme, ödev, sınav, devamsızlık) enqueue only; delivery requires `process_communication_queue` (cron) or Celery worker.

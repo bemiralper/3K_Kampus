@@ -12,11 +12,14 @@ type KisiBulunduModalProps = {
   applyDisabled?: boolean;
   applyLabel?: string;
   /** Varsayılan: Numarayı değiştir */
-  cancelLabel?: string;
+  changeNumberLabel?: string;
   hideApply?: boolean;
   extraContent?: ReactNode;
   onApply: () => void;
-  onCancel: () => void;
+  /** Sadece telefon alanını temizle */
+  onChangeNumber: () => void;
+  /** X / arka plan — formu değiştirmeden kapat */
+  onClose?: () => void;
 };
 
 const ROL_LABEL: Record<string, string> = {
@@ -32,15 +35,17 @@ export default function KisiBulunduModal({
   loading = false,
   applyDisabled = false,
   applyLabel,
-  cancelLabel = "Numarayı değiştir",
+  changeNumberLabel = "Numarayı değiştir",
   hideApply = false,
   extraContent,
   onApply,
-  onCancel,
+  onChangeNumber,
+  onClose,
 }: KisiBulunduModalProps) {
   if (!open || !result?.found) return null;
 
   const blocked = applyDisabled || Boolean(result.engellenen);
+  const handleClose = onClose || onChangeNumber;
 
   const kisi = result.kisi;
   const displayName =
@@ -60,7 +65,7 @@ export default function KisiBulunduModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="kisi-bulundu-title"
-      onClick={onCancel}
+      onClick={handleClose}
     >
       <div
         className="flex max-h-[92vh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl"
@@ -87,7 +92,7 @@ export default function KisiBulunduModal({
             </div>
             <button
               type="button"
-              onClick={onCancel}
+              onClick={handleClose}
               className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               aria-label="Kapat"
             >
@@ -170,17 +175,18 @@ export default function KisiBulunduModal({
 
           <p className="text-xs text-slate-500">
             Mevcut kişiyi seçerseniz TC kilitlenir; iletişim bilgilerini formda güncelleyebilirsiniz.
-            Farklı bir numara kullanacaksanız «{cancelLabel}»e tıklayın.
+            Farklı bir numara kullanacaksanız «{changeNumberLabel}»e tıklayın — yalnızca telefon alanı
+            temizlenir.
           </p>
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-slate-100 px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-6">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={onChangeNumber}
             className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            {cancelLabel}
+            {changeNumberLabel}
           </button>
           {!hideApply && (
             <button

@@ -30,9 +30,19 @@ interface FormState {
   is_active: boolean;
   is_default: boolean;
   scope_type: WhatsAppAccountScope;
+  department: string;
   role_ids: number[];
   sube_ids: number[];
 }
+
+const DEPARTMENTS = [
+  { id: "COACHING", label: "Koçluk" },
+  { id: "ACCOUNTING", label: "Muhasebe" },
+  { id: "SECRETARIAT", label: "Sekreterya" },
+  { id: "GUIDANCE", label: "Rehberlik" },
+  { id: "ADMISSIONS", label: "Kayıt Ofisi" },
+  { id: "MANAGEMENT", label: "Yönetim" },
+];
 
 function emptyForm(): FormState {
   return {
@@ -46,6 +56,7 @@ function emptyForm(): FormState {
     is_active: true,
     is_default: false,
     scope_type: "ALL_SUBES",
+    department: "COACHING",
     role_ids: [],
     sube_ids: [],
   };
@@ -74,6 +85,7 @@ export default function AccountFormDrawer({ open, account, onClose, onSaved }: A
             is_active: account.is_active,
             is_default: account.is_default,
             scope_type: account.scope_type || "ALL_SUBES",
+            department: account.department || "COACHING",
             role_ids: account.role_ids || [],
             sube_ids: account.sube_ids || [],
           }
@@ -129,6 +141,7 @@ export default function AccountFormDrawer({ open, account, onClose, onSaved }: A
         is_active: form.is_active,
         is_default: form.is_default,
         scope_type: form.scope_type,
+        department: form.department,
         role_ids: form.role_ids,
         sube_ids: form.scope_type === "SELECTED_SUBES" ? form.sube_ids : [],
       };
@@ -251,6 +264,19 @@ export default function AccountFormDrawer({ open, account, onClose, onSaved }: A
               />
               <span style={{ fontSize: "0.875rem", fontWeight: 500 }}>Varsayılan hesap</span>
             </label>
+          </div>
+
+          <div className="comm-form-field">
+            <label htmlFor="acc-department">Departman</label>
+            <select
+              id="acc-department"
+              value={form.department}
+              onChange={(e) => setForm({ ...form, department: e.target.value })}
+            >
+              {DEPARTMENTS.map((d) => (
+                <option key={d.id} value={d.id}>{d.label}</option>
+              ))}
+            </select>
           </div>
 
           <div className="comm-form-field">

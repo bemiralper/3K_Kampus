@@ -20,8 +20,56 @@ class KisiService:
             if kisi:
                 return kisi
         if telefon_norm:
-            return Kisi.objects.filter(kurum_id=kurum_id, telefon=telefon_norm).exclude(telefon='').first()
+            kisi = Kisi.objects.filter(kurum_id=kurum_id, telefon=telefon_norm).exclude(telefon='').first()
+            if kisi and KisiService.release_orphaned_phone(kisi):
+                return None
+            return kisi
         return None
+
+    @staticmethod
+    def _linked_role_ids(kisi: Kisi) -> tuple[bool, bool, bool]:
+        from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+        from apps.personel.domain.models import Personel
+
+        has_personel = Personel.objects.filter(kisi_id=kisi.id).exists()
+        has_ogrenci = Ogrenci.objects.filter(kisi_id=kisi.id).exists()
+        has_veli = OgrenciVeli.objects.filter(kisi_id=kisi.id).exists()
+        return has_personel, has_ogrenci, has_veli
+
+    @staticmethod
+    def _role_uses_phone(kisi: Kisi, telefon_norm: str) -> bool:
+        """Bağlı personel/öğrenci/veli kayıtlarından biri hâlâ bu telefonu kullanıyor mu?"""
+        if not telefon_norm:
+            return False
+        from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+        from apps.personel.domain.models import Personel
+
+        for p in Personel.objects.filter(kisi_id=kisi.id).only('telefon', 'cep_telefon'):
+            if normalize_phone(p.cep_telefon or p.telefon or '') == telefon_norm:
+                return True
+        for o in Ogrenci.objects.filter(kisi_id=kisi.id).only('telefon'):
+            if normalize_phone(o.telefon or '') == telefon_norm:
+                return True
+        for v in OgrenciVeli.objects.filter(kisi_id=kisi.id).only('telefon'):
+            if normalize_phone(v.telefon or '') == telefon_norm:
+                return True
+        return False
+
+    @staticmethod
+    def release_orphaned_phone(kisi: Kisi) -> bool:
+        """Rolü olan kişide telefon artık hiçbir rolde yoksa Kisi.telefon'u temizle."""
+        telefon_norm = normalize_phone(kisi.telefon or '')
+        if not telefon_norm:
+            return False
+        has_p, has_o, has_v = KisiService._linked_role_ids(kisi)
+        if not (has_p or has_o or has_v):
+            # Henüz role bağlanmamış Kisi kaydı telefonu sahiplenir
+            return False
+        if KisiService._role_uses_phone(kisi, telefon_norm):
+            return False
+        kisi.telefon = ''
+        kisi.save(update_fields=['telefon', 'updated_at'])
+        return True
 
     @staticmethod
     def assert_unique(
@@ -51,6 +99,9 @@ class KisiService:
                 qs = qs.exclude(id=exclude_kisi_id)
             existing = qs.first()
             if existing:
+                # Silinen/değişen numaralar Kisi üzerinde kalmış olabilir — rol kullanmıyorsa serbest bırak
+                if KisiService.release_orphaned_phone(existing):
+                    return
                 if tc and existing.tc_kimlik_no and existing.tc_kimlik_no != tc:
                     raise KimlikConflictError(
                         f'Bu telefon numarası farklı bir kişiye ait: {existing.tam_ad}',
@@ -85,14 +136,25 @@ class KisiService:
 
     @staticmethod
     @transaction.atomic
-    def sync_from_profile(kisi: Kisi, profile: dict, fields: list[str] | None = None) -> Kisi:
-        """Kisi ortak alanlarını güncelle (boş olmayan değerlerle)."""
+    def sync_from_profile(
+        kisi: Kisi,
+        profile: dict,
+        fields: list[str] | None = None,
+        *,
+        clear_empty: bool = False,
+    ) -> Kisi:
+        """Kisi ortak alanlarını güncelle.
+
+        clear_empty=True iken telefon/email gibi alanlar boş string ile temizlenebilir
+        (personel telefon silme senaryosu).
+        """
         allowed = fields or [
             'ad', 'soyad', 'dogum_tarihi', 'cinsiyet', 'email', 'adres', 'il', 'ilce', 'telefon', 'tc_kimlik_no',
         ]
         pending_tc = profile.get('tc_kimlik_no') if 'tc_kimlik_no' in allowed else None
+        phone_key_present = 'telefon' in profile or 'cep_telefon' in profile
         pending_tel = None
-        if 'telefon' in allowed:
+        if 'telefon' in allowed and phone_key_present:
             pending_tel = normalize_phone(profile.get('telefon') or profile.get('cep_telefon') or '')
 
         if pending_tc or pending_tel:
@@ -106,6 +168,8 @@ class KisiService:
         update_fields = []
         for field in allowed:
             if field == 'telefon':
+                if not phone_key_present and not clear_empty:
+                    continue
                 value = normalize_phone(profile.get('telefon') or profile.get('cep_telefon') or '')
             elif field == 'tc_kimlik_no':
                 value = profile.get('tc_kimlik_no') or None
@@ -115,6 +179,9 @@ class KisiService:
                     value = value.strip()
             if value is not None and value != '':
                 setattr(kisi, field, value)
+                update_fields.append(field)
+            elif clear_empty and field == 'telefon' and phone_key_present:
+                setattr(kisi, field, '')
                 update_fields.append(field)
         if update_fields:
             kisi.save(update_fields=update_fields + ['updated_at'])

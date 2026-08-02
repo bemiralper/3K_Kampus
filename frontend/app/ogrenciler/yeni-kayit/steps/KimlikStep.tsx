@@ -376,7 +376,8 @@ export default function KimlikStep({
         loading={tcChecking || kimlik.checking}
         extraContent={<OgrenciKimlikEkPanel tcResult={tcResult} />}
         onApply={handleApplyExisting}
-        onCancel={() => {
+        onClose={() => kimlik.dismissForChangeNumber(data.student.telefon)}
+        onChangeNumber={() => {
           const phone = data.student.telefon;
           kimlik.dismissForChangeNumber(phone);
           onChange({

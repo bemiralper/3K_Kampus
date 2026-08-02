@@ -81,6 +81,16 @@ class TemplateCategoryServiceTest(TestCase):
             8,
         )
 
+    def test_ensure_defaults_is_idempotent(self):
+        self.service.ensure_defaults(self.kurum.id, self.sube.id)
+        first = MessageTemplateCategory.objects.filter(kurum=self.kurum, sube=self.sube).count()
+        self.service.ensure_defaults(self.kurum.id, self.sube.id)
+        self.service.ensure_defaults(self.kurum.id, self.sube.id)
+        self.assertEqual(
+            MessageTemplateCategory.objects.filter(kurum=self.kurum, sube=self.sube).count(),
+            first,
+        )
+
     def test_create_custom_category(self):
         cat = self.service.create(self.kurum.id, sube_id=self.sube.id, label='Veli Bilgilendirme')
         self.assertTrue(cat.slug)

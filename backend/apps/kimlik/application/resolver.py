@@ -201,8 +201,8 @@ class KimlikResolver:
         if len(tip_set) > 1:
             if context == self.CONTEXT_VELI and 'personel' in tip_set:
                 uyarilar.append('Bu kişi sistemde Personel olarak kayıtlı. Veli olarak da kullanılabilir.')
-            elif context == self.CONTEXT_OGRENCI and 'personel' in tip_set:
-                uyarilar.append('Bu kişi sistemde Personel olarak kayıtlı. Öğrenci kaydı için mevcut bilgiler kullanılabilir.')
+            elif context == self.CONTEXT_OGRENCI and 'ogrenci' in tip_set and 'personel' in tip_set:
+                uyarilar.append('Bu kişi sistemde Personel olarak da kayıtlı.')
             elif context == self.CONTEXT_PERSONEL and 'ogrenci' in tip_set:
                 uyarilar.append('Bu kişi sistemde Öğrenci olarak da kayıtlı.')
 
@@ -263,6 +263,26 @@ class KimlikResolver:
                     f'Bu telefon numarası {tel_kisi.tam_ad} adlı kişiye ait. '
                     'Farklı TC ile kayıt yapılamaz.'
                 )
+
+        # Öğrenci kaydında personel/veli kimliği «mevcut öğrenci» olarak kullanılamaz
+        if context == self.CONTEXT_OGRENCI and roller:
+            tip_set = {r['tip'] for r in roller}
+            if 'ogrenci' not in tip_set:
+                if 'personel' in tip_set and 'veli' in tip_set:
+                    return True, (
+                        'Bu kimlik personel ve veli olarak kayıtlı. '
+                        'Öğrenci kaydında kullanılamaz; farklı bir numara/TC girin.'
+                    )
+                if 'personel' in tip_set:
+                    return True, (
+                        'Bu kimlik bir personele ait. '
+                        'Personel öğrenci olarak kaydedilemez; farklı bir numara/TC girin.'
+                    )
+                if 'veli' in tip_set:
+                    return True, (
+                        'Bu kimlik bir veliye ait. '
+                        'Veli öğrenci olarak kaydedilemez; farklı bir numara/TC girin.'
+                    )
 
         if context == self.CONTEXT_OGRENCI and tc:
             ogrenci = Ogrenci.objects.filter(kurum_id=self.kurum_id, tc_kimlik_no=tc).first()

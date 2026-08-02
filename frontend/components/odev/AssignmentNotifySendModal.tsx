@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  downloadAssignmentServerPdf,
   previewAssignmentNotify,
   sendAssignmentNotify,
   type AssignmentNotifyRecipient,
@@ -63,6 +64,8 @@ export default function AssignmentNotifySendModal({
   const [sendPhase, setSendPhase] = useState("");
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const [previewTitle, setPreviewTitle] = useState("");
   const [recipients, setRecipients] = useState<AssignmentNotifyRecipient[]>([]);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
@@ -113,11 +116,28 @@ export default function AssignmentNotifySendModal({
     });
   }, []);
 
+  const handleDownloadPdf = async () => {
+    setPdfBusy(true);
+    setPdfError("");
+    try {
+      await downloadAssignmentServerPdf(
+        assignmentId,
+        notifyType,
+        notifyType === "report" ? (reportOrientation || "portrait") : "portrait",
+      );
+    } catch (e) {
+      setPdfError(e instanceof Error ? e.message : "PDF indirilemedi");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const handleSend = async () => {
     if (sendable.length === 0) return;
     setSending(true);
     setError("");
     setSuccessMsg("");
+    setPdfError("");
     try {
       const veliIds = sendable
         .filter((r) => r.recipient_type === "veli" && r.veli_id)
@@ -147,12 +167,9 @@ export default function AssignmentNotifySendModal({
 
       onSent?.(sentCount, res.data?.sent_details);
 
-      if (warning || (skipped > 0 && extraErrors.length > 0)) {
-        setSuccessMsg(`${formatNotifySentToast(sentCount, res.data?.sent_details)} ${warning || extraErrors[0] || ""}`.trim());
-        return;
-      }
-
-      onClose();
+      const base = formatNotifySentToast(sentCount, res.data?.sent_details);
+      const extra = warning || (skipped > 0 && extraErrors.length > 0 ? extraErrors[0] : "");
+      setSuccessMsg(extra ? `${base} ${extra}`.trim() : base);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gönderim hatası");
     } finally {
@@ -200,12 +217,40 @@ export default function AssignmentNotifySendModal({
         ) : successMsg ? (
           <div style={{ padding: 24 }}>
             <div style={{ color: "#059669", fontSize: 14, fontWeight: 600, marginBottom: 8 }}>{successMsg}</div>
-            <button type="button" onClick={onClose} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#059669", color: "#fff", cursor: "pointer" }}>
-              Tamam
-            </button>
+            <p style={{ margin: "0 0 16px", fontSize: 12, color: "#64748b" }}>
+              Aynı PDF’i istediğiniz zaman ödev detayından veya buradan yeniden indirebilirsiniz.
+            </p>
+            {pdfError && (
+              <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 10 }}>{pdfError}</div>
+            )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={pdfBusy}
+                style={{
+                  padding: "8px 14px", borderRadius: 8, border: "1px solid #93c5fd",
+                  background: "#eff6ff", color: "#1d4ed8", cursor: pdfBusy ? "wait" : "pointer", fontWeight: 600,
+                }}
+              >
+                {pdfBusy ? "PDF hazırlanıyor…" : "PDF indir"}
+              </button>
+              <button type="button" onClick={onClose} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#059669", color: "#fff", cursor: "pointer" }}>
+                Kapat
+              </button>
+            </div>
           </div>
         ) : error ? (
-          <div style={{ padding: 24, color: "#dc2626", fontSize: 13 }}>{error}</div>
+          <div style={{ padding: 24 }}>
+            <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>
+            <button
+              type="button"
+              onClick={() => setError("")}
+              style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}
+            >
+              Geri dön
+            </button>
+          </div>
         ) : (
           <div style={{ overflowY: "auto", padding: "12px 16px", flex: 1 }}>
             {recipients.map((r) => {
@@ -267,7 +312,7 @@ export default function AssignmentNotifySendModal({
           </div>
         )}
 
-        {!successMsg && (
+        {!successMsg && !error && (
           <div style={{ padding: "12px 16px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <button type="button" onClick={onClose} disabled={sending} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
               Vazgeç

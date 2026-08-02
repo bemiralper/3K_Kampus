@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ComposeBar,
   ConversationListPanel,
+  ConversationOpsPanel,
   createComposerState,
   MessageThreadPanel,
 } from "@/components/communication";
@@ -11,8 +12,10 @@ import "@/components/communication/communication.css";
 import {
   accountLabel,
   archiveConversation,
+  claimConversation,
   ConversationFilter,
   ConversationListItem,
+  ConversationPeriod,
   fetchAccessibleWhatsAppAccounts,
   fetchConversations,
   WhatsAppAccount,
@@ -30,15 +33,22 @@ interface MesajlarClientProps {
 export default function MesajlarClient({ initialConversationId, showAccountFilter = false }: MesajlarClientProps) {
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId ?? null);
+  // Admin: tümü. Koç: tümü (Yeni Gelenler + kendi sohbetleri); "Benim" filtresi ayrı seçilir.
   const [filter, setFilter] = useState<ConversationFilter>("all");
+  const [period, setPeriod] = useState<ConversationPeriod>("7d");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("");
   const [threadRefreshToken, setThreadRefreshToken] = useState(0);
+  const [claimBusy, setClaimBusy] = useState(false);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const visibleIdsRef = useRef<Set<string>>(new Set());
 
   const handleConversationRead = useCallback((conversationId: string) => {
     setConversations((prev) =>
@@ -79,11 +89,11 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
       setError(null);
       const data = await fetchConversations({
         filter,
+        period,
         search: search.trim() || undefined,
         channel_config_id: accountId || undefined,
       });
       const list = data.conversations || [];
-      // En yeni mesaj en üstte (null last_message_at alta)
       list.sort((a, b) => {
         const ta = a.last_message_at ? Date.parse(a.last_message_at) : 0;
         const tb = b.last_message_at ? Date.parse(b.last_message_at) : 0;
@@ -91,15 +101,21 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
         return (b.created_at || "").localeCompare(a.created_at || "");
       });
       setConversations(list);
+      const nextIds = new Set(list.map((c) => c.id));
+      const sid = selectedIdRef.current;
+      // Yalnızca daha önce listede görünen sohbet kaybolduysa (üstlenme) temizle
+      if (sid && !nextIds.has(sid) && visibleIdsRef.current.has(sid)) {
+        setToast("Sohbet listeden kalktı (başka biri üstlendi).");
+        window.setTimeout(() => setToast(null), 4000);
+        setSelectedId(null);
+      }
+      visibleIdsRef.current = nextIds;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Konuşmalar yüklenemedi");
     } finally {
       setLoading(false);
     }
-  }, [filter, search, accountId]);
-
-  const selectedIdRef = useRef(selectedId);
-  selectedIdRef.current = selectedId;
+  }, [filter, period, search, accountId]);
 
   useCommunicationSSE({
     onUpdate: () => {
@@ -142,6 +158,23 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
     }
   };
 
+  const handleClaim = async () => {
+    if (!selectedId || !selected) return;
+    setClaimBusy(true);
+    try {
+      const updated = await claimConversation(selectedId, selected.claim_version);
+      setConversations((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
+      setToast("Sohbet üstlenildi.");
+      window.setTimeout(() => setToast(null), 3000);
+      loadConversations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Üstlenme başarısız");
+      loadConversations();
+    } finally {
+      setClaimBusy(false);
+    }
+  };
+
   const displayError = error || threadError;
 
   if (loading) {
@@ -159,8 +192,6 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
         <section className="comm-thread-panel">
           <div className="comm-thread-empty">
             <div className="comm-inbox-skeleton comm-inbox-skeleton--pulse" style={{ width: 80, height: 80, borderRadius: "50%" }} />
-            <div className="comm-inbox-skeleton comm-inbox-skeleton--pulse" style={{ width: 180, height: 16, marginTop: 16 }} />
-            <div className="comm-inbox-skeleton comm-inbox-skeleton--pulse" style={{ width: 240, height: 12, marginTop: 8 }} />
           </div>
         </section>
       </div>
@@ -172,15 +203,18 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
 
   return (
     <div className="comm-inbox">
+      {toast && <div className="comm-toast">{toast}</div>}
       <ConversationListPanel
         conversations={conversations}
         selectedId={selectedId}
         filter={filter}
+        period={period}
         search={search}
         onFilterChange={(f) => {
           setFilter(f);
           setSelectedId(null);
         }}
+        onPeriodChange={setPeriod}
         onSearchChange={setSearch}
         onSelect={handleSelect}
         error={displayError}
@@ -211,18 +245,28 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
         threadRef={threadRef}
         error={displayError}
         onArchive={handleArchive}
+        onClaim={handleClaim}
+        claimBusy={claimBusy}
         onBack={() => setSelectedId(null)}
         className={showThreadMobile ? "" : "hidden-mobile"}
         onReply={setReplyTo}
         onReact={handleReact}
+        sidePanel={
+          selected ? (
+            <ConversationOpsPanel
+              conversation={selected}
+              onUpdated={(conv) => {
+                setConversations((prev) => prev.map((c) => (c.id === conv.id ? { ...c, ...conv } : c)));
+              }}
+            />
+          ) : null
+        }
         composeBar={
           <ComposeBar
             value={composerState}
             onChange={setComposerState}
             onSend={handleSend}
             sending={sending}
-            inboxMode
-            conversation={selected}
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
           />

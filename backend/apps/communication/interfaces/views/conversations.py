@@ -24,11 +24,14 @@ def _parse_filters(request) -> dict:
     status_param = request.query_params.get('status')
     if status_param:
         filters['status'] = status_param
+    inbox = (request.query_params.get('inbox') or '').strip().lower()
+    if inbox:
+        filters['inbox'] = inbox
     if request.query_params.get('unread') in ('1', 'true', 'yes'):
         filters['unread'] = True
-    if request.query_params.get('archived') in ('1', 'true', 'yes'):
+    if request.query_params.get('archived') in ('1', 'true', 'yes') or inbox == 'archived':
         filters['archived'] = True
-    elif status_param != ConversationStatus.ARCHIVED:
+    elif status_param != ConversationStatus.ARCHIVED and inbox != 'archived':
         filters['exclude_archived'] = True
     search = request.query_params.get('search', '').strip()
     if search:
@@ -42,6 +45,12 @@ def _parse_filters(request) -> dict:
     channel_config_id = request.query_params.get('channel_config_id') or request.query_params.get('account_id')
     if channel_config_id:
         filters['channel_config_id'] = channel_config_id
+    period = (request.query_params.get('period') or '').strip().lower()
+    if period:
+        filters['period'] = period
+    department = (request.query_params.get('department') or '').strip()
+    if department:
+        filters['department'] = department
     return filters
 
 
@@ -51,9 +60,11 @@ class ConversationListView(CommunicationAPIView):
         if err:
             return err
 
-        qs = ConversationRepository.list_by_kurum_and_sube(kurum_id, sube_id, **_parse_filters(request))
-        qs = filter_conversations_for_user(qs, request.user)
-        serializer = ConversationListSerializer(qs, many=True)
+        filters = _parse_filters(request)
+        inbox = filters.get('inbox')
+        qs = ConversationRepository.list_by_kurum_and_sube(kurum_id, sube_id, **filters)
+        qs = filter_conversations_for_user(qs, request.user, inbox=inbox)
+        serializer = ConversationListSerializer(qs, many=True, context={'request': request})
         return Response({
             'conversations': serializer.data,
             'total': qs.count(),

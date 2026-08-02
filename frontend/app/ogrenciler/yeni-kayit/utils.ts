@@ -125,6 +125,71 @@ export function hasWizardUserInput(data: WizardData): boolean {
   return false;
 }
 
+/** Düzeltülen alanların kırmızı hata durumunu kaldırır (ileri validasyon sonrası). */
+export function clearResolvedWizardErrors(
+  errors: Record<string, string>,
+  data: WizardData,
+): Record<string, string> {
+  const next = { ...errors };
+
+  const drop = (key: string, ok: boolean) => {
+    if (ok && next[key]) delete next[key];
+  };
+
+  drop("kayit_turu", data.student.kayit_turu != null);
+  drop(
+    "tc_kimlik_no",
+    Boolean(
+      data.student.tc_kimlik_no &&
+        data.student.tc_kimlik_no.length === 11 &&
+        validateTcKimlik(data.student.tc_kimlik_no),
+    ),
+  );
+  drop("ad", Boolean(data.student.ad.trim()));
+  drop("soyad", Boolean(data.student.soyad.trim()));
+  drop("dogum_tarihi", Boolean(data.student.dogum_tarihi));
+  drop("cinsiyet", data.student.cinsiyet != null && data.student.cinsiyet !== "");
+
+  drop("ogrenci_no", Boolean(data.enrollment.ogrenci_no.trim()));
+  drop("egitim_yili", data.enrollment.egitim_yili != null);
+  drop("sinif_seviyesi", data.enrollment.sinif_seviyesi != null);
+  drop("alan", data.enrollment.alan != null);
+  drop("giris_tarihi", Boolean(data.enrollment.giris_tarihi));
+  drop("giris_turu", data.enrollment.giris_turu != null);
+
+  drop("adres_turu", data.address.adres_turu != null);
+  drop("il", data.address.il != null);
+  drop(
+    "ilce",
+    data.address.ilce != null || Boolean(data.address.ilce_adi?.trim()),
+  );
+  drop("ilce_adi", Boolean(data.address.ilce_adi?.trim()));
+  drop("acik_adres", Boolean(data.address.acik_adres.trim()));
+
+  drop("veli_secimi", data.veliSecimi != null);
+  data.guardians.forEach((g, index) => {
+    drop(`guardian_${index}_yakinlik_turu`, g.yakinlik_turu != null);
+    drop(
+      `guardian_${index}_tc_kimlik_no`,
+      Boolean(g.tc_kimlik_no && g.tc_kimlik_no.length === 11),
+    );
+    drop(`guardian_${index}_ad`, Boolean(g.ad.trim()));
+    drop(`guardian_${index}_soyad`, Boolean(g.soyad.trim()));
+    drop(`guardian_${index}_telefon`, Boolean(g.telefon.trim()));
+    drop(`guardian_${index}_adres_il`, Boolean(g.adres?.il));
+    drop(`guardian_${index}_adres_acik_adres`, Boolean(g.adres?.acik_adres?.trim()));
+  });
+
+  const hasPaket =
+    (data.package.paketler || []).length > 0 ||
+    (data.package.ek_hizmet_ids || []).length > 0 ||
+    data.package.deneme_paketi_id != null ||
+    (data.package.yayin_paketi_ids || []).length > 0;
+  drop("paket", hasPaket);
+
+  return next;
+}
+
 // Get age from birth date
 export function calculateAge(birthDate: string): number | null {
   if (!birthDate) return null;

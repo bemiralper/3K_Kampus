@@ -250,6 +250,9 @@ export interface AssignmentTask {
   is_required: boolean;
   status: string;
   completed_at: string | null;
+  is_completion_task?: boolean;
+  previous_task_completion_percent?: number | null;
+  previous_assignment_title?: string;
 }
 
 export interface AssignmentLesson {
@@ -1357,19 +1360,65 @@ export interface ContentTaskHistoryItem {
   assignment_title: string;
   assignment_status: string;
   evaluated_at: string | null;
+  unit_id?: number | null;
+  book_id?: number | null;
 }
 
 export type ContentTaskHistory = Record<number, ContentTaskHistoryItem>;
 
+export interface ScopeCompletionProgress {
+  assigned: number;
+  percent: number;
+  total?: number;
+}
+
+export interface ContentTaskHistoryResponse {
+  /** content_id → geçmiş */
+  contents: ContentTaskHistory;
+  by_book: Record<number, ScopeCompletionProgress>;
+  by_unit: Record<number, ScopeCompletionProgress>;
+}
+
+function parseScopeMap(raw: unknown): Record<number, ScopeCompletionProgress> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<number, ScopeCompletionProgress> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const id = Number(k);
+    if (!Number.isFinite(id) || !v || typeof v !== "object") continue;
+    const row = v as { assigned?: unknown; percent?: unknown };
+    out[id] = {
+      assigned: Number(row.assigned) || 0,
+      percent: Number(row.percent) || 0,
+      total: row.total != null ? Number(row.total) || 0 : undefined,
+    };
+  }
+  return out;
+}
+
 /**
- * Öğrencinin content bazlı görev geçmişi
+ * Öğrencinin content bazlı görev geçmişi + kitap/ünite bitirme özetleri
  */
 export async function fetchContentTaskHistory(
   studentId: number
-): Promise<ApiResponse<ContentTaskHistory>> {
-  return apiGet<ContentTaskHistory>(
+): Promise<ApiResponse<ContentTaskHistoryResponse>> {
+  const res = await apiGet<ContentTaskHistory>(
     `/api/coaching/manual-assignments/assignments/content_task_history/?student_id=${studentId}`
   );
+  if (!res.success) {
+    return { ...res, data: { contents: {}, by_book: {}, by_unit: {} } };
+  }
+  const extra = res as ApiResponse<ContentTaskHistory> & {
+    by_book?: unknown;
+    by_unit?: unknown;
+  };
+  return {
+    ...res,
+    data: {
+      contents: (res.data || {}) as ContentTaskHistory,
+      by_book: parseScopeMap(extra.by_book),
+      by_unit: parseScopeMap(extra.by_unit),
+    },
+  };
 }
 
 export interface OgrenciBrief {
@@ -1563,6 +1612,62 @@ export async function renderAssignmentReportPdf(
     throw new Error(`PDF oluşturulamadı (${res.status})`);
   }
   return res.blob();
+}
+
+/** Sunucuda yeniden üretilen plan/rapor PDF'ini indir (gönderim sonrası da erişilebilir). */
+export async function downloadAssignmentServerPdf(
+  assignmentId: number,
+  notifyType: AssignmentNotifyType,
+  orientation: "portrait" | "landscape" = "portrait",
+): Promise<void> {
+  const path =
+    notifyType === "report"
+      ? `/api/coaching/manual-assignments/assignments/${assignmentId}/report-pdf/?orientation=${orientation}`
+      : `/api/coaching/manual-assignments/assignments/${assignmentId}/plan-pdf/?orientation=${orientation}`;
+  const url =
+    typeof window !== "undefined" && path.startsWith("/api/")
+      ? path
+      : `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}${path}`;
+
+  const contextHeaders: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    const kurumId = localStorage.getItem("3k_active_kurum");
+    if (kurumId) {
+      try {
+        const parsed = JSON.parse(kurumId);
+        contextHeaders["X-Kurum-ID"] = String(parsed?.id ?? parsed);
+      } catch {
+        contextHeaders["X-Kurum-ID"] = kurumId;
+      }
+    }
+  }
+
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    headers: contextHeaders,
+  });
+
+  if (!res.ok) {
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data = await res.json();
+      throw new Error(extractApiError(data, res, "PDF indirilemedi"));
+    }
+    throw new Error(`PDF indirilemedi (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") || "";
+  const match = /filename="?([^";]+)"?/i.exec(cd);
+  const filename =
+    match?.[1] ||
+    (notifyType === "report"
+      ? `odev-rapor-${assignmentId}.pdf`
+      : `odev-plani-${assignmentId}.pdf`);
+
+  const { downloadPdfBlob } = await import("@/lib/download-file");
+  await downloadPdfBlob(blob, filename);
 }
 
 export async function sendAssignmentNotify(

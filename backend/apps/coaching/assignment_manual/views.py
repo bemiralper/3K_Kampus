@@ -624,37 +624,23 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             lesson_block__assignment__status=ManualAssignment.Status.DRAFT
         ).select_related(
             'lesson_block__assignment',
-            'content'
+            'content',
+            'content__topic',
+            'content__topic__unit',
         ).order_by('lesson_block__assignment__created_at')  # Eskiden yeniye
-        
-        # content_id bazlı grupla — aynı content birden fazla ödevde varsa
-        # Sadece DEĞERLENDİRİLMİŞ görevleri dikkate al (PENDING olanlarda henüz değerlendirme yok)
-        # En son değerlendirilen durumu al
-        history = {}
-        for task in tasks:
-            cid = task.content_id
-            assignment = task.lesson_block.assignment
-            
-            # PENDING = henüz değerlendirilmemiş, bunu atla (eğer daha önce değerlendirilmiş varsa)
-            if task.completion_status == 'PENDING':
-                # Eğer bu content için daha önce bir kayıt yoksa yine de ekle (ama PENDING olarak)
-                if cid not in history:
-                    history[cid] = {
-                        'content_id': cid,
-                        'completion_status': task.completion_status,
-                        'task_completion_percent': task.task_completion_percent,
-                        'completed_question_count': task.completed_question_count or 0,
-                        'question_count': task.question_count or 0,
-                        'assignment_id': assignment.id,
-                        'assignment_title': assignment.title,
-                        'assignment_status': assignment.status,
-                        'evaluated_at': task.evaluated_at.isoformat() if task.evaluated_at else None,
-                    }
-                continue
-            
-            # Değerlendirilmiş görev — her zaman güncelle (eskiden yeniye sıralı olduğu için en son kalır)
-            history[cid] = {
-                'content_id': cid,
+
+        def _scope_ids(task):
+            content = task.content
+            if not content or not content.topic_id:
+                return None, None
+            topic = content.topic
+            unit_id = topic.unit_id
+            book_id = topic.unit.book_id if topic.unit_id else None
+            return unit_id, book_id
+
+        def _history_row(task, assignment, unit_id, book_id):
+            return {
+                'content_id': task.content_id,
                 'completion_status': task.completion_status,
                 'task_completion_percent': task.task_completion_percent,
                 'completed_question_count': task.completed_question_count or 0,
@@ -663,12 +649,101 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'assignment_title': assignment.title,
                 'assignment_status': assignment.status,
                 'evaluated_at': task.evaluated_at.isoformat() if task.evaluated_at else None,
+                'unit_id': unit_id,
+                'book_id': book_id,
             }
-        
+
+        # content_id bazlı grupla — aynı content birden fazla ödevde varsa
+        # Sadece DEĞERLENDİRİLMİŞ görevleri dikkate al (PENDING olanlarda henüz değerlendirme yok)
+        # En son değerlendirilen durumu al
+        history = {}
+        for task in tasks:
+            cid = task.content_id
+            assignment = task.lesson_block.assignment
+            unit_id, book_id = _scope_ids(task)
+
+            # PENDING = henüz değerlendirilmemiş, bunu atla (eğer daha önce değerlendirilmiş varsa)
+            if task.completion_status == 'PENDING':
+                # Eğer bu content için daha önce bir kayıt yoksa yine de ekle (ama PENDING olarak)
+                if cid not in history:
+                    history[cid] = _history_row(task, assignment, unit_id, book_id)
+                continue
+
+            # Değerlendirilmiş görev — her zaman güncelle (eskiden yeniye sıralı olduğu için en son kalır)
+            history[cid] = _history_row(task, assignment, unit_id, book_id)
+
+        def _effective_pct(row):
+            status = row.get('completion_status')
+            if status == 'DONE':
+                return 100
+            if status == 'NOT_DONE':
+                return 0
+            if status == 'PARTIAL':
+                try:
+                    return max(0, min(100, int(row.get('task_completion_percent') or 0)))
+                except (TypeError, ValueError):
+                    return 0
+            return 0  # PENDING — ödev verilmiş, henüz kontrol yok
+
+        by_book = {}
+        by_unit = {}
+        for row in history.values():
+            pct = _effective_pct(row)
+            for key, bucket in (('book_id', by_book), ('unit_id', by_unit)):
+                scope_id = row.get(key)
+                if not scope_id:
+                    continue
+                agg = bucket.setdefault(scope_id, {'sum': 0, 'assigned': 0})
+                agg['sum'] += pct
+                agg['assigned'] += 1
+
+        # Kitap yüzdesi: tüm kitabın aktif içerik sayısına göre
+        # (ödev verilmemiş içerikler %0 — payda = kitaptaki toplam içerik)
+        book_totals = {}
+        book_ids = [sid for sid in by_book.keys() if sid]
+        if book_ids:
+            from django.db.models import Count
+            from apps.resources.models import ResourceContent
+
+            for row in (
+                ResourceContent.objects.filter(
+                    aktif_mi=True,
+                    topic__unit__book_id__in=book_ids,
+                )
+                .values('topic__unit__book_id')
+                .annotate(total=Count('id'))
+            ):
+                book_totals[row['topic__unit__book_id']] = row['total'] or 0
+
+        by_book_out = {}
+        for sid, agg in by_book.items():
+            assigned = agg['assigned']
+            total = book_totals.get(sid) or 0
+            if total > 0:
+                percent = round(agg['sum'] / total)
+            else:
+                # İçerik sayısı bulunamazsa atanmış ortalamasına düş
+                percent = round(agg['sum'] / assigned) if assigned else 0
+            by_book_out[str(sid)] = {
+                'assigned': assigned,
+                'total': total,
+                'percent': max(0, min(100, percent)),
+            }
+
+        by_unit_out = {}
+        for sid, agg in by_unit.items():
+            assigned = agg['assigned']
+            by_unit_out[str(sid)] = {
+                'assigned': assigned,
+                'percent': round(agg['sum'] / assigned) if assigned else 0,
+            }
+
         return Response({
             'success': True,
             'data': history,
-            'count': len(history)
+            'by_book': by_book_out,
+            'by_unit': by_unit_out,
+            'count': len(history),
         })
 
     @action(detail=False, methods=['post'])
@@ -1258,6 +1333,33 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
 
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         filename = _resolve_assignment_pdf_filename(pk, kurum_id, 'report')
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+
+    @action(detail=True, methods=['get'], url_path='plan-pdf')
+    def plan_pdf(self, request, pk=None):
+        """Sunucu tarafı: ödev planı React print route → PDF (sonradan yeniden indirilebilir)."""
+        kurum_id = self._get_kurum_id()
+        if not kurum_id:
+            return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
+
+        orientation = (request.query_params.get('orientation') or 'portrait').strip().lower()
+        if orientation not in ('portrait', 'landscape'):
+            orientation = 'portrait'
+
+        try:
+            from .report_pdf_service import render_assignment_plan_pdf
+
+            pdf_bytes = render_assignment_plan_pdf(
+                int(pk),
+                kurum_id,
+                orientation=orientation,
+            )
+        except RuntimeError as exc:
+            return Response({'success': False, 'error': str(exc)}, status=400)
+
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        filename = _resolve_assignment_pdf_filename(pk, kurum_id, 'plan')
         response['Content-Disposition'] = f'inline; filename="{filename}"'
         return response
 

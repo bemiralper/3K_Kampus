@@ -9,6 +9,8 @@ from django.db import models
 from .enums import (
     CampaignStatus,
     Channel,
+    CommunicationDepartment,
+    ConversationEventType,
     ConversationStatus,
     LogDirection,
     MessageDirection,
@@ -67,6 +69,13 @@ class CommunicationChannelConfig(models.Model):
     )
     quota_json = models.JSONField(default=dict, blank=True, verbose_name='Kota')
     last_synced_at = models.DateTimeField(null=True, blank=True, verbose_name='Son Senkronizasyon')
+    department = models.CharField(
+        max_length=32,
+        choices=CommunicationDepartment.choices,
+        default=CommunicationDepartment.COACHING,
+        verbose_name='Departman',
+        db_index=True,
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -226,6 +235,22 @@ class Conversation(models.Model):
         related_name='assigned_conversations',
         verbose_name='Atanan Koç',
     )
+    claimed_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='claimed_conversations',
+        verbose_name='Üstlenen Kullanıcı',
+    )
+    department = models.CharField(
+        max_length=32,
+        choices=CommunicationDepartment.choices,
+        default=CommunicationDepartment.COACHING,
+        verbose_name='Departman',
+        db_index=True,
+    )
+    contact_name = models.CharField(max_length=255, blank=True, default='', verbose_name='Kişi Adı')
     status = models.CharField(
         max_length=20,
         choices=ConversationStatus.choices,
@@ -236,6 +261,18 @@ class Conversation(models.Model):
     last_message_at = models.DateTimeField(null=True, blank=True, verbose_name='Son Mesaj')
     last_message_preview = models.CharField(max_length=255, blank=True, default='')
     unread_count_coach = models.PositiveIntegerField(default=0, verbose_name='Koç Okunmamış')
+    first_unanswered_at = models.DateTimeField(null=True, blank=True, verbose_name='İlk Cevapsız')
+    last_customer_message_at = models.DateTimeField(null=True, blank=True, verbose_name='Son Müşteri Mesajı')
+    last_reply_at = models.DateTimeField(null=True, blank=True, verbose_name='Son Kurum Cevabı')
+    needs_support_at = models.DateTimeField(null=True, blank=True, verbose_name='Destek Gerekiyor Zamanı')
+    archived_at = models.DateTimeField(null=True, blank=True, verbose_name='Arşiv Zamanı')
+    claim_version = models.PositiveIntegerField(default=0, verbose_name='Claim Versiyonu')
+    tags = models.ManyToManyField(
+        'ConversationTag',
+        blank=True,
+        related_name='conversations',
+        verbose_name='Etiketler',
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -249,10 +286,161 @@ class Conversation(models.Model):
             models.Index(fields=['kurum', 'status']),
             models.Index(fields=['kurum', 'assigned_coach']),
             models.Index(fields=['kurum', 'sube'], name='comm_conv_kurum_sube_idx'),
+            models.Index(fields=['kurum', 'department', 'status'], name='comm_conv_dept_status_idx'),
+            models.Index(fields=['kurum', 'claimed_by_user'], name='comm_conv_claimed_idx'),
+            models.Index(fields=['kurum', 'first_unanswered_at'], name='comm_conv_sla_idx'),
         ]
 
     def __str__(self):
         return f'{self.contact_phone} — {self.get_status_display()}'
+
+
+class ConversationTag(models.Model):
+    """Sohbet etiketleri (kurum bazlı)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='conversation_tags',
+    )
+    slug = models.SlugField(max_length=64)
+    name = models.CharField(max_length=80)
+    color = models.CharField(max_length=16, blank=True, default='#64748b')
+    is_system = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'comm_conversation_tag'
+        verbose_name = 'Sohbet Etiketi'
+        verbose_name_plural = 'Sohbet Etiketleri'
+        constraints = [
+            models.UniqueConstraint(fields=['kurum', 'slug'], name='unique_conv_tag_slug_per_kurum'),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class ConversationNote(models.Model):
+    """Müşterinin görmediği kurum içi not."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name='internal_notes',
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='conversation_notes',
+    )
+    body = models.TextField()
+    edit_history = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_conversation_note'
+        verbose_name = 'İç Not'
+        verbose_name_plural = 'İç Notlar'
+        ordering = ['-created_at']
+
+
+class ConversationTransferLog(models.Model):
+    """Sohbet devretme geçmişi."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name='transfer_logs',
+    )
+    from_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='conversation_transfers_from',
+    )
+    to_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='conversation_transfers_to',
+    )
+    reason = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'comm_conversation_transfer'
+        verbose_name = 'Sohbet Devir'
+        verbose_name_plural = 'Sohbet Devirleri'
+        ordering = ['-created_at']
+
+
+class ConversationEvent(models.Model):
+    """Sohbet audit / hareket logu."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name='events',
+    )
+    event_type = models.CharField(max_length=32, choices=ConversationEventType.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='conversation_events',
+    )
+    meta = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'comm_conversation_event'
+        verbose_name = 'Sohbet Olayı'
+        verbose_name_plural = 'Sohbet Olayları'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['conversation', 'created_at'], name='comm_evt_conv_created_idx'),
+            models.Index(fields=['event_type', 'created_at'], name='comm_evt_type_created_idx'),
+        ]
+
+
+class ConversationRoutingRule(models.Model):
+    """Departman bazlı yönlendirme kuralı (konfigüre edilebilir)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='conversation_routing_rules',
+    )
+    department = models.CharField(
+        max_length=32,
+        choices=CommunicationDepartment.choices,
+        default=CommunicationDepartment.COACHING,
+    )
+    name = models.CharField(max_length=120)
+    is_active = models.BooleanField(default=True)
+    priority = models.PositiveSmallIntegerField(default=100)
+    # Örn: {"contact_types": ["RAW_PHONE"], "has_coach": false, "queue": "new"}
+    conditions = models.JSONField(default=dict, blank=True)
+    # Örn: {"queue_behavior": "unclaimed", "notify_roles": ["koc"]}
+    actions = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_conversation_routing_rule'
+        verbose_name = 'Yönlendirme Kuralı'
+        verbose_name_plural = 'Yönlendirme Kuralları'
+        ordering = ['priority', 'name']
 
 
 class MessageTemplateCategory(models.Model):

@@ -1,7 +1,7 @@
 import KampanyalarClient from "./KampanyalarClient";
 
 export const metadata = {
-  title: "Kampanyalar — 3K Kampüs",
+  title: "Gönderim Geçmişi — 3K Kampüs",
 };
 
 export default function KampanyalarPage() {

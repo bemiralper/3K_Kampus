@@ -107,6 +107,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 }
 
+export interface ConversationSlaInfo {
+  first_unanswered_at?: string | null;
+  last_customer_message_at?: string | null;
+  last_reply_at?: string | null;
+  waiting_seconds?: number | null;
+  breached?: boolean;
+}
+
+export interface ConversationTagItem {
+  id: string;
+  slug: string;
+  name: string;
+  color: string;
+}
+
 export interface ConversationListItem {
   id: string;
   channel: string;
@@ -117,13 +132,28 @@ export interface ConversationListItem {
   ogrenci_ad?: string;
   kurum_ad?: string;
   sube?: string;
+  profil_foto?: string | null;
   status: string;
   subject: string;
+  department?: string;
   last_message_at: string | null;
   last_message_preview: string;
   unread_count_coach: number;
   ogrenci_id?: number | null;
   veli_id?: number | null;
+  assigned_coach_id?: number | null;
+  assigned_coach_name?: string;
+  claimed_by_user_id?: number | null;
+  claimed_by_name?: string;
+  claim_version?: number;
+  first_unanswered_at?: string | null;
+  last_customer_message_at?: string | null;
+  last_reply_at?: string | null;
+  needs_support_at?: string | null;
+  archived_at?: string | null;
+  tags?: ConversationTagItem[];
+  sla?: ConversationSlaInfo;
+  can_claim?: boolean;
   created_at: string;
 }
 
@@ -212,26 +242,249 @@ export interface WhatsAppConfig {
   webhook_callback_path?: string;
 }
 
-export type ConversationFilter = 'all' | 'unread' | 'archived';
+export type ConversationFilter = 'all' | 'unread' | 'archived' | 'mine' | 'new' | 'needs_support' | 'unassigned';
+export type ConversationPeriod = '7d' | '30d' | 'year' | 'all';
 
 export async function fetchConversations(params?: {
   filter?: ConversationFilter;
+  inbox?: ConversationFilter;
+  period?: ConversationPeriod;
   search?: string;
   ogrenci_id?: number;
   channel_config_id?: string;
   account_id?: string;
+  department?: string;
 }): Promise<ConversationsResponse> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const search = new URLSearchParams();
   if (kurumId) search.set('kurum_id', kurumId);
-  if (params?.filter === 'unread') search.set('unread', '1');
-  if (params?.filter === 'archived') search.set('archived', '1');
+  const inbox = params?.inbox || params?.filter;
+  if (inbox === 'unread') search.set('unread', '1');
+  else if (inbox === 'archived') {
+    search.set('archived', '1');
+    search.set('inbox', 'archived');
+  } else if (inbox && inbox !== 'all') {
+    search.set('inbox', inbox);
+  }
+  if (params?.period) search.set('period', params.period);
   if (params?.search) search.set('search', params.search);
   if (params?.ogrenci_id) search.set('ogrenci_id', String(params.ogrenci_id));
+  if (params?.department) search.set('department', params.department);
   const accountId = params?.channel_config_id || params?.account_id;
   if (accountId) search.set('channel_config_id', accountId);
   const qs = search.toString();
   return request<ConversationsResponse>(`/conversations/${qs ? `?${qs}` : ''}`);
+}
+
+export async function claimConversation(
+  conversationId: string,
+  claimVersion?: number,
+): Promise<ConversationListItem> {
+  const body: Record<string, unknown> = {};
+  if (claimVersion != null) body.claim_version = claimVersion;
+  return request<ConversationListItem>(`/conversations/${conversationId}/claim/`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function transferConversation(
+  conversationId: string,
+  toUserId: number,
+  reason?: string,
+): Promise<ConversationListItem> {
+  return request<ConversationListItem>(`/conversations/${conversationId}/transfer/`, {
+    method: 'POST',
+    body: JSON.stringify({ to_user_id: toUserId, reason: reason || '' }),
+  });
+}
+
+export interface TransferCandidate {
+  user_id: number;
+  personel_id: number;
+  name: string;
+  email?: string;
+  sube_ad?: string;
+}
+
+export async function fetchTransferCandidates(
+  query: string,
+): Promise<{ candidates: TransferCandidate[]; total: number }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const params = new URLSearchParams();
+  if (kurumId) params.set('kurum_id', kurumId);
+  if (query.trim()) params.set('q', query.trim());
+  const qs = params.toString() ? `?${params}` : '';
+  return request(`/transfer-candidates/${qs}`);
+}
+
+export async function fetchConversationNotes(conversationId: string): Promise<{
+  notes: Array<{
+    id: string;
+    body: string;
+    author_id?: number | null;
+    author_name?: string;
+    edit_history?: unknown[];
+    created_at?: string | null;
+    updated_at?: string | null;
+  }>;
+}> {
+  return request(`/conversations/${conversationId}/notes/`);
+}
+
+export async function createConversationNote(
+  conversationId: string,
+  body: string,
+): Promise<{ id: string; body: string }> {
+  return request(`/conversations/${conversationId}/notes/`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+}
+
+export async function fetchTagCatalog(): Promise<{ tags: ConversationTagItem[] }> {
+  return request('/tags/');
+}
+
+export async function setConversationTags(
+  conversationId: string,
+  slugs: string[],
+): Promise<ConversationListItem> {
+  return request<ConversationListItem>(`/conversations/${conversationId}/tags/`, {
+    method: 'POST',
+    body: JSON.stringify({ slugs }),
+  });
+}
+
+export interface CommunicationDashboardData {
+  active_conversations: number;
+  waiting_conversations: number;
+  sla_breaches: number;
+  by_coach_active: Array<{ assigned_coach_id: number; count: number }>;
+  by_coach_reply_time: Array<{
+    assigned_coach_id: number;
+    avg_reply_seconds: number | null;
+    sample_count: number;
+  }>;
+  daily_inbound: number;
+  daily_outbound: number;
+  busy_hours: Array<{ hour: number; count: number }>;
+  unanswered_messages: number;
+  generated_at: string;
+}
+
+export async function fetchCommunicationDashboard(): Promise<CommunicationDashboardData> {
+  return request<CommunicationDashboardData>('/dashboard/');
+}
+
+export type CommunicationDepartment =
+  | 'COACHING'
+  | 'ACCOUNTING'
+  | 'SECRETARIAT'
+  | 'GUIDANCE'
+  | 'ADMISSIONS'
+  | 'MANAGEMENT';
+
+export type RoutingContactType = 'RAW_PHONE' | 'OGRENCI' | 'VELI' | 'PERSONEL';
+export type RoutingQueueLabel = 'new' | 'mine' | 'needs_support';
+export type RoutingQueueBehavior = 'unclaimed' | 'assign_coach' | 'needs_support';
+export type RoutingSetStatus = 'NEW' | 'WAITING' | 'NEEDS_SUPPORT';
+
+export interface RoutingRuleConditions {
+  has_coach?: boolean | null;
+  contact_types?: RoutingContactType[];
+  queue?: RoutingQueueLabel | '';
+}
+
+export interface RoutingRuleActions {
+  set_department?: CommunicationDepartment | string;
+  queue_behavior?: RoutingQueueBehavior | '';
+  set_status?: RoutingSetStatus | '';
+  notify_roles?: string[];
+}
+
+export interface RoutingRule {
+  id: string;
+  name: string;
+  department: CommunicationDepartment | string;
+  is_active: boolean;
+  priority: number;
+  conditions: RoutingRuleConditions;
+  actions: RoutingRuleActions;
+}
+
+export interface RoutingRuleWritePayload {
+  name: string;
+  department: CommunicationDepartment | string;
+  priority?: number;
+  is_active?: boolean;
+  conditions?: RoutingRuleConditions;
+  actions?: RoutingRuleActions;
+}
+
+export async function fetchRoutingRules(): Promise<{ rules: RoutingRule[] }> {
+  return request('/routing-rules/');
+}
+
+export async function createRoutingRule(
+  payload: RoutingRuleWritePayload,
+): Promise<RoutingRule> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/routing-rules/', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, kurum_id: kurumId }),
+  });
+}
+
+export async function updateRoutingRule(
+  id: string,
+  payload: Partial<RoutingRuleWritePayload>,
+): Promise<RoutingRule> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request(`/routing-rules/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ...payload, kurum_id: kurumId }),
+  });
+}
+
+export async function deleteRoutingRule(id: string): Promise<void> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  await request(`/routing-rules/${id}/${qs}`, { method: 'DELETE' });
+}
+
+export const DEPARTMENT_LABELS: Record<string, string> = {
+  COACHING: 'Koçluk',
+  ACCOUNTING: 'Muhasebe',
+  SECRETARIAT: 'Sekreterya',
+  GUIDANCE: 'Rehberlik',
+  ADMISSIONS: 'Kayıt Ofisi',
+  MANAGEMENT: 'Yönetim',
+};
+
+export const ROUTING_CONTACT_TYPE_LABELS: Record<RoutingContactType, string> = {
+  RAW_PHONE: 'Bilinmeyen numara',
+  OGRENCI: 'Öğrenci',
+  VELI: 'Veli',
+  PERSONEL: 'Personel',
+};
+
+export const ROUTING_QUEUE_BEHAVIOR_LABELS: Record<RoutingQueueBehavior, string> = {
+  unclaimed: 'Yeni Gelenler (üstlenilmemiş)',
+  assign_coach: 'Koça ata / Bekliyor',
+  needs_support: 'Destek Gerekiyor',
+};
+
+export interface NotificationSummary {
+  unread_count: number;
+  unread_conversations: number;
+  cards?: ConversationListItem[];
+}
+
+export async function fetchNotificationSummary(): Promise<NotificationSummary> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request<NotificationSummary>(`/notifications/summary/${qs}`);
 }
 
 export async function fetchConversationMessages(
@@ -344,6 +597,7 @@ export interface WhatsAppAccount {
   is_active: boolean;
   is_default: boolean;
   scope_type: WhatsAppAccountScope;
+  department?: CommunicationDepartment | string;
   quota_json?: Record<string, unknown>;
   last_synced_at?: string | null;
   role_ids: number[];
@@ -368,6 +622,7 @@ export interface WhatsAppAccountWritePayload {
   is_active?: boolean;
   is_default?: boolean;
   scope_type?: WhatsAppAccountScope;
+  department?: CommunicationDepartment | string;
   quota_json?: Record<string, unknown>;
   role_ids?: number[];
   sube_ids?: number[];
@@ -549,12 +804,6 @@ export async function openConversationByPhone(
 export function conversationInboxPath(conversationId: string, admin = false): string {
   const base = admin ? '/admin/iletisim/mesajlar' : '/coach/mesajlar';
   return `${base}?conversation=${conversationId}`;
-}
-
-export async function fetchNotificationSummary(): Promise<{ unread_count: number; unread_conversations: number }> {
-  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
-  return request(`/notifications/summary${qs}`);
 }
 
 export async function sendPaymentReminder(
@@ -833,7 +1082,7 @@ export const AUDIENCE_TYPE_LABELS: Record<string, string> = {
   sube: 'Şube',
   coach_students: 'Koç öğrencileri',
   coach_parents: 'Koç velileri',
-  custom_ids: 'Özel seçim',
+  custom_ids: 'Arama ile seçim',
   filtered: 'Filtre',
   advanced: 'Gelişmiş filtre',
 };

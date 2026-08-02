@@ -16,6 +16,7 @@ import {
   updateLateNote,
   markAllNotDone,
   deleteAssignment,
+  downloadAssignmentServerPdf,
 } from "@/lib/resources-api";
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
@@ -186,13 +187,14 @@ export default function OdevKontrolDetailClient() {
   const [deletionReason, setDeletionReason] = useState("");
 
   const [showSendModal, setShowSendModal] = useState<"plan" | "report" | null>(null);
+  const [pdfDownloadBusy, setPdfDownloadBusy] = useState<"plan" | "report" | null>(null);
 
   // Kontrol tamamlandı ama tekrar düzenleme modu
   const [isReEditing, setIsReEditing] = useState(false);
 
   const initialLoadDone = useRef(false);
 
-  const fetchAssignment = useCallback(async () => {
+  const fetchAssignment = useCallback(async (): Promise<AssignmentDetail | null> => {
     // Sadece ilk yüklemede loading göster, sonraki refresh'lerde scroll bozulmasın
     if (!initialLoadDone.current) setLoading(true);
     try {
@@ -205,6 +207,9 @@ export default function OdevKontrolDetailClient() {
           const ids = new Set<number>((data.lessons || []).map((l: AssignmentLesson) => l.id as number));
           setExpandedLessons(ids);
         }
+        setLoading(false);
+        initialLoadDone.current = true;
+        return data;
       }
     } catch (e) {
       console.error("Yüklenemedi:", e);
@@ -212,6 +217,7 @@ export default function OdevKontrolDetailClient() {
     }
     setLoading(false);
     initialLoadDone.current = true;
+    return null;
   }, [assignmentId]);
 
   useEffect(() => { fetchAssignment(); }, [fetchAssignment]);
@@ -256,6 +262,7 @@ export default function OdevKontrolDetailClient() {
   // ─── Actions ───
   const handleUpdateTaskStatus = async (taskId: number, completionStatus: string, pct?: number) => {
     setSaving(taskId);
+    const wasCompleted = assignment?.status === "COMPLETED";
     try {
       const body: {
         completion_status: string;
@@ -267,8 +274,11 @@ export default function OdevKontrolDetailClient() {
       const result = await updateTaskCompletionStatus(taskId, body);
       if (result.success) {
         flash(completionStatus === "DONE" ? "✅ Yaptı olarak işaretlendi" : completionStatus === "NOT_DONE" ? "❌ Yapmadı olarak işaretlendi" : `⚠️ Eksik: %${pct}`);
-        await fetchAssignment();
+        const updated = await fetchAssignment();
         setPartialTaskId(null);
+        if (!wasCompleted && updated?.status === "COMPLETED") {
+          setShowSendModal("report");
+        }
       } else {
         flash("❌ " + (result.error || "İşlem başarısız"));
       }
@@ -359,6 +369,7 @@ export default function OdevKontrolDetailClient() {
 
   const handleMarkAllNotDone = async () => {
     if (!assignment) return;
+    const wasCompleted = assignment.status === "COMPLETED";
     try {
       const result = await markAllNotDone(assignment.id, {
         reason: notDoneReason,
@@ -366,10 +377,13 @@ export default function OdevKontrolDetailClient() {
       });
       if (result.success) {
         flash("✅ " + (result.message || "Tüm görevler yapmadı olarak işaretlendi"));
-        await fetchAssignment();
+        const updated = await fetchAssignment();
         setShowNotDoneModal(false);
         setNotDoneReason("NOT_BROUGHT");
         setNotDoneNote("");
+        if (!wasCompleted && updated?.status === "COMPLETED") {
+          setShowSendModal("report");
+        }
       } else {
         flash("❌ " + (result.error || "İşlem başarısız"));
       }
@@ -1112,7 +1126,49 @@ export default function OdevKontrolDetailClient() {
                 <Link href={paths.report(assignmentId)} className="ok-btn-primary ok-summary-report-btn">
                   Detaylı Sonuç Raporu
                 </Link>
-                <p className="ok-summary-report-hint">Yazdır, PDF indir veya paylaş</p>
+                <p className="ok-summary-report-hint">Yazdır, PDF indir veya WhatsApp ile paylaş</p>
+                {assignment.status !== "DRAFT" && (
+                  <button
+                    type="button"
+                    className="ok-btn-secondary"
+                    style={{ marginTop: 8, width: "100%" }}
+                    disabled={pdfDownloadBusy === "plan"}
+                    onClick={async () => {
+                      setPdfDownloadBusy("plan");
+                      try {
+                        await downloadAssignmentServerPdf(assignment.id, "plan");
+                        flash("Plan PDF indirildi");
+                      } catch (e) {
+                        flash(e instanceof Error ? e.message : "PDF indirilemedi");
+                      } finally {
+                        setPdfDownloadBusy(null);
+                      }
+                    }}
+                  >
+                    {pdfDownloadBusy === "plan" ? "Plan PDF hazırlanıyor…" : "Plan PDF İndir"}
+                  </button>
+                )}
+                {assignment.status === "COMPLETED" && (
+                  <button
+                    type="button"
+                    className="ok-btn-secondary"
+                    style={{ marginTop: 8, width: "100%" }}
+                    disabled={pdfDownloadBusy === "report"}
+                    onClick={async () => {
+                      setPdfDownloadBusy("report");
+                      try {
+                        await downloadAssignmentServerPdf(assignment.id, "report");
+                        flash("Kontrol PDF indirildi");
+                      } catch (e) {
+                        flash(e instanceof Error ? e.message : "PDF indirilemedi");
+                      } finally {
+                        setPdfDownloadBusy(null);
+                      }
+                    }}
+                  >
+                    {pdfDownloadBusy === "report" ? "Kontrol PDF hazırlanıyor…" : "Kontrol PDF İndir"}
+                  </button>
+                )}
                 {assignment.status === "COMPLETED" && (
                   <button
                     type="button"
@@ -1120,17 +1176,17 @@ export default function OdevKontrolDetailClient() {
                     style={{ marginTop: 8, width: "100%", background: "#ecfdf5", borderColor: "#6ee7b7", color: "#047857" }}
                     onClick={() => setShowSendModal("report")}
                   >
-                    WhatsApp — Rapor Gönder
+                    WhatsApp — Kontrol PDF Gönder
                   </button>
                 )}
-                {assignment.status !== "DRAFT" && assignment.status !== "COMPLETED" && (
+                {assignment.status !== "DRAFT" && (
                   <button
                     type="button"
                     className="ok-btn-secondary"
                     style={{ marginTop: 8, width: "100%", background: "#eff6ff", borderColor: "#93c5fd", color: "#1d4ed8" }}
                     onClick={() => setShowSendModal("plan")}
                   >
-                    WhatsApp — Plan Gönder
+                    WhatsApp — Plan PDF Gönder
                   </button>
                 )}
               </div>
@@ -1261,7 +1317,8 @@ const OdevKontrolPrintPreview: React.FC<{ assignment: AssignmentDetail; onClose:
 
   const summary = assignment.report_summary;
   const overallPct = summary?.overall_completion_percent ?? 0;
-  const logoUrl = "/img/3k-logo.png";
+  const headerLogoUrl = "/img/beyaz-logo.png";
+  const footerLogoUrl = "/img/3k-logo.png";
   const currentYear = new Date().getFullYear();
   const todayStr = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
 
@@ -1278,7 +1335,7 @@ const OdevKontrolPrintPreview: React.FC<{ assignment: AssignmentDetail; onClose:
   const { print: printVector } = useVectorPrint({
     title: `Ödev Kontrol - ${assignment.student_name}`,
     orientation,
-    marginMm: "8mm 10mm",
+    marginMm: "6mm 6mm",
     externalRef: printRef as React.RefObject<HTMLDivElement>,
   });
 
@@ -1413,10 +1470,10 @@ const OdevKontrolPrintPreview: React.FC<{ assignment: AssignmentDetail; onClose:
 
         {/* ═══════════ A4 CONTENT ═══════════ */}
         <div ref={printRef} id="odev-print-area" style={{
-          padding: orientation === "landscape" ? "18px 24px" : "22px 28px",
+          padding: orientation === "landscape" ? "12px 14px" : "14px 10px",
           fontFamily: "'Poppins', sans-serif",
           color: "#172b4c", lineHeight: 1.4,
-          maxWidth: orientation === "landscape" ? 1100 : 780,
+          maxWidth: orientation === "landscape" ? 1100 : 860,
           margin: "0 auto",
         }}>
 
@@ -1424,53 +1481,48 @@ const OdevKontrolPrintPreview: React.FC<{ assignment: AssignmentDetail; onClose:
           <div style={{
             position: "relative", overflow: "hidden",
             background: "linear-gradient(135deg, #003d6b 0%, #0061a6 40%, #0085e0 100%)",
-            borderRadius: 12, padding: "16px 20px", marginBottom: 12, color: "#fff",
+            borderRadius: 10, padding: "12px 16px", marginBottom: 10, color: "#fff",
           }}>
-            {/* Decorative */}
-            <div style={{ position: "absolute", top: -30, right: -30, width: 100, height: 100, borderRadius: "50%", background: "rgba(255,255,255,0.08)" }} />
-            <div style={{ position: "absolute", bottom: -20, right: 60, width: 65, height: 65, borderRadius: "50%", background: "rgba(255,255,255,0.05)" }} />
+            <div style={{ position: "absolute", top: -24, right: -24, width: 80, height: 80, borderRadius: "50%", background: "rgba(255,255,255,0.08)" }} />
 
-            {/* Row 1: Logo + Title + Doc info */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{
-                  width: 38, height: 38, borderRadius: 8,
-                  background: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-                }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={logoUrl} alt="3K" crossOrigin="anonymous" style={{ width: 28, height: 28, objectFit: "contain" }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 1 }}>3K KAMPÜS</div>
-                  <div style={{ fontSize: 8, opacity: 0.75 }}>Koçluk &amp; Danışmanlık Merkezi</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={headerLogoUrl}
+                  alt="3K"
+                  crossOrigin="anonymous"
+                  style={{ width: 36, height: 36, objectFit: "contain", flexShrink: 0 }}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 0.6, lineHeight: 1.2 }}>3K KAMPÜS</div>
+                  <div style={{
+                    marginTop: 3, display: "inline-block", padding: "1px 8px", borderRadius: 10,
+                    background: "rgba(255,255,255,0.16)", fontSize: 8, fontWeight: 600,
+                    letterSpacing: 1.2, textTransform: "uppercase",
+                  }}>
+                    Ödev Sonuç Raporu
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: "center" }}>
+              <div style={{ textAlign: "right", flex: 1, minWidth: 0 }}>
                 <div style={{
-                  display: "inline-block", padding: "2px 14px", borderRadius: 16,
-                  background: "rgba(255,255,255,0.15)", fontSize: 8, fontWeight: 600,
-                  letterSpacing: 2, textTransform: "uppercase", marginBottom: 3,
+                  fontSize: 15, fontWeight: 700, lineHeight: 1.25,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                 }}>
-                  ÖDEV KONTROL RAPORU
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>
                   {assignment.title || "İsimsiz Ödev"}
                 </div>
-              </div>
-              <div style={{ textAlign: "right", fontSize: 8, opacity: 0.7, lineHeight: 1.7 }}>
-                <div>ÖKR-{new Date().getTime().toString(36).toUpperCase().slice(-6)}</div>
-                <div>{todayStr}</div>
+                <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>
+                  ÖKR-{assignment.id} · {todayStr}
+                </div>
               </div>
             </div>
 
-            {/* Row 2: Student bar */}
             <div style={{
               display: "flex", alignItems: "center", gap: 12,
               background: "rgba(255,255,255,0.12)", borderRadius: 8,
-              padding: "8px 12px",
+              padding: "7px 12px",
             }}>
-              {/* Öğrenci Fotoğrafı */}
               {assignment.student_info?.profil_foto ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -1478,56 +1530,56 @@ const OdevKontrolPrintPreview: React.FC<{ assignment: AssignmentDetail; onClose:
                   alt={assignment.student_name}
                   crossOrigin="anonymous"
                   style={{
-                    width: 40, height: 40, borderRadius: "50%", objectFit: "cover",
-                    border: "2px solid rgba(255,255,255,0.5)", flexShrink: 0,
+                    width: 34, height: 34, borderRadius: "50%", objectFit: "cover",
+                    border: "1.5px solid rgba(255,255,255,0.5)", flexShrink: 0,
                   }}
                 />
               ) : (
                 <div style={{
-                  width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+                  width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
                   background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 14, fontWeight: 700,
+                  fontSize: 12, fontWeight: 700,
                 }}>
                   {assignment.student_name.split(" ").map(w => w.charAt(0)).join("").substring(0, 2)}
                 </div>
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>🎓 {assignment.student_name}</div>
-                <div style={{ fontSize: 8, opacity: 0.75 }}>
-                  Öğrenci · {assignment.priority_display} Öncelik · {assignment.status_display}
+                <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {assignment.student_name}
+                </div>
+                <div style={{ fontSize: 9, opacity: 0.75 }}>
+                  Öğrenci · {assignment.status_display} · {assignment.priority_display} öncelik
                 </div>
               </div>
-
-              {/* Stats */}
-              <div style={{ display: "flex", gap: 12, fontSize: 9 }}>
+              <div style={{ display: "flex", gap: 12, fontSize: 10, opacity: 0.95, flexShrink: 0 }}>
                 {assignment.coach_name && (
                   <>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 7, opacity: 0.6, marginBottom: 1 }}>Maestro Koç</div>
-                      <div style={{ fontWeight: 600, fontSize: 10 }}>👨‍🏫 {assignment.coach_name}</div>
+                    <div style={{ textAlign: "center", maxWidth: 90 }}>
+                      <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Koç</div>
+                      <div style={{ fontWeight: 600, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{assignment.coach_name}</div>
                     </div>
-                    <div style={{ width: 1, background: "rgba(255,255,255,0.25)" }} />
+                    <div style={{ width: 1, background: "rgba(255,255,255,0.3)" }} />
                   </>
                 )}
                 {summary && (
                   <>
                     <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 7, opacity: 0.6, marginBottom: 1 }}>Görev</div>
-                      <div style={{ fontWeight: 700, fontSize: 12 }}>📋 {summary.total_tasks}</div>
+                      <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Görev</div>
+                      <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{summary.total_tasks}</div>
                     </div>
-                    <div style={{ width: 1, background: "rgba(255,255,255,0.25)" }} />
                     {summary.total_questions > 0 && (
                       <>
+                        <div style={{ width: 1, background: "rgba(255,255,255,0.3)" }} />
                         <div style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 7, opacity: 0.6, marginBottom: 1 }}>Soru</div>
-                          <div style={{ fontWeight: 700, fontSize: 12, color: "#fbbf24" }}>✏️ {summary.total_questions}</div>
+                          <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Soru</div>
+                          <div style={{ fontWeight: 700, color: "#fbbf24", lineHeight: 1.2 }}>{summary.total_questions}</div>
                         </div>
-                        <div style={{ width: 1, background: "rgba(255,255,255,0.25)" }} />
                       </>
                     )}
+                    <div style={{ width: 1, background: "rgba(255,255,255,0.3)" }} />
                     <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 7, opacity: 0.6, marginBottom: 1 }}>Tamamlanma</div>
-                      <div style={{ fontWeight: 700, fontSize: 12, color: "#34d399" }}>✅ %{overallPct}</div>
+                      <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Başarı</div>
+                      <div style={{ fontWeight: 700, color: "#34d399", lineHeight: 1.2 }}>%{overallPct}</div>
                     </div>
                   </>
                 )}
@@ -1866,7 +1918,7 @@ const OdevKontrolPrintPreview: React.FC<{ assignment: AssignmentDetail; onClose:
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logoUrl} alt="3K" crossOrigin="anonymous" style={{ width: 10, height: 10, objectFit: "contain", opacity: 0.5 }} />
+              <img src={footerLogoUrl} alt="3K" crossOrigin="anonymous" style={{ width: 10, height: 10, objectFit: "contain", opacity: 0.5 }} />
               <span style={{ fontWeight: 600 }}>3K Kampüs Koçluk &amp; Danışmanlık Merkezi</span>
             </div>
             <span>© {currentYear} Tüm hakları saklıdır.</span>

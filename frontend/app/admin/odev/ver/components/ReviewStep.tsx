@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import type { Student, SelectedContent, CartLessonGroup, ContentTaskHistory } from '../types';
+import { isAutoCompletionNote } from '@/components/odev/odevCompletionHelpers';
 import '../odev-ver.css';
 
 interface ReviewStepProps {
@@ -403,7 +404,7 @@ export default function ReviewStep({
                                       )}
                                     </div>
                                   )}
-                                  {note && (
+                                  {note && !(isCompletion && isAutoCompletionNote(note)) && (
                                     <div style={{ fontSize: 11, color: 'var(--primary)', fontStyle: 'italic', marginTop: 2 }}>
                                       📌 {note}
                                     </div>
@@ -545,7 +546,7 @@ export default function ReviewStep({
                   }}>
                     <span style={{ fontSize: 14 }}>🔄</span>
                     <span style={{ fontSize: 11, fontWeight: 600, color: '#2563eb' }}>
-                      {completionCount} içerik eksik tamamlama
+                      {completionCount} görev eksik tamamlama
                     </span>
                   </div>
                 ) : null;
@@ -599,10 +600,12 @@ export default function ReviewStep({
           {/* Action Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <button
+              type="button"
               onClick={() => onSave('PUBLISHED')}
               disabled={saving}
               className="btn-modern btn-primary"
               style={{ width: '100%', justifyContent: 'center', padding: '14px 20px' }}
+              title="Ödevi kaydeder, ardından veli ve öğrenciye WhatsApp PDF gönderim ekranını açar"
             >
               {saving ? (
                 <><div className="spinner-small" /> Kaydediliyor...</>
@@ -612,7 +615,7 @@ export default function ReviewStep({
                     <line x1="22" y1="2" x2="11" y2="13" />
                     <polygon points="22 2 15 22 11 13 2 9 22 2" />
                   </svg>
-                  Gönder
+                  Gönder (WhatsApp PDF)
                 </>
               )}
             </button>

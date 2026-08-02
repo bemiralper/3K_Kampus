@@ -16,6 +16,7 @@ import {
 import AppDatePicker from "@/components/ui/AppDatePicker";
 import { downloadPersonelExportCsv, downloadPersonelExportXlsx } from "@/lib/personel-api";
 import { downloadBlob } from "@/lib/download-file";
+import { titleCase } from "@/app/ogrenciler/yeni-kayit/utils";
 
 // Tip tanımları
 type PersonelData = {
@@ -1165,7 +1166,7 @@ export default function PersonelListesiPage() {
                     type="text"
                     className={kimlikFieldClass("field-input", "ad", kimlik.highlightedFields)}
                     value={formData.ad}
-                    onChange={(e) => setFormData({ ...formData, ad: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, ad: titleCase(e.target.value) })}
                     placeholder="Personelin adı"
                     required
                   />
@@ -1179,7 +1180,7 @@ export default function PersonelListesiPage() {
                     type="text"
                     className={kimlikFieldClass("field-input", "soyad", kimlik.highlightedFields)}
                     value={formData.soyad}
-                    onChange={(e) => setFormData({ ...formData, soyad: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, soyad: titleCase(e.target.value) })}
                     placeholder="Personelin soyadı"
                     required
                   />
@@ -1404,7 +1405,9 @@ export default function PersonelListesiPage() {
                     type="text"
                     className="field-input"
                     value={formData.acil_durum_kisi}
-                    onChange={(e) => setFormData({ ...formData, acil_durum_kisi: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, acil_durum_kisi: titleCase(e.target.value) })
+                    }
                     placeholder="Yakınının adı soyadı"
                   />
                 </div>
@@ -2915,7 +2918,8 @@ export default function PersonelListesiPage() {
         applyDisabled={kimlik.applyDisabled || Boolean(editingPersonel)}
         hideApply={Boolean(editingPersonel)}
         onApply={applyKimlikToForm}
-        onCancel={() => {
+        onClose={() => kimlik.dismissForChangeNumber(formData.cep_telefon)}
+        onChangeNumber={() => {
           kimlik.dismissForChangeNumber(formData.cep_telefon);
           setFormData((prev) => ({ ...prev, cep_telefon: "" }));
           if (editingPersonel) {

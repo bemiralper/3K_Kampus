@@ -97,6 +97,10 @@ COMMUNICATION_AI_ENABLED = os.environ.get('COMMUNICATION_AI_ENABLED', 'False').l
 # Varsayılan ~90 sn (18×5s heartbeat); istemci yeniden bağlanır. Env ile değiştirilebilir.
 COMMUNICATION_SSE_MAX_ITERATIONS = int(os.environ.get('COMMUNICATION_SSE_MAX_ITERATIONS', '18'))
 COMMUNICATION_SSE_POLL_SECONDS = float(os.environ.get('COMMUNICATION_SSE_POLL_SECONDS', '5'))
+COMMUNICATION_TICKET_ROUTING = os.environ.get('COMMUNICATION_TICKET_ROUTING', 'True').lower() in (
+    '1', 'true', 'yes', 'on',
+)
+COMMUNICATION_SLA_MINUTES = int(os.environ.get('COMMUNICATION_SLA_MINUTES', '30'))
 
 COMMUNICATION_WHATSAPP_COST_USD = os.environ.get('COMMUNICATION_WHATSAPP_COST_USD', '0.0009')
 COMMUNICATION_ATTACHMENT_MAX_BYTES = int(
@@ -178,8 +182,17 @@ TIME_ZONE = 'Europe/Istanbul'
 USE_I18N = True
 USE_TZ = True
 
-# Frontend base URL
+# Frontend base URL (tarayıcı yönlendirmeleri / CSRF)
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+
+# Playwright PDF — backend'in print sayfasına erişeceği adres.
+# Docker'da FRONTEND_URL=localhost:3000 host içindir; container içinden
+# PDF_RENDER_BASE_URL=http://frontend:3000 kullanılmalı.
+PDF_RENDER_BASE_URL = (
+    os.environ.get('PDF_RENDER_BASE_URL')
+    or os.environ.get('INTERNAL_FRONTEND_URL')
+    or FRONTEND_URL
+)
 
 # REST Framework
 REST_FRAMEWORK = {

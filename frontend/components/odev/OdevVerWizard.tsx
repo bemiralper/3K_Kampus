@@ -16,6 +16,7 @@ import type {
   Unit,
   SelectedContent,
   ContentTaskHistory,
+  ScopeCompletionMap,
 } from '@/app/admin/odev/ver/types';
 import {
   fetchOgrenciList,
@@ -29,6 +30,11 @@ import {
   type AssignmentPackageItem,
 } from '@/lib/resources-api';
 import AssignmentNotifySendModal from '@/components/odev/AssignmentNotifySendModal';
+import {
+  buildCompletionNote,
+  isIncompleteHistory,
+  withCompletionTitleSuffix,
+} from '@/components/odev/odevCompletionHelpers';
 
 export type OdevVerVariant = 'admin' | 'coach';
 
@@ -114,6 +120,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const [resLoading, setResLoading] = useState(false);
   const [bookLoading, setBookLoading] = useState(false);
   const [taskHistory, setTaskHistory] = useState<ContentTaskHistory>({});
+  const [bookProgress, setBookProgress] = useState<ScopeCompletionMap>({});
+  const [unitProgress, setUnitProgress] = useState<ScopeCompletionMap>({});
 
   /* ─── Paketten gelen bekleyen veriler ─── */
   const [pendingPackageCart, setPendingPackageCart] = useState<SelectedContent[] | null>(null);
@@ -129,6 +137,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const [showPrint, setShowPrint] = useState(false);
   const [savedAssignmentId, setSavedAssignmentId] = useState<number | null>(null);
   const [showSendAfterSave, setShowSendAfterSave] = useState(false);
+  const [sendStudentName, setSendStudentName] = useState('');
+  const [sendBusy, setSendBusy] = useState(false);
 
   /* ─── Toast ─── */
   const [toast, setToast] = useState<string | null>(null);
@@ -267,7 +277,9 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     try {
       const result = await fetchContentTaskHistory(sid);
       if (result.success && result.data) {
-        setTaskHistory(result.data as ContentTaskHistory);
+        setTaskHistory(result.data.contents || {});
+        setBookProgress(result.data.by_book || {});
+        setUnitProgress(result.data.by_unit || {});
       }
     } catch { flash('❌ Görev geçmişi yüklenemedi'); }
   };
@@ -366,6 +378,21 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     fetchBook(r.resource_book);
   };
 
+  const applyCompletionNotes = useCallback((items: SelectedContent[]) => {
+    if (!items.length) return;
+    setContentNotes((prev) => {
+      const next = { ...prev };
+      for (const item of items) {
+        if (next[item.id]?.trim()) continue;
+        const hist = taskHistory[item.contentId];
+        if (isIncompleteHistory(hist)) {
+          next[item.id] = buildCompletionNote(hist);
+        }
+      }
+      return next;
+    });
+  }, [taskHistory]);
+
   const addContent = useCallback((c: Content, t: Topic, u: Unit) => {
     if (!bookDetails || !selectedResource) return;
     if (cart.some(x => x.id === c.id)) return;
@@ -380,7 +407,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
     };
     setCart(prev => [...prev, item]);
-  }, [bookDetails, selectedResource, cart]);
+    applyCompletionNotes([item]);
+  }, [bookDetails, selectedResource, cart, applyCompletionNotes]);
 
   const removeContent = (id: number) => {
     setCart(prev => prev.filter(c => c.id !== id));
@@ -412,8 +440,12 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         });
       }
     }));
-    if (newItems.length) { setCart(prev => [...prev, ...newItems]); flash(`${newItems.length} içerik eklendi`); }
-  }, [bookDetails, selectedResource, cart, taskHistory]);
+    if (newItems.length) {
+      setCart(prev => [...prev, ...newItems]);
+      applyCompletionNotes(newItems);
+      flash(`${newItems.length} görev eklendi`);
+    }
+  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes]);
 
   const selectAllTopic = useCallback((topic: Topic, unit: Unit) => {
     if (!bookDetails || !selectedResource) return;
@@ -435,8 +467,66 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         });
       }
     });
-    if (newItems.length) { setCart(prev => [...prev, ...newItems]); flash(`${newItems.length} içerik eklendi`); }
-  }, [bookDetails, selectedResource, cart, taskHistory]);
+    if (newItems.length) {
+      setCart(prev => [...prev, ...newItems]);
+      applyCompletionNotes(newItems);
+      flash(`${newItems.length} görev eklendi`);
+    }
+  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes]);
+
+  const selectIncompleteFromUnit = useCallback((unit: Unit) => {
+    if (!bookDetails || !selectedResource) return;
+    const newItems: SelectedContent[] = [];
+    unit.topics?.forEach((t: Topic) => t.contents?.forEach((c: Content) => {
+      const h = taskHistory[c.id];
+      if (!isIncompleteHistory(h)) return;
+      if (cart.some(x => x.id === c.id)) return;
+      newItems.push({
+        id: c.id, contentId: c.id,
+        contentName: c.name || c.ad, contentType: c.content_type,
+        topicId: t.id, topicName: t.name || t.ad,
+        unitId: unit.id, unitName: unit.name || unit.ad,
+        bookId: bookDetails.id, bookName: bookDetails.name || bookDetails.ad,
+        lessonId: selectedResource.lesson, lessonName: selectedResource.lesson_name,
+        questionCount: c.question_count, pageCount: c.page_count,
+        startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
+      });
+    }));
+    if (newItems.length) {
+      setCart(prev => [...prev, ...newItems]);
+      applyCompletionNotes(newItems);
+      flash(`${newItems.length} eksik/yapılmayan görev eklendi`);
+    } else {
+      flash('Bu ünitede eklenecek eksik yok');
+    }
+  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes]);
+
+  const selectIncompleteFromTopic = useCallback((topic: Topic, unit: Unit) => {
+    if (!bookDetails || !selectedResource) return;
+    const newItems: SelectedContent[] = [];
+    topic.contents?.forEach((c: Content) => {
+      const h = taskHistory[c.id];
+      if (!isIncompleteHistory(h)) return;
+      if (cart.some(x => x.id === c.id)) return;
+      newItems.push({
+        id: c.id, contentId: c.id,
+        contentName: c.name || c.ad, contentType: c.content_type,
+        topicId: topic.id, topicName: topic.name || topic.ad,
+        unitId: unit.id, unitName: unit.name || unit.ad,
+        bookId: bookDetails.id, bookName: bookDetails.name || bookDetails.ad,
+        lessonId: selectedResource.lesson, lessonName: selectedResource.lesson_name,
+        questionCount: c.question_count, pageCount: c.page_count,
+        startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
+      });
+    });
+    if (newItems.length) {
+      setCart(prev => [...prev, ...newItems]);
+      applyCompletionNotes(newItems);
+      flash(`${newItems.length} eksik/yapılmayan görev eklendi`);
+    } else {
+      flash('Bu konuda eklenecek eksik yok');
+    }
+  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes]);
 
   const clearCart = () => { setCart([]); setContentNotes({}); };
 
@@ -458,10 +548,31 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       'Ödev verme işlemi tamamlanmadan bu sayfadan ayrılmak istediğinize emin misiniz? Seçtiğiniz içerikler kaybolabilir.',
   });
 
-  const handleSave = async (status: 'PUBLISHED' | 'DRAFT') => {
+  const extractAssignmentId = (data: unknown): number | null => {
+    if (!data || typeof data !== 'object') return null;
+    const obj = data as Record<string, unknown>;
+    const nested = obj.data;
+    if (nested && typeof nested === 'object' && 'id' in (nested as object)) {
+      const id = Number((nested as { id: unknown }).id);
+      return Number.isFinite(id) ? id : null;
+    }
+    if ('id' in obj) {
+      const id = Number(obj.id);
+      return Number.isFinite(id) ? id : null;
+    }
+    return null;
+  };
+
+  const handleSave = async (
+    status: 'PUBLISHED' | 'DRAFT',
+    options?: { openWhatsApp?: boolean; keepPrintOpen?: boolean },
+  ) => {
     const targetStudents = multiSelect ? selectedStudents : (selectedStudent ? [selectedStudent] : []);
     if (targetStudents.length === 0 || cart.length === 0) return;
+    const openWhatsApp = options?.openWhatsApp ?? status === 'PUBLISHED';
+    const keepPrintOpen = options?.keepPrintOpen ?? false;
     setSaving(true);
+    if (openWhatsApp) setSendBusy(true);
     // Backend status mapping: PUBLISHED → ASSIGNED
     const backendStatus: 'ASSIGNED' | 'DRAFT' = status === 'PUBLISHED' ? 'ASSIGNED' : status;
     try {
@@ -476,30 +587,37 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           notes: '',
           tasks: contents.map(c => {
             const hist = taskHistory[c.contentId];
-            const isCompletion = hist?.completion_status === 'PARTIAL' || hist?.completion_status === 'NOT_DONE';
+            const isCompletion = isIncompleteHistory(hist);
+            const autoNote = isCompletion ? buildCompletionNote(hist) : '';
             return {
               task_type: c.contentType === 'TEST_SET' ? 'SOLVE_TEST' : c.contentType === 'PAGE_RANGE' ? 'SOLVE_PDF' : c.contentType === 'VIDEO' ? 'WATCH_VIDEO' : 'REVIEW_TOPIC',
               title: c.contentName,
-              description: contentNotes[c.id] || '',
+              description: (contentNotes[c.id] || '').trim() || autoNote,
               content_id: c.contentId,
               question_count: c.questionCount || null,
               page_count: c.pageCount || (c.startPage && c.endPage ? c.endPage - c.startPage + 1 : null),
               is_required: true,
               is_completion_task: isCompletion,
-              previous_task_completion_percent: isCompletion ? (hist?.task_completion_percent ?? 0) : null,
-              previous_assignment_title: isCompletion ? (hist?.assignment_title ?? '') : '',
+              previous_task_completion_percent: isCompletion
+                ? (hist.completion_status === 'PARTIAL' ? (hist.task_completion_percent ?? 0) : null)
+                : null,
+              previous_assignment_title: isCompletion ? (hist.assignment_title ?? '') : '',
             };
           }),
         };
       });
 
+      const hasCompletion = cart.some((c) => isIncompleteHistory(taskHistory[c.contentId]));
+      const finalTitle = withCompletionTitleSuffix(title || generateWeeklyTitle(), hasCompletion);
+
       let successCount = 0;
       let failCount = 0;
       let lastCreatedId: number | null = null;
+      let lastStudentName = '';
       for (const student of targetStudents) {
         const body = {
           student: student.id,
-          title: title || generateWeeklyTitle(),
+          title: finalTitle,
           description: notes,
           priority: priority,
           due_date: dueDate || getDefaultDueDate(),
@@ -511,7 +629,11 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           const result = await createAssignment(body);
           if (result.success) {
             successCount++;
-            if (result.data?.id) lastCreatedId = result.data.id;
+            const createdId = extractAssignmentId(result.data) ?? extractAssignmentId(result);
+            if (createdId) {
+              lastCreatedId = createdId;
+              lastStudentName = `${student.ad} ${student.soyad}`.trim();
+            }
           } else {
             failCount++;
           }
@@ -526,13 +648,22 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           : `${successCount} öğrenci`;
         const msg = status === 'DRAFT'
           ? `✅ Taslak kaydedildi — ${studentNames}`
-          : `✅ Ödev gönderildi — ${studentNames}`;
+          : openWhatsApp && lastCreatedId
+            ? (targetStudents.length > 1
+              ? `✅ ${successCount} ödev kaydedildi — WhatsApp için son öğrenci açılıyor`
+              : `✅ Ödev kaydedildi — WhatsApp gönderimi açılıyor`)
+            : `✅ Ödev kaydedildi — ${studentNames}`;
         flash(msg);
-        if (failCount === 0 && targetStudents.length === 1 && lastCreatedId && status === 'PUBLISHED') {
+        if (openWhatsApp && lastCreatedId) {
           setSavedAssignmentId(lastCreatedId);
+          setSendStudentName(lastStudentName || studentNames);
           setShowSendAfterSave(true);
+        } else if (lastCreatedId) {
+          setSavedAssignmentId(lastCreatedId);
         }
-        resetAll();
+        if (!keepPrintOpen || openWhatsApp) {
+          resetAll({ preserveSendState: true });
+        }
       } else {
         flash(`⚠️ ${successCount} başarılı, ${failCount} başarısız — bazı ödevler gönderilemedi`);
       }
@@ -541,9 +672,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       flash('❌ Ödev kaydedilemedi: ' + msg);
     }
     setSaving(false);
+    setSendBusy(false);
   };
 
-  const resetAll = () => {
+  const resetAll = (opts?: { preserveSendState?: boolean }) => {
     markClean();
     setCart([]);
     setSelectedResource(null);
@@ -559,6 +691,13 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     setPackageTemplateId(null);
     setPackageLoaded(false);
     setTaskHistory({});
+    setBookProgress({});
+    setUnitProgress({});
+    if (!opts?.preserveSendState) {
+      setShowSendAfterSave(false);
+      setSavedAssignmentId(null);
+      setSendStudentName('');
+    }
 
     if (studentLocked && selectedStudent) {
       setMultiSelect(false);
@@ -586,7 +725,12 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   };
 
   const goToStep = (step: number) => {
-    if (canGoToStep(step)) setCurrentStep(step);
+    if (!canGoToStep(step)) return;
+    if (step === 3) {
+      const hasCompletion = cart.some((c) => isIncompleteHistory(taskHistory[c.contentId]));
+      setTitle((t) => withCompletionTitleSuffix(t || generateWeeklyTitle(), hasCompletion));
+    }
+    setCurrentStep(step);
   };
 
   const isContentSelected = (id: number) => cart.some(c => c.id === id);
@@ -762,10 +906,14 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               resLoading={resLoading}
               bookLoading={bookLoading}
               taskHistory={taskHistory}
+              bookProgress={bookProgress}
+              unitProgress={unitProgress}
               onPickResource={pickResource}
               onToggleContent={toggleContent}
               onSelectAllUnit={selectAllUnit}
               onSelectAllTopic={selectAllTopic}
+              onSelectIncompleteUnit={selectIncompleteFromUnit}
+              onSelectIncompleteTopic={selectIncompleteFromTopic}
               onRemoveContent={removeContent}
               onClearCart={clearCart}
               onNoteChange={(id: number, v: string) => setContentNotes(p => ({ ...p, [id]: v }))}
@@ -816,7 +964,15 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           )}
           {currentStep < 3 && (
             <button
-              onClick={() => canGoToStep(currentStep + 1) && setCurrentStep(currentStep + 1)}
+              onClick={() => {
+                if (!canGoToStep(currentStep + 1)) return;
+                const next = currentStep + 1;
+                if (next === 3) {
+                  const hasCompletion = cart.some((c) => isIncompleteHistory(taskHistory[c.contentId]));
+                  setTitle((t) => withCompletionTitleSuffix(t || generateWeeklyTitle(), hasCompletion));
+                }
+                setCurrentStep(next);
+              }}
               disabled={!canGoToStep(currentStep + 1)}
               className="wizard-btn-primary"
             >
@@ -839,6 +995,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           contentNotes={contentNotes}
           taskHistory={taskHistory}
           assignmentId={savedAssignmentId ?? undefined}
+          sendBusy={sendBusy || saving}
+          onRequestSaveAndSend={() => handleSave('PUBLISHED', { openWhatsApp: true, keepPrintOpen: true })}
           onClose={() => setShowPrint(false)}
         />
       )}
@@ -847,8 +1005,17 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         <AssignmentNotifySendModal
           assignmentId={savedAssignmentId}
           notifyType="plan"
-          onClose={() => { setShowSendAfterSave(false); setSavedAssignmentId(null); }}
-          onSent={() => { setShowSendAfterSave(false); setSavedAssignmentId(null); }}
+          studentName={sendStudentName}
+          onClose={() => {
+            setShowSendAfterSave(false);
+            setSavedAssignmentId(null);
+            setSendStudentName('');
+          }}
+          onSent={() => {
+            setShowSendAfterSave(false);
+            setSavedAssignmentId(null);
+            setSendStudentName('');
+          }}
         />
       )}
     </div>

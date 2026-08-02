@@ -28,6 +28,20 @@ from apps.communication.interfaces.views.conversations import (
     ConversationListView,
     ConversationReadView,
 )
+from apps.communication.interfaces.views.conversation_actions import (
+    ConversationClaimView,
+    ConversationNoteDetailView,
+    ConversationNotesView,
+    ConversationTagCatalogView,
+    ConversationTagsView,
+    ConversationTransferView,
+)
+from apps.communication.interfaces.views.dashboard import CommunicationDashboardView
+from apps.communication.interfaces.views.routing_rules import (
+    RoutingRuleDetailView,
+    RoutingRuleListCreateView,
+)
+from apps.communication.interfaces.views.transfer_candidates import TransferCandidatesView
 from apps.communication.interfaces.views.messages import ConversationMessagesView
 from apps.communication.interfaces.views.message_reactions import MessageReactionView
 from apps.communication.interfaces.views.notifications import NotificationSummaryView
@@ -91,6 +105,40 @@ urlpatterns = [
         ConversationReadView.as_view(),
         name='conversation-read',
     ),
+    path(
+        'conversations/<uuid:conversation_id>/claim/',
+        ConversationClaimView.as_view(),
+        name='conversation-claim',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/transfer/',
+        ConversationTransferView.as_view(),
+        name='conversation-transfer',
+    ),
+    path(
+        'transfer-candidates/',
+        TransferCandidatesView.as_view(),
+        name='transfer-candidates',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/notes/',
+        ConversationNotesView.as_view(),
+        name='conversation-notes',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/notes/<uuid:note_id>/',
+        ConversationNoteDetailView.as_view(),
+        name='conversation-note-detail',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/tags/',
+        ConversationTagsView.as_view(),
+        name='conversation-tags',
+    ),
+    path('tags/', ConversationTagCatalogView.as_view(), name='tag-catalog'),
+    path('dashboard/', CommunicationDashboardView.as_view(), name='communication-dashboard'),
+    path('routing-rules/', RoutingRuleListCreateView.as_view(), name='routing-rules'),
+    path('routing-rules/<uuid:rule_id>/', RoutingRuleDetailView.as_view(), name='routing-rule-detail'),
     path('notifications/summary/', NotificationSummaryView.as_view(), name='notification-summary'),
     path('events/stream/', CommunicationEventsStreamView.as_view(), name='events-stream'),
     path('ai/suggest-reply/', AiSuggestReplyView.as_view(), name='ai-suggest-reply'),

@@ -8,6 +8,8 @@ export { default as RichMessageToolbar } from "./RichMessageToolbar";
 export { default as AttachmentDropZone } from "./AttachmentDropZone";
 export { default as RecipientsSummaryPanel } from "./RecipientsSummaryPanel";
 export { default as AdvancedFilterPanel } from "./AdvancedFilterPanel";
+export { default as RecipientPickerPanel } from "./RecipientPickerPanel";
+export { default as CampaignHistoryPanel } from "./CampaignHistoryPanel";
 export { default as SendOptionsBar } from "./SendOptionsBar";
 export { default as SendConfirmModal } from "./SendConfirmModal";
 export { default as TemplatePickerDrawer } from "./TemplatePickerDrawer";
@@ -17,6 +19,7 @@ export { default as CommunicationChatDrawer } from "./CommunicationChatDrawer";
 export { default as WhatsAppChatButton } from "./WhatsAppChatButton";
 export { default as StepWizard } from "./StepWizard";
 export { default as ConversationListPanel } from "./ConversationListPanel";
+export { default as ConversationOpsPanel } from "./ConversationOpsPanel";
 export { default as MessageThreadPanel } from "./MessageThreadPanel";
 export { default as ComposeBar } from "./ComposeBar";
 export {

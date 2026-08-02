@@ -18,11 +18,15 @@ interface PrintPreviewProps {
   contentNotes: Record<number, string>;
   taskHistory?: ContentTaskHistory;
   assignmentId?: number;
+  /** Kayıt yoksa önce kaydedip WhatsApp modalını açar */
+  onRequestSaveAndSend?: () => void | Promise<void>;
+  sendBusy?: boolean;
   onClose: () => void;
 }
 
 export default function PrintPreview({
-  studentName, studentPhoto, coachName, title, notes, dueDate, items, contentNotes, taskHistory = {}, assignmentId, onClose,
+  studentName, studentPhoto, coachName, title, notes, dueDate, items, contentNotes, taskHistory = {},
+  assignmentId, onRequestSaveAndSend, sendBusy = false, onClose,
 }: PrintPreviewProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -90,7 +94,7 @@ export default function PrintPreview({
   const { print: printVector } = useVectorPrint({
     title: `Ödev - ${title || 'plan'} - ${studentName}`,
     orientation: 'portrait',
-    marginMm: '10mm 12mm',
+    marginMm: '6mm 6mm',
     externalRef: printRef as React.RefObject<HTMLDivElement>,
   });
 
@@ -137,18 +141,30 @@ export default function PrintPreview({
               cursor: pdfBusy ? 'not-allowed' : 'pointer',
             }}>⬇️ İndir</button>
             <button
-              onClick={() => assignmentId ? setShowSendModal(true) : setSendToast('Önce ödevi kaydedin')}
-              disabled={!assignmentId}
-              title={assignmentId ? 'Veli ve öğrenciye WhatsApp ile gönder' : 'Ödev kaydedildikten sonra gönderilebilir'}
+              type="button"
+              onClick={async () => {
+                if (assignmentId) {
+                  setShowSendModal(true);
+                  return;
+                }
+                if (onRequestSaveAndSend) {
+                  await onRequestSaveAndSend();
+                  return;
+                }
+                setSendToast('Önce ödevi kaydedin');
+                setTimeout(() => setSendToast(null), 3000);
+              }}
+              disabled={sendBusy}
+              title="Veli ve öğrenciye ödev planı PDF'ini WhatsApp ile gönder"
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', borderRadius: 8, border: '1px solid #6ee7b7',
-                background: assignmentId ? '#ecfdf5' : '#f1f5f9',
-                color: assignmentId ? '#047857' : '#94a3b8',
+                background: sendBusy ? '#f1f5f9' : '#ecfdf5',
+                color: sendBusy ? '#94a3b8' : '#047857',
                 fontSize: 12, fontWeight: 600,
-                cursor: assignmentId ? 'pointer' : 'not-allowed',
+                cursor: sendBusy ? 'not-allowed' : 'pointer',
               }}
-            >📱 Gönder</button>
+            >{sendBusy ? '⏳ Kaydediliyor…' : '📱 WhatsApp Gönder'}</button>
             <button onClick={onClose} style={{
               padding: '8px 14px', borderRadius: 8, border: '1px solid #e4e9f2',
               background: '#fff', color: '#8c98a4', fontSize: 12, fontWeight: 500, cursor: 'pointer',

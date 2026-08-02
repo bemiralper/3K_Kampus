@@ -12,9 +12,40 @@ export interface VectorPrintHtmlOptions {
 }
 
 const REPORT_PRINT_HELPERS = `
-  .page-break-avoid { page-break-inside: avoid; break-inside: avoid; }
+  .page-break-avoid,
+  .ok-report-card,
+  .ok-report-eval-panel,
+  .ok-report-stat-grid,
+  .ok-report-stat-card,
+  .ok-report-topic,
+  .ok-report-perf,
+  .ok-report-perf-header,
+  .ok-report-perf-score,
+  .ok-report-perf-status,
+  .ok-report-perf-status-card,
+  .ok-report-perf-rates,
+  .ok-report-perf-rate-row,
+  .ok-report-perf-details,
+  .ok-report-footer-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
   .ok-report-header { position: relative; overflow: hidden; }
-  .ok-report-card { page-break-inside: avoid; }
+  .ok-report-card,
+  .ok-report-eval-panel { overflow: visible; }
+  .ok-report-perf {
+    page-break-before: always;
+    break-before: page;
+  }
+  .ok-report-perf-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 14px;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  table tr { page-break-inside: avoid; break-inside: avoid; }
   svg { max-width: 100%; height: auto; }
 `;
 

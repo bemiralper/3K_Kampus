@@ -5,6 +5,7 @@ import {
   fetchNotificationSummary, markNotificationRead, markAllNotificationsRead,
   type AppNotification,
 } from '@/lib/takvim-api';
+import { fetchNotificationSummary as fetchWhatsAppNotificationSummary } from '@/lib/communication-api';
 import { playNotificationSound, isGorevNotification } from '@/lib/notification-sound';
 
 /* ════════════════════════════════════════════
@@ -26,17 +27,39 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
   const knownUnreadIdsRef = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
-    const res = await fetchNotificationSummary();
+    const [res, wa] = await Promise.all([
+      fetchNotificationSummary(),
+      fetchWhatsAppNotificationSummary().catch(() => null),
+    ]);
+
+    const waCards = wa?.cards || [];
+    const waItems: AppNotification[] = waCards.slice(0, 8).map((c) => ({
+      id: `wa-${c.id}`,
+      baslik: `WhatsApp: ${c.contact_name || c.contact_phone || 'Sohbet'}`,
+      mesaj: c.last_message_preview || 'Yeni mesaj',
+      ikon: '💬',
+      renk: '#25D366',
+      url: `/admin/iletisim/mesajlar?conversation=${c.id}`,
+      event_id: null,
+      is_read: false,
+      read_at: null,
+      created_at: c.last_message_at || c.created_at || new Date().toISOString(),
+      alici_tip: 'PERSONEL' as AppNotification['alici_tip'],
+    }));
+    const waUnread = wa?.unread_conversations ?? wa?.unread_count ?? 0;
+
     if (res.success && res.data) {
-      const newRecent = res.data.recent;
+      const baseRecent = res.data.recent || [];
+      const merged = [...waItems, ...baseRecent].slice(0, 15);
 
       if (initializedRef.current) {
-        const newGorevNotifs = newRecent.filter(
+        const newGorevNotifs = baseRecent.filter(
           n => !n.is_read
             && !knownUnreadIdsRef.current.has(n.id)
             && isGorevNotification(n.baslik, n.url),
         );
-        if (newGorevNotifs.length > 0) {
+        const newWa = waItems.filter(n => !knownUnreadIdsRef.current.has(n.id));
+        if (newGorevNotifs.length > 0 || newWa.length > 0) {
           playNotificationSound();
         }
       } else {
@@ -44,10 +67,13 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
       }
 
       knownUnreadIdsRef.current = new Set(
-        newRecent.filter(n => !n.is_read).map(n => n.id),
+        merged.filter(n => !n.is_read).map(n => n.id),
       );
-      setUnreadCount(res.data.unread_count);
-      setRecent(newRecent);
+      setUnreadCount((res.data.unread_count || 0) + (waUnread > 0 ? waUnread : waItems.length));
+      setRecent(merged);
+    } else if (waItems.length > 0) {
+      setUnreadCount(waUnread || waItems.length);
+      setRecent(waItems);
     }
   }, []);
 
@@ -83,7 +109,8 @@ export default function NotificationBell({ pollInterval = 30000 }: Props) {
   };
 
   const handleClick = async (n: AppNotification) => {
-    if (!n.is_read) {
+    const isWa = n.id.startsWith('wa-');
+    if (!isWa && !n.is_read) {
       await markNotificationRead(n.id);
       setUnreadCount(prev => Math.max(0, prev - 1));
       knownUnreadIdsRef.current.delete(n.id);

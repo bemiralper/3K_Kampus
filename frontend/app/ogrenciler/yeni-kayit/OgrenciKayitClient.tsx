@@ -19,7 +19,7 @@ import {
   RenewalState,
   TcCheckResponse,
 } from "./types";
-import { validateTcKimlik, hasWizardUserInput } from "./utils";
+import { validateTcKimlik, hasWizardUserInput, clearResolvedWizardErrors } from "./utils";
 import { apiFetch } from "@/lib/api";
 import { ensureTelefonlar } from "@/components/ogrenci/VeliTelefonEditor";
 import { isKimlikConflictCode, useKimlikLookup } from "@/hooks/useKimlikLookup";
@@ -180,7 +180,10 @@ export default function OgrenciKayitClient() {
   const isDirty = useMemo(() => hasWizardUserInput(data), [data]);
 
   const { leaveDialogProps, markClean, requestNavigation } = useUnsavedChangesGuard({
-    isDirty,
+    // Başarı modalı açıkken form verisi hâlâ dolu olsa bile koruma kapanır;
+    // aksi halde «Sözleşme Oluştur» sert yönlendirmesi tarayıcıda takılı kalabiliyor.
+    isDirty: isDirty && !showSuccessModal,
+    enabled: !showSuccessModal,
     title: "Kayıt Tamamlanmadı",
     message:
       "Girdiğiniz bilgiler henüz kaydedilmedi. Bu sayfadan ayrılırsanız tüm veriler kaybolacaktır.",
@@ -193,7 +196,14 @@ export default function OgrenciKayitClient() {
   }, [leaveDialogProps.onConfirm, markClean]);
 
   const handleDataChange = useCallback((value: WizardData | ((prev: WizardData) => WizardData)) => {
-    setData(value);
+    setData((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      setErrors((errs) => {
+        if (!errs || Object.keys(errs).length === 0) return errs;
+        return clearResolvedWizardErrors(errs, next);
+      });
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -728,12 +738,17 @@ export default function OgrenciKayitClient() {
       }
 
       clearWizardStorage();
+      const payloadData = result.data as Record<string, unknown>;
+      const ogrenciId = payloadData.id ?? payloadData.ogrenci_id;
       setRegisteredStudent({
-        ...result.data,
-        ad: result.data.ad ?? data.student.ad,
-        soyad: result.data.soyad ?? data.student.soyad,
-        tam_ad: result.data.tam_ad ?? `${data.student.ad} ${data.student.soyad}`.trim(),
-        ogrenci_no: result.data.ogrenci_no ?? data.enrollment.ogrenci_no,
+        ...payloadData,
+        id: ogrenciId,
+        ad: payloadData.ad ?? data.student.ad,
+        soyad: payloadData.soyad ?? data.student.soyad,
+        tam_ad:
+          payloadData.tam_ad ??
+          `${data.student.ad} ${data.student.soyad}`.trim(),
+        ogrenci_no: payloadData.ogrenci_no ?? data.enrollment.ogrenci_no,
       });
       markClean();
       setShowSuccessModal(true);
@@ -957,21 +972,33 @@ export default function OgrenciKayitClient() {
             <div style={{ padding: "8px 24px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
               {/* Sözleşme Oluştur — Ana buton */}
               <button
+                type="button"
                 onClick={() => {
-                  if (registeredStudent.id) {
+                  const ogrenciId = registeredStudent.id ?? registeredStudent.ogrenci_id;
+                  if (!ogrenciId) {
+                    setShowSuccessModal(false);
+                    setErrors({
+                      submit:
+                        "Öğrenci kaydı oluştu ancak yönlendirme kimliği alınamadı. Öğrenci listesinden sözleşmeye devam edin.",
+                    });
+                    return;
+                  }
+                  try {
                     sessionStorage.setItem(
                       "sozlesme_ogrenci_prefill",
                       JSON.stringify({
-                        id: registeredStudent.id,
+                        id: ogrenciId,
                         ad: registeredStudent.ad,
                         soyad: registeredStudent.soyad,
                         tam_ad: registeredStudent.tam_ad,
                         ogrenci_no: registeredStudent.ogrenci_no,
                       }),
                     );
+                  } catch {
+                    // private mode vb. — prefill olmadan da URL ile devam edilir
                   }
                   markClean();
-                  window.location.assign(sozlesmeOlusturHref(registeredStudent.id));
+                  window.location.assign(sozlesmeOlusturHref(ogrenciId));
                 }}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, width: "100%",
@@ -1005,7 +1032,13 @@ export default function OgrenciKayitClient() {
 
               {/* Öğrenci Detay */}
               <button
-                onClick={() => requestNavigation(`${ogrenciHref(String(registeredStudent.id))}?success=true`)}
+                type="button"
+                onClick={() => {
+                  const ogrenciId = registeredStudent.id ?? registeredStudent.ogrenci_id;
+                  if (!ogrenciId) return;
+                  markClean();
+                  requestNavigation(`${ogrenciHref(String(ogrenciId))}?success=true`, { hard: true });
+                }}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, width: "100%",
                   padding: "14px 18px", borderRadius: 12,
@@ -1035,6 +1068,7 @@ export default function OgrenciKayitClient() {
 
               {/* Yeni Kayıt */}
               <button
+                type="button"
                 onClick={() => {
                   setShowSuccessModal(false);
                   setRegisteredStudent(null);

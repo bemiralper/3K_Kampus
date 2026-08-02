@@ -16,6 +16,7 @@ services:
       - .env.production.docker
     environment:
       DJANGO_ENV: production
+      PDF_RENDER_BASE_URL: ${PDF_RENDER_BASE_URL:-http://frontend:3000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -94,6 +95,7 @@ services:
       - .env.production.docker
     environment:
       DJANGO_ENV: production
+      PDF_RENDER_BASE_URL: ${PDF_RENDER_BASE_URL:-http://frontend:3000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

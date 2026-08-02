@@ -3,9 +3,46 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import type {
   StudentResource, BookDetails, Unit, Topic, Content, SelectedContent,
-  ResourcesByLesson, CartLessonGroup, ContentTaskHistory,
+  ResourcesByLesson, CartLessonGroup, ContentTaskHistory, ScopeCompletionMap,
 } from '../types';
+import { completionBadgeLabel, isIncompleteHistory } from '@/components/odev/odevCompletionHelpers';
 import '../odev-ver.css';
+
+type HistoryFilter = 'all' | 'partial' | 'not_done' | 'never';
+
+/** Ödev verilmiş kapsamlarda sade bitirme yüzdesi — yoksa hiçbir şey çizmez */
+function ScopePct({
+  progress,
+  titlePrefix = 'Bitirme',
+  wholeBook = false,
+}: {
+  progress?: { assigned: number; percent: number; total?: number } | null;
+  titlePrefix?: string;
+  /** Kitap: yüzde tüm içerik sayısına göre */
+  wholeBook?: boolean;
+}) {
+  if (!progress || progress.assigned <= 0) return null;
+  const pct = Math.max(0, Math.min(100, progress.percent));
+  const color = pct >= 75 ? '#059669' : pct >= 40 ? '#d97706' : '#dc2626';
+  const detail = wholeBook && progress.total
+    ? `${progress.assigned}/${progress.total} içerik ödevlenmiş · kitap geneli`
+    : `${progress.assigned} görev`;
+  return (
+    <span
+      title={`${titlePrefix}: %${pct} · ${detail}`}
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        color,
+        letterSpacing: 0.2,
+        fontVariantNumeric: 'tabular-nums',
+        flexShrink: 0,
+      }}
+    >
+      %{pct}
+    </span>
+  );
+}
 
 interface AssignmentStepProps {
   resources: StudentResource[];
@@ -16,10 +53,14 @@ interface AssignmentStepProps {
   resLoading: boolean;
   bookLoading: boolean;
   taskHistory: ContentTaskHistory;
+  bookProgress?: ScopeCompletionMap;
+  unitProgress?: ScopeCompletionMap;
   onPickResource: (r: StudentResource) => void;
   onToggleContent: (c: Content, t: Topic, u: Unit) => void;
   onSelectAllUnit: (u: Unit) => void;
   onSelectAllTopic: (t: Topic, u: Unit) => void;
+  onSelectIncompleteUnit: (u: Unit) => void;
+  onSelectIncompleteTopic: (t: Topic, u: Unit) => void;
   onRemoveContent: (id: number) => void;
   onClearCart: () => void;
   onNoteChange: (id: number, note: string) => void;
@@ -29,7 +70,9 @@ interface AssignmentStepProps {
 export default function AssignmentStep({
   resources, selectedResource, bookDetails, cart, contentNotes,
   resLoading, bookLoading, taskHistory,
+  bookProgress = {}, unitProgress = {},
   onPickResource, onToggleContent, onSelectAllUnit, onSelectAllTopic,
+  onSelectIncompleteUnit, onSelectIncompleteTopic,
   onRemoveContent, onClearCart, onNoteChange, isSelected,
 }: AssignmentStepProps) {
   const [openLessons, setOpenLessons] = useState<Record<number, boolean>>({});
@@ -38,6 +81,7 @@ export default function AssignmentStep({
   const [openTopics, setOpenTopics] = useState<Record<number, boolean>>({});
   const [openCartLessons, setOpenCartLessons] = useState<Record<number, boolean>>({});
   const [noteExpanded, setNoteExpanded] = useState<Record<number, boolean>>({});
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 
   /* ─── Group resources: Ders → Kaynak Türü → Kitap ─── */
   const groupedResources: ResourcesByLesson[] = useMemo(() => {
@@ -90,6 +134,24 @@ export default function AssignmentStep({
 
   const totalQuestions = cart.reduce((s, c) => s + (c.questionCount || 0), 0);
   const totalPages = cart.reduce((s, c) => s + (c.pageCount || 0), 0);
+  const cartCompletionCount = cart.filter((c) => isIncompleteHistory(taskHistory[c.contentId])).length;
+
+  const countIncomplete = useCallback((contents: Content[] | undefined) => {
+    let n = 0;
+    for (const c of contents || []) {
+      if (isIncompleteHistory(taskHistory[c.id]) && !isSelected(c.id)) n += 1;
+    }
+    return n;
+  }, [taskHistory, cart]);
+
+  const matchesHistoryFilter = useCallback((contentId: number) => {
+    const h = taskHistory[contentId];
+    if (historyFilter === 'all') return true;
+    if (historyFilter === 'partial') return h?.completion_status === 'PARTIAL';
+    if (historyFilter === 'not_done') return h?.completion_status === 'NOT_DONE';
+    // never: no evaluated history or PENDING only
+    return !h || h.completion_status === 'PENDING';
+  }, [historyFilter, taskHistory]);
 
   const toggle = (set: React.Dispatch<React.SetStateAction<Record<number, boolean>>>, id: number) =>
     set(prev => ({ ...prev, [id]: !prev[id] }));
@@ -102,6 +164,22 @@ export default function AssignmentStep({
     if (type === 'VIDEO') return '🎬';
     return '📖';
   };
+
+  const filterChip = (key: HistoryFilter, label: string) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setHistoryFilter(key)}
+      style={{
+        padding: '3px 8px', borderRadius: 12, fontSize: 10, fontWeight: 600, cursor: 'pointer',
+        border: historyFilter === key ? '1px solid #2563eb' : '1px solid var(--border-color)',
+        background: historyFilter === key ? 'rgba(37,99,235,0.1)' : 'var(--card-bg)',
+        color: historyFilter === key ? '#2563eb' : 'var(--text-muted)',
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div>
@@ -206,6 +284,7 @@ export default function AssignmentStep({
 
                       {openTypes[`${lesson.lessonId}-${type.typeName}`] && type.books.map(book => {
                         const active = selectedResource?.id === book.resource.id;
+                        const bp = bookProgress[book.bookId];
                         return (
                           <button
                             key={book.bookId}
@@ -228,7 +307,10 @@ export default function AssignmentStep({
                               transition: 'all 0.15s',
                             }}
                           >
-                            📘 {book.bookName}
+                            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              📘 {book.bookName}
+                            </span>
+                            <ScopePct progress={bp} titlePrefix="Kitap bitirme" wholeBook />
                           </button>
                         );
                       })}
@@ -243,23 +325,34 @@ export default function AssignmentStep({
         {/* ─── CENTER: Content Tree ─── */}
         <div className="odev-assign-panel">
           <div style={{
-            padding: '14px 16px',
+            padding: '12px 14px',
             borderBottom: '1px solid var(--border-color)',
             background: 'var(--body-bg)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
           }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-color)' }}>
-                {bookDetails ? `📖 ${bookDetails.name || bookDetails.ad}` : '📖 İçerikler'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-color)' }}>
+                  {bookDetails ? `📖 ${bookDetails.name || bookDetails.ad}` : '📖 Görevler'}
+                </div>
+                {bookDetails && (
+                  <ScopePct progress={bookProgress[bookDetails.id]} titlePrefix="Kitap bitirme" wholeBook />
+                )}
               </div>
               {bookDetails && (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                   {bookDetails.total_units || bookDetails.units?.length || 0} ünite · {bookDetails.total_topics || 0} konu
+                  {' · '}Eksikleri ünite veya konudan ekleyin
                 </div>
               )}
             </div>
+            {bookDetails && (
+              <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
+                {filterChip('all', 'Hepsi')}
+                {filterChip('partial', 'Eksik')}
+                {filterChip('not_done', 'Yapılmadı')}
+                {filterChip('never', 'Verilmemiş')}
+              </div>
+            )}
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {!selectedResource ? (
@@ -280,7 +373,13 @@ export default function AssignmentStep({
                 <p style={{ fontSize: 13 }}>Bu kaynakta henüz içerik tanımlanmamış</p>
               </div>
             ) : (
-              bookDetails.units.map((unit: Unit) => (
+              bookDetails.units.map((unit: Unit) => {
+                const unitIncomplete = (unit.topics || []).reduce(
+                  (s, t) => s + countIncomplete(t.contents),
+                  0,
+                );
+                const up = unitProgress[unit.id];
+                return (
                 <div key={unit.id} style={{ marginBottom: 4 }}>
                   {/* Unit header */}
                   <div style={{
@@ -303,15 +402,35 @@ export default function AssignmentStep({
                     >▶</button>
                     <div
                       onClick={() => toggle(setOpenUnits, unit.id)}
-                      style={{ flex: 1, cursor: 'pointer' }}
+                      style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-color)' }}>
-                        {unit.name || unit.ad}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-color)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {unit.name || unit.ad}
+                        </div>
+                        <ScopePct progress={up} titlePrefix="Ünite bitirme" />
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {unit.topics?.length || 0} konu
+                        {unitIncomplete > 0 && (
+                          <span style={{ color: '#2563eb', fontWeight: 600 }}> · {unitIncomplete} eksik</span>
+                        )}
                       </div>
                     </div>
+                    {unitIncomplete > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectIncompleteUnit(unit)}
+                        style={{
+                          padding: '4px 8px', borderRadius: 6, border: '1px solid #93c5fd',
+                          background: '#eff6ff', fontSize: 10, fontWeight: 600,
+                          color: '#1d4ed8', cursor: 'pointer',
+                        }}
+                        title="Bu ünitedeki eksik / yapılmayanlar"
+                      >
+                        Eksikler ({unitIncomplete})
+                      </button>
+                    )}
                     <button
                       onClick={() => onSelectAllUnit(unit)}
                       style={{
@@ -324,7 +443,9 @@ export default function AssignmentStep({
                     </button>
                   </div>
 
-                  {openUnits[unit.id] && unit.topics?.map((topic: Topic) => (
+                  {openUnits[unit.id] && unit.topics?.map((topic: Topic) => {
+                    const topicIncomplete = countIncomplete(topic.contents);
+                    return (
                     <div key={topic.id} style={{ paddingLeft: 20, marginBottom: 2 }}>
                       {/* Topic header */}
                       <div style={{
@@ -348,10 +469,29 @@ export default function AssignmentStep({
                           style={{ flex: 1, fontSize: 12, fontWeight: 500, color: 'var(--text-color)', cursor: 'pointer' }}
                         >
                           {topic.name || topic.ad}
+                          {topicIncomplete > 0 && (
+                            <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#2563eb' }}>
+                              {topicIncomplete} eksik
+                            </span>
+                          )}
                         </div>
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                           {topic.contents?.length || 0}
                         </span>
+                        {topicIncomplete > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectIncompleteTopic(topic, unit)}
+                            style={{
+                              padding: '3px 8px', borderRadius: 4, border: '1px solid #93c5fd',
+                              background: '#eff6ff', fontSize: 10, fontWeight: 600,
+                              color: '#1d4ed8', cursor: 'pointer',
+                            }}
+                            title="Bu konudaki eksik / yapılmayanlar"
+                          >
+                            Eksikler ({topicIncomplete})
+                          </button>
+                        )}
                         <button
                           onClick={() => onSelectAllTopic(topic, unit)}
                           style={{
@@ -364,7 +504,7 @@ export default function AssignmentStep({
                         </button>
                       </div>
 
-                      {openTopics[topic.id] && topic.contents?.map((content: Content) => {
+                      {openTopics[topic.id] && topic.contents?.filter((c) => matchesHistoryFilter(c.id)).map((content: Content) => {
                         const selected = isSelected(content.id);
                         const history = taskHistory[content.id];
                         const isDone = history?.completion_status === 'DONE';
@@ -386,16 +526,20 @@ export default function AssignmentStep({
                                   ? '1px solid #86efac'
                                   : isPartial
                                     ? '1px solid #fcd34d'
-                                    : selected
-                                      ? '1px solid var(--primary)'
-                                      : '1px solid transparent',
+                                    : isNotDone
+                                      ? '1px solid #fca5a5'
+                                      : selected
+                                        ? '1px solid var(--primary)'
+                                        : '1px solid transparent',
                                 background: isDone
                                   ? 'rgba(16,185,129,0.06)'
                                   : isPartial
                                     ? 'rgba(245,158,11,0.06)'
-                                    : selected
-                                      ? 'rgba(0,97,166,0.05)'
-                                      : 'transparent',
+                                    : isNotDone
+                                      ? 'rgba(220,38,38,0.05)'
+                                      : selected
+                                        ? 'rgba(0,97,166,0.05)'
+                                        : 'transparent',
                                 cursor: isLocked ? 'not-allowed' : 'pointer',
                                 transition: 'all 0.15s',
                                 opacity: isLocked ? 0.75 : 1,
@@ -509,9 +653,11 @@ export default function AssignmentStep({
                         );
                       })}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -531,7 +677,10 @@ export default function AssignmentStep({
                 🛒 Sepet
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                {cart.length} içerik seçildi
+                {cart.length} görev seçildi
+                {cartCompletionCount > 0 && (
+                  <span style={{ color: '#2563eb', fontWeight: 600 }}> · {cartCompletionCount} tekrar</span>
+                )}
               </div>
             </div>
             {cart.length > 0 && (
@@ -605,7 +754,10 @@ export default function AssignmentStep({
                           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-color)', padding: '6px 4px 4px', borderBottom: '1px solid var(--border-color)' }}>
                             {topic.topicName}
                           </div>
-                          {topic.items.map(({ content: item }) => (
+                          {topic.items.map(({ content: item }) => {
+                            const hist = taskHistory[item.contentId];
+                            const incomplete = isIncompleteHistory(hist);
+                            return (
                             <div
                               key={item.id}
                               style={{
@@ -614,6 +766,9 @@ export default function AssignmentStep({
                                 gap: 8,
                                 padding: '6px 4px',
                                 borderBottom: '1px solid rgba(0,0,0,0.04)',
+                                borderLeft: incomplete ? '3px solid #3b82f6' : '3px solid transparent',
+                                background: incomplete ? 'rgba(37,99,235,0.05)' : 'transparent',
+                                borderRadius: 4,
                               }}
                             >
                               <span style={{ fontSize: 14 }}>{getContentIcon(item.contentType)}</span>
@@ -628,6 +783,14 @@ export default function AssignmentStep({
                                   {item.questionCount ? `${item.questionCount} soru` : ''}
                                   {item.pageCount ? `${item.questionCount ? ' · ' : ''}${item.pageCount} sayfa` : ''}
                                 </div>
+                                {incomplete && (
+                                  <div style={{ fontSize: 9, fontWeight: 700, color: '#2563eb', marginTop: 2 }}>
+                                    🔄 {completionBadgeLabel(hist)}
+                                    {hist.assignment_title && (
+                                      <span style={{ fontWeight: 500, color: '#64748b' }}> · {hist.assignment_title}</span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                               <button
                                 onClick={() => onRemoveContent(item.id)}
@@ -643,7 +806,8 @@ export default function AssignmentStep({
                                 ✕
                               </button>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ))}
                     </div>
@@ -664,8 +828,14 @@ export default function AssignmentStep({
             }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--primary)' }}>{cart.length}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>İçerik</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Görev</div>
               </div>
+              {cartCompletionCount > 0 && (
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#2563eb' }}>{cartCompletionCount}</div>
+                  <div style={{ fontSize: 10, color: '#2563eb' }}>Tekrar</div>
+                </div>
+              )}
               {totalQuestions > 0 && (
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--success)' }}>{totalQuestions}</div>
