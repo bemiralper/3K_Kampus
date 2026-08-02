@@ -14,14 +14,16 @@ import {
   unlockNotificationAudio,
   bindNotificationAudioUnlock,
 } from '@/lib/notification-sound';
-import { useCommunicationSSE } from '@/hooks/useCommunicationSSE';
 
 /* ════════════════════════════════════════════
    🔔 BİLDİRİM ÇANI (Header Badge + Dropdown)
    ════════════════════════════════════════════ */
 
 interface Props {
-  /** Polling aralığı (ms). SSE yanında yedek; varsayılan 15 sn */
+  /**
+   * Polling aralığı (ms). Varsayılan 8 sn.
+   * SSE yalnızca sohbet ekranında açılır (gunicorn worker kilidi); çan polling + event dinler.
+   */
   pollInterval?: number;
 }
 
@@ -41,7 +43,7 @@ function extractConversationId(n: AppNotification): string | null {
   }
 }
 
-export default function NotificationBell({ pollInterval = 15000 }: Props) {
+export default function NotificationBell({ pollInterval = 8000 }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [recent, setRecent] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
@@ -115,11 +117,6 @@ export default function NotificationBell({ pollInterval = 15000 }: Props) {
       window.removeEventListener('lms:notifications-refresh', onRefresh);
     };
   }, [load, pollInterval]);
-
-  useCommunicationSSE({
-    onUpdate: () => { void load(); },
-    onFallbackPoll: () => { void load(); },
-  });
 
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {

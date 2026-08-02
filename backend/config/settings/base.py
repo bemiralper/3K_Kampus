@@ -95,8 +95,10 @@ COMMUNICATION_AI_ENABLED = os.environ.get('COMMUNICATION_AI_ENABLED', 'False').l
 )
 # SSE: 0 = sınırsız (Gunicorn sync worker + --timeout ile çakışır → WORKER TIMEOUT).
 # Varsayılan ~90 sn (18×5s heartbeat); istemci yeniden bağlanır. Env ile değiştirilebilir.
-COMMUNICATION_SSE_MAX_ITERATIONS = int(os.environ.get('COMMUNICATION_SSE_MAX_ITERATIONS', '18'))
-COMMUNICATION_SSE_POLL_SECONDS = float(os.environ.get('COMMUNICATION_SSE_POLL_SECONDS', '5'))
+# Sync gunicorn (3 worker): uzun SSE bağlantısı API'yi kilitlemesin.
+# ~45 sn sonra client reconnect; poll 8 sn.
+COMMUNICATION_SSE_MAX_ITERATIONS = int(os.environ.get('COMMUNICATION_SSE_MAX_ITERATIONS', '6'))
+COMMUNICATION_SSE_POLL_SECONDS = float(os.environ.get('COMMUNICATION_SSE_POLL_SECONDS', '8'))
 COMMUNICATION_TICKET_ROUTING = os.environ.get('COMMUNICATION_TICKET_ROUTING', 'True').lower() in (
     '1', 'true', 'yes', 'on',
 )

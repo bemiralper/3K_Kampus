@@ -1,10 +1,36 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const POLL_FALLBACK_MS = 20_000;
 const SSE_RECONNECT_MS = 1_500;
 const SSE_MAX_RECONNECTS = 8;
+
+export interface CommunicationSSEPayload {
+  unread_count?: number;
+  unread_conversations?: number;
+}
+
+type UpdateListener = (data: CommunicationSSEPayload) => void;
+type PollListener = () => void;
+type StatusListener = (status: { connected: boolean; usingFallback: boolean }) => void;
+
+/**
+ * Uygulama genelinde tek EventSource — sync gunicorn worker'larını tüketmemek için.
+ * NotificationBell + MesajlarClient aynı bağlantıyı paylaşır.
+ */
+const shared = {
+  refCount: 0,
+  es: null as EventSource | null,
+  reconnectTimer: null as ReturnType<typeof setTimeout> | null,
+  fallbackTimer: null as ReturnType<typeof setInterval> | null,
+  reconnectCount: 0,
+  connected: false,
+  usingFallback: false,
+  updateListeners: new Set<UpdateListener>(),
+  pollListeners: new Set<PollListener>(),
+  statusListeners: new Set<StatusListener>(),
+};
 
 function readKurumId(): string | null {
   if (typeof window === 'undefined') return null;
@@ -40,9 +66,145 @@ function readSubeId(): string | null {
   return null;
 }
 
-export interface CommunicationSSEPayload {
-  unread_count?: number;
-  unread_conversations?: number;
+function emitStatus() {
+  const status = { connected: shared.connected, usingFallback: shared.usingFallback };
+  shared.statusListeners.forEach((fn) => {
+    try { fn(status); } catch { /* ignore */ }
+  });
+}
+
+function stopFallback() {
+  if (shared.fallbackTimer) {
+    clearInterval(shared.fallbackTimer);
+    shared.fallbackTimer = null;
+  }
+  if (shared.usingFallback) {
+    shared.usingFallback = false;
+    emitStatus();
+  }
+}
+
+function startFallback() {
+  if (shared.fallbackTimer) return;
+  shared.usingFallback = true;
+  emitStatus();
+  shared.pollListeners.forEach((fn) => {
+    try { fn(); } catch { /* ignore */ }
+  });
+  shared.fallbackTimer = setInterval(() => {
+    shared.pollListeners.forEach((fn) => {
+      try { fn(); } catch { /* ignore */ }
+    });
+  }, POLL_FALLBACK_MS);
+}
+
+function clearReconnectTimer() {
+  if (shared.reconnectTimer) {
+    clearTimeout(shared.reconnectTimer);
+    shared.reconnectTimer = null;
+  }
+}
+
+function buildUrl() {
+  const kurumId = readKurumId();
+  const subeId = readSubeId();
+  const params = new URLSearchParams();
+  if (kurumId) params.set('kurum_id', kurumId);
+  if (subeId) params.set('sube_id', subeId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return `/api/communication/events/stream/${qs}`;
+}
+
+function handleInboxEvent(ev: Event) {
+  try {
+    const data = JSON.parse((ev as MessageEvent).data) as CommunicationSSEPayload;
+    shared.updateListeners.forEach((fn) => {
+      try { fn(data); } catch { /* ignore */ }
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('lms:communication-inbox', { detail: data }));
+      window.dispatchEvent(new Event('lms:notifications-refresh'));
+    }
+  } catch {
+    shared.pollListeners.forEach((fn) => {
+      try { fn(); } catch { /* ignore */ }
+    });
+  }
+}
+
+function connectShared() {
+  if (typeof window === 'undefined' || shared.refCount <= 0) return;
+  try {
+    shared.es?.close();
+    const es = new EventSource(buildUrl(), { withCredentials: true });
+    shared.es = es;
+
+    es.addEventListener('connected', () => {
+      shared.reconnectCount = 0;
+      shared.connected = true;
+      stopFallback();
+      emitStatus();
+    });
+
+    es.addEventListener('new_message', handleInboxEvent);
+    es.addEventListener('conversation_updated', handleInboxEvent);
+    es.addEventListener('conversation_claimed', handleInboxEvent);
+    es.addEventListener('sla_breach', handleInboxEvent);
+
+    es.addEventListener('heartbeat', () => {
+      shared.connected = true;
+      emitStatus();
+    });
+
+    es.addEventListener('reconnect', () => {
+      es.close();
+      if (shared.es === es) shared.es = null;
+      shared.connected = false;
+      emitStatus();
+      clearReconnectTimer();
+      shared.reconnectTimer = setTimeout(connectShared, SSE_RECONNECT_MS);
+    });
+
+    es.onerror = () => {
+      shared.connected = false;
+      emitStatus();
+      es.close();
+      if (shared.es === es) shared.es = null;
+
+      shared.reconnectCount += 1;
+      if (shared.reconnectCount <= SSE_MAX_RECONNECTS) {
+        clearReconnectTimer();
+        shared.reconnectTimer = setTimeout(
+          connectShared,
+          SSE_RECONNECT_MS * shared.reconnectCount,
+        );
+      } else {
+        startFallback();
+      }
+    };
+  } catch {
+    startFallback();
+  }
+}
+
+function acquireShared() {
+  shared.refCount += 1;
+  if (shared.refCount === 1) {
+    connectShared();
+  }
+}
+
+function releaseShared() {
+  shared.refCount = Math.max(0, shared.refCount - 1);
+  if (shared.refCount === 0) {
+    clearReconnectTimer();
+    stopFallback();
+    shared.es?.close();
+    shared.es = null;
+    shared.connected = false;
+    shared.reconnectCount = 0;
+    emitStatus();
+  }
 }
 
 interface UseCommunicationSSEOptions {
@@ -52,137 +214,45 @@ interface UseCommunicationSSEOptions {
 }
 
 /**
- * Koç inbox SSE — sunucu ~90 sn sonra temiz kapanır; istemci yeniden bağlanır.
- * Ardışık kopmalarda 20s polling fallback'e düşer.
+ * Koç inbox SSE — uygulama genelinde tek bağlantı (refcount).
+ * Sync gunicorn'da sayfa başına birden fazla EventSource worker'ı kilitlemesin.
  */
 export function useCommunicationSSE({
   enabled = true,
   onUpdate,
   onFallbackPoll,
 }: UseCommunicationSSEOptions = {}) {
-  const [connected, setConnected] = useState(false);
-  const [usingFallback, setUsingFallback] = useState(false);
-  const esRef = useRef<EventSource | null>(null);
-  const fallbackRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectCountRef = useRef(0);
+  const [connected, setConnected] = useState(shared.connected);
+  const [usingFallback, setUsingFallback] = useState(shared.usingFallback);
   const onUpdateRef = useRef(onUpdate);
   const onFallbackPollRef = useRef(onFallbackPoll);
   onUpdateRef.current = onUpdate;
   onFallbackPollRef.current = onFallbackPoll;
 
-  const stopFallback = useCallback(() => {
-    if (fallbackRef.current) {
-      clearInterval(fallbackRef.current);
-      fallbackRef.current = null;
-    }
-    setUsingFallback(false);
-  }, []);
-
-  const startFallback = useCallback(() => {
-    if (fallbackRef.current) return;
-    setUsingFallback(true);
-    onFallbackPollRef.current?.();
-    fallbackRef.current = setInterval(() => {
-      onFallbackPollRef.current?.();
-    }, POLL_FALLBACK_MS);
-  }, []);
-
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return;
 
-    let closed = false;
-
-    const buildUrl = () => {
-      const kurumId = readKurumId();
-      const subeId = readSubeId();
-      const params = new URLSearchParams();
-      if (kurumId) params.set('kurum_id', kurumId);
-      if (subeId) params.set('sube_id', subeId);
-      const qs = params.toString() ? `?${params.toString()}` : '';
-      return `/api/communication/events/stream/${qs}`;
+    const updateFn: UpdateListener = (data) => onUpdateRef.current?.(data);
+    const pollFn: PollListener = () => onFallbackPollRef.current?.();
+    const statusFn: StatusListener = (status) => {
+      setConnected(status.connected);
+      setUsingFallback(status.usingFallback);
     };
 
-    const clearReconnectTimer = () => {
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-    };
-
-    const connect = () => {
-      if (closed) return;
-      try {
-        esRef.current?.close();
-        const es = new EventSource(buildUrl(), { withCredentials: true });
-        esRef.current = es;
-
-        es.addEventListener('connected', () => {
-          if (closed) return;
-          reconnectCountRef.current = 0;
-          setConnected(true);
-          stopFallback();
-        });
-
-        const handleInboxEvent = (ev: Event) => {
-          if (closed) return;
-          try {
-            const data = JSON.parse((ev as MessageEvent).data) as CommunicationSSEPayload;
-            onUpdateRef.current?.(data);
-          } catch {
-            onFallbackPollRef.current?.();
-          }
-        };
-        es.addEventListener('new_message', handleInboxEvent);
-        es.addEventListener('conversation_updated', handleInboxEvent);
-        es.addEventListener('conversation_claimed', handleInboxEvent);
-        es.addEventListener('sla_breach', handleInboxEvent);
-
-        es.addEventListener('heartbeat', () => {
-          if (closed) return;
-          setConnected(true);
-        });
-
-        es.addEventListener('reconnect', () => {
-          // Sunucu bilinçli kapattı — hemen yeniden bağlan
-          if (closed) return;
-          es.close();
-          esRef.current = null;
-          setConnected(false);
-          clearReconnectTimer();
-          reconnectTimerRef.current = setTimeout(connect, SSE_RECONNECT_MS);
-        });
-
-        es.onerror = () => {
-          if (closed) return;
-          setConnected(false);
-          es.close();
-          if (esRef.current === es) esRef.current = null;
-
-          reconnectCountRef.current += 1;
-          if (reconnectCountRef.current <= SSE_MAX_RECONNECTS) {
-            clearReconnectTimer();
-            reconnectTimerRef.current = setTimeout(connect, SSE_RECONNECT_MS * reconnectCountRef.current);
-          } else {
-            startFallback();
-          }
-        };
-      } catch {
-        startFallback();
-      }
-    };
-
-    connect();
+    shared.updateListeners.add(updateFn);
+    shared.pollListeners.add(pollFn);
+    shared.statusListeners.add(statusFn);
+    acquireShared();
+    setConnected(shared.connected);
+    setUsingFallback(shared.usingFallback);
 
     return () => {
-      closed = true;
-      clearReconnectTimer();
-      esRef.current?.close();
-      esRef.current = null;
-      stopFallback();
-      setConnected(false);
+      shared.updateListeners.delete(updateFn);
+      shared.pollListeners.delete(pollFn);
+      shared.statusListeners.delete(statusFn);
+      releaseShared();
     };
-  }, [enabled, startFallback, stopFallback]);
+  }, [enabled]);
 
   return { connected, usingFallback };
 }

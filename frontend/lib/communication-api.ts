@@ -54,7 +54,7 @@ function communicationApiUrl(path: string): string {
   return `${BACKEND_URL}/api/communication${normalized}`;
 }
 
-const REQUEST_TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 45_000;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const csrf = getCsrfToken();
