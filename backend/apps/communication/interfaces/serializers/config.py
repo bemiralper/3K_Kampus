@@ -354,6 +354,7 @@ class CampaignPreviewResponseSerializer(serializers.Serializer):
     total_recipients = serializers.IntegerField()
     ogrenci_count = serializers.IntegerField()
     veli_count = serializers.IntegerField()
+    personel_count = serializers.IntegerField(required=False, default=0)
     estimated_messages = serializers.IntegerField()
     invalid_phones = serializers.IntegerField()
     attachment_count = serializers.IntegerField(required=False, default=0)

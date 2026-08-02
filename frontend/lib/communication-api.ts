@@ -854,6 +854,7 @@ export interface AudienceFilter {
   coach_id?: number;
   ogrenci_ids?: number[];
   veli_ids?: number[];
+  personel_ids?: number[];
   egitim_yili_id?: number;
   template_name?: string;
 
@@ -883,6 +884,7 @@ export interface CampaignPreviewRecipient {
   recipient_type: string;
   ogrenci_id?: number | null;
   veli_id?: number | null;
+  personel_id?: number | null;
   display_name?: string;
 }
 
@@ -890,6 +892,7 @@ export interface CampaignPreviewStats {
   total_recipients: number;
   ogrenci_count: number;
   veli_count: number;
+  personel_count?: number;
   estimated_messages: number;
   invalid_phones: number;
   attachment_count?: number;
@@ -899,6 +902,32 @@ export interface CampaignPreviewStats {
   recipients_total?: number;
   page?: number;
   page_size?: number;
+}
+
+export interface BulkRecipientHit {
+  kind: 'ogrenci' | 'veli' | 'personel';
+  id: number;
+  label: string;
+  meta?: string;
+  phone?: string;
+  sinif?: string;
+  ad?: string;
+  soyad?: string;
+  ogrenci_id?: number;
+  ogrenci_name?: string;
+  veli_turu_display?: string;
+}
+
+export async function searchBulkRecipients(
+  q: string,
+  options?: { includePersonel?: boolean },
+): Promise<{ results: BulkRecipientHit[]; counts?: Record<string, number> }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const search = new URLSearchParams();
+  search.set('q', q);
+  if (kurumId) search.set('kurum_id', kurumId);
+  if (options?.includePersonel === false) search.set('include_personel', '0');
+  return request(`/recipients/search/?${search.toString()}`);
 }
 
 export interface MessageTemplateItem {
@@ -1087,7 +1116,7 @@ export const AUDIENCE_TYPE_LABELS: Record<string, string> = {
   sube: 'Şube',
   coach_students: 'Koç öğrencileri',
   coach_parents: 'Koç velileri',
-  custom_ids: 'Arama ile seçim',
+  custom_ids: 'Arama ile seç (öğrenci / veli / personel)',
   filtered: 'Filtre',
   advanced: 'Gelişmiş filtre',
 };

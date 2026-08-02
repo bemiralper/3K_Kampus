@@ -43,6 +43,7 @@ class AudienceRecipient:
     recipient_type: str
     ogrenci_id: int | None = None
     veli_id: int | None = None
+    personel_id: int | None = None
     display_name: str = ''
     raw_phone: str = ''
 
@@ -52,6 +53,7 @@ class AudiencePreview:
     total_recipients: int = 0
     ogrenci_count: int = 0
     veli_count: int = 0
+    personel_count: int = 0
     estimated_messages: int = 0
     invalid_phones: int = 0
     attachment_count: int = 0
@@ -64,6 +66,7 @@ class AudiencePreview:
             'total_recipients': self.total_recipients,
             'ogrenci_count': self.ogrenci_count,
             'veli_count': self.veli_count,
+            'personel_count': self.personel_count,
             'estimated_messages': self.estimated_messages,
             'invalid_phones': self.invalid_phones,
             'attachment_count': self.attachment_count,
@@ -77,6 +80,7 @@ class AudiencePreview:
                     'recipient_type': r.recipient_type,
                     'ogrenci_id': r.ogrenci_id,
                     'veli_id': r.veli_id,
+                    'personel_id': r.personel_id,
                     'display_name': r.display_name,
                 }
                 for r in self.recipients
@@ -145,7 +149,11 @@ class AudienceResolver:
         elif audience_type == 'custom_ids':
             ogrenci_ids = filter_json.get('ogrenci_ids') or []
             veli_ids = filter_json.get('veli_ids') or []
-            raw_entries.extend(cls._collect_custom_ids(kurum_id, ogrenci_ids, veli_ids, allowed_student_ids))
+            personel_ids = filter_json.get('personel_ids') or []
+            raw_entries.extend(cls._collect_custom_ids(
+                kurum_id, ogrenci_ids, veli_ids, allowed_student_ids,
+                personel_ids=personel_ids,
+            ))
         else:
             # filtered — combine optional filters
             if filter_json.get('sinif_id'):
@@ -165,9 +173,13 @@ class AudienceResolver:
                 raw_entries.extend(cls._collect_coach_parents(kurum_id, int(filter_json['coach_id'])))
             ogrenci_ids = filter_json.get('ogrenci_ids') or []
             veli_ids = filter_json.get('veli_ids') or []
-            if ogrenci_ids or veli_ids:
+            personel_ids = filter_json.get('personel_ids') or []
+            if ogrenci_ids or veli_ids or personel_ids:
                 raw_entries.extend(
-                    cls._collect_custom_ids(kurum_id, ogrenci_ids, veli_ids, allowed_student_ids)
+                    cls._collect_custom_ids(
+                        kurum_id, ogrenci_ids, veli_ids, allowed_student_ids,
+                        personel_ids=personel_ids,
+                    )
                 )
             if not raw_entries and audience_type in ('filtered',):
                 if filter_json.get('include_students'):
@@ -351,12 +363,13 @@ class AudienceResolver:
         excluded_ids = set(int(x) for x in (filter_json.get('excluded_ids') or []))
 
         filtered = []
-        for phone, rtype, oid, vid, name in raw_entries:
+        for entry in raw_entries:
+            phone, rtype, oid, vid, name = entry[:5]
             if oid and (oid in excluded_ogrenci or oid in excluded_ids):
                 continue
             if vid and (vid in excluded_veli or vid in excluded_ids):
                 continue
-            filtered.append((phone, rtype, oid, vid, name))
+            filtered.append(entry)
 
         include_ogrenci = filter_json.get('included_ogrenci_ids') or filter_json.get('included_ids') or []
         include_veli = filter_json.get('included_veli_ids') or []
@@ -543,6 +556,8 @@ class AudienceResolver:
         ogrenci_ids: list,
         veli_ids: list,
         allowed_student_ids,
+        *,
+        personel_ids: list | None = None,
     ) -> list[tuple]:
         from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
 
@@ -574,6 +589,28 @@ class AudienceResolver:
                         veli.id,
                         veli.tam_ad,
                     ))
+
+        # Koç kapsamı (allowed_student_ids) personel seçimine izin vermez
+        if personel_ids and allowed_student_ids is None:
+            from apps.personel.domain.models import Personel
+
+            pqs = Personel.objects.filter(
+                kurum_id=kurum_id,
+                id__in=personel_ids,
+                aktif_mi=True,
+            )
+            for p in pqs:
+                phone = (getattr(p, 'cep_telefon', None) or getattr(p, 'telefon', None) or '').strip()
+                if not phone:
+                    continue
+                entries.append((
+                    phone,
+                    RecipientType.PERSONEL,
+                    None,
+                    None,
+                    p.tam_ad,
+                    p.id,
+                ))
         return entries
 
     @classmethod
@@ -588,8 +625,14 @@ class AudienceResolver:
         invalid = 0
         ogrenci_count = 0
         veli_count = 0
+        personel_count = 0
 
-        for phone, rtype, ogrenci_id, veli_id, display_name in raw_entries:
+        for entry in raw_entries:
+            if len(entry) >= 6:
+                phone, rtype, ogrenci_id, veli_id, display_name, personel_id = entry[:6]
+            else:
+                phone, rtype, ogrenci_id, veli_id, display_name = entry[:5]
+                personel_id = None
             try:
                 e164 = ContactResolver.normalize(phone)
             except (ValidationError, Exception):
@@ -603,6 +646,7 @@ class AudienceResolver:
                 recipient_type=rtype,
                 ogrenci_id=ogrenci_id,
                 veli_id=veli_id,
+                personel_id=personel_id,
                 display_name=display_name,
                 raw_phone=phone,
             ))
@@ -610,11 +654,14 @@ class AudienceResolver:
                 ogrenci_count += 1
             elif rtype == RecipientType.VELI:
                 veli_count += 1
+            elif rtype == RecipientType.PERSONEL:
+                personel_count += 1
 
         preview = AudiencePreview(
             total_recipients=len(recipients),
             ogrenci_count=ogrenci_count,
             veli_count=veli_count,
+            personel_count=personel_count,
             estimated_messages=len(recipients),
             invalid_phones=invalid,
             recipients=recipients if include_invalid else recipients,
@@ -831,18 +878,26 @@ class CampaignService:
         for recipient in preview.recipients:
             ogrenci = None
             veli = None
-            if recipient.ogrenci_id:
+            personel = None
+            is_personel = recipient.recipient_type == RecipientType.PERSONEL
+            if recipient.ogrenci_id and not is_personel:
                 from apps.ogrenci.domain.models import Ogrenci
 
                 ogrenci = Ogrenci.objects.select_related('sube').filter(id=recipient.ogrenci_id).first()
-            if recipient.veli_id:
+            if recipient.veli_id and not is_personel:
                 from apps.ogrenci.domain.models import OgrenciVeli
 
                 veli = OgrenciVeli.objects.filter(id=recipient.veli_id).first()
+            if recipient.personel_id:
+                from apps.personel.domain.models import Personel
+
+                personel = Personel.objects.filter(id=recipient.personel_id).first()
 
             sube_ad = ''
             if ogrenci and getattr(ogrenci, 'sube', None):
                 sube_ad = getattr(ogrenci.sube, 'ad', '') or ''
+            elif personel and getattr(personel, 'sube', None):
+                sube_ad = getattr(personel.sube, 'ad', '') or ''
 
             body = resolve_variables(
                 body_template,
@@ -862,10 +917,27 @@ class CampaignService:
                 contact_phone=recipient.e164,
                 contact_type=recipient.recipient_type,
                 contact_identity=resolved.identity,
-                ogrenci_id=recipient.ogrenci_id or resolved.ogrenci_id,
-                veli_id=recipient.veli_id or resolved.veli_id,
+                ogrenci_id=None if is_personel else (recipient.ogrenci_id or resolved.ogrenci_id),
+                veli_id=None if is_personel else (recipient.veli_id or resolved.veli_id),
                 channel_config=campaign.channel_config,
             )
+            if is_personel and personel:
+                update_fields = []
+                if conversation.contact_type != RecipientType.PERSONEL:
+                    conversation.contact_type = RecipientType.PERSONEL
+                    update_fields.append('contact_type')
+                if conversation.subject != (personel.tam_ad or ''):
+                    conversation.subject = personel.tam_ad or ''
+                    update_fields.append('subject')
+                if conversation.ogrenci_id is not None:
+                    conversation.ogrenci_id = None
+                    update_fields.append('ogrenci_id')
+                if conversation.veli_id is not None:
+                    conversation.veli_id = None
+                    update_fields.append('veli_id')
+                if update_fields:
+                    update_fields.append('updated_at')
+                    conversation.save(update_fields=update_fields)
             msg_type = message_type
             if campaign_attachments and not template_name:
                 first = campaign_attachments[0]

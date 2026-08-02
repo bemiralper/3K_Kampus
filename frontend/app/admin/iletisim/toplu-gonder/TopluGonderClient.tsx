@@ -45,7 +45,7 @@ export interface AudienceOption {
 }
 
 export const ADMIN_AUDIENCE_OPTIONS: AudienceOption[] = [
-  { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci ara; öğrenci ve velilerinden seçerek gönder" },
+  { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci, veli veya personel arayıp seçerek gönder" },
   { value: "all_veliler", icon: "👨‍👩‍👧", title: "Tüm veliler", description: "Duyuru opt-in vermiş tüm velilere gönder" },
   { value: "all_ogrenciler", icon: "🎓", title: "Tüm öğrenciler", description: "Aktif öğrencilere gönder" },
   { value: "sinif", icon: "🏫", title: "Sınıf", description: "Belirli bir sınıfın velilerine gönder" },
@@ -55,7 +55,7 @@ export const ADMIN_AUDIENCE_OPTIONS: AudienceOption[] = [
 ];
 
 export const COACH_AUDIENCE_OPTIONS: AudienceOption[] = [
-  { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci ara; öğrenci ve velilerinden seçerek gönder" },
+  { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci veya veli arayıp seçerek gönder" },
   { value: "coach_students", icon: "🎯", title: "Öğrencilerim", description: "Koçluk kapsamındaki öğrencilere gönder" },
   { value: "coach_parents", icon: "👪", title: "Velilerim", description: "Koçluk kapsamındaki öğrenci velilerine gönder" },
 ];
@@ -92,6 +92,7 @@ export default function TopluGonderClient({
   const [advancedFilter, setAdvancedFilter] = useState<AudienceFilter>({});
   const [pickedOgrenciIds, setPickedOgrenciIds] = useState<number[]>([]);
   const [pickedVeliIds, setPickedVeliIds] = useState<number[]>([]);
+  const [pickedPersonelIds, setPickedPersonelIds] = useState<number[]>([]);
   const [historyKey, setHistoryKey] = useState(0);
 
   const buildFilter = useCallback((): AudienceFilter => {
@@ -105,9 +106,10 @@ export default function TopluGonderClient({
     if (audienceType === "custom_ids") {
       filter.ogrenci_ids = pickedOgrenciIds;
       filter.veli_ids = pickedVeliIds;
+      if (!isCoach) filter.personel_ids = pickedPersonelIds;
     }
     return filter;
-  }, [audienceType, sinifId, advancedFilter, pickedOgrenciIds, pickedVeliIds]);
+  }, [audienceType, sinifId, advancedFilter, pickedOgrenciIds, pickedVeliIds, pickedPersonelIds, isCoach]);
 
   useEffect(() => {
     if (isCoach) return;
@@ -148,7 +150,7 @@ export default function TopluGonderClient({
 
   useEffect(() => {
     if (pageTab === "compose" && step === 0) refreshMiniPreview();
-  }, [pageTab, step, audienceType, sinifId, advancedFilter, pickedOgrenciIds, pickedVeliIds, refreshMiniPreview]);
+  }, [pageTab, step, audienceType, sinifId, advancedFilter, pickedOgrenciIds, pickedVeliIds, pickedPersonelIds, refreshMiniPreview]);
 
   const handleNext = () => {
     if (step === 0 && audienceType === "sinif" && !sinifId) {
@@ -159,9 +161,10 @@ export default function TopluGonderClient({
       step === 0 &&
       audienceType === "custom_ids" &&
       pickedOgrenciIds.length === 0 &&
-      pickedVeliIds.length === 0
+      pickedVeliIds.length === 0 &&
+      pickedPersonelIds.length === 0
     ) {
-      setError("En az bir öğrenci veya veli seçin.");
+      setError(isCoach ? "En az bir öğrenci veya veli seçin." : "En az bir öğrenci, veli veya personel seçin.");
       return;
     }
     setError(null);
@@ -283,9 +286,12 @@ export default function TopluGonderClient({
                   <RecipientPickerPanel
                     ogrenciIds={pickedOgrenciIds}
                     veliIds={pickedVeliIds}
-                    onChange={({ ogrenci_ids, veli_ids }) => {
+                    personelIds={pickedPersonelIds}
+                    allowPersonel={!isCoach}
+                    onChange={({ ogrenci_ids, veli_ids, personel_ids }) => {
                       setPickedOgrenciIds(ogrenci_ids);
                       setPickedVeliIds(veli_ids);
+                      setPickedPersonelIds(personel_ids);
                     }}
                   />
                 </div>
@@ -301,6 +307,9 @@ export default function TopluGonderClient({
                 <div className="comm-audience-preview-breakdown">
                   <span>{previewLoading ? "…" : miniPreview?.veli_count ?? 0} veli</span>
                   <span>{previewLoading ? "…" : miniPreview?.ogrenci_count ?? 0} öğrenci</span>
+                  {!isCoach && (
+                    <span>{previewLoading ? "…" : miniPreview?.personel_count ?? 0} personel</span>
+                  )}
                 </div>
               </div>
             </div>

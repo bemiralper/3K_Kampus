@@ -49,6 +49,7 @@ from apps.communication.interfaces.views.recipients import (
     CoachParentsRecipientsView,
     CoachStudentsRecipientsView,
     RecipientResolveView,
+    RecipientSearchView,
 )
 from apps.communication.interfaces.views.announcements import AnnouncementSendView
 from apps.communication.interfaces.views.ai import AiSuggestReplyView
@@ -162,6 +163,7 @@ urlpatterns = [
     path('attachments/upload/', AttachmentUploadView.as_view(), name='attachment-upload'),
     path('attachments/<uuid:attachment_id>/', AttachmentDetailView.as_view(), name='attachment-detail'),
     path('recipients/resolve/', RecipientResolveView.as_view(), name='recipient-resolve'),
+    path('recipients/search/', RecipientSearchView.as_view(), name='recipient-search'),
     path('recipients/coach-students/', CoachStudentsRecipientsView.as_view(), name='recipient-coach-students'),
     path('recipients/coach-parents/', CoachParentsRecipientsView.as_view(), name='recipient-coach-parents'),
     path('announcements/send/', AnnouncementSendView.as_view(), name='announcement-send'),
