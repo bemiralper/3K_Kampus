@@ -1352,7 +1352,7 @@ export async function updateTaskEvaluationNote(
 
 export interface ContentTaskHistoryItem {
   content_id: number;
-  completion_status: string;
+  completion_status: 'PENDING' | 'DONE' | 'NOT_DONE' | 'PARTIAL';
   task_completion_percent: number;
   completed_question_count: number;
   question_count: number;
@@ -1385,7 +1385,7 @@ function parseScopeMap(raw: unknown): Record<number, ScopeCompletionProgress> {
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     const id = Number(k);
     if (!Number.isFinite(id) || !v || typeof v !== "object") continue;
-    const row = v as { assigned?: unknown; percent?: unknown };
+    const row = v as { assigned?: unknown; percent?: unknown; total?: unknown };
     out[id] = {
       assigned: Number(row.assigned) || 0,
       percent: Number(row.percent) || 0,

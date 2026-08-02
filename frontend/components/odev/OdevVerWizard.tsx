@@ -826,7 +826,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
             </Link>
           )}
           <button
-            onClick={resetAll}
+            type="button"
+            onClick={() => resetAll()}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '8px 16px', background: 'rgba(255,255,255,0.2)',

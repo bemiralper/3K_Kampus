@@ -1,3 +1,12 @@
+import type { ScopeCompletionProgress as ScopeProgress } from '@/lib/resources-api';
+
+export type {
+  ContentTaskHistoryItem,
+  ContentTaskHistory,
+  ScopeCompletionProgress,
+} from '@/lib/resources-api';
+export type ScopeCompletionMap = Record<number, ScopeProgress>;
+
 export interface Student {
   id: number;
   ad: string;
@@ -98,33 +107,6 @@ export interface SavedAssignment {
   coachNotes: string;
   coachName: string;
 }
-
-/* ─── Content Task History ─── */
-export interface ContentTaskHistoryItem {
-  content_id: number;
-  completion_status: 'PENDING' | 'DONE' | 'NOT_DONE' | 'PARTIAL';
-  task_completion_percent: number;
-  completed_question_count: number;
-  question_count: number;
-  assignment_id: number;
-  assignment_title: string;
-  assignment_status: string;
-  evaluated_at: string | null;
-  unit_id?: number | null;
-  book_id?: number | null;
-}
-
-export type ContentTaskHistory = Record<number, ContentTaskHistoryItem>;
-
-/** Ödev verilmiş kapsam için bitirme özeti (kitap / ünite) */
-export interface ScopeCompletionProgress {
-  assigned: number;
-  percent: number;
-  /** Kitapta: tüm içerik sayısı (yüzde buna göre) */
-  total?: number;
-}
-
-export type ScopeCompletionMap = Record<number, ScopeCompletionProgress>;
 
 /* ─── Cart Grouping ─── */
 export interface CartContentItem {

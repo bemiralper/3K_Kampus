@@ -56,7 +56,7 @@ export default function EmojiPickerPortal({
     }
 
     setPosition({ top, left });
-  }, [triggerRef, height]);
+  }, [triggerRef, height, width]);
 
   useLayoutEffect(() => {
     if (!open) {
