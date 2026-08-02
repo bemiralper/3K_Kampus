@@ -33,6 +33,7 @@ class AssignmentControlLockTest(TestCase):
         )
         self.client = APIClient()
         self.client.force_authenticate(user=self.coach)
+        self.client.credentials(HTTP_X_KURUM_ID=str(kurum.id), HTTP_X_SUBE_ID=str(sube.id))
 
         self.assignment = ManualAssignment.objects.create(
             coach=self.coach,

@@ -322,6 +322,12 @@ if [[ "$SKIP_RESTART" != true ]]; then
     log "restart backend: $LMS_BACKEND_SERVICE"
     sudo systemctl restart "$LMS_BACKEND_SERVICE"
     restarted=true
+    # SSE (iletişim canlı dinleme) sync worker'da worker'ı bloklar → 503 / WORKER TIMEOUT
+    if ! systemctl cat "$LMS_BACKEND_SERVICE" 2>/dev/null | grep -q -- '--worker-class[= ]gthread'; then
+      log "UYARI: $LMS_BACKEND_SERVICE gthread worker kullanmıyor."
+      log "       ExecStart satırına '--worker-class gthread --threads 8' ekleyin"
+      log "       (bkz. docs/deployment/production-deploy.md)."
+    fi
   fi
   if [[ -n "${LMS_FRONTEND_SERVICE:-}" ]]; then
     log "restart frontend: $LMS_FRONTEND_SERVICE"

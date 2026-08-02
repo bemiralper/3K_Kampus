@@ -8,7 +8,10 @@ from apps.finans.domain.payment_method import OdemeYontemi
 
 @admin.register(OdemeYontemi)
 class OdemeYontemiAdmin(admin.ModelAdmin):
-    list_display = ['ad', 'tip', 'mali_hesap', 'kurum', 'komisyon_orani', 'valor_gun', 'aktif_mi', 'silindi_mi']
+    list_display = [
+        'ad', 'tip', 'mali_hesap', 'kurum', 'komisyon_orani', 'valor_gun',
+        'siralama', 'aktif_mi', 'silindi_mi',
+    ]
     list_filter = ['tip', 'aktif_mi', 'silindi_mi', 'kurum']
     search_fields = ['ad', 'aciklama']
     ordering = ['kurum', 'siralama', 'ad']

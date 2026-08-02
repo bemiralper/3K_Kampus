@@ -67,6 +67,8 @@ WHATSAPP_WABA_ID = os.environ.get('WHATSAPP_WABA_ID', '')
 WHATSAPP_ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')
 WHATSAPP_VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', '')
 WHATSAPP_APP_SECRET = os.environ.get('WHATSAPP_APP_SECRET', '')
+# Şablon header örneği (resumable upload) için Meta App ID — boşsa token'dan çözülür.
+WHATSAPP_APP_ID = os.environ.get('WHATSAPP_APP_ID', '')
 COMM_QUEUE_BATCH_SIZE = int(os.environ.get('COMM_QUEUE_BATCH_SIZE', '20'))
 COMMUNICATION_QUEUE_BATCH_SIZE = int(
     os.environ.get('COMMUNICATION_QUEUE_BATCH_SIZE', str(COMM_QUEUE_BATCH_SIZE))
@@ -99,6 +101,10 @@ COMMUNICATION_AI_ENABLED = os.environ.get('COMMUNICATION_AI_ENABLED', 'False').l
 # ~45 sn sonra client reconnect; poll 8 sn.
 COMMUNICATION_SSE_MAX_ITERATIONS = int(os.environ.get('COMMUNICATION_SSE_MAX_ITERATIONS', '6'))
 COMMUNICATION_SSE_POLL_SECONDS = float(os.environ.get('COMMUNICATION_SSE_POLL_SECONDS', '8'))
+# Worker başına eşzamanlı SSE bağlantısı. Açık her stream bir thread/worker tutar;
+# gthread (--threads 8) altında yarısını normal isteklere ayırıyoruz. Sınır dolunca
+# istemci "fallback" olayı alıp yoklamaya geçer.
+COMMUNICATION_SSE_MAX_STREAMS = int(os.environ.get('COMMUNICATION_SSE_MAX_STREAMS', '4'))
 COMMUNICATION_TICKET_ROUTING = os.environ.get('COMMUNICATION_TICKET_ROUTING', 'True').lower() in (
     '1', 'true', 'yes', 'on',
 )

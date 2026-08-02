@@ -33,8 +33,12 @@ class AssignmentCreateEvaluateTest(TestCase):
             email='coach_create@test.com',
             password='testpass123',
         )
-        self.ders = Ders.objects.create(ad='Matematik', kod='MAT')
-        self.sinif = SinifSeviyesi.objects.create(ad='12. Sınıf', kod='S12', sira=12)
+        self.ders = Ders.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Matematik', kod='MAT',
+        )
+        self.sinif = SinifSeviyesi.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='12. Sınıf', kod='S12', sira=12,
+        )
         self.book_type = BookType.objects.create(kod='SB_ASG', ad='Soru Bankası')
         self.resource_book = ResourceBook.objects.create(
             sube=self.sube,
@@ -50,6 +54,7 @@ class AssignmentCreateEvaluateTest(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.coach)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
 
         self.due_date = (timezone.now() + timezone.timedelta(days=5)).isoformat()
 
@@ -99,7 +104,7 @@ class AssignmentCreateEvaluateTest(TestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 201, response.data)
         self.assertTrue(response.data['success'])
         data = response.data['data']
         self.assertEqual(data['title'], 'Haftalık Matematik Ödevi')

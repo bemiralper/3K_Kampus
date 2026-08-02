@@ -10,6 +10,7 @@ from apps.kurum.domain.models import Kurum
 from apps.sube.domain.models import Sube
 from apps.finans.domain.cari_hesap import CariHesap
 from apps.finans.domain.gelir_kaydi import GelirKaydi
+from apps.finans.domain.payment_method import OdemeYontemi
 from apps.finans.application.financial_account_service import MaliHesapService
 from apps.finans.application.payment_method_service import OdemeYontemiService
 from apps.finans.application.finans_tanim_usage import (
@@ -30,19 +31,31 @@ class FinansTanimDeleteProtectionTest(TestCase):
         self.odeme_service = OdemeYontemiService()
 
     def test_mali_hesap_delete_blocked_by_odeme_yontemi(self):
+        """Hesabın ödeme yöntemi bir kayıtta kullanılıyorsa hesap silinemez."""
         mali, _ = self.mali_service.create(self.sube.id, {
             'ad': 'Kullanılan Kasa',
             'tip': MaliHesapTipi.KASA,
         })
-        self.odeme_service.create(self.kurum.id, {
-            'ad': 'Nakit',
-            'tip': OdemeYontemiTipi.NAKIT,
-            'mali_hesap_id': mali.id,
-        })
+        # Kasa açılırken Nakit kanalı otomatik oluşur.
+        odeme = OdemeYontemi.objects.filter(
+            mali_hesap_id=mali.id, tip=OdemeYontemiTipi.NAKIT,
+        ).first()
+        self.assertIsNotNone(odeme)
+        cari = CariHesap.objects.create(kurum=self.kurum, sube=self.sube, unvan='Nakit Müşteri')
+        GelirKaydi.tum_kayitlar.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            cari_hesap=cari,
+            odeme_yontemi_id=odeme.id,
+            fatura_tarihi=date.today(),
+            vade_tarihi=date.today(),
+            brut_tutar=Decimal('100.00'),
+            net_tutar=Decimal('100.00'),
+        )
 
         message = get_mali_hesap_delete_block_message(mali.id)
         self.assertIsNotNone(message)
-        self.assertIn('bu hesaba tanımlı ödeme yöntemi', message)
+        self.assertIn('kullanımda olan ödeme yöntemi', message)
 
         deleted, errors = self.mali_service.soft_delete(mali.id)
         self.assertIsNone(deleted)

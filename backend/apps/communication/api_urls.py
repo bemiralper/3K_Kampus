@@ -22,6 +22,15 @@ from apps.communication.interfaces.views.config import WhatsAppConfigTestView, W
 from apps.communication.interfaces.views.queue import OutboundQueueListView
 from apps.communication.interfaces.views.conversation_open import ConversationOpenView
 from apps.communication.interfaces.views.meta_templates import WhatsAppMetaTemplatesView
+from apps.communication.interfaces.views.meta_template_mgmt import (
+    MetaTemplateCloneView,
+    MetaTemplateDetailView,
+    MetaTemplateExampleMediaUploadView,
+    MetaTemplateListCreateView,
+    MetaTemplateRefreshStatusView,
+    MetaTemplateResubmitView,
+    MetaTemplateSubmitView,
+)
 from apps.communication.interfaces.views.conversations import (
     ConversationArchiveView,
     ConversationDetailView,
@@ -73,6 +82,33 @@ urlpatterns = [
     path('config/whatsapp/', WhatsAppConfigView.as_view(), name='whatsapp-config'),
     path('config/whatsapp/test/', WhatsAppConfigTestView.as_view(), name='whatsapp-config-test'),
     path('config/whatsapp/templates/', WhatsAppMetaTemplatesView.as_view(), name='whatsapp-meta-templates'),
+    path('meta-templates/', MetaTemplateListCreateView.as_view(), name='meta-template-list-create'),
+    path(
+        'meta-templates/example-media/',
+        MetaTemplateExampleMediaUploadView.as_view(),
+        name='meta-template-example-media',
+    ),
+    path('meta-templates/<uuid:template_id>/', MetaTemplateDetailView.as_view(), name='meta-template-detail'),
+    path(
+        'meta-templates/<uuid:template_id>/submit/',
+        MetaTemplateSubmitView.as_view(),
+        name='meta-template-submit',
+    ),
+    path(
+        'meta-templates/<uuid:template_id>/resubmit/',
+        MetaTemplateResubmitView.as_view(),
+        name='meta-template-resubmit',
+    ),
+    path(
+        'meta-templates/<uuid:template_id>/refresh-status/',
+        MetaTemplateRefreshStatusView.as_view(),
+        name='meta-template-refresh-status',
+    ),
+    path(
+        'meta-templates/<uuid:template_id>/clone/',
+        MetaTemplateCloneView.as_view(),
+        name='meta-template-clone',
+    ),
     path('accounts/', WhatsAppAccountListCreateView.as_view(), name='whatsapp-accounts'),
     path('accounts/accessible/', WhatsAppAccessibleAccountsView.as_view(), name='whatsapp-accounts-accessible'),
     path('accounts/<uuid:account_id>/', WhatsAppAccountDetailView.as_view(), name='whatsapp-account-detail'),

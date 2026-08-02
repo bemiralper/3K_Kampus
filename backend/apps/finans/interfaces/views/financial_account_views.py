@@ -60,7 +60,11 @@ class MaliHesapListCreateView(APIView):
         from apps.finans.interfaces.views.sube_context import resolve_mandatory_finans_sube
 
         kurum_id = get_secili_kurum_id(request)
-        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
+        # Kayıt aktif şubeye açılır; gövdedeki sube_id bağlam yerine geçmez,
+        # yalnızca aktif şube ile eşleştiği doğrulanır.
+        sube_id, err = resolve_mandatory_finans_sube(
+            request, kurum_id, allow_body_param=False,
+        )
         if err:
             return err
 

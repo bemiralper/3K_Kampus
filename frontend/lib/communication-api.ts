@@ -1,5 +1,7 @@
 // İletişim Merkezi — API client
 
+import { isSessionExpiredResponse, notifySessionExpired } from '@/lib/api';
+
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 const STORAGE_KEYS = {
@@ -86,6 +88,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
+      if (isSessionExpiredResponse(response.status, body)) {
+        // Rozet/inbox yoklamaları oturum düştükten sonra sonsuza dek 401 üretmesin
+        notifySessionExpired();
+      }
       const errMsg =
         (typeof body.error === 'string' && body.error) ||
         (typeof body.detail === 'string' && body.detail) ||
@@ -697,6 +703,7 @@ export async function testWhatsAppAccount(
 export async function syncWhatsAppAccountTemplates(id: string): Promise<{
   success: boolean;
   templates?: MetaWhatsAppTemplate[];
+  upserted?: number;
   error?: string;
 }> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
@@ -704,6 +711,167 @@ export async function syncWhatsAppAccountTemplates(id: string): Promise<{
     method: 'POST',
     body: JSON.stringify({ kurum_id: kurumId }),
   });
+}
+
+// ─── WhatsApp Meta Templates (local lifecycle) ───
+
+export type MetaTemplateStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PAUSED'
+  | 'DISABLED';
+
+export type MetaTemplateCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
+
+export interface MetaTemplateHeader {
+  type?: 'NONE' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | string;
+  text?: string;
+  example_handle?: string;
+  media_handle?: string;
+}
+
+export interface MetaTemplateButton {
+  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER' | 'PHONE' | 'OTP' | string;
+  text?: string;
+  url?: string;
+  phone_number?: string;
+  phone?: string;
+  otp_type?: string;
+}
+
+export interface WhatsAppMetaTemplateItem {
+  id: string;
+  channel_config: string;
+  channel_config_name?: string;
+  name: string;
+  language: string;
+  meta_category: MetaTemplateCategory | string;
+  meta_category_label?: string;
+  status: MetaTemplateStatus | string;
+  status_label?: string;
+  meta_template_id?: string;
+  body_named: string;
+  header_json?: MetaTemplateHeader;
+  footer_text?: string;
+  buttons_json?: MetaTemplateButton[];
+  components_json?: unknown[];
+  variable_map_json?: Record<string, string>;
+  rejected_reason?: string;
+  rejected_detail?: string;
+  last_submitted_at?: string | null;
+  approved_at?: string | null;
+  usage_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export async function fetchLocalMetaTemplates(params?: {
+  account_id?: string;
+  status?: string;
+  meta_category?: string;
+  language?: string;
+  search?: string;
+  approved_only?: boolean;
+}): Promise<{ templates: WhatsAppMetaTemplateItem[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.account_id) qs.set('account_id', params.account_id);
+  if (params?.status) qs.set('status', params.status);
+  if (params?.meta_category) qs.set('meta_category', params.meta_category);
+  if (params?.language) qs.set('language', params.language);
+  if (params?.search) qs.set('search', params.search);
+  if (params?.approved_only) qs.set('approved_only', '1');
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/meta-templates/${suffix}`);
+}
+
+export async function createLocalMetaTemplate(data: {
+  channel_config_id: string;
+  name: string;
+  language?: string;
+  meta_category?: string;
+  body_named?: string;
+  header_json?: MetaTemplateHeader;
+  footer_text?: string;
+  buttons_json?: MetaTemplateButton[];
+}): Promise<WhatsAppMetaTemplateItem> {
+  return request('/meta-templates/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateLocalMetaTemplate(
+  id: string,
+  data: Partial<{
+    name: string;
+    language: string;
+    meta_category: string;
+    body_named: string;
+    header_json: MetaTemplateHeader;
+    footer_text: string;
+    buttons_json: MetaTemplateButton[];
+  }>,
+): Promise<WhatsAppMetaTemplateItem> {
+  return request(`/meta-templates/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteLocalMetaTemplate(
+  id: string,
+  deleteOnMeta = false,
+): Promise<{ success: boolean }> {
+  const qs = deleteOnMeta ? '?delete_on_meta=1' : '';
+  return request(`/meta-templates/${id}/${qs}`, { method: 'DELETE' });
+}
+
+export async function submitLocalMetaTemplate(id: string): Promise<WhatsAppMetaTemplateItem> {
+  return request(`/meta-templates/${id}/submit/`, { method: 'POST', body: '{}' });
+}
+
+export async function resubmitLocalMetaTemplate(id: string): Promise<WhatsAppMetaTemplateItem> {
+  return request(`/meta-templates/${id}/resubmit/`, { method: 'POST', body: '{}' });
+}
+
+export async function refreshLocalMetaTemplateStatus(id: string): Promise<WhatsAppMetaTemplateItem> {
+  return request(`/meta-templates/${id}/refresh-status/`, { method: 'POST', body: '{}' });
+}
+
+export async function cloneLocalMetaTemplate(
+  id: string,
+  newName: string,
+): Promise<WhatsAppMetaTemplateItem> {
+  return request(`/meta-templates/${id}/clone/`, {
+    method: 'POST',
+    body: JSON.stringify({ new_name: newName }),
+  });
+}
+
+export async function uploadMetaTemplateExampleMedia(
+  file: File,
+  channelConfigId: string,
+): Promise<{ success: boolean; example_handle: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('channel_config_id', channelConfigId);
+  const csrf = getCsrfToken();
+  const headers: Record<string, string> = { ...getContextHeaders() };
+  if (csrf) headers['X-CSRFToken'] = csrf;
+  const res = await fetch(communicationApiUrl('/meta-templates/example-media/'), {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+    headers,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Örnek medya yüklenemedi');
+  }
+  return res.json();
 }
 
 // ─── Outbound queue monitoring ───

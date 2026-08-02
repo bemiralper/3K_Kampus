@@ -2,6 +2,7 @@
 Faz 5 — SSE, ödeme hatırlatma API, görüşme WhatsApp flag testleri.
 """
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -9,7 +10,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.coaching.models import CoachProfile, CoachStudentAssignment, GorusmeKaydi
-from apps.communication.domain.models import Message, OutboundQueueItem
+from apps.communication.domain.enums import MessageStatus
+from apps.communication.domain.models import Message
+from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
+from apps.communication.interfaces.views.events import _StreamSlots, _stream_slots
 from apps.kurum.domain.models import Kurum
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.odeme_takip.domain.enums import SozlesmeDurum, TaksitDurum
@@ -130,7 +134,48 @@ class Faz5CommunicationAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/event-stream', response.get('Content-Type', ''))
 
-    def test_payment_reminder_api_enqueues(self):
+    def _open_stream(self):
+        return self.client.get(
+            '/api/communication/events/stream/',
+            {'kurum_id': self.kurum.id},
+            **self.sube_header,
+        )
+
+    @override_settings(COMMUNICATION_SSE_MAX_STREAMS=1)
+    def test_sse_over_limit_tells_client_to_poll(self):
+        """Slot doluyken bağlantı worker'ı tutmamalı; istemci yoklamaya düşmeli."""
+        self.assertTrue(_stream_slots.acquire())
+        try:
+            body = b''.join(self._open_stream().streaming_content).decode()
+            self.assertIn('event: fallback', body)
+            self.assertNotIn('event: connected', body)
+        finally:
+            _stream_slots.release()
+
+    # close_old_connections testin atomic bağlantısını kapatır; burada ölçülen
+    # slotun stream bitince serbest bırakılmasıdır.
+    @override_settings(COMMUNICATION_SSE_MAX_ITERATIONS=1, COMMUNICATION_SSE_MAX_STREAMS=1)
+    @patch('apps.communication.interfaces.views.events.close_old_connections')
+    def test_sse_slot_released_when_stream_ends(self, _close):
+        body = b''.join(self._open_stream().streaming_content).decode()
+        self.assertIn('event: connected', body)
+        self.assertIn('event: reconnect', body)
+
+        self.assertTrue(_stream_slots.acquire(), 'Stream bitince slot geri verilmeli')
+        _stream_slots.release()
+
+    def test_stream_slots_block_and_free(self):
+        slots = _StreamSlots()
+        with override_settings(COMMUNICATION_SSE_MAX_STREAMS=2):
+            self.assertTrue(slots.acquire())
+            self.assertTrue(slots.acquire())
+            self.assertFalse(slots.acquire())
+            slots.release()
+            self.assertTrue(slots.acquire())
+
+    @patch.object(WhatsAppCloudClient, 'send_text')
+    def test_payment_reminder_api_sends_message(self, mock_send):
+        mock_send.return_value = {'success': True, 'messages': [{'id': 'wamid.pay1'}]}
         response = self.client.post(
             '/api/communication/payment-reminders/send/',
             {
@@ -140,11 +185,12 @@ class Faz5CommunicationAPITest(TestCase):
             format='json',
             **self.sube_header,
         )
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.data)
         self.assertTrue(response.data.get('success'))
-        self.assertTrue(
-            OutboundQueueItem.objects.filter(message__source_module='odeme').exists(),
-        )
+        msg = Message.objects.filter(source_module='odeme').first()
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.status, MessageStatus.SENT)
+        mock_send.assert_called_once()
 
     def test_payment_reminder_duplicate_rejected(self):
         self.client.post(
@@ -178,8 +224,9 @@ class Faz5CommunicationAPITest(TestCase):
                 'send_whatsapp_reminder': False,
             },
             format='json',
+            **self.sube_header,
         )
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 201, response.data)
         after = Message.objects.filter(source_module='gorusme').count()
         self.assertEqual(before, after, 'send_whatsapp_reminder=False iken mesaj kuyruğa eklenmemeli')
 

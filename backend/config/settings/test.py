@@ -5,6 +5,9 @@ from .base import *
 
 DEBUG = True
 
+# `apps` namespace paketi nedeniyle keşif kökü backend/ olmalı (bkz. config/test_runner.py)
+TEST_RUNNER = 'config.test_runner.LmsTestRunner'
+
 # Test database
 DATABASES = {
     'default': {

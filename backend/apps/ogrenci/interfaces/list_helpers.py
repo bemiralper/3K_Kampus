@@ -547,9 +547,11 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
 
     if apply_durum:
         if params['durum'] == 'aktif':
-            qs = qs.filter(aktif_mi=True)
+            qs = qs.filter(aktif_mi=True, ogrenci__aktif_mi=True)
         elif params['durum'] == 'pasif':
-            qs = qs.filter(aktif_mi=False)
+            qs = qs.filter(
+                models.Q(aktif_mi=False) | models.Q(ogrenci__aktif_mi=False)
+            )
 
     order = SORT_MAP.get(params['sort'], SORT_MAP['created_at_desc'])
     qs = qs.order_by(*order)
@@ -559,8 +561,10 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
 
 def compute_filter_counts(qs):
     return {
-        'aktif': qs.filter(aktif_mi=True).count(),
-        'pasif': qs.filter(aktif_mi=False).count(),
+        'aktif': qs.filter(aktif_mi=True, ogrenci__aktif_mi=True).count(),
+        'pasif': qs.filter(
+            models.Q(aktif_mi=False) | models.Q(ogrenci__aktif_mi=False)
+        ).count(),
     }
 
 
@@ -707,7 +711,7 @@ def serialize_kayit_row(
                 ogrenci.get_veli_yakinlik_display() if ogrenci.veli_yakinlik else ''
             )
         ),
-        'aktif_mi': kayit.aktif_mi,
+        'aktif_mi': bool(kayit.aktif_mi and ogrenci.aktif_mi),
         'cinsiyet': ogrenci.cinsiyet or '',
         'sinif_id': kayit.sinif.id if kayit.sinif else None,
         'sinif_ad': kayit.sinif.ad if kayit.sinif else '',

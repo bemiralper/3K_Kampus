@@ -7,7 +7,7 @@ from typing import Optional, List
 from django.db.models import QuerySet
 
 from apps.academic.domain.lesson_teacher_pool import LessonTeacherPool
-from apps.academic.services.active_academic_year import get_active_academic_year
+from apps.academic.interfaces.repositories.active_year import get_active_academic_year
 
 
 class LessonTeacherPoolRepository:

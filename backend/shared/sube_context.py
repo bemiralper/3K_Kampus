@@ -8,15 +8,20 @@ SUBE_REQUIRED_MSG = (
 SUBE_FORBIDDEN_MSG = 'Bu şubeye erişim yetkiniz yok.'
 
 
-def resolve_mandatory_sube(request, kurum_id):
+def resolve_mandatory_sube(request, kurum_id, *, allow_body_param=True):
     """
     Zorunlu şube bağlamını çözümler ve kullanıcı erişimini doğrular.
+
+    `allow_body_param=False`: yazma uçlarında bağlam yalnızca aktif şubeden
+    (header/session/query) okunur; gövdedeki `sube_id` bağlam yerine geçmez.
 
     Returns:
         (sube_id, None) başarılı
         (None, {'error': str, 'status': int}) hata
     """
-    sube_id = require_mandatory_sube_id(request, kurum_id=int(kurum_id))
+    sube_id = require_mandatory_sube_id(
+        request, kurum_id=int(kurum_id), allow_body_param=allow_body_param,
+    )
     if not sube_id:
         return None, {'error': SUBE_REQUIRED_MSG, 'status': 400}
 

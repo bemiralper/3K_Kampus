@@ -39,10 +39,22 @@ There are two Django entrypoints in the tree. Only one is current:
 - **Browser login over http:** `development.py` uses `SESSION_COOKIE_SAMESITE='Lax'` and
   `CSRF_COOKIE_SAMESITE='Lax'` so cookies work on plain `http://localhost`. Do not set
   `SameSite=None` without `Secure=True` — Chrome rejects those cookies and breaks login/session.
-- **Running Django tests:** the `apps` package under `backend/apps/` is a namespace package
-  (no `__init__.py`), which breaks dotted test labels. Use the **filesystem-path form**, e.g.
-  `DJANGO_ENV=test python manage.py test apps/finans/tests` (NOT `apps.finans.tests`).
+- **Running Django tests:** `apps` under `backend/` is a namespace package (no `__init__.py`).
+  Test settings therefore use `config.test_runner.LmsTestRunner`, which pins unittest's discovery
+  root to `backend/` so modules keep their real `apps.*` names. Without it, discovery imports the
+  same models twice (`apps.coaching.…` and `coaching.…`) and Django raises "Conflicting models".
+  Both label styles work: `DJANGO_ENV=test python manage.py test apps/finans` and
+  `... test apps.finans.tests.test_financial_account`. Whole suite:
+  `DJANGO_ENV=test python manage.py test $(ls -d apps/*/)` (`apps` alone is not importable).
   Do NOT add `backend/apps/__init__.py` — it changes import resolution.
+  Every `tests/` directory **must** contain an `__init__.py`; Python 3.11+ discovery silently
+  skips namespace-package test dirs, so missing files mean whole modules never run.
+- **Gunicorn worker class:** İletişim modülü SSE kullanır
+  (`/api/communication/events/stream/`). Sync worker'da açık her stream bir worker'ı süresi
+  boyunca tutar; 3 worker ile birkaç açık sekme `WORKER TIMEOUT` + tüm isteklere 503 üretir.
+  Canlıda `--worker-class gthread --threads 8` şart (bkz. docs/deployment/production-deploy.md).
+  Worker başına eşzamanlı stream `COMMUNICATION_SSE_MAX_STREAMS` (varsayılan 4) ile sınırlı;
+  sınır dolunca istemci `fallback` olayı alıp yoklamaya geçer.
 - **`apps.rapor` stub:** `config/settings/base.py` lists `apps.rapor` in `INSTALLED_APPS`, but the
   module does not ship in the repo (reporting actually lives in `apps.finans`). A minimal empty app
   package exists at `backend/apps/rapor/` so the backend can boot; leave it in place.
@@ -56,7 +68,8 @@ There are two Django entrypoints in the tree. Only one is current:
   Hata: `Executable doesn't exist at .../ms-playwright/chromium_headless_shell-*` → yukarıdaki komutları çalıştırın.
 
 ### Lint / test / build commands
-- Backend tests: `cd backend && DJANGO_ENV=test python manage.py test apps/finans/tests` (37 tests).
+- Backend tests: `cd backend && DJANGO_ENV=test python manage.py test apps/finans` (202 tests);
+  tüm suite: `cd backend && DJANGO_ENV=test python manage.py test $(ls -d apps/*/)` (869 tests).
 - Frontend lint: `cd frontend && npm run lint` (note: a pre-existing config error about an
   undefined `@typescript-eslint/no-var-requires` rule causes a non-zero exit; this is not an env issue).
 - Frontend build: `cd frontend && npm run build`; dev: `npm run dev`.
@@ -88,6 +101,7 @@ Background workers are management commands by default; optional Celery + Redis w
 | `python manage.py process_communication_queue` | Sends queued WhatsApp/SMS outbound messages | Every 1 min |
 | `python manage.py check_conversation_sla` | Marks unanswered coach threads as NEEDS_SUPPORT (default 30 min) | Every 1 min |
 | `python manage.py send_payment_reminders` | Enqueues overdue/upcoming taksit reminders (`--days-ahead=3`, `--dry-run`) | Daily 09:00 |
+| `python manage.py backfill_conversation_names` | Sohbetlerde görünen kişi adını `contact_name` alanına yazar (istek başına canlı eşleme yapılmasın diye) — `--kurum-id`, `--dry-run` | Tek seferlik / gerektikçe |
 
 Run from `backend/` with appropriate `DJANGO_ENV`. Module hooks (görüşme, ödev, sınav, devamsızlık) enqueue only; delivery requires `process_communication_queue` (cron) or Celery worker.
 

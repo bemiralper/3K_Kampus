@@ -4,8 +4,22 @@ from __future__ import annotations
 
 import re
 
+SCANNER_PROBE_RE = re.compile(
+    r'"(GET|POST|HEAD)\s+/(\.env|\.git|phpinfo|phpmyadmin|wp-login|wp-admin|wordpress'
+    r'|xmlrpc\.php|vendor/phpunit|\.well-known/[^ ]*\.php|admin\.php|config\.json'
+    r'|actuator|solr|cgi-bin)[^ "]*\s',
+    re.I,
+)
+
 # (pattern, title, explanation) — ilk eşleşen kazanır
 LOG_EXPLANATIONS: list[tuple[re.Pattern[str], str, str]] = [
+    (
+        SCANNER_PROBE_RE,
+        'Otomatik bot taraması',
+        'İnternetteki tarayıcı botları her sunucuda `.env`, `phpinfo`, `wp-admin` gibi '
+        'adresleri dener. 404 dönmesi beklenen ve doğru davranıştır; uygulama hatası '
+        'değildir. Aynı IP çok sık deniyorsa fail2ban/nginx ile engellenebilir.',
+    ),
     (
         re.compile(r'Handling signal: term|was sent SIGTERM|Shutting down: Master|Worker exiting \(pid:', re.I),
         'Gunicorn kontrollü yeniden başlatma',
@@ -14,7 +28,15 @@ LOG_EXPLANATIONS: list[tuple[re.Pattern[str], str, str]] = [
         'Ardından “Starting gunicorn / Booting worker” satırları gelmeli.',
     ),
     (
-        re.compile(r'Starting gunicorn|Listening at:|Booting worker with pid|Using worker: sync|Control socket listening', re.I),
+        re.compile(r'Using worker: sync', re.I),
+        'Gunicorn sync worker (SSE için riskli)',
+        'Backend thread’siz (sync) worker ile çalışıyor. İletişim modülünün canlı dinleme '
+        '(SSE) bağlantısı sync worker’da açık kaldığı sürece bir worker’ı tamamen tutar; '
+        'birkaç açık sekme tüm API’yi 503’e düşürür. systemd biriminde '
+        '`--worker-class gthread --threads 8` kullanın.',
+    ),
+    (
+        re.compile(r'Starting gunicorn|Listening at:|Booting worker with pid|Control socket listening', re.I),
         'Gunicorn başladı',
         'Backend (Gunicorn) yeni master/worker süreçleriyle ayağa kalktı. Deploy veya '
         'servis restart sonrası beklenen INFO kaydı.',
@@ -23,15 +45,18 @@ LOG_EXPLANATIONS: list[tuple[re.Pattern[str], str, str]] = [
         re.compile(r'WORKER TIMEOUT', re.I),
         'Gunicorn worker zaman aşımı',
         'Bir istek Gunicorn --timeout süresini aştığı için worker süreci öldürüldü. '
-        'Sık görülen neden: /api/communication/events/stream/ (SSE) uzun süre açık kalması. '
-        'Ayrıca uzun yedek/PDF/rapor da tetikleyebilir. Aynı dakikadaki access log’a bakın.',
+        'Sık görülen neden: /api/communication/events/stream/ (SSE) bağlantısının sync '
+        'worker’ı bloklaması — çözümü `--worker-class gthread --threads 8`. '
+        'Uzun yedek/PDF/rapor işleri de tetikleyebilir; aynı dakikadaki access log’a bakın.',
     ),
     (
         re.compile(r'Error handling request GET /api/communication/events/stream', re.I),
         'İletişim SSE stream kesildi',
         'Koç inbox canlı dinleme (Server-Sent Events) bağlantısı worker öldüğü için koptu. '
-        'Genelde WORKER TIMEOUT ile aynı andadır. Stream artık ~90 sn sonra temiz kapanıp '
-        'yeniden bağlanacak şekilde ayarlanmıştır.',
+        'Genelde WORKER TIMEOUT ile aynı andadır. Stream ~45 sn sonra kendisi kapanıp '
+        'yeniden bağlanır ve worker başına eşzamanlı stream sayısı sınırlıdır '
+        '(COMMUNICATION_SSE_MAX_STREAMS); tekrarlıyorsa Gunicorn’un gthread ile '
+        'çalıştığını doğrulayın.',
     ),
     (
         re.compile(r'was sent SIGKILL|Perhaps out of memory', re.I),
@@ -45,6 +70,14 @@ LOG_EXPLANATIONS: list[tuple[re.Pattern[str], str, str]] = [
         'Gunicorn worker çöktü',
         'Worker beklenmedik şekilde kapandı. Üstündeki/altındaki satırlarda Python traceback '
         'veya OOM (bellek) ipucu arayın; sık tekrarlanıyorsa bellek veya kod hatası olabilir.',
+    ),
+    (
+        # Access log satırı: "GET /api/... HTTP/1.1" 503 ...
+        re.compile(r'"(GET|POST|PUT|PATCH|DELETE)[^"]*"\s+503\b'),
+        'İstek 503 döndü (backend meşgul/kapalı)',
+        'Nginx isteği karşılayacak uygulama bulamadı: backend restart ediliyor, bakım modu açık '
+        'ya da tüm Gunicorn worker’ları dolu. Aynı dakikada WORKER TIMEOUT / SIGKILL varsa neden '
+        'doygunluktur; SSE bağlantıları için gthread worker kullanıldığını doğrulayın.',
     ),
     (
         re.compile(r'Broken pipe|Connection reset by peer', re.I),
@@ -77,7 +110,8 @@ LOG_EXPLANATIONS: list[tuple[re.Pattern[str], str, str]] = [
         'yanıtı olabilir; yetkisiz erişim denemesi de olabilir.',
     ),
     (
-        re.compile(r'Unauthorized|401|Authentication credentials were not provided|oturum açmanız', re.I),
+        # 401 yalın sayı olarak aranırsa UUID/boyut alanlarına takılır; sınırla eşle.
+        re.compile(r'Unauthorized|\b401\b|Authentication credentials were not provided|oturum açmanız', re.I),
         'Oturum / kimlik doğrulama',
         'Kullanıcı giriş yapmamış veya oturum süresi dolmuş. API çağrısında cookie/session eksik '
         'olabilir.',

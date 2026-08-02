@@ -35,8 +35,12 @@ class HomeworkPoolUnplannedFilterTest(TestCase):
             email='coach_pool@test.com',
             password='testpass123',
         )
-        self.ders_mat = Ders.objects.create(ad='Matematik', kod='MAT')
-        self.ders_fiz = Ders.objects.create(ad='Fizik', kod='FIZ')
+        self.ders_mat = Ders.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Matematik', kod='MAT',
+        )
+        self.ders_fiz = Ders.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Fizik', kod='FIZ',
+        )
         self.due_date = timezone.now() + timedelta(days=7)
 
         self.client = APIClient()

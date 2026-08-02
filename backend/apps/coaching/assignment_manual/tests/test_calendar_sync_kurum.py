@@ -34,8 +34,12 @@ class AssignmentCalendarSyncKurumTest(TestCase):
             email='coach_calendar@test.com',
             password='testpass123',
         )
-        self.ders = Ders.objects.create(ad='Matematik', kod='MAT')
-        self.sinif = SinifSeviyesi.objects.create(ad='12. Sınıf', kod='S12', sira=12)
+        self.ders = Ders.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Matematik', kod='MAT',
+        )
+        self.sinif = SinifSeviyesi.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='12. Sınıf', kod='S12', sira=12,
+        )
         self.book_type = BookType.objects.create(kod='SB_TKV', ad='Soru Bankası')
         self.resource_book = ResourceBook.objects.create(
             sube=self.sube,
@@ -86,6 +90,8 @@ class AssignmentCalendarSyncKurumTest(TestCase):
         """X-Kurum-ID olmadan session active_kurum_id ile takvim event'i oluşur."""
         client = APIClient()
         client.force_authenticate(user=self.coach)
+        # Kurum bilinçli olarak header'dan verilmiyor; şube bağlamı ise zorunlu.
+        client.credentials(HTTP_X_SUBE_ID=str(self.sube.id))
         session = client.session
         session['active_kurum_id'] = self.kurum.id
         session.save()
@@ -104,6 +110,7 @@ class AssignmentCalendarSyncKurumTest(TestCase):
         """Header ve session yokken ilk aktif kurum ile takvim event'i oluşur."""
         client = APIClient()
         client.force_authenticate(user=self.coach)
+        client.credentials(HTTP_X_SUBE_ID=str(self.sube.id))
 
         response = client.post(
             ASSIGNMENTS_URL,

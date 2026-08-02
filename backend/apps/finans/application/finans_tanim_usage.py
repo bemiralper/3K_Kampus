@@ -23,6 +23,28 @@ def _format_delete_block_message(entity_label: str, usages: list[tuple[str, int]
     )
 
 
+def odeme_yontemi_ids_for_mali_hesap(mali_hesap_id: int) -> list[int]:
+    """Hesaba bağlı (silinmemiş) ödeme yöntemleri."""
+    return list(
+        OdemeYontemi.objects.filter(mali_hesap_id=mali_hesap_id).values_list('id', flat=True)
+    )
+
+
+def _kullanimdaki_odeme_yontemi_sayisi(mali_hesap_id: int) -> int:
+    """
+    Hesabın ödeme yöntemlerinden kaçı gerçekten kullanımda?
+
+    Kasa/banka hesabı açılırken kanal kayıtları (Nakit, Havale, POS…) otomatik
+    üretildiği için yalnızca varlıkları silmeyi engellememeli; hesapla birlikte
+    silinirler. Engel yalnızca bir kayıtta kullanılmış yöntemler için geçerlidir.
+    """
+    return sum(
+        1
+        for odeme_yontemi_id in odeme_yontemi_ids_for_mali_hesap(mali_hesap_id)
+        if is_odeme_yontemi_in_use(odeme_yontemi_id)
+    )
+
+
 def get_mali_hesap_delete_block_message(mali_hesap_id: int) -> str | None:
     """Mali hesap silinmeden önce kullanım kontrolü."""
     BakiyeHareketi = apps.get_model('finans', 'BakiyeHareketi')
@@ -34,8 +56,8 @@ def get_mali_hesap_delete_block_message(mali_hesap_id: int) -> str | None:
 
     usages = [
         (
-            'bu hesaba tanımlı ödeme yöntemi',
-            OdemeYontemi.objects.filter(mali_hesap_id=mali_hesap_id).count(),
+            'kullanımda olan ödeme yöntemi',
+            _kullanimdaki_odeme_yontemi_sayisi(mali_hesap_id),
         ),
         (
             'öğrenci sözleşmesi',

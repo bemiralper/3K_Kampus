@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 const POLL_FALLBACK_MS = 20_000;
 const SSE_RECONNECT_MS = 1_500;
 const SSE_MAX_RECONNECTS = 8;
+/** Sunucuda stream slotu yokken bir süre yeniden denemeyip yoklamada kalınır. */
+const SSE_RETRY_AFTER_FALLBACK_MS = 5 * 60_000;
 
 export interface CommunicationSSEPayload {
   unread_count?: number;
@@ -154,6 +156,17 @@ function connectShared() {
     es.addEventListener('heartbeat', () => {
       shared.connected = true;
       emitStatus();
+    });
+
+    es.addEventListener('fallback', () => {
+      // Sunucu stream kapasitesi dolu: bağlantıyı zorlamak yerine yoklamaya geç.
+      es.close();
+      if (shared.es === es) shared.es = null;
+      shared.connected = false;
+      shared.reconnectCount = 0;
+      startFallback();
+      clearReconnectTimer();
+      shared.reconnectTimer = setTimeout(connectShared, SSE_RETRY_AFTER_FALLBACK_MS);
     });
 
     es.addEventListener('reconnect', () => {

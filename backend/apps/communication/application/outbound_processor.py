@@ -9,6 +9,8 @@ import time
 from django.conf import settings
 
 from apps.communication.application.campaign_service import CampaignStatsService
+from apps.communication.application.meta_template_mapper import build_send_body_parameters
+from apps.communication.application.meta_template_service import MetaTemplateService
 from apps.communication.application.template_component_builder import build_template_components
 from apps.communication.application.variable_resolver import build_recipient_context_from_conversation
 from apps.communication.domain.enums import CampaignStatus, MessageStatus, MessageType
@@ -193,15 +195,54 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
             else:
                 result = {'success': False, 'error': 'Belge eki bulunamadı.'}
         elif message.message_type == MessageType.TEMPLATE and template_name:
-            body_template = ''
-            if item.campaign_id and item.campaign:
-                body_template = item.campaign.body_template or ''
             context = _build_recipient_context_from_message(message)
-            components = build_template_components(
-                body_template,
-                context,
-                extra_components=extra_components,
+            channel_config_id = filter_json.get('channel_config_id') or filter_json.get('account_id')
+            meta_tpl = MetaTemplateService.get_approved(
+                item.kurum_id,
+                name=template_name,
+                language=template_language or 'tr',
+                channel_config_id=channel_config_id,
             )
+            if meta_tpl is None:
+                # Yerelde kayıt yoksa eski davranış (legacy body_template)
+                # ama yerel REJECTED/PAUSED kaydı varsa engelle
+                from apps.communication.domain.models import WhatsAppMetaTemplate
+                from apps.communication.domain.enums import MetaTemplateStatus
+                blocked = WhatsAppMetaTemplate.objects.filter(
+                    kurum_id=item.kurum_id,
+                    name=template_name,
+                    language=template_language or 'tr',
+                ).exclude(status=MetaTemplateStatus.APPROVED).first()
+                if blocked:
+                    result = {
+                        'success': False,
+                        'error': (
+                            f'Meta şablon gönderilemez — durum: {blocked.status}. '
+                            'Yalnızca onaylı şablonlar kullanılabilir.'
+                        ),
+                    }
+                    OutboundQueueRepository.mark_failed(item, result['error'])
+                    if item.campaign_id:
+                        _safe_refresh_campaign_stats(item.campaign_id)
+                    return False
+                body_template = ''
+                if item.campaign_id and item.campaign:
+                    body_template = item.campaign.body_template or ''
+                components = build_template_components(
+                    body_template,
+                    context,
+                    extra_components=extra_components,
+                )
+            else:
+                vmap = MetaTemplateService.ensure_variable_map(meta_tpl)
+                body_params = build_send_body_parameters(vmap, context)
+                components = []
+                if body_params:
+                    components.append({'type': 'body', 'parameters': body_params})
+                if extra_components:
+                    components.extend(extra_components)
+                MetaTemplateService.increment_usage(meta_tpl)
+
             result = client.send_template(
                 item.kurum_id,
                 phone,

@@ -41,8 +41,12 @@ class TaskResetAndDeleteArchiveTest(TestCase):
             email='coach_kontrol@test.com',
             password='testpass123',
         )
-        self.ders = Ders.objects.create(ad='Fizik', kod='FIZ')
-        self.sinif = SinifSeviyesi.objects.create(ad='11. Sınıf', kod='S11', sira=11)
+        self.ders = Ders.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Fizik', kod='FIZ',
+        )
+        self.sinif = SinifSeviyesi.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='11. Sınıf', kod='S11', sira=11,
+        )
         self.book_type = BookType.objects.create(kod='SB_KTR', ad='Soru Bankası')
         self.resource_book = ResourceBook.objects.create(
             sube=self.sube,
@@ -58,6 +62,7 @@ class TaskResetAndDeleteArchiveTest(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
 
         self.due_date = (timezone.now() + timezone.timedelta(days=5)).isoformat()
 

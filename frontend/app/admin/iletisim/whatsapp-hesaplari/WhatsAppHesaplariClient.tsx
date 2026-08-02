@@ -101,7 +101,7 @@ export default function WhatsAppHesaplariClient() {
       const result = await syncWhatsAppAccountTemplates(account.id);
       if (result.success) {
         setMessage(
-          `${account.name || account.display_phone}: ${result.templates?.length ?? 0} şablon senkronize edildi.`,
+          `${account.name || account.display_phone}: ${result.upserted ?? result.templates?.length ?? 0} şablon senkronize edildi.`,
         );
         await load();
       } else {

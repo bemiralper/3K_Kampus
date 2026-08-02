@@ -8,7 +8,7 @@ from django.db import models
 from django.db.models import QuerySet, Count, F
 
 from apps.academic.domain.student_class_placement import StudentClassPlacement
-from apps.academic.services.active_academic_year import get_active_academic_year
+from apps.academic.interfaces.repositories.active_year import get_active_academic_year
 
 
 class StudentClassPlacementRepository:

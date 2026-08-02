@@ -2098,6 +2098,28 @@
   border: 1px solid #86efac;
 }
 
+.meta-badge-draft {
+  background: #e8e8e8 !important;
+  color: #333 !important;
+}
+.meta-badge-submitted,
+.meta-badge-pending {
+  background: #fff3cd !important;
+  color: #856404 !important;
+}
+.meta-badge-approved {
+  background: #d4edda !important;
+  color: #155724 !important;
+}
+.meta-badge-rejected {
+  background: #f8d7da !important;
+  color: #721c24 !important;
+}
+.meta-badge-disabled {
+  background: #d6d8db !important;
+  color: #383d41 !important;
+}
+
 .comm-sablon-card-usage {
   margin: 0.35rem 0 0;
   font-size: 0.6875rem;
@@ -4182,4 +4204,1053 @@
 }
 .comm-recipient-chip:hover {
   filter: brightness(0.97);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Şablon Stüdyosu (tplx) — Şablonlar & Meta Şablonları arayüzü
+   ═══════════════════════════════════════════════════════════════ */
+
+.tplx {
+  --tplx-ink: #0b141a;
+  --tplx-muted: #64748b;
+  --tplx-line: #e6ebef;
+  --tplx-soft: #f7f9fa;
+  --tplx-accent: #128c7e;
+  --tplx-accent-soft: #e7f7f2;
+}
+
+.tplx-page {
+  max-width: 1240px;
+}
+
+/* ─── Hero / özet şerit ─── */
+
+.tplx-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--tplx-line);
+  border: 1px solid var(--tplx-line);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 1.15rem;
+  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.04);
+}
+
+.tplx-hero-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+  background: #fff;
+  transition: background 0.18s ease;
+}
+
+.tplx-hero-cell:hover {
+  background: var(--tplx-soft);
+}
+
+.tplx-hero-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  font-size: 1rem;
+  background: var(--tplx-accent-soft);
+  color: var(--tplx-accent);
+}
+
+.tplx-hero-icon.is-blue { background: #e8f1fe; color: #1d4ed8; }
+.tplx-hero-icon.is-amber { background: #fef6e7; color: #b45309; }
+.tplx-hero-icon.is-rose { background: #fdeeef; color: #be123c; }
+.tplx-hero-icon.is-violet { background: #f1edfd; color: #6d28d9; }
+
+.tplx-hero-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.tplx-hero-value {
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--tplx-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.tplx-hero-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tplx-muted);
+  margin-top: 2px;
+}
+
+/* ─── Araç çubuğu ─── */
+
+.tplx-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 1.1rem;
+  border: 1px solid var(--tplx-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.04);
+}
+
+.tplx-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tplx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--tplx-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--tplx-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.16s ease;
+}
+
+.tplx-chip:hover {
+  border-color: #b9c6cc;
+  color: var(--tplx-ink);
+  transform: translateY(-1px);
+}
+
+.tplx-chip.is-active {
+  background: var(--tplx-accent);
+  border-color: var(--tplx-accent);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(18, 140, 126, 0.28);
+}
+
+.tplx-chip.is-dashed {
+  border-style: dashed;
+  color: var(--tplx-accent);
+  font-weight: 700;
+}
+
+.tplx-chip-count {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  min-width: 1.3rem;
+  text-align: center;
+  border-radius: 999px;
+  background: rgba(11, 20, 26, 0.07);
+  font-variant-numeric: tabular-nums;
+}
+
+.tplx-chip.is-active .tplx-chip-count {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.tplx-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-right: -0.25rem;
+  border-radius: 50%;
+  font-size: 0.9rem;
+  line-height: 1;
+  opacity: 0.5;
+}
+
+.tplx-chip-x:hover {
+  opacity: 1;
+  background: rgba(11, 20, 26, 0.1);
+}
+
+.tplx-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tplx-search-icon {
+  position: absolute;
+  left: 0.7rem;
+  font-size: 0.8rem;
+  color: var(--tplx-muted);
+  pointer-events: none;
+}
+
+.tplx-search input {
+  width: 230px;
+  padding: 0.5rem 0.8rem 0.5rem 2rem;
+  border: 1px solid var(--tplx-line);
+  border-radius: 999px;
+  background: var(--tplx-soft);
+  font-size: 0.8125rem;
+  transition: all 0.16s ease;
+}
+
+.tplx-search input:focus {
+  outline: none;
+  width: 260px;
+  background: #fff;
+  border-color: var(--comm-primary);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.14);
+}
+
+.tplx-select {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--tplx-line);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--tplx-ink);
+  cursor: pointer;
+}
+
+.tplx-select:focus {
+  outline: none;
+  border-color: var(--comm-primary);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.14);
+}
+
+.tplx-toolbar-spacer {
+  flex: 1;
+}
+
+/* ─── Kategori ekleme formu ─── */
+
+.tplx-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.1rem;
+  border: 1px dashed #a9d9cf;
+  border-radius: 14px;
+  background: var(--tplx-accent-soft);
+}
+
+.tplx-inline-form input,
+.tplx-inline-form select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #cfe6e0;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.8125rem;
+}
+
+.tplx-inline-form input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.tplx-inline-form input:focus,
+.tplx-inline-form select:focus {
+  outline: none;
+  border-color: var(--comm-primary);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.14);
+}
+
+/* ─── Kart ızgarası ─── */
+
+.tplx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 0.9rem;
+}
+
+.tplx-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--tplx-line);
+  border-radius: 15px;
+  background: #fff;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.tplx-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--comm-primary), var(--comm-primary-dark));
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.tplx-card:hover {
+  transform: translateY(-2px);
+  border-color: #cfe0dc;
+  box-shadow: 0 10px 26px rgba(11, 20, 26, 0.09);
+}
+
+.tplx-card:hover::before,
+.tplx-card.is-flagged::before {
+  opacity: 1;
+}
+
+.tplx-card.is-approved::before { background: linear-gradient(180deg, #34d399, #059669); opacity: 1; }
+.tplx-card.is-pending::before { background: linear-gradient(180deg, #fbbf24, #d97706); opacity: 1; }
+.tplx-card.is-rejected::before { background: linear-gradient(180deg, #fb7185, #e11d48); opacity: 1; }
+.tplx-card.is-draft::before { background: linear-gradient(180deg, #cbd5e1, #94a3b8); opacity: 1; }
+
+.tplx-card-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.95rem 1rem 0.85rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.tplx-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.tplx-card-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--tplx-ink);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.tplx-card-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--tplx-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tplx-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tplx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  background: #eef2f4;
+  color: #475569;
+  border: 1px solid transparent;
+}
+
+.tplx-badge.is-approved { background: #dcfce7; color: #14532d; border-color: #a7f3cf; }
+.tplx-badge.is-pending { background: #fef3c7; color: #78350f; border-color: #fcd9a0; }
+.tplx-badge.is-rejected { background: #ffe4e6; color: #881337; border-color: #fecdd3; }
+.tplx-badge.is-draft { background: #eef2f6; color: #475569; border-color: #dde5ec; }
+.tplx-badge.is-disabled { background: #e5e7eb; color: #374151; border-color: #d6dae0; }
+.tplx-badge.is-live { background: #dcfce7; color: #14532d; border-color: #a7f3cf; }
+.tplx-badge.is-ghost { background: #fff; color: var(--tplx-muted); border-color: var(--tplx-line); }
+
+.tplx-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tplx-badge.is-pending .tplx-badge-dot {
+  animation: tplx-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tplx-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.tplx-card-snippet {
+  position: relative;
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: 10px 10px 10px 3px;
+  background: var(--comm-primary-light);
+  color: #14351f;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 3.1rem;
+}
+
+.tplx-card-snippet:empty::after {
+  content: "Boş şablon";
+  color: var(--tplx-muted);
+  font-style: italic;
+}
+
+.tplx-card-usage {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #047857;
+  line-height: 1.35;
+}
+
+.tplx-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.6rem;
+  font-size: 0.7rem;
+  color: var(--tplx-muted);
+  border-top: 1px dashed var(--tplx-line);
+}
+
+.tplx-card-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tplx-card-actions {
+  display: flex;
+  border-top: 1px solid var(--tplx-line);
+  background: var(--tplx-soft);
+  opacity: 0.6;
+  transition: opacity 0.18s ease;
+}
+
+.tplx-card:hover .tplx-card-actions,
+.tplx-card:focus-within .tplx-card-actions {
+  opacity: 1;
+}
+
+.tplx-card-action {
+  flex: 1;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tplx-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tplx-card-action:hover {
+  background: #eef2f4;
+  color: var(--tplx-ink);
+}
+
+.tplx-card-action.is-danger:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.tplx-card-action + .tplx-card-action {
+  border-left: 1px solid var(--tplx-line);
+}
+
+/* ─── Boş & yükleniyor ─── */
+
+.tplx-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 3rem 1.5rem;
+  border: 1px dashed #d5dee3;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff 0%, var(--tplx-soft) 100%);
+  text-align: center;
+}
+
+.tplx-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 0.35rem;
+  border-radius: 18px;
+  background: var(--tplx-accent-soft);
+  font-size: 1.6rem;
+}
+
+.tplx-empty h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--tplx-ink);
+}
+
+.tplx-empty p {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--tplx-muted);
+  max-width: 380px;
+}
+
+.tplx-skeleton-card {
+  height: 168px;
+  border-radius: 15px;
+  border: 1px solid var(--tplx-line);
+  background: linear-gradient(100deg, #f4f7f8 30%, #eaeff1 50%, #f4f7f8 70%);
+  background-size: 220% 100%;
+  animation: tplx-shimmer 1.3s linear infinite;
+}
+
+@keyframes tplx-shimmer {
+  from { background-position: 180% 0; }
+  to { background-position: -60% 0; }
+}
+
+/* ─── Editör çekmecesi ─── */
+
+.tplx-drawer {
+  width: min(1080px, 94vw) !important;
+  max-width: 100vw;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.tplx-drawer-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
+.tplx-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--tplx-line);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.tplx-drawer-head h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--tplx-ink);
+}
+
+.tplx-drawer-head p {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: var(--tplx-muted);
+}
+
+.tplx-drawer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tplx-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--tplx-line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--tplx-muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tplx-icon-btn:hover {
+  background: var(--tplx-soft);
+  color: var(--tplx-ink);
+}
+
+.tplx-drawer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+.tplx-drawer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem 1.4rem;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.tplx-drawer-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.1rem 1.25rem 1.4rem;
+  border-left: 1px solid var(--tplx-line);
+  background: linear-gradient(180deg, var(--tplx-soft) 0%, #eef2f3 100%);
+  overflow-y: auto;
+}
+
+/* Kaydırılan sütunlarda flex çocukları asla büzülmemeli;
+   aksi halde alanlar üst üste biner. */
+.tplx-drawer-main > *,
+.tplx-drawer-side > *,
+.tplx-section-body > *,
+.tplx-preview-stack > * {
+  flex-shrink: 0;
+}
+
+.tplx-drawer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 1.25rem;
+  border-top: 1px solid var(--tplx-line);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.tplx-drawer-foot .tplx-foot-left {
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ─── Form blokları ─── */
+
+.tplx-section {
+  border: 1px solid var(--tplx-line);
+  border-radius: 13px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.tplx-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--tplx-line);
+  background: var(--tplx-soft);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tplx-muted);
+}
+
+.tplx-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 0.85rem;
+}
+
+.tplx-field label,
+.tplx-field > span.tplx-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--tplx-ink);
+}
+
+.tplx-field input[type="text"],
+.tplx-field input[type="search"],
+.tplx-field input:not([type]),
+.tplx-field select,
+.tplx-field textarea {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--tplx-line);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: var(--tplx-ink);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tplx-field textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.tplx-field input:focus,
+.tplx-field select:focus,
+.tplx-field textarea:focus {
+  outline: none;
+  border-color: var(--comm-primary);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.14);
+}
+
+.tplx-field input:disabled,
+.tplx-field select:disabled,
+.tplx-field textarea:disabled {
+  background: var(--tplx-soft);
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.tplx-field-hint {
+  margin: 0.3rem 0 0;
+  font-size: 0.7rem;
+  color: var(--tplx-muted);
+  line-height: 1.4;
+}
+
+.tplx-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.7rem;
+}
+
+/* ─── Uyarı blokları ─── */
+
+.tplx-note {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 12px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  border: 1px solid;
+}
+
+.tplx-note-icon {
+  font-size: 0.95rem;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+.tplx-note strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.8125rem;
+}
+
+.tplx-note p {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.9;
+}
+
+.tplx-note ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.05rem;
+  font-size: 0.78rem;
+}
+
+.tplx-note.is-success { background: #f0fdf4; border-color: #bbf7d0; color: #14532d; }
+.tplx-note.is-danger { background: #fff1f2; border-color: #fecdd3; color: #881337; }
+.tplx-note.is-warn { background: #fffbeb; border-color: #fde68a; color: #78350f; }
+.tplx-note.is-info { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+
+/* ─── Önizleme paneli ─── */
+
+.tplx-preview-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tplx-muted);
+}
+
+.tplx-preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.85rem;
+  border-radius: 14px;
+  background:
+    linear-gradient(rgba(233, 237, 233, 0.92), rgba(233, 237, 233, 0.92)),
+    repeating-linear-gradient(45deg, #dfe4dc 0 2px, transparent 2px 9px);
+  border: 1px solid #d7ded6;
+}
+
+.tplx-bubble {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0.55rem 0.7rem 0.4rem;
+  border-radius: 10px 10px 10px 3px;
+  background: #fff;
+  box-shadow: 0 1px 1px rgba(11, 20, 26, 0.13);
+  font-size: 0.8375rem;
+  line-height: 1.45;
+  color: #111b21;
+}
+
+.tplx-bubble-header {
+  margin: 0 0 0.3rem;
+  font-weight: 700;
+  font-size: 0.8125rem;
+  color: #0b141a;
+}
+
+.tplx-bubble-media {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 92px;
+  margin-bottom: 0.4rem;
+  border-radius: 7px;
+  background: #e9edef;
+  color: var(--tplx-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.tplx-bubble-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tplx-bubble-text .wa-var {
+  background: #fff3c4;
+  border-radius: 4px;
+  padding: 0 3px;
+  font-weight: 600;
+}
+
+.tplx-bubble-footer {
+  margin: 0.35rem 0 0;
+  font-size: 0.6875rem;
+  color: #8696a0;
+}
+
+.tplx-bubble-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  margin-top: 0.2rem;
+  font-size: 0.625rem;
+  color: #8696a0;
+}
+
+.tplx-bubble-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+  border-radius: 3px 3px 10px 10px;
+  overflow: hidden;
+}
+
+.tplx-bubble-button {
+  padding: 0.45rem;
+  background: #fff;
+  color: #0aa2c0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: center;
+  box-shadow: 0 1px 1px rgba(11, 20, 26, 0.13);
+}
+
+.tplx-map-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.tplx-map-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--tplx-line);
+  font-size: 0.6875rem;
+  color: var(--tplx-muted);
+}
+
+.tplx-map-pill b {
+  color: var(--tplx-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ─── Buton listesi editörü ─── */
+
+.tplx-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.6rem;
+  border: 1px solid var(--tplx-line);
+  border-radius: 11px;
+  background: var(--tplx-soft);
+}
+
+.tplx-btn-row + .tplx-btn-row {
+  margin-top: 0.5rem;
+}
+
+.tplx-btn-row input {
+  flex: 1;
+  min-width: 130px;
+  padding: 0.42rem 0.6rem;
+  border: 1px solid var(--tplx-line);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  background: #fff;
+}
+
+.tplx-btn-row input:focus {
+  outline: none;
+  border-color: var(--comm-primary);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.14);
+}
+
+.tplx-btn-type {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tplx-accent);
+  background: var(--tplx-accent-soft);
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.tplx-mini-btn {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--tplx-line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tplx-ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tplx-mini-btn:hover:not(:disabled) {
+  border-color: var(--comm-primary);
+  background: var(--tplx-accent-soft);
+}
+
+.tplx-mini-btn.is-danger:hover:not(:disabled) {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.tplx-mini-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Değişken paneli (drawer içinde kompakt) ─── */
+
+.tplx-drawer .comm-sablon-var-panel {
+  margin: 0;
+  border-radius: 11px;
+  background: var(--tplx-soft);
+}
+
+.tplx-drawer .comm-sablon-var-chip {
+  border-style: solid;
+  border-color: var(--tplx-line);
+}
+
+.tplx-drawer .comm-sablon-var-chip:hover {
+  border-color: var(--comm-primary);
+}
+
+/* ─── Duyarlılık ─── */
+
+@media (max-width: 1024px) {
+  .tplx-drawer-body {
+    grid-template-columns: 1fr;
+  }
+  .tplx-drawer-side {
+    border-left: none;
+    border-top: 1px solid var(--tplx-line);
+  }
+}
+
+@media (max-width: 640px) {
+  .tplx-toolbar {
+    position: static;
+  }
+  .tplx-search input,
+  .tplx-search input:focus {
+    width: 100%;
+  }
+  .tplx-search {
+    width: 100%;
+  }
+  .tplx-grid {
+    grid-template-columns: 1fr;
+  }
 }

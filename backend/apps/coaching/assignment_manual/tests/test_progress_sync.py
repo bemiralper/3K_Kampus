@@ -36,8 +36,12 @@ class ProgressSyncTest(TestCase):
             email='coach_sync@test.com',
             password='testpass123',
         )
-        self.ders = Ders.objects.create(ad='Matematik', kod='MAT')
-        self.sinif = SinifSeviyesi.objects.create(ad='10. Sınıf', kod='S10', sira=10)
+        self.ders = Ders.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Matematik', kod='MAT',
+        )
+        self.sinif = SinifSeviyesi.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='10. Sınıf', kod='S10', sira=10,
+        )
         self.book_type = BookType.objects.create(kod='SB', ad='Soru Bankası')
         self.resource_book = ResourceBook.objects.create(
             sube=self.sube,
@@ -85,6 +89,9 @@ class ProgressSyncTest(TestCase):
         )
         self.client = APIClient()
         self.client.force_authenticate(user=self.coach)
+        self.client.credentials(
+            HTTP_X_KURUM_ID=str(self.kurum.id), HTTP_X_SUBE_ID=str(self.sube.id),
+        )
 
     def test_completing_homework_updates_source_progress(self):
         response_a = self.client.post(

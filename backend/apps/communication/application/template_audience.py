@@ -34,15 +34,24 @@ def visible_audience_scopes_for_user(user) -> list[str]:
 
 
 def assert_can_write_template(user, audience_scope: str) -> None:
-    """Şablon oluşturma/güncelleme yetkisi — kitle bazlı."""
+    """
+    Şablon oluşturma/güncelleme yetkisi — kitle bazlı.
+
+    Yönetici kitlesi (ADMIN) yalnızca `communication.manage` / sistem yöneticisi
+    içindir; `communication.bulk` (ör. koç rolü) diğer kitleleri yönetebilir.
+    """
     if not user or not user.is_authenticated:
         raise PermissionDenied('Yetkisiz.')
 
     scope = audience_scope or TemplateAudienceScope.GENEL
 
-    if is_resource_admin(user) or user_has_any_permission(
-        user, 'communication.manage', 'communication.bulk'
-    ):
+    if is_resource_admin(user) or user_has_any_permission(user, 'communication.manage'):
+        return
+
+    if scope == TemplateAudienceScope.ADMIN:
+        raise PermissionDenied('Yönetici kitleli şablon için iletişim yönetimi yetkisi gerekir.')
+
+    if user_has_any_permission(user, 'communication.bulk'):
         return
 
     if scope == TemplateAudienceScope.COACH:
@@ -55,7 +64,7 @@ def assert_can_write_template(user, audience_scope: str) -> None:
             return
         raise PermissionDenied('Muhasebe şablonu için finans yetkisi gerekir.')
 
-    if scope in (TemplateAudienceScope.ADMIN, TemplateAudienceScope.GENEL):
+    if scope == TemplateAudienceScope.GENEL:
         raise PermissionDenied('Bu kitle için şablon yönetimi yetkiniz yok.')
 
     raise PermissionDenied('Şablon yönetimi için yetkiniz yok.')

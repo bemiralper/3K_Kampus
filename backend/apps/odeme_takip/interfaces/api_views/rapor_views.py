@@ -28,7 +28,11 @@ from apps.odeme_takip.interfaces.sube_context import resolve_mandatory_odeme_con
 
 
 def _sozlesmesiz_kayit_qs(kurum_id, sube_id, egitim_yili_id):
-    """Aktif kaydı olup iptal dışı sözleşmesi olmayan öğrenciler."""
+    """Aktif kaydı olup iptal dışı sözleşmesi olmayan öğrenciler.
+
+    Pasif öğrenciler (Ogrenci.aktif_mi=False) dahil edilmez — sözleşmesi iptal
+    edilip öğrenci pasife alınmışsa muhasebe dashboard'unda görünmemelidir.
+    """
     with_contract = Sozlesme.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
@@ -39,6 +43,7 @@ def _sozlesmesiz_kayit_qs(kurum_id, sube_id, egitim_yili_id):
         sube_id=sube_id,
         egitim_yili_id=egitim_yili_id,
         aktif_mi=True,
+        ogrenci__aktif_mi=True,
     ).exclude(ogrenci_id__in=with_contract).select_related(
         'ogrenci', 'sinif', 'sinif_seviyesi',
     )

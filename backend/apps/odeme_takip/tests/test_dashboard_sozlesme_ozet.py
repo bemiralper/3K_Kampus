@@ -155,3 +155,39 @@ class DashboardSozlesmeOzetTest(TestCase):
         self.assertNotIn(self.ogrenci_taslak.id, ids)
         self.assertNotIn(self.ogrenci_odemesiz.id, ids)
         self.assertNotIn(self.ogrenci_odenen.id, ids)
+
+    def test_pasif_ogrenci_sozlesmesiz_listede_yok(self):
+        """Sözleşmesi iptal + öğrenci pasif → sözleşmesiz listede ve sayaçta olmamalı."""
+        today = timezone.localdate()
+        pasif = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Pasif', soyad='Öğrenci', aktif_mi=False,
+        )
+        OgrenciKayit.objects.create(
+            ogrenci=pasif,
+            egitim_yili=self.egitim_yili,
+            kurum=self.kurum,
+            sube=self.sube,
+            aktif_mi=True,  # eski tutarsız veri senaryosu
+        )
+        Sozlesme.objects.create(
+            sozlesme_no='SZ-DASH-IPTAL',
+            ogrenci=pasif,
+            egitim_yili=self.egitim_yili,
+            kurum=self.kurum,
+            sube=self.sube,
+            baslangic_tarihi=today,
+            bitis_tarihi=today + timedelta(days=365),
+            brut_tutar=3000,
+            net_tutar=3000,
+            durum=SozlesmeDurum.IPTAL,
+        )
+
+        dash = self.client.get(f'{API}/dashboard/', **self._headers())
+        self.assertEqual(dash.status_code, 200)
+        self.assertEqual(dash.json()['sozlesmesiz_ogrenci_sayisi'], 1)
+
+        liste = self.client.get(f'{API}/sozlesmesiz-ogrenciler/', **self._headers())
+        self.assertEqual(liste.status_code, 200)
+        ids = {row['id'] for row in liste.json()['results']}
+        self.assertIn(self.ogrenci_sozlesmesiz.id, ids)
+        self.assertNotIn(pasif.id, ids)

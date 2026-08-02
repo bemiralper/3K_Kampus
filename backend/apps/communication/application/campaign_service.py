@@ -782,11 +782,39 @@ class CampaignService:
             raise ValidationError('Seçilen filtreye uygun alıcı bulunamadı.')
 
         if template_name:
+            from apps.communication.application.meta_template_service import MetaTemplateService
+            from apps.communication.domain.enums import MetaTemplateStatus
+            from apps.communication.domain.models import WhatsAppMetaTemplate
+
+            lang = template_language or 'tr'
+            acct_id = channel_config.id if channel_config else channel_config_id
+            approved = MetaTemplateService.get_approved(
+                kurum_id,
+                name=template_name,
+                language=lang,
+                channel_config_id=acct_id,
+            )
+            if approved is None:
+                blocked = WhatsAppMetaTemplate.objects.filter(
+                    kurum_id=kurum_id,
+                    name=template_name,
+                    language=lang,
+                ).exclude(status=MetaTemplateStatus.APPROVED).first()
+                if blocked:
+                    raise ValidationError(
+                        f'Meta şablon onaylı değil (durum: {blocked.status}). '
+                        'Yalnızca onaylanmış şablonlar gönderilebilir.',
+                    )
+            else:
+                if not body:
+                    body = approved.body_named
             audience_filter = {
                 **audience_filter,
                 'template_name': template_name,
-                'template_language': template_language or 'tr',
+                'template_language': lang,
             }
+            if acct_id:
+                audience_filter['channel_config_id'] = str(acct_id)
             if template_components_json:
                 audience_filter['template_components_json'] = template_components_json
 

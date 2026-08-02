@@ -231,6 +231,7 @@ export default function SablonlarClient() {
       title="Şablonlar"
       subtitle="Hazır yanıtları kategorilere göre yönetin"
       icon="📋"
+      className="tplx tplx-page"
       breadcrumbs={[
         { label: "İletişim", href: "/admin/iletisim/toplu-gonder" },
         { label: "Şablonlar" },
@@ -244,36 +245,55 @@ export default function SablonlarClient() {
       {error && <div className="comm-alert comm-alert-danger">{error}</div>}
       {successMsg && <div className="comm-alert comm-alert-success">{successMsg}</div>}
 
-      <div className="comm-stat-grid" style={{ marginBottom: "1.25rem" }}>
-        <div className="comm-stat-card">
-          <span className="comm-stat-value">{templates.length}</span>
-          <span className="comm-stat-label">Aktif şablon</span>
+      <div className="tplx-hero">
+        <div className="tplx-hero-cell">
+          <span className="tplx-hero-icon" aria-hidden="true">📋</span>
+          <span className="tplx-hero-text">
+            <span className="tplx-hero-value">{templates.length}</span>
+            <span className="tplx-hero-label">Şablon</span>
+          </span>
         </div>
-        <div className="comm-stat-card">
-          <span className="comm-stat-value">{totals.sent}</span>
-          <span className="comm-stat-label">Gönderildi</span>
+        <div className="tplx-hero-cell">
+          <span className="tplx-hero-icon is-blue" aria-hidden="true">📤</span>
+          <span className="tplx-hero-text">
+            <span className="tplx-hero-value">{totals.sent.toLocaleString("tr-TR")}</span>
+            <span className="tplx-hero-label">Gönderildi</span>
+          </span>
         </div>
-        <div className="comm-stat-card">
-          <span className="comm-stat-value">{totals.read}</span>
-          <span className="comm-stat-label">Okundu</span>
+        <div className="tplx-hero-cell">
+          <span className="tplx-hero-icon" aria-hidden="true">👁</span>
+          <span className="tplx-hero-text">
+            <span className="tplx-hero-value">{totals.read.toLocaleString("tr-TR")}</span>
+            <span className="tplx-hero-label">Okundu</span>
+          </span>
         </div>
-        <div className="comm-stat-card">
-          <span className="comm-stat-value">{activeCategories.length}</span>
-          <span className="comm-stat-label">Kategori</span>
+        <div className="tplx-hero-cell">
+          <span className="tplx-hero-icon is-rose" aria-hidden="true">⚠</span>
+          <span className="tplx-hero-text">
+            <span className="tplx-hero-value">{totals.failed.toLocaleString("tr-TR")}</span>
+            <span className="tplx-hero-label">Başarısız</span>
+          </span>
+        </div>
+        <div className="tplx-hero-cell">
+          <span className="tplx-hero-icon is-violet" aria-hidden="true">🗂</span>
+          <span className="tplx-hero-text">
+            <span className="tplx-hero-value">{activeCategories.length}</span>
+            <span className="tplx-hero-label">Kategori</span>
+          </span>
         </div>
       </div>
 
-      <div className="comm-tabbar">
-        <div className="comm-tabs" role="tablist" aria-label="Şablon kategorileri">
+      <div className="tplx-toolbar">
+        <div className="tplx-chips" role="tablist" aria-label="Şablon kategorileri">
           <button
             type="button"
             role="tab"
             aria-selected={categoryFilter === ""}
-            className={`comm-tab${categoryFilter === "" ? " active" : ""}`}
+            className={`tplx-chip${categoryFilter === "" ? " is-active" : ""}`}
             onClick={() => selectCategory("")}
           >
             Tümü
-            <span className="comm-tab-count">{totalTemplateCount}</span>
+            <span className="tplx-chip-count">{totalTemplateCount}</span>
           </button>
           {activeCategories.map((cat) => (
             <button
@@ -281,17 +301,17 @@ export default function SablonlarClient() {
               type="button"
               role="tab"
               aria-selected={categoryFilter === cat.slug}
-              className={`comm-tab${categoryFilter === cat.slug ? " active" : ""}`}
+              className={`tplx-chip${categoryFilter === cat.slug ? " is-active" : ""}`}
               onClick={() => selectCategory(cat.slug)}
               title={TEMPLATE_AUDIENCE_LABELS[cat.audience_scope] || cat.audience_scope}
             >
               {cat.label}
-              <span className="comm-tab-count">{cat.template_count ?? 0}</span>
+              <span className="tplx-chip-count">{cat.template_count ?? 0}</span>
               {(cat.template_count ?? 0) === 0 && (
                 <span
                   role="button"
                   tabIndex={0}
-                  className="comm-tab-remove"
+                  className="tplx-chip-x"
                   aria-label={`${cat.label} kategorisini kaldır`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -305,24 +325,27 @@ export default function SablonlarClient() {
           ))}
           <button
             type="button"
-            className="comm-tab comm-tab-add"
+            className="tplx-chip is-dashed"
             onClick={() => setShowCategoryForm((v) => !v)}
           >
             + Kategori
           </button>
         </div>
 
-        <input
-          type="search"
-          className="comm-tabbar-search"
-          placeholder="Şablon ara…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <label className="tplx-search">
+          <span className="tplx-search-icon" aria-hidden="true">🔍</span>
+          <input
+            type="search"
+            placeholder="Şablon veya metin ara…"
+            aria-label="Şablon ara"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
       </div>
 
       {showCategoryForm && (
-        <form className="comm-card comm-sablon-category-add-form" onSubmit={handleAddCategory}>
+        <form className="tplx-inline-form" onSubmit={handleAddCategory}>
           <input
             type="text"
             placeholder="Yeni kategori adı"
@@ -350,61 +373,91 @@ export default function SablonlarClient() {
       )}
 
       {loading ? (
-        <p className="comm-studio-muted">Yükleniyor…</p>
+        <div className="tplx-grid" aria-busy="true" aria-label="Yükleniyor">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="tplx-skeleton-card" />
+          ))}
+        </div>
       ) : visibleTemplates.length === 0 ? (
-        <div className="comm-card" style={{ textAlign: "center", padding: "2.5rem" }}>
-          <span style={{ fontSize: "2.5rem", display: "block", marginBottom: "0.75rem" }}>📭</span>
-          <p className="comm-studio-muted" style={{ margin: "0 0 1rem" }}>
-            {search ? "Aramayla eşleşen şablon yok." : "Bu kategoride henüz şablon yok."}
+        <div className="tplx-empty">
+          <span className="tplx-empty-icon" aria-hidden="true">{search ? "🔍" : "✨"}</span>
+          <h3>{search ? "Sonuç bulunamadı" : "Henüz şablon yok"}</h3>
+          <p>
+            {search
+              ? `"${search}" aramasıyla eşleşen şablon yok. Farklı bir kelime deneyin veya filtreyi temizleyin.`
+              : "Sık kullandığınız mesajları şablona dönüştürün; tek tıkla gönderin, değişkenler otomatik dolsun."}
           </p>
-          {!search && (
+          {search ? (
+            <button type="button" className="comm-btn-secondary" onClick={() => setSearch("")}>
+              Aramayı temizle
+            </button>
+          ) : (
             <button type="button" className="comm-btn-primary" onClick={openCreate}>
-              Yeni şablon ekleyin
+              + İlk şablonu oluştur
             </button>
           )}
         </div>
       ) : (
-        <div className="comm-sablon-card-grid">
+        <div className="tplx-grid">
           {visibleTemplates.map((t) => (
-            <div key={t.id} className="comm-sablon-card">
-              <button type="button" className="comm-sablon-card-main" onClick={() => openEdit(t)}>
-                <div className="comm-sablon-card-head">
-                  <strong>{t.name}</strong>
-                  <div className="comm-sablon-card-badges">
+            <article
+              key={t.id}
+              className={`tplx-card${t.is_system_active ? " is-flagged" : ""}`}
+            >
+              <button
+                type="button"
+                className="tplx-card-main"
+                onClick={() => openEdit(t)}
+                aria-label={`${t.name} şablonunu düzenle`}
+              >
+                <div className="tplx-card-head">
+                  <span className="tplx-card-title">{t.name}</span>
+                  <div className="tplx-badges">
                     {t.is_system_active && (
-                      <span className="comm-sablon-card-badge comm-sablon-card-badge-active">
+                      <span className="tplx-badge is-live">
+                        <span className="tplx-badge-dot" aria-hidden="true" />
                         Aktif
                       </span>
                     )}
                     {!categoryFilter && (
-                      <span className="comm-sablon-card-badge">
+                      <span className="tplx-badge is-ghost">
                         {t.category_label || labels[t.category] || t.category}
                       </span>
                     )}
                   </div>
                 </div>
-                <p className="comm-sablon-card-body">
-                  {t.body.slice(0, 100)}{t.body.length > 100 ? "…" : ""}
+
+                <p className="tplx-card-snippet">
+                  {t.body.slice(0, 130)}{t.body.length > 130 ? "…" : ""}
                 </p>
+
                 {t.is_system_active && t.system_usages?.length ? (
-                  <p className="comm-sablon-card-usage">
+                  <p className="tplx-card-usage">
+                    <span aria-hidden="true">⚡</span>
                     {t.system_usages.map((u) => u.label).join(" · ")}
                   </p>
                 ) : null}
-                <div className="comm-sablon-card-meta">
-                  <span>{TEMPLATE_AUDIENCE_LABELS[t.audience_scope || "genel"]}</span>
+
+                <div className="tplx-card-foot">
+                  <span>👥 {TEMPLATE_AUDIENCE_LABELS[t.audience_scope || "genel"]}</span>
                   <span>{t.usage_count} kullanım</span>
                 </div>
               </button>
-              <button
-                type="button"
-                className="comm-sablon-card-delete"
-                aria-label={`${t.name} sil`}
-                onClick={() => handleDelete(t)}
-              >
-                Sil
-              </button>
-            </div>
+
+              <div className="tplx-card-actions">
+                <button type="button" className="tplx-card-action" onClick={() => openEdit(t)}>
+                  Düzenle
+                </button>
+                <button
+                  type="button"
+                  className="tplx-card-action is-danger"
+                  aria-label={`${t.name} sil`}
+                  onClick={() => handleDelete(t)}
+                >
+                  Sil
+                </button>
+              </div>
+            </article>
           ))}
         </div>
       )}
@@ -413,7 +466,7 @@ export default function SablonlarClient() {
         <>
           <div className="comm-drawer-overlay" onClick={closeDrawer} role="presentation" />
           <div
-            className="comm-drawer comm-sablon-drawer"
+            className="tplx comm-drawer tplx-drawer"
             role="dialog"
             aria-modal="true"
             aria-labelledby="sablon-drawer-title"

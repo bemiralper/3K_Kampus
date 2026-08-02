@@ -12,6 +12,7 @@ import {
 } from "@/components/communication";
 import "@/components/communication/communication.css";
 import { AudienceFilter, CampaignPreviewStats, previewCampaign } from "@/lib/communication-api";
+import { getContextHeaders } from "@/lib/api";
 
 const STORAGE_KEYS = { activeEgitimYili: "3k_active_egitim_yili" };
 
@@ -113,27 +114,25 @@ export default function TopluGonderClient({
 
   useEffect(() => {
     if (isCoach) return;
-    const kurumRaw = localStorage.getItem("3k_active_kurum");
-    const subeRaw = localStorage.getItem("3k_active_sube");
-    if (!kurumRaw) return;
-    try {
-      const kurum = JSON.parse(kurumRaw);
-      const sube = subeRaw ? JSON.parse(subeRaw) : null;
-      const egitimYiliId = readEgitimYiliId();
-      const params = new URLSearchParams();
-      if (kurum?.id) params.set("kurum_id", String(kurum.id));
-      if (sube?.id) params.set("sube_id", String(sube.id));
-      if (egitimYiliId) params.set("egitim_yili_id", String(egitimYiliId));
-      fetch(`/api/sinif/?${params}`)
-        .then((r) => r.json())
-        .then((data) => {
-          const list = Array.isArray(data) ? data : data.results || data.siniflar || [];
-          setSiniflar(list.map((s: { id: number; ad: string }) => ({ id: s.id, ad: s.ad })));
-        })
-        .catch(() => null);
-    } catch {
-      /* ignore */
-    }
+    // Kurum/şube bağlamı header ile gider; ikisi de yoksa uç zaten 400 döner.
+    const contextHeaders = getContextHeaders();
+    if (!contextHeaders["X-Kurum-ID"] || !contextHeaders["X-Sube-ID"]) return;
+    const egitimYiliId = readEgitimYiliId();
+    const params = new URLSearchParams();
+    if (egitimYiliId) params.set("egitim_yili_id", String(egitimYiliId));
+    const qs = params.toString();
+    fetch(`/api/siniflar/api/${qs ? `?${qs}` : ""}`, {
+      credentials: "include",
+      headers: contextHeaders,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const list = data?.siniflar || [];
+        setSiniflar(
+          list.map((s: { id: number; ad: string }) => ({ id: s.id, ad: s.ad })),
+        );
+      })
+      .catch(() => null);
   }, [isCoach]);
 
   const refreshMiniPreview = useCallback(async () => {

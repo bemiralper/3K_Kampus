@@ -202,8 +202,10 @@ class ConversationTagsView(CommunicationAPIView):
         _, _, conversation, err = _get_conversation(request, conversation_id)
         if err:
             return err
-        tag_ids = request.data.get('tag_ids') or []
-        slugs = request.data.get('slugs') or []
+        tag_ids = request.data.get('tag_ids')
+        slugs = request.data.get('slugs')
+        if tag_ids is None and slugs is None:
+            return Response({'error': 'tag_ids veya slugs gerekli.'}, status=status.HTTP_400_BAD_REQUEST)
         self._ensure_default_tags(conversation.kurum_id)
         tags = ConversationTag.objects.filter(kurum_id=conversation.kurum_id)
         if tag_ids:
@@ -211,7 +213,8 @@ class ConversationTagsView(CommunicationAPIView):
         elif slugs:
             tags = tags.filter(slug__in=slugs)
         else:
-            return Response({'error': 'tag_ids veya slugs gerekli.'}, status=status.HTTP_400_BAD_REQUEST)
+            # Açık boş liste: sohbetin tüm etiketlerini kaldır
+            tags = tags.none()
         conversation.tags.set(tags)
         log_conversation_event(
             conversation,

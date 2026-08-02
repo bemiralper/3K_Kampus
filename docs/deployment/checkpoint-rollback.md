@@ -8,6 +8,8 @@ Büyük canlı alımlarından önce kod tabanının sabitlenmiş hali. Bu commit
 
 | Etiket / dal | Commit | Ne içerir |
 |--------------|--------|-----------|
+| `checkpoint/2026-08-02-pre-meta-sablon-sse` | `0320a91` | **Meta şablon yönetimi + SSE gthread/slot + log/oturum düzeltmeleri deploy öncesi** — bu alımdan önceki `main` |
+| `backup/checkpoint-pre-meta-sablon-sse-20260802` | `0320a91` | Aynı commit’te yedek dal |
 | `checkpoint/2026-08-02-communication-bildirim` | `a91d96b` | **İletişim paneli / ticket routing / toplu gönderim / bildirim zili (SSE+ses+badge)** sonrası sabit `main` |
 | `backup/checkpoint-communication-bildirim-20260802` | `a91d96b` | Aynı commit’te yedek dal |
 | `checkpoint/2026-07-19-pre-coach-portal-mvp` | `cb35d6e` | **Koç portalı MVP (Student360 + risk + ödev ver + scope) deploy öncesi** — bu alımdan önceki `main` |
@@ -37,17 +39,17 @@ cd ~/Documents/3k-kampus-lms-main-2
 git fetch origin --tags
 
 # Bu canlı alımından önceki durum (önerilen geri dönüş)
-git checkout checkpoint/2026-07-12-pre-akademi-finans-portal
+git checkout checkpoint/2026-08-02-pre-meta-sablon-sse
 
 # Veya yedek dal
-git checkout backup/checkpoint-pre-akademi-finans-20260712
+git checkout backup/checkpoint-pre-meta-sablon-sse-20260802
 ```
 
 `main`’i checkpoint’e sabitlemek (dikkat: force push gerekir, ekip onayı şart):
 
 ```bash
 git checkout main
-git reset --hard checkpoint/2026-07-12-pre-akademi-finans-portal
+git reset --hard checkpoint/2026-08-02-pre-meta-sablon-sse
 git push origin main --force-with-lease
 ```
 
@@ -62,7 +64,7 @@ Sunucuda (`/var/www/lms`):
 ```bash
 cd /var/www/lms
 git fetch origin --tags
-git checkout checkpoint/2026-07-12-pre-akademi-finans-portal
+git checkout checkpoint/2026-08-02-pre-meta-sablon-sse
 
 export LMS_APP_ROOT=/var/www/lms
 export LMS_BACKEND_SERVICE=lms-backend
@@ -72,7 +74,7 @@ export LMS_FRONTEND_SERVICE=lms-frontend
 
 `--no-git` kullanın; kod zaten checkout ile güncellendi.
 
-**Migration uyarısı:** Website CMS migration’ları (`website` `0008`–`0014`: hero galeri, bölüm sırası, görünürlük vb.) uygulandıysa, eski koda dönmek DB şemasını bozabilir. Tam geri dönüş için yedek DB restore gerekebilir — bkz. [backup-restore.md](./backup-restore.md).
+**Migration uyarısı:** Bu alımda `communication` `0011` (WhatsAppMetaTemplate) ve `0012` (message index) migration’ları var. Checkpoint’e dönerken şema uyumsuzluğu oluşursa yedek DB restore gerekir — bkz. [backup-restore.md](./backup-restore.md). Website CMS (`0008`–`0014`) için aynı kural geçerli.
 
 CMS v2 deploy sonrası hızlı geri alma:
 

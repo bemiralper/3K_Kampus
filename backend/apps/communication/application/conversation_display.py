@@ -135,7 +135,7 @@ def resolve_conversation_display_name(
             if lookup_cache is not None:
                 maps = lookup_cache.get(conversation.kurum_id)
                 if maps is None:
-                    maps = ContactResolver.build_kurum_lookup_maps(conversation.kurum_id)
+                    maps = ContactResolver.get_kurum_lookup_maps(conversation.kurum_id)
                     lookup_cache[conversation.kurum_id] = maps
                 name = ContactResolver.lookup_display_name(
                     conversation.kurum_id, conversation.contact_phone, maps,

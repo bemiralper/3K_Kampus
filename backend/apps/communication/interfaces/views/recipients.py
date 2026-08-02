@@ -1,7 +1,7 @@
 """
 Alıcı çözümleme API.
 """
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -110,18 +110,28 @@ class RecipientSearchView(CommunicationAPIView):
             | Q(telefon__icontains=q)
         )
 
-        from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+        from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
+
+        # Okul no ve sınıf öğrencide değil, yıllık kayıtta (OgrenciKayit) tutulur.
+        aktif_kayit = OgrenciKayit.objects.filter(
+            ogrenci_id=OuterRef('pk'),
+            aktif_mi=True,
+        ).order_by('-egitim_yili__baslangic_yil', '-id')
 
         ogr_qs = Ogrenci.objects.filter(
             kurum_id=kurum_id,
             aktif_mi=True,
         ).filter(
-            q_filter | Q(okul_no__icontains=q) | Q(tc_kimlik_no__icontains=q)
-        )
+            q_filter
+            | Q(kayitlar__okul_no__icontains=q)
+            | Q(tc_kimlik_no__icontains=q)
+        ).annotate(
+            aktif_sinif_ad=Subquery(aktif_kayit.values('sinif__ad')[:1]),
+        ).distinct()
         if sube_id:
             ogr_qs = ogr_qs.filter(sube_id=sube_id)
-        for o in ogr_qs.select_related('sinif').order_by('ad', 'soyad')[:12]:
-            sinif_ad = getattr(getattr(o, 'sinif', None), 'ad', None) or ''
+        for o in ogr_qs.order_by('ad', 'soyad')[:12]:
+            sinif_ad = o.aktif_sinif_ad or ''
             results.append({
                 'kind': 'ogrenci',
                 'id': o.id,

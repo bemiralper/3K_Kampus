@@ -82,6 +82,7 @@ class PhoneChangeSync:
             return
 
         kurum_id = ogrenci.kurum_id
+        ContactResolver.invalidate_kurum_lookup_maps(kurum_id)
         new_phone = (veli.telefon or '').strip()
 
         if veli.varsayilan:
@@ -116,6 +117,7 @@ class PhoneChangeSync:
             return
 
         kurum_id = ogrenci.kurum_id
+        ContactResolver.invalidate_kurum_lookup_maps(kurum_id)
         new_phone = (ogrenci.telefon or '').strip()
 
         conversations = Conversation.objects.filter(
@@ -145,6 +147,7 @@ class PhoneChangeSync:
         kurum_id = ogrenci.kurum_id if ogrenci else None
         if not kurum_id:
             return
+        ContactResolver.invalidate_kurum_lookup_maps(kurum_id)
         raw = (phone or getattr(veli, 'telefon', '') or '').strip()
         if raw:
             reconcile_phone(kurum_id, raw)

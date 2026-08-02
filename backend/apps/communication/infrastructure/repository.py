@@ -260,6 +260,9 @@ class ConversationRepository:
             'ogrenci', 'ogrenci__sube', 'veli', 'veli__ogrenci', 'kurum',
             'assigned_coach', 'assigned_coach__teacher', 'claimed_by_user',
             'contact_identity', 'contact_identity__personel',
+            # İsim çözümlemesi identity üzerinden de bakıyor; select_related
+            # olmazsa satır başına ek sorgu (N+1) çıkar.
+            'contact_identity__veli', 'contact_identity__ogrenci',
             'sube', 'channel_config',
         ).prefetch_related('tags').order_by(
             F('last_message_at').desc(nulls_last=True),

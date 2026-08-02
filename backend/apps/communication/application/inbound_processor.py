@@ -97,7 +97,15 @@ class InboundProcessor:
                     continue
 
                 try:
-                    self._process_value(kurum_id, value, channel_config=config)
+                    field = change.get('field') or ''
+                    if field == 'message_template_status_update':
+                        self._process_template_status_update(
+                            value,
+                            phone_number_id=phone_number_id,
+                            waba_id=str(entry.get('id') or ''),
+                        )
+                    else:
+                        self._process_value(kurum_id, value, channel_config=config)
                     RawWebhookEventRepository.mark_processed(event, WebhookProcessingStatus.PROCESSED)
                     processed += 1
                 except Exception as exc:
@@ -118,6 +126,21 @@ class InboundProcessor:
         )
 
         return {'processed': processed, 'errors': errors}
+
+    def _process_template_status_update(
+        self,
+        value: dict[str, Any],
+        *,
+        phone_number_id: str = '',
+        waba_id: str = '',
+    ) -> None:
+        from apps.communication.application.meta_template_service import MetaTemplateService
+
+        MetaTemplateService.apply_webhook_status(
+            phone_number_id=phone_number_id,
+            waba_id=waba_id,
+            event=value or {},
+        )
 
     def _process_value(
         self,

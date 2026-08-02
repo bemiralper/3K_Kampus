@@ -16,6 +16,8 @@ from .enums import (
     MessageDirection,
     MessageStatus,
     MessageType,
+    MetaTemplateCategory,
+    MetaTemplateStatus,
     RecipientType,
     TemplateCategory,
     TemplateAudienceScope,
@@ -557,6 +559,84 @@ class MessageTemplate(models.Model):
         return self.name
 
 
+class WhatsAppMetaTemplate(models.Model):
+    """Meta WABA message template — named değişken katmanı ile yerel kayıt."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='whatsapp_meta_templates',
+        verbose_name='Kurum',
+    )
+    channel_config = models.ForeignKey(
+        CommunicationChannelConfig,
+        on_delete=models.CASCADE,
+        related_name='meta_templates',
+        verbose_name='WhatsApp Hesabı',
+    )
+    name = models.CharField(max_length=512, verbose_name='Şablon Adı')
+    language = models.CharField(max_length=16, default='tr', verbose_name='Dil')
+    meta_category = models.CharField(
+        max_length=32,
+        choices=MetaTemplateCategory.choices,
+        default=MetaTemplateCategory.UTILITY,
+        verbose_name='Meta Kategori',
+        db_index=True,
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=MetaTemplateStatus.choices,
+        default=MetaTemplateStatus.DRAFT,
+        verbose_name='Durum',
+        db_index=True,
+    )
+    meta_template_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Meta Template ID')
+    body_named = models.TextField(blank=True, default='', verbose_name='Gövde (named değişkenler)')
+    header_json = models.JSONField(default=dict, blank=True, verbose_name='Header')
+    footer_text = models.CharField(max_length=60, blank=True, default='', verbose_name='Footer')
+    buttons_json = models.JSONField(default=list, blank=True, verbose_name='Butonlar')
+    components_json = models.JSONField(default=list, blank=True, verbose_name='Meta Components')
+    variable_map_json = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name='Değişken eşlemesi (1→ogrenci_ad)',
+    )
+    rejected_reason = models.CharField(max_length=255, blank=True, default='', verbose_name='Ret nedeni')
+    rejected_detail = models.TextField(blank=True, default='', verbose_name='Meta açıklaması')
+    last_submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='Son gönderim')
+    approved_at = models.DateTimeField(null=True, blank=True, verbose_name='Onay tarihi')
+    usage_count = models.PositiveIntegerField(default=0, verbose_name='Kullanım sayısı')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='whatsapp_meta_templates',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_whatsapp_meta_template'
+        verbose_name = 'WhatsApp Meta Şablonu'
+        verbose_name_plural = 'WhatsApp Meta Şablonları'
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['channel_config', 'name', 'language'],
+                name='comm_meta_tpl_account_name_lang_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['kurum', 'status'], name='comm_meta_tpl_kurum_status_idx'),
+            models.Index(fields=['channel_config', 'status'], name='comm_meta_tpl_acct_status_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.language}) — {self.status}'
+
+
 class CampaignAttachment(models.Model):
     """Kampanya öncesi yüklenen ek dosya."""
 
@@ -756,6 +836,12 @@ class Message(models.Model):
         verbose_name = 'Mesaj'
         verbose_name_plural = 'Mesajlar'
         ordering = ['created_at']
+        indexes = [
+            models.Index(
+                fields=['conversation', '-created_at'],
+                name='comm_msg_conv_created_idx',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.direction} — {self.status}'

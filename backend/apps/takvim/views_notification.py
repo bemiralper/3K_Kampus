@@ -20,6 +20,33 @@ from apps.takvim.application.notification_service import (
 from apps.takvim.helpers import _get_kurum_id, _get_user_id
 
 
+def _require_user_and_kurum(request):
+    """
+    (kurum_id, user_id, hata_yanıtı) döndürür.
+
+    Oturum yoksa 401 verilir: bu uçlar arayüzde sürekli yoklandığı için 400
+    dönmek hem istemcinin "oturum bitti" akışını tetiklemiyor hem de log'da
+    gerçek hata gibi görünüyordu.
+    """
+    user_id = _get_user_id(request)
+    if not user_id:
+        return None, None, JsonResponse(
+            {
+                'success': False,
+                'error': 'Oturum açmanız gerekiyor.',
+                'code': 'not_authenticated',
+            },
+            status=401,
+        )
+    kurum_id = _get_kurum_id(request)
+    if not kurum_id:
+        return None, None, JsonResponse(
+            {'success': False, 'error': 'Kurum seçilmedi.', 'code': 'kurum_required'},
+            status=400,
+        )
+    return kurum_id, user_id, None
+
+
 def serialize_notification(n):
     return {
         'id': str(n.id),
@@ -64,10 +91,9 @@ def api_notification_list(request):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
-    kurum_id = _get_kurum_id(request)
-    user_id = _get_user_id(request)
-    if not kurum_id or not user_id:
-        return JsonResponse({'success': False, 'error': 'Yetkilendirme hatası'}, status=400)
+    kurum_id, user_id, err = _require_user_and_kurum(request)
+    if err:
+        return err
 
     unread_only = request.GET.get('unread_only') == 'true'
     limit = min(int(request.GET.get('limit', 50)), 100)
@@ -87,10 +113,9 @@ def api_notification_summary(request):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
-    kurum_id = _get_kurum_id(request)
-    user_id = _get_user_id(request)
-    if not kurum_id or not user_id:
-        return JsonResponse({'success': False, 'error': 'Yetkilendirme hatası'}, status=400)
+    kurum_id, user_id, err = _require_user_and_kurum(request)
+    if err:
+        return err
 
     service = AppNotificationService()
     summary = service.get_summary(user_id, kurum_id)
@@ -110,10 +135,9 @@ def api_notification_screen(request):
     if request.method != 'GET':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
-    kurum_id = _get_kurum_id(request)
-    user_id = _get_user_id(request)
-    if not kurum_id or not user_id:
-        return JsonResponse({'success': False, 'error': 'Yetkilendirme hatası'}, status=400)
+    kurum_id, user_id, err = _require_user_and_kurum(request)
+    if err:
+        return err
 
     limit = min(int(request.GET.get('limit', 5)), 10)
     service = AppNotificationService()
@@ -131,10 +155,9 @@ def api_notification_mark_screen_shown(request, pk):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
-    kurum_id = _get_kurum_id(request)
-    user_id = _get_user_id(request)
-    if not kurum_id or not user_id:
-        return JsonResponse({'success': False, 'error': 'Yetkilendirme hatası'}, status=400)
+    _kurum_id, _user_id, err = _require_user_and_kurum(request)
+    if err:
+        return err
 
     service = AppNotificationService()
     service.mark_ekran_gosterildi(pk)
@@ -159,10 +182,9 @@ def api_notification_mark_all_read(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
-    kurum_id = _get_kurum_id(request)
-    user_id = _get_user_id(request)
-    if not kurum_id or not user_id:
-        return JsonResponse({'success': False, 'error': 'Yetkilendirme hatası'}, status=400)
+    kurum_id, user_id, err = _require_user_and_kurum(request)
+    if err:
+        return err
 
     service = AppNotificationService()
     service.mark_all_as_read(user_id, kurum_id)

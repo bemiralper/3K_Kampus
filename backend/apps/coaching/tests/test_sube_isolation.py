@@ -34,7 +34,12 @@ class CoachingSubeIsolationAPITest(TestCase):
             bitis_yil=2026,
             aktif_mi=True,
         )
-        self.user = User.objects.create_user(username='kociso', password='test')
+        # Kurum geneli erişimi olan kullanıcı: burada test edilen koç kapsamı
+        # değil, aktif şube filtresidir. Yetkisiz kullanıcıda liste zaten boş
+        # döner ve şube izolasyonu ölçülemez.
+        self.user = User.objects.create_user(
+            username='kociso', password='test', is_staff=True,
+        )
         self.client.force_authenticate(user=self.user)
 
         self.student_a = Ogrenci.objects.create(

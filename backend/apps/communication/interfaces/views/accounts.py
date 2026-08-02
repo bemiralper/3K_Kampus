@@ -3,7 +3,6 @@ WhatsApp hesapları CRUD + test + şablon senkronu.
 """
 from __future__ import annotations
 
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -197,17 +196,17 @@ class WhatsAppAccountSyncTemplatesView(APIView):
     permission_classes = [CommunicationConfigPermission]
 
     def post(self, request, account_id):
+        from apps.communication.application.meta_template_service import MetaTemplateService
+
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
         account = ChannelConfigRepository.get_by_id(kurum_id, account_id)
         if not account:
             return Response({'error': 'Hesap bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
-        result = WhatsAppCloudClient(channel_config=account).list_message_templates(kurum_id)
-        if result.get('success'):
-            account.last_synced_at = timezone.now()
-            account.save(update_fields=['last_synced_at', 'updated_at'])
-        return Response(result)
+        result = MetaTemplateService.sync_account(account)
+        status_code = status.HTTP_200_OK if result.get('success') else status.HTTP_400_BAD_REQUEST
+        return Response(result, status=status_code)
 
 
 class WhatsAppAccessibleAccountsView(APIView):

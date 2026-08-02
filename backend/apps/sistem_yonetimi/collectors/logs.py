@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from apps.sistem_yonetimi.collectors.explanations import explain_log_line
+from apps.sistem_yonetimi.collectors.explanations import SCANNER_PROBE_RE, explain_log_line
 
 LEVEL_PATTERNS = [
     (re.compile(r'\bCRITICAL\b|\bFATAL\b', re.I), 'CRITICAL'),
@@ -31,7 +31,8 @@ def detect_level(line: str, *, source_category: str | None = None) -> str:
             if code >= 500:
                 return 'ERROR'
             if code >= 400:
-                return 'WARNING'
+                # Bot taramaları (.env, wp-admin…) beklenen 404'tür, uyarı sayılmaz
+                return 'INFO' if SCANNER_PROBE_RE.search(line) else 'WARNING'
             return 'INFO'
         return 'INFO'
 

@@ -283,11 +283,15 @@ export default function BulkSendStudio({
         <div className="comm-studio-headerbar-field">
           <MetaTemplateSelect
             value={templateName}
-            label="Meta şablonu (isteğe bağlı)"
-            onChange={(name, language) => {
+            accountId={accountId || undefined}
+            label="Meta şablonu (onaylı)"
+            onChange={(name, language, tpl) => {
               onTemplateNameChange(name);
               if (language && onTemplateLanguageChange) {
                 onTemplateLanguageChange(language);
+              }
+              if (tpl?.body_named) {
+                onComposerChange({ ...composerState, text: tpl.body_named });
               }
             }}
           />

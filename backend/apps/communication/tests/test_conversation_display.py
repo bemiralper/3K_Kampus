@@ -4,6 +4,7 @@ telefon yerine isim dönmeli.
 """
 from django.test import TestCase
 
+from apps.communication.application.contact_resolver import ContactResolver
 from apps.communication.application.conversation_display import (
     looks_like_phone,
     resolve_conversation_display_name,
@@ -140,6 +141,9 @@ class ResolveConversationDisplayNameLookupCacheTest(TestCase):
         conv_ogrenci = self._conv('+905309449925')
         conv_unmatched = self._conv('+905559998877')
         cache: dict = {}
+        # Kurum haritası ayrıca process cache'inde tutuluyor; burada istek-içi
+        # yeniden kullanım ölçüldüğü için soğuk başlangıç zorlanır.
+        ContactResolver.invalidate_kurum_lookup_maps(self.kurum.id)
 
         with self.assertNumQueries(3):
             name1 = resolve_conversation_display_name(
@@ -157,6 +161,21 @@ class ResolveConversationDisplayNameLookupCacheTest(TestCase):
             )
         self.assertEqual(name2, 'Zeynep Ogrenci')
         self.assertEqual(name3, '+905559998877')
+
+    def test_kurum_map_cached_across_requests(self):
+        """Ayrı isteklerde (istek-içi cache yokken) harita yeniden kurulmamalı."""
+        conv = self._conv('+905321112233')
+        ContactResolver.invalidate_kurum_lookup_maps(self.kurum.id)
+
+        with self.assertNumQueries(3):
+            resolve_conversation_display_name(
+                conv, allow_live_lookup=True, lookup_cache={},
+            )
+        with self.assertNumQueries(0):
+            name = resolve_conversation_display_name(
+                conv, allow_live_lookup=True, lookup_cache={},
+            )
+        self.assertEqual(name, self.veli.tam_ad)
 
     def test_lookup_cache_does_not_write_contact_identity(self):
         conv = self._conv('+905321112233')

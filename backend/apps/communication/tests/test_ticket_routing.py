@@ -164,6 +164,30 @@ class TicketRoutingAPITest(TestCase):
         self.assertIn('cards', res.data)
         self.assertIn('unread_count', res.data)
 
+    def test_set_and_clear_tags(self):
+        url = f'/api/communication/conversations/{self.conv.id}/tags/'
+        catalog = self.client.get(url, {'kurum_id': self.kurum.id})
+        self.assertEqual(catalog.status_code, 200, catalog.content)
+        slug = catalog.data['tags'][0]['slug']
+
+        res = self.client.post(
+            url, {'kurum_id': self.kurum.id, 'slugs': [slug]}, format='json',
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.conv.tags.count(), 1)
+
+        # Son etiketi kaldırma: boş liste 400 vermemeli
+        res = self.client.post(
+            url, {'kurum_id': self.kurum.id, 'slugs': []}, format='json',
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.conv.tags.count(), 0)
+
+    def test_tags_without_payload_is_bad_request(self):
+        url = f'/api/communication/conversations/{self.conv.id}/tags/'
+        res = self.client.post(url, {'kurum_id': self.kurum.id}, format='json')
+        self.assertEqual(res.status_code, 400)
+
     def test_routing_rules_crud(self):
         res = self.client.post(
             '/api/communication/routing-rules/',

@@ -8,7 +8,10 @@ from apps.finans.domain.financial_account import MaliHesap
 
 @admin.register(MaliHesap)
 class MaliHesapAdmin(admin.ModelAdmin):
-    list_display = ['ad', 'tip', 'sube', 'banka', 'banka_adi', 'baslangic_bakiye', 'para_birimi', 'aktif_mi', 'silindi_mi']
+    list_display = [
+        'ad', 'tip', 'sube', 'banka', 'banka_adi', 'baslangic_bakiye',
+        'para_birimi', 'siralama', 'aktif_mi', 'silindi_mi',
+    ]
     list_filter = ['tip', 'aktif_mi', 'silindi_mi', 'para_birimi', 'banka', 'sube__kurum']
     search_fields = ['ad', 'iban', 'banka_adi', 'aciklama']
     ordering = ['sube', 'siralama', 'ad']

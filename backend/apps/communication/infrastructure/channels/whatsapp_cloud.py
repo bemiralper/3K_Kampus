@@ -3,12 +3,15 @@ WhatsApp Business Cloud API client.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import mimetypes
+import os
 from typing import Any
 
 import httpx
 from django.conf import settings
+from django.core.cache import cache
 
 from apps.communication.application.token_crypto import decrypt_access_token
 from apps.communication.domain.enums import Channel
@@ -19,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 GRAPH_API_BASE = 'https://graph.facebook.com/v21.0'
 REQUEST_TIMEOUT = 30.0
+UPLOAD_TIMEOUT = 120.0
+APP_ID_CACHE_TTL = 60 * 60 * 24
 
 META_ERROR_HINTS = {
     130429: 'Meta rate limit — gönderimi yavaşlatın.',
@@ -282,6 +287,125 @@ class WhatsAppCloudClient(BaseChannelClient):
             logger.exception('WhatsApp media upload error kurum=%s', kurum_id)
             return None
 
+    def resolve_app_id(self, access_token: str) -> str:
+        """Şablon medya yüklemesi için Meta App ID (ayar yoksa token'dan çözülür)."""
+        configured = str(getattr(settings, 'WHATSAPP_APP_ID', '') or '')
+        if configured:
+            return configured
+        if not access_token:
+            return ''
+
+        cache_key = 'wa:app_id:' + hashlib.sha256(access_token.encode()).hexdigest()[:24]
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        app_id = ''
+        try:
+            with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+                response = client.get(
+                    f'{GRAPH_API_BASE}/debug_token',
+                    params={'input_token': access_token, 'access_token': access_token},
+                )
+                data = response.json()
+                if response.is_success:
+                    app_id = str(data.get('data', {}).get('app_id') or '')
+                else:
+                    logger.warning(
+                        'Meta debug_token failed: %s',
+                        self._format_api_error(data, response.text),
+                    )
+        except httpx.HTTPError:
+            logger.exception('Meta debug_token error')
+
+        if app_id:
+            cache.set(cache_key, app_id, APP_ID_CACHE_TTL)
+        return app_id
+
+    def upload_template_media_handle(
+        self,
+        kurum_id: int,
+        file_path: str,
+        mime_type: str,
+        *,
+        file_name: str = '',
+    ) -> dict[str, Any]:
+        """
+        Resumable Upload API — şablon HEADER örneği için `header_handle` üretir.
+        /{phone_number_id}/media'nın döndürdüğü media_id şablon oluştururken
+        geçersizdir ("Parameter value is not valid"); Meta burada ayrı bir
+        upload session handle'ı bekler.
+        """
+        config = self._resolve_config(kurum_id)
+        access_token = config['access_token']
+        if not access_token:
+            logger.info('WhatsApp stub template media upload — kurum=%s', kurum_id)
+            return {'success': True, 'stub': True, 'handle': f'stub_handle_{kurum_id}'}
+
+        app_id = self.resolve_app_id(access_token)
+        if not app_id:
+            return {
+                'success': False,
+                'error': (
+                    'Meta App ID belirlenemedi. Sunucuda WHATSAPP_APP_ID ayarını tanımlayın '
+                    'veya access token yetkilerini kontrol edin.'
+                ),
+            }
+
+        name = file_name or os.path.basename(file_path)
+        guessed = mime_type or mimetypes.guess_type(name)[0] or 'application/octet-stream'
+        try:
+            file_length = os.path.getsize(file_path)
+            with open(file_path, 'rb') as fh:
+                payload = fh.read()
+        except OSError as exc:
+            logger.exception('Template media read error kurum=%s', kurum_id)
+            return {'success': False, 'error': str(exc)}
+
+        try:
+            with httpx.Client(timeout=UPLOAD_TIMEOUT) as client:
+                session_response = client.post(
+                    f'{GRAPH_API_BASE}/{app_id}/uploads',
+                    params={
+                        'file_name': name,
+                        'file_length': file_length,
+                        'file_type': guessed,
+                        'access_token': access_token,
+                    },
+                )
+                session_data = session_response.json()
+                if not session_response.is_success:
+                    return {
+                        'success': False,
+                        'error': self._format_api_error(session_data, session_response.text),
+                    }
+                session_id = session_data.get('id') or ''
+                if not session_id:
+                    return {'success': False, 'error': 'Meta upload session oluşturulamadı.'}
+
+                upload_response = client.post(
+                    f'{GRAPH_API_BASE}/{session_id}',
+                    headers={
+                        'Authorization': f'OAuth {access_token}',
+                        'file_offset': '0',
+                        'Content-Type': 'application/octet-stream',
+                    },
+                    content=payload,
+                )
+                upload_data = upload_response.json()
+                if not upload_response.is_success:
+                    return {
+                        'success': False,
+                        'error': self._format_api_error(upload_data, upload_response.text),
+                    }
+                handle = upload_data.get('h') or ''
+                if not handle:
+                    return {'success': False, 'error': 'Meta upload handle döndürmedi.'}
+                return {'success': True, 'handle': handle}
+        except httpx.HTTPError as exc:
+            logger.exception('Template media upload error kurum=%s', kurum_id)
+            return {'success': False, 'error': str(exc)}
+
     def get_media_download_url(self, kurum_id: int, media_id: str) -> str | None:
         """Graph GET /{media_id} — geçici download URL."""
         config = self._resolve_config(kurum_id)
@@ -340,7 +464,13 @@ class WhatsAppCloudClient(BaseChannelClient):
 
         url = f'{GRAPH_API_BASE}/{waba_id}/message_templates'
         headers = {'Authorization': f'Bearer {access_token}'}
-        params = {'limit': min(limit, 250)}
+        params = {
+            'limit': min(limit, 250),
+            'fields': (
+                'id,name,status,language,category,rejected_reason,'
+                'components,quality_score,previous_category'
+            ),
+        }
 
         try:
             with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
@@ -356,6 +486,103 @@ class WhatsAppCloudClient(BaseChannelClient):
                 }
         except httpx.HTTPError as exc:
             return {'success': False, 'error': str(exc), 'templates': []}
+
+    def create_message_template(
+        self,
+        kurum_id: int,
+        *,
+        name: str,
+        language: str,
+        category: str,
+        components: list[dict[str, Any]],
+        allow_category_change: bool = True,
+    ) -> dict[str, Any]:
+        """Graph POST /{waba_id}/message_templates"""
+        config = self._resolve_config(kurum_id)
+        waba_id = config['waba_id']
+        access_token = config['access_token']
+
+        if not waba_id or not access_token:
+            return {
+                'success': True,
+                'stub': True,
+                'id': f'stub_tpl_{name}',
+                'status': 'PENDING',
+                'category': category,
+            }
+
+        url = f'{GRAPH_API_BASE}/{waba_id}/message_templates'
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+        }
+        payload = {
+            'name': name,
+            'language': language,
+            'category': category,
+            'components': components,
+            'allow_category_change': allow_category_change,
+        }
+        try:
+            with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+                response = client.post(url, json=payload, headers=headers)
+                data = response.json()
+                if response.is_success:
+                    return {'success': True, **data}
+                return {
+                    'success': False,
+                    'error': self._format_api_error(data, response.text),
+                    'status_code': response.status_code,
+                    'raw': data,
+                }
+        except httpx.HTTPError as exc:
+            return {'success': False, 'error': str(exc)}
+
+    def delete_message_template(self, kurum_id: int, *, name: str, hsm_id: str = '') -> dict[str, Any]:
+        """Graph DELETE /{waba_id}/message_templates"""
+        config = self._resolve_config(kurum_id)
+        waba_id = config['waba_id']
+        access_token = config['access_token']
+
+        if not waba_id or not access_token:
+            return {'success': True, 'stub': True}
+
+        url = f'{GRAPH_API_BASE}/{waba_id}/message_templates'
+        headers = {'Authorization': f'Bearer {access_token}'}
+        params: dict[str, str] = {'name': name}
+        if hsm_id:
+            params['hsm_id'] = hsm_id
+        try:
+            with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+                response = client.delete(url, headers=headers, params=params)
+                data = response.json() if response.content else {}
+                if response.is_success:
+                    return {'success': True, **data}
+                return {
+                    'success': False,
+                    'error': self._format_api_error(data, response.text),
+                }
+        except httpx.HTTPError as exc:
+            return {'success': False, 'error': str(exc)}
+
+    def get_message_template(
+        self,
+        kurum_id: int,
+        *,
+        name: str,
+        language: str = '',
+    ) -> dict[str, Any]:
+        """Listeden name (+ optional language) ile tek şablon bul."""
+        result = self.list_message_templates(kurum_id)
+        if not result.get('success'):
+            return result
+        for tpl in result.get('templates') or []:
+            if tpl.get('name') != name:
+                continue
+            if language and tpl.get('language') != language:
+                continue
+            return {'success': True, 'template': tpl}
+        return {'success': False, 'error': 'Şablon Meta üzerinde bulunamadı.', 'template': None}
 
     def test_connection(self, kurum_id: int) -> dict[str, Any]:
         config = self._resolve_config(kurum_id)

@@ -118,12 +118,17 @@ After=network.target postgresql.service
 User=www-data
 WorkingDirectory=/var/www/lms/backend
 EnvironmentFile=/etc/lms/env
-ExecStart=/var/www/lms/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3
+ExecStart=/var/www/lms/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 \
+  --worker-class gthread --workers 3 --threads 8 --timeout 120
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+> SSE (`/api/communication/events/stream/`) nedeniyle `gthread` şart; sync
+> worker'da açık streamler 3 worker'ı da tutup tüm API'yi 503'e düşürüyor.
+> Değişiklik sonrası: `sudo systemctl daemon-reload && sudo systemctl restart lms-backend`.
 
 `/etc/systemd/system/lms-frontend.service`:
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 
@@ -30,6 +31,10 @@ class ContactResolver:
     """E.164 normalizasyon ve kurum içi kişi çözümleme."""
 
     TR_MOBILE_PATTERN = re.compile(r'^(\+90|0)?5\d{9}$')
+
+    # Telefon → kişi haritası kurum başına cache'lenir; veli/öğrenci telefonu
+    # değişince PhoneChangeSync tarafından geçersiz kılınır.
+    LOOKUP_MAP_CACHE_TTL = 60
 
     # sms_bildirimleri kodları — duyuru/genel mesajlar için
     GENERAL_OPT_IN_CODES = {'duyuru', 'genel', 'general', 'announcement'}
@@ -225,6 +230,24 @@ class ContactResolver:
 
         return {'veli': veli_map, 'ogrenci': ogrenci_map, 'personel': personel_map}
 
+    @staticmethod
+    def _lookup_map_cache_key(kurum_id: int) -> str:
+        return f'comm:contact_lookup_maps:{kurum_id}'
+
+    @classmethod
+    def get_kurum_lookup_maps(cls, kurum_id: int) -> dict:
+        """Cache'li `build_kurum_lookup_maps` — istek başına yeniden kurulmaz."""
+        key = cls._lookup_map_cache_key(kurum_id)
+        maps = cache.get(key)
+        if maps is None:
+            maps = cls.build_kurum_lookup_maps(kurum_id)
+            cache.set(key, maps, cls.LOOKUP_MAP_CACHE_TTL)
+        return maps
+
+    @classmethod
+    def invalidate_kurum_lookup_maps(cls, kurum_id: int) -> None:
+        cache.delete(cls._lookup_map_cache_key(kurum_id))
+
     @classmethod
     def lookup_display_name(cls, kurum_id: int, phone: str, maps: dict) -> str:
         """`build_kurum_lookup_maps` çıktısı üzerinden yalnızca isim çözer (yazma yapmaz)."""
@@ -240,36 +263,21 @@ class ContactResolver:
 
     @classmethod
     def _lookup_entities(cls, kurum_id: int, e164: str) -> dict:
-        from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
-        from apps.personel.domain.models import Personel
+        """
+        Telefon → veli / öğrenci / personel eşlemesi.
 
-        veliler = (
-            OgrenciVeli.objects.filter(ogrenci__kurum_id=kurum_id)
-            .exclude(telefon='')
-            .select_related('ogrenci')
-        )
-        for veli in veliler:
-            if cls._digits_match(veli.telefon, e164):
-                return {
-                    'veli_id': veli.id,
-                    'ogrenci_id': veli.ogrenci_id,
-                    'display_name': veli.tam_ad,
-                }
-
-        for ogrenci in Ogrenci.objects.filter(kurum_id=kurum_id).exclude(telefon=''):
-            if cls._digits_match(ogrenci.telefon, e164):
-                return {
-                    'ogrenci_id': ogrenci.id,
-                    'display_name': f'{ogrenci.ad} {ogrenci.soyad}'.strip(),
-                }
-
-        for personel in Personel.objects.filter(kurum_id=kurum_id):
-            if cls._digits_match(personel.telefon, e164) or cls._digits_match(personel.cep_telefon, e164):
-                return {
-                    'personel_id': personel.id,
-                    'display_name': f'{personel.ad} {personel.soyad}'.strip(),
-                }
-
+        Kurum haritası üzerinden çalışır (`get_kurum_lookup_maps`); her çağrıda
+        veli/öğrenci/personel tablolarını Python'da taramak yerine cache'li
+        son-10-hane indeksinden okur. Eşleşme kuralı `_digits_match` ile aynıdır.
+        """
+        suffix = cls._phone_suffix(e164)
+        if not suffix:
+            return {}
+        maps = cls.get_kurum_lookup_maps(kurum_id)
+        for bucket in ('veli', 'ogrenci', 'personel'):
+            entry = maps.get(bucket, {}).get(suffix)
+            if entry:
+                return dict(entry)
         return {}
 
     @classmethod

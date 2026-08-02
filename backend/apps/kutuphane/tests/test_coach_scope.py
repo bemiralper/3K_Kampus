@@ -132,8 +132,19 @@ class KutuphaneCoachScopeTest(TestCase):
         self.assertIn(self.coach_student.id, seat_ids)
         self.assertIn(self.other_student.id, seat_ids)
 
-    def test_coach_can_create_salon(self):
+    def test_coach_cannot_create_salon(self):
+        """Salon altyapısı CRUD yalnızca admin/muhasebe yetkisindedir."""
         self.client.force_login(self.coach_user)
+        res = self.client.post(
+            '/kutuphane/api/salon/',
+            data=json.dumps({'ad': 'Yeni', 'kod': 'YN', 'kapasite': 10}),
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_admin_can_create_salon(self):
+        self.client.force_login(self.admin_user)
         res = self.client.post(
             '/kutuphane/api/salon/',
             data=json.dumps({'ad': 'Yeni', 'kod': 'YN', 'kapasite': 10}),

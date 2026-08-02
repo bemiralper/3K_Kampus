@@ -1,24 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { fetchMetaWhatsAppTemplates, MetaWhatsAppTemplate } from "@/lib/communication-api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  fetchLocalMetaTemplates,
+  WhatsAppMetaTemplateItem,
+} from "@/lib/communication-api";
+import WhatsAppPreviewBubble from "./WhatsAppPreviewBubble";
+import { resolvePreviewVariables } from "./composer-utils";
 
 interface MetaTemplateSelectProps {
   value: string;
-  onChange: (name: string, language?: string) => void;
+  onChange: (name: string, language?: string, template?: WhatsAppMetaTemplateItem | null) => void;
   id?: string;
   label?: string;
   disabled?: boolean;
+  accountId?: string;
 }
 
 export default function MetaTemplateSelect({
   value,
   onChange,
   id = "meta-template-select",
-  label = "Meta şablon adı (isteğe bağlı)",
+  label = "Meta şablonu (onaylı)",
   disabled = false,
+  accountId,
 }: MetaTemplateSelectProps) {
-  const [templates, setTemplates] = useState<MetaWhatsAppTemplate[]>([]);
+  const [templates, setTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +33,10 @@ export default function MetaTemplateSelect({
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchMetaWhatsAppTemplates();
+      const data = await fetchLocalMetaTemplates({
+        account_id: accountId,
+        approved_only: true,
+      });
       setTemplates(data.templates || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Şablon listesi alınamadı");
@@ -34,18 +44,21 @@ export default function MetaTemplateSelect({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [accountId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const approved = templates.filter((t) => t.status === "APPROVED");
+  const selected = useMemo(
+    () => templates.find((t) => t.name === value) || null,
+    [templates, value],
+  );
 
   const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const name = e.target.value;
-    const tpl = approved.find((t) => t.name === name);
-    onChange(name, tpl?.language);
+    const tpl = templates.find((t) => t.name === name) || null;
+    onChange(name, tpl?.language, tpl);
   };
 
   return (
@@ -53,7 +66,7 @@ export default function MetaTemplateSelect({
       <label htmlFor={id}>{label}</label>
       {loading ? (
         <p className="comm-studio-muted" style={{ margin: 0, fontSize: "0.875rem" }}>
-          Meta şablonları yükleniyor…
+          Onaylı Meta şablonları yükleniyor…
         </p>
       ) : (
         <>
@@ -61,24 +74,29 @@ export default function MetaTemplateSelect({
             id={id}
             value={value}
             onChange={handleSelect}
-            disabled={disabled || approved.length === 0}
+            disabled={disabled || templates.length === 0}
           >
-            <option value="">— Şablon seçin veya boş bırakın —</option>
-            {approved.map((tpl) => (
-              <option key={`${tpl.name}-${tpl.language}`} value={tpl.name}>
+            <option value="">— Onaylı şablon seçin —</option>
+            {templates.map((tpl) => (
+              <option key={tpl.id} value={tpl.name}>
                 {tpl.name} ({tpl.language || "?"})
               </option>
             ))}
           </select>
-          {!loading && approved.length === 0 && !error && (
+          {!loading && templates.length === 0 && !error && (
             <p className="comm-studio-muted" style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem" }}>
-              Onaylı Meta şablonu bulunamadı — WABA yapılandırmasını kontrol edin.
+              Onaylı Meta şablonu yok — Meta Şablonları sayfasından oluşturun veya senkronize edin.
             </p>
           )}
           {error && (
             <p className="comm-studio-muted" style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "#c0392b" }}>
               {error}
             </p>
+          )}
+          {selected?.body_named && (
+            <div style={{ marginTop: "0.75rem" }}>
+              <WhatsAppPreviewBubble text={resolvePreviewVariables(selected.body_named)} />
+            </div>
           )}
         </>
       )}

@@ -4,10 +4,12 @@ Koç inbox SSE — okunmamış mesaj değişikliklerini canlı bildirir.
 from __future__ import annotations
 
 import json
+import threading
 import time
 
 from django.conf import settings
 from django.db import close_old_connections
+from django.db.models import Count, Q, Sum
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.renderers import BaseRenderer
@@ -22,6 +24,39 @@ from apps.communication.permissions import CommunicationModulePermission
 
 def _sse_event(event: str, data: dict) -> str:
     return f'event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n'
+
+
+class _StreamSlots:
+    """
+    Worker başına eşzamanlı SSE bağlantısı sınırı.
+
+    Her açık stream bir sync worker'ı (gthread'de bir thread'i) süresi boyunca
+    meşgul eder. Sınır olmadan birkaç açık sekme tüm worker'ları tüketip diğer
+    isteklerin 503 almasına yol açıyor. Slot kalmadığında istemciye "fallback"
+    olayı gönderilir; o da yoklamaya (polling) düşer.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._active = 0
+
+    @property
+    def limit(self) -> int:
+        return max(1, int(getattr(settings, 'COMMUNICATION_SSE_MAX_STREAMS', 4) or 1))
+
+    def acquire(self) -> bool:
+        with self._lock:
+            if self._active >= self.limit:
+                return False
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        with self._lock:
+            self._active = max(0, self._active - 1)
+
+
+_stream_slots = _StreamSlots()
 
 
 class EventStreamRenderer(BaseRenderer):
@@ -47,6 +82,11 @@ class CommunicationEventsStreamView(CommunicationAPIView):
             return err
 
         def event_generator():
+            # Slot generator içinde alınır: yanıt hiç tüketilmezse sayaç sızmasın.
+            if not _stream_slots.acquire():
+                yield _sse_event('fallback', {'reason': 'stream_limit'})
+                return
+
             last_unread = -1
             last_conversations = -1
             last_fingerprint = ''
@@ -67,8 +107,12 @@ class CommunicationEventsStreamView(CommunicationAPIView):
                     qs = filter_conversations_for_user(
                         qs, request.user, kurum_id=kurum_id, sube_id=sube_id,
                     )
-                    unread_count = ConversationRepository.unread_count_for_queryset(qs)
-                    unread_conversations = qs.filter(unread_count_coach__gt=0).count()
+                    totals = qs.aggregate(
+                        unread=Sum('unread_count_coach'),
+                        conversations=Count('id', filter=Q(unread_count_coach__gt=0)),
+                    )
+                    unread_count = int(totals['unread'] or 0)
+                    unread_conversations = int(totals['conversations'] or 0)
                     # Claim / SLA / status değişikliklerini de yakala
                     agg = qs.order_by('-updated_at').values_list(
                         'id', 'claim_version', 'status', 'unread_count_coach',
@@ -104,6 +148,7 @@ class CommunicationEventsStreamView(CommunicationAPIView):
             except GeneratorExit:
                 pass
             finally:
+                _stream_slots.release()
                 close_old_connections()
 
         response = StreamingHttpResponse(

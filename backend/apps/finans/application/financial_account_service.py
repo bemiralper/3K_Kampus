@@ -119,8 +119,27 @@ class MaliHesapService:
         if block_message:
             return None, {'detail': block_message}
 
+        self._soft_delete_bagli_odeme_yontemleri(pk)
         instance = self.repo.soft_delete(instance)
         return instance, None
+
+    @staticmethod
+    def _soft_delete_bagli_odeme_yontemleri(mali_hesap_id):
+        """
+        Hesapla birlikte açılan kanal kayıtlarını da kapatır.
+
+        Buraya yalnızca hiçbir kayıtta kullanılmayan yöntemlerle gelinir
+        (bkz. get_mali_hesap_delete_block_message); aksi halde hesap zaten
+        silinemez.
+        """
+        from apps.finans.application.finans_tanim_usage import odeme_yontemi_ids_for_mali_hesap
+        from apps.finans.infrastructure.payment_method_repository import OdemeYontemiRepository
+
+        repo = OdemeYontemiRepository()
+        for odeme_yontemi_id in odeme_yontemi_ids_for_mali_hesap(mali_hesap_id):
+            odeme_yontemi = repo.get_by_id(odeme_yontemi_id)
+            if odeme_yontemi:
+                repo.soft_delete(odeme_yontemi)
 
     # ─── ACTIVATE / DEACTIVATE ───────────────────
 

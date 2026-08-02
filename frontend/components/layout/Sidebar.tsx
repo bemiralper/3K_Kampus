@@ -317,6 +317,7 @@ const navItems: MenuItem[] = [
       { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
       { label: "Mesaj Kuyruğu", href: "/admin/iletisim/kuyruk" },
       { label: "Şablonlar", href: "/admin/iletisim/sablonlar" },
+      { label: "Meta Şablonları", href: "/admin/iletisim/meta-sablonlar" },
       { label: "WhatsApp Hesapları", href: "/admin/iletisim/whatsapp-hesaplari" },
       { label: "Yönlendirme Kuralları", href: "/admin/iletisim/yonlendirme" },
     ],

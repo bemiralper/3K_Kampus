@@ -2,6 +2,7 @@
 Faz 4 — Modül entegrasyon hook testleri.
 """
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -19,7 +20,9 @@ from apps.communication.application.integration_hooks import (
     notify_gorusme_reminder,
     notify_payment_reminder,
 )
-from apps.communication.domain.models import Message, OutboundQueueItem
+from apps.communication.domain.enums import MessageStatus
+from apps.communication.domain.models import Message
+from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
 from apps.kurum.domain.models import Kurum
 from apps.odeme_takip.domain.enums import SozlesmeDurum, TaksitDurum
 from apps.odeme_takip.domain.models import Sozlesme, Taksit
@@ -75,7 +78,9 @@ class IntegrationHooksTest(TestCase):
             is_coach=True,
         )
 
-    def test_gorusme_hook_enqueues_message(self):
+    @patch.object(WhatsAppCloudClient, 'send_text')
+    def test_gorusme_hook_sends_message(self, mock_send):
+        mock_send.return_value = {'success': True, 'messages': [{'id': 'wamid.gor1'}]}
         future = timezone.localdate() + timedelta(days=7)
         gorusme = GorusmeKaydi.objects.create(
             kurum=self.kurum,
@@ -91,13 +96,12 @@ class IntegrationHooksTest(TestCase):
 
         msg = Message.objects.filter(source_module=SOURCE_GORUSME).first()
         self.assertIsNotNone(msg)
-        self.assertTrue(
-            OutboundQueueItem.objects.filter(message=msg).exists(),
-            'Kuyruk kaydı oluşmalı',
-        )
+        self.assertEqual(msg.status, MessageStatus.SENT, 'Hook mesajı iletmeli')
         self.assertTrue(msg.source_ref_id.startswith(str(gorusme.id)))
 
-    def test_payment_reminder_respects_opt_out(self):
+    @patch.object(WhatsAppCloudClient, 'send_text')
+    def test_payment_reminder_respects_opt_out(self, mock_send):
+        mock_send.return_value = {'success': True, 'messages': [{'id': 'wamid.pay1'}]}
         from apps.egitim_yili.domain.models import EgitimYili
 
         ey = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
@@ -136,7 +140,9 @@ class IntegrationHooksTest(TestCase):
         self.assertTrue(result2.success if result2 else False)
         self.assertEqual(Message.objects.filter(source_module=SOURCE_ODEME).count(), 1)
 
-    def test_assignment_hook_sets_source_module(self):
+    @patch.object(WhatsAppCloudClient, 'send_text')
+    def test_assignment_hook_sets_source_module(self, mock_send):
+        mock_send.return_value = {'success': True, 'messages': [{'id': 'wamid.odev1'}]}
         assignment = ManualAssignment.objects.create(
             student=self.student,
             title='Matematik Ödevi',
@@ -150,9 +156,11 @@ class IntegrationHooksTest(TestCase):
         msg = Message.objects.filter(source_module=SOURCE_ODEV).first()
         self.assertIsNotNone(msg)
         self.assertIn(str(assignment.id), msg.source_ref_id)
-        self.assertTrue(OutboundQueueItem.objects.filter(message=msg).exists())
+        self.assertEqual(msg.status, MessageStatus.SENT)
 
-    def test_absence_hook_enqueues_when_called(self):
+    @patch.object(WhatsAppCloudClient, 'send_text')
+    def test_absence_hook_sends_when_called(self, mock_send):
+        mock_send.return_value = {'success': True, 'messages': [{'id': 'wamid.dev1'}]}
         notify_absence(
             self.kurum.id,
             self.student.id,
@@ -162,4 +170,4 @@ class IntegrationHooksTest(TestCase):
 
         msg = Message.objects.filter(source_module=SOURCE_DEVAMSIZLIK).first()
         self.assertIsNotNone(msg)
-        self.assertTrue(OutboundQueueItem.objects.filter(message=msg).exists())
+        self.assertEqual(msg.status, MessageStatus.SENT)

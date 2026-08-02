@@ -56,6 +56,17 @@ class BakiyeHareketiRepository:
             kaynak_id=kaynak_id,
         ).select_related('mali_hesap')
 
+    @staticmethod
+    def kaynak_hareketi_var_mi(kaynak_tip, kaynak_id, kaynaklar=None):
+        """Kaynak işlem için (isteğe bağlı belirli kaynak türlerinde) hareket var mı?"""
+        qs = BakiyeHareketi.objects.filter(
+            kaynak_tip=kaynak_tip,
+            kaynak_id=kaynak_id,
+        )
+        if kaynaklar:
+            qs = qs.filter(kaynak__in=list(kaynaklar))
+        return qs.exists()
+
     # ─── AGGREGATES ──────────────────────────────
 
     @staticmethod

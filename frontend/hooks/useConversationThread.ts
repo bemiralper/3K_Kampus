@@ -42,6 +42,8 @@ export function useConversationThread(
   const loadSeqRef = useRef(0);
   const onConversationReadRef = useRef(onConversationRead);
   onConversationReadRef.current = onConversationRead;
+  const unreadRef = useRef(0);
+  unreadRef.current = conversation?.unread_count_coach ?? 0;
 
   const loadMessages = useCallback(async (id: string, opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
@@ -52,9 +54,12 @@ export function useConversationThread(
       const data = await fetchConversationMessages(id);
       if (seq !== loadSeqRef.current) return;
       setMessages(data.messages || []);
+      // Sessiz yenilemede okunmamış yoksa gereksiz yazma isteği atma
+      if (silent && unreadRef.current === 0) return;
       // Okundu işaretleme yüklemeyi bloklamasın
       void markConversationRead(id)
         .then(() => {
+          unreadRef.current = 0;
           onConversationReadRef.current?.(id);
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('lms:notifications-refresh'));

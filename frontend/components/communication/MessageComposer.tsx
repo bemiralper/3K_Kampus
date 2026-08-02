@@ -50,6 +50,8 @@ interface MessageComposerProps {
   onOpenTemplates?: () => void;
   onAttachClick?: () => void;
   allowSendWithoutText?: boolean;
+  /** Dışarıdan imleç konumuna yazı eklemek isteyen ebeveynler için. */
+  onTextareaMount?: (node: HTMLTextAreaElement | null) => void;
 }
 
 function normalizeValue(value: ComposerState | string): ComposerState {
@@ -71,9 +73,17 @@ export default function MessageComposer({
   onOpenTemplates,
   onAttachClick,
   allowSendWithoutText = false,
+  onTextareaMount,
 }: MessageComposerProps) {
   const state = normalizeValue(value);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const setTextareaNode = useCallback(
+    (node: HTMLTextAreaElement | null) => {
+      textareaRef.current = node;
+      onTextareaMount?.(node);
+    },
+    [onTextareaMount],
+  );
   const [showEmoji, setShowEmoji] = useState(false);
   const [showVars, setShowVars] = useState(false);
   const emojiTriggerRef = useRef<HTMLButtonElement>(null);
@@ -305,7 +315,7 @@ export default function MessageComposer({
 
       <div className="comm-compose-body">
         <textarea
-          ref={textareaRef}
+          ref={setTextareaNode}
           id={id}
           className="comm-compose-textarea"
           value={state.text}

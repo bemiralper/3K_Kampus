@@ -10,7 +10,7 @@ from shared.sube_context import (
 )
 
 
-def resolve_mandatory_finans_sube(request, kurum_id):
+def resolve_mandatory_finans_sube(request, kurum_id, *, allow_body_param=True):
     """
     Zorunlu şube bağlamını çözümler ve kullanıcı erişimini doğrular.
 
@@ -18,7 +18,9 @@ def resolve_mandatory_finans_sube(request, kurum_id):
         (sube_id, None) başarılı
         (None, Response) hata
     """
-    sube_id, err = resolve_mandatory_sube(request, kurum_id)
+    sube_id, err = resolve_mandatory_sube(
+        request, kurum_id, allow_body_param=allow_body_param,
+    )
     if err:
         return None, Response(
             {'error': err['error']},

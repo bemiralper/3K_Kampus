@@ -142,6 +142,20 @@ class BakiyeHareketiService:
             'toplam_gelir', 'toplam_gider', 'donem_sonu_bakiye', 'updated_at',
         ])
 
+    def kaynak_hareketi_var_mi(self, kaynak_tip, kaynak_id, kaynaklar=None):
+        """
+        Aynı kaynak işlem için hareket yazılmış mı?
+
+        İptal akışlarında çift ters kayıt oluşmasını engellemek için kullanılır;
+        `kaynaklar` verilirse yalnızca o hareket kaynakları (ör. TAHSILAT_IPTAL)
+        dikkate alınır.
+        """
+        return self.repo.kaynak_hareketi_var_mi(
+            kaynak_tip=kaynak_tip,
+            kaynak_id=kaynak_id,
+            kaynaklar=kaynaklar,
+        )
+
     # ─── Kolaylık Metodları ──────────────────────
 
     def tahsilat_giris(self, mali_hesap_id, kurum_id, sube_id, egitim_yili_id,

@@ -88,9 +88,12 @@ class OgrenciRepository:
         """Öğrenci güncelle"""
         ogrenci = self.get_by_id(pk)
         if ogrenci:
+            aktif_mi_changed = 'aktif_mi' in data and data['aktif_mi'] != ogrenci.aktif_mi
             for key, value in data.items():
                 setattr(ogrenci, key, value)
             ogrenci.save()
+            if aktif_mi_changed:
+                self._sync_kayit_aktif_mi(pk, ogrenci.aktif_mi)
         return ogrenci
     
     def delete(self, pk):
@@ -98,9 +101,30 @@ class OgrenciRepository:
         ogrenci = self.get_by_id(pk)
         if ogrenci:
             ogrenci.aktif_mi = False
-            ogrenci.save()
+            ogrenci.save(update_fields=['aktif_mi'])
+            self._sync_kayit_aktif_mi(pk, False)
             return True
         return False
+
+    def _sync_kayit_aktif_mi(self, ogrenci_id, aktif_mi):
+        """Öğrenci durumu ile yıllık kayıt aktif_mi alanını senkronize et.
+
+        Liste ve filtreler OgrenciKayit.aktif_mi üzerinden okunur; pasife alma /
+        yeniden aktifleştirme yalnızca öğrenci satırında kalırsa UI tutarsız kalır.
+        """
+        if aktif_mi:
+            kayit = (
+                OgrenciKayit.objects.filter(ogrenci_id=ogrenci_id)
+                .order_by('-egitim_yili__baslangic_yil', '-created_at')
+                .first()
+            )
+            if kayit and not kayit.aktif_mi:
+                kayit.aktif_mi = True
+                kayit.save(update_fields=['aktif_mi'])
+        else:
+            OgrenciKayit.objects.filter(
+                ogrenci_id=ogrenci_id, aktif_mi=True,
+            ).update(aktif_mi=False)
     
     def hard_delete(self, pk):
         """Öğrenci kalıcı sil"""

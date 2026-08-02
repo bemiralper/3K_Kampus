@@ -130,3 +130,19 @@ class TemplateAudienceScope(models.TextChoices):
     ADMIN = 'admin', 'Admin / İletişim'
     COACH = 'coach', 'Koç'
     MUHASEBE = 'muhasebe', 'Muhasebe'
+
+
+class MetaTemplateCategory(models.TextChoices):
+    UTILITY = 'UTILITY', 'Utility'
+    MARKETING = 'MARKETING', 'Marketing'
+    AUTHENTICATION = 'AUTHENTICATION', 'Authentication'
+
+
+class MetaTemplateStatus(models.TextChoices):
+    DRAFT = 'DRAFT', 'Taslak'
+    SUBMITTED = 'SUBMITTED', 'Meta\'ya Gönderildi'
+    PENDING = 'PENDING', 'İnceleniyor'
+    APPROVED = 'APPROVED', 'Onaylandı'
+    REJECTED = 'REJECTED', 'Reddedildi'
+    PAUSED = 'PAUSED', 'Duraklatıldı'
+    DISABLED = 'DISABLED', 'Devre Dışı'

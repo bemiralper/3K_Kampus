@@ -281,7 +281,9 @@ EnvironmentFile=/etc/lms/env
 Environment=DJANGO_ENV=production
 ExecStart=/var/www/lms/venv/bin/gunicorn config.wsgi:application \
   --bind 127.0.0.1:8000 \
+  --worker-class gthread \
   --workers 3 \
+  --threads 8 \
   --timeout 120 \
   --access-logfile /var/log/lms/backend-access.log \
   --error-logfile /var/log/lms/backend-error.log
@@ -291,6 +293,14 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 ```
+
+> **`--worker-class gthread` zorunlu.** İletişim modülü SSE kullanır
+> (`/api/communication/events/stream/`). Sync worker'da açık her stream bir
+> worker'ı süresi boyunca meşgul eder; 3 worker ile iki-üç açık sekme tüm
+> API'yi kilitler (`WORKER TIMEOUT`, `SIGKILL`, ardından her isteğe 503).
+> Thread'li worker'da aynı bağlantı yalnızca bir thread tutar. Sunucu başına
+> eşzamanlı stream sayısı ayrıca `COMMUNICATION_SSE_MAX_STREAMS` (varsayılan 4)
+> ile sınırlıdır; sınır dolunca istemci otomatik yoklamaya düşer.
 
 ### 8.2 Frontend — `/etc/systemd/system/lms-frontend.service`
 
