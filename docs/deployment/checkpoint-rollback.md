@@ -8,6 +8,8 @@ Büyük canlı alımlarından önce kod tabanının sabitlenmiş hali. Bu commit
 
 | Etiket / dal | Commit | Ne içerir |
 |--------------|--------|-----------|
+| `checkpoint/2026-08-02-communication-bildirim` | `a91d96b` | **İletişim paneli / ticket routing / toplu gönderim / bildirim zili (SSE+ses+badge)** sonrası sabit `main` |
+| `backup/checkpoint-communication-bildirim-20260802` | `a91d96b` | Aynı commit’te yedek dal |
 | `checkpoint/2026-07-19-pre-coach-portal-mvp` | `cb35d6e` | **Koç portalı MVP (Student360 + risk + ödev ver + scope) deploy öncesi** — bu alımdan önceki `main` |
 | `backup/checkpoint-pre-coach-portal-mvp-20260719` | `cb35d6e` | Aynı commit’te yedek dal |
 | `checkpoint/2026-07-15-pre-restore-session-media-fix` | `4550429` | **Restore oturum/medya sırası + eğitim yılı varsayılanı deploy öncesi** |
