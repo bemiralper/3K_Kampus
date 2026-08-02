@@ -143,7 +143,11 @@ class ConversationListSerializer(serializers.ModelSerializer):
         return ''
 
     def get_contact_name(self, obj) -> str:
-        return resolve_conversation_display_name(obj, allow_live_lookup=True)
+        # Request-scoped cache: canlı telefon eşlemesi (kayıtsız numaralar için)
+        # sohbet listesinde satır başına değil, kurum başına tek seferlik
+        # oluşturulur — bkz. ContactResolver.build_kurum_lookup_maps.
+        cache = self.context.setdefault('_contact_lookup_cache', {})
+        return resolve_conversation_display_name(obj, allow_live_lookup=True, lookup_cache=cache)
 
     def get_assigned_coach_name(self, obj) -> str:
         coach = getattr(obj, 'assigned_coach', None)
@@ -211,27 +215,6 @@ class ConversationListSerializer(serializers.ModelSerializer):
             if isinstance(foto, str) and foto:
                 return foto
         return None
-
-    def _personel_name_by_phone(self, obj) -> str:
-        phone = (obj.contact_phone or '').strip()
-        if not phone:
-            return ''
-        cache = self.context.setdefault('_personel_name_by_phone', {})
-        key = f'{obj.kurum_id}:{phone}'
-        if key in cache:
-            return cache[key]
-        from apps.communication.application.contact_resolver import ContactResolver
-        from apps.personel.domain.models import Personel
-
-        name = ''
-        for personel in Personel.objects.filter(kurum_id=obj.kurum_id).only('ad', 'soyad', 'telefon', 'cep_telefon'):
-            if ContactResolver._digits_match(personel.telefon, phone) or ContactResolver._digits_match(
-                personel.cep_telefon, phone,
-            ):
-                name = f'{personel.ad} {personel.soyad}'.strip()
-                break
-        cache[key] = name
-        return name
 
     def get_veli_ad(self, obj) -> str:
         if obj.veli_id and obj.veli:

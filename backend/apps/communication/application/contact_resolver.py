@@ -161,6 +161,84 @@ class ContactResolver:
         return stored.endswith(suffix)
 
     @classmethod
+    def _phone_suffix(cls, phone: str | None) -> str | None:
+        digits = re.sub(r'\D', '', phone or '')
+        return digits[-10:] if len(digits) >= 10 else None
+
+    @classmethod
+    def build_kurum_lookup_maps(cls, kurum_id: int) -> dict:
+        """
+        Kurum genelinde telefon-son-10-hane → kişi eşleme tabloları.
+
+        Sohbet listesi gibi çok satırlı gösterimlerde her satır için ayrı ayrı
+        veli/öğrenci/personel tablolarını taramak yerine (N+1) tek seferlik
+        oluşturulup istek boyunca (request-scoped) yeniden kullanılmak üzere
+        tasarlanmıştır. `_digits_match` ile aynı eşleşme kuralını uygular:
+        son 10 hane eşleşirse kişi bulunmuş sayılır.
+        """
+        from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+        from apps.personel.domain.models import Personel
+
+        veli_map: dict[str, dict] = {}
+        for veli_id, ogrenci_id, ad, soyad, telefon in (
+            OgrenciVeli.objects.filter(ogrenci__kurum_id=kurum_id)
+            .exclude(telefon='')
+            .order_by('id')
+            .values_list('id', 'ogrenci_id', 'ad', 'soyad', 'telefon')
+        ):
+            suffix = cls._phone_suffix(telefon)
+            if suffix and suffix not in veli_map:
+                veli_map[suffix] = {
+                    'veli_id': veli_id,
+                    'ogrenci_id': ogrenci_id,
+                    'display_name': f'{ad} {soyad}'.strip(),
+                }
+
+        ogrenci_map: dict[str, dict] = {}
+        for ogrenci_id, ad, soyad, telefon in (
+            Ogrenci.objects.filter(kurum_id=kurum_id)
+            .exclude(telefon='')
+            .order_by('id')
+            .values_list('id', 'ad', 'soyad', 'telefon')
+        ):
+            suffix = cls._phone_suffix(telefon)
+            if suffix and suffix not in ogrenci_map:
+                ogrenci_map[suffix] = {
+                    'ogrenci_id': ogrenci_id,
+                    'display_name': f'{ad} {soyad}'.strip(),
+                }
+
+        personel_map: dict[str, dict] = {}
+        for personel_id, ad, soyad, telefon, cep_telefon in (
+            Personel.objects.filter(kurum_id=kurum_id)
+            .order_by('id')
+            .values_list('id', 'ad', 'soyad', 'telefon', 'cep_telefon')
+        ):
+            display_name = f'{ad} {soyad}'.strip()
+            for phone in (telefon, cep_telefon):
+                suffix = cls._phone_suffix(phone)
+                if suffix and suffix not in personel_map:
+                    personel_map[suffix] = {
+                        'personel_id': personel_id,
+                        'display_name': display_name,
+                    }
+
+        return {'veli': veli_map, 'ogrenci': ogrenci_map, 'personel': personel_map}
+
+    @classmethod
+    def lookup_display_name(cls, kurum_id: int, phone: str, maps: dict) -> str:
+        """`build_kurum_lookup_maps` çıktısı üzerinden yalnızca isim çözer (yazma yapmaz)."""
+        try:
+            e164 = cls.normalize(phone)
+        except ValidationError:
+            return ''
+        suffix = cls._phone_suffix(e164)
+        if not suffix:
+            return ''
+        entry = maps['veli'].get(suffix) or maps['ogrenci'].get(suffix) or maps['personel'].get(suffix)
+        return (entry or {}).get('display_name') or ''
+
+    @classmethod
     def _lookup_entities(cls, kurum_id: int, e164: str) -> dict:
         from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
         from apps.personel.domain.models import Personel

@@ -102,10 +102,20 @@ def resolve_conversation_display_name(
     *,
     wa_profile_name: str = '',
     allow_live_lookup: bool = True,
+    lookup_cache: dict | None = None,
 ) -> str:
     """
     Öncelik: bağlı kayıt → geçerli contact_name/subject → canlı telefon eşlemesi
     → WhatsApp profil adı → telefon.
+
+    `lookup_cache` verilirse (ör. sohbet listesi serializer'ının request-scoped
+    context'i), canlı telefon eşlemesi her satır için veli/öğrenci/personel
+    tablolarını taramak yerine kurum başına tek seferlik oluşturulan
+    (`ContactResolver.build_kurum_lookup_maps`) haritayı kullanır — hem N+1
+    sorgu hem de GET isteğinde ContactIdentity yazma yan etkisi engellenmiş
+    olur. `lookup_cache` verilmezse eski davranış (tekil, yazma yapan
+    `ContactResolver.resolve_contact`) korunur — router/webhook gibi tekil
+    akışlar için uygundur.
     """
     linked = _name_from_linked_entities(conversation)
     if linked:
@@ -122,11 +132,20 @@ def resolve_conversation_display_name(
     if allow_live_lookup and conversation.contact_phone and conversation.kurum_id:
         try:
             from apps.communication.application.contact_resolver import ContactResolver
-            resolved = ContactResolver.resolve_contact(
-                conversation.kurum_id,
-                conversation.contact_phone,
-            )
-            name = (resolved.display_name or '').strip()
+            if lookup_cache is not None:
+                maps = lookup_cache.get(conversation.kurum_id)
+                if maps is None:
+                    maps = ContactResolver.build_kurum_lookup_maps(conversation.kurum_id)
+                    lookup_cache[conversation.kurum_id] = maps
+                name = ContactResolver.lookup_display_name(
+                    conversation.kurum_id, conversation.contact_phone, maps,
+                ).strip()
+            else:
+                resolved = ContactResolver.resolve_contact(
+                    conversation.kurum_id,
+                    conversation.contact_phone,
+                )
+                name = (resolved.display_name or '').strip()
             if name and not looks_like_phone(name, conversation.contact_phone):
                 return name
         except Exception:

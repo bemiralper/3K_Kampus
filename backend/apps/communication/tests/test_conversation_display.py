@@ -10,7 +10,7 @@ from apps.communication.application.conversation_display import (
     sync_conversation_display_name,
 )
 from apps.communication.domain.enums import Channel, RecipientType
-from apps.communication.domain.models import Conversation
+from apps.communication.domain.models import Conversation, ContactIdentity
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
 from apps.sube.domain.models import Sube
@@ -98,6 +98,75 @@ class ResolveConversationDisplayNameTest(TestCase):
             conv, wa_profile_name='Mehmet K.', allow_live_lookup=False,
         )
         self.assertEqual(name, 'Mehmet K.')
+
+
+class ResolveConversationDisplayNameLookupCacheTest(TestCase):
+    """
+    Sohbet listesi N+1 regresyonu: canlı telefon eşlemesi `lookup_cache` ile
+    kurum başına tek seferlik yapılmalı (satır başına değil) ve GET isteğinde
+    ContactIdentity yazmamalı.
+    """
+
+    def setUp(self):
+        self.kurum = Kurum.objects.create(ad='Cache Test', kod='CCH')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='CCH-S')
+        self.ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Zeynep',
+            soyad='Ogrenci',
+            telefon='0530 944 99 25',
+            aktif_mi=True,
+        )
+        self.veli = OgrenciVeli.objects.create(
+            ogrenci=self.ogrenci,
+            ad='Fatma',
+            soyad='Veli',
+            telefon='0532 111 22 33',
+            veli_turu='anne',
+            varsayilan=True,
+        )
+
+    def _conv(self, phone):
+        return Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone=phone,
+            contact_type=RecipientType.RAW_PHONE,
+        )
+
+    def test_maps_built_once_and_reused_across_conversations(self):
+        conv_veli = self._conv('+905321112233')
+        conv_ogrenci = self._conv('+905309449925')
+        conv_unmatched = self._conv('+905559998877')
+        cache: dict = {}
+
+        with self.assertNumQueries(3):
+            name1 = resolve_conversation_display_name(
+                conv_veli, allow_live_lookup=True, lookup_cache=cache,
+            )
+        self.assertEqual(name1, self.veli.tam_ad)
+
+        # İkinci ve üçüncü konuşma aynı önbelleği kullanır — sıfır ek sorgu.
+        with self.assertNumQueries(0):
+            name2 = resolve_conversation_display_name(
+                conv_ogrenci, allow_live_lookup=True, lookup_cache=cache,
+            )
+            name3 = resolve_conversation_display_name(
+                conv_unmatched, allow_live_lookup=True, lookup_cache=cache,
+            )
+        self.assertEqual(name2, 'Zeynep Ogrenci')
+        self.assertEqual(name3, '+905559998877')
+
+    def test_lookup_cache_does_not_write_contact_identity(self):
+        conv = self._conv('+905321112233')
+        # Veli/öğrenci kaydı oluşturulurken sinyal zaten kendi ContactIdentity'sini
+        # yazmış olabilir (phone_change_sync) — burada test edilen, salt-okunur
+        # isim çözümlemesinin (lookup_cache) EK bir yazma yapmamasıdır.
+        before = ContactIdentity.objects.count()
+        cache: dict = {}
+        resolve_conversation_display_name(conv, allow_live_lookup=True, lookup_cache=cache)
+        self.assertEqual(ContactIdentity.objects.count(), before)
 
 
 class SyncConversationDisplayNameTest(TestCase):

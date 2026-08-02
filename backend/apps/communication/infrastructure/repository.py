@@ -166,7 +166,9 @@ class ConversationRepository:
             qs = filter_conversations_by_sube(qs, sube_id)
         return qs.select_related(
             'ogrenci', 'ogrenci__sube', 'veli', 'veli__ogrenci', 'veli__ogrenci__sube',
-            'kurum', 'contact_identity', 'sube',
+            'kurum', 'contact_identity', 'contact_identity__personel',
+            'contact_identity__veli', 'contact_identity__ogrenci',
+            'assigned_coach', 'assigned_coach__teacher', 'claimed_by_user', 'sube',
         ).first()
 
     @staticmethod
