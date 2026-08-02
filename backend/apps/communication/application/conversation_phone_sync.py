@@ -6,6 +6,7 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError
 
 from apps.communication.application.contact_resolver import ContactResolver
+from apps.communication.domain.enums import RecipientType
 from apps.communication.domain.models import Conversation
 
 
@@ -26,8 +27,34 @@ def _phone_from_ogrenci_direct(ogrenci) -> str:
     return (getattr(ogrenci, 'telefon', '') or '').strip()
 
 
+def _phone_from_personel(personel) -> str:
+    if not personel:
+        return ''
+    return (
+        (getattr(personel, 'cep_telefon', '') or '').strip()
+        or (getattr(personel, 'telefon', '') or '').strip()
+    )
+
+
 def resolve_linked_phone(conversation: Conversation) -> str | None:
-    """Bağlı öğrenci/veli kaydından güncel ham telefon."""
+    """Bağlı öğrenci/veli/personel kaydından güncel ham telefon."""
+    # Personel thread: öğrenci/veli FK kalmış olsa bile personel numarasını kullan.
+    if conversation.contact_type == RecipientType.PERSONEL:
+        identity = getattr(conversation, 'contact_identity', None)
+        if identity is None and conversation.contact_identity_id:
+            from apps.communication.domain.models import ContactIdentity
+
+            identity = ContactIdentity.objects.filter(
+                id=conversation.contact_identity_id,
+            ).select_related('personel').first()
+        personel = getattr(identity, 'personel', None) if identity else None
+        if personel is None and identity and identity.personel_id:
+            from apps.personel.domain.models import Personel
+
+            personel = Personel.objects.filter(id=identity.personel_id).first()
+        raw = _phone_from_personel(personel)
+        return raw or None
+
     ogrenci = None
     if conversation.ogrenci_id:
         ogrenci = getattr(conversation, 'ogrenci', None)
@@ -178,12 +205,13 @@ def sync_conversation_linked_phone(conversation: Conversation) -> Conversation:
 
     try:
         resolved = ContactResolver.resolve_contact(conversation.kurum_id, e164)
-        if resolved.identity and conversation.contact_identity_id != resolved.identity.id:
-            conversation.contact_identity = resolved.identity
-            update_fields.append('contact_identity')
-        if resolved.contact_type and conversation.contact_type != resolved.contact_type:
-            conversation.contact_type = resolved.contact_type
-            update_fields.append('contact_type')
+        if conversation.contact_type != RecipientType.PERSONEL:
+            if resolved.identity and conversation.contact_identity_id != resolved.identity.id:
+                conversation.contact_identity = resolved.identity
+                update_fields.append('contact_identity')
+            if resolved.contact_type and conversation.contact_type != resolved.contact_type:
+                conversation.contact_type = resolved.contact_type
+                update_fields.append('contact_type')
     except ValidationError:
         pass
 

@@ -353,3 +353,42 @@ class ConversationOpenPersonelThreadTest(TestCase):
         self.assertEqual(data['contact_type'], 'PERSONEL')
         self.assertIn('Pers', data.get('contact_name') or '')
         self.assertNotEqual(data.get('contact_name'), data.get('contact_phone'))
+        self.assertIsNone(data.get('ogrenci_id'))
+        self.assertIsNone(data.get('veli_id'))
+
+    def test_personel_message_post_works_across_sube_mismatch(self):
+        """GET zaten şube fallback yapıyordu; POST da aynı yolu kullanmalı."""
+        from unittest.mock import patch
+
+        from apps.communication.application.communication_service import SendResult
+        from apps.communication.domain.enums import Channel, MessageStatus, RecipientType
+        from apps.communication.domain.models import Conversation, Message
+
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_b,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905334445566',
+            contact_type=RecipientType.PERSONEL,
+            subject='Pers A',
+        )
+        msg = Message.objects.create(
+            conversation=conv,
+            direction='OUTBOUND',
+            message_type='TEXT',
+            body='merhaba',
+            status=MessageStatus.SENT,
+            provider_message_id='wamid.test',
+        )
+        with patch(
+            'apps.communication.interfaces.views.messages.CommunicationService.send',
+            return_value=SendResult(success=True, message_id=str(msg.id)),
+        ):
+            resp = self.client.post(
+                f'/api/communication/conversations/{conv.id}/messages/',
+                {'text': 'merhaba', 'kurum_id': self.kurum.id},
+                format='json',
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        conv.refresh_from_db()
+        self.assertEqual(conv.sube_id, self.sube_a.id)

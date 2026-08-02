@@ -670,9 +670,12 @@ class OutboundQueueRepository:
         msg = item.message
         msg.status = MessageStatus.SENT
         msg.sent_at = timezone.now()
+        msg.failed_reason = ''
         if provider_message_id:
             msg.provider_message_id = provider_message_id
-        msg.save(update_fields=['status', 'sent_at', 'provider_message_id', 'updated_at'])
+        msg.save(update_fields=[
+            'status', 'sent_at', 'provider_message_id', 'failed_reason', 'updated_at',
+        ])
         item.delete()
 
     @staticmethod

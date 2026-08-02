@@ -163,6 +163,14 @@ class ConversationOpenView(CommunicationAPIView):
                 if resolved.identity and conversation.contact_identity_id != resolved.identity.id:
                     conversation.contact_identity = resolved.identity
                     update_fields.append('contact_identity')
+                # Paylaşılan numarada eski öğrenci/veli bağını temizle — outbound telefon
+                # çözümlemesi personel contact_phone / identity üzerinden kalsın.
+                if conversation.ogrenci_id is not None:
+                    conversation.ogrenci_id = None
+                    update_fields.append('ogrenci_id')
+                if conversation.veli_id is not None:
+                    conversation.veli_id = None
+                    update_fields.append('veli_id')
             else:
                 if ogrenci_id and conversation.ogrenci_id != ogrenci_id:
                     conversation.ogrenci_id = ogrenci_id
@@ -220,6 +228,12 @@ class ConversationOpenView(CommunicationAPIView):
                 if resolved.identity and conversation.contact_identity_id != getattr(resolved.identity, 'id', None):
                     conversation.contact_identity = resolved.identity
                     update_fields.append('contact_identity')
+                if conversation.ogrenci_id is not None:
+                    conversation.ogrenci_id = None
+                    update_fields.append('ogrenci_id')
+                if conversation.veli_id is not None:
+                    conversation.veli_id = None
+                    update_fields.append('veli_id')
                 if conversation.sube_id != sube_id:
                     conversation.sube_id = sube_id
                     update_fields.append('sube_id')

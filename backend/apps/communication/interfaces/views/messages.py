@@ -12,12 +12,49 @@ from apps.communication.application.communication_service import (
     MessageSource,
     RecipientQuery,
 )
-from apps.communication.domain.enums import MessageType
+from apps.communication.domain.enums import MessageType, RecipientType
 from apps.communication.interfaces.serializers import MessageCreateSerializer, MessageSerializer
 from apps.communication.interfaces.sube_context import assert_conversation_sube_access
 from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube
 from apps.communication.infrastructure.repository import ConversationRepository, MessageRepository
+
+
+def _load_conversation_for_messages(request, kurum_id, conversation_id, sube_id):
+    """
+    Şube filtresiyle yükle; personel / şubesiz thread'lerde id fallback.
+    Returns (conversation, error_response).
+    """
+    conversation = ConversationRepository.get_by_id(
+        kurum_id, conversation_id, sube_id=sube_id,
+    )
+    if not conversation:
+        conversation = ConversationRepository.get_by_id(kurum_id, conversation_id)
+        if not conversation:
+            return None, Response(
+                {'error': 'Konuşma bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        is_personel = conversation.contact_type == RecipientType.PERSONEL
+        if is_personel:
+            if conversation.sube_id and int(conversation.sube_id) != int(sube_id):
+                conversation.sube_id = sube_id
+                conversation.save(update_fields=['sube_id', 'updated_at'])
+        else:
+            gate = assert_conversation_sube_access(request, kurum_id, conversation)
+            if gate:
+                return None, gate
+    else:
+        gate = assert_conversation_sube_access(request, kurum_id, conversation)
+        if gate:
+            return None, gate
+
+    if not user_can_access_conversation(request.user, conversation):
+        return None, Response(
+            {'error': 'Bu konuşmaya erişim yetkiniz yok.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return conversation, None
 
 
 class ConversationMessagesView(CommunicationAPIView):
@@ -28,32 +65,11 @@ class ConversationMessagesView(CommunicationAPIView):
         if err:
             return err
 
-        from apps.communication.domain.enums import RecipientType
-
-        # Önce şube filtresiyle dene; personel / şubesiz thread'ler için id fallback
-        conversation = ConversationRepository.get_by_id(
-            kurum_id, conversation_id, sube_id=sube_id,
+        conversation, err_resp = _load_conversation_for_messages(
+            request, kurum_id, conversation_id, sube_id,
         )
-        if not conversation:
-            conversation = ConversationRepository.get_by_id(kurum_id, conversation_id)
-            if not conversation:
-                return Response({'error': 'Konuşma bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
-            is_personel = conversation.contact_type == RecipientType.PERSONEL
-            if is_personel:
-                if conversation.sube_id and int(conversation.sube_id) != int(sube_id):
-                    conversation.sube_id = sube_id
-                    conversation.save(update_fields=['sube_id', 'updated_at'])
-            else:
-                gate = assert_conversation_sube_access(request, kurum_id, conversation)
-                if gate:
-                    return gate
-        else:
-            gate = assert_conversation_sube_access(request, kurum_id, conversation)
-            if gate:
-                return gate
-
-        if not user_can_access_conversation(request.user, conversation):
-            return Response({'error': 'Bu konuşmaya erişim yetkiniz yok.'}, status=status.HTTP_403_FORBIDDEN)
+        if err_resp:
+            return err_resp
 
         from apps.communication.application.conversation_phone_sync import sync_conversation_linked_phone
 
@@ -80,16 +96,11 @@ class ConversationMessagesView(CommunicationAPIView):
         if err:
             return err
 
-        conversation = ConversationRepository.get_by_id(kurum_id, conversation_id, sube_id=sube_id)
-        if not conversation:
-            return Response({'error': 'Konuşma bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
-
-        gate = assert_conversation_sube_access(request, kurum_id, conversation)
-        if gate:
-            return gate
-
-        if not user_can_access_conversation(request.user, conversation):
-            return Response({'error': 'Bu konuşmaya erişim yetkiniz yok.'}, status=status.HTTP_403_FORBIDDEN)
+        conversation, err_resp = _load_conversation_for_messages(
+            request, kurum_id, conversation_id, sube_id,
+        )
+        if err_resp:
+            return err_resp
 
         from apps.communication.application.conversation_phone_sync import sync_conversation_linked_phone
 
