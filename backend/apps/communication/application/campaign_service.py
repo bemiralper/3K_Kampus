@@ -951,6 +951,8 @@ class CampaignService:
             elif personel and getattr(personel, 'sube', None):
                 sube_ad = getattr(personel.sube, 'ad', '') or ''
 
+            from apps.communication.application.variable_resolver import aktif_sinif_ad
+
             body = resolve_variables(
                 body_template,
                 build_recipient_context(
@@ -959,6 +961,7 @@ class CampaignService:
                     ogrenci=ogrenci,
                     veli=veli,
                     kurum=kurum,
+                    sinif_ad=aktif_sinif_ad(ogrenci),
                     sube_ad=sube_ad,
                 ),
             )

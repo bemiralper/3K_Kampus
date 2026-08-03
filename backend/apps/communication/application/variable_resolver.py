@@ -56,6 +56,25 @@ def build_recipient_context(
     return ctx
 
 
+def aktif_sinif_ad(ogrenci) -> str:
+    """Öğrencinin aktif kaydındaki sınıf adı."""
+    ogrenci_id = getattr(ogrenci, 'id', None) if ogrenci is not None else None
+    if not ogrenci_id:
+        return ''
+    from apps.ogrenci.domain.models import OgrenciKayit
+
+    kayit = (
+        OgrenciKayit.objects
+        .filter(ogrenci_id=ogrenci_id, aktif_mi=True)
+        .select_related('sinif')
+        .order_by('-id')
+        .first()
+    )
+    if kayit and kayit.sinif_id:
+        return getattr(kayit.sinif, 'ad', '') or ''
+    return ''
+
+
 def build_recipient_context_from_conversation(conversation) -> dict[str, str]:
     """Konuşmadaki veli/öğrenci bağlantılarından değişken sözlüğü üret."""
     kurum = getattr(conversation, 'kurum', None)
@@ -66,6 +85,8 @@ def build_recipient_context_from_conversation(conversation) -> dict[str, str]:
 
     veli = conversation.veli if conversation.veli_id else None
     ogrenci = conversation.ogrenci if conversation.ogrenci_id else None
+    if ogrenci is None and veli is not None:
+        ogrenci = getattr(veli, 'ogrenci', None)
 
     display_name = conversation.contact_phone
     recipient_type = conversation.contact_type or ''
@@ -92,6 +113,7 @@ def build_recipient_context_from_conversation(conversation) -> dict[str, str]:
         ogrenci=ogrenci,
         veli=veli,
         kurum=kurum,
+        sinif_ad=aktif_sinif_ad(ogrenci),
         sube_ad=sube_ad,
     )
 
@@ -113,12 +135,20 @@ def build_attendance_context(
     kurum=None,
 ) -> dict[str, str]:
     """Yoklama bildirimi şablon değişkenleri."""
+    sube_ad = ''
+    if ogrenci and getattr(ogrenci, 'sube_id', None):
+        sube = getattr(ogrenci, 'sube', None)
+        if sube:
+            sube_ad = getattr(sube, 'ad', '') or ''
+
     ctx = build_recipient_context(
         display_name=getattr(veli, 'tam_ad', '') if veli else '',
         recipient_type='VELI',
         ogrenci=ogrenci,
         veli=veli,
         kurum=kurum,
+        sinif_ad=aktif_sinif_ad(ogrenci),
+        sube_ad=sube_ad,
     )
 
     library = getattr(session, 'library', None)
@@ -131,9 +161,9 @@ def build_attendance_context(
     ders_no = getattr(session, 'ders_no', None)
     ctx['ders_no'] = str(ders_no) if ders_no else ''
 
-    if ogrenci and getattr(ogrenci, 'sube_id', None):
-        sube = getattr(ogrenci, 'sube', None)
-        if sube:
-            ctx['sube'] = getattr(sube, 'ad', '') or ''
+    # Bildirim olay katalogu {{tarih}}/{{saat}} kullanır; LMS şablonları
+    # yoklama_tarihi/giris_saati/cikis_saati kullanır — ikisini de doldur.
+    ctx['tarih'] = ctx['yoklama_tarihi']
+    ctx['saat'] = ctx['giris_saati'] or ctx['cikis_saati'] or ''
 
     return ctx

@@ -13,28 +13,47 @@ export const WHATSAPP_MAX_LENGTH = 4096;
 export const TEMPLATE_VARIABLES = [
   { key: "veli_ad", label: "Veli adı", token: "{{veli_ad}}", group: "genel" },
   { key: "ogrenci_ad", label: "Öğrenci adı", token: "{{ogrenci_ad}}", group: "genel" },
+  { key: "personel_ad", label: "Personel adı", token: "{{personel_ad}}", group: "genel" },
   { key: "sinif", label: "Sınıf", token: "{{sinif}}", group: "genel" },
   { key: "sube", label: "Şube", token: "{{sube}}", group: "genel" },
   { key: "kurum_ad", label: "Kurum adı", token: "{{kurum_ad}}", group: "genel" },
+  { key: "tarih", label: "Tarih", token: "{{tarih}}", group: "genel" },
+  { key: "saat", label: "Saat", token: "{{saat}}", group: "genel" },
+  { key: "baslik", label: "Başlık", token: "{{baslik}}", group: "genel" },
+  { key: "mesaj", label: "Mesaj", token: "{{mesaj}}", group: "genel" },
+  { key: "aciklama", label: "Açıklama", token: "{{aciklama}}", group: "genel" },
+
   { key: "oturum_ad", label: "Oturum (Sabah/Öğle/Akşam)", token: "{{oturum_ad}}", group: "yoklama" },
   { key: "yoklama_tarihi", label: "Yoklama tarihi", token: "{{yoklama_tarihi}}", group: "yoklama" },
   { key: "giris_saati", label: "Giriş saati", token: "{{giris_saati}}", group: "yoklama" },
   { key: "cikis_saati", label: "Çıkış saati", token: "{{cikis_saati}}", group: "yoklama" },
   { key: "salon_ad", label: "Salon adı", token: "{{salon_ad}}", group: "yoklama" },
   { key: "ders_no", label: "Ders no", token: "{{ders_no}}", group: "yoklama" },
+
   { key: "taksit_tutar", label: "Taksit tutarı", token: "{{taksit_tutar}}", group: "finans" },
   { key: "vade_tarihi", label: "Vade tarihi", token: "{{vade_tarihi}}", group: "finans" },
   { key: "taksit_no", label: "Taksit no", token: "{{taksit_no}}", group: "finans" },
   { key: "kalan_tutar", label: "Kalan tutar", token: "{{kalan_tutar}}", group: "finans" },
   { key: "toplam_gecikmis_tutar", label: "Toplam gecikmiş tutar", token: "{{toplam_gecikmis_tutar}}", group: "finans" },
   { key: "taksit_detay_listesi", label: "Gecikmiş taksit listesi", token: "{{taksit_detay_listesi}}", group: "finans" },
+  { key: "taksit_sayisi", label: "Gecikmiş taksit sayısı", token: "{{taksit_sayisi}}", group: "finans" },
+  { key: "max_gecikme_gunu", label: "En uzun gecikme (gün)", token: "{{max_gecikme_gunu}}", group: "finans" },
   { key: "sozlesme_no", label: "Sözleşme no", token: "{{sozlesme_no}}", group: "finans" },
   { key: "gecikme_gunu", label: "Gecikme günü", token: "{{gecikme_gunu}}", group: "finans" },
+  { key: "belge_turu", label: "Belge türü", token: "{{belge_turu}}", group: "finans" },
+  { key: "toplam_tahsilat", label: "Toplam tahsilat", token: "{{toplam_tahsilat}}", group: "finans" },
+  { key: "toplam_gider", label: "Toplam gider", token: "{{toplam_gider}}", group: "finans" },
+
   { key: "hafta_no", label: "Hafta numarası", token: "{{hafta_no}}", group: "odev" },
   { key: "hafta", label: "Hafta (örn. 4. Hafta)", token: "{{hafta}}", group: "odev" },
   { key: "odev_baslik", label: "Ödev başlığı", token: "{{odev_baslik}}", group: "odev" },
   { key: "pdf_baslik", label: "PDF başlığı", token: "{{pdf_baslik}}", group: "odev" },
   { key: "teslim_tarihi", label: "Teslim tarihi", token: "{{teslim_tarihi}}", group: "odev" },
+
+  { key: "koc_ad", label: "Koç adı", token: "{{koc_ad}}", group: "gorusme" },
+  { key: "konu", label: "Görüşme konusu", token: "{{konu}}", group: "gorusme" },
+
+  { key: "sinav_ad", label: "Sınav adı", token: "{{sinav_ad}}", group: "sinav" },
 ] as const;
 
 export const TEMPLATE_VARIABLE_GROUP_LABELS: Record<string, string> = {
@@ -43,6 +62,8 @@ export const TEMPLATE_VARIABLE_GROUP_LABELS: Record<string, string> = {
   finans: "Finans & Taksit",
   odeme: "Finans & Taksit",
   odev: "Haftalık ödev",
+  gorusme: "Görüşme",
+  sinav: "Sınav",
 };
 
 /** Strip preview-only metadata; returns API-ready plain text. */
@@ -126,16 +147,42 @@ export function parseWhatsAppText(input: string): WhatsAppSegment[] {
 export const SAMPLE_PREVIEW_CONTEXT: Record<string, string> = {
   veli_ad: "Ayşe Hanım",
   ogrenci_ad: "Mehmet Yılmaz",
+  personel_ad: "Zeynep Kaya",
   sinif: "12-A",
   sube: "Merkez Kampüs",
-  taksit_tutar: "2.500 ₺",
+  kurum_ad: "3K Kampüs",
+  tarih: "03.08.2026",
+  saat: "14:30",
+  baslik: "Veli Toplantısı",
+  mesaj: "Bilgilendirme metni",
+  aciklama: "Detaylı açıklama",
+  oturum_ad: "Sabah",
+  yoklama_tarihi: "03.08.2026",
+  giris_saati: "08:45",
+  cikis_saati: "16:10",
+  salon_ad: "A Salonu",
+  ders_no: "3",
+  taksit_tutar: "2.500",
   vade_tarihi: "15.07.2026",
+  taksit_no: "3",
+  kalan_tutar: "2.500",
+  toplam_gecikmis_tutar: "5.000",
+  taksit_detay_listesi: "3. taksit: 2.500 TL (vade: 15.07.2026, 19 gün gecikme)",
+  taksit_sayisi: "2",
+  max_gecikme_gunu: "19",
+  sozlesme_no: "SZ-2026-0142",
+  gecikme_gunu: "19",
+  belge_turu: "Ödeme planı",
+  toplam_tahsilat: "125.000",
+  toplam_gider: "18.500",
   hafta_no: "4",
   hafta: "4. Hafta",
   odev_baslik: "Haziran Ayı 4. Hafta Ödevi",
   pdf_baslik: "Ödev Planı",
   teslim_tarihi: "06.07.2026",
-  kurum_ad: "3K Kampüs",
+  koc_ad: "Elif Demir",
+  konu: "Sınav hazırlığı",
+  sinav_ad: "TYT Deneme 12",
 };
 
 export type PreviewSampleContext = Partial<typeof SAMPLE_PREVIEW_CONTEXT>;
@@ -159,6 +206,7 @@ export function resolveTemplateBodyForConversation(
     ogrenci_ad?: string;
     kurum_ad?: string;
     sube?: string;
+    sinif?: string;
   } | null,
 ): string {
   const veliAd = conversation?.veli_ad?.trim() || "";
@@ -177,10 +225,8 @@ export function resolveTemplateBodyForConversation(
   return resolvePreviewVariables(body, {
     veli_ad: resolvedVeliAd,
     ogrenci_ad: resolvedOgrenciAd,
-    sinif: "",
+    sinif: conversation?.sinif?.trim() || "",
     sube: conversation?.sube?.trim() || "",
-    taksit_tutar: "",
-    vade_tarihi: "",
     kurum_ad: conversation?.kurum_ad?.trim() || "",
   });
 }

@@ -246,16 +246,30 @@ class NotificationDispatcher:
                 if not veli:
                     logger.info('[WHATSAPP] Öğrenci %s için veli telefonu yok', user_id)
                     return False
+                ogrenci = getattr(veli, 'ogrenci', None)
+                ogrenci_ad = ''
+                if ogrenci:
+                    ogrenci_ad = (
+                        f'{getattr(ogrenci, "ad", "")} {getattr(ogrenci, "soyad", "")}'.strip()
+                    )
+                baslangic = getattr(event, 'baslangic', None)
+                tarih = ''
+                saat = ''
+                if baslangic and hasattr(baslangic, 'strftime'):
+                    tarih = timezone.localtime(baslangic).strftime('%d.%m.%Y')
+                    saat = timezone.localtime(baslangic).strftime('%H:%M')
                 result = dispatch_event(
                     event.kurum_id,
                     'takvim.etkinlik',
                     recipient=NotificationRecipient.veli(veli.id),
                     context={
                         'veli_ad': veli.tam_ad,
-                        'baslik': baslik,
+                        'ogrenci_ad': ogrenci_ad,
+                        'baslik': event.baslik or baslik,
                         'mesaj': mesaj,
                         'aciklama': mesaj,
-                        'tarih': getattr(event, 'baslangic_tarihi', '') or '',
+                        'tarih': tarih,
+                        'saat': saat,
                     },
                     source=MessageSource(module='takvim', ref_id=source_id),
                     fallback_body=body,

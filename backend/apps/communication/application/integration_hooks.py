@@ -989,10 +989,15 @@ def notify_exam_result(
 
     sent = 0
     skipped = 0
-    veliler = OgrenciVeli.objects.filter(
-        ogrenci_id__in=ogrenci_ids,
-        ogrenci__kurum_id=kurum_id,
-    ).exclude(telefon='')
+    veliler = (
+        OgrenciVeli.objects
+        .filter(
+            ogrenci_id__in=ogrenci_ids,
+            ogrenci__kurum_id=kurum_id,
+        )
+        .exclude(telefon='')
+        .select_related('ogrenci')
+    )
 
     seen_veli: set[int] = set()
     for veli in veliler:
@@ -1006,12 +1011,15 @@ def notify_exam_result(
         if already_sent(kurum_id, SOURCE_SINAV, veli_source, veli_id=veli.id):
             skipped += 1
             continue
+        ogrenci = veli.ogrenci
+        ogrenci_ad = f'{ogrenci.ad} {ogrenci.soyad}'.strip() if ogrenci else ''
         result = dispatch_event(
             kurum_id,
             'sinav.sonuc',
             recipient=NotificationRecipient.veli(veli.id),
             context={
                 'veli_ad': veli.tam_ad,
+                'ogrenci_ad': ogrenci_ad,
                 'sinav_ad': exam.name,
             },
             source=MessageSource(module=SOURCE_SINAV, ref_id=veli_source),

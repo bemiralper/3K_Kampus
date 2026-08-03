@@ -211,3 +211,30 @@ class VariableResolverTest(TestCase):
     def test_unknown_variable_preserved(self):
         result = resolve_variables('{{bilinmeyen}}', {})
         self.assertEqual(result, '{{bilinmeyen}}')
+
+    def test_attendance_context_fills_tarih_saat_aliases(self):
+        from datetime import date, time
+        from types import SimpleNamespace
+
+        from apps.communication.application.variable_resolver import build_attendance_context
+
+        session = SimpleNamespace(
+            tarih=date(2026, 8, 3),
+            ders_no=2,
+            library=SimpleNamespace(ad='A Salonu'),
+            get_periyot_kodu_display=lambda: 'Sabah',
+        )
+        record = SimpleNamespace(giris_saati=time(8, 45), cikis_saati=time(16, 10))
+        ogrenci = SimpleNamespace(ad='Mehmet', soyad='Yılmaz', sube_id=None, sube=None, id=1)
+        veli = SimpleNamespace(tam_ad='Ayşe Hanım')
+
+        ctx = build_attendance_context(
+            session=session, record=record, ogrenci=ogrenci, veli=veli,
+        )
+        self.assertEqual(ctx['yoklama_tarihi'], '03.08.2026')
+        self.assertEqual(ctx['tarih'], '03.08.2026')
+        self.assertEqual(ctx['giris_saati'], '08:45')
+        self.assertEqual(ctx['saat'], '08:45')
+        self.assertEqual(ctx['oturum_ad'], 'Sabah')
+        self.assertEqual(ctx['salon_ad'], 'A Salonu')
+        self.assertEqual(ctx['ders_no'], '2')

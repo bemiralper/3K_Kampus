@@ -146,7 +146,11 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         label='Yoklama — gelmedi',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
-        variables=('ogrenci_ad', 'veli_ad', 'tarih', 'saat'),
+        variables=(
+            'ogrenci_ad', 'veli_ad', 'tarih', 'saat',
+            'yoklama_tarihi', 'oturum_ad', 'giris_saati', 'cikis_saati',
+            'salon_ad', 'ders_no',
+        ),
         meta_name_base='yoklama_gelmedi',
         default_bodies=MappingProxyType({
             VELI: (
@@ -161,7 +165,11 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         label='Yoklama — geç kalma',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
-        variables=('ogrenci_ad', 'veli_ad', 'tarih', 'saat'),
+        variables=(
+            'ogrenci_ad', 'veli_ad', 'tarih', 'saat',
+            'yoklama_tarihi', 'oturum_ad', 'giris_saati', 'cikis_saati',
+            'salon_ad', 'ders_no',
+        ),
         meta_name_base='yoklama_gec',
         default_bodies=MappingProxyType({
             VELI: (
@@ -176,7 +184,11 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         label='Yoklama — çıkış',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
-        variables=('ogrenci_ad', 'veli_ad', 'tarih', 'saat'),
+        variables=(
+            'ogrenci_ad', 'veli_ad', 'tarih', 'saat',
+            'yoklama_tarihi', 'oturum_ad', 'giris_saati', 'cikis_saati',
+            'salon_ad', 'ders_no',
+        ),
         meta_name_base='yoklama_cikis',
         default_bodies=MappingProxyType({
             VELI: (
@@ -193,7 +205,7 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         opt_in_category='odeme',
         variables=(
             'ogrenci_ad', 'veli_ad', 'taksit_no', 'vade_tarihi',
-            'kalan_tutar', 'sozlesme_no',
+            'kalan_tutar', 'taksit_tutar', 'sozlesme_no',
         ),
         meta_name_base='odeme_hatirlatma',
         default_bodies=MappingProxyType({
@@ -212,7 +224,8 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         opt_in_category='odeme',
         variables=(
             'ogrenci_ad', 'veli_ad', 'taksit_no', 'vade_tarihi', 'kalan_tutar',
-            'gecikme_gunu', 'toplam_gecikmis_tutar', 'sozlesme_no',
+            'taksit_tutar', 'gecikme_gunu', 'toplam_gecikmis_tutar', 'sozlesme_no',
+            'taksit_detay_listesi', 'taksit_sayisi', 'max_gecikme_gunu',
         ),
         meta_name_base='odeme_gecikme',
         default_bodies=MappingProxyType({

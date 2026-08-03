@@ -56,10 +56,18 @@ class GunSonuWhatsappService:
         if not targets:
             return {'success': False, 'sent': 0, 'errors': ['Alıcı bulunamadı.'], 'results': []}
 
-        meta = (report.get('ozet_rapor') or {}).get('meta') or {}
+        ozet_rapor = report.get('ozet_rapor') or {}
+        meta = ozet_rapor.get('meta') or {}
+        gunluk = ozet_rapor.get('gunluk_ozet') or {}
         body = (message or '').strip() or cls._default_message(meta)
         pdf_bytes = GunSonuExportService.render_pdf_bytes(report)
         filename = f"gun_sonu_{meta.get('tarih_iso', 'rapor')}.pdf"
+
+        def _fmt_money(value) -> str:
+            try:
+                return f'{int(value or 0):,}'.replace(',', '.')
+            except (TypeError, ValueError):
+                return str(value or '0')
 
         results = []
         sent = 0
@@ -80,6 +88,8 @@ class GunSonuWhatsappService:
                 context={
                     'personel_ad': target['ad_soyad'],
                     'tarih': meta.get('tarih') or meta.get('tarih_iso', ''),
+                    'toplam_tahsilat': _fmt_money(gunluk.get('toplam_tahsilat')),
+                    'toplam_gider': _fmt_money(gunluk.get('toplam_gider')),
                     'pdf_baslik': 'Gün Sonu Raporu',
                 },
                 attachment=NotificationAttachment(

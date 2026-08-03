@@ -1,18 +1,21 @@
 """Yoklama veli bildirimi testleri."""
-from datetime import time
+from datetime import date, time
 from unittest.mock import MagicMock
 
 from django.test import TestCase
 
+from apps.communication.application.notification_events import get_event
 from apps.communication.application.variable_resolver import build_attendance_context, resolve_variables
+from apps.kutuphane.application.attendance_template_seed import DEFAULT_TEMPLATES
 from apps.kutuphane.application.notification_service import AttendanceNotificationService
 from apps.kutuphane.domain.models import AttendanceNotificationEventType, AttendanceStatus
+from apps.communication.domain.enums import TemplateCategory
 
 
 class BuildAttendanceContextTest(TestCase):
-    def test_resolves_oturum_and_times(self):
+    def _ctx(self, *, giris=time(9, 42), cikis=time(17, 30)):
         class _Session:
-            tarih = __import__('datetime').date(2026, 6, 28)
+            tarih = date(2026, 6, 28)
             ders_no = 2
             library = MagicMock(ad='Salon A')
 
@@ -20,24 +23,28 @@ class BuildAttendanceContextTest(TestCase):
                 return 'Sabah'
 
         class _Record:
-            giris_saati = time(9, 42)
-            cikis_saati = time(17, 30)
+            giris_saati = giris
+            cikis_saati = cikis
 
         class _Veli:
             tam_ad = 'Ayşe Hanım'
 
         class _Ogrenci:
+            id = None
             ad = 'Mehmet'
             soyad = 'Yılmaz'
             sube_id = None
 
-        ctx = build_attendance_context(
+        return build_attendance_context(
             session=_Session(),
             record=_Record(),
             ogrenci=_Ogrenci(),
             veli=_Veli(),
             kurum=MagicMock(ad='3K Kampüs'),
         )
+
+    def test_resolves_oturum_and_times(self):
+        ctx = self._ctx()
         body = resolve_variables(
             'Sayın {{veli_ad}}, {{ogrenci_ad}} {{oturum_ad}} {{giris_saati}} {{cikis_saati}} {{salon_ad}}',
             ctx,
@@ -48,6 +55,49 @@ class BuildAttendanceContextTest(TestCase):
         self.assertIn('09:42', body)
         self.assertIn('17:30', body)
         self.assertIn('Salon A', body)
+
+    def test_tarih_saat_aliases_match_lms_fields(self):
+        ctx = self._ctx()
+        self.assertEqual(ctx['yoklama_tarihi'], '28.06.2026')
+        self.assertEqual(ctx['tarih'], '28.06.2026')
+        self.assertEqual(ctx['giris_saati'], '09:42')
+        self.assertEqual(ctx['cikis_saati'], '17:30')
+        self.assertEqual(ctx['saat'], '09:42')
+        self.assertEqual(ctx['oturum_ad'], 'Sabah')
+        self.assertEqual(ctx['salon_ad'], 'Salon A')
+        self.assertEqual(ctx['ders_no'], '2')
+        self.assertEqual(ctx['kurum_ad'], '3K Kampüs')
+
+    def test_saat_falls_back_to_cikis_when_giris_empty(self):
+        ctx = self._ctx(giris=None, cikis=time(17, 30))
+        self.assertEqual(ctx['giris_saati'], '')
+        self.assertEqual(ctx['saat'], '17:30')
+
+    def test_default_lms_templates_fully_resolve(self):
+        ctx = self._ctx()
+        for category, (_name, body) in DEFAULT_TEMPLATES.items():
+            rendered = resolve_variables(body, ctx)
+            self.assertNotIn('{{', rendered, msg=f'{category} unresolved: {rendered}')
+            self.assertIn('Mehmet Yılmaz', rendered)
+            self.assertIn('28.06.2026', rendered)
+            self.assertIn('Sabah', rendered)
+            self.assertIn('Salon A', rendered)
+            self.assertIn('3K Kampüs', rendered)
+            if category == TemplateCategory.YOKLAMA_GEC:
+                self.assertIn('09:42', rendered)
+            if category == TemplateCategory.YOKLAMA_CIKIS:
+                self.assertIn('17:30', rendered)
+
+    def test_catalog_default_bodies_use_tarih_saat(self):
+        ctx = self._ctx()
+        for key in ('yoklama.gelmedi', 'yoklama.gec', 'yoklama.cikis'):
+            event = get_event(key)
+            body = event.default_bodies['VELI']
+            rendered = resolve_variables(body, ctx)
+            self.assertNotIn('{{', rendered, msg=f'{key} unresolved: {rendered}')
+            self.assertIn('28.06.2026', rendered)
+            if key != 'yoklama.gelmedi':
+                self.assertIn('09:42', rendered)
 
 
 class AttendanceNotificationServiceTest(TestCase):

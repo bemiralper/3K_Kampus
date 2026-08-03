@@ -34,13 +34,16 @@ def build_overdue_context(taksit, *, toplam_gecikmis: int = 0) -> dict:
     ogrenci = sozlesme.ogrenci
     kurum = sozlesme.kurum
     vade = taksit.vade_tarihi.strftime('%d.%m.%Y') if taksit.vade_tarihi else ''
+    kalan = f'{int(taksit.kalan_tutar or taksit.tutar):,}'.replace(',', '.')
     return {
         'veli_ad': getattr(sozlesme.veli, 'tam_ad', '') if sozlesme.veli_id else '',
         'ogrenci_ad': f'{ogrenci.ad} {ogrenci.soyad}'.strip() if ogrenci else '',
         'sozlesme_no': sozlesme.sozlesme_no,
         'taksit_no': str(taksit.taksit_no),
         'vade_tarihi': vade,
-        'kalan_tutar': f'{int(taksit.kalan_tutar or taksit.tutar):,}'.replace(',', '.'),
+        'kalan_tutar': kalan,
+        # Eski / UI şablonlarında {{taksit_tutar}} kullanılmış olabilir.
+        'taksit_tutar': kalan,
         'gecikme_gunu': str(gecikme_gunu(taksit)),
         'toplam_gecikmis_tutar': f'{int(toplam_gecikmis):,}'.replace(',', '.'),
         'kurum_ad': getattr(kurum, 'ad', '') if kurum else '',
@@ -71,10 +74,13 @@ def build_consolidated_overdue_context(
     if len(taksitler) == 1:
         ctx['taksit_no'] = str(primary.taksit_no)
         ctx['vade_tarihi'] = ctx.get('vade_tarihi') or ''
-        ctx['kalan_tutar'] = f'{int(primary.kalan_tutar or primary.tutar or 0):,}'.replace(',', '.')
+        kalan = f'{int(primary.kalan_tutar or primary.tutar or 0):,}'.replace(',', '.')
+        ctx['kalan_tutar'] = kalan
+        ctx['taksit_tutar'] = kalan
         ctx['gecikme_gunu'] = str(gecikme_gunu(primary))
     else:
         ctx['taksit_no'] = ', '.join(str(t.taksit_no) for t in sorted(taksitler, key=lambda x: x.taksit_no or 0))
+        ctx['taksit_tutar'] = ctx.get('kalan_tutar', '')
 
     return ctx
 
