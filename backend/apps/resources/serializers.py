@@ -421,10 +421,16 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
 
     def update(self, instance, validated_data):
         sinif_list = validated_data.pop('sinif_seviyeleri', None)
+        old_ders_id = instance.ders_id
         book = super().update(instance, validated_data)
         if sinif_list is not None:
             book.sinif_seviyeleri.set(sinif_list)
             if sinif_list:
                 book.sinif_seviyesi = sinif_list[0]
                 book.save(update_fields=['sinif_seviyesi'])
+        # Kitap dersi değişince öğrenci atamalarındaki denormalize lesson'ı senkronla;
+        # aksi halde ödev ver ekranı eski ders altında göstermeye devam eder.
+        if book.ders_id and book.ders_id != old_ders_id:
+            from apps.student_resources.lesson_sync import sync_assignments_for_book
+            sync_assignments_for_book(book.id, book.ders_id)
         return book

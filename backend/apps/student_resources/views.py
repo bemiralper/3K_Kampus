@@ -85,7 +85,12 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         queryset = StudentResourceAssignment.objects.filter(is_active=True).select_related(
-            'student', 'coach', 'lesson', 'resource_book', 'resource_book__book_type'
+            'student',
+            'coach',
+            'lesson',
+            'resource_book',
+            'resource_book__ders',
+            'resource_book__book_type',
         )
 
         queryset = filter_by_student_scope(queryset, self.request.user, student_field='student_id')
@@ -823,12 +828,26 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         if gate:
             return gate
         
+        # Eski atamalarda lesson kitaptaki dersten sapmış olabilir (kitap dersi
+        # sonradan düzeltilince). Ödev ver ekranı bu alanı grupladığı için önce
+        # kaynak gerçeğine çekeriz.
+        from apps.student_resources.lesson_sync import (
+            effective_lesson_id,
+            effective_lesson_name,
+            heal_mismatched_assignments,
+        )
+        heal_mismatched_assignments(student_id=student_id)
+
         # Öğrenci atamaları
         assignments = StudentResourceAssignment.objects.filter(
             student_id=student_id,
             is_active=True
         ).select_related(
-            'lesson', 'resource_book', 'resource_book__book_type', 'coach'
+            'lesson',
+            'resource_book',
+            'resource_book__ders',
+            'resource_book__book_type',
+            'coach',
         )
         resource_type = request.query_params.get('resource_type')
         publisher = request.query_params.get('publisher')
@@ -838,7 +857,11 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
             publisher=publisher or None,
             prefix='resource_book__',
         )
-        assignments = assignments.order_by('lesson__ad', 'resource_book__book_type__ad', 'resource_book__ad')
+        assignments = assignments.order_by(
+            'resource_book__ders__ad',
+            'resource_book__book_type__ad',
+            'resource_book__ad',
+        )
         
         today = timezone.now().date()
         
@@ -853,16 +876,16 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
         if total > 0:
             avg_progress = sum(a.progress_percent for a in assignments) / total
         
-        # Ders bazlı gruplama
+        # Ders bazlı gruplama — kaynak kütüphanesiyle aynı: ResourceBook.ders
         from apps.resources.application.kapak import resolve_book_kapak_url
 
         lessons_dict = {}
         for a in assignments:
-            lesson_id = a.lesson_id
+            lesson_id = effective_lesson_id(a)
             if lesson_id not in lessons_dict:
                 lessons_dict[lesson_id] = {
                     'lesson_id': lesson_id,
-                    'lesson_name': a.lesson.ad if a.lesson else 'Bilinmiyor',
+                    'lesson_name': effective_lesson_name(a),
                     'resources': []
                 }
             

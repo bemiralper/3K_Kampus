@@ -12,7 +12,8 @@ class StudentResourceAssignmentSerializer(serializers.ModelSerializer):
     student_soyad = serializers.CharField(source='student.soyad', read_only=True)
     student_full_name = serializers.SerializerMethodField()
     coach_name = serializers.SerializerMethodField()
-    lesson_name = serializers.CharField(source='lesson.ad', read_only=True)
+    lesson = serializers.SerializerMethodField()
+    lesson_name = serializers.SerializerMethodField()
     resource_name = serializers.CharField(source='resource_book.ad', read_only=True)
     resource_type = serializers.CharField(source='resource_book.book_type.ad', read_only=True)
     resource_yayin_yili = serializers.IntegerField(source='resource_book.yayin_yili', read_only=True)
@@ -43,6 +44,14 @@ class StudentResourceAssignmentSerializer(serializers.ModelSerializer):
         if obj.coach:
             return f"{obj.coach.first_name} {obj.coach.last_name}".strip() or obj.coach.username
         return None
+
+    def get_lesson(self, obj):
+        from apps.student_resources.lesson_sync import effective_lesson_id
+        return effective_lesson_id(obj)
+
+    def get_lesson_name(self, obj):
+        from apps.student_resources.lesson_sync import effective_lesson_name
+        return effective_lesson_name(obj)
 
 
 class StudentResourceAssignmentWriteSerializer(serializers.ModelSerializer):
@@ -90,20 +99,28 @@ class StudentResourceAssignmentWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'resource_book': 'Pasif kaynak atanamaz.'
             })
+
+        # Ders her zaman kitaptan gelir; istemci yanlış ders gönderse bile düzeltilir.
+        book = resource_book or (self.instance.resource_book if self.instance else None)
+        if book and book.ders_id:
+            data['lesson'] = book.ders
         
         return data
 
     def create(self, validated_data):
+        book = validated_data['resource_book']
+        if book.ders_id:
+            validated_data['lesson'] = book.ders
         inactive = StudentResourceAssignment.objects.filter(
             student=validated_data['student'],
-            resource_book=validated_data['resource_book'],
+            resource_book=book,
             is_active=False,
         ).first()
         if inactive:
             inactive.is_active = True
             inactive.deleted_at = None
             inactive.coach = validated_data.get('coach')
-            inactive.lesson = validated_data.get('lesson', inactive.resource_book.ders)
+            inactive.lesson = book.ders
             inactive.ownership_type = validated_data.get(
                 'ownership_type',
                 StudentResourceAssignment.OwnershipType.TO_PURCHASE,
