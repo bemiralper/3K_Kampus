@@ -5,8 +5,10 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.communication.domain.enums import CampaignStatus, Channel
+from apps.communication.domain.enums import CampaignStatus, Channel, RecipientType
 from apps.communication.domain.models import Conversation, OutboundCampaign
+from apps.communication.infrastructure.repository import ConversationRepository
+from apps.communication.interfaces.sube_context import filter_conversations_by_sube
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci
 from apps.roller.models import Permission, Role, RolePermission, UserRole
@@ -130,3 +132,75 @@ class CommunicationSubeIsolationAPITest(TestCase):
         titles = {row['title'] for row in res.json()['campaigns']}
         self.assertIn('Kampanya A', titles)
         self.assertNotIn('Kampanya B', titles)
+
+    def test_unmatched_raw_phone_visible_in_every_sube_inbox(self):
+        """Kayıtsız numara (null şube) tüm şube listelerinde görünür."""
+        raw = Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905339998877',
+            contact_type=RecipientType.RAW_PHONE,
+            sube=None,
+            ogrenci=None,
+            veli=None,
+        )
+        res_a = self.client.get(
+            '/api/communication/conversations/',
+            {'kurum_id': self.kurum.id},
+            HTTP_X_SUBE_ID=str(self.sube_a.id),
+        )
+        res_b = self.client.get(
+            '/api/communication/conversations/',
+            {'kurum_id': self.kurum.id},
+            HTTP_X_SUBE_ID=str(self.sube_b.id),
+        )
+        self.assertEqual(res_a.status_code, 200)
+        self.assertEqual(res_b.status_code, 200)
+        ids_a = {row['id'] for row in res_a.json()['conversations']}
+        ids_b = {row['id'] for row in res_b.json()['conversations']}
+        self.assertIn(str(raw.id), ids_a)
+        self.assertIn(str(raw.id), ids_b)
+        # Diğer şubenin eşleşmiş sohbeti hâlâ gizlenir
+        self.assertNotIn(str(self.conv_b.id), ids_a)
+
+    def test_unmatched_raw_phone_detail_accessible(self):
+        raw = Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905339998866',
+            contact_type=RecipientType.RAW_PHONE,
+        )
+        res = self.client.get(
+            f'/api/communication/conversations/{raw.id}/',
+            {'kurum_id': self.kurum.id},
+            HTTP_X_SUBE_ID=str(self.sube_a.id),
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()['id'], str(raw.id))
+
+    def test_filter_conversations_by_sube_includes_orphans(self):
+        raw = Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905339998855',
+            contact_type=RecipientType.RAW_PHONE,
+        )
+        qs = filter_conversations_by_sube(
+            Conversation.objects.filter(kurum=self.kurum),
+            self.sube_a.id,
+        )
+        ids = set(qs.values_list('id', flat=True))
+        self.assertIn(raw.id, ids)
+        self.assertIn(self.conv_a.id, ids)
+        self.assertNotIn(self.conv_b.id, ids)
+
+    def test_get_or_create_unmatched_keeps_null_sube_for_all_subes_account(self):
+        conv, created = ConversationRepository.get_or_create_for_contact(
+            self.kurum.id,
+            Channel.WHATSAPP,
+            '+905551112233',
+            contact_type=RecipientType.RAW_PHONE,
+        )
+        self.assertTrue(created)
+        self.assertIsNone(conv.sube_id)
+        self.assertEqual(conv.contact_type, RecipientType.RAW_PHONE)

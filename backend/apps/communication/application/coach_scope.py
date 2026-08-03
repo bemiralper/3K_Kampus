@@ -45,12 +45,18 @@ def _legacy_filter_conversations_for_user(qs, user):
     coach_profile = get_coach_profile(user)
     if coach_profile:
         allowed = scoped_student_ids(user)
+        # Kayıtsız numara (RAW_PHONE) — koçlar "yeni gelen" olarak görebilsin.
+        unmatched = (
+            Q(contact_type=RecipientType.RAW_PHONE)
+            & Q(ogrenci_id__isnull=True)
+            & Q(veli_id__isnull=True)
+        )
         if allowed is None:
             return qs
         if not allowed:
-            return qs.filter(assigned_coach=coach_profile)
+            return qs.filter(Q(assigned_coach=coach_profile) | unmatched)
         return qs.filter(
-            Q(assigned_coach=coach_profile) | Q(ogrenci_id__in=allowed)
+            Q(assigned_coach=coach_profile) | Q(ogrenci_id__in=allowed) | unmatched
         )
 
     if _has_staff_messaging_access(user):

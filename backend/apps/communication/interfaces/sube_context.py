@@ -52,16 +52,31 @@ def conversation_sube_id(conversation) -> int | None:
 
 
 def filter_conversations_by_sube(qs, sube_id):
-    """Konuşma queryset'ini aktif şubeye göre filtreler."""
+    """Konuşma queryset'ini aktif şubeye göre filtreler.
+
+    Kayıtsız numaradan gelen (veli/öğrenci eşleşmeyen) sohbetlerde `sube_id`
+    boş kalabilir; bunlar tüm şube inbox'larında görünür ki mesaj kaçmasın.
+    """
     return qs.filter(
         Q(sube_id=sube_id)
         | Q(ogrenci__sube_id=sube_id)
         | Q(veli__ogrenci__sube_id=sube_id)
+        | (
+            Q(sube_id__isnull=True)
+            & Q(ogrenci_id__isnull=True)
+            & Q(veli_id__isnull=True)
+        )
     )
 
 
 def assert_conversation_sube_access(request, kurum_id, conversation):
     """Konuşma kaydı için şube erişim doğrulaması."""
+    record_sube = conversation_sube_id(conversation)
+    allow_null = (
+        record_sube is None
+        and not getattr(conversation, 'ogrenci_id', None)
+        and not getattr(conversation, 'veli_id', None)
+    )
     return assert_record_sube_access(
-        request, kurum_id, conversation_sube_id(conversation),
+        request, kurum_id, record_sube, allow_null_sube=allow_null,
     )

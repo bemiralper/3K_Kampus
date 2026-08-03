@@ -285,6 +285,27 @@ class ConversationRepository:
         return None
 
     @staticmethod
+    def _fallback_sube_id(kurum_id: int, channel_config=None) -> int | None:
+        """Eşleşmeyen numara için şube — seçili-şube hesaplarında ilk izinli şube.
+
+        Tüm-şube hesaplarında null bırakılır; liste filtresi bu orphan sohbetleri
+        her şube inbox'ında gösterir.
+        """
+        if channel_config is None:
+            return None
+        from apps.communication.domain.enums import WhatsAppAccountScope
+
+        if getattr(channel_config, 'scope_type', None) != WhatsAppAccountScope.SELECTED_SUBES:
+            return None
+        return (
+            channel_config.allowed_subes
+            .filter(aktif_mi=True)
+            .order_by('id')
+            .values_list('id', flat=True)
+            .first()
+        )
+
+    @staticmethod
     def find_by_phone(
         kurum_id: int,
         channel: str,
@@ -346,7 +367,11 @@ class ConversationRepository:
             defaults['veli_id'] = veli_id
         if cfg_id:
             defaults['channel_config_id'] = cfg_id
+        if channel_config is not None and getattr(channel_config, 'department', None):
+            defaults['department'] = channel_config.department
         sube_id = ConversationRepository._resolve_sube_id(ogrenci_id=ogrenci_id, veli_id=veli_id)
+        if not sube_id and not ogrenci_id and not veli_id:
+            sube_id = ConversationRepository._fallback_sube_id(kurum_id, channel_config)
         if sube_id:
             defaults['sube_id'] = sube_id
 
@@ -419,8 +444,21 @@ class ConversationRepository:
             if ogrenci_id is not None and conversation.ogrenci_id != ogrenci_id:
                 conversation.ogrenci_id = ogrenci_id
                 update_fields.append('ogrenci_id')
-            if sube_id and conversation.sube_id != sube_id:
-                conversation.sube_id = sube_id
+            # Eşleşen kişi şubesi veya seçili-şube fallback; null orphan'ları bilinçli bırak.
+            effective_sube = sube_id
+            if (
+                not effective_sube
+                and not conversation.sube_id
+                and not conversation.ogrenci_id
+                and not conversation.veli_id
+                and not ogrenci_id
+                and not veli_id
+            ):
+                effective_sube = ConversationRepository._fallback_sube_id(
+                    kurum_id, channel_config,
+                )
+            if effective_sube and conversation.sube_id != effective_sube:
+                conversation.sube_id = effective_sube
                 update_fields.append('sube_id')
             if contact_type and conversation.contact_type != contact_type:
                 conversation.contact_type = contact_type
@@ -428,6 +466,14 @@ class ConversationRepository:
             if cfg_id and conversation.channel_config_id != cfg_id:
                 conversation.channel_config_id = cfg_id
                 update_fields.append('channel_config_id')
+            if (
+                channel_config is not None
+                and getattr(channel_config, 'department', None)
+                and conversation.department != channel_config.department
+                and not conversation.claimed_by_user_id
+            ):
+                conversation.department = channel_config.department
+                update_fields.append('department')
             if update_fields:
                 update_fields.append('updated_at')
                 conversation.save(update_fields=update_fields)
