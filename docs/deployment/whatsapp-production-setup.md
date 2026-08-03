@@ -198,7 +198,100 @@ SMS/EMAIL kanalları da log-only stub'dır (`SmsStubClient`, `EmailStubClient`).
 
 ---
 
-## 8. Haftalık ödev PDF — Meta Document Template
+## 8. Bildirim şablonları — hangi olayda hangi şablon?
+
+Modüller artık şablon adı seçmez; her gönderim bir **olay anahtarı** (`odev.plan`, `yoklama.gelmedi`, `odeme.gecikme` …) ile yapılır ve hangi şablonun kullanılacağı **Admin → İletişim → Bildirim Şablonları** ekranından yönetilir.
+
+### Ekranın kullanımı
+
+`/admin/iletisim/bildirim-sablonlari`
+
+1. Üstten kapsam seçin: kurum varsayılanı, aktif şube ve/veya belirli bir WhatsApp hesabı.
+2. Soldan modül ve olay seçin; sağda o olayın alıcı rolleri (Veli / Öğrenci / Personel) listelenir.
+3. Her rol için Meta şablonu, LMS şablonu ve gönderim modunu seçin. **Önizle** ile mesajın son hali görünür.
+4. Bir satırda tanım yoksa rozet hangi kuralla çözüldüğünü söyler (şube eşlemesi, kurum varsayılanı, Meta şablon adından otomatik, kod varsayılanı).
+
+Gönderim modları: `AUTO` (24 saat kuralına göre otomatik seç), `META_ONLY`, `FREEFORM_ONLY`, `DISABLED`.
+
+### 24 saatlik pencere ve akıllı gönderim
+
+WhatsApp, kişinin son mesajından itibaren **24 saat** boyunca serbest metne izin verir; pencere kapalıyken yalnızca onaylı şablon iletilir (Meta hata kodu `131047`). Kullanıcı bu kuralı bilmek zorunda değildir, sistem gönderim anında karar verir:
+
+| Durum | Davranış |
+|-------|----------|
+| Pencere açık (`AUTO`) | Uygulama şablonu serbest mesaj olarak gider, Meta şablonu kullanılmaz |
+| Pencere kapalı (`AUTO`) | Aynı mesajın Meta şablonu otomatik kullanılır |
+| Toplu gönderim | Her zaman Meta şablonu — serbest metin toplu gönderilmez |
+| Pencere kapalı + şablon yok | Gönderim Meta'ya hiç gitmez; ekranda gerekçe gösterilir |
+
+Pencere durumu `Conversation.last_customer_message_at` alanından hesaplanır (her inbound mesajda yazılır) ve tek yerden okunur: `backend/apps/communication/application/session_window.py`.
+
+Serbest mesaj yine de Meta tarafında `131047` alırsa kuyruk aynı içeriği bir kez onaylı şablonla dener (`send_options.session_fallback`); şablon yoksa kayıt kalıcı hatalı işaretlenir, boşuna yeniden denenmez.
+
+İlgili ayarlar:
+
+| Ayar | Varsayılan | Etki |
+|------|-----------|------|
+| `COMMUNICATION_SESSION_WINDOW_HOURS` | `24` | Pencere süresi |
+| `COMMUNICATION_ENFORCE_SESSION_WINDOW` | `True` | Kapalı pencerede serbest mesajı baştan durdur |
+| `COMMUNICATION_CAMPAIGN_REQUIRE_TEMPLATE` | `True` | Toplu gönderimde şablon zorunluluğu |
+
+### Şablon kullanım alanı (`usage_scope`)
+
+Meta şablonları hangi ekranda seçilebileceklerine göre etiketlenir: `SYSTEM` (otomatik bildirimler), `PERSONAL` (sohbet — kişisel mesaj), `CAMPAIGN` (toplu duyuru), `ALL` (her yerde). Sohbet ekranındaki şablon seçici yalnızca `PERSONAL`/`ALL`, toplu gönderim ekranı yalnızca `CAMPAIGN`/`ALL` şablonları listeler.
+
+Uygulama şablonu (`MessageTemplate`) bir Meta şablonuna bağlanabilir (**Meta Karşılığı** alanı). Toplu gönderimde uygulama şablonu seçildiğinde bağlı Meta şablonu otomatik kullanılır; `{{ogrenci_ad}}` gibi adlandırılmış değişkenler Meta'nın beklediği `{{1}}` sırasına gönderim anında dönüştürülür.
+
+### Kullanıcı ne görür?
+
+- **Sohbet ekranı:** mesaj kutusunun üstünde yeşil “Normal mesaj gönderilebilir” veya kırmızı “24 saatlik süre dolmuş” rozeti. Kapalıyken kutu pasif olmaz; gönderim denemesi otomatik olarak **Kişisel Mesaj Şablonları** seçicisini açar.
+- **Toplu gönderim:** serbest metin alanı yoktur; onaylı duyuru şablonu seçilir, alıcı başına çözülmeyen değişkenler forma girilir.
+- **Otomatik bildirimler:** kullanıcı hiçbir seçim yapmaz; olay eşlemesi ve pencere durumu kararı verir.
+
+### Çözümleme sırası
+
+Sistem en özelden en genele doğru arar:
+
+1. Şube + WhatsApp hesabı eşlemesi
+2. Şube eşlemesi
+3. WhatsApp hesabı eşlemesi
+4. Kurum varsayılanı
+5. Eski modül ayarları (`AssignmentNotificationConfig`, `AttendanceNotificationConfig`) — geçiş dönemi, mevcut kurulumlar migration ile otomatik taşındı
+6. Olayın önerilen Meta şablon adıyla APPROVED şablon araması (`odev_plani_veli` gibi)
+7. Koddaki varsayılan metin
+
+### Olay katalogu
+
+Olaylar `backend/apps/communication/application/notification_events.py` içinde tanımlıdır:
+
+| Modül | Olaylar | Alıcı | PDF |
+|-------|---------|-------|-----|
+| Ödev | `odev.plan`, `odev.rapor` | Veli, Öğrenci | ✓ |
+| Ödev | `odev.atama` | Veli | — |
+| Yoklama | `yoklama.gelmedi`, `yoklama.gec`, `yoklama.cikis` | Veli | — |
+| Ödeme | `odeme.hatirlatma`, `odeme.gecikme` | Veli | — |
+| Ödeme | `odeme.belge` | Veli, Öğrenci | ✓ |
+| Görüşme | `gorusme.hatirlatma` | Veli, Öğrenci | — |
+| Sınav | `sinav.sonuc` | Veli | — |
+| Takvim | `takvim.etkinlik` | Veli, Öğrenci | — |
+| Devamsızlık | `devamsizlik.bildirim` | Veli | — |
+| Finans | `finans.gun_sonu` | Personel | ✓ |
+| Duyuru | `duyuru.genel` | Veli, Öğrenci, Personel | — |
+
+### API
+
+| Uç | Amaç |
+|----|------|
+| `GET /api/communication/notification-events/?sube_id=&channel_config_id=` | Katalog + mevcut eşlemeler + çözümleme gerekçesi |
+| `PUT /api/communication/notification-bindings/` | Kapsam + olay + rol için eşlemeyi kaydet |
+| `DELETE /api/communication/notification-bindings/` | Eşlemeyi kaldır (varsayılana dön) |
+| `POST /api/communication/notification-bindings/preview/` | Gönderim yapmadan önizleme |
+| `GET /api/communication/conversations/<id>/template-messages/` | Sohbet için kişisel şablonlar + pencere durumu |
+| `POST /api/communication/conversations/<id>/template-messages/` | Seçilen şablonu değişkenleriyle gönder |
+
+---
+
+## 8.1 Haftalık ödev PDF — Meta Document Template
 
 Ödev planı / kontrol raporu WhatsApp’a gittiğinde veli veya öğrenci **aynı mesajda** hem metni hem PDF’yi görmeli. Bu, Meta’nın **DOCUMENT header**’lı message template’i ile yapılır.
 
@@ -211,7 +304,7 @@ SMS/EMAIL kanalları da log-only stub'dır (`SmsStubClient`, `EmailStubClient`).
 
 ### Meta’da şablon oluşturma
 
-Admin → İletişim → **Meta Şablonlar** üzerinden (veya Meta Business Manager):
+En kolay yol: Bildirim Şablonları ekranında ilgili satırdaki **“Bu olay için şablon oluştur”** bağlantısı — Meta Şablonlar sayfası önerilen ad, DOCUMENT başlık ve kurallara uygun örnek gövde ile önceden dolu açılır. Elle oluşturmak için Admin → İletişim → **Meta Şablonlar** (veya Meta Business Manager):
 
 | Alan | Öneri |
 |------|--------|
@@ -228,7 +321,7 @@ Desteklenen body değişkenleri: `ogrenci_ad`, `veli_ad`, `hafta`, `hafta_no`, `
 - İki değişken **yan yana** olamaz (`{{ogrenci_ad}} {{hafta}}` ✗ → `{{ogrenci_ad}} için {{hafta}}` ✓).
 - Alt bilgide (footer) değişken kullanılamaz; başlık metninde en fazla bir değişken olabilir.
 
-Onay sonrası sistem bu isimleri otomatik tanır. Alternatif: `AssignmentNotificationConfig` üzerinden Meta şablon FK’si bağlanır.
+Onay sonrası sistem bu isimleri otomatik tanır. Farklı bir ad kullanacaksanız şablonu Bildirim Şablonları ekranından ilgili olaya bağlayın.
 
 ### Kontrol
 
@@ -247,7 +340,13 @@ Onay sonrası sistem bu isimleri otomatik tanır. Alternatif: `AssignmentNotific
 | Koç inbox güncellenmiyor | SSE kopuk | `/api/communication/events/stream/` nginx buffering kapalı mı; fallback 20s polling devreye girer |
 | Ödeme hatırlatma 400 "zaten gönderildi" | Idempotency | Aynı taksit için tekrar gönderim engellenir (by design) |
 | Veli mesaj almıyor | Opt-out | Veli `sms_bildirimleri` içinde `odeme`/`duyuru` kategorisi açık mı |
-| Ödev PDF ayrı mesaj / sadece caption | Meta DOCUMENT şablonu yok | Bölüm 8: `odev_plani_veli` APPROVED + DOCUMENT header |
+| Ödev PDF ayrı mesaj / sadece caption | Meta DOCUMENT şablonu yok | Bölüm 8.1: `odev_plani_veli` APPROVED + DOCUMENT header |
+| Bir olay hiç mesaj göndermiyor | Eşlemede gönderim modu `DISABLED` | Bildirim Şablonları ekranında ilgili satırı `AUTO` yapın |
+| Yanlış şablon gidiyor | Daha özel kapsamda eski bir eşleme var | Ekranda kapsamı şube/hesap yapıp satırı kontrol edin; “Varsayılana dön” ile temizleyin |
+| Sohbette “24 saatlik süre dolmuş” yazıyor ama kişi az önce yazdı | Webhook düşmüş, `last_customer_message_at` güncellenmemiş | Webhook loglarını kontrol edin; gerekirse `backfill_conversation_names` sonrası inbound akışını doğrulayın |
+| Sohbette şablon listesi boş | `PERSONAL`/`ALL` kapsamında APPROVED şablon yok | Meta Şablonlar ekranından kapsamı “Sohbet — kişisel mesaj” olan şablon oluşturup onaylatın |
+| Toplu gönderimde “şablon seçilmelidir” hatası | Serbest metinle toplu gönderim kapalı | Onaylı duyuru şablonu seçin veya uygulama şablonuna Meta karşılığı bağlayın |
+| Mesaj `#131047` ile başarısız | Pencere kapalı, yedek şablon yok | Olaya `AUTO` modda bir Meta şablonu bağlayın |
 
 ---
 
@@ -260,6 +359,9 @@ Onay sonrası sistem bu isimleri otomatik tanır. Alternatif: `AssignmentNotific
 - [ ] Admin WABA test endpoint: `POST /api/communication/config/whatsapp/test/`
 - [ ] Ödeme planı → "WhatsApp Hatırlat" butonu çalışır
 - [ ] Görüşme formu → WhatsApp checkbox ile kontrol
+- [ ] Sohbet ekranında oturum rozeti doğru (kişi yazınca yeşile döner)
+- [ ] Pencere kapalıyken serbest mesaj denemesi şablon seçicisini açar
+- [ ] Toplu gönderim şablonsuz gönderime izin vermiyor
 
 ---
 
@@ -268,6 +370,13 @@ Onay sonrası sistem bu isimleri otomatik tanır. Alternatif: `AssignmentNotific
 | Bileşen | Konum |
 |---------|--------|
 | Communication app | `backend/apps/communication/` |
+| Bildirim olay katalogu | `backend/apps/communication/application/notification_events.py` |
+| Şablon çözümleyici | `backend/apps/communication/application/notification_template_resolver.py` |
+| Gönderim dispatcher | `backend/apps/communication/application/notification_dispatcher.py` |
+| 24 saatlik pencere | `backend/apps/communication/application/session_window.py` |
+| Sohbette şablon gönderimi | `backend/apps/communication/interfaces/views/conversation_template_send.py` |
+| Sohbet şablon seçici (UI) | `frontend/components/communication/MetaTemplateSendDrawer.tsx` |
+| Bildirim şablonları ekranı | `frontend/app/admin/iletisim/bildirim-sablonlari/` |
 | Webhook | `backend/apps/communication/interfaces/views/webhook.py` |
 | Kuyruk komutu | `backend/apps/communication/management/commands/process_communication_queue.py` |
 | Zamanlanmış kampanya komutu | `backend/apps/communication/management/commands/process_scheduled_campaigns.py` |

@@ -1,7 +1,11 @@
 """WhatsApp Meta şablon serializers."""
 from rest_framework import serializers
 
-from apps.communication.domain.enums import MetaTemplateCategory, MetaTemplateStatus
+from apps.communication.domain.enums import (
+    MetaTemplateCategory,
+    MetaTemplateStatus,
+    MetaTemplateUsage,
+)
 from apps.communication.domain.models import WhatsAppMetaTemplate
 
 
@@ -10,6 +14,8 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
     meta_category_label = serializers.SerializerMethodField()
+    usage_scope_label = serializers.SerializerMethodField()
+    variables = serializers.SerializerMethodField()
 
     class Meta:
         model = WhatsAppMetaTemplate
@@ -17,8 +23,9 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
             'id', 'channel_config', 'channel_config_name',
             'name', 'language', 'meta_category', 'meta_category_label',
             'status', 'status_label', 'meta_template_id',
+            'usage_scope', 'usage_scope_label',
             'body_named', 'header_json', 'footer_text', 'buttons_json',
-            'components_json', 'variable_map_json',
+            'components_json', 'variable_map_json', 'variables',
             'rejected_reason', 'rejected_detail',
             'last_submitted_at', 'approved_at', 'usage_count',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
@@ -47,6 +54,23 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     def get_meta_category_label(self, obj) -> str:
         return dict(MetaTemplateCategory.choices).get(obj.meta_category, obj.meta_category)
 
+    def get_usage_scope_label(self, obj) -> str:
+        return dict(MetaTemplateUsage.choices).get(obj.usage_scope, obj.usage_scope)
+
+    def get_variables(self, obj) -> list:
+        """Gönderim ekranında doldurulacak değişken adları, gövdedeki sırayla."""
+        from apps.communication.application.meta_template_mapper import (
+            extract_named_variables_in_order,
+        )
+
+        header = obj.header_json or {}
+        header_text = header.get('text') or '' if (header.get('type') or '') == 'TEXT' else ''
+        names = extract_named_variables_in_order(f'{obj.body_named or ""} {header_text}')
+        if names:
+            return list(names)
+        vmap = obj.variable_map_json or {}
+        return [vmap[key] for key in sorted(vmap, key=lambda k: int(k) if k.isdigit() else 0)]
+
 
 class WhatsAppMetaTemplateWriteSerializer(serializers.Serializer):
     channel_config_id = serializers.UUIDField(required=False)
@@ -56,6 +80,11 @@ class WhatsAppMetaTemplateWriteSerializer(serializers.Serializer):
         choices=MetaTemplateCategory.choices,
         required=False,
         default=MetaTemplateCategory.UTILITY,
+    )
+    usage_scope = serializers.ChoiceField(
+        choices=MetaTemplateUsage.choices,
+        required=False,
+        default=MetaTemplateUsage.ALL,
     )
     body_named = serializers.CharField(required=False, allow_blank=True, default='')
     header_json = serializers.JSONField(required=False, default=dict)

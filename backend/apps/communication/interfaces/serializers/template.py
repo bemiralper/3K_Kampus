@@ -12,6 +12,8 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
     system_usages = serializers.SerializerMethodField()
     is_system_active = serializers.SerializerMethodField()
     odev_pdf_role = serializers.SerializerMethodField()
+    meta_template_name = serializers.SerializerMethodField()
+    meta_template_status = serializers.SerializerMethodField()
 
     class Meta:
         model = MessageTemplate
@@ -20,6 +22,7 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
             'is_active', 'usage_count', 'stats_sent', 'stats_read', 'stats_failed',
             'avg_read_seconds', 'created_by', 'created_by_name', 'created_at', 'updated_at',
             'system_usages', 'is_system_active', 'odev_pdf_role',
+            'meta_template', 'meta_template_name', 'meta_template_status',
         ]
         read_only_fields = [
             'id', 'usage_count', 'stats_sent', 'stats_read', 'stats_failed',
@@ -46,6 +49,12 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
         from apps.coaching.assignment_manual.assignment_template_roles import get_template_odev_role
         return get_template_odev_role(obj)
 
+    def get_meta_template_name(self, obj) -> str:
+        return obj.meta_template.name if obj.meta_template_id else ''
+
+    def get_meta_template_status(self, obj) -> str:
+        return obj.meta_template.status if obj.meta_template_id else ''
+
 
 class MessageTemplateWriteSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
@@ -56,6 +65,7 @@ class MessageTemplateWriteSerializer(serializers.Serializer):
     attachment_ids_json = serializers.JSONField(required=False, default=list)
     is_active = serializers.BooleanField(required=False, default=True)
     odev_pdf_role = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    meta_template_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class CampaignAttachmentSerializer(serializers.Serializer):

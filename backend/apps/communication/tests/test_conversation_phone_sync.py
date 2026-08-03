@@ -7,6 +7,7 @@ from django.test import TestCase
 from apps.communication.application.conversation_phone_sync import sync_conversation_linked_phone
 from apps.communication.domain.enums import Channel
 from apps.communication.infrastructure.repository import ConversationRepository
+from apps.communication.tests.session_helpers import open_session_window
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
 from apps.sube.domain.models import Sube
@@ -48,6 +49,7 @@ class ConversationPhoneSyncTest(TestCase):
             '+905309449925',
             ogrenci_id=self.ogrenci.id,
         )
+        open_session_window(self.kurum.id, '+905321112233', '+905309449925')
 
     def test_sync_updates_veli_thread_when_veli_phone_changes(self):
         self.veli.telefon = '0542 999 88 77'

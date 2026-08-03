@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import MessageComposer from "./MessageComposer";
 import TemplateVariablePanel from "./TemplateVariablePanel";
 import { useTextareaInsert } from "./useTextareaInsert";
@@ -12,9 +12,11 @@ import {
   resolvePreviewVariables,
 } from "./composer-utils";
 import {
+  fetchLocalMetaTemplates,
   MessageTemplateItem,
   TEMPLATE_AUDIENCE_LABELS,
   TemplateCategoryItem,
+  WhatsAppMetaTemplateItem,
 } from "@/lib/communication-api";
 
 export interface TemplateEditorForm {
@@ -23,6 +25,8 @@ export interface TemplateEditorForm {
   category: string;
   audience_scope: string;
   odev_pdf_role?: string;
+  /** Meta karşılığı — 24 saatlik pencere kapalıyken bu şablon kullanılır */
+  meta_template_id?: string;
 }
 
 export const ODEV_PDF_ROLE_OPTIONS = [
@@ -62,6 +66,14 @@ export default function TemplateEditorPanel({
     () => categories.filter((c) => c.is_active),
     [categories],
   );
+
+  const [metaTemplates, setMetaTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
+
+  useEffect(() => {
+    fetchLocalMetaTemplates({ approved_only: true })
+      .then((res) => setMetaTemplates(res.templates || []))
+      .catch(() => setMetaTemplates([]));
+  }, []);
 
   const { setNode, insert } = useTextareaInsert();
   const rawText = plainTextFromComposer(composerState) || form.body;
@@ -188,6 +200,26 @@ export default function TemplateEditorPanel({
                   </p>
                 </div>
               )}
+
+              <div className="tplx-field">
+                <label htmlFor="tpl-meta">Meta karşılığı</label>
+                <select
+                  id="tpl-meta"
+                  value={form.meta_template_id ?? editing?.meta_template ?? ""}
+                  onChange={(e) => onChange({ ...form, meta_template_id: e.target.value })}
+                >
+                  <option value="">— Yok —</option>
+                  {metaTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.language})
+                    </option>
+                  ))}
+                </select>
+                <p className="tplx-field-hint">
+                  Alıcının 24 saatlik penceresi kapalıysa veya toplu gönderim yapılırsa bu onaylı
+                  şablon kullanılır. Değişkenler Meta biçimine otomatik dönüştürülür.
+                </p>
+              </div>
             </div>
           </section>
 

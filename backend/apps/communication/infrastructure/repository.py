@@ -456,10 +456,13 @@ class ConversationRepository:
         conversation.last_message_preview = (preview or '')[:255]
         if direction == MessageDirection.INBOUND:
             conversation.unread_count_coach = (conversation.unread_count_coach or 0) + 1
+            # 24 saatlik pencere bu alandan hesaplanır; ticket routing kapalıyken de yazılmalı.
+            conversation.last_customer_message_at = conversation.last_message_at
             conversation.save(update_fields=[
                 'last_message_at',
                 'last_message_preview',
                 'unread_count_coach',
+                'last_customer_message_at',
                 'updated_at',
             ])
             if getattr(settings, 'COMMUNICATION_TICKET_ROUTING', True):
@@ -686,8 +689,9 @@ class OutboundQueueRepository:
         item.delete()
 
     @staticmethod
-    def mark_failed(item: OutboundQueueItem, error: str) -> None:
-        item.attempt_count += 1
+    def mark_failed(item: OutboundQueueItem, error: str, *, permanent: bool = False) -> None:
+        """`permanent=True`: tekrar denemenin sonucu değiştirmeyeceği hatalar (örn. 24 saat kuralı)."""
+        item.attempt_count = item.max_attempts if permanent else item.attempt_count + 1
         item.last_error = error
         item.locked_at = None
         backoff_minutes = [1, 5, 15, 60, 60]

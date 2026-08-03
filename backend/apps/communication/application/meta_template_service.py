@@ -21,7 +21,11 @@ from apps.communication.application.meta_template_mapper import (
 from apps.communication.application.meta_template_validation import (
     validate_template_content,
 )
-from apps.communication.domain.enums import MetaTemplateCategory, MetaTemplateStatus
+from apps.communication.domain.enums import (
+    MetaTemplateCategory,
+    MetaTemplateStatus,
+    MetaTemplateUsage,
+)
 from apps.communication.domain.models import CommunicationChannelConfig, WhatsAppMetaTemplate
 from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
 from apps.communication.infrastructure.repository import ChannelConfigRepository
@@ -75,12 +79,16 @@ class MetaTemplateService:
         language: str | None = None,
         search: str | None = None,
         approved_only: bool = False,
+        usage: str | None = None,
     ) -> QuerySet[WhatsAppMetaTemplate]:
         qs = (
             WhatsAppMetaTemplate.objects
             .select_related('channel_config', 'created_by')
             .filter(kurum_id=kurum_id)
         )
+        if usage:
+            # ALL kapsamı her ekranda görünür
+            qs = qs.filter(usage_scope__in=[usage, MetaTemplateUsage.ALL])
         if channel_config_id:
             qs = qs.filter(channel_config_id=channel_config_id)
         if status:
@@ -108,6 +116,7 @@ class MetaTemplateService:
         header_json: dict | None = None,
         footer_text: str = '',
         buttons_json: list | None = None,
+        usage_scope: str = MetaTemplateUsage.ALL,
         user=None,
     ) -> WhatsAppMetaTemplate:
         account = ChannelConfigRepository.get_by_id(kurum_id, channel_config_id)
@@ -140,6 +149,7 @@ class MetaTemplateService:
             language=language,
             meta_category=meta_category,
             status=MetaTemplateStatus.DRAFT,
+            usage_scope=usage_scope or MetaTemplateUsage.ALL,
             body_named=body_named or '',
             header_json=header_json or {},
             footer_text=(footer_text or '')[:60],
@@ -148,6 +158,16 @@ class MetaTemplateService:
             variable_map_json=vmap,
             created_by=user,
         )
+
+    @staticmethod
+    def set_usage_scope(template: WhatsAppMetaTemplate, usage_scope: str | None) -> WhatsAppMetaTemplate:
+        """Şablonun hangi ekranlarda seçilebileceği — Meta'ya gönderilmeyen yerel alan."""
+        if not usage_scope or usage_scope not in MetaTemplateUsage.values:
+            raise MetaTemplateServiceError('Geçersiz kullanım alanı.')
+        if template.usage_scope != usage_scope:
+            template.usage_scope = usage_scope
+            template.save(update_fields=['usage_scope', 'updated_at'])
+        return template
 
     @classmethod
     def update_draft(

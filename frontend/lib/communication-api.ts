@@ -58,6 +58,35 @@ function communicationApiUrl(path: string): string {
 
 const REQUEST_TIMEOUT_MS = 45_000;
 
+/**
+ * 24 saatlik serbest mesaj penceresi kapalı — Meta onaylı şablon gerekir.
+ * Sohbet ekranı bunu yakalayıp şablon seçiciyi açar.
+ */
+export class SessionWindowClosedError extends Error {
+  readonly session?: ConversationSessionInfo;
+
+  constructor(message: string, session?: ConversationSessionInfo) {
+    super(message);
+    this.name = 'SessionWindowClosedError';
+    this.session = session;
+  }
+}
+
+function errorFromBody(body: Record<string, unknown>, status: number): Error {
+  const raw = body.error ?? body.detail ?? body.details;
+  const message =
+    (Array.isArray(raw) ? raw.join(', ') : typeof raw === 'string' ? raw : '') ||
+    (raw && typeof raw === 'object' ? Object.values(raw).flat().join(', ') : '') ||
+    `HTTP ${status}`;
+  if (body.session_expired) {
+    return new SessionWindowClosedError(
+      message,
+      body.session as ConversationSessionInfo | undefined,
+    );
+  }
+  return new Error(message);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {
@@ -92,12 +121,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         // Rozet/inbox yoklamaları oturum düştükten sonra sonsuza dek 401 üretmesin
         notifySessionExpired();
       }
-      const errMsg =
-        (typeof body.error === 'string' && body.error) ||
-        (typeof body.detail === 'string' && body.detail) ||
-        (Array.isArray(body.error) ? body.error.join(', ') : '') ||
-        `HTTP ${response.status}`;
-      throw new Error(typeof errMsg === 'string' ? errMsg : `HTTP ${response.status}`);
+      throw errorFromBody(body, response.status);
     }
 
     if (response.status === 204) return {} as T;
@@ -119,6 +143,18 @@ export interface ConversationSlaInfo {
   last_reply_at?: string | null;
   waiting_seconds?: number | null;
   breached?: boolean;
+}
+
+/** WhatsApp 24 saatlik serbest mesaj penceresi */
+export interface ConversationSessionInfo {
+  state: 'OPEN' | 'EXPIRED' | 'NEVER' | 'NA' | string;
+  is_open: boolean;
+  label: string;
+  notice: string;
+  last_inbound_at?: string | null;
+  expires_at?: string | null;
+  seconds_left: number;
+  window_hours: number;
 }
 
 export interface ConversationTagItem {
@@ -159,6 +195,7 @@ export interface ConversationListItem {
   archived_at?: string | null;
   tags?: ConversationTagItem[];
   sla?: ConversationSlaInfo;
+  session?: ConversationSessionInfo;
   can_claim?: boolean;
   created_at: string;
 }
@@ -534,13 +571,7 @@ export async function sendConversationMessage(
     );
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      const rawError = body.error ?? body.details;
-      const errMsg = Array.isArray(rawError)
-        ? rawError.join(', ')
-        : typeof rawError === 'object' && rawError
-          ? Object.values(rawError).flat().join(', ')
-          : rawError || `HTTP ${response.status}`;
-      throw new Error(String(errMsg));
+      throw errorFromBody(body, response.status);
     }
     return response.json();
   }
@@ -726,6 +757,16 @@ export type MetaTemplateStatus =
 
 export type MetaTemplateCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
 
+/** Şablonun hangi ekranlarda seçilebileceği */
+export type MetaTemplateUsage = 'ALL' | 'SYSTEM' | 'PERSONAL' | 'CAMPAIGN';
+
+export const META_TEMPLATE_USAGE_LABELS: Record<MetaTemplateUsage, string> = {
+  ALL: 'Her yerde',
+  SYSTEM: 'Otomatik bildirimler',
+  PERSONAL: 'Sohbet — kişisel mesaj',
+  CAMPAIGN: 'Toplu duyuru',
+};
+
 export interface MetaTemplateHeader {
   type?: 'NONE' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | string;
   text?: string;
@@ -753,6 +794,12 @@ export interface WhatsAppMetaTemplateItem {
   status: MetaTemplateStatus | string;
   status_label?: string;
   meta_template_id?: string;
+  usage_scope?: MetaTemplateUsage | string;
+  usage_scope_label?: string;
+  /** Gövdedeki değişken adları, gönderim ekranında doldurulur */
+  variables?: string[];
+  /** Sohbet bağlamıyla çözülmüş önizleme (yalnızca sohbet şablon listesinde) */
+  preview?: string;
   body_named: string;
   header_json?: MetaTemplateHeader;
   footer_text?: string;
@@ -775,6 +822,7 @@ export async function fetchLocalMetaTemplates(params?: {
   language?: string;
   search?: string;
   approved_only?: boolean;
+  usage?: MetaTemplateUsage;
 }): Promise<{ templates: WhatsAppMetaTemplateItem[]; total: number }> {
   const qs = new URLSearchParams();
   if (params?.account_id) qs.set('account_id', params.account_id);
@@ -783,8 +831,31 @@ export async function fetchLocalMetaTemplates(params?: {
   if (params?.language) qs.set('language', params.language);
   if (params?.search) qs.set('search', params.search);
   if (params?.approved_only) qs.set('approved_only', '1');
+  if (params?.usage) qs.set('usage', params.usage);
   const suffix = qs.toString() ? `?${qs}` : '';
   return request(`/meta-templates/${suffix}`);
+}
+
+/** Sohbette kullanılabilecek Meta onaylı kişisel şablonlar + pencere durumu */
+export async function fetchConversationTemplates(
+  conversationId: string,
+): Promise<{
+  templates: WhatsAppMetaTemplateItem[];
+  session: ConversationSessionInfo;
+  context: Record<string, string>;
+}> {
+  return request(`/conversations/${conversationId}/template-messages/`);
+}
+
+export async function sendConversationTemplate(
+  conversationId: string,
+  templateId: string,
+  variables: Record<string, string>,
+): Promise<MessageItem> {
+  return request(`/conversations/${conversationId}/template-messages/`, {
+    method: 'POST',
+    body: JSON.stringify({ template_id: templateId, variables }),
+  });
 }
 
 export async function createLocalMetaTemplate(data: {
@@ -792,6 +863,7 @@ export async function createLocalMetaTemplate(data: {
   name: string;
   language?: string;
   meta_category?: string;
+  usage_scope?: MetaTemplateUsage;
   body_named?: string;
   header_json?: MetaTemplateHeader;
   footer_text?: string;
@@ -809,6 +881,7 @@ export async function updateLocalMetaTemplate(
     name: string;
     language: string;
     meta_category: string;
+    usage_scope: MetaTemplateUsage;
     body_named: string;
     header_json: MetaTemplateHeader;
     footer_text: string;
@@ -1119,6 +1192,10 @@ export interface MessageTemplateItem {
   system_usages?: Array<{ module: string; role: string; label: string; is_active: boolean }>;
   is_system_active?: boolean;
   odev_pdf_role?: string | null;
+  /** Meta karşılığı — 24 saatlik pencere kapalıyken bu şablon kullanılır */
+  meta_template?: string | null;
+  meta_template_name?: string;
+  meta_template_status?: string;
 }
 
 export interface CampaignAttachmentItem {
@@ -1417,6 +1494,135 @@ export async function fetchTemplates(
   return request(`/templates/${qs}`);
 }
 
+// ─── Merkezi bildirim şablon eşlemesi ───
+
+export type NotificationSendMode = 'AUTO' | 'META_ONLY' | 'FREEFORM_ONLY' | 'DISABLED';
+
+export interface NotificationBindingRow {
+  id: string;
+  sube_id: number | null;
+  channel_config_id: string | null;
+  meta_template_id: string | null;
+  meta_template_name: string;
+  message_template_id: string | null;
+  message_template_name: string;
+  send_mode: NotificationSendMode;
+  is_active: boolean;
+}
+
+export interface NotificationResolvedInfo {
+  source: string;
+  source_label: string;
+  send_mode: NotificationSendMode;
+  meta_template_id: string | null;
+  meta_template_name: string;
+  meta_template_status: string;
+  message_template_name: string;
+  body: string;
+  warnings: string[];
+}
+
+export interface NotificationEventSlot {
+  recipient_type: 'VELI' | 'OGRENCI' | 'PERSONEL';
+  binding: NotificationBindingRow | null;
+  suggested_meta_name: string;
+  default_body: string;
+  meta_example_body: string;
+  resolved: NotificationResolvedInfo;
+}
+
+export interface NotificationEventItem {
+  key: string;
+  module: string;
+  module_label: string;
+  label: string;
+  description: string;
+  has_document: boolean;
+  opt_in_category: string;
+  variables: string[];
+  meta_name_base: string;
+  slots: NotificationEventSlot[];
+}
+
+export interface NotificationEventCatalog {
+  modules: Array<{ key: string; label: string }>;
+  events: NotificationEventItem[];
+  send_modes: Array<{ value: NotificationSendMode; label: string }>;
+}
+
+export interface NotificationPreviewResult {
+  event_key: string;
+  recipient_type: string;
+  body: string;
+  send_mode: NotificationSendMode;
+  uses_meta: boolean;
+  meta_template_name: string;
+  meta_template_language: string;
+  message_template_name: string;
+  channel_config_id: string | null;
+  source: string;
+  source_label: string;
+  warnings: string[];
+  would_send: boolean;
+}
+
+export async function fetchNotificationEvents(params?: {
+  sube_id?: number | null;
+  channel_config_id?: string | null;
+}): Promise<NotificationEventCatalog> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = new URLSearchParams();
+  if (kurumId) qs.set('kurum_id', kurumId);
+  if (params?.sube_id) qs.set('sube_id', String(params.sube_id));
+  if (params?.channel_config_id) qs.set('channel_config_id', params.channel_config_id);
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/notification-events/${suffix}`);
+}
+
+export async function saveNotificationBinding(data: {
+  event_key: string;
+  recipient_type: string;
+  sube_id?: number | null;
+  channel_config_id?: string | null;
+  meta_template_id?: string | null;
+  message_template_id?: string | null;
+  send_mode?: NotificationSendMode;
+  is_active?: boolean;
+}): Promise<{ id: string }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/notification-bindings/', {
+    method: 'PUT',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+export async function deleteNotificationBinding(data: {
+  event_key: string;
+  recipient_type: string;
+  sube_id?: number | null;
+  channel_config_id?: string | null;
+}): Promise<{ deleted: number }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/notification-bindings/', {
+    method: 'DELETE',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+export async function previewNotificationBinding(data: {
+  event_key: string;
+  recipient_type: string;
+  sube_id?: number | null;
+  channel_config_id?: string | null;
+  context?: Record<string, string>;
+}): Promise<NotificationPreviewResult> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/notification-bindings/preview/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
 export async function fetchTemplate(id: string): Promise<MessageTemplateItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const qs = kurumId ? `?kurum_id=${kurumId}` : '';
@@ -1430,6 +1636,7 @@ export async function createTemplate(data: {
   audience_scope?: string;
   variables_json?: string[];
   odev_pdf_role?: string;
+  meta_template_id?: string | null;
 }): Promise<MessageTemplateItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request('/templates/', {
@@ -1440,7 +1647,15 @@ export async function createTemplate(data: {
 
 export async function updateTemplate(
   id: string,
-  data: Partial<{ name: string; body: string; category: string; audience_scope: string; is_active: boolean; odev_pdf_role: string }>,
+  data: Partial<{
+    name: string;
+    body: string;
+    category: string;
+    audience_scope: string;
+    is_active: boolean;
+    odev_pdf_role: string;
+    meta_template_id: string | null;
+  }>,
 ): Promise<MessageTemplateItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request(`/templates/${id}/`, {

@@ -24,7 +24,9 @@ class AnnouncementSendView(CommunicationAPIView):
 
         body = (request.data.get('body') or '').strip()
         title = (request.data.get('title') or '').strip()
-        if not body:
+        template_name = (request.data.get('template_name') or '').strip()
+        template_language = (request.data.get('template_language') or 'tr').strip()
+        if not body and not template_name:
             return Response({'error': 'body zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
 
         audience_filter = request.data.get('audience_filter') or {'audience_type': 'all_veliler'}
@@ -39,6 +41,8 @@ class AnnouncementSendView(CommunicationAPIView):
                 title=title,
                 sent_by_user_id=request.user.id if request.user.is_authenticated else None,
                 audience_filter=audience_filter,
+                template_name=template_name,
+                template_language=template_language,
             )
         except ValidationError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)

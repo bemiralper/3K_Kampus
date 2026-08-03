@@ -8,6 +8,7 @@ import {
   fetchConversationMessages,
   markConversationRead,
   MessageItem,
+  SessionWindowClosedError,
   sendConversationMessage,
   sendMessageReaction,
 } from "@/lib/communication-api";
@@ -37,6 +38,7 @@ export function useConversationThread(
   const [replyTo, setReplyTo] = useState<MessageItem | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [metaTemplatesOpen, setMetaTemplatesOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const loadSeqRef = useRef(0);
@@ -120,11 +122,24 @@ export function useConversationThread(
       setComposerState(createComposerState());
       setReplyTo(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Mesaj gönderilemedi");
+      // Pencere kapalıysa kullanıcıyı hata mesajıyla baş başa bırakmayıp
+      // doğrudan onaylı şablon seçicisine yönlendiriyoruz.
+      if (err instanceof SessionWindowClosedError) {
+        setMetaTemplatesOpen(true);
+        setError(null);
+      } else {
+        setError(err instanceof Error ? err.message : "Mesaj gönderilemedi");
+      }
     } finally {
       setSending(false);
     }
   }, [conversationId, sending, replyTo]);
+
+  const handleTemplateSent = useCallback((msg: MessageItem) => {
+    setMessages((prev) => [...prev, msg]);
+    setComposerState(createComposerState());
+    setReplyTo(null);
+  }, []);
 
   const handleReact = useCallback(async (msg: MessageItem, emoji: string) => {
     if (!conversationId) return;
@@ -170,6 +185,9 @@ export function useConversationThread(
     loadMessages,
     handleSend,
     handleReact,
+    metaTemplatesOpen,
+    setMetaTemplatesOpen,
+    handleTemplateSent,
     selected,
   };
 }

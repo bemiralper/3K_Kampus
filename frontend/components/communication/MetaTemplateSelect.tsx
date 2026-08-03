@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchLocalMetaTemplates,
+  MetaTemplateUsage,
   WhatsAppMetaTemplateItem,
 } from "@/lib/communication-api";
 import WhatsAppPreviewBubble from "./WhatsAppPreviewBubble";
@@ -15,6 +16,8 @@ interface MetaTemplateSelectProps {
   label?: string;
   disabled?: boolean;
   accountId?: string;
+  usage?: MetaTemplateUsage;
+  hidePreview?: boolean;
 }
 
 export default function MetaTemplateSelect({
@@ -24,6 +27,8 @@ export default function MetaTemplateSelect({
   label = "Meta şablonu (onaylı)",
   disabled = false,
   accountId,
+  usage,
+  hidePreview = false,
 }: MetaTemplateSelectProps) {
   const [templates, setTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +41,7 @@ export default function MetaTemplateSelect({
       const data = await fetchLocalMetaTemplates({
         account_id: accountId,
         approved_only: true,
+        usage,
       });
       setTemplates(data.templates || []);
     } catch (err) {
@@ -44,7 +50,7 @@ export default function MetaTemplateSelect({
     } finally {
       setLoading(false);
     }
-  }, [accountId]);
+  }, [accountId, usage]);
 
   useEffect(() => {
     load();
@@ -93,7 +99,7 @@ export default function MetaTemplateSelect({
               {error}
             </p>
           )}
-          {selected?.body_named && (
+          {!hidePreview && selected?.body_named && (
             <div style={{ marginTop: "0.75rem" }}>
               <WhatsAppPreviewBubble text={resolvePreviewVariables(selected.body_named)} />
             </div>

@@ -116,6 +116,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
     claimed_by_name = serializers.SerializerMethodField()
     tags = serializers.SerializerMethodField()
     sla = serializers.SerializerMethodField()
+    session = serializers.SerializerMethodField()
     can_claim = serializers.SerializerMethodField()
     profil_foto = serializers.SerializerMethodField()
 
@@ -132,7 +133,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'claimed_by_user_id', 'claimed_by_name', 'claim_version',
             'first_unanswered_at', 'last_customer_message_at', 'last_reply_at',
             'needs_support_at', 'archived_at',
-            'tags', 'sla', 'can_claim',
+            'tags', 'sla', 'session', 'can_claim',
             'created_at',
         ]
 
@@ -191,6 +192,12 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'waiting_seconds': waiting_sec,
             'breached': obj.status == 'NEEDS_SUPPORT' or bool(obj.needs_support_at),
         }
+
+    def get_session(self, obj) -> dict:
+        """24 saatlik serbest mesaj penceresi — sohbet ekranındaki rozet."""
+        from apps.communication.application.session_window import window_for_conversation
+
+        return window_for_conversation(obj).as_dict()
 
     def get_can_claim(self, obj) -> bool:
         request = self.context.get('request')

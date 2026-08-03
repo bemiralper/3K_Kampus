@@ -225,7 +225,11 @@ class NotificationDispatcher:
         event: Event,
     ) -> bool:
         """WhatsApp — veli telefonu üzerinden CommunicationService kuyruğuna ekler."""
-        from apps.communication.application.integration_hooks import send_text_to_veli
+        from apps.communication.application.communication_service import MessageSource
+        from apps.communication.application.notification_dispatcher import (
+            NotificationRecipient,
+            dispatch_event,
+        )
 
         body = f'{baslik}\n\n{mesaj}' if baslik else mesaj
         source_id = f'takvim-{event.id}-{user_id}'
@@ -242,13 +246,19 @@ class NotificationDispatcher:
                 if not veli:
                     logger.info('[WHATSAPP] Öğrenci %s için veli telefonu yok', user_id)
                     return False
-                result = send_text_to_veli(
+                result = dispatch_event(
                     event.kurum_id,
-                    veli.id,
-                    body,
-                    'duyuru',
-                    'takvim',
-                    source_id,
+                    'takvim.etkinlik',
+                    recipient=NotificationRecipient.veli(veli.id),
+                    context={
+                        'veli_ad': veli.tam_ad,
+                        'baslik': baslik,
+                        'mesaj': mesaj,
+                        'aciklama': mesaj,
+                        'tarih': getattr(event, 'baslangic_tarihi', '') or '',
+                    },
+                    source=MessageSource(module='takvim', ref_id=source_id),
+                    fallback_body=body,
                 )
             else:
                 logger.info('[WHATSAPP] Desteklenmeyen alıcı tipi: %s', alici_tip)

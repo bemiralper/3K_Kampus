@@ -42,14 +42,6 @@ ROLE_META_CONFIG_FIELDS: dict[str, str] = {
     ROLE_REPORT_OGRENCI: 'report_ogrenci_meta_template',
 }
 
-# Meta şablon adı eşlemesi (APPROVED + DOCUMENT header otomatik keşif)
-ROLE_META_TEMPLATE_NAMES: dict[str, tuple[str, ...]] = {
-    ROLE_PLAN_VELI: ('odev_plani_veli', 'haftalik_odev_plani_veli'),
-    ROLE_PLAN_OGRENCI: ('odev_plani_ogrenci', 'haftalik_odev_plani_ogrenci'),
-    ROLE_REPORT_VELI: ('odev_raporu_veli', 'haftalik_odev_raporu_veli'),
-    ROLE_REPORT_OGRENCI: ('odev_raporu_ogrenci', 'haftalik_odev_raporu_ogrenci'),
-}
-
 DEFAULT_PDF_BODIES: dict[tuple[str, str], str] = {
     ('plan', 'veli'): '{{ogrenci_ad}} — Ödev planı ektedir.',
     ('plan', 'ogrenci'): 'Ödev planı ektedir.',
@@ -123,51 +115,40 @@ def set_config_meta_template(
     return config
 
 
-def _meta_template_is_document_approved(tpl) -> bool:
-    from apps.communication.domain.enums import MetaTemplateStatus
-    from apps.communication.application.template_media_header import meta_template_header_type
+NOTIFY_EVENT_KEYS: dict[str, str] = {
+    'plan': 'odev.plan',
+    'report': 'odev.rapor',
+}
 
-    if not tpl or tpl.status != MetaTemplateStatus.APPROVED:
-        return False
-    return meta_template_header_type(tpl) == 'DOCUMENT'
+NOTIFY_RECIPIENT_TYPES: dict[str, str] = {
+    'veli': 'VELI',
+    'ogrenci': 'OGRENCI',
+}
 
 
 def get_meta_template_for_notify(
     kurum_id: int,
     notify_type: str,
     recipient_type: str,
+    *,
+    sube_id: int | None = None,
 ):
     """
     Haftalık ödev PDF için APPROVED Meta DOCUMENT-header şablonu.
 
-    Öncelik: config FK → isim eşlemesi (odev_plani_veli vb.).
+    Merkezi bildirim eşlemesine devreder; eşleme yoksa eski config ve isim
+    keşfi zinciri resolver içinde çalışır.
     """
-    from apps.communication.domain.enums import MetaTemplateStatus
-    from apps.communication.domain.models import WhatsAppMetaTemplate
+    from apps.communication.application.notification_template_resolver import resolve_binding
 
-    role = NOTIFY_RECIPIENT_TO_ROLE.get((notify_type, recipient_type))
-    if not role:
+    event_key = NOTIFY_EVENT_KEYS.get(notify_type)
+    recipient = NOTIFY_RECIPIENT_TYPES.get(recipient_type)
+    if not event_key or not recipient:
         return None
 
-    if _config_table_available():
-        config = AssignmentNotificationConfig.objects.filter(kurum_id=kurum_id).first()
-        field = ROLE_META_CONFIG_FIELDS.get(role)
-        if config and field and hasattr(config, field):
-            tpl = getattr(config, field, None)
-            if _meta_template_is_document_approved(tpl):
-                return tpl
-
-    names = ROLE_META_TEMPLATE_NAMES.get(role) or ()
-    if not names:
-        return None
-    candidates = WhatsAppMetaTemplate.objects.filter(
-        kurum_id=kurum_id,
-        status=MetaTemplateStatus.APPROVED,
-        name__in=names,
-    ).select_related('channel_config')
-    for tpl in candidates:
-        if _meta_template_is_document_approved(tpl):
-            return tpl
+    resolved = resolve_binding(kurum_id, event_key, recipient, sube_id=sube_id)
+    if resolved.use_meta(needs_document=True):
+        return resolved.meta_template
     return None
 
 

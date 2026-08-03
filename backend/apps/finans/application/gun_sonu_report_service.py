@@ -166,6 +166,7 @@ class GunSonuReportService:
             seen_phones.add(key)
             recipients.append({
                 'id': y.id,
+                'personel_id': y.personel_id,
                 'ad_soyad': y.gorunen_ad,
                 'rol': y.rol or '',
                 'telefon': phone,

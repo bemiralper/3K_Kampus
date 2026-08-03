@@ -9,11 +9,13 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.communication.application.communication_service import MessageSource
 from apps.communication.application.contact_resolver import ContactResolver
-from apps.communication.application.integration_hooks import (
-    SOURCE_ODEME,
-    send_document_to_ogrenci,
-    send_document_to_veli,
+from apps.communication.application.integration_hooks import SOURCE_ODEME
+from apps.communication.application.notification_dispatcher import (
+    NotificationAttachment,
+    NotificationRecipient,
+    dispatch_event,
 )
 from apps.odeme_takip.domain.models import Sozlesme, Tahsilat
 from apps.ogrenci.application.veli_contact import list_outbound_veliler
@@ -409,16 +411,26 @@ class OdemeNotificationService:
                     kurum_ad=kurum_ad,
                     extra_line=extra_line,
                 )
-                result = send_document_to_veli(
+                result = dispatch_event(
                     kurum_id,
-                    item.veli_id,
-                    short_body,
-                    DOCUMENT_DELIVERY_CATEGORY,
-                    SOURCE_ODEME,
-                    self._source_id(notify_type, entity_id, f'veli:{item.veli_id}'),
-                    file_bytes=pdf_bytes,
-                    filename=filename,
+                    'odeme.belge',
+                    recipient=NotificationRecipient.veli(item.veli_id),
+                    context={
+                        'ogrenci_ad': ogrenci_ad,
+                        'veli_ad': item.display_name,
+                        'belge_turu': pdf_title_label(notify_type),
+                        'sozlesme_no': sozlesme_no,
+                        'pdf_baslik': pdf_title_label(notify_type),
+                    },
+                    attachment=NotificationAttachment(
+                        filename=filename, file_bytes=pdf_bytes,
+                    ),
+                    source=MessageSource(
+                        module=SOURCE_ODEME,
+                        ref_id=self._source_id(notify_type, entity_id, f'veli:{item.veli_id}'),
+                    ),
                     sent_by_user_id=sent_by_user_id,
+                    fallback_body=short_body,
                 )
                 if result and result.success:
                     sent += 1
@@ -450,16 +462,25 @@ class OdemeNotificationService:
                     kurum_ad=kurum_ad,
                     extra_line=extra_line,
                 )
-                result = send_document_to_ogrenci(
+                result = dispatch_event(
                     kurum_id,
-                    item.ogrenci_id,
-                    short_body,
-                    DOCUMENT_DELIVERY_CATEGORY,
-                    SOURCE_ODEME,
-                    self._source_id(notify_type, entity_id, 'ogrenci'),
-                    file_bytes=pdf_bytes,
-                    filename=filename,
+                    'odeme.belge',
+                    recipient=NotificationRecipient.ogrenci(item.ogrenci_id),
+                    context={
+                        'ogrenci_ad': ogrenci_ad,
+                        'belge_turu': pdf_title_label(notify_type),
+                        'sozlesme_no': sozlesme_no,
+                        'pdf_baslik': pdf_title_label(notify_type),
+                    },
+                    attachment=NotificationAttachment(
+                        filename=filename, file_bytes=pdf_bytes,
+                    ),
+                    source=MessageSource(
+                        module=SOURCE_ODEME,
+                        ref_id=self._source_id(notify_type, entity_id, 'ogrenci'),
+                    ),
                     sent_by_user_id=sent_by_user_id,
+                    fallback_body=short_body,
                 )
                 if result and result.success:
                     sent += 1

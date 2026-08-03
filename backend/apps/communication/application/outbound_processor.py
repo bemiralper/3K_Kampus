@@ -11,6 +11,7 @@ from django.conf import settings
 from apps.communication.application.campaign_service import CampaignStatsService
 from apps.communication.application.meta_template_mapper import build_send_body_parameters
 from apps.communication.application.meta_template_service import MetaTemplateService
+from apps.communication.application.session_window import is_session_error
 from apps.communication.application.template_component_builder import build_template_components
 from apps.communication.application.template_media_header import (
     build_media_header_component,
@@ -176,6 +177,68 @@ def _build_template_media_header(client, kurum_id, message, meta_tpl) -> dict | 
         link=link,
         filename=attachment.original_name or '',
     )
+
+
+def _retry_as_template(client, item, message, phone, opts) -> dict | None:
+    """
+    Serbest mesaj 24 saat kuralına takıldıysa aynı içeriği Meta şablonuyla gönder.
+
+    Gönderim sırasında pencerenin açık olduğunu sanıp yanılmıştık (saat kayması,
+    kaçan webhook); kuyruk kaydındaki yedek şablonla tek seferlik yeniden dener.
+    """
+    fallback = opts.get('session_fallback') or {}
+    template_name = fallback.get('template_name')
+    if not template_name:
+        return None
+
+    meta_tpl = MetaTemplateService.get_approved(
+        item.kurum_id,
+        name=template_name,
+        language=fallback.get('template_language') or 'tr',
+        channel_config_id=fallback.get('channel_config_id') or None,
+    )
+    if meta_tpl is None:
+        return None
+
+    context = _build_recipient_context_from_message(message)
+    extra_ctx = fallback.get('template_context') or {}
+    if isinstance(extra_ctx, dict):
+        context = {
+            **context,
+            **{k: str(v) if v is not None else '' for k, v in extra_ctx.items()},
+        }
+
+    components: list[dict] = []
+    media_header = _build_template_media_header(client, item.kurum_id, message, meta_tpl)
+    if media_header:
+        components.append(media_header)
+    elif meta_template_header_type(meta_tpl) in ('DOCUMENT', 'IMAGE', 'VIDEO'):
+        return None
+
+    body_params = build_send_body_parameters(
+        MetaTemplateService.ensure_variable_map(meta_tpl),
+        context,
+        body_named=meta_tpl.body_named or '',
+    )
+    if body_params:
+        components.append({'type': 'body', 'parameters': body_params})
+
+    logger.info(
+        '24 saat penceresi kapalı — mesaj %s şablonla yeniden deneniyor: %s',
+        message.id, template_name,
+    )
+    result = client.send_template(
+        item.kurum_id,
+        phone,
+        template_name=template_name,
+        language_code=meta_tpl.language or fallback.get('template_language') or 'tr',
+        components=components or None,
+    )
+    if result.get('success'):
+        MetaTemplateService.increment_usage(meta_tpl)
+        message.message_type = MessageType.TEMPLATE
+        message.save(update_fields=['message_type', 'updated_at'])
+    return result
 
 
 def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
@@ -357,6 +420,11 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 context_message_id=_reply_context_id(message),
             )
 
+        if not result.get('success') and is_session_error(result):
+            retried = _retry_as_template(client, item, message, phone, opts)
+            if retried is not None:
+                result = retried
+
         if result.get('success'):
             provider_id = ''
             msgs = result.get('messages', [])
@@ -367,7 +435,12 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 _safe_refresh_campaign_stats(item.campaign_id)
             return True
 
-        OutboundQueueRepository.mark_failed(item, str(result.get('error', 'Unknown')))
+        # 24 saat kuralı tekrar denemekle çözülmez; kuyruğu boşuna meşgul etme.
+        OutboundQueueRepository.mark_failed(
+            item,
+            str(result.get('error', 'Unknown')),
+            permanent=is_session_error(result),
+        )
         if item.campaign_id:
             _safe_refresh_campaign_stats(item.campaign_id)
         return False

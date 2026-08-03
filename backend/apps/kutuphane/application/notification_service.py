@@ -8,13 +8,12 @@ from dataclasses import dataclass, field
 
 from django.db import transaction
 
-from apps.communication.application.communication_service import (
-    CommunicationService,
-    MessageContent,
-    MessageSource,
-    RecipientQuery,
-)
+from apps.communication.application.communication_service import MessageSource
 from apps.communication.application.contact_resolver import ContactResolver
+from apps.communication.application.notification_dispatcher import (
+    NotificationRecipient,
+    dispatch_event,
+)
 from apps.communication.application.variable_resolver import build_attendance_context, resolve_variables
 from apps.kutuphane.application.attendance_template_seed import (
     EVENT_TO_CATEGORY,
@@ -33,6 +32,13 @@ logger = logging.getLogger(__name__)
 
 SOURCE_MODULE = 'yoklama_bildirim'
 OPT_IN_CATEGORY = 'devamsizlik'
+
+# Merkezi bildirim eşlemesindeki olay anahtarları
+EVENT_TO_NOTIFICATION_KEY = {
+    AttendanceNotificationEventType.ABSENT: 'yoklama.gelmedi',
+    AttendanceNotificationEventType.LATE: 'yoklama.gec',
+    AttendanceNotificationEventType.EXIT: 'yoklama.cikis',
+}
 
 EXIT_ELIGIBLE_STATUSES = {
     AttendanceStatus.PRESENT,
@@ -70,9 +76,6 @@ class NotifySendResult:
 
 
 class AttendanceNotificationService:
-    def __init__(self):
-        self._comm = CommunicationService()
-
     def get_config(self, kurum_id: int):
         return ensure_attendance_notification_setup(kurum_id)
 
@@ -343,20 +346,23 @@ class AttendanceNotificationService:
                 veli=veli,
                 kurum=kurum,
             )
-            body = resolve_variables(template.body, ctx)
+            legacy_body = resolve_variables(template.body, ctx) if template else ''
             source_ref = f'{session_id}:{item.ogrenci_id}:{event_type}:{veli.id}'
 
-            send_result = self._comm.send(
+            send_result = dispatch_event(
                 kurum_id,
-                recipients=RecipientQuery(veli_id=veli.id, opt_in_category=OPT_IN_CATEGORY),
-                content=MessageContent(text=body),
+                EVENT_TO_NOTIFICATION_KEY[event_type],
+                recipient=NotificationRecipient.veli(veli.id),
+                context=ctx,
                 source=MessageSource(module=SOURCE_MODULE, ref_id=source_ref),
-                sender_user_id=sent_by_user_id,
-                process_immediately=True,
+                sube_id=getattr(ogrenci, 'sube_id', None),
+                sent_by_user_id=sent_by_user_id,
+                fallback_body=legacy_body,
             )
 
-            if not send_result.success:
-                result.errors.extend(send_result.errors or ['Gönderim başarısız'])
+            if not send_result or not send_result.success:
+                errors = getattr(send_result, 'errors', None) if send_result else None
+                result.errors.extend(errors or ['Gönderim başarısız'])
                 result.skipped += 1
                 continue
 

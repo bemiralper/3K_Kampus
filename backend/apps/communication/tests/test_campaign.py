@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.coaching.models import CoachProfile, CoachStudentAssignment
@@ -38,6 +38,9 @@ def _assign_bulk_role(user, role_code: str = 'admin_bulk'):
     UserRole.objects.update_or_create(user=user, defaults={'role': role})
 
 
+# Bu sınıf kitle çözümlemesi ve kuyruk davranışını sınar; şablon zorunluluğu
+# ayrı testte doğrulanır (CampaignTemplateRequirementTest).
+@override_settings(COMMUNICATION_CAMPAIGN_REQUIRE_TEMPLATE=False)
 class CampaignAudienceTest(TestCase):
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='Kampanya Kurum', kod='CAMP')
@@ -230,6 +233,7 @@ class CampaignAudienceTest(TestCase):
         self.assertTrue(OutboundQueueItem.objects.filter(message=msg).exists())
 
 
+@override_settings(COMMUNICATION_CAMPAIGN_REQUIRE_TEMPLATE=False)
 class CoachBulkScopeTest(TestCase):
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='Scope Kamp', kod='CSC')

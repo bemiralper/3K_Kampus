@@ -1,20 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import AttachmentDropZone from "./AttachmentDropZone";
 import RecipientsSummaryPanel, { recipientKey } from "./RecipientsSummaryPanel";
-import RichMessageToolbar from "./RichMessageToolbar";
 import SendConfirmModal from "./SendConfirmModal";
 import SendOptionsBar from "./SendOptionsBar";
 import MetaTemplateSelect from "./MetaTemplateSelect";
-import TemplatePickerDrawer from "./TemplatePickerDrawer";
 import WhatsAppPhonePreview from "./WhatsAppPhonePreview";
-import {
-  ComposerState,
-  plainTextFromComposer,
-  WHATSAPP_MAX_LENGTH,
-} from "./composer-utils";
+import { ComposerState, plainTextFromComposer, TEMPLATE_VARIABLES } from "./composer-utils";
 import {
   accountLabel,
   AUDIENCE_TYPE_LABELS,
@@ -25,13 +19,39 @@ import {
   confirmCampaign,
   createCampaign,
   fetchAccessibleWhatsAppAccounts,
-  MessageTemplateItem,
   previewCampaign,
   SendMode,
   WhatsAppAccount,
+  WhatsAppMetaTemplateItem,
 } from "@/lib/communication-api";
 
 const RECIPIENTS_PAGE_SIZE = 20;
+
+/** Alıcı başına sunucuda çözülen değişkenler — kullanıcıdan istenmez. */
+const AUTO_RESOLVED_VARIABLES = new Set([
+  "veli_ad",
+  "ogrenci_ad",
+  "sinif",
+  "sube",
+  "kurum_ad",
+]);
+
+const VARIABLE_LABELS: Record<string, string> = Object.fromEntries(
+  TEMPLATE_VARIABLES.map((v) => [v.key, v.label]),
+);
+
+function templateVariables(body: string): string[] {
+  const found = new Set<string>();
+  for (const match of body.matchAll(/\{\{\s*(\w+)\s*\}\}/g)) found.add(match[1]);
+  return Array.from(found);
+}
+
+function fillManualVariables(body: string, values: Record<string, string>): string {
+  return body.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key: string) => {
+    if (AUTO_RESOLVED_VARIABLES.has(key)) return match;
+    return values[key]?.trim() ? values[key] : match;
+  });
+}
 
 export interface BulkSendStudioProps {
   audienceFilter: AudienceFilter;
@@ -45,7 +65,6 @@ export interface BulkSendStudioProps {
   templateLanguage?: string;
   onTemplateLanguageChange?: (value: string) => void;
   campaignDetailPath: (id: string) => string;
-  readOnlyTemplates?: boolean;
   kurumName?: string;
 }
 
@@ -61,11 +80,9 @@ export default function BulkSendStudio({
   templateLanguage = "tr",
   onTemplateLanguageChange,
   campaignDetailPath,
-  readOnlyTemplates = false,
   kurumName = "3K Kampüs",
 }: BulkSendStudioProps) {
   const router = useRouter();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [preview, setPreview] = useState<CampaignPreviewStats | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [attachments, setAttachments] = useState<CampaignAttachmentItem[]>([]);
@@ -74,9 +91,7 @@ export default function BulkSendStudio({
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [saveAsDraft, setSaveAsDraft] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [showAiInfo, setShowAiInfo] = useState(false);
-  const [aiUsed, setAiUsed] = useState(false);
+  const [aiUsed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showMobilePreview, setShowMobilePreview] = useState(false);
@@ -86,6 +101,28 @@ export default function BulkSendStudio({
   const [page, setPage] = useState(1);
   const [excludedOgrenci, setExcludedOgrenci] = useState<Map<number, string>>(new Map());
   const [excludedVeli, setExcludedVeli] = useState<Map<number, string>>(new Map());
+  const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppMetaTemplateItem | null>(null);
+  const [variableValues, setVariableValues] = useState<Record<string, string>>({});
+
+  const templateBody = selectedTemplate?.body_named || "";
+  const manualVariables = useMemo(
+    () => templateVariables(templateBody).filter((key) => !AUTO_RESOLVED_VARIABLES.has(key)),
+    [templateBody],
+  );
+  const resolvedBody = useMemo(
+    () => fillManualVariables(templateBody, variableValues),
+    [templateBody, variableValues],
+  );
+  const missingVariables = useMemo(
+    () => manualVariables.filter((key) => !(variableValues[key] || "").trim()),
+    [manualVariables, variableValues],
+  );
+
+  // Kampanya gövdesi seçilen şablondan türetilir; serbest metin girişi yok.
+  useEffect(() => {
+    onComposerChange({ ...composerState, text: resolvedBody });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedBody]);
 
   const body = plainTextFromComposer(composerState);
 
@@ -144,11 +181,6 @@ export default function BulkSendStudio({
     loadPreview();
   }, [loadPreview]);
 
-  const handleTemplateSelect = (template: MessageTemplateItem) => {
-    onComposerChange({ ...composerState, text: template.body });
-    if (template.name) onTitleChange(template.name);
-  };
-
   const handleExcludeRecipient = (recipient: CampaignPreviewRecipient) => {
     if (recipient.ogrenci_id) {
       setExcludedOgrenci((prev) => {
@@ -189,8 +221,16 @@ export default function BulkSendStudio({
   };
 
   const handleSendClick = () => {
-    if (!body && !templateName.trim()) {
-      setError("Mesaj metni veya şablon adı girin.");
+    if (!templateName.trim()) {
+      setError("Toplu gönderim için Meta onaylı bir şablon seçin.");
+      return;
+    }
+    if (missingVariables.length > 0) {
+      setError(
+        `Doldurulmamış değişken: ${missingVariables
+          .map((key) => VARIABLE_LABELS[key] || key)
+          .join(", ")}`,
+      );
       return;
     }
     if (!preview || preview.total_recipients === 0) {
@@ -284,15 +324,17 @@ export default function BulkSendStudio({
           <MetaTemplateSelect
             value={templateName}
             accountId={accountId || undefined}
-            label="Meta şablonu (onaylı)"
+            usage="CAMPAIGN"
+            hidePreview
+            label="Duyuru şablonu (Meta onaylı)"
             onChange={(name, language, tpl) => {
               onTemplateNameChange(name);
               if (language && onTemplateLanguageChange) {
                 onTemplateLanguageChange(language);
               }
-              if (tpl?.body_named) {
-                onComposerChange({ ...composerState, text: tpl.body_named });
-              }
+              setSelectedTemplate(tpl || null);
+              setVariableValues({});
+              if (tpl?.name && !title.trim()) onTitleChange(tpl.name);
             }}
           />
         </div>
@@ -321,23 +363,41 @@ export default function BulkSendStudio({
 
         <main className="comm-studio-center">
           <div className="comm-card comm-studio-editor">
-            <RichMessageToolbar
-              composerState={composerState}
-              onChange={onComposerChange}
-              textareaRef={textareaRef}
-              onOpenTemplates={() => setShowTemplates(true)}
-              onOpenAi={() => setShowAiInfo(true)}
-              readOnlyTemplates={readOnlyTemplates}
-            />
-            <textarea
-              ref={textareaRef}
-              className="comm-studio-textarea"
-              value={composerState.text}
-              onChange={(e) => onComposerChange({ ...composerState, text: e.target.value })}
-              placeholder="Gönderilecek mesajı yazın… *kalın*, _italik_, ~çizili~ desteklenir."
-              maxLength={WHATSAPP_MAX_LENGTH}
-              rows={8}
-            />
+            {!selectedTemplate ? (
+              <div className="comm-alert comm-alert-warning comm-studio-template-hint">
+                Toplu duyurular WhatsApp tarafından yalnızca onaylı şablonla iletilir.
+                Yukarıdan bir duyuru şablonu seçin; metin şablondan gelir.
+              </div>
+            ) : (
+              <>
+                <div className="comm-studio-template-body">
+                  <h3>{selectedTemplate.name}</h3>
+                  <pre>{templateBody}</pre>
+                </div>
+                {manualVariables.length > 0 ? (
+                  <div className="comm-studio-template-vars">
+                    <h3>Değişkenleri doldurun</h3>
+                    {manualVariables.map((key) => (
+                      <label key={key} className="comm-meta-send-var">
+                        <span>{VARIABLE_LABELS[key] || key.replace(/_/g, " ")}</span>
+                        <input
+                          type="text"
+                          value={variableValues[key] || ""}
+                          onChange={(e) =>
+                            setVariableValues((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                          placeholder={`{{${key}}}`}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="comm-studio-muted comm-studio-template-note">
+                    Bu şablondaki değişkenler her alıcı için otomatik doldurulur.
+                  </p>
+                )}
+              </>
+            )}
             <AttachmentDropZone attachments={attachments} onChange={setAttachments} />
             <SendOptionsBar
               sendMode={sendMode}
@@ -376,7 +436,13 @@ export default function BulkSendStudio({
         >
           👁 Önizleme
         </button>
-        <button type="button" className="comm-btn-primary" onClick={handleSendClick}>
+        <button
+          type="button"
+          className="comm-btn-primary"
+          onClick={handleSendClick}
+          disabled={!templateName.trim()}
+          title={!templateName.trim() ? "Önce onaylı bir duyuru şablonu seçin" : undefined}
+        >
           Gönder
         </button>
       </div>
@@ -398,27 +464,6 @@ export default function BulkSendStudio({
         }}
       />
 
-      <TemplatePickerDrawer
-        open={showTemplates}
-        onClose={() => setShowTemplates(false)}
-        onSelect={handleTemplateSelect}
-        readOnly={readOnlyTemplates}
-      />
-
-      {showAiInfo && (
-        <div className="comm-modal-overlay" onClick={() => setShowAiInfo(false)} role="presentation">
-          <div className="comm-modal" onClick={(e) => e.stopPropagation()} role="dialog">
-            <h2>AI Asistan</h2>
-            <p className="comm-studio-muted">
-              AI asistan şu an kurumunuzda etkin değil. Etkinleştirildiğinde mesaj önerisi alabilirsiniz;
-              öneriler otomatik gönderilmez.
-            </p>
-            <button type="button" className="comm-btn-primary" onClick={() => setShowAiInfo(false)}>
-              Tamam
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

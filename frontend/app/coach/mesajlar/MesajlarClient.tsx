@@ -8,6 +8,7 @@ import {
   createComposerState,
   MessageThreadPanel,
 } from "@/components/communication";
+import MetaTemplateSendDrawer from "@/components/communication/MetaTemplateSendDrawer";
 import "@/components/communication/communication.css";
 import {
   accountLabel,
@@ -70,6 +71,9 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
     threadRef,
     handleSend: sendMessage,
     handleReact,
+    metaTemplatesOpen,
+    setMetaTemplatesOpen,
+    handleTemplateSent,
   } = useConversationThread(selectedId, {
     enabled: !!selectedId,
     conversation: selected,
@@ -280,10 +284,21 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
             onChange={setComposerState}
             onSend={handleSend}
             sending={sending}
+            conversation={selected}
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
+            onOpenMetaTemplates={() => setMetaTemplatesOpen(true)}
           />
         }
+      />
+      <MetaTemplateSendDrawer
+        open={metaTemplatesOpen}
+        conversationId={selectedId}
+        onClose={() => setMetaTemplatesOpen(false)}
+        onSent={(msg) => {
+          handleTemplateSent(msg);
+          loadConversations();
+        }}
       />
     </div>
   );

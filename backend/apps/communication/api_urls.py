@@ -22,6 +22,11 @@ from apps.communication.interfaces.views.config import WhatsAppConfigTestView, W
 from apps.communication.interfaces.views.queue import OutboundQueueListView
 from apps.communication.interfaces.views.conversation_open import ConversationOpenView
 from apps.communication.interfaces.views.meta_templates import WhatsAppMetaTemplatesView
+from apps.communication.interfaces.views.notification_bindings import (
+    NotificationBindingPreviewView,
+    NotificationBindingUpsertView,
+    NotificationEventCatalogView,
+)
 from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateCloneView,
     MetaTemplateDetailView,
@@ -52,6 +57,9 @@ from apps.communication.interfaces.views.routing_rules import (
 )
 from apps.communication.interfaces.views.transfer_candidates import TransferCandidatesView
 from apps.communication.interfaces.views.messages import ConversationMessagesView
+from apps.communication.interfaces.views.conversation_template_send import (
+    ConversationTemplateSendView,
+)
 from apps.communication.interfaces.views.message_reactions import MessageReactionView
 from apps.communication.interfaces.views.notifications import NotificationSummaryView
 from apps.communication.interfaces.views.recipients import (
@@ -109,6 +117,21 @@ urlpatterns = [
         MetaTemplateCloneView.as_view(),
         name='meta-template-clone',
     ),
+    path(
+        'notification-events/',
+        NotificationEventCatalogView.as_view(),
+        name='notification-events',
+    ),
+    path(
+        'notification-bindings/',
+        NotificationBindingUpsertView.as_view(),
+        name='notification-bindings',
+    ),
+    path(
+        'notification-bindings/preview/',
+        NotificationBindingPreviewView.as_view(),
+        name='notification-bindings-preview',
+    ),
     path('accounts/', WhatsAppAccountListCreateView.as_view(), name='whatsapp-accounts'),
     path('accounts/accessible/', WhatsAppAccessibleAccountsView.as_view(), name='whatsapp-accounts-accessible'),
     path('accounts/<uuid:account_id>/', WhatsAppAccountDetailView.as_view(), name='whatsapp-account-detail'),
@@ -126,6 +149,11 @@ urlpatterns = [
         'conversations/<uuid:conversation_id>/messages/',
         ConversationMessagesView.as_view(),
         name='conversation-messages',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/template-messages/',
+        ConversationTemplateSendView.as_view(),
+        name='conversation-template-messages',
     ),
     path(
         'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/reactions/',

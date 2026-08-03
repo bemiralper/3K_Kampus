@@ -25,6 +25,15 @@ interface ComposeBarProps {
   conversation?: ConversationListItem | null;
   replyTo?: MessageItem | null;
   onClearReply?: () => void;
+  /** 24 saatlik pencere kapalı — onaylı şablon seçicisini aç */
+  onOpenMetaTemplates?: () => void;
+}
+
+function remainingLabel(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  if (hours >= 1) return `${hours} saat kaldı`;
+  const minutes = Math.max(1, Math.floor(seconds / 60));
+  return `${minutes} dk kaldı`;
 }
 
 function replyLabel(msg: MessageItem): string {
@@ -52,12 +61,14 @@ export default function ComposeBar({
   conversation = null,
   replyTo = null,
   onClearReply,
+  onOpenMetaTemplates,
 }: ComposeBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const session = conversation?.session ?? null;
 
   const applyFile = useCallback((file: File | null | undefined) => {
     if (!file || !isAcceptedFile(file)) return;
@@ -124,6 +135,34 @@ export default function ComposeBar({
         {dragOver && (
           <div className="comm-compose-drop-hint" aria-hidden="true">
             Dosyayı buraya bırakın
+          </div>
+        )}
+        {session && session.state !== "NA" && (
+          <div
+            className={`comm-session-bar${session.is_open ? " is-open" : " is-closed"}`}
+            role="status"
+          >
+            <span className="comm-session-dot" aria-hidden="true" />
+            <span className="comm-session-label">
+              {session.is_open ? "Normal mesaj gönderilebilir" : "24 saatlik süre dolmuş"}
+              {session.is_open && session.seconds_left > 0 && (
+                <em> · {remainingLabel(session.seconds_left)}</em>
+              )}
+            </span>
+            {!session.is_open && (
+              <>
+                <span className="comm-session-notice">{session.notice}</span>
+                {onOpenMetaTemplates && (
+                  <button
+                    type="button"
+                    className="comm-session-action"
+                    onClick={onOpenMetaTemplates}
+                  >
+                    Şablon seç
+                  </button>
+                )}
+              </>
+            )}
           </div>
         )}
         {replyTo && (

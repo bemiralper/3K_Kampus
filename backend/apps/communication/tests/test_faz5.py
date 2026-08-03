@@ -14,6 +14,7 @@ from apps.communication.domain.enums import MessageStatus
 from apps.communication.domain.models import Message
 from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
 from apps.communication.interfaces.views.events import _StreamSlots, _stream_slots
+from apps.communication.tests.session_helpers import open_session_window
 from apps.kurum.domain.models import Kurum
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.odeme_takip.domain.enums import SozlesmeDurum, TaksitDurum
@@ -115,6 +116,7 @@ class Faz5CommunicationAPITest(TestCase):
             vade_tarihi=timezone.localdate() + timedelta(days=3),
             durum=TaksitDurum.BEKLEMEDE,
         )
+        open_session_window(self.kurum.id, self.student.telefon, self.veli.telefon)
 
     def test_sse_requires_auth(self):
         anon = APIClient()

@@ -224,7 +224,12 @@ class ConversationMessagesView(CommunicationAPIView):
         )
 
         if not result.success:
-            return Response({'error': result.errors}, status=status.HTTP_400_BAD_REQUEST)
+            payload = {'error': result.errors}
+            if result.session_expired:
+                # Ön yüz bu bayrakla şablon seçiciyi açar
+                payload['session_expired'] = True
+                payload['session'] = result.session
+            return Response(payload, status=status.HTTP_400_BAD_REQUEST)
 
         message = None
         if result.message_id:

@@ -22,6 +22,7 @@ from apps.communication.domain.enums import (
     MessageDirection,
     MessageStatus,
     MessageType,
+    MetaTemplateStatus,
     RecipientType,
 )
 from apps.communication.domain.models import OutboundCampaign
@@ -35,6 +36,18 @@ from shared.permissions import user_has_any_permission
 
 
 OPT_IN_CATEGORY = 'duyuru'
+
+
+def _campaign_requires_template() -> bool:
+    """
+    Toplu gönderim yalnızca Meta onaylı şablonla yapılır.
+
+    24 saatlik pencere kitlenin çok küçük bir kısmında açıktır; serbest metin
+    toplu gönderimde alıcıların büyük bölümüne ulaşmaz.
+    """
+    from django.conf import settings
+
+    return bool(getattr(settings, 'COMMUNICATION_CAMPAIGN_REQUIRE_TEMPLATE', True))
 
 
 @dataclass
@@ -776,6 +789,18 @@ class CampaignService:
                 raise ValidationError('Şablon bulunamadı.')
             if not body:
                 body = message_template.body
+            # Uygulama şablonunun Meta karşılığı varsa toplu gönderim onu kullanır
+            if not template_name and message_template.meta_template_id:
+                paired = message_template.meta_template
+                if paired and paired.status == MetaTemplateStatus.APPROVED:
+                    template_name = paired.name
+                    template_language = paired.language or template_language
+
+        if not template_name and _campaign_requires_template():
+            raise ValidationError(
+                'Toplu gönderimde Meta onaylı bir şablon seçilmelidir. WhatsApp, '
+                'toplu serbest metin mesajlarını iletmez.',
+            )
 
         preview_data = AudienceResolver.resolve(kurum_id, audience_filter, user=user)
         if preview_data.total_recipients == 0:
@@ -783,7 +808,6 @@ class CampaignService:
 
         if template_name:
             from apps.communication.application.meta_template_service import MetaTemplateService
-            from apps.communication.domain.enums import MetaTemplateStatus
             from apps.communication.domain.models import WhatsAppMetaTemplate
 
             lang = template_language or 'tr'

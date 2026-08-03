@@ -6,14 +6,17 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from apps.communication.application.communication_service import MessageSource
 from apps.communication.application.integration_hooks import (
     SOURCE_ODEME,
     already_sent,
     recently_sent_within_hours,
-    send_text_to_veli,
+)
+from apps.communication.application.notification_dispatcher import (
+    NotificationRecipient,
+    dispatch_event,
 )
 from apps.finans.application.overdue_messaging import (
-    CATEGORY_ODEME_GECIKME,
     build_consolidated_overdue_context,
     render_overdue_message,
 )
@@ -165,6 +168,7 @@ class OverdueReminderService:
                 'ogrenci_adi': ctx.get('ogrenci_ad') or '—',
                 'telefon': telefon,
                 'rendered_body': body,
+                'context': dict(ctx),
                 'skip_reason': skip_reason,
                 'already_sent_24h': already_24h,
                 'available_veliler': available_veliler,
@@ -238,14 +242,17 @@ class OverdueReminderService:
                     results.append({**base, 'status': 'skipped', 'message': 'Hatırlatma zaten gönderildi'})
                     continue
 
-            result = send_text_to_veli(
+            result = dispatch_event(
                 kurum_id,
-                item['veli_id'],
-                item['rendered_body'],
-                CATEGORY_ODEME_GECIKME,
-                SOURCE_ODEME,
-                source_id,
+                'odeme.gecikme',
+                recipient=NotificationRecipient.veli(item['veli_id']),
+                context=item.get('context') or {
+                    'veli_ad': veli_adi,
+                    'ogrenci_ad': ogrenci_adi,
+                },
+                source=MessageSource(module=SOURCE_ODEME, ref_id=source_id),
                 sent_by_user_id=sent_by_user_id,
+                fallback_body=item['rendered_body'],
             )
             if result and result.success:
                 sent += 1

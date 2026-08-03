@@ -32,6 +32,8 @@ class MessageContent:
     template_language: str = 'tr'
     channel_config_id: str | None = None
     template_context: dict = field(default_factory=dict)
+    # Serbest mesaj 24 saat kuralına takılırsa kuyruğun deneyeceği Meta şablonu
+    session_fallback: dict | None = None
 
 
 @dataclass
@@ -45,6 +47,7 @@ class RecipientQuery:
     phone: str | None = None
     ogrenci_id: int | None = None
     veli_id: int | None = None
+    personel_id: int | None = None
     conversation_id: str | None = None
     opt_in_category: str = 'duyuru'
 
@@ -57,6 +60,9 @@ class SendResult:
     provider_response: dict[str, Any] = field(default_factory=dict)
     sent_to_phone: str | None = None
     message_status: str | None = None
+    # 24 saatlik pencere kapalı olduğu için serbest mesaj gönderilemedi
+    session_expired: bool = False
+    session: dict[str, Any] = field(default_factory=dict)
 
 
 class CommunicationService:
@@ -118,6 +124,16 @@ class CommunicationService:
                 if not phone:
                     phone = veli.telefon
 
+        if not phone and recipients.personel_id:
+            from apps.personel.domain.models import Personel
+
+            personel = Personel.objects.filter(
+                id=recipients.personel_id,
+                kurum_id=kurum_id,
+            ).first()
+            if personel:
+                phone = (personel.cep_telefon or '').strip() or (personel.telefon or '').strip()
+
         if not phone:
             return SendResult(success=False, errors=['Alıcı telefonu bulunamadı.'])
 
@@ -145,6 +161,10 @@ class CommunicationService:
                 thread_ogrenci_id = veli_ogrenci_id or resolved.ogrenci_id
                 thread_veli_id = recipients.veli_id
                 thread_contact_type = RecipientType.VELI
+            elif recipients.personel_id:
+                thread_ogrenci_id = None
+                thread_veli_id = None
+                thread_contact_type = RecipientType.PERSONEL
             else:
                 thread_ogrenci_id = resolved.ogrenci_id or recipients.ogrenci_id
                 thread_veli_id = resolved.veli_id or recipients.veli_id
@@ -164,6 +184,32 @@ class CommunicationService:
             message_type = MessageType.TEMPLATE
         elif content.attachment_path and message_type == MessageType.TEXT:
             message_type = MessageType.DOCUMENT
+
+        # 24 saat kuralı: şablonsuz mesajlar yalnızca pencere açıkken iletilebilir.
+        # Meta'ya boşuna istek atıp kuyruğu yakmamak için burada durdurulur.
+        # Pencere Meta tarafında numaraya bağlıdır; aynı numaraya ait tüm thread'ler
+        # taranır, yoksa aynı kişi için açılmış ikinci bir sohbet yanlış engellenir.
+        if message_type != MessageType.TEMPLATE and channel == Channel.WHATSAPP:
+            from apps.communication.application.session_window import (
+                enforcement_enabled,
+                window_for_recipient,
+            )
+
+            session = window_for_recipient(
+                kurum_id,
+                phone=e164,
+                veli_id=conversation.veli_id or recipients.veli_id,
+                ogrenci_id=conversation.ogrenci_id or recipients.ogrenci_id,
+                personel_id=recipients.personel_id,
+                channel=channel,
+            )
+            if not session.is_open and enforcement_enabled():
+                return SendResult(
+                    success=False,
+                    errors=[session.notice],
+                    session_expired=True,
+                    session=session.as_dict(),
+                )
 
         reply_to = None
         if content.reply_to_message_id:
@@ -221,7 +267,7 @@ class CommunicationService:
             direction=MessageDirection.OUTBOUND,
         )
 
-        send_options = {}
+        send_options: dict[str, Any] = {}
         if content.template_name:
             send_options = {
                 'template_name': content.template_name,
@@ -229,6 +275,8 @@ class CommunicationService:
                 'channel_config_id': content.channel_config_id or '',
                 'template_context': content.template_context or {},
             }
+        elif content.session_fallback:
+            send_options = {'session_fallback': content.session_fallback}
 
         queue_item = OutboundQueueRepository.enqueue(
             kurum_id=kurum_id,

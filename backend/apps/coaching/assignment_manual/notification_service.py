@@ -9,13 +9,13 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.communication.application.communication_service import MessageSource
 from apps.communication.application.contact_resolver import ContactResolver
-from apps.communication.application.integration_hooks import (
-    SOURCE_ODEV,
-    send_document_to_ogrenci,
-    send_document_to_veli,
-    send_template_document_to_ogrenci,
-    send_template_document_to_veli,
+from apps.communication.application.integration_hooks import SOURCE_ODEV
+from apps.communication.application.notification_dispatcher import (
+    NotificationAttachment,
+    NotificationRecipient,
+    dispatch_event,
 )
 from apps.communication.application.pdf_render_service import PdfRenderService
 from apps.coaching.assignment_manual.models import AssignmentLesson, AssignmentTask, ManualAssignment
@@ -33,6 +33,12 @@ OPT_IN_CATEGORY = 'duyuru'
 
 NOTIFY_PLAN = 'plan'
 NOTIFY_REPORT = 'report'
+
+# Merkezi bildirim eşlemesindeki olay anahtarları
+NOTIFY_EVENT_KEYS = {
+    NOTIFY_PLAN: 'odev.plan',
+    NOTIFY_REPORT: 'odev.rapor',
+}
 
 
 @dataclass
@@ -327,39 +333,22 @@ class AssignmentNotificationService:
         source_id: str,
         sent_by_user_id: int | None,
     ):
-        meta_tpl = get_meta_template_for_notify(kurum_id, notify_type, 'veli')
-        if meta_tpl:
-            ctx = build_assignment_context(
-                assignment=assignment,
-                notify_type=notify_type,
-                veli=veli,
-                kurum=getattr(assignment.student, 'kurum', None),
-            )
-            return send_template_document_to_veli(
-                kurum_id,
-                veli.id,
-                template_name=meta_tpl.name,
-                template_language=meta_tpl.language or 'tr',
-                template_context=ctx,
-                channel_config_id=str(meta_tpl.channel_config_id) if meta_tpl.channel_config_id else None,
-                preview_text=short_body,
-                category=OPT_IN_CATEGORY,
-                source_module=SOURCE_ODEV,
-                source_id=source_id,
-                file_bytes=pdf_bytes,
-                filename=filename,
-                sent_by_user_id=sent_by_user_id,
-            )
-        return send_document_to_veli(
+        ctx = build_assignment_context(
+            assignment=assignment,
+            notify_type=notify_type,
+            veli=veli,
+            kurum=getattr(assignment.student, 'kurum', None),
+        )
+        return dispatch_event(
             kurum_id,
-            veli.id,
-            short_body,
-            OPT_IN_CATEGORY,
-            SOURCE_ODEV,
-            source_id,
-            file_bytes=pdf_bytes,
-            filename=filename,
+            NOTIFY_EVENT_KEYS[notify_type],
+            recipient=NotificationRecipient.veli(veli.id),
+            context={**ctx, 'kisa_mesaj': short_body},
+            attachment=NotificationAttachment(filename=filename, file_bytes=pdf_bytes),
+            source=MessageSource(module=SOURCE_ODEV, ref_id=source_id),
+            sube_id=getattr(assignment.student, 'sube_id', None),
             sent_by_user_id=sent_by_user_id,
+            fallback_body=short_body,
         )
 
     def _send_pdf_to_ogrenci(
@@ -374,38 +363,21 @@ class AssignmentNotificationService:
         source_id: str,
         sent_by_user_id: int | None,
     ):
-        meta_tpl = get_meta_template_for_notify(kurum_id, notify_type, 'ogrenci')
-        if meta_tpl:
-            ctx = build_assignment_context(
-                assignment=assignment,
-                notify_type=notify_type,
-                kurum=getattr(assignment.student, 'kurum', None),
-            )
-            return send_template_document_to_ogrenci(
-                kurum_id,
-                assignment.student_id,
-                template_name=meta_tpl.name,
-                template_language=meta_tpl.language or 'tr',
-                template_context=ctx,
-                channel_config_id=str(meta_tpl.channel_config_id) if meta_tpl.channel_config_id else None,
-                preview_text=short_body,
-                category=OPT_IN_CATEGORY,
-                source_module=SOURCE_ODEV,
-                source_id=source_id,
-                file_bytes=pdf_bytes,
-                filename=filename,
-                sent_by_user_id=sent_by_user_id,
-            )
-        return send_document_to_ogrenci(
+        ctx = build_assignment_context(
+            assignment=assignment,
+            notify_type=notify_type,
+            kurum=getattr(assignment.student, 'kurum', None),
+        )
+        return dispatch_event(
             kurum_id,
-            assignment.student_id,
-            short_body,
-            OPT_IN_CATEGORY,
-            SOURCE_ODEV,
-            source_id,
-            file_bytes=pdf_bytes,
-            filename=filename,
+            NOTIFY_EVENT_KEYS[notify_type],
+            recipient=NotificationRecipient.ogrenci(assignment.student_id),
+            context={**ctx, 'kisa_mesaj': short_body},
+            attachment=NotificationAttachment(filename=filename, file_bytes=pdf_bytes),
+            source=MessageSource(module=SOURCE_ODEV, ref_id=source_id),
+            sube_id=getattr(assignment.student, 'sube_id', None),
             sent_by_user_id=sent_by_user_id,
+            fallback_body=short_body,
         )
 
     @transaction.atomic

@@ -327,7 +327,6 @@ export default function TopluGonderClient({
               templateLanguage={templateLanguage}
               onTemplateLanguageChange={setTemplateLanguage}
               campaignDetailPath={detailPath}
-              readOnlyTemplates={isCoach}
             />
           )}
 

@@ -7,6 +7,7 @@ import {
   createComposerState,
   MessageThreadPanel,
 } from "@/components/communication";
+import MetaTemplateSendDrawer from "./MetaTemplateSendDrawer";
 import { useConversationThread } from "@/hooks/useConversationThread";
 import {
   conversationInboxPath,
@@ -92,6 +93,9 @@ export default function CommunicationChatDrawer({
     threadRef,
     handleSend,
     handleReact,
+    metaTemplatesOpen,
+    setMetaTemplatesOpen,
+    handleTemplateSent,
     selected,
   } = useConversationThread(conversation?.id ?? null, {
     enabled: open && !!conversation?.id,
@@ -185,12 +189,19 @@ export default function CommunicationChatDrawer({
                   conversation={threadSelected}
                   replyTo={replyTo}
                   onClearReply={() => setReplyTo(null)}
+                  onOpenMetaTemplates={() => setMetaTemplatesOpen(true)}
                 />
               }
             />
           )}
         </div>
       </aside>
+      <MetaTemplateSendDrawer
+        open={metaTemplatesOpen}
+        conversationId={conversation?.id ?? null}
+        onClose={() => setMetaTemplatesOpen(false)}
+        onSent={handleTemplateSent}
+      />
     </div>
   );
 }

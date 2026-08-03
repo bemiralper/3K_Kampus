@@ -8,14 +8,12 @@ import uuid
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
-from apps.communication.application.communication_service import (
-    CommunicationService,
-    MessageContent,
-    MessageSource,
-    RecipientQuery,
-    SendResult,
+from apps.communication.application.communication_service import MessageSource
+from apps.communication.application.notification_dispatcher import (
+    NotificationAttachment,
+    NotificationRecipient,
+    dispatch_event,
 )
-from apps.communication.domain.enums import MessageType
 from apps.finans.application.export.gun_sonu_export_service import GunSonuExportService
 from apps.finans.application.gun_sonu_report_service import GunSonuReportService
 
@@ -63,7 +61,6 @@ class GunSonuWhatsappService:
         pdf_bytes = GunSonuExportService.render_pdf_bytes(report)
         filename = f"gun_sonu_{meta.get('tarih_iso', 'rapor')}.pdf"
 
-        comm = CommunicationService()
         results = []
         sent = 0
         errors: list[str] = []
@@ -74,30 +71,38 @@ class GunSonuWhatsappService:
                 f'communication/attachments/{unique_name}',
                 ContentFile(pdf_bytes),
             )
-            result: SendResult = comm.send(
+            result = dispatch_event(
                 kurum_id,
-                recipients=RecipientQuery(phone=target['telefon']),
-                content=MessageContent(
-                    text=body,
-                    message_type=MessageType.DOCUMENT,
-                    attachment_path=storage_path,
-                    attachment_filename=filename,
+                'finans.gun_sonu',
+                recipient=NotificationRecipient.personel(
+                    target.get('personel_id'), phone=target['telefon'],
+                ),
+                context={
+                    'personel_ad': target['ad_soyad'],
+                    'tarih': meta.get('tarih') or meta.get('tarih_iso', ''),
+                    'pdf_baslik': 'Gün Sonu Raporu',
+                },
+                attachment=NotificationAttachment(
+                    filename=filename, file_path=storage_path,
                 ),
                 source=MessageSource(module=SOURCE_GUN_SONU, ref_id=meta.get('tarih_iso', '')),
-                sender_user_id=sender_user_id,
-                process_immediately=True,
+                sube_id=meta.get('sube_id'),
+                sent_by_user_id=sender_user_id,
+                fallback_body=body,
             )
+            success = bool(result and result.success)
+            result_errors = list(getattr(result, 'errors', None) or []) if result else ['Gönderim başarısız']
             results.append({
                 'recipient_id': target['id'],
                 'ad_soyad': target['ad_soyad'],
                 'telefon_maskeli': target['telefon_maskeli'],
-                'success': result.success,
-                'errors': result.errors,
+                'success': success,
+                'errors': result_errors,
             })
-            if result.success:
+            if success:
                 sent += 1
-            elif result.errors:
-                errors.extend(result.errors)
+            elif result_errors:
+                errors.extend(result_errors)
 
         return {
             'success': sent > 0,

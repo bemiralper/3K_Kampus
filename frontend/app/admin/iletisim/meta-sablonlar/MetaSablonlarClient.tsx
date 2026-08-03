@@ -12,12 +12,15 @@ import "@/components/communication/communication.css";
 import {
   WhatsAppAccount,
   WhatsAppMetaTemplateItem,
+  META_TEMPLATE_USAGE_LABELS,
   MetaTemplateButton,
   MetaTemplateHeader,
+  MetaTemplateUsage,
   cloneLocalMetaTemplate,
   createLocalMetaTemplate,
   deleteLocalMetaTemplate,
   fetchLocalMetaTemplates,
+  fetchNotificationEvents,
   fetchWhatsAppAccounts,
   refreshLocalMetaTemplateStatus,
   resubmitLocalMetaTemplate,
@@ -109,6 +112,7 @@ const emptyForm = () => ({
   name: "",
   language: "tr",
   meta_category: "UTILITY",
+  usage_scope: "ALL" as MetaTemplateUsage,
   body_named: "",
   footer_text: "",
   header: { type: "NONE" } as MetaTemplateHeader,
@@ -169,6 +173,42 @@ export default function MetaSablonlarClient() {
     if (accountId) load();
   }, [accountId, load]);
 
+  // Bildirim Şablonları ekranından "bu olay için şablon oluştur" kısayolu
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const eventKey = params.get("event");
+    const recipient = (params.get("recipient") || "").toUpperCase();
+    if (!eventKey || !recipient) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const catalog = await fetchNotificationEvents();
+        if (cancelled) return;
+        const event = catalog.events.find((e) => e.key === eventKey);
+        const slot = event?.slots.find((s) => s.recipient_type === recipient);
+        if (!event || !slot) return;
+        setEditing(null);
+        setForm({
+          ...emptyForm(),
+          name: slot.suggested_meta_name,
+          body_named: slot.meta_example_body,
+          header: event.has_document
+            ? ({ type: "DOCUMENT" } as MetaTemplateHeader)
+            : ({ type: "NONE" } as MetaTemplateHeader),
+        });
+        setDrawerOpen(true);
+        setMessage(`${event.label} olayı için şablon taslağı hazırlandı.`);
+      } catch {
+        // kısayol ön dolgusu başarısızsa normal oluşturma akışı çalışır
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const previewText = useMemo(
     () => resolvePreviewVariables(form.body_named || ""),
     [form.body_named],
@@ -188,6 +228,7 @@ export default function MetaSablonlarClient() {
       name: t.name,
       language: t.language || "tr",
       meta_category: t.meta_category || "UTILITY",
+      usage_scope: (t.usage_scope as MetaTemplateUsage) || "ALL",
       body_named: t.body_named || "",
       footer_text: t.footer_text || "",
       header: (t.header_json as MetaTemplateHeader) || { type: "NONE" },
@@ -203,6 +244,7 @@ export default function MetaSablonlarClient() {
     name: form.name,
     language: form.language,
     meta_category: form.meta_category,
+    usage_scope: form.usage_scope,
     body_named: form.body_named,
     footer_text: form.footer_text,
     header_json: form.header?.type && form.header.type !== "NONE" ? form.header : {},
@@ -219,7 +261,11 @@ export default function MetaSablonlarClient() {
     setError(null);
     try {
       if (editing) {
-        const updated = await updateLocalMetaTemplate(editing.id, payload());
+        // Meta'ya gitmiş şablonun içeriği değişemez; yalnızca yerel kullanım alanı güncellenir.
+        const updated = await updateLocalMetaTemplate(
+          editing.id,
+          locked ? { usage_scope: form.usage_scope } : payload(),
+        );
         setMessage("Şablon kaydedildi.");
         setEditing(updated);
       } else {
@@ -567,6 +613,10 @@ export default function MetaSablonlarClient() {
                       {t.name}
                       <span className="tplx-card-sub">
                         {CATEGORY_LABELS[t.meta_category] || t.meta_category} · {t.language}
+                        {t.usage_scope && t.usage_scope !== "ALL" && (
+                          <> · {t.usage_scope_label
+                            || META_TEMPLATE_USAGE_LABELS[t.usage_scope as MetaTemplateUsage]}</>
+                        )}
                       </span>
                     </span>
                     <div className="tplx-badges">
@@ -733,6 +783,29 @@ export default function MetaSablonlarClient() {
                             <option value="AUTHENTICATION">Doğrulama (Authentication)</option>
                           </select>
                         </div>
+                      </div>
+                      <div className="tplx-field">
+                        <label htmlFor="meta-usage">Kullanım alanı</label>
+                        <select
+                          id="meta-usage"
+                          value={form.usage_scope}
+                          onChange={(e) => setForm((f) => ({
+                            ...f,
+                            usage_scope: e.target.value as MetaTemplateUsage,
+                          }))}
+                        >
+                          {(Object.keys(META_TEMPLATE_USAGE_LABELS) as MetaTemplateUsage[]).map(
+                            (scope) => (
+                              <option key={scope} value={scope}>
+                                {META_TEMPLATE_USAGE_LABELS[scope]}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                        <p className="tplx-field-hint">
+                          Şablonun hangi ekranda seçilebileceğini belirler. Onaydan sonra da
+                          değiştirilebilir.
+                        </p>
                       </div>
                     </div>
                   </section>

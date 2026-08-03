@@ -18,6 +18,8 @@ from .enums import (
     MessageType,
     MetaTemplateCategory,
     MetaTemplateStatus,
+    MetaTemplateUsage,
+    NotificationSendMode,
     RecipientType,
     TemplateCategory,
     TemplateAudienceScope,
@@ -529,6 +531,16 @@ class MessageTemplate(models.Model):
     body = models.TextField(blank=True, default='', verbose_name='Mesaj Metni')
     variables_json = models.JSONField(default=list, blank=True, verbose_name='Değişkenler')
     attachment_ids_json = models.JSONField(default=list, blank=True, verbose_name='Ek ID Listesi')
+    # Aynı mesajın Meta onaylı karşılığı. 24 saatlik pencere kapalıyken bu şablon
+    # kullanılır; boşsa yalnızca pencere açıkken gönderilebilir.
+    meta_template = models.ForeignKey(
+        'communication.WhatsAppMetaTemplate',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='app_templates',
+        verbose_name='Meta Karşılığı',
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -591,6 +603,13 @@ class WhatsAppMetaTemplate(models.Model):
         verbose_name='Durum',
         db_index=True,
     )
+    usage_scope = models.CharField(
+        max_length=16,
+        choices=MetaTemplateUsage.choices,
+        default=MetaTemplateUsage.ALL,
+        verbose_name='Kullanım Alanı',
+        db_index=True,
+    )
     meta_template_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Meta Template ID')
     body_named = models.TextField(blank=True, default='', verbose_name='Gövde (named değişkenler)')
     header_json = models.JSONField(default=dict, blank=True, verbose_name='Header')
@@ -635,6 +654,122 @@ class WhatsAppMetaTemplate(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.language}) — {self.status}'
+
+
+class NotificationTemplateBinding(models.Model):
+    """
+    Bildirim olayı → şablon eşlemesi.
+
+    `sube` ve `channel_config` boş bırakıldığında kayıt o seviyenin varsayılanıdır;
+    çözümleme en özelden en genele doğru yapılır (şube+hesap → şube → hesap → kurum).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='notification_template_bindings',
+        verbose_name='Kurum',
+    )
+    sube = models.ForeignKey(
+        'sube.Sube',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='notification_template_bindings',
+        verbose_name='Şube',
+    )
+    channel_config = models.ForeignKey(
+        CommunicationChannelConfig,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='notification_template_bindings',
+        verbose_name='WhatsApp Hesabı',
+    )
+    event_key = models.CharField(max_length=64, db_index=True, verbose_name='Olay')
+    recipient_type = models.CharField(
+        max_length=20,
+        choices=RecipientType.choices,
+        verbose_name='Alıcı Rolü',
+    )
+    channel = models.CharField(
+        max_length=20,
+        choices=Channel.choices,
+        default=Channel.WHATSAPP,
+        verbose_name='Kanal',
+    )
+    meta_template = models.ForeignKey(
+        WhatsAppMetaTemplate,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='notification_bindings',
+        verbose_name='Meta Şablonu',
+    )
+    message_template = models.ForeignKey(
+        MessageTemplate,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='notification_bindings',
+        verbose_name='LMS Şablonu',
+    )
+    send_mode = models.CharField(
+        max_length=20,
+        choices=NotificationSendMode.choices,
+        default=NotificationSendMode.AUTO,
+        verbose_name='Gönderim Modu',
+    )
+    is_active = models.BooleanField(default=True, verbose_name='Aktif')
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='notification_template_bindings',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_notification_template_binding'
+        verbose_name = 'Bildirim Şablon Eşlemesi'
+        verbose_name_plural = 'Bildirim Şablon Eşlemeleri'
+        ordering = ['event_key', 'recipient_type']
+        # NULL'lar Postgres'te birbirinden farklı sayıldığı için kapsam
+        # kombinasyonlarının her biri ayrı koşullu kısıt olarak tanımlanır.
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum', 'event_key', 'recipient_type', 'channel'],
+                condition=models.Q(sube__isnull=True, channel_config__isnull=True),
+                name='comm_notif_binding_kurum_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['kurum', 'sube', 'event_key', 'recipient_type', 'channel'],
+                condition=models.Q(sube__isnull=False, channel_config__isnull=True),
+                name='comm_notif_binding_sube_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['kurum', 'channel_config', 'event_key', 'recipient_type', 'channel'],
+                condition=models.Q(sube__isnull=True, channel_config__isnull=False),
+                name='comm_notif_binding_account_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['kurum', 'sube', 'channel_config', 'event_key', 'recipient_type', 'channel'],
+                condition=models.Q(sube__isnull=False, channel_config__isnull=False),
+                name='comm_notif_binding_full_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=['kurum', 'event_key', 'recipient_type'],
+                name='comm_notif_bind_lookup_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.event_key} → {self.recipient_type}'
 
 
 class CampaignAttachment(models.Model):

@@ -23,6 +23,7 @@ from apps.communication.application.integration_hooks import (
 from apps.communication.domain.enums import MessageStatus
 from apps.communication.domain.models import Message
 from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
+from apps.communication.tests.session_helpers import open_session_window
 from apps.kurum.domain.models import Kurum
 from apps.odeme_takip.domain.enums import SozlesmeDurum, TaksitDurum
 from apps.odeme_takip.domain.models import Sozlesme, Taksit
@@ -76,6 +77,13 @@ class IntegrationHooksTest(TestCase):
             capacity=20,
             is_active=True,
             is_coach=True,
+        )
+        # Serbest mesaj yalnızca 24 saatlik pencere açıkken gider
+        open_session_window(
+            self.kurum.id,
+            self.student.telefon,
+            self.veli_opt_in.telefon,
+            self.veli_opt_out.telefon,
         )
 
     @patch.object(WhatsAppCloudClient, 'send_text')

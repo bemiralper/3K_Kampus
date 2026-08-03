@@ -13,6 +13,7 @@ export { default as CampaignHistoryPanel } from "./CampaignHistoryPanel";
 export { default as SendOptionsBar } from "./SendOptionsBar";
 export { default as SendConfirmModal } from "./SendConfirmModal";
 export { default as TemplatePickerDrawer } from "./TemplatePickerDrawer";
+export { default as MetaTemplateSendDrawer } from "./MetaTemplateSendDrawer";
 export { default as CommunicationPageShell } from "./CommunicationPageShell";
 export { CommunicationChatProvider, useCommunicationChat } from "./CommunicationChatProvider";
 export { default as CommunicationChatDrawer } from "./CommunicationChatDrawer";

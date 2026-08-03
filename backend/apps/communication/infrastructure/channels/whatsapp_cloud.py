@@ -113,7 +113,7 @@ class WhatsAppCloudClient(BaseChannelClient):
             (text for needle, text in META_MESSAGE_HINTS if needle in haystack),
             None,
         ) or META_ERROR_HINTS.get(code)
-        parts = [message]
+        parts = [f'{message} (#{code})' if code else message]
         if details:
             parts.append(str(details))
         if hint:

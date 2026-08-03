@@ -20,6 +20,11 @@ from apps.communication.application.communication_service import (
     SendResult,
 )
 from apps.communication.application.contact_resolver import ContactResolver
+from apps.communication.application.notification_dispatcher import (
+    NotificationAttachment,
+    NotificationRecipient,
+    dispatch_event,
+)
 from apps.communication.domain.enums import MessageType
 from apps.communication.domain.models import Message
 
@@ -86,6 +91,7 @@ def send_text_to_veli(
     source_id: str | int,
     *,
     sent_by_user_id: int | None = None,
+    session_fallback: dict | None = None,
 ) -> SendResult | None:
     from apps.ogrenci.domain.models import OgrenciVeli
 
@@ -99,7 +105,7 @@ def send_text_to_veli(
         _service.send,
         kurum_id,
         recipients=_veli_recipient_query(veli, category=category),
-        content=MessageContent(text=body),
+        content=MessageContent(text=body, session_fallback=session_fallback),
         source=MessageSource(module=source_module, ref_id=source_id),
         sender_user_id=sent_by_user_id,
         process_immediately=True,
@@ -114,6 +120,7 @@ def send_text_to_ogrenci(
     source_id: str | int,
     *,
     sent_by_user_id: int | None = None,
+    session_fallback: dict | None = None,
 ) -> SendResult | None:
     from apps.ogrenci.domain.models import Ogrenci
 
@@ -126,7 +133,7 @@ def send_text_to_ogrenci(
         _service.send,
         kurum_id,
         recipients=RecipientQuery(phone=ogrenci.telefon, ogrenci_id=ogrenci_id),
-        content=MessageContent(text=body),
+        content=MessageContent(text=body, session_fallback=session_fallback),
         source=MessageSource(module=source_module, ref_id=source_id),
         sender_user_id=sent_by_user_id,
         process_immediately=True,
@@ -145,6 +152,7 @@ def send_document_to_ogrenci(
     file_bytes: bytes | None = None,
     filename: str = 'document.pdf',
     sent_by_user_id: int | None = None,
+    session_fallback: dict | None = None,
 ) -> SendResult | None:
     from apps.ogrenci.domain.models import Ogrenci
 
@@ -175,6 +183,7 @@ def send_document_to_ogrenci(
             message_type=MessageType.DOCUMENT,
             attachment_path=storage_path,
             attachment_filename=filename,
+            session_fallback=session_fallback,
         ),
         source=MessageSource(module=source_module, ref_id=source_id),
         sender_user_id=sent_by_user_id,
@@ -194,6 +203,7 @@ def send_document_to_veli(
     file_bytes: bytes | None = None,
     filename: str = 'document.pdf',
     sent_by_user_id: int | None = None,
+    session_fallback: dict | None = None,
 ) -> SendResult | None:
     from apps.ogrenci.domain.models import OgrenciVeli
 
@@ -222,6 +232,7 @@ def send_document_to_veli(
             message_type=MessageType.DOCUMENT,
             attachment_path=storage_path,
             attachment_filename=filename,
+            session_fallback=session_fallback,
         ),
         source=MessageSource(module=source_module, ref_id=source_id),
         sender_user_id=sent_by_user_id,
@@ -353,6 +364,296 @@ def send_template_document_to_veli(
     )
 
 
+def _personel_recipient_query(
+    kurum_id: int,
+    personel_id: int | None,
+    *,
+    phone: str | None,
+    category: str,
+) -> RecipientQuery | None:
+    """Personel gönderiminde telefon; kayıt yoksa doğrudan verilen numara."""
+    resolved_phone = (phone or '').strip()
+    if not resolved_phone and personel_id:
+        from apps.personel.domain.models import Personel
+
+        personel = Personel.objects.filter(id=personel_id, kurum_id=kurum_id).first()
+        if personel:
+            resolved_phone = (personel.cep_telefon or '').strip() or (personel.telefon or '').strip()
+    if not resolved_phone:
+        return None
+    return RecipientQuery(
+        phone=resolved_phone,
+        personel_id=personel_id,
+        opt_in_category=category,
+    )
+
+
+def send_text_to_personel(
+    kurum_id: int,
+    personel_id: int | None,
+    body: str,
+    source_module: str,
+    source_id: str | int,
+    *,
+    phone: str | None = None,
+    category: str = 'genel',
+    sent_by_user_id: int | None = None,
+    session_fallback: dict | None = None,
+) -> SendResult | None:
+    recipients = _personel_recipient_query(
+        kurum_id, personel_id, phone=phone, category=category,
+    )
+    if recipients is None:
+        return SendResult(success=False, errors=['Personel telefonu bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=recipients,
+        content=MessageContent(text=body, session_fallback=session_fallback),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_document_to_personel(
+    kurum_id: int,
+    personel_id: int | None,
+    body: str,
+    source_module: str,
+    source_id: str | int,
+    *,
+    phone: str | None = None,
+    category: str = 'genel',
+    file_path: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str = 'document.pdf',
+    sent_by_user_id: int | None = None,
+    session_fallback: dict | None = None,
+) -> SendResult | None:
+    recipients = _personel_recipient_query(
+        kurum_id, personel_id, phone=phone, category=category,
+    )
+    if recipients is None:
+        return SendResult(success=False, errors=['Personel telefonu bulunamadı.'])
+
+    storage_path = _store_attachment_bytes(
+        file_path=file_path, file_bytes=file_bytes, filename=filename,
+    )
+    if not storage_path:
+        return SendResult(success=False, errors=['Dosya bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=recipients,
+        content=MessageContent(
+            text=body,
+            message_type=MessageType.DOCUMENT,
+            attachment_path=storage_path,
+            attachment_filename=filename,
+            session_fallback=session_fallback,
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def _template_content(
+    *,
+    template_name: str,
+    template_language: str,
+    template_context: dict | None,
+    channel_config_id: str | None,
+    preview_text: str,
+    storage_path: str | None = None,
+    filename: str = '',
+) -> MessageContent:
+    content = MessageContent(
+        text=preview_text or f'[{template_name}]',
+        message_type=MessageType.TEMPLATE,
+        template_name=template_name,
+        template_language=template_language or 'tr',
+        channel_config_id=channel_config_id,
+        template_context=template_context or {},
+    )
+    if storage_path:
+        content.attachment_path = storage_path
+        content.attachment_filename = filename
+        content.attachment_mime_type = 'application/pdf'
+    return content
+
+
+def send_template_text_to_veli(
+    kurum_id: int,
+    veli_id: int,
+    *,
+    template_name: str,
+    template_language: str = 'tr',
+    template_context: dict | None = None,
+    channel_config_id: str | None = None,
+    preview_text: str = '',
+    category: str,
+    source_module: str,
+    source_id: str | int,
+    sent_by_user_id: int | None = None,
+) -> SendResult | None:
+    """Ek olmadan Meta şablonu — 24 saatlik pencere dışında da iletilir."""
+    from apps.ogrenci.domain.models import OgrenciVeli
+
+    veli = OgrenciVeli.objects.filter(id=veli_id, ogrenci__kurum_id=kurum_id).first()
+    if not veli:
+        return SendResult(success=False, errors=['Veli bulunamadı.'])
+    if not ContactResolver.veli_allows_outbound(veli, category):
+        return SendResult(success=False, errors=['Veli opt-out.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=_veli_recipient_query(veli, category=category),
+        content=_template_content(
+            template_name=template_name,
+            template_language=template_language,
+            template_context=template_context,
+            channel_config_id=channel_config_id,
+            preview_text=preview_text,
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_template_text_to_ogrenci(
+    kurum_id: int,
+    ogrenci_id: int,
+    *,
+    template_name: str,
+    template_language: str = 'tr',
+    template_context: dict | None = None,
+    channel_config_id: str | None = None,
+    preview_text: str = '',
+    category: str,
+    source_module: str,
+    source_id: str | int,
+    sent_by_user_id: int | None = None,
+) -> SendResult | None:
+    from apps.ogrenci.domain.models import Ogrenci
+
+    ogrenci = Ogrenci.objects.filter(id=ogrenci_id, kurum_id=kurum_id).first()
+    if not ogrenci or not ogrenci.telefon:
+        return SendResult(success=False, errors=['Öğrenci telefonu bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=RecipientQuery(
+            phone=ogrenci.telefon,
+            ogrenci_id=ogrenci_id,
+            opt_in_category=category,
+        ),
+        content=_template_content(
+            template_name=template_name,
+            template_language=template_language,
+            template_context=template_context,
+            channel_config_id=channel_config_id,
+            preview_text=preview_text,
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_template_text_to_personel(
+    kurum_id: int,
+    personel_id: int | None,
+    *,
+    template_name: str,
+    template_language: str = 'tr',
+    template_context: dict | None = None,
+    channel_config_id: str | None = None,
+    preview_text: str = '',
+    category: str = 'genel',
+    source_module: str,
+    source_id: str | int,
+    phone: str | None = None,
+    sent_by_user_id: int | None = None,
+) -> SendResult | None:
+    recipients = _personel_recipient_query(
+        kurum_id, personel_id, phone=phone, category=category,
+    )
+    if recipients is None:
+        return SendResult(success=False, errors=['Personel telefonu bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=recipients,
+        content=_template_content(
+            template_name=template_name,
+            template_language=template_language,
+            template_context=template_context,
+            channel_config_id=channel_config_id,
+            preview_text=preview_text,
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_template_document_to_personel(
+    kurum_id: int,
+    personel_id: int | None,
+    *,
+    template_name: str,
+    template_language: str = 'tr',
+    template_context: dict | None = None,
+    channel_config_id: str | None = None,
+    preview_text: str = '',
+    category: str = 'genel',
+    source_module: str,
+    source_id: str | int,
+    phone: str | None = None,
+    file_path: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str = 'document.pdf',
+    sent_by_user_id: int | None = None,
+) -> SendResult | None:
+    recipients = _personel_recipient_query(
+        kurum_id, personel_id, phone=phone, category=category,
+    )
+    if recipients is None:
+        return SendResult(success=False, errors=['Personel telefonu bulunamadı.'])
+
+    storage_path = _store_attachment_bytes(
+        file_path=file_path, file_bytes=file_bytes, filename=filename,
+    )
+    if not storage_path:
+        return SendResult(success=False, errors=['Dosya bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=recipients,
+        content=_template_content(
+            template_name=template_name,
+            template_language=template_language,
+            template_context=template_context,
+            channel_config_id=channel_config_id,
+            preview_text=preview_text,
+            storage_path=storage_path,
+            filename=filename,
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
 def recently_sent_within_hours(
     kurum_id: int,
     source_module: str,
@@ -439,54 +740,41 @@ def notify_payment_reminder(
     from apps.communication.application.template_service import TemplateService
     from apps.communication.application.variable_resolver import resolve_variables
 
+    # Kategori bazlı eski LMS şablonu (varsa) merkezi eşlemeye yedek metin olur.
     tpl = TemplateService().list_templates(
         kurum_id,
         category=tpl_category,
         active_only=True,
     ).first()
     if tpl and tpl.body:
-        body = resolve_variables(tpl.body, ctx)
-    elif tpl_category == CATEGORY_ODEME_GECIKME:
-        body = resolve_variables(
-            (
-                'Sayın {{veli_ad}},\n\n'
-                '{{ogrenci_ad}} için {{taksit_no}}. taksit ödemeniz gecikmiştir.\n'
-                'Vade: {{vade_tarihi}}, kalan: {{kalan_tutar}} TL, gecikme: {{gecikme_gunu}} gün.\n'
-                'Toplam gecikmiş: {{toplam_gecikmis_tutar}} TL.\n\n'
-                'Sözleşme No: {{sozlesme_no}}\n{{kurum_ad}}'
-            ),
-            ctx,
-        )
+        legacy_body = resolve_variables(tpl.body, ctx)
     else:
-        body = fallback_body
+        legacy_body = fallback_body
 
+    event_key = (
+        'odeme.gecikme' if tpl_category == CATEGORY_ODEME_GECIKME else 'odeme.hatirlatma'
+    )
+    attachment = NotificationAttachment()
     if with_pdf:
         from apps.communication.application.pdf_render_service import PdfRenderService
 
-        pdf_bytes = PdfRenderService.render_simple_text_pdf(
-            'Ödeme Hatırlatması',
-            body,
-        )
-        return send_document_to_veli(
-            kurum_id,
-            veli.id,
-            body,
-            category,
-            SOURCE_ODEME,
-            source_id,
-            file_bytes=pdf_bytes,
+        attachment = NotificationAttachment(
             filename=f'odeme-hatirlatma-{taksit_id}.pdf',
-            sent_by_user_id=sent_by_user_id,
+            file_bytes=PdfRenderService.render_simple_text_pdf(
+                'Ödeme Hatırlatması', legacy_body,
+            ),
         )
 
-    return send_text_to_veli(
+    return dispatch_event(
         kurum_id,
-        veli.id,
-        body,
-        category,
-        SOURCE_ODEME,
-        source_id,
+        event_key,
+        recipient=NotificationRecipient.veli(veli.id),
+        context=ctx,
+        attachment=attachment,
+        source=MessageSource(module=SOURCE_ODEME, ref_id=source_id),
+        sube_id=getattr(ogrenci, 'sube_id', None),
         sent_by_user_id=sent_by_user_id,
+        fallback_body=legacy_body,
     )
 
 
@@ -518,22 +806,16 @@ def notify_gorusme_reminder(
     koc_ad = str(gorusme.koc.teacher) if gorusme.koc_id else 'Koçunuz'
     tarih = gorusme.gorusme_tarihi.strftime('%d.%m.%Y')
     saat = gorusme.gorusme_saati.strftime('%H:%M') if gorusme.gorusme_saati else ''
-    saat_metni = f' saat {saat}' if saat else ''
     ogrenci_ad = f'{gorusme.ogrenci.ad} {gorusme.ogrenci.soyad}'.strip()
 
-    body_veli = (
-        f'Sayın velimiz,\n\n'
-        f'{ogrenci_ad} için {tarih}{saat_metni} tarihinde '
-        f'{koc_ad} ile planlanmış görüşme bulunmaktadır.\n'
-        f'Konu: {gorusme.konu}\n\n'
-        f'3K Kampüs'
-    )
-    body_ogrenci = (
-        f'Merhaba {gorusme.ogrenci.ad},\n\n'
-        f'{tarih}{saat_metni} tarihinde {koc_ad} ile görüşmeniz planlandı.\n'
-        f'Konu: {gorusme.konu}\n\n'
-        f'3K Kampüs'
-    )
+    base_context = {
+        'ogrenci_ad': ogrenci_ad,
+        'koc_ad': koc_ad,
+        'tarih': tarih,
+        'saat': saat,
+        'konu': gorusme.konu,
+    }
+    sube_id = getattr(gorusme.ogrenci, 'sube_id', None)
 
     results = {'veli': None, 'ogrenci': None}
 
@@ -548,13 +830,13 @@ def notify_gorusme_reminder(
         veli_source = f'{source_id}:veli:{veli.id}'
         if already_sent(kurum_id, SOURCE_GORUSME, veli_source, veli_id=veli.id):
             continue
-        results['veli'] = send_text_to_veli(
+        results['veli'] = dispatch_event(
             kurum_id,
-            veli.id,
-            body_veli,
-            'duyuru',
-            SOURCE_GORUSME,
-            veli_source,
+            'gorusme.hatirlatma',
+            recipient=NotificationRecipient.veli(veli.id),
+            context={**base_context, 'veli_ad': veli.tam_ad},
+            source=MessageSource(module=SOURCE_GORUSME, ref_id=veli_source),
+            sube_id=sube_id,
             sent_by_user_id=sent_by_user_id,
         )
         break
@@ -562,12 +844,13 @@ def notify_gorusme_reminder(
     if notify_student and not already_sent(
         kurum_id, SOURCE_GORUSME, f'{source_id}:ogrenci', ogrenci_id=gorusme.ogrenci_id,
     ):
-        results['ogrenci'] = send_text_to_ogrenci(
+        results['ogrenci'] = dispatch_event(
             kurum_id,
-            gorusme.ogrenci_id,
-            body_ogrenci,
-            SOURCE_GORUSME,
-            f'{source_id}:ogrenci',
+            'gorusme.hatirlatma',
+            recipient=NotificationRecipient.ogrenci(gorusme.ogrenci_id),
+            context=base_context,
+            source=MessageSource(module=SOURCE_GORUSME, ref_id=f'{source_id}:ogrenci'),
+            sube_id=sube_id,
             sent_by_user_id=sent_by_user_id,
         )
 
@@ -597,13 +880,6 @@ def notify_assignment(
     ogrenci_ad = f'{ogrenci.ad} {ogrenci.soyad}'.strip()
     teslim = assignment.due_date.strftime('%d.%m.%Y %H:%M') if assignment.due_date else ''
 
-    body = (
-        f'Sayın velimiz,\n\n'
-        f'{ogrenci_ad} için yeni ödev atandı: {assignment.title}\n'
-        f'Teslim tarihi: {teslim}\n\n'
-        f'3K Kampüs'
-    )
-
     from apps.ogrenci.domain.models import OgrenciVeli
 
     veliler = OgrenciVeli.objects.filter(ogrenci_id=ogrenci.id).exclude(telefon='')
@@ -613,13 +889,18 @@ def notify_assignment(
         veli_source = f'{source_id}:veli:{veli.id}'
         if already_sent(kurum_id, SOURCE_ODEV, veli_source, veli_id=veli.id):
             continue
-        return send_text_to_veli(
+        return dispatch_event(
             kurum_id,
-            veli.id,
-            body,
-            'duyuru',
-            SOURCE_ODEV,
-            veli_source,
+            'odev.atama',
+            recipient=NotificationRecipient.veli(veli.id),
+            context={
+                'ogrenci_ad': ogrenci_ad,
+                'veli_ad': veli.tam_ad,
+                'odev_baslik': assignment.title,
+                'teslim_tarihi': teslim,
+            },
+            source=MessageSource(module=SOURCE_ODEV, ref_id=veli_source),
+            sube_id=getattr(ogrenci, 'sube_id', None),
             sent_by_user_id=sent_by_user_id,
         )
 
@@ -706,13 +987,6 @@ def notify_exam_result(
     if not ogrenci_ids:
         return {'sent': 0, 'skipped': 0}
 
-    body = (
-        f'Sayın velimiz,\n\n'
-        f'"{exam.name}" sınav sonuçları yayınlandı.\n'
-        f'Öğrencinizin sonuçlarını koç panelinden veya kurumdan görüntüleyebilirsiniz.\n\n'
-        f'3K Kampüs'
-    )
-
     sent = 0
     skipped = 0
     veliler = OgrenciVeli.objects.filter(
@@ -732,13 +1006,15 @@ def notify_exam_result(
         if already_sent(kurum_id, SOURCE_SINAV, veli_source, veli_id=veli.id):
             skipped += 1
             continue
-        result = send_text_to_veli(
+        result = dispatch_event(
             kurum_id,
-            veli.id,
-            body,
-            'duyuru',
-            SOURCE_SINAV,
-            veli_source,
+            'sinav.sonuc',
+            recipient=NotificationRecipient.veli(veli.id),
+            context={
+                'veli_ad': veli.tam_ad,
+                'sinav_ad': exam.name,
+            },
+            source=MessageSource(module=SOURCE_SINAV, ref_id=veli_source),
             sent_by_user_id=sent_by_user_id,
         )
         if result and result.success:
@@ -769,14 +1045,6 @@ def notify_absence(
         tarih = absence_date.strftime('%d.%m.%Y')
 
     ogrenci_ad = f'{ogrenci.ad} {ogrenci.soyad}'.strip()
-    body = (
-        f'Sayın velimiz,\n\n'
-        f'{ogrenci_ad} {tarih} tarihinde devamsızlık kaydı oluşturulmuştur.'
-    )
-    if aciklama:
-        body += f'\nAçıklama: {aciklama}'
-    body += '\n\n3K Kampüs'
-
     source_id = f'{ogrenci_id}:{tarih}'
 
     veliler = OgrenciVeli.objects.filter(ogrenci_id=ogrenci_id).exclude(telefon='')
@@ -786,13 +1054,18 @@ def notify_absence(
         veli_source = f'{source_id}:veli:{veli.id}'
         if already_sent(kurum_id, SOURCE_DEVAMSIZLIK, veli_source, veli_id=veli.id):
             continue
-        return send_text_to_veli(
+        return dispatch_event(
             kurum_id,
-            veli.id,
-            body,
-            'devamsizlik',
-            SOURCE_DEVAMSIZLIK,
-            veli_source,
+            'devamsizlik.bildirim',
+            recipient=NotificationRecipient.veli(veli.id),
+            context={
+                'ogrenci_ad': ogrenci_ad,
+                'veli_ad': veli.tam_ad,
+                'tarih': tarih,
+                'aciklama': aciklama,
+            },
+            source=MessageSource(module=SOURCE_DEVAMSIZLIK, ref_id=veli_source),
+            sube_id=getattr(ogrenci, 'sube_id', None),
             sent_by_user_id=sent_by_user_id,
         )
 
@@ -806,6 +1079,8 @@ def notify_announcement(
     title: str = '',
     sent_by_user_id: int | None = None,
     audience_filter: dict | None = None,
+    template_name: str = '',
+    template_language: str = 'tr',
 ) -> SendResult | None:
     from apps.communication.application.campaign_service import CampaignService
 
@@ -818,6 +1093,8 @@ def notify_announcement(
             created_by_id=sent_by_user_id,
             title=title or 'Duyuru',
             body=body,
+            template_name=template_name,
+            template_language=template_language,
             audience_filter=filter_json,
         )
         service.confirm(campaign, sender_user_id=sent_by_user_id)

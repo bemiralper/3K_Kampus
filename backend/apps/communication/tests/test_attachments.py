@@ -5,7 +5,7 @@ import io
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.communication.application.campaign_service import CampaignService
@@ -73,6 +73,7 @@ class AttachmentUploadTest(TestCase):
         self.assertEqual(res.status_code, 400)
 
 
+@override_settings(COMMUNICATION_CAMPAIGN_REQUIRE_TEMPLATE=False)
 class CampaignWithAttachmentsTest(TestCase):
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='Camp Att', kod='CATT')

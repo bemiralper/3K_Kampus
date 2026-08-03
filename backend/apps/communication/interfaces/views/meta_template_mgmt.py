@@ -41,6 +41,7 @@ class MetaTemplateListCreateView(APIView):
             language=request.query_params.get('language') or None,
             search=request.query_params.get('search') or None,
             approved_only=request.query_params.get('approved_only') in ('1', 'true', 'True'),
+            usage=request.query_params.get('usage') or None,
         )
         return Response({
             'templates': WhatsAppMetaTemplateSerializer(qs, many=True).data,
@@ -75,6 +76,7 @@ class MetaTemplateListCreateView(APIView):
                 header_json=data.get('header_json') or {},
                 footer_text=data.get('footer_text') or '',
                 buttons_json=data.get('buttons_json') or [],
+                usage_scope=data.get('usage_scope'),
                 user=request.user,
             )
         except MetaTemplateServiceError as exc:
@@ -114,17 +116,21 @@ class MetaTemplateDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         data = ser.validated_data
-        try:
-            tpl = MetaTemplateService.update_draft(
-                tpl,
-                name=data.get('name'),
-                language=data.get('language'),
-                meta_category=data.get('meta_category'),
-                body_named=data.get('body_named'),
-                header_json=data.get('header_json'),
-                footer_text=data.get('footer_text'),
-                buttons_json=data.get('buttons_json'),
+        # Kullanım alanı Meta'ya gitmeyen yerel bir alan; onaylı şablonda da değişebilir.
+        if 'usage_scope' in request.data:
+            MetaTemplateService.set_usage_scope(tpl, data.get('usage_scope'))
+        editable = {
+            key: data.get(key)
+            for key in (
+                'name', 'language', 'meta_category', 'body_named',
+                'header_json', 'footer_text', 'buttons_json',
             )
+            if key in request.data
+        }
+        if not editable:
+            return Response(WhatsAppMetaTemplateSerializer(tpl).data)
+        try:
+            tpl = MetaTemplateService.update_draft(tpl, **editable)
         except MetaTemplateServiceError as exc:
             return _err(exc)
         return Response(WhatsAppMetaTemplateSerializer(tpl).data)

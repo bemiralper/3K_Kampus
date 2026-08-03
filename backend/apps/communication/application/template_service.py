@@ -44,7 +44,7 @@ class TemplateService:
                 qs = qs.filter(audience_scope__in=scopes)
             else:
                 qs = qs.none()
-        return qs.select_related('created_by').order_by('-updated_at')
+        return qs.select_related('created_by', 'meta_template').order_by('-updated_at')
 
     def get_template(self, kurum_id: int, template_id, *, sube_id: int | None = None) -> MessageTemplate | None:
         qs = MessageTemplate.objects.filter(
@@ -53,7 +53,7 @@ class TemplateService:
         )
         if sube_id is not None:
             qs = qs.filter(sube_id=sube_id)
-        return qs.select_related('created_by', 'sube').first()
+        return qs.select_related('created_by', 'sube', 'meta_template').first()
 
     def create(
         self,
@@ -67,6 +67,7 @@ class TemplateService:
         audience_scope: str = TemplateAudienceScope.GENEL,
         variables_json: list | None = None,
         attachment_ids_json: list | None = None,
+        meta_template_id=None,
     ) -> MessageTemplate:
         scope = audience_scope or TemplateAudienceScope.GENEL
         assert_can_write_template(user, scope)
@@ -85,9 +86,24 @@ class TemplateService:
             audience_scope=scope,
             variables_json=variables_json or [],
             attachment_ids_json=attachment_ids_json or [],
+            meta_template_id=self._validated_meta_template_id(kurum_id, meta_template_id),
             created_by=user,
             is_active=True,
         )
+
+    @staticmethod
+    def _validated_meta_template_id(kurum_id: int, meta_template_id):
+        """Meta karşılığı yalnızca aynı kurumun şablonlarından seçilebilir."""
+        if not meta_template_id:
+            return None
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+
+        exists = WhatsAppMetaTemplate.objects.filter(
+            id=meta_template_id, kurum_id=kurum_id,
+        ).exists()
+        if not exists:
+            raise ValidationError('Meta şablonu bulunamadı.')
+        return meta_template_id
 
     def update(
         self,
@@ -105,9 +121,14 @@ class TemplateService:
                 existing_slug=template.category,
                 sube_id=template.sube_id,
             )
+        if 'meta_template_id' in fields:
+            fields['meta_template_id'] = self._validated_meta_template_id(
+                template.kurum_id, fields['meta_template_id'],
+            )
         allowed = {
             'name', 'body', 'category', 'audience_scope',
             'variables_json', 'attachment_ids_json', 'is_active',
+            'meta_template_id',
         }
         for key, value in fields.items():
             if key in allowed:

@@ -138,6 +138,22 @@ class MetaTemplateCategory(models.TextChoices):
     AUTHENTICATION = 'AUTHENTICATION', 'Authentication'
 
 
+class NotificationSendMode(models.TextChoices):
+    """Bir bildirim olayı için gönderim davranışı."""
+    AUTO = 'AUTO', 'Otomatik (24 saat kuralına göre seç)'
+    META_ONLY = 'META_ONLY', 'Her zaman Meta şablonu'
+    FREEFORM_ONLY = 'FREEFORM_ONLY', 'Yalnızca serbest mesaj'
+    DISABLED = 'DISABLED', 'Kapalı (gönderme)'
+
+
+class MetaTemplateUsage(models.TextChoices):
+    """Meta şablonunun hangi ekranlarda seçilebileceği."""
+    ALL = 'ALL', 'Her yerde'
+    SYSTEM = 'SYSTEM', 'Otomatik bildirimler'
+    PERSONAL = 'PERSONAL', 'Sohbet — kişisel mesaj'
+    CAMPAIGN = 'CAMPAIGN', 'Toplu duyuru'
+
+
 class MetaTemplateStatus(models.TextChoices):
     DRAFT = 'DRAFT', 'Taslak'
     SUBMITTED = 'SUBMITTED', 'Meta\'ya Gönderildi'
