@@ -109,6 +109,32 @@ class ContactResolverTest(TestCase):
         self.assertEqual(resolved.contact_type, 'VELI')
         self.assertIsNotNone(resolved.identity)
 
+    def test_resolve_prefers_varsayilan_veli_for_shared_phone(self):
+        other = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Kardeş', soyad='Ogr', aktif_mi=True,
+        )
+        non_default = OgrenciVeli.objects.create(
+            ogrenci=other,
+            veli_turu='anne',
+            ad='Ayşe',
+            soyad='Veli',
+            telefon='05327776655',
+            varsayilan=False,
+        )
+        preferred = OgrenciVeli.objects.create(
+            ogrenci=self.student,
+            veli_turu='anne',
+            ad='Ayşe',
+            soyad='Veli',
+            telefon='05327776655',
+            varsayilan=True,
+        )
+        ContactResolver.invalidate_kurum_lookup_maps(self.kurum.id)
+        resolved = ContactResolver.resolve_contact(self.kurum.id, '05327776655')
+        self.assertEqual(resolved.veli_id, preferred.id)
+        self.assertEqual(resolved.ogrenci_id, self.student.id)
+        self.assertNotEqual(resolved.veli_id, non_default.id)
+
     def test_resolve_refreshes_stale_identity(self):
         from apps.communication.domain.models import ContactIdentity
 

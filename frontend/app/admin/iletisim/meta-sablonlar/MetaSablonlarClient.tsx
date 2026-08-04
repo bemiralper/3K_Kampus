@@ -65,6 +65,10 @@ const HEADER_MEDIA_LABEL: Record<string, string> = {
 };
 
 const VAR_TOKEN = /\{\{\s*\w+\s*\}\}/;
+const HEADER_FORMAT_CHARS = /[*_~`]/;
+/** Meta başlık: emoji / ifade simgesi (BMP dışı + yaygın semboller). */
+const HEADER_EMOJI =
+  /[\u{1F300}-\u{1FAFF}\u{2700}-\u{27BF}\u{2600}-\u{26FF}\u{1F1E0}-\u{1F1FF}]/u;
 
 const templateContentIssues = (
   body: string,
@@ -73,35 +77,59 @@ const templateContentIssues = (
 ): string[] => {
   const issues: string[] = [];
   const text = (body || "").trim();
-  if (!text) return issues;
+  if (text) {
+    const tokens = Array.from(text.matchAll(new RegExp(VAR_TOKEN, "g")));
+    const last = tokens[tokens.length - 1];
+    if (text.search(VAR_TOKEN) === 0) {
+      issues.push(
+        'Mesaj bir değişkenle başlayamaz. Başına sabit metin ekleyin — örn. "Sayın {{veli_ad}}, …".',
+      );
+    }
+    if (last && (last.index ?? 0) + last[0].length === text.length) {
+      issues.push(
+        'Mesaj bir değişkenle bitemez. Sonuna sabit metin ekleyin — örn. "… bilgilerinize sunulur.".',
+      );
+    }
+    if (/\}\}\s*\{\{/.test(text)) {
+      issues.push("İki değişken yan yana olamaz; aralarına açıklayıcı metin ekleyin.");
+    }
+    if (text.length > 1024) {
+      issues.push(`Mesaj gövdesi en fazla 1024 karakter olabilir (şu an ${text.length}).`);
+    }
+  }
 
-  const tokens = Array.from(text.matchAll(new RegExp(VAR_TOKEN, "g")));
-  const last = tokens[tokens.length - 1];
-  if (text.search(VAR_TOKEN) === 0) {
-    issues.push(
-      'Mesaj bir değişkenle başlayamaz. Başına sabit metin ekleyin — örn. "Sayın {{veli_ad}}, …".',
-    );
+  const headerRaw = (header?.type || "").toUpperCase() === "TEXT" ? header?.text || "" : "";
+  const headerText = headerRaw.trim();
+  if ((header?.type || "").toUpperCase() === "TEXT" && !headerText) {
+    issues.push('Başlık türü "Metin" seçildi ancak başlık metni boş.');
   }
-  if (last && (last.index ?? 0) + last[0].length === text.length) {
-    issues.push(
-      'Mesaj bir değişkenle bitemez. Sonuna sabit metin ekleyin — örn. "… bilgilerinize sunulur.".',
-    );
-  }
-  if (/\}\}\s*\{\{/.test(text)) {
-    issues.push("İki değişken yan yana olamaz; aralarına açıklayıcı metin ekleyin.");
-  }
-  if (text.length > 1024) {
-    issues.push(`Mesaj gövdesi en fazla 1024 karakter olabilir (şu an ${text.length}).`);
-  }
-
-  const headerText = ((header?.type || "").toUpperCase() === "TEXT" ? header?.text || "" : "").trim();
   if (headerText) {
-    const headerTokens = headerText.match(new RegExp(VAR_TOKEN, "g")) || [];
+    if (/\r|\n/.test(headerRaw)) {
+      issues.push("Başlık metninde yeni satır kullanılamaz. Tek satır yazın.");
+    }
+    if (HEADER_FORMAT_CHARS.test(headerText)) {
+      issues.push(
+        "Başlık metninde yıldız (*) veya biçimlendirme (*kalın*, _italik_, ~üstü çizili~, `kod`) kullanılamaz.",
+      );
+    }
+    if (HEADER_EMOJI.test(headerText)) {
+      issues.push("Başlık metninde emoji / ifade simgesi kullanılamaz.");
+    }
+    const headerTokens = Array.from(headerText.matchAll(new RegExp(VAR_TOKEN, "g")));
     if (headerTokens.length > 1) {
       issues.push("Başlık metninde en fazla bir değişken kullanılabilir.");
     }
     if (headerText.length > 60) {
       issues.push("Başlık metni en fazla 60 karakter olabilir.");
+    }
+    const headerLast = headerTokens[headerTokens.length - 1];
+    const headerStartsVar = headerText.search(VAR_TOKEN) === 0;
+    const headerEndsVar = !!(
+      headerLast
+      && (headerLast.index ?? 0) + headerLast[0].length === headerText.length
+    );
+    if (headerStartsVar || headerEndsVar) {
+      issues.push("Başlık metni değişkenle başlayamaz veya bitemez; sabit metinle çevreleyin.");
     }
   }
   if (footer && VAR_TOKEN.test(footer)) {
@@ -994,9 +1022,24 @@ export default function MetaSablonlarClient() {
                                 header: { ...f.header, text: e.target.value },
                               }))}
                             />
+                            <p className="tplx-field-hint">
+                              Yeni satır, emoji, yıldız (*) ve biçimlendirme (* _ ~ `) kullanılamaz.
+                            </p>
                           </div>
                         )}
                       </div>
+                      {contentIssues.some((i) => i.toLocaleLowerCase("tr").includes("başlık")) && (
+                        <div className="comm-alert comm-alert-warning" style={{ marginTop: "0.5rem" }}>
+                          <strong>Başlık Meta kurallarına uymuyor:</strong>
+                          <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem" }}>
+                            {contentIssues
+                              .filter((i) => i.toLocaleLowerCase("tr").includes("başlık"))
+                              .map((issue) => (
+                                <li key={issue}>{issue}</li>
+                              ))}
+                          </ul>
+                        </div>
+                      )}
 
                       {["IMAGE", "VIDEO", "DOCUMENT"].includes(form.header.type || "") && !locked && (
                         <div className="tplx-field">

@@ -185,19 +185,34 @@ class ContactResolver:
         from apps.personel.domain.models import Personel
 
         veli_map: dict[str, dict] = {}
-        for veli_id, ogrenci_id, ad, soyad, telefon in (
+        # Varsayılan veli önce — aynı telefon birden fazla çocukta varsa önce o bağlanır.
+        for veli_id, ogrenci_id, ad, soyad, telefon, telefonlar in (
             OgrenciVeli.objects.filter(ogrenci__kurum_id=kurum_id)
-            .exclude(telefon='')
-            .order_by('id')
-            .values_list('id', 'ogrenci_id', 'ad', 'soyad', 'telefon')
+            .order_by('-varsayilan', 'id')
+            .values_list('id', 'ogrenci_id', 'ad', 'soyad', 'telefon', 'telefonlar')
         ):
-            suffix = cls._phone_suffix(telefon)
-            if suffix and suffix not in veli_map:
-                veli_map[suffix] = {
-                    'veli_id': veli_id,
-                    'ogrenci_id': ogrenci_id,
-                    'display_name': f'{ad} {soyad}'.strip(),
-                }
+            phones = [telefon] if telefon else []
+            if isinstance(telefonlar, list):
+                for item in telefonlar:
+                    if isinstance(item, dict) and item.get('numara'):
+                        phones.append(item['numara'])
+                    elif isinstance(item, str) and item.strip():
+                        phones.append(item)
+            for phone in phones:
+                suffix = cls._phone_suffix(phone)
+                if not suffix:
+                    continue
+                if suffix not in veli_map:
+                    veli_map[suffix] = {
+                        'veli_id': veli_id,
+                        'ogrenci_id': ogrenci_id,
+                        'display_name': f'{ad} {soyad}'.strip(),
+                        'sibling_ogrenci_ids': [ogrenci_id] if ogrenci_id else [],
+                    }
+                elif ogrenci_id:
+                    siblings = veli_map[suffix].setdefault('sibling_ogrenci_ids', [])
+                    if ogrenci_id not in siblings:
+                        siblings.append(ogrenci_id)
 
         ogrenci_map: dict[str, dict] = {}
         for ogrenci_id, ad, soyad, telefon in (

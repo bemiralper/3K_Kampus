@@ -103,9 +103,12 @@ def filter_conversations_for_user(
     coach_profile = get_coach_profile(user)
     if coach_profile:
         from apps.communication.domain.enums import CommunicationDepartment
+        allowed = scoped_student_ids(user) or set()
+        scoped_students_q = Q(ogrenci_id__in=allowed) if allowed else Q(pk__in=[])
         visibility = (
             Q(assigned_coach=coach_profile)
             | Q(claimed_by_user=user)
+            | scoped_students_q
             | (
                 Q(claimed_by_user__isnull=True)
                 & Q(department=CommunicationDepartment.COACHING)
@@ -125,12 +128,17 @@ def filter_conversations_for_user(
                     Q(claimed_by_user__isnull=True)
                     | Q(claimed_by_user=user)
                     | Q(assigned_coach=coach_profile)
+                    | scoped_students_q
                 )
             )
         )
-        # Başkasının claim ettiği ama kendi öğrencisi olan sohbetler: assigned_coach ile zaten görünür
-        # Başkasının claim ettiği ve kendi öğrencisi olmayan: visibility dışında
-        other_claim_block = Q(claimed_by_user__isnull=False) & ~Q(claimed_by_user=user) & ~Q(assigned_coach=coach_profile)
+        # Başkasının claim ettiği ama kendi öğrencisi / ataması olan sohbetler görünür kalır.
+        other_claim_block = (
+            Q(claimed_by_user__isnull=False)
+            & ~Q(claimed_by_user=user)
+            & ~Q(assigned_coach=coach_profile)
+            & ~scoped_students_q
+        )
         qs = qs.filter(visibility).exclude(other_claim_block)
         qs = _apply_inbox_filter(qs, inbox, coach_profile=coach_profile, user=user, is_admin=False)
         return filter_by_accessible_whatsapp_accounts(
@@ -303,6 +311,10 @@ def user_can_access_conversation(user, conversation) -> bool:
             return True
         if conversation.claimed_by_user_id == user.id:
             return True
+        allowed = scoped_student_ids(user) or set()
+        # Yardımcı koç: atandığı öğrencinin sohbetlerini görür (primary olmasa da)
+        if conversation.ogrenci_id and conversation.ogrenci_id in allowed:
+            return True
         # Yeni gelenler / unclaimed queue
         if (
             not conversation.claimed_by_user_id
@@ -313,9 +325,9 @@ def user_can_access_conversation(user, conversation) -> bool:
         if conversation.status == ConversationStatus.NEEDS_SUPPORT and (
             not conversation.claimed_by_user_id
             or conversation.claimed_by_user_id == user.id
+            or (conversation.ogrenci_id and conversation.ogrenci_id in allowed)
         ):
             return True
-        # Başka biri claim etmişse hayır (kendi öğrencisi değilse yukarıda assigned ile döndü)
         return False
 
     if _has_staff_messaging_access(user):

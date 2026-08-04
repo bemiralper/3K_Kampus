@@ -27,6 +27,29 @@ def _coach_user_id(conversation) -> int | None:
     return int(user_id) if user_id else None
 
 
+def _assigned_coach_user_ids_for_student(ogrenci_id: int | None) -> list[int]:
+    """Primary + yardımcı koçların user id'leri."""
+    if not ogrenci_id:
+        return []
+    try:
+        from apps.coaching.models import CoachStudentAssignment
+
+        rows = (
+            CoachStudentAssignment.objects.filter(
+                student_id=ogrenci_id,
+                end_date__isnull=True,
+                coach__is_active=True,
+                coach__is_coach=True,
+            )
+            .select_related('coach__teacher')
+            .values_list('coach__teacher__user_id', flat=True)
+        )
+        return [int(uid) for uid in rows if uid]
+    except Exception:
+        logger.exception('whatsapp notify: secondary coach resolve failed')
+        return []
+
+
 def _manage_user_ids(kurum_id: int) -> list[int]:
     """communication.manage / write yetkili kullanıcılar (üst sınırlı)."""
     try:
@@ -77,9 +100,30 @@ def resolve_whatsapp_notify_user_ids(conversation) -> list[int]:
     coach_uid = _coach_user_id(conversation)
     if coach_uid:
         ids.add(coach_uid)
+    ids.update(_assigned_coach_user_ids_for_student(conversation.ogrenci_id))
     if not ids:
         ids.update(_manage_user_ids(conversation.kurum_id))
     return sorted(ids)
+
+
+def _inbox_url_for_user(user, conversation_id) -> str:
+    """
+    Koç profili olan ve communication.manage olmayan kullanıcı → /coach/...
+    Diğerleri → /admin/...
+    """
+    try:
+        from apps.coaching.services.coach_access import get_coach_profile
+        from shared.permissions import user_has_any_permission
+
+        if (
+            get_coach_profile(user)
+            and not getattr(user, 'is_superuser', False)
+            and not user_has_any_permission(user, 'communication.manage')
+        ):
+            return f'/coach/mesajlar?conversation={conversation_id}'
+    except Exception:
+        logger.exception('whatsapp notify: inbox url resolve failed user=%s', getattr(user, 'id', None))
+    return f'/admin/iletisim/mesajlar?conversation={conversation_id}'
 
 
 def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
@@ -94,10 +138,26 @@ def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
 
     name = resolve_conversation_display_name(conversation, allow_live_lookup=True)
     body = (preview or conversation.last_message_preview or 'Yeni mesaj')[:200]
-    url = f'/admin/iletisim/mesajlar?conversation={conversation.id}'
     repo = AppNotificationRepository()
     created = 0
+
+    try:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        users_by_id = {
+            u.id: u
+            for u in User.objects.filter(id__in=user_ids, is_active=True)
+        }
+    except Exception:
+        users_by_id = {}
+
     for user_id in user_ids:
+        user = users_by_id.get(user_id)
+        url = (
+            _inbox_url_for_user(user, conversation.id)
+            if user is not None
+            else f'/admin/iletisim/mesajlar?conversation={conversation.id}'
+        )
         try:
             repo.create({
                 'kurum_id': conversation.kurum_id,

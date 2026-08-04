@@ -236,6 +236,30 @@ export default function RecipientPickerPanel({
     emit({ ogrenci_ids: Array.from(nextO), veli_ids: Array.from(nextV) });
   };
 
+  /** Veli satırından bağlı öğrenciyi de seçime ekle. */
+  const selectParentWithStudent = (hit: BulkRecipientHit) => {
+    if (hit.kind !== "veli" || !hit.ogrenci_id) return;
+    const nextO = new Set(ogrenciIds);
+    const nextV = new Set(veliIds);
+    nextV.add(hit.id);
+    nextO.add(hit.ogrenci_id);
+    rememberChip({
+      key: `v-${hit.id}`,
+      kind: "veli",
+      id: hit.id,
+      label: hit.label,
+      meta: hit.meta || "Veli",
+    });
+    rememberChip({
+      key: `o-${hit.ogrenci_id}`,
+      kind: "ogrenci",
+      id: hit.ogrenci_id,
+      label: hit.ogrenci_name || `Öğrenci #${hit.ogrenci_id}`,
+      meta: "Öğrenci",
+    });
+    emit({ ogrenci_ids: Array.from(nextO), veli_ids: Array.from(nextV) });
+  };
+
   const toggleVeliRow = (studentLabel: string, veli: VeliRow, checked: boolean) => {
     const nextV = new Set(veliIds);
     if (checked) {
@@ -306,8 +330,8 @@ export default function RecipientPickerPanel({
           <h3 className="comm-recipient-picker-title">Kişi ara ve seç</h3>
           <p className="comm-recipient-picker-sub">
             {allowPersonel
-              ? "Öğrenci, veli veya personel arayın; istediğinizi ekleyin."
-              : "Öğrenci veya veli arayın; istediğinizi ekleyin."}
+              ? "Öğrenci veya veli arayınca ilişkili kişiler birlikte listelenir."
+              : "Öğrenci arayınca velisi, veli arayınca öğrencisi birlikte çıkar."}
           </p>
         </div>
         {chips.length > 0 && (
@@ -413,6 +437,17 @@ export default function RecipientPickerPanel({
                               aria-expanded={expanded}
                             >
                               {expanded ? "▲" : "▼"}
+                            </button>
+                          </div>
+                        )}
+                        {hit.kind === "veli" && hit.ogrenci_id && (
+                          <div className="comm-recipient-hit-actions">
+                            <button
+                              type="button"
+                              className="comm-btn-secondary comm-recipient-pick-all"
+                              onClick={() => selectParentWithStudent(hit)}
+                            >
+                              + Öğrenci
                             </button>
                           </div>
                         )}

@@ -28,7 +28,8 @@ APP_ID_CACHE_TTL = 60 * 60 * 24
 META_ERROR_HINTS = {
     100: (
         'Geçersiz parametre — şablon değişken sayısı/adı, dil kodu (tr/tr_TR), '
-        'DOCUMENT header medyası veya boş body değeri kontrol edin.'
+        'başlıkta yeni satır/emoji/yıldız, DOCUMENT header medyası veya boş body '
+        'değerini kontrol edin.'
     ),
     130429: 'Meta rate limit — gönderimi yavaşlatın.',
     132012: 'Şablon bileşen formatı uyuşmuyor — DOCUMENT header bekleniyorsa PDF ekleyin.',
@@ -57,6 +58,21 @@ META_MESSAGE_HINTS = (
     (
         'invalid parameter format',
         'Şablon değişken sayısı/sırası gönderilen parametrelerle uyuşmuyor.',
+    ),
+    (
+        'newlines, formatting characters, emojis or asterisks',
+        'Başlık metninde yeni satır, emoji, yıldız (*) veya biçimlendirme '
+        '(*kalın* _italik_) kullanılamaz. Düz tek satır yazın.',
+    ),
+    (
+        'yeni satırlar, biçimlendirme karakterleri, ifade simgeleri veya yıldız',
+        'Başlık metninde yeni satır, emoji, yıldız (*) veya biçimlendirme '
+        'karakterleri kullanılamaz. Düz tek satır yazın.',
+    ),
+    (
+        'formatting characters, emojis or asterisks',
+        'Başlık metninde yeni satır, emoji, yıldız (*) veya biçimlendirme '
+        'karakterleri kullanılamaz. Düz tek satır yazın.',
     ),
 )
 

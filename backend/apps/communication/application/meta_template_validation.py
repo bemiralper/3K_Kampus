@@ -11,6 +11,19 @@ from typing import Any
 
 VAR_TOKEN_RE = re.compile(r'\{\{\s*\w+\s*\}\}')
 ADJACENT_VARS_RE = re.compile(r'\}\}\s*\{\{')
+# WhatsApp başlık metni: * _ ~ ` ve emoji / sembol yasak (#100 Invalid parameter).
+HEADER_FORMAT_CHARS_RE = re.compile(r'[*_~`]')
+# Geniş emoji / pictograph aralığı (başlıkta "ifade simgesi" reddi).
+EMOJI_RE = re.compile(
+    '['
+    '\U0001F300-\U0001FAFF'  # symbols & pictographs + extensions
+    '\U00002700-\U000027BF'  # dingbats
+    '\U00002600-\U000026FF'  # misc symbols
+    '\U0001F1E0-\U0001F1FF'  # flags
+    '\U0000FE00-\U0000FE0F'  # variation selectors
+    '\U0000200D'             # ZWJ
+    ']+',
+)
 
 BODY_MAX_LENGTH = 1024
 HEADER_TEXT_MAX_LENGTH = 60
@@ -62,9 +75,23 @@ def validate_header(header_json: dict[str, Any] | None) -> list[str]:
         return []
 
     errors: list[str] = []
-    text = (header.get('text') or '').strip()
+    raw = header.get('text') or ''
+    text = raw.strip()
     if not text:
         return ['Başlık türü "Metin" seçildi ancak başlık metni boş.']
+    if '\n' in raw or '\r' in raw:
+        errors.append(
+            'Başlık metninde yeni satır kullanılamaz (Meta kuralı). Tek satır yazın.',
+        )
+    if HEADER_FORMAT_CHARS_RE.search(text):
+        errors.append(
+            'Başlık metninde yıldız (*) veya biçimlendirme karakterleri '
+            '(*kalın*, _italik_, ~üstü çizili~, `kod`) kullanılamaz.',
+        )
+    if EMOJI_RE.search(text):
+        errors.append(
+            'Başlık metninde emoji / ifade simgesi kullanılamaz (Meta kuralı).',
+        )
     if len(text) > HEADER_TEXT_MAX_LENGTH:
         errors.append(
             f'Başlık metni en fazla {HEADER_TEXT_MAX_LENGTH} karakter olabilir '

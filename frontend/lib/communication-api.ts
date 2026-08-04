@@ -172,6 +172,8 @@ export interface ConversationListItem {
   contact_name?: string;
   veli_ad?: string;
   ogrenci_ad?: string;
+  /** Veli sohbetinde bağlı öğrenci adları (çok çocuklu ailelerde birden fazla). */
+  ogrenci_adlari?: string[];
   kurum_ad?: string;
   sube?: string;
   profil_foto?: string | null;
@@ -1093,6 +1095,26 @@ export async function openConversationByPhone(
 export function conversationInboxPath(conversationId: string, admin = false): string {
   const base = admin ? '/admin/iletisim/mesajlar' : '/coach/mesajlar';
   return `${base}?conversation=${conversationId}`;
+}
+
+/** Veli sohbetinde "… velisi" alt satırı; öğrenci sohbetinde veli adı (varsa). */
+export function conversationRelationLabel(conv: {
+  contact_type?: string;
+  ogrenci_ad?: string;
+  ogrenci_adlari?: string[];
+  veli_ad?: string;
+}): string {
+  const students = (conv.ogrenci_adlari && conv.ogrenci_adlari.length > 0)
+    ? conv.ogrenci_adlari
+    : (conv.ogrenci_ad ? conv.ogrenci_ad.split(',').map((s) => s.trim()).filter(Boolean) : []);
+  if (conv.contact_type === 'VELI' && students.length > 0) {
+    if (students.length === 1) return `${students[0]} velisi`;
+    return `${students.join(', ')} velisi`;
+  }
+  if (conv.contact_type === 'OGRENCI' && conv.veli_ad) {
+    return `Veli: ${conv.veli_ad}`;
+  }
+  return '';
 }
 
 export async function sendPaymentReminder(

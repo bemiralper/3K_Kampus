@@ -107,6 +107,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
     contact_name = serializers.SerializerMethodField()
     veli_ad = serializers.SerializerMethodField()
     ogrenci_ad = serializers.SerializerMethodField()
+    ogrenci_adlari = serializers.SerializerMethodField()
     kurum_ad = serializers.SerializerMethodField()
     sube = serializers.SerializerMethodField()
 
@@ -125,7 +126,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'channel', 'channel_config_id', 'channel_config_name',
             'contact_phone', 'contact_type', 'contact_name',
-            'veli_ad', 'ogrenci_ad', 'kurum_ad', 'sube', 'profil_foto',
+            'veli_ad', 'ogrenci_ad', 'ogrenci_adlari', 'kurum_ad', 'sube', 'profil_foto',
             'status', 'subject', 'department',
             'last_message_at', 'last_message_preview',
             'unread_count_coach', 'ogrenci_id', 'veli_id',
@@ -228,7 +229,16 @@ class ConversationListSerializer(serializers.ModelSerializer):
             return obj.veli.tam_ad
         return ''
 
+    def get_ogrenci_adlari(self, obj) -> list:
+        from apps.communication.application.conversation_display import (
+            linked_student_names_for_conversation,
+        )
+        return linked_student_names_for_conversation(obj)
+
     def get_ogrenci_ad(self, obj) -> str:
+        names = self.get_ogrenci_adlari(obj)
+        if names:
+            return ', '.join(names)
         if obj.ogrenci_id and obj.ogrenci:
             return f'{obj.ogrenci.ad} {obj.ogrenci.soyad}'.strip()
         return ''

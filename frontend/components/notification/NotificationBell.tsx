@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   fetchNotificationSummary, markNotificationRead, markAllNotificationsRead,
   type AppNotification,
 } from '@/lib/takvim-api';
 import {
+  conversationInboxPath,
   fetchNotificationSummary as fetchWhatsAppNotificationSummary,
   markConversationRead,
 } from '@/lib/communication-api';
@@ -13,7 +15,10 @@ import {
   playNotificationSound,
   unlockNotificationAudio,
   bindNotificationAudioUnlock,
+  isNotificationSoundMuted,
+  toggleNotificationSoundMuted,
 } from '@/lib/notification-sound';
+import { useCommunicationSSE } from '@/hooks/useCommunicationSSE';
 
 /* ════════════════════════════════════════════
    🔔 BİLDİRİM ÇANI (Header Badge + Dropdown)
@@ -22,7 +27,7 @@ import {
 interface Props {
   /**
    * Polling aralığı (ms). Varsayılan 8 sn.
-   * SSE yalnızca sohbet ekranında açılır (gunicorn worker kilidi); çan polling + event dinler.
+   * SSE uygulama genelinde (çan üzerinden) açılır; yoklama yedek kalır.
    */
   pollInterval?: number;
 }
@@ -43,11 +48,30 @@ function extractConversationId(n: AppNotification): string | null {
   }
 }
 
+function rewriteInboxUrl(url: string | null | undefined, adminInbox: boolean): string | null {
+  if (!url) return null;
+  const convId = (() => {
+    try {
+      const u = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://local');
+      return u.searchParams.get('conversation');
+    } catch {
+      const m = url.match(/[?&]conversation=([^&]+)/);
+      return m?.[1] ? decodeURIComponent(m[1]) : null;
+    }
+  })();
+  if (!convId) return url;
+  if (!/\/(admin\/iletisim\/mesajlar|coach\/mesajlar)/.test(url)) return url;
+  return conversationInboxPath(convId, adminInbox);
+}
+
 export default function NotificationBell({ pollInterval = 8000 }: Props) {
+  const pathname = usePathname() || '';
+  const adminInbox = !pathname.startsWith('/coach');
   const [unreadCount, setUnreadCount] = useState(0);
   const [recent, setRecent] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [soundMuted, setSoundMuted] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const knownKeysRef = useRef<Set<string>>(new Set());
@@ -67,7 +91,7 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
       mesaj: c.last_message_preview || 'Yeni mesaj',
       ikon: '💬',
       renk: '#25D366',
-      url: `/admin/iletisim/mesajlar?conversation=${c.id}`,
+      url: conversationInboxPath(c.id, adminInbox),
       event_id: null,
       is_read: false,
       read_at: null,
@@ -79,7 +103,12 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     const baseRecent = res.success && res.data ? (res.data.recent || []) : [];
     // Aynı sohbet için hem WA kartı hem AppNotification varsa tek satır göster
     const waUrls = new Set(waItems.map((n) => n.url).filter(Boolean));
-    const filteredBase = baseRecent.filter((n) => !(n.url && waUrls.has(n.url)));
+    const filteredBase = baseRecent
+      .map((n) => {
+        const rewritten = rewriteInboxUrl(n.url, adminInbox);
+        return rewritten && rewritten !== n.url ? { ...n, url: rewritten } : n;
+      })
+      .filter((n) => !(n.url && waUrls.has(n.url)));
     const merged = [...waItems, ...filteredBase].slice(0, 15);
 
     const unreadKeys = merged.filter((n) => !n.is_read).map(notifFingerprint);
@@ -95,10 +124,30 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
 
     const takvimUnread = res.success && res.data ? (res.data.unread_count || 0) : 0;
     const waDupInTakvim = baseRecent.filter(
-      (n) => !n.is_read && n.url && waUrls.has(n.url),
+      (n) => !n.is_read && n.url && (
+        waUrls.has(n.url) || waUrls.has(rewriteInboxUrl(n.url, adminInbox) || '')
+      ),
     ).length;
     setUnreadCount(Math.max(0, takvimUnread - waDupInTakvim) + (waUnread || 0));
     setRecent(merged);
+  }, [adminInbox]);
+
+  // Uygulama genelinde tek SSE — Mesajlar sayfası açık olmasa da anlık yenileme
+  useCommunicationSSE({
+    enabled: true,
+    onUpdate: () => { void load(); },
+    onFallbackPoll: () => { void load(); },
+  });
+
+  useEffect(() => {
+    setSoundMuted(isNotificationSoundMuted());
+    const onMute = (e: Event) => {
+      const detail = (e as CustomEvent<{ muted?: boolean }>).detail;
+      if (typeof detail?.muted === 'boolean') setSoundMuted(detail.muted);
+      else setSoundMuted(isNotificationSoundMuted());
+    };
+    window.addEventListener('lms:notification-sound-muted', onMute);
+    return () => window.removeEventListener('lms:notification-sound-muted', onMute);
   }, []);
 
   useEffect(() => {
@@ -176,8 +225,9 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     }
     await Promise.allSettled(tasks);
 
-    if (n.url) {
-      window.location.href = n.url;
+    const target = rewriteInboxUrl(n.url, adminInbox) || n.url;
+    if (target) {
+      window.location.href = target;
     }
   };
 
@@ -236,6 +286,7 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '14px 16px', borderBottom: '1px solid #f3f4f6',
+            gap: 8,
           }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>
               🔔 Bildirimler
@@ -248,20 +299,36 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
                 </span>
               )}
             </span>
-            {unreadCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
                 type="button"
-                onClick={handleMarkAllRead}
-                disabled={loading}
+                onClick={() => {
+                  unlockNotificationAudio();
+                  setSoundMuted(toggleNotificationSoundMuted());
+                }}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 12, color: '#4F46E5', fontWeight: 500,
-                  opacity: loading ? 0.5 : 1,
+                  fontSize: 12, color: '#6B7280', fontWeight: 500,
                 }}
+                title={soundMuted ? 'Sesi aç' : 'Sesi kapat'}
               >
-                Tümünü oku
+                {soundMuted ? '🔇 Sessiz' : '🔊 Ses'}
               </button>
-            )}
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  disabled={loading}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 12, color: '#4F46E5', fontWeight: 500,
+                    opacity: loading ? 0.5 : 1,
+                  }}
+                >
+                  Tümünü oku
+                </button>
+              )}
+            </div>
           </div>
 
           <div style={{ maxHeight: 380, overflowY: 'auto' }}>

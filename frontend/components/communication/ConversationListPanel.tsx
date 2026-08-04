@@ -5,6 +5,7 @@ import {
   ConversationFilter,
   ConversationListItem,
   ConversationPeriod,
+  conversationRelationLabel,
   formatMessageTime,
 } from "@/lib/communication-api";
 
@@ -146,6 +147,7 @@ export default function ConversationListPanel({
           <ul className="comm-inbox-list" role="list">
             {conversations.map((conv) => {
               const displayName = conv.contact_name || conv.contact_phone;
+              const relation = conversationRelationLabel(conv);
               const badge = statusLabel(conv);
               const wait = formatWait(conv.sla?.waiting_seconds);
               return (
@@ -173,6 +175,9 @@ export default function ConversationListPanel({
                           {formatMessageTime(conv.last_message_at)}
                         </span>
                       </div>
+                      {relation && (
+                        <div className="comm-inbox-relation">{relation}</div>
+                      )}
                       <div className="comm-inbox-row">
                         <span className="comm-inbox-preview">
                           {conv.last_message_preview || "—"}

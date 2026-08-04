@@ -81,7 +81,7 @@ export default function TemplateEditorPanel({
     fetchLocalMetaTemplates({ approved_only: true })
       .then((res) => setMetaTemplates(res.templates || []))
       .catch(() => setMetaTemplates([]));
-    fetchWhatsAppAccounts({ active_only: true })
+    fetchWhatsAppAccounts({ activeOnly: true })
       .then((res) => setAccounts(res.accounts || []))
       .catch(() => setAccounts([]));
   }, []);

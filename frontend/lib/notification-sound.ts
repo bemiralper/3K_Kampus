@@ -1,4 +1,7 @@
 /** Yeni bildirim geldiğinde kısa çift bip sesi (harici dosya gerekmez). */
+
+const MUTE_STORAGE_KEY = '3k_notification_sound_muted';
+
 let audioCtx: AudioContext | null = null;
 let unlockBound = false;
 
@@ -10,6 +13,31 @@ function getAudioContext(): AudioContext | null {
     audioCtx = new Ctx();
   }
   return audioCtx;
+}
+
+export function isNotificationSoundMuted(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(MUTE_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setNotificationSoundMuted(muted: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(MUTE_STORAGE_KEY, muted ? '1' : '0');
+    window.dispatchEvent(new CustomEvent('lms:notification-sound-muted', { detail: { muted } }));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function toggleNotificationSoundMuted(): boolean {
+  const next = !isNotificationSoundMuted();
+  setNotificationSoundMuted(next);
+  return next;
 }
 
 /** Tarayıcı autoplay kilidini açmak için ilk kullanıcı etkileşiminde çağırın. */
@@ -53,6 +81,7 @@ function playTone(ctx: AudioContext, frequency: number, startAt: number, duratio
 }
 
 export function playNotificationSound() {
+  if (isNotificationSoundMuted()) return;
   try {
     const ctx = getAudioContext();
     if (!ctx) return;

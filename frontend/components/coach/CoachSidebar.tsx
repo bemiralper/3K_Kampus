@@ -52,22 +52,30 @@ export default function CoachSidebar({
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
 
   useEffect(() => {
+    const refreshMesajlar = () => {
+      fetchNotificationSummary()
+        .then((data) => setMesajlarBadge(data.unread_count ?? 0))
+        .catch(() => setMesajlarBadge(0));
+    };
     fetchKontrolBadge().then((res) => {
       if (res.success && res.data) setKontrolBadge(res.data.count ?? 0);
     });
-    fetchNotificationSummary()
-      .then((data) => setMesajlarBadge(data.unread_count ?? 0))
-      .catch(() => setMesajlarBadge(0));
+    refreshMesajlar();
 
     const id = setInterval(() => {
       fetchKontrolBadge().then((res) => {
         if (res.success && res.data) setKontrolBadge(res.data.count ?? 0);
       });
-      fetchNotificationSummary()
-        .then((data) => setMesajlarBadge(data.unread_count ?? 0))
-        .catch(() => {});
+      refreshMesajlar();
     }, 30_000);
-    return () => clearInterval(id);
+    const onRefresh = () => refreshMesajlar();
+    window.addEventListener('lms:notifications-refresh', onRefresh);
+    window.addEventListener('lms:communication-inbox', onRefresh);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('lms:notifications-refresh', onRefresh);
+      window.removeEventListener('lms:communication-inbox', onRefresh);
+    };
   }, []);
 
   useEffect(() => {

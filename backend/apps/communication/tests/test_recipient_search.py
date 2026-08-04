@@ -120,3 +120,19 @@ class RecipientSearchTest(TestCase):
         veliler = [r for r in response.data['results'] if r['kind'] == 'veli']
         self.assertEqual(len(veliler), 1)
         self.assertEqual(veliler[0]['phone'], '05324445566')
+
+    def test_search_student_also_returns_parent(self):
+        response = self._search('Zeynep')
+        self.assertEqual(response.status_code, 200, response.data)
+        kinds = {(r['kind'], r['id']) for r in response.data['results']}
+        self.assertIn(('ogrenci', self.ogrenci.id), kinds)
+        veli = OgrenciVeli.objects.get(ogrenci=self.ogrenci, ad='Hatice')
+        self.assertIn(('veli', veli.id), kinds)
+
+    def test_search_parent_also_returns_student(self):
+        response = self._search('Hatice')
+        self.assertEqual(response.status_code, 200, response.data)
+        kinds = {(r['kind'], r['id']) for r in response.data['results']}
+        veli = OgrenciVeli.objects.get(ogrenci=self.ogrenci, ad='Hatice')
+        self.assertIn(('veli', veli.id), kinds)
+        self.assertIn(('ogrenci', self.ogrenci.id), kinds)

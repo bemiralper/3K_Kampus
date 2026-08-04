@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { fetchKontrolBadge } from "@/lib/resources-api";
+import { fetchNotificationSummary } from "@/lib/communication-api";
 import KurumLogo from "@/components/branding/KurumLogo";
 import { useSubmenuOrderMap } from "@/hooks/useMenuOrder";
 import { akademikSidebarChildren } from "@/lib/akademik-routes";
@@ -163,6 +164,7 @@ interface MenuItem {
 }
 
 const ODEV_KONTROL_HREF = "/admin/odev/kontrol";
+const MESAJLAR_HREF = "/admin/iletisim/mesajlar";
 
 const navItems: MenuItem[] = [
   {
@@ -541,6 +543,7 @@ export default function Sidebar({
   const [subDragOver, setSubDragOver] = useState<{ parentId: string; href: string } | null>(null);
   const [subDragPosition, setSubDragPosition] = useState<"before" | "after">("after");
   const [kontrolBadgeCount, setKontrolBadgeCount] = useState(0);
+  const [mesajlarBadgeCount, setMesajlarBadgeCount] = useState(0);
 
   const loadKontrolBadge = useCallback(async () => {
     const response = await fetchKontrolBadge();
@@ -549,11 +552,33 @@ export default function Sidebar({
     }
   }, []);
 
+  const loadMesajlarBadge = useCallback(async () => {
+    try {
+      const data = await fetchNotificationSummary();
+      setMesajlarBadgeCount(data.unread_count ?? 0);
+    } catch {
+      setMesajlarBadgeCount(0);
+    }
+  }, []);
+
   useEffect(() => {
     loadKontrolBadge();
     const interval = setInterval(loadKontrolBadge, 60_000);
     return () => clearInterval(interval);
   }, [pathname, loadKontrolBadge]);
+
+  useEffect(() => {
+    loadMesajlarBadge();
+    const interval = setInterval(loadMesajlarBadge, 30_000);
+    const onRefresh = () => { void loadMesajlarBadge(); };
+    window.addEventListener('lms:notifications-refresh', onRefresh);
+    window.addEventListener('lms:communication-inbox', onRefresh);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('lms:notifications-refresh', onRefresh);
+      window.removeEventListener('lms:communication-inbox', onRefresh);
+    };
+  }, [loadMesajlarBadge]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -736,6 +761,9 @@ export default function Sidebar({
   const getChildBadge = (child: SubMenuItem): number | undefined => {
     if (child.href === ODEV_KONTROL_HREF) {
       return kontrolBadgeCount > 0 ? kontrolBadgeCount : undefined;
+    }
+    if (child.href === MESAJLAR_HREF) {
+      return mesajlarBadgeCount > 0 ? mesajlarBadgeCount : undefined;
     }
     return child.badge;
   };
@@ -1020,7 +1048,12 @@ export default function Sidebar({
         >
           <div className="submenu-tooltip-header">{hoveredMenu}</div>
           {hoveredChildren.map((child) => {
-            const badge = child.href === ODEV_KONTROL_HREF ? kontrolBadgeCount : child.badge;
+            const badge =
+              child.href === ODEV_KONTROL_HREF
+                ? kontrolBadgeCount
+                : child.href === MESAJLAR_HREF
+                  ? mesajlarBadgeCount
+                  : child.badge;
             return (
               <Link
                 href={child.href}

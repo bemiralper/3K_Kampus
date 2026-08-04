@@ -1,7 +1,12 @@
 "use client";
 
 import { RefObject, useEffect, useState } from "react";
-import { ConversationListItem, formatMessageTime, MessageItem } from "@/lib/communication-api";
+import {
+  ConversationListItem,
+  conversationRelationLabel,
+  formatMessageTime,
+  MessageItem,
+} from "@/lib/communication-api";
 import MessageThreadBubble from "./MessageThreadBubble";
 
 function contactInitials(name: string): string {
@@ -79,6 +84,7 @@ export default function MessageThreadPanel({
 
   const isArchived = selected.status === "ARCHIVED";
   const displayName = selected.contact_name || selected.contact_phone;
+  const relation = conversationRelationLabel(selected);
 
   return (
     <section className={`comm-thread-panel ${className}`}>
@@ -99,6 +105,7 @@ export default function MessageThreadPanel({
           </div>
           <div className="comm-thread-header-info">
             <h3>{displayName}</h3>
+            {relation && <span className="comm-thread-relation">{relation}</span>}
             <span className="comm-thread-phone">{selected.contact_phone}</span>
             {(selected.assigned_coach_name || selected.claimed_by_name || selected.status === "NEEDS_SUPPORT") && (
               <span className="comm-thread-meta">

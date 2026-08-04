@@ -356,3 +356,108 @@ class WhatsAppAppNotificationTest(TestCase):
                 baslik__icontains='WhatsApp',
             ).exists()
         )
+
+    def test_notify_coach_gets_coach_inbox_url(self):
+        from datetime import date
+
+        from apps.coaching.models import CoachProfile, CoachStudentAssignment
+        from apps.communication.application.whatsapp_notifications import notify_inbound_whatsapp
+        from apps.ogrenci.domain.models import Ogrenci
+        from apps.personel.domain.models import Personel
+        from apps.sube.domain.models import Sube
+        from apps.takvim.domain.models import AppNotification
+
+        sube = Sube.objects.create(kurum=self.kurum, ad='N', kod='WAN')
+        coach_user = User.objects.create_user(username='wa_coach', password='x')
+        personel = Personel.objects.create(
+            kurum=self.kurum, sube=sube, ad='Koç', soyad='W',
+            tc_kimlik_no='44444444444', user=coach_user,
+        )
+        coach = CoachProfile.objects.create(
+            teacher=personel, capacity=10, is_active=True, is_coach=True,
+        )
+        student = Ogrenci.objects.create(
+            kurum=self.kurum, sube=sube, ad='Ali', soyad='Y', aktif_mi=True,
+        )
+        CoachStudentAssignment.objects.create(
+            coach=coach, student=student, start_date=date(2026, 1, 1), is_primary=True,
+        )
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            channel='WHATSAPP',
+            contact_phone='+905555555555',
+            contact_type=RecipientType.OGRENCI,
+            ogrenci=student,
+            assigned_coach=coach,
+            status=ConversationStatus.WAITING,
+            department='COACHING',
+        )
+        notify_inbound_whatsapp(conv, preview='Merhaba koç')
+        notif = AppNotification.objects.filter(user_id=coach_user.id).order_by('-id').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('/coach/mesajlar?conversation=', notif.url)
+
+
+@override_settings(COMMUNICATION_TICKET_ROUTING=True)
+class SecondaryCoachVisibilityTest(TestCase):
+    def setUp(self):
+        from datetime import date
+
+        from apps.coaching.models import CoachProfile, CoachStudentAssignment
+        from apps.ogrenci.domain.models import Ogrenci
+        from apps.personel.domain.models import Personel
+        from apps.sube.domain.models import Sube
+
+        self.kurum = Kurum.objects.create(ad='Sec Coach', kod='SEC')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='M', kod='SEC')
+        self.student = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='S', soyad='T', aktif_mi=True,
+        )
+        self.primary_user = User.objects.create_user(username='prim', password='x')
+        self.secondary_user = User.objects.create_user(username='sec', password='x')
+        primary_p = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='P', soyad='C',
+            tc_kimlik_no='55555555551', user=self.primary_user,
+        )
+        secondary_p = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='S', soyad='C',
+            tc_kimlik_no='55555555552', user=self.secondary_user,
+        )
+        self.primary = CoachProfile.objects.create(
+            teacher=primary_p, capacity=10, is_active=True, is_coach=True,
+        )
+        self.secondary = CoachProfile.objects.create(
+            teacher=secondary_p, capacity=10, is_active=True, is_coach=True,
+        )
+        CoachStudentAssignment.objects.create(
+            coach=self.primary, student=self.student,
+            start_date=date(2026, 1, 1), is_primary=True,
+        )
+        CoachStudentAssignment.objects.create(
+            coach=self.secondary, student=self.student,
+            start_date=date(2026, 1, 1), is_primary=False,
+        )
+        self.conv = Conversation.objects.create(
+            kurum=self.kurum,
+            channel='WHATSAPP',
+            contact_phone='+905556666666',
+            contact_type=RecipientType.OGRENCI,
+            ogrenci=self.student,
+            assigned_coach=self.primary,
+            claimed_by_user=self.primary_user,
+            status=ConversationStatus.WAITING,
+            department='COACHING',
+        )
+
+    def test_secondary_coach_can_access_student_thread(self):
+        self.assertTrue(user_can_access_conversation(self.secondary_user, self.conv))
+
+    def test_secondary_coach_sees_in_filtered_queryset(self):
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            self.secondary_user,
+            kurum_id=self.kurum.id,
+        )
+        self.assertIn(self.conv.id, qs.values_list('id', flat=True))

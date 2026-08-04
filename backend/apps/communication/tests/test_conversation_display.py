@@ -235,3 +235,36 @@ class SyncConversationDisplayNameTest(TestCase):
         sync_conversation_display_name(conv, save=True)
         conv.refresh_from_db()
         self.assertEqual(conv.contact_name, '')
+
+    def test_linked_student_names_includes_siblings_same_phone(self):
+        from apps.communication.application.conversation_display import (
+            linked_student_names_for_conversation,
+        )
+
+        sibling = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Mehmet',
+            soyad='Veli',
+            telefon='0530 944 99 26',
+            aktif_mi=True,
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=sibling,
+            ad='Ayşe',
+            soyad='Veli',
+            telefon='0532 111 22 33',
+            veli_turu='anne',
+            varsayilan=True,
+        )
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905321112233',
+            contact_type=RecipientType.VELI,
+            veli=self.veli,
+            ogrenci=self.ogrenci,
+        )
+        names = linked_student_names_for_conversation(conv)
+        self.assertIn(self.ogrenci.tam_ad, names)
+        self.assertIn(sibling.tam_ad, names)

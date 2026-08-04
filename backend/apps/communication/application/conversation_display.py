@@ -182,3 +182,67 @@ def sync_conversation_display_name(
             if save:
                 conversation.save(update_fields=['contact_name', 'updated_at'])
     return name
+
+
+def linked_student_names_for_conversation(conversation) -> list[str]:
+    """
+    Veli sohbetinde bağlı öğrenci(ler)in adları.
+    Aynı telefon / merkezi kişi ile birden fazla çocuk varsa hepsini döner.
+    """
+    from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+
+    names: list[str] = []
+    seen: set[int] = set()
+
+    def _add(ogrenci) -> None:
+        if not ogrenci or ogrenci.id in seen:
+            return
+        label = f'{ogrenci.ad} {ogrenci.soyad}'.strip()
+        if not label:
+            return
+        seen.add(ogrenci.id)
+        names.append(label)
+
+    if conversation.ogrenci_id:
+        ogrenci = getattr(conversation, 'ogrenci', None)
+        if ogrenci is None:
+            ogrenci = Ogrenci.objects.filter(id=conversation.ogrenci_id).first()
+        _add(ogrenci)
+
+    veli = getattr(conversation, 'veli', None) if conversation.veli_id else None
+    if conversation.veli_id and veli is None:
+        veli = OgrenciVeli.objects.filter(id=conversation.veli_id).select_related('ogrenci').first()
+    if veli:
+        _add(getattr(veli, 'ogrenci', None))
+        if veli.kisi_id:
+            sibling_qs = (
+                OgrenciVeli.objects.filter(
+                    ogrenci__kurum_id=conversation.kurum_id,
+                    ogrenci__aktif_mi=True,
+                    kisi_id=veli.kisi_id,
+                )
+                .select_related('ogrenci')[:12]
+            )
+            for row in sibling_qs:
+                _add(row.ogrenci)
+        else:
+            # Telefon alanlarında boşluk/format farkı olabilir — Python'da son 10 hane eşleştir.
+            suffix = re.sub(r'\D', '', veli.telefon or '')[-10:]
+            phone_hint = (conversation.contact_phone or '')
+            if len(suffix) < 10:
+                suffix = re.sub(r'\D', '', phone_hint)[-10:]
+            if len(suffix) >= 10:
+                candidates = (
+                    OgrenciVeli.objects.filter(
+                        ogrenci__kurum_id=conversation.kurum_id,
+                        ogrenci__aktif_mi=True,
+                    )
+                    .exclude(telefon='')
+                    .select_related('ogrenci')[:80]
+                )
+                for row in candidates:
+                    row_suffix = re.sub(r'\D', '', row.telefon or '')[-10:]
+                    if row_suffix == suffix:
+                        _add(row.ogrenci)
+
+    return names

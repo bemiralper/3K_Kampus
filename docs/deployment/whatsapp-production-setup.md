@@ -320,6 +320,7 @@ Desteklenen body değişkenleri: `ogrenci_ad`, `veli_ad`, `hafta`, `hafta_no`, `
 - Body bir değişkenle **başlayamaz** ve **bitemez** — başına/sonuna sabit metin ekleyin.
 - İki değişken **yan yana** olamaz (`{{ogrenci_ad}} {{hafta}}` ✗ → `{{ogrenci_ad}} için {{hafta}}` ✓).
 - Alt bilgide (footer) değişken kullanılamaz; başlık metninde en fazla bir değişken olabilir.
+- Metin başlığında **yeni satır, emoji, yıldız (*) ve biçimlendirme** (`*_~\``) kullanılamaz.
 
 Onay sonrası sistem bu isimleri otomatik tanır. Farklı bir ad kullanacaksanız şablonu Bildirim Şablonları ekranından ilgili olaya bağlayın.
 
