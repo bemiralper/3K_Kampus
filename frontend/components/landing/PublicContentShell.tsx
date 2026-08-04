@@ -65,7 +65,7 @@ function PublicContentShellInner({
       <KurumBrandingHead
         branding={b}
         documentTitle={`${documentTitle} · ${b.gorunen_ad || SITE_TAB_TITLE}`}
-        manageFavicon
+        manageFavicon={false}
       />
       <div className="min-h-screen bg-slate-50">
         <TopBar settings={settings} socialLinks={data?.social_links ?? []} />

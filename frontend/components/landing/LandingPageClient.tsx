@@ -97,7 +97,7 @@ function LandingPageInner({ initialData }: { initialData: LandingData | null }) 
   return (
     <>
       <LandingJsonLd data={data} />
-      <KurumBrandingHead branding={b} documentTitle={pageTitle} manageFavicon />
+      <KurumBrandingHead branding={b} documentTitle={pageTitle} manageFavicon={false} />
       <div className="min-h-screen bg-white">
         <TopBar settings={settings} socialLinks={data?.social_links ?? []} />
         <TopBarMobile settings={settings} />

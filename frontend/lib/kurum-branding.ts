@@ -168,9 +168,11 @@ export function getFaviconUrl(branding: KurumBranding): string {
   if (branding.favicon_url) {
     return resolveBrandingAssetUrl(branding.favicon_url, DEFAULT_FAVICON);
   }
+  // Session’daki tercih yalnızca gerçek medya yoluysa (varsayılan svg değil)
   const preferred = getPreferredFaviconUrl();
-  if (preferred) {
-    return resolveBrandingAssetUrl(preferred, DEFAULT_FAVICON);
+  if (preferred && preferred !== DEFAULT_FAVICON && !preferred.endsWith('/favicon.svg')) {
+    const resolved = resolveBrandingAssetUrl(preferred, '');
+    if (resolved && resolved !== DEFAULT_FAVICON) return resolved;
   }
   return DEFAULT_FAVICON;
 }
@@ -235,36 +237,34 @@ export function applyFavicon(branding: KurumBranding, options?: { force?: boolea
   if (typeof document === 'undefined') return;
   rememberPreferredFavicon(branding);
   const favicon = getFaviconUrl(branding);
-  const applyKey = `${favicon}|${branding.tema_rengi}`;
+  const applyKey = `${favicon}|${branding.tema_rengi}|${branding.favicon_url ?? ''}`;
   if (!options?.force && applyKey === lastAppliedFaviconKey) return;
   lastAppliedFaviconKey = applyKey;
 
   const isDefault = favicon === DEFAULT_FAVICON;
   const bustedUrl = `${favicon}${favicon.includes('?') ? '&' : '?'}t=${Date.now()}`;
 
-  // Varsayılan (statik) favicon için blob'a ihtiyaç yok — direkt uygula.
+  // Önce senkron uygula — Next navigasyonunda varsayılan <link> yeniden eklense
+  // bile blob fetch bitene kadar boşlukta /favicon.svg kalmasın.
+  setFaviconHref(isDefault ? favicon : bustedUrl);
+
   if (isDefault || typeof fetch === 'undefined') {
-    setFaviconHref(isDefault ? favicon : bustedUrl);
     return;
   }
 
-  // Özel favicon: blob: URL'ye çevirerek tüm HTTP/tarayıcı önbelleğini bypass et.
-  // Chrome'un sekme seviyesindeki favicon önbelleği, href değişse de bazen
-  // yeniden fetch tetiklemiyor; blob: URL her zaman "yeni" bir kaynak sayılır.
+  // Özel favicon: blob: URL ile Chrome sekme önbelleğini bypass et.
   const token = ++faviconFetchToken;
   fetch(bustedUrl, { cache: 'no-store' })
-    .then(res => (res.ok ? res.blob() : Promise.reject(new Error('favicon fetch failed'))))
-    .then(blob => {
-      if (token !== faviconFetchToken) return; // daha yeni bir istek başladı
+    .then((res) => (res.ok ? res.blob() : Promise.reject(new Error('favicon fetch failed'))))
+    .then((blob) => {
+      if (token !== faviconFetchToken) return;
       const objectUrl = URL.createObjectURL(blob);
       setFaviconHref(objectUrl);
       if (lastFaviconBlobUrl) URL.revokeObjectURL(lastFaviconBlobUrl);
       lastFaviconBlobUrl = objectUrl;
     })
     .catch(() => {
-      if (token !== faviconFetchToken) return;
-      // Blob başarısız olursa düz URL ile dene (en azından cache-bust'lı)
-      setFaviconHref(bustedUrl);
+      // Senkron bustedUrl zaten uygulandı
     });
 }
 

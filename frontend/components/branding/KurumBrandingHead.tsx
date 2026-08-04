@@ -14,8 +14,8 @@ type Props = {
   documentTitle?: string;
   titleSuffix?: string;
   /**
-   * Favicon yönetimi. Landing dahil varsayılan true — login öncesi/sonrası
-   * aynı applyFavicon yolunu kullanır (SSR metadata ile çift kaynak olmasın).
+   * true: client applyFavicon. Landing’de false — SSR/metadata ikonu kalsın;
+   * tercih edilen kurum favicon’u yine session’a yazılır (login sonrası için).
    */
   manageFavicon?: boolean;
 };

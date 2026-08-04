@@ -10,6 +10,7 @@ import {
   getLoginLogo,
   applyFavicon,
   applyKurumTheme,
+  resetFaviconCache,
 } from '@/lib/kurum-branding';
 
 type Props = {
@@ -67,7 +68,8 @@ export function ActiveKurumBranding() {
     if (!branding) return;
     applyKurumTheme(branding);
     document.title = `${branding.gorunen_ad} — 3K Kampüs`;
-    // pathname değişiminde cache sıfırlama → varsayılan /favicon.svg yarışı yaratıyordu
+    // Next client navigasyonunda metadata varsayılan icon'u yeniden ekleyebilir
+    resetFaviconCache();
     applyFavicon(branding, { force: true });
   }, [branding, faviconKey, pathname]);
 
