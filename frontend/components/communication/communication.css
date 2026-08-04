@@ -5108,6 +5108,19 @@
   cursor: not-allowed;
 }
 
+.tplx-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tplx-check-row input {
+  margin-top: 0.2rem;
+}
+
 .tplx-field-hint {
   margin: 0.3rem 0 0;
   font-size: 0.7rem;

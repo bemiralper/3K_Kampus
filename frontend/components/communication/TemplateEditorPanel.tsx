@@ -12,10 +12,13 @@ import {
   resolvePreviewVariables,
 } from "./composer-utils";
 import {
+  accountLabel,
   fetchLocalMetaTemplates,
+  fetchWhatsAppAccounts,
   MessageTemplateItem,
   TEMPLATE_AUDIENCE_LABELS,
   TemplateCategoryItem,
+  WhatsAppAccount,
   WhatsAppMetaTemplateItem,
 } from "@/lib/communication-api";
 
@@ -27,6 +30,10 @@ export interface TemplateEditorForm {
   odev_pdf_role?: string;
   /** Meta karşılığı — 24 saatlik pencere kapalıyken bu şablon kullanılır */
   meta_template_id?: string;
+  /** Yeni kayıtta aynı metinli Meta taslağı da oluştur */
+  also_create_meta_template?: boolean;
+  meta_channel_config_id?: string;
+  meta_template_name?: string;
 }
 
 export const ODEV_PDF_ROLE_OPTIONS = [
@@ -68,11 +75,15 @@ export default function TemplateEditorPanel({
   );
 
   const [metaTemplates, setMetaTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
+  const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
 
   useEffect(() => {
     fetchLocalMetaTemplates({ approved_only: true })
       .then((res) => setMetaTemplates(res.templates || []))
       .catch(() => setMetaTemplates([]));
+    fetchWhatsAppAccounts({ active_only: true })
+      .then((res) => setAccounts(res.accounts || []))
+      .catch(() => setAccounts([]));
   }, []);
 
   const { setNode, insert } = useTextareaInsert();
@@ -202,11 +213,18 @@ export default function TemplateEditorPanel({
               )}
 
               <div className="tplx-field">
-                <label htmlFor="tpl-meta">Meta karşılığı</label>
+                <label htmlFor="tpl-meta">Meta karşılığı (mevcut)</label>
                 <select
                   id="tpl-meta"
                   value={form.meta_template_id ?? editing?.meta_template ?? ""}
-                  onChange={(e) => onChange({ ...form, meta_template_id: e.target.value })}
+                  disabled={!editing && !!form.also_create_meta_template}
+                  onChange={(e) => onChange({
+                    ...form,
+                    meta_template_id: e.target.value,
+                    also_create_meta_template: e.target.value
+                      ? false
+                      : form.also_create_meta_template,
+                  })}
                 >
                   <option value="">— Yok —</option>
                   {metaTemplates.map((t) => (
@@ -216,10 +234,70 @@ export default function TemplateEditorPanel({
                   ))}
                 </select>
                 <p className="tplx-field-hint">
-                  Alıcının 24 saatlik penceresi kapalıysa veya toplu gönderim yapılırsa bu onaylı
-                  şablon kullanılır. Değişkenler Meta biçimine otomatik dönüştürülür.
+                  24 saatlik pencere kapalıysa bu onaylı Meta şablonu kullanılır; açıksa bu
+                  uygulama şablonunun metni serbest mesaj olarak gider.
                 </p>
               </div>
+
+              {!editing && (
+                <div className="tplx-field">
+                  <label className="tplx-check-row">
+                    <input
+                      type="checkbox"
+                      checked={!!form.also_create_meta_template}
+                      disabled={!!form.meta_template_id}
+                      onChange={(e) => onChange({
+                        ...form,
+                        also_create_meta_template: e.target.checked,
+                        meta_template_id: e.target.checked ? "" : form.meta_template_id,
+                        meta_channel_config_id:
+                          form.meta_channel_config_id
+                          || accounts.find((a) => a.is_default)?.id
+                          || accounts[0]?.id
+                          || "",
+                      })}
+                    />
+                    <span>Aynı metinle Meta taslağı da oluştur</span>
+                  </label>
+                  <p className="tplx-field-hint">
+                    Pencere kapalıyken Meta, açıkken uygulama şablonu kullanılır. Meta onayına
+                    ayrıca gönderim gerekir.
+                  </p>
+                  {form.also_create_meta_template && (
+                    <div className="tplx-row" style={{ marginTop: "0.55rem" }}>
+                      <div className="tplx-field">
+                        <label htmlFor="tpl-meta-account">WhatsApp hesabı</label>
+                        <select
+                          id="tpl-meta-account"
+                          required
+                          value={form.meta_channel_config_id || ""}
+                          onChange={(e) => onChange({
+                            ...form,
+                            meta_channel_config_id: e.target.value,
+                          })}
+                        >
+                          <option value="">Seçin…</option>
+                          {accounts.map((a) => (
+                            <option key={a.id} value={a.id}>{accountLabel(a)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="tplx-field">
+                        <label htmlFor="tpl-meta-name">Meta şablon adı</label>
+                        <input
+                          id="tpl-meta-name"
+                          placeholder="otomatik (küçük_harf)"
+                          value={form.meta_template_name || ""}
+                          onChange={(e) => onChange({
+                            ...form,
+                            meta_template_name: e.target.value,
+                          })}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 

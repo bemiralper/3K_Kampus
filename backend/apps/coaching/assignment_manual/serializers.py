@@ -43,6 +43,16 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
         return None
 
 
+def _effective_lesson_from_block(obj):
+    """Kitabın gerçek dersi öncelikli — denormalize lesson FK bayat kalabilir."""
+    book = getattr(obj, 'resource_book', None)
+    if book is not None and getattr(book, 'ders_id', None):
+        return book.ders_id, getattr(book.ders, 'ad', None) or ''
+    if obj.lesson_id:
+        return obj.lesson_id, getattr(obj.lesson, 'ad', None) or ''
+    return None, obj.topic_name or ''
+
+
 class AssignmentLessonSerializer(serializers.ModelSerializer):
     """Ders Bloğu Serializer"""
     tasks = AssignmentTaskSerializer(many=True, read_only=True)
@@ -62,12 +72,15 @@ class AssignmentLessonSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
     def get_lesson_name(self, obj):
-        """Ders adını lesson veya resource_book.ders'ten çek"""
-        if obj.lesson:
-            return obj.lesson.ad
-        if obj.resource_book and obj.resource_book.ders:
-            return obj.resource_book.ders.ad
-        return None
+        _lesson_id, name = _effective_lesson_from_block(obj)
+        return name or None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        lesson_id, lesson_name = _effective_lesson_from_block(instance)
+        data['lesson'] = lesson_id
+        data['lesson_name'] = lesson_name or None
+        return data
 
 
 class ManualAssignmentListSerializer(serializers.ModelSerializer):
@@ -308,10 +321,19 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
             if lesson_id:
                 lesson_data['lesson_id'] = lesson_id
             
-            # resource_book alanını kontrol et
+            # resource_book alanını kontrol et — ders her zaman kitabın dersinden gelir
             resource_book_id = lesson_data.pop('resource_book', None)
             if resource_book_id:
                 lesson_data['resource_book_id'] = resource_book_id
+                from apps.resources.models import ResourceBook
+                book_ders_id = (
+                    ResourceBook.objects
+                    .filter(id=resource_book_id)
+                    .values_list('ders_id', flat=True)
+                    .first()
+                )
+                if book_ders_id:
+                    lesson_data['lesson_id'] = book_ders_id
             
             lesson = AssignmentLesson.objects.create(
                 assignment=assignment,

@@ -33,6 +33,8 @@ from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateExampleMediaUploadView,
     MetaTemplateListCreateView,
     MetaTemplateRefreshStatusView,
+    MetaTemplateCreateAppView,
+    MetaTemplateImportAppBulkView,
     MetaTemplateResubmitView,
     MetaTemplateSubmitView,
 )
@@ -96,6 +98,11 @@ urlpatterns = [
         MetaTemplateExampleMediaUploadView.as_view(),
         name='meta-template-example-media',
     ),
+    path(
+        'meta-templates/import-app-templates/',
+        MetaTemplateImportAppBulkView.as_view(),
+        name='meta-template-import-app-bulk',
+    ),
     path('meta-templates/<uuid:template_id>/', MetaTemplateDetailView.as_view(), name='meta-template-detail'),
     path(
         'meta-templates/<uuid:template_id>/submit/',
@@ -116,6 +123,11 @@ urlpatterns = [
         'meta-templates/<uuid:template_id>/clone/',
         MetaTemplateCloneView.as_view(),
         name='meta-template-clone',
+    ),
+    path(
+        'meta-templates/<uuid:template_id>/create-app-template/',
+        MetaTemplateCreateAppView.as_view(),
+        name='meta-template-create-app',
     ),
     path(
         'notification-events/',

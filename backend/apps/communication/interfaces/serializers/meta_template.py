@@ -16,6 +16,8 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     meta_category_label = serializers.SerializerMethodField()
     usage_scope_label = serializers.SerializerMethodField()
     variables = serializers.SerializerMethodField()
+    app_template_id = serializers.SerializerMethodField()
+    app_template_name = serializers.SerializerMethodField()
 
     class Meta:
         model = WhatsAppMetaTemplate
@@ -26,6 +28,7 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
             'usage_scope', 'usage_scope_label',
             'body_named', 'header_json', 'footer_text', 'buttons_json',
             'components_json', 'variable_map_json', 'variables',
+            'app_template_id', 'app_template_name',
             'rejected_reason', 'rejected_detail',
             'last_submitted_at', 'approved_at', 'usage_count',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
@@ -56,6 +59,21 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
 
     def get_usage_scope_label(self, obj) -> str:
         return dict(MetaTemplateUsage.choices).get(obj.usage_scope, obj.usage_scope)
+
+    def _first_app_template(self, obj):
+        cache = getattr(obj, '_prefetched_objects_cache', {}) or {}
+        if 'app_templates' in cache:
+            related = cache['app_templates']
+            return related[0] if related else None
+        return obj.app_templates.order_by('created_at').first()
+
+    def get_app_template_id(self, obj) -> str:
+        app = self._first_app_template(obj)
+        return str(app.id) if app else ''
+
+    def get_app_template_name(self, obj) -> str:
+        app = self._first_app_template(obj)
+        return app.name if app else ''
 
     def get_variables(self, obj) -> list:
         """Gönderim ekranında doldurulacak değişken adları, gövdedeki sırayla."""
@@ -90,6 +108,17 @@ class WhatsAppMetaTemplateWriteSerializer(serializers.Serializer):
     header_json = serializers.JSONField(required=False, default=dict)
     footer_text = serializers.CharField(required=False, allow_blank=True, default='', max_length=60)
     buttons_json = serializers.JSONField(required=False, default=list)
+    # Oluştururken aynı metinli uygulama şablonu da üret
+    also_create_app_template = serializers.BooleanField(required=False, default=False)
+    app_template_name = serializers.CharField(
+        required=False, allow_blank=True, max_length=200, default='',
+    )
+    app_template_category = serializers.CharField(
+        required=False, allow_blank=True, max_length=64, default='',
+    )
+    app_template_audience_scope = serializers.CharField(
+        required=False, allow_blank=True, max_length=32, default='',
+    )
 
 
 class WhatsAppMetaTemplateCloneSerializer(serializers.Serializer):

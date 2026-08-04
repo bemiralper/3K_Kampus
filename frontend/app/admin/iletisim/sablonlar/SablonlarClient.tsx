@@ -31,6 +31,9 @@ const EMPTY_FORM: TemplateEditorForm = {
   audience_scope: "admin",
   odev_pdf_role: "",
   meta_template_id: "",
+  also_create_meta_template: false,
+  meta_channel_config_id: "",
+  meta_template_name: "",
 };
 
 export default function SablonlarClient() {
@@ -133,13 +136,41 @@ export default function SablonlarClient() {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    const { meta_template_id, ...rest } = composerToTemplateForm(form, composerState);
-    const payload = { ...rest, meta_template_id: meta_template_id || null };
+    setSuccessMsg(null);
+    const {
+      meta_template_id,
+      also_create_meta_template,
+      meta_channel_config_id,
+      meta_template_name,
+      ...rest
+    } = composerToTemplateForm(form, composerState);
+    const payload = {
+      ...rest,
+      meta_template_id: meta_template_id || null,
+      also_create_meta_template: !editing && !!also_create_meta_template,
+      meta_channel_config_id:
+        !editing && also_create_meta_template ? (meta_channel_config_id || null) : undefined,
+      meta_template_name:
+        !editing && also_create_meta_template ? (meta_template_name || undefined) : undefined,
+    };
     try {
       if (editing) {
-        await updateTemplate(editing.id, payload);
+        await updateTemplate(editing.id, {
+          ...rest,
+          meta_template_id: meta_template_id || null,
+        });
+        setSuccessMsg("Şablon güncellendi.");
       } else {
-        await createTemplate(payload);
+        const created = await createTemplate(payload);
+        const metaName = created.pairing?.meta_template?.name;
+        setSuccessMsg(
+          created.info
+            || (
+              metaName
+                ? `Şablon oluşturuldu ve Meta taslağı eklendi (${metaName}). ${created.pairing?.info || ""}`
+                : "Şablon oluşturuldu."
+            ),
+        );
       }
       closeDrawer();
       resetForm();

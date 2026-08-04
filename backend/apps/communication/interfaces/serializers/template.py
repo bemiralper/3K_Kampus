@@ -66,6 +66,18 @@ class MessageTemplateWriteSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(required=False, default=True)
     odev_pdf_role = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     meta_template_id = serializers.UUIDField(required=False, allow_null=True)
+    # Oluştururken aynı metinli Meta taslağı da üret
+    also_create_meta_template = serializers.BooleanField(required=False, default=False)
+    meta_channel_config_id = serializers.UUIDField(required=False, allow_null=True)
+    meta_template_name = serializers.CharField(
+        required=False, allow_blank=True, max_length=512, default='',
+    )
+    meta_language = serializers.CharField(
+        required=False, allow_blank=True, max_length=16, default='tr',
+    )
+    meta_category = serializers.CharField(
+        required=False, allow_blank=True, max_length=32, default='UTILITY',
+    )
 
 
 class CampaignAttachmentSerializer(serializers.Serializer):

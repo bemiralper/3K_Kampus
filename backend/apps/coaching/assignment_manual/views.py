@@ -242,7 +242,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             Prefetch(
                 'lessons',
                 queryset=AssignmentLesson.objects.select_related(
-                    'lesson', 'resource_book'
+                    'lesson', 'resource_book', 'resource_book__ders',
                 ).prefetch_related('tasks')
             )
         ).filter(is_active=True)
@@ -456,7 +456,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 Prefetch(
                     'lessons',
                     queryset=AssignmentLesson.objects.select_related(
-                        'lesson', 'resource_book'
+                        'lesson', 'resource_book', 'resource_book__ders',
                     ).prefetch_related('tasks'),
                 )
             ).first()

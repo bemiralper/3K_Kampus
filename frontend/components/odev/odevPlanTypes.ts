@@ -35,18 +35,23 @@ export interface PlanLessonGroup {
 }
 
 export function buildPlanGroupsFromAssignment(assignment: ManualAssignment): PlanLessonGroup[] {
-  const map = new Map<number, PlanLessonGroup>();
+  const map = new Map<string, PlanLessonGroup>();
   for (const lb of assignment.lessons || []) {
-    if (!map.has(lb.lesson)) {
-      map.set(lb.lesson, {
-        lessonId: lb.lesson,
-        lessonName: lb.lesson_name,
+    // API lesson/lesson_name kitabın gerçek dersini döndürmeli; yine de
+    // ders adı + id ile grupla ki yanlış denormalize FK tek başlıkta birleşmesin.
+    const lessonId = lb.lesson ?? 0;
+    const lessonName = (lb.lesson_name || lb.topic_name || "Ders").trim() || "Ders";
+    const groupKey = `${lessonId}:${lessonName}`;
+    if (!map.has(groupKey)) {
+      map.set(groupKey, {
+        lessonId,
+        lessonName,
         books: [],
         totalQuestions: 0,
         totalPages: 0,
       });
     }
-    const lesson = map.get(lb.lesson)!;
+    const lesson = map.get(groupKey)!;
     let book = lesson.books.find((b) => b.bookId === lb.resource_book);
     if (!book) {
       book = { bookId: lb.resource_book, bookName: lb.resource_book_name, topics: [] };

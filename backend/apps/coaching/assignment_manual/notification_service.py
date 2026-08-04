@@ -72,7 +72,12 @@ class AssignmentNotificationService:
     def _get_assignment(self, assignment_id: int, kurum_id: int) -> ManualAssignment | None:
         return (
             ManualAssignment.objects.select_related('student', 'student__kurum')
-            .prefetch_related('lessons__tasks', 'lessons__lesson', 'lessons__resource_book')
+            .prefetch_related(
+                'lessons__tasks',
+                'lessons__lesson',
+                'lessons__resource_book',
+                'lessons__resource_book__ders',
+            )
             .filter(id=assignment_id, student__kurum_id=kurum_id, is_active=True)
             .first()
         )
@@ -112,7 +117,12 @@ class AssignmentNotificationService:
         lines.append('')
         lines.append('İçerik:')
         for lesson in assignment.lessons.all().order_by('order', 'id'):
-            lesson_name = lesson.lesson.ad if lesson.lesson else (lesson.topic_name or 'Ders')
+            if lesson.resource_book_id and getattr(lesson.resource_book, 'ders', None):
+                lesson_name = lesson.resource_book.ders.ad
+            elif lesson.lesson:
+                lesson_name = lesson.lesson.ad
+            else:
+                lesson_name = lesson.topic_name or 'Ders'
             lines.append(f'• {lesson_name}')
             for task in lesson.tasks.all().order_by('order', 'id'):
                 detail = task.title or task.get_task_type_display()
@@ -148,11 +158,13 @@ class AssignmentNotificationService:
             'Detay:',
         ]
         for task in tasks.order_by('lesson_block__order', 'order', 'id'):
-            lesson_name = (
-                task.lesson_block.lesson.ad
-                if task.lesson_block.lesson
-                else (task.lesson_block.topic_name or 'Ders')
-            )
+            block = task.lesson_block
+            if block.resource_book_id and getattr(block.resource_book, 'ders', None):
+                lesson_name = block.resource_book.ders.ad
+            elif block.lesson:
+                lesson_name = block.lesson.ad
+            else:
+                lesson_name = block.topic_name or 'Ders'
             status = self._task_status_label(task.completion_status)
             pct = task.task_completion_percent or 0
             line = f'• {lesson_name} — {task.title or task.get_task_type_display()}: {status}'

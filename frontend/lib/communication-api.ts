@@ -811,6 +811,9 @@ export interface WhatsAppMetaTemplateItem {
   last_submitted_at?: string | null;
   approved_at?: string | null;
   usage_count?: number;
+  /** Bağlı uygulama şablonu (varsa) */
+  app_template_id?: string;
+  app_template_name?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -868,7 +871,14 @@ export async function createLocalMetaTemplate(data: {
   header_json?: MetaTemplateHeader;
   footer_text?: string;
   buttons_json?: MetaTemplateButton[];
-}): Promise<WhatsAppMetaTemplateItem> {
+  also_create_app_template?: boolean;
+  app_template_name?: string;
+  app_template_category?: string;
+  app_template_audience_scope?: string;
+}): Promise<WhatsAppMetaTemplateItem & {
+  pairing?: { app_template?: MessageTemplateItem; info?: string };
+  info?: string;
+}> {
   return request('/meta-templates/', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -921,6 +931,39 @@ export async function cloneLocalMetaTemplate(
   return request(`/meta-templates/${id}/clone/`, {
     method: 'POST',
     body: JSON.stringify({ new_name: newName }),
+  });
+}
+
+export async function createAppTemplateFromMeta(
+  id: string,
+  data?: { name?: string; category?: string; audience_scope?: string },
+): Promise<{
+  success: boolean;
+  info?: string;
+  app_template?: MessageTemplateItem;
+  meta_template?: WhatsAppMetaTemplateItem;
+}> {
+  return request(`/meta-templates/${id}/create-app-template/`, {
+    method: 'POST',
+    body: JSON.stringify(data || {}),
+  });
+}
+
+export async function importAppTemplatesFromMeta(data?: {
+  channel_config_id?: string;
+  account_id?: string;
+  category?: string;
+  audience_scope?: string;
+}): Promise<{
+  created_count: number;
+  skipped_count: number;
+  created: Array<{ id: string; name: string; meta_template_id: string }>;
+  skipped: Array<{ meta_template_id: string; name: string; reason: string }>;
+  info?: string;
+}> {
+  return request('/meta-templates/import-app-templates/', {
+    method: 'POST',
+    body: JSON.stringify(data || {}),
   });
 }
 
@@ -1637,7 +1680,15 @@ export async function createTemplate(data: {
   variables_json?: string[];
   odev_pdf_role?: string;
   meta_template_id?: string | null;
-}): Promise<MessageTemplateItem> {
+  also_create_meta_template?: boolean;
+  meta_channel_config_id?: string | null;
+  meta_template_name?: string;
+  meta_language?: string;
+  meta_category?: string;
+}): Promise<MessageTemplateItem & {
+  pairing?: { meta_template?: WhatsAppMetaTemplateItem; info?: string };
+  info?: string;
+}> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request('/templates/', {
     method: 'POST',

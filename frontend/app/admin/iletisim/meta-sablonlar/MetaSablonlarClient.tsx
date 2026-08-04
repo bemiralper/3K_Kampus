@@ -17,11 +17,13 @@ import {
   MetaTemplateHeader,
   MetaTemplateUsage,
   cloneLocalMetaTemplate,
+  createAppTemplateFromMeta,
   createLocalMetaTemplate,
   deleteLocalMetaTemplate,
   fetchLocalMetaTemplates,
   fetchNotificationEvents,
   fetchWhatsAppAccounts,
+  importAppTemplatesFromMeta,
   refreshLocalMetaTemplateStatus,
   resubmitLocalMetaTemplate,
   submitLocalMetaTemplate,
@@ -117,6 +119,8 @@ const emptyForm = () => ({
   footer_text: "",
   header: { type: "NONE" } as MetaTemplateHeader,
   buttons: [] as MetaTemplateButton[],
+  also_create_app_template: true,
+  app_template_name: "",
 });
 
 export default function MetaSablonlarClient() {
@@ -233,6 +237,8 @@ export default function MetaSablonlarClient() {
       footer_text: t.footer_text || "",
       header: (t.header_json as MetaTemplateHeader) || { type: "NONE" },
       buttons: (t.buttons_json as MetaTemplateButton[]) || [],
+      also_create_app_template: false,
+      app_template_name: "",
     });
     setDrawerOpen(true);
     setMessage(null);
@@ -249,6 +255,11 @@ export default function MetaSablonlarClient() {
     footer_text: form.footer_text,
     header_json: form.header?.type && form.header.type !== "NONE" ? form.header : {},
     buttons_json: form.buttons,
+    also_create_app_template: !editing && !!form.also_create_app_template,
+    app_template_name:
+      !editing && form.also_create_app_template
+        ? (form.app_template_name || undefined)
+        : undefined,
   });
 
   const handleSave = async (e: FormEvent) => {
@@ -259,6 +270,7 @@ export default function MetaSablonlarClient() {
     }
     setSaving(true);
     setError(null);
+    setMessage(null);
     try {
       if (editing) {
         // Meta'ya gitmiş şablonun içeriği değişemez; yalnızca yerel kullanım alanı güncellenir.
@@ -270,7 +282,15 @@ export default function MetaSablonlarClient() {
         setEditing(updated);
       } else {
         const created = await createLocalMetaTemplate(payload());
-        setMessage("Taslak oluşturuldu.");
+        const appName = created.pairing?.app_template?.name;
+        setMessage(
+          created.info
+            || (
+              appName
+                ? `Meta taslağı oluşturuldu ve uygulama şablonu eklendi (“${appName}”).`
+                : "Meta taslağı oluşturuldu."
+            ),
+        );
         setEditing(created);
       }
       await load();
@@ -317,6 +337,57 @@ export default function MetaSablonlarClient() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Senkron başarısız");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleImportAppTemplates = async () => {
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin.");
+      return;
+    }
+    if (!confirm(
+      "Bu hesaptaki henüz uygulama karşılığı olmayan Meta şablonları uygulama şablonlarına aktarılsın mı?\n\n"
+      + "24s pencere açıkken uygulama, kapalıyken Meta şablonu kullanılır.",
+    )) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await importAppTemplatesFromMeta({ channel_config_id: accountId });
+      setMessage(
+        `${res.created_count} şablon uygulamaya aktarıldı`
+        + (res.skipped_count ? `, ${res.skipped_count} atlandı.` : ".")
+        + (res.info ? ` ${res.info}` : ""),
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Aktarım başarısız");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateAppFromEditing = async () => {
+    if (!editing) return;
+    if (editing.app_template_id) {
+      setMessage(`Zaten bağlı: “${editing.app_template_name || "uygulama şablonu"}”.`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await createAppTemplateFromMeta(editing.id);
+      setMessage(
+        res.info
+          || `Uygulama şablonu oluşturuldu: “${res.app_template?.name || ""}”.`,
+      );
+      if (res.meta_template) setEditing(res.meta_template);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Aktarım başarısız");
     } finally {
       setSaving(false);
     }
@@ -451,6 +522,15 @@ export default function MetaSablonlarClient() {
             disabled={!accountId || saving}
           >
             ⟳ Meta&apos;dan Güncelle
+          </button>
+          <button
+            type="button"
+            className="comm-btn-secondary"
+            onClick={handleImportAppTemplates}
+            disabled={!accountId || saving}
+            title="Eşleşmeyen Meta şablonlarını uygulama şablonlarına kopyalar"
+          >
+            Uygulamaya aktar
           </button>
           <button
             type="button"
@@ -807,6 +887,39 @@ export default function MetaSablonlarClient() {
                           değiştirilebilir.
                         </p>
                       </div>
+                      {!editing && (
+                        <div className="tplx-field">
+                          <label className="tplx-check-row">
+                            <input
+                              type="checkbox"
+                              checked={!!form.also_create_app_template}
+                              onChange={(e) => setForm((f) => ({
+                                ...f,
+                                also_create_app_template: e.target.checked,
+                              }))}
+                            />
+                            <span>Aynı metinle uygulama şablonu da oluştur</span>
+                          </label>
+                          <p className="tplx-field-hint">
+                            24 saatlik pencere açıkken uygulama şablonu, kapalıyken Meta şablonu
+                            kullanılır. Metinler eşleştirilir.
+                          </p>
+                          {form.also_create_app_template && (
+                            <div className="tplx-field" style={{ marginTop: "0.55rem" }}>
+                              <label htmlFor="meta-app-name">Uygulama şablon adı</label>
+                              <input
+                                id="meta-app-name"
+                                value={form.app_template_name}
+                                onChange={(e) => setForm((f) => ({
+                                  ...f,
+                                  app_template_name: e.target.value,
+                                }))}
+                                placeholder="Boş bırakılırsa Meta adından üretilir"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </section>
 
@@ -1087,6 +1200,22 @@ export default function MetaSablonlarClient() {
                       <button type="button" className="tplx-mini-btn" disabled={saving} onClick={handleClone}>
                         Kopyala
                       </button>
+                      {!editing.app_template_id && (
+                        <button
+                          type="button"
+                          className="tplx-mini-btn"
+                          disabled={saving || !(editing.body_named || "").trim()}
+                          onClick={handleCreateAppFromEditing}
+                          title="Aynı metinle uygulama şablonu oluştur"
+                        >
+                          Uygulamaya aktar
+                        </button>
+                      )}
+                      {editing.app_template_id && (
+                        <span className="tplx-field-hint" style={{ margin: 0 }}>
+                          Uygulama: {editing.app_template_name || "bağlı"}
+                        </span>
+                      )}
                       <button
                         type="button"
                         className="tplx-mini-btn is-danger"

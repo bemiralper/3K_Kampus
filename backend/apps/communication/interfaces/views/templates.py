@@ -69,6 +69,11 @@ class TemplateListCreateView(CommunicationAPIView):
             data = dict(serializer.validated_data)
             odev_role = (data.pop('odev_pdf_role', None) or '').strip() or None
             data.pop('is_active', None)
+            also_meta = bool(data.pop('also_create_meta_template', False))
+            meta_channel_config_id = data.pop('meta_channel_config_id', None)
+            meta_template_name = (data.pop('meta_template_name', None) or '').strip() or None
+            meta_language = (data.pop('meta_language', None) or 'tr').strip() or 'tr'
+            meta_category = (data.pop('meta_category', None) or 'UTILITY').strip() or 'UTILITY'
             template = service.create(
                 kurum_id,
                 sube_id=sube_id,
@@ -85,13 +90,79 @@ class TemplateListCreateView(CommunicationAPIView):
         except ValidationError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(
-            MessageTemplateSerializer(
-                template,
-                context={'category_labels': TemplateCategoryService().get_label_map(kurum_id, sube_id=sube_id)},
-            ).data,
-            status=status.HTTP_201_CREATED,
+        from apps.communication.application.template_pairing_service import (
+            PAIRING_INFO,
+            TemplatePairingService,
         )
+        from apps.communication.interfaces.serializers.meta_template import (
+            WhatsAppMetaTemplateSerializer,
+        )
+
+        pairing = None
+        if also_meta:
+            if not meta_channel_config_id:
+                return Response(
+                    {
+                        'error': (
+                            'Meta şablonu oluşturmak için WhatsApp hesabı '
+                            '(meta_channel_config_id) seçilmelidir.'
+                        ),
+                        'template': MessageTemplateSerializer(
+                            template,
+                            context={
+                                'category_labels': TemplateCategoryService().get_label_map(
+                                    kurum_id, sube_id=sube_id,
+                                ),
+                            },
+                        ).data,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                meta = TemplatePairingService.create_meta_from_app(
+                    template,
+                    channel_config_id=meta_channel_config_id,
+                    user=request.user,
+                    meta_name=meta_template_name,
+                    language=meta_language,
+                    meta_category=meta_category,
+                )
+            except ValidationError as exc:
+                return Response(
+                    {
+                        'error': (
+                            f'Uygulama şablonu oluşturuldu ancak Meta taslağı '
+                            f'eklenemedi: {exc}'
+                        ),
+                        'template': MessageTemplateSerializer(
+                            template,
+                            context={
+                                'category_labels': TemplateCategoryService().get_label_map(
+                                    kurum_id, sube_id=sube_id,
+                                ),
+                            },
+                        ).data,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            template.refresh_from_db()
+            pairing = {
+                'meta_template': WhatsAppMetaTemplateSerializer(meta).data,
+                'info': PAIRING_INFO,
+            }
+
+        payload = MessageTemplateSerializer(
+            template,
+            context={'category_labels': TemplateCategoryService().get_label_map(kurum_id, sube_id=sube_id)},
+        ).data
+        if pairing:
+            payload['pairing'] = pairing
+            payload['info'] = pairing['info']
+        else:
+            payload['info'] = (
+                f'{PAIRING_INFO} Meta karşılığı seçmediyseniz daha sonra bu ekrandan bağlayabilirsiniz.'
+            )
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class TemplateDetailView(CommunicationAPIView):

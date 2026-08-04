@@ -84,6 +84,7 @@ class MetaTemplateService:
         qs = (
             WhatsAppMetaTemplate.objects
             .select_related('channel_config', 'created_by')
+            .prefetch_related('app_templates')
             .filter(kurum_id=kurum_id)
         )
         if usage:

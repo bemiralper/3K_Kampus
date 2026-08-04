@@ -81,10 +81,55 @@ class MetaTemplateListCreateView(APIView):
             )
         except MetaTemplateServiceError as exc:
             return _err(exc)
-        return Response(
-            WhatsAppMetaTemplateSerializer(tpl).data,
-            status=status.HTTP_201_CREATED,
-        )
+
+        pairing = None
+        if data.get('also_create_app_template'):
+            from django.core.exceptions import ValidationError
+
+            from apps.communication.application.template_pairing_service import (
+                PAIRING_INFO,
+                TemplatePairingService,
+            )
+            from apps.communication.interfaces.serializers.template import (
+                MessageTemplateSerializer,
+            )
+
+            try:
+                app_tpl = TemplatePairingService.create_app_from_meta(
+                    tpl,
+                    sube_id=_sube_id,
+                    user=request.user,
+                    category=(data.get('app_template_category') or '').strip() or None,
+                    audience_scope=(
+                        data.get('app_template_audience_scope') or ''
+                    ).strip() or None,
+                    display_name=(data.get('app_template_name') or '').strip() or None,
+                )
+            except ValidationError as exc:
+                return Response(
+                    {
+                        'error': (
+                            f'Meta taslağı oluşturuldu ancak uygulama şablonu eklenemedi: {exc}'
+                        ),
+                        'template': WhatsAppMetaTemplateSerializer(tpl).data,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            pairing = {
+                'app_template': MessageTemplateSerializer(app_tpl).data,
+                'info': PAIRING_INFO,
+            }
+
+        payload = WhatsAppMetaTemplateSerializer(tpl).data
+        if pairing:
+            payload['pairing'] = pairing
+            payload['info'] = pairing['info']
+        else:
+            from apps.communication.application.template_pairing_service import PAIRING_INFO
+            payload['info'] = (
+                f'{PAIRING_INFO} İsterseniz uygulama şablonları ekranından Meta karşılığı bağlayabilirsiniz.'
+            )
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class MetaTemplateDetailView(APIView):
@@ -229,6 +274,77 @@ class MetaTemplateCloneView(APIView):
             WhatsAppMetaTemplateSerializer(clone).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class MetaTemplateCreateAppView(APIView):
+    """Mevcut Meta şablonundan uygulama şablonu oluştur (tekil)."""
+
+    permission_classes = [CommunicationConfigPermission]
+
+    def post(self, request, template_id):
+        from django.core.exceptions import ValidationError
+
+        from apps.communication.application.template_pairing_service import (
+            PAIRING_INFO,
+            TemplatePairingService,
+        )
+        from apps.communication.interfaces.serializers.template import (
+            MessageTemplateSerializer,
+        )
+
+        kurum_id, sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+        tpl = MetaTemplateService.get(kurum_id, template_id)
+        if not tpl:
+            return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            app = TemplatePairingService.create_app_from_meta(
+                tpl,
+                sube_id=sube_id,
+                user=request.user,
+                category=(request.data.get('category') or '').strip() or None,
+                audience_scope=(request.data.get('audience_scope') or '').strip() or None,
+                display_name=(request.data.get('name') or '').strip() or None,
+            )
+        except ValidationError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                'success': True,
+                'info': PAIRING_INFO,
+                'app_template': MessageTemplateSerializer(app).data,
+                'meta_template': WhatsAppMetaTemplateSerializer(tpl).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MetaTemplateImportAppBulkView(APIView):
+    """Eşleşmeyen tüm Meta şablonlarını uygulama şablonlarına aktar."""
+
+    permission_classes = [CommunicationConfigPermission]
+
+    def post(self, request):
+        from apps.communication.application.template_pairing_service import (
+            TemplatePairingService,
+        )
+
+        kurum_id, sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+        result = TemplatePairingService.import_unpaired_meta_templates(
+            kurum_id,
+            sube_id=sube_id,
+            user=request.user,
+            channel_config_id=(
+                request.data.get('channel_config_id')
+                or request.data.get('account_id')
+            ),
+            category=(request.data.get('category') or '').strip() or None,
+            audience_scope=(request.data.get('audience_scope') or '').strip() or None,
+        )
+        return Response(result)
 
 
 class MetaTemplateExampleMediaUploadView(APIView):
