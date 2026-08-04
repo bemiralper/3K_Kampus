@@ -49,7 +49,7 @@ function IletisimPageInner({ initialData = null }: Props) {
 
   return (
     <>
-      <KurumBrandingHead branding={b} documentTitle={`İletişim · ${b.gorunen_ad || SITE_TAB_TITLE}`} manageFavicon={false} />
+      <KurumBrandingHead branding={b} documentTitle={`İletişim · ${b.gorunen_ad || SITE_TAB_TITLE}`} manageFavicon />
       <div className="min-h-screen bg-white">
         <TopBar settings={settings} socialLinks={data?.social_links ?? []} />
         <TopBarMobile settings={settings} />

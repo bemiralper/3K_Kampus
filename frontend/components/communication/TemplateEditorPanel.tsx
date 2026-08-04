@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import MessageComposer from "./MessageComposer";
 import TemplateVariablePanel from "./TemplateVariablePanel";
 import { useTextareaInsert } from "./useTextareaInsert";
@@ -25,6 +25,10 @@ import {
 export interface TemplateEditorForm {
   name: string;
   body: string;
+  /** Uygulama şablonu: Yok | Metin (Meta ile aynı) */
+  header_type?: "NONE" | "TEXT";
+  header_text?: string;
+  footer_text?: string;
   category: string;
   audience_scope: string;
   odev_pdf_role?: string;
@@ -43,6 +47,19 @@ export const ODEV_PDF_ROLE_OPTIONS = [
   { value: "report_veli", label: "Ödev kontrol raporu PDF — Veli WhatsApp (aktif)" },
   { value: "report_ogrenci", label: "Ödev kontrol raporu PDF — Öğrenci WhatsApp (aktif)" },
 ] as const;
+
+/** Meta şablon adı önerisi (küçük_harf_altçizgi). */
+export function suggestMetaTemplateName(value: string): string {
+  const tr: Record<string, string> = {
+    ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u",
+    Ç: "c", Ğ: "g", İ: "i", I: "i", Ö: "o", Ş: "s", Ü: "u",
+  };
+  let text = (value || "").replace(/[çğışöüÇĞİIÖŞÜ]/g, (ch) => tr[ch] || ch);
+  text = text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  text = text.toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]+/g, "");
+  text = text.replace(/_+/g, "_").replace(/^_|_$/g, "");
+  return text.slice(0, 512);
+}
 
 interface TemplateEditorPanelProps {
   editing: MessageTemplateItem | null;
@@ -76,24 +93,76 @@ export default function TemplateEditorPanel({
 
   const [metaTemplates, setMetaTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
+  const [metaNameTouched, setMetaNameTouched] = useState(false);
+  const metaFetchSeq = useRef(0);
 
   useEffect(() => {
-    fetchLocalMetaTemplates({ approved_only: true })
-      .then((res) => setMetaTemplates(res.templates || []))
-      .catch(() => setMetaTemplates([]));
     fetchWhatsAppAccounts({ activeOnly: true })
       .then((res) => setAccounts(res.accounts || []))
       .catch(() => setAccounts([]));
   }, []);
 
+  // Meta karşılığı listesi — şablon adına göre dinamik arama
+  useEffect(() => {
+    const q = form.name.trim();
+    const seq = ++metaFetchSeq.current;
+    const timer = window.setTimeout(() => {
+      fetchLocalMetaTemplates({
+        approved_only: true,
+        search: q || undefined,
+      })
+        .then((res) => {
+          if (seq !== metaFetchSeq.current) return;
+          setMetaTemplates(res.templates || []);
+        })
+        .catch(() => {
+          if (seq !== metaFetchSeq.current) return;
+          setMetaTemplates([]);
+        });
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [form.name]);
+
+  // "Aynı metinle Meta taslağı" açıksa adı şablon adından öner
+  useEffect(() => {
+    if (editing || !form.also_create_meta_template || metaNameTouched) return;
+    const suggested = suggestMetaTemplateName(form.name);
+    if (suggested !== (form.meta_template_name || "")) {
+      onChange({ ...form, meta_template_name: suggested });
+    }
+    // form/onChange bilinçli dışarıda — yalnızca name / checkbox
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.name, form.also_create_meta_template, metaNameTouched, editing]);
+
+  const filteredMetaTemplates = useMemo(() => {
+    const q = form.name.trim().toLowerCase();
+    if (!q) return metaTemplates;
+    const slug = suggestMetaTemplateName(form.name);
+    return metaTemplates.filter((t) => {
+      const n = (t.name || "").toLowerCase();
+      const body = (t.body_named || "").toLowerCase();
+      return (
+        n.includes(q)
+        || n.includes(slug)
+        || slug.includes(n)
+        || body.includes(q)
+      );
+    });
+  }, [metaTemplates, form.name]);
+
   const { setNode, insert } = useTextareaInsert();
   const rawText = plainTextFromComposer(composerState) || form.body;
   const previewText = resolvePreviewVariables(rawText);
   const previewSegments = useMemo(() => parseWhatsAppText(previewText), [previewText]);
+  const headerPreview = form.header_type === "TEXT"
+    ? resolvePreviewVariables((form.header_text || "").trim())
+    : "";
+  const footerPreview = (form.footer_text || "").trim();
   const usedVariables = useMemo(() => {
-    const found = rawText.match(/\{\{(\w+)\}\}/g) || [];
+    const blob = `${rawText} ${form.header_text || ""}`;
+    const found = blob.match(/\{\{(\w+)\}\}/g) || [];
     return Array.from(new Set(found));
-  }, [rawText]);
+  }, [rawText, form.header_text]);
 
   const insertVariable = (token: string) => {
     const current = plainTextFromComposer(composerState);
@@ -227,15 +296,15 @@ export default function TemplateEditorPanel({
                   })}
                 >
                   <option value="">— Yok —</option>
-                  {metaTemplates.map((t) => (
+                  {filteredMetaTemplates.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.language})
                     </option>
                   ))}
                 </select>
                 <p className="tplx-field-hint">
-                  24 saatlik pencere kapalıysa bu onaylı Meta şablonu kullanılır; açıksa bu
-                  uygulama şablonunun metni serbest mesaj olarak gider.
+                  Liste şablon adına göre güncellenir. 24 saatlik pencere kapalıysa bu onaylı
+                  Meta şablonu kullanılır; açıksa uygulama şablonunun metni serbest mesaj olarak gider.
                 </p>
               </div>
 
@@ -246,16 +315,22 @@ export default function TemplateEditorPanel({
                       type="checkbox"
                       checked={!!form.also_create_meta_template}
                       disabled={!!form.meta_template_id}
-                      onChange={(e) => onChange({
-                        ...form,
-                        also_create_meta_template: e.target.checked,
-                        meta_template_id: e.target.checked ? "" : form.meta_template_id,
-                        meta_channel_config_id:
-                          form.meta_channel_config_id
-                          || accounts.find((a) => a.is_default)?.id
-                          || accounts[0]?.id
-                          || "",
-                      })}
+                      onChange={(e) => {
+                        setMetaNameTouched(false);
+                        onChange({
+                          ...form,
+                          also_create_meta_template: e.target.checked,
+                          meta_template_id: e.target.checked ? "" : form.meta_template_id,
+                          meta_channel_config_id:
+                            form.meta_channel_config_id
+                            || accounts.find((a) => a.is_default)?.id
+                            || accounts[0]?.id
+                            || "",
+                          meta_template_name: e.target.checked
+                            ? suggestMetaTemplateName(form.name)
+                            : form.meta_template_name,
+                        });
+                      }}
                     />
                     <span>Aynı metinle Meta taslağı da oluştur</span>
                   </label>
@@ -288,10 +363,13 @@ export default function TemplateEditorPanel({
                           id="tpl-meta-name"
                           placeholder="otomatik (küçük_harf)"
                           value={form.meta_template_name || ""}
-                          onChange={(e) => onChange({
-                            ...form,
-                            meta_template_name: e.target.value,
-                          })}
+                          onChange={(e) => {
+                            setMetaNameTouched(true);
+                            onChange({
+                              ...form,
+                              meta_template_name: e.target.value,
+                            });
+                          }}
                         />
                       </div>
                     </div>
@@ -317,6 +395,58 @@ export default function TemplateEditorPanel({
               <TemplateVariablePanel category={form.category} onInsert={insertVariable} />
             </div>
           </section>
+
+          <section className="tplx-section">
+            <div className="tplx-section-head">
+              <span aria-hidden="true">🧩</span> Başlık &amp; alt bilgi
+            </div>
+            <div className="tplx-section-body">
+              <div className="tplx-row">
+                <div className="tplx-field">
+                  <label htmlFor="tpl-header-type">Başlık türü</label>
+                  <select
+                    id="tpl-header-type"
+                    value={form.header_type || "NONE"}
+                    onChange={(e) => onChange({
+                      ...form,
+                      header_type: e.target.value as "NONE" | "TEXT",
+                    })}
+                  >
+                    <option value="NONE">Yok</option>
+                    <option value="TEXT">Metin</option>
+                  </select>
+                </div>
+                {form.header_type === "TEXT" && (
+                  <div className="tplx-field">
+                    <label htmlFor="tpl-header-text">Başlık metni</label>
+                    <input
+                      id="tpl-header-text"
+                      maxLength={60}
+                      value={form.header_text || ""}
+                      placeholder="Örn. Ödeme hatırlatması"
+                      onChange={(e) => onChange({ ...form, header_text: e.target.value })}
+                    />
+                    <p className="tplx-field-hint">
+                      Yeni satır, emoji, yıldız (*) ve biçimlendirme (* _ ~ `) kullanılamaz.
+                      {(form.header_text || "").length}/60
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="tplx-field">
+                <label htmlFor="tpl-footer">Alt bilgi (isteğe bağlı)</label>
+                <input
+                  id="tpl-footer"
+                  maxLength={60}
+                  value={form.footer_text || ""}
+                  placeholder="Örn. 3K Kampüs — Bilgilendirme mesajı"
+                  onChange={(e) => onChange({ ...form, footer_text: e.target.value })}
+                />
+                <p className="tplx-field-hint">{(form.footer_text || "").length}/60 karakter</p>
+              </div>
+            </div>
+          </section>
         </div>
 
         <aside className="tplx-drawer-side">
@@ -327,6 +457,9 @@ export default function TemplateEditorPanel({
 
           <div className="tplx-preview-stack">
             <div className="tplx-bubble">
+              {headerPreview ? (
+                <p className="tplx-bubble-header">{headerPreview}</p>
+              ) : null}
               <p className="tplx-bubble-text">
                 {previewText.trim()
                   ? previewSegments.map((seg, i) =>
@@ -346,6 +479,9 @@ export default function TemplateEditorPanel({
                     )
                   : "Mesajınız burada görünecek…"}
               </p>
+              {footerPreview ? (
+                <p className="tplx-bubble-footer">{footerPreview}</p>
+              ) : null}
               <div className="tplx-bubble-meta">
                 <span>{now}</span>
                 <span aria-hidden="true">✓✓</span>

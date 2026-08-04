@@ -1243,6 +1243,8 @@ export interface MessageTemplateItem {
   category_label?: string;
   name: string;
   body: string;
+  header_json?: MetaTemplateHeader;
+  footer_text?: string;
   variables_json?: string[];
   attachment_ids_json?: string[];
   is_active: boolean;
@@ -1697,6 +1699,8 @@ export async function fetchTemplate(id: string): Promise<MessageTemplateItem> {
 export async function createTemplate(data: {
   name: string;
   body?: string;
+  header_json?: MetaTemplateHeader;
+  footer_text?: string;
   category?: string;
   audience_scope?: string;
   variables_json?: string[];
@@ -1723,6 +1727,8 @@ export async function updateTemplate(
   data: Partial<{
     name: string;
     body: string;
+    header_json: MetaTemplateHeader;
+    footer_text: string;
     category: string;
     audience_scope: string;
     is_active: boolean;

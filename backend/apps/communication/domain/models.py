@@ -529,6 +529,9 @@ class MessageTemplate(models.Model):
     )
     name = models.CharField(max_length=200, verbose_name='Şablon Adı')
     body = models.TextField(blank=True, default='', verbose_name='Mesaj Metni')
+    # Meta şablonlarıyla aynı yapı — metin başlığı + alt bilgi (serbest gönderimde önizleme / eşleme)
+    header_json = models.JSONField(default=dict, blank=True, verbose_name='Başlık')
+    footer_text = models.CharField(max_length=60, blank=True, default='', verbose_name='Alt bilgi')
     variables_json = models.JSONField(default=list, blank=True, verbose_name='Değişkenler')
     attachment_ids_json = models.JSONField(default=list, blank=True, verbose_name='Ek ID Listesi')
     # Aynı mesajın Meta onaylı karşılığı. 24 saatlik pencere kapalıyken bu şablon

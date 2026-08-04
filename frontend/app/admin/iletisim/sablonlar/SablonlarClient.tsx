@@ -27,6 +27,9 @@ import {
 const EMPTY_FORM: TemplateEditorForm = {
   name: "",
   body: "",
+  header_type: "NONE",
+  header_text: "",
+  footer_text: "",
   category: "ozel",
   audience_scope: "admin",
   odev_pdf_role: "",
@@ -35,6 +38,27 @@ const EMPTY_FORM: TemplateEditorForm = {
   meta_channel_config_id: "",
   meta_template_name: "",
 };
+
+function headerFieldsFromTemplate(t: MessageTemplateItem) {
+  const h = t.header_json || {};
+  const type = (h.type || "NONE").toUpperCase() === "TEXT" ? "TEXT" : "NONE";
+  return {
+    header_type: type as "NONE" | "TEXT",
+    header_text: type === "TEXT" ? (h.text || "") : "",
+    footer_text: t.footer_text || "",
+  };
+}
+
+function headerPayloadFromForm(form: TemplateEditorForm) {
+  const header_json =
+    form.header_type === "TEXT"
+      ? { type: "TEXT" as const, text: (form.header_text || "").trim() }
+      : {};
+  return {
+    header_json,
+    footer_text: (form.footer_text || "").trim(),
+  };
+}
 
 export default function SablonlarClient() {
   const searchParams = useSearchParams();
@@ -117,6 +141,7 @@ export default function SablonlarClient() {
     setForm({
       name: t.name,
       body: t.body,
+      ...headerFieldsFromTemplate(t),
       category: t.category,
       audience_scope: t.audience_scope || "genel",
       odev_pdf_role: t.odev_pdf_role || "",
@@ -142,10 +167,15 @@ export default function SablonlarClient() {
       also_create_meta_template,
       meta_channel_config_id,
       meta_template_name,
+      header_type: _ht,
+      header_text: _hx,
+      footer_text: _ft,
       ...rest
     } = composerToTemplateForm(form, composerState);
+    const headerFields = headerPayloadFromForm(form);
     const payload = {
       ...rest,
+      ...headerFields,
       meta_template_id: meta_template_id || null,
       also_create_meta_template: !editing && !!also_create_meta_template,
       meta_channel_config_id:
@@ -157,6 +187,7 @@ export default function SablonlarClient() {
       if (editing) {
         await updateTemplate(editing.id, {
           ...rest,
+          ...headerFields,
           meta_template_id: meta_template_id || null,
         });
         setSuccessMsg("Şablon güncellendi.");

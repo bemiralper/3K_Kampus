@@ -133,6 +133,39 @@ class TemplateAPITest(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn('stats_sent', res.data)
 
+    def test_template_header_footer_api(self):
+        res = self.client.post(
+            '/api/communication/templates/',
+            {
+                'kurum_id': self.kurum.id,
+                'name': 'Baslikli',
+                'body': 'Sayın {{veli_ad}}, bilgilendirme metni burada.',
+                'category': 'duyuru',
+                'header_json': {'type': 'TEXT', 'text': 'Bilgilendirme'},
+                'footer_text': '3K Kampus',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['header_json'].get('type'), 'TEXT')
+        self.assertEqual(res.data['header_json'].get('text'), 'Bilgilendirme')
+        self.assertEqual(res.data['footer_text'], '3K Kampus')
+        tpl_id = res.data['id']
+
+        res = self.client.patch(
+            f'/api/communication/templates/{tpl_id}/',
+            {
+                'kurum_id': self.kurum.id,
+                'name': 'Baslikli',
+                'footer_text': 'Guncel alt bilgi',
+                'header_json': {'type': 'NONE'},
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['footer_text'], 'Guncel alt bilgi')
+        self.assertEqual(res.data['header_json'] or {}, {})
+
     def test_coach_create_coach_scope_api(self):
         from apps.coaching.models import CoachProfile
         from apps.personel.domain.models import Personel

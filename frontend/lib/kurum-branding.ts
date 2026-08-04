@@ -32,6 +32,8 @@ export const DEFAULT_APP_LOGO = '/img/3k-logo.png';
 export const DEFAULT_FAVICON = '/favicon.svg';
 
 export const LOGIN_KURUM_KOD_KEY = '3k_login_kurum_kod';
+/** Landing / login ile uygulama içi aynı favicon kaynağı (session). */
+export const PREFERRED_FAVICON_KEY = '3k_preferred_favicon_url';
 
 export function mergeBranding(partial?: Partial<KurumBranding> | null): KurumBranding {
   if (!partial) return { ...DEFAULT_BRANDING };
@@ -142,9 +144,35 @@ export function getSubePrintLogo(sube: SubeBrandingInput | null | undefined): {
   return { src: DEFAULT_APP_LOGO, onDarkBackground: false };
 }
 
+export function rememberPreferredFavicon(branding: KurumBranding | null | undefined) {
+  if (typeof window === 'undefined') return;
+  const url = (branding?.favicon_url || '').trim();
+  if (!url) return;
+  try {
+    sessionStorage.setItem(PREFERRED_FAVICON_KEY, url);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getPreferredFaviconUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return sessionStorage.getItem(PREFERRED_FAVICON_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function getFaviconUrl(branding: KurumBranding): string {
-  if (!branding.favicon_url) return DEFAULT_FAVICON;
-  return resolveBrandingAssetUrl(branding.favicon_url, DEFAULT_FAVICON);
+  if (branding.favicon_url) {
+    return resolveBrandingAssetUrl(branding.favicon_url, DEFAULT_FAVICON);
+  }
+  const preferred = getPreferredFaviconUrl();
+  if (preferred) {
+    return resolveBrandingAssetUrl(preferred, DEFAULT_FAVICON);
+  }
+  return DEFAULT_FAVICON;
 }
 
 const KURUM_FAVICON_ATTR = 'data-kurum-favicon';
@@ -205,8 +233,9 @@ function setFaviconHref(href: string) {
 
 export function applyFavicon(branding: KurumBranding, options?: { force?: boolean }) {
   if (typeof document === 'undefined') return;
+  rememberPreferredFavicon(branding);
   const favicon = getFaviconUrl(branding);
-  const applyKey = brandingFaviconKey(branding);
+  const applyKey = `${favicon}|${branding.tema_rengi}`;
   if (!options?.force && applyKey === lastAppliedFaviconKey) return;
   lastAppliedFaviconKey = applyKey;
 

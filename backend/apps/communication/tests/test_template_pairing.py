@@ -106,6 +106,27 @@ class TemplatePairingServiceTest(TestCase):
         self.assertEqual(meta.name, 'odeme_hatirlatma')
         self.assertEqual(app.meta_template_id, meta.id)
 
+    def test_create_meta_from_app_copies_header_footer(self):
+        app = MessageTemplate.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            name='Başlıklı Hatırlatma',
+            body='Sayın {{veli_ad}}, taksit bilginiz hazırdır.',
+            header_json={'type': 'TEXT', 'text': 'Odeme hatirlatmasi'},
+            footer_text='3K Kampus',
+            category=TemplateCategory.OZEL,
+            audience_scope=TemplateAudienceScope.ADMIN,
+            created_by=self.user,
+        )
+        meta = TemplatePairingService.create_meta_from_app(
+            app,
+            channel_config_id=self.account.id,
+            user=self.user,
+        )
+        self.assertEqual(meta.header_json.get('type'), 'TEXT')
+        self.assertEqual(meta.header_json.get('text'), 'Odeme hatirlatmasi')
+        self.assertEqual(meta.footer_text, '3K Kampus')
+
     def test_rejects_body_violating_meta_rules(self):
         app = MessageTemplate.objects.create(
             kurum=self.kurum,

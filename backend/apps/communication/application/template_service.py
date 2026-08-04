@@ -67,6 +67,8 @@ class TemplateService:
         audience_scope: str = TemplateAudienceScope.GENEL,
         variables_json: list | None = None,
         attachment_ids_json: list | None = None,
+        header_json: dict | None = None,
+        footer_text: str = '',
         meta_template_id=None,
     ) -> MessageTemplate:
         scope = audience_scope or TemplateAudienceScope.GENEL
@@ -77,11 +79,14 @@ class TemplateService:
         TemplateCategoryService().validate_category_slug(
             kurum_id, category_slug, sube_id=sube_id,
         )
+        header, footer = self._normalized_header_footer(header_json, footer_text)
         return MessageTemplate.objects.create(
             kurum_id=kurum_id,
             sube_id=sube_id,
             name=name.strip(),
             body=body or '',
+            header_json=header,
+            footer_text=footer,
             category=category_slug,
             audience_scope=scope,
             variables_json=variables_json or [],
@@ -105,6 +110,34 @@ class TemplateService:
             raise ValidationError('Meta şablonu bulunamadı.')
         return meta_template_id
 
+    @staticmethod
+    def _normalized_header_footer(header_json, footer_text: str | None):
+        """TEXT başlık + alt bilgi; Meta kurallarıyla uyumlu tut."""
+        from apps.communication.application.meta_template_validation import (
+            validate_footer,
+            validate_header,
+        )
+
+        header = dict(header_json or {}) if header_json is not None else {}
+        htype = (header.get('type') or 'NONE').upper()
+        if htype in ('', 'NONE'):
+            header = {}
+        elif htype == 'TEXT':
+            header = {
+                'type': 'TEXT',
+                'text': (header.get('text') or '').strip()[:60],
+            }
+        else:
+            # Uygulama şablonunda yalnızca metin başlığı desteklenir
+            raise ValidationError(
+                'Uygulama şablonunda başlık türü yalnızca Yok veya Metin olabilir.',
+            )
+        footer = (footer_text or '')[:60]
+        issues = [*validate_header(header), *validate_footer(footer)]
+        if issues:
+            raise ValidationError(' '.join(issues))
+        return header, footer
+
     def update(
         self,
         template: MessageTemplate,
@@ -125,10 +158,24 @@ class TemplateService:
             fields['meta_template_id'] = self._validated_meta_template_id(
                 template.kurum_id, fields['meta_template_id'],
             )
+        if 'header_json' in fields or 'footer_text' in fields:
+            header, footer = self._normalized_header_footer(
+                fields['header_json'] if 'header_json' in fields else template.header_json,
+                fields['footer_text'] if 'footer_text' in fields else template.footer_text,
+            )
+            fields['header_json'] = header
+            fields['footer_text'] = footer
+        # Meta oluşturma bayrakları update'e sızmasın
+        for key in (
+            'also_create_meta_template', 'meta_channel_config_id',
+            'meta_template_name', 'meta_language', 'meta_category',
+            'odev_pdf_role',
+        ):
+            fields.pop(key, None)
         allowed = {
             'name', 'body', 'category', 'audience_scope',
             'variables_json', 'attachment_ids_json', 'is_active',
-            'meta_template_id',
+            'meta_template_id', 'header_json', 'footer_text',
         }
         for key, value in fields.items():
             if key in allowed:

@@ -77,12 +77,18 @@ class TemplatePairingService:
 
         name = (display_name or '').strip() or humanize_meta_name(meta.name)
         variables = extract_named_variables_in_order(body)
+        # Uygulama şablonunda yalnızca metin başlığı tutulur
+        header = meta.header_json or {}
+        if (header.get('type') or '').upper() != 'TEXT':
+            header = {}
         return TemplateService().create(
             meta.kurum_id,
             sube_id=sube_id,
             user=user,
             name=name,
             body=body,
+            header_json=header,
+            footer_text=meta.footer_text or '',
             category=category or TemplateCategory.OZEL,
             audience_scope=audience_scope or TemplateAudienceScope.GENEL,
             variables_json=variables,
@@ -100,7 +106,7 @@ class TemplatePairingService:
         meta_category: str = MetaTemplateCategory.UTILITY,
         usage_scope: str = MetaTemplateUsage.ALL,
         header_json: dict | None = None,
-        footer_text: str = '',
+        footer_text: str | None = None,
     ) -> WhatsAppMetaTemplate:
         """Uygulama şablonundan Meta taslağı oluştur ve bağla."""
         if template.meta_template_id:
@@ -110,10 +116,17 @@ class TemplatePairingService:
         if not body:
             raise ValidationError('Meta şablonu için uygulama gövde metni boş olamaz.')
 
+        resolved_header = (
+            header_json if header_json is not None else (template.header_json or {})
+        )
+        resolved_footer = (
+            footer_text if footer_text is not None else (template.footer_text or '')
+        )
+
         issues = validate_template_content(
             body_named=body,
-            header_json=header_json or {},
-            footer_text=footer_text or '',
+            header_json=resolved_header or {},
+            footer_text=resolved_footer or '',
         )
         if issues:
             raise ValidationError('Meta kuralları: ' + ' '.join(issues))
@@ -127,8 +140,8 @@ class TemplatePairingService:
                 language=language or 'tr',
                 meta_category=meta_category or MetaTemplateCategory.UTILITY,
                 body_named=body,
-                header_json=header_json or {},
-                footer_text=footer_text or '',
+                header_json=resolved_header or {},
+                footer_text=resolved_footer or '',
                 usage_scope=usage_scope or MetaTemplateUsage.ALL,
                 user=user,
             )

@@ -18,7 +18,9 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = MessageTemplate
         fields = [
-            'id', 'category', 'category_label', 'audience_scope', 'name', 'body', 'variables_json', 'attachment_ids_json',
+            'id', 'category', 'category_label', 'audience_scope', 'name', 'body',
+            'header_json', 'footer_text',
+            'variables_json', 'attachment_ids_json',
             'is_active', 'usage_count', 'stats_sent', 'stats_read', 'stats_failed',
             'avg_read_seconds', 'created_by', 'created_by_name', 'created_at', 'updated_at',
             'system_usages', 'is_system_active', 'odev_pdf_role',
@@ -59,6 +61,8 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
 class MessageTemplateWriteSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     body = serializers.CharField(required=False, allow_blank=True, default='')
+    header_json = serializers.JSONField(required=False, default=dict)
+    footer_text = serializers.CharField(required=False, allow_blank=True, default='', max_length=60)
     category = serializers.CharField(required=False, default='ozel')
     audience_scope = serializers.CharField(required=False, default='genel')
     variables_json = serializers.JSONField(required=False, default=list)

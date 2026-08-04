@@ -44,7 +44,7 @@ function Sistem3kPageInner({ initialData }: { initialData: LandingData | null })
 
   return (
     <>
-      <KurumBrandingHead branding={b} documentTitle={SITE_TAB_TITLE} manageFavicon={false} />
+      <KurumBrandingHead branding={b} documentTitle={SITE_TAB_TITLE} manageFavicon />
       <div className="min-h-screen bg-white">
         <TopBar settings={settings} socialLinks={data?.social_links ?? []} />
         <TopBarMobile settings={settings} />
