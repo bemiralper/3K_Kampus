@@ -40,7 +40,10 @@ class BirthdayMediaService:
             raise ValidationError('Görsel en fazla 5 MB olabilir.')
         ext = os.path.splitext(upload.name or '')[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
-            raise ValidationError(f'Desteklenmeyen tür: {ext}. png/jpg/webp kullanın.')
+            raise ValidationError(
+                f'Desteklenmeyen dosya türü ({ext or "bilinmiyor"}). '
+                'PNG, JPG veya WEBP yükleyin (HEIC desteklenmez).',
+            )
 
         mime = getattr(upload, 'content_type', '') or mimetypes.guess_type(upload.name)[0] or ''
         asset = BirthdayMediaAsset(

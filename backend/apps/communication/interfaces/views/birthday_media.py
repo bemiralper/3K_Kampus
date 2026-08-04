@@ -8,7 +8,7 @@ from apps.communication.application.birthday_media_service import BirthdayMediaS
 from apps.communication.interfaces.sube_context import assert_record_sube_access
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube
 from apps.communication.interfaces.views.base import CommunicationAPIView
-from apps.communication.permissions import CommunicationManagePermission
+from apps.communication.permissions import CommunicationConfigPermission
 
 
 def _serialize(asset) -> dict:
@@ -31,7 +31,8 @@ def _serialize(asset) -> dict:
 
 
 class BirthdayMediaListCreateView(CommunicationAPIView):
-    permission_classes = [CommunicationManagePermission]
+    # Bildirim şablonları ile aynı: config veya manage
+    permission_classes = [CommunicationConfigPermission]
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
@@ -67,12 +68,13 @@ class BirthdayMediaListCreateView(CommunicationAPIView):
                 sort_order=sort_order,
             )
         except ValidationError as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            msg = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
+            return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response(_serialize(asset), status=status.HTTP_201_CREATED)
 
 
 class BirthdayMediaDetailView(CommunicationAPIView):
-    permission_classes = [CommunicationManagePermission]
+    permission_classes = [CommunicationConfigPermission]
 
     def patch(self, request, asset_id):
         kurum_id, sube_id, err = resolve_kurum_and_sube(request)

@@ -1647,7 +1647,12 @@ export async function uploadBirthdayMedia(file: File): Promise<BirthdayMediaAsse
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Görsel yüklenemedi');
+    const detail = err.error || err.detail || err.message;
+    throw new Error(
+      typeof detail === 'string' && detail.trim()
+        ? detail
+        : `Görsel yüklenemedi (HTTP ${res.status})`,
+    );
   }
   return res.json();
 }
