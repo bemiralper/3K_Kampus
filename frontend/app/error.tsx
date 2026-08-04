@@ -18,7 +18,7 @@ export default function Error({
 
   const onRetry = () => {
     if (isChunkError) {
-      reloadAfterChunkError();
+      reloadAfterChunkError({ force: true });
       return;
     }
     if (isRouterCacheError) {

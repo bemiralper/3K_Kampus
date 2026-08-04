@@ -14,11 +14,14 @@ export function isChunkLoadError(message = "", stack = ""): boolean {
   );
 }
 
-/** Deploy sonrası stale chunk — oturumda bir kez tam yenileme (cache-bust) */
-export function reloadAfterChunkError(): boolean {
+/**
+ * Deploy sonrası stale chunk — oturumda bir kez tam yenileme (cache-bust).
+ * `force: true` (hata ekranı butonu) bayrağı yok sayar; kullanıcı takılı kalmasın.
+ */
+export function reloadAfterChunkError(options?: { force?: boolean }): boolean {
   if (typeof window === "undefined") return false;
   try {
-    if (sessionStorage.getItem(RELOAD_KEY)) return false;
+    if (!options?.force && sessionStorage.getItem(RELOAD_KEY)) return false;
     sessionStorage.setItem(RELOAD_KEY, "1");
   } catch {
     /* ignore */
