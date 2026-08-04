@@ -18,7 +18,6 @@ import {
   isNotificationSoundMuted,
   toggleNotificationSoundMuted,
 } from '@/lib/notification-sound';
-import { useCommunicationSSE } from '@/hooks/useCommunicationSSE';
 
 /* ════════════════════════════════════════════
    🔔 BİLDİRİM ÇANI (Header Badge + Dropdown)
@@ -27,7 +26,8 @@ import { useCommunicationSSE } from '@/hooks/useCommunicationSSE';
 interface Props {
   /**
    * Polling aralığı (ms). Varsayılan 8 sn.
-   * SSE uygulama genelinde (çan üzerinden) açılır; yoklama yedek kalır.
+   * SSE yalnızca Mesajlar ekranında açılır (sync gunicorn worker kilidi);
+   * çan polling + `lms:notifications-refresh` dinler.
    */
   pollInterval?: number;
 }
@@ -131,13 +131,6 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     setUnreadCount(Math.max(0, takvimUnread - waDupInTakvim) + (waUnread || 0));
     setRecent(merged);
   }, [adminInbox]);
-
-  // Uygulama genelinde tek SSE — Mesajlar sayfası açık olmasa da anlık yenileme
-  useCommunicationSSE({
-    enabled: true,
-    onUpdate: () => { void load(); },
-    onFallbackPoll: () => { void load(); },
-  });
 
   useEffect(() => {
     setSoundMuted(isNotificationSoundMuted());
