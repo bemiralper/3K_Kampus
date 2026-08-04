@@ -69,7 +69,12 @@ class ResolvedTemplate:
     def is_disabled(self) -> bool:
         return self.send_mode == NotificationSendMode.DISABLED
 
-    def meta_usable(self, *, needs_document: bool) -> bool:
+    def meta_usable(
+        self,
+        *,
+        needs_document: bool = False,
+        needs_image: bool = False,
+    ) -> bool:
         """Bağlı Meta şablonu bu gönderim biçimiyle uyumlu ve onaylı mı?"""
         if not self.meta_template:
             return False
@@ -78,10 +83,18 @@ class ResolvedTemplate:
         header_type = meta_template_header_type(self.meta_template)
         if needs_document:
             return header_type == 'DOCUMENT'
+        if needs_image:
+            return header_type == 'IMAGE'
         # Medya başlıklı şablon ek olmadan gönderilemez
         return header_type not in ('DOCUMENT', 'IMAGE', 'VIDEO')
 
-    def use_meta(self, *, needs_document: bool, session_open: bool = False) -> bool:
+    def use_meta(
+        self,
+        *,
+        needs_document: bool = False,
+        needs_image: bool = False,
+        session_open: bool = False,
+    ) -> bool:
         """
         Bu çözümleme Meta şablonuyla mı gönderilmeli?
 
@@ -90,7 +103,7 @@ class ResolvedTemplate:
         """
         if self.is_disabled or self.send_mode == NotificationSendMode.FREEFORM_ONLY:
             return False
-        if not self.meta_usable(needs_document=needs_document):
+        if not self.meta_usable(needs_document=needs_document, needs_image=needs_image):
             return False
         if self.send_mode == NotificationSendMode.META_ONLY:
             return True
@@ -179,6 +192,11 @@ def _discover_meta_by_name(kurum_id: int, event: NotificationEvent, recipient_ty
             if meta_template_header_type(tpl) == 'DOCUMENT':
                 return tpl
         return None
+    if event.has_image:
+        for tpl in candidates:
+            if meta_template_header_type(tpl) == 'IMAGE':
+                return tpl
+        return None
     return candidates[0]
 
 
@@ -261,6 +279,10 @@ def resolve_binding(
         elif event.has_document and meta_template_header_type(resolved.meta_template) != 'DOCUMENT':
             resolved.warnings.append(
                 'Bu olay PDF gönderiyor ancak seçili Meta şablonunda DOCUMENT başlığı yok.',
+            )
+        elif event.has_image and meta_template_header_type(resolved.meta_template) != 'IMAGE':
+            resolved.warnings.append(
+                'Bu olay görsel gönderiyor ancak seçili Meta şablonunda IMAGE başlığı yok.',
             )
     elif resolved.send_mode == NotificationSendMode.META_ONLY:
         resolved.warnings.append(

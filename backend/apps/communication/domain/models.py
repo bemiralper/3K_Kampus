@@ -1191,3 +1191,100 @@ class RawWebhookEvent(models.Model):
 
     def __str__(self):
         return f'{self.event_type} — {self.processing_status}'
+
+
+class BirthdayMediaAsset(models.Model):
+    """Doğum günü WhatsApp görsel havuzu — gönderimde biri seçilir."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='birthday_media_assets',
+        verbose_name='Kurum',
+    )
+    sube = models.ForeignKey(
+        'sube.Sube',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='birthday_media_assets',
+        verbose_name='Şube',
+    )
+    file = models.FileField(upload_to='communication/birthday/%Y/%m/')
+    mime_type = models.CharField(max_length=128, blank=True, default='')
+    original_name = models.CharField(max_length=255, blank=True, default='')
+    file_size = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True, verbose_name='Aktif')
+    sort_order = models.PositiveIntegerField(default=0, verbose_name='Sıra')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='birthday_media_uploads',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'comm_birthday_media'
+        verbose_name = 'Doğum Günü Görseli'
+        verbose_name_plural = 'Doğum Günü Görselleri'
+        ordering = ['sort_order', '-created_at']
+        indexes = [
+            models.Index(fields=['kurum', 'sube', 'is_active'], name='comm_bday_media_scope_idx'),
+        ]
+
+    def __str__(self):
+        return self.original_name or str(self.id)
+
+
+class BirthdayWishLog(models.Model):
+    """Aynı öğrenciye aynı yıl ikinci kez doğum günü mesajı gitmesin."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='birthday_wish_logs',
+    )
+    ogrenci = models.ForeignKey(
+        'ogrenci.Ogrenci',
+        on_delete=models.CASCADE,
+        related_name='birthday_wish_logs',
+    )
+    year = models.PositiveIntegerField(verbose_name='Yıl')
+    media_asset = models.ForeignKey(
+        BirthdayMediaAsset,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='wish_logs',
+    )
+    message = models.ForeignKey(
+        Message,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='birthday_wish_logs',
+    )
+    status = models.CharField(max_length=32, default='queued', verbose_name='Durum')
+    detail = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'comm_birthday_wish_log'
+        verbose_name = 'Doğum Günü Gönderim Logu'
+        verbose_name_plural = 'Doğum Günü Gönderim Logları'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum', 'ogrenci', 'year'],
+                name='comm_bday_wish_unique_year',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['kurum', 'year'], name='comm_bday_wish_kurum_year_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.ogrenci_id} — {self.year}'

@@ -1605,10 +1605,65 @@ export interface NotificationEventItem {
   label: string;
   description: string;
   has_document: boolean;
+  has_image?: boolean;
   opt_in_category: string;
   variables: string[];
   meta_name_base: string;
   slots: NotificationEventSlot[];
+}
+
+export interface BirthdayMediaAsset {
+  id: string;
+  original_name: string;
+  mime_type: string;
+  file_size: number;
+  is_active: boolean;
+  sort_order: number;
+  sube_id: number | null;
+  url: string;
+  created_at: string | null;
+}
+
+export async function fetchBirthdayMedia(params?: {
+  active_only?: boolean;
+}): Promise<{ assets: BirthdayMediaAsset[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.active_only) qs.set('active_only', '1');
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return request(`/birthday-media/${suffix}`);
+}
+
+export async function uploadBirthdayMedia(file: File): Promise<BirthdayMediaAsset> {
+  const form = new FormData();
+  form.append('file', file);
+  const csrf = getCsrfToken();
+  const headers: Record<string, string> = { ...getContextHeaders() };
+  if (csrf) headers['X-CSRFToken'] = csrf;
+  const res = await fetch(communicationApiUrl('/birthday-media/'), {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+    headers,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Görsel yüklenemedi');
+  }
+  return res.json();
+}
+
+export async function updateBirthdayMedia(
+  id: string,
+  data: Partial<{ is_active: boolean; sort_order: number }>,
+): Promise<BirthdayMediaAsset> {
+  return request(`/birthday-media/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteBirthdayMedia(id: string): Promise<{ success: boolean }> {
+  return request(`/birthday-media/${id}/`, { method: 'DELETE' });
 }
 
 export interface NotificationEventCatalog {

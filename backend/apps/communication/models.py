@@ -2,6 +2,8 @@
 Communication Modelleri — Django model registry için re-export
 """
 from apps.communication.domain.models import (  # noqa: F401
+    BirthdayMediaAsset,
+    BirthdayWishLog,
     CampaignAttachment,
     CommunicationChannelConfig,
     ContactIdentity,

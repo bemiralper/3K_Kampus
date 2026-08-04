@@ -99,6 +99,7 @@ def list_event_catalog(
             'label': event.label,
             'description': event.description,
             'has_document': event.has_document,
+            'has_image': event.has_image,
             'opt_in_category': event.opt_in_category,
             'variables': list(event.all_variables()),
             'meta_name_base': event.meta_name_base,

@@ -22,6 +22,10 @@ from apps.communication.interfaces.views.config import WhatsAppConfigTestView, W
 from apps.communication.interfaces.views.queue import OutboundQueueListView
 from apps.communication.interfaces.views.conversation_open import ConversationOpenView
 from apps.communication.interfaces.views.meta_templates import WhatsAppMetaTemplatesView
+from apps.communication.interfaces.views.birthday_media import (
+    BirthdayMediaDetailView,
+    BirthdayMediaListCreateView,
+)
 from apps.communication.interfaces.views.notification_bindings import (
     NotificationBindingPreviewView,
     NotificationBindingUpsertView,
@@ -143,6 +147,16 @@ urlpatterns = [
         'notification-bindings/preview/',
         NotificationBindingPreviewView.as_view(),
         name='notification-bindings-preview',
+    ),
+    path(
+        'birthday-media/',
+        BirthdayMediaListCreateView.as_view(),
+        name='birthday-media-list-create',
+    ),
+    path(
+        'birthday-media/<uuid:asset_id>/',
+        BirthdayMediaDetailView.as_view(),
+        name='birthday-media-detail',
     ),
     path('accounts/', WhatsAppAccountListCreateView.as_view(), name='whatsapp-accounts'),
     path('accounts/accessible/', WhatsAppAccessibleAccountsView.as_view(), name='whatsapp-accounts-accessible'),

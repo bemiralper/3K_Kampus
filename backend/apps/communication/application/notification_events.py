@@ -24,6 +24,7 @@ MODULE_TAKVIM = 'takvim'
 MODULE_DEVAMSIZLIK = 'devamsizlik'
 MODULE_FINANS = 'finans'
 MODULE_DUYURU = 'duyuru'
+MODULE_OGRENCI = 'ogrenci'
 
 MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_ODEV: 'Ödev',
@@ -35,6 +36,7 @@ MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_DEVAMSIZLIK: 'Devamsızlık',
     MODULE_FINANS: 'Finans',
     MODULE_DUYURU: 'Duyuru',
+    MODULE_OGRENCI: 'Öğrenci',
 })
 
 COMMON_VARIABLES = ('kurum_ad', 'sube', 'sinif')
@@ -53,6 +55,8 @@ class NotificationEvent:
     meta_name_base: str
     default_bodies: Mapping[str, str]
     has_document: bool = False
+    # IMAGE header Meta şablonu + runtime görsel eki (doğum günü vb.)
+    has_image: bool = False
     description: str = ''
     legacy_meta_names: Mapping[str, tuple[str, ...]] = field(
         default_factory=lambda: MappingProxyType({}),
@@ -336,6 +340,29 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         meta_name_base='genel_duyuru',
         default_bodies=MappingProxyType({
             '*': '{{mesaj}}',
+        }),
+    ),
+    NotificationEvent(
+        key='ogrenci.dogum_gunu',
+        module=MODULE_OGRENCI,
+        label='Doğum günü kutlaması',
+        description=(
+            'Her gece 00:01’de doğum günü olan aktif öğrenciye WhatsApp ile '
+            'görsel + mesaj gönderilir. Görseller Doğum Günü havuzundan seçilir.'
+        ),
+        recipients=(OGRENCI,),
+        opt_in_category='duyuru',
+        has_image=True,
+        variables=('ogrenci_ad', 'yas', 'kurum_ad', 'sube', 'sinif'),
+        meta_name_base='dogum_gunu',
+        legacy_meta_names=MappingProxyType({
+            OGRENCI: ('dogum_gunu_ogrenci', 'birthday_student'),
+        }),
+        default_bodies=MappingProxyType({
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, doğum günün kutlu olsun! '
+                '{{yas}}. yaşın sağlık ve başarı getirsin.'
+            ),
         }),
     ),
 )

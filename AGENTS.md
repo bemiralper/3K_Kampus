@@ -101,6 +101,7 @@ Background workers are management commands by default; optional Celery + Redis w
 | `python manage.py process_communication_queue` | Sends queued WhatsApp/SMS outbound messages | Every 1 min |
 | `python manage.py check_conversation_sla` | Marks unanswered coach threads as NEEDS_SUPPORT (default 30 min) | Every 1 min |
 | `python manage.py send_payment_reminders` | Enqueues overdue/upcoming taksit reminders (`--days-ahead=3`, `--dry-run`) | Daily 09:00 |
+| `python manage.py send_birthday_wishes` | Doğum günü olan öğrencilere IMAGE Meta/şablon + havuz görseli gönderir (`--dry-run`, `--date`, `--kurum-id`) | Daily 00:01 |
 | `python manage.py backfill_conversation_names` | Sohbetlerde görünen kişi adını `contact_name` alanına yazar (istek başına canlı eşleme yapılmasın diye) — `--kurum-id`, `--dry-run` | Tek seferlik / gerektikçe |
 
 Run from `backend/` with appropriate `DJANGO_ENV`. Module hooks (görüşme, ödev, sınav, devamsızlık) enqueue only; delivery requires `process_communication_queue` (cron) or Celery worker.

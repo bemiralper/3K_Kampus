@@ -256,6 +256,19 @@ def _store_attachment_bytes(
     return None
 
 
+def _guess_image_mime(filename: str, mime_type: str = '') -> str:
+    if mime_type and mime_type.startswith('image/'):
+        return mime_type
+    lower = (filename or '').lower()
+    if lower.endswith('.png'):
+        return 'image/png'
+    if lower.endswith('.webp'):
+        return 'image/webp'
+    if lower.endswith(('.jpg', '.jpeg')):
+        return 'image/jpeg'
+    return mime_type or 'image/jpeg'
+
+
 def send_template_document_to_ogrenci(
     kurum_id: int,
     ogrenci_id: int,
@@ -304,6 +317,211 @@ def send_template_document_to_ogrenci(
             template_language=template_language or 'tr',
             channel_config_id=channel_config_id,
             template_context=template_context or {},
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_template_image_to_ogrenci(
+    kurum_id: int,
+    ogrenci_id: int,
+    *,
+    template_name: str,
+    template_language: str = 'tr',
+    template_context: dict | None = None,
+    channel_config_id: str | None = None,
+    preview_text: str = '',
+    category: str,
+    source_module: str,
+    source_id: str | int,
+    file_path: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str = 'birthday.jpg',
+    mime_type: str = '',
+    sent_by_user_id: int | None = None,
+) -> SendResult | None:
+    """Meta IMAGE-header template: görsel header + gövde metni."""
+    from apps.ogrenci.domain.models import Ogrenci
+
+    ogrenci = Ogrenci.objects.filter(id=ogrenci_id, kurum_id=kurum_id).first()
+    if not ogrenci or not ogrenci.telefon:
+        return SendResult(success=False, errors=['Öğrenci telefonu bulunamadı.'])
+
+    storage_path = _store_attachment_bytes(
+        file_path=file_path, file_bytes=file_bytes, filename=filename,
+    )
+    if not storage_path:
+        return SendResult(success=False, errors=['Dosya bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=RecipientQuery(
+            phone=ogrenci.telefon,
+            ogrenci_id=ogrenci_id,
+            opt_in_category=category,
+        ),
+        content=MessageContent(
+            text=preview_text or f'[{template_name}]',
+            message_type=MessageType.TEMPLATE,
+            attachment_path=storage_path,
+            attachment_filename=filename,
+            attachment_mime_type=_guess_image_mime(filename, mime_type),
+            template_name=template_name,
+            template_language=template_language or 'tr',
+            channel_config_id=channel_config_id,
+            template_context=template_context or {},
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_template_image_to_veli(
+    kurum_id: int,
+    veli_id: int,
+    *,
+    template_name: str,
+    template_language: str = 'tr',
+    template_context: dict | None = None,
+    channel_config_id: str | None = None,
+    preview_text: str = '',
+    category: str,
+    source_module: str,
+    source_id: str | int,
+    file_path: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str = 'birthday.jpg',
+    mime_type: str = '',
+    sent_by_user_id: int | None = None,
+) -> SendResult | None:
+    from apps.ogrenci.domain.models import OgrenciVeli
+
+    veli = OgrenciVeli.objects.filter(id=veli_id, ogrenci__kurum_id=kurum_id).first()
+    if not veli:
+        return SendResult(success=False, errors=['Veli bulunamadı.'])
+    if not ContactResolver.veli_allows_outbound(veli, category):
+        return SendResult(success=False, errors=['Veli opt-out.'])
+
+    storage_path = _store_attachment_bytes(
+        file_path=file_path, file_bytes=file_bytes, filename=filename,
+    )
+    if not storage_path:
+        return SendResult(success=False, errors=['Dosya bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=_veli_recipient_query(veli, category=category),
+        content=MessageContent(
+            text=preview_text or f'[{template_name}]',
+            message_type=MessageType.TEMPLATE,
+            attachment_path=storage_path,
+            attachment_filename=filename,
+            attachment_mime_type=_guess_image_mime(filename, mime_type),
+            template_name=template_name,
+            template_language=template_language or 'tr',
+            channel_config_id=channel_config_id,
+            template_context=template_context or {},
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_image_to_ogrenci(
+    kurum_id: int,
+    ogrenci_id: int,
+    body: str,
+    category: str,
+    source_module: str,
+    source_id: str | int,
+    *,
+    file_path: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str = 'birthday.jpg',
+    mime_type: str = '',
+    sent_by_user_id: int | None = None,
+    session_fallback: dict | None = None,
+) -> SendResult | None:
+    from apps.ogrenci.domain.models import Ogrenci
+
+    ogrenci = Ogrenci.objects.filter(id=ogrenci_id, kurum_id=kurum_id).first()
+    if not ogrenci or not ogrenci.telefon:
+        return SendResult(success=False, errors=['Öğrenci telefonu bulunamadı.'])
+
+    storage_path = _store_attachment_bytes(
+        file_path=file_path, file_bytes=file_bytes, filename=filename,
+    )
+    if not storage_path:
+        return SendResult(success=False, errors=['Dosya bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=RecipientQuery(
+            phone=ogrenci.telefon,
+            ogrenci_id=ogrenci_id,
+            opt_in_category=category,
+        ),
+        content=MessageContent(
+            text=body,
+            message_type=MessageType.IMAGE,
+            attachment_path=storage_path,
+            attachment_filename=filename,
+            attachment_mime_type=_guess_image_mime(filename, mime_type),
+            session_fallback=session_fallback,
+        ),
+        source=MessageSource(module=source_module, ref_id=source_id),
+        sender_user_id=sent_by_user_id,
+        process_immediately=True,
+    )
+
+
+def send_image_to_veli(
+    kurum_id: int,
+    veli_id: int,
+    body: str,
+    category: str,
+    source_module: str,
+    source_id: str | int,
+    *,
+    file_path: str | None = None,
+    file_bytes: bytes | None = None,
+    filename: str = 'birthday.jpg',
+    mime_type: str = '',
+    sent_by_user_id: int | None = None,
+    session_fallback: dict | None = None,
+) -> SendResult | None:
+    from apps.ogrenci.domain.models import OgrenciVeli
+
+    veli = OgrenciVeli.objects.filter(id=veli_id, ogrenci__kurum_id=kurum_id).first()
+    if not veli:
+        return SendResult(success=False, errors=['Veli bulunamadı.'])
+    if not ContactResolver.veli_allows_outbound(veli, category):
+        return SendResult(success=False, errors=['Veli opt-out.'])
+
+    storage_path = _store_attachment_bytes(
+        file_path=file_path, file_bytes=file_bytes, filename=filename,
+    )
+    if not storage_path:
+        return SendResult(success=False, errors=['Dosya bulunamadı.'])
+
+    return _safe_hook(
+        _service.send,
+        kurum_id,
+        recipients=_veli_recipient_query(veli, category=category),
+        content=MessageContent(
+            text=body,
+            message_type=MessageType.IMAGE,
+            attachment_path=storage_path,
+            attachment_filename=filename,
+            attachment_mime_type=_guess_image_mime(filename, mime_type),
+            session_fallback=session_fallback,
         ),
         source=MessageSource(module=source_module, ref_id=source_id),
         sender_user_id=sent_by_user_id,

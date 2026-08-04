@@ -133,6 +133,9 @@ export default function BildirimSablonlariClient() {
       const scoped = scopeAccountId
         ? metaTemplates.filter((t) => t.channel_config === scopeAccountId)
         : metaTemplates;
+      if (event.has_image) {
+        return scoped.filter((t) => headerTypeOf(t) === "IMAGE");
+      }
       if (!event.has_document) return scoped;
       return scoped.filter((t) => headerTypeOf(t) === "DOCUMENT");
     },
@@ -311,6 +314,7 @@ export default function BildirimSablonlariClient() {
                           >
                             {e.label}
                             {e.has_document && <span className="nb-doc-chip">PDF</span>}
+                            {e.has_image && <span className="nb-doc-chip">GÖRSEL</span>}
                           </button>
                         </li>
                       ))}

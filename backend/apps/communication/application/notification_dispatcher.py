@@ -53,6 +53,7 @@ class NotificationAttachment:
     filename: str = 'document.pdf'
     file_path: str | None = None
     file_bytes: bytes | None = None
+    mime_type: str = ''
 
     @property
     def is_empty(self) -> bool:
@@ -122,15 +123,26 @@ def build_preview(
     uygulama şablonu serbest mesaj olarak, kapalıyken Meta şablonu olarak gider.
     """
     event = get_event(event_key)
-    needs_document = event.has_document if has_attachment is None else bool(has_attachment)
+    needs_image = bool(event and event.has_image)
+    if has_attachment is None:
+        needs_document = bool(event and event.has_document)
+        attachment_present = needs_document or needs_image
+    else:
+        attachment_present = bool(has_attachment)
+        needs_document = bool(event and event.has_document and attachment_present and not needs_image)
     resolved = resolved or resolve_binding(
         kurum_id, event_key, recipient_type,
         sube_id=sube_id, channel_config_id=channel_config_id,
     )
-    meta_available = resolved.meta_usable(needs_document=needs_document)
+    meta_available = resolved.meta_usable(
+        needs_document=needs_document,
+        needs_image=needs_image and attachment_present,
+    )
     session_open = True if session is None else session.is_open
     uses_meta = resolved.use_meta(
-        needs_document=needs_document, session_open=session_open,
+        needs_document=needs_document,
+        needs_image=needs_image and attachment_present,
+        session_open=session_open,
     )
     # Modül hazır bir metin verdiyse (eski davranış) ve eşlemede LMS şablonu
     # bağlı değilse katalog varsayılanı yerine o metin kullanılır.
@@ -205,6 +217,54 @@ def _send_meta_document(hooks, kurum_id, recipient, *, preview, attachment, opt_
     return hooks.send_template_document_to_personel(
         kurum_id, recipient.personel_id, phone=recipient.phone, **kwargs,
     )
+
+
+def _send_meta_image(hooks, kurum_id, recipient, *, preview, attachment, opt_in_category, source, sent_by_user_id, context):
+    kwargs = dict(
+        template_name=preview.meta_template_name,
+        template_language=preview.meta_template_language,
+        template_context=context,
+        channel_config_id=preview.channel_config_id,
+        preview_text=preview.body,
+        category=opt_in_category,
+        source_module=source.module,
+        source_id=source.ref_id,
+        file_path=attachment.file_path,
+        file_bytes=attachment.file_bytes,
+        filename=attachment.filename,
+        mime_type=getattr(attachment, 'mime_type', '') or '',
+        sent_by_user_id=sent_by_user_id,
+    )
+    if recipient.recipient_type == RecipientType.OGRENCI:
+        return hooks.send_template_image_to_ogrenci(kurum_id, recipient.ogrenci_id, **kwargs)
+    if recipient.recipient_type == RecipientType.VELI:
+        return hooks.send_template_image_to_veli(kurum_id, recipient.veli_id, **kwargs)
+    return SendResult(success=False, errors=['IMAGE şablon yalnızca öğrenci/veli için desteklenir.'])
+
+
+def _send_image(
+    hooks, kurum_id, recipient, *,
+    body, attachment, opt_in_category, source, sent_by_user_id, session_fallback=None,
+):
+    common = dict(
+        file_path=attachment.file_path,
+        file_bytes=attachment.file_bytes,
+        filename=attachment.filename,
+        mime_type=getattr(attachment, 'mime_type', '') or '',
+        sent_by_user_id=sent_by_user_id,
+        session_fallback=session_fallback,
+    )
+    if recipient.recipient_type == RecipientType.OGRENCI:
+        return hooks.send_image_to_ogrenci(
+            kurum_id, recipient.ogrenci_id, body, opt_in_category,
+            source.module, source.ref_id, **common,
+        )
+    if recipient.recipient_type == RecipientType.VELI:
+        return hooks.send_image_to_veli(
+            kurum_id, recipient.veli_id, body, opt_in_category,
+            source.module, source.ref_id, **common,
+        )
+    return SendResult(success=False, errors=['Görsel gönderimi yalnızca öğrenci/veli için desteklenir.'])
 
 
 def _send_meta_text(hooks, kurum_id, recipient, *, preview, opt_in_category, source, sent_by_user_id, context):
@@ -369,6 +429,16 @@ def dispatch_event(
     session_fallback = _session_fallback(preview, context)
 
     if preview.uses_meta and not attachment.is_empty:
+        if event.has_image:
+            return _send_meta_image(
+                hooks, kurum_id, recipient,
+                preview=preview,
+                attachment=attachment,
+                opt_in_category=opt_in_category,
+                source=source,
+                sent_by_user_id=sent_by_user_id,
+                context=context,
+            )
         return _send_meta_document(
             hooks, kurum_id, recipient,
             preview=preview,
@@ -380,6 +450,16 @@ def dispatch_event(
         )
 
     if not attachment.is_empty:
+        if event.has_image:
+            return _send_image(
+                hooks, kurum_id, recipient,
+                body=preview.body,
+                attachment=attachment,
+                opt_in_category=opt_in_category,
+                source=source,
+                sent_by_user_id=sent_by_user_id,
+                session_fallback=session_fallback,
+            )
         return _send_document(
             hooks, kurum_id, recipient,
             body=preview.body,
