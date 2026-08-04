@@ -181,8 +181,6 @@ const KURUM_FAVICON_ATTR = 'data-kurum-favicon';
 
 /** Aynı kurum favicon'unun her render'da tekrar indirilmesini önler */
 let lastAppliedFaviconKey = '';
-/** Önceki blob: URL'yi serbest bırakmak için */
-let lastFaviconBlobUrl: string | null = null;
 /** Aynı favicon için üst üste gelen fetch isteklerini engeller */
 let faviconFetchToken = 0;
 
@@ -201,6 +199,10 @@ function clearForeignFaviconLinks() {
 }
 
 function faviconMimeType(href: string): string | undefined {
+  if (href.startsWith('data:')) {
+    const mime = href.slice(5).split(/[;,]/, 1)[0];
+    return mime || undefined;
+  }
   const path = href.split('?')[0].split('#')[0].toLowerCase();
   if (path.endsWith('.svg')) return 'image/svg+xml';
   if (path.endsWith('.png')) return 'image/png';
@@ -226,11 +228,21 @@ function replaceFaviconLink(rel: string, href: string, sizes?: string) {
   document.head.appendChild(link);
 }
 
-function setFaviconHref(href: string) {
+/** `tabHref` sekme ikonu; `appleHref` dokunmatik ikon (data: URL'yi büyütmemek için ayrı). */
+function setFaviconHref(tabHref: string, appleHref: string = tabHref) {
   clearForeignFaviconLinks();
-  replaceFaviconLink('icon', href);
-  replaceFaviconLink('shortcut icon', href);
-  replaceFaviconLink('apple-touch-icon', href, '180x180');
+  replaceFaviconLink('icon', tabHref);
+  replaceFaviconLink('shortcut icon', tabHref);
+  replaceFaviconLink('apple-touch-icon', appleHref, '180x180');
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error('favicon read failed'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 export function applyFavicon(branding: KurumBranding, options?: { force?: boolean }) {
@@ -245,23 +257,23 @@ export function applyFavicon(branding: KurumBranding, options?: { force?: boolea
   const bustedUrl = `${favicon}${favicon.includes('?') ? '&' : '?'}t=${Date.now()}`;
 
   // Önce senkron uygula — Next navigasyonunda varsayılan <link> yeniden eklense
-  // bile blob fetch bitene kadar boşlukta /favicon.svg kalmasın.
+  // bile data: URL hazırlanana kadar boşlukta /favicon.svg kalmasın.
   setFaviconHref(isDefault ? favicon : bustedUrl);
 
   if (isDefault || typeof fetch === 'undefined') {
     return;
   }
 
-  // Özel favicon: blob: URL ile Chrome sekme önbelleğini bypass et.
+  // Özel favicon: data: URL ile Chrome'un sekme ikonu önbelleğini bypass et.
+  // blob: KULLANILAMAZ — favicon çözümlemesi tarayıcı sürecinde yapılır ve
+  // blob: URL'ler o bağlamda çözülemez; sekme ikonu boş kalır.
   const token = ++faviconFetchToken;
   fetch(bustedUrl, { cache: 'no-store' })
     .then((res) => (res.ok ? res.blob() : Promise.reject(new Error('favicon fetch failed'))))
-    .then((blob) => {
+    .then((blob) => blobToDataUrl(blob))
+    .then((dataUrl) => {
       if (token !== faviconFetchToken) return;
-      const objectUrl = URL.createObjectURL(blob);
-      setFaviconHref(objectUrl);
-      if (lastFaviconBlobUrl) URL.revokeObjectURL(lastFaviconBlobUrl);
-      lastFaviconBlobUrl = objectUrl;
+      setFaviconHref(dataUrl, bustedUrl);
     })
     .catch(() => {
       // Senkron bustedUrl zaten uygulandı
