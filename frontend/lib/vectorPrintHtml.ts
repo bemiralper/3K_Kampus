@@ -13,9 +13,7 @@ export interface VectorPrintHtmlOptions {
 
 const REPORT_PRINT_HELPERS = `
   .page-break-avoid,
-  .ok-report-card,
   .ok-report-eval-panel,
-  .ok-report-stat-grid,
   .ok-report-stat-card,
   .ok-report-topic,
   .ok-report-perf,
@@ -30,7 +28,19 @@ const REPORT_PRINT_HELPERS = `
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
-  .ok-report-header { position: relative; overflow: hidden; }
+  /* Büyük ders analizi kartı sayfa içinde bölünebilir — yoksa 1. sayfa boş kalır */
+  .ok-report-card {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+  .ok-report-stat-grid { display: none !important; }
+  .ok-report-eval-panel { margin-bottom: 10px !important; }
+  .ok-report-header {
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 8px !important;
+    padding: 10px 14px !important;
+  }
   .ok-report-card,
   .ok-report-eval-panel { overflow: visible; }
   .ok-report-perf {

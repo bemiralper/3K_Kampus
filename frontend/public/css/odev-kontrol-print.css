@@ -1013,11 +1013,9 @@
   line-height: 1.5;
 }
 
-/* PDF sayfa kırılımı — blokları yarıya bölme */
+/* PDF sayfa kırılımı — büyük ders kartını tek parça tutma (1. sayfa boş kalır) */
 .page-break-avoid,
-.ok-report-card,
 .ok-report-eval-panel,
-.ok-report-stat-grid,
 .ok-report-stat-card,
 .ok-report-topic,
 .ok-report-perf,
@@ -1033,9 +1031,27 @@
   break-inside: avoid !important;
 }
 
+.ok-report-stat-grid {
+  display: none !important;
+}
+
+.ok-report-eval-panel {
+  margin-bottom: 10px !important;
+}
+
+.ok-report-header {
+  margin-bottom: 8px !important;
+  padding: 10px 14px !important;
+}
+
 .ok-report-card,
 .ok-report-eval-panel {
   overflow: visible;
+}
+
+.ok-report-card {
+  page-break-inside: auto !important;
+  break-inside: auto !important;
 }
 
 .ok-report-perf {
