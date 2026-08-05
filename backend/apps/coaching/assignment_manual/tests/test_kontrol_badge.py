@@ -14,7 +14,7 @@ KONTROL_BADGE_URL = '/api/coaching/manual-assignments/assignments/kontrol_badge/
 
 
 class KontrolBadgeTest(TestCase):
-    """Ödev Kontrol sidebar badge endpoint sayım mantığı."""
+    """Ödev Kontrol sidebar badge — yalnızca kontrol günü bugün olanlar."""
 
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='Badge Kurum', kod='BDG')
@@ -41,6 +41,7 @@ class KontrolBadgeTest(TestCase):
         self.client.force_authenticate(user=self.coach)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
 
+        self.due_today = timezone.now()
         self.due_future = timezone.now() + timezone.timedelta(days=3)
         self.due_past = timezone.now() - timezone.timedelta(days=1)
 
@@ -55,26 +56,39 @@ class KontrolBadgeTest(TestCase):
         defaults.update(kwargs)
         return ManualAssignment.objects.create(**defaults)
 
-    def test_kontrol_badge_counts_by_status(self):
-        self._create_assignment(status=ManualAssignment.Status.ASSIGNED)
-        self._create_assignment(status=ManualAssignment.Status.IN_PROGRESS)
-        self._create_assignment(status=ManualAssignment.Status.OVERDUE, due_date=self.due_past)
-        self._create_assignment(status=ManualAssignment.Status.DRAFT)
-        self._create_assignment(status=ManualAssignment.Status.COMPLETED)
-        self._create_assignment(status=ManualAssignment.Status.CANCELLED)
+    def test_kontrol_badge_counts_only_due_today(self):
         self._create_assignment(
             status=ManualAssignment.Status.ASSIGNED,
-            is_active=False,
+            due_date=self.due_today,
+            title='Bugün kontrol',
         )
+        self._create_assignment(
+            status=ManualAssignment.Status.IN_PROGRESS,
+            due_date=self.due_today,
+            title='Bugün devam',
+        )
+        self._create_assignment(
+            status=ManualAssignment.Status.ASSIGNED,
+            due_date=self.due_future,
+            title='İleride',
+        )
+        self._create_assignment(
+            status=ManualAssignment.Status.OVERDUE,
+            due_date=self.due_past,
+            title='Gecikmiş',
+        )
+        self._create_assignment(status=ManualAssignment.Status.DRAFT)
+        self._create_assignment(status=ManualAssignment.Status.COMPLETED)
 
         response = self.client.get(KONTROL_BADGE_URL)
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['success'])
         data = response.data['data']
-        self.assertEqual(data['count'], 3)
+        self.assertEqual(data['count'], 2)
+        self.assertEqual(data['due_today'], 2)
         self.assertEqual(data['overdue'], 1)
-        self.assertEqual(data['pending'], 2)
+        self.assertEqual(data['pending'], 3)
 
     def test_kontrol_badge_scoped_to_coach(self):
         other_student = Ogrenci.objects.create(
@@ -84,11 +98,15 @@ class KontrolBadgeTest(TestCase):
             soyad='Demir',
             aktif_mi=True,
         )
-        self._create_assignment(status=ManualAssignment.Status.ASSIGNED)
+        self._create_assignment(
+            status=ManualAssignment.Status.ASSIGNED,
+            due_date=self.due_today,
+        )
         self._create_assignment(
             coach=self.other_coach,
             student=other_student,
             status=ManualAssignment.Status.ASSIGNED,
+            due_date=self.due_today,
             title='Başka koç ödevi',
         )
 

@@ -26,8 +26,10 @@ import {
   fetchBookStructure,
   createAssignment,
   fetchAssignmentPackage,
+  fetchAssignments,
   incrementPackageUsage,
   type AssignmentPackageItem,
+  type ManualAssignment,
 } from '@/lib/resources-api';
 import AssignmentNotifySendModal from '@/components/odev/AssignmentNotifySendModal';
 import {
@@ -37,6 +39,15 @@ import {
 } from '@/components/odev/odevCompletionHelpers';
 
 export type OdevVerVariant = 'admin' | 'coach';
+
+const PENDING_CONTROL_STATUSES = new Set(['ASSIGNED', 'IN_PROGRESS', 'OVERDUE']);
+
+type PendingControlInfo = {
+  id: number;
+  title: string;
+  studentId: number;
+  studentName: string;
+};
 
 interface OdevVerWizardProps {
   variant?: OdevVerVariant;
@@ -62,11 +73,30 @@ function generateWeeklyTitle(): string {
   return `${month} Ayı ${weekNum}. Hafta Ödevi`;
 }
 
-/* ─── Default due date: 1 week from now ─── */
+/** Yerel takvim günü → YYYY-MM-DD (UTC toISOString kayması yok) */
+function formatLocalDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Varsayılan kontrol/teslim tarihi: tam 1 hafta sonra — aynı hafta günü.
+ * Örn. Perşembe verilirse → haftaya Perşembe (UTC toISOString kullanma).
+ */
 function getDefaultDueDate(): string {
   const d = new Date();
+  d.setHours(12, 0, 0, 0);
   d.setDate(d.getDate() + 7);
-  return d.toISOString().split('T')[0];
+  return formatLocalDate(d);
+}
+
+/** date input değerini API için yerel gün sonu ISO'ya çevir */
+function dueDateToApi(dateStr: string): string {
+  if (!dateStr) return dateStr;
+  if (dateStr.includes('T')) return dateStr;
+  return `${dateStr}T23:59:00`;
 }
 
 function mapPackageItemsToCart(items: AssignmentPackageItem[]): SelectedContent[] {
@@ -143,6 +173,34 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   /* ─── Toast ─── */
   const [toast, setToast] = useState<string | null>(null);
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+
+  /* ─── Kontrolü tamamlanmamış ödev uyarısı ─── */
+  const [pendingControls, setPendingControls] = useState<PendingControlInfo[]>([]);
+
+  const kontrolBase = isCoach ? '/coach/odev/kontrol' : '/admin/odev/kontrol';
+
+  const checkPendingControls = useCallback(async (studentIds: number[], nameById: Map<number, string>) => {
+    const found: PendingControlInfo[] = [];
+    await Promise.all(
+      studentIds.map(async (sid) => {
+        try {
+          const res = await fetchAssignments({ student_id: sid });
+          const list = (res.success && res.data ? res.data : []) as ManualAssignment[];
+          for (const a of list) {
+            if (PENDING_CONTROL_STATUSES.has(a.status)) {
+              found.push({
+                id: a.id,
+                title: a.title || 'İsimsiz ödev',
+                studentId: sid,
+                studentName: nameById.get(sid) || `#${sid}`,
+              });
+            }
+          }
+        } catch { /* sessiz */ }
+      }),
+    );
+    setPendingControls(found);
+  }, []);
 
   /* ─── URL query param ile öğrenci / paket oto-seçimi ─── */
   const searchParams = useSearchParams();
@@ -309,6 +367,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     setSelectedResource(null);
     setBookDetails(null);
     setContentNotes({});
+    void checkPendingControls(
+      [s.id],
+      new Map([[s.id, `${s.ad} ${s.soyad}`.trim()]]),
+    );
 
     // Paketten gelen bekleyen veriler varsa cart'a yükle, yoksa sıfırla
     if (pendingPackageCart && pendingPackageCart.length > 0) {
@@ -339,6 +401,12 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       }
       if (updated.length === 0) {
         setSelectedStudent(null);
+        setPendingControls([]);
+      } else {
+        void checkPendingControls(
+          updated.map((x) => x.id),
+          new Map(updated.map((x) => [x.id, `${x.ad} ${x.soyad}`.trim()])),
+        );
       }
 
       // Paketten gelen bekleyen veriler varsa ilk öğrenci eklendiğinde cart'a yükle
@@ -620,7 +688,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           title: finalTitle,
           description: notes,
           priority: priority,
-          due_date: dueDate || getDefaultDueDate(),
+          due_date: dueDateToApi(dueDate || getDefaultDueDate()),
           status: backendStatus,
           lessons,
           ...(packageTemplateId ? { template_id: packageTemplateId } : {}),
@@ -881,6 +949,64 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
       {/* Step Content */}
       <div className="wizard-content" style={{ minHeight: 280 }}>
+        {pendingControls.length > 0 && (
+          <div
+            role="status"
+            style={{
+              marginBottom: 16,
+              padding: '14px 16px',
+              borderRadius: 12,
+              border: '1.5px solid #fbbf24',
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#92400e', marginBottom: 6 }}>
+              Kontrolü tamamlanmamış ödev var
+            </div>
+            <p style={{ margin: '0 0 10px', fontSize: 13, color: '#78350f', lineHeight: 1.45 }}>
+              Yeni ödev vermeden önce aşağıdaki ödev(ler)in kontrolünü tamamlamanız önerilir.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {pendingControls.map((pc) => (
+                <div
+                  key={pc.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    background: '#fff',
+                    border: '1px solid #fde68a',
+                  }}
+                >
+                  <div style={{ fontSize: 13, color: '#78350f' }}>
+                    <strong>{pc.studentName}</strong>
+                    {' · '}
+                    {pc.title}
+                  </div>
+                  <Link
+                    href={`${kontrolBase}/${pc.id}`}
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: 8,
+                      background: '#d97706',
+                      color: '#fff',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Ödev kontrolüne git
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="wizard-step-content">
           {/* Step 1: Student */}
           {currentStep === 1 && !studentLocked && (

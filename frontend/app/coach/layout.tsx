@@ -16,6 +16,7 @@ import "./coach.css";
 
 const PAGE_TITLES: Record<string, string> = {
   "/coach/dashboard": "Bugün",
+  "/coach/bildirimler": "Bildirimler",
   "/coach/ogrenciler": "Öğrencilerim",
   "/coach/profil": "Profilim",
   "/coach/profil/istatistikler": "İstatistiklerim",

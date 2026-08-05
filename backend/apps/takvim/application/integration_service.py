@@ -360,9 +360,13 @@ class CalendarIntegrationService:
         if not assignment.due_date:
             return None
 
-        # Tüm gün event — teslim tarihi
+        # Tüm gün event — teslim tarihi (yerel takvim günü; UTC .date() kayması olmasın)
         if hasattr(assignment.due_date, 'date'):
-            due_date = assignment.due_date.date()
+            due_date = (
+                timezone.localtime(assignment.due_date).date()
+                if timezone.is_aware(assignment.due_date)
+                else assignment.due_date.date()
+            )
         else:
             due_date = assignment.due_date
 

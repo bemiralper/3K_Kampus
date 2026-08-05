@@ -85,7 +85,7 @@ export default function DayColumn({
             {WEEKDAY_FULL[day.weekday]?.slice(0, 3)}
           </span>
           <span style={{ fontSize: '11px', color: '#6b7280' }}>
-            {new Date(day.day_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
+            {new Date(`${day.day_date}T12:00:00`).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
           </span>
         </div>
 

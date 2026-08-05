@@ -17,6 +17,7 @@ import {
   fetchPrograms,
   fetchProgram,
   createProgram,
+  updateProgram,
   autoDistribute,
   fetchHomeworkPool,
   fetchSummary,
@@ -69,12 +70,12 @@ function formatDate(d: Date): string {
 }
 
 function formatDateTR(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`);
   return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 function formatDateShortTR(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`);
   return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 }
 
@@ -82,6 +83,31 @@ function addDays(d: Date, n: number): Date {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
   return r;
+}
+
+/** ISO / datetime → date input (YYYY-MM-DD), yerel gün */
+function toDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return formatDate(d);
+}
+
+/** Ödev verilme/kontrol tarihlerinden program aralığı öner */
+function datesFromHomework(hw: HomeworkPoolItem): { start: string; end: string } {
+  let end = toDateInputValue(hw.due_date);
+  let start = toDateInputValue(hw.assigned_date);
+  if (!start && end) {
+    start = formatDate(addDays(new Date(`${end}T12:00:00`), -6));
+  }
+  if (!end && start) {
+    end = formatDate(addDays(new Date(`${start}T12:00:00`), 6));
+  }
+  if (start && end && start > end) {
+    return { start: end, end };
+  }
+  return { start, end };
 }
 
 /** Programın süresi dolmuş mu? (week_end < bugün) */
@@ -121,9 +147,18 @@ export default function StudyProgramEditor({
   // Yeni program oluşturma alanları
   const [newWeekStart, setNewWeekStart] = useState('');
   const [newWeekEnd, setNewWeekEnd] = useState('');
+  const [dateSourceHomeworkId, setDateSourceHomeworkId] = useState<number | null>(null);
+
+  // Aktif program tarih aralığı düzenleme
+  const [editWeekStart, setEditWeekStart] = useState('');
+  const [editWeekEnd, setEditWeekEnd] = useState('');
+  const [rangeSaving, setRangeSaving] = useState(false);
 
   // Süresi dolmuş program kilidi
   const isExpired = program ? isProgramExpired(program) : false;
+  const rangeDirty = !!program && (
+    editWeekStart !== program.week_start || editWeekEnd !== program.week_end
+  );
 
   // Ödev havuzu
   const [homeworkPool, setHomeworkPool] = useState<HomeworkPoolItem[]>([]);
@@ -132,6 +167,18 @@ export default function StudyProgramEditor({
     status: '',
     search: '',
   });
+
+  /** Program oluşturma ekranı: ödev başına tek satır */
+  const uniqueHomeworkForDates = useMemo(() => {
+    const seen = new Set<number>();
+    const out: HomeworkPoolItem[] = [];
+    for (const hw of homeworkPool) {
+      if (seen.has(hw.id)) continue;
+      seen.add(hw.id);
+      out.push(hw);
+    }
+    return out;
+  }, [homeworkPool]);
 
   // Haftalık özet
   const [summary, setSummary] = useState<WeeklySummary | null>(null);
@@ -315,6 +362,8 @@ export default function StudyProgramEditor({
       const detail = await fetchProgram(programId);
       if (detail.success && detail.data) {
         setProgram(detail.data);
+        setEditWeekStart(detail.data.week_start);
+        setEditWeekEnd(detail.data.week_end);
       }
     } catch {
       setError('Program yüklenirken bir hata oluştu');
@@ -322,6 +371,17 @@ export default function StudyProgramEditor({
       setLoading(false);
     }
   };
+
+  // Program yüklendiğinde tarih aralığı formunu senkronla
+  useEffect(() => {
+    if (program) {
+      setEditWeekStart(program.week_start);
+      setEditWeekEnd(program.week_end);
+    } else {
+      setEditWeekStart('');
+      setEditWeekEnd('');
+    }
+  }, [program?.id, program?.week_start, program?.week_end]);
 
   // Ödev havuzu yükle
   const loadHomeworkPool = useCallback(async () => {
@@ -365,6 +425,13 @@ export default function StudyProgramEditor({
      AKSİYONLAR
      ═══════════════════════════════════════════════════════ */
 
+  const applyHomeworkDates = useCallback((hw: HomeworkPoolItem) => {
+    const { start, end } = datesFromHomework(hw);
+    if (start) setNewWeekStart(start);
+    if (end) setNewWeekEnd(end);
+    setDateSourceHomeworkId(hw.id);
+  }, []);
+
   // Yeni hafta oluştur
   const handleCreateWeek = async () => {
     if (!selectedStudent || !newWeekStart || !newWeekEnd) return;
@@ -377,12 +444,15 @@ export default function StudyProgramEditor({
       });
       if (res.success && res.data) {
         setProgram(res.data);
+        setEditWeekStart(res.data.week_start);
+        setEditWeekEnd(res.data.week_end);
         const isExisting = !!(res.data as any).total_block_count;
         showToast(isExisting ? 'Mevcut program yüklendi!' : 'Yeni çalışma programı oluşturuldu!');
         loadHomeworkPool();
         loadStudentPrograms(); // listeyi güncelle
         setNewWeekStart('');
         setNewWeekEnd('');
+        setDateSourceHomeworkId(null);
       } else {
         showToast(res.error || 'Program oluşturulamadı', 'error');
       }
@@ -390,6 +460,47 @@ export default function StudyProgramEditor({
       showToast('Bir hata oluştu', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Aktif program tarih aralığını güncelle
+  const handleUpdateDateRange = async (force = false) => {
+    if (!program || !editWeekStart || !editWeekEnd) return;
+    if (editWeekEnd < editWeekStart) {
+      showToast('Bitiş tarihi başlangıçtan önce olamaz', 'error');
+      return;
+    }
+    setRangeSaving(true);
+    try {
+      const res = await updateProgram(program.id, {
+        week_start: editWeekStart,
+        week_end: editWeekEnd,
+        force_remove_blocks: force || undefined,
+      });
+      if (res.success && res.data) {
+        setProgram(res.data);
+        setEditWeekStart(res.data.week_start);
+        setEditWeekEnd(res.data.week_end);
+        showToast('Tarih aralığı güncellendi');
+        loadHomeworkPool();
+        loadStudentPrograms();
+      } else {
+        const msg = res.error || 'Tarih aralığı güncellenemedi';
+        if (/blok/i.test(msg) && !force) {
+          const ok = window.confirm(
+            `${msg}\n\nAralık dışı günlerdeki blokları silerek devam edilsin mi?`,
+          );
+          if (ok) {
+            await handleUpdateDateRange(true);
+            return;
+          }
+        }
+        showToast(msg, 'error');
+      }
+    } catch {
+      showToast('Tarih aralığı güncellenirken hata oluştu', 'error');
+    } finally {
+      setRangeSaving(false);
     }
   };
 
@@ -819,7 +930,12 @@ export default function StudyProgramEditor({
           </label>
           <select
             value={selectedStudent ?? ''}
-            onChange={(e) => setSelectedStudent(Number(e.target.value) || null)}
+            onChange={(e) => {
+              setSelectedStudent(Number(e.target.value) || null);
+              setNewWeekStart('');
+              setNewWeekEnd('');
+              setDateSourceHomeworkId(null);
+            }}
             disabled={!selectedCoach || students.length === 0}
             style={{
               width: '100%',
@@ -839,38 +955,15 @@ export default function StudyProgramEditor({
           </select>
         </div>
 
-        {/* Aktif program tarih aralığı göstergesi */}
         {program && (
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', marginLeft: 'auto' }}>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-                📅 Aktif Program
-              </label>
-              <div style={{
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: isExpired ? '2px solid #fca5a5' : '1px solid #e5e7eb',
-                backgroundColor: isExpired ? '#fef2f2' : '#fff',
-                fontSize: '13px',
-                fontWeight: 600,
-                color: isExpired ? '#dc2626' : '#374151',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}>
-                {isExpired && <span>🔒</span>}
-                {formatDateShortTR(program.week_start)} — {formatDateShortTR(program.week_end)}
-                {isExpired && <span style={{ fontSize: '11px', fontWeight: 700, color: '#dc2626' }}>SÜRESİ DOLMUŞ</span>}
-                <button
-                  onClick={() => setProgram(null)}
-                  style={{
-                    background: 'none', border: 'none', fontSize: '16px',
-                    cursor: 'pointer', color: '#9ca3af', marginLeft: '4px',
-                  }}
-                  title="Programa dön"
-                >×</button>
-              </div>
-            </div>
+          <div style={{
+            marginLeft: 'auto', padding: '8px 12px', borderRadius: '8px',
+            border: isExpired ? '2px solid #fca5a5' : '1px solid #e5e7eb',
+            backgroundColor: isExpired ? '#fef2f2' : '#fff',
+            fontSize: '13px', fontWeight: 600, color: isExpired ? '#dc2626' : '#374151',
+          }}>
+            📅 {formatDateShortTR(program.week_start)} — {formatDateShortTR(program.week_end)}
+            {isExpired && ' · süresi dolmuş'}
           </div>
         )}
       </div>
@@ -920,6 +1013,63 @@ export default function StudyProgramEditor({
       {selectedStudent && !loading && !program && (
         <div style={{ maxWidth: '700px', margin: '0 auto' }}>
 
+          {/* ── Verilmiş ödevler → tarihe tıkla ── */}
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '16px',
+            border: '1px solid #e5e7eb',
+            padding: '20px',
+            marginBottom: '16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#111827' }}>Verilmiş Ödevler</div>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 2 }}>
+                  Bir ödeve tıklayın — başlangıç/bitiş tarihleri otomatik dolsun; sonra elle düzenleyebilirsiniz.
+                </div>
+              </div>
+              {poolLoading && <span style={{ fontSize: 12, color: '#94a3b8' }}>Yükleniyor…</span>}
+            </div>
+            {!poolLoading && uniqueHomeworkForDates.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#9ca3af', padding: '8px 0' }}>
+                Bu öğrenciye verilmiş aktif ödev bulunamadı.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {uniqueHomeworkForDates.map((hw) => {
+                  const selected = dateSourceHomeworkId === hw.id;
+                  const assigned = toDateInputValue(hw.assigned_date);
+                  const due = toDateInputValue(hw.due_date);
+                  return (
+                    <button
+                      key={hw.id}
+                      type="button"
+                      onClick={() => applyHomeworkDates(hw)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '12px 14px',
+                        borderRadius: 10,
+                        border: selected ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                        background: selected ? '#eff6ff' : '#fafafa',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
+                        {hw.title || 'İsimsiz ödev'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        <span>{hw.status_display || hw.status}</span>
+                        {assigned && <span>Verilme: {formatDateShortTR(assigned)}</span>}
+                        {due && <span>Kontrol: {formatDateShortTR(due)}</span>}
+                        {hw.lesson_name && <span>{hw.lesson_name}</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* ── Yeni Program Oluştur Kartı ── */}
           <div style={{
             backgroundColor: '#fff',
@@ -932,7 +1082,10 @@ export default function StudyProgramEditor({
               <span style={{ fontSize: '28px' }}>🗓️</span>
               <div>
                 <div style={{ fontSize: '16px', fontWeight: 700, color: '#111827' }}>Yeni Program Oluştur</div>
-                <div style={{ fontSize: '12px', color: '#6b7280' }}>Ödev verilme ve kontrol tarihlerine göre başlangıç/bitiş belirleyin</div>
+                <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                  Ödeve tıklayarak doldurun veya tarihleri manuel seçin
+                  {dateSourceHomeworkId ? ' · ödevden dolduruldu' : ''}
+                </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -945,6 +1098,7 @@ export default function StudyProgramEditor({
                   value={newWeekStart}
                   onChange={(e) => {
                     setNewWeekStart(e.target.value);
+                    setDateSourceHomeworkId(null);
                     if (!newWeekEnd || e.target.value > newWeekEnd) {
                       // Otomatik 6 gün ekle
                       const d = new Date(e.target.value + 'T12:00:00');
@@ -964,7 +1118,10 @@ export default function StudyProgramEditor({
                 <input
                   type="date"
                   value={newWeekEnd}
-                  onChange={(e) => setNewWeekEnd(e.target.value)}
+                  onChange={(e) => {
+                    setNewWeekEnd(e.target.value);
+                    setDateSourceHomeworkId(null);
+                  }}
                   min={newWeekStart}
                   style={{
                     padding: '10px 12px', borderRadius: '8px', border: '1px solid #e5e7eb',
@@ -1149,11 +1306,63 @@ export default function StudyProgramEditor({
               <div>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: '#dc2626' }}>Bu programın süresi dolmuş</div>
                 <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                  {formatDateShortTR(program.week_start)} – {formatDateShortTR(program.week_end)} aralığı geçmiş. Düzenleme devre dışı.
+                  {formatDateShortTR(program.week_start)} – {formatDateShortTR(program.week_end)} aralığı geçmiş.
+                  Bitiş tarihini uzatarak yeniden düzenleyebilirsiniz.
                 </div>
               </div>
             </div>
           )}
+
+          {/* ─── Tarih aralığı (koç portalı / gömülü görünümde de görünür) ─── */}
+          <div style={{
+            display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap', alignItems: 'flex-end',
+            padding: '12px 14px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0',
+          }}>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: '4px' }}>
+                Program başlangıç
+              </label>
+              <input
+                type="date"
+                value={editWeekStart}
+                onChange={(e) => setEditWeekStart(e.target.value)}
+                style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: '4px' }}>
+                Program bitiş
+              </label>
+              <input
+                type="date"
+                value={editWeekEnd}
+                onChange={(e) => setEditWeekEnd(e.target.value)}
+                style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px' }}
+              />
+            </div>
+            <button
+              onClick={() => handleUpdateDateRange(false)}
+              disabled={!rangeDirty || rangeSaving || !editWeekStart || !editWeekEnd}
+              style={{
+                padding: '8px 14px', borderRadius: '8px', border: 'none',
+                backgroundColor: rangeDirty ? '#2563eb' : '#e5e7eb',
+                color: rangeDirty ? '#fff' : '#9ca3af',
+                fontSize: '12px', fontWeight: 600,
+                cursor: rangeDirty && !rangeSaving ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {rangeSaving ? 'Kaydediliyor…' : 'Aralığı Kaydet'}
+            </button>
+            <button
+              onClick={() => setProgram(null)}
+              style={{
+                padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb',
+                backgroundColor: '#fff', fontSize: '12px', fontWeight: 600, color: '#6b7280', cursor: 'pointer',
+              }}
+            >
+              ← Programlar
+            </button>
+          </div>
 
           {/* ─── Toolbar ─── */}
           <div
@@ -1319,7 +1528,8 @@ export default function StudyProgramEditor({
                 }}
               >
                 {(program.days || [])
-                  .sort((a, b) => new Date(a.day_date).getTime() - new Date(b.day_date).getTime())
+                  .slice()
+                  .sort((a, b) => a.day_date.localeCompare(b.day_date))
                   .map((day) => (
                     <DayColumn
                       key={day.id}

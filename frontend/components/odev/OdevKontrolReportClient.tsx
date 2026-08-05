@@ -1158,6 +1158,11 @@ export default function OdevKontrolReportClient({
             setSendToast(formatNotifySentToast(sent, details));
             setTimeout(() => setSendToast(null), 6000);
           }}
+          assignHomeworkHref={
+            paths.newAssignment && fullReport?.data.student_info?.id
+              ? `${paths.newAssignment}?student=${fullReport.data.student_info.id}&locked=1&return=${encodeURIComponent(paths.detail(assignmentId))}`
+              : null
+          }
         />
       )}
 

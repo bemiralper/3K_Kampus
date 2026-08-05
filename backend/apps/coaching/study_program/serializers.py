@@ -246,6 +246,46 @@ class WeeklyProgramCreateSerializer(serializers.ModelSerializer):
         return program
 
 
+class WeeklyProgramUpdateSerializer(serializers.ModelSerializer):
+    """Program güncelleme — tarih aralığı değişince günler senkronlanır."""
+    week_start = serializers.DateField(required=False)
+    week_end = serializers.DateField(required=False)
+    force_remove_blocks = serializers.BooleanField(
+        required=False, write_only=True, default=False,
+        help_text='Aralık dışı günlerdeki blokları silerek daraltmaya izin ver',
+    )
+
+    class Meta:
+        model = WeeklyProgram
+        fields = ['week_start', 'week_end', 'coach_note', 'force_remove_blocks']
+
+    def update(self, instance, validated_data):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from .services import sync_program_date_range
+
+        force = validated_data.pop('force_remove_blocks', False)
+        week_start = validated_data.pop('week_start', None)
+        week_end = validated_data.pop('week_end', None)
+
+        if 'coach_note' in validated_data:
+            instance.coach_note = validated_data['coach_note']
+            instance.save(update_fields=['coach_note', 'updated_at'])
+
+        if week_start is not None or week_end is not None:
+            new_start = week_start if week_start is not None else instance.week_start
+            new_end = week_end if week_end is not None else instance.week_end
+            try:
+                sync_program_date_range(
+                    instance, new_start, new_end, force_remove_blocks=force,
+                )
+            except DjangoValidationError as exc:
+                detail = getattr(exc, 'message_dict', None) or {'detail': exc.messages}
+                raise serializers.ValidationError(detail)
+            instance.refresh_from_db()
+
+        return instance
+
+
 # ─────────────────────────
 # Ödev Havuzu (read-only)
 # ─────────────────────────
@@ -262,7 +302,8 @@ class HomeworkPoolItemSerializer(serializers.Serializer):
     topic_name     = serializers.CharField(allow_blank=True)
     resource_name  = serializers.CharField(allow_blank=True)
     question_count = serializers.IntegerField()
-    due_date       = serializers.DateTimeField()
+    assigned_date  = serializers.DateTimeField(allow_null=True, required=False)
+    due_date       = serializers.DateTimeField(allow_null=True, required=False)
     coach_name     = serializers.CharField(allow_null=True, required=False)
     is_planned     = serializers.BooleanField(help_text='Bu ödev programa atanmış mı?')
     lesson_id      = serializers.IntegerField(allow_null=True, required=False)

@@ -82,3 +82,32 @@ class AssignmentNotifyTemplateTests(TestCase):
         self.assertIn('Ahmet Yılmaz', message)
         self.assertIn('4. Hafta', message)
         self.assertIn('Ayşe', message)
+
+    def test_plan_notify_ignores_report_template_body(self):
+        """Plan gönderiminde yanlışlıkla rapor metni bağlıysa varsayılan plan metni gider."""
+        from apps.coaching.assignment_manual.assignment_template_roles import (
+            ROLE_PLAN_VELI,
+            set_config_template,
+        )
+
+        ensure_assignment_pdf_templates(self.kurum.id)
+        bad = MessageTemplate.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            name='Bozuk plan şablonu',
+            category=TemplateCategory.HAFTALIK_ODEV,
+            body='Ödev kontrol raporu ektedir.',
+            is_active=True,
+        )
+        set_config_template(self.kurum.id, ROLE_PLAN_VELI, bad)
+
+        message = build_pdf_attachment_message(
+            self.assignment,
+            self.kurum.id,
+            'plan',
+            for_veli=True,
+            veli=self.veli,
+            kurum=self.kurum,
+        )
+        self.assertIn('planı ektedir', message.lower())
+        self.assertNotIn('kontrol rapor', message.lower())

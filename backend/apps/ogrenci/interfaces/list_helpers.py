@@ -661,21 +661,31 @@ def build_kalem_ozet_map(kayit_list, filter_kalemler=None):
 
 
 def build_primary_coach_name_map(student_ids: list[int]) -> dict[int, str]:
-    """Aktif birincil koç adları — export için toplu lookup."""
+    """Aktif koç adları — birincil tercih; yoksa diğer aktif atama."""
     if not student_ids:
         return {}
     from apps.coaching.models import CoachStudentAssignment
 
     result: dict[int, str] = {}
-    rows = CoachStudentAssignment.objects.filter(
-        student_id__in=student_ids,
-        is_primary=True,
-        end_date__isnull=True,
-    ).select_related('coach', 'coach__teacher')
+    rows = (
+        CoachStudentAssignment.objects.filter(
+            student_id__in=student_ids,
+            end_date__isnull=True,
+        )
+        .select_related('coach', 'coach__teacher', 'coach__teacher__user')
+        .order_by('-is_primary', '-start_date', '-id')
+    )
     for row in rows:
+        if row.student_id in result:
+            continue
         teacher = row.coach.teacher if row.coach_id and row.coach else None
-        if teacher:
-            result[row.student_id] = f'{teacher.ad} {teacher.soyad}'.strip()
+        if not teacher:
+            continue
+        name = f'{teacher.ad or ""} {teacher.soyad or ""}'.strip()
+        if not name and getattr(teacher, 'user_id', None) and teacher.user:
+            name = (teacher.user.get_full_name() or teacher.user.username or '').strip()
+        if name:
+            result[row.student_id] = name
     return result
 
 

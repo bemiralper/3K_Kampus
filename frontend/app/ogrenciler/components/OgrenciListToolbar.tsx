@@ -1,9 +1,27 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import FloatingMenu from '@/components/finans/FloatingMenu';
+import type { OgrenciListColumnDef, OgrenciListColumnId } from '../lib/ogrenci-list-utils';
 
 export type StatusFilter = 'all' | 'aktif' | 'pasif';
 export type SortOption = 'name_asc' | 'name_desc' | 'kayit_tarihi_desc' | 'kayit_tarihi_asc' | 'created_at_desc';
+
+export type OgrenciColumnsApi = {
+  toggleableColumns: OgrenciListColumnDef[];
+  visibleColumns: OgrenciListColumnId[];
+  toggleColumn: (id: OgrenciListColumnId) => void;
+  resetColumns: () => void;
+};
+
+const EXTRA_COLUMN_IDS = new Set<OgrenciListColumnId>([
+  'aktif_mi',
+  'egitim_yili',
+  'tc_kimlik_no',
+  'telefon',
+  'veli_ad_soyad',
+  'veli_telefon',
+]);
 
 interface OgrenciListToolbarProps {
   searchInput: string;
@@ -28,6 +46,7 @@ interface OgrenciListToolbarProps {
   activeFilterChips?: { key: string; label: string }[];
   onRemoveFilter?: (key: string) => void;
   rosterExport?: React.ReactNode;
+  columnsApi?: OgrenciColumnsApi;
 }
 
 export default function OgrenciListToolbar({
@@ -53,8 +72,26 @@ export default function OgrenciListToolbar({
   activeFilterChips = [],
   onRemoveFilter,
   rosterExport,
+  columnsApi,
 }: OgrenciListToolbarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const colBtnRef = useRef<HTMLButtonElement>(null);
+  const [colOpen, setColOpen] = useState(false);
+
+  const columnGroups = useMemo(() => {
+    const cols = columnsApi?.toggleableColumns ?? [];
+    return {
+      core: cols.filter((c) => !EXTRA_COLUMN_IDS.has(c.id)),
+      extra: cols.filter((c) => EXTRA_COLUMN_IDS.has(c.id)),
+    };
+  }, [columnsApi?.toggleableColumns]);
+
+  const visibleToggleCount = useMemo(() => {
+    if (!columnsApi) return 0;
+    return columnsApi.toggleableColumns.filter((c) =>
+      columnsApi.visibleColumns.includes(c.id),
+    ).length;
+  }, [columnsApi]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -161,6 +198,100 @@ export default function OgrenciListToolbar({
                 <span className="ogrenci-toolbar-badge">{advancedFilterCount}</span>
               )}
             </button>
+          )}
+          {columnsApi && (
+            <div className="ogrenci-col-picker-wrap">
+              <button
+                ref={colBtnRef}
+                type="button"
+                className={`ogrenci-toolbar-btn${colOpen ? ' is-active' : ''}`}
+                aria-expanded={colOpen}
+                aria-haspopup="menu"
+                onClick={() => setColOpen((v) => !v)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 6h16M4 12h10M4 18h14" />
+                </svg>
+                Sütunlar
+                <span className="ogrenci-toolbar-badge soft">{visibleToggleCount}</span>
+              </button>
+              <FloatingMenu
+                open={colOpen}
+                anchorRef={colBtnRef}
+                onClose={() => setColOpen(false)}
+                className="ogrenci-col-picker-menu"
+                minWidth={280}
+              >
+                <div className="ogrenci-col-picker-head">
+                  <div>
+                    <strong>Tablo sütunları</strong>
+                    <p>Görünür alanları seçin</p>
+                  </div>
+                  <span className="ogrenci-col-picker-count">
+                    {visibleToggleCount}/{columnsApi.toggleableColumns.length}
+                  </span>
+                </div>
+                <div className="ogrenci-col-picker-body">
+                  <div className="ogrenci-col-picker-group">
+                    <span className="ogrenci-col-picker-group-label">Temel</span>
+                    {columnGroups.core.map((col) => {
+                      const checked = columnsApi.visibleColumns.includes(col.id);
+                      return (
+                        <label
+                          key={col.id}
+                          className={`ogrenci-col-picker-item${checked ? ' is-on' : ''}`}
+                        >
+                          <span className="ogrenci-col-picker-label">{col.label}</span>
+                          <span className={`ogrenci-col-switch${checked ? ' is-on' : ''}`} aria-hidden>
+                            <span className="ogrenci-col-switch-knob" />
+                          </span>
+                          <input
+                            type="checkbox"
+                            className="ogrenci-col-picker-input"
+                            checked={checked}
+                            onChange={() => columnsApi.toggleColumn(col.id)}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {columnGroups.extra.length > 0 && (
+                    <div className="ogrenci-col-picker-group">
+                      <span className="ogrenci-col-picker-group-label">Ek alanlar</span>
+                      {columnGroups.extra.map((col) => {
+                        const checked = columnsApi.visibleColumns.includes(col.id);
+                        return (
+                          <label
+                            key={col.id}
+                            className={`ogrenci-col-picker-item${checked ? ' is-on' : ''}`}
+                          >
+                            <span className="ogrenci-col-picker-label">{col.label}</span>
+                            <span className={`ogrenci-col-switch${checked ? ' is-on' : ''}`} aria-hidden>
+                              <span className="ogrenci-col-switch-knob" />
+                            </span>
+                            <input
+                              type="checkbox"
+                              className="ogrenci-col-picker-input"
+                              checked={checked}
+                              onChange={() => columnsApi.toggleColumn(col.id)}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div className="ogrenci-col-picker-foot">
+                  <button
+                    type="button"
+                    className="ogrenci-col-picker-reset"
+                    onClick={() => columnsApi.resetColumns()}
+                  >
+                    Varsayılana dön
+                  </button>
+                </div>
+              </FloatingMenu>
+            </div>
           )}
           {rosterExport}
           {onOpenExport && (

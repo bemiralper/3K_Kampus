@@ -16,6 +16,7 @@ import OgrenciBelgesiModal from "./components/OgrenciBelgesiModal";
 import OgrenciIzinBelgesiModal from "./components/OgrenciIzinBelgesiModal";
 import type { OgrenciBelgeTipi } from "./components/OgrenciBelgeMenu";
 import OgrenciQuickInfoModal from "./components/OgrenciQuickInfoModal";
+import { useOgrenciListColumns } from "./hooks/useOgrenciListColumns";
 import {
   parseFiltersFromSearchParams,
   filtersToSearchParams,
@@ -62,6 +63,7 @@ type OgrenciData = {
     kalem_adi: string;
   }[];
   kalem_ozet?: string;
+  koc_adi?: string;
 };
 
 function asOgrenciData(row: OgrenciRow): OgrenciData {
@@ -88,6 +90,12 @@ export default function OgrenciListesiPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { activeKurum, activeSube, activeEgitimYili, loading: contextLoading, initialized, applyStoredContext } = useKurum();
+  const {
+    toggleableColumns,
+    visibleColumns,
+    toggleColumn,
+    resetColumns,
+  } = useOgrenciListColumns();
 
   const [filters, setFilters] = useState<OgrenciListFilters>(() =>
     parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString()))
@@ -666,6 +674,12 @@ export default function OgrenciListesiPage() {
           activeFilterChips={activeFilterChips}
           onRemoveFilter={handleRemoveFilter}
           rosterExport={<OgrenciSinifRosterExportButton filters={filters} />}
+          columnsApi={{
+            toggleableColumns,
+            visibleColumns,
+            toggleColumn,
+            resetColumns,
+          }}
         />
         <OgrenciListResults
           loading={loading}
@@ -690,6 +704,7 @@ export default function OgrenciListesiPage() {
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
           hasKalemFilter={activeKalemFilters.length > 0}
+          visibleColumns={visibleColumns}
         />
         <Pagination
           currentPage={filters.page || 1}

@@ -17,6 +17,13 @@ import type { ProgramDay } from '@/lib/study-program-api';
 
 const WEEKDAY_LABELS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
+function dayLabel(day: ProgramDay): string {
+  const wd = WEEKDAY_LABELS[day.weekday] || `Gün ${day.weekday}`;
+  const d = new Date(`${day.day_date}T12:00:00`);
+  const short = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+  return `${wd} ${short}`;
+}
+
 interface SplitTarget {
   dayId: number;
   dayLabel: string;
@@ -40,6 +47,7 @@ export default function SplitModal({
 }: SplitModalProps) {
   const [targets, setTargets] = useState<SplitTarget[]>([]);
   const [error, setError] = useState('');
+  const orderedDays = [...days].sort((a, b) => a.day_date.localeCompare(b.day_date));
 
   // Modal açıldığında hedefleri sıfırla
   useEffect(() => {
@@ -59,7 +67,7 @@ export default function SplitModal({
         ...prev,
         {
           dayId: day.id,
-          dayLabel: WEEKDAY_LABELS[day.weekday] || `Gün ${day.weekday}`,
+          dayLabel: dayLabel(day),
           questionCount: 0,
         },
       ];
@@ -156,7 +164,7 @@ export default function SplitModal({
             Hangi günlere bölünsün?
           </div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {days.map(day => {
+            {orderedDays.map(day => {
               const selected = targets.some(t => t.dayId === day.id);
               const isCurrent = day.id === currentDayId;
               return (
@@ -175,7 +183,7 @@ export default function SplitModal({
                     position: 'relative',
                   }}
                 >
-                  {WEEKDAY_LABELS[day.weekday]}
+                  {dayLabel(day)}
                   {isCurrent && (
                     <span style={{
                       position: 'absolute', top: '-4px', right: '-4px',

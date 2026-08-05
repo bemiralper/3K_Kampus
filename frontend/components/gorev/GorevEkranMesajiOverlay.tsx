@@ -57,10 +57,16 @@ export default function GorevEkranMesajiOverlay() {
 
     load();
     const pollId = setInterval(load, 45000);
+    const onFocus = () => {
+      attempt = 0;
+      void load();
+    };
+    window.addEventListener('focus', onFocus);
 
     return () => {
       cancelled = true;
       clearInterval(pollId);
+      window.removeEventListener('focus', onFocus);
     };
   }, [kurumLoading, activeKurum]);
 
@@ -101,12 +107,22 @@ export default function GorevEkranMesajiOverlay() {
           <p className="gorev-ekran-count">+{queue.length - 1} bildirim daha</p>
         )}
         <div className="gorev-ekran-actions">
-          <button type="button" className="gorev-btn gorev-btn-ghost" onClick={() => dismiss(false)}>
-            Kapat
+          <button
+            type="button"
+            className={current.url ? 'gorev-btn gorev-btn-ghost' : 'gorev-btn gorev-btn-primary'}
+            onClick={() => dismiss(false)}
+          >
+            {current.url ? 'Kapat' : 'Tamam'}
           </button>
           {current.url && (
             <button type="button" className="gorev-btn gorev-btn-primary" onClick={() => dismiss(true)}>
-              Göreve Git
+              {current.url.includes('/gorev')
+                ? 'Göreve Git'
+                : current.url.includes('/coach/ogrenciler/')
+                  ? 'Öğrenciye Git'
+                  : current.url.includes('/coach/ogrenciler')
+                    ? 'Öğrencilerim'
+                    : 'Detaya Git'}
             </button>
           )}
         </div>

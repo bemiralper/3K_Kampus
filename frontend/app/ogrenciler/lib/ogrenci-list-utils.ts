@@ -76,6 +76,64 @@ export const EXPORT_COLUMNS: ExportColumnDef[] = [
 
 export const DEFAULT_EXPORT_KEYS = EXPORT_COLUMNS.filter((c) => c.default).map((c) => c.key);
 
+/** Liste tablosu sütun tercihleri */
+export type OgrenciListColumnId =
+  | 'student'
+  | 'alan'
+  | 'sinif_seviyesi'
+  | 'kalemler'
+  | 'kayit_tarihi'
+  | 'sinif'
+  | 'egitim_yili'
+  | 'koc'
+  | 'aktif_mi'
+  | 'tc_kimlik_no'
+  | 'telefon'
+  | 'veli_ad_soyad'
+  | 'veli_telefon'
+  | 'actions';
+
+export type OgrenciListColumnDef = {
+  id: OgrenciListColumnId;
+  label: string;
+  /** Kapatılamaz sütun */
+  locked?: boolean;
+  /** İlk yüklemede görünür */
+  defaultVisible?: boolean;
+};
+
+export const LIST_COLUMNS: OgrenciListColumnDef[] = [
+  { id: 'student', label: 'Öğrenci Bilgisi', locked: true, defaultVisible: true },
+  { id: 'alan', label: 'Alan', defaultVisible: true },
+  { id: 'sinif_seviyesi', label: 'Sınıf Seviyesi', defaultVisible: true },
+  { id: 'kalemler', label: 'Eğitim Kalemleri', defaultVisible: true },
+  { id: 'kayit_tarihi', label: 'Giriş / Kayıt Tarihi', defaultVisible: true },
+  { id: 'sinif', label: 'Sınıf', defaultVisible: true },
+  { id: 'koc', label: 'Koç', defaultVisible: true },
+  { id: 'aktif_mi', label: 'Durum', defaultVisible: false },
+  { id: 'egitim_yili', label: 'Eğitim Yılı', defaultVisible: false },
+  { id: 'tc_kimlik_no', label: 'TC Kimlik No', defaultVisible: false },
+  { id: 'telefon', label: 'Telefon', defaultVisible: false },
+  { id: 'veli_ad_soyad', label: 'Veli Adı', defaultVisible: false },
+  { id: 'veli_telefon', label: 'Veli Telefon', defaultVisible: false },
+  { id: 'actions', label: 'İşlemler', locked: true, defaultVisible: true },
+];
+
+export const LIST_COLUMN_IDS = LIST_COLUMNS.map((c) => c.id);
+
+export const DEFAULT_VISIBLE_LIST_COLUMNS: OgrenciListColumnId[] = LIST_COLUMNS
+  .filter((c) => c.defaultVisible !== false)
+  .map((c) => c.id);
+
+export const OGRENCI_LIST_COLUMNS_STORAGE_KEY = 'ogrenci-list-columns-v1';
+
+export function isListColumnVisible(
+  visible: readonly OgrenciListColumnId[],
+  id: OgrenciListColumnId,
+): boolean {
+  return visible.includes(id);
+}
+
 /** Sütunları tanım sırasını koruyarak grup adına göre kümeler. */
 export function groupExportColumns(
   columns: ExportColumnDef[],

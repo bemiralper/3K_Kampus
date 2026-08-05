@@ -1,16 +1,105 @@
 """
 Çalışma Programı - Services
 
-Dengeli Dağıtım motoru, rozet hesaplama, haftalık özet.
+Dengeli Dağıtım motoru, rozet hesaplama, haftalık özet, tarih aralığı senkronu.
 """
-from datetime import timedelta
-from django.db import models
+from datetime import date, timedelta
+
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
 from django.utils import timezone
 
 from .models import (
     WeeklyProgram, ProgramDay, ProgramBlock, Badge,
     BlockType, GoalType, BadgeCode, LoadLevel,
 )
+
+
+# ────────────────────────────────────────
+# 0) Tarih aralığı senkronu
+# ────────────────────────────────────────
+
+def sync_program_date_range(
+    program: WeeklyProgram,
+    week_start: date,
+    week_end: date,
+    *,
+    force_remove_blocks: bool = False,
+) -> dict:
+    """
+    Program tarih aralığını günceller ve ProgramDay satırlarını senkronlar.
+
+    - Yeni günler eklenir
+    - Aralık dışı boş günler silinir
+    - Blok içeren günler aralık dışına düşerse force yoksa ValidationError
+    """
+    if week_end < week_start:
+        raise ValidationError({'week_end': 'Bitiş tarihi başlangıçtan önce olamaz.'})
+    if (week_end - week_start).days > 30:
+        raise ValidationError({'week_end': 'Program süresi en fazla 30 gün olabilir.'})
+
+    conflict = (
+        WeeklyProgram.objects.filter(
+            student_id=program.student_id,
+            week_start=week_start,
+            is_template=False,
+        )
+        .exclude(pk=program.pk)
+        .exists()
+    )
+    if conflict:
+        raise ValidationError({
+            'week_start': 'Bu öğrenci için aynı başlangıç tarihli başka bir program var.',
+        })
+
+    with transaction.atomic():
+        wanted = {
+            week_start + timedelta(days=i)
+            for i in range((week_end - week_start).days + 1)
+        }
+        existing = {d.day_date: d for d in program.days.all()}
+
+        removed_with_blocks = []
+        for day_date, day in list(existing.items()):
+            if day_date in wanted:
+                continue
+            if day.blocks.exists():
+                if not force_remove_blocks:
+                    removed_with_blocks.append(str(day_date))
+                    continue
+                day.blocks.all().delete()
+            day.delete()
+
+        if removed_with_blocks:
+            raise ValidationError({
+                'week_end': (
+                    'Şu günlerde blok var; aralığı daraltmadan önce blokları taşıyın veya silin: '
+                    + ', '.join(removed_with_blocks)
+                ),
+            })
+
+        created = 0
+        for day_date in sorted(wanted):
+            if day_date in existing:
+                continue
+            ProgramDay.objects.create(
+                program=program,
+                day_date=day_date,
+                weekday=day_date.weekday(),
+            )
+            created += 1
+
+        program.week_start = week_start
+        program.week_end = week_end
+        program.save(update_fields=['week_start', 'week_end', 'updated_at'])
+        program.refresh_stats()
+
+    return {
+        'week_start': str(program.week_start),
+        'week_end': str(program.week_end),
+        'day_count': program.days.count(),
+        'created_days': created,
+    }
 
 
 # ────────────────────────────────────────
@@ -26,30 +115,34 @@ def auto_distribute(program: WeeklyProgram, assignment_ids: list[int] | None = N
     """
     from apps.coaching.assignment_manual.models import ManualAssignment, AssignmentTask
 
+    days = list(program.days.order_by('day_date'))
+    if not days:
+        return {'distributed': 0, 'error': 'Programda gün yok.'}
+
+    already_mapped = set(
+        ProgramBlock.objects.filter(
+            day__program=program,
+            source_assignment__isnull=False,
+        ).values_list('source_assignment_id', flat=True)
+    )
+
     # Dağıtılacak ödevleri belirle
     if assignment_ids:
         assignments = ManualAssignment.objects.filter(
             id__in=assignment_ids,
             student=program.student,
-        )
+            is_active=True,
+        ).exclude(id__in=already_mapped)
     else:
-        # Programa henüz atanmamış tüm ASSIGNED ödevler
-        already_mapped = ProgramBlock.objects.filter(
-            day__program=program,
-            source_assignment__isnull=False,
-        ).values_list('source_assignment_id', flat=True)
-
         assignments = ManualAssignment.objects.filter(
             student=program.student,
-            status__in=['ASSIGNED', 'IN_PROGRESS'],
+            status__in=['ASSIGNED', 'IN_PROGRESS', 'OVERDUE'],
             is_active=True,
         ).exclude(id__in=already_mapped)
 
     if not assignments.exists():
         return {'distributed': 0}
 
-    # Günleri hazırla — mevcut soru toplamlarını al
-    days = list(program.days.order_by('day_date'))
     day_loads: dict[int, int] = {}
     for d in days:
         day_loads[d.id] = d.total_question_count
@@ -57,11 +150,9 @@ def auto_distribute(program: WeeklyProgram, assignment_ids: list[int] | None = N
     created_count = 0
 
     for asgn in assignments:
-        # En az yüklü günü bul
         target_day_id = min(day_loads, key=day_loads.get)  # type: ignore
         target_day = next(d for d in days if d.id == target_day_id)
 
-        # Ödevin ilk lesson + task bilgisini al
         first_lesson = asgn.lessons.first()
         lesson_obj = first_lesson.lesson if first_lesson else None
         topic = first_lesson.topic_name if first_lesson else ''
@@ -74,6 +165,7 @@ def auto_distribute(program: WeeklyProgram, assignment_ids: list[int] | None = N
         ProgramBlock.objects.create(
             day=target_day,
             source_assignment=asgn,
+            source_lesson=first_lesson,
             lesson=lesson_obj,
             title=asgn.title,
             topic_name=topic,
@@ -88,7 +180,6 @@ def auto_distribute(program: WeeklyProgram, assignment_ids: list[int] | None = N
         day_loads[target_day_id] += q_count
         created_count += 1
 
-    # Günleri yenile
     for d in days:
         d.refresh_stats()
     program.refresh_stats()
@@ -157,7 +248,7 @@ def calculate_badges(program: WeeklyProgram):
     Mevcut rozetleri silmez, tekrar kazanılanları atlar.
     """
     student = program.student
-    days = program.days.order_by('weekday')
+    days = program.days.order_by('day_date')
     existing_codes = set(
         program.badges.values_list('code', flat=True)
     )
@@ -253,7 +344,7 @@ def weekly_summary(program: WeeklyProgram) -> dict:
     Otomatik üretilen haftalık özet kartı verisi.
     Frontend'de hafta sonunda gösterilir.
     """
-    days = program.days.order_by('weekday')
+    days = program.days.order_by('day_date')
     day_data = []
     best_day = None
     worst_day = None

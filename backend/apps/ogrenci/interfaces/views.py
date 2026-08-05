@@ -206,6 +206,7 @@ def ogrenci_list_api(request):
         paginate_queryset,
         compute_filter_counts,
         build_ogrenci_kalemler_map,
+        build_primary_coach_name_map,
     )
     from apps.ogrenci.interfaces.sube_context import mandatory_ogrenci_context
 
@@ -223,6 +224,7 @@ def ogrenci_list_api(request):
     filter_kalemler = list(params.get('kalemler') or [])
 
     kalemler_map = build_ogrenci_kalemler_map(items, filter_kalemler=filter_kalemler or None)
+    coach_map = build_primary_coach_name_map([k.ogrenci_id for k in items])
 
     if use_all_years and ctx.get('egitim_yili_id') and params['all_years']:
         filter_mode = 'tum_yillar'
@@ -238,6 +240,7 @@ def ogrenci_list_api(request):
                 k,
                 include_egitim_yili=use_all_years,
                 egitim_kalemleri=kalemler_map.get(k.id, []),
+                koc_adi=coach_map.get(k.ogrenci_id, ''),
             ) for k in items
         ],
         'egitim_yili': (

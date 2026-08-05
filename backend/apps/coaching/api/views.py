@@ -599,13 +599,25 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                     is_primary=serializer.validated_data.get('is_primary', True),
                     created_by=request.user if request.user.is_authenticated else None
                 )
-                
-                result_serializer = AssignmentListSerializer(instance)
-                return Response({
-                    'success': True,
-                    'message': 'Öğrenci koça atandı.',
-                    'data': result_serializer.data,
-                }, status=status.HTTP_201_CREATED)
+
+            try:
+                from apps.coaching.services.assignment_notification import (
+                    CoachingAssignmentNotificationService,
+                )
+                CoachingAssignmentNotificationService().notify_students_assigned(
+                    instance.coach,
+                    [instance.student],
+                )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Koç atama bildirimi başarısız')
+
+            result_serializer = AssignmentListSerializer(instance)
+            return Response({
+                'success': True,
+                'message': 'Öğrenci koça atandı.',
+                'data': result_serializer.data,
+            }, status=status.HTTP_201_CREATED)
         
         return Response({
             'success': False,
@@ -617,10 +629,21 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         from datetime import date
         
         instance = self.get_object()
+        coach = instance.coach
+        student = instance.student
         
         # Soft delete - end_date'i bugün olarak ayarla
         instance.end_date = date.today()
         instance.save()
+
+        try:
+            from apps.coaching.services.assignment_notification import (
+                CoachingAssignmentNotificationService,
+            )
+            CoachingAssignmentNotificationService().notify_student_removed(coach, student)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Koç atama sonlandırma bildirimi başarısız')
         
         return Response({
             'success': True,
@@ -690,17 +713,30 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                     ))
                 
                 created = CoachStudentAssignment.objects.bulk_create(assignments)
-                
-                return Response({
-                    'success': True,
-                    'message': f'{len(created)} öğrenci koça atandı.',
-                    'data': {
-                        'coach_id': coach.id,
-                        'assigned_count': len(created),
-                        'new_student_count': coach.current_student_count,
-                        'available_capacity': coach.available_capacity,
-                    }
-                }, status=status.HTTP_201_CREATED)
+
+            if created:
+                try:
+                    from apps.coaching.services.assignment_notification import (
+                        CoachingAssignmentNotificationService,
+                    )
+                    CoachingAssignmentNotificationService().notify_students_assigned(
+                        coach,
+                        list(students),
+                    )
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception('Toplu koç atama bildirimi başarısız')
+
+            return Response({
+                'success': True,
+                'message': f'{len(created)} öğrenci koça atandı.',
+                'data': {
+                    'coach_id': coach.id,
+                    'assigned_count': len(created),
+                    'new_student_count': coach.current_student_count,
+                    'available_capacity': coach.available_capacity,
+                }
+            }, status=status.HTTP_201_CREATED)
         
         return Response({
             'success': False,

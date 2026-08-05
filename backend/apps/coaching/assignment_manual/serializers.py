@@ -292,77 +292,130 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
             'estimated_duration_minutes', 'difficulty_level',
             'coach_notes', 'source_assignment', 'template_id', 'lessons'
         ]
-    
+
+    @staticmethod
+    def _collect_task_content_ids(lessons_data) -> list[int]:
+        ids: list[int] = []
+        for lesson in lessons_data or []:
+            for task in lesson.get('tasks') or []:
+                raw = task.get('content_id', task.get('content'))
+                if raw in (None, '', 0, '0'):
+                    continue
+                try:
+                    ids.append(int(raw))
+                except (TypeError, ValueError):
+                    continue
+        return ids
+
+    def validate(self, data):
+        from apps.resources.models import ResourceContent
+
+        content_ids = self._collect_task_content_ids(data.get('lessons') or [])
+        if not content_ids:
+            return data
+
+        existing = set(
+            ResourceContent.objects.filter(id__in=content_ids).values_list('id', flat=True)
+        )
+        missing = sorted({cid for cid in content_ids if cid not in existing})
+        if missing:
+            titles = []
+            for lesson in data.get('lessons') or []:
+                for task in lesson.get('tasks') or []:
+                    raw = task.get('content_id', task.get('content'))
+                    try:
+                        cid = int(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if cid in missing:
+                        title = (task.get('title') or '').strip()
+                        titles.append(f'{title} (#{cid})' if title else f'#{cid}')
+            label = ', '.join(dict.fromkeys(titles))  # sıra koruyarak tekilleştir
+            raise serializers.ValidationError({
+                'lessons': (
+                    'Seçilen kaynak içerik(ler) artık sistemde yok (silinmiş veya taşınmış olabilir): '
+                    f'{label}. Sayfayı yenileyip içeriği tekrar seçin.'
+                ),
+            })
+        return data
+
     def create(self, validated_data):
+        from django.db import transaction
         from django.utils import timezone
-        
+        from apps.resources.models import ResourceBook, ResourceContent
+
         lessons_data = validated_data.pop('lessons', [])
-        
-        # Coach otomatik set edilir (anonim kullanıcı için None)
+
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             validated_data['coach'] = request.user
         else:
             validated_data['coach'] = None
-        
-        # Eğer status ASSIGNED olarak geldiyse assigned_date'i set et
+
         if validated_data.get('status') == 'ASSIGNED':
             validated_data['assigned_date'] = timezone.now()
-        
-        # Ödev oluştur
-        assignment = ManualAssignment.objects.create(**validated_data)
-        
-        # Dersleri oluştur
-        for lesson_data in lessons_data:
-            tasks_data = lesson_data.pop('tasks', [])
-            
-            # lesson alanı null olabilir
-            lesson_id = lesson_data.pop('lesson', None)
-            if lesson_id:
-                lesson_data['lesson_id'] = lesson_id
-            
-            # resource_book alanını kontrol et — ders her zaman kitabın dersinden gelir
-            resource_book_id = lesson_data.pop('resource_book', None)
-            if resource_book_id:
-                lesson_data['resource_book_id'] = resource_book_id
-                from apps.resources.models import ResourceBook
-                book_ders_id = (
-                    ResourceBook.objects
-                    .filter(id=resource_book_id)
-                    .values_list('ders_id', flat=True)
-                    .first()
+
+        with transaction.atomic():
+            assignment = ManualAssignment.objects.create(**validated_data)
+
+            for lesson_data in lessons_data:
+                tasks_data = lesson_data.pop('tasks', [])
+
+                lesson_id = lesson_data.pop('lesson', None)
+                if lesson_id:
+                    lesson_data['lesson_id'] = lesson_id
+
+                resource_book_id = lesson_data.pop('resource_book', None)
+                if resource_book_id:
+                    lesson_data['resource_book_id'] = resource_book_id
+                    book_ders_id = (
+                        ResourceBook.objects
+                        .filter(id=resource_book_id)
+                        .values_list('ders_id', flat=True)
+                        .first()
+                    )
+                    if book_ders_id:
+                        lesson_data['lesson_id'] = book_ders_id
+
+                lesson = AssignmentLesson.objects.create(
+                    assignment=assignment,
+                    **lesson_data
                 )
-                if book_ders_id:
-                    lesson_data['lesson_id'] = book_ders_id
-            
-            lesson = AssignmentLesson.objects.create(
-                assignment=assignment,
-                **lesson_data
-            )
-            
-            # Görevleri oluştur
-            for task_data in tasks_data:
-                # lesson_block alanını kaldır (otomatik set edilecek)
-                task_data.pop('lesson_block', None)
-                # content_id alanını FK olarak set et
-                content_id = task_data.pop('content_id', None)
-                if content_id:
-                    task_data['content_id'] = content_id
-                    # Content'ten soru/sayfa sayısını otomatik çek (yoksa veya 0 ise)
-                    try:
-                        from apps.resources.models import ResourceContent
-                        content = ResourceContent.objects.get(id=content_id)
+
+                for task_data in tasks_data:
+                    task_data.pop('lesson_block', None)
+                    content_id = task_data.pop('content_id', None)
+                    if content_id is None:
+                        content_id = task_data.pop('content', None)
+                    else:
+                        task_data.pop('content', None)
+
+                    if content_id:
+                        content = ResourceContent.objects.filter(id=content_id).first()
+                        if content is None:
+                            raise serializers.ValidationError({
+                                'lessons': (
+                                    f'Seçilen kaynak içerik bulunamadı (#{content_id}). '
+                                    'Sayfayı yenileyip içeriği tekrar seçin.'
+                                ),
+                            })
+                        task_data['content_id'] = content.id
                         if not task_data.get('question_count'):
                             task_data['question_count'] = content.question_count
-                        if not task_data.get('page_count') and content.page_start and content.page_end:
-                            task_data['page_count'] = content.page_end - content.page_start + 1
-                    except Exception:
-                        pass
-                AssignmentTask.objects.create(
-                    lesson_block=lesson,
-                    **task_data
-                )
-        
+                        if (
+                            not task_data.get('page_count')
+                            and content.page_start
+                            and content.page_end
+                        ):
+                            task_data['page_count'] = (
+                                content.page_end - content.page_start + 1
+                            )
+
+                    AssignmentTask.objects.create(
+                        lesson_block=lesson,
+                        **task_data
+                    )
+
         return assignment
 
 

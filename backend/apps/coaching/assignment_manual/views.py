@@ -544,9 +544,12 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def kontrol_badge(self, request):
         """
-        Sidebar Ödev Kontrol badge sayıları (geciken + bekleyen kontrol).
+        Sidebar Ödev Kontrol badge — yalnızca kontrol günü (due_date) bugün olanlar.
+        overdue/pending alanları dashboard özeti için tüm bekleyenleri içerir.
         GET /api/coaching/manual-assignments/assignments/kontrol_badge/
         """
+        from django.db.models.functions import TruncDate
+        from django.utils import timezone as dj_tz
         from apps.student_resources.services.overdue_status import (
             refresh_manual_assignment_overdue,
         )
@@ -562,10 +565,20 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             )
         ).count()
 
+        today = dj_tz.localdate()
+        tz = dj_tz.get_current_timezone()
+        due_today = (
+            queryset.exclude(due_date__isnull=True)
+            .annotate(due_day=TruncDate('due_date', tzinfo=tz))
+            .filter(due_day=today)
+            .count()
+        )
+
         return Response({
             'success': True,
             'data': {
-                'count': queryset.count(),
+                'count': due_today,
+                'due_today': due_today,
                 'overdue': overdue,
                 'pending': pending,
             },

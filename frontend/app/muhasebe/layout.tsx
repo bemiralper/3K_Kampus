@@ -15,6 +15,7 @@ import "./muhasebe.css";
 
 const PAGE_TITLES: Record<string, string> = {
   "/muhasebe/dashboard": "Dashboard",
+  "/muhasebe/bildirimler": "Bildirimler",
   "/muhasebe/ogrenci/liste": "Öğrenci Listesi",
   "/muhasebe/ogrenci/yeni-kayit": "Yeni Kayıt",
   "/muhasebe/odeme-takip": "Sözleşme/Tahsilat",

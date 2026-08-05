@@ -178,7 +178,13 @@ export default function ReviewStep({
                 <input
                   type="date"
                   value={dueDate}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={(() => {
+                    const n = new Date();
+                    const y = n.getFullYear();
+                    const m = String(n.getMonth() + 1).padStart(2, '0');
+                    const d = String(n.getDate()).padStart(2, '0');
+                    return `${y}-${m}-${d}`;
+                  })()}
                   onChange={e => onDueDateChange(e.target.value)}
                   style={{
                     width: '100%',

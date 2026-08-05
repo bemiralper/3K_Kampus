@@ -107,6 +107,7 @@ def serialize_event_compact(e):
             'ikon': e.event_type.ikon if e.event_type_id else '',
             'salon_adi': e.salon_adi,
             'ogretmen_id': e.ogretmen_id,
+            'ogrenci_ids': e.ogrenci_ids or [],
             'kaynak_modul': e.kaynak_modul,
             'kaynak_id': e.kaynak_id,
         },

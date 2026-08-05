@@ -93,6 +93,20 @@ def build_assignment_context(
     return ctx
 
 
+def _body_matches_notify_type(notify_type: str, body: str) -> bool:
+    """Plan gönderiminde rapor metni (ve tersi) kullanılmasın."""
+    if not body or notify_type not in (NOTIFY_PLAN, NOTIFY_REPORT):
+        return True
+    text = body.lower()
+    if notify_type == NOTIFY_PLAN and 'kontrol rapor' in text and 'plan' not in text:
+        return False
+    if notify_type == NOTIFY_REPORT and (
+        'ödev planı' in text or 'odev plani' in text
+    ) and 'rapor' not in text:
+        return False
+    return True
+
+
 def build_pdf_attachment_message(
     assignment: ManualAssignment,
     kurum_id: int,
@@ -104,7 +118,21 @@ def build_pdf_attachment_message(
 ) -> str:
     recipient_type = 'veli' if for_veli else 'ogrenci'
     template = get_pdf_message_template(kurum_id, notify_type, recipient_type)
-    body_template = template.body if template else default_pdf_message_body(notify_type, recipient_type)
+    body_template = default_pdf_message_body(notify_type, recipient_type)
+    if template and _body_matches_notify_type(notify_type, template.body or ''):
+        # Rol etiketi varsa plan/rapor slotunun doğru şablon olduğunu doğrula
+        from .assignment_template_roles import (
+            NOTIFY_RECIPIENT_TO_ROLE,
+            get_template_odev_role,
+        )
+        expected_role = NOTIFY_RECIPIENT_TO_ROLE.get((notify_type, recipient_type))
+        role = get_template_odev_role(template)
+        if not role or role == expected_role:
+            body_template = template.body
+        else:
+            template = None
+    elif template:
+        template = None
     ctx = build_assignment_context(
         assignment=assignment,
         notify_type=notify_type,

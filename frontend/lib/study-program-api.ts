@@ -194,7 +194,8 @@ export interface HomeworkPoolItem {
   topic_name: string;
   resource_name: string;
   question_count: number;
-  due_date: string;
+  assigned_date?: string | null;
+  due_date: string | null;
   coach_name?: string | null;
   is_planned: boolean;
   lesson_id: number | null;
@@ -269,10 +270,13 @@ export async function createProgram(data: {
 }
 
 /**
- * Program güncelle
+ * Program güncelle (tarih aralığı dahil — günler sunucuda senkronlanır)
  */
 export async function updateProgram(id: number, data: {
   coach_note?: string;
+  week_start?: string;
+  week_end?: string;
+  force_remove_blocks?: boolean;
 }): Promise<ApiResponse<WeeklyProgram>> {
   return apiFetch(`${BASE}/programs/${id}/`, {
     method: 'PATCH',

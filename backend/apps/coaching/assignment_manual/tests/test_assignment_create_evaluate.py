@@ -119,6 +119,25 @@ class AssignmentCreateEvaluateTest(TestCase):
         self.assertEqual(assignment.lessons.count(), 1)
         self.assertEqual(assignment.lessons.first().tasks.count(), 2)
 
+    def test_create_rejects_missing_resource_content(self):
+        """Silinmiş content_id ile 500 yerine 400 + anlaşılır mesaj."""
+        payload = self._create_assignment_payload()
+        payload['lessons'][0]['tasks'][0]['content_id'] = 3434
+        payload['lessons'][0]['tasks'][0]['title'] = 'Silinmiş Test'
+
+        before = ManualAssignment.objects.count()
+        response = self.client.post(ASSIGNMENTS_URL, payload, format='json')
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(ManualAssignment.objects.count(), before)
+        err = response.data
+        # DRF ValidationError: {lessons: [...]} veya success envelope
+        text = str(err)
+        self.assertIn('3434', text)
+        self.assertTrue(
+            'içerik' in text.lower() or 'content' in text.lower() or 'lessons' in err,
+        )
+
     def test_evaluate_all_tasks_reaches_full_completion(self):
         create_response = self.client.post(
             ASSIGNMENTS_URL,

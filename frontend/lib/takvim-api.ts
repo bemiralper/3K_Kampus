@@ -73,6 +73,7 @@ export interface FCEventExtendedProps {
   ikon?: string;
   salon_adi?: string;
   ogretmen_id?: number | null;
+  ogrenci_ids?: number[];
   kaynak_modul?: string;
   kaynak_id?: string | number;
   atama_id?: string | number;
@@ -210,6 +211,9 @@ export interface EventFilters {
   salon_id?: string;
   ogretmen_id?: number;
   sinif_id?: number;
+  ogrenci_id?: number;
+  /** Koç portalı: kendi + roster + tatil kapsamı */
+  coach_scope?: boolean | 1 | '1' | 'true';
   search?: string;
   compact?: boolean;
   donem_id?: number;

@@ -88,8 +88,33 @@ def api_event_list_create(request):
             filters['ogretmen_id'] = int(p['ogretmen_id'])
         if p.get('sinif_id'):
             filters['sinif_id'] = int(p['sinif_id'])
+        if p.get('ogrenci_id'):
+            filters['ogrenci_id'] = int(p['ogrenci_id'])
         if p.get('search'):
             filters['search'] = p['search']
+
+        # Koç portalı: yalnızca kendi / roster / tatil etkinlikleri
+        coach_scope_flag = (p.get('coach_scope') or '').lower() in ('1', 'true', 'yes')
+        if coach_scope_flag:
+            user = getattr(request, 'user', None)
+            if user is not None and user.is_authenticated:
+                from apps.coaching.services.coach_access import (
+                    get_coach_profile,
+                    scoped_student_ids,
+                )
+                personel_id = None
+                try:
+                    personel_id = user.personel.id
+                except Exception:
+                    personel_id = None
+                student_ids = []
+                if get_coach_profile(user) is not None:
+                    student_ids = list(scoped_student_ids(user) or [])
+                filters['coach_scope'] = {
+                    'user_id': user.id,
+                    'personel_id': personel_id,
+                    'student_ids': student_ids,
+                }
 
         events = service.list_events(kurum_id, filters)
 

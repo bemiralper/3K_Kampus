@@ -1,9 +1,5 @@
-import GorevTakvimClient from '@/components/gorev/GorevTakvimClient';
+import CoachTakvimClient from '@/components/coach/CoachTakvimClient';
 
 export default function CoachTakvimPage() {
-  return (
-    <div>
-      <GorevTakvimClient backHref="/coach/gorevler" allowPersonalCreate />
-    </div>
-  );
+  return <CoachTakvimClient />;
 }

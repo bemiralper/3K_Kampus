@@ -86,8 +86,8 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
       .then((res) => {
         const list = res.accounts || [];
         setAccounts(list);
-        // Tek hesap → otomatik seç. Birden fazla → varsayılan; "Tüm hesaplar" yönetici için boş bırakılabilir.
-        if (!accountId) {
+        // Yönetici: tek hesap / varsayılanı önceden seç. Koç: boş bırak → erişilebilir tüm hesaplar.
+        if (showAccountFilter && !accountId) {
           if (list.length === 1) {
             setAccountId(list[0].id);
           } else if (res.default_account_id) {
@@ -235,16 +235,20 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
         error={displayError}
         className={showListMobile ? "" : "hidden-mobile"}
         accountFilterSlot={
-          accounts.length > 0 ? (
+          accounts.length === 0 ? (
+            <div className="comm-inbox-account-hint" style={{ fontSize: 12, color: "#b45309", lineHeight: 1.4 }}>
+              Bu rol/şube için WhatsApp hesabı yok. Yönetici: İletişim → WhatsApp hesapları → Koç rolünü ekleyin.
+            </div>
+          ) : accounts.length > 1 || showAccountFilter ? (
             <select
               className="comm-inbox-account-select"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
               aria-label="WhatsApp hesabı"
             >
-              {accounts.length > 1 && showAccountFilter ? (
-                <option value="">Erişebildiğim tüm hesaplar</option>
-              ) : null}
+              <option value="">
+                {showAccountFilter ? "Erişebildiğim tüm hesaplar" : "Tüm hesaplarım"}
+              </option>
               {accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
                   {accountLabel(acc)}

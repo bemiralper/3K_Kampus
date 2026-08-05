@@ -169,6 +169,47 @@ def _legacy_templates(kurum_id: int, event_key: str, recipient_type: str):
         return None, None
 
 
+def _meta_template_matches_event(event_key: str, meta_tpl) -> bool:
+    """
+    Plan/rapor Meta şablonlarının yanlış olaya bağlanmasını engelle.
+
+    Örn. odev.plan → odev_raporu_* veya gövdede «kontrol raporu» → reddet.
+    """
+    if not meta_tpl or event_key not in ('odev.plan', 'odev.rapor'):
+        return True
+    name = (getattr(meta_tpl, 'name', None) or '').lower()
+    body = (getattr(meta_tpl, 'body_named', None) or '').lower()
+    blob = f'{name} {body}'
+
+    if event_key == 'odev.plan':
+        if any(token in name for token in ('odev_raporu', 'odev-raporu', 'haftalik_odev_raporu')):
+            return False
+        if 'kontrol rapor' in body and 'plan' not in body:
+            return False
+        return True
+
+    # odev.rapor
+    if any(token in name for token in ('odev_plani', 'odev-plani', 'haftalik_odev_plani')):
+        return False
+    if ('ödev planı' in body or 'odev plani' in body) and 'rapor' not in blob:
+        return False
+    return True
+
+
+def lms_body_matches_event(event_key: str, body: str) -> bool:
+    """Bağlı LMS şablon metni olayla çelişiyor mu? (plan↔rapor karışması)."""
+    if not body or event_key not in ('odev.plan', 'odev.rapor'):
+        return True
+    text = body.lower()
+    if event_key == 'odev.plan' and 'kontrol rapor' in text and 'plan' not in text:
+        return False
+    if event_key == 'odev.rapor' and (
+        'ödev planı' in text or 'odev plani' in text
+    ) and 'rapor' not in text:
+        return False
+    return True
+
+
 def _discover_meta_by_name(kurum_id: int, event: NotificationEvent, recipient_type: str):
     from apps.communication.domain.models import WhatsAppMetaTemplate
 
@@ -253,11 +294,23 @@ def resolve_binding(
         if paired is not None:
             resolved.meta_template = paired
 
+    # Plan↔rapor karışmış Meta eşlemesini düşür; doğru isimle yeniden dene
+    rejected_bound_meta = False
+    if resolved.meta_template and not _meta_template_matches_event(
+        event_key, resolved.meta_template,
+    ):
+        resolved.warnings.append(
+            f'Bağlı Meta şablonu ({resolved.meta_template.name}) bu olay için uygun değil; '
+            'yok sayılıyor.',
+        )
+        resolved.meta_template = None
+        rejected_bound_meta = True
+
     if not resolved.meta_template and resolved.send_mode != NotificationSendMode.FREEFORM_ONLY:
         discovered = _discover_meta_by_name(kurum_id, event, recipient_type)
-        if discovered:
+        if discovered and _meta_template_matches_event(event_key, discovered):
             resolved.meta_template = discovered
-            if resolved.source == SOURCE_EVENT_DEFAULT:
+            if resolved.source == SOURCE_EVENT_DEFAULT or rejected_bound_meta:
                 resolved.source = SOURCE_META_NAME
 
     if resolved.meta_template and not resolved.channel_config_id:
@@ -265,7 +318,14 @@ def resolve_binding(
 
     body = ''
     if resolved.message_template and resolved.message_template.is_active:
-        body = resolved.message_template.body or ''
+        candidate = resolved.message_template.body or ''
+        if lms_body_matches_event(event_key, candidate):
+            body = candidate
+        else:
+            resolved.warnings.append(
+                'Bağlı LMS şablon metni bu olayla uyuşmuyor; varsayılan/modül metni kullanılacak.',
+            )
+            resolved.message_template = None
     resolved.body_from_template = bool(body)
     if not body:
         body = event.default_body(recipient_type)

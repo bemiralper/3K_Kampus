@@ -464,6 +464,10 @@ export default function OdevKontrolDetailClient() {
   const isCompleted = assignment.status === "COMPLETED";
   const isLocked = isNonSubmission || isControlLocked || (isCompleted && !isReEditing);
   const evaluatedTaskCount = liveSummary ? liveSummary.total - liveSummary.pending : 0;
+  const assignHomeworkHref =
+    isCompleted && paths.newAssignment
+      ? `${paths.newAssignment}?student=${assignment.student}&locked=1&return=${encodeURIComponent(paths.detail(assignment.id))}`
+      : null;
 
   return (
     <div className="ok-root" style={{ maxWidth: 1400, margin: "0 auto" }}>
@@ -662,7 +666,7 @@ export default function OdevKontrolDetailClient() {
               borderRadius: 14, padding: "16px 22px", marginBottom: 14,
               border: "1.5px solid #86efac",
               boxShadow: "0 2px 8px rgba(34,197,94,0.1)",
-              display: "flex", justifyContent: "space-between", alignItems: "center",
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 22 }}>✅</span>
@@ -673,32 +677,49 @@ export default function OdevKontrolDetailClient() {
                   </div>
                 </div>
               </div>
-              {!isReEditing ? (
-                <button
-                  onClick={() => setIsReEditing(true)}
-                  style={{
-                    padding: "9px 18px", background: "white",
-                    color: "#15803d", border: "1.5px solid #86efac",
-                    borderRadius: 10, fontSize: 12, fontWeight: 700,
-                    cursor: "pointer", transition: "all 0.2s",
-                  }}
-                >
-                  ✏️ Yeniden Düzenle
-                </button>
-              ) : (
-                <button
-                  onClick={() => setIsReEditing(false)}
-                  style={{
-                    padding: "9px 18px",
-                    background: "linear-gradient(135deg, #16a34a, #15803d)",
-                    color: "white", border: "none",
-                    borderRadius: 10, fontSize: 12, fontWeight: 700,
-                    cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,0.3)",
-                  }}
-                >
-                  🔒 Düzenlemeyi Bitir
-                </button>
-              )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {assignHomeworkHref && (
+                  <Link
+                    href={assignHomeworkHref}
+                    style={{
+                      padding: "9px 18px",
+                      background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+                      color: "white", border: "none",
+                      borderRadius: 10, fontSize: 12, fontWeight: 700,
+                      cursor: "pointer", textDecoration: "none",
+                      boxShadow: "0 2px 8px rgba(79,70,229,0.3)",
+                    }}
+                  >
+                    📝 Yeni Ödev Ver
+                  </Link>
+                )}
+                {!isReEditing ? (
+                  <button
+                    onClick={() => setIsReEditing(true)}
+                    style={{
+                      padding: "9px 18px", background: "white",
+                      color: "#15803d", border: "1.5px solid #86efac",
+                      borderRadius: 10, fontSize: 12, fontWeight: 700,
+                      cursor: "pointer", transition: "all 0.2s",
+                    }}
+                  >
+                    ✏️ Yeniden Düzenle
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsReEditing(false)}
+                    style={{
+                      padding: "9px 18px",
+                      background: "linear-gradient(135deg, #16a34a, #15803d)",
+                      color: "white", border: "none",
+                      borderRadius: 10, fontSize: 12, fontWeight: 700,
+                      cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,0.3)",
+                    }}
+                  >
+                    🔒 Düzenlemeyi Bitir
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -1189,6 +1210,19 @@ export default function OdevKontrolDetailClient() {
                     WhatsApp — Plan PDF Gönder
                   </button>
                 )}
+                {assignHomeworkHref && (
+                  <Link
+                    href={assignHomeworkHref}
+                    className="ok-btn-secondary"
+                    style={{
+                      marginTop: 8, width: "100%", display: "block", textAlign: "center",
+                      background: "#eef2ff", borderColor: "#a5b4fc", color: "#4338ca",
+                      textDecoration: "none", boxSizing: "border-box",
+                    }}
+                  >
+                    📝 Bu Öğrenciye Yeni Ödev Ver
+                  </Link>
+                )}
               </div>
 
             </div>
@@ -1269,6 +1303,7 @@ export default function OdevKontrolDetailClient() {
           studentName={assignment.student_name}
           onClose={() => setShowSendModal(null)}
           onSent={(sent, details) => flash(formatNotifySentToast(sent, details))}
+          assignHomeworkHref={showSendModal === "report" ? assignHomeworkHref : null}
         />
       )}
 

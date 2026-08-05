@@ -16,6 +16,7 @@ from .serializers import (
     WeeklyProgramListSerializer,
     WeeklyProgramDetailSerializer,
     WeeklyProgramCreateSerializer,
+    WeeklyProgramUpdateSerializer,
     ProgramDaySerializer,
     ProgramBlockSerializer,
     ProgramBlockCreateSerializer,
@@ -88,6 +89,8 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return WeeklyProgramCreateSerializer
+        if self.action in ('update', 'partial_update'):
+            return WeeklyProgramUpdateSerializer
         if self.action in ('list',):
             return WeeklyProgramListSerializer
         return WeeklyProgramDetailSerializer
@@ -158,10 +161,18 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
 
         return Response(detail_ser.data, status=status.HTTP_201_CREATED)
 
-    def perform_update(self, serializer):
+    def update(self, request, *args, **kwargs):
+        """PATCH/PUT sonrası günler yenilenmiş detay serializer döndür."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
         program = serializer.save()
         program.refresh_from_db()
-        self._sync_to_calendar(program, self.request.user.id)
+        self._sync_to_calendar(program, request.user.id)
+        program = self.get_queryset().get(pk=program.pk)
+        detail = WeeklyProgramDetailSerializer(program, context={'request': request})
+        return Response(detail.data)
 
     def perform_destroy(self, instance):
         """Programı sil ve takvimden kaldır"""
@@ -251,18 +262,49 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
     # ── POST /programs/{id}/save-as-template/ ──
     @action(detail=True, methods=['post'], url_path='save-as-template')
     def save_as_template(self, request, pk=None):
-        """Mevcut haftayı şablon olarak kaydet."""
+        """Mevcut programı kopyalayarak şablon oluştur (canlı programı bozmaz)."""
         program = self.get_object()
         name = request.data.get('name', f'Şablon — {program.week_start}')
-        program.is_template = True
-        program.template_name = name
-        program.save(update_fields=['is_template', 'template_name', 'updated_at'])
-        return Response({'id': program.id, 'template_name': name})
+
+        template = WeeklyProgram.objects.create(
+            student=program.student,
+            coach=program.coach,
+            week_start=program.week_start,
+            week_end=program.week_end,
+            coach_note=program.coach_note,
+            is_template=True,
+            template_name=name,
+        )
+        for day in program.days.order_by('day_date'):
+            new_day = ProgramDay.objects.create(
+                program=template,
+                day_date=day.day_date,
+                weekday=day.weekday,
+                coach_note=day.coach_note,
+            )
+            for block in day.blocks.order_by('order'):
+                ProgramBlock.objects.create(
+                    day=new_day,
+                    lesson=block.lesson,
+                    title=block.title,
+                    topic_name=block.topic_name,
+                    resource_name=block.resource_name,
+                    block_type=block.block_type,
+                    goal_type=block.goal_type,
+                    question_count=block.question_count,
+                    estimated_duration_minutes=block.estimated_duration_minutes,
+                    priority=block.priority,
+                    order=block.order,
+                    color=block.color,
+                )
+            new_day.refresh_stats()
+        template.refresh_stats()
+        return Response({'id': template.id, 'template_name': name}, status=status.HTTP_201_CREATED)
 
     # ── POST /programs/{id}/apply-template/ ──
     @action(detail=True, methods=['post'], url_path='apply-template')
     def apply_template(self, request, pk=None):
-        """Bir şablonu mevcut programa uygula — blokları kopyala."""
+        """Bir şablonu mevcut programa uygula — blokları gün sırasına göre kopyala."""
         program = self.get_object()
         template_id = request.data.get('template_id')
         if not template_id:
@@ -273,13 +315,12 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         # Mevcut blokları sil
         ProgramBlock.objects.filter(day__program=program).delete()
 
-        for tday in template.days.all():
-            try:
-                target_day = program.days.get(weekday=tday.weekday)
-            except ProgramDay.DoesNotExist:
-                continue
+        # Esnek aralıklarda weekday çakışabilir; günleri tarih sırasıyla eşle
+        template_days = list(template.days.order_by('day_date'))
+        program_days = list(program.days.order_by('day_date'))
 
-            for tblock in tday.blocks.all():
+        for tday, target_day in zip(template_days, program_days):
+            for tblock in tday.blocks.order_by('order'):
                 ProgramBlock.objects.create(
                     day=target_day,
                     lesson=tblock.lesson,
@@ -297,7 +338,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
             target_day.refresh_stats()
 
         program.refresh_stats()
-        serializer = WeeklyProgramDetailSerializer(program)
+        serializer = WeeklyProgramDetailSerializer(program, context={'request': request})
         return Response(serializer.data)
 
     # ── GET /programs/homework-pool/?student_id=X ──
@@ -318,7 +359,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         qs = ManualAssignment.objects.filter(
             student_id=student_id,
             is_active=True,
-            status__in=['ASSIGNED', 'IN_PROGRESS', 'DRAFT'],
+            status__in=['ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'OVERDUE'],
         ).select_related('coach').prefetch_related('lessons__lesson', 'lessons__resource_book')
 
         if lesson_id:
@@ -352,6 +393,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
                     'topic_name': '',
                     'resource_name': '',
                     'question_count': q_count,
+                    'assigned_date': a.assigned_date,
                     'due_date': a.due_date,
                     'coach_name': a.coach.get_full_name() if a.coach else None,
                     'is_planned': (a.id, None) in planned_pairs,
@@ -362,12 +404,15 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
                     l_q_count = AssignmentTask.objects.filter(
                         lesson_block=lesson
                     ).aggregate(s=models.Sum('question_count'))['s'] or 0
-                    # is_planned: (assignment_id, lesson.id) veya (assignment_id, None)
-                    # Split sonrası source_lesson None olabilir, bu yüzden her iki şekilde kontrol et
-                    is_planned = (
-                        (a.id, lesson.id) in planned_pairs
-                        or (a.id, None) in planned_pairs
-                    )
+                    # Ders bazlı eşleşme; (id, None) yalnızca bu ödevde ders-spesifik
+                    # blok yoksa tüm dersleri planlanmış sayar (tek blok / eski kayıt).
+                    is_planned = (a.id, lesson.id) in planned_pairs
+                    if not is_planned and (a.id, None) in planned_pairs:
+                        has_lesson_specific = any(
+                            aid == a.id and lid is not None for aid, lid in planned_pairs
+                        )
+                        if not has_lesson_specific:
+                            is_planned = True
                     items.append({
                         'id': a.id,
                         'title': a.title,
@@ -379,6 +424,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
                         'topic_name': lesson.topic_name or '',
                         'resource_name': lesson.resource_book.ad if lesson.resource_book else '',
                         'question_count': l_q_count,
+                        'assigned_date': a.assigned_date,
                         'due_date': a.due_date,
                         'coach_name': a.coach.get_full_name() if a.coach else None,
                         'is_planned': is_planned,

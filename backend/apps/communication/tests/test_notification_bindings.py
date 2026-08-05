@@ -203,6 +203,36 @@ class ResolverScopeTest(TestCase):
         self.assertTrue(resolved.body_from_template)
         self.assertEqual(resolved.body, tpl.body)
 
+    def test_rejects_report_meta_bound_to_plan_event(self):
+        """Plan gönderiminde rapor Meta şablonu kullanılmamalı."""
+        wrong = self._meta(
+            'odev_raporu_veli',
+            header_type='DOCUMENT',
+        )
+        wrong.body_named = 'Ödev kontrol raporu ektedir.'
+        wrong.save(update_fields=['body_named'])
+        self._binding(meta=wrong)
+
+        resolved = resolve_binding(self.kurum.id, 'odev.plan', RecipientType.VELI)
+        self.assertIsNone(resolved.meta_template)
+        self.assertTrue(any('uygun değil' in w for w in resolved.warnings))
+
+    def test_rejects_report_lms_body_on_plan_event(self):
+        tpl = MessageTemplate.objects.create(
+            kurum=self.kurum,
+            name='Yanlış rapor metni',
+            body='Ödev kontrol raporu ektedir.',
+        )
+        NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            event_key='odev.plan',
+            recipient_type=RecipientType.VELI,
+            message_template=tpl,
+        )
+        resolved = resolve_binding(self.kurum.id, 'odev.plan', RecipientType.VELI)
+        self.assertFalse(resolved.body_from_template)
+        self.assertIn('planı ektedir', resolved.body.lower())
+
 
 class BindingServiceTest(TestCase):
     def setUp(self):

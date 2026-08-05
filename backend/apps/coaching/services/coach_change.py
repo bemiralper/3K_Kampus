@@ -107,4 +107,31 @@ def change_primary_coach(
             created_by=created_by,
         )
 
+    # Transaction dışında bildirim (başarısızlık atamayı geri almasın)
+    try:
+        from apps.coaching.services.assignment_notification import (
+            CoachingAssignmentNotificationService,
+        )
+
+        notifier = CoachingAssignmentNotificationService()
+        if previous and previous.coach_id != new_coach.id:
+            old_coach = (
+                CoachProfile.objects.select_related('teacher')
+                .filter(pk=previous.coach_id)
+                .first()
+            )
+            if old_coach:
+                notifier.notify_student_removed(old_coach, student)
+        new_coach_loaded = (
+            CoachProfile.objects.select_related('teacher')
+            .filter(pk=new_coach.id)
+            .first()
+            or new_coach
+        )
+        notifier.notify_students_assigned(new_coach_loaded, [student])
+    except Exception:
+        # Bildirim hatası koç değişikliğini etkilemez
+        import logging
+        logging.getLogger(__name__).exception('Koç değişikliği bildirimi başarısız')
+
     return CoachChangeResult(previous_assignment=previous, new_assignment=new_assignment)

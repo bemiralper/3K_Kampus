@@ -183,3 +183,36 @@ class MultiWhatsAppAccountTests(TestCase):
         koc_ids = set(koc_qs.values_list('id', flat=True))
         self.assertIn(conv_genel.id, koc_ids)
         self.assertNotIn(conv_muh.id, koc_ids)
+
+    def test_coach_profile_accesses_coaching_account_without_role(self):
+        """Aktif CoachProfile, allowed_roles'ta olmasa da COACHING hattını görür."""
+        from apps.coaching.models import CoachProfile
+        from apps.communication.domain.enums import CommunicationDepartment
+        from apps.personel.domain.models import Personel
+
+        self.acc_genel.allowed_roles.set([self.role_muhasebe])  # koç rolü yok
+        self.acc_genel.department = CommunicationDepartment.COACHING
+        self.acc_genel.save(update_fields=['department'])
+
+        # Rolü olmayan kullanıcı + koç profili
+        user_coach = User.objects.create_user(username='wa_coach_profile', password='x')
+        personel = Personel.objects.create(
+            user=user_coach,
+            kurum=self.kurum,
+            sube=self.sube_a,
+            ad='Koç',
+            soyad='Test',
+            tc_kimlik_no='44444444444',
+        )
+        CoachProfile.objects.create(
+            teacher=personel, capacity=10, is_active=True, is_coach=True,
+        )
+
+        accessible = AccountResolver.list_accessible(
+            kurum_id=self.kurum.id,
+            user=user_coach,
+            sube_id=self.sube_a.id,
+        )
+        ids = {a.id for a in accessible}
+        self.assertIn(self.acc_genel.id, ids)
+        self.assertNotIn(self.acc_kadikoy.id, ids)

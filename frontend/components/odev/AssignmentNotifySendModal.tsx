@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   downloadAssignmentServerPdf,
   previewAssignmentNotify,
@@ -22,6 +23,8 @@ interface AssignmentNotifySendModalProps {
   reportOrientation?: "portrait" | "landscape";
   onClose: () => void;
   onSent?: (sent: number, details?: NotifySentDetail[]) => void;
+  /** Kontrol raporu gönderildikten sonra "Yeni ödev ver" kısayolu */
+  assignHomeworkHref?: string | null;
 }
 
 export interface NotifySentDetail {
@@ -58,6 +61,7 @@ export default function AssignmentNotifySendModal({
   reportOrientation,
   onClose,
   onSent,
+  assignHomeworkHref,
 }: AssignmentNotifySendModalProps) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -246,6 +250,18 @@ export default function AssignmentNotifySendModal({
               <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 10 }}>{pdfError}</div>
             )}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {assignHomeworkHref && notifyType === "report" && (
+                <Link
+                  href={assignHomeworkHref}
+                  style={{
+                    padding: "8px 14px", borderRadius: 8, border: "none",
+                    background: "#4f46e5", color: "#fff", cursor: "pointer", fontWeight: 700,
+                    textDecoration: "none", display: "inline-flex", alignItems: "center",
+                  }}
+                >
+                  Yeni ödev ver
+                </Link>
+              )}
               <button
                 type="button"
                 onClick={handleDownloadPdf}

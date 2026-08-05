@@ -5269,6 +5269,28 @@
   }
 }
 
+/* Takvim — tam genişlik, shell padding’siz */
+.coach-shell:has(.coach-takvim-root) .coach-main {
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.coach-content:has(.coach-takvim-root) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+.coach-takvim-root.tkv-root {
+  height: 100%;
+  min-height: calc(100dvh - 120px);
+  flex: 1;
+}
+
 /* Ödev / Kaynak sayfaları — coach shell içinde çift padding & overflow düzelt */
 .coach-content:has(.kk-page),
 .coach-content:has(.kh-page),

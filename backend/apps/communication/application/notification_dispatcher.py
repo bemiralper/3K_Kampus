@@ -144,11 +144,18 @@ def build_preview(
         needs_image=needs_image and attachment_present,
         session_open=session_open,
     )
-    # Modül hazır bir metin verdiyse (eski davranış) ve eşlemede LMS şablonu
-    # bağlı değilse katalog varsayılanı yerine o metin kullanılır.
+    # Modül metni (ödev planı/rapor vb.) olayla uyumlu kısa mesajı taşır.
+    # Binding LMS şablonu yoksa veya plan↔rapor karışmışsa fallback önceliklidir.
     raw_body = resolved.body
-    if fallback_body and not resolved.body_from_template:
-        raw_body = fallback_body
+    if fallback_body:
+        from apps.communication.application.notification_template_resolver import (
+            lms_body_matches_event,
+        )
+        if (
+            not resolved.body_from_template
+            or not lms_body_matches_event(event_key, resolved.body)
+        ):
+            raw_body = fallback_body
     body = resolve_variables(raw_body, context or {})
 
     warnings = list(resolved.warnings)

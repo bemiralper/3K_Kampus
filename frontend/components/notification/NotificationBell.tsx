@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   fetchNotificationSummary, markNotificationRead, markAllNotificationsRead,
@@ -17,6 +18,8 @@ import {
   bindNotificationAudioUnlock,
   isNotificationSoundMuted,
   toggleNotificationSoundMuted,
+  getNotificationSoundVolume,
+  setNotificationSoundVolume,
 } from '@/lib/notification-sound';
 
 /* ════════════════════════════════════════════
@@ -64,14 +67,24 @@ function rewriteInboxUrl(url: string | null | undefined, adminInbox: boolean): s
   return conversationInboxPath(convId, adminInbox);
 }
 
+/** Portal bazlı bildirimler listesi — koç/muhasebe /admin'e yönlendirilmez. */
+function notificationsListPath(pathname: string): string {
+  if (pathname.startsWith('/coach')) return '/coach/bildirimler';
+  if (pathname.startsWith('/muhasebe')) return '/muhasebe/bildirimler';
+  return '/admin/takvim/bildirimler';
+}
+
 export default function NotificationBell({ pollInterval = 8000 }: Props) {
   const pathname = usePathname() || '';
   const adminInbox = !pathname.startsWith('/coach');
+  const allNotificationsHref = notificationsListPath(pathname);
   const [unreadCount, setUnreadCount] = useState(0);
   const [recent, setRecent] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [soundMuted, setSoundMuted] = useState(false);
+  const [soundVolume, setSoundVolume] = useState(85);
+  const volumePreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const knownKeysRef = useRef<Set<string>>(new Set());
@@ -134,14 +147,37 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
 
   useEffect(() => {
     setSoundMuted(isNotificationSoundMuted());
+    setSoundVolume(getNotificationSoundVolume());
     const onMute = (e: Event) => {
       const detail = (e as CustomEvent<{ muted?: boolean }>).detail;
       if (typeof detail?.muted === 'boolean') setSoundMuted(detail.muted);
       else setSoundMuted(isNotificationSoundMuted());
     };
+    const onVolume = (e: Event) => {
+      const detail = (e as CustomEvent<{ volume?: number }>).detail;
+      if (typeof detail?.volume === 'number') setSoundVolume(detail.volume);
+      else setSoundVolume(getNotificationSoundVolume());
+      setSoundMuted(isNotificationSoundMuted());
+    };
     window.addEventListener('lms:notification-sound-muted', onMute);
-    return () => window.removeEventListener('lms:notification-sound-muted', onMute);
+    window.addEventListener('lms:notification-sound-volume', onVolume);
+    return () => {
+      window.removeEventListener('lms:notification-sound-muted', onMute);
+      window.removeEventListener('lms:notification-sound-volume', onVolume);
+      if (volumePreviewTimer.current) clearTimeout(volumePreviewTimer.current);
+    };
   }, []);
+
+  const handleVolumeChange = (value: number) => {
+    unlockNotificationAudio();
+    setSoundVolume(value);
+    setNotificationSoundVolume(value);
+    setSoundMuted(value === 0 || isNotificationSoundMuted());
+    if (volumePreviewTimer.current) clearTimeout(volumePreviewTimer.current);
+    volumePreviewTimer.current = setTimeout(() => {
+      if (value > 0) playNotificationSound();
+    }, 120);
+  };
 
   useEffect(() => {
     bindNotificationAudioUnlock();
@@ -278,7 +314,7 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
         }}>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '14px 16px', borderBottom: '1px solid #f3f4f6',
+            padding: '14px 16px 10px',
             gap: 8,
           }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>
@@ -293,20 +329,6 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
               )}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  unlockNotificationAudio();
-                  setSoundMuted(toggleNotificationSoundMuted());
-                }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 12, color: '#6B7280', fontWeight: 500,
-                }}
-                title={soundMuted ? 'Sesi aç' : 'Sesi kapat'}
-              >
-                {soundMuted ? '🔇 Sessiz' : '🔊 Ses'}
-              </button>
               {unreadCount > 0 && (
                 <button
                   type="button"
@@ -322,6 +344,72 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
                 </button>
               )}
             </div>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '0 16px 12px',
+              borderBottom: '1px solid #f3f4f6',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                unlockNotificationAudio();
+                const nextMuted = toggleNotificationSoundMuted();
+                setSoundMuted(nextMuted);
+                if (!nextMuted && soundVolume === 0) {
+                  handleVolumeChange(70);
+                } else if (!nextMuted) {
+                  playNotificationSound();
+                }
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 16,
+                lineHeight: 1,
+                padding: 0,
+                color: '#6B7280',
+              }}
+              title={soundMuted || soundVolume === 0 ? 'Sesi aç' : 'Sesi kapat'}
+              aria-label={soundMuted || soundVolume === 0 ? 'Sesi aç' : 'Sesi kapat'}
+            >
+              {soundMuted || soundVolume === 0 ? '🔇' : soundVolume < 40 ? '🔉' : '🔊'}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={soundMuted ? 0 : soundVolume}
+              onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              aria-label="Bildirim ses seviyesi"
+              title={`Ses: ${soundMuted ? 0 : soundVolume}%`}
+              style={{
+                flex: 1,
+                accentColor: '#4F46E5',
+                cursor: 'pointer',
+                height: 4,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#6B7280',
+                minWidth: 32,
+                textAlign: 'right',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {soundMuted ? 0 : soundVolume}%
+            </span>
           </div>
 
           <div style={{ maxHeight: 380, overflowY: 'auto' }}>
@@ -387,14 +475,15 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
               padding: '10px 16px', borderTop: '1px solid #f3f4f6',
               textAlign: 'center',
             }}>
-              <a
-                href="/admin/takvim/bildirimler"
+              <Link
+                href={allNotificationsHref}
+                onClick={() => setOpen(false)}
                 style={{
                   fontSize: 12, color: '#4F46E5', textDecoration: 'none', fontWeight: 500,
                 }}
               >
                 Tüm bildirimleri görüntüle →
-              </a>
+              </Link>
             </div>
           )}
         </div>

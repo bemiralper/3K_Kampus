@@ -51,7 +51,7 @@ export default function StudyProgramPrintPreview({ program, onClose }: StudyProg
   const logoUrl = '/img/3k-logo.png';
   const todayStr = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
   const weekStartStr = formatDateTR(program.week_start);
-  const weekEndStr = formatDateTR(addDaysStr(program.week_start, 6));
+  const weekEndStr = formatDateTR(program.week_end || addDaysStr(program.week_start, 6));
   const currentYear = new Date().getFullYear();
 
   /* Escape key */
@@ -61,8 +61,8 @@ export default function StudyProgramPrintPreview({ program, onClose }: StudyProg
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
 
-  /* ─── Sorted days ─── */
-  const sortedDays = [...(program.days || [])].sort((a, b) => a.weekday - b.weekday);
+  /* ─── Sorted days (tarih sırası — esnek aralık) ─── */
+  const sortedDays = [...(program.days || [])].sort((a, b) => a.day_date.localeCompare(b.day_date));
 
   /* ─── Stats ─── */
   const allBlocks = sortedDays.flatMap(d => d.blocks);

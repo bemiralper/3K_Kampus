@@ -3,7 +3,7 @@ WhatsApp hesap çözümleyici — rol + şube hibrit kapsam.
 """
 from __future__ import annotations
 
-from apps.communication.domain.enums import Channel, WhatsAppAccountScope
+from apps.communication.domain.enums import Channel, CommunicationDepartment, WhatsAppAccountScope
 from apps.communication.domain.models import CommunicationChannelConfig
 
 
@@ -27,6 +27,17 @@ def _user_role_id(user) -> int | None:
     if ur and getattr(ur, 'role_id', None):
         return ur.role_id
     return None
+
+
+def _is_active_coach(user) -> bool:
+    """Aktif koç profili — rol kaydı eksik/yanlış olsa bile koçluk hattına erişim için."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    try:
+        from apps.coaching.services.coach_access import get_coach_profile
+        return get_coach_profile(user) is not None
+    except Exception:
+        return False
 
 
 class AccountResolver:
@@ -66,9 +77,10 @@ class AccountResolver:
         ):
             return list(qs.order_by('-is_default', 'name'))
 
+        is_coach = _is_active_coach(user)
         candidates = []
         for cfg in qs.order_by('-is_default', 'name'):
-            if not _role_allowed(cfg, role_id):
+            if not _account_role_allows(cfg, role_id, is_coach=is_coach):
                 continue
             if not _sube_allowed(cfg, sube_id):
                 continue
@@ -217,6 +229,26 @@ def _role_allowed(cfg: CommunicationChannelConfig, role_id: int | None) -> bool:
     return role_id in role_ids
 
 
+def _account_role_allows(
+    cfg: CommunicationChannelConfig,
+    role_id: int | None,
+    *,
+    is_coach: bool = False,
+) -> bool:
+    """
+    Rol kapsamı + koç güvenli ağı.
+
+    Admin portal → koç görünümü impersonation değildir; manage yetkisi tüm hesapları açar.
+    Gerçek koçta allowed_roles Koç'u içermezse veya UserRole eksikse inbox boş kalıyordu.
+    Aktif CoachProfile, COACHING departmanlı hatlara şube kapsamında erişebilir.
+    """
+    if _role_allowed(cfg, role_id):
+        return True
+    if is_coach and cfg.department == CommunicationDepartment.COACHING:
+        return True
+    return False
+
+
 def _sube_allowed(cfg: CommunicationChannelConfig, sube_id: int | None) -> bool:
     if cfg.scope_type == WhatsAppAccountScope.ALL_SUBES:
         return True
@@ -228,4 +260,8 @@ def _sube_allowed(cfg: CommunicationChannelConfig, sube_id: int | None) -> bool:
 def _user_can_use(cfg: CommunicationChannelConfig, user, sube_id: int | None) -> bool:
     if getattr(user, 'is_superuser', False) or _has_sistem_admin(user):
         return True
-    return _role_allowed(cfg, _user_role_id(user)) and _sube_allowed(cfg, sube_id)
+    if _has_comm_manage(user):
+        return True
+    return _account_role_allows(
+        cfg, _user_role_id(user), is_coach=_is_active_coach(user),
+    ) and _sube_allowed(cfg, sube_id)

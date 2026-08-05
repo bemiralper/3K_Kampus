@@ -168,6 +168,10 @@ export function extractApiError(data: unknown, response: Response, fallback: str
         if (typeof first === "string" && first.trim()) return first;
       }
     }
+
+    // DRF alan hataları: { week_end: ["..."], non_field_errors: [...] }
+    const fieldErr = firstValidationError(obj);
+    if (fieldErr) return fieldErr;
   }
   if (response.status >= 400) {
     return describeHttpStatus(response.status);

@@ -1135,13 +1135,15 @@ export async function fetchAssignments(params?: {
 }
 
 export interface KontrolBadgeData {
+  /** Menü rozeti: kontrol günü bugün olan ödev sayısı */
   count: number;
+  due_today?: number;
   overdue: number;
   pending: number;
 }
 
 /**
- * Ödev Kontrol sidebar badge sayıları (geciken + bekleyen)
+ * Ödev Kontrol sidebar badge (kontrol günü bugün) + geciken/bekleyen özet
  */
 export async function fetchKontrolBadge(): Promise<ApiResponse<KontrolBadgeData>> {
   return apiGet<KontrolBadgeData>(

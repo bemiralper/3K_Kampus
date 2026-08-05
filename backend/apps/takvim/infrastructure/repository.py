@@ -141,6 +141,30 @@ class EventRepository:
         if filters.get('sinif_id'):
             qs = qs.filter(sinif_ids__contains=[filters['sinif_id']])
 
+        # Öğrenci (JSONField içinde arama)
+        if filters.get('ogrenci_id'):
+            qs = qs.filter(ogrenci_ids__contains=[int(filters['ogrenci_id'])])
+
+        # Koç kapsamı — kendi etkinlikleri + roster öğrencileri + tatiller
+        if filters.get('coach_scope'):
+            scope = filters['coach_scope']
+            user_id = scope.get('user_id')
+            personel_id = scope.get('personel_id')
+            student_ids = scope.get('student_ids') or []
+
+            from apps.takvim.application.integration_service import KaynakModul
+
+            scope_q = Q(event_type__kategori='TATIL') | Q(
+                kaynak_modul__in=[KaynakModul.RESMI_TATIL, KaynakModul.OZEL_DERS_CEVRE]
+            )
+            if user_id:
+                scope_q |= Q(ogretmen_id=user_id) | Q(created_by=user_id)
+            if personel_id:
+                scope_q |= Q(ogretmen_id=personel_id)
+            for sid in student_ids:
+                scope_q |= Q(ogrenci_ids__contains=[int(sid)])
+            qs = qs.filter(scope_q)
+
         # Arama
         if filters.get('search'):
             qs = qs.filter(
