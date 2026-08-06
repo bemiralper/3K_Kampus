@@ -11,8 +11,18 @@ from apps.communication.application.notification_events import (
     get_event,
 )
 from apps.communication.application.notification_template_resolver import resolve_binding
-from apps.communication.domain.enums import Channel, NotificationSendMode
-from apps.communication.domain.models import NotificationTemplateBinding
+from apps.communication.domain.enums import Channel, NotificationSendMode, RecipientType
+from apps.communication.domain.models import (
+    MessageTemplate,
+    NotificationTemplateBinding,
+    WhatsAppMetaTemplate,
+)
+
+_RECIPIENT_LABELS = {
+    RecipientType.VELI: 'Veli',
+    RecipientType.OGRENCI: 'Öğrenci',
+    RecipientType.PERSONEL: 'Personel',
+}
 
 
 class NotificationBindingError(Exception):
@@ -20,6 +30,58 @@ class NotificationBindingError(Exception):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
+
+
+def _usage_label(event_key: str, recipient_type: str) -> str:
+    event = get_event(event_key)
+    role = _RECIPIENT_LABELS.get(recipient_type, recipient_type)
+    if event:
+        return f'{event.label} ({role})'
+    return f'{event_key} ({role})'
+
+
+def list_message_template_binding_usages(template: MessageTemplate) -> list[dict]:
+    """LMS şablonunun Bildirim Şablonları eşlemelerinde kullanımı."""
+    rows = (
+        NotificationTemplateBinding.objects.filter(
+            message_template_id=template.id,
+            is_active=True,
+        )
+        .exclude(send_mode=NotificationSendMode.DISABLED)
+        .order_by('event_key', 'recipient_type')
+    )
+    return [
+        {
+            'module': 'communication',
+            'role': f'{row.event_key}:{row.recipient_type}',
+            'label': _usage_label(row.event_key, row.recipient_type),
+            'is_active': True,
+            'event_key': row.event_key,
+        }
+        for row in rows
+    ]
+
+
+def list_meta_template_binding_usages(template: WhatsAppMetaTemplate) -> list[dict]:
+    """Meta şablonunun Bildirim Şablonları eşlemelerinde kullanımı."""
+    rows = (
+        NotificationTemplateBinding.objects.filter(
+            meta_template_id=template.id,
+            is_active=True,
+        )
+        .exclude(send_mode=NotificationSendMode.DISABLED)
+        .order_by('event_key', 'recipient_type')
+    )
+    return [
+        {
+            'module': 'communication',
+            'role': f'{row.event_key}:{row.recipient_type}',
+            'label': _usage_label(row.event_key, row.recipient_type),
+            'is_active': True,
+            'event_key': row.event_key,
+        }
+        for row in rows
+    ]
 
 
 def _binding_payload(binding) -> dict | None:
@@ -60,6 +122,8 @@ def list_event_catalog(
 
     events = []
     for event in NOTIFICATION_EVENTS:
+        if event.hidden_in_ui:
+            continue
         slots = []
         for recipient_type in event.recipients:
             resolved = resolve_binding(
@@ -103,6 +167,7 @@ def list_event_catalog(
             'opt_in_category': event.opt_in_category,
             'variables': list(event.all_variables()),
             'meta_name_base': event.meta_name_base,
+            'hidden_in_ui': event.hidden_in_ui,
             'slots': slots,
         })
 

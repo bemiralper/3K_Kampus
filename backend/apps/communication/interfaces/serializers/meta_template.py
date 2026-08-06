@@ -18,6 +18,8 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     variables = serializers.SerializerMethodField()
     app_template_id = serializers.SerializerMethodField()
     app_template_name = serializers.SerializerMethodField()
+    system_usages = serializers.SerializerMethodField()
+    is_system_active = serializers.SerializerMethodField()
 
     class Meta:
         model = WhatsAppMetaTemplate
@@ -29,6 +31,7 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
             'body_named', 'header_json', 'footer_text', 'buttons_json',
             'components_json', 'variable_map_json', 'variables',
             'app_template_id', 'app_template_name',
+            'system_usages', 'is_system_active',
             'rejected_reason', 'rejected_detail',
             'last_submitted_at', 'approved_at', 'usage_count',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
@@ -88,6 +91,15 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
             return list(names)
         vmap = obj.variable_map_json or {}
         return [vmap[key] for key in sorted(vmap, key=lambda k: int(k) if k.isdigit() else 0)]
+
+    def get_system_usages(self, obj) -> list[dict]:
+        from apps.communication.application.notification_binding_service import (
+            list_meta_template_binding_usages,
+        )
+        return list_meta_template_binding_usages(obj)
+
+    def get_is_system_active(self, obj) -> bool:
+        return bool(self.get_system_usages(obj))
 
 
 class WhatsAppMetaTemplateWriteSerializer(serializers.Serializer):

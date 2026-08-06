@@ -816,6 +816,14 @@ export interface WhatsAppMetaTemplateItem {
   /** Bağlı uygulama şablonu (varsa) */
   app_template_id?: string;
   app_template_name?: string;
+  system_usages?: Array<{
+    module: string;
+    role: string;
+    label: string;
+    is_active: boolean;
+    event_key?: string;
+  }>;
+  is_system_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -1256,7 +1264,13 @@ export interface MessageTemplateItem {
   created_by_name?: string;
   created_at: string;
   updated_at: string;
-  system_usages?: Array<{ module: string; role: string; label: string; is_active: boolean }>;
+  system_usages?: Array<{
+    module: string;
+    role: string;
+    label: string;
+    is_active: boolean;
+    event_key?: string;
+  }>;
   is_system_active?: boolean;
   odev_pdf_role?: string | null;
   /** Meta karşılığı — 24 saatlik pencere kapalıyken bu şablon kullanılır */
@@ -1708,7 +1722,7 @@ export async function fetchNotificationEvents(params?: {
 
 export async function saveNotificationBinding(data: {
   event_key: string;
-  recipient_type: string;
+  recipient_type: string | 'VELI' | 'OGRENCI' | 'PERSONEL';
   sube_id?: number | null;
   channel_config_id?: string | null;
   meta_template_id?: string | null;

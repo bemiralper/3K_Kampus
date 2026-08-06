@@ -270,7 +270,7 @@ Olaylar `backend/apps/communication/application/notification_events.py` içinde 
 | Ödev | `odev.atama` | Veli | — |
 | Yoklama | `yoklama.gelmedi`, `yoklama.gec`, `yoklama.cikis` | Veli | — |
 | Ödeme | `odeme.hatirlatma`, `odeme.gecikme` | Veli | — |
-| Ödeme | `odeme.belge` | Veli, Öğrenci | ✓ |
+| Ödeme | `odeme.plan` / `odeme.makbuz` / `odeme.sozlesme` | Veli, Öğrenci | ✓ |
 | Görüşme | `gorusme.hatirlatma` | Veli, Öğrenci | — |
 | Sınav | `sinav.sonuc` | Veli | — |
 | Takvim | `takvim.etkinlik` | Veli, Öğrenci | — |

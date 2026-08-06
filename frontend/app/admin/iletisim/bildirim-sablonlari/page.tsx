@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import BildirimSablonlariClient from "./BildirimSablonlariClient";
 
 export const metadata = {
@@ -5,5 +6,9 @@ export const metadata = {
 };
 
 export default function BildirimSablonlariPage() {
-  return <BildirimSablonlariClient />;
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>Yükleniyor…</div>}>
+      <BildirimSablonlariClient />
+    </Suspense>
+  );
 }

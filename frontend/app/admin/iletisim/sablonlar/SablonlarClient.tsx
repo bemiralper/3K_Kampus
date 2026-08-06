@@ -499,7 +499,21 @@ export default function SablonlarClient() {
                 {t.is_system_active && t.system_usages?.length ? (
                   <p className="tplx-card-usage">
                     <span aria-hidden="true">⚡</span>
-                    {t.system_usages.map((u) => u.label).join(" · ")}
+                    {t.system_usages.map((u, idx) => (
+                      <span key={`${u.module}-${u.role}-${idx}`}>
+                        {idx > 0 ? " · " : ""}
+                        {u.event_key ? (
+                          <a
+                            href={`/admin/iletisim/bildirim-sablonlari?event=${encodeURIComponent(u.event_key)}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {u.label}
+                          </a>
+                        ) : (
+                          u.label
+                        )}
+                      </span>
+                    ))}
                   </p>
                 ) : null}
 

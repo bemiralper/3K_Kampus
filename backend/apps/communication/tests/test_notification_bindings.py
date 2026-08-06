@@ -275,7 +275,10 @@ class BindingServiceTest(TestCase):
 
     def test_catalog_lists_every_event_with_slots(self):
         catalog = list_event_catalog(self.kurum.id)
-        self.assertEqual(len(catalog['events']), len(NOTIFICATION_EVENTS))
+        visible = [e for e in NOTIFICATION_EVENTS if not e.hidden_in_ui]
+        self.assertEqual(len(catalog['events']), len(visible))
+        self.assertNotIn('devamsizlik.bildirim', [e['key'] for e in catalog['events']])
+        self.assertNotIn('devamsizlik', [m['key'] for m in catalog['modules']])
         for event in catalog['events']:
             self.assertTrue(event['slots'])
 

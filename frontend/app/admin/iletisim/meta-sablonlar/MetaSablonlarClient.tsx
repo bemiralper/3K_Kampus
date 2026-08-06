@@ -26,6 +26,7 @@ import {
   importAppTemplatesFromMeta,
   refreshLocalMetaTemplateStatus,
   resubmitLocalMetaTemplate,
+  saveNotificationBinding,
   submitLocalMetaTemplate,
   syncWhatsAppAccountTemplates,
   updateLocalMetaTemplate,
@@ -166,6 +167,11 @@ export default function MetaSablonlarClient() {
   const [editing, setEditing] = useState<WhatsAppMetaTemplateItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
+  const [bindContext, setBindContext] = useState<{
+    eventKey: string;
+    recipient: string;
+    bind: boolean;
+  } | null>(null);
   const { setNode: setBodyNode, insert: insertIntoBody } = useTextareaInsert();
 
   const loadAccounts = useCallback(async () => {
@@ -173,8 +179,14 @@ export default function MetaSablonlarClient() {
     const list = res.accounts || [];
     setAccounts(list);
     if (!accountId && list.length) {
-      const def = list.find((a) => a.is_default) || list[0];
-      setAccountId(def.id);
+      const params = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search)
+        : null;
+      const fromUrl = params?.get("account") || "";
+      const preferred = fromUrl && list.some((a) => a.id === fromUrl)
+        ? fromUrl
+        : (list.find((a) => a.is_default) || list[0]).id;
+      setAccountId(preferred);
     }
   }, [accountId]);
 
@@ -211,7 +223,10 @@ export default function MetaSablonlarClient() {
     const params = new URLSearchParams(window.location.search);
     const eventKey = params.get("event");
     const recipient = (params.get("recipient") || "").toUpperCase();
+    const shouldBind = params.get("bind") === "1";
     if (!eventKey || !recipient) return;
+
+    setBindContext({ eventKey, recipient, bind: shouldBind });
 
     let cancelled = false;
     (async () => {
@@ -226,12 +241,21 @@ export default function MetaSablonlarClient() {
           ...emptyForm(),
           name: slot.suggested_meta_name,
           body_named: slot.meta_example_body,
+          usage_scope: "SYSTEM",
           header: event.has_document
             ? ({ type: "DOCUMENT" } as MetaTemplateHeader)
-            : ({ type: "NONE" } as MetaTemplateHeader),
+            : event.has_image
+              ? ({ type: "IMAGE" } as MetaTemplateHeader)
+              : ({ type: "NONE" } as MetaTemplateHeader),
+          also_create_app_template: true,
+          app_template_name: `${event.label} — ${recipient === "VELI" ? "Veli" : recipient === "OGRENCI" ? "Öğrenci" : "Personel"}`,
         });
         setDrawerOpen(true);
-        setMessage(`${event.label} olayı için şablon taslağı hazırlandı.`);
+        setMessage(
+          shouldBind
+            ? `${event.label} olayı için şablon taslağı hazır. Kaydedince bu olaya otomatik bağlanır.`
+            : `${event.label} olayı için şablon taslağı hazırlandı.`,
+        );
       } catch {
         // kısayol ön dolgusu başarısızsa normal oluşturma akışı çalışır
       }
@@ -311,13 +335,32 @@ export default function MetaSablonlarClient() {
       } else {
         const created = await createLocalMetaTemplate(payload());
         const appName = created.pairing?.app_template?.name;
+        let bindNote = "";
+        if (bindContext?.bind && bindContext.eventKey && bindContext.recipient) {
+          try {
+            await saveNotificationBinding({
+              event_key: bindContext.eventKey,
+              recipient_type: bindContext.recipient as "VELI" | "OGRENCI" | "PERSONEL",
+              channel_config_id: accountId || null,
+              meta_template_id: created.id,
+              message_template_id: created.pairing?.app_template?.id || null,
+              send_mode: "AUTO",
+              is_active: true,
+            });
+            bindNote = ` Bildirim olayı (${bindContext.eventKey}) bağlandı.`;
+          } catch (bindErr) {
+            bindNote = ` Şablon oluştu ancak olaya bağlanamadı: ${
+              bindErr instanceof Error ? bindErr.message : "hata"
+            }`;
+          }
+        }
         setMessage(
-          created.info
+          (created.info
             || (
               appName
                 ? `Meta taslağı oluşturuldu ve uygulama şablonu eklendi (“${appName}”).`
                 : "Meta taslağı oluşturuldu."
-            ),
+            )) + bindNote,
         );
         setEditing(created);
       }
@@ -728,6 +771,12 @@ export default function MetaSablonlarClient() {
                       </span>
                     </span>
                     <div className="tplx-badges">
+                      {t.is_system_active && (
+                        <span className="tplx-badge is-live">
+                          <span className="tplx-badge-dot" aria-hidden="true" />
+                          Aktif
+                        </span>
+                      )}
                       <span className={`tplx-badge ${tone}`}>
                         <span className="tplx-badge-dot" aria-hidden="true" />
                         {t.status_label || STATUS_LABELS[t.status] || t.status}
@@ -739,6 +788,13 @@ export default function MetaSablonlarClient() {
                     {(t.body_named || "").slice(0, 130)}
                     {(t.body_named || "").length > 130 ? "…" : ""}
                   </p>
+
+                  {t.is_system_active && t.system_usages?.length ? (
+                    <p className="tplx-card-usage">
+                      <span aria-hidden="true">⚡</span>
+                      {t.system_usages.map((u) => u.label).join(" · ")}
+                    </p>
+                  ) : null}
 
                   {t.status === "REJECTED" && t.rejected_reason ? (
                     <p className="tplx-card-usage" style={{ color: "#be123c" }}>
@@ -945,6 +1001,22 @@ export default function MetaSablonlarClient() {
                                 placeholder="Boş bırakılırsa Meta adından üretilir"
                               />
                             </div>
+                          )}
+                          {bindContext && (
+                            <label className="tplx-check-row" style={{ marginTop: "0.75rem" }}>
+                              <input
+                                type="checkbox"
+                                checked={!!bindContext.bind}
+                                onChange={(e) => setBindContext((prev) => (
+                                  prev ? { ...prev, bind: e.target.checked } : prev
+                                ))}
+                              />
+                              <span>
+                                Kaydedince bildirim olayına bağla
+                                {" "}
+                                <code>{bindContext.eventKey}</code>
+                              </span>
+                            </label>
                           )}
                         </div>
                       )}

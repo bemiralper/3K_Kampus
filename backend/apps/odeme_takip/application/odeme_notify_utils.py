@@ -15,6 +15,21 @@ _TYPE_LABELS = {
     NOTIFY_SOZLESME: 'Sözleşme Belgesi',
 }
 
+# Bildirim olay anahtarları — her belge türü ayrı Meta/uygulama şablonuna bağlanır.
+_EVENT_KEYS = {
+    NOTIFY_PLAN: 'odeme.plan',
+    NOTIFY_MAKBUZ: 'odeme.makbuz',
+    NOTIFY_SOZLESME: 'odeme.sozlesme',
+}
+
+
+def notify_event_key(notify_type: str) -> str:
+    """notify_type (plan/makbuz/sozlesme) → notification event key."""
+    try:
+        return _EVENT_KEYS[notify_type]
+    except KeyError as exc:
+        raise ValueError(f'Geçersiz belge türü: {notify_type}') from exc
+
 
 def _safe_filename_part(value: str) -> str:
     cleaned = re.sub(r'[^\w\s-]', '', (value or '').strip(), flags=re.UNICODE)

@@ -58,6 +58,8 @@ class NotificationEvent:
     # IMAGE header Meta şablonu + runtime görsel eki (doğum günü vb.)
     has_image: bool = False
     description: str = ''
+    # True ise Bildirim Şablonları UI/katalogundan gizlenir; dispatch/hook çalışmaya devam eder.
+    hidden_in_ui: bool = False
     legacy_meta_names: Mapping[str, tuple[str, ...]] = field(
         default_factory=lambda: MappingProxyType({}),
     )
@@ -148,6 +150,10 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='yoklama.gelmedi',
         module=MODULE_YOKLAMA,
         label='Yoklama — gelmedi',
+        description=(
+            'Kütüphane / yoklama sisteminden “gelmedi” bildirimi. '
+            'Canlı devamsızlık WhatsApp mesajları bu olay üzerinden gider.'
+        ),
         recipients=(VELI,),
         opt_in_category='devamsizlik',
         variables=(
@@ -167,6 +173,7 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='yoklama.gec',
         module=MODULE_YOKLAMA,
         label='Yoklama — geç kalma',
+        description='Kütüphane / yoklama sisteminden geç giriş bildirimi.',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
         variables=(
@@ -186,6 +193,7 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='yoklama.cikis',
         module=MODULE_YOKLAMA,
         label='Yoklama — çıkış',
+        description='Kütüphane / yoklama sisteminden çıkış bildirimi.',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
         variables=(
@@ -205,6 +213,10 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='odeme.hatirlatma',
         module=MODULE_ODEME,
         label='Ödeme hatırlatma',
+        description=(
+            'Vadesi yaklaşan taksit hatırlatması (cron / manuel). '
+            'Muhasebe WhatsApp hattı üzerinden veliye gider.'
+        ),
         recipients=(VELI,),
         opt_in_category='odeme',
         variables=(
@@ -214,8 +226,9 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         meta_name_base='odeme_hatirlatma',
         default_bodies=MappingProxyType({
             VELI: (
-                'Sayın {{veli_ad}}, {{ogrenci_ad}} için {{taksit_no}}. taksit ödemesinin '
-                'vadesi {{vade_tarihi}}, kalan tutar {{kalan_tutar}} TL. '
+                'Sayın {{veli_ad}}, {{ogrenci_ad}} öğrencisi için {{taksit_no}}. '
+                'taksit ödemesinin vadesi {{vade_tarihi}} tarihidir. '
+                'Kalan tutar {{kalan_tutar}} TL. Sözleşme no: {{sozlesme_no}}. '
                 'Bilgilerinize sunarız.'
             ),
         }),
@@ -224,6 +237,11 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='odeme.gecikme',
         module=MODULE_ODEME,
         label='Ödeme gecikme',
+        description=(
+            'Gecikmiş taksit bildirimi (tekil veya toplu). '
+            'Meta gövdesinde çok satırlı taksit listesi kullanılmaz; '
+            'özet tutar alanları tercih edilir.'
+        ),
         recipients=(VELI,),
         opt_in_category='odeme',
         variables=(
@@ -234,25 +252,75 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         meta_name_base='odeme_gecikme',
         default_bodies=MappingProxyType({
             VELI: (
-                'Sayın {{veli_ad}}, {{ogrenci_ad}} için {{taksit_no}}. taksit ödemesi '
-                '{{gecikme_gunu}} gün gecikmiştir. Kalan tutar: {{kalan_tutar}} TL. '
-                'Bilgilerinize sunarız.'
+                'Sayın {{veli_ad}}, {{ogrenci_ad}} için gecikmiş taksit ödemesi '
+                'bulunmaktadır (taksit: {{taksit_no}}). Gecikme {{gecikme_gunu}} gündür. '
+                'Kalan tutar {{kalan_tutar}} TL, toplam gecikmiş tutar '
+                '{{toplam_gecikmis_tutar}} TL. Sözleşme no: {{sozlesme_no}}. '
+                'Lütfen en kısa sürede ödeme yapınız.'
             ),
         }),
     ),
     NotificationEvent(
-        key='odeme.belge',
+        key='odeme.plan',
         module=MODULE_ODEME,
-        label='Ödeme belgesi (PDF)',
-        description='Ödeme planı, makbuz veya sözleşme PDF olarak gönderilir.',
+        label='Ödeme planı (PDF)',
+        description='Ödeme planı PDF olarak gönderilir (DOCUMENT header Meta şablonu gerekir).',
         recipients=(VELI, OGRENCI),
         opt_in_category='genel',
         has_document=True,
-        variables=('ogrenci_ad', 'veli_ad', 'belge_turu', 'sozlesme_no', 'pdf_baslik'),
-        meta_name_base='odeme_belgesi',
+        variables=('ogrenci_ad', 'veli_ad', 'sozlesme_no', 'pdf_baslik'),
+        meta_name_base='odeme_plani',
         default_bodies=MappingProxyType({
-            VELI: 'Sayın {{veli_ad}}, {{ogrenci_ad}} için {{belge_turu}} ektedir.',
-            OGRENCI: 'Merhaba, {{belge_turu}} ektedir.',
+            VELI: (
+                'Sayın {{veli_ad}}, {{ogrenci_ad}} için ödeme planı ektedir. '
+                'Sözleşme no: {{sozlesme_no}}. İyi günler dileriz.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, ödeme planı ektedir. '
+                'Sözleşme no: {{sozlesme_no}}. İyi günler dileriz.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='odeme.makbuz',
+        module=MODULE_ODEME,
+        label='Tahsilat makbuzu (PDF)',
+        description='Tahsilat makbuzu PDF olarak gönderilir (DOCUMENT header Meta şablonu gerekir).',
+        recipients=(VELI, OGRENCI),
+        opt_in_category='genel',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'sozlesme_no', 'pdf_baslik'),
+        meta_name_base='odeme_makbuzu',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}}, {{ogrenci_ad}} için tahsilat makbuzu ektedir. '
+                'Sözleşme no: {{sozlesme_no}}. İyi günler dileriz.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, tahsilat makbuzu ektedir. '
+                'Sözleşme no: {{sozlesme_no}}. İyi günler dileriz.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='odeme.sozlesme',
+        module=MODULE_ODEME,
+        label='Sözleşme belgesi (PDF)',
+        description='Sözleşme PDF olarak gönderilir (DOCUMENT header Meta şablonu gerekir).',
+        recipients=(VELI, OGRENCI),
+        opt_in_category='genel',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'sozlesme_no', 'pdf_baslik'),
+        meta_name_base='odeme_sozlesmesi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}}, {{ogrenci_ad}} için sözleşme belgesi ektedir. '
+                'Sözleşme no: {{sozlesme_no}}. İyi günler dileriz.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, sözleşme belgesi ektedir. '
+                'Sözleşme no: {{sozlesme_no}}. İyi günler dileriz.'
+            ),
         }),
     ),
     NotificationEvent(
@@ -305,10 +373,15 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='devamsizlik.bildirim',
         module=MODULE_DEVAMSIZLIK,
         label='Devamsızlık bildirimi',
+        description=(
+            'Legacy / kullanılmayan olay. Canlı sistem Yoklama (gelmedi/geç/çıkış) '
+            'olaylarını kullanır; bu kayıt UI’da gizlidir.'
+        ),
         recipients=(VELI,),
         opt_in_category='devamsizlik',
         variables=('ogrenci_ad', 'veli_ad', 'tarih', 'aciklama'),
         meta_name_base='devamsizlik_bildirim',
+        hidden_in_ui=True,
         default_bodies=MappingProxyType({
             VELI: (
                 'Sayın velimiz, {{ogrenci_ad}} {{tarih}} tarihinde devamsızlık kaydı '
@@ -320,14 +393,21 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='finans.gun_sonu',
         module=MODULE_FINANS,
         label='Gün sonu raporu (PDF)',
-        description='Gün sonu finansal özet raporu yetkili personele gönderilir.',
+        description=(
+            'Gün sonu finansal özet raporu mali hesap yetkilisine gönderilir '
+            '(DOCUMENT header Meta şablonu gerekir).'
+        ),
         recipients=(PERSONEL,),
         opt_in_category='genel',
         has_document=True,
         variables=('personel_ad', 'tarih', 'toplam_tahsilat', 'toplam_gider', 'pdf_baslik'),
         meta_name_base='gun_sonu_raporu',
         default_bodies=MappingProxyType({
-            PERSONEL: '{{tarih}} tarihli gün sonu raporu ektedir.',
+            PERSONEL: (
+                'Merhaba {{personel_ad}}, {{tarih}} tarihli gün sonu raporu ektedir. '
+                'Toplam tahsilat {{toplam_tahsilat}} TL, toplam gider {{toplam_gider}} TL. '
+                'Detay PDF ekindedir.'
+            ),
         }),
     ),
     NotificationEvent(

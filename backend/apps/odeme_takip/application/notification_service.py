@@ -24,6 +24,7 @@ from .odeme_notify_utils import (
     NOTIFY_MAKBUZ,
     NOTIFY_PLAN,
     NOTIFY_SOZLESME,
+    notify_event_key,
     build_makbuz_pdf_filename,
     build_pdf_attachment_message,
     build_sozlesme_pdf_filename,
@@ -413,7 +414,7 @@ class OdemeNotificationService:
                 )
                 result = dispatch_event(
                     kurum_id,
-                    'odeme.belge',
+                    notify_event_key(notify_type),
                     recipient=NotificationRecipient.veli(item.veli_id),
                     context={
                         'ogrenci_ad': ogrenci_ad,
@@ -464,7 +465,7 @@ class OdemeNotificationService:
                 )
                 result = dispatch_event(
                     kurum_id,
-                    'odeme.belge',
+                    notify_event_key(notify_type),
                     recipient=NotificationRecipient.ogrenci(item.ogrenci_id),
                     context={
                         'ogrenci_ad': ogrenci_ad,

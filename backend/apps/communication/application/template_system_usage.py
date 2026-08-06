@@ -23,8 +23,14 @@ def deactivate_template_with_reassignment(template: MessageTemplate) -> dict:
         recreate_default_template_for_role,
         set_config_template,
     )
+    from apps.communication.application.notification_binding_service import (
+        list_message_template_binding_usages,
+    )
 
-    usages = list_template_system_usages(template)
+    usages = [
+        *list_template_system_usages(template),
+        *list_message_template_binding_usages(template),
+    ]
     if not usages:
         template.is_active = False
         template.save(update_fields=['is_active', 'updated_at'])
@@ -104,6 +110,21 @@ def deactivate_template_with_reassignment(template: MessageTemplate) -> dict:
                         f'Bu şablon "{usage["label"]}" için aktif kullanılıyor. '
                         'Silmeden önce aynı kategoride başka bir şablonu aktif yapın.',
                     )
+
+            elif usage['module'] == 'communication':
+                # Bildirim eşlemesinden düşür; olay varsayılan metne / Meta keşfine döner.
+                from apps.communication.domain.models import NotificationTemplateBinding
+
+                cleared = NotificationTemplateBinding.objects.filter(
+                    message_template_id=template.id,
+                ).update(message_template=None)
+                if cleared:
+                    reassigned.append({
+                        'role': usage.get('role') or 'binding',
+                        'label': usage['label'],
+                        'template_id': '',
+                        'template_name': 'varsayılan',
+                    })
 
         template.is_active = False
         template.save(update_fields=['is_active', 'updated_at'])

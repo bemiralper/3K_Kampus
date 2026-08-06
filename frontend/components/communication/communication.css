@@ -770,6 +770,7 @@
 .comm-status-badge.completed { background: #dcfce7; color: #15803d; }
 .comm-status-badge.partial { background: #ffedd5; color: #c2410c; }
 .comm-status-badge.cancelled { background: #fee2e2; color: #b91c1c; }
+.comm-status-badge.is-success { background: #dcfce7; color: #15803d; }
 
 .comm-progress-mini {
   display: flex;
@@ -5485,6 +5486,10 @@
 .nb-module-btn {
   padding: 10px 12px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .nb-module-btn:hover,
@@ -5517,6 +5522,11 @@
   background: #e0e7ff;
   color: #1e293b;
   font-weight: 600;
+}
+
+.nb-bound-chip {
+  background: #dcfce7;
+  color: #15803d;
 }
 
 .nb-doc-chip {

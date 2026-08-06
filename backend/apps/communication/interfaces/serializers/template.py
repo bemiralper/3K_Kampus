@@ -41,8 +41,16 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
         return ''
 
     def get_system_usages(self, obj) -> list[dict]:
-        from apps.coaching.assignment_manual.assignment_template_roles import list_template_system_usages
-        return list_template_system_usages(obj)
+        from apps.coaching.assignment_manual.assignment_template_roles import (
+            list_template_system_usages,
+        )
+        from apps.communication.application.notification_binding_service import (
+            list_message_template_binding_usages,
+        )
+        return [
+            *list_template_system_usages(obj),
+            *list_message_template_binding_usages(obj),
+        ]
 
     def get_is_system_active(self, obj) -> bool:
         return bool(self.get_system_usages(obj))
