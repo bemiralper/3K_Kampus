@@ -32,6 +32,10 @@ import {
   updateLocalMetaTemplate,
   uploadMetaTemplateExampleMedia,
 } from "@/lib/communication-api";
+import {
+  notifyCommunicationTemplateUsageChanged,
+  useRefreshOnCommunicationTemplateUsageChange,
+} from "@/lib/communication-template-usage-sync";
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: "is-draft",
@@ -217,6 +221,10 @@ export default function MetaSablonlarClient() {
     if (accountId) load();
   }, [accountId, load]);
 
+  useRefreshOnCommunicationTemplateUsageChange(() => {
+    if (accountId) return load();
+  });
+
   // Bildirim Şablonları ekranından "bu olay için şablon oluştur" kısayolu
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -347,6 +355,7 @@ export default function MetaSablonlarClient() {
               send_mode: "AUTO",
               is_active: true,
             });
+            notifyCommunicationTemplateUsageChanged();
             bindNote = ` Bildirim olayı (${bindContext.eventKey}) bağlandı.`;
           } catch (bindErr) {
             bindNote = ` Şablon oluştu ancak olaya bağlanamadı: ${

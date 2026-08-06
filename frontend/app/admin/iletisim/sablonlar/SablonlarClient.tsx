@@ -23,6 +23,7 @@ import {
   TemplateCategoryItem,
   updateTemplate,
 } from "@/lib/communication-api";
+import { useRefreshOnCommunicationTemplateUsageChange } from "@/lib/communication-template-usage-sync";
 
 const EMPTY_FORM: TemplateEditorForm = {
   name: "",
@@ -108,6 +109,8 @@ export default function SablonlarClient() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useRefreshOnCommunicationTemplateUsageChange(load);
 
   useEffect(() => {
     const fromUrl = searchParams.get("category") || "";

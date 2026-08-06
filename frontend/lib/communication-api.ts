@@ -110,6 +110,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   try {
     const response = await fetch(communicationApiUrl(path), {
       credentials: 'include',
+      cache: 'no-store',
       ...options,
       headers,
       signal: controller.signal,

@@ -22,6 +22,7 @@ import {
   previewNotificationBinding,
   saveNotificationBinding,
 } from "@/lib/communication-api";
+import { notifyCommunicationTemplateUsageChanged } from "@/lib/communication-template-usage-sync";
 
 const RECIPIENT_LABELS: Record<string, string> = {
   VELI: "Veli",
@@ -234,6 +235,7 @@ export default function BildirimSablonlariClient() {
             channel_config_id: scopeChannelConfigId,
           });
           setMessage(`${event.label} — ${RECIPIENT_LABELS[slot.recipient_type]} varsayılana döndü.`);
+          notifyCommunicationTemplateUsageChanged();
         } else if (isEmptyDefault && !slot.binding) {
           setMessage("Zaten varsayılan ayar kullanılıyor.");
         } else {
@@ -245,6 +247,7 @@ export default function BildirimSablonlariClient() {
             ...next,
           });
           setMessage(`${event.label} — ${RECIPIENT_LABELS[slot.recipient_type]} güncellendi.`);
+          notifyCommunicationTemplateUsageChanged();
         }
         await loadCatalog();
       } catch (err) {
@@ -270,6 +273,7 @@ export default function BildirimSablonlariClient() {
           channel_config_id: scopeChannelConfigId,
         });
         setMessage(`${event.label} — ${RECIPIENT_LABELS[slot.recipient_type]} varsayılana döndü.`);
+        notifyCommunicationTemplateUsageChanged();
         await loadCatalog();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Eşleme silinemedi.");
