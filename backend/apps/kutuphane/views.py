@@ -1305,6 +1305,86 @@ def api_locker_assignment_toggle_key(request, pk):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
+@csrf_exempt
+def api_locker_audit_logs(request):
+    """Şube dolap / dolap-atama işlem geçmişi."""
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    ctx, err = _mandatory_ctx(request)
+    if err:
+        return err
+
+    try:
+        limit = min(int(request.GET.get('limit', 100)), 300)
+    except (TypeError, ValueError):
+        limit = 100
+
+    locker_ids = list(
+        Locker.objects.filter(
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            is_deleted=False,
+        ).values_list('id', flat=True)
+    )
+    assignment_ids = list(
+        LockerAssignment.objects.filter(
+            kurum_id=ctx['kurum_id'],
+            locker_id__in=locker_ids,
+        ).values_list('id', flat=True)
+    )
+    entity_ids = list(locker_ids) + list(assignment_ids)
+    logs = AuditLogRepository.list_for_entities(entity_ids, limit=limit)
+
+    # Dolap no / öğrenci zenginleştirme
+    locker_no_map = {
+        str(lid): no
+        for lid, no in Locker.objects.filter(id__in=locker_ids).values_list('id', 'dolap_no')
+    }
+    assignment_meta = {
+        str(a['id']): a
+        for a in LockerAssignment.objects.filter(id__in=assignment_ids).values(
+            'id', 'ogrenci_id', 'locker_id',
+        )
+    }
+
+    data = []
+    for log in logs:
+        eid = str(log.entity_id)
+        dolap_no = None
+        ogrenci_adi = None
+        if log.entity_type == 'Locker':
+            dolap_no = locker_no_map.get(eid)
+        elif log.entity_type == 'LockerAssignment':
+            meta = assignment_meta.get(eid) or {}
+            dolap_no = locker_no_map.get(str(meta.get('locker_id'))) if meta else None
+            if meta.get('ogrenci_id'):
+                ogrenci_adi = _get_ogrenci_adi(meta['ogrenci_id'])
+
+        new_vals = log.new_values or {}
+        anahtar_yon = None
+        if 'anahtar_verildi' in new_vals:
+            anahtar_yon = 'verildi' if new_vals['anahtar_verildi'] else 'geri_alindi'
+
+        data.append({
+            'id': str(log.id),
+            'entity_type': log.entity_type,
+            'entity_id': eid,
+            'action': log.action,
+            'description': log.description,
+            'old_values': log.old_values,
+            'new_values': log.new_values,
+            'anahtar_yon': anahtar_yon,
+            'dolap_no': dolap_no,
+            'ogrenci_adi': ogrenci_adi,
+            'performed_by': log.performed_by,
+            'performed_by_name': _get_user_display_name(log.performed_by),
+            'performed_at': log.performed_at.isoformat() if log.performed_at else '',
+        })
+
+    return JsonResponse({'success': True, 'data': data, 'count': len(data)})
+
+
 # ──────────────────────────────────────
 # ATTENDANCE
 # ──────────────────────────────────────

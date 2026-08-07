@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   fetchLockers, createLocker, deleteLocker, updateLocker,
   fetchLockerAssignments, createLockerAssignment, endLockerAssignment,
-  type Locker, type LockerAssignment,
+  fetchLockerAuditLogs,
+  type Locker, type LockerAssignment, type LockerAuditLog,
 } from '@/lib/kutuphane-api';
 import { searchKutuphaneStudents } from '@/lib/kutuphane-student-search';
 import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
@@ -95,10 +96,13 @@ function SummaryCard({ icon, label, value, gradient, active, onClick, subtitle }
 export default function DolaplarPage() {
   const { href, isCoachMode, portalHomeHref, portalHomeLabel } = useKutuphanePath();
   const { activeKurum, activeSube } = useKurum();
-  const [activeTab, setActiveTab] = useState<'dolaplar' | 'atamalar'>('dolaplar');
+  const [activeTab, setActiveTab] = useState<'dolaplar' | 'atamalar' | 'gecmis'>('dolaplar');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [lockers, setLockers] = useState<Locker[]>([]);
   const [assignments, setAssignments] = useState<LockerAssignment[]>([]);
+  const [auditLogs, setAuditLogs] = useState<LockerAuditLog[]>([]);
+  const [logSearch, setLogSearch] = useState('');
+  const [logFilter, setLogFilter] = useState<'all' | 'anahtar' | 'atama' | 'dolap'>('all');
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchText, setSearchText] = useState('');
@@ -150,11 +154,15 @@ export default function DolaplarPage() {
         const res = await fetchLockers();
         if (res.success && res.data) setLockers(Array.isArray(res.data) ? res.data : []);
         else { setLockers([]); setErrorMsg(res.error || 'Dolaplar yüklenemedi'); }
-      } else {
+      } else if (activeTab === 'atamalar') {
         const params = filterStatus !== 'all' ? { durum: filterStatus } : {};
         const res = await fetchLockerAssignments(params);
         if (res.success && res.data) setAssignments(Array.isArray(res.data) ? res.data : []);
         else { setAssignments([]); setErrorMsg(res.error || 'Atamalar yüklenemedi'); }
+      } else {
+        const res = await fetchLockerAuditLogs({ limit: 150 });
+        if (res.success && res.data) setAuditLogs(Array.isArray(res.data) ? res.data : []);
+        else { setAuditLogs([]); setErrorMsg(res.error || 'İşlem geçmişi yüklenemedi'); }
       }
     } catch {
       setErrorMsg('Veriler yüklenirken hata oluştu');
@@ -359,7 +367,29 @@ export default function DolaplarPage() {
     setFilterStatus(filterStatus === status ? 'all' : status);
   };
 
+  const filteredAuditLogs = auditLogs.filter((log) => {
+    if (logFilter === 'anahtar' && !log.anahtar_yon) return false;
+    if (logFilter === 'atama' && log.entity_type !== 'LockerAssignment') return false;
+    if (logFilter === 'dolap' && log.entity_type !== 'Locker') return false;
+    if (logSearch.trim()) {
+      const q = logSearch.toLowerCase();
+      const hay = [
+        log.description,
+        log.dolap_no,
+        log.ogrenci_adi,
+        log.performed_by_name,
+        log.action,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
   const handlePrintPdf = async () => {
+    if (activeTab === 'gecmis') {
+      alert('PDF listesi Dolaplar veya Atamalar sekmesinde kullanılabilir.');
+      return;
+    }
     setPrintingPdf(true);
     try {
       let rows: {
@@ -600,9 +630,13 @@ export default function DolaplarPage() {
       {/* ═══ FILTER BAR ═══ */}
       <div className="filter-bar">
         <div className="tab-group">
-          {([{ key: 'dolaplar', label: '🗄️ Dolaplar' }, { key: 'atamalar', label: '👤 Atamalar' }] as const).map(({ key, label }) => (
+          {([
+            { key: 'dolaplar', label: '🗄️ Dolaplar' },
+            { key: 'atamalar', label: '👤 Atamalar' },
+            { key: 'gecmis', label: '📝 İşlem Geçmişi' },
+          ] as const).map(({ key, label }) => (
             <button key={key} className={`tab-btn ${activeTab === key ? 'active' : ''}`}
-              onClick={() => { setActiveTab(key as any); setFilterStatus('all'); }}>
+              onClick={() => { setActiveTab(key); setFilterStatus('all'); }}>
               {label}
             </button>
           ))}
@@ -640,20 +674,44 @@ export default function DolaplarPage() {
           </select>
         )}
 
+        {activeTab === 'gecmis' && (
+          <>
+            <div className="filter-search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" placeholder="Öğrenci, dolap, personel ara..."
+                value={logSearch} onChange={(e) => setLogSearch(e.target.value)} />
+            </div>
+            <select className="filter-select" value={logFilter} onChange={(e) => setLogFilter(e.target.value as typeof logFilter)}>
+              <option value="all">Tüm işlemler</option>
+              <option value="anahtar">🔑 Anahtar</option>
+              <option value="atama">👤 Atama</option>
+              <option value="dolap">🗄️ Dolap</option>
+            </select>
+          </>
+        )}
+
         <button className="filter-refresh" onClick={() => loadData()} disabled={loading}>🔄 Yenile</button>
-        <button
-          onClick={() => void handlePrintPdf()}
-          disabled={loading || printingPdf}
-          style={{
-            padding: '8px 14px', borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4',
-            color: '#059669', fontSize: 13, fontWeight: 600, cursor: printingPdf ? 'wait' : 'pointer',
-            opacity: loading || printingPdf ? 0.6 : 1,
-          }}
-        >
-          {printingPdf ? '⏳ Hazırlanıyor...' : '📄 PDF Listesi'}
-        </button>
+        {activeTab !== 'gecmis' && (
+          <button
+            onClick={() => void handlePrintPdf()}
+            disabled={loading || printingPdf}
+            style={{
+              padding: '8px 14px', borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4',
+              color: '#059669', fontSize: 13, fontWeight: 600, cursor: printingPdf ? 'wait' : 'pointer',
+              opacity: loading || printingPdf ? 0.6 : 1,
+            }}
+          >
+            {printingPdf ? '⏳ Hazırlanıyor...' : '📄 PDF Listesi'}
+          </button>
+        )}
         <div className="filter-count">
-          {activeTab === 'dolaplar' ? `${filteredLockers.length} dolap` : `${assignments.length} atama`}
+          {activeTab === 'dolaplar'
+            ? `${filteredLockers.length} dolap`
+            : activeTab === 'atamalar'
+              ? `${assignments.length} atama`
+              : `${filteredAuditLogs.length} işlem`}
         </div>
       </div>
 
@@ -663,6 +721,89 @@ export default function DolaplarPage() {
           <div style={{ fontSize: 36, marginBottom: 12 }}>⏳</div>
           <div style={{ fontSize: 15, fontWeight: 500 }}>Yükleniyor...</div>
         </div>
+      ) : activeTab === 'gecmis' ? (
+        filteredAuditLogs.length === 0 ? (
+          <div className="data-table-wrap">
+            <div className="empty-state">
+              <div style={{ fontSize: 40, marginBottom: 8 }}>📝</div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>İşlem geçmişi boş</div>
+              <div style={{ fontSize: 13, color: '#94a3b8' }}>
+                {auditLogs.length === 0
+                  ? 'Dolap atama / anahtar işlemleri burada listelenir.'
+                  : 'Filtreye uyan kayıt yok.'}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="data-table-wrap">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12 }}>
+              {filteredAuditLogs.map((log) => {
+                const when = formatRelativeTr(log.performed_at) || (
+                  log.performed_at
+                    ? new Date(log.performed_at).toLocaleString('tr-TR')
+                    : '—'
+                );
+                const badge =
+                  log.anahtar_yon === 'verildi'
+                    ? { label: '🔑 Anahtar verildi', bg: '#ecfdf5', color: '#047857' }
+                    : log.anahtar_yon === 'geri_alindi'
+                      ? { label: '🔑 Anahtar geri alındı', bg: '#fff7ed', color: '#c2410c' }
+                      : log.action === 'CREATE'
+                        ? { label: '➕ Oluşturma', bg: '#eff6ff', color: '#1d4ed8' }
+                        : log.action === 'STATUS_CHANGE'
+                          ? { label: '🔄 Durum', bg: '#f5f3ff', color: '#6d28d9' }
+                          : log.action === 'DELETE'
+                            ? { label: '🗑 Silme', bg: '#fef2f2', color: '#b91c1c' }
+                            : { label: log.action, bg: '#f1f5f9', color: '#475569' };
+                return (
+                  <div
+                    key={log.id}
+                    style={{
+                      display: 'flex',
+                      gap: 12,
+                      alignItems: 'flex-start',
+                      padding: '12px 14px',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      background: '#fff',
+                    }}
+                  >
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                      background: badge.bg, color: badge.color,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 16, fontWeight: 700,
+                    }}>
+                      {log.anahtar_yon ? '🔑' : log.entity_type === 'Locker' ? '🗄️' : '👤'}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                          background: badge.bg, color: badge.color,
+                        }}>
+                          {badge.label}
+                        </span>
+                        {log.dolap_no && (
+                          <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>Dolap {log.dolap_no}</span>
+                        )}
+                        {log.ogrenci_adi && (
+                          <span style={{ fontSize: 12, color: '#334155' }}>{log.ogrenci_adi}</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.45 }}>
+                        {log.description || '—'}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
+                        {[log.performed_by_name || 'Sistem', when].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )
       ) : activeTab === 'dolaplar' ? (
         filteredLockers.length === 0 ? (
           <div className="data-table-wrap">

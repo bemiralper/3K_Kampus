@@ -684,6 +684,18 @@ class AuditLogRepository:
                 result[key] = log
         return result
 
+    @staticmethod
+    def list_for_entities(entity_ids, *, limit: int = 100) -> list:
+        """Dolap / dolap ataması denetim logları (yeniden eskiye)."""
+        if not entity_ids:
+            return []
+        return list(
+            LibraryAuditLog.objects.filter(
+                entity_type__in=('Locker', 'LockerAssignment'),
+                entity_id__in=list(entity_ids),
+            ).order_by('-performed_at')[:limit]
+        )
+
 
 # ──────────────────────────────────────
 # ŞUBE DERS PROGRAMI REPOSITORY

@@ -52,6 +52,7 @@ urlpatterns = [
     path("dolap-atama/", views.api_locker_assignment_list_create, name="dolap_atama_list_create"),
     path("dolap-atama/<uuid:pk>/sonlandir/", views.api_locker_assignment_end, name="dolap_atama_end"),
     path("dolap-atama/<uuid:pk>/anahtar/", views.api_locker_assignment_toggle_key, name="dolap_atama_toggle_key"),
+    path("dolap-loglar/", views.api_locker_audit_logs, name="dolap_audit_logs"),
 
     # Attendance (Yoklama)
     path("salon/<uuid:library_id>/yoklama/", views.api_attendance_sessions, name="yoklama_sessions"),

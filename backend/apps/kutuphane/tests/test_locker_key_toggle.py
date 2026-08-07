@@ -94,3 +94,17 @@ class LockerKeyToggleTest(TestCase):
         self.assertIsNotNone(data['anahtar_son_islem_at'])
         self.assertEqual(data['anahtar_son_islem_yon'], 'verildi')
         self.assertIn('Ayşe', data['anahtar_son_islem_yapan'] or '')
+
+    def test_dolap_loglar_lists_key_ops(self):
+        self.service.toggle_locker_key(self.assignment.id, self.user.id)
+        self.client.force_login(self.user)
+        res = self.client.get('/kutuphane/api/dolap-loglar/', **self.headers)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertTrue(body['success'])
+        rows = body['data']
+        self.assertGreaterEqual(len(rows), 1)
+        key_rows = [r for r in rows if r.get('anahtar_yon') == 'verildi']
+        self.assertTrue(key_rows)
+        self.assertEqual(key_rows[0].get('dolap_no'), 'D-99')
+        self.assertIn('Ayşe', key_rows[0].get('performed_by_name') or '')

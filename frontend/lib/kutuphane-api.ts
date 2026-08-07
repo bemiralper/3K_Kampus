@@ -581,6 +581,31 @@ export async function fetchAuditLogs(libraryId: string): Promise<ApiResponse<Aud
   return apiGet<AuditLog[]>(`${BASE}/salon/${libraryId}/loglar/`);
 }
 
+export interface LockerAuditLog {
+  id: string;
+  entity_type: 'Locker' | 'LockerAssignment' | string;
+  entity_id: string;
+  action: string;
+  description: string;
+  old_values?: Record<string, unknown> | null;
+  new_values?: Record<string, unknown> | null;
+  anahtar_yon?: 'verildi' | 'geri_alindi' | null;
+  dolap_no?: string | null;
+  ogrenci_adi?: string | null;
+  performed_by?: number | null;
+  performed_by_name?: string | null;
+  performed_at: string;
+}
+
+export async function fetchLockerAuditLogs(params?: {
+  limit?: number;
+}): Promise<ApiResponse<LockerAuditLog[]>> {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  return apiGet<LockerAuditLog[]>(`${BASE}/dolap-loglar/${qs ? `?${qs}` : ''}`);
+}
+
 // --- Kapasite & Analitik ---
 export interface AnalyticsData {
   salon_id: string;
