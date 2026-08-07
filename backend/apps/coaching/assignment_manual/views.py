@@ -22,6 +22,16 @@ from .models import (
     AssignmentPackageItem,
 )
 
+# PDF / plan gruplaması için ünite → konu → sira erişimi
+ASSIGNMENT_TASKS_PREFETCH = Prefetch(
+    'tasks',
+    queryset=AssignmentTask.objects.select_related(
+        'content',
+        'content__topic',
+        'content__topic__unit',
+    ).order_by('order', 'id'),
+)
+
 
 def _resolve_assignment_pdf_filename(pk, kurum_id, notify_type: str) -> str:
     from .assignment_notify_utils import build_assignment_pdf_filename
@@ -243,7 +253,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'lessons',
                 queryset=AssignmentLesson.objects.select_related(
                     'lesson', 'resource_book', 'resource_book__ders',
-                ).prefetch_related('tasks')
+                ).prefetch_related(ASSIGNMENT_TASKS_PREFETCH)
             )
         ).filter(is_active=True)
 
@@ -457,7 +467,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                     'lessons',
                     queryset=AssignmentLesson.objects.select_related(
                         'lesson', 'resource_book', 'resource_book__ders',
-                    ).prefetch_related('tasks'),
+                    ).prefetch_related(ASSIGNMENT_TASKS_PREFETCH),
                 )
             ).first()
             if not assignment:
@@ -1530,7 +1540,7 @@ class AssignmentLessonViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset().select_related(
             'assignment', 'lesson', 'resource_book'
-        ).prefetch_related('tasks')
+        ).prefetch_related(ASSIGNMENT_TASKS_PREFETCH)
 
         queryset = filter_by_assignment_scope(
             queryset,

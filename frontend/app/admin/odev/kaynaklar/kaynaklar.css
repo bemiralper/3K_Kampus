@@ -4,6 +4,17 @@
   background: #f0f4f8;
 }
 
+/* Kitap yapı sayfası — hero/filtre yok, alan geniş */
+.kk-page-structure {
+  padding: 12px 16px 16px;
+  min-height: calc(100vh - 56px);
+}
+
+.kk-page-structure .kk-structure-fullpage {
+  width: 100%;
+  max-width: none;
+}
+
 .kk-hero {
   background: linear-gradient(135deg, #0061a6 0%, #004d85 55%, #003a66 100%);
   border-radius: 20px;
@@ -78,6 +89,73 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
 }
 
+/* Açık zemin (beyaz kart / sayfa) — hero dışı butonlar */
+.kk-btn-on-light {
+  background: #eff6ff;
+  color: #0c4a6e;
+  border: 1px solid #bfdbfe;
+}
+
+.kk-btn-on-light:hover {
+  background: #dbeafe;
+  color: #075985;
+}
+
+.kk-btn-active-on-light {
+  background: #0061a6;
+  color: #fff;
+  border: 1px solid #0061a6;
+  box-shadow: 0 2px 8px rgba(0, 97, 166, 0.25);
+}
+
+.kk-btn-active-on-light:hover {
+  background: #004d85;
+  color: #fff;
+}
+
+.kk-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: #fff;
+  padding: 8px;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  border: 1px solid #e2e8f0;
+  margin-bottom: 18px;
+}
+
+.kk-tab {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: #334155;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.kk-tab:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.kk-tab.is-active {
+  background: #0061a6;
+  color: #fff;
+  border-color: #0061a6;
+}
+
+.kk-tab-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 .kk-stats {
   display: flex;
   gap: 12px;
@@ -126,6 +204,7 @@
   border-radius: 10px;
   font-size: 14px;
   background: #fff;
+  color: #0f172a;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -147,6 +226,11 @@
 
 .kk-grid.is-split {
   grid-template-columns: 380px 1fr;
+}
+
+/* Liste sayfası: kitaplar tam genişlik */
+.kk-grid:not(.is-split) .kk-panel {
+  max-width: none;
 }
 
 .kk-panel {
@@ -417,6 +501,10 @@
     height: auto;
     max-height: min(52vh, 480px);
   }
+
+  .kk-page-structure .kk-structure-fullpage {
+    height: calc(100vh - 72px) !important;
+  }
 }
 
 @media (max-width: 768px) {
@@ -512,4 +600,9 @@
   .kk-stat strong {
     font-size: 16px;
   }
+}
+
+@keyframes kkPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
 }

@@ -71,6 +71,7 @@ export interface ResourceBook {
   sinif_seviyesi_ad: string;
   sinif_seviyeleri?: number[];
   sinif_seviyeleri_ad?: string;
+  publisher?: number | null;
   yayinevi: string;
   yazar: string;
   yayin_yili: number | null;
@@ -99,6 +100,7 @@ export interface BookFormData {
   book_type: string;
   ders: string;
   sinif_seviyeleri: number[];
+  publisher: number | null;
   yayinevi: string;
   yazar: string;
   yayin_yili: string;

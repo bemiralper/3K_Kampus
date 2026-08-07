@@ -5,18 +5,24 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     BookTypeViewSet,
+    ResourcePublisherViewSet,
     ResourceBookViewSet,
     ResourceUnitViewSet,
     ResourceTopicViewSet,
-    ResourceContentViewSet
+    ResourceContentViewSet,
 )
+from .views_match import PublisherMatchViewSet
+from .views_analytics import ResourceAnalyticsViewSet
 
 router = DefaultRouter()
 router.register(r'book-types', BookTypeViewSet, basename='book-type')
+router.register(r'publishers', ResourcePublisherViewSet, basename='resource-publisher')
 router.register(r'books', ResourceBookViewSet, basename='resource-book')
 router.register(r'units', ResourceUnitViewSet, basename='resource-unit')
 router.register(r'topics', ResourceTopicViewSet, basename='resource-topic')
 router.register(r'contents', ResourceContentViewSet, basename='resource-content')
+router.register(r'publisher-match', PublisherMatchViewSet, basename='publisher-match')
+router.register(r'analytics', ResourceAnalyticsViewSet, basename='resource-analytics')
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -6,6 +6,7 @@ import CmsCoverCropper, { type CoverAspectPreset } from "@/components/cms/CmsCov
 import "@/components/cms/cms.css";
 import { toTitleCaseTr } from "@/lib/text-format";
 import type { BookFormData, UnitFormData, TopicFormData, ContentFormData, Ders, SinifSeviyesi, BookType } from "../types";
+import PublisherPicker from "./PublisherPicker";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -210,10 +211,13 @@ export function ResourceDrawer(props: DrawerProps) {
               </div>
 
               <div className="kk-form-grid">
-                <div className="kk-field">
-                  <label className="kk-label">Yayınevi</label>
-                  <input type="text" className="kk-input" value={bookForm.yayinevi} onChange={(e) => setBookForm({ ...bookForm, yayinevi: e.target.value })} />
-                </div>
+                <PublisherPicker
+                  value={bookForm.publisher}
+                  label={bookForm.yayinevi}
+                  onChange={(publisherId, publisherAd) =>
+                    setBookForm({ ...bookForm, publisher: publisherId, yayinevi: publisherAd })
+                  }
+                />
                 <div className="kk-field">
                   <label className="kk-label">Yazar</label>
                   <input type="text" className="kk-input" value={bookForm.yazar} onChange={(e) => setBookForm({ ...bookForm, yazar: e.target.value })} />

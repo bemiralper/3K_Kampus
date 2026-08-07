@@ -9,6 +9,7 @@ from django.db import transaction
 
 from apps.egitim_tanimlari.models import Ders, SinifSeviyesi
 from apps.resources.models import BookType, ResourceBook
+from apps.resources.application.publisher_resolve import resolve_or_create_publisher
 from apps.resources.utils import generate_book_kod, normalize_kod
 
 MAX_AD_LENGTH = 200
@@ -302,6 +303,10 @@ class BulkBookImportService:
                 continue
 
             seen_kods.add(kod)
+            publisher = resolve_or_create_publisher(
+                self.kurum_id,
+                str(raw.get('yayinevi') or '').strip()[:200],
+            )
             book = ResourceBook(
                 ad=ad,
                 kod=kod,
@@ -310,7 +315,7 @@ class BulkBookImportService:
                 book_type=book_type,
                 ders=ders,
                 sinif_seviyesi=sinif,
-                yayinevi=str(raw.get('yayinevi') or '').strip()[:200],
+                publisher=publisher,
                 yazar=str(raw.get('yazar') or '').strip()[:200],
                 yayin_yili=_parse_int(str(raw.get('yayin_yili') or '')),
                 isbn=str(raw.get('isbn') or '').strip()[:20],

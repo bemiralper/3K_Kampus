@@ -244,6 +244,7 @@ const navItems: MenuItem[] = [
     emoji: "",
     icon: icons.homework,
     children: [
+      { label: "Kaynak Analizleri", href: "/admin/odev/analizler" },
       { label: "Eğitim Kaynakları", href: "/admin/odev/kaynaklar" },
       { label: "Kitap Atamaları", href: "/admin/odev/kaynak-havuzu" },
       { label: "Ödev Ver", href: "/admin/odev/ver", group: "Ödev Takibi" },

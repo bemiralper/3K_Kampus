@@ -1,5 +1,8 @@
 export const ADMIN_KAYNAK_BASE = '/admin/odev/kaynaklar';
 export const ADMIN_KAYNAK_HAVUZU_BASE = '/admin/odev/kaynak-havuzu';
+export const ADMIN_KAYNAK_ANALIZLER_BASE = '/admin/odev/analizler';
+export const ADMIN_YAYINEVLERI_BASE = '/admin/odev/analizler?tab=yayinevleri';
+export const ADMIN_YAYINEVI_ESLESTIRME_BASE = '/admin/odev/analizler?tab=eslestirme';
 export const COACH_KAYNAK_BASE = '/coach/odev/kaynaklar';
 export const COACH_KAYNAK_HAVUZU_BASE = '/coach/odev/kaynak-havuzu';
 

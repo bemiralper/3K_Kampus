@@ -4,8 +4,16 @@ DRF Serializers for Book-based Content Library
 """
 from rest_framework import serializers
 from apps.egitim_tanimlari.models import SinifSeviyesi
-from .models import BookType, ResourceBook, ResourceUnit, ResourceTopic, ResourceContent
+from .models import (
+    BookType,
+    ResourceBook,
+    ResourcePublisher,
+    ResourceUnit,
+    ResourceTopic,
+    ResourceContent,
+)
 from .scoping import get_request_kurum_id, get_request_sube_id
+from .application.publisher_resolve import resolve_or_create_publisher
 from .utils import (
     generate_book_kod,
     generate_topic_kod,
@@ -39,6 +47,51 @@ class BookTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = BookType
         fields = ['id', 'kod', 'ad', 'renk', 'ikon', 'aciklama', 'aktif_mi', 'sira']
+
+
+class ResourcePublisherSerializer(serializers.ModelSerializer):
+    """Yayınevi serializer — list annotate alanları opsiyonel."""
+
+    book_count = serializers.IntegerField(read_only=True, required=False, default=0)
+    used_book_count = serializers.IntegerField(read_only=True, required=False, default=0)
+    student_usage_count = serializers.IntegerField(read_only=True, required=False, default=0)
+    logo_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResourcePublisher
+        fields = [
+            'id', 'kurum_id', 'ad', 'kisa_ad', 'logo', 'logo_url',
+            'aktif_mi', 'aciklama', 'eslesme_anahtarlari', 'sira',
+            'book_count', 'used_book_count', 'student_usage_count',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['kurum_id', 'logo', 'created_at', 'updated_at']
+
+    def get_logo_url(self, obj):
+        # Kitap kapakları gibi göreli /media/... — Next rewrite ile uyumlu
+        if not obj.logo:
+            return ''
+        try:
+            from apps.resources.application.kapak import media_path_url
+            return media_path_url(obj.logo.name)
+        except (ValueError, AttributeError):
+            return ''
+
+    def validate_ad(self, value):
+        ad = (value or '').strip()
+        if not ad:
+            raise serializers.ValidationError('Yayınevi adı zorunludur.')
+        return ad
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        kurum_id = get_request_kurum_id(request) if request else None
+        if not kurum_id:
+            raise serializers.ValidationError({'kurum': 'Kurum bağlamı gerekli.'})
+        validated_data['kurum_id'] = kurum_id
+        if not validated_data.get('kisa_ad'):
+            validated_data['kisa_ad'] = validated_data['ad'][:100]
+        return super().create(validated_data)
 
 
 class ResourceContentSerializer(serializers.ModelSerializer):
@@ -121,6 +174,8 @@ class ResourceBookSerializer(serializers.ModelSerializer):
     sinif_seviyesi_ad = serializers.SerializerMethodField()
     sinif_seviyeleri = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     sinif_seviyeleri_ad = serializers.SerializerMethodField()
+    publisher = serializers.PrimaryKeyRelatedField(read_only=True)
+    yayinevi = serializers.SerializerMethodField()
     
     # DB-level annotated counts (no more N+1)
     unit_count = serializers.IntegerField(source='db_unit_count', read_only=True, default=0)
@@ -136,13 +191,16 @@ class ResourceBookSerializer(serializers.ModelSerializer):
             'id', 'ad', 'kod', 'kurum_id', 'sube_id', 'book_type', 'book_type_display', 'book_type_renk',
             'ders', 'ders_ad', 'sinif_seviyesi', 'sinif_seviyesi_ad',
             'sinif_seviyeleri', 'sinif_seviyeleri_ad',
-            'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
+            'publisher', 'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
             'zorluk_min', 'zorluk_max', 'zorluk_display',
             'kapak_url', 'aciklama', 'aktif_mi', 'icerik_tamamlandi_mi', 'sira',
             'unit_count', 'topic_count', 'content_count',
             'created_at', 'updated_at'
         ]
     
+    def get_yayinevi(self, obj):
+        return obj.yayinevi or ''
+
     def get_sinif_seviyesi_ad(self, obj):
         return _sinif_seviyeleri_ad(obj)
 
@@ -170,6 +228,8 @@ class ResourceBookDetailSerializer(serializers.ModelSerializer):
     sinif_seviyesi_ad = serializers.SerializerMethodField()
     sinif_seviyeleri = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     sinif_seviyeleri_ad = serializers.SerializerMethodField()
+    publisher = serializers.PrimaryKeyRelatedField(read_only=True)
+    yayinevi = serializers.SerializerMethodField()
     units = ResourceUnitDetailSerializer(many=True, read_only=True)
     unit_count = serializers.IntegerField(read_only=True)
     topic_count = serializers.IntegerField(read_only=True)
@@ -183,12 +243,15 @@ class ResourceBookDetailSerializer(serializers.ModelSerializer):
             'id', 'ad', 'kod', 'kurum_id', 'sube_id', 'book_type', 'book_type_display', 'book_type_renk',
             'ders', 'ders_ad', 'sinif_seviyesi', 'sinif_seviyesi_ad',
             'sinif_seviyeleri', 'sinif_seviyeleri_ad',
-            'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
+            'publisher', 'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
             'zorluk_min', 'zorluk_max', 'zorluk_display',
             'kapak_url', 'aciklama', 'aktif_mi', 'icerik_tamamlandi_mi', 'sira',
             'unit_count', 'topic_count', 'content_count', 'units',
             'created_at', 'updated_at'
         ]
+
+    def get_yayinevi(self, obj):
+        return obj.yayinevi or ''
     
     def get_sinif_seviyesi_ad(self, obj):
         return _sinif_seviyeleri_ad(obj)
@@ -340,13 +403,20 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
         queryset=SinifSeviyesi.objects.filter(aktif_mi=True),
         required=False,
     )
+    publisher = serializers.PrimaryKeyRelatedField(
+        queryset=ResourcePublisher.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    # Geriye dönük: string yayınevi → publisher çözümle
+    yayinevi = serializers.CharField(required=False, allow_blank=True, write_only=True)
     
     class Meta:
         model = ResourceBook
         fields = [
             'id', 'ad', 'kod', 'book_type',
             'ders', 'sinif_seviyesi', 'sinif_seviyeleri',
-            'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
+            'publisher', 'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
             'zorluk_min', 'zorluk_max',
             'kapak_url', 'aciklama', 'aktif_mi', 'icerik_tamamlandi_mi', 'sira'
         ]
@@ -398,10 +468,24 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
                     raise serializers.ValidationError({'kod': 'Ders ve kitap türü seçin.'})
             else:
                 data.pop('kod', None)
+
+        request = self.context.get('request')
+        kurum_id = get_request_kurum_id(request) if request else None
+        yayinevi_raw = data.pop('yayinevi', serializers.empty)
+        if yayinevi_raw is not serializers.empty and 'publisher' not in data:
+            if yayinevi_raw:
+                pub = resolve_or_create_publisher(kurum_id, yayinevi_raw)
+                data['publisher'] = pub
+            else:
+                data['publisher'] = None
+        elif data.get('publisher') is not None and kurum_id:
+            if data['publisher'].kurum_id != kurum_id:
+                raise serializers.ValidationError({'publisher': 'Yayınevi bu kuruma ait değil.'})
         
         return data
 
     def create(self, validated_data):
+        validated_data.pop('yayinevi', None)
         sinif_list = validated_data.pop('sinif_seviyeleri', [])
         request = self.context.get('request')
         kurum_id = get_request_kurum_id(request) if request else None
@@ -420,8 +504,10 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
         return book
 
     def update(self, instance, validated_data):
+        validated_data.pop('yayinevi', None)
         sinif_list = validated_data.pop('sinif_seviyeleri', None)
         old_ders_id = instance.ders_id
+        was_incomplete = not instance.icerik_tamamlandi_mi
         book = super().update(instance, validated_data)
         if sinif_list is not None:
             book.sinif_seviyeleri.set(sinif_list)
@@ -433,4 +519,10 @@ class ResourceBookWriteSerializer(AutoKodWriteMixin, serializers.ModelSerializer
         if book.ders_id and book.ders_id != old_ders_id:
             from apps.student_resources.lesson_sync import sync_assignments_for_book
             sync_assignments_for_book(book.id, book.ders_id)
+        if was_incomplete and book.icerik_tamamlandi_mi and book.kurum_id:
+            try:
+                from apps.gorev.application.rule_engine import GorevRuleEngine
+                GorevRuleEngine().complete_resource_content_tasks(book.kurum_id, book.id)
+            except Exception:
+                pass
         return book

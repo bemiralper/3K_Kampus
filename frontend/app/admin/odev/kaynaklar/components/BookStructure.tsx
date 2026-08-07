@@ -1,10 +1,16 @@
 // ========== Book Structure Panel (Tree View) ==========
 "use client";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ResourceBook, ResourceUnit, ResourceTopic, ResourceContent } from "../types";
 import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
 import { DragSortList, DragHandle } from "./DragSortList";
 import { StructureSkeleton } from "./Skeletons";
+import { GroupContentsModal, MoveTopicModal, PrefixNamesModal } from "./Modals";
+
+type ContentClipboard = {
+  mode: "copy" | "cut";
+  contentIds: number[];
+};
 
 interface BookStructureProps {
   selectedBook: ResourceBook;
@@ -35,6 +41,29 @@ interface BookStructureProps {
   onEditContent: (topicId: number, content: ResourceContent) => void;
   onDuplicateContent: (topicId: number, content: ResourceContent) => void;
   onUpdateQuestionCount: (contentId: number, questionCount: number) => Promise<boolean>;
+  onUpdateContentAd: (contentId: number, ad: string) => Promise<boolean>;
+  onBulkTransferContents: (
+    contentIds: number[],
+    targetTopicId: number,
+    mode: "copy" | "move",
+  ) => Promise<boolean>;
+  onBulkDeleteContents: (contentIds: number[]) => Promise<boolean>;
+  onBulkPrefixNames: (
+    contentIds: number[],
+    prefix: string,
+    withNumber: boolean,
+    startNumber: number,
+  ) => Promise<boolean>;
+  onGroupContentsIntoTopic: (
+    contentIds: number[],
+    ad: string,
+    kod?: string,
+  ) => Promise<boolean>;
+  onMoveTopic: (
+    topicId: number,
+    targetUnitId: number,
+    mode?: "move" | "copy",
+  ) => Promise<boolean>;
   onDeleteContent: (id: number) => void;
   onBulkTest: (topicId: number, topicName: string) => void;
   reorderUnits: (ids: number[]) => void;
@@ -42,6 +71,8 @@ interface BookStructureProps {
   reorderContents: (ids: number[]) => void;
   getBookTypeBadgeClass: (renk?: string) => string;
   readOnly?: boolean;
+  /** Ayrı sayfada tam genişlik / yükseklik */
+  fullPage?: boolean;
 }
 
 function InlineQuestionCount({
@@ -149,6 +180,103 @@ function InlineQuestionCount({
   );
 }
 
+function InlineContentAd({
+  contentId,
+  value,
+  readOnly,
+  onSave,
+}: {
+  contentId: number;
+  value: string;
+  readOnly?: boolean;
+  onSave: (contentId: number, ad: string) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    setDraft(value);
+    const t = window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [editing, value]);
+
+  const commit = async () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === value) {
+      setEditing(false);
+      setDraft(value);
+      return;
+    }
+    setSaving(true);
+    const ok = await onSave(contentId, trimmed);
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+
+  if (readOnly) {
+    return <span style={{ fontSize: 13 }}>{value}</span>;
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        disabled={saving}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { void commit(); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void commit();
+          }
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        style={{
+          minWidth: 120,
+          maxWidth: 260,
+          padding: "2px 8px",
+          fontSize: 13,
+          border: "1px solid #8b5cf6",
+          borderRadius: 6,
+          outline: "none",
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setEditing(true);
+      }}
+      title="Çift tıkla: adı düzenle"
+      style={{
+        fontSize: 13,
+        cursor: "text",
+        borderBottom: "1px dashed #cbd5e1",
+        userSelect: "none",
+      }}
+    >
+      {value}
+    </span>
+  );
+}
+
 const CONTENT_TYPE_ICON: Record<string, string> = {
   TEST_SET: "📝",
   SUBJECT_SECTION: "📖",
@@ -165,16 +293,216 @@ export function BookStructure(props: BookStructureProps) {
     onEditBook, onDeleteBook, onDuplicateBook, onClose,
     onAddUnit, onEditUnit, onDuplicateUnit, onDeleteUnit, onBulkUnit, onImport,
     onAddTopic, onEditTopic, onDuplicateTopic, onDeleteTopic, onBulkTopic,
-    onAddContent, onEditContent, onDuplicateContent, onUpdateQuestionCount, onDeleteContent, onBulkTest,
+    onAddContent, onEditContent, onDuplicateContent, onUpdateQuestionCount, onUpdateContentAd,
+    onBulkTransferContents, onBulkDeleteContents, onBulkPrefixNames,
+    onGroupContentsIntoTopic, onMoveTopic,
+    onDeleteContent, onBulkTest,
     reorderUnits, reorderTopics, reorderContents,
     getBookTypeBadgeClass,
     readOnly = false,
+    fullPage = false,
   } = props;
 
   // Structure search
   const [structureSearch, setStructureSearch] = useState("");
   const treeScrollRef = useRef<HTMLDivElement>(null);
   const treeScrollTopRef = useRef(0);
+  const [selectedContentIds, setSelectedContentIds] = useState<number[]>([]);
+  const [clipboard, setClipboard] = useState<ContentClipboard | null>(null);
+  const [busyAction, setBusyAction] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [groupForm, setGroupForm] = useState({ ad: "", kod: "" });
+  const [moveTopicOpen, setMoveTopicOpen] = useState(false);
+  const [moveTopicLoading, setMoveTopicLoading] = useState(false);
+  const [moveTopicTarget, setMoveTopicTarget] = useState<{
+    topic: ResourceTopic;
+    unitId: number;
+  } | null>(null);
+  const [moveTargetUnitId, setMoveTargetUnitId] = useState<number | "">("");
+  const [moveTopicMode, setMoveTopicMode] = useState<"move" | "copy">("move");
+  const [prefixOpen, setPrefixOpen] = useState(false);
+  const [prefixLoading, setPrefixLoading] = useState(false);
+  const [prefixText, setPrefixText] = useState("");
+  const [prefixWithNumber, setPrefixWithNumber] = useState(false);
+  const [prefixStart, setPrefixStart] = useState(1);
+
+  const selectedSet = useMemo(() => new Set(selectedContentIds), [selectedContentIds]);
+
+  const selectedContentsOrdered = useMemo(() => {
+    if (!bookStructure?.units || !selectedContentIds.length) return [] as ResourceContent[];
+    const byId = new Map<number, ResourceContent>();
+    for (const u of bookStructure.units) {
+      for (const t of u.topics || []) {
+        for (const c of t.contents || []) byId.set(c.id, c);
+      }
+    }
+    return selectedContentIds.map((id) => byId.get(id)).filter(Boolean) as ResourceContent[];
+  }, [bookStructure, selectedContentIds]);
+
+  const prefixPreviewNames = useMemo(() => {
+    const p = prefixText.trim();
+    if (!p) return [];
+    return selectedContentsOrdered.slice(0, 6).map((c, i) => {
+      let base = (c.ad || "").trim();
+      if (base.includes("/")) base = base.split("/").pop()?.trim() || base;
+      if (prefixWithNumber) return `${p} ${prefixStart + i}/${base}`;
+      return `${p}/${base}`;
+    });
+  }, [prefixText, prefixWithNumber, prefixStart, selectedContentsOrdered]);
+
+  useEffect(() => {
+    setSelectedContentIds([]);
+    setClipboard(null);
+    setGroupOpen(false);
+  }, [selectedBook.id]);
+
+  const toggleContentSelected = (id: number) => {
+    setSelectedContentIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const clearSelection = () => setSelectedContentIds([]);
+
+  const copySelected = () => {
+    if (!selectedContentIds.length) return;
+    setClipboard({ mode: "copy", contentIds: [...selectedContentIds] });
+  };
+
+  const cutSelected = () => {
+    if (!selectedContentIds.length) return;
+    setClipboard({ mode: "cut", contentIds: [...selectedContentIds] });
+  };
+
+  const actionBtn = (
+    label: string,
+    onClick: () => void,
+    opts?: { variant?: "primary" | "danger" | "neutral" | "teal"; disabled?: boolean },
+  ) => {
+    const variant = opts?.variant || "neutral";
+    const styles: Record<string, React.CSSProperties> = {
+      primary: { background: "#0061a6", color: "#fff", border: "1px solid #0061a6" },
+      teal: { background: "#0f766e", color: "#fff", border: "1px solid #0f766e" },
+      danger: { background: "#dc2626", color: "#fff", border: "1px solid #dc2626" },
+      neutral: { background: "#fff", color: "#0f172a", border: "1px solid #cbd5e1" },
+    };
+    return (
+      <button
+        type="button"
+        disabled={opts?.disabled || busyAction}
+        onClick={onClick}
+        style={{
+          ...styles[variant],
+          borderRadius: 8,
+          padding: "8px 14px",
+          cursor: opts?.disabled || busyAction ? "not-allowed" : "pointer",
+          fontSize: 13,
+          fontWeight: 700,
+          opacity: opts?.disabled || busyAction ? 0.6 : 1,
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  const pasteIntoTopic = async (topicId: number) => {
+    if (!clipboard?.contentIds.length || busyAction) return;
+    setBusyAction(true);
+    const ok = await onBulkTransferContents(
+      clipboard.contentIds,
+      topicId,
+      clipboard.mode === "cut" ? "move" : "copy",
+    );
+    setBusyAction(false);
+    if (ok) {
+      if (clipboard.mode === "cut") setClipboard(null);
+      clearSelection();
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (!selectedContentIds.length || busyAction) return;
+    if (!confirm(`${selectedContentIds.length} içerik silinsin mi?`)) return;
+    setBusyAction(true);
+    const ok = await onBulkDeleteContents(selectedContentIds);
+    setBusyAction(false);
+    if (ok) {
+      clearSelection();
+      setClipboard((prev) => {
+        if (!prev) return null;
+        const left = prev.contentIds.filter((id) => !selectedSet.has(id));
+        return left.length ? { ...prev, contentIds: left } : null;
+      });
+    }
+  };
+
+  const openGroupModal = () => {
+    if (!selectedContentIds.length) return;
+    setGroupForm({ ad: "", kod: "" });
+    setGroupOpen(true);
+  };
+
+  const openPrefixModal = () => {
+    if (!selectedContentIds.length) return;
+    setPrefixText("");
+    setPrefixWithNumber(false);
+    setPrefixStart(1);
+    setPrefixOpen(true);
+  };
+
+  const submitPrefix = async () => {
+    if (!prefixText.trim() || !selectedContentIds.length) return;
+    setPrefixLoading(true);
+    const ok = await onBulkPrefixNames(
+      selectedContentIds,
+      prefixText,
+      prefixWithNumber,
+      prefixStart,
+    );
+    setPrefixLoading(false);
+    if (ok) {
+      setPrefixOpen(false);
+      clearSelection();
+    }
+  };
+
+  const submitGroup = async () => {
+    if (!groupForm.ad.trim() || !selectedContentIds.length) return;
+    setGroupLoading(true);
+    const ok = await onGroupContentsIntoTopic(
+      selectedContentIds,
+      groupForm.ad,
+      groupForm.kod || undefined,
+    );
+    setGroupLoading(false);
+    if (ok) {
+      setGroupOpen(false);
+      clearSelection();
+      setClipboard(null);
+    }
+  };
+
+  const openMoveTopic = (unitId: number, topic: ResourceTopic) => {
+    setMoveTopicTarget({ topic, unitId });
+    setMoveTargetUnitId("");
+    setMoveTopicMode("move");
+    setMoveTopicOpen(true);
+  };
+
+  const submitMoveTopic = async () => {
+    if (!moveTopicTarget || !moveTargetUnitId) return;
+    setMoveTopicLoading(true);
+    const ok = await onMoveTopic(moveTopicTarget.topic.id, moveTargetUnitId, moveTopicMode);
+    setMoveTopicLoading(false);
+    if (ok) {
+      setMoveTopicOpen(false);
+      setMoveTopicTarget(null);
+    }
+  };
+
+  const unitOptions = (bookStructure?.units || []).map((u) => ({ id: u.id, ad: u.ad }));
 
   // Yapı yenilenince panel scroll konumunu koru
   useLayoutEffect(() => {
@@ -209,17 +537,20 @@ export function BookStructure(props: BookStructureProps) {
   const sortedUnits = filteredUnits ? [...filteredUnits].sort((a, b) => a.sira - b.sira) : [];
 
   return (
-    <div style={{
+    <div
+      className={fullPage ? "kk-structure-fullpage" : undefined}
+      style={{
       background: "white",
-      borderRadius: 12,
+      borderRadius: fullPage ? 16 : 12,
       border: "1px solid #e2e8f0",
       overflow: "hidden",
       display: "flex",
       flexDirection: "column",
-      height: "calc(100vh - 260px)",
+      height: fullPage ? "calc(100vh - 88px)" : "calc(100vh - 260px)",
+      minHeight: fullPage ? 520 : undefined,
     }}>
       {/* Book Header */}
-      <div style={{ padding: 20, borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
+      <div style={{ padding: 20, borderBottom: "1px solid #e2e8f0", background: "#f8fafc", flexShrink: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>{selectedBook.ad}</h2>
@@ -252,8 +583,21 @@ export function BookStructure(props: BookStructureProps) {
                 </button>
               </>
             )}
-            <button onClick={onClose} style={{ background: "#f1f5f9", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14 }}>
-              ✕
+            <button
+              onClick={onClose}
+              style={{
+                background: fullPage ? "#e0f2fe" : "#f1f5f9",
+                border: fullPage ? "1px solid #bae6fd" : "none",
+                borderRadius: 8,
+                padding: "8px 16px",
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: fullPage ? 600 : 400,
+                color: fullPage ? "#0369a1" : undefined,
+              }}
+              title={fullPage ? "Kitap listesine dön" : "Kapat"}
+            >
+              {fullPage ? "← Listeye dön" : "✕"}
             </button>
           </div>
         </div>
@@ -289,6 +633,72 @@ export function BookStructure(props: BookStructureProps) {
           </>
         )}
       </div>
+
+      {!readOnly && (selectedContentIds.length > 0 || clipboard) && (
+        <div
+          style={{
+            flexShrink: 0,
+            padding: "12px 16px",
+            borderBottom: "1px solid #93c5fd",
+            background: "linear-gradient(180deg, #dbeafe 0%, #eff6ff 100%)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            boxShadow: "0 2px 8px rgba(37, 99, 235, 0.12)",
+            zIndex: 5,
+          }}
+        >
+          {selectedContentIds.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <strong style={{ color: "#1e3a8a", fontSize: 14 }}>
+                {selectedContentIds.length} içerik seçili
+              </strong>
+              {actionBtn("Kopyala", copySelected, { variant: "primary" })}
+              {actionBtn("Kes / Taşı", cutSelected, { variant: "teal" })}
+              {actionBtn("Ön başlık ekle", openPrefixModal)}
+              {actionBtn("Konu altında topla", openGroupModal)}
+              {actionBtn("Sil", () => { void deleteSelected(); }, { variant: "danger" })}
+              {actionBtn("Seçimi temizle", clearSelection)}
+            </div>
+          )}
+          {clipboard && (
+            <div
+              style={{
+                fontSize: 13,
+                color: "#0f172a",
+                background: "#fff",
+                border: "1px solid #bfdbfe",
+                borderRadius: 8,
+                padding: "8px 12px",
+                fontWeight: 600,
+              }}
+            >
+              Pano: {clipboard.contentIds.length} içerik{" "}
+              {clipboard.mode === "cut" ? "kesildi" : "kopyalandı"}.
+              {" "}Hedef konuyu açıp sağdaki{" "}
+              <span style={{ color: clipboard.mode === "cut" ? "#0f766e" : "#0369a1" }}>
+                {clipboard.mode === "cut" ? "Taşı" : "Yapıştır"}
+              </span>{" "}
+              butonuna tıklayın.
+              <button
+                type="button"
+                onClick={() => setClipboard(null)}
+                style={{
+                  marginLeft: 12,
+                  border: 0,
+                  background: "none",
+                  color: "#64748b",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  fontSize: 12,
+                }}
+              >
+                Panoyu temizle
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tree Content */}
       <div
@@ -391,6 +801,13 @@ export function BookStructure(props: BookStructureProps) {
                                     <>
                                       <button onClick={(e) => { e.stopPropagation(); onEditTopic(unit.id, topic); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }} title="Düzenle">✏️</button>
                                       <button onClick={(e) => { e.stopPropagation(); onDuplicateTopic(topic); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }} title="Konuyu kopyala">📋</button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); openMoveTopic(unit.id, topic); }}
+                                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#0f766e" }}
+                                        title="Başka üniteye taşı / kopyala"
+                                      >
+                                        ↗
+                                      </button>
                                       <button onClick={(e) => { e.stopPropagation(); onDeleteTopic(topic.id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.6 }} title="Sil">🗑️</button>
                                     </>
                                   )}
@@ -403,7 +820,29 @@ export function BookStructure(props: BookStructureProps) {
                                   <div style={{ padding: "6px 16px 6px 48px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                     <span style={{ fontSize: 12, fontWeight: 500, color: "#64748b" }}>İçerikler</span>
                                     {!readOnly && (
-                                      <div style={{ display: "flex", gap: 6 }}>
+                                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                        {clipboard && (
+                                          <button
+                                            type="button"
+                                            onClick={() => { void pasteIntoTopic(topic.id); }}
+                                            disabled={busyAction}
+                                            style={{
+                                              background: clipboard.mode === "cut" ? "#0f766e" : "#0369a1",
+                                              color: "white",
+                                              border: "2px solid #fff",
+                                              boxShadow: "0 0 0 2px " + (clipboard.mode === "cut" ? "#0f766e" : "#0369a1"),
+                                              borderRadius: 8,
+                                              padding: "6px 12px",
+                                              cursor: busyAction ? "wait" : "pointer",
+                                              fontSize: 12,
+                                              fontWeight: 800,
+                                              animation: "kkPulse 1.4s ease-in-out infinite",
+                                            }}
+                                            title={clipboard.mode === "cut" ? "Kesilen içerikleri buraya taşı" : "Kopyalanan içerikleri buraya yapıştır"}
+                                          >
+                                            {clipboard.mode === "cut" ? `⬇ Taşı (${clipboard.contentIds.length})` : `⬇ Yapıştır (${clipboard.contentIds.length})`}
+                                          </button>
+                                        )}
                                         <button onClick={() => onBulkTest(topic.id, topic.ad)} style={{ background: "#f59e0b", color: "white", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11 }}>⚡ Toplu Test</button>
                                         <button onClick={() => onAddContent(topic.id)} style={{ background: "#8b5cf6", color: "white", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11 }}>+ İçerik</button>
                                       </div>
@@ -414,7 +853,10 @@ export function BookStructure(props: BookStructureProps) {
                                     <DragSortList
                                       items={[...(topic.contents || [])].sort((a, b) => a.sira - b.sira)}
                                       onReorder={readOnly ? () => {} : reorderContents}
-                                      renderItem={(content, cDragProps) => (
+                                      renderItem={(content, cDragProps) => {
+                                        const isSelected = selectedSet.has(content.id);
+                                        const isCutPending = clipboard?.mode === "cut" && clipboard.contentIds.includes(content.id);
+                                        return (
                                         <div
                                           style={{
                                             ...cDragProps.style,
@@ -423,19 +865,39 @@ export function BookStructure(props: BookStructureProps) {
                                             display: "flex",
                                             justifyContent: "space-between",
                                             alignItems: "center",
-                                            background: "white",
+                                            background: isSelected ? "#eff6ff" : "white",
+                                            opacity: isCutPending ? 0.55 : 1,
                                           }}
                                           onDragOver={cDragProps.onDragOver}
                                           onDrop={cDragProps.onDrop}
                                         >
                                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                             {!readOnly && (
-                                              <span draggable onDragStart={cDragProps.onDragStart} onDragEnd={cDragProps.onDragEnd}>
-                                                <DragHandle />
-                                              </span>
+                                              <>
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isSelected}
+                                                  onChange={() => toggleContentSelected(content.id)}
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  title="Seç — Kopyala / Kes / Sil için"
+                                                  style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#0061a6" }}
+                                                />
+                                                <span draggable onDragStart={cDragProps.onDragStart} onDragEnd={cDragProps.onDragEnd}>
+                                                  <DragHandle />
+                                                </span>
+                                              </>
                                             )}
                                             <span>{CONTENT_TYPE_ICON[content.content_type] || "📌"}</span>
-                                            <span style={{ fontSize: 13 }}>{content.ad}</span>
+                                            {content.content_type === "TEST_SET" ? (
+                                              <InlineContentAd
+                                                contentId={content.id}
+                                                value={content.ad}
+                                                readOnly={readOnly}
+                                                onSave={onUpdateContentAd}
+                                              />
+                                            ) : (
+                                              <span style={{ fontSize: 13 }}>{content.ad}</span>
+                                            )}
                                             <span style={{ fontSize: 11, color: "#64748b" }}>({content.content_type_display})</span>
                                           </div>
                                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -469,7 +931,8 @@ export function BookStructure(props: BookStructureProps) {
                                             )}
                                           </div>
                                         </div>
-                                      )}
+                                        );
+                                      }}
                                     />
                                   ) : (
                                     <div style={{ padding: "12px 16px 12px 48px", fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>İçerik bulunmuyor</div>
@@ -494,6 +957,7 @@ export function BookStructure(props: BookStructureProps) {
       {/* Summary Bar */}
       {bookStructure && (
         <div style={{
+          flexShrink: 0,
           padding: "10px 20px",
           borderTop: "1px solid #e2e8f0",
           background: "#f8fafc",
@@ -508,6 +972,45 @@ export function BookStructure(props: BookStructureProps) {
           <span>📄 {bookStructure.units?.reduce((s, u) => s + (u.topics || []).reduce((s2, t) => s2 + (t.contents?.length || 0), 0), 0) || 0} İçerik</span>
         </div>
       )}
+
+      <GroupContentsModal
+        open={groupOpen}
+        onClose={() => setGroupOpen(false)}
+        contentCount={selectedContentIds.length}
+        form={groupForm}
+        setForm={setGroupForm}
+        loading={groupLoading}
+        onSubmit={() => { void submitGroup(); }}
+      />
+
+      <PrefixNamesModal
+        open={prefixOpen}
+        onClose={() => setPrefixOpen(false)}
+        contentCount={selectedContentIds.length}
+        previewNames={prefixPreviewNames}
+        prefix={prefixText}
+        setPrefix={setPrefixText}
+        withNumber={prefixWithNumber}
+        setWithNumber={setPrefixWithNumber}
+        startNumber={prefixStart}
+        setStartNumber={setPrefixStart}
+        loading={prefixLoading}
+        onSubmit={() => { void submitPrefix(); }}
+      />
+
+      <MoveTopicModal
+        open={moveTopicOpen}
+        onClose={() => { setMoveTopicOpen(false); setMoveTopicTarget(null); }}
+        topicName={moveTopicTarget?.topic.ad || ""}
+        currentUnitId={moveTopicTarget?.unitId ?? null}
+        units={unitOptions}
+        targetUnitId={moveTargetUnitId}
+        setTargetUnitId={setMoveTargetUnitId}
+        mode={moveTopicMode}
+        setMode={setMoveTopicMode}
+        loading={moveTopicLoading}
+        onSubmit={() => { void submitMoveTopic(); }}
+      />
     </div>
   );
 }

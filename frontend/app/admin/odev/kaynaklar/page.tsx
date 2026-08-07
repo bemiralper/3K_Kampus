@@ -1,16 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useResources } from "./hooks/useResources";
 import { BookList } from "./components/BookList";
-import { BookStructure } from "./components/BookStructure";
-import { ResourceDrawer } from "./components/ResourceDrawer";
-import {
-  BookTypeModal, BulkTestModal, BulkItemModal, ImportModal, DuplicateModal, StructureDuplicateModal,
-} from "./components/Modals";
-import { ToastNotification } from "./components/ToastNotification";
+import { KaynaklarOverlays } from "./components/KaynaklarOverlays";
 import TopluKitapEkleModal from "./components/TopluKitapEkleModal";
 import KaynakExportModal from "./components/KaynakExportModal";
+import { useKaynakPath } from "@/components/kaynak/KaynakPathProvider";
+import type { ResourceBook } from "./types";
 import "./kaynaklar.css";
 
 function getBookTypeBadgeClass(renk?: string): string {
@@ -27,6 +25,8 @@ function getBookTypeBadgeClass(renk?: string): string {
 
 export default function KaynaklarPage() {
   const r = useResources();
+  const router = useRouter();
+  const { kaynakHref } = useKaynakPath();
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -37,6 +37,10 @@ export default function KaynaklarPage() {
   const totalUnits = r.books.reduce((s, b) => s + (b.unit_count || 0), 0);
   const totalTopics = r.books.reduce((s, b) => s + (b.topic_count || 0), 0);
   const totalContents = r.books.reduce((s, b) => s + (b.content_count || 0), 0);
+
+  const openBook = (book: ResourceBook) => {
+    router.push(kaynakHref(String(book.id)));
+  };
 
   return (
     <div className="kk-page">
@@ -128,168 +132,18 @@ export default function KaynaklarPage() {
           </button>
         </div>
       ) : (
-        <div className={`kk-grid${r.selectedBook ? " is-split" : ""}`}>
+        <div className="kk-grid">
           <BookList
             filteredBooks={r.filteredBooks}
-            selectedBook={r.selectedBook}
+            selectedBook={null}
             loading={r.loading}
-            onSelectBook={r.setSelectedBook}
+            onSelectBook={openBook}
             getBookTypeBadgeClass={getBookTypeBadgeClass}
           />
-
-          {r.selectedBook && (
-            <BookStructure
-              selectedBook={r.selectedBook}
-              bookStructure={r.bookStructure}
-              loadingStructure={r.loadingStructure}
-              expandedUnits={r.expandedUnits}
-              expandedTopics={r.expandedTopics}
-              toggleUnit={r.toggleUnit}
-              toggleTopic={r.toggleTopic}
-              expandAll={r.expandAll}
-              collapseAll={r.collapseAll}
-              onEditBook={(book) => r.openBookDrawer("edit", book)}
-              onDeleteBook={r.handleDeleteBook}
-              onDuplicateBook={r.openDuplicateModal}
-              onClose={() => { r.setSelectedBook(null); r.setBookStructure(null); }}
-              onAddUnit={() => r.openUnitDrawer("create")}
-              onEditUnit={(unit) => r.openUnitDrawer("edit", unit)}
-              onDuplicateUnit={r.openDuplicateUnitModal}
-              onDeleteUnit={r.handleDeleteUnit}
-              onBulkUnit={r.openBulkUnitModal}
-              onImport={() => r.setImportModalOpen(true)}
-              onAddTopic={(unitId) => r.openTopicDrawer("create", unitId)}
-              onEditTopic={(unitId, topic) => r.openTopicDrawer("edit", unitId, topic)}
-              onDuplicateTopic={r.openDuplicateTopicModal}
-              onDeleteTopic={r.handleDeleteTopic}
-              onBulkTopic={r.openBulkTopicModal}
-              onAddContent={(topicId) => r.openContentDrawer("create", topicId)}
-              onEditContent={(topicId, content) => r.openContentDrawer("edit", topicId, content)}
-              onDuplicateContent={r.handleDuplicateContent}
-              onUpdateQuestionCount={r.handleUpdateQuestionCount}
-              onDeleteContent={r.handleDeleteContent}
-              onBulkTest={r.openBulkTestModal}
-              reorderUnits={r.reorderUnits}
-              reorderTopics={r.reorderTopics}
-              reorderContents={r.reorderContents}
-              getBookTypeBadgeClass={getBookTypeBadgeClass}
-            />
-          )}
         </div>
       )}
 
-      <ResourceDrawer
-        open={r.drawerOpen}
-        onClose={() => r.setDrawerOpen(false)}
-        mode={r.drawerMode}
-        editingId={r.editingId}
-        loading={r.drawerLoading}
-        error={r.drawerError}
-        onSave={r.handleDrawerSave}
-        bookForm={r.bookForm}
-        setBookForm={r.setBookForm}
-        unitForm={r.unitForm}
-        setUnitForm={r.setUnitForm}
-        topicForm={r.topicForm}
-        setTopicForm={r.setTopicForm}
-        contentForm={r.contentForm}
-        setContentForm={r.setContentForm}
-        dersler={r.dersler}
-        sinifSeviyeleri={r.sinifSeviyeleri}
-        bookTypes={r.bookTypes}
-        onUploadKapak={r.handleUploadKapak}
-        onDeleteKapak={r.handleDeleteKapak}
-        onPendingKapakChange={r.setPendingKapakFile}
-      />
-
-      <BookTypeModal
-        open={r.bookTypeModalOpen}
-        onClose={() => r.setBookTypeModalOpen(false)}
-        bookTypes={r.bookTypes}
-        form={r.bookTypeForm}
-        setForm={r.setBookTypeForm}
-        loading={r.bookTypeLoading}
-        onSave={r.saveBookType}
-        onEdit={r.openBookTypeForEdit}
-        onDelete={r.deleteBookType}
-        onReset={r.resetBookTypeForm}
-      />
-
-      <BulkTestModal
-        open={r.bulkTestOpen}
-        onClose={() => r.setBulkTestOpen(false)}
-        topicName={r.bulkTestTopicName}
-        form={r.bulkTestForm}
-        setForm={r.setBulkTestForm}
-        rows={r.bulkTestRows}
-        onUpdateRow={r.updateBulkTestRow}
-        onApplyDefaults={r.applyDefaultQuestionToAll}
-        previewLoading={r.bulkTestPreviewLoading}
-        loading={r.bulkTestLoading}
-        error={r.bulkTestError}
-        onSubmit={r.submitBulkTests}
-      />
-
-      <BulkItemModal
-        open={r.bulkUnitOpen}
-        onClose={() => r.setBulkUnitOpen(false)}
-        title="Toplu Ünite Ekle"
-        subtitle={`${r.selectedBook?.ad || ""} kitabına üniteler ekleyin`}
-        rows={r.bulkUnitRows}
-        setRows={r.setBulkUnitRows}
-        loading={r.bulkUnitLoading}
-        error={r.bulkUnitError}
-        onSubmit={r.submitBulkUnits}
-        color="#10b981"
-        placeholder="Ünite adı"
-      />
-
-      <BulkItemModal
-        open={r.bulkTopicOpen}
-        onClose={() => r.setBulkTopicOpen(false)}
-        title="Toplu Konu Ekle"
-        subtitle={`${r.bulkTopicUnitName} ünitesine konular ekleyin`}
-        rows={r.bulkTopicRows}
-        setRows={r.setBulkTopicRows}
-        loading={r.bulkTopicLoading}
-        error={r.bulkTopicError}
-        onSubmit={r.submitBulkTopics}
-        color="#6366f1"
-        placeholder="Konu adı"
-      />
-
-      <ImportModal
-        open={r.importModalOpen}
-        onClose={() => r.setImportModalOpen(false)}
-        text={r.importText}
-        setText={r.setImportText}
-        loading={r.importLoading}
-        error={r.importError}
-        result={r.importResult}
-        onSubmit={r.handleImportStructure}
-      />
-
-      <DuplicateModal
-        open={r.duplicateModalOpen}
-        onClose={() => r.setDuplicateModalOpen(false)}
-        selectedBook={r.selectedBook}
-        form={r.duplicateForm}
-        setForm={r.setDuplicateForm}
-        loading={r.duplicateLoading}
-        onSubmit={r.handleDuplicateBook}
-      />
-
-      <StructureDuplicateModal
-        open={r.structureDupOpen}
-        onClose={() => r.setStructureDupOpen(false)}
-        kind={r.structureDupKind}
-        sourceName={r.structureDupSourceName}
-        hint={r.structureDupHint}
-        form={r.structureDupForm}
-        setForm={r.setStructureDupForm}
-        loading={r.structureDupLoading}
-        onSubmit={r.handleStructureDuplicate}
-      />
+      <KaynaklarOverlays r={r} showBookTypeModal />
 
       <TopluKitapEkleModal
         open={bulkImportOpen}
@@ -308,15 +162,6 @@ export default function KaynaklarPage() {
           search: r.searchTerm || undefined,
         }}
       />
-
-      <ToastNotification toast={r.toast} />
-
-      <style jsx global>{`
-        @keyframes slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }

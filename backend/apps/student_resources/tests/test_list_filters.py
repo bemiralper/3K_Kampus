@@ -43,6 +43,13 @@ class StudentResourceListFilterTest(TestCase):
             ad='Konu Anlatım',
         )
 
+        from apps.resources.models import ResourcePublisher
+        self.pub_palme = ResourcePublisher.objects.create(
+            kurum=self.kurum, ad='Palme Yayınları', kisa_ad='Palme',
+        )
+        self.pub_karekok = ResourcePublisher.objects.create(
+            kurum=self.kurum, ad='Karekök Yayınları', kisa_ad='Karekök',
+        )
         self.soru_book = ResourceBook.objects.create(
             sube=self.sube,
             ad='Fizik Soru Bankası',
@@ -51,7 +58,7 @@ class StudentResourceListFilterTest(TestCase):
             ders=self.ders,
             sinif_seviyesi=self.sinif_seviyesi,
             kurum=self.kurum,
-            yayinevi='Palme Yayınları',
+            publisher=self.pub_palme,
             aktif_mi=True,
             icerik_tamamlandi_mi=True,
         )
@@ -63,7 +70,7 @@ class StudentResourceListFilterTest(TestCase):
             ders=self.ders,
             sinif_seviyesi=self.sinif_seviyesi,
             kurum=self.kurum,
-            yayinevi='Karekök Yayınları',
+            publisher=self.pub_karekok,
             aktif_mi=True,
             icerik_tamamlandi_mi=True,
         )

@@ -3,7 +3,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from apps.gorev.domain.enums import GorevDurum, GorevOncelik, HedefTipi
@@ -16,6 +16,7 @@ KAYNAK_ODEME = 'odeme_takip'
 KAYNAK_OLCME = 'olcme'
 KAYNAK_OGRENCI = 'ogrenci_inaktif'
 KAYNAK_YOKLAMA = 'yoklama'
+KAYNAK_RESOURCES = 'resources'
 
 
 def _safe(fn, *args, **kwargs):
@@ -314,6 +315,69 @@ class GorevRuleEngine:
                 created += 1
         return created
 
+    def scan_incomplete_resources(self, kurum_id: int = None, min_students: int = 3) -> int:
+        """Öğrenci havuzunda kullanılan + içeriği eksik kitaplar için görev oluştur."""
+        from apps.resources.models import ResourceBook
+        from apps.student_resources.models import StudentResourceAssignment
+        from apps.kurum.domain.models import Kurum
+
+        created = 0
+        kurumlar = Kurum.objects.filter(aktif_mi=True)
+        if kurum_id:
+            kurumlar = kurumlar.filter(pk=kurum_id)
+
+        for kurum in kurumlar:
+            usage = (
+                StudentResourceAssignment.objects.filter(
+                    is_active=True,
+                    resource_book__kurum_id=kurum.id,
+                    resource_book__icerik_tamamlandi_mi=False,
+                    resource_book__aktif_mi=True,
+                )
+                .values('resource_book_id')
+                .annotate(student_count=Count('student_id', distinct=True))
+                .filter(student_count__gte=min_students)
+            )
+            book_ids = [r['resource_book_id'] for r in usage]
+            if not book_ids:
+                continue
+            count_map = {r['resource_book_id']: r['student_count'] for r in usage}
+            books = ResourceBook.objects.filter(pk__in=book_ids).select_related('ders', 'sube')
+            for book in books:
+                sc = count_map.get(book.id, 0)
+                if sc >= 10:
+                    oncelik = GorevOncelik.KRITIK
+                elif sc >= 5:
+                    oncelik = GorevOncelik.YUKSEK
+                else:
+                    oncelik = GorevOncelik.NORMAL
+                kaynak_id = f'book-{book.id}'
+                g = self._create(
+                    kurum_id=kurum.id,
+                    tip_kod='KAYNAK_ICERIK',
+                    baslik=f'Kaynak içeriği eksik: {book.ad}',
+                    aciklama=(
+                        f'{book.ad} kitabı şu anda {sc} öğrencinin kaynak havuzunda '
+                        f've içeriği tamamlanmamış. Kaynağın içeriğinin tamamlanması gerekiyor.'
+                    ),
+                    son_tarih=timezone.now() + timedelta(days=7),
+                    kaynak_modul=KAYNAK_RESOURCES,
+                    kaynak_id=kaynak_id,
+                    hedef_tipi=HedefTipi.ROL,
+                    hedef_rol_kodu='admin',
+                    oncelik=oncelik,
+                    sube_id=book.sube_id,
+                    aksiyon_url=f'/admin/odev/kaynaklar?book={book.id}',
+                    tum_gun=True,
+                )
+                if g:
+                    created += 1
+        return created
+
+    def complete_resource_content_tasks(self, kurum_id: int, book_id: int):
+        """İçerik tamamlanınca ilgili görevleri kapat."""
+        self.complete_by_kaynak_prefix(kurum_id, KAYNAK_RESOURCES, f'book-{book_id}')
+
     def scan_all(self, kurum_id: int = None) -> dict:
         return {
             'taksit_vadesi': self.scan_payment_due(days_ahead=0, kurum_id=kurum_id),
@@ -321,6 +385,7 @@ class GorevRuleEngine:
             'geciken_odeme': self.scan_payment_overdue(kurum_id=kurum_id),
             'senet_vadesi': self.scan_senet_vadesi(kurum_id=kurum_id),
             'ogrenci_inaktif': self.scan_student_inactivity(inactivity_days=7, kurum_id=kurum_id),
+            'kaynak_icerik': self.scan_incomplete_resources(kurum_id=kurum_id),
         }
 
     # ─── Anlık hook'lar ───

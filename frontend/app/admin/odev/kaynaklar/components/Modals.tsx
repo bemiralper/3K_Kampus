@@ -618,3 +618,272 @@ export function StructureDuplicateModal({
     </ModalBackdrop>
   );
 }
+
+// ────────────── GROUP CONTENTS INTO TOPIC MODAL ──────────────
+interface GroupContentsModalProps {
+  open: boolean;
+  onClose: () => void;
+  contentCount: number;
+  form: { ad: string; kod: string };
+  setForm: (f: { ad: string; kod: string }) => void;
+  loading: boolean;
+  onSubmit: () => void;
+}
+
+export function GroupContentsModal({
+  open, onClose, contentCount, form, setForm, loading, onSubmit,
+}: GroupContentsModalProps) {
+  if (!open) return null;
+  const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14 };
+  return (
+    <ModalBackdrop onClose={onClose}>
+      <div style={{ width: 480 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Konu altında topla</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#64748b" }}>×</button>
+        </div>
+        <div style={{ marginBottom: 16, padding: 12, background: "#f8fafc", borderRadius: 8, fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
+          Seçilen <strong style={{ color: "#0f172a" }}>{contentCount}</strong> içerik yeni konuya taşınacak.
+          Yeni konu, seçimin yapıldığı konunun hemen altına eklenecek.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 20 }}>
+          <div>
+            <label style={{ display: "block", marginBottom: 6, fontWeight: 500, fontSize: 14 }}>Yeni Konu Adı *</label>
+            <input
+              type="text"
+              value={form.ad}
+              onChange={(e) => setForm({ ...form, ad: e.target.value })}
+              style={inputStyle}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", marginBottom: 6, fontWeight: 500, fontSize: 14 }}>Kod (opsiyonel)</label>
+            <input
+              type="text"
+              value={form.kod}
+              onChange={(e) => setForm({ ...form, kod: e.target.value })}
+              placeholder="Boş bırakılırsa otomatik üretilir"
+              style={inputStyle}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", border: "1px solid #d1d5db", borderRadius: 8, background: "white", cursor: "pointer", fontSize: 14 }}>İptal</button>
+          <button
+            onClick={onSubmit}
+            disabled={loading || !form.ad.trim()}
+            style={{
+              padding: "10px 24px", border: "none", borderRadius: 8,
+              background: loading || !form.ad.trim() ? "#94a3b8" : "#0f766e",
+              color: "white", cursor: loading || !form.ad.trim() ? "not-allowed" : "pointer",
+              fontSize: 14, fontWeight: 600,
+            }}
+          >
+            {loading ? "Toplanıyor..." : "Topla"}
+          </button>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+}
+
+// ────────────── PREFIX CONTENT NAMES MODAL ──────────────
+interface PrefixNamesModalProps {
+  open: boolean;
+  onClose: () => void;
+  contentCount: number;
+  previewNames: string[];
+  prefix: string;
+  setPrefix: (v: string) => void;
+  withNumber: boolean;
+  setWithNumber: (v: boolean) => void;
+  startNumber: number;
+  setStartNumber: (v: number) => void;
+  loading: boolean;
+  onSubmit: () => void;
+}
+
+export function PrefixNamesModal({
+  open, onClose, contentCount, previewNames,
+  prefix, setPrefix, withNumber, setWithNumber, startNumber, setStartNumber,
+  loading, onSubmit,
+}: PrefixNamesModalProps) {
+  if (!open) return null;
+  const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14 };
+  return (
+    <ModalBackdrop onClose={onClose}>
+      <div style={{ width: 520 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Ön başlık ekle</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#64748b" }}>×</button>
+        </div>
+        <div style={{ marginBottom: 16, padding: 12, background: "#f8fafc", borderRadius: 8, fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
+          Seçilen <strong style={{ color: "#0f172a" }}>{contentCount}</strong> içeriğin adına ön başlık eklenecek.
+          Örnek: <code style={{ background: "#e2e8f0", padding: "1px 6px", borderRadius: 4 }}>Cümlede Anlam/Test-13</code>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 16 }}>
+          <div>
+            <label style={{ display: "block", marginBottom: 6, fontWeight: 500, fontSize: 14 }}>Ön başlık *</label>
+            <input
+              type="text"
+              value={prefix}
+              onChange={(e) => setPrefix(e.target.value)}
+              placeholder="Örn. Cümlede Anlam"
+              style={inputStyle}
+              autoFocus
+            />
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={withNumber}
+              onChange={(e) => setWithNumber(e.target.checked)}
+            />
+            Numara ekle (Cümlede Anlam 1/Test-13 …)
+          </label>
+          {withNumber && (
+            <div>
+              <label style={{ display: "block", marginBottom: 6, fontWeight: 500, fontSize: 14 }}>Başlangıç numarası</label>
+              <input
+                type="number"
+                min={0}
+                value={startNumber}
+                onChange={(e) => setStartNumber(parseInt(e.target.value, 10) || 0)}
+                style={{ ...inputStyle, maxWidth: 160 }}
+              />
+            </div>
+          )}
+        </div>
+        {previewNames.length > 0 && (
+          <div style={{ marginBottom: 16, padding: 12, background: "#eff6ff", borderRadius: 8, fontSize: 12, color: "#1e3a8a", maxHeight: 160, overflowY: "auto" }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Önizleme</div>
+            {previewNames.map((n, i) => (
+              <div key={i} style={{ padding: "2px 0" }}>{n}</div>
+            ))}
+            {contentCount > previewNames.length && (
+              <div style={{ color: "#64748b", marginTop: 4 }}>… ve {contentCount - previewNames.length} tane daha</div>
+            )}
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", border: "1px solid #d1d5db", borderRadius: 8, background: "white", cursor: "pointer", fontSize: 14 }}>İptal</button>
+          <button
+            onClick={onSubmit}
+            disabled={loading || !prefix.trim()}
+            style={{
+              padding: "10px 24px", border: "none", borderRadius: 8,
+              background: loading || !prefix.trim() ? "#94a3b8" : "#0061a6",
+              color: "white",
+              cursor: loading || !prefix.trim() ? "not-allowed" : "pointer",
+              fontSize: 14, fontWeight: 600,
+            }}
+          >
+            {loading ? "Uygulanıyor..." : "Uygula"}
+          </button>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+}
+
+// ────────────── MOVE / COPY TOPIC TO UNIT MODAL ──────────────
+interface MoveTopicModalProps {
+  open: boolean;
+  onClose: () => void;
+  topicName: string;
+  currentUnitId: number | null;
+  units: Array<{ id: number; ad: string }>;
+  targetUnitId: number | "";
+  setTargetUnitId: (id: number | "") => void;
+  mode: "move" | "copy";
+  setMode: (mode: "move" | "copy") => void;
+  loading: boolean;
+  onSubmit: () => void;
+}
+
+export function MoveTopicModal({
+  open, onClose, topicName, currentUnitId, units, targetUnitId, setTargetUnitId,
+  mode, setMode, loading, onSubmit,
+}: MoveTopicModalProps) {
+  if (!open) return null;
+  const options = units.filter((u) => u.id !== currentUnitId);
+  const inputStyle: React.CSSProperties = { width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14 };
+  const isCopy = mode === "copy";
+  return (
+    <ModalBackdrop onClose={onClose}>
+      <div style={{ width: 480 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Konuyu üniteye aktar</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#64748b" }}>×</button>
+        </div>
+        <div style={{ marginBottom: 16, padding: 12, background: "#f0f9ff", borderRadius: 8, fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
+          <strong style={{ color: "#0f172a" }}>{topicName}</strong> konusu seçtiğiniz üniteye
+          {isCopy ? " kopyalanacak" : " taşınacak"}.
+          Altındaki tüm içerikler konuyla birlikte gelir.
+          {isCopy ? " Kaynak ünitede konu kalır." : " Kaynak üniteden kalkar."}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button
+            type="button"
+            onClick={() => setMode("move")}
+            style={{
+              flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+              border: mode === "move" ? "2px solid #0f766e" : "1px solid #e2e8f0",
+              background: mode === "move" ? "#ccfbf1" : "#fff",
+              color: mode === "move" ? "#115e59" : "#475569",
+            }}
+          >
+            Taşı
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("copy")}
+            style={{
+              flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+              border: mode === "copy" ? "2px solid #0369a1" : "1px solid #e2e8f0",
+              background: mode === "copy" ? "#e0f2fe" : "#fff",
+              color: mode === "copy" ? "#0c4a6e" : "#475569",
+            }}
+          >
+            Kopyala
+          </button>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "block", marginBottom: 6, fontWeight: 500, fontSize: 14 }}>Hedef ünite *</label>
+          {options.length === 0 ? (
+            <div style={{ fontSize: 13, color: "#b91c1c" }}>Başka ünite yok. Önce yeni ünite ekleyin.</div>
+          ) : (
+            <select
+              value={targetUnitId === "" ? "" : String(targetUnitId)}
+              onChange={(e) => setTargetUnitId(e.target.value ? Number(e.target.value) : "")}
+              style={inputStyle}
+              autoFocus
+            >
+              <option value="">Ünite seçin…</option>
+              {options.map((u) => (
+                <option key={u.id} value={u.id}>{u.ad}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "10px 20px", border: "1px solid #d1d5db", borderRadius: 8, background: "white", cursor: "pointer", fontSize: 14 }}>İptal</button>
+          <button
+            onClick={onSubmit}
+            disabled={loading || !targetUnitId || options.length === 0}
+            style={{
+              padding: "10px 24px", border: "none", borderRadius: 8,
+              background: loading || !targetUnitId ? "#94a3b8" : (isCopy ? "#0369a1" : "#0f766e"),
+              color: "white",
+              cursor: loading || !targetUnitId ? "not-allowed" : "pointer",
+              fontSize: 14, fontWeight: 600,
+            }}
+          >
+            {loading ? (isCopy ? "Kopyalanıyor..." : "Taşınıyor...") : (isCopy ? "Kopyala" : "Taşı")}
+          </button>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+}

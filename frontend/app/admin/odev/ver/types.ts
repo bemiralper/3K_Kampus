@@ -93,6 +93,8 @@ export interface SelectedContent {
   lessonName: string;
   questionCount: number | null;
   pageCount: number | null;
+  /** Kaynak kitaptaki sıra */
+  contentSira?: number | null;
   startPage?: number | null;
   endPage?: number | null;
   note?: string;

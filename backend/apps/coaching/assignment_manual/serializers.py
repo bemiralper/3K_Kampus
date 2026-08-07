@@ -17,12 +17,19 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
     task_type_display = serializers.CharField(source='get_task_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     completion_status_display = serializers.CharField(source='get_completion_status_display', read_only=True)
+    content_id = serializers.IntegerField(read_only=True, allow_null=True)
     content_topic_name = serializers.SerializerMethodField()
+    content_topic_id = serializers.SerializerMethodField()
+    content_unit_name = serializers.SerializerMethodField()
+    content_unit_id = serializers.SerializerMethodField()
+    content_sira = serializers.SerializerMethodField()
 
     class Meta:
         model = AssignmentTask
         fields = [
-            'id', 'lesson_block', 'content', 'content_topic_name',
+            'id', 'lesson_block', 'content', 'content_id',
+            'content_topic_name', 'content_topic_id',
+            'content_unit_name', 'content_unit_id', 'content_sira',
             'task_type', 'task_type_display',
             'title', 'description', 'is_required',
             'question_count', 'page_count',
@@ -38,8 +45,29 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
 
     def get_content_topic_name(self, obj):
         """İçerik kaynağının konu adını döndür (ResourceContent.topic.ad)"""
-        if obj.content and hasattr(obj.content, 'topic') and obj.content.topic:
+        if obj.content and getattr(obj.content, 'topic', None):
             return obj.content.topic.ad
+        return None
+
+    def get_content_topic_id(self, obj):
+        if obj.content and getattr(obj.content, 'topic_id', None):
+            return obj.content.topic_id
+        return None
+
+    def get_content_unit_name(self, obj):
+        topic = getattr(obj.content, 'topic', None) if obj.content else None
+        unit = getattr(topic, 'unit', None) if topic else None
+        return unit.ad if unit else None
+
+    def get_content_unit_id(self, obj):
+        topic = getattr(obj.content, 'topic', None) if obj.content else None
+        if topic and getattr(topic, 'unit_id', None):
+            return topic.unit_id
+        return None
+
+    def get_content_sira(self, obj):
+        if obj.content is not None and getattr(obj.content, 'sira', None) is not None:
+            return obj.content.sira
         return None
 
 

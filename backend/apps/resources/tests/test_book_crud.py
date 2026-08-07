@@ -73,6 +73,8 @@ class ResourceBookCrudTest(TestCase):
         self.assertEqual(book.kurum_id, self.kurum.id)
         self.assertEqual(book.sube_id, self.sube.id)
         self.assertEqual(book.ad, 'Fizik Soru Bankası')
+        self.assertIsNotNone(book.publisher_id)
+        self.assertEqual(book.yayinevi, 'Palme')
 
     def test_list_includes_only_sube_scoped_books(self):
         own_book = ResourceBook.objects.create(

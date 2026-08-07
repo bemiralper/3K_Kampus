@@ -5,7 +5,7 @@ import type { SelectedContent, ContentTaskHistory } from '../types';
 import { useVectorPrint } from '@/lib/useVectorPrint';
 import AssignmentNotifySendModal from '@/components/odev/AssignmentNotifySendModal';
 import OdevPlanDocument from '@/components/odev/OdevPlanDocument';
-import type { PlanLessonGroup, PlanContentItemView } from '@/components/odev/odevPlanTypes';
+import { buildPlanGroupsFromSelected } from '@/components/odev/odevPlanTypes';
 
 interface PrintPreviewProps {
   studentName: string;
@@ -42,46 +42,11 @@ export default function PrintPreview({
     ? new Date(dueDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
     : '';
 
-  /* ─── Gruplama: Ders → Kitap → Konu ─── */
-  const cartGroups: PlanLessonGroup[] = useMemo(() => {
-    const map = new Map<number, PlanLessonGroup>();
-    items.forEach(item => {
-      if (!map.has(item.lessonId)) {
-        map.set(item.lessonId, {
-          lessonId: item.lessonId, lessonName: item.lessonName,
-          books: [], totalQuestions: 0, totalPages: 0,
-        });
-      }
-      const lesson = map.get(item.lessonId)!;
-      lesson.totalQuestions += item.questionCount || 0;
-      lesson.totalPages += item.pageCount || 0;
-
-      let bookGrp = lesson.books.find(b => b.bookId === item.bookId);
-      if (!bookGrp) {
-        bookGrp = { bookId: item.bookId, bookName: item.bookName, topics: [] };
-        lesson.books.push(bookGrp);
-      }
-
-      let topicGrp = bookGrp.topics.find(t => t.topicId === item.topicId);
-      if (!topicGrp) {
-        topicGrp = { topicId: item.topicId, topicName: item.topicName, items: [] };
-        bookGrp.topics.push(topicGrp);
-      }
-      const content: PlanContentItemView = {
-        id: item.id,
-        contentId: item.contentId,
-        contentName: item.contentName,
-        contentType: item.contentType,
-        questionCount: item.questionCount || 0,
-        pageCount: item.pageCount || 0,
-      };
-      topicGrp.items.push({
-        content,
-        note: contentNotes[item.id] || '',
-      });
-    });
-    return Array.from(map.values());
-  }, [items, contentNotes]);
+  /* ─── Gruplama: Kitap → Ünite → Konu → Test ─── */
+  const cartGroups = useMemo(
+    () => buildPlanGroupsFromSelected(items, contentNotes),
+    [items, contentNotes],
+  );
 
   const totalQ = items.reduce((s, c) => s + (c.questionCount || 0), 0);
   const totalP = items.reduce((s, c) => s + (c.pageCount || 0), 0);

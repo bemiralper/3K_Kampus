@@ -32,6 +32,59 @@ class BookType(models.Model):
         return self.ad
 
 
+class ResourcePublisher(models.Model):
+    """Kurum bazlı yayınevi kataloğu."""
+
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='resource_publishers',
+        verbose_name='Kurum',
+    )
+    ad = models.CharField('Yayınevi Adı', max_length=200)
+    kisa_ad = models.CharField('Kısa Ad', max_length=100, blank=True)
+    logo = models.ImageField(
+        'Logo',
+        upload_to='resources/publisher/',
+        blank=True,
+        null=True,
+    )
+    aktif_mi = models.BooleanField('Aktif', default=True)
+    aciklama = models.TextField('Açıklama', blank=True)
+    eslesme_anahtarlari = models.TextField(
+        'Eşleşme Anahtarları',
+        blank=True,
+        help_text='Virgülle ayrılmış kısaltma/alias (otomatik eşleştirme için)',
+    )
+    sira = models.PositiveIntegerField('Sıra', default=0)
+    created_at = models.DateTimeField('Oluşturma Tarihi', auto_now_add=True)
+    updated_at = models.DateTimeField('Güncelleme Tarihi', auto_now=True)
+
+    class Meta:
+        db_table = 'resource_publisher'
+        verbose_name = 'Yayınevi'
+        verbose_name_plural = 'Yayınevleri'
+        ordering = ['sira', 'ad']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum', 'ad'],
+                name='unique_resource_publisher_ad_per_kurum',
+            ),
+        ]
+
+    def __str__(self):
+        return self.ad
+
+    def match_keys(self):
+        """Eşleştirmede kullanılacak anahtar listesi (uzun → kısa)."""
+        keys = []
+        for raw in (self.ad, self.kisa_ad, *(self.eslesme_anahtarlari or '').split(',')):
+            key = (raw or '').strip()
+            if key and key not in keys:
+                keys.append(key)
+        return sorted(keys, key=len, reverse=True)
+
+
 class ResourceBook(models.Model):
     """
     Kaynak Kitap Model
@@ -85,7 +138,14 @@ class ResourceBook(models.Model):
     )
     
     # Kitap Detayları
-    yayinevi = models.CharField('Yayınevi', max_length=200, blank=True)
+    publisher = models.ForeignKey(
+        ResourcePublisher,
+        on_delete=models.SET_NULL,
+        related_name='books',
+        verbose_name='Yayınevi',
+        null=True,
+        blank=True,
+    )
     yazar = models.CharField('Yazar', max_length=200, blank=True)
     yayin_yili = models.PositiveIntegerField('Yayın Yılı', null=True, blank=True)
     toplam_sayfa = models.PositiveIntegerField('Toplam Sayfa', null=True, blank=True)
@@ -138,7 +198,14 @@ class ResourceBook(models.Model):
         
     def __str__(self):
         return f"{self.ad} ({self.book_type.ad})"
-    
+
+    @property
+    def yayinevi(self):
+        """Geriye dönük: yayınevi adı (string)."""
+        if self.publisher_id:
+            return self.publisher.ad
+        return ''
+
     @property
     def unit_count(self):
         """Ünite sayısı"""

@@ -4,8 +4,10 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useKurum } from "@/lib/contexts/KurumContext";
+import { notifyResourcesChanged } from "@/lib/resources-events";
 import {
   fetchBooks,
+  fetchBook,
   fetchDersler,
   fetchSinifSeviyeleri,
   fetchBookTypes,
@@ -20,6 +22,11 @@ import {
   duplicateUnit,
   duplicateTopic,
   duplicateContent,
+  bulkTransferContents,
+  bulkDeleteContents,
+  bulkPrefixContentNames,
+  groupContentsIntoTopic,
+  moveTopic,
   uploadBookKapak,
   deleteBookKapak,
   fetchNextTestBatch,
@@ -50,7 +57,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 const INITIAL_BOOK_FORM: BookFormData = {
   ad: "", kod: "", book_type: "", ders: "", sinif_seviyeleri: [],
-  yayinevi: "", yazar: "", yayin_yili: String(CURRENT_YEAR), toplam_sayfa: "",
+  publisher: null, yayinevi: "", yazar: "", yayin_yili: String(CURRENT_YEAR), toplam_sayfa: "",
   zorluk_min: "", zorluk_max: "", isbn: "", kapak_url: "",
   aciklama: "", aktif_mi: true, icerik_tamamlandi_mi: false, sira: 0,
 };
@@ -103,15 +110,25 @@ function syncBulkTestRows(
   });
 }
 
-export function useResources() {
+type UseResourcesOptions = {
+  /** Verilirse bu kitabı yükler (yapı sayfası) */
+  bookId?: number | null;
+  /** Liste fetch'ini atla (yalnızca yapı sayfası) */
+  skipBookList?: boolean;
+};
+
+export function useResources(opts: UseResourcesOptions = {}) {
+  const { bookId = null, skipBookList = false } = opts;
   const { activeSube, initialized } = useKurum();
   // ───── Core data ─────
   const [books, setBooks] = useState<ResourceBook[]>([]);
   const [dersler, setDersler] = useState<Ders[]>([]);
   const [sinifSeviyeleri, setSinifSeviyeleri] = useState<SinifSeviyesi[]>([]);
   const [bookTypes, setBookTypes] = useState<BookType[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!skipBookList);
   const [error, setError] = useState<string | null>(null);
+  const [bookDetailError, setBookDetailError] = useState<string | null>(null);
+  const [loadingBookDetail, setLoadingBookDetail] = useState(Boolean(bookId));
   const structureRequestRef = useRef(0);
 
   // ───── Filters ─────
@@ -305,18 +322,52 @@ export function useResources() {
 
   useEffect(() => {
     if (!initialized || !activeSube?.id) return;
-    fetchBooksList();
+    if (!skipBookList) fetchBooksList();
     fetchMetadata();
-  }, [initialized, activeSube?.id, fetchBooksList, fetchMetadata]);
+  }, [initialized, activeSube?.id, fetchBooksList, fetchMetadata, skipBookList]);
 
   useEffect(() => {
     // Şube değişince seçimi temizle (eski şube kitabı/yapısı kalmasın)
-    setSelectedBook(null);
-    setBookStructure(null);
-    setExpandedUnits([]);
-    setExpandedTopics([]);
-    structureRequestRef.current += 1;
-  }, [activeSube?.id]);
+    if (!bookId) {
+      setSelectedBook(null);
+      setBookStructure(null);
+      setExpandedUnits([]);
+      setExpandedTopics([]);
+      structureRequestRef.current += 1;
+    }
+  }, [activeSube?.id, bookId]);
+
+  // Yapı sayfası: kitabı id ile yükle
+  useEffect(() => {
+    if (!bookId || !initialized || !activeSube?.id) {
+      if (!bookId) setLoadingBookDetail(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoadingBookDetail(true);
+      setBookDetailError(null);
+      try {
+        const result = await fetchBook(bookId);
+        if (cancelled) return;
+        if (result.success && result.data) {
+          setSelectedBook(result.data as ResourceBook);
+        } else {
+          setSelectedBook(null);
+          setBookStructure(null);
+          setBookDetailError(result.error || "Kitap bulunamadı");
+        }
+      } catch {
+        if (!cancelled) {
+          setSelectedBook(null);
+          setBookDetailError("Kitap yüklenirken hata oluştu");
+        }
+      } finally {
+        if (!cancelled) setLoadingBookDetail(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bookId, initialized, activeSube?.id]);
 
   useEffect(() => {
     if (selectedBook?.id) fetchBookStructureData(selectedBook.id, { resetExpand: true });
@@ -390,6 +441,7 @@ export function useResources() {
       setBookForm({
         ad: book.ad, kod: book.kod, book_type: String(book.book_type),
         ders: String(book.ders), sinif_seviyeleri: levels,
+        publisher: book.publisher ?? null,
         yayinevi: book.yayinevi || "", yazar: book.yazar || "",
         yayin_yili: book.yayin_yili ? String(book.yayin_yili) : String(CURRENT_YEAR),
         toplam_sayfa: book.toplam_sayfa ? String(book.toplam_sayfa) : "",
@@ -489,7 +541,7 @@ export function useResources() {
         ders: parseInt(bookForm.ders),
         sinif_seviyeleri: bookForm.sinif_seviyeleri,
         sinif_seviyesi: bookForm.sinif_seviyeleri[0],
-        yayinevi: bookForm.yayinevi,
+        publisher: bookForm.publisher,
         yazar: bookForm.yazar,
         yayin_yili: bookForm.yayin_yili ? parseInt(bookForm.yayin_yili) : null,
         toplam_sayfa: bookForm.toplam_sayfa ? parseInt(bookForm.toplam_sayfa) : null,
@@ -514,8 +566,16 @@ export function useResources() {
             showToast(`⚠️ Kitap kaydedildi ancak kapak yüklenemedi: ${kapakResult.error || ""}`, "error");
           }
         }
-        setDrawerOpen(false); fetchBooksList();
-        if (selectedBook && editingId === selectedBook.id) fetchBookStructureData(selectedBook.id);
+        setDrawerOpen(false);
+        if (!skipBookList) fetchBooksList();
+        if (editingId && selectedBook?.id === editingId) {
+          const refreshed = await fetchBook(editingId);
+          if (refreshed.success && refreshed.data) {
+            setSelectedBook(refreshed.data as ResourceBook);
+          }
+          fetchBookStructureData(selectedBook.id);
+        }
+        notifyResourcesChanged({ type: editingId ? "book-update" : "book-create" });
         showToast(`✅ Kitap ${editingId ? "güncellendi" : "oluşturuldu"}`);
       } else setDrawerError(typeof result.error === "object" ? JSON.stringify(result.error) : (result.error ?? "Hata"));
     } catch { setDrawerError("Kayıt sırasında hata oluştu"); }
@@ -622,16 +682,23 @@ export function useResources() {
   };
 
   // ═══════ DELETE HANDLERS ═══════
-  const handleDeleteBook = async (bookId: number) => {
-    if (!confirm("⚠️ Bu kitabı silmek istediğinize emin misiniz?\nTüm üniteler, konular ve içerikler de silinecektir!")) return;
+  const handleDeleteBook = async (bookId: number): Promise<boolean> => {
+    if (!confirm("⚠️ Bu kitabı silmek istediğinize emin misiniz?\nTüm üniteler, konular ve içerikler de silinecektir!")) return false;
     try {
       const result = await deleteBook(bookId);
       if (result.success) {
-        fetchBooksList();
+        if (!skipBookList) fetchBooksList();
         if (selectedBook?.id === bookId) { setSelectedBook(null); setBookStructure(null); }
+        notifyResourcesChanged({ type: "book-delete" });
         showToast("✅ Kitap silindi");
-      } else showToast(`❌ ${result.error || "Silme hatası"}`, "error");
-    } catch { showToast("❌ Silme sırasında hata oluştu", "error"); }
+        return true;
+      }
+      showToast(`❌ ${result.error || "Silme hatası"}`, "error");
+      return false;
+    } catch {
+      showToast("❌ Silme sırasında hata oluştu", "error");
+      return false;
+    }
   };
 
   const handleDeleteUnit = async (unitId: number) => {
@@ -675,6 +742,7 @@ export function useResources() {
       if (result.success) {
         setDuplicateModalOpen(false);
         fetchBooksList();
+        notifyResourcesChanged({ type: "book-duplicate" });
         showToast(`✅ ${result.message || "Kitap kopyalandı"}`);
       } else showToast(`❌ ${result.error || "Kopyalama hatası"}`, "error");
     } catch { showToast("❌ Kopyalama sırasında hata oluştu", "error"); }
@@ -777,6 +845,173 @@ export function useResources() {
     } catch {
       setBookStructure(prev);
       showToast("❌ Soru sayısı güncellenemedi", "error");
+      return false;
+    }
+  };
+
+  const handleUpdateContentAd = async (contentId: number, ad: string) => {
+    const trimmed = ad.trim();
+    if (!trimmed) return false;
+    const prev = bookStructure;
+    setBookStructure((current) => {
+      if (!current?.units) return current;
+      return {
+        ...current,
+        units: current.units.map((u) => ({
+          ...u,
+          topics: (u.topics || []).map((t) => ({
+            ...t,
+            contents: (t.contents || []).map((c) =>
+              c.id === contentId ? { ...c, ad: trimmed } : c,
+            ),
+          })),
+        })),
+      };
+    });
+    try {
+      const result = await patchContent(contentId, { ad: trimmed });
+      if (result.success) {
+        showToast(`✅ Ad güncellendi: ${trimmed}`);
+        return true;
+      }
+      setBookStructure(prev);
+      const err =
+        typeof result.error === "string"
+          ? result.error
+          : typeof result.error === "object" && result.error
+            ? JSON.stringify(result.error)
+            : "Güncellenemedi";
+      showToast(`❌ ${err}`, "error");
+      return false;
+    } catch {
+      setBookStructure(prev);
+      showToast("❌ İçerik adı güncellenemedi", "error");
+      return false;
+    }
+  };
+
+  const handleBulkTransferContents = async (
+    contentIds: number[],
+    targetTopicId: number,
+    mode: "copy" | "move",
+  ) => {
+    if (!selectedBook || !contentIds.length) return false;
+    try {
+      const result = await bulkTransferContents({
+        content_ids: contentIds,
+        target_topic_id: targetTopicId,
+        mode,
+      });
+      if (result.success) {
+        await fetchBookStructureData(selectedBook.id, { ensureTopicId: targetTopicId });
+        showToast(`✅ ${result.message || (mode === "copy" ? "Kopyalandı" : "Taşındı")}`);
+        return true;
+      }
+      const err = typeof result.error === "string" ? result.error : "İşlem başarısız";
+      showToast(`❌ ${err}`, "error");
+      return false;
+    } catch {
+      showToast("❌ Toplu aktarım sırasında hata oluştu", "error");
+      return false;
+    }
+  };
+
+  const handleBulkDeleteContents = async (contentIds: number[]) => {
+    if (!selectedBook || !contentIds.length) return false;
+    try {
+      const result = await bulkDeleteContents(contentIds);
+      if (result.success) {
+        await fetchBookStructureData(selectedBook.id);
+        showToast(`✅ ${result.message || "Silindi"}`);
+        return true;
+      }
+      const err = typeof result.error === "string" ? result.error : "Silinemedi";
+      showToast(`❌ ${err}`, "error");
+      return false;
+    } catch {
+      showToast("❌ Toplu silme sırasında hata oluştu", "error");
+      return false;
+    }
+  };
+
+  const handleBulkPrefixNames = async (
+    contentIds: number[],
+    prefix: string,
+    withNumber: boolean,
+    startNumber: number,
+  ) => {
+    if (!selectedBook || !contentIds.length || !prefix.trim()) return false;
+    try {
+      const result = await bulkPrefixContentNames({
+        content_ids: contentIds,
+        prefix: prefix.trim(),
+        with_number: withNumber,
+        start_number: startNumber,
+      });
+      if (result.success) {
+        await fetchBookStructureData(selectedBook.id);
+        showToast(`✅ ${result.message || "Ön başlık eklendi"}`);
+        return true;
+      }
+      const err = typeof result.error === "string" ? result.error : "Uygulanamadı";
+      showToast(`❌ ${err}`, "error");
+      return false;
+    } catch {
+      showToast("❌ Ön başlık eklenirken hata oluştu", "error");
+      return false;
+    }
+  };
+
+  const handleGroupContentsIntoTopic = async (
+    contentIds: number[],
+    ad: string,
+    kod?: string,
+  ) => {
+    if (!selectedBook || !contentIds.length || !ad.trim()) return false;
+    try {
+      const result = await groupContentsIntoTopic({
+        content_ids: contentIds,
+        ad: ad.trim(),
+        ...(kod?.trim() ? { kod: kod.trim() } : {}),
+      });
+      if (result.success && result.data) {
+        await fetchBookStructureData(selectedBook.id, {
+          ensureUnitId: result.data.unit_id,
+          ensureTopicId: result.data.id,
+        });
+        showToast(`✅ ${result.message || "Konu oluşturuldu"}`);
+        return true;
+      }
+      const err = typeof result.error === "string" ? result.error : "İşlem başarısız";
+      showToast(`❌ ${err}`, "error");
+      return false;
+    } catch {
+      showToast("❌ Konu altında toplama sırasında hata oluştu", "error");
+      return false;
+    }
+  };
+
+  const handleMoveTopic = async (
+    topicId: number,
+    targetUnitId: number,
+    mode: "move" | "copy" = "move",
+  ) => {
+    if (!selectedBook) return false;
+    try {
+      const result = await moveTopic(topicId, targetUnitId, mode);
+      if (result.success && result.data) {
+        await fetchBookStructureData(selectedBook.id, {
+          ensureUnitId: result.data.unit_id,
+          ensureTopicId: result.data.id,
+        });
+        showToast(`✅ ${result.message || (mode === "copy" ? "Konu kopyalandı" : "Konu taşındı")}`);
+        return true;
+      }
+      const err = typeof result.error === "string" ? result.error : "İşlem başarısız";
+      showToast(`❌ ${err}`, "error");
+      return false;
+    } catch {
+      showToast("❌ Konu aktarımı sırasında hata oluştu", "error");
       return false;
     }
   };
@@ -1156,7 +1391,8 @@ export function useResources() {
   return {
     // Data
     books, filteredBooks, dersler, sinifSeviyeleri, bookTypes,
-    loading, error, selectedBook, setSelectedBook,
+    loading, error, bookDetailError, loadingBookDetail,
+    selectedBook, setSelectedBook,
     bookStructure, setBookStructure, loadingStructure,
     // Filters
     searchTerm, setSearchTerm, filterDers, setFilterDers,
@@ -1190,6 +1426,12 @@ export function useResources() {
     openDuplicateUnitModal, openDuplicateTopicModal, handleStructureDuplicate,
     handleDuplicateContent,
     handleUpdateQuestionCount,
+    handleUpdateContentAd,
+    handleBulkTransferContents,
+    handleBulkDeleteContents,
+    handleBulkPrefixNames,
+    handleGroupContentsIntoTopic,
+    handleMoveTopic,
     // Delete
     handleDeleteBook, handleDeleteUnit, handleDeleteTopic, handleDeleteContent,
     // Reorder

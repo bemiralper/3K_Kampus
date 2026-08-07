@@ -1,7 +1,8 @@
 "use client";
 
 import { forwardRef } from "react";
-import type { ContentTaskHistory, PlanLessonGroup } from "./odevPlanTypes";
+import type { ContentTaskHistory, PlanBookGroup, PlanContentItemView } from "./odevPlanTypes";
+import { displayTestLabel, splitColumnMajor } from "./odevPlanTypes";
 import { MetaCol, assignmentTypeLabel } from "./odevPdfMeta";
 import { isAutoCompletionNote } from "./odevCompletionHelpers";
 
@@ -14,11 +15,117 @@ export interface OdevPlanDocumentProps {
   assignedDateStr: string;
   dueDateStr: string;
   documentRef?: string;
-  cartGroups: PlanLessonGroup[];
+  cartGroups: PlanBookGroup[];
   itemCount: number;
   totalQuestions: number;
   totalPages: number;
   taskHistory?: ContentTaskHistory;
+}
+
+function TestRow({
+  item,
+  note,
+  topicName,
+  taskHistory,
+}: {
+  item: PlanContentItemView;
+  note: string;
+  topicName: string;
+  taskHistory: ContentTaskHistory;
+}) {
+  const hist = taskHistory[item.contentId];
+  const isCompletion = Boolean(item.isCompletionTask)
+    || Boolean(hist && (hist.completion_status === "PARTIAL" || hist.completion_status === "NOT_DONE"));
+  const prevPct = item.previousCompletionPercent
+    ?? (hist?.completion_status === "PARTIAL" ? hist.task_completion_percent : null);
+  const prevTitle = item.previousAssignmentTitle
+    || (isCompletion ? hist?.assignment_title : "")
+    || "";
+  const showPrevPct = prevPct != null && prevPct > 0;
+  const label = displayTestLabel(item.contentName, topicName);
+
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 8,
+      padding: "6px 10px",
+      minHeight: 32,
+      borderBottom: "1px solid #f0f2f5",
+      fontSize: 11,
+      color: "#172b4c",
+      background: isCompletion ? "#eff6ff" : "#fff",
+      borderLeft: isCompletion ? "3px solid #3b82f6" : "none",
+    }}>
+      <span style={{
+        display: "inline-flex",
+        width: 12,
+        height: 12,
+        marginTop: 2,
+        border: "1.5px solid #cbd5e1",
+        borderRadius: 3,
+        flexShrink: 0,
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontWeight: 500,
+          lineHeight: 1.3,
+          wordBreak: "break-word",
+          overflowWrap: "anywhere",
+          whiteSpace: "normal",
+        }}>
+          {label}
+        </div>
+        {isCompletion && (
+          <div style={{ fontSize: 8, color: "#1d4ed8", fontWeight: 600, marginTop: 1, lineHeight: 1.2 }}>
+            🔄 {showPrevPct ? "Eksik Tamamlama" : "Tekrar (yapılmamıştı)"}
+            {showPrevPct && (
+              <span style={{
+                padding: "0 4px", borderRadius: 3, background: "#dbeafe",
+                fontSize: 7, fontWeight: 700, marginLeft: 4,
+              }}>
+                önceki: %{prevPct}
+              </span>
+            )}
+            {prevTitle && (
+              <span style={{ color: "#64748b", fontWeight: 500, marginLeft: 4 }}>
+                · {prevTitle}
+              </span>
+            )}
+          </div>
+        )}
+        {note && !(isCompletion && isAutoCompletionNote(note)) && (
+          <div style={{
+            fontSize: 9, color: "#0061a6", fontStyle: "italic", marginTop: 1, lineHeight: 1.2,
+            wordBreak: "break-word",
+          }}>
+            📌 {note}
+          </div>
+        )}
+        {item.contentType && item.contentType !== "SOLVE_TEST" && item.contentType !== "TEST_SET" && (
+          <div style={{ fontSize: 8, color: "#94a3b8", marginTop: 1 }}>
+            {assignmentTypeLabel(item.contentType)}
+          </div>
+        )}
+      </div>
+      <div style={{
+        flexShrink: 0,
+        textAlign: "right",
+        fontSize: 10,
+        fontWeight: 600,
+        color: "#475569",
+        whiteSpace: "nowrap",
+        paddingTop: 1,
+        minWidth: 52,
+      }}>
+        {item.questionCount > 0
+          ? `${item.questionCount} Soru`
+          : item.pageCount > 0
+            ? `${item.pageCount} Sayfa`
+            : ""}
+      </div>
+    </div>
+  );
 }
 
 const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(function OdevPlanDocument(
@@ -39,15 +146,14 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
   },
   ref,
 ) {
-  /** Mavi üst bar → şeffaf/beyaz logo; açık footer → koyu logo */
   const headerLogoUrl = "/img/beyaz-logo.png";
   const footerLogoUrl = "/img/3k-logo.png";
   const currentYear = new Date().getFullYear();
   const docRef = documentRef || `ÖCP-${Date.now().toString(36).toUpperCase().slice(-6)}`;
 
   const completionCount = cartGroups.reduce(
-    (sum, lesson) => sum + lesson.books.reduce(
-      (bSum, book) => bSum + book.topics.reduce(
+    (sum, book) => sum + book.units.reduce(
+      (uSum, unit) => uSum + unit.topics.reduce(
         (tSum, topic) => tSum + topic.items.filter(({ content: item }) => {
           if (item.isCompletionTask) return true;
           const hist = taskHistory[item.contentId];
@@ -160,7 +266,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
 
       <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
         <MetaCol
-          label="Ders"
+          label="Kitap"
           value={String(cartGroups.length)}
           minWidth={48}
           valueColor="#4338ca"
@@ -217,126 +323,106 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
         </div>
       )}
 
-      {cartGroups.map((lesson, li) => (
-        <div key={lesson.lessonId} style={{ marginBottom: 12 }}>
-          <div style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "10px 14px", background: "#0061a6", color: "#fff",
-            borderRadius: "8px 8px 0 0", fontSize: 13, fontWeight: 600,
-          }}>
-            <span>{li + 1}. {lesson.lessonName}</span>
-            <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.85 }}>
-              {lesson.books.reduce((s, b) => s + b.topics.reduce((s2, t) => s2 + t.items.length, 0), 0)} görev
-              {lesson.totalQuestions > 0 ? ` · ${lesson.totalQuestions} soru` : ""}
-              {lesson.totalPages > 0 ? ` · ${lesson.totalPages} sayfa` : ""}
-            </span>
-          </div>
-          <div style={{ border: "1px solid #e4e9f2", borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
-            {lesson.books.map((book) => (
-              <div key={book.bookId}>
-                <div style={{
-                  padding: "5px 14px", background: "#e8f0fe",
-                  fontSize: 10, fontWeight: 600, color: "#1a56db",
-                  borderBottom: "1px solid #d4dff7",
-                  display: "flex", alignItems: "center", gap: 6,
-                }}>
-                  📖 {book.bookName}
-                  <span style={{ fontSize: 9, fontWeight: 400, color: "#6b7280" }}>
-                    ({book.topics.reduce((s, t) => s + t.items.length, 0)} görev)
-                  </span>
-                </div>
-                {book.topics.map((topic) => (
-                  <div key={topic.topicId}>
-                    <div style={{
-                      padding: "6px 14px", background: "#f0f4f8",
-                      fontSize: 11, fontWeight: 600, color: "#0061a6",
-                      borderBottom: "1px solid #e4e9f2",
-                    }}>
-                      📂 {topic.topicName}
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 0 }}>
-                      {topic.items.map(({ content: item, note }, idx) => {
-                        const hist = taskHistory[item.contentId];
-                        const isCompletion = Boolean(item.isCompletionTask)
-                          || Boolean(hist && (hist.completion_status === "PARTIAL" || hist.completion_status === "NOT_DONE"));
-                        const prevPct = item.previousCompletionPercent
-                          ?? (hist?.completion_status === "PARTIAL" ? hist.task_completion_percent : null);
-                        const prevTitle = item.previousAssignmentTitle
-                          || (isCompletion ? hist?.assignment_title : "")
-                          || "";
-                        const showPrevPct = prevPct != null && prevPct > 0;
-                        return (
-                          <div key={item.id} style={{
-                            display: "flex", alignItems: "center", gap: 8,
-                            padding: "5px 8px",
-                            minHeight: 32,
-                            borderBottom: "1px solid #f0f2f5",
-                            borderRight: idx % 2 === 0 ? "1px solid #f0f2f5" : "none",
-                            fontSize: 11, color: "#172b4c",
-                            background: isCompletion ? "#eff6ff" : (idx % 4 < 2 ? "#fff" : "#fafbfc"),
-                            borderLeft: isCompletion ? "3px solid #3b82f6" : "none",
-                          }}>
-                            <span style={{
-                              display: "inline-flex", width: 12, height: 12,
-                              border: "1.5px solid #cbd5e1", borderRadius: 3, flexShrink: 0,
-                            }} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{
-                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                fontWeight: 500, lineHeight: 1.25,
-                              }}>
-                                {item.contentName}
-                              </div>
-                              {isCompletion && (
-                                <div style={{ fontSize: 8, color: "#1d4ed8", fontWeight: 600, marginTop: 1, lineHeight: 1.2 }}>
-                                  🔄 {showPrevPct ? "Eksik Tamamlama" : "Tekrar (yapılmamıştı)"}
-                                  {showPrevPct && (
-                                    <span style={{ padding: "0 4px", borderRadius: 3, background: "#dbeafe", fontSize: 7, fontWeight: 700, marginLeft: 4 }}>
-                                      önceki: %{prevPct}
-                                    </span>
-                                  )}
-                                  {prevTitle && (
-                                    <span style={{ color: "#64748b", fontWeight: 500, marginLeft: 4 }}>
-                                      · {prevTitle}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                              {/* Otomatik eksik notu zaten üst satırda; yalnızca koçun eklediği özel notu göster */}
-                              {note && !(isCompletion && isAutoCompletionNote(note)) && (
-                                <div style={{ fontSize: 9, color: "#0061a6", fontStyle: "italic", marginTop: 1, lineHeight: 1.2 }}>
-                                  📌 {note}
-                                </div>
-                              )}
-                            </div>
-                            <div style={{
-                              display: "inline-flex",
-                              alignItems: "stretch",
-                              gap: 3,
-                              flexShrink: 0,
-                            }}>
-                              <MetaCol label="Tür" value={assignmentTypeLabel(item.contentType)} />
-                              {item.questionCount > 0 && (
-                                <MetaCol label="Soru" value={String(item.questionCount)} />
-                              )}
-                              {item.pageCount > 0 && (
-                                <MetaCol label="Sayfa" value={String(item.pageCount)} />
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {topic.items.length % 2 !== 0 && (
-                        <div style={{ borderBottom: "1px solid #f0f2f5" }} />
-                      )}
-                    </div>
+      {/* Kitap → Ünite → Konu → Test */}
+      {cartGroups.map((book) => {
+        const bookTaskCount = book.units.reduce(
+          (s, u) => s + u.topics.reduce((s2, t) => s2 + t.items.length, 0),
+          0,
+        );
+        return (
+          <div key={book.bookId} style={{ marginBottom: 12 }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "10px 14px", background: "#0061a6", color: "#fff",
+              borderRadius: "8px 8px 0 0", fontSize: 13, fontWeight: 600,
+              gap: 8,
+            }}>
+              <span style={{
+                wordBreak: "break-word", overflowWrap: "anywhere", lineHeight: 1.3,
+              }}>
+                📖 {book.bookName}
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.85, flexShrink: 0 }}>
+                {bookTaskCount} görev
+                {book.totalQuestions > 0 ? ` · ${book.totalQuestions} soru` : ""}
+                {book.totalPages > 0 ? ` · ${book.totalPages} sayfa` : ""}
+              </span>
+            </div>
+            <div style={{
+              border: "1px solid #e4e9f2", borderTop: "none",
+              borderRadius: "0 0 8px 8px", overflow: "hidden",
+            }}>
+              {book.units.map((unit) => (
+                <div key={`${book.bookId}-${unit.unitId}`}>
+                  <div style={{
+                    padding: "6px 14px", background: "#e8f0fe",
+                    fontSize: 11, fontWeight: 600, color: "#1a56db",
+                    borderBottom: "1px solid #d4dff7",
+                    wordBreak: "break-word", overflowWrap: "anywhere",
+                    lineHeight: 1.35,
+                  }}>
+                    📂 {unit.unitName}
                   </div>
-                ))}
-              </div>
-            ))}
+                  {unit.topics.map((topic) => {
+                    const [leftItems, rightItems] = splitColumnMajor(topic.items);
+                    return (
+                      <div key={`${unit.unitId}-${topic.topicId}`}>
+                        <div style={{
+                          padding: "7px 14px 4px",
+                          background: "#f8fafc",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: "#0f172a",
+                          borderBottom: "1px solid #e4e9f2",
+                          wordBreak: "break-word",
+                          overflowWrap: "anywhere",
+                          whiteSpace: "normal",
+                          lineHeight: 1.35,
+                        }}>
+                          {topic.topicName}
+                        </div>
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: rightItems.length > 0 ? "1fr 1fr" : "1fr",
+                          gap: 0,
+                          alignItems: "start",
+                        }}>
+                          <div style={{
+                            borderRight: rightItems.length > 0 ? "1px solid #f0f2f5" : "none",
+                          }}>
+                            {leftItems.map(({ content: item, note }) => (
+                              <TestRow
+                                key={item.id}
+                                item={item}
+                                note={note}
+                                topicName={topic.topicName}
+                                taskHistory={taskHistory}
+                              />
+                            ))}
+                          </div>
+                          {rightItems.length > 0 && (
+                            <div>
+                              {rightItems.map(({ content: item, note }) => (
+                                <TestRow
+                                  key={item.id}
+                                  item={item}
+                                  note={note}
+                                  topicName={topic.topicName}
+                                  taskHistory={taskHistory}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div style={{
         padding: "12px 18px", marginBottom: 20,

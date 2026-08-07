@@ -75,6 +75,21 @@ export interface ResourceUnit {
   aktif_mi: boolean;
 }
 
+export interface ResourcePublisher {
+  id: number;
+  kurum_id?: number;
+  ad: string;
+  kisa_ad: string;
+  logo_url?: string;
+  aktif_mi: boolean;
+  aciklama: string;
+  eslesme_anahtarlari: string;
+  sira?: number;
+  book_count?: number;
+  used_book_count?: number;
+  student_usage_count?: number;
+}
+
 export interface ResourceBook {
   id: number;
   ad: string;
@@ -88,6 +103,7 @@ export interface ResourceBook {
   sinif_seviyesi_ad: string;
   sinif_seviyeleri?: number[];
   sinif_seviyeleri_ad?: string;
+  publisher?: number | null;
   yayinevi: string;
   yazar: string;
   yayin_yili: number | null;
@@ -244,7 +260,13 @@ export interface AssignmentTask {
   title: string;
   description: string;
   content_id: number | null;
-  content?: ResourceContent | null;
+  content?: ResourceContent | number | null;
+  content_topic_name?: string | null;
+  content_topic_id?: number | null;
+  content_unit_name?: string | null;
+  content_unit_id?: number | null;
+  content_sira?: number | null;
+  order?: number;
   question_count: number | null;
   page_count: number | null;
   is_required: boolean;
@@ -345,6 +367,7 @@ export interface AssignmentCreatePayload {
     topic_name: string;
     content_mode: string;
     notes?: string;
+    order?: number;
     tasks: {
       task_type: string;
       title: string;
@@ -353,6 +376,7 @@ export interface AssignmentCreatePayload {
       question_count?: number | null;
       page_count?: number | null;
       is_required?: boolean;
+      order?: number;
       is_completion_task?: boolean;
       previous_task_completion_percent?: number | null;
       previous_assignment_title?: string;
@@ -422,6 +446,7 @@ export async function fetchBooks(params?: {
   sinif_seviyesi?: string;
   book_type?: string;
   yayin_yili?: string;
+  publisher?: string;
   search?: string;
   icerik_tamamlandi?: string;
 }): Promise<ApiResponse<ResourceBook[]>> {
@@ -430,11 +455,148 @@ export async function fetchBooks(params?: {
   if (params?.sinif_seviyesi) searchParams.append('sinif_seviyesi', params.sinif_seviyesi);
   if (params?.book_type) searchParams.append('book_type', params.book_type);
   if (params?.yayin_yili) searchParams.append('yayin_yili', params.yayin_yili);
+  if (params?.publisher) searchParams.append('publisher', params.publisher);
   if (params?.search) searchParams.append('search', params.search);
   if (params?.icerik_tamamlandi) searchParams.append('icerik_tamamlandi', params.icerik_tamamlandi);
 
   const qs = searchParams.toString();
   return apiGet<ResourceBook[]>(`/api/resources/books/${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchPublishers(params?: {
+  aktif?: string;
+  search?: string;
+}): Promise<ApiResponse<ResourcePublisher[]>> {
+  const searchParams = new URLSearchParams();
+  if (params?.aktif) searchParams.append('aktif', params.aktif);
+  if (params?.search) searchParams.append('search', params.search);
+  const qs = searchParams.toString();
+  return apiGet<ResourcePublisher[]>(`/api/resources/publishers/${qs ? `?${qs}` : ''}`);
+}
+
+export async function createPublisher(data: Partial<ResourcePublisher>): Promise<ApiResponse<ResourcePublisher>> {
+  return apiPost<ResourcePublisher>('/api/resources/publishers/', data);
+}
+
+export async function updatePublisher(id: number, data: Partial<ResourcePublisher>): Promise<ApiResponse<ResourcePublisher>> {
+  return apiPut<ResourcePublisher>(`/api/resources/publishers/${id}/`, data);
+}
+
+export async function deletePublisher(id: number): Promise<ApiResponse<{
+  book_count?: number;
+  books?: Array<{ id: number; ad: string; kod?: string }>;
+}>> {
+  return apiDelete(`/api/resources/publishers/${id}/`);
+}
+
+export async function uploadPublisherLogo(id: number, file: File): Promise<ApiResponse<ResourcePublisher>> {
+  const form = new FormData();
+  form.append('logo', file);
+  return apiPostForm<ResourcePublisher>(`/api/resources/publishers/${id}/upload-logo/`, form);
+}
+
+export interface PublisherMatchItem {
+  book_id: number;
+  book_ad: string;
+  publisher_id: number | null;
+  publisher_ad: string;
+  matched_key: string;
+  confidence: number;
+  confidence_percent: number;
+}
+
+export async function fetchPublisherMatchSuggestions(): Promise<ApiResponse<{
+  items: PublisherMatchItem[];
+  total: number;
+  with_suggestion: number;
+}>> {
+  return apiGet('/api/resources/publisher-match/suggestions/');
+}
+
+export async function confirmPublisherMatch(payload: {
+  items?: Array<{ book_id: number; publisher_id: number }>;
+  book_ids?: number[];
+  publisher_id?: number;
+}): Promise<ApiResponse<{ updated: number }>> {
+  return apiPost('/api/resources/publisher-match/confirm/', payload);
+}
+
+export async function manualBulkPublisherMatch(payload: {
+  book_ids: number[];
+  publisher_id: number;
+}): Promise<ApiResponse<{ updated: number }>> {
+  return apiPost('/api/resources/publisher-match/manual-bulk/', payload);
+}
+
+export async function bulkArchiveBooks(bookIds: number[]): Promise<ApiResponse<{ updated: number }>> {
+  return apiPost('/api/resources/books/bulk-archive/', { book_ids: bookIds });
+}
+
+async function analyticsGet<T>(path: string, params?: Record<string, string | undefined>): Promise<ApiResponse<T>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '') searchParams.append(k, v);
+    });
+  }
+  const qs = searchParams.toString();
+  return apiGet<T>(`/api/resources/analytics/${path}${qs ? `?${qs}` : ''}`);
+}
+
+export const fetchAnalyticsSummary = (params?: Record<string, string | undefined>) =>
+  analyticsGet<Record<string, number>>('summary/', params);
+export const fetchAnalyticsActionItems = (params?: Record<string, string | undefined>) =>
+  analyticsGet<Record<string, number>>('action-items/', params);
+export const fetchAnalyticsTopBooks = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('top-books/', params);
+export const fetchAnalyticsPublishers = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('publishers/', params);
+export const fetchAnalyticsByLesson = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('by-lesson/', params);
+export const fetchAnalyticsIncomplete = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('incomplete/', params);
+export const fetchAnalyticsIntervention = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('intervention/', params);
+export const fetchAnalyticsPriority = (params?: Record<string, string | undefined>) =>
+  analyticsGet<Record<string, number>>('priority-summary/', params);
+export const fetchAnalyticsUsageTrend = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('usage-trend/', params);
+export const fetchAnalyticsAvgPerStudent = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('avg-per-student/', params);
+export const fetchAnalyticsByCoach = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('by-coach/', params);
+export const fetchAnalyticsMatrix = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any>('lesson-publisher-matrix/', params);
+export const fetchAnalyticsUsageRate = (params?: Record<string, string | undefined>) =>
+  analyticsGet<Record<string, number>>('usage-rate/', params);
+export const fetchAnalyticsIdle = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('idle/', params);
+export const fetchAnalyticsHotIncomplete = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('hot-incomplete/', params);
+export const fetchAnalyticsPoolGrowth = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('pool-growth/', params);
+export const fetchAnalyticsChurn = (params?: Record<string, string | undefined>) =>
+  analyticsGet<any[]>('churn/', params);
+export const fetchAnalyticsSearch = (q: string) =>
+  analyticsGet<any>('search/', { q });
+export const fetchAnalyticsBookStudents = (bookId: number) =>
+  analyticsGet<any[]>('book-students/', { book_id: String(bookId) });
+
+export async function downloadAnalyticsPdf(payload: {
+  report_type: string;
+} & Record<string, string | undefined>): Promise<Blob | null> {
+  try {
+    const res = await fetch('/api/resources/analytics/report-pdf/', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return null;
+    return await res.blob();
+  } catch {
+    return null;
+  }
 }
 
 export async function suggestBookKod(params: {
@@ -499,6 +661,11 @@ export async function fetchNextTestBatch(params: {
     searchParams.append('start', 'auto');
   }
   return apiGet<TestBatchPreview>(`/api/resources/contents/next-test-batch/?${searchParams.toString()}`);
+}
+
+/** Tek kitap detayı */
+export async function fetchBook(bookId: number): Promise<ApiResponse<ResourceBook>> {
+  return apiGet<ResourceBook>(`/api/resources/books/${bookId}/`);
 }
 
 /**
@@ -566,6 +733,67 @@ export async function duplicateContent(
   data?: { ad?: string }
 ): Promise<ApiResponse<ResourceContent>> {
   return apiPost(`/api/resources/contents/${id}/duplicate/`, data || {});
+}
+
+/** Seçili içerikleri hedef konuya kopyala veya taşı */
+export async function bulkTransferContents(payload: {
+  content_ids: number[];
+  target_topic_id: number;
+  mode: "copy" | "move";
+}): Promise<ApiResponse<{ mode: string; target_topic_id: number; ids: number[] }>> {
+  return apiPost("/api/resources/contents/bulk-transfer/", payload);
+}
+
+/** Seçili içerikleri toplu sil */
+export async function bulkDeleteContents(
+  contentIds: number[],
+): Promise<ApiResponse<{ deleted_count: number; ids: number[] }>> {
+  return apiPost("/api/resources/contents/bulk-delete/", { content_ids: contentIds });
+}
+
+/** Seçili içeriklere ön başlık ekle: "Ön Başlık/Test-13" veya "Ön Başlık 1/Test-13" */
+export async function bulkPrefixContentNames(payload: {
+  content_ids: number[];
+  prefix: string;
+  with_number?: boolean;
+  start_number?: number;
+}): Promise<ApiResponse<{ items: Array<{ id: number; ad: string }>; count: number }>> {
+  return apiPost("/api/resources/contents/bulk-prefix-name/", payload);
+}
+
+/** Seçili içerikleri yeni konuya taşı (konu seçimin altına eklenir) */
+export async function groupContentsIntoTopic(payload: {
+  content_ids: number[];
+  ad: string;
+  kod?: string;
+}): Promise<ApiResponse<{
+  id: number;
+  ad: string;
+  kod: string;
+  sira: number;
+  unit_id: number;
+  moved_ids: number[];
+}>> {
+  return apiPost("/api/resources/topics/group-contents/", payload);
+}
+
+/** Konuyu başka üniteye taşı veya kopyala (içerikler konuyla gelir) */
+export async function moveTopic(
+  topicId: number,
+  targetUnitId: number,
+  mode: "move" | "copy" = "move",
+): Promise<ApiResponse<{
+  id: number;
+  ad: string;
+  kod: string;
+  unit_id: number;
+  sira: number;
+  mode?: string;
+}>> {
+  return apiPost(`/api/resources/topics/${topicId}/move/`, {
+    target_unit_id: targetUnitId,
+    mode,
+  });
 }
 
 export type BookBulkImportResult = {

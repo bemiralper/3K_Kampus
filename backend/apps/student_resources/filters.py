@@ -53,7 +53,7 @@ def filter_resource_books_by_type_publisher(qs, resource_type=None, publisher=No
     Filter a ResourceBook queryset (or related lookup via prefix) by book type and publisher.
 
     resource_type matches book_type.kod (case-insensitive exact) or book_type.ad (icontains).
-    publisher matches yayinevi (icontains).
+    publisher matches publisher.ad / kisa_ad (icontains).
 
     prefix: optional relation prefix, e.g. 'resource_book__' for StudentResourceAssignment querysets.
     """
@@ -63,7 +63,10 @@ def filter_resource_books_by_type_publisher(qs, resource_type=None, publisher=No
             | Q(**{f'{prefix}book_type__ad__icontains': resource_type})
         )
     if publisher:
-        qs = qs.filter(**{f'{prefix}yayinevi__icontains': publisher})
+        qs = qs.filter(
+            Q(**{f'{prefix}publisher__ad__icontains': publisher})
+            | Q(**{f'{prefix}publisher__kisa_ad__icontains': publisher})
+        )
     return qs
 
 

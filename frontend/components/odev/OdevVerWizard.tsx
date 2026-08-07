@@ -472,6 +472,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       bookId: bookDetails.id, bookName: bookDetails.name || bookDetails.ad,
       lessonId: selectedResource.lesson, lessonName: selectedResource.lesson_name,
       questionCount: c.question_count, pageCount: c.page_count,
+      contentSira: c.sira ?? null,
       startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
     };
     setCart(prev => [...prev, item]);
@@ -504,6 +505,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           bookId: bookDetails.id, bookName: bookDetails.name || bookDetails.ad,
           lessonId: selectedResource.lesson, lessonName: selectedResource.lesson_name,
           questionCount: c.question_count, pageCount: c.page_count,
+          contentSira: c.sira ?? null,
           startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
         });
       }
@@ -531,6 +533,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           bookId: bookDetails.id, bookName: bookDetails.name || bookDetails.ad,
           lessonId: selectedResource.lesson, lessonName: selectedResource.lesson_name,
           questionCount: c.question_count, pageCount: c.page_count,
+          contentSira: c.sira ?? null,
           startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
         });
       }
@@ -557,6 +560,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         bookId: bookDetails.id, bookName: bookDetails.name || bookDetails.ad,
         lessonId: selectedResource.lesson, lessonName: selectedResource.lesson_name,
         questionCount: c.question_count, pageCount: c.page_count,
+        contentSira: c.sira ?? null,
         startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
       });
     }));
@@ -584,6 +588,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         bookId: bookDetails.id, bookName: bookDetails.name || bookDetails.ad,
         lessonId: selectedResource.lesson, lessonName: selectedResource.lesson_name,
         questionCount: c.question_count, pageCount: c.page_count,
+        contentSira: c.sira ?? null,
         startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
       });
     });
@@ -644,16 +649,22 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     // Backend status mapping: PUBLISHED → ASSIGNED
     const backendStatus: 'ASSIGNED' | 'DRAFT' = status === 'PUBLISHED' ? 'ASSIGNED' : status;
     try {
+      // Kitap → Ünite → Konu blokları (konu sınırları korunur; PDF hiyerarşisi bozulmaz)
       const grouped: Record<string, SelectedContent[]> = {};
-      cart.forEach(c => { const k = String(c.bookId); if (!grouped[k]) grouped[k] = []; grouped[k].push(c); });
-      const lessons = Object.entries(grouped).map(([bookId, contents]) => {
+      cart.forEach((c) => {
+        const k = `${c.bookId}:${c.unitId}:${c.topicId}`;
+        if (!grouped[k]) grouped[k] = [];
+        grouped[k].push(c);
+      });
+      const lessons = Object.entries(grouped).map(([, contents], lessonOrder) => {
         const first = contents[0];
         return {
-          resource_book: parseInt(bookId),
+          resource_book: first.bookId,
           topic_name: first.topicName,
           content_mode: 'TOPIC',
           notes: '',
-          tasks: contents.map(c => {
+          order: lessonOrder,
+          tasks: contents.map((c, taskOrder) => {
             const hist = taskHistory[c.contentId];
             const isCompletion = isIncompleteHistory(hist);
             const autoNote = isCompletion ? buildCompletionNote(hist) : '';
@@ -665,6 +676,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               question_count: c.questionCount || null,
               page_count: c.pageCount || (c.startPage && c.endPage ? c.endPage - c.startPage + 1 : null),
               is_required: true,
+              order: taskOrder,
               is_completion_task: isCompletion,
               previous_task_completion_percent: isCompletion
                 ? (hist.completion_status === 'PARTIAL' ? (hist.task_completion_percent ?? 0) : null)

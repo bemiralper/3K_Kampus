@@ -16,7 +16,14 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 from django.db import transaction
 
-from .models import BookType, ResourceBook, ResourceUnit, ResourceTopic, ResourceContent
+from .models import (
+    BookType,
+    ResourceBook,
+    ResourcePublisher,
+    ResourceUnit,
+    ResourceTopic,
+    ResourceContent,
+)
 from .scoping import (
     filter_books_for_request,
     filter_by_book_kurum_for_request,
@@ -33,12 +40,38 @@ from .utils import (
 )
 from .serializers import (
     BookTypeSerializer,
+    ResourcePublisherSerializer,
     ResourceBookSerializer, ResourceBookDetailSerializer,
     ResourceBookStructureSerializer, ResourceBookWriteSerializer,
     ResourceUnitSerializer, ResourceUnitDetailSerializer, ResourceUnitWriteSerializer,
     ResourceTopicSerializer, ResourceTopicDetailSerializer, ResourceTopicWriteSerializer,
     ResourceContentSerializer, ResourceContentWriteSerializer
 )
+
+
+def _content_copy_fields(source: ResourceContent) -> dict:
+    """İçerik kopyalama / taşıma için ortak alanlar (topic ve sira hariç)."""
+    return {
+        'ad': source.ad,
+        'content_type': source.content_type,
+        'question_count': source.question_count,
+        'difficulty': source.difficulty,
+        'page_start': source.page_start,
+        'page_end': source.page_end,
+        'estimated_minutes': source.estimated_minutes,
+        'video_url': source.video_url,
+        'video_duration': source.video_duration,
+        'aciklama': source.aciklama,
+        'aktif_mi': source.aktif_mi,
+    }
+
+
+def _ordered_contents_by_ids(queryset, content_ids: list[int]) -> list[ResourceContent]:
+    """İstek sırasını koruyarak içerikleri getir."""
+    order_map = {int(cid): idx for idx, cid in enumerate(content_ids)}
+    items = list(queryset.filter(pk__in=order_map.keys()))
+    items.sort(key=lambda c: order_map.get(c.id, 10**9))
+    return items
 
 
 class CsrfExemptSessionAuthentication(SessionAuthentication):
@@ -166,6 +199,163 @@ class BookTypeViewSet(viewsets.ModelViewSet):
         })
 
 
+class ResourcePublisherViewSet(viewsets.ModelViewSet):
+    """Yayınevi CRUD — kurum kapsamlı."""
+
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated, IsAuthenticatedResourceReadOrAdminWrite]
+    serializer_class = ResourcePublisherSerializer
+    queryset = ResourcePublisher.objects.all()
+
+    def get_queryset(self):
+        kurum_id = get_request_kurum_id(self.request)
+        if not kurum_id:
+            return ResourcePublisher.objects.none()
+        qs = ResourcePublisher.objects.filter(kurum_id=kurum_id)
+        aktif = self.request.query_params.get('aktif')
+        search = self.request.query_params.get('search')
+        if aktif is not None:
+            qs = qs.filter(aktif_mi=aktif.lower() == 'true')
+        if search:
+            qs = qs.filter(
+                Q(ad__icontains=search)
+                | Q(kisa_ad__icontains=search)
+                | Q(eslesme_anahtarlari__icontains=search)
+            )
+
+        if self.action == 'list':
+            from apps.student_resources.models import StudentResourceAssignment
+            usage_sq = (
+                StudentResourceAssignment.objects.filter(
+                    is_active=True,
+                    resource_book__publisher_id=OuterRef('pk'),
+                    resource_book__kurum_id=kurum_id,
+                )
+                .order_by()
+                .values('resource_book__publisher_id')
+                .annotate(c=Count('id'))
+                .values('c')[:1]
+            )
+            used_sq = (
+                StudentResourceAssignment.objects.filter(
+                    is_active=True,
+                    resource_book__publisher_id=OuterRef('pk'),
+                    resource_book__kurum_id=kurum_id,
+                )
+                .order_by()
+                .values('resource_book__publisher_id')
+                .annotate(c=Count('resource_book_id', distinct=True))
+                .values('c')[:1]
+            )
+            qs = qs.annotate(
+                book_count=Count('books', distinct=True),
+                used_book_count=Coalesce(
+                    Subquery(used_sq, output_field=IntegerField()),
+                    Value(0),
+                ),
+                student_usage_count=Coalesce(
+                    Subquery(usage_sq, output_field=IntegerField()),
+                    Value(0),
+                ),
+            )
+        return qs.order_by('sira', 'ad')
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        return Response({'success': True, 'data': response.data})
+
+    def retrieve(self, request, *args, **kwargs):
+        response = super().retrieve(request, *args, **kwargs)
+        return Response({'success': True, 'data': response.data})
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(
+            {'success': True, 'data': serializer.data, 'message': 'Yayınevi oluşturuldu.'},
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response({'success': True, 'data': serializer.data, 'message': 'Yayınevi güncellendi.'})
+
+    def destroy(self, request, *args, **kwargs):
+        """Kalıcı silme — bağlı kitap varsa engelle ve kitap listesini döndür."""
+        instance = self.get_object()
+        books_qs = instance.books.order_by('ad').values('id', 'ad', 'kod')
+        book_count = books_qs.count()
+        if book_count:
+            books = list(books_qs[:50])
+            return Response(
+                {
+                    'success': False,
+                    'error': (
+                        f'Bu yayınevi silinemez: {book_count} kitap bağlı. '
+                        'Önce kitapların yayınevini değiştirin veya eşleştirmeden kaldırın.'
+                    ),
+                    'data': {
+                        'book_count': book_count,
+                        'books': books,
+                    },
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        instance.delete()
+        return Response({'success': True, 'message': 'Yayınevi silindi.'})
+
+    @action(detail=True, methods=['get'], url_path='books')
+    def books(self, request, pk=None):
+        """Yayınevine bağlı kitap listesi."""
+        publisher = self.get_object()
+        books = list(
+            publisher.books.order_by('ad').values('id', 'ad', 'kod', 'aktif_mi')[:200]
+        )
+        return Response({
+            'success': True,
+            'data': {'book_count': publisher.books.count(), 'books': books},
+        })
+
+    @action(detail=True, methods=['post'], url_path='upload-logo')
+    def upload_logo(self, request, pk=None):
+        from apps.resources.application.kapak import process_kapak_image, validate_kapak_upload
+
+        publisher = self.get_object()
+        file = request.FILES.get('logo') or request.FILES.get('file')
+        if not file:
+            return Response(
+                {'success': False, 'error': 'Logo dosyası gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        err = validate_kapak_upload(file)
+        if err:
+            return Response(
+                {'success': False, 'error': err},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            processed = process_kapak_image(file)
+        except Exception as exc:
+            return Response(
+                {'success': False, 'error': f'Logo işlenemedi: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if publisher.logo:
+            publisher.logo.delete(save=False)
+        publisher.logo.save(f'publisher_{publisher.id}_logo.jpg', processed, save=True)
+        publisher.refresh_from_db()
+        return Response({
+            'success': True,
+            'data': ResourcePublisherSerializer(publisher, context={'request': request}).data,
+            'message': 'Logo yüklendi.',
+        })
+
+
 class ResourceBookViewSet(viewsets.ModelViewSet):
     """
     Kaynak Kitap API ViewSet
@@ -181,7 +371,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
     authentication_classes = [CsrfExemptSessionAuthentication]
     permission_classes = [IsAuthenticated, IsAuthenticatedResourceReadOrAdminWrite]
     queryset = ResourceBook.objects.select_related(
-        'ders', 'sinif_seviyesi', 'book_type', 'kurum', 'sube'
+        'ders', 'sinif_seviyesi', 'book_type', 'kurum', 'sube', 'publisher'
     ).prefetch_related('sinif_seviyeleri')
     
     def get_serializer_class(self):
@@ -205,6 +395,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
         sinif_id = self.request.query_params.get('sinif_seviyesi')
         book_type_id = self.request.query_params.get('book_type')
         yayin_yili = self.request.query_params.get('yayin_yili')
+        publisher_id = self.request.query_params.get('publisher')
         aktif = self.request.query_params.get('aktif')
         icerik_tamamlandi = self.request.query_params.get('icerik_tamamlandi')
         search = self.request.query_params.get('search')
@@ -219,6 +410,11 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(book_type_id=book_type_id)
         if yayin_yili:
             queryset = queryset.filter(yayin_yili=yayin_yili)
+        if publisher_id:
+            if str(publisher_id).lower() in ('null', 'none', '0', 'empty'):
+                queryset = queryset.filter(publisher__isnull=True)
+            else:
+                queryset = queryset.filter(publisher_id=publisher_id)
         if aktif is not None:
             queryset = queryset.filter(aktif_mi=aktif.lower() == 'true')
         if icerik_tamamlandi is not None:
@@ -446,6 +642,26 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
             ),
         })
 
+    @action(detail=False, methods=['post'], url_path='bulk-archive')
+    def bulk_archive(self, request):
+        """Seçilen kitapları pasife al (arşiv)."""
+        book_ids = request.data.get('book_ids') or []
+        if not isinstance(book_ids, list) or not book_ids:
+            return Response(
+                {'success': False, 'error': 'book_ids gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        qs = filter_books_for_request(
+            ResourceBook.objects.filter(pk__in=book_ids),
+            request,
+        )
+        updated = qs.update(aktif_mi=False)
+        return Response({
+            'success': True,
+            'data': {'updated': updated},
+            'message': f'{updated} kitap arşivlendi.',
+        })
+
     @action(detail=True, methods=['get'])
     def structure(self, request, pk=None):
         """
@@ -527,7 +743,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
                 book_type=source.book_type,
                 ders=source.ders,
                 sinif_seviyesi=source.sinif_seviyesi,
-                yayinevi=source.yayinevi,
+                publisher=source.publisher,
                 yazar=source.yazar,
                 yayin_yili=source.yayin_yili,
                 toplam_sayfa=source.toplam_sayfa,
@@ -1097,6 +1313,229 @@ class ResourceTopicViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @action(detail=True, methods=['post'], url_path='move')
+    def move(self, request, pk=None):
+        """
+        Konuyu (içerikleriyle) başka üniteye taşı veya kopyala.
+        POST /api/resources/topics/{id}/move/
+        Body: { "target_unit_id": N, "mode": "move"|"copy" }
+        """
+        mode = (request.data.get('mode') or 'move').strip().lower()
+        if mode not in ('move', 'copy'):
+            return Response(
+                {'success': False, 'error': 'mode "move" veya "copy" olmalı.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        topic = (
+            self.get_queryset()
+            .select_related('unit', 'unit__book')
+            .prefetch_related(
+                Prefetch(
+                    'contents',
+                    queryset=ResourceContent.objects.order_by('sira'),
+                )
+            )
+            .filter(pk=pk)
+            .first()
+        )
+        if not topic:
+            return Response(
+                {'success': False, 'error': 'Konu bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            target_unit_id = int(request.data.get('target_unit_id'))
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'target_unit_id gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if mode == 'move' and target_unit_id == topic.unit_id:
+            return Response(
+                {'success': False, 'error': 'Konu zaten bu ünitede.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_unit = filter_by_book_kurum_for_request(
+            ResourceUnit.objects.filter(pk=target_unit_id).select_related('book'),
+            request,
+        ).first()
+        if not target_unit:
+            return Response(
+                {'success': False, 'error': 'Hedef ünite bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if target_unit.book_id != topic.unit.book_id:
+            return Response(
+                {'success': False, 'error': 'Konu yalnızca aynı kitap içindeki üniteye taşınabilir / kopyalanabilir.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        max_sira = (
+            ResourceTopic.objects.filter(unit=target_unit)
+            .aggregate(m=Max('sira'))
+            .get('m')
+            or 0
+        )
+
+        with transaction.atomic():
+            if mode == 'copy':
+                new_kod = topic.kod
+                if ResourceTopic.objects.filter(unit=target_unit, kod=new_kod).exists():
+                    new_kod = generate_topic_kod(target_unit)
+                new_topic = ResourceTopic.objects.create(
+                    unit=target_unit,
+                    ad=topic.ad,
+                    kod=new_kod,
+                    sira=max_sira + 1,
+                    aciklama=topic.aciklama,
+                    aktif_mi=topic.aktif_mi,
+                )
+                content_count = 0
+                for content in topic.contents.all():
+                    ResourceContent.objects.create(
+                        topic=new_topic,
+                        sira=content.sira,
+                        **_content_copy_fields(content),
+                    )
+                    content_count += 1
+                result_topic = new_topic
+                message = (
+                    f'Konu "{target_unit.ad}" ünitesine kopyalandı'
+                    f' ({content_count} içerik).'
+                )
+                status_code = status.HTTP_201_CREATED
+            else:
+                new_kod = topic.kod
+                if ResourceTopic.objects.filter(unit=target_unit, kod=new_kod).exclude(pk=topic.pk).exists():
+                    new_kod = generate_topic_kod(target_unit)
+                topic.unit = target_unit
+                topic.kod = new_kod
+                topic.sira = max_sira + 1
+                topic.save(update_fields=['unit', 'kod', 'sira', 'updated_at'])
+                result_topic = topic
+                message = f'Konu "{target_unit.ad}" ünitesine taşındı.'
+                status_code = status.HTTP_200_OK
+
+        return Response({
+            'success': True,
+            'data': {
+                'id': result_topic.id,
+                'ad': result_topic.ad,
+                'kod': result_topic.kod,
+                'unit_id': target_unit.id,
+                'sira': result_topic.sira,
+                'mode': mode,
+            },
+            'message': message,
+        }, status=status_code)
+
+    @action(detail=False, methods=['post'], url_path='group-contents')
+    def group_contents(self, request):
+        """
+        Seçili içerikleri yeni konuya taşı; yeni konu seçimin yapıldığı
+        (en küçük sira'lı) konunun hemen altına eklenir.
+        POST /api/resources/topics/group-contents/
+        Body: { "content_ids": [...], "ad": "...", "kod": "" }
+        """
+        raw_ids = request.data.get('content_ids') or []
+        try:
+            content_ids = [int(x) for x in raw_ids]
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'Geçersiz content_ids.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not content_ids:
+            return Response(
+                {'success': False, 'error': 'content_ids gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        new_ad = (request.data.get('ad') or '').strip()
+        if not new_ad:
+            return Response(
+                {'success': False, 'error': 'Konu adı zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        contents_qs = filter_by_book_kurum_for_request(
+            ResourceContent.objects.filter(pk__in=content_ids).select_related(
+                'topic', 'topic__unit', 'topic__unit__book'
+            ),
+            request,
+            kurum_lookup='topic__unit__book__kurum_id',
+        )
+        contents = _ordered_contents_by_ids(contents_qs, content_ids)
+        if len(contents) != len(set(content_ids)):
+            return Response(
+                {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        unit_ids = {c.topic.unit_id for c in contents}
+        if len(unit_ids) != 1:
+            return Response(
+                {'success': False, 'error': 'Seçilen içerikler aynı ünite içinde olmalıdır.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        unit = contents[0].topic.unit
+
+        # Önceki konu = seçilen içeriklerin konularından en küçük sira'lı
+        topics = sorted(
+            {c.topic_id: c.topic for c in contents}.values(),
+            key=lambda t: (t.sira, t.id),
+        )
+        after_topic = topics[0]
+
+        new_kod = (request.data.get('kod') or '').strip() or generate_topic_kod(unit)
+        if ResourceTopic.objects.filter(unit=unit, kod=new_kod).exists():
+            return Response(
+                {'success': False, 'error': f'Bu ünitede "{new_kod}" kodu zaten var.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            ResourceTopic.objects.filter(
+                unit=unit,
+                sira__gte=after_topic.sira + 1,
+            ).update(sira=F('sira') + 1)
+
+            new_topic = ResourceTopic.objects.create(
+                unit=unit,
+                ad=new_ad,
+                kod=new_kod,
+                sira=after_topic.sira + 1,
+                aktif_mi=True,
+            )
+
+            moved_ids = []
+            for index, content in enumerate(contents, start=1):
+                content.topic = new_topic
+                content.sira = index
+                content.save(update_fields=['topic', 'sira', 'updated_at'])
+                moved_ids.append(content.id)
+
+        return Response(
+            {
+                'success': True,
+                'data': {
+                    'id': new_topic.id,
+                    'ad': new_topic.ad,
+                    'kod': new_topic.kod,
+                    'sira': new_topic.sira,
+                    'unit_id': unit.id,
+                    'moved_ids': moved_ids,
+                },
+                'message': f'{len(moved_ids)} içerik yeni konuya taşındı.',
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class ResourceContentViewSet(viewsets.ModelViewSet):
     """
@@ -1292,6 +1731,231 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
             return Response({'success': False, 'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({'success': True, 'data': batch})
+
+    @action(detail=False, methods=['post'], url_path='bulk-transfer')
+    def bulk_transfer(self, request):
+        """
+        Seçili içerikleri başka konuya kopyala veya taşı.
+        POST /api/resources/contents/bulk-transfer/
+        Body: { "content_ids": [...], "target_topic_id": N, "mode": "copy"|"move" }
+        """
+        raw_ids = request.data.get('content_ids') or []
+        try:
+            content_ids = [int(x) for x in raw_ids]
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'Geçersiz content_ids.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not content_ids:
+            return Response(
+                {'success': False, 'error': 'content_ids gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        mode = (request.data.get('mode') or '').strip().lower()
+        if mode not in ('copy', 'move'):
+            return Response(
+                {'success': False, 'error': 'mode "copy" veya "move" olmalı.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            target_topic_id = int(request.data.get('target_topic_id'))
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'target_topic_id gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_topic = filter_by_book_kurum_for_request(
+            ResourceTopic.objects.filter(pk=target_topic_id).select_related('unit', 'unit__book'),
+            request,
+            kurum_lookup='unit__book__kurum_id',
+        ).first()
+        if not target_topic:
+            return Response(
+                {'success': False, 'error': 'Hedef konu bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        contents = _ordered_contents_by_ids(
+            self.get_queryset().select_related('topic', 'topic__unit', 'topic__unit__book'),
+            content_ids,
+        )
+        if len(contents) != len(set(content_ids)):
+            return Response(
+                {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        book_ids = {c.topic.unit.book_id for c in contents}
+        book_ids.add(target_topic.unit.book_id)
+        if len(book_ids) != 1:
+            return Response(
+                {'success': False, 'error': 'İçerikler ve hedef konu aynı kitapta olmalıdır.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            max_sira = (
+                ResourceContent.objects.filter(topic=target_topic)
+                .aggregate(m=Max('sira'))
+                .get('m')
+                or 0
+            )
+            result_ids = []
+            if mode == 'copy':
+                for index, source in enumerate(contents, start=1):
+                    created = ResourceContent.objects.create(
+                        topic=target_topic,
+                        sira=max_sira + index,
+                        **_content_copy_fields(source),
+                    )
+                    result_ids.append(created.id)
+            else:
+                for index, source in enumerate(contents, start=1):
+                    source.topic = target_topic
+                    source.sira = max_sira + index
+                    source.save(update_fields=['topic', 'sira', 'updated_at'])
+                    result_ids.append(source.id)
+
+        verb = 'kopyalandı' if mode == 'copy' else 'taşındı'
+        return Response({
+            'success': True,
+            'data': {
+                'mode': mode,
+                'target_topic_id': target_topic.id,
+                'ids': result_ids,
+            },
+            'message': f'{len(result_ids)} içerik {verb}.',
+        })
+
+    @action(detail=False, methods=['post'], url_path='bulk-delete')
+    def bulk_delete(self, request):
+        """
+        Seçili içerikleri toplu sil.
+        POST /api/resources/contents/bulk-delete/
+        Body: { "content_ids": [...] }
+        """
+        raw_ids = request.data.get('content_ids') or []
+        try:
+            content_ids = [int(x) for x in raw_ids]
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'Geçersiz content_ids.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not content_ids:
+            return Response(
+                {'success': False, 'error': 'content_ids gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        qs = self.get_queryset().filter(pk__in=content_ids)
+        found_ids = list(qs.values_list('id', flat=True))
+        if not found_ids:
+            return Response(
+                {'success': False, 'error': 'Silinecek içerik bulunamadı.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            deleted_count, _ = qs.delete()
+
+        return Response({
+            'success': True,
+            'data': {'deleted_count': deleted_count, 'ids': found_ids},
+            'message': f'{deleted_count} içerik silindi.',
+        })
+
+    @action(detail=False, methods=['post'], url_path='bulk-prefix-name')
+    def bulk_prefix_name(self, request):
+        """
+        Seçili içeriklere ön başlık ekle.
+        POST /api/resources/contents/bulk-prefix-name/
+        Body: {
+          "content_ids": [...],
+          "prefix": "Cümlede Anlam",
+          "with_number": false,
+          "start_number": 1
+        }
+        Sonuç: "Cümlede Anlam/Test-13" veya "Cümlede Anlam 1/Test-13"
+        Mevcut addaki son "/" sonrası kısım korunur (yeniden ön başlık uygulanabilir).
+        """
+        raw_ids = request.data.get('content_ids') or []
+        try:
+            content_ids = [int(x) for x in raw_ids]
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'Geçersiz content_ids.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not content_ids:
+            return Response(
+                {'success': False, 'error': 'content_ids gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        prefix = (request.data.get('prefix') or '').strip()
+        if not prefix:
+            return Response(
+                {'success': False, 'error': 'Ön başlık zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if '/' in prefix:
+            return Response(
+                {'success': False, 'error': 'Ön başlıkta "/" kullanılamaz.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with_number = bool(request.data.get('with_number'))
+        try:
+            start_number = int(request.data.get('start_number') or 1)
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'Geçersiz başlangıç numarası.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if with_number and start_number < 0:
+            return Response(
+                {'success': False, 'error': 'Başlangıç numarası 0 veya pozitif olmalı.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        contents = _ordered_contents_by_ids(self.get_queryset(), content_ids)
+        if len(contents) != len(set(content_ids)):
+            return Response(
+                {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        updated = []
+        with transaction.atomic():
+            for index, content in enumerate(contents):
+                base = (content.ad or '').strip()
+                if '/' in base:
+                    base = base.rsplit('/', 1)[-1].strip()
+                if not base:
+                    base = content.ad or 'İçerik'
+                if with_number:
+                    new_ad = f'{prefix} {start_number + index}/{base}'
+                else:
+                    new_ad = f'{prefix}/{base}'
+                if len(new_ad) > 200:
+                    return Response(
+                        {'success': False, 'error': f'Ad çok uzun: {new_ad[:60]}…'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                content.ad = new_ad
+                content.save(update_fields=['ad', 'updated_at'])
+                updated.append({'id': content.id, 'ad': new_ad})
+
+        return Response({
+            'success': True,
+            'data': {'items': updated, 'count': len(updated)},
+            'message': f'{len(updated)} içeriğe ön başlık eklendi.',
+        })
 
     @action(detail=False, methods=['post'])
     def reorder(self, request):

@@ -1,5 +1,12 @@
 from django.contrib import admin
-from .models import BookType, ResourceBook, ResourceUnit, ResourceTopic, ResourceContent
+from .models import (
+    BookType,
+    ResourcePublisher,
+    ResourceBook,
+    ResourceUnit,
+    ResourceTopic,
+    ResourceContent,
+)
 
 
 @admin.register(BookType)
@@ -7,6 +14,14 @@ class BookTypeAdmin(admin.ModelAdmin):
     list_display = ['ad', 'kod', 'renk', 'ikon', 'sira', 'aktif_mi']
     list_filter = ['aktif_mi']
     search_fields = ['ad', 'kod']
+    ordering = ['sira', 'ad']
+
+
+@admin.register(ResourcePublisher)
+class ResourcePublisherAdmin(admin.ModelAdmin):
+    list_display = ['ad', 'kisa_ad', 'kurum', 'aktif_mi', 'sira']
+    list_filter = ['aktif_mi', 'kurum']
+    search_fields = ['ad', 'kisa_ad', 'eslesme_anahtarlari']
     ordering = ['sira', 'ad']
 
 
@@ -32,9 +47,9 @@ class ResourceUnitInline(admin.TabularInline):
 
 @admin.register(ResourceBook)
 class ResourceBookAdmin(admin.ModelAdmin):
-    list_display = ['ad', 'kod', 'book_type', 'ders', 'sinif_seviyesi', 'yayinevi', 'aktif_mi']
-    list_filter = ['book_type', 'ders', 'sinif_seviyesi', 'aktif_mi']
-    search_fields = ['ad', 'kod', 'yayinevi', 'yazar']
+    list_display = ['ad', 'kod', 'book_type', 'ders', 'sinif_seviyesi', 'publisher', 'aktif_mi']
+    list_filter = ['book_type', 'ders', 'sinif_seviyesi', 'publisher', 'aktif_mi']
+    search_fields = ['ad', 'kod', 'publisher__ad', 'yazar']
     inlines = [ResourceUnitInline]
     ordering = ['sira', 'ad']
 
