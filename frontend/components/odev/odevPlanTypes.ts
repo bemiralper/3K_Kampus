@@ -37,7 +37,7 @@ export interface PlanBookGroup {
   totalPages: number;
 }
 
-/** @deprecated Ders sarmalayıcı; yeni kod PlanBookGroup kullanır */
+/** Ders → Kitap → Ünite → Konu → Test */
 export interface PlanLessonGroup {
   lessonId: number;
   lessonName: string;
@@ -88,50 +88,117 @@ function sortTopicItems(items: PlanTopicGroup["items"]): void {
   });
 }
 
-export function buildPlanGroupsFromAssignment(assignment: ManualAssignment): PlanBookGroup[] {
-  const bookMap = new Map<number, PlanBookGroup>();
-  const books: PlanBookGroup[] = [];
+function sortAllTopics(groups: PlanLessonGroup[]): void {
+  for (const lesson of groups) {
+    for (const book of lesson.books) {
+      for (const unit of book.units) {
+        for (const topic of unit.topics) {
+          sortTopicItems(topic.items);
+        }
+      }
+    }
+  }
+}
+
+function ensureBook(
+  lesson: PlanLessonGroup,
+  bookId: number,
+  bookName: string,
+): PlanBookGroup {
+  let book = lesson.books.find((b) => b.bookId === bookId);
+  if (!book) {
+    book = { bookId, bookName, units: [], totalQuestions: 0, totalPages: 0 };
+    lesson.books.push(book);
+  }
+  return book;
+}
+
+function pushTaskToBook(
+  book: PlanBookGroup,
+  opts: {
+    unitId: number;
+    unitName: string;
+    topicId: number;
+    topicName: string;
+    item: PlanContentItemView;
+    note: string;
+  },
+): void {
+  book.totalQuestions += opts.item.questionCount || 0;
+  book.totalPages += opts.item.pageCount || 0;
+
+  const unitName = (opts.unitName || "").trim() || "Ünite";
+  let unit = book.units.find((u) =>
+    opts.unitId ? u.unitId === opts.unitId : u.unitName === unitName,
+  );
+  if (!unit) {
+    unit = {
+      unitId: opts.unitId || book.units.length + 1,
+      unitName,
+      topics: [],
+    };
+    book.units.push(unit);
+  }
+
+  let topic = unit.topics.find((t) =>
+    opts.topicId ? t.topicId === opts.topicId : t.topicName === opts.topicName,
+  );
+  if (!topic) {
+    topic = {
+      topicId: opts.topicId || unit.topics.length + 1,
+      topicName: opts.topicName,
+      items: [],
+    };
+    unit.topics.push(topic);
+  }
+
+  topic.items.push({ content: opts.item, note: opts.note });
+}
+
+export function buildPlanGroupsFromAssignment(assignment: ManualAssignment): PlanLessonGroup[] {
+  const map = new Map<string, PlanLessonGroup>();
+  const lessons: PlanLessonGroup[] = [];
 
   for (const lb of assignment.lessons || []) {
+    const lessonId = lb.lesson ?? 0;
+    const lessonName = (lb.lesson_name || lb.topic_name || "Ders").trim() || "Ders";
+    const groupKey = `${lessonId}:${lessonName}`;
+
+    let lesson = map.get(groupKey);
+    if (!lesson) {
+      lesson = {
+        lessonId,
+        lessonName,
+        books: [],
+        totalQuestions: 0,
+        totalPages: 0,
+      };
+      map.set(groupKey, lesson);
+      lessons.push(lesson);
+    }
+
     const bookId = lb.resource_book ?? 0;
     const bookName = (lb.resource_book_name || "Kitap").trim() || "Kitap";
-
-    let book = bookMap.get(bookId);
-    if (!book) {
-      book = { bookId, bookName, units: [], totalQuestions: 0, totalPages: 0 };
-      bookMap.set(bookId, book);
-      books.push(book);
-    }
+    const book = ensureBook(lesson, bookId, bookName);
 
     for (const task of lb.tasks || []) {
       const q = task.question_count || 0;
       const p = task.page_count || 0;
-      book.totalQuestions += q;
-      book.totalPages += p;
+      lesson.totalQuestions += q;
+      lesson.totalPages += p;
 
       const topicName = (task.content_topic_name || lb.topic_name || "Konu").trim() || "Konu";
       const unitName = (task.content_unit_name || "").trim() || "Ünite";
       const topicId = task.content_topic_id ?? lb.id;
       const unitId = task.content_unit_id ?? 0;
 
-      let unit = book.units.find((u) =>
-        unitId ? u.unitId === unitId : u.unitName === unitName,
-      );
-      if (!unit) {
-        unit = { unitId: unitId || book.units.length + 1, unitName, topics: [] };
-        book.units.push(unit);
-      }
-
-      let topic = unit.topics.find((t) =>
-        topicId ? t.topicId === topicId : t.topicName === topicName,
-      );
-      if (!topic) {
-        topic = { topicId: topicId || unit.topics.length + 1, topicName, items: [] };
-        unit.topics.push(topic);
-      }
-
-      topic.items.push({
-        content: {
+      pushTaskToBook(book, {
+        unitId,
+        unitName,
+        topicId,
+        topicName,
+        note: task.description || "",
+        item: {
           id: task.id,
           contentId: task.content_id ?? (typeof task.content === "number" ? task.content : task.id),
           contentName: task.title,
@@ -143,23 +210,15 @@ export function buildPlanGroupsFromAssignment(assignment: ManualAssignment): Pla
           previousCompletionPercent: task.previous_task_completion_percent ?? null,
           previousAssignmentTitle: task.previous_assignment_title || "",
         },
-        note: task.description || "",
       });
     }
   }
 
-  for (const book of books) {
-    for (const unit of book.units) {
-      for (const topic of unit.topics) {
-        sortTopicItems(topic.items);
-      }
-    }
-  }
-
-  return books;
+  sortAllTopics(lessons);
+  return lessons;
 }
 
-/** Seçili içeriklerden (önizleme) Kitap → Ünite → Konu → Test */
+/** Seçili içeriklerden (önizleme) Ders → Kitap → Ünite → Konu → Test */
 export function buildPlanGroupsFromSelected(
   items: Array<{
     id: number;
@@ -172,82 +231,79 @@ export function buildPlanGroupsFromSelected(
     unitName: string;
     bookId: number;
     bookName: string;
+    lessonId: number;
+    lessonName: string;
     questionCount: number | null;
     pageCount: number | null;
     contentSira?: number | null;
   }>,
   contentNotes: Record<number, string> = {},
-): PlanBookGroup[] {
-  const bookMap = new Map<number, PlanBookGroup>();
-  const books: PlanBookGroup[] = [];
+): PlanLessonGroup[] {
+  const map = new Map<number, PlanLessonGroup>();
+  const lessons: PlanLessonGroup[] = [];
 
   for (const item of items) {
-    let book = bookMap.get(item.bookId);
-    if (!book) {
-      book = {
-        bookId: item.bookId,
-        bookName: item.bookName,
-        units: [],
+    let lesson = map.get(item.lessonId);
+    if (!lesson) {
+      lesson = {
+        lessonId: item.lessonId,
+        lessonName: item.lessonName || "Ders",
+        books: [],
         totalQuestions: 0,
         totalPages: 0,
       };
-      bookMap.set(item.bookId, book);
-      books.push(book);
-    }
-    book.totalQuestions += item.questionCount || 0;
-    book.totalPages += item.pageCount || 0;
-
-    const unitName = (item.unitName || "").trim() || "Ünite";
-    let unit = book.units.find((u) =>
-      item.unitId ? u.unitId === item.unitId : u.unitName === unitName,
-    );
-    if (!unit) {
-      unit = { unitId: item.unitId || book.units.length + 1, unitName, topics: [] };
-      book.units.push(unit);
+      map.set(item.lessonId, lesson);
+      lessons.push(lesson);
     }
 
-    let topic = unit.topics.find((t) => t.topicId === item.topicId);
-    if (!topic) {
-      topic = { topicId: item.topicId, topicName: item.topicName, items: [] };
-      unit.topics.push(topic);
-    }
+    const q = item.questionCount || 0;
+    const p = item.pageCount || 0;
+    lesson.totalQuestions += q;
+    lesson.totalPages += p;
 
-    topic.items.push({
-      content: {
+    const book = ensureBook(lesson, item.bookId, item.bookName);
+    pushTaskToBook(book, {
+      unitId: item.unitId,
+      unitName: item.unitName,
+      topicId: item.topicId,
+      topicName: item.topicName,
+      note: contentNotes[item.id] || "",
+      item: {
         id: item.id,
         contentId: item.contentId,
         contentName: item.contentName,
         contentType: item.contentType,
-        questionCount: item.questionCount || 0,
-        pageCount: item.pageCount || 0,
+        questionCount: q,
+        pageCount: p,
         contentSira: item.contentSira ?? null,
       },
-      note: contentNotes[item.id] || "",
     });
   }
 
-  for (const book of books) {
-    for (const unit of book.units) {
-      for (const topic of unit.topics) {
-        sortTopicItems(topic.items);
-      }
-    }
-  }
-
-  return books;
+  sortAllTopics(lessons);
+  return lessons;
 }
 
-export function countPlanItems(groups: PlanBookGroup[]): number {
+export function countPlanItems(groups: PlanLessonGroup[]): number {
   return groups.reduce(
-    (sum, book) =>
+    (sum, lesson) =>
       sum +
-      book.units.reduce(
-        (uSum, unit) =>
-          uSum + unit.topics.reduce((tSum, topic) => tSum + topic.items.length, 0),
+      lesson.books.reduce(
+        (bSum, book) =>
+          bSum +
+          book.units.reduce(
+            (uSum, unit) =>
+              uSum + unit.topics.reduce((tSum, topic) => tSum + topic.items.length, 0),
+            0,
+          ),
         0,
       ),
     0,
   );
+}
+
+export function countPlanBooks(groups: PlanLessonGroup[]): number {
+  return groups.reduce((sum, lesson) => sum + lesson.books.length, 0);
 }
 
 export type { ContentTaskHistory };

@@ -42,7 +42,7 @@ export default function PrintPreview({
     ? new Date(dueDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
     : '';
 
-  /* ─── Gruplama: Kitap → Ünite → Konu → Test ─── */
+  /* ─── Gruplama: Ders → Kitap → Ünite → Konu → Test ─── */
   const cartGroups = useMemo(
     () => buildPlanGroupsFromSelected(items, contentNotes),
     [items, contentNotes],

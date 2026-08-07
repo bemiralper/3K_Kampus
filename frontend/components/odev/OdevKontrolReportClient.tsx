@@ -8,6 +8,8 @@ import { downloadAssignmentServerPdf, fetchAssignmentReport } from "@/lib/resour
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
 import { MetaCol, assignmentTypeLabel } from "@/components/odev/odevPdfMeta";
+import { displayTestLabel, splitColumnMajor } from "@/components/odev/odevPlanTypes";
+
 /** Backend completion_utils ile aynı mantık */
 function effectiveTaskCompletionPercent(task: {
   completion_status: string;
@@ -48,11 +50,19 @@ interface AssignmentTask {
   is_completion_task: boolean;
   previous_task_completion_percent: number | null;
   previous_assignment_title: string;
+  content_topic_name?: string | null;
+  content_topic_id?: number | null;
+  content_unit_name?: string | null;
+  content_unit_id?: number | null;
+  content_sira?: number | null;
+  order?: number;
 }
 
 interface AssignmentLesson {
   id: number;
+  lesson?: number | null;
   lesson_name: string;
+  resource_book?: number | null;
   resource_book_name: string | null;
   content_mode: string;
   topic_name: string;
@@ -183,6 +193,190 @@ const getCompletionBadge = (cs: string) => {
     default: return { bg: "#f1f5f9", text: "#94a3b8", label: "Beklemede" };
   }
 };
+
+function pctColor(pct: number): string {
+  if (pct >= 75) return "#16a34a";
+  if (pct >= 50) return "#d97706";
+  return "#dc2626";
+}
+
+/** Plan PDF ile aynı hiyerarşi: Kitap → Ünite → Konu → Test (+ değerlendirme) */
+function ReportTaskRow({ task, topicName }: { task: AssignmentTask; topicName: string }) {
+  const badge = getCompletionBadge(task.completion_status);
+  const effPct = effectiveTaskCompletionPercent(task);
+  const label = displayTestLabel(task.title, topicName);
+  const typeKey = task.task_type || "";
+  const qText = task.question_count
+    ? `${task.completed_question_count ?? 0}/${task.question_count} Soru`
+    : task.page_count
+      ? `${task.completed_page_count ?? 0}/${task.page_count} Sayfa`
+      : "";
+
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 8,
+      padding: "6px 10px",
+      minHeight: 34,
+      borderBottom: "1px solid #f0f2f5",
+      fontSize: 11,
+      color: "#172b4c",
+      background: task.is_completion_task ? "#eff6ff" : "#fff",
+      borderLeft: task.is_completion_task ? "3px solid #3b82f6" : "none",
+    }}>
+      <span style={{
+        display: "inline-flex",
+        width: 12,
+        height: 12,
+        marginTop: 2,
+        borderRadius: 3,
+        flexShrink: 0,
+        background: task.completion_status === "DONE" ? "#16a34a"
+          : task.completion_status === "PARTIAL" ? "#d97706"
+            : task.completion_status === "NOT_DONE" ? "#dc2626" : "#e2e8f0",
+        border: task.completion_status === "PENDING" || !task.completion_status
+          ? "1.5px solid #cbd5e1" : "none",
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontWeight: 500,
+          lineHeight: 1.3,
+          wordBreak: "break-word",
+          overflowWrap: "anywhere",
+          whiteSpace: "normal",
+        }}>
+          {label}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", marginTop: 3 }}>
+          <span style={{
+            padding: "1px 7px", borderRadius: 10, fontSize: 9, fontWeight: 600,
+            background: badge.bg, color: badge.text,
+          }}>
+            {badge.label}
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: pctColor(effPct) }}>
+            %{effPct}
+          </span>
+          {typeKey && typeKey !== "SOLVE_TEST" && typeKey !== "TEST_SET" && (
+            <span style={{ fontSize: 8, color: "#94a3b8" }}>{assignmentTypeLabel(typeKey)}</span>
+          )}
+        </div>
+        {task.is_completion_task && (
+          <div style={{ fontSize: 8, color: "#1d4ed8", fontWeight: 600, marginTop: 2, lineHeight: 1.2 }}>
+            🔄 Eksik Tamamlama
+            {task.previous_task_completion_percent != null && task.previous_task_completion_percent > 0 && (
+              <span style={{ color: "#60a5fa", marginLeft: 4 }}>
+                (önceki: %{task.previous_task_completion_percent})
+              </span>
+            )}
+          </div>
+        )}
+        {task.coach_evaluation_note && (
+          <div style={{
+            fontSize: 9, color: "#6d28d9", fontStyle: "italic", marginTop: 2, lineHeight: 1.2,
+            wordBreak: "break-word",
+          }}>
+            💬 {task.coach_evaluation_note}
+          </div>
+        )}
+      </div>
+      <div style={{
+        flexShrink: 0,
+        textAlign: "right",
+        fontSize: 10,
+        fontWeight: 600,
+        color: "#475569",
+        whiteSpace: "nowrap",
+        paddingTop: 1,
+        minWidth: 64,
+      }}>
+        {qText}
+      </div>
+    </div>
+  );
+}
+
+function TopicCumulativeBlock({ topicCum }: { topicCum: TopicCumulative }) {
+  if (!topicCum || (topicCum.cumulative_total_questions <= 0 && topicCum.cumulative_total_pages <= 0)) {
+    return null;
+  }
+  return (
+    <div style={{
+      margin: "8px 10px 4px",
+      padding: "8px 12px",
+      background: "linear-gradient(135deg, #ede9fe 0%, #faf5ff 100%)",
+      borderRadius: 8,
+      border: "1px solid #ddd6fe",
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, color: "#7c3aed", marginBottom: 6,
+        display: "flex", alignItems: "center", gap: 4,
+      }}>
+        📊 Bu Konudan Bugüne Kadar Toplam
+        {topicCum.cumulative_assignment_count > 1 && (
+          <span style={{ fontSize: 12, fontWeight: 500, color: "#a78bfa" }}>
+            ({topicCum.cumulative_assignment_count} ödevden)
+          </span>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        {topicCum.cumulative_total_questions > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 6, background: "#10b981",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "white", fontSize: 11, fontWeight: 700,
+            }}>
+              📝
+            </div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b" }}>
+                {topicCum.cumulative_completed_questions}
+                <span style={{ fontSize: 12, fontWeight: 500, color: "#94a3b8" }}>
+                  {" "}/ {topicCum.cumulative_total_questions} soru
+                </span>
+              </div>
+              <div style={{ fontSize: 10, color: "#64748b" }}>
+                Bu ödevde: {topicCum.current_completed_questions}/{topicCum.current_total_questions} soru
+              </div>
+            </div>
+          </div>
+        )}
+        {topicCum.cumulative_total_pages > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 6, background: "#8b5cf6",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "white", fontSize: 11, fontWeight: 700,
+            }}>
+              📄
+            </div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b" }}>
+                {topicCum.cumulative_completed_pages}
+                <span style={{ fontSize: 12, fontWeight: 500, color: "#94a3b8" }}>
+                  {" "}/ {topicCum.cumulative_total_pages} sayfa
+                </span>
+              </div>
+              <div style={{ fontSize: 10, color: "#64748b" }}>
+                Bu ödevde: {topicCum.current_completed_pages}/{topicCum.current_total_pages} sayfa
+              </div>
+            </div>
+          </div>
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+          <div style={{
+            padding: "4px 12px", background: "#7c3aed", borderRadius: 16,
+            color: "white", fontSize: 11, fontWeight: 700,
+          }}>
+            %{topicCum.cumulative_completion_percent} tamamlandı
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Circular Progress ───
 function CircularProgress({ value, size = 120, strokeWidth = 10, color = "#0262a7", label, sublabel }: { value: number; size?: number; strokeWidth?: number; color?: string; label?: string; sublabel?: string }) {
@@ -756,14 +950,35 @@ export default function OdevKontrolReportClient({
           <div style={{ padding: 0 }}>
             {groupedLessonStats.map((group, gIdx) => (
               <div key={group.subjectName} className="ok-report-subject" style={{ borderBottom: gIdx < groupedLessonStats.length - 1 ? "2px solid #e2e8f0" : "none" }}>
-                {/* Ders Başlığı — Grup Header */}
-                <div style={{ padding: "12px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)" }}>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>📖 {group.subjectName}</div>
-                    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{group.items.length} kaynak · {group.totalTasks} görev</div>
+                {/* Ders Başlığı — Grup Header (plan PDF ile uyumlu) */}
+                <div style={{
+                  padding: "10px 16px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#0061a6",
+                  color: "#fff",
+                  gap: 8,
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 14, fontWeight: 700, lineHeight: 1.3,
+                      wordBreak: "break-word", overflowWrap: "anywhere",
+                    }}>
+                      {gIdx + 1}. {group.subjectName}
+                    </div>
+                    <div style={{ fontSize: 10, opacity: 0.85, marginTop: 2 }}>
+                      {group.items.length} kaynak · {group.totalTasks} görev
+                      {group.totalQ > 0 ? ` · ${group.completedQ}/${group.totalQ} soru` : ""}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <CircularProgress value={group.avgPct} size={40} strokeWidth={4} color={group.avgPct >= 75 ? "#16a34a" : group.avgPct >= 50 ? "#d97706" : "#dc2626"} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <CircularProgress
+                      value={group.avgPct}
+                      size={40}
+                      strokeWidth={4}
+                      color={group.avgPct >= 75 ? "#86efac" : group.avgPct >= 50 ? "#fcd34d" : "#fca5a5"}
+                    />
                   </div>
                 </div>
 
@@ -802,210 +1017,221 @@ export default function OdevKontrolReportClient({
                   )}
                 </div>
 
-                {/* Alt Kaynaklar (Kitap → Konu hiyerarşisi) */}
+                {/* Alt Kaynaklar: Kitap → Ünite → Konu → Test (plan PDF ile aynı) */}
                 {(() => {
-                  // Aynı kitap adına sahip lesson'ları grupla
-                  const bookGroups: { bookName: string | null; items: typeof group.items; totalTasks: number; avgPct: number }[] = [];
-                  const bookMap = new Map<string, typeof bookGroups[number]>();
-                  group.items.forEach(ls => {
-                    const bookKey = ls.lesson.resource_book_name || "__no_book__";
-                    if (!bookMap.has(bookKey)) {
-                      const bg = { bookName: ls.lesson.resource_book_name, items: [ls], totalTasks: ls.totalTasks, avgPct: ls.avgPct };
-                      bookMap.set(bookKey, bg);
-                      bookGroups.push(bg);
-                    } else {
-                      const bg = bookMap.get(bookKey)!;
-                      bg.items.push(ls);
-                      bg.totalTasks += ls.totalTasks;
-                      const allTasks = bg.items.flatMap(i => i.lesson.tasks);
-                      bg.avgPct = weightedTaskAvg(allTasks);
+                  type TopicSec = {
+                    topicId: number;
+                    topicName: string;
+                    tasks: AssignmentTask[];
+                    topicCum: TopicCumulative | null;
+                  };
+                  type UnitSec = {
+                    unitId: number;
+                    unitName: string;
+                    topics: TopicSec[];
+                  };
+                  type BookSec = {
+                    bookId: number;
+                    bookName: string;
+                    units: UnitSec[];
+                    totalTasks: number;
+                    avgPct: number;
+                  };
+
+                  const books: BookSec[] = [];
+                  const bookMap = new Map<string, BookSec>();
+
+                  group.items.forEach((ls) => {
+                    const bookId = ls.lesson.resource_book ?? 0;
+                    const bookName = (ls.lesson.resource_book_name || "").trim() || "Kitap";
+                    const bookKey = `${bookId}:${bookName}`;
+                    let book = bookMap.get(bookKey);
+                    if (!book) {
+                      book = {
+                        bookId: bookId || books.length + 1,
+                        bookName,
+                        units: [],
+                        totalTasks: 0,
+                        avgPct: 0,
+                      };
+                      bookMap.set(bookKey, book);
+                      books.push(book);
                     }
-                  });
 
-                  return bookGroups.map((bg, bgIdx) => {
-                    // Kitap grubundaki tüm task'ları topla ve content_topic_name'e göre alt-grupla
-                    const allBookTasks = bg.items.flatMap(ls => ls.lesson.tasks as any[]);
-                    const topicSections: { topicName: string; tasks: any[]; topicCum: any }[] = [];
-                    const topicMap = new Map<string, typeof topicSections[number]>();
-
-                    bg.items.forEach(ls => {
-                      (ls.lesson.tasks as any[]).forEach((task: any) => {
-                        const tKey = task.content_topic_name || ls.lesson.topic_name || "__default__";
-                        if (!topicMap.has(tKey)) {
-                          const sec = { topicName: tKey === "__default__" ? "" : tKey, tasks: [task], topicCum: ls.topicCum };
-                          topicMap.set(tKey, sec);
-                          topicSections.push(sec);
-                        } else {
-                          topicMap.get(tKey)!.tasks.push(task);
-                        }
-                      });
-                    });
-
-                    // Tek konu varsa konu adını lesson'dan al
-                    const uniqueTopics = topicSections.filter(s => s.topicName);
-                    const hasMultipleTopics = uniqueTopics.length > 1;
-
-                    return (
-                    <div key={bg.bookName || bgIdx} style={{ marginLeft: 12, borderLeft: "3px solid #e2e8f0", borderBottom: bgIdx < bookGroups.length - 1 ? "1px solid #f1f5f9" : "none" }}>
-                      {/* Kitap Başlığı */}
-                      {bg.bookName ? (
-                        <div style={{ padding: "8px 20px 4px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc" }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
-                            📕 {bg.bookName}
-                            <span style={{ fontSize: 10, fontWeight: 400, color: "#94a3b8" }}>({hasMultipleTopics ? `${uniqueTopics.length} konu · ` : ""}{bg.totalTasks} görev)</span>
-                          </div>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: bg.avgPct >= 75 ? "#16a34a" : bg.avgPct >= 50 ? "#d97706" : "#dc2626" }}>%{bg.avgPct}</span>
-                        </div>
-                      ) : null}
-
-                      {/* Konu Bölümleri */}
-                      {topicSections.map((sec, secIdx) => {
-                        const secAvg = weightedTaskAvg(sec.tasks);
-                        return (
-                        <div key={sec.topicName || secIdx} className="ok-report-topic" style={{ padding: bg.bookName ? "6px 20px 12px 32px" : "8px 20px 12px", borderBottom: secIdx < topicSections.length - 1 ? "1px solid #f1f5f9" : "none" }}>
-                          {/* Konu Başlığı — birden fazla konu varsa veya tek konunun adı varsa göster */}
-                          {(sec.topicName && (hasMultipleTopics || !bg.bookName)) ? (
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: bg.bookName ? "#6366f1" : "#475569", display: "flex", alignItems: "center", gap: 4 }}>
-                                {bg.bookName ? "📂" : "📌"} {sec.topicName}
-                                <span style={{ fontSize: 10, fontWeight: 400, color: "#94a3b8" }}>({sec.tasks.length} görev)</span>
-                              </div>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: secAvg >= 75 ? "#16a34a" : secAvg >= 50 ? "#d97706" : "#dc2626" }}>%{secAvg}</span>
-                            </div>
-                          ) : !bg.bookName && !sec.topicName ? (
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8" }}>Kaynak belirtilmemiş</div>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: secAvg >= 75 ? "#16a34a" : secAvg >= 50 ? "#d97706" : "#dc2626" }}>%{secAvg}</span>
-                            </div>
-                          ) : null}
-
-                    {/* Görev Detayları Tablosu */}
-                    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
-                          <th style={{ textAlign: "left", padding: "6px 8px", color: "#94a3b8", fontWeight: 500 }}>Görev</th>
-                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 52 }}>Tür</th>
-                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 72 }}>Durum</th>
-                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 44 }}>%</th>
-                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 56 }}>Soru</th>
-                          <th style={{ textAlign: "center", padding: "6px 4px", color: "#94a3b8", fontWeight: 500, width: 56 }}>Sayfa</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sec.tasks.map((task: any) => {
-                          const badge = getCompletionBadge(task.completion_status);
-                          const typeKey = task.task_type || task.content_type || "";
-                          return (
-                            <tr key={task.id} style={{ borderBottom: "1px solid #f8fafc" }}>
-                              <td style={{ padding: "6px 8px", color: "#1e293b", fontWeight: 500 }}>
-                                {task.title}
-                                {task.is_completion_task && (
-                                  <div style={{ fontSize: 10, color: "#2563eb", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
-                                    🔄 Eksik Tamamlama
-                                    {task.previous_task_completion_percent != null && task.previous_task_completion_percent > 0 && (
-                                      <span style={{ color: "#60a5fa" }}>(önceki: %{task.previous_task_completion_percent})</span>
-                                    )}
-                                  </div>
-                                )}
-                                {task.coach_evaluation_note && <div style={{ fontSize: 11, color: "#6d28d9", fontStyle: "italic", marginTop: 2 }}>💬 {task.coach_evaluation_note}</div>}
-                              </td>
-                              <td style={{ padding: "6px 4px", textAlign: "center" }}>
-                                <div style={{ display: "inline-flex", justifyContent: "center" }}>
-                                  <MetaCol label="Tür" value={assignmentTypeLabel(typeKey)} minWidth={40} />
-                                </div>
-                              </td>
-                              <td style={{ padding: "6px 4px", textAlign: "center" }}>
-                                <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 600, background: badge.bg, color: badge.text }}>{badge.label}</span>
-                              </td>
-                              <td style={{ padding: "6px 4px", textAlign: "center", fontWeight: 700, color: task.task_completion_percent >= 75 ? "#16a34a" : task.task_completion_percent >= 50 ? "#d97706" : "#dc2626" }}>
-                                %{task.task_completion_percent}
-                              </td>
-                              <td style={{ padding: "6px 4px", textAlign: "center" }}>
-                                {task.question_count ? (
-                                  <div style={{ display: "inline-flex", justifyContent: "center" }}>
-                                    <MetaCol
-                                      label="Soru"
-                                      value={`${task.completed_question_count ?? 0}/${task.question_count}`}
-                                      minWidth={44}
-                                      valueColor="#ea580c"
-                                    />
-                                  </div>
-                                ) : <span style={{ color: "#cbd5e1" }}>—</span>}
-                              </td>
-                              <td style={{ padding: "6px 4px", textAlign: "center" }}>
-                                {task.page_count ? (
-                                  <div style={{ display: "inline-flex", justifyContent: "center" }}>
-                                    <MetaCol
-                                      label="Sayfa"
-                                      value={`${task.completed_page_count ?? 0}/${task.page_count}`}
-                                      minWidth={44}
-                                      valueColor="#be185d"
-                                    />
-                                  </div>
-                                ) : <span style={{ color: "#cbd5e1" }}>—</span>}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-
-                    {/* Kümülatif Konu İstatistikleri */}
-                    {sec.topicCum && (sec.topicCum.cumulative_total_questions > 0 || sec.topicCum.cumulative_total_pages > 0) && (
-                      <div style={{ marginTop: 8, padding: "8px 12px", background: "linear-gradient(135deg, #ede9fe 0%, #faf5ff 100%)", borderRadius: 8, border: "1px solid #ddd6fe" }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
-                          📊 Bu Konudan Bugüne Kadar Toplam
-                          {sec.topicCum.cumulative_assignment_count > 1 && (
-                            <span style={{ fontSize: 12, fontWeight: 500, color: "#a78bfa" }}>({sec.topicCum.cumulative_assignment_count} ödevden)</span>
-                          )}
-                        </div>
-                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                          {sec.topicCum.cumulative_total_questions > 0 && (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <div style={{ width: 28, height: 28, borderRadius: 6, background: "#10b981", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 11, fontWeight: 700 }}>
-                                📝
-                              </div>
-                              <div>
-                                <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b" }}>
-                                  {sec.topicCum.cumulative_completed_questions}
-                                  <span style={{ fontSize: 12, fontWeight: 500, color: "#94a3b8" }}> / {sec.topicCum.cumulative_total_questions} soru</span>
-                                </div>
-                                <div style={{ fontSize: 10, color: "#64748b" }}>
-                                  Bu ödevde: {sec.topicCum.current_completed_questions}/{sec.topicCum.current_total_questions} soru
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          {sec.topicCum.cumulative_total_pages > 0 && (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <div style={{ width: 28, height: 28, borderRadius: 6, background: "#8b5cf6", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 11, fontWeight: 700 }}>
-                                📄
-                              </div>
-                              <div>
-                                <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b" }}>
-                                  {sec.topicCum.cumulative_completed_pages}
-                                  <span style={{ fontSize: 12, fontWeight: 500, color: "#94a3b8" }}> / {sec.topicCum.cumulative_total_pages} sayfa</span>
-                                </div>
-                                <div style={{ fontSize: 10, color: "#64748b" }}>
-                                  Bu ödevde: {sec.topicCum.current_completed_pages}/{sec.topicCum.current_total_pages} sayfa
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
-                            <div style={{ padding: "4px 12px", background: "#7c3aed", borderRadius: 16, color: "white", fontSize: 11, fontWeight: 700 }}>
-                              %{sec.topicCum.cumulative_completion_percent} tamamlandı
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                        </div>
+                    (ls.lesson.tasks as AssignmentTask[]).forEach((task) => {
+                      book!.totalTasks += 1;
+                      const unitName = (task.content_unit_name || "").trim() || "Ünite";
+                      const unitId = task.content_unit_id ?? 0;
+                      let unit = book!.units.find((u) =>
+                        unitId ? u.unitId === unitId : u.unitName === unitName,
                       );
-                      })}
-                    </div>
-                  );
+                      if (!unit) {
+                        unit = {
+                          unitId: unitId || book!.units.length + 1,
+                          unitName,
+                          topics: [],
+                        };
+                        book!.units.push(unit);
+                      }
+
+                      const topicName = (task.content_topic_name || ls.lesson.topic_name || "Konu").trim() || "Konu";
+                      const topicId = task.content_topic_id ?? ls.lesson.id;
+                      let topic = unit.topics.find((t) =>
+                        topicId ? t.topicId === topicId : t.topicName === topicName,
+                      );
+                      if (!topic) {
+                        topic = {
+                          topicId: topicId || unit.topics.length + 1,
+                          topicName,
+                          tasks: [],
+                          topicCum: (ls.topicCum as TopicCumulative) || null,
+                        };
+                        unit.topics.push(topic);
+                      } else if (!topic.topicCum && ls.topicCum) {
+                        topic.topicCum = ls.topicCum as TopicCumulative;
+                      }
+                      topic.tasks.push(task);
+                    });
                   });
+
+                  for (const book of books) {
+                    const allTasks = book.units.flatMap((u) => u.topics.flatMap((t) => t.tasks));
+                    book.avgPct = weightedTaskAvg(allTasks);
+                    for (const unit of book.units) {
+                      for (const topic of unit.topics) {
+                        if (topic.tasks.some((t) => t.content_sira != null)) {
+                          topic.tasks.sort((a, b) => {
+                            const sa = a.content_sira ?? Number.MAX_SAFE_INTEGER;
+                            const sb = b.content_sira ?? Number.MAX_SAFE_INTEGER;
+                            if (sa !== sb) return sa - sb;
+                            return (a.order ?? a.id) - (b.order ?? b.id);
+                          });
+                        }
+                      }
+                    }
+                  }
+
+                  return books.map((book, bookIdx) => (
+                    <div
+                      key={`${book.bookId}-${book.bookName}`}
+                      style={{
+                        borderBottom: bookIdx < books.length - 1 ? "1px solid #e4e9f2" : "none",
+                      }}
+                    >
+                      <div style={{
+                        padding: "6px 14px",
+                        background: "#e8f0fe",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: "#1a56db",
+                        borderBottom: "1px solid #d4dff7",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 8,
+                        wordBreak: "break-word",
+                        overflowWrap: "anywhere",
+                        lineHeight: 1.35,
+                      }}>
+                        <span>📖 {book.bookName}
+                          <span style={{ fontSize: 9, fontWeight: 400, color: "#6b7280", marginLeft: 6 }}>
+                            ({book.totalTasks} görev)
+                          </span>
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: pctColor(book.avgPct), flexShrink: 0 }}>
+                          %{book.avgPct}
+                        </span>
+                      </div>
+
+                      {book.units.map((unit) => (
+                        <div key={`${book.bookId}-${unit.unitId}`}>
+                          <div style={{
+                            padding: "6px 14px",
+                            background: "#f0f4f8",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "#0061a6",
+                            borderBottom: "1px solid #e4e9f2",
+                            wordBreak: "break-word",
+                            overflowWrap: "anywhere",
+                            lineHeight: 1.35,
+                          }}>
+                            📂 {unit.unitName}
+                          </div>
+
+                          {unit.topics.map((topic) => {
+                            const topicAvg = weightedTaskAvg(topic.tasks);
+                            const [leftTasks, rightTasks] = splitColumnMajor(topic.tasks);
+                            return (
+                              <div key={`${unit.unitId}-${topic.topicId}`} className="ok-report-topic">
+                                <div style={{
+                                  padding: "7px 14px 4px",
+                                  background: "#f8fafc",
+                                  borderBottom: "1px solid #e4e9f2",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "flex-start",
+                                  gap: 8,
+                                }}>
+                                  <div style={{
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    wordBreak: "break-word",
+                                    overflowWrap: "anywhere",
+                                    whiteSpace: "normal",
+                                    lineHeight: 1.35,
+                                  }}>
+                                    {topic.topicName}
+                                    <span style={{ fontSize: 9, fontWeight: 400, color: "#94a3b8", marginLeft: 6 }}>
+                                      ({topic.tasks.length} görev)
+                                    </span>
+                                  </div>
+                                  <span style={{
+                                    fontSize: 11, fontWeight: 700, color: pctColor(topicAvg), flexShrink: 0,
+                                  }}>
+                                    %{topicAvg}
+                                  </span>
+                                </div>
+
+                                <div style={{
+                                  display: "grid",
+                                  gridTemplateColumns: rightTasks.length > 0 ? "1fr 1fr" : "1fr",
+                                  gap: 0,
+                                  alignItems: "start",
+                                }}>
+                                  <div style={{
+                                    borderRight: rightTasks.length > 0 ? "1px solid #f0f2f5" : "none",
+                                  }}>
+                                    {leftTasks.map((task) => (
+                                      <ReportTaskRow
+                                        key={task.id}
+                                        task={task}
+                                        topicName={topic.topicName}
+                                      />
+                                    ))}
+                                  </div>
+                                  {rightTasks.length > 0 && (
+                                    <div>
+                                      {rightTasks.map((task) => (
+                                        <ReportTaskRow
+                                          key={task.id}
+                                          task={task}
+                                          topicName={topic.topicName}
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {topic.topicCum && <TopicCumulativeBlock topicCum={topic.topicCum} />}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  ));
                 })()}
               </div>
             ))}

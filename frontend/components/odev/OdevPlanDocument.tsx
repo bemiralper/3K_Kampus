@@ -1,8 +1,8 @@
 "use client";
 
 import { forwardRef } from "react";
-import type { ContentTaskHistory, PlanBookGroup, PlanContentItemView } from "./odevPlanTypes";
-import { displayTestLabel, splitColumnMajor } from "./odevPlanTypes";
+import type { ContentTaskHistory, PlanContentItemView, PlanLessonGroup } from "./odevPlanTypes";
+import { countPlanBooks, displayTestLabel, splitColumnMajor } from "./odevPlanTypes";
 import { MetaCol, assignmentTypeLabel } from "./odevPdfMeta";
 import { isAutoCompletionNote } from "./odevCompletionHelpers";
 
@@ -15,7 +15,7 @@ export interface OdevPlanDocumentProps {
   assignedDateStr: string;
   dueDateStr: string;
   documentRef?: string;
-  cartGroups: PlanBookGroup[];
+  cartGroups: PlanLessonGroup[];
   itemCount: number;
   totalQuestions: number;
   totalPages: number;
@@ -151,14 +151,18 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
   const currentYear = new Date().getFullYear();
   const docRef = documentRef || `ÖCP-${Date.now().toString(36).toUpperCase().slice(-6)}`;
 
+  const bookCount = countPlanBooks(cartGroups);
   const completionCount = cartGroups.reduce(
-    (sum, book) => sum + book.units.reduce(
-      (uSum, unit) => uSum + unit.topics.reduce(
-        (tSum, topic) => tSum + topic.items.filter(({ content: item }) => {
-          if (item.isCompletionTask) return true;
-          const hist = taskHistory[item.contentId];
-          return Boolean(hist && (hist.completion_status === "PARTIAL" || hist.completion_status === "NOT_DONE"));
-        }).length,
+    (sum, lesson) => sum + lesson.books.reduce(
+      (bSum, book) => bSum + book.units.reduce(
+        (uSum, unit) => uSum + unit.topics.reduce(
+          (tSum, topic) => tSum + topic.items.filter(({ content: item }) => {
+            if (item.isCompletionTask) return true;
+            const hist = taskHistory[item.contentId];
+            return Boolean(hist && (hist.completion_status === "PARTIAL" || hist.completion_status === "NOT_DONE"));
+          }).length,
+          0,
+        ),
         0,
       ),
       0,
@@ -266,12 +270,20 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
 
       <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
         <MetaCol
-          label="Kitap"
+          label="Ders"
           value={String(cartGroups.length)}
           minWidth={48}
           valueColor="#4338ca"
           borderColor="#c7d2fe"
           background="#eef2ff"
+        />
+        <MetaCol
+          label="Kitap"
+          value={String(bookCount)}
+          minWidth={48}
+          valueColor="#1d4ed8"
+          borderColor="#bfdbfe"
+          background="#eff6ff"
         />
         <MetaCol
           label="Görev"
@@ -323,14 +335,14 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
         </div>
       )}
 
-      {/* Kitap → Ünite → Konu → Test */}
-      {cartGroups.map((book) => {
-        const bookTaskCount = book.units.reduce(
-          (s, u) => s + u.topics.reduce((s2, t) => s2 + t.items.length, 0),
+      {/* Ders → Kitap → Ünite → Konu → Test */}
+      {cartGroups.map((lesson, li) => {
+        const lessonTaskCount = lesson.books.reduce(
+          (s, b) => s + b.units.reduce((s2, u) => s2 + u.topics.reduce((s3, t) => s3 + t.items.length, 0), 0),
           0,
         );
         return (
-          <div key={book.bookId} style={{ marginBottom: 12 }}>
+          <div key={`${lesson.lessonId}-${lesson.lessonName}`} style={{ marginBottom: 12 }}>
             <div style={{
               display: "flex", justifyContent: "space-between", alignItems: "center",
               padding: "10px 14px", background: "#0061a6", color: "#fff",
@@ -340,85 +352,109 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
               <span style={{
                 wordBreak: "break-word", overflowWrap: "anywhere", lineHeight: 1.3,
               }}>
-                📖 {book.bookName}
+                {li + 1}. {lesson.lessonName}
               </span>
               <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.85, flexShrink: 0 }}>
-                {bookTaskCount} görev
-                {book.totalQuestions > 0 ? ` · ${book.totalQuestions} soru` : ""}
-                {book.totalPages > 0 ? ` · ${book.totalPages} sayfa` : ""}
+                {lessonTaskCount} görev
+                {lesson.totalQuestions > 0 ? ` · ${lesson.totalQuestions} soru` : ""}
+                {lesson.totalPages > 0 ? ` · ${lesson.totalPages} sayfa` : ""}
               </span>
             </div>
             <div style={{
               border: "1px solid #e4e9f2", borderTop: "none",
               borderRadius: "0 0 8px 8px", overflow: "hidden",
             }}>
-              {book.units.map((unit) => (
-                <div key={`${book.bookId}-${unit.unitId}`}>
-                  <div style={{
-                    padding: "6px 14px", background: "#e8f0fe",
-                    fontSize: 11, fontWeight: 600, color: "#1a56db",
-                    borderBottom: "1px solid #d4dff7",
-                    wordBreak: "break-word", overflowWrap: "anywhere",
-                    lineHeight: 1.35,
-                  }}>
-                    📂 {unit.unitName}
-                  </div>
-                  {unit.topics.map((topic) => {
-                    const [leftItems, rightItems] = splitColumnMajor(topic.items);
-                    return (
-                      <div key={`${unit.unitId}-${topic.topicId}`}>
+              {lesson.books.map((book) => {
+                const bookTaskCount = book.units.reduce(
+                  (s, u) => s + u.topics.reduce((s2, t) => s2 + t.items.length, 0),
+                  0,
+                );
+                return (
+                  <div key={book.bookId}>
+                    <div style={{
+                      padding: "6px 14px", background: "#e8f0fe",
+                      fontSize: 11, fontWeight: 600, color: "#1a56db",
+                      borderBottom: "1px solid #d4dff7",
+                      display: "flex", alignItems: "flex-start", gap: 6,
+                      wordBreak: "break-word", overflowWrap: "anywhere",
+                      lineHeight: 1.35,
+                    }}>
+                      <span>📖 {book.bookName}</span>
+                      <span style={{ fontSize: 9, fontWeight: 400, color: "#6b7280", flexShrink: 0 }}>
+                        ({bookTaskCount} görev
+                        {book.totalQuestions > 0 ? ` · ${book.totalQuestions} soru` : ""})
+                      </span>
+                    </div>
+                    {book.units.map((unit) => (
+                      <div key={`${book.bookId}-${unit.unitId}`}>
                         <div style={{
-                          padding: "7px 14px 4px",
-                          background: "#f8fafc",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: "#0f172a",
+                          padding: "6px 14px", background: "#f0f4f8",
+                          fontSize: 11, fontWeight: 600, color: "#0061a6",
                           borderBottom: "1px solid #e4e9f2",
-                          wordBreak: "break-word",
-                          overflowWrap: "anywhere",
-                          whiteSpace: "normal",
+                          wordBreak: "break-word", overflowWrap: "anywhere",
                           lineHeight: 1.35,
                         }}>
-                          {topic.topicName}
+                          📂 {unit.unitName}
                         </div>
-                        <div style={{
-                          display: "grid",
-                          gridTemplateColumns: rightItems.length > 0 ? "1fr 1fr" : "1fr",
-                          gap: 0,
-                          alignItems: "start",
-                        }}>
-                          <div style={{
-                            borderRight: rightItems.length > 0 ? "1px solid #f0f2f5" : "none",
-                          }}>
-                            {leftItems.map(({ content: item, note }) => (
-                              <TestRow
-                                key={item.id}
-                                item={item}
-                                note={note}
-                                topicName={topic.topicName}
-                                taskHistory={taskHistory}
-                              />
-                            ))}
-                          </div>
-                          {rightItems.length > 0 && (
-                            <div>
-                              {rightItems.map(({ content: item, note }) => (
-                                <TestRow
-                                  key={item.id}
-                                  item={item}
-                                  note={note}
-                                  topicName={topic.topicName}
-                                  taskHistory={taskHistory}
-                                />
-                              ))}
+                        {unit.topics.map((topic) => {
+                          const [leftItems, rightItems] = splitColumnMajor(topic.items);
+                          return (
+                            <div key={`${unit.unitId}-${topic.topicId}`}>
+                              <div style={{
+                                padding: "7px 14px 4px",
+                                background: "#f8fafc",
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: "#0f172a",
+                                borderBottom: "1px solid #e4e9f2",
+                                wordBreak: "break-word",
+                                overflowWrap: "anywhere",
+                                whiteSpace: "normal",
+                                lineHeight: 1.35,
+                              }}>
+                                {topic.topicName}
+                              </div>
+                              <div style={{
+                                display: "grid",
+                                gridTemplateColumns: rightItems.length > 0 ? "1fr 1fr" : "1fr",
+                                gap: 0,
+                                alignItems: "start",
+                              }}>
+                                <div style={{
+                                  borderRight: rightItems.length > 0 ? "1px solid #f0f2f5" : "none",
+                                }}>
+                                  {leftItems.map(({ content: item, note }) => (
+                                    <TestRow
+                                      key={item.id}
+                                      item={item}
+                                      note={note}
+                                      topicName={topic.topicName}
+                                      taskHistory={taskHistory}
+                                    />
+                                  ))}
+                                </div>
+                                {rightItems.length > 0 && (
+                                  <div>
+                                    {rightItems.map(({ content: item, note }) => (
+                                      <TestRow
+                                        key={item.id}
+                                        item={item}
+                                        note={note}
+                                        topicName={topic.topicName}
+                                        taskHistory={taskHistory}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              ))}
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
