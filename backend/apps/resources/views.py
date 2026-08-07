@@ -10,7 +10,10 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
 from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
 from .permissions import IsAuthenticatedResourceReadOrAdminWrite
-from django.db.models import Prefetch, Count, Q, Max, F
+from django.db.models import (
+    Prefetch, Count, Q, Max, F, OuterRef, Subquery, IntegerField, Value,
+)
+from django.db.models.functions import Coalesce
 from django.db import transaction
 
 from .models import BookType, ResourceBook, ResourceUnit, ResourceTopic, ResourceContent
@@ -42,6 +45,57 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
     """CSRF doğrulaması yapmayan SessionAuthentication"""
     def enforce_csrf(self, request):
         return  # CSRF kontrolünü atla
+
+
+def annotate_resource_book_counts(queryset):
+    """
+    Ünite/konu/içerik sayıları — correlated Subquery.
+    JOIN + COUNT(DISTINCT) yerine kullan; liste sorgusu şişmesin.
+    """
+    unit_sq = (
+        ResourceUnit.objects.filter(book_id=OuterRef('pk'), aktif_mi=True)
+        .order_by()
+        .values('book_id')
+        .annotate(c=Count('id'))
+        .values('c')[:1]
+    )
+    topic_sq = (
+        ResourceTopic.objects.filter(
+            unit__book_id=OuterRef('pk'),
+            aktif_mi=True,
+            unit__aktif_mi=True,
+        )
+        .order_by()
+        .values('unit__book_id')
+        .annotate(c=Count('id'))
+        .values('c')[:1]
+    )
+    content_sq = (
+        ResourceContent.objects.filter(
+            topic__unit__book_id=OuterRef('pk'),
+            aktif_mi=True,
+            topic__aktif_mi=True,
+            topic__unit__aktif_mi=True,
+        )
+        .order_by()
+        .values('topic__unit__book_id')
+        .annotate(c=Count('id'))
+        .values('c')[:1]
+    )
+    return queryset.annotate(
+        db_unit_count=Coalesce(
+            Subquery(unit_sq, output_field=IntegerField()),
+            Value(0),
+        ),
+        db_topic_count=Coalesce(
+            Subquery(topic_sq, output_field=IntegerField()),
+            Value(0),
+        ),
+        db_content_count=Coalesce(
+            Subquery(content_sq, output_field=IntegerField()),
+            Value(0),
+        ),
+    )
 
 
 class BookTypeViewSet(viewsets.ModelViewSet):
@@ -141,14 +195,11 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         queryset = filter_books_for_request(super().get_queryset(), self.request)
-        queryset = queryset.annotate(
-            db_unit_count=Count('units', filter=Q(units__aktif_mi=True), distinct=True),
-            db_topic_count=Count('units__topics', filter=Q(units__aktif_mi=True, units__topics__aktif_mi=True), distinct=True),
-            db_content_count=Count('units__topics__contents', filter=Q(
-                units__aktif_mi=True, units__topics__aktif_mi=True, units__topics__contents__aktif_mi=True
-            ), distinct=True),
-        )
-        
+
+        # Sayaçlar yalnızca liste / export için — structure/retrieve/yazmada JOIN maliyeti olmasın
+        if self.action in ('list', 'export_books'):
+            queryset = annotate_resource_book_counts(queryset)
+
         # Filtering
         ders_id = self.request.query_params.get('ders')
         sinif_id = self.request.query_params.get('sinif_seviyesi')
@@ -157,7 +208,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
         aktif = self.request.query_params.get('aktif')
         icerik_tamamlandi = self.request.query_params.get('icerik_tamamlandi')
         search = self.request.query_params.get('search')
-        
+
         if ders_id:
             queryset = queryset.filter(ders_id=ders_id)
         if sinif_id:
@@ -174,7 +225,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(icerik_tamamlandi_mi=icerik_tamamlandi.lower() == 'true')
         if search:
             queryset = queryset.filter(ad__icontains=search)
-        
+
         return queryset
     
     def get_serializer_context(self):
