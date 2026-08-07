@@ -12,37 +12,36 @@ export interface VectorPrintHtmlOptions {
 }
 
 const REPORT_PRINT_HELPERS = `
-  .page-break-avoid,
+  /* Büyük bloklar bölünebilir — avoid → 1. sayfa boş kalır */
+  .ok-report-card,
   .ok-report-eval-panel,
-  .ok-report-stat-card,
   .ok-report-topic,
   .ok-report-perf,
-  .ok-report-perf-header,
-  .ok-report-perf-score,
-  .ok-report-perf-status,
-  .ok-report-perf-status-card,
-  .ok-report-perf-rates,
-  .ok-report-perf-rate-row,
   .ok-report-perf-details,
-  .ok-report-footer-block {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-  /* Büyük ders analizi kartı sayfa içinde bölünebilir — yoksa 1. sayfa boş kalır */
-  .ok-report-card {
+  .ok-report-perf-rates,
+  .ok-report-perf-status {
     page-break-inside: auto !important;
     break-inside: auto !important;
   }
+  .ok-report-stat-card,
+  .ok-report-perf-header,
+  .ok-report-perf-score,
+  .ok-report-perf-status-card,
+  .ok-report-perf-rate-row,
+  .ok-report-footer-block,
+  table tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
   .ok-report-stat-grid { display: none !important; }
-  .ok-report-eval-panel { margin-bottom: 10px !important; }
+  .ok-report-eval-panel { margin-bottom: 8px !important; overflow: visible !important; }
   .ok-report-header {
     position: relative;
     overflow: hidden;
-    margin-bottom: 8px !important;
-    padding: 10px 14px !important;
+    margin-bottom: 6px !important;
+    padding: 8px 12px !important;
   }
-  .ok-report-card,
-  .ok-report-eval-panel { overflow: visible; }
+  .ok-report-card { overflow: visible !important; margin-bottom: 8px !important; }
   .ok-report-perf {
     page-break-before: always;
     break-before: page;
@@ -55,7 +54,7 @@ const REPORT_PRINT_HELPERS = `
     page-break-after: avoid;
     break-after: avoid;
   }
-  table tr { page-break-inside: avoid; break-inside: avoid; }
+  body, html { height: auto !important; min-height: 0 !important; }
   svg { max-width: 100%; height: auto; }
 `;
 

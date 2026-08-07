@@ -181,15 +181,35 @@ async function proxyRequest(request: NextRequest, path: string) {
   } catch (error) {
     console.error('[API Proxy] Error:', error);
     const detail = error instanceof Error ? error.message : String(error);
-    const backendDown =
-      /ECONNREFUSED|ENOTFOUND|fetch failed|network|socket/i.test(detail);
+    const cause =
+      error instanceof Error && error.cause instanceof Error
+        ? error.cause.message
+        : error instanceof Error && error.cause
+          ? String(error.cause)
+          : '';
+    const combined = `${detail} ${cause}`;
+    const unreachable = /ECONNREFUSED|ENOTFOUND/i.test(combined);
+    const socketClosed =
+      /UND_ERR_SOCKET|other side closed|ECONNRESET|socket hang up/i.test(combined);
+    let message: string;
+    let code: string;
+    if (unreachable) {
+      message =
+        'Backend servisine ulaşılamadı. lms-backend (Gunicorn) çalışıyor mu kontrol edin.';
+      code = 'backend_unreachable';
+    } else if (socketClosed) {
+      message =
+        'Backend isteği yarıda kesti (worker timeout / çökme). Ağır sorgu veya Gunicorn timeout olabilir.';
+      code = 'backend_socket_closed';
+    } else {
+      message = `API vekil katmanı hatası: ${detail.slice(0, 240)}`;
+      code = 'proxy_error';
+    }
     return NextResponse.json(
       {
-        error: backendDown
-          ? `Backend’e bağlanılamadı (${BACKEND_URL}). Django sunucusunun çalıştığından emin olun.`
-          : `API vekil katmanı hatası: ${detail.slice(0, 240)}`,
-        details: detail,
-        code: backendDown ? 'backend_unreachable' : 'proxy_error',
+        error: message,
+        details: combined.slice(0, 500),
+        code,
       },
       { status: 502 }
     );

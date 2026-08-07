@@ -88,7 +88,7 @@ export default function OdevPlanPrintClient({
   const studentPhoto = ext.student_info?.profil_foto;
 
   return (
-    <div style={{ background: "#fff", minHeight: "100vh" }}>
+    <div style={{ background: "#fff" }}>
       <OdevPlanDocument
         studentName={assignment.student_name}
         studentPhoto={studentPhoto}

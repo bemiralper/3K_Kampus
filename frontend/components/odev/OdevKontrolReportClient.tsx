@@ -374,7 +374,7 @@ export default function OdevKontrolReportClient({
   const todayStr = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
 
   return (
-    <div className={printMode ? undefined : "ok-report-overlay"} style={printMode ? { background: "#fff", minHeight: "100vh" } : undefined}>
+    <div className={printMode ? undefined : "ok-report-overlay"} style={printMode ? { background: "#fff" } : undefined}>
       <div
         className={printMode ? undefined : "ok-report-shell"}
         style={{
@@ -862,7 +862,7 @@ export default function OdevKontrolReportClient({
                       {topicSections.map((sec, secIdx) => {
                         const secAvg = weightedTaskAvg(sec.tasks);
                         return (
-                        <div key={sec.topicName || secIdx} className="ok-report-topic page-break-avoid" style={{ padding: bg.bookName ? "6px 20px 12px 32px" : "8px 20px 12px", borderBottom: secIdx < topicSections.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                        <div key={sec.topicName || secIdx} className="ok-report-topic" style={{ padding: bg.bookName ? "6px 20px 12px 32px" : "8px 20px 12px", borderBottom: secIdx < topicSections.length - 1 ? "1px solid #f1f5f9" : "none" }}>
                           {/* Konu Başlığı — birden fazla konu varsa veya tek konunun adı varsa göster */}
                           {(sec.topicName && (hasMultipleTopics || !bg.bookName)) ? (
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -1032,15 +1032,15 @@ export default function OdevKontrolReportClient({
             { label: "Soru Tamamlama", hint: "Çözülen / toplam soru", pct: soruPct, color: "#ea580c", showBar: true },
           ];
           return (
-          <div className="ok-report-perf page-break-avoid">
-            <div className="ok-report-perf-header page-break-avoid">
+          <div className="ok-report-perf">
+            <div className="ok-report-perf-header">
               <div>
                 <h2 className="ok-report-perf-title">Ödev Performans Özeti</h2>
                 <p className="ok-report-perf-sub">
                   {overall.total_assignments} ödev · koçluk sürecindeki birikimli özet
                 </p>
               </div>
-              <div className="ok-report-perf-score page-break-avoid" title="Tüm görevlerin ağırlıklı ortalaması (eksik ve yapmadı dahil)">
+              <div className="ok-report-perf-score" title="Tüm görevlerin ağırlıklı ortalaması (eksik ve yapmadı dahil)">
                 <div className="ok-report-perf-score-label">Performans Puanı</div>
                 <div className="ok-report-perf-score-value">
                   <span className="ok-report-perf-score-num">{performans}</span>
@@ -1050,7 +1050,7 @@ export default function OdevKontrolReportClient({
               </div>
             </div>
 
-            <div className="ok-report-perf-status page-break-avoid">
+            <div className="ok-report-perf-status">
               {statusCards.map((c) => (
                 <div
                   key={c.label}
@@ -1064,7 +1064,7 @@ export default function OdevKontrolReportClient({
               ))}
             </div>
 
-            <div className="ok-report-perf-rates page-break-avoid">
+            <div className="ok-report-perf-rates">
               {rateRows.map((r) => (
                 <div key={r.label} className="ok-report-perf-rate-row">
                   <div className="ok-report-perf-rate-text">
@@ -1083,7 +1083,7 @@ export default function OdevKontrolReportClient({
               ))}
             </div>
 
-            <div className="ok-report-perf-details page-break-avoid">
+            <div className="ok-report-perf-details">
               <div className="ok-report-perf-detail">
                 <span className="ok-report-perf-detail-label">Toplam görev</span>
                 <div className="ok-report-perf-chips">

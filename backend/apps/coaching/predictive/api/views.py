@@ -17,7 +17,9 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import IsAuthenticated
 
 from django.utils import timezone
-from django.db.models import Count, Avg, Q
+from django.db.models import Count, Avg, Q, FloatField
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Cast
 
 from apps.coaching.services.coach_access import is_resource_admin, user_can_access_student
 
@@ -129,11 +131,17 @@ class PredictiveDashboardView(APIView):
             daily_trend = []
             for i in range(7):
                 day = week_ago + timedelta(days=i+1)
+                # scores JSONB — AVG doğrudan jsonb üzerinde çalışmaz; cast gerekir
                 day_stats = StudentFeatureSnapshot.objects.filter(
                     snapshot_date=day
+                ).annotate(
+                    _dropout=Cast(
+                        KeyTextTransform('dropout_score', 'scores'),
+                        FloatField(),
+                    )
                 ).aggregate(
-                    avg_dropout=Avg('scores__dropout_score'),
-                    count=Count('id')
+                    avg_dropout=Avg('_dropout'),
+                    count=Count('id'),
                 )
                 daily_trend.append({
                     'date': day.isoformat(),

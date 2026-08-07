@@ -227,6 +227,24 @@ def render_url_to_pdf(
                 page = browser.new_page(viewport={'width': 1280, 'height': 1800})
                 page.goto(url, wait_until='networkidle', timeout=timeout_ms)
                 page.wait_for_selector(wait_selector, timeout=timeout_ms)
+                # Print medyası + büyük bloklarda avoid'u kaldır (1. sayfa boşluğu)
+                page.emulate_media(media='print')
+                if 'odev-kontrol' in url or 'odev-plan' in url:
+                    page.add_style_tag(
+                        content=(
+                            '.ok-report-card,.ok-report-eval-panel,.ok-report-topic,'
+                            '.ok-report-perf,.ok-report-perf-details,.ok-report-perf-rates,'
+                            '.ok-report-perf-status{break-inside:auto!important;'
+                            'page-break-inside:auto!important;}'
+                            '.ok-report-stat-card,.ok-report-perf-header,'
+                            '.ok-report-perf-score,.ok-report-perf-status-card,'
+                            '.ok-report-perf-rate-row,.ok-report-footer-block,'
+                            'table tr{break-inside:avoid!important;'
+                            'page-break-inside:avoid!important;}'
+                            'body,html{height:auto!important;min-height:0!important;}'
+                            '.ok-report-stat-grid{display:none!important;}'
+                        )
+                    )
                 pdf_bytes = page.pdf(
                     format='A4',
                     landscape=landscape,

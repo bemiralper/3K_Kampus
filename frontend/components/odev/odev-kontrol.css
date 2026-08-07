@@ -791,21 +791,19 @@
   transform: translateY(-1px);
 }
 
-/* Print / PDF: blokları sayfa ortasında yarıya bölme */
+/* Print / PDF: sadece küçük birimler için (büyük kartlarda kullanma) */
 .page-break-avoid {
   break-inside: avoid;
   page-break-inside: avoid;
 }
 
-/* Ödev Performans Özeti */
+/* Ödev Performans Özeti — büyük blok; print'te bölünebilir olmalı */
 .ok-report-perf {
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   padding: 16px 18px;
   margin-bottom: 14px;
-  break-inside: avoid;
-  page-break-inside: avoid;
 }
 
 .ok-report-perf-header {
@@ -1036,23 +1034,29 @@
 
 @media print {
   /*
-   * Büyük .ok-report-card (Ders Bazlı Analiz) avoid OLMAZ — aksi halde
-   * başlık/özetten sonra tüm ders bloğu 2. sayfaya kayıp 1. sayfa boş kalır.
-   * Kırılımı ders / konu biriminde engelle.
+   * Büyük bloklarda page-break-inside:avoid KULLANMA.
+   * Chromium sığmayan avoid bloğu komple sonraki sayfaya atar →
+   * 1. sayfada sadece başlık + büyük boşluk kalır (indir / veli / öğrenci aynı HTML).
    */
-  .page-break-avoid,
+  .ok-report-card,
   .ok-report-eval-panel,
-  .ok-report-stat-card,
   .ok-report-topic,
   .ok-report-perf,
+  .ok-report-perf-details,
+  .ok-report-perf-rates,
+  .ok-report-perf-status {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* Yalnızca küçük birimleri bölünmeden tut */
+  .ok-report-stat-card,
   .ok-report-perf-header,
   .ok-report-perf-score,
-  .ok-report-perf-status,
   .ok-report-perf-status-card,
-  .ok-report-perf-rates,
   .ok-report-perf-rate-row,
-  .ok-report-perf-details,
-  .ok-report-footer-block {
+  .ok-report-footer-block,
+  #rapor-print-area table tr {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
@@ -1063,34 +1067,26 @@
   }
 
   .ok-report-eval-panel {
-    margin-bottom: 10px !important;
+    margin-bottom: 8px !important;
+    overflow: visible !important;
   }
 
   .ok-report-header {
-    margin-bottom: 8px !important;
-    padding: 10px 14px !important;
-  }
-
-  /* overflow:hidden Chromium'da break-inside:avoid'u bozar */
-  .ok-report-card,
-  .ok-report-eval-panel {
-    overflow: visible;
+    margin-bottom: 6px !important;
+    padding: 8px 12px !important;
   }
 
   .ok-report-card {
-    break-inside: auto !important;
-    page-break-inside: auto !important;
+    overflow: visible !important;
+    margin-bottom: 8px !important;
   }
 
   /*
-   * Performans özeti rapor sonunda sıkça sayfa sınırına denk gelir.
-   * Tüm bloğu sonraki sayfaya al — puan kutusu yarım kalmasın.
+   * Performans özeti yeni sayfada başlasın; blok büyürse bölünebilsin.
    */
   .ok-report-perf {
     break-before: page;
     page-break-before: always;
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
   }
 
   /* Flex fragmentation Chromium'da zayıf; header'ı grid'e çevir */
@@ -1099,8 +1095,6 @@
     grid-template-columns: 1fr auto;
     align-items: center;
     gap: 14px;
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
     break-after: avoid;
     page-break-after: avoid;
   }
@@ -1109,18 +1103,13 @@
     box-shadow: none;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
   }
 
-  .ok-report-perf-status {
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
-  }
-
-  #rapor-print-area table tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  /* printMode sarmalayıcısı 100vh ile boş sayfa üretmesin */
+  body,
+  html {
+    height: auto !important;
+    min-height: 0 !important;
   }
 }
 
