@@ -526,6 +526,36 @@ class AssignmentService:
         return assignment
 
     @transaction.atomic
+    def toggle_locker_key(self, assignment_id, user_id: int) -> LockerAssignment:
+        """Anahtar verildi / geri alındı — audit ile."""
+        assignment = LockerAssignmentRepository.get_by_id(assignment_id)
+        if not assignment:
+            raise ValueError("Atama bulunamadı")
+        if assignment.durum != AssignmentStatus.ACTIVE:
+            raise ValueError("Bu atama aktif değil")
+
+        old_val = bool(assignment.anahtar_verildi)
+        new_val = not old_val
+        LockerAssignmentRepository.update(assignment_id, {'anahtar_verildi': new_val})
+
+        dolap_no = assignment.locker.dolap_no if assignment.locker else '?'
+        AuditLogRepository.create({
+            'entity_type': 'LockerAssignment',
+            'entity_id': assignment_id,
+            'action': AuditAction.UPDATE,
+            'performed_by': user_id,
+            'old_values': {'anahtar_verildi': old_val},
+            'new_values': {'anahtar_verildi': new_val},
+            'description': (
+                f"Dolap {dolap_no} anahtar "
+                f"{'verildi' if new_val else 'geri alındı'} "
+                f"(öğrenci #{assignment.ogrenci_id})"
+            ),
+        })
+        assignment.refresh_from_db()
+        return assignment
+
+    @transaction.atomic
     def end_locker_assignment(self, assignment_id, user_id: int) -> LockerAssignment:
         assignment = LockerAssignmentRepository.get_by_id(assignment_id)
         if not assignment:
@@ -538,17 +568,35 @@ class AssignmentService:
         if assignment.depozit_odendi > 0 and not assignment.depozit_iade_edildi:
             warnings.append("Depozit henüz iade edilmedi")
 
-        LockerAssignmentRepository.update(assignment_id, {
-            'durum': AssignmentStatus.ENDED,
-        })
+        had_key = bool(assignment.anahtar_verildi)
+        update_fields = {'durum': AssignmentStatus.ENDED}
+        if had_key:
+            update_fields['anahtar_verildi'] = False
+
+        LockerAssignmentRepository.update(assignment_id, update_fields)
         LockerRepository.update(assignment.locker_id, {'durum': LockerStatus.AVAILABLE})
+
+        dolap_no = assignment.locker.dolap_no if assignment.locker else '?'
+        if had_key:
+            AuditLogRepository.create({
+                'entity_type': 'LockerAssignment',
+                'entity_id': assignment_id,
+                'action': AuditAction.UPDATE,
+                'performed_by': user_id,
+                'old_values': {'anahtar_verildi': True},
+                'new_values': {'anahtar_verildi': False},
+                'description': (
+                    f"Dolap {dolap_no} anahtar teslim alındı "
+                    f"(atama sonlandırma, öğrenci #{assignment.ogrenci_id})"
+                ),
+            })
 
         AuditLogRepository.create({
             'entity_type': 'LockerAssignment',
             'entity_id': assignment_id,
             'action': AuditAction.STATUS_CHANGE,
             'performed_by': user_id,
-            'description': f"Dolap {assignment.locker.dolap_no} ataması sonlandırıldı"
+            'description': f"Dolap {dolap_no} ataması sonlandırıldı"
         })
         assignment.refresh_from_db()
         return assignment

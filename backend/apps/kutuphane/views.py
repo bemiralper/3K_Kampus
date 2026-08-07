@@ -111,6 +111,43 @@ def _get_ogrenci_adi(ogrenci_id):
     return f"Öğrenci #{ogrenci_id}"
 
 
+def _get_user_display_name(user_id):
+    if not user_id:
+        return None
+    try:
+        from django.contrib.auth import get_user_model
+        u = get_user_model().objects.filter(id=user_id).values(
+            'first_name', 'last_name', 'username'
+        ).first()
+        if not u:
+            return f"Kullanıcı #{user_id}"
+        full = f"{(u.get('first_name') or '').strip()} {(u.get('last_name') or '').strip()}".strip()
+        return full or u.get('username') or f"Kullanıcı #{user_id}"
+    except Exception:
+        return f"Kullanıcı #{user_id}"
+
+
+def _anahtar_son_islem_fields(log):
+    """Audit log → serializer alanları."""
+    if not log:
+        return {
+            'anahtar_son_islem_at': None,
+            'anahtar_son_islem_yapan': None,
+            'anahtar_son_islem_yon': None,
+        }
+    new_vals = log.new_values or {}
+    yon = None
+    if 'anahtar_verildi' in new_vals:
+        yon = 'verildi' if new_vals['anahtar_verildi'] else 'geri_alindi'
+    return {
+        'anahtar_son_islem_at': (
+            log.performed_at.isoformat() if log.performed_at else None
+        ),
+        'anahtar_son_islem_yapan': _get_user_display_name(log.performed_by),
+        'anahtar_son_islem_yon': yon,
+    }
+
+
 def _serialize_library(lib, include_stats=False):
     data = {
         'id': str(lib.id),
@@ -251,8 +288,10 @@ def _serialize_seat_assignment(a):
     }
 
 
-def _serialize_locker_assignment(a):
-    return {
+def _serialize_locker_assignment(a, anahtar_log=None):
+    if anahtar_log is None:
+        anahtar_log = AuditLogRepository.latest_anahtar_ops([a.id]).get(str(a.id))
+    data = {
         'id': str(a.id),
         'kurum_id': a.kurum_id,
         'locker_id': str(a.locker_id),
@@ -271,6 +310,8 @@ def _serialize_locker_assignment(a):
         'notlar': a.notlar,
         'created_at': a.created_at.isoformat() if a.created_at else '',
     }
+    data.update(_anahtar_son_islem_fields(anahtar_log))
+    return data
 
 
 def _serialize_attendance_session(s):
@@ -464,16 +505,22 @@ def api_student_resource_overview(request):
             'baslangic_tarihi': a.baslangic_tarihi.isoformat() if a.baslangic_tarihi else '',
         }
 
+    locker_assignment_ids = [a.id for a in locker_assignments]
+    anahtar_ops = AuditLogRepository.latest_anahtar_ops(locker_assignment_ids)
+
     locker_by_student = {}
     for a in locker_assignments:
-        locker_by_student[a.ogrenci_id] = {
-            'atama_id': str(a.id),
+        aid = str(a.id)
+        dolap_row = {
+            'atama_id': aid,
             'dolap_no': a.locker.dolap_no if a.locker else '',
             'dolap_id': str(a.locker_id),
             'atama_tipi': a.atama_tipi,
             'baslangic_tarihi': a.baslangic_tarihi.isoformat() if a.baslangic_tarihi else '',
             'anahtar_verildi': a.anahtar_verildi,
         }
+        dolap_row.update(_anahtar_son_islem_fields(anahtar_ops.get(aid)))
+        locker_by_student[a.ogrenci_id] = dolap_row
 
     # Tüm öğrenci ID'leri
     all_student_ids = set(seat_by_student.keys()) | set(locker_by_student.keys())
@@ -1148,9 +1195,14 @@ def api_locker_assignment_list_create(request):
                 locker_id__in=locker_ids,
             )
         assignments = filter_kutuphane_assignments_qs(assignments, request.user)
+        assignment_list = list(assignments)
+        anahtar_ops = AuditLogRepository.latest_anahtar_ops([a.id for a in assignment_list])
         return JsonResponse({
             'success': True,
-            'data': [_serialize_locker_assignment(a) for a in assignments]
+            'data': [
+                _serialize_locker_assignment(a, anahtar_ops.get(str(a.id)))
+                for a in assignment_list
+            ],
         })
 
     elif request.method == 'POST':
@@ -1226,21 +1278,29 @@ def api_locker_assignment_toggle_key(request, pk):
         return err
 
     try:
-        assignment = LockerAssignment.objects.select_related('locker').get(pk=pk, durum=AssignmentStatus.ACTIVE)
+        assignment = LockerAssignment.objects.select_related('locker').get(
+            pk=pk, durum=AssignmentStatus.ACTIVE,
+        )
         if assignment.locker.sube_id != ctx['sube_id']:
             return JsonResponse({'success': False, 'error': 'Kayıt bu şubeye ait değil.'}, status=403)
         denied = require_kutuphane_operational_access(request, assignment.ogrenci_id)
         if denied:
             return denied
-        assignment.anahtar_verildi = not assignment.anahtar_verildi
-        assignment.save(update_fields=['anahtar_verildi'])
+        user_id = _get_user_id(request)
+        service = AssignmentService()
+        assignment = service.toggle_locker_key(pk, user_id)
         return JsonResponse({
             'success': True,
             'data': _serialize_locker_assignment(assignment),
-            'message': f'Anahtar durumu güncellendi: {"Verildi" if assignment.anahtar_verildi else "Verilmedi"}'
+            'message': (
+                f'Anahtar durumu güncellendi: '
+                f'{"Verildi" if assignment.anahtar_verildi else "Verilmedi"}'
+            ),
         })
     except LockerAssignment.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Aktif dolap ataması bulunamadı'}, status=404)
+    except ValueError as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 

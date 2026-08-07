@@ -25,6 +25,34 @@ const STATUS_LABELS: Record<string, string> = {
   AVAILABLE: 'Müsait', ASSIGNED: 'Atanmış', OUT_OF_SERVICE: 'Hizmet Dışı',
   ACTIVE: 'Aktif', ENDED: 'Sona Erdi', CANCELLED: 'İptal',
 };
+
+function formatRelativeTr(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const diffSec = Math.round((Date.now() - t) / 1000);
+  if (diffSec < 45) return 'az önce';
+  if (diffSec < 3600) return `${Math.max(1, Math.floor(diffSec / 60))} dk önce`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} sa önce`;
+  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)} gün önce`;
+  return new Date(iso).toLocaleString('tr-TR', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function formatAnahtarSonIslem(a: LockerAssignment): string | null {
+  if (!a.anahtar_son_islem_at) return null;
+  const yon =
+    a.anahtar_son_islem_yon === 'verildi'
+      ? 'Verildi'
+      : a.anahtar_son_islem_yon === 'geri_alindi'
+        ? 'Geri alındı'
+        : 'İşlem';
+  const when = formatRelativeTr(a.anahtar_son_islem_at);
+  const who = a.anahtar_son_islem_yapan || '';
+  const ogrenci = a.ogrenci_adi || '';
+  return [ogrenci, yon, when, who].filter(Boolean).join(' · ');
+}
 const BOYUT_OPTIONS = [
   { value: 'KUCUK', label: 'Küçük', icon: '📦' },
   { value: 'STANDARD', label: 'Standart', icon: '��️' },
@@ -807,9 +835,29 @@ export default function DolaplarPage() {
                         </td>
                         <td>{ATAMA_TIPI_LABELS[a.atama_tipi] || a.atama_tipi}</td>
                         <td>
-                          <span style={{ color: a.anahtar_verildi ? '#059669' : '#ef4444', fontWeight: 600, fontSize: 13 }}>
-                            {a.anahtar_verildi ? '🔑 Verildi' : '❌ Verilmedi'}
-                          </span>
+                          <div>
+                            <span style={{ color: a.anahtar_verildi ? '#059669' : '#ef4444', fontWeight: 600, fontSize: 13 }}>
+                              {a.anahtar_verildi ? '🔑 Verildi' : '❌ Verilmedi'}
+                            </span>
+                            {formatAnahtarSonIslem(a) && (
+                              <div
+                                title="Son anahtar işlemi"
+                                style={{
+                                  fontSize: 11,
+                                  color: '#64748b',
+                                  marginTop: 4,
+                                  padding: '3px 6px',
+                                  lineHeight: 1.35,
+                                  background: '#f1f5f9',
+                                  borderRadius: 6,
+                                  display: 'inline-block',
+                                  maxWidth: 260,
+                                }}
+                              >
+                                {formatAnahtarSonIslem(a)}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td>{a.baslangic_tarihi ? new Date(a.baslangic_tarihi).toLocaleDateString('tr-TR') : '-'}</td>
                         <td>

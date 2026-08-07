@@ -30,6 +30,37 @@ const ATAMA_TIPI_OPTIONS = [
   { value: 'DONEMLIK', label: 'Dönemlik' },
 ];
 
+function formatRelativeTr(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const diffSec = Math.round((Date.now() - t) / 1000);
+  if (diffSec < 45) return 'az önce';
+  if (diffSec < 3600) return `${Math.max(1, Math.floor(diffSec / 60))} dk önce`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} sa önce`;
+  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)} gün önce`;
+  return new Date(iso).toLocaleString('tr-TR', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function formatAnahtarSonIslem(
+  dolap: NonNullable<StudentResource['dolap']>,
+  ogrenciAdi?: string,
+): string | null {
+  if (!dolap.anahtar_son_islem_at) return null;
+  const yon =
+    dolap.anahtar_son_islem_yon === 'verildi'
+      ? 'Verildi'
+      : dolap.anahtar_son_islem_yon === 'geri_alindi'
+        ? 'Geri alındı'
+        : 'İşlem';
+  const when = formatRelativeTr(dolap.anahtar_son_islem_at);
+  const who = dolap.anahtar_son_islem_yapan || '';
+  // Örn: Ali Yılmaz · Verildi · az önce · Ayşe Hoca
+  return [ogrenciAdi, yon, when, who].filter(Boolean).join(' · ');
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    Searchable Student Dropdown
    ═══════════════════════════════════════════════════════════════════ */
@@ -249,6 +280,13 @@ export default function AtamalarPage() {
   const [endingSeat, setEndingSeat] = useState(false);
   const [endLockerConfirmId, setEndLockerConfirmId] = useState<string | null>(null);
   const [endingLocker, setEndingLocker] = useState(false);
+  const [keyToggleConfirm, setKeyToggleConfirm] = useState<{
+    atamaId: string;
+    ogrenciAdi: string;
+    dolapNo: string;
+    currentlyGiven: boolean;
+  } | null>(null);
+  const [togglingKey, setTogglingKey] = useState(false);
 
   /* ── Load libraries */
   useEffect(() => {
@@ -379,9 +417,33 @@ export default function AtamalarPage() {
     }
   };
 
-  const handleToggleKey = async (atamaId: string) => {
-    const r = await toggleLockerKey(atamaId);
-    r.success ? (setSuccessMsg(r.data?.anahtar_verildi ? '🔑 Anahtar verildi' : '🔑 Anahtar geri alındı'), loadStudents()) : alert(r.error || 'Hata');
+  const handleToggleKey = (student: StudentResource) => {
+    if (!student.dolap) return;
+    setKeyToggleConfirm({
+      atamaId: student.dolap.atama_id,
+      ogrenciAdi: student.ogrenci_adi,
+      dolapNo: student.dolap.dolap_no,
+      currentlyGiven: !!student.dolap.anahtar_verildi,
+    });
+  };
+
+  const confirmToggleKey = async () => {
+    if (!keyToggleConfirm) return;
+    setTogglingKey(true);
+    try {
+      const r = await toggleLockerKey(keyToggleConfirm.atamaId);
+      if (r.success) {
+        setSuccessMsg(
+          r.data?.anahtar_verildi ? '🔑 Anahtar verildi' : '🔑 Anahtar geri alındı',
+        );
+        loadStudents();
+      } else {
+        setErrorMsg(r.error || 'Anahtar işlemi başarısız');
+      }
+    } finally {
+      setTogglingKey(false);
+      setKeyToggleConfirm(null);
+    }
   };
 
   const canGoNext = step === 1 ? !!selectedOgrenci : step === 2 ? (!!formData.seat_id || !!formData.locker_id) : true;
@@ -714,13 +776,33 @@ export default function AtamalarPage() {
                     {/* Dolap */}
                     <td>
                       {s.dolap ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <span className="badge badge-green">🔒 {s.dolap.dolap_no}</span>
-                          <button className={`btn-key ${s.dolap.anahtar_verildi ? 'btn-key-yes' : 'btn-key-no'}`}
-                            onClick={() => handleToggleKey(s.dolap!.atama_id)}
-                            title={s.dolap.anahtar_verildi ? 'Anahtar verildi — tıklayarak geri alın' : 'Anahtar verilmedi — tıklayarak verin'}>
-                            🔑 {s.dolap.anahtar_verildi ? 'Verildi' : 'Verilmedi'}
-                          </button>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span className="badge badge-green">🔒 {s.dolap.dolap_no}</span>
+                            <button className={`btn-key ${s.dolap.anahtar_verildi ? 'btn-key-yes' : 'btn-key-no'}`}
+                              onClick={() => handleToggleKey(s)}
+                              title={s.dolap.anahtar_verildi ? 'Anahtar verildi — onay ile geri alın' : 'Anahtar verilmedi — onay ile verin'}>
+                              🔑 {s.dolap.anahtar_verildi ? 'Verildi' : 'Verilmedi'}
+                            </button>
+                          </div>
+                          {formatAnahtarSonIslem(s.dolap, s.ogrenci_adi) && (
+                            <div
+                              title="Son anahtar işlemi"
+                              style={{
+                                fontSize: 11,
+                                color: '#64748b',
+                                marginTop: 5,
+                                padding: '3px 6px',
+                                lineHeight: 1.35,
+                                background: '#f1f5f9',
+                                borderRadius: 6,
+                                display: 'inline-block',
+                                maxWidth: 280,
+                              }}
+                            >
+                              {formatAnahtarSonIslem(s.dolap, s.ogrenci_adi)}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <button className="btn-assign btn-assign-green"
@@ -1000,6 +1082,24 @@ export default function AtamalarPage() {
         loading={endingLocker}
         onConfirm={confirmEndLockerSimple}
         onCancel={() => !endingLocker && setEndLockerConfirmId(null)}
+      />
+
+      <KutuphaneConfirmModal
+        open={keyToggleConfirm !== null}
+        title={keyToggleConfirm?.currentlyGiven ? 'Anahtarı geri al' : 'Anahtar ver'}
+        message={
+          keyToggleConfirm
+            ? keyToggleConfirm.currentlyGiven
+              ? `Anahtarı ${keyToggleConfirm.ogrenciAdi} / Dolap ${keyToggleConfirm.dolapNo} için geri alındı olarak işaretlemek istediğinize emin misiniz?`
+              : `Anahtarı ${keyToggleConfirm.ogrenciAdi} / Dolap ${keyToggleConfirm.dolapNo} için verildi olarak işaretlemek istediğinize emin misiniz?`
+            : ''
+        }
+        confirmLabel={keyToggleConfirm?.currentlyGiven ? 'Evet, geri alındı' : 'Evet, verildi'}
+        cancelLabel="Vazgeç"
+        tone="warning"
+        loading={togglingKey}
+        onConfirm={confirmToggleKey}
+        onCancel={() => !togglingKey && setKeyToggleConfirm(null)}
       />
     </div>
   );

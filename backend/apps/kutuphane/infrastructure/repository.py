@@ -664,6 +664,26 @@ class AuditLogRepository:
     def get_recent(limit: int = 20) -> QuerySet:
         return LibraryAuditLog.objects.all()[:limit]
 
+    @staticmethod
+    def latest_anahtar_ops(assignment_ids) -> dict:
+        """assignment_id (str) → son anahtar audit kaydı."""
+        if not assignment_ids:
+            return {}
+        logs = (
+            LibraryAuditLog.objects.filter(
+                entity_type='LockerAssignment',
+                entity_id__in=list(assignment_ids),
+                new_values__has_key='anahtar_verildi',
+            )
+            .order_by('-performed_at')
+        )
+        result = {}
+        for log in logs.iterator():
+            key = str(log.entity_id)
+            if key not in result:
+                result[key] = log
+        return result
+
 
 # ──────────────────────────────────────
 # ŞUBE DERS PROGRAMI REPOSITORY

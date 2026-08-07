@@ -144,6 +144,9 @@ export interface LockerAssignment {
   bitis_tarihi: string | null;
   depozit_odendi: boolean;
   anahtar_verildi: boolean;
+  anahtar_son_islem_at?: string | null;
+  anahtar_son_islem_yapan?: string | null;
+  anahtar_son_islem_yon?: 'verildi' | 'geri_alindi' | null;
   notlar: string;
   created_at: string;
 }
@@ -688,6 +691,9 @@ export interface StudentResource {
     atama_tipi: string;
     baslangic_tarihi: string;
     anahtar_verildi: boolean;
+    anahtar_son_islem_at?: string | null;
+    anahtar_son_islem_yapan?: string | null;
+    anahtar_son_islem_yon?: 'verildi' | 'geri_alindi' | null;
   } | null;
 }
 
