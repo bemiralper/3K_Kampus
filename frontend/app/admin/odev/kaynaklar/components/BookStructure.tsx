@@ -454,9 +454,15 @@ export function BookStructure(props: BookStructureProps) {
 
   const submitPrefix = async () => {
     if (!prefixText.trim() || !selectedContentIds.length) return;
+    // Yapıda artık olmayan (bayat) seçimleri gönderme
+    const ids = selectedContentsOrdered.map((c) => c.id);
+    if (!ids.length) {
+      clearSelection();
+      return;
+    }
     setPrefixLoading(true);
     const ok = await onBulkPrefixNames(
-      selectedContentIds,
+      ids,
       prefixText,
       prefixWithNumber,
       prefixStart,

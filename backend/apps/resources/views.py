@@ -25,6 +25,7 @@ from .models import (
     ResourceContent,
 )
 from .scoping import (
+    contents_accessible_for_request,
     filter_books_for_request,
     filter_by_book_kurum_for_request,
     get_request_kurum_id,
@@ -1463,15 +1464,8 @@ class ResourceTopicViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        contents_qs = filter_by_book_kurum_for_request(
-            ResourceContent.objects.filter(pk__in=content_ids).select_related(
-                'topic', 'topic__unit', 'topic__unit__book'
-            ),
-            request,
-            kurum_lookup='topic__unit__book__kurum_id',
-        )
-        contents = _ordered_contents_by_ids(contents_qs, content_ids)
-        if len(contents) != len(set(content_ids)):
+        contents = contents_accessible_for_request(request, content_ids)
+        if contents is None:
             return Response(
                 {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1768,22 +1762,19 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        target_topic = filter_by_book_kurum_for_request(
-            ResourceTopic.objects.filter(pk=target_topic_id).select_related('unit', 'unit__book'),
-            request,
-            kurum_lookup='unit__book__kurum_id',
-        ).first()
-        if not target_topic:
+        target_topic = (
+            ResourceTopic.objects.filter(pk=target_topic_id)
+            .select_related('unit', 'unit__book')
+            .first()
+        )
+        if not target_topic or resolve_book_for_structure(request, target_topic.unit.book_id) is None:
             return Response(
                 {'success': False, 'error': 'Hedef konu bulunamadı.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        contents = _ordered_contents_by_ids(
-            self.get_queryset().select_related('topic', 'topic__unit', 'topic__unit__book'),
-            content_ids,
-        )
-        if len(contents) != len(set(content_ids)):
+        contents = contents_accessible_for_request(request, content_ids)
+        if contents is None:
             return Response(
                 {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1852,8 +1843,13 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        qs = self.get_queryset().filter(pk__in=content_ids)
-        found_ids = list(qs.values_list('id', flat=True))
+        contents = contents_accessible_for_request(request, content_ids)
+        if contents is None:
+            return Response(
+                {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        found_ids = [c.id for c in contents]
         if not found_ids:
             return Response(
                 {'success': False, 'error': 'Silinecek içerik bulunamadı.'},
@@ -1861,7 +1857,7 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
             )
 
         with transaction.atomic():
-            deleted_count, _ = qs.delete()
+            deleted_count, _ = ResourceContent.objects.filter(pk__in=found_ids).delete()
 
         return Response({
             'success': True,
@@ -1923,8 +1919,8 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        contents = _ordered_contents_by_ids(self.get_queryset(), content_ids)
-        if len(contents) != len(set(content_ids)):
+        contents = contents_accessible_for_request(request, content_ids)
+        if contents is None:
             return Response(
                 {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
                 status=status.HTTP_400_BAD_REQUEST,

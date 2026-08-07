@@ -6,6 +6,50 @@ def get_request_kurum_id(request):
     return get_secili_kurum_id(request)
 
 
+def contents_accessible_for_request(request, content_ids: list[int]):
+    """
+    Toplu içerik yazma için erişim kontrolü.
+
+    Kitap structure GET ile aynı çözümü kullanır (aktif şube + izinli şubeler).
+    Böylece UI'da görünen içerikler bulk-prefix / transfer'de "erişim yok" olmaz.
+
+    Returns:
+        istek sırasına göre ResourceContent listesi, veya erişim/eksik varsa None.
+    """
+    from apps.resources.models import ResourceContent
+
+    if not content_ids:
+        return []
+
+    unique_ids: list[int] = []
+    seen: set[int] = set()
+    for raw in content_ids:
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            return None
+        if cid in seen:
+            continue
+        seen.add(cid)
+        unique_ids.append(cid)
+
+    found = list(
+        ResourceContent.objects.filter(pk__in=unique_ids).select_related(
+            'topic', 'topic__unit', 'topic__unit__book',
+        )
+    )
+    if len(found) != len(unique_ids):
+        return None
+
+    book_ids = {c.topic.unit.book_id for c in found}
+    for book_id in book_ids:
+        if resolve_book_for_structure(request, book_id) is None:
+            return None
+
+    by_id = {c.id: c for c in found}
+    return [by_id[cid] for cid in unique_ids]
+
+
 def get_request_sube_id(request, kurum_id=None):
     """Zorunlu şube bağlamı — header/session; yoksa None."""
     from shared.context import require_mandatory_sube_id

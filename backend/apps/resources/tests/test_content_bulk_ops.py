@@ -255,3 +255,35 @@ class ResourceContentBulkOpsTest(TestCase):
             **self.headers,
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_bulk_prefix_works_for_book_in_allowed_other_sube(self):
+        """Structure'da görünen (diğer şube) kitapta ön başlık uygulanabilmeli."""
+        other_sube = Sube.objects.create(kurum=self.kurum, ad='Diğer', kod='BD', aktif_mi=True)
+        other_book = ResourceBook.objects.create(
+            ad='Diğer Kitap', kod='K-OTHER-SUBE', book_type=self.book.book_type,
+            ders=self.book.ders, sinif_seviyesi=self.book.sinif_seviyesi,
+            kurum=self.kurum, sube=other_sube, aktif_mi=True,
+        )
+        unit = ResourceUnit.objects.create(book=other_book, ad='Ü', kod='UO', sira=1)
+        topic = ResourceTopic.objects.create(unit=unit, ad='K', kod='TO', sira=1)
+        content = ResourceContent.objects.create(
+            topic=topic, ad='Test-9', content_type='TEST_SET', sira=1, question_count=5,
+        )
+
+        # Staff global şube erişimi: aktif şube self.sube, kitap other_sube
+        url = '/api/resources/contents/bulk-prefix-name/'
+        response = self.client.post(
+            url,
+            {
+                'content_ids': [content.id],
+                'prefix': 'Cümlede Anlam',
+                'with_number': True,
+                'start_number': 1,
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['success'])
+        content.refresh_from_db()
+        self.assertEqual(content.ad, 'Cümlede Anlam 1/Test-9')
