@@ -181,6 +181,9 @@ class ResourceBookSerializer(serializers.ModelSerializer):
     unit_count = serializers.IntegerField(source='db_unit_count', read_only=True, default=0)
     topic_count = serializers.IntegerField(source='db_topic_count', read_only=True, default=0)
     content_count = serializers.IntegerField(source='db_content_count', read_only=True, default=0)
+    total_question_count = serializers.IntegerField(
+        source='db_total_question_count', read_only=True, default=0,
+    )
     
     zorluk_display = serializers.SerializerMethodField()
     kapak_url = serializers.SerializerMethodField()
@@ -194,7 +197,7 @@ class ResourceBookSerializer(serializers.ModelSerializer):
             'publisher', 'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
             'zorluk_min', 'zorluk_max', 'zorluk_display',
             'kapak_url', 'aciklama', 'aktif_mi', 'icerik_tamamlandi_mi', 'sira',
-            'unit_count', 'topic_count', 'content_count',
+            'unit_count', 'topic_count', 'content_count', 'total_question_count',
             'created_at', 'updated_at'
         ]
     
@@ -234,6 +237,9 @@ class ResourceBookDetailSerializer(serializers.ModelSerializer):
     unit_count = serializers.IntegerField(read_only=True)
     topic_count = serializers.IntegerField(read_only=True)
     content_count = serializers.IntegerField(read_only=True)
+    total_question_count = serializers.IntegerField(
+        source='db_total_question_count', read_only=True, default=0,
+    )
     zorluk_display = serializers.SerializerMethodField()
     kapak_url = serializers.SerializerMethodField()
     
@@ -246,7 +252,7 @@ class ResourceBookDetailSerializer(serializers.ModelSerializer):
             'publisher', 'yayinevi', 'yazar', 'yayin_yili', 'toplam_sayfa', 'isbn',
             'zorluk_min', 'zorluk_max', 'zorluk_display',
             'kapak_url', 'aciklama', 'aktif_mi', 'icerik_tamamlandi_mi', 'sira',
-            'unit_count', 'topic_count', 'content_count', 'units',
+            'unit_count', 'topic_count', 'content_count', 'total_question_count', 'units',
             'created_at', 'updated_at'
         ]
 

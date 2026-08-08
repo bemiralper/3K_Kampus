@@ -48,16 +48,16 @@ class ResourceBookListCountsTest(TestCase):
         ResourceTopic.objects.create(unit=u2, ad='Pasif konu', kod='T0', sira=1, aktif_mi=False)
 
         ResourceContent.objects.create(
-            topic=t1, ad='İ1', content_type='CUSTOM', sira=1, aktif_mi=True,
+            topic=t1, ad='İ1', content_type='TEST_SET', sira=1, aktif_mi=True, question_count=10,
         )
         ResourceContent.objects.create(
-            topic=t1, ad='İ2', content_type='CUSTOM', sira=2, aktif_mi=True,
+            topic=t1, ad='İ2', content_type='TEST_SET', sira=2, aktif_mi=True, question_count=20,
         )
         ResourceContent.objects.create(
-            topic=t2, ad='İ3', content_type='CUSTOM', sira=1, aktif_mi=True,
+            topic=t2, ad='İ3', content_type='TEST_SET', sira=1, aktif_mi=True, question_count=5,
         )
         ResourceContent.objects.create(
-            topic=t1, ad='Pasif içerik', content_type='CUSTOM', sira=3, aktif_mi=False,
+            topic=t1, ad='Pasif içerik', content_type='TEST_SET', sira=3, aktif_mi=False, question_count=99,
         )
 
         self.user = User.objects.create_user(
@@ -82,3 +82,14 @@ class ResourceBookListCountsTest(TestCase):
         self.assertEqual(row['unit_count'], 2)
         self.assertEqual(row['topic_count'], 2)
         self.assertEqual(row['content_count'], 3)
+        self.assertEqual(row['total_question_count'], 35)
+
+    def test_retrieve_returns_total_question_count(self):
+        response = self.client.get(
+            f'/api/resources/books/{self.book.id}/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube.id),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['data']['total_question_count'], 35)

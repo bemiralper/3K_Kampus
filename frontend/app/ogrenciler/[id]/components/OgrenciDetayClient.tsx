@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useOgrenciPath } from "@/components/ogrenci/OgrenciPathProvider";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/lib/contexts/AuthContext";
+import { ModulePermissions, PermissionChecks } from "@/app/roles/role.permissions";
 import { OgrenciDetay, TabType, TabConfig } from "../types";
 import OgrenciProfilKart from "./OgrenciProfilKart";
 import OgrenciBilgiDrawer from "./OgrenciBilgiDrawer";
-import { VeliTab, AkademikTab, SinavTab, FinansTab, RehberlikTab, IletisimTab } from "./tabs";
+import { VeliTab, AkademikTab, SinavTab, FinansTab, RehberlikTab, IletisimTab, NotlarTab } from "./tabs";
 
-// Tab configurations
-const tabs: TabConfig[] = [
+const ALL_TABS: TabConfig[] = [
   {
     id: 'veli',
     label: 'Veli',
@@ -73,16 +74,38 @@ const tabs: TabConfig[] = [
       </svg>
     ),
   },
+  {
+    id: 'notlar',
+    label: 'Notlar',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+        <line x1="10" y1="9" x2="8" y2="9" />
+      </svg>
+    ),
+  },
 ];
 
 export default function OgrenciDetayClient({ data: initialData }: { data: OgrenciDetay }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { listHref, portalHomeHref, href } = useOgrenciPath();
+  const { user } = useAuth();
+  const { listHref, portalHomeHref } = useOgrenciPath();
+  const canViewNotes = PermissionChecks.hasAnyPermission(user?.permissions || [], [
+    ModulePermissions.OGRENCI.NOTES,
+    ModulePermissions.OGRENCI.MANAGE,
+  ]);
+  const tabs = useMemo(
+    () => (canViewNotes ? ALL_TABS : ALL_TABS.filter((t) => t.id !== 'notlar')),
+    [canViewNotes],
+  );
   const tabFromUrl = searchParams.get('tab') as TabType | null;
   const hasAkademikQuery = Boolean(searchParams.get('akademik'));
   const [activeTab, setActiveTab] = useState<TabType>(() => {
-    if (tabFromUrl && tabs.some((t) => t.id === tabFromUrl)) return tabFromUrl;
+    if (tabFromUrl && ALL_TABS.some((t) => t.id === tabFromUrl)) return tabFromUrl;
     if (hasAkademikQuery) return 'akademik';
     return 'veli';
   });
@@ -98,13 +121,24 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
     if (searchParams.get('edit') === '1') {
       setShowEditDrawer(true);
     }
+  }, [searchParams]);
+
+  useEffect(() => {
     const t = searchParams.get('tab') as TabType | null;
     if (t && tabs.some((x) => x.id === t)) {
       setActiveTab(t);
+    } else if (t === 'notlar' && !canViewNotes) {
+      setActiveTab('veli');
     } else if (searchParams.get('akademik')) {
       setActiveTab('akademik');
     }
-  }, [searchParams]);
+  }, [searchParams, tabs, canViewNotes]);
+
+  useEffect(() => {
+    if (activeTab === 'notlar' && !canViewNotes) {
+      setActiveTab('veli');
+    }
+  }, [activeTab, canViewNotes]);
 
   function renderTabContent(tab: TabType) {
     switch (tab) {
@@ -125,26 +159,24 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
         return <RehberlikTab />;
       case 'iletisim':
         return <IletisimTab ogrenciId={data.id} ogrenciAd={data.tam_ad} />;
+      case 'notlar':
+        return canViewNotes ? <NotlarTab ogrenciId={data.id} /> : null;
       default:
         return null;
     }
   }
 
-  // Handle successful update
   const handleUpdateSuccess = (updatedData: OgrenciDetay) => {
     setData(updatedData);
-    // Refresh the page to get the latest data from server
     router.refresh();
   };
 
-  // Handle photo update
   const handlePhotoUpdate = (newPhotoUrl: string | null) => {
     setData(prev => ({ ...prev, profil_foto: newPhotoUrl }));
   };
 
   return (
     <div className="section">
-      {/* Page Header */}
       <div className="page-header">
         <div className="page-header-left">
           <h2>Öğrenci Detayı</h2>
@@ -164,8 +196,8 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
             </svg>
             Geri Dön
           </Link>
-          <button 
-            onClick={() => openEditDrawer('kisisel')} 
+          <button
+            onClick={() => openEditDrawer('kisisel')}
             className="btn-modern btn-primary"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -177,15 +209,13 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
         </div>
       </div>
 
-      {/* Student Profile Card */}
-      <OgrenciProfilKart 
-        data={data} 
+      <OgrenciProfilKart
+        data={data}
         onEditClick={() => openEditDrawer('kisisel')}
         onSchoolEditClick={() => openEditDrawer('egitim')}
         onPhotoUpdate={handlePhotoUpdate}
       />
 
-      {/* Tab Menu */}
       <div className="student-tabs-container">
         <div className="student-tabs">
           {tabs.map((tab) => (
@@ -201,13 +231,11 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
         </div>
       </div>
 
-      {/* Tab Content */}
       <div className="student-tab-content">
         {renderTabContent(activeTab)}
       </div>
 
-      {/* Edit Drawer */}
-      <OgrenciBilgiDrawer 
+      <OgrenciBilgiDrawer
         isOpen={showEditDrawer}
         onClose={() => setShowEditDrawer(false)}
         data={data}

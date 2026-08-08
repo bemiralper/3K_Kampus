@@ -287,3 +287,37 @@ class ResourceContentBulkOpsTest(TestCase):
         self.assertTrue(response.data['success'])
         content.refresh_from_db()
         self.assertEqual(content.ad, 'Cümlede Anlam 1/Test-9')
+
+    def test_bulk_delete_skips_stale_missing_ids(self):
+        """Silinmiş/bayat ID karışık gönderilince geçerli içerikler silinmeli."""
+        url = '/api/resources/contents/bulk-delete/'
+        stale_id = 9_999_991
+        response = self.client.post(
+            url,
+            {'content_ids': [self.c1.id, stale_id, self.c2.id]},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['data']['deleted_count'], 2)
+        self.assertFalse(ResourceContent.objects.filter(pk=self.c1.id).exists())
+        self.assertFalse(ResourceContent.objects.filter(pk=self.c2.id).exists())
+        self.assertTrue(ResourceContent.objects.filter(pk=self.c3.id).exists())
+
+    def test_bulk_transfer_skips_stale_missing_ids(self):
+        url = '/api/resources/contents/bulk-transfer/'
+        response = self.client.post(
+            url,
+            {
+                'content_ids': [self.c1.id, 9_999_992],
+                'target_topic_id': self.topic_b.id,
+                'mode': 'move',
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['success'])
+        self.c1.refresh_from_db()
+        self.assertEqual(self.c1.topic_id, self.topic_b.id)

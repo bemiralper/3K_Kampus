@@ -2,6 +2,7 @@
 Ogrenci Domain Models
 Production-Grade SaaS Multi-Tenant Architecture
 """
+from django.conf import settings
 from django.db import models
 from django.core.validators import RegexValidator
 
@@ -605,4 +606,154 @@ class OgrenciEkHizmet(models.Model):
     def hizmet_turu(self):
         """Ek hizmetin türünü döndürür — kolay erişim"""
         return self.ek_hizmet.hizmet_turu
+
+
+class OgrenciNotKategori:
+    FINANS = 'finans'
+    EGITIM = 'egitim'
+    KOCLUK = 'kocluk'
+    VELI_ILETISIMI = 'veli_iletisimi'
+    DEVAMSIZLIK = 'devamsizlik'
+    SOZLESME = 'sozlesme'
+    GENEL = 'genel'
+    DIGER = 'diger'
+
+    CHOICES = [
+        (FINANS, 'Finans'),
+        (EGITIM, 'Eğitim'),
+        (KOCLUK, 'Koçluk'),
+        (VELI_ILETISIMI, 'Veli İletişimi'),
+        (DEVAMSIZLIK, 'Devamsızlık'),
+        (SOZLESME, 'Sözleşme'),
+        (GENEL, 'Genel'),
+        (DIGER, 'Diğer'),
+    ]
+
+    LABELS = dict(CHOICES)
+    CODES = frozenset(LABELS)
+
+
+class OgrenciNot(models.Model):
+    """Öğrenci kurumsal olay/not kaydı (manuel)."""
+
+    ogrenci = models.ForeignKey(
+        Ogrenci,
+        on_delete=models.CASCADE,
+        related_name='notlar',
+        verbose_name='Öğrenci',
+    )
+    baslik = models.CharField('Başlık', max_length=255)
+    icerik = models.TextField('İçerik')
+    kategori = models.CharField(
+        'Kategori',
+        max_length=32,
+        choices=OgrenciNotKategori.CHOICES,
+        default=OgrenciNotKategori.GENEL,
+        db_index=True,
+    )
+    not_zamani = models.DateTimeField(
+        'Not Zamanı',
+        help_text='Kullanıcı tarafından düzenlenebilir olay tarihi/saati',
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='ogrenci_notlari_created',
+        verbose_name='Ekleyen',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='ogrenci_notlari_updated',
+        verbose_name='Son Düzenleyen',
+    )
+    created_at = models.DateTimeField('Eklenme Tarihi', auto_now_add=True)
+    updated_at = models.DateTimeField('Son Düzenleme Tarihi', auto_now=True)
+    is_deleted = models.BooleanField('Silindi', default=False, db_index=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='ogrenci_notlari_deleted',
+        verbose_name='Silen',
+    )
+    deleted_at = models.DateTimeField('Silinme Tarihi', null=True, blank=True)
+
+    class Meta:
+        db_table = 'ogrenci_not'
+        verbose_name = 'Öğrenci Notu'
+        verbose_name_plural = 'Öğrenci Notları'
+        ordering = ['-not_zamani', '-id']
+        indexes = [
+            models.Index(fields=['ogrenci', 'is_deleted', '-not_zamani']),
+            models.Index(fields=['ogrenci', 'kategori', 'is_deleted']),
+        ]
+
+    def __str__(self):
+        return f"{self.baslik} ({self.get_kategori_display()})"
+
+
+class OgrenciNotAuditAction:
+    CREATED = 'created'
+    UPDATED = 'updated'
+    DELETED = 'deleted'
+
+    CHOICES = [
+        (CREATED, 'Oluşturuldu'),
+        (UPDATED, 'Düzenlendi'),
+        (DELETED, 'Silindi'),
+    ]
+
+
+class OgrenciNotAuditLog(models.Model):
+    """Öğrenci notu işlem geçmişi."""
+
+    not_kaydi = models.ForeignKey(
+        OgrenciNot,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='audit_logs',
+        verbose_name='Not',
+    )
+    note_id = models.IntegerField('Not ID', db_index=True)
+    ogrenci = models.ForeignKey(
+        Ogrenci,
+        on_delete=models.CASCADE,
+        related_name='not_audit_logs',
+        verbose_name='Öğrenci',
+    )
+    baslik_snapshot = models.CharField('Başlık (anlık)', max_length=255, blank=True, default='')
+    action = models.CharField('İşlem', max_length=20, choices=OgrenciNotAuditAction.CHOICES)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='ogrenci_not_audit_logs',
+        verbose_name='İşlemi Yapan',
+    )
+    performed_at = models.DateTimeField('İşlem Zamanı', auto_now_add=True, db_index=True)
+    old_values = models.JSONField('Eski Değerler', null=True, blank=True)
+    new_values = models.JSONField('Yeni Değerler', null=True, blank=True)
+    description = models.CharField('Açıklama', max_length=500, blank=True, default='')
+
+    class Meta:
+        db_table = 'ogrenci_not_audit_log'
+        verbose_name = 'Öğrenci Not Audit'
+        verbose_name_plural = 'Öğrenci Not Audit Logları'
+        ordering = ['-performed_at', '-id']
+        indexes = [
+            models.Index(fields=['note_id', '-performed_at']),
+            models.Index(fields=['ogrenci', '-performed_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.action} — {self.baslik_snapshot or self.note_id}"
 

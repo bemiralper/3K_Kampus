@@ -1,6 +1,7 @@
 from django.contrib import admin
 from apps.ogrenci.domain.models import (
-    Ogrenci, OgrenciKayit, OgrenciAdres, OgrenciVeli, OgrenciEgitimPaketi, OgrenciEkHizmet
+    Ogrenci, OgrenciKayit, OgrenciAdres, OgrenciVeli, OgrenciEgitimPaketi, OgrenciEkHizmet,
+    OgrenciNot, OgrenciNotAuditLog,
 )
 
 
@@ -80,3 +81,21 @@ class OgrenciEkHizmetAdmin(admin.ModelAdmin):
     search_fields = ['ogrenci__ad', 'ogrenci__soyad', 'ek_hizmet__ad']
     raw_id_fields = ['ogrenci', 'ek_hizmet']
     readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(OgrenciNot)
+class OgrenciNotAdmin(admin.ModelAdmin):
+    list_display = ['baslik', 'ogrenci', 'kategori', 'not_zamani', 'created_by', 'is_deleted']
+    list_filter = ['kategori', 'is_deleted']
+    search_fields = ['baslik', 'icerik', 'ogrenci__ad', 'ogrenci__soyad']
+    raw_id_fields = ['ogrenci', 'created_by', 'updated_by', 'deleted_by']
+    readonly_fields = ['created_at', 'updated_at', 'deleted_at']
+
+
+@admin.register(OgrenciNotAuditLog)
+class OgrenciNotAuditLogAdmin(admin.ModelAdmin):
+    list_display = ['action', 'baslik_snapshot', 'ogrenci', 'performed_by', 'performed_at']
+    list_filter = ['action']
+    search_fields = ['baslik_snapshot', 'description']
+    raw_id_fields = ['not_kaydi', 'ogrenci', 'performed_by']
+    readonly_fields = ['performed_at']

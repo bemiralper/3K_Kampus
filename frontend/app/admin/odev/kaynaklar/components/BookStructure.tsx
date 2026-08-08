@@ -327,18 +327,29 @@ export function BookStructure(props: BookStructureProps) {
   const [prefixWithNumber, setPrefixWithNumber] = useState(false);
   const [prefixStart, setPrefixStart] = useState(1);
 
-  const selectedSet = useMemo(() => new Set(selectedContentIds), [selectedContentIds]);
-
-  const selectedContentsOrdered = useMemo(() => {
-    if (!bookStructure?.units || !selectedContentIds.length) return [] as ResourceContent[];
+  const contentById = useMemo(() => {
     const byId = new Map<number, ResourceContent>();
+    if (!bookStructure?.units) return byId;
     for (const u of bookStructure.units) {
       for (const t of u.topics || []) {
         for (const c of t.contents || []) byId.set(c.id, c);
       }
     }
-    return selectedContentIds.map((id) => byId.get(id)).filter(Boolean) as ResourceContent[];
-  }, [bookStructure, selectedContentIds]);
+    return byId;
+  }, [bookStructure]);
+
+  const selectedSet = useMemo(() => new Set(selectedContentIds), [selectedContentIds]);
+
+  /** Yapıda hâlâ duran içerik ID'leri — bayat seçim/pano ID'lerini ele. */
+  const liveContentIds = (ids: number[]) =>
+    ids.filter((id) => contentById.has(id));
+
+  const selectedContentsOrdered = useMemo(() => {
+    if (!selectedContentIds.length) return [] as ResourceContent[];
+    return selectedContentIds
+      .map((id) => contentById.get(id))
+      .filter(Boolean) as ResourceContent[];
+  }, [contentById, selectedContentIds]);
 
   const prefixPreviewNames = useMemo(() => {
     const p = prefixText.trim();
@@ -357,6 +368,20 @@ export function BookStructure(props: BookStructureProps) {
     setGroupOpen(false);
   }, [selectedBook.id]);
 
+  // Yapı yenilenince silinen içerikleri seçim/panodan temizle
+  useEffect(() => {
+    setSelectedContentIds((prev) => {
+      const next = prev.filter((id) => contentById.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+    setClipboard((prev) => {
+      if (!prev) return prev;
+      const nextIds = prev.contentIds.filter((id) => contentById.has(id));
+      if (nextIds.length === prev.contentIds.length) return prev;
+      return nextIds.length ? { ...prev, contentIds: nextIds } : null;
+    });
+  }, [contentById]);
+
   const toggleContentSelected = (id: number) => {
     setSelectedContentIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -366,13 +391,15 @@ export function BookStructure(props: BookStructureProps) {
   const clearSelection = () => setSelectedContentIds([]);
 
   const copySelected = () => {
-    if (!selectedContentIds.length) return;
-    setClipboard({ mode: "copy", contentIds: [...selectedContentIds] });
+    const ids = liveContentIds(selectedContentIds);
+    if (!ids.length) return;
+    setClipboard({ mode: "copy", contentIds: ids });
   };
 
   const cutSelected = () => {
-    if (!selectedContentIds.length) return;
-    setClipboard({ mode: "cut", contentIds: [...selectedContentIds] });
+    const ids = liveContentIds(selectedContentIds);
+    if (!ids.length) return;
+    setClipboard({ mode: "cut", contentIds: ids });
   };
 
   const actionBtn = (
@@ -409,9 +436,14 @@ export function BookStructure(props: BookStructureProps) {
 
   const pasteIntoTopic = async (topicId: number) => {
     if (!clipboard?.contentIds.length || busyAction) return;
+    const ids = liveContentIds(clipboard.contentIds);
+    if (!ids.length) {
+      setClipboard(null);
+      return;
+    }
     setBusyAction(true);
     const ok = await onBulkTransferContents(
-      clipboard.contentIds,
+      ids,
       topicId,
       clipboard.mode === "cut" ? "move" : "copy",
     );
@@ -423,16 +455,21 @@ export function BookStructure(props: BookStructureProps) {
   };
 
   const deleteSelected = async () => {
-    if (!selectedContentIds.length || busyAction) return;
-    if (!confirm(`${selectedContentIds.length} içerik silinsin mi?`)) return;
+    const ids = liveContentIds(selectedContentIds);
+    if (!ids.length || busyAction) {
+      if (!ids.length) clearSelection();
+      return;
+    }
+    if (!confirm(`${ids.length} içerik silinsin mi?`)) return;
     setBusyAction(true);
-    const ok = await onBulkDeleteContents(selectedContentIds);
+    const ok = await onBulkDeleteContents(ids);
     setBusyAction(false);
     if (ok) {
       clearSelection();
+      const deleted = new Set(ids);
       setClipboard((prev) => {
         if (!prev) return null;
-        const left = prev.contentIds.filter((id) => !selectedSet.has(id));
+        const left = prev.contentIds.filter((id) => !deleted.has(id));
         return left.length ? { ...prev, contentIds: left } : null;
       });
     }
@@ -453,9 +490,8 @@ export function BookStructure(props: BookStructureProps) {
   };
 
   const submitPrefix = async () => {
-    if (!prefixText.trim() || !selectedContentIds.length) return;
-    // Yapıda artık olmayan (bayat) seçimleri gönderme
-    const ids = selectedContentsOrdered.map((c) => c.id);
+    if (!prefixText.trim()) return;
+    const ids = liveContentIds(selectedContentIds);
     if (!ids.length) {
       clearSelection();
       return;
@@ -475,10 +511,15 @@ export function BookStructure(props: BookStructureProps) {
   };
 
   const submitGroup = async () => {
-    if (!groupForm.ad.trim() || !selectedContentIds.length) return;
+    if (!groupForm.ad.trim()) return;
+    const ids = liveContentIds(selectedContentIds);
+    if (!ids.length) {
+      clearSelection();
+      return;
+    }
     setGroupLoading(true);
     const ok = await onGroupContentsIntoTopic(
-      selectedContentIds,
+      ids,
       groupForm.ad,
       groupForm.kod || undefined,
     );
@@ -542,6 +583,22 @@ export function BookStructure(props: BookStructureProps) {
 
   const sortedUnits = filteredUnits ? [...filteredUnits].sort((a, b) => a.sira - b.sira) : [];
 
+  // Yapıdaki içeriklerden canlı toplam; yoksa API alanı
+  const totalQuestionCount = (() => {
+    let sum = 0;
+    let fromStructure = false;
+    for (const u of bookStructure?.units || []) {
+      for (const t of u.topics || []) {
+        for (const c of t.contents || []) {
+          fromStructure = true;
+          sum += c.question_count || 0;
+        }
+      }
+    }
+    if (fromStructure || bookStructure?.units) return sum;
+    return selectedBook.total_question_count ?? 0;
+  })();
+
   return (
     <div
       className={fullPage ? "kk-structure-fullpage" : undefined}
@@ -573,6 +630,21 @@ export function BookStructure(props: BookStructureProps) {
               )}
               {selectedBook.yayinevi && <span className="badge badge-light">{selectedBook.yayinevi}</span>}
               {selectedBook.icerik_tamamlandi_mi && <BookContentCompleteBadge />}
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "4px 10px",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: "#ecfdf5",
+                  color: "#047857",
+                  border: "1px solid #a7f3d0",
+                }}
+                title="Kitaptaki tüm aktif içeriklerin soru sayısı toplamı"
+              >
+                📝 {totalQuestionCount.toLocaleString("tr-TR")} soru
+              </span>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>

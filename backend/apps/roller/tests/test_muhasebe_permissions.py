@@ -37,6 +37,7 @@ class MuhasebePermissionTests(TestCase):
     def test_muhasebe_role_has_expected_permissions(self):
         perms = set(self.muhasebe_role.get_all_permissions().values_list('code', flat=True))
         self.assertIn('ogrenci.write', perms)
+        self.assertIn('ogrenci.notes', perms)
         self.assertIn('personel.read', perms)
         self.assertIn('personel.write', perms)
         self.assertIn('finans.manage', perms)

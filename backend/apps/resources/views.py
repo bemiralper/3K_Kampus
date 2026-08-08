@@ -11,7 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
 from .permissions import IsAuthenticatedResourceReadOrAdminWrite
 from django.db.models import (
-    Prefetch, Count, Q, Max, F, OuterRef, Subquery, IntegerField, Value,
+    Prefetch, Count, Q, Max, F, OuterRef, Subquery, IntegerField, Value, Sum,
 )
 from django.db.models.functions import Coalesce
 from django.db import transaction
@@ -31,6 +31,8 @@ from .scoping import (
     get_request_kurum_id,
     get_request_sube_id,
     resolve_book_for_structure,
+    resolve_topic_for_structure,
+    resolve_unit_for_structure,
 )
 from .utils import (
     generate_book_kod,
@@ -83,7 +85,7 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
 
 def annotate_resource_book_counts(queryset):
     """
-    Ünite/konu/içerik sayıları — correlated Subquery.
+    Ünite/konu/içerik sayıları + toplam soru — correlated Subquery.
     JOIN + COUNT(DISTINCT) yerine kullan; liste sorgusu şişmesin.
     """
     unit_sq = (
@@ -116,6 +118,18 @@ def annotate_resource_book_counts(queryset):
         .annotate(c=Count('id'))
         .values('c')[:1]
     )
+    question_sq = (
+        ResourceContent.objects.filter(
+            topic__unit__book_id=OuterRef('pk'),
+            aktif_mi=True,
+            topic__aktif_mi=True,
+            topic__unit__aktif_mi=True,
+        )
+        .order_by()
+        .values('topic__unit__book_id')
+        .annotate(c=Coalesce(Sum('question_count'), Value(0)))
+        .values('c')[:1]
+    )
     return queryset.annotate(
         db_unit_count=Coalesce(
             Subquery(unit_sq, output_field=IntegerField()),
@@ -127,6 +141,10 @@ def annotate_resource_book_counts(queryset):
         ),
         db_content_count=Coalesce(
             Subquery(content_sq, output_field=IntegerField()),
+            Value(0),
+        ),
+        db_total_question_count=Coalesce(
+            Subquery(question_sq, output_field=IntegerField()),
             Value(0),
         ),
     )
@@ -387,8 +405,8 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = filter_books_for_request(super().get_queryset(), self.request)
 
-        # Sayaçlar yalnızca liste / export için — structure/retrieve/yazmada JOIN maliyeti olmasın
-        if self.action in ('list', 'export_books'):
+        # Sayaçlar liste / detay / export için — structure/yazmada JOIN maliyeti olmasın
+        if self.action in ('list', 'retrieve', 'export_books'):
             queryset = annotate_resource_book_counts(queryset)
 
         # Filtering
@@ -1328,8 +1346,15 @@ class ResourceTopicViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        topic = resolve_topic_for_structure(request, pk)
+        if not topic:
+            return Response(
+                {'success': False, 'error': 'Konu bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        # İçerikleri sıra ile yükle (move/copy)
         topic = (
-            self.get_queryset()
+            ResourceTopic.objects.filter(pk=topic.pk)
             .select_related('unit', 'unit__book')
             .prefetch_related(
                 Prefetch(
@@ -1337,14 +1362,8 @@ class ResourceTopicViewSet(viewsets.ModelViewSet):
                     queryset=ResourceContent.objects.order_by('sira'),
                 )
             )
-            .filter(pk=pk)
             .first()
         )
-        if not topic:
-            return Response(
-                {'success': False, 'error': 'Konu bulunamadı.'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
 
         try:
             target_unit_id = int(request.data.get('target_unit_id'))
@@ -1360,10 +1379,7 @@ class ResourceTopicViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        target_unit = filter_by_book_kurum_for_request(
-            ResourceUnit.objects.filter(pk=target_unit_id).select_related('book'),
-            request,
-        ).first()
+        target_unit = resolve_unit_for_structure(request, target_unit_id)
         if not target_unit:
             return Response(
                 {'success': False, 'error': 'Hedef ünite bulunamadı.'},
@@ -1465,9 +1481,15 @@ class ResourceTopicViewSet(viewsets.ModelViewSet):
             )
 
         contents = contents_accessible_for_request(request, content_ids)
-        if contents is None:
+        if not contents:
             return Response(
-                {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
+                {
+                    'success': False,
+                    'error': (
+                        'Seçilen içerikler bulunamadı veya erişim yok. '
+                        'Sayfayı yenileyip tekrar deneyin.'
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1762,21 +1784,23 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        target_topic = (
-            ResourceTopic.objects.filter(pk=target_topic_id)
-            .select_related('unit', 'unit__book')
-            .first()
-        )
-        if not target_topic or resolve_book_for_structure(request, target_topic.unit.book_id) is None:
+        target_topic = resolve_topic_for_structure(request, target_topic_id)
+        if not target_topic:
             return Response(
                 {'success': False, 'error': 'Hedef konu bulunamadı.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         contents = contents_accessible_for_request(request, content_ids)
-        if contents is None:
+        if not contents:
             return Response(
-                {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
+                {
+                    'success': False,
+                    'error': (
+                        'Seçilen içerikler bulunamadı veya erişim yok. '
+                        'Sayfayı yenileyip tekrar deneyin.'
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1844,17 +1868,18 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
             )
 
         contents = contents_accessible_for_request(request, content_ids)
-        if contents is None:
+        if not contents:
             return Response(
-                {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
+                {
+                    'success': False,
+                    'error': (
+                        'Seçilen içerikler bulunamadı veya erişim yok. '
+                        'Sayfayı yenileyip tekrar deneyin.'
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
         found_ids = [c.id for c in contents]
-        if not found_ids:
-            return Response(
-                {'success': False, 'error': 'Silinecek içerik bulunamadı.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         with transaction.atomic():
             deleted_count, _ = ResourceContent.objects.filter(pk__in=found_ids).delete()
@@ -1920,9 +1945,15 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
             )
 
         contents = contents_accessible_for_request(request, content_ids)
-        if contents is None:
+        if not contents:
             return Response(
-                {'success': False, 'error': 'Bazı içerikler bulunamadı veya erişim yok.'},
+                {
+                    'success': False,
+                    'error': (
+                        'Seçilen içerikler bulunamadı veya erişim yok. '
+                        'Sayfayı yenileyip tekrar deneyin.'
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

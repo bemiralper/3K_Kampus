@@ -13,8 +13,13 @@ def contents_accessible_for_request(request, content_ids: list[int]):
     Kitap structure GET ile aynı çözümü kullanır (aktif şube + izinli şubeler).
     Böylece UI'da görünen içerikler bulk-prefix / transfer'de "erişim yok" olmaz.
 
+    Silinmiş / bayat ID'ler atlanır (UI seçimi yapı yenilemesinden sonra
+    güncellenmemiş olabilir). En az bir erişilebilir içerik gerekir.
+    Var olan ama erişilemeyen kitap içeriği hard-fail üretir.
+
     Returns:
-        istek sırasına göre ResourceContent listesi, veya erişim/eksik varsa None.
+        istek sırasına göre ResourceContent listesi, veya erişim yok / hiç
+        geçerli içerik yoksa None.
     """
     from apps.resources.models import ResourceContent
 
@@ -28,26 +33,31 @@ def contents_accessible_for_request(request, content_ids: list[int]):
             cid = int(raw)
         except (TypeError, ValueError):
             return None
-        if cid in seen:
+        if cid <= 0 or cid in seen:
             continue
         seen.add(cid)
         unique_ids.append(cid)
+
+    if not unique_ids:
+        return None
 
     found = list(
         ResourceContent.objects.filter(pk__in=unique_ids).select_related(
             'topic', 'topic__unit', 'topic__unit__book',
         )
     )
-    if len(found) != len(unique_ids):
+    if not found:
         return None
 
+    # Kitap erişimini bir kez kontrol et (aynı kitap için tekrar DB yok)
     book_ids = {c.topic.unit.book_id for c in found}
     for book_id in book_ids:
         if resolve_book_for_structure(request, book_id) is None:
             return None
 
     by_id = {c.id: c for c in found}
-    return [by_id[cid] for cid in unique_ids]
+    # Bayat (silinmiş) ID'leri atla; kalanları orijinal sırada döndür
+    return [by_id[cid] for cid in unique_ids if cid in by_id]
 
 
 def get_request_sube_id(request, kurum_id=None):
@@ -127,6 +137,16 @@ def resolve_book_for_structure(request, book_id):
             egitim_yili_id=egitim_yili_id,
         ).values_list('id', flat=True)
     )
+    # Eğitim yılı header'ı yoksa / eşleşmezse görev kayıtlarını yıl filtresiz dene
+    # (intermittent "erişim yok" — yıl header'ı bazen eksik kalabiliyor)
+    if book.sube_id and book.sube_id not in allowed_ids and egitim_yili_id:
+        allowed_ids = set(
+            get_allowed_subeler_for_user(
+                request.user,
+                kurum_id=kurum_id,
+                egitim_yili_id=None,
+            ).values_list('id', flat=True)
+        )
     if book.sube_id and book.sube_id in allowed_ids:
         return book
 
@@ -154,3 +174,45 @@ def resolve_book_for_structure(request, book_id):
                 return book
 
     return None
+
+
+def resolve_unit_for_structure(request, unit_id):
+    """Üniteyi structure ile aynı erişim kuralıyla çöz."""
+    from apps.resources.models import ResourceUnit
+
+    try:
+        unit_id = int(unit_id)
+    except (TypeError, ValueError):
+        return None
+
+    unit = (
+        ResourceUnit.objects.filter(pk=unit_id)
+        .select_related('book')
+        .first()
+    )
+    if not unit:
+        return None
+    if resolve_book_for_structure(request, unit.book_id) is None:
+        return None
+    return unit
+
+
+def resolve_topic_for_structure(request, topic_id):
+    """Konuyu structure ile aynı erişim kuralıyla çöz."""
+    from apps.resources.models import ResourceTopic
+
+    try:
+        topic_id = int(topic_id)
+    except (TypeError, ValueError):
+        return None
+
+    topic = (
+        ResourceTopic.objects.filter(pk=topic_id)
+        .select_related('unit', 'unit__book')
+        .first()
+    )
+    if not topic:
+        return None
+    if resolve_book_for_structure(request, topic.unit.book_id) is None:
+        return None
+    return topic

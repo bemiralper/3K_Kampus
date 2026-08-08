@@ -59,6 +59,7 @@ export function BookList({ filteredBooks, selectedBook, loading, onSelectBook, g
                 <span>📑 {book.unit_count}</span>
                 <span>📝 {book.topic_count}</span>
                 <span>📄 {book.content_count}</span>
+                <span title="Toplam soru">❓ {(book.total_question_count ?? 0).toLocaleString("tr-TR")}</span>
               </div>
             </div>
           ))}

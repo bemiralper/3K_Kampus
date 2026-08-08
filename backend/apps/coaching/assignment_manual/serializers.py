@@ -70,6 +70,15 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
             return obj.content.sira
         return None
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # İçerik FK varsa test adı kitaptaki canlı adı takip eder
+        content = getattr(instance, 'content', None)
+        live_ad = getattr(content, 'ad', None) if content is not None else None
+        if live_ad:
+            data['title'] = live_ad
+        return data
+
 
 def _effective_lesson_from_block(obj):
     """Kitabın gerçek dersi öncelikli — denormalize lesson FK bayat kalabilir."""

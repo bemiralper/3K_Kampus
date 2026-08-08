@@ -88,6 +88,8 @@ export interface ResourceBook {
   unit_count: number;
   topic_count: number;
   content_count: number;
+  /** Aktif içeriklerin question_count toplamı */
+  total_question_count?: number;
   units?: ResourceUnit[];
 }
 

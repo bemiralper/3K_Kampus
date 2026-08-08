@@ -14,3 +14,8 @@ class ResourcesConfig(AppConfig):
         except Exception:
             # Migrate / partial boot sırasında yedekleme henüz hazır olmayabilir
             pass
+        # Ödev görev başlıklarını içerik adıyla senkron tut (idempotent)
+        try:
+            from apps.coaching.assignment_manual import content_sync  # noqa: F401
+        except Exception:
+            pass

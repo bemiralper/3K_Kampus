@@ -21,6 +21,7 @@ export const ModulePermissions = {
     READ: 'ogrenci.read',
     WRITE: 'ogrenci.write',
     DELETE: 'ogrenci.delete',
+    NOTES: 'ogrenci.notes',
     MANAGE: 'ogrenci.manage',
   },
   

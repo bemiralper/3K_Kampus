@@ -21,6 +21,10 @@ urlpatterns = [
     path("<int:pk>/adresler/<int:adres_id>/", views.ogrenci_adres_detail_api, name="ogrenci_adres_detail_api"),
     # Profil Fotoğrafı
     path("<int:pk>/profil-foto/", views.ogrenci_profil_foto_api, name="ogrenci_profil_foto_api"),
+    # Notlar
+    path("<int:pk>/notlar/", views.ogrenci_notlar_api, name="ogrenci_notlar_api"),
+    path("<int:pk>/notlar/<int:not_id>/", views.ogrenci_not_detail_api, name="ogrenci_not_detail_api"),
+    path("<int:pk>/notlar/<int:not_id>/gecmis/", views.ogrenci_not_gecmis_api, name="ogrenci_not_gecmis_api"),
     # Seçenekler
     path("kayit-turleri/", views.kayit_turleri_api, name="kayit_turleri_api"),
     path("cinsiyet-secenekleri/", views.cinsiyet_secenekleri_api, name="cinsiyet_secenekleri_api"),

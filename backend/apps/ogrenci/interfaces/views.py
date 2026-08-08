@@ -17,6 +17,7 @@ from datetime import datetime
 from apps.ogrenci.application.services import OgrenciService
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
 from apps.egitim_yili.domain.models import EgitimYili
+from shared.permissions import api_permission_required
 
 logger = logging.getLogger(__name__)
 
@@ -1695,3 +1696,143 @@ def ogrenci_finans_ozet_api(request, pk):
         return JsonResponse({
             'error': f'Finans bilgileri alınırken hata oluştu: {str(e)}'
         }, status=500)
+
+
+def _parse_optional_date_param(value):
+    if not value:
+        return None
+    s = str(value).strip()[:10]
+    try:
+        return datetime.strptime(s, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+@csrf_exempt
+@api_permission_required('ogrenci.notes', 'sistem.admin')
+def ogrenci_notlar_api(request, pk):
+    """Öğrenci notları — GET liste (manuel + sözleşme), POST yeni not."""
+    from apps.ogrenci.application import not_service
+    from apps.ogrenci.domain.models import OgrenciNotKategori
+
+    service = OgrenciService()
+    ogrenci = service.get_by_id(pk)
+    if not ogrenci:
+        return JsonResponse({'error': 'Öğrenci bulunamadı'}, status=404)
+
+    gate = _ogrenci_sube_gate(request, ogrenci)
+    if gate:
+        return gate
+
+    if request.method == 'GET':
+        kategori = (request.GET.get('kategori') or '').strip() or None
+        q = (request.GET.get('q') or '').strip() or None
+        date_from = _parse_optional_date_param(request.GET.get('date_from'))
+        date_to = _parse_optional_date_param(request.GET.get('date_to'))
+        created_by_raw = (request.GET.get('created_by') or '').strip()
+        created_by = int(created_by_raw) if created_by_raw.isdigit() else None
+        notes = not_service.list_merged_notes(
+            ogrenci,
+            kategori=kategori,
+            q=q,
+            date_from=date_from,
+            date_to=date_to,
+            created_by=created_by,
+        )
+        return JsonResponse({
+            'notlar': notes,
+            'kategoriler': not_service.categories_payload(),
+        })
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body or b'{}')
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Geçersiz JSON'}, status=400)
+        try:
+            note = not_service.create_note(ogrenci=ogrenci, user=request.user, data=data)
+        except ValueError as e:
+            return JsonResponse({'error': str(e)}, status=400)
+        from apps.ogrenci.domain.models import OgrenciNot
+        note = OgrenciNot.objects.select_related('created_by', 'updated_by').get(pk=note.pk)
+        return JsonResponse({
+            'success': True,
+            'not': not_service.serialize_manual_note(note),
+            'kategoriler': [
+                {'code': c, 'label': l} for c, l in OgrenciNotKategori.CHOICES
+            ],
+        }, status=201)
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+@api_permission_required('ogrenci.notes', 'sistem.admin')
+def ogrenci_not_detail_api(request, pk, not_id):
+    """Manuel not — PATCH / DELETE (soft)."""
+    from apps.ogrenci.application import not_service
+    from apps.ogrenci.domain.models import OgrenciNot
+
+    service = OgrenciService()
+    ogrenci = service.get_by_id(pk)
+    if not ogrenci:
+        return JsonResponse({'error': 'Öğrenci bulunamadı'}, status=404)
+
+    gate = _ogrenci_sube_gate(request, ogrenci)
+    if gate:
+        return gate
+
+    try:
+        note = OgrenciNot.objects.select_related('created_by', 'updated_by').get(
+            pk=not_id, ogrenci=ogrenci
+        )
+    except OgrenciNot.DoesNotExist:
+        return JsonResponse({'error': 'Not bulunamadı'}, status=404)
+
+    if request.method == 'PATCH':
+        try:
+            data = json.loads(request.body or b'{}')
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Geçersiz JSON'}, status=400)
+        try:
+            note = not_service.update_note(note=note, user=request.user, data=data)
+        except ValueError as e:
+            return JsonResponse({'error': str(e)}, status=400)
+        note = OgrenciNot.objects.select_related('created_by', 'updated_by').get(pk=note.pk)
+        return JsonResponse({'success': True, 'not': not_service.serialize_manual_note(note)})
+
+    if request.method == 'DELETE':
+        try:
+            not_service.soft_delete_note(note=note, user=request.user)
+        except ValueError as e:
+            return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({'success': True})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+@api_permission_required('ogrenci.notes', 'sistem.admin')
+def ogrenci_not_gecmis_api(request, pk, not_id):
+    """Not işlem geçmişi."""
+    from apps.ogrenci.application import not_service
+    from apps.ogrenci.domain.models import OgrenciNot
+
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    service = OgrenciService()
+    ogrenci = service.get_by_id(pk)
+    if not ogrenci:
+        return JsonResponse({'error': 'Öğrenci bulunamadı'}, status=404)
+
+    gate = _ogrenci_sube_gate(request, ogrenci)
+    if gate:
+        return gate
+
+    exists = OgrenciNot.objects.filter(pk=not_id, ogrenci=ogrenci).exists()
+    audit_exists = not_service.list_note_audit(not_id, ogrenci.id)
+    if not exists and not audit_exists:
+        return JsonResponse({'error': 'Not bulunamadı'}, status=404)
+
+    return JsonResponse({'gecmis': audit_exists})

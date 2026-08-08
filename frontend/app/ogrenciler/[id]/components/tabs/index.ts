@@ -5,3 +5,4 @@ export { default as SinavTab } from './SinavTab';
 export { default as FinansTab } from './FinansTab';
 export { default as RehberlikTab } from './RehberlikTab';
 export { default as IletisimTab } from './IletisimTab';
+export { default as NotlarTab } from './NotlarTab';

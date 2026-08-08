@@ -9,6 +9,7 @@ PERMISSIONS_DATA = [
     {'code': 'ogrenci.read', 'name': 'Öğrenci Görüntüleme', 'module': 'ogrenci', 'permission_type': 'read', 'description': 'Öğrenci listesi ve detaylarını görüntüleyebilir'},
     {'code': 'ogrenci.write', 'name': 'Öğrenci Düzenleme', 'module': 'ogrenci', 'permission_type': 'write', 'description': 'Öğrenci bilgilerini ekleyebilir ve düzenleyebilir'},
     {'code': 'ogrenci.delete', 'name': 'Öğrenci Silme', 'module': 'ogrenci', 'permission_type': 'delete', 'description': 'Öğrenci kayıtlarını silebilir'},
+    {'code': 'ogrenci.notes', 'name': 'Öğrenci Notları', 'module': 'ogrenci', 'permission_type': 'write', 'description': 'Öğrenci detayındaki Notlar sekmesini görüntüleyebilir ve yönetebilir'},
     {'code': 'ogrenci.manage', 'name': 'Öğrenci Yönetimi', 'module': 'ogrenci', 'permission_type': 'manage', 'description': 'Öğrenci modülünün tüm yetkilerine sahip'},
     {'code': 'personel.read', 'name': 'Personel Görüntüleme', 'module': 'personel', 'permission_type': 'read', 'description': 'Personel listesi ve detaylarını görüntüleyebilir'},
     {'code': 'personel.write', 'name': 'Personel Düzenleme', 'module': 'personel', 'permission_type': 'write', 'description': 'Personel bilgilerini ekleyebilir ve düzenleyebilir'},
@@ -85,7 +86,7 @@ ROLES_DATA = [
         'is_system_role': True,
         'permissions': [
             'kurum.manage', 'sube.manage', 'personel.manage',
-            'ogrenci.manage', 'finans.manage', 'egitim_tanimlari.manage',
+            'ogrenci.manage', 'ogrenci.notes', 'finans.manage', 'egitim_tanimlari.manage',
             'egitim_paketleri.manage', 'sinif.manage', 'rapor.manage',
             'communication.manage', 'communication.config', 'communication.bulk',
             'gorev.manage', 'gorev.analytics',
@@ -101,7 +102,7 @@ ROLES_DATA = [
         'level': 20,
         'is_system_role': True,
         'permissions': [
-            'sube.read', 'personel.manage', 'ogrenci.manage',
+            'sube.read', 'personel.manage', 'ogrenci.manage', 'ogrenci.notes',
             'finans.read', 'egitim_tanimlari.read', 'egitim_paketleri.read',
             'ozel_ders.manage', 'ozel_ders.hakedis_approve',
             'sinif.manage', 'rapor.read',
@@ -152,7 +153,7 @@ ROLES_DATA = [
         'level': 50,
         'is_system_role': True,
         'permissions': [
-            'finans.manage', 'ogrenci.read', 'ogrenci.write',
+            'finans.manage', 'ogrenci.read', 'ogrenci.write', 'ogrenci.notes',
             'personel.read', 'personel.write',
             'egitim_tanimlari.read', 'egitim_tanimlari.write',
             'egitim_paketleri.read', 'egitim_paketleri.write',
