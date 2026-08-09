@@ -355,9 +355,10 @@ class MetaTemplateService:
         components = payload.get('components') or []
         if components:
             template.components_json = components
+            body, header, footer, buttons, _ = infer_named_body_from_meta_components(components)
+            # Header tipi (DOCUMENT/IMAGE/…) her sync'te güncellenir — UI filtreleri buna bakar.
+            # Named gövde korunurken yalnızca header/footer/buttons yapısal alanlar yazılır.
             if not preserve_named or not template.body_named:
-                body, header, footer, buttons, _ = infer_named_body_from_meta_components(components)
-                # Mevcut map varsa numaralıyı named'e çevir
                 if template.variable_map_json:
                     template.body_named = numbered_to_named(body, template.variable_map_json)
                     if header.get('type') == 'TEXT' and header.get('text'):
@@ -366,9 +367,25 @@ class MetaTemplateService:
                         )
                 else:
                     template.body_named = body
-                template.header_json = header
                 template.footer_text = footer[:60]
                 template.buttons_json = buttons
+            if header:
+                # Mevcut example_handle'ı koru (sync payload'da olmayabilir)
+                prev = template.header_json or {}
+                merged = dict(header)
+                if prev.get('example_handle') and not merged.get('example_handle'):
+                    merged['example_handle'] = prev['example_handle']
+                if prev.get('media_handle') and not merged.get('media_handle'):
+                    merged['media_handle'] = prev['media_handle']
+                if (
+                    preserve_named
+                    and template.body_named
+                    and prev.get('type') == 'TEXT'
+                    and merged.get('type') == 'TEXT'
+                    and prev.get('text')
+                ):
+                    merged['text'] = prev['text']
+                template.header_json = merged
         if status == MetaTemplateStatus.APPROVED and not template.approved_at:
             template.approved_at = timezone.now()
 

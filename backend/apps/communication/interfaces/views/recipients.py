@@ -220,7 +220,7 @@ class RecipientSearchView(CommunicationAPIView):
                     _add(_ogrenci_row(o, o.aktif_sinif_ad or ''))
 
         if include_personel:
-            from apps.personel.domain.models import Personel
+            from apps.personel.domain.models import Personel, PersonelGorevlendirme
 
             p_qs = Personel.objects.filter(
                 kurum_id=kurum_id,
@@ -233,14 +233,30 @@ class RecipientSearchView(CommunicationAPIView):
                 | Q(tc_kimlik_no__icontains=q)
             )
             if sube_id:
-                p_qs = p_qs.filter(sube_id=sube_id)
+                p_qs = p_qs.filter(
+                    Q(sube_id=sube_id)
+                    | Q(
+                        gorevlendirmeler__aktif_mi=True,
+                        gorevlendirmeler__gorev_sube_id=sube_id,
+                    )
+                ).distinct()
             for p in p_qs.order_by('ad', 'soyad')[:12]:
                 phone = (p.cep_telefon or p.telefon or '').strip()
+                role_name = (
+                    PersonelGorevlendirme.objects.filter(
+                        personel_id=p.id,
+                        aktif_mi=True,
+                        rol__isnull=False,
+                    )
+                    .order_by('-updated_at')
+                    .values_list('rol__name', flat=True)
+                    .first()
+                )
                 _add({
                     'kind': 'personel',
                     'id': p.id,
                     'label': p.tam_ad,
-                    'meta': 'Personel',
+                    'meta': role_name or 'Personel',
                     'phone': phone,
                     'ad': p.ad,
                     'soyad': p.soyad,

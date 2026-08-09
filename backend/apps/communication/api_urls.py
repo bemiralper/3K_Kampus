@@ -40,6 +40,9 @@ from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateCreateAppView,
     MetaTemplateImportAppBulkView,
     MetaTemplateResubmitView,
+    MetaTemplateSeedAcademicScheduleView,
+    MetaTemplateSeedDuyuruView,
+    MetaTemplateSeedPersonalChatView,
     MetaTemplateSubmitView,
 )
 from apps.communication.interfaces.views.conversations import (
@@ -106,6 +109,21 @@ urlpatterns = [
         'meta-templates/import-app-templates/',
         MetaTemplateImportAppBulkView.as_view(),
         name='meta-template-import-app-bulk',
+    ),
+    path(
+        'meta-templates/seed-duyuru/',
+        MetaTemplateSeedDuyuruView.as_view(),
+        name='meta-template-seed-duyuru',
+    ),
+    path(
+        'meta-templates/seed-academic-schedule/',
+        MetaTemplateSeedAcademicScheduleView.as_view(),
+        name='meta-template-seed-academic-schedule',
+    ),
+    path(
+        'meta-templates/seed-personal-chat/',
+        MetaTemplateSeedPersonalChatView.as_view(),
+        name='meta-template-seed-personal-chat',
     ),
     path('meta-templates/<uuid:template_id>/', MetaTemplateDetailView.as_view(), name='meta-template-detail'),
     path(

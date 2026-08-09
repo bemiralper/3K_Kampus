@@ -39,6 +39,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Aynı adlı mevcut şablonları atlama.',
         )
+        parser.add_argument(
+            '--no-bind',
+            action='store_true',
+            help='Bildirim Şablonları eşlemesi oluşturma.',
+        )
 
     def handle(self, *args, **options):
         if options.get('list'):
@@ -67,6 +72,7 @@ class Command(BaseCommand):
             channel_config_id=options.get('channel_config_id'),
             dry_run=bool(options.get('dry_run')),
             skip_existing=not bool(options.get('force')),
+            bind=not bool(options.get('no_bind')),
         )
 
         self.stdout.write(
@@ -76,17 +82,25 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             f"uygulama: +{len(result['created_app'])} "
+            f"güncellendi={len(result.get('updated_app') or [])} "
             f"atlandı={len(result['skipped_app'])}",
         )
         if result['channel_config_id']:
             self.stdout.write(
                 f"meta DRAFT: +{len(result['created_meta'])} "
+                f"güncellendi={len(result.get('updated_meta') or [])} "
                 f"atlandı={len(result['skipped_meta'])}",
             )
+        if result.get('bound'):
+            self.stdout.write(f"bağlandı: {len(result['bound'])}")
         for name in result['created_app']:
             self.stdout.write(f'  + app  {name}')
+        for name in result.get('updated_app') or []:
+            self.stdout.write(f'  ~ app  {name}')
         for name in result['created_meta']:
             self.stdout.write(f'  + meta {name}')
+        for name in result.get('updated_meta') or []:
+            self.stdout.write(f'  ~ meta {name}')
         for err in result['errors']:
             self.stderr.write(self.style.ERROR(f'  ! {err}'))
         for step in result.get('next_steps') or []:

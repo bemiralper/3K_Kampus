@@ -8,6 +8,7 @@ import {
   parseWhatsAppText,
   resolvePreviewVariables,
 } from "@/components/communication/composer-utils";
+import { useLivePreviewContext } from "@/components/communication/useLivePreviewContext";
 import "@/components/communication/communication.css";
 import {
   WhatsAppAccount,
@@ -27,6 +28,9 @@ import {
   refreshLocalMetaTemplateStatus,
   resubmitLocalMetaTemplate,
   saveNotificationBinding,
+  seedAcademicScheduleTemplates,
+  seedDuyuruMetaTemplates,
+  seedPersonalChatTemplates,
   submitLocalMetaTemplate,
   syncWhatsAppAccountTemplates,
   updateLocalMetaTemplate,
@@ -273,9 +277,10 @@ export default function MetaSablonlarClient() {
     };
   }, []);
 
+  const livePreviewContext = useLivePreviewContext();
   const previewText = useMemo(
-    () => resolvePreviewVariables(form.body_named || ""),
-    [form.body_named],
+    () => resolvePreviewVariables(form.body_named || "", livePreviewContext),
+    [form.body_named, livePreviewContext],
   );
 
   const openCreate = () => {
@@ -334,12 +339,27 @@ export default function MetaSablonlarClient() {
     try {
       if (editing) {
         // Meta'ya gitmiş şablonun içeriği değişemez; yalnızca yerel kullanım alanı güncellenir.
+        const isLocked = editing.status === "APPROVED"
+          || editing.status === "PENDING"
+          || editing.status === "SUBMITTED";
         const updated = await updateLocalMetaTemplate(
           editing.id,
-          locked ? { usage_scope: form.usage_scope } : payload(),
+          isLocked ? { usage_scope: form.usage_scope } : payload(),
         );
-        setMessage("Şablon kaydedildi.");
+        setMessage(
+          isLocked
+            ? `Kullanım alanı güncellendi: ${
+              META_TEMPLATE_USAGE_LABELS[(updated.usage_scope as MetaTemplateUsage)]
+              || updated.usage_scope
+              || form.usage_scope
+            }.`
+            : "Şablon kaydedildi.",
+        );
         setEditing(updated);
+        setForm((f) => ({
+          ...f,
+          usage_scope: (updated.usage_scope as MetaTemplateUsage) || f.usage_scope,
+        }));
       } else {
         const created = await createLocalMetaTemplate(payload());
         const appName = created.pairing?.app_template?.name;
@@ -444,6 +464,104 @@ export default function MetaSablonlarClient() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Aktarım başarısız");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSeedDuyuruTemplates = async () => {
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin.");
+      return;
+    }
+    if (!confirm(
+      "Toplu mesaj taslakları oluşturulsun mu? (27 şablon)\n\n"
+      + "Aileler: duyuru · hatırlatma · bilgilendirme\n"
+      + "Her biri: metin / görsel / PDF × veli / öğrenci / personel\n\n"
+      + "Örn. hatirlatma_metin, bilgilendirme_gorsel_ogrenci, duyuru_pdf_personel …\n\n"
+      + "Mevcut aynı adlı şablonlar atlanır. Görsel/PDF için örnek medya yükleyip Meta onayına gönderin.",
+    )) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await seedDuyuruMetaTemplates({ channel_config_id: accountId });
+      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
+      setMessage(
+        (res.info
+          || `${res.created_count} taslak, ${res.updated_count || 0} güncellendi, ${res.skipped_count} atlandı.`)
+        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
+        + errText,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Toplu mesaj taslakları oluşturulamadı");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSeedAcademicSchedule = async () => {
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin.");
+      return;
+    }
+    if (!confirm(
+      "Ders programı Meta taslakları oluşturulsun mu?\n\n"
+      + "• sinif_programi_veli (DOCUMENT)\n"
+      + "• sinif_programi_ogrenci (DOCUMENT)\n\n"
+      + "LMS şablonları da oluşturulur ve Bildirim Şablonları’nda "
+      + "akademik.sinif_programi olayına bağlanır.",
+    )) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await seedAcademicScheduleTemplates({
+        channel_config_id: accountId,
+        bind: true,
+      });
+      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
+      setMessage(
+        (res.info || "Ders programı taslakları hazır.")
+        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
+        + errText,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ders programı taslakları oluşturulamadı");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSeedPersonalChat = async () => {
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin.");
+      return;
+    }
+    if (!confirm(
+      "Sohbet açılış taslakları oluşturulsun mu?\n\n"
+      + "Hesap birimine göre PERSONAL şablonlar (veli + öğrenci):\n"
+      + "• Muhasebe / Koçluk / Yönetim + Genel\n"
+      + "• Hızlı yanıt: Uygunum · Daha sonra · Arayın\n\n"
+      + "Meta’ya gönderip onaylattıktan sonra detay sayfasındaki WhatsApp "
+      + "ikonundan kullanılır.",
+    )) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await seedPersonalChatTemplates({ channel_config_id: accountId });
+      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
+      setMessage(
+        (res.info || "Sohbet taslakları hazır.")
+        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
+        + errText,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sohbet taslakları oluşturulamadı");
     } finally {
       setSaving(false);
     }
@@ -611,6 +729,33 @@ export default function MetaSablonlarClient() {
             title="Eşleşmeyen Meta şablonlarını uygulama şablonlarına kopyalar"
           >
             Uygulamaya aktar
+          </button>
+          <button
+            type="button"
+            className="comm-btn-secondary"
+            onClick={handleSeedPersonalChat}
+            disabled={!accountId || saving}
+            title="Personel–veli/öğrenci sohbet açılış PERSONAL taslakları"
+          >
+            Sohbet taslakları
+          </button>
+          <button
+            type="button"
+            className="comm-btn-secondary"
+            onClick={handleSeedAcademicSchedule}
+            disabled={!accountId || saving}
+            title="Planlama → Programı Bildir: sinif_programi_veli / _ogrenci DOCUMENT"
+          >
+            Ders programı taslakları
+          </button>
+          <button
+            type="button"
+            className="comm-btn-secondary"
+            onClick={handleSeedDuyuruTemplates}
+            disabled={!accountId || saving}
+            title="Duyuru + hatırlatma + bilgilendirme CAMPAIGN taslakları (veli/öğrenci × metin/görsel/PDF)"
+          >
+            Toplu mesaj taslakları
           </button>
           <button
             type="button"
@@ -900,11 +1045,12 @@ export default function MetaSablonlarClient() {
                       <span className="tplx-note-icon" aria-hidden="true">🔒</span>
                       <div>
                         <strong>
-                          Düzenlemeye kapalı ({STATUS_LABELS[editing!.status] || editing!.status})
+                          İçerik kilitli ({STATUS_LABELS[editing!.status] || editing!.status})
                         </strong>
                         <p>
-                          Meta tarafındaki şablonlar değiştirilemez. Değişiklik için &quot;Kopyala&quot; ile
-                          yeni bir sürüm oluşturun.
+                          Meta gövdesi / başlık değiştirilemez.{" "}
+                          <strong>Kullanım alanı</strong> yerelde kalır — aşağıdan kaydedebilirsiniz.
+                          İçerik değişikliği için &quot;Kopyala&quot; ile yeni sürüm oluşturun.
                         </p>
                       </div>
                     </div>
@@ -1235,7 +1381,7 @@ export default function MetaSablonlarClient() {
                     <div className="tplx-bubble">
                       {form.header.type === "TEXT" && form.header.text && (
                         <p className="tplx-bubble-header">
-                          {resolvePreviewVariables(form.header.text)}
+                          {resolvePreviewVariables(form.header.text, livePreviewContext)}
                         </p>
                       )}
                       {["IMAGE", "VIDEO", "DOCUMENT"].includes(form.header.type || "") && (
@@ -1362,9 +1508,22 @@ export default function MetaSablonlarClient() {
                     ⟳ Meta durumunu sorgula
                   </button>
                 )}
-                {editing && !locked && (
-                  <button type="submit" className="comm-btn-secondary" disabled={saving}>
-                    {saving ? "Kaydediliyor…" : "Kaydet"}
+                {editing && (
+                  <button
+                    type="submit"
+                    className={locked ? "comm-btn-primary" : "comm-btn-secondary"}
+                    disabled={saving}
+                    title={
+                      locked
+                        ? "Yalnızca kullanım alanı (yerel) kaydedilir; Meta içeriği değişmez"
+                        : undefined
+                    }
+                  >
+                    {saving
+                      ? "Kaydediliyor…"
+                      : locked
+                        ? "Kullanım alanını kaydet"
+                        : "Kaydet"}
                   </button>
                 )}
                 {editing && (editing.status === "DRAFT" || editing.status === "REJECTED") && (

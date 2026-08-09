@@ -16,7 +16,7 @@ from apps.communication.domain.models import Message, OutboundCampaign, Outbound
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
-from apps.personel.domain.models import Personel
+from apps.personel.domain.models import Personel, PersonelGorevlendirme
 from apps.roller.models import Permission, Role, RolePermission, UserRole
 from apps.sinif.domain.models import Sinif
 from apps.sube.domain.models import Sube
@@ -231,6 +231,78 @@ class CampaignAudienceTest(TestCase):
         msg.refresh_from_db()
         self.assertEqual(msg.status, MessageStatus.PENDING)
         self.assertTrue(OutboundQueueItem.objects.filter(message=msg).exists())
+
+    def test_all_personeller_role_filter_and_manual_tweak(self):
+        role_ogretmen, _ = Role.objects.get_or_create(
+            code='ogretmen',
+            defaults={'name': 'Öğretmen', 'level': 50, 'is_system_role': True},
+        )
+        role_koc, _ = Role.objects.get_or_create(
+            code='koc',
+            defaults={'name': 'Koç', 'level': 50, 'is_system_role': True},
+        )
+        p_teacher = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Ayşe',
+            soyad='Öğretmen',
+            tc_kimlik_no='11111111111',
+            cep_telefon='05327771111',
+            aktif_mi=True,
+        )
+        p_coach = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Can',
+            soyad='Koç',
+            tc_kimlik_no='11111111112',
+            cep_telefon='05327772222',
+            aktif_mi=True,
+        )
+        p_extra = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Deniz',
+            soyad='Muhasebe',
+            tc_kimlik_no='11111111113',
+            cep_telefon='05327773333',
+            aktif_mi=True,
+        )
+        for personel, role in ((p_teacher, role_ogretmen), (p_coach, role_koc)):
+            PersonelGorevlendirme.objects.create(
+                personel=personel,
+                egitim_yili=self.egitim_yili,
+                rol=role,
+                gorev_sube=self.sube,
+                kurum=self.kurum,
+                aktif_mi=True,
+            )
+
+        by_role = AudienceResolver.resolve(
+            self.kurum.id,
+            {
+                'audience_type': 'all_personeller',
+                'sube_id': self.sube.id,
+                'egitim_yili_id': self.egitim_yili.id,
+                'rol_ids': [role_ogretmen.id],
+            },
+        )
+        self.assertEqual(by_role.personel_count, 1)
+        self.assertEqual(by_role.recipients[0].personel_id, p_teacher.id)
+
+        with_include_exclude = AudienceResolver.resolve(
+            self.kurum.id,
+            {
+                'audience_type': 'all_personeller',
+                'sube_id': self.sube.id,
+                'egitim_yili_id': self.egitim_yili.id,
+                'rol_ids': [role_ogretmen.id],
+                'included_personel_ids': [p_extra.id],
+                'excluded_personel_ids': [p_teacher.id],
+            },
+        )
+        self.assertEqual(with_include_exclude.personel_count, 1)
+        self.assertEqual(with_include_exclude.recipients[0].personel_id, p_extra.id)
 
 
 @override_settings(COMMUNICATION_CAMPAIGN_REQUIRE_TEMPLATE=False)

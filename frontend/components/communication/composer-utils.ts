@@ -143,14 +143,17 @@ export function parseWhatsAppText(input: string): WhatsAppSegment[] {
   return segments.length ? segments : [{ type: "text", content: input }];
 }
 
-/** Demo preview context for template variables in the studio UI. */
+/**
+ * Demo preview context for template variables in the studio UI.
+ * kurum_ad / sube canlı bağlamla override edilmeli (buildPreviewContext).
+ */
 export const SAMPLE_PREVIEW_CONTEXT: Record<string, string> = {
   veli_ad: "Ayşe Hanım",
   ogrenci_ad: "Mehmet Yılmaz",
   personel_ad: "Zeynep Kaya",
   sinif: "12-A",
-  sube: "Merkez Kampüs",
-  kurum_ad: "3K Kampüs",
+  sube: "Örnek Şube",
+  kurum_ad: "Örnek Kurum",
   tarih: "03.08.2026",
   saat: "14:30",
   baslik: "Veli Toplantısı",
@@ -187,12 +190,35 @@ export const SAMPLE_PREVIEW_CONTEXT: Record<string, string> = {
 
 export type PreviewSampleContext = Partial<typeof SAMPLE_PREVIEW_CONTEXT>;
 
+/** Örnek bağlam + canlı/override değerler (boş stringler yok sayılır). */
+export function buildPreviewContext(
+  overrides?: PreviewSampleContext | null,
+): Record<string, string> {
+  const merged: Record<string, string> = { ...SAMPLE_PREVIEW_CONTEXT };
+  if (!overrides) return merged;
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value == null) continue;
+    const trimmed = String(value).trim();
+    if (!trimmed) continue;
+    merged[key] = trimmed;
+  }
+  return merged;
+}
+
 /** Replace {{token}} placeholders for live preview (send-time resolution is server-side). */
 export function resolvePreviewVariables(
   text: string,
-  context: PreviewSampleContext = SAMPLE_PREVIEW_CONTEXT,
+  context?: PreviewSampleContext | null,
 ): string {
-  return text.replace(/\{\{(\w+)\}\}/g, (match, key: string) => context[key] ?? match);
+  // context verilirse üzerine yazar (boş string dahil). Canlı kurum/şube için
+  // useLivePreviewContext / buildPreviewContext kullanın.
+  const resolved: Record<string, string> = {
+    ...SAMPLE_PREVIEW_CONTEXT,
+    ...(context || {}),
+  };
+  return text.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+    Object.prototype.hasOwnProperty.call(resolved, key) ? resolved[key] : match,
+  );
 }
 
 /** Inbox hazır yanıt — konuşma bağlamıyla değişken doldurma. */

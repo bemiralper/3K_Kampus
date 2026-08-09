@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from collections import Counter
 
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
-from django.db.models.functions import ExtractHour, TruncDate
+from django.db.models.functions import ExtractHour
 from django.utils import timezone
 from rest_framework.response import Response
 
@@ -13,8 +12,27 @@ from apps.communication.domain.enums import ConversationStatus, MessageDirection
 from apps.communication.domain.models import Conversation, Message
 from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube
-from apps.communication.permissions import CommunicationModulePermission
 from shared.permissions import user_has_any_permission
+
+
+def _coach_display_names(coach_ids: list[int]) -> dict[int, str]:
+    """CoachProfile id → görünen ad (öğretmen adı)."""
+    if not coach_ids:
+        return {}
+    from apps.coaching.models import CoachProfile
+
+    names: dict[int, str] = {}
+    for cp in CoachProfile.objects.filter(id__in=coach_ids).select_related('teacher'):
+        teacher = getattr(cp, 'teacher', None)
+        if teacher:
+            label = (
+                getattr(teacher, 'tam_ad', None)
+                or f'{getattr(teacher, "ad", "")} {getattr(teacher, "soyad", "")}'.strip()
+            )
+            names[cp.id] = label or f'Koç #{cp.id}'
+        else:
+            names[cp.id] = f'Koç #{cp.id}'
+    return names
 
 
 class CommunicationDashboardView(CommunicationAPIView):
@@ -43,15 +61,17 @@ class CommunicationDashboardView(CommunicationAPIView):
             | Q(first_unanswered_at__isnull=False),
         )
         sla_breach = conv_qs.filter(status=ConversationStatus.NEEDS_SUPPORT)
+        active_count = active.count()
+        unassigned_active = active.filter(assigned_coach__isnull=True).count()
 
-        by_coach = list(
+        by_coach_raw = list(
             active.filter(assigned_coach__isnull=False)
             .values('assigned_coach_id')
             .annotate(count=Count('id'))
             .order_by('-count')[:20]
         )
 
-        # Koç başına ortalama cevap süresi (last_reply - first_unanswered yaklaşık)
+        # Koç başına ortalama cevap süresi (last_reply - last_customer yaklaşık)
         reply_stats = list(
             conv_qs.filter(
                 assigned_coach__isnull=False,
@@ -68,11 +88,30 @@ class CommunicationDashboardView(CommunicationAPIView):
             .annotate(avg_delay=Avg('reply_delay'), n=Count('id'))
             .order_by()[:20]
         )
+
+        coach_ids = {
+            row['assigned_coach_id']
+            for row in by_coach_raw + reply_stats
+            if row.get('assigned_coach_id')
+        }
+        coach_names = _coach_display_names(list(coach_ids))
+
+        by_coach = [
+            {
+                'assigned_coach_id': row['assigned_coach_id'],
+                'coach_name': coach_names.get(row['assigned_coach_id'], f"Koç #{row['assigned_coach_id']}"),
+                'count': row['count'],
+            }
+            for row in by_coach_raw
+        ]
+
         coach_reply = []
         for row in reply_stats:
             delay = row.get('avg_delay')
+            cid = row['assigned_coach_id']
             coach_reply.append({
-                'assigned_coach_id': row['assigned_coach_id'],
+                'assigned_coach_id': cid,
+                'coach_name': coach_names.get(cid, f'Koç #{cid}'),
                 'avg_reply_seconds': int(delay.total_seconds()) if delay else None,
                 'sample_count': row['n'],
             })
@@ -111,9 +150,10 @@ class CommunicationDashboardView(CommunicationAPIView):
         ).count()
 
         return Response({
-            'active_conversations': active.count(),
+            'active_conversations': active_count,
             'waiting_conversations': waiting.count(),
             'sla_breaches': sla_breach.count(),
+            'unassigned_active': unassigned_active,
             'by_coach_active': by_coach,
             'by_coach_reply_time': coach_reply,
             'daily_inbound': daily_in,

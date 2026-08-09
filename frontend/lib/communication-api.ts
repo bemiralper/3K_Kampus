@@ -406,9 +406,16 @@ export interface CommunicationDashboardData {
   active_conversations: number;
   waiting_conversations: number;
   sla_breaches: number;
-  by_coach_active: Array<{ assigned_coach_id: number; count: number }>;
+  /** Koça atanmamış aktif sohbet */
+  unassigned_active?: number;
+  by_coach_active: Array<{
+    assigned_coach_id: number;
+    coach_name?: string;
+    count: number;
+  }>;
   by_coach_reply_time: Array<{
     assigned_coach_id: number;
+    coach_name?: string;
     avg_reply_seconds: number | null;
     sample_count: number;
   }>;
@@ -857,6 +864,7 @@ export async function fetchConversationTemplates(
   templates: WhatsAppMetaTemplateItem[];
   session: ConversationSessionInfo;
   context: Record<string, string>;
+  preferred_audience?: 'veli' | 'ogrenci' | null;
 }> {
   return request(`/conversations/${conversationId}/template-messages/`);
 }
@@ -975,6 +983,82 @@ export async function importAppTemplatesFromMeta(data?: {
   return request('/meta-templates/import-app-templates/', {
     method: 'POST',
     body: JSON.stringify(data || {}),
+  });
+}
+
+/** Kampanya CAMPAIGN taslakları: duyuru / hatirlatma / bilgilendirme × veli|öğrenci × medya */
+export async function seedDuyuruMetaTemplates(data: {
+  channel_config_id: string;
+  force?: boolean;
+}): Promise<{
+  created_count: number;
+  updated_count?: number;
+  skipped_count: number;
+  created: string[];
+  updated?: string[];
+  skipped: string[];
+  errors: string[];
+  next_steps?: string[];
+  info?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/meta-templates/seed-duyuru/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+/** Personel sohbet açılış PERSONAL taslakları (birim × veli/öğrenci + QUICK_REPLY) */
+export async function seedPersonalChatTemplates(data: {
+  channel_config_id: string;
+  force?: boolean;
+}): Promise<{
+  created_count: number;
+  updated_count?: number;
+  skipped_count: number;
+  created: string[];
+  updated?: string[];
+  skipped: string[];
+  errors: string[];
+  department?: string;
+  next_steps?: string[];
+  info?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/meta-templates/seed-personal-chat/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+/** Akademik sınıf ders programı — veli/öğrenci DOCUMENT Meta + LMS + bildirim bağlama */
+export async function seedAcademicScheduleTemplates(data: {
+  channel_config_id: string;
+  sube_id?: number | null;
+  force?: boolean;
+  bind?: boolean;
+}): Promise<{
+  created_app_count: number;
+  updated_app_count: number;
+  skipped_app_count: number;
+  created_meta_count: number;
+  updated_meta_count: number;
+  skipped_meta_count: number;
+  bound_count: number;
+  created_app: string[];
+  updated_app: string[];
+  created_meta: string[];
+  updated_meta: string[];
+  bound: string[];
+  errors: string[];
+  next_steps?: string[];
+  event_keys?: string[];
+  info?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/meta-templates/seed-academic-schedule/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
   });
 }
 
@@ -1191,6 +1275,10 @@ export interface AudienceFilter {
   excluded_ogrenci_ids?: number[];
   included_veli_ids?: number[];
   excluded_veli_ids?: number[];
+  included_personel_ids?: number[];
+  excluded_personel_ids?: number[];
+  /** Personel kitlesi: görevlendirme rolleri (boş = tüm personel) */
+  rol_ids?: number[];
   q?: string;
 }
 
@@ -1439,6 +1527,7 @@ export const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
 export const AUDIENCE_TYPE_LABELS: Record<string, string> = {
   all_veliler: 'Tüm veliler',
   all_ogrenciler: 'Tüm öğrenciler',
+  all_personeller: 'Personeller',
   sinif: 'Sınıf',
   sube: 'Şube',
   coach_students: 'Koç öğrencileri',

@@ -13,6 +13,8 @@ import {
 import "@/components/communication/communication.css";
 import { AudienceFilter, CampaignPreviewStats, previewCampaign } from "@/lib/communication-api";
 import { getContextHeaders } from "@/lib/api";
+import RoleService from "@/app/roles/role.service";
+import type { Role } from "@/app/roles/role.types";
 
 const STORAGE_KEYS = { activeEgitimYili: "3k_active_egitim_yili" };
 
@@ -32,6 +34,7 @@ function readEgitimYiliId(): number | undefined {
 export type BulkAudienceType =
   | "all_veliler"
   | "all_ogrenciler"
+  | "all_personeller"
   | "sinif"
   | "coach_students"
   | "coach_parents"
@@ -45,10 +48,14 @@ export interface AudienceOption {
   description: string;
 }
 
+/** Portal / öğrenci rolleri personel kitlesinde gösterilmez. */
+const PERSONEL_ROLE_EXCLUDE_CODES = new Set(["ogrenci", "okuyucu", "super_admin"]);
+
 export const ADMIN_AUDIENCE_OPTIONS: AudienceOption[] = [
   { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci, veli veya personel arayıp seçerek gönder" },
   { value: "all_veliler", icon: "👨‍👩‍👧", title: "Tüm veliler", description: "Duyuru opt-in vermiş tüm velilere gönder" },
   { value: "all_ogrenciler", icon: "🎓", title: "Tüm öğrenciler", description: "Aktif öğrencilere gönder" },
+  { value: "all_personeller", icon: "🧑‍💼", title: "Personeller", description: "Role göre personel seç; istersen tek tek ekle/çıkar" },
   { value: "sinif", icon: "🏫", title: "Sınıf", description: "Belirli bir sınıfın velilerine gönder" },
   { value: "coach_students", icon: "🎯", title: "Koç öğrencileri", description: "Koçluk kapsamındaki öğrencilere gönder" },
   { value: "coach_parents", icon: "👪", title: "Koç velileri", description: "Koçluk kapsamındaki öğrenci velilerine gönder" },
@@ -94,6 +101,10 @@ export default function TopluGonderClient({
   const [pickedOgrenciIds, setPickedOgrenciIds] = useState<number[]>([]);
   const [pickedVeliIds, setPickedVeliIds] = useState<number[]>([]);
   const [pickedPersonelIds, setPickedPersonelIds] = useState<number[]>([]);
+  /** Personel kitlesinde manuel eklenenler (rol filtresine ek). */
+  const [includedPersonelIds, setIncludedPersonelIds] = useState<number[]>([]);
+  const [selectedRolIds, setSelectedRolIds] = useState<number[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [historyKey, setHistoryKey] = useState(0);
 
   const buildFilter = useCallback((): AudienceFilter => {
@@ -109,8 +120,22 @@ export default function TopluGonderClient({
       filter.veli_ids = pickedVeliIds;
       if (!isCoach) filter.personel_ids = pickedPersonelIds;
     }
+    if (audienceType === "all_personeller" && !isCoach) {
+      if (selectedRolIds.length) filter.rol_ids = selectedRolIds;
+      if (includedPersonelIds.length) filter.included_personel_ids = includedPersonelIds;
+    }
     return filter;
-  }, [audienceType, sinifId, advancedFilter, pickedOgrenciIds, pickedVeliIds, pickedPersonelIds, isCoach]);
+  }, [
+    audienceType,
+    sinifId,
+    advancedFilter,
+    pickedOgrenciIds,
+    pickedVeliIds,
+    pickedPersonelIds,
+    includedPersonelIds,
+    selectedRolIds,
+    isCoach,
+  ]);
 
   useEffect(() => {
     if (isCoach) return;
@@ -135,6 +160,24 @@ export default function TopluGonderClient({
       .catch(() => null);
   }, [isCoach]);
 
+  useEffect(() => {
+    if (isCoach) return;
+    RoleService.listRoles({ is_active: true })
+      .then((res) => {
+        const list = (res.success ? res.roles : []) || [];
+        setRoles(
+          list.filter((r) => !PERSONEL_ROLE_EXCLUDE_CODES.has((r.code || "").toLowerCase())),
+        );
+      })
+      .catch(() => setRoles([]));
+  }, [isCoach]);
+
+  const toggleRol = (id: number) => {
+    setSelectedRolIds((prev) => (
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    ));
+  };
+
   const refreshMiniPreview = useCallback(async () => {
     setPreviewLoading(true);
     try {
@@ -149,7 +192,19 @@ export default function TopluGonderClient({
 
   useEffect(() => {
     if (pageTab === "compose" && step === 0) refreshMiniPreview();
-  }, [pageTab, step, audienceType, sinifId, advancedFilter, pickedOgrenciIds, pickedVeliIds, pickedPersonelIds, refreshMiniPreview]);
+  }, [
+    pageTab,
+    step,
+    audienceType,
+    sinifId,
+    advancedFilter,
+    pickedOgrenciIds,
+    pickedVeliIds,
+    pickedPersonelIds,
+    includedPersonelIds,
+    selectedRolIds,
+    refreshMiniPreview,
+  ]);
 
   const handleNext = () => {
     if (step === 0 && audienceType === "sinif" && !sinifId) {
@@ -226,9 +281,9 @@ export default function TopluGonderClient({
 
       {pageTab === "compose" && (
         <>
-          <StepWizard steps={["Kitle", "Stüdyo"]} currentStep={step} />
+          {step === 0 && <StepWizard steps={["Kitle", "Stüdyo"]} currentStep={step} />}
 
-          {error && <div className="comm-alert comm-alert-danger">{error}</div>}
+          {error && step === 0 && <div className="comm-alert comm-alert-danger">{error}</div>}
 
           {step === 0 && (
             <div className="comm-step-panel comm-card">
@@ -296,6 +351,60 @@ export default function TopluGonderClient({
                 </div>
               )}
 
+              {audienceType === "all_personeller" && !isCoach && (
+                <div style={{ marginTop: "1rem" }} className="comm-personel-audience">
+                  <div className="comm-form-field">
+                    <label>Rol (opsiyonel)</label>
+                    <p className="comm-studio-muted" style={{ margin: "0 0 0.5rem", fontSize: "0.8125rem" }}>
+                      Boş bırakırsanız telefonu olan tüm aktif personel seçilir. Bir veya daha fazla rol işaretleyebilirsiniz.
+                    </p>
+                    <div className="comm-role-chip-grid" role="group" aria-label="Personel rolleri">
+                      {roles.length === 0 ? (
+                        <span className="comm-studio-muted">Roller yükleniyor…</span>
+                      ) : (
+                        roles.map((role) => {
+                          const active = selectedRolIds.includes(role.id);
+                          return (
+                            <button
+                              key={role.id}
+                              type="button"
+                              className={`comm-role-chip${active ? " is-active" : ""}`}
+                              aria-pressed={active}
+                              onClick={() => toggleRol(role.id)}
+                            >
+                              {role.name}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                    {selectedRolIds.length > 0 && (
+                      <button
+                        type="button"
+                        className="comm-link-btn"
+                        style={{ marginTop: "0.5rem" }}
+                        onClick={() => setSelectedRolIds([])}
+                      >
+                        Rol seçimini temizle
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: "1.25rem" }}>
+                    <RecipientPickerPanel
+                      ogrenciIds={[]}
+                      veliIds={[]}
+                      personelIds={includedPersonelIds}
+                      allowOgrenci={false}
+                      allowVeli={false}
+                      allowPersonel
+                      hint="Rol filtresine ek olarak personel arayıp ekleyin. Stüdyoda listeden de çıkarabilirsiniz."
+                      onChange={({ personel_ids }) => setIncludedPersonelIds(personel_ids)}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="comm-audience-preview-banner">
                 <div className="comm-audience-preview-count">
                   <strong>
@@ -315,33 +424,42 @@ export default function TopluGonderClient({
           )}
 
           {step === 1 && (
-            <BulkSendStudio
-              audienceFilter={buildFilter()}
-              audienceType={audienceType}
-              title={title}
-              onTitleChange={setTitle}
-              composerState={composerState}
-              onComposerChange={setComposerState}
-              templateName={templateName}
-              onTemplateNameChange={setTemplateName}
-              templateLanguage={templateLanguage}
-              onTemplateLanguageChange={setTemplateLanguage}
-              campaignDetailPath={detailPath}
-            />
+            <>
+              <div className="comm-studio-back-row">
+                <button
+                  type="button"
+                  className="comm-studio-back-btn"
+                  onClick={() => {
+                    setError(null);
+                    setStep(0);
+                  }}
+                >
+                  ← Kitleye dön
+                </button>
+              </div>
+              <BulkSendStudio
+                audienceFilter={buildFilter()}
+                audienceType={audienceType}
+                title={title}
+                onTitleChange={setTitle}
+                composerState={composerState}
+                onComposerChange={setComposerState}
+                templateName={templateName}
+                onTemplateNameChange={setTemplateName}
+                templateLanguage={templateLanguage}
+                onTemplateLanguageChange={setTemplateLanguage}
+                campaignDetailPath={detailPath}
+              />
+            </>
           )}
 
-          <div className="comm-step-actions">
-            {step > 0 && (
-              <button type="button" className="comm-btn-secondary" onClick={() => { setError(null); setStep(0); }}>
-                Geri
-              </button>
-            )}
-            {step === 0 && (
+          {step === 0 && (
+            <div className="comm-step-actions">
               <button type="button" className="comm-btn-primary" onClick={handleNext}>
                 Stüdyoya Geç
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
     </CommunicationPageShell>

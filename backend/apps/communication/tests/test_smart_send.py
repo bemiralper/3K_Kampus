@@ -124,6 +124,16 @@ class SessionWindowTest(TestCase):
         self.assertTrue(is_session_error({'success': False, 'error': 'Bir hata (#131047)'}))
         self.assertFalse(is_session_error({'success': False, 'error': 'Invalid parameter'}))
 
+        from apps.communication.application.session_window import is_permanent_send_error
+
+        self.assertTrue(is_permanent_send_error({'success': False, 'error_code': 132001}))
+        self.assertTrue(is_permanent_send_error({
+            'success': False,
+            'error': '(#132001) Template name does not exist in the translation',
+        }))
+        self.assertTrue(is_permanent_send_error({'success': False, 'error_code': 131047}))
+        self.assertFalse(is_permanent_send_error({'success': False, 'error': 'rate limit'}))
+
 
 class SmartChannelSelectionTest(TestCase):
     """Pencere durumu, serbest mesaj ↔ Meta şablonu kararını belirler."""

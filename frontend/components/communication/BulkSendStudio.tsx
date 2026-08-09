@@ -6,7 +6,7 @@ import AttachmentDropZone from "./AttachmentDropZone";
 import RecipientsSummaryPanel, { recipientKey } from "./RecipientsSummaryPanel";
 import SendConfirmModal from "./SendConfirmModal";
 import SendOptionsBar from "./SendOptionsBar";
-import MetaTemplateSelect from "./MetaTemplateSelect";
+import MetaTemplateSelect, { headerTypeOf } from "./MetaTemplateSelect";
 import WhatsAppPhonePreview from "./WhatsAppPhonePreview";
 import { ComposerState, plainTextFromComposer, TEMPLATE_VARIABLES } from "./composer-utils";
 import {
@@ -27,6 +27,69 @@ import {
 
 const RECIPIENTS_PAGE_SIZE = 20;
 
+/** Ek tipine göre tercih edilen duyuru şablon adları (veli / öğrenci). */
+const PREFERRED_TEMPLATE_BY_HEADER_VELI: Record<string, string> = {
+  TEXT: "duyuru_metin",
+  NONE: "duyuru_metin",
+  IMAGE: "duyuru_gorsel",
+  DOCUMENT: "duyuru_pdf",
+};
+const PREFERRED_TEMPLATE_BY_HEADER_OGRENCI: Record<string, string> = {
+  TEXT: "duyuru_metin_ogrenci",
+  NONE: "duyuru_metin_ogrenci",
+  IMAGE: "duyuru_gorsel_ogrenci",
+  DOCUMENT: "duyuru_pdf_ogrenci",
+};
+const PREFERRED_TEMPLATE_BY_HEADER_PERSONEL: Record<string, string> = {
+  TEXT: "duyuru_metin_personel",
+  NONE: "duyuru_metin_personel",
+  IMAGE: "duyuru_gorsel_personel",
+  DOCUMENT: "duyuru_pdf_personel",
+};
+
+function isOgrenciAudience(audienceType: string): boolean {
+  return (
+    audienceType === "all_ogrenciler"
+    || audienceType === "coach_students"
+    || audienceType.includes("ogrenci")
+  );
+}
+
+function isPersonelAudience(audienceType: string): boolean {
+  return audienceType === "all_personeller" || audienceType.includes("personel");
+}
+
+function preferredTemplateMap(audienceType: string): Record<string, string> {
+  if (isPersonelAudience(audienceType)) return PREFERRED_TEMPLATE_BY_HEADER_PERSONEL;
+  if (isOgrenciAudience(audienceType)) return PREFERRED_TEMPLATE_BY_HEADER_OGRENCI;
+  return PREFERRED_TEMPLATE_BY_HEADER_VELI;
+}
+
+function requiredHeadersFromAttachments(atts: CampaignAttachmentItem[]): string[] {
+  if (!atts.length) return ["TEXT", "NONE"];
+  const mime = (atts[0].mime_type || "").toLowerCase();
+  if (mime.startsWith("image/")) return ["IMAGE"];
+  return ["DOCUMENT"];
+}
+
+function attachmentHeaderMismatch(
+  atts: CampaignAttachmentItem[],
+  tpl: WhatsAppMetaTemplateItem | null,
+): string | null {
+  if (!tpl) return null;
+  const htype = headerTypeOf(tpl);
+  const required = requiredHeadersFromAttachments(atts);
+  if (required.includes(htype)) return null;
+  if (!atts.length) {
+    return `Seçilen şablon ${htype} header bekliyor ancak ek yok. Metin için duyuru_metin / duyuru_metin_ogrenci seçin.`;
+  }
+  const mime = (atts[0].mime_type || "").toLowerCase();
+  if (mime.startsWith("image/")) {
+    return "Görsel ek için IMAGE header’lı şablon gerekli (örn. duyuru_gorsel / duyuru_gorsel_ogrenci).";
+  }
+  return "PDF/belge ek için DOCUMENT header’lı şablon gerekli (örn. duyuru_pdf / duyuru_pdf_ogrenci).";
+}
+
 /** Alıcı başına sunucuda çözülen değişkenler — kullanıcıdan istenmez. */
 const AUTO_RESOLVED_VARIABLES = new Set([
   "veli_ad",
@@ -34,6 +97,7 @@ const AUTO_RESOLVED_VARIABLES = new Set([
   "sinif",
   "sube",
   "kurum_ad",
+  "personel_ad",
 ]);
 
 const VARIABLE_LABELS: Record<string, string> = Object.fromEntries(
@@ -44,6 +108,36 @@ function templateVariables(body: string): string[] {
   const found = new Set<string>();
   for (const match of body.matchAll(/\{\{\s*(\w+)\s*\}\}/g)) found.add(match[1]);
   return Array.from(found);
+}
+
+/** variable_map: "1"→"kurum_ad" veya "kurum_ad"→"1" */
+function canonicalVarName(key: string, map?: Record<string, string> | null): string {
+  if (!map) return key;
+  const direct = map[key];
+  if (direct && !/^\d+$/.test(direct)) return direct;
+  const reverse = Object.entries(map).find(([, v]) => v === key)?.[0];
+  if (reverse && !/^\d+$/.test(reverse)) return reverse;
+  if (direct) return direct;
+  return key;
+}
+
+function variableFieldLabel(key: string, map?: Record<string, string> | null): string {
+  const canonical = canonicalVarName(key, map);
+  if (VARIABLE_LABELS[canonical]) return VARIABLE_LABELS[canonical];
+  if (VARIABLE_LABELS[key]) return VARIABLE_LABELS[key];
+  if (/^\d+$/.test(key)) return `Alan ${key}`;
+  return canonical.replace(/_/g, " ");
+}
+
+/** Şablon gövdesinden değişken etrafındaki kısa bağlam. */
+function variableContextHint(body: string, key: string): string | null {
+  const re = new RegExp(`([^\\n]{0,28})\\{\\{\\s*${key}\\s*\\}\\}([^\\n]{0,28})`);
+  const m = body.match(re);
+  if (!m) return null;
+  const left = (m[1] || "").trim();
+  const right = (m[2] || "").trim();
+  const snippet = `${left ? `…${left}` : ""}{{${key}}}${right ? `${right}…` : ""}`.trim();
+  return snippet.length > 4 ? snippet : null;
 }
 
 function fillManualVariables(body: string, values: Record<string, string>): string {
@@ -101,14 +195,78 @@ export default function BulkSendStudio({
   const [page, setPage] = useState(1);
   const [excludedOgrenci, setExcludedOgrenci] = useState<Map<number, string>>(new Map());
   const [excludedVeli, setExcludedVeli] = useState<Map<number, string>>(new Map());
+  const [excludedPersonel, setExcludedPersonel] = useState<Map<number, string>>(new Map());
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppMetaTemplateItem | null>(null);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
+  const [compatibleTemplates, setCompatibleTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
+
+  const requiredHeaderTypes = useMemo(
+    () => requiredHeadersFromAttachments(attachments),
+    [attachments],
+  );
 
   const templateBody = selectedTemplate?.body_named || "";
+  const variableMap = selectedTemplate?.variable_map_json || null;
   const manualVariables = useMemo(
-    () => templateVariables(templateBody).filter((key) => !AUTO_RESOLVED_VARIABLES.has(key)),
-    [templateBody],
+    () => templateVariables(templateBody).filter((key) => {
+      const canonical = canonicalVarName(key, variableMap);
+      return !AUTO_RESOLVED_VARIABLES.has(key) && !AUTO_RESOLVED_VARIABLES.has(canonical);
+    }),
+    [templateBody, variableMap],
   );
+  const headerMismatch = useMemo(
+    () => attachmentHeaderMismatch(attachments, selectedTemplate),
+    [attachments, selectedTemplate],
+  );
+
+  // Ek tipi / kitle değişince uyumlu şablonu otomatik öner (veli ↔ öğrenci)
+  useEffect(() => {
+    if (!compatibleTemplates.length) {
+      if (selectedTemplate || templateName) {
+        onTemplateNameChange("");
+        setSelectedTemplate(null);
+        setVariableValues({});
+      }
+      return;
+    }
+    const preferredMap = preferredTemplateMap(audienceType);
+    const preferredNames = requiredHeaderTypes
+      .map((h) => preferredMap[h])
+      .filter(Boolean);
+    const preferred =
+      compatibleTemplates.find((t) => preferredNames.includes(t.name))
+      || (() => {
+        const altMaps = [
+          PREFERRED_TEMPLATE_BY_HEADER_VELI,
+          PREFERRED_TEMPLATE_BY_HEADER_OGRENCI,
+          PREFERRED_TEMPLATE_BY_HEADER_PERSONEL,
+        ].filter((m) => m !== preferredMap);
+        for (const altMap of altMaps) {
+          const altNames = requiredHeaderTypes.map((h) => altMap[h]).filter(Boolean);
+          const hit = compatibleTemplates.find((t) => altNames.includes(t.name));
+          if (hit) return hit;
+        }
+        return undefined;
+      })()
+      || compatibleTemplates[0];
+
+    // Kitleye özel tercih varsa ona geç; yoksa mevcut uyumlu seçimi koru
+    if (preferredNames.includes(templateName)) return;
+    if (
+      !preferredNames.some((n) => compatibleTemplates.some((t) => t.name === n))
+      && compatibleTemplates.some((t) => t.name === templateName)
+    ) {
+      return;
+    }
+
+    onTemplateNameChange(preferred.name);
+    if (preferred.language && onTemplateLanguageChange) {
+      onTemplateLanguageChange(preferred.language);
+    }
+    setSelectedTemplate(preferred);
+    setVariableValues({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compatibleTemplates, requiredHeaderTypes.join("|"), audienceType]);
   const resolvedBody = useMemo(
     () => fillManualVariables(templateBody, variableValues),
     [templateBody, variableValues],
@@ -141,6 +299,7 @@ export default function BulkSendStudio({
   useEffect(() => {
     setExcludedOgrenci(new Map());
     setExcludedVeli(new Map());
+    setExcludedPersonel(new Map());
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audienceFilterKey]);
@@ -148,12 +307,14 @@ export default function BulkSendStudio({
   const effectiveFilter = useMemo<AudienceFilter>(() => {
     const excludedOgrenciIds = Array.from(excludedOgrenci.keys());
     const excludedVeliIds = Array.from(excludedVeli.keys());
+    const excludedPersonelIds = Array.from(excludedPersonel.keys());
     return {
       ...audienceFilter,
       ...(excludedOgrenciIds.length ? { excluded_ogrenci_ids: excludedOgrenciIds } : {}),
       ...(excludedVeliIds.length ? { excluded_veli_ids: excludedVeliIds } : {}),
+      ...(excludedPersonelIds.length ? { excluded_personel_ids: excludedPersonelIds } : {}),
     };
-  }, [audienceFilter, excludedOgrenci, excludedVeli]);
+  }, [audienceFilter, excludedOgrenci, excludedVeli, excludedPersonel]);
 
   const loadPreview = useCallback(async () => {
     setPreviewLoading(true);
@@ -182,7 +343,13 @@ export default function BulkSendStudio({
   }, [loadPreview]);
 
   const handleExcludeRecipient = (recipient: CampaignPreviewRecipient) => {
-    if (recipient.ogrenci_id) {
+    if (recipient.personel_id) {
+      setExcludedPersonel((prev) => {
+        const next = new Map(prev);
+        next.set(recipient.personel_id as number, recipient.display_name || recipient.e164);
+        return next;
+      });
+    } else if (recipient.ogrenci_id) {
       setExcludedOgrenci((prev) => {
         const next = new Map(prev);
         next.set(recipient.ogrenci_id as number, recipient.display_name || recipient.e164);
@@ -200,6 +367,7 @@ export default function BulkSendStudio({
   const excludedEntries = [
     ...Array.from(excludedOgrenci.entries()).map(([id, label]) => ({ key: `ogrenci:${id}`, label })),
     ...Array.from(excludedVeli.entries()).map(([id, label]) => ({ key: `veli:${id}`, label })),
+    ...Array.from(excludedPersonel.entries()).map(([id, label]) => ({ key: `personel:${id}`, label })),
   ];
 
   const handleUndoExclude = (key: string) => {
@@ -217,6 +385,12 @@ export default function BulkSendStudio({
         next.delete(id);
         return next;
       });
+    } else if (kind === "personel") {
+      setExcludedPersonel((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -225,10 +399,14 @@ export default function BulkSendStudio({
       setError("Toplu gönderim için Meta onaylı bir şablon seçin.");
       return;
     }
+    if (headerMismatch) {
+      setError(headerMismatch);
+      return;
+    }
     if (missingVariables.length > 0) {
       setError(
-        `Doldurulmamış değişken: ${missingVariables
-          .map((key) => VARIABLE_LABELS[key] || key)
+        `Doldurulmamış alan: ${missingVariables
+          .map((key) => variableFieldLabel(key, variableMap))
           .join(", ")}`,
       );
       return;
@@ -264,7 +442,10 @@ export default function BulkSendStudio({
         scheduled_at: scheduledIso,
         save_as_template: saveAsTemplate,
         draft_only: saveAsDraft,
-        send_options: saveAsDraft ? { draft: true } : undefined,
+        send_options: {
+          ...(saveAsDraft ? { draft: true } : {}),
+          template_context: variableValues,
+        },
         channel_config_id: accountId || undefined,
       });
 
@@ -288,117 +469,152 @@ export default function BulkSendStudio({
   }));
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
+  const recipientTotal = preview?.total_recipients ?? 0;
+  const canSend =
+    !!templateName.trim()
+    && !headerMismatch
+    && missingVariables.length === 0
+    && recipientTotal > 0;
+
+  const sendLabel = saveAsDraft
+    ? "Taslağı kaydet"
+    : sendMode === "scheduled"
+      ? "Planla"
+      : `${recipientTotal.toLocaleString("tr-TR")} kişiye gönder`;
 
   return (
-    <div className="comm-bulk-studio">
+    <div className="comm-studio-shell">
       {error && <div className="comm-alert comm-alert-danger">{error}</div>}
 
-      <div className="comm-card comm-studio-headerbar">
-        <div className="comm-studio-headerbar-field comm-studio-headerbar-title">
-          <label htmlFor="studio-title">Kampanya başlığı</label>
+      <header className="comm-studio-top">
+        <div className="comm-studio-top-main">
+          <div className="comm-studio-kicker">
+            <span className="comm-studio-audience-pill">
+              {AUDIENCE_TYPE_LABELS[audienceType] || audienceType}
+            </span>
+            <span className="comm-studio-top-count">
+              {previewLoading ? "…" : recipientTotal.toLocaleString("tr-TR")}
+              <small>alıcı</small>
+            </span>
+          </div>
           <input
             id="studio-title"
+            className="comm-studio-title-input"
             type="text"
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
-            placeholder="Örn: Nisan duyurusu (opsiyonel)"
+            placeholder="Kampanya başlığı (opsiyonel)"
+            aria-label="Kampanya başlığı"
           />
         </div>
-        <div className="comm-studio-headerbar-field">
-          <label htmlFor="studio-account">Gönderim hesabı</label>
-          <select
-            id="studio-account"
-            value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-            disabled={accounts.length === 0}
-          >
-            {accounts.length === 0 && <option value="">Erişilebilir hesap bulunamadı</option>}
-            {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {accountLabel(acc)}
-              </option>
-            ))}
-          </select>
+        <div className="comm-studio-top-controls">
+          <label className="comm-studio-field">
+            <span>Hesap</span>
+            <select
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              disabled={accounts.length === 0}
+            >
+              {accounts.length === 0 && <option value="">Hesap yok</option>}
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {accountLabel(acc)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="comm-studio-field comm-studio-field-template">
+            <MetaTemplateSelect
+              value={templateName}
+              accountId={accountId || undefined}
+              usage="CAMPAIGN"
+              hidePreview
+              variant="compact"
+              requiredHeaderTypes={requiredHeaderTypes}
+              onTemplatesLoaded={setCompatibleTemplates}
+              label="Şablon"
+              onChange={(name, language, tpl) => {
+                onTemplateNameChange(name);
+                if (language && onTemplateLanguageChange) {
+                  onTemplateLanguageChange(language);
+                }
+                setSelectedTemplate(tpl || null);
+                setVariableValues({});
+                if (tpl?.name && !title.trim()) onTitleChange(tpl.name);
+              }}
+            />
+          </div>
         </div>
-        <div className="comm-studio-headerbar-field">
-          <MetaTemplateSelect
-            value={templateName}
-            accountId={accountId || undefined}
-            usage="CAMPAIGN"
-            hidePreview
-            label="Duyuru şablonu (Meta onaylı)"
-            onChange={(name, language, tpl) => {
-              onTemplateNameChange(name);
-              if (language && onTemplateLanguageChange) {
-                onTemplateLanguageChange(language);
-              }
-              setSelectedTemplate(tpl || null);
-              setVariableValues({});
-              if (tpl?.name && !title.trim()) onTitleChange(tpl.name);
-            }}
-          />
-        </div>
-        <div className="comm-studio-headerbar-summary">
-          <span className="comm-scope-chip">{AUDIENCE_TYPE_LABELS[audienceType] || audienceType}</span>
-          <span className="comm-studio-headerbar-count">
-            {previewLoading ? "…" : (preview?.total_recipients ?? 0).toLocaleString("tr-TR")}
-            <small>alıcı</small>
-          </span>
-        </div>
-      </div>
+      </header>
 
-      <div className="comm-studio-grid">
-        <RecipientsSummaryPanel
-          preview={preview}
-          audienceType={audienceType}
-          loading={previewLoading}
-          onRefresh={loadPreview}
-          page={page}
-          pageSize={RECIPIENTS_PAGE_SIZE}
-          onPageChange={setPage}
-          onExclude={handleExcludeRecipient}
-          excludedEntries={excludedEntries}
-          onUndoExclude={handleUndoExclude}
-        />
-
-        <main className="comm-studio-center">
-          <div className="comm-card comm-studio-editor">
+      <div className="comm-studio-body">
+        <main className="comm-studio-compose">
+          <section className="comm-studio-section">
+            <div className="comm-studio-section-label">Mesaj</div>
             {!selectedTemplate ? (
-              <div className="comm-alert comm-alert-warning comm-studio-template-hint">
-                Toplu duyurular WhatsApp tarafından yalnızca onaylı şablonla iletilir.
-                Yukarıdan bir duyuru şablonu seçin; metin şablondan gelir.
+              <div className="comm-studio-empty-template">
+                <strong>Onaylı bir şablon seçin</strong>
+                <p>
+                  Toplu WhatsApp gönderimi yalnızca Meta onaylı şablonla yapılır.
+                  Üstten duyuru / hatırlatma şablonunu seçin.
+                </p>
               </div>
             ) : (
-              <>
-                <div className="comm-studio-template-body">
-                  <h3>{selectedTemplate.name}</h3>
-                  <pre>{templateBody}</pre>
+              <div className="comm-studio-message-card">
+                <div className="comm-studio-message-meta">
+                  <strong>{selectedTemplate.name}</strong>
+                  <span>{selectedTemplate.language || templateLanguage || "tr"}</span>
                 </div>
+                <pre className="comm-studio-message-body">{templateBody}</pre>
                 {manualVariables.length > 0 ? (
-                  <div className="comm-studio-template-vars">
-                    <h3>Değişkenleri doldurun</h3>
-                    {manualVariables.map((key) => (
-                      <label key={key} className="comm-meta-send-var">
-                        <span>{VARIABLE_LABELS[key] || key.replace(/_/g, " ")}</span>
-                        <input
-                          type="text"
-                          value={variableValues[key] || ""}
-                          onChange={(e) =>
-                            setVariableValues((prev) => ({ ...prev, [key]: e.target.value }))
-                          }
-                          placeholder={`{{${key}}}`}
-                        />
-                      </label>
-                    ))}
+                  <div className="comm-studio-vars">
+                    <div className="comm-studio-vars-head">
+                      <span className="comm-studio-section-label">Doldurulacak alanlar</span>
+                      <span className="comm-studio-vars-count">{manualVariables.length}</span>
+                    </div>
+                    <div className="comm-studio-var-grid">
+                      {manualVariables.map((key) => {
+                        const label = variableFieldLabel(key, variableMap);
+                        const hint = variableContextHint(templateBody, key);
+                        return (
+                          <label key={key} className="comm-studio-var-field">
+                            <span>{label}</span>
+                            <input
+                              type="text"
+                              value={variableValues[key] || ""}
+                              onChange={(e) =>
+                                setVariableValues((prev) => ({ ...prev, [key]: e.target.value }))
+                              }
+                              placeholder={label}
+                            />
+                            {hint && <small>{hint}</small>}
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 ) : (
-                  <p className="comm-studio-muted comm-studio-template-note">
-                    Bu şablondaki değişkenler her alıcı için otomatik doldurulur.
+                  <p className="comm-studio-auto-vars">
+                    Tüm alanlar alıcıya göre otomatik doldurulur.
                   </p>
                 )}
-              </>
+              </div>
             )}
+          </section>
+
+          <section className="comm-studio-section">
+            <div className="comm-studio-section-label">Ek</div>
             <AttachmentDropZone attachments={attachments} onChange={setAttachments} />
+            {headerMismatch && (
+              <div className="comm-alert comm-alert-warning">{headerMismatch}</div>
+            )}
+            <p className="comm-studio-hint">
+              Ek yok → metin şablon · Görsel → IMAGE · PDF → DOCUMENT
+            </p>
+          </section>
+
+          <section className="comm-studio-section">
+            <div className="comm-studio-section-label">Zamanlama</div>
             <SendOptionsBar
               sendMode={sendMode}
               onSendModeChange={setSendMode}
@@ -409,43 +625,65 @@ export default function BulkSendStudio({
               saveAsDraft={saveAsDraft}
               onSaveAsDraftChange={setSaveAsDraft}
             />
-          </div>
+          </section>
         </main>
 
-        <aside className={`comm-studio-right${showMobilePreview ? " mobile-visible" : ""}`}>
-          <WhatsAppPhonePreview
-            text={body}
-            kurumName={kurumName}
-            previewColor={composerState.previewColor}
-            fontSize={composerState.previewFontSize}
-            attachments={previewAttachments}
+        <aside className={`comm-studio-rail${showMobilePreview ? " is-open" : ""}`}>
+          <div className="comm-studio-preview-block">
+            <div className="comm-studio-section-label">Önizleme</div>
+            <WhatsAppPhonePreview
+              text={body}
+              kurumName={kurumName}
+              previewColor={composerState.previewColor}
+              fontSize={composerState.previewFontSize}
+              attachments={previewAttachments}
+            />
+          </div>
+          <RecipientsSummaryPanel
+            preview={preview}
+            audienceType={audienceType}
+            loading={previewLoading}
+            onRefresh={loadPreview}
+            page={page}
+            pageSize={RECIPIENTS_PAGE_SIZE}
+            onPageChange={setPage}
+            onExclude={handleExcludeRecipient}
+            excludedEntries={excludedEntries}
+            onUndoExclude={handleUndoExclude}
           />
         </aside>
       </div>
 
-      <div className="comm-studio-footer-actions">
-        <span className="comm-studio-footer-hint">
+      <footer className="comm-studio-dock">
+        <p className="comm-studio-dock-hint">
           {previewLoading
             ? "Alıcılar hesaplanıyor…"
-            : `${(preview?.total_recipients ?? 0).toLocaleString("tr-TR")} alıcıya gönderilecek`}
-        </span>
-        <button
-          type="button"
-          className="comm-btn-secondary comm-preview-toggle"
-          onClick={() => setShowMobilePreview((v) => !v)}
-        >
-          👁 Önizleme
-        </button>
-        <button
-          type="button"
-          className="comm-btn-primary"
-          onClick={handleSendClick}
-          disabled={!templateName.trim()}
-          title={!templateName.trim() ? "Önce onaylı bir duyuru şablonu seçin" : undefined}
-        >
-          Gönder
-        </button>
-      </div>
+            : excludedEntries.length > 0
+              ? `${recipientTotal.toLocaleString("tr-TR")} alıcı · ${excludedEntries.length} hariç`
+              : `${recipientTotal.toLocaleString("tr-TR")} alıcıya gidecek`}
+        </p>
+        <div className="comm-studio-dock-actions">
+          <button
+            type="button"
+            className="comm-btn-secondary comm-preview-toggle"
+            onClick={() => setShowMobilePreview((v) => !v)}
+          >
+            {showMobilePreview ? "Önizlemeyi kapat" : "Önizleme"}
+          </button>
+          <button
+            type="button"
+            className="comm-btn-primary"
+            onClick={handleSendClick}
+            disabled={!canSend}
+            title={
+              headerMismatch
+              || (!templateName.trim() ? "Önce onaylı bir şablon seçin" : undefined)
+            }
+          >
+            {sendLabel}
+          </button>
+        </div>
+      </footer>
 
       <SendConfirmModal
         open={showConfirm}
@@ -463,7 +701,6 @@ export default function BulkSendStudio({
           setError(null);
         }}
       />
-
     </div>
   );
 }

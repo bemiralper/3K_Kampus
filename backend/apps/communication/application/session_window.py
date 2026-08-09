@@ -37,6 +37,12 @@ CLOSED_NOTICE = (
 # 131047 dışında pencere kapalıyken dönebilen Meta kodları
 SESSION_EXPIRED_ERROR_CODES = frozenset({131047})
 
+# Tekrar denemenin sonucu değiştirmeyeceği Meta hataları
+PERMANENT_SEND_ERROR_CODES = frozenset({
+    131047,  # 24 saat penceresi / re-engagement
+    132001,  # Şablon adı bu dilde Meta'da yok
+})
+
 
 def window_hours() -> int:
     return int(getattr(settings, 'COMMUNICATION_SESSION_WINDOW_HOURS', 24) or 24)
@@ -47,18 +53,42 @@ def enforcement_enabled() -> bool:
     return bool(getattr(settings, 'COMMUNICATION_ENFORCE_SESSION_WINDOW', True))
 
 
+def _error_code(result: dict | None) -> int | None:
+    if not result:
+        return None
+    code = result.get('error_code')
+    try:
+        return int(code) if code is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def is_session_error(result: dict | None) -> bool:
     """Meta yanıtı 24 saatlik pencere hatası mı?"""
     if not result:
         return False
-    code = result.get('error_code')
-    try:
-        if code is not None and int(code) in SESSION_EXPIRED_ERROR_CODES:
-            return True
-    except (TypeError, ValueError):
-        pass
+    if _error_code(result) in SESSION_EXPIRED_ERROR_CODES:
+        return True
     text = str(result.get('error') or '').lower()
     return '131047' in text or 're-engagement message' in text
+
+
+def is_permanent_send_error(result: dict | None) -> bool:
+    """
+    Tekrar denemenin fayda etmeyeceği gönderim hataları.
+    Örn. şablon Meta'da yok (#132001) veya 24 saat penceresi (#131047).
+    """
+    if not result:
+        return False
+    if _error_code(result) in PERMANENT_SEND_ERROR_CODES:
+        return True
+    if is_session_error(result):
+        return True
+    text = str(result.get('error') or '').lower()
+    return (
+        '132001' in text
+        or 'template name does not exist' in text
+    )
 
 
 @dataclass(frozen=True)

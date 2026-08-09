@@ -10,10 +10,12 @@ import {
 import MetaTemplateSendDrawer from "./MetaTemplateSendDrawer";
 import { useConversationThread } from "@/hooks/useConversationThread";
 import {
+  accountLabel,
   conversationInboxPath,
   ConversationListItem,
   fetchAccessibleWhatsAppAccounts,
   openConversationByPhone,
+  WhatsAppAccount,
 } from "@/lib/communication-api";
 import type { ChatOpenParams } from "./CommunicationChatProvider";
 
@@ -24,6 +26,15 @@ interface CommunicationChatDrawerProps {
   adminInbox?: boolean;
 }
 
+const DEPT_LABELS: Record<string, string> = {
+  COACHING: "Koçluk",
+  ACCOUNTING: "Muhasebe",
+  SECRETARIAT: "Sekreterya",
+  GUIDANCE: "Rehberlik",
+  ADMISSIONS: "Kayıt",
+  MANAGEMENT: "Yönetim",
+};
+
 export default function CommunicationChatDrawer({
   open,
   onClose,
@@ -33,11 +44,46 @@ export default function CommunicationChatDrawer({
   const [conversation, setConversation] = useState<ConversationListItem | null>(null);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
+  const [accountId, setAccountId] = useState("");
 
   useEffect(() => {
-    if (!open || !target?.phone) {
+    if (!open) {
       setConversation(null);
       setOpenError(null);
+      setAccounts([]);
+      setAccountId("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const accessible = await fetchAccessibleWhatsAppAccounts();
+        if (cancelled) return;
+        const list = accessible.accounts || [];
+        setAccounts(list);
+        const initial =
+          accessible.default_account_id
+          || list[0]?.id
+          || "";
+        setAccountId((prev) => prev || initial);
+      } catch {
+        if (!cancelled) {
+          setAccounts([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !target?.phone || !accountId) {
+      if (!open || !target?.phone) {
+        setConversation(null);
+        setOpenError(null);
+      }
       return;
     }
 
@@ -47,16 +93,11 @@ export default function CommunicationChatDrawer({
 
     (async () => {
       try {
-        const accessible = await fetchAccessibleWhatsAppAccounts().catch(() => null);
-        const channelConfigId =
-          accessible?.default_account_id
-          || accessible?.accounts?.[0]?.id
-          || undefined;
         const conv = await openConversationByPhone(target.phone, {
           ogrenci_id: target.ogrenciId,
           veli_id: target.veliId,
           personel_id: target.personelId,
-          channel_config_id: channelConfigId,
+          channel_config_id: accountId,
         });
         if (!cancelled) setConversation(conv);
       } catch (err) {
@@ -72,7 +113,7 @@ export default function CommunicationChatDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, target?.phone, target?.ogrenciId, target?.veliId, target?.personelId]);
+  }, [open, target?.phone, target?.ogrenciId, target?.veliId, target?.personelId, accountId]);
 
   const displayConversation: ConversationListItem | null = conversation
     ? {
@@ -157,6 +198,33 @@ export default function CommunicationChatDrawer({
           </div>
         </header>
 
+        {accounts.length > 0 && (
+          <div className="comm-chat-drawer-account" style={{ padding: "0.5rem 1rem" }}>
+            <label className="comm-form-field" style={{ margin: 0 }}>
+              <span style={{ fontSize: "0.8rem" }}>WhatsApp hesabı (birim)</span>
+              <select
+                className="tplx-select"
+                value={accountId}
+                disabled={opening}
+                onChange={(e) => setAccountId(e.target.value)}
+                aria-label="WhatsApp hesabı"
+              >
+                {accounts.map((acc) => {
+                  const dept = acc.department
+                    ? DEPT_LABELS[String(acc.department)] || String(acc.department)
+                    : "";
+                  return (
+                    <option key={acc.id} value={acc.id}>
+                      {accountLabel(acc)}
+                      {dept ? ` — ${dept}` : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          </div>
+        )}
+
         {opening && (
           <p className="comm-chat-drawer-status">Konuşma açılıyor…</p>
         )}
@@ -199,6 +267,7 @@ export default function CommunicationChatDrawer({
       <MetaTemplateSendDrawer
         open={metaTemplatesOpen}
         conversationId={conversation?.id ?? null}
+        contactType={conversation?.contact_type}
         onClose={() => setMetaTemplatesOpen(false)}
         onSent={handleTemplateSent}
       />

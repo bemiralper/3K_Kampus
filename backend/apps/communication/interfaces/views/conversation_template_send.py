@@ -52,14 +52,33 @@ class ConversationTemplateSendView(CommunicationAPIView):
             approved_only=True,
             usage=MetaTemplateUsage.PERSONAL,
         )
-        context = build_recipient_context_from_conversation(conversation)
+        context = build_recipient_context_from_conversation(
+            conversation, sender_user=request.user,
+        )
+        contact_type = (conversation.contact_type or '').upper()
+        preferred_suffix = '_veli' if contact_type == 'VELI' else (
+            '_ogrenci' if contact_type == 'OGRENCI' else ''
+        )
         data = WhatsAppMetaTemplateSerializer(templates, many=True).data
+        if preferred_suffix:
+            data = sorted(
+                data,
+                key=lambda row: (
+                    0 if (row.get('name') or '').endswith(preferred_suffix) else 1,
+                    row.get('name') or '',
+                ),
+            )
         for row in data:
             row['preview'] = resolve_variables(row.get('body_named') or '', context)
         return Response({
             'templates': data,
             'session': window_for_conversation(conversation).as_dict(),
             'context': context,
+            'preferred_audience': (
+                'veli' if preferred_suffix == '_veli'
+                else 'ogrenci' if preferred_suffix == '_ogrenci'
+                else None
+            ),
         })
 
     def post(self, request, conversation_id):
@@ -91,7 +110,9 @@ class ConversationTemplateSendView(CommunicationAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         context = {
-            **build_recipient_context_from_conversation(conversation),
+            **build_recipient_context_from_conversation(
+                conversation, sender_user=request.user,
+            ),
             **{k: str(v) if v is not None else '' for k, v in variables.items()},
         }
 

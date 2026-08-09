@@ -167,6 +167,10 @@ class AudienceResolver:
                 kurum_id, ogrenci_ids, veli_ids, allowed_student_ids,
                 personel_ids=personel_ids,
             ))
+        elif audience_type == 'all_personeller':
+            # Personel kitleleri koç öğrenci kapsamına bağlı değildir (yalnızca admin bulk).
+            if allowed_student_ids is None:
+                raw_entries.extend(cls._collect_personeller(kurum_id, filter_json))
         else:
             # filtered — combine optional filters
             if filter_json.get('sinif_id'):
@@ -372,30 +376,94 @@ class AudienceResolver:
     ) -> list[tuple]:
         excluded_ogrenci = set(int(x) for x in (filter_json.get('excluded_ogrenci_ids') or []))
         excluded_veli = set(int(x) for x in (filter_json.get('excluded_veli_ids') or []))
+        excluded_personel = set(int(x) for x in (filter_json.get('excluded_personel_ids') or []))
         # Legacy keys
         excluded_ids = set(int(x) for x in (filter_json.get('excluded_ids') or []))
 
         filtered = []
         for entry in raw_entries:
-            phone, rtype, oid, vid, name = entry[:5]
+            if len(entry) >= 6:
+                phone, rtype, oid, vid, name, pid = entry[:6]
+            else:
+                phone, rtype, oid, vid, name = entry[:5]
+                pid = None
             if oid and (oid in excluded_ogrenci or oid in excluded_ids):
                 continue
             if vid and (vid in excluded_veli or vid in excluded_ids):
+                continue
+            if pid and pid in excluded_personel:
                 continue
             filtered.append(entry)
 
         include_ogrenci = filter_json.get('included_ogrenci_ids') or filter_json.get('included_ids') or []
         include_veli = filter_json.get('included_veli_ids') or []
-        if include_ogrenci or include_veli:
+        include_personel = filter_json.get('included_personel_ids') or []
+        if include_ogrenci or include_veli or include_personel:
             filtered.extend(
                 cls._collect_custom_ids(
                     kurum_id,
                     include_ogrenci if include_ogrenci else [],
                     include_veli,
                     allowed_student_ids,
+                    personel_ids=include_personel or None,
                 )
             )
         return filtered
+
+    @classmethod
+    def _collect_personeller(cls, kurum_id: int, filter_json: dict) -> list[tuple]:
+        """Aktif personeller — opsiyonel rol / şube / eğitim yılı filtresi."""
+        from django.db.models import Q
+
+        from apps.personel.domain.models import Personel, PersonelGorevlendirme
+
+        rol_ids = [int(x) for x in (filter_json.get('rol_ids') or []) if x is not None]
+        sube_id = filter_json.get('sube_id')
+        egitim_yili_id = filter_json.get('egitim_yili_id')
+
+        qs = Personel.objects.filter(kurum_id=kurum_id, aktif_mi=True)
+
+        if rol_ids:
+            # Rol seçiliyse görevlendirmeden çöz (eğitim yılı / şube daraltması ile).
+            gorev_qs = PersonelGorevlendirme.objects.filter(
+                kurum_id=kurum_id,
+                aktif_mi=True,
+                rol_id__in=rol_ids,
+            )
+            if sube_id:
+                gorev_qs = gorev_qs.filter(gorev_sube_id=int(sube_id))
+            if egitim_yili_id:
+                gorev_qs = gorev_qs.filter(egitim_yili_id=int(egitim_yili_id))
+            personel_ids = list(gorev_qs.values_list('personel_id', flat=True).distinct())
+            if not personel_ids:
+                return []
+            qs = qs.filter(id__in=personel_ids)
+        elif sube_id:
+            # Ev şubesi veya bu şubede aktif görevlendirme
+            gorev_qs = PersonelGorevlendirme.objects.filter(
+                kurum_id=kurum_id,
+                aktif_mi=True,
+                gorev_sube_id=int(sube_id),
+            )
+            if egitim_yili_id:
+                gorev_qs = gorev_qs.filter(egitim_yili_id=int(egitim_yili_id))
+            gorev_ids = gorev_qs.values_list('personel_id', flat=True)
+            qs = qs.filter(Q(sube_id=int(sube_id)) | Q(id__in=gorev_ids))
+
+        entries: list[tuple] = []
+        for p in qs:
+            phone = (getattr(p, 'cep_telefon', None) or getattr(p, 'telefon', None) or '').strip()
+            if not phone:
+                continue
+            entries.append((
+                phone,
+                RecipientType.PERSONEL,
+                None,
+                None,
+                p.tam_ad,
+                p.id,
+            ))
+        return entries
 
     @classmethod
     def _scope_student_ids(cls, user, kurum_id: int, filter_json: dict):
@@ -685,6 +753,32 @@ class AudienceResolver:
 class CampaignService:
     """Kampanya CRUD ve kuyruk üretimi."""
 
+    @staticmethod
+    def _validate_attachment_header_match(attachments, header_type: str) -> None:
+        """Ek MIME tipi ile Meta şablon header türünün uyumunu zorunlu kılar."""
+        htype = (header_type or '').upper()
+        if not attachments:
+            if htype in ('IMAGE', 'DOCUMENT', 'VIDEO'):
+                raise ValidationError(
+                    f'Seçilen şablon {htype} header bekliyor ancak ek yok. '
+                    'Metin duyurusu için TEXT header’lı şablon seçin '
+                    '(örn. duyuru_metin) veya uygun ek yükleyin.',
+                )
+            return
+        mime = (attachments[0].mime_type or '').lower()
+        if mime.startswith('image/'):
+            if htype != 'IMAGE':
+                raise ValidationError(
+                    'Görsel ek yüklendi; IMAGE header’lı şablon seçin '
+                    '(örn. duyuru_gorsel).',
+                )
+        else:
+            if htype != 'DOCUMENT':
+                raise ValidationError(
+                    'PDF/belge ek yüklendi; DOCUMENT header’lı şablon seçin '
+                    '(örn. duyuru_pdf).',
+                )
+
     def preview(
         self,
         kurum_id: int,
@@ -742,7 +836,9 @@ class CampaignService:
         audience_filter = audience_filter or {}
         if sube_id:
             audience_type = audience_filter.get('audience_type')
-            if audience_type in ('all_veliler', 'all_ogrenciler', 'advanced', 'filtered'):
+            if audience_type in (
+                'all_veliler', 'all_ogrenciler', 'all_personeller', 'advanced', 'filtered',
+            ):
                 audience_filter = {**audience_filter, 'sube_id': sube_id}
             elif not audience_filter.get('sube_id'):
                 audience_filter = {**audience_filter, 'sube_id': sube_id}
@@ -808,6 +904,9 @@ class CampaignService:
 
         if template_name:
             from apps.communication.application.meta_template_service import MetaTemplateService
+            from apps.communication.application.template_media_header import (
+                meta_template_header_type,
+            )
             from apps.communication.domain.models import WhatsAppMetaTemplate
 
             lang = template_language or 'tr'
@@ -832,6 +931,8 @@ class CampaignService:
             else:
                 if not body:
                     body = approved.body_named
+                header_type = meta_template_header_type(approved)
+                self._validate_attachment_header_match(attachments, header_type)
             audience_filter = {
                 **audience_filter,
                 'template_name': template_name,
@@ -847,9 +948,19 @@ class CampaignService:
             attachment_count=len(attachments),
         )
 
-        send_options = send_options or {}
+        send_options = dict(send_options or {})
         if scheduled_at:
             send_options = {**send_options, 'scheduled': True}
+        # Manuel şablon değişkenleri (örn. {{mesaj}}) — gönderimde context'e eklenir
+        template_context = send_options.get('template_context')
+        if isinstance(template_context, dict) and template_context:
+            audience_filter = {
+                **audience_filter,
+                'template_context': {
+                    str(k): ('' if v is None else str(v))
+                    for k, v in template_context.items()
+                },
+            }
 
         campaign = OutboundCampaignRepository.create_draft(
             kurum_id,
@@ -960,6 +1071,7 @@ class CampaignService:
                     recipient_type=recipient.recipient_type,
                     ogrenci=ogrenci,
                     veli=veli,
+                    personel=personel,
                     kurum=kurum,
                     sinif_ad=aktif_sinif_ad(ogrenci),
                     sube_ad=sube_ad,
@@ -1036,6 +1148,7 @@ class CampaignService:
                 message=message,
                 campaign=campaign,
                 next_attempt_at=timezone.now(),
+                send_options=dict(campaign.send_options_json or {}),
             )
 
         campaign.status = CampaignStatus.QUEUED

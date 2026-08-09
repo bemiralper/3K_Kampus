@@ -1,6 +1,12 @@
 "use client";
 
-import { parseWhatsAppText, PreviewFontSize, resolvePreviewVariables } from "./composer-utils";
+import {
+  parseWhatsAppText,
+  PreviewFontSize,
+  PreviewSampleContext,
+  resolvePreviewVariables,
+} from "./composer-utils";
+import { useLivePreviewContext } from "./useLivePreviewContext";
 
 export interface PreviewAttachment {
   id: string;
@@ -15,6 +21,8 @@ interface WhatsAppPhonePreviewProps {
   fontSize?: PreviewFontSize;
   attachments?: PreviewAttachment[];
   resolveVariables?: boolean;
+  /** Ek önizleme değişkenleri (mesaj vb.) — kurum/şube canlı bağlamdan gelir. */
+  previewContext?: PreviewSampleContext;
   className?: string;
 }
 
@@ -46,14 +54,19 @@ function attachmentIcon(mime: string): string {
 
 export default function WhatsAppPhonePreview({
   text,
-  kurumName = "3K Kampüs",
+  kurumName,
   previewColor,
   fontSize = "normal",
   attachments = [],
   resolveVariables = true,
+  previewContext,
   className = "",
 }: WhatsAppPhonePreviewProps) {
-  const displayText = resolveVariables ? resolvePreviewVariables(text) : text;
+  const liveContext = useLivePreviewContext(previewContext);
+  const headerName = kurumName?.trim() || liveContext.kurum_ad || "Kurum";
+  const displayText = resolveVariables
+    ? resolvePreviewVariables(text, liveContext)
+    : text;
   const segments = parseWhatsAppText(displayText);
   const time = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
@@ -64,7 +77,7 @@ export default function WhatsAppPhonePreview({
         <div className="comm-wa-phone-header-info">
           <span className="comm-wa-phone-avatar" aria-hidden="true">🏫</span>
           <div>
-            <strong>{kurumName}</strong>
+            <strong>{headerName}</strong>
             <span className="comm-wa-phone-status">çevrimiçi</span>
           </div>
         </div>

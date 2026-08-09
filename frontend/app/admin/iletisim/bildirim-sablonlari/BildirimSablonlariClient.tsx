@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CommunicationPageShell } from "@/components/communication";
+import { headerTypeOf } from "@/components/communication/MetaTemplateSelect";
 import "@/components/communication/communication.css";
 import {
   MessageTemplateItem,
@@ -21,6 +22,7 @@ import {
   fetchWhatsAppAccounts,
   previewNotificationBinding,
   saveNotificationBinding,
+  seedAcademicScheduleTemplates,
 } from "@/lib/communication-api";
 import { notifyCommunicationTemplateUsageChanged } from "@/lib/communication-template-usage-sync";
 
@@ -37,8 +39,8 @@ const readActiveSubeId = (): number | null => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
-const headerTypeOf = (tpl: WhatsAppMetaTemplateItem): string =>
-  ((tpl.header_json as { type?: string } | undefined)?.type || "").toUpperCase();
+const sameAccount = (tpl: WhatsAppMetaTemplateItem, accountId: string): boolean =>
+  String(tpl.channel_config || "") === String(accountId || "");
 
 const slotHasCustomBinding = (slot: NotificationEventSlot): boolean =>
   Boolean(
@@ -64,6 +66,7 @@ export default function BildirimSablonlariClient() {
 
   const [loading, setLoading] = useState(true);
   const [savingSlot, setSavingSlot] = useState<string>("");
+  const [seedingAcademic, setSeedingAcademic] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, NotificationPreviewResult>>({});
@@ -154,17 +157,39 @@ export default function BildirimSablonlariClient() {
   );
 
   const metaOptionsFor = useCallback(
-    (event: NotificationEventItem) => {
+    (
+      event: NotificationEventItem,
+      boundId?: string | null,
+    ): WhatsAppMetaTemplateItem[] => {
       const scoped = scopeAccountId
-        ? metaTemplates.filter((t) => t.channel_config === scopeAccountId)
+        ? metaTemplates.filter((t) => sameAccount(t, scopeAccountId))
         : metaTemplates;
-      let list = scoped;
-      if (event.has_image) {
-        list = scoped.filter((t) => headerTypeOf(t) === "IMAGE");
-      } else if (event.has_document) {
-        list = scoped.filter((t) => headerTypeOf(t) === "DOCUMENT");
+
+      let required: string[] | null = null;
+      if (event.has_image) required = ["IMAGE"];
+      else if (event.has_document) required = ["DOCUMENT"];
+      // Serbest metin olaylarında medya başlıklı şablonları gizleme —
+      // yanlışlıkla DOCUMENT seçilmesin; yine de bağlı olanı göster.
+      else required = ["NONE", "TEXT"];
+
+      let list = scoped.filter((t) => required!.includes(headerTypeOf(t)));
+
+      // Bağlı şablon filtre dışında kaldıysa (eski header / başka hesap) yine de göster
+      if (boundId) {
+        const bound = metaTemplates.find((t) => String(t.id) === String(boundId));
+        if (bound && !list.some((t) => String(t.id) === String(boundId))) {
+          list = [bound, ...list];
+        }
       }
+
+      // İsim eşleşmesi: önerilen meta adları üste
+      const base = (event.meta_name_base || "").toLowerCase();
       return [...list].sort((a, b) => {
+        const aName = (a.name || "").toLowerCase();
+        const bName = (b.name || "").toLowerCase();
+        const aHit = base && aName.includes(base) ? 0 : 1;
+        const bHit = base && bName.includes(base) ? 0 : 1;
+        if (aHit !== bHit) return aHit - bHit;
         const aOk = a.status === "APPROVED" ? 0 : 1;
         const bOk = b.status === "APPROVED" ? 0 : 1;
         if (aOk !== bOk) return aOk - bOk;
@@ -325,6 +350,46 @@ export default function BildirimSablonlariClient() {
       ? "WhatsApp hesabı"
       : "Kurum varsayılanı";
 
+  const handleSeedAcademicSchedule = async () => {
+    const accountId = scopeAccountId || accounts[0]?.id || "";
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin (veya en az bir aktif hesap tanımlayın).");
+      return;
+    }
+    if (!confirm(
+      "Sınıf ders programı taslakları oluşturulsun mu?\n\n"
+      + "• sinif_programi_veli (DOCUMENT)\n"
+      + "• sinif_programi_ogrenci (DOCUMENT)\n\n"
+      + "LMS şablonları + Meta DRAFT üretilir ve bu olayın Veli/Öğrenci "
+      + "slotlarına bağlanır. Örnek PDF yükleyip Meta onayına göndermeniz gerekir.",
+    )) return;
+    setSeedingAcademic(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await seedAcademicScheduleTemplates({
+        channel_config_id: accountId,
+        sube_id: scopeSube ? activeSubeId : null,
+        bind: true,
+      });
+      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
+      setMessage(
+        (res.info || "Akademik program taslakları hazır.")
+        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
+        + errText,
+      );
+      notifyCommunicationTemplateUsageChanged();
+      await Promise.all([loadCatalog(), reloadTemplateLists()]);
+      setSelectedModule("akademik");
+      setSelectedEventKey("akademik.sinif_programi");
+      if (!scopeAccountId) setScopeAccountId(accountId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Akademik program taslakları oluşturulamadı.");
+    } finally {
+      setSeedingAcademic(false);
+    }
+  };
+
   return (
     <CommunicationPageShell
       title="Bildirim Şablonları"
@@ -336,6 +401,15 @@ export default function BildirimSablonlariClient() {
       ]}
       actions={
         <>
+          <button
+            type="button"
+            className="comm-btn-secondary"
+            onClick={handleSeedAcademicSchedule}
+            disabled={seedingAcademic || accounts.length === 0}
+            title="Planlama → Programı Bildir için veli/öğrenci DOCUMENT taslakları"
+          >
+            {seedingAcademic ? "Oluşturuluyor…" : "Ders programı taslakları"}
+          </button>
           <Link className="comm-btn-secondary" href="/admin/iletisim/sablonlar">
             LMS Şablonları
           </Link>
@@ -459,11 +533,21 @@ export default function BildirimSablonlariClient() {
                   const key = slotKey(selectedEvent.key, slot.recipient_type);
                   const busy = savingSlot === key;
                   const preview = previews[key];
-                  const options = metaOptionsFor(selectedEvent);
+                  const options = metaOptionsFor(
+                    selectedEvent,
+                    slot.binding?.meta_template_id,
+                  );
                   const lmsOptions = lmsOptionsFor(selectedEvent);
                   const boundMeta = slot.binding?.meta_template_id
-                    ? metaTemplates.find((t) => t.id === slot.binding?.meta_template_id)
+                    ? metaTemplates.find(
+                      (t) => String(t.id) === String(slot.binding?.meta_template_id),
+                    )
                     : null;
+                  const headerFilterHint = selectedEvent.has_image
+                    ? "Yalnızca IMAGE başlıklı Meta şablonları listelenir."
+                    : selectedEvent.has_document
+                      ? "Yalnızca DOCUMENT (PDF) başlıklı Meta şablonları listelenir."
+                      : "Yalnızca metin başlıklı (TEXT / başlıksız) Meta şablonları listelenir.";
                   const createHref = (() => {
                     const qs = new URLSearchParams({
                       event: selectedEvent.key,
@@ -503,15 +587,32 @@ export default function BildirimSablonlariClient() {
                                 ? `Otomatik — ${slot.resolved.meta_template_name}`
                                 : "Otomatik / yok"}
                             </option>
-                            {options.map((tpl) => (
-                              <option key={tpl.id} value={tpl.id}>
-                                {tpl.name} ({tpl.language})
-                                {tpl.status !== "APPROVED"
-                                  ? ` — ${tpl.status_label || tpl.status}`
-                                  : ""}
-                              </option>
-                            ))}
+                            {options.map((tpl) => {
+                              const htype = headerTypeOf(tpl);
+                              const accountTag =
+                                !scopeAccountId && tpl.channel_config_name
+                                  ? ` · ${tpl.channel_config_name}`
+                                  : "";
+                              return (
+                                <option key={tpl.id} value={tpl.id}>
+                                  {tpl.name}
+                                  {htype && htype !== "NONE" ? ` [${htype}]` : ""}
+                                  {` (${tpl.language})`}
+                                  {tpl.status !== "APPROVED"
+                                    ? ` — ${tpl.status_label || tpl.status}`
+                                    : ""}
+                                  {accountTag}
+                                </option>
+                              );
+                            })}
                           </select>
+                          <p className="tplx-field-hint">
+                            {headerFilterHint}
+                            {scopeAccountId
+                              ? " Seçili WhatsApp hesabına ait şablonlar."
+                              : " Tüm hesaplar — hesap adı seçenek sonunda görünür."}
+                            {` (${options.length} şablon)`}
+                          </p>
                           {boundMeta && boundMeta.status !== "APPROVED" && (
                             <p className="tplx-field-hint" style={{ color: "#b45309" }}>
                               Bu şablon henüz Meta onayında değil; pencere kapalıyken

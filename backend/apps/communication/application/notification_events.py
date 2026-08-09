@@ -376,8 +376,9 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         module=MODULE_AKADEMIK,
         label='Sınıf ders programı (PDF)',
         description=(
-            'Ders Programı ekranından seçilen sınıfların haftalık programı '
-            'PDF olarak veliye ve öğrenciye gönderilir (DOCUMENT header Meta şablonu gerekir).'
+            'Planlama → Ders Programı ekranından “Programı Bildir” ile seçilen '
+            'sınıfların haftalık programı PDF olarak veliye ve öğrenciye gönderilir '
+            '(DOCUMENT header Meta şablonu gerekir).'
         ),
         recipients=(VELI, OGRENCI),
         opt_in_category='duyuru',
@@ -385,8 +386,18 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         variables=('ogrenci_ad', 'veli_ad', 'sinif', 'donem', 'pdf_baslik'),
         meta_name_base='sinif_programi',
         default_bodies=MappingProxyType({
-            VELI: '{{ogrenci_ad}} ({{sinif}}) ders programı ektedir.',
-            OGRENCI: '{{sinif}} ders programın ektedir.',
+            VELI: (
+                'Sayın {{veli_ad}},\n\n'
+                '{{sube}} şubesinde {{ogrenci_ad}} ({{sinif}}) öğrencimizin '
+                '{{donem}} dönemi haftalık ders programı ektedir.\n\n'
+                'Bilgilerinize sunarız.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                '{{sube}} — {{sinif}} sınıfının {{donem}} dönemi haftalık '
+                'ders programın ektedir.\n\n'
+                'Bilgine sunarız.'
+            ),
         }),
     ),
     NotificationEvent(

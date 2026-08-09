@@ -13,6 +13,7 @@ import {
 interface MetaTemplateSendDrawerProps {
   open: boolean;
   conversationId: string | null;
+  contactType?: string | null;
   onClose: () => void;
   onSent: (message: MessageItem) => void;
 }
@@ -69,6 +70,7 @@ function fillBody(body: string, values: Record<string, string>): string {
 export default function MetaTemplateSendDrawer({
   open,
   conversationId,
+  contactType,
   onClose,
   onSent,
 }: MetaTemplateSendDrawerProps) {
@@ -87,13 +89,25 @@ export default function MetaTemplateSendDrawer({
     setSelectedId("");
     fetchConversationTemplates(conversationId)
       .then((res) => {
-        setTemplates(res.templates);
-        // Sohbetten çözülen değerler (öğrenci/veli adı vb.) hazır gelsin
+        const list = res.templates || [];
+        setTemplates(list);
         setValues(res.context || {});
+        const audience =
+          res.preferred_audience
+          || ((contactType || "").toUpperCase() === "VELI"
+            ? "veli"
+            : (contactType || "").toUpperCase() === "OGRENCI"
+              ? "ogrenci"
+              : null);
+        const suffix = audience === "veli" ? "_veli" : audience === "ogrenci" ? "_ogrenci" : "";
+        const preferred = suffix
+          ? list.find((t) => (t.name || "").endsWith(suffix))
+          : null;
+        setSelectedId(preferred?.id || list[0]?.id || "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Şablonlar yüklenemedi"))
       .finally(() => setLoading(false));
-  }, [open, conversationId]);
+  }, [open, conversationId, contactType]);
 
   const selected = useMemo(
     () => templates.find((t) => t.id === selectedId) || null,

@@ -22,6 +22,7 @@ from apps.communication.domain.enums import (
     MessageStatus,
     MessageType,
     MetaTemplateStatus,
+    MetaTemplateUsage,
     RecipientType,
 )
 from apps.communication.domain.models import (
@@ -92,6 +93,23 @@ class MetaTemplateServiceTest(TestCase):
         self.assertEqual(tpl.status, MetaTemplateStatus.DRAFT)
         self.assertEqual(tpl.variable_map_json['1'], 'ogrenci_ad')
         self.assertEqual(tpl.variable_map_json['2'], 'kurum_ad')
+
+    def test_set_usage_scope_on_approved(self):
+        tpl = MetaTemplateService.create_draft(
+            self.kurum.id,
+            channel_config_id=self.account.id,
+            name='kullanim_alani',
+            body_named='Merhaba, bilgilendirme metni.',
+            usage_scope=MetaTemplateUsage.ALL,
+        )
+        tpl.status = MetaTemplateStatus.APPROVED
+        tpl.save(update_fields=['status'])
+        MetaTemplateService.set_usage_scope(tpl, MetaTemplateUsage.CAMPAIGN)
+        tpl.refresh_from_db()
+        self.assertEqual(tpl.usage_scope, MetaTemplateUsage.CAMPAIGN)
+        # İçerik güncellemesi hâlâ engelli
+        with self.assertRaises(MetaTemplateServiceError):
+            MetaTemplateService.update_draft(tpl, body_named='Yeni metin burada.')
 
     @patch.object(WhatsAppCloudClient, 'create_message_template')
     def test_submit_calls_meta(self, mock_create):

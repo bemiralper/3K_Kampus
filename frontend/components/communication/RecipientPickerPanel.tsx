@@ -16,7 +16,11 @@ interface RecipientPickerPanelProps {
   ogrenciIds: number[];
   veliIds: number[];
   personelIds?: number[];
+  allowOgrenci?: boolean;
+  allowVeli?: boolean;
   allowPersonel?: boolean;
+  /** Arama kutusu üstündeki kısa yardım metni */
+  hint?: string;
   onChange: (next: {
     ogrenci_ids: number[];
     veli_ids: number[];
@@ -60,7 +64,10 @@ export default function RecipientPickerPanel({
   ogrenciIds,
   veliIds,
   personelIds = [],
+  allowOgrenci = true,
+  allowVeli = true,
   allowPersonel = true,
+  hint,
   onChange,
 }: RecipientPickerPanelProps) {
   const [query, setQuery] = useState("");
@@ -86,7 +93,14 @@ export default function RecipientPickerPanel({
       setSearching(true);
       searchBulkRecipients(q, { includePersonel: allowPersonel })
         .then((res) => {
-          if (!cancelled) setResults(res.results || []);
+          if (cancelled) return;
+          const filtered = (res.results || []).filter((hit) => {
+            if (hit.kind === "ogrenci") return allowOgrenci;
+            if (hit.kind === "veli") return allowVeli;
+            if (hit.kind === "personel") return allowPersonel;
+            return false;
+          });
+          setResults(filtered);
         })
         .catch(() => {
           if (!cancelled) setResults([]);
@@ -99,7 +113,7 @@ export default function RecipientPickerPanel({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, allowPersonel]);
+  }, [query, allowPersonel, allowOgrenci, allowVeli]);
 
   const rememberChip = (chip: PickedRecipientChip) => {
     setChipLabels((prev) => ({ ...prev, [chip.key]: chip }));
@@ -119,6 +133,7 @@ export default function RecipientPickerPanel({
 
   const toggleHit = (hit: BulkRecipientHit, checked: boolean) => {
     if (hit.kind === "ogrenci") {
+      if (!allowOgrenci) return;
       const next = new Set(ogrenciIds);
       if (checked) {
         next.add(hit.id);
@@ -134,6 +149,7 @@ export default function RecipientPickerPanel({
       return;
     }
     if (hit.kind === "veli") {
+      if (!allowVeli) return;
       const next = new Set(veliIds);
       if (checked) {
         next.add(hit.id);
@@ -148,6 +164,7 @@ export default function RecipientPickerPanel({
       emit({ veli_ids: Array.from(next) });
       return;
     }
+    if (!allowPersonel) return;
     const next = new Set(personelIds);
     if (checked) {
       next.add(hit.id);
@@ -156,7 +173,7 @@ export default function RecipientPickerPanel({
         kind: "personel",
         id: hit.id,
         label: hit.label,
-        meta: "Personel",
+        meta: hit.meta || "Personel",
       });
     } else next.delete(hit.id);
     emit({ personel_ids: Array.from(next) });
@@ -327,11 +344,16 @@ export default function RecipientPickerPanel({
     <div className="comm-recipient-picker">
       <div className="comm-recipient-picker-head">
         <div>
-          <h3 className="comm-recipient-picker-title">Kişi ara ve seç</h3>
+          <h3 className="comm-recipient-picker-title">
+            {allowOgrenci || allowVeli ? "Kişi ara ve seç" : "Personel ara ve seç"}
+          </h3>
           <p className="comm-recipient-picker-sub">
-            {allowPersonel
-              ? "Öğrenci veya veli arayınca ilişkili kişiler birlikte listelenir."
-              : "Öğrenci arayınca velisi, veli arayınca öğrencisi birlikte çıkar."}
+            {hint
+              || (allowOgrenci || allowVeli
+                ? (allowPersonel
+                  ? "Öğrenci veya veli arayınca ilişkili kişiler birlikte listelenir."
+                  : "Öğrenci arayınca velisi, veli arayınca öğrencisi birlikte çıkar.")
+                : "İsim veya telefon ile personel ekleyin; seçilenler listeden çıkarılabilir.")}
           </p>
         </div>
         {chips.length > 0 && (
@@ -346,9 +368,9 @@ export default function RecipientPickerPanel({
           type="search"
           className="comm-recipient-search-input"
           placeholder={
-            allowPersonel
-              ? "Ad, soyad, telefon…"
-              : "Öğrenci veya veli adı, telefon…"
+            allowOgrenci || allowVeli
+              ? (allowPersonel ? "Ad, soyad, telefon…" : "Öğrenci veya veli adı, telefon…")
+              : "Personel adı veya telefon…"
           }
           value={query}
           onChange={(e) => setQuery(e.target.value)}

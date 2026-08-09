@@ -5,6 +5,15 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.communication.application.academic_schedule_template_seed import (
+    AcademicScheduleTemplateSeedService,
+)
+from apps.communication.application.campaign_duyuru_template_seed import (
+    CampaignDuyuruTemplateSeedService,
+)
+from apps.communication.application.personal_chat_template_seed import (
+    PersonalChatTemplateSeedService,
+)
 from apps.communication.application.meta_template_service import (
     MetaTemplateService,
     MetaTemplateServiceError,
@@ -162,8 +171,13 @@ class MetaTemplateDetailView(APIView):
             )
         data = ser.validated_data
         # Kullanım alanı Meta'ya gitmeyen yerel bir alan; onaylı şablonda da değişebilir.
-        if 'usage_scope' in request.data:
-            MetaTemplateService.set_usage_scope(tpl, data.get('usage_scope'))
+        usage_touched = 'usage_scope' in request.data
+        if usage_touched:
+            try:
+                MetaTemplateService.set_usage_scope(tpl, data.get('usage_scope'))
+            except MetaTemplateServiceError as exc:
+                return _err(exc)
+            tpl.refresh_from_db()
         editable = {
             key: data.get(key)
             for key in (
@@ -178,6 +192,9 @@ class MetaTemplateDetailView(APIView):
             tpl = MetaTemplateService.update_draft(tpl, **editable)
         except MetaTemplateServiceError as exc:
             return _err(exc)
+        # update_draft full save sonrası usage_scope zaten nesnede; emin olmak için
+        if usage_touched and data.get('usage_scope') and tpl.usage_scope != data.get('usage_scope'):
+            tpl = MetaTemplateService.set_usage_scope(tpl, data.get('usage_scope'))
         return Response(WhatsAppMetaTemplateSerializer(tpl).data)
 
     def delete(self, request, template_id):
@@ -404,3 +421,177 @@ class MetaTemplateExampleMediaUploadView(APIView):
             'mime_type': mime,
             'original_name': upload.name,
         })
+
+
+class MetaTemplateSeedDuyuruView(APIView):
+    """Kampanya CAMPAIGN taslaklarını (duyuru/hatırlatma/bilgilendirme) seçili hesaba ekler."""
+
+    permission_classes = [CommunicationConfigPermission]
+
+    def post(self, request):
+        kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+        account_id = (
+            request.data.get('channel_config_id')
+            or request.data.get('account_id')
+        )
+        if not account_id:
+            return Response(
+                {'error': 'channel_config_id zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        force = bool(request.data.get('force'))
+        try:
+            result = CampaignDuyuruTemplateSeedService.seed(
+                kurum_id,
+                channel_config_id=account_id,
+                user=request.user,
+                skip_existing=not force,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except MetaTemplateServiceError as exc:
+            return _err(exc)
+
+        status_code = (
+            status.HTTP_400_BAD_REQUEST if result['errors'] else status.HTTP_200_OK
+        )
+        updated = result.get('updated_meta') or []
+        return Response({
+            'created_count': len(result['created_meta']),
+            'updated_count': len(updated),
+            'skipped_count': len(result['skipped_meta']),
+            'created': result['created_meta'],
+            'updated': updated,
+            'skipped': result['skipped_meta'],
+            'errors': result['errors'],
+            'next_steps': result.get('next_steps') or [],
+            'info': (
+                f"{len(result['created_meta'])} taslak oluşturuldu, "
+                f"{len(updated)} güncellendi, "
+                f"{len(result['skipped_meta'])} atlandı."
+            ),
+        }, status=status_code)
+
+
+class MetaTemplateSeedAcademicScheduleView(APIView):
+    """Sınıf ders programı (veli/öğrenci) Meta + LMS taslaklarını oluşturur ve bağlar."""
+
+    permission_classes = [CommunicationConfigPermission]
+
+    def post(self, request):
+        kurum_id, sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+        account_id = (
+            request.data.get('channel_config_id')
+            or request.data.get('account_id')
+        )
+        if not account_id:
+            return Response(
+                {'error': 'channel_config_id zorunludur (DOCUMENT Meta taslağı için).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        force = bool(request.data.get('force'))
+        bind = request.data.get('bind', True)
+        scope_sube = request.data.get('sube_id', sube_id)
+        try:
+            scope_sube_id = int(scope_sube) if scope_sube not in (None, '', 'null') else None
+        except (TypeError, ValueError):
+            scope_sube_id = sube_id
+        try:
+            result = AcademicScheduleTemplateSeedService.seed(
+                kurum_id,
+                sube_id=scope_sube_id,
+                channel_config_id=account_id,
+                user=request.user,
+                skip_existing=not force,
+                bind=bool(bind),
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except MetaTemplateServiceError as exc:
+            return _err(exc)
+
+        status_code = (
+            status.HTTP_400_BAD_REQUEST if result['errors'] else status.HTTP_200_OK
+        )
+        return Response({
+            'created_app_count': len(result['created_app']),
+            'updated_app_count': len(result.get('updated_app') or []),
+            'skipped_app_count': len(result['skipped_app']),
+            'created_meta_count': len(result['created_meta']),
+            'updated_meta_count': len(result.get('updated_meta') or []),
+            'skipped_meta_count': len(result['skipped_meta']),
+            'bound_count': len(result.get('bound') or []),
+            'created_app': result['created_app'],
+            'updated_app': result.get('updated_app') or [],
+            'skipped_app': result['skipped_app'],
+            'created_meta': result['created_meta'],
+            'updated_meta': result.get('updated_meta') or [],
+            'skipped_meta': result['skipped_meta'],
+            'bound': result.get('bound') or [],
+            'errors': result['errors'],
+            'next_steps': result.get('next_steps') or [],
+            'event_keys': result.get('event_keys') or [],
+            'info': (
+                f"LMS +{len(result['created_app'])}/↻{len(result.get('updated_app') or [])}, "
+                f"Meta +{len(result['created_meta'])}/↻{len(result.get('updated_meta') or [])}, "
+                f"bağlandı {len(result.get('bound') or [])}."
+            ),
+        }, status=status_code)
+
+
+class MetaTemplateSeedPersonalChatView(APIView):
+    """Personel sohbet açılış PERSONAL taslaklarını (veli/öğrenci) seçili hesaba ekler."""
+
+    permission_classes = [CommunicationConfigPermission]
+
+    def post(self, request):
+        kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+        account_id = (
+            request.data.get('channel_config_id')
+            or request.data.get('account_id')
+        )
+        if not account_id:
+            return Response(
+                {'error': 'channel_config_id zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        force = bool(request.data.get('force'))
+        try:
+            result = PersonalChatTemplateSeedService.seed(
+                kurum_id,
+                channel_config_id=account_id,
+                user=request.user,
+                skip_existing=not force,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except MetaTemplateServiceError as exc:
+            return _err(exc)
+
+        status_code = (
+            status.HTTP_400_BAD_REQUEST if result['errors'] else status.HTTP_200_OK
+        )
+        updated = result.get('updated_meta') or []
+        return Response({
+            'created_count': len(result['created_meta']),
+            'updated_count': len(updated),
+            'skipped_count': len(result['skipped_meta']),
+            'created': result['created_meta'],
+            'updated': updated,
+            'skipped': result['skipped_meta'],
+            'errors': result['errors'],
+            'department': result.get('department') or '',
+            'next_steps': result.get('next_steps') or [],
+            'info': (
+                f"{len(result['created_meta'])} sohbet taslağı oluşturuldu, "
+                f"{len(updated)} güncellendi, "
+                f"{len(result['skipped_meta'])} atlandı "
+                f"(dept={result.get('department') or '—'})."
+            ),
+        }, status=status_code)

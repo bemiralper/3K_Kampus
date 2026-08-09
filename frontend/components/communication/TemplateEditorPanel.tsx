@@ -11,6 +11,7 @@ import {
   parseWhatsAppText,
   resolvePreviewVariables,
 } from "./composer-utils";
+import { useLivePreviewContext } from "./useLivePreviewContext";
 import {
   accountLabel,
   fetchLocalMetaTemplates,
@@ -151,11 +152,12 @@ export default function TemplateEditorPanel({
   }, [metaTemplates, form.name]);
 
   const { setNode, insert } = useTextareaInsert();
+  const livePreviewContext = useLivePreviewContext();
   const rawText = plainTextFromComposer(composerState) || form.body;
-  const previewText = resolvePreviewVariables(rawText);
+  const previewText = resolvePreviewVariables(rawText, livePreviewContext);
   const previewSegments = useMemo(() => parseWhatsAppText(previewText), [previewText]);
   const headerPreview = form.header_type === "TEXT"
-    ? resolvePreviewVariables((form.header_text || "").trim())
+    ? resolvePreviewVariables((form.header_text || "").trim(), livePreviewContext)
     : "";
   const footerPreview = (form.footer_text || "").trim();
   const usedVariables = useMemo(() => {
@@ -522,7 +524,7 @@ export default function TemplateEditorPanel({
       <div className="tplx-drawer-foot">
         <div className="tplx-foot-left">
           <span className="tplx-field-hint">
-            Önizlemede örnek veriler kullanılır; gönderimde gerçek kayıtlar dolar.
+            Önizlemede kurum/şube adı canlı alınır; diğer alanlar örnek veridir.
           </span>
         </div>
         <button type="button" className="comm-btn-secondary" onClick={onCancel}>

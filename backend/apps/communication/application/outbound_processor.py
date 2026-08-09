@@ -11,7 +11,10 @@ from django.conf import settings
 from apps.communication.application.campaign_service import CampaignStatsService
 from apps.communication.application.meta_template_mapper import build_send_body_parameters
 from apps.communication.application.meta_template_service import MetaTemplateService
-from apps.communication.application.session_window import is_session_error
+from apps.communication.application.session_window import (
+    is_permanent_send_error,
+    is_session_error,
+)
 from apps.communication.application.template_component_builder import build_template_components
 from apps.communication.application.template_media_header import (
     build_media_header_component,
@@ -311,9 +314,16 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 result = {'success': False, 'error': 'Belge eki bulunamadı.'}
         elif message.message_type == MessageType.TEMPLATE and template_name:
             context = _build_recipient_context_from_message(message)
-            extra_ctx = opts.get('template_context') or {}
+            extra_ctx = (
+                opts.get('template_context')
+                or filter_json.get('template_context')
+                or {}
+            )
             if isinstance(extra_ctx, dict):
-                context = {**context, **{k: str(v) if v is not None else '' for k, v in extra_ctx.items()}}
+                context = {
+                    **context,
+                    **{k: str(v) if v is not None else '' for k, v in extra_ctx.items()},
+                }
             channel_config_id = (
                 opts.get('channel_config_id')
                 or opts.get('account_id')
@@ -356,7 +366,9 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                             'Yalnızca onaylı şablonlar kullanılabilir.'
                         ),
                     }
-                    OutboundQueueRepository.mark_failed(item, result['error'])
+                    OutboundQueueRepository.mark_failed(
+                        item, result['error'], permanent=True,
+                    )
                     if item.campaign_id:
                         _safe_refresh_campaign_stats(item.campaign_id)
                     return False
@@ -391,7 +403,9 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                             'WhatsApp hesabı token/phone_number_id ve sunucu dosya erişimini kontrol edin.'
                         ),
                     }
-                    OutboundQueueRepository.mark_failed(item, result['error'])
+                    OutboundQueueRepository.mark_failed(
+                        item, result['error'], permanent=True,
+                    )
                     if item.campaign_id:
                         _safe_refresh_campaign_stats(item.campaign_id)
                     return False
@@ -435,11 +449,11 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 _safe_refresh_campaign_stats(item.campaign_id)
             return True
 
-        # 24 saat kuralı tekrar denemekle çözülmez; kuyruğu boşuna meşgul etme.
+        # Şablon yok / 24 saat vb. tekrar denemekle çözülmez; kuyruğu boşuna meşgul etme.
         OutboundQueueRepository.mark_failed(
             item,
             str(result.get('error', 'Unknown')),
-            permanent=is_session_error(result),
+            permanent=is_permanent_send_error(result),
         )
         if item.campaign_id:
             _safe_refresh_campaign_stats(item.campaign_id)

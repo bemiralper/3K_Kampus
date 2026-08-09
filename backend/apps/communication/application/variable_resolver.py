@@ -28,6 +28,7 @@ def build_recipient_context(
     recipient_type: str = '',
     ogrenci=None,
     veli=None,
+    personel=None,
     kurum=None,
     sinif_ad: str = '',
     sube_ad: str = '',
@@ -47,6 +48,15 @@ def build_recipient_context(
         ctx['ogrenci_ad'] = f'{getattr(ogrenci, "ad", "")} {getattr(ogrenci, "soyad", "")}'.strip()
     elif recipient_type == 'OGRENCI' and display_name:
         ctx['ogrenci_ad'] = display_name
+
+    if personel:
+        ctx['personel_ad'] = (
+            getattr(personel, 'tam_ad', None)
+            or f'{getattr(personel, "ad", "")} {getattr(personel, "soyad", "")}'.strip()
+            or display_name
+        )
+    elif recipient_type == 'PERSONEL' and display_name:
+        ctx['personel_ad'] = display_name
 
     if sinif_ad:
         ctx['sinif'] = sinif_ad
@@ -75,7 +85,27 @@ def aktif_sinif_ad(ogrenci) -> str:
     return ''
 
 
-def build_recipient_context_from_conversation(conversation) -> dict[str, str]:
+def resolve_sender_personel_ad(user) -> str:
+    """Gönderen kullanıcının personel görünen adı (sohbet şablon {{personel_ad}})."""
+    if user is None or not getattr(user, 'is_authenticated', False):
+        return ''
+    personel = getattr(user, 'personel', None)
+    if personel is None:
+        try:
+            from apps.personel.domain.models import Personel
+
+            personel = Personel.objects.filter(user_id=user.id).only('ad', 'soyad').first()
+        except Exception:
+            personel = None
+    if personel is not None:
+        return f'{getattr(personel, "ad", "")} {getattr(personel, "soyad", "")}'.strip()
+    full = (user.get_full_name() or '').strip()
+    if full:
+        return full
+    return (getattr(user, 'username', None) or '').strip()
+
+
+def build_recipient_context_from_conversation(conversation, *, sender_user=None) -> dict[str, str]:
     """Konuşmadaki veli/öğrenci bağlantılarından değişken sözlüğü üret."""
     kurum = getattr(conversation, 'kurum', None)
     if kurum is None and conversation.kurum_id:
@@ -107,7 +137,7 @@ def build_recipient_context_from_conversation(conversation) -> dict[str, str]:
         if sube:
             sube_ad = getattr(sube, 'ad', '') or ''
 
-    return build_recipient_context(
+    ctx = build_recipient_context(
         display_name=display_name,
         recipient_type=recipient_type,
         ogrenci=ogrenci,
@@ -116,6 +146,10 @@ def build_recipient_context_from_conversation(conversation) -> dict[str, str]:
         sinif_ad=aktif_sinif_ad(ogrenci),
         sube_ad=sube_ad,
     )
+    personel_ad = resolve_sender_personel_ad(sender_user)
+    if personel_ad:
+        ctx['personel_ad'] = personel_ad
+    return ctx
 
 
 def _format_time(value) -> str:

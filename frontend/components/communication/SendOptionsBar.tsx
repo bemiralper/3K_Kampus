@@ -23,49 +23,64 @@ export default function SendOptionsBar({
   saveAsDraft,
   onSaveAsDraftChange,
 }: SendOptionsBarProps) {
+  const mode: "now" | "scheduled" | "draft" = saveAsDraft
+    ? "draft"
+    : sendMode === "scheduled"
+      ? "scheduled"
+      : "now";
+
   return (
-    <div className="comm-send-options">
-      <span className="comm-send-options-label">Gönderim:</span>
-      <div className="comm-send-options-radios">
-        <label>
-          <input
-            type="radio"
-            name="sendMode"
-            checked={sendMode === "now" && !saveAsDraft}
-            onChange={() => { onSendModeChange("now"); onSaveAsDraftChange(false); }}
-          />
-          Şimdi gönder
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="sendMode"
-            checked={sendMode === "scheduled"}
-            onChange={() => { onSendModeChange("scheduled"); onSaveAsDraftChange(false); }}
-          />
-          Belirli tarih
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="sendMode"
-            checked={saveAsDraft}
-            onChange={() => { onSendModeChange("draft"); onSaveAsDraftChange(true); }}
-          />
+    <div className="comm-studio-send-options">
+      <div className="comm-studio-segment" role="radiogroup" aria-label="Gönderim zamanı">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === "now"}
+          className={mode === "now" ? "is-active" : undefined}
+          onClick={() => {
+            onSendModeChange("now");
+            onSaveAsDraftChange(false);
+          }}
+        >
+          Şimdi
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === "scheduled"}
+          className={mode === "scheduled" ? "is-active" : undefined}
+          onClick={() => {
+            onSendModeChange("scheduled");
+            onSaveAsDraftChange(false);
+          }}
+        >
+          Planla
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === "draft"}
+          className={mode === "draft" ? "is-active" : undefined}
+          onClick={() => {
+            onSendModeChange("draft");
+            onSaveAsDraftChange(true);
+          }}
+        >
           Taslak
-        </label>
+        </button>
       </div>
 
-      {sendMode === "scheduled" && !saveAsDraft && (
+      {mode === "scheduled" && (
         <input
           type="datetime-local"
-          className="comm-scheduled-input"
+          className="comm-studio-datetime"
           value={scheduledAt}
           onChange={(e) => onScheduledAtChange(e.target.value)}
+          aria-label="Gönderim tarihi"
         />
       )}
 
-      <label className="comm-send-option-check">
+      <label className="comm-studio-check">
         <input
           type="checkbox"
           checked={saveAsTemplate}
