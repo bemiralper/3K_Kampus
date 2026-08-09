@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 
 from apps.academic.domain.class_lesson_plan import ClassLessonPlan
+from apps.academic.domain.schedule_change_log import ScheduleChangeAction, ScheduleChangeLog
 from apps.egitim_tanimlari.models import Alan, Ders, SinifSeviyesi
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
@@ -23,6 +24,8 @@ class ClassLessonPlanApiTest(TestCase):
         self.sube_b = Sube.objects.create(kurum=self.kurum, ad='Şube B', kod='CLP-B')
         self.year = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
         self.user = User.objects.create_user(username='clpuser', password='test')
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
         self.client.force_login(self.user)
 
         self.seviye = SinifSeviyesi.objects.create(
@@ -258,3 +261,107 @@ class ClassLessonPlanApiTest(TestCase):
         )
         self.assertEqual(mat.weekly_hours, 4)
         self.assertIsNone(mat.ogretmen_id)
+
+    # ==================== YETKİ TESTLERİ ====================
+
+    def test_create_requires_authentication(self):
+        anon = Client()
+        res = anon.post(
+            '/api/academic/class-lesson-plan/create/',
+            data={
+                'term': self.term.id,
+                'sinif': self.sinif.id,
+                'ders': self.ders_a.id,
+                'weekly_hours': 2,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(res.status_code, (401, 403))
+
+    def test_create_rejects_read_only_user(self):
+        """sinif.write/manage yetkisi olmayan giriş yapmış kullanıcı POST yapamaz."""
+        read_only_user = User.objects.create_user(username='clp_readonly', password='test')
+        client = Client()
+        client.force_login(read_only_user)
+        res = client.post(
+            '/api/academic/class-lesson-plan/create/',
+            data={
+                'term': self.term.id,
+                'sinif': self.sinif.id,
+                'ders': self.ders_a.id,
+                'weekly_hours': 2,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 403)
+
+    # ==================== DEĞİŞİKLİK GÜNLÜĞÜ TESTLERİ ====================
+
+    def test_create_and_delete_write_schedule_change_log(self):
+        create_res = self.client.post(
+            '/api/academic/class-lesson-plan/create/',
+            data={
+                'term': self.term.id,
+                'sinif': self.sinif.id,
+                'ders': self.ders_a.id,
+                'weekly_hours': 4,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(create_res.status_code, 201, create_res.content)
+        plan_id = create_res.json()['id']
+        self.assertTrue(
+            ScheduleChangeLog.objects.filter(
+                action=ScheduleChangeAction.PLAN_CREATE, term=self.term,
+            ).exists()
+        )
+
+        delete_res = self.client.delete(
+            f'/api/academic/class-lesson-plan/{plan_id}/delete/',
+            **self.headers,
+        )
+        self.assertEqual(delete_res.status_code, 200, delete_res.content)
+        self.assertTrue(
+            ScheduleChangeLog.objects.filter(
+                action=ScheduleChangeAction.PLAN_DELETE, term=self.term,
+            ).exists()
+        )
+
+    def test_seed_from_alan_writes_schedule_change_log(self):
+        res = self.client.post(
+            '/api/academic/class-lesson-plan/seed-from-alan/',
+            data={'classroom_id': self.sinif.id, 'term_id': self.term.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(res.status_code, (200, 201), res.content)
+        self.assertTrue(
+            ScheduleChangeLog.objects.filter(
+                action=ScheduleChangeAction.PLAN_SEED, term=self.term,
+            ).exists()
+        )
+
+    def test_copy_writes_schedule_change_log(self):
+        ClassLessonPlan.objects.create(
+            egitim_yili=self.year, term=self.term, sinif=self.sinif,
+            ders=self.ders_a, weekly_hours=4,
+        )
+        res = self.client.post(
+            '/api/academic/class-lesson-plan/copy/',
+            data={
+                'source_classroom_id': self.sinif.id,
+                'term_id': self.term.id,
+                'target_classroom_ids': [self.sinif_b.id],
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(
+            ScheduleChangeLog.objects.filter(
+                action=ScheduleChangeAction.PLAN_COPY, term=self.term,
+            ).exists()
+        )

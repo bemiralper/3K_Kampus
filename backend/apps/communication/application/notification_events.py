@@ -25,6 +25,7 @@ MODULE_DEVAMSIZLIK = 'devamsizlik'
 MODULE_FINANS = 'finans'
 MODULE_DUYURU = 'duyuru'
 MODULE_OGRENCI = 'ogrenci'
+MODULE_AKADEMIK = 'akademik'
 
 MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_ODEV: 'Ödev',
@@ -37,6 +38,7 @@ MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_FINANS: 'Finans',
     MODULE_DUYURU: 'Duyuru',
     MODULE_OGRENCI: 'Öğrenci',
+    MODULE_AKADEMIK: 'Akademik',
 })
 
 COMMON_VARIABLES = ('kurum_ad', 'sube', 'sinif')
@@ -367,6 +369,24 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         meta_name_base='takvim_etkinlik',
         default_bodies=MappingProxyType({
             '*': 'Sayın velimiz, {{baslik}} etkinliği {{tarih}} tarihindedir. {{aciklama}}',
+        }),
+    ),
+    NotificationEvent(
+        key='akademik.sinif_programi',
+        module=MODULE_AKADEMIK,
+        label='Sınıf ders programı (PDF)',
+        description=(
+            'Ders Programı ekranından seçilen sınıfların haftalık programı '
+            'PDF olarak veliye ve öğrenciye gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'sinif', 'donem', 'pdf_baslik'),
+        meta_name_base='sinif_programi',
+        default_bodies=MappingProxyType({
+            VELI: '{{ogrenci_ad}} ({{sinif}}) ders programı ektedir.',
+            OGRENCI: '{{sinif}} ders programın ektedir.',
         }),
     ),
     NotificationEvent(

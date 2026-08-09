@@ -507,8 +507,15 @@ def hakedis_approve(request, hakedis_id):
 
 
 @csrf_exempt
-@ozel_ders_api(methods=['POST'])
+@require_module_permission('ozel_ders')
+@require_http_methods(['POST'])
 def hakedis_cancel(request, hakedis_id):
+    """İptal, onay kadar kritik bir işlem olduğu için aynı yetki barını kullanır."""
+    if not (
+        user_has_permission(request.user, 'ozel_ders.manage')
+        or user_has_permission(request.user, 'ozel_ders.hakedis_approve')
+    ):
+        return JsonResponse({'success': False, 'error': 'Hakediş iptal yetkisi yok.'}, status=403)
     ctx, err = mandatory_ozel_ders_context(request)
     if err:
         return err
@@ -547,15 +554,48 @@ def hakedis_bordro_aktar(request):
 @csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def hakedis_for_bordro(request, aylik_hakedis_id):
+    from apps.personel.domain.sozlesme_models import AylikHakedis
+
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        aylik = AylikHakedis.objects.select_related('sozlesme').get(pk=aylik_hakedis_id)
+    except AylikHakedis.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Aylık hakediş bulunamadı.'}, status=404)
+    if aylik.sozlesme.kurum_id != ctx['kurum_id'] or aylik.sozlesme.sube_id != ctx['sube_id']:
+        return JsonResponse({'success': False, 'error': 'Bu kayda erişim yetkiniz yok.'}, status=403)
+
     data = bordro_bridge.list_for_bordro(aylik_hakedis_id)
     return JsonResponse({'success': True, 'data': data})
 
 
 # ─── Premium kota ───────────────────────────────────────────
 
+def _gate_premium_paket(ctx, premium_paket_id):
+    """Premium paketin aktif kurum/şube bağlamına ait olduğunu doğrular."""
+    from apps.egitim_paketleri.models import PremiumPaket
+
+    try:
+        paket = PremiumPaket.objects.get(pk=premium_paket_id)
+    except PremiumPaket.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Premium paket bulunamadı.'}, status=404)
+    if paket.kurum_id and paket.kurum_id != ctx['kurum_id']:
+        return JsonResponse({'success': False, 'error': 'Bu pakete erişim yetkiniz yok.'}, status=403)
+    if paket.sube_id and paket.sube_id != ctx['sube_id']:
+        return JsonResponse({'success': False, 'error': 'Bu pakete erişim yetkiniz yok.'}, status=403)
+    return None
+
+
 @csrf_exempt
 @ozel_ders_api(methods=['GET', 'PUT'])
 def premium_kota(request, premium_paket_id):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    gate_err = _gate_premium_paket(ctx, premium_paket_id)
+    if gate_err:
+        return gate_err
     try:
         if request.method == 'GET':
             return JsonResponse({
@@ -573,6 +613,12 @@ def premium_kota(request, premium_paket_id):
 @csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def premium_kota_suggest(request, premium_paket_id):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    gate_err = _gate_premium_paket(ctx, premium_paket_id)
+    if gate_err:
+        return gate_err
     return JsonResponse({
         'success': True,
         'data': premium_kota_service.suggest_slots_from_kota(premium_paket_id),

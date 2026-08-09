@@ -16,6 +16,8 @@ class AcademicSubeIsolationTest(TestCase):
         self.sube_a = Sube.objects.create(kurum=self.kurum, ad='Şube A', kod='AISO-A')
         self.sube_b = Sube.objects.create(kurum=self.kurum, ad='Şube B', kod='AISO-B')
         self.user = User.objects.create_user(username='akademikiso', password='test')
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
         self.client.force_login(self.user)
 
         self.template_a = ScheduleTemplate.objects.create(

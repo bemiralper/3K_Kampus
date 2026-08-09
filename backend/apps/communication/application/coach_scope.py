@@ -17,9 +17,40 @@ from shared.permissions import user_has_any_permission
 
 COACH_AUDIENCE_TYPES = frozenset({'coach_students', 'coach_parents', 'custom_ids', 'filtered'})
 
+# Ticket routing claim filtrelerinin üstünde kalan roller (koç profili olsa bile).
+FULL_INBOX_ROLE_CODES = frozenset({'super_admin', 'kurum_yoneticisi'})
+
 
 def _ticket_routing_enabled() -> bool:
     return bool(getattr(settings, 'COMMUNICATION_TICKET_ROUTING', True))
+
+
+def _has_full_inbox_access(user) -> bool:
+    """
+    Süper Yönetici / Yönetici — tüm sohbetler (devredilmiş / başkasının claim'i dahil).
+
+    is_resource_admin aktif koç profilinde False döner; iletişim yönetiminde ise
+    koç kimliği claim gizlemeyi tetiklememeli. Rol kodu yedeği, seed eksik
+    permission atamalarında da aynı korumayı verir.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if getattr(user, 'is_superuser', False):
+        return True
+    if user_has_any_permission(user, 'communication.manage', 'sistem.admin'):
+        return True
+    try:
+        role = user.user_role.role
+        if role and role.code in FULL_INBOX_ROLE_CODES:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _bypasses_claim_visibility(user) -> bool:
+    """Claim / ticket gizleme uygulanmaz (yönetici veya coach'suz resource admin)."""
+    return _has_full_inbox_access(user) or is_resource_admin(user)
 
 
 def _has_staff_messaging_access(user) -> bool:
@@ -37,9 +68,7 @@ def _has_staff_messaging_access(user) -> bool:
 
 
 def _legacy_filter_conversations_for_user(qs, user):
-    if is_resource_admin(user):
-        return qs
-    if user_has_any_permission(user, 'communication.manage'):
+    if _bypasses_claim_visibility(user):
         return qs
 
     coach_profile = get_coach_profile(user)
@@ -94,7 +123,7 @@ def filter_conversations_for_user(
             qs, user, kurum_id=kurum_id, sube_id=sube_id,
         )
 
-    if is_resource_admin(user) or user_has_any_permission(user, 'communication.manage'):
+    if _bypasses_claim_visibility(user):
         qs = _apply_inbox_filter(qs, inbox, coach_profile=None, user=user, is_admin=True)
         return filter_by_accessible_whatsapp_accounts(
             qs, user, kurum_id=kurum_id, sube_id=sube_id,
@@ -172,14 +201,12 @@ def filter_by_accessible_whatsapp_accounts(
 ):
     """
     Sohbetleri kullanıcının rol/şube ile erişebildiği WhatsApp hesaplarıyla sınırla.
-    communication.manage / superuser / sistem.admin → filtre yok.
+    Süper Yönetici / Yönetici / communication.manage → filtre yok.
+    (is_staff tek başına tüm WhatsApp hesaplarını açmaz.)
     """
     if not user or not getattr(user, 'is_authenticated', False):
         return qs.none()
-    # Django is_staff tek başına tüm WhatsApp hesaplarını açmaz — sadece manage/admin.
-    if getattr(user, 'is_superuser', False):
-        return qs
-    if user_has_any_permission(user, 'communication.manage', 'sistem.admin'):
+    if _has_full_inbox_access(user):
         return qs
 
     if kurum_id is None:
@@ -245,12 +272,11 @@ def _apply_inbox_filter(qs, inbox, *, coach_profile, user, is_admin: bool):
 
 def _user_can_access_conversation_account(user, conversation) -> bool:
     """WhatsApp hesabı rol/şube kapsamı — yönetici değilse zorunlu."""
-    if getattr(user, 'is_superuser', False):
-        return True
-    if user_has_any_permission(user, 'communication.manage', 'sistem.admin'):
+    if _has_full_inbox_access(user):
         return True
 
     from apps.communication.application.account_resolver import AccountResolver
+
     from apps.communication.domain.enums import Channel
     from apps.communication.domain.models import CommunicationChannelConfig
 
@@ -277,9 +303,7 @@ def _user_can_access_conversation_account(user, conversation) -> bool:
 
 
 def user_can_access_conversation(user, conversation) -> bool:
-    if is_resource_admin(user):
-        return True
-    if user_has_any_permission(user, 'communication.manage'):
+    if _bypasses_claim_visibility(user):
         return True
 
     if not _user_can_access_conversation_account(user, conversation):
@@ -354,9 +378,7 @@ def is_coach_bulk_user(user) -> bool:
     """Gerçek koç profili olan, admin olmayan bulk kullanıcı."""
     if not user or not user.is_authenticated:
         return False
-    if is_resource_admin(user):
-        return False
-    if user_has_any_permission(user, 'communication.manage'):
+    if _bypasses_claim_visibility(user):
         return False
     return get_coach_profile(user) is not None
 

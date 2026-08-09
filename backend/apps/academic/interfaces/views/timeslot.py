@@ -15,6 +15,7 @@ from apps.academic.interfaces.sube_context import (
 )
 from apps.academic.domain.timeslot import TimeSlot
 from apps.academic.domain.schedule_template import ScheduleTemplate
+from apps.academic.interfaces.permissions import academic_view_permission
 from apps.academic.interfaces.serializers.timeslot import (
     TimeSlotSerializer,
     TimeSlotCreateSerializer,
@@ -25,6 +26,7 @@ from apps.academic.interfaces.serializers.timeslot import (
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def timeslot_list_api(request):
     """
     GET /api/academic/timeslots/
@@ -65,6 +67,7 @@ def timeslot_list_api(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def timeslot_create_api(request):
     """
     POST /api/academic/timeslots/create/
@@ -111,6 +114,7 @@ def timeslot_create_api(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def timeslot_bulk_create_api(request):
     """
     POST /api/academic/timeslots/bulk-create/
@@ -157,6 +161,7 @@ def timeslot_bulk_create_api(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def timeslot_detail_api(request, timeslot_id):
     """
     GET /api/academic/timeslots/<id>/
@@ -183,6 +188,7 @@ def timeslot_detail_api(request, timeslot_id):
 
 @csrf_exempt
 @require_http_methods(["PUT", "PATCH"])
+@academic_view_permission
 def timeslot_update_api(request, timeslot_id):
     """
     PUT/PATCH /api/academic/timeslots/<id>/update/
@@ -230,6 +236,7 @@ def timeslot_update_api(request, timeslot_id):
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
+@academic_view_permission
 def timeslot_delete_api(request, timeslot_id):
     """
     DELETE /api/academic/timeslots/<id>/delete/
@@ -256,6 +263,7 @@ def timeslot_delete_api(request, timeslot_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def timeslot_reorder_api(request):
     """
     POST /api/academic/timeslots/reorder/
@@ -317,6 +325,7 @@ def timeslot_reorder_api(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def timeslot_by_template_api(request, template_id):
     """
     GET /api/academic/schedule-templates/<template_id>/timeslots/
@@ -353,6 +362,7 @@ def timeslot_by_template_api(request, template_id):
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
+@academic_view_permission
 def timeslot_bulk_delete_api(request, template_id):
     """
     DELETE /api/academic/schedule-templates/<template_id>/timeslots/bulk-delete/
@@ -388,6 +398,7 @@ def timeslot_bulk_delete_api(request, template_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def timeslot_generate_preview_api(request):
     """
     POST /api/academic/timeslots/generate-preview/
@@ -481,6 +492,7 @@ def timeslot_generate_preview_api(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def timeslot_generate_create_api(request):
     """
     POST /api/academic/timeslots/generate-create/
@@ -576,6 +588,7 @@ def timeslot_generate_create_api(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def timeslot_bulk_shift_api(request):
     """POST /api/academic/timeslots/bulk-shift/"""
     try:
@@ -622,6 +635,7 @@ def timeslot_bulk_shift_api(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def timeslot_bulk_duration_api(request):
     """POST /api/academic/timeslots/bulk-duration/"""
     try:

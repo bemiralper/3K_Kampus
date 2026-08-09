@@ -123,6 +123,10 @@ from apps.academic.interfaces.views.schedule_view import (
     daily_flow_api,
 )
 from apps.academic.interfaces.views.schedule_export import schedule_export_api
+from apps.academic.interfaces.views.schedule_notify import (
+    schedule_notify_preview_api,
+    schedule_notify_send_api,
+)
 from apps.academic.interfaces.views.schedule_version import (
     version_list_api as schedule_version_list_api,
     version_create_api as schedule_version_create_api,
@@ -268,7 +272,9 @@ urlpatterns = [
     path('schedule/room/', room_schedule_api, name='schedule-room'),
     path('schedule/daily-flow/', daily_flow_api, name='schedule-daily-flow'),
     path('schedule/export/', schedule_export_api, name='schedule-export'),
-    
+    path('schedule/notify/preview/', schedule_notify_preview_api, name='schedule-notify-preview'),
+    path('schedule/notify/send/', schedule_notify_send_api, name='schedule-notify-send'),
+
     # Schedule Version endpoints (Program Versiyonu Yönetimi)
     path('schedule/versions/', schedule_version_list_api, name='schedule-version-list'),
     path('schedule/versions/create/', schedule_version_create_api, name='schedule-version-create'),

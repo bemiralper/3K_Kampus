@@ -8,10 +8,12 @@ from datetime import date, timedelta
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.interfaces.sube_context import (
+    gate_lesson_session_drf,
     gate_sinif_drf,
     mandatory_academic_context_drf,
 )
@@ -51,8 +53,8 @@ def _err(exc: LessonSessionError):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_session_materialize_api(request):
     """POST /api/academic/lesson-sessions/materialize/"""
     ctx, err = mandatory_academic_context_drf(request)
@@ -83,8 +85,8 @@ def lesson_session_materialize_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_session_list_api(request):
     """GET /api/academic/lesson-sessions/"""
     ctx, err = mandatory_academic_context_drf(request)
@@ -115,8 +117,8 @@ def lesson_session_list_api(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_session_create_api(request):
     """POST /api/academic/lesson-sessions/create/"""
     ctx, err = mandatory_academic_context_drf(request)
@@ -139,20 +141,12 @@ def lesson_session_create_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_session_detail_api(request, pk):
-    ctx, err = mandatory_academic_context_drf(request)
+    ctx, session, err = gate_lesson_session_drf(request, pk)
     if err:
         return err
-    try:
-        session = LessonSession.objects.select_related(
-            'ders', 'ogretmen', 'sinif', 'timeslot', 'substitute_ogretmen', 'private_student', 'term',
-        ).get(pk=pk, is_active=True)
-    except LessonSession.DoesNotExist:
-        return Response({'error': 'Oturum bulunamadı.'}, status=404)
-    if session.sinif_id and session.sinif.sube_id != ctx['sube_id']:
-        return Response({'error': 'Bu oturuma erişim yok.'}, status=403)
     data = serialize_session(session)
     data['roster'] = get_or_build_student_roster(session)
     return Response(data)
@@ -160,11 +154,11 @@ def lesson_session_detail_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_session_action_api(request, pk, action):
     """POST .../lesson-sessions/<id>/<action>/  action in start|complete|cancel|no_show"""
-    _, err = mandatory_academic_context_drf(request)
+    _, _, err = gate_lesson_session_drf(request, pk)
     if err:
         return err
     try:
@@ -184,10 +178,10 @@ def lesson_session_action_api(request, pk, action):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_teacher_attendance_api(request, pk):
-    _, err = mandatory_academic_context_drf(request)
+    _, _, err = gate_lesson_session_drf(request, pk)
     if err:
         return err
     try:
@@ -207,16 +201,12 @@ def lesson_teacher_attendance_api(request, pk):
 
 @csrf_exempt
 @api_view(['GET', 'POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_student_attendance_api(request, pk):
-    _, err = mandatory_academic_context_drf(request)
+    _, session, err = gate_lesson_session_drf(request, pk)
     if err:
         return err
-    try:
-        session = LessonSession.objects.select_related('sinif', 'ders').get(pk=pk, is_active=True)
-    except LessonSession.DoesNotExist:
-        return Response({'error': 'Oturum bulunamadı.'}, status=404)
 
     if request.method == 'GET':
         return Response({
@@ -245,8 +235,8 @@ def lesson_student_attendance_api(request, pk):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_pay_summary_api(request):
     ctx, err = mandatory_academic_context_drf(request)
     if err:
@@ -275,8 +265,8 @@ def lesson_pay_summary_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def schedule_revision_list_api(request):
     _, err = mandatory_academic_context_drf(request)
     if err:
@@ -294,8 +284,8 @@ def schedule_revision_list_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_operations_meta_api(request):
     """Filtre seçenekleri — tür/durum enumları + öğretmen / ders listesi."""
     from apps.egitim_tanimlari.models import Ders

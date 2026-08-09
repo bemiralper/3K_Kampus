@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Result } from "antd";
 import {
   AKADEMIK_MODULE_LABEL,
   akademikPortalHomeHref,
@@ -9,6 +10,9 @@ import {
   resolveAkademikBase,
   type AkademikGroupDef,
 } from "@/lib/akademik-routes";
+import { AKADEMIK_TAB_PAGES } from "./akademikTabPages";
+import { canReadAkademik } from "@/lib/akademik-permissions";
+import { useAuth } from "@/lib/contexts/AuthContext";
 import "./akademik-operasyon.css";
 
 type Props = {
@@ -20,6 +24,20 @@ export default function AkademikGroupLayout({ group, children }: Props) {
   const pathname = usePathname();
   const basePath = resolveAkademikBase(pathname);
   const homeHref = akademikPortalHomeHref(basePath);
+  const { user } = useAuth();
+
+  if (user && !canReadAkademik(user.permissions)) {
+    return (
+      <div className="akademik-page">
+        <Result
+          status="403"
+          title="Yetkiniz Yok"
+          subTitle="Akademik Operasyonlar modülünü görüntülemek için gerekli yetkiye sahip değilsiniz. Erişim gerekiyorsa yöneticinizden 'Sınıf' veya 'Eğitim Tanımları' yetkisi talep edin."
+          extra={<Link href="/dashboard">Ana Sayfaya Dön</Link>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="akademik-page">
@@ -41,6 +59,7 @@ export default function AkademikGroupLayout({ group, children }: Props) {
           {group.tabs.map((tab) => {
             const href = akademikTabHref(group.slug, tab.segment, basePath);
             const active = pathname === href || pathname.startsWith(`${href}/`);
+            const isPlaceholder = !AKADEMIK_TAB_PAGES[tab.segment];
             return (
               <Link
                 key={tab.segment}
@@ -49,6 +68,7 @@ export default function AkademikGroupLayout({ group, children }: Props) {
                 aria-current={active ? "page" : undefined}
               >
                 {tab.label}
+                {isPlaceholder && <span className="akademik-tab-badge">Yakında</span>}
               </Link>
             );
           })}

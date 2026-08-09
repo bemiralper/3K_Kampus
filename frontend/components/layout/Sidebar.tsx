@@ -192,6 +192,10 @@ const navItems: MenuItem[] = [
     label: "Akademik Operasyon",
     emoji: "📚",
     icon: icons.calendar,
+    requiredPermissions: [
+      "sinif.read", "sinif.write", "sinif.manage",
+      "egitim_tanimlari.read", "egitim_tanimlari.manage",
+    ],
     children: akademikSidebarChildren(),
   },
   {

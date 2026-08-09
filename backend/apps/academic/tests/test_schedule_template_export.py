@@ -16,6 +16,8 @@ class ScheduleTemplateExportApiTest(TestCase):
         self.kurum = Kurum.objects.create(ad='Ders Saati Export Kurum', kod='DEXP')
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='DEXP-M')
         self.user = User.objects.create_user(username='ders_saati_export', password='test')
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
         self.client.force_login(self.user)
 
         self.template = ScheduleTemplate.objects.create(

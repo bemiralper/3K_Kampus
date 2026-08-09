@@ -14,7 +14,8 @@ Versiyon yönetimi endpointleri:
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.domain import ScheduleVersion, ScheduleTemplate, WeeklyCycle
@@ -81,8 +82,8 @@ def serialize_version(version):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_list_api(request):
     """
     Versiyonları listele
@@ -141,8 +142,8 @@ def version_list_api(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_create_api(request):
     """
     Yeni versiyon oluştur
@@ -231,8 +232,8 @@ def version_create_api(request):
 
 @csrf_exempt
 @api_view(['PUT', 'PATCH'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_update_api(request, pk):
     """
     Versiyonu güncelle
@@ -276,8 +277,8 @@ def version_update_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_activate_api(request, pk):
     """
     Versiyonu aktif yap
@@ -308,8 +309,8 @@ def version_activate_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_duplicate_api(request, pk):
     """
     Versiyonu kopyala
@@ -349,8 +350,8 @@ def version_duplicate_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_lock_api(request, pk):
     """
     Versiyonu kilitle
@@ -379,8 +380,8 @@ def version_lock_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_unlock_api(request, pk):
     """
     Versiyonun kilidini aç
@@ -409,8 +410,8 @@ def version_unlock_api(request, pk):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_detail_api(request, pk):
     """
     Versiyon detayı
@@ -435,8 +436,8 @@ def version_detail_api(request, pk):
 
 @csrf_exempt
 @api_view(['DELETE'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def version_delete_api(request, pk):
     """
     Versiyonu sil

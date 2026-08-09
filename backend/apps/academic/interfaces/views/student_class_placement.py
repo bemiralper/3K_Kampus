@@ -11,7 +11,8 @@ ENTEGRASYON NOTLARI:
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.domain.student_class_placement import PlacementType, StudentClassPlacement
@@ -43,8 +44,8 @@ from apps.academic.interfaces.serializers.student_class_placement import (
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def active_academic_year_api(request):
     """
     GET /api/academic/student-class-placements/active-year/
@@ -76,8 +77,8 @@ def active_academic_year_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def placement_types_api(request):
     """
     GET /api/academic/student-class-placements/types/
@@ -98,8 +99,8 @@ def placement_types_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def student_class_placement_list_api(request):
     """
     GET /api/academic/student-class-placements/
@@ -171,8 +172,8 @@ def student_class_placement_list_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def student_class_placement_detail_api(request, placement_id):
     """
     GET /api/academic/student-class-placements/{id}/
@@ -208,8 +209,8 @@ def student_class_placement_detail_api(request, placement_id):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def student_class_placement_create_api(request):
     """
     POST /api/academic/student-class-placements/create/
@@ -270,8 +271,8 @@ def student_class_placement_create_api(request):
 
 @csrf_exempt
 @api_view(['PUT'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def student_class_placement_update_api(request, placement_id):
     """
     PUT /api/academic/student-class-placements/{id}/update/
@@ -337,8 +338,8 @@ def student_class_placement_update_api(request, placement_id):
 
 @csrf_exempt
 @api_view(['DELETE'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def student_class_placement_delete_api(request, placement_id):
     """
     DELETE /api/academic/student-class-placements/{id}/delete/
@@ -379,8 +380,8 @@ def student_class_placement_delete_api(request, placement_id):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def bulk_assign_api(request):
     """
     POST /api/academic/student-class-placements/bulk-assign/
@@ -468,8 +469,8 @@ def bulk_assign_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def helper_data_api(request):
     """
     GET /api/academic/student-class-placements/helper-data/

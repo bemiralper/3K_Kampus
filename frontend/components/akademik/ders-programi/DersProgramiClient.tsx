@@ -26,11 +26,12 @@ import {
   LockOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SendOutlined,
   UnlockOutlined,
 } from '@ant-design/icons';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import { resolveAkademikBase } from '@/lib/akademik-routes';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   CLASS_LESSON_PLAN_CHANGED_EVENT,
   activateAcademicScheduleVersion,
@@ -62,6 +63,7 @@ import {
   type ScheduleColorBy,
 } from '@/lib/schedule-color';
 import ScheduleExportModal from '@/components/akademik/ders-programi/ScheduleExportModal';
+import ScheduleNotifyModal from '@/components/akademik/ders-programi/ScheduleNotifyModal';
 import './ders-programi.css';
 
 const { Title, Text } = Typography;
@@ -133,19 +135,30 @@ function writeDragPayload(e: DragEvent, payload: DragPayload) {
 export default function DersProgramiClient() {
   const { activeKurum, activeSube, initialized } = useKurum();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const akademikBase = resolveAkademikBase(pathname);
   const DERS_SAATLERI_HREF = `${akademikBase}/tanimlar/ders-saatleri`;
-  const SINIF_DERS_PLANLARI_HREF = `${akademikBase}/planlama/sinif-ders-planlari`;
+
+  // Diğer sekmelerden ("Sınıf Ders Planları" vb.) gelen bağlam — ilk yüklemede sınıf/dönem önceçilenir.
+  const urlClassroomId = Number(searchParams.get('classroom_id') || 0) || null;
+  const urlTermId = Number(searchParams.get('term_id') || 0) || null;
 
   const [context, setContext] = useState<ClassLessonPlanContext | null>(null);
   const [calendars, setCalendars] = useState<WorkCalendar[]>([]);
   const [versions, setVersions] = useState<AcademicScheduleVersion[]>([]);
   const [plans, setPlans] = useState<ClassLessonPlan[]>([]);
 
-  const [termId, setTermId] = useState<number | null>(null);
+  const [termId, setTermId] = useState<number | null>(urlTermId);
   const [calendarId, setCalendarId] = useState<number | null>(null);
   const [versionId, setVersionId] = useState<number | null>(null);
-  const [classroomId, setClassroomId] = useState<number | null>(null);
+  const [classroomId, setClassroomId] = useState<number | null>(urlClassroomId);
+
+  const sinifDersPlanlariParams = new URLSearchParams();
+  if (classroomId) sinifDersPlanlariParams.set('classroom_id', String(classroomId));
+  if (termId) sinifDersPlanlariParams.set('term_id', String(termId));
+  const SINIF_DERS_PLANLARI_HREF = `${akademikBase}/planlama/sinif-ders-planlari${
+    sinifDersPlanlariParams.toString() ? `?${sinifDersPlanlariParams.toString()}` : ''
+  }`;
 
   const [grid, setGrid] = useState<ClassScheduleGrid | null>(null);
   const [loading, setLoading] = useState(false);
@@ -156,6 +169,7 @@ export default function DersProgramiClient() {
   const [poolDropActive, setPoolDropActive] = useState(false);
   const [colorBy, setColorBy] = useState<ScheduleColorBy>('ders');
   const [exportOpen, setExportOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
   const [versionNameDraft, setVersionNameDraft] = useState('');
   const [versionNameModal, setVersionNameModal] = useState<'create' | 'rename' | null>(null);
   const [versionNameSaving, setVersionNameSaving] = useState(false);
@@ -309,9 +323,15 @@ export default function DersProgramiClient() {
     if (silent && typeof window !== 'undefined') {
       scrollYRef.current = window.scrollY;
     }
+    const versionLocked = Boolean(selectedVersion?.is_locked || selectedTerm?.schedule_locked);
     try {
-      if (!silent) {
-        await ensureVersionClassroomGrid(versionId, classroomId);
+      if (!silent && !versionLocked) {
+        try {
+          await ensureVersionClassroomGrid(versionId, classroomId);
+        } catch {
+          // İskelet oluşturma başarısız olsa da mevcut grid'i yüklemeyi dene
+          // (örn. versiyon bu arada kilitlendi, hücreler zaten mevcut vb.)
+        }
       }
       const data = await fetchClassScheduleGrid({
         classroom_id: classroomId,
@@ -332,7 +352,7 @@ export default function DersProgramiClient() {
         requestAnimationFrame(() => window.scrollTo({ top: y, left: 0, behavior: 'auto' }));
       }
     }
-  }, [classroomId, termId, versionId]);
+  }, [classroomId, termId, versionId, selectedVersion, selectedTerm]);
 
   useEffect(() => {
     void loadGrid();
@@ -751,6 +771,14 @@ export default function DersProgramiClient() {
             onClick={() => setExportOpen(true)}
           >
             Dışa Aktar
+          </Button>
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            disabled={!termId || !versionId}
+            onClick={() => setNotifyOpen(true)}
+          >
+            Programı Bildir
           </Button>
           <Button icon={<ReloadOutlined />} onClick={() => { boot(); void loadGrid(); void loadPlans(); }}>
             Yenile
@@ -1178,6 +1206,15 @@ export default function DersProgramiClient() {
       <ScheduleExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
+        termId={termId}
+        versionId={versionId}
+        currentClassroomId={classroomId}
+        classrooms={context?.classrooms || []}
+      />
+
+      <ScheduleNotifyModal
+        open={notifyOpen}
+        onClose={() => setNotifyOpen(false)}
         termId={termId}
         versionId={versionId}
         currentClassroomId={classroomId}

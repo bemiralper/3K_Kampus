@@ -9,10 +9,11 @@ from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.response import Response
 
 from apps.academic.domain import WeeklyCycle, WeeklyDay, DayOfWeek
+from apps.academic.interfaces.permissions import AcademicModulePermission, academic_view_permission
 from apps.academic.interfaces.sube_context import (
     assert_academic_sube_access,
     mandatory_academic_context,
@@ -56,6 +57,7 @@ def _gate_cycle(request, cycle_id, *, active_only=False):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def weekly_cycle_list_api(request):
     """GET /api/academic/weekly-cycles/"""
     ctx, err = mandatory_academic_context(request)
@@ -75,6 +77,7 @@ def weekly_cycle_list_api(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def weekly_cycle_create_api(request):
     """POST /api/academic/weekly-cycles/create/"""
     ctx, err = mandatory_academic_context(request)
@@ -112,6 +115,7 @@ def weekly_cycle_create_api(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def weekly_cycle_detail_api(request, pk):
     """GET /api/academic/weekly-cycles/<id>/"""
     ctx, cycle, gate_err = _gate_cycle(request, pk)
@@ -130,6 +134,7 @@ def weekly_cycle_detail_api(request, pk):
 
 @csrf_exempt
 @require_http_methods(["PUT", "PATCH"])
+@academic_view_permission
 def weekly_cycle_update_api(request, pk):
     """PUT/PATCH /api/academic/weekly-cycles/<id>/update/"""
     ctx, cycle, gate_err = _gate_cycle(request, pk)
@@ -155,6 +160,7 @@ def weekly_cycle_update_api(request, pk):
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
+@academic_view_permission
 def weekly_cycle_delete_api(request, pk):
     """DELETE /api/academic/weekly-cycles/<id>/delete/"""
     ctx, cycle, gate_err = _gate_cycle(request, pk)
@@ -183,6 +189,7 @@ def weekly_cycle_delete_api(request, pk):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def weekly_cycle_copy_api(request, pk):
     """POST /api/academic/weekly-cycles/<id>/copy/"""
     ctx, cycle, gate_err = _gate_cycle(request, pk)
@@ -238,6 +245,7 @@ def weekly_cycle_copy_api(request, pk):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def weekly_cycle_usage_api(request, pk):
     """GET /api/academic/weekly-cycles/<id>/usage/"""
     ctx, cycle, gate_err = _gate_cycle(request, pk)
@@ -263,6 +271,7 @@ def weekly_cycle_usage_api(request, pk):
 
 @csrf_exempt
 @require_http_methods(["PUT", "PATCH"])
+@academic_view_permission
 def weekly_cycle_plan_save_api(request, pk):
     """PUT /api/academic/weekly-cycles/<id>/plan/ — haftalık gün planını kaydet."""
     ctx, cycle, gate_err = _gate_cycle(request, pk)
@@ -303,8 +312,8 @@ def weekly_cycle_plan_save_api(request, pk):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def weekly_day_list_api(request):
     cycle_id = request.query_params.get('weekly_cycle_id')
     if not cycle_id:
@@ -338,8 +347,8 @@ def _gate_cycle_drf(request, cycle_id, *, active_only=False):
 
 @csrf_exempt
 @api_view(['PATCH', 'PUT'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def weekly_day_update_api(request, pk):
     try:
         day = WeeklyDay.objects.select_related('weekly_cycle').get(pk=pk)
@@ -360,8 +369,8 @@ def weekly_day_update_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def weekly_day_create_defaults_api(request, cycle_pk):
     _, cycle, gate_err = _gate_cycle_drf(request, cycle_pk)
     if gate_err:
@@ -376,16 +385,16 @@ def weekly_day_create_defaults_api(request, cycle_pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def weekly_day_create_api(request):
     return Response({'detail': 'Haftalık plan kaydı için /weekly-cycles/<id>/plan/ kullanın.'}, status=400)
 
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def weekly_day_detail_api(request, pk):
     try:
         day = WeeklyDay.objects.get(pk=pk)
@@ -396,8 +405,8 @@ def weekly_day_detail_api(request, pk):
 
 @csrf_exempt
 @api_view(['DELETE'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def weekly_day_delete_api(request, pk):
     try:
         day = WeeklyDay.objects.get(pk=pk)

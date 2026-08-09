@@ -64,6 +64,8 @@ class DersDisplayNameTest(TestCase):
     def test_schedule_grid_uses_display_name(self):
         client = Client()
         user = User.objects.create_user(username='dndisp', password='test')
+        user.is_superuser = True
+        user.save(update_fields=['is_superuser'])
         client.force_login(user)
 
         template = ScheduleTemplate.objects.create(
@@ -142,6 +144,8 @@ class DersDisplayNameTest(TestCase):
 
         client = Client()
         user = User.objects.create_user(username='dnteach', password='test')
+        user.is_superuser = True
+        user.save(update_fields=['is_superuser'])
         client.force_login(user)
 
         template = ScheduleTemplate.objects.create(

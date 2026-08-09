@@ -7,7 +7,8 @@ Grid Engine API'leri ve ProgramGridCell CRUD.
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.domain import WeeklyCycle, ProgramGridCell, ScheduleVersion
@@ -44,8 +45,8 @@ from apps.academic.interfaces.serializers import (
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def grid_generate_preview_api(request):
     """
     Grid önizlemesi oluştur.
@@ -103,8 +104,8 @@ def grid_generate_preview_api(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def grid_generate_create_api(request):
     """
     Grid hücrelerini oluştur.
@@ -151,8 +152,8 @@ def grid_generate_create_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def grid_matrix_api(request, cycle_pk):
     """
     Grid matrisini getir.
@@ -181,8 +182,8 @@ def grid_matrix_api(request, cycle_pk):
 
 @csrf_exempt
 @api_view(['DELETE'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def grid_clear_api(request, cycle_pk):
     """
     Bir döngüye ait tüm grid hücrelerini sil.
@@ -245,8 +246,8 @@ def _serialize_placement_cell(cell: ProgramGridCell) -> dict:
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def grid_ensure_version_api(request):
     """
     POST /api/academic/program-grid/ensure-version/
@@ -312,8 +313,8 @@ def grid_ensure_version_api(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def program_grid_cell_fill_api(request, pk):
     """
     POST /api/academic/program-grid/cells/<id>/fill/
@@ -363,8 +364,8 @@ def program_grid_cell_fill_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def program_grid_cell_clear_api(request, pk):
     """
     POST /api/academic/program-grid/cells/<id>/clear/
@@ -400,8 +401,8 @@ def program_grid_cell_clear_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def program_grid_cells_swap_api(request):
     """
     POST /api/academic/program-grid/cells/swap/
@@ -462,8 +463,8 @@ def program_grid_cells_swap_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def program_grid_cell_list_api(request):
     """
     Grid hücrelerini listele.
@@ -500,8 +501,8 @@ def program_grid_cell_list_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def program_grid_cell_detail_api(request, pk):
     """
     Grid hücresi detayı.
@@ -526,8 +527,8 @@ def program_grid_cell_detail_api(request, pk):
 
 @csrf_exempt
 @api_view(['PUT', 'PATCH'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def program_grid_cell_update_api(request, pk):
     """
     Grid hücresi güncelle.
@@ -561,8 +562,8 @@ def program_grid_cell_update_api(request, pk):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def program_grid_cell_bulk_update_api(request):
     """
     Grid hücrelerini toplu güncelle.

@@ -6,7 +6,8 @@ Sınıf Alt Grubu CRUD API'leri
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.services.classroom_group_service import (
@@ -31,8 +32,8 @@ from apps.academic.interfaces.serializers.classroom_group import (
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def classroom_group_list_api(request):
     """
     GET /api/academic/classroom-groups/
@@ -79,8 +80,8 @@ def classroom_group_list_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def classroom_group_detail_api(request, group_id):
     """
     GET /api/academic/classroom-groups/{id}/
@@ -114,8 +115,8 @@ def classroom_group_detail_api(request, group_id):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def classroom_group_create_api(request):
     """
     POST /api/academic/classroom-groups/create/
@@ -165,8 +166,8 @@ def classroom_group_create_api(request):
 
 @csrf_exempt
 @api_view(['PUT'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def classroom_group_update_api(request, group_id):
     """
     PUT /api/academic/classroom-groups/{id}/update/
@@ -221,8 +222,8 @@ def classroom_group_update_api(request, group_id):
 
 @csrf_exempt
 @api_view(['DELETE'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def classroom_group_delete_api(request, group_id):
     """
     DELETE /api/academic/classroom-groups/{id}/delete/

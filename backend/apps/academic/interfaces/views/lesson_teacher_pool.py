@@ -6,7 +6,8 @@ Branş Öğretmen Havuzu CRUD API'leri
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.services.lesson_teacher_pool_service import (
@@ -35,8 +36,8 @@ from apps.academic.interfaces.serializers.lesson_teacher_pool import (
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_teacher_pool_list_api(request):
     """
     GET /api/academic/lesson-teacher-pool/
@@ -95,8 +96,8 @@ def lesson_teacher_pool_list_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_teacher_pool_detail_api(request, pool_id):
     """
     GET /api/academic/lesson-teacher-pool/{id}/
@@ -122,8 +123,8 @@ def lesson_teacher_pool_detail_api(request, pool_id):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_teacher_pool_create_api(request):
     """
     POST /api/academic/lesson-teacher-pool/
@@ -184,8 +185,8 @@ def lesson_teacher_pool_create_api(request):
 
 @csrf_exempt
 @api_view(['PUT', 'PATCH'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_teacher_pool_update_api(request, pool_id):
     """
     PUT/PATCH /api/academic/lesson-teacher-pool/{id}/
@@ -239,8 +240,8 @@ def lesson_teacher_pool_update_api(request, pool_id):
 
 @csrf_exempt
 @api_view(['DELETE'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def lesson_teacher_pool_delete_api(request, pool_id):
     """
     DELETE /api/academic/lesson-teacher-pool/{id}/

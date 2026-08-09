@@ -449,6 +449,9 @@ export default function HaftalikSablonlariClient() {
 
   async function onDelete() {
     if (!detailLesson) return;
+    if (!window.confirm('Bu haftalık şablon dersini pasifleştirmek istediğinize emin misiniz?')) {
+      return;
+    }
     setDeleting(true);
     try {
       await deleteSlot(detailLesson.id);

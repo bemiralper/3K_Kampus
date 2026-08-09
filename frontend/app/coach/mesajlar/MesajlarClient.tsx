@@ -29,14 +29,20 @@ const POLL_MS = 20_000;
 interface MesajlarClientProps {
   initialConversationId?: string | null;
   showAccountFilter?: boolean;
+  /** Yönetici / süper yönetici inbox — claim gizleme yok, dönem varsayılanı tümü. */
+  managerInbox?: boolean;
 }
 
-export default function MesajlarClient({ initialConversationId, showAccountFilter = false }: MesajlarClientProps) {
+export default function MesajlarClient({
+  initialConversationId,
+  showAccountFilter = false,
+  managerInbox = false,
+}: MesajlarClientProps) {
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId ?? null);
   // Admin: tümü. Koç: tümü (Yeni Gelenler + kendi sohbetleri); "Benim" filtresi ayrı seçilir.
   const [filter, setFilter] = useState<ConversationFilter>("all");
-  const [period, setPeriod] = useState<ConversationPeriod>("7d");
+  const [period, setPeriod] = useState<ConversationPeriod>(managerInbox ? "all" : "7d");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,8 +124,13 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
       setConversations(list);
       const nextIds = new Set(list.map((c) => c.id));
       const sid = selectedIdRef.current;
-      // Yalnızca daha önce listede görünen sohbet kaybolduysa (üstlenme) temizle
-      if (sid && !nextIds.has(sid) && visibleIdsRef.current.has(sid)) {
+      // Koç: başka biri üstlenince listeden düşer. Yönetici inbox'ta claim gizleme yok.
+      if (
+        !managerInbox &&
+        sid &&
+        !nextIds.has(sid) &&
+        visibleIdsRef.current.has(sid)
+      ) {
         setToast("Sohbet listeden kalktı (başka biri üstlendi).");
         window.setTimeout(() => setToast(null), 4000);
         setSelectedId(null);
@@ -130,7 +141,7 @@ export default function MesajlarClient({ initialConversationId, showAccountFilte
     } finally {
       setLoading(false);
     }
-  }, [filter, period, search, accountId]);
+  }, [filter, period, search, accountId, managerInbox]);
 
   useCommunicationSSE({
     onUpdate: () => {

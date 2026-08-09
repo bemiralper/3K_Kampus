@@ -10,6 +10,7 @@ export default function OgretmenYoklamalariClient() {
       showMaterialize
       autoMaterialize
       dailyMode
+      attendanceFocus
     />
   );
 }

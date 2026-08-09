@@ -461,3 +461,128 @@ class SecondaryCoachVisibilityTest(TestCase):
             kurum_id=self.kurum.id,
         )
         self.assertIn(self.conv.id, qs.values_list('id', flat=True))
+
+
+@override_settings(COMMUNICATION_TICKET_ROUTING=True)
+class ManagerSeesTransferredConversationsTest(TestCase):
+    """Devredilmiş sohbetler Süper Yönetici / Yönetici için görünür kalmalı."""
+
+    def setUp(self):
+        from apps.coaching.models import CoachProfile
+        from apps.personel.domain.models import Personel
+        from apps.roller.models import Permission, Role, RolePermission, UserRole
+        from apps.sube.domain.models import Sube
+
+        self.kurum = Kurum.objects.create(ad='Mgr Xfer', kod='MXF')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='M', kod='MXF')
+        self.claimer = User.objects.create_user(username='claimer_mxf', password='x')
+        self.other_coach = User.objects.create_user(username='other_mxf', password='x')
+
+        # Yönetici + aktif koç profili (is_resource_admin False olsa bile tam inbox)
+        self.yonetici = User.objects.create_user(username='yonetici_mxf', password='x')
+        role_y, _ = Role.objects.get_or_create(
+            code='kurum_yoneticisi',
+            defaults={'name': 'Yönetici', 'level': 10, 'is_system_role': True},
+        )
+        UserRole.objects.update_or_create(user=self.yonetici, defaults={'role': role_y})
+        y_personel = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Y', soyad='Netici',
+            tc_kimlik_no='55555555561', user=self.yonetici,
+        )
+        CoachProfile.objects.create(
+            teacher=y_personel, capacity=10, is_active=True, is_coach=True,
+        )
+
+        # Süper yönetici (yalnızca rol kodu; permission satırı olmasa bile)
+        self.super_y = User.objects.create_user(username='super_mxf', password='x')
+        role_s, _ = Role.objects.get_or_create(
+            code='super_admin',
+            defaults={'name': 'Süper Yönetici', 'level': 0, 'is_system_role': True},
+        )
+        UserRole.objects.update_or_create(user=self.super_y, defaults={'role': role_s})
+
+        # communication.manage ile yönetici (rol kodu farklı olsa bile)
+        self.manage_user = User.objects.create_user(username='manage_mxf', password='x')
+        role_m, _ = Role.objects.get_or_create(
+            code='custom_comm_mgr_mxf',
+            defaults={'name': 'Comm Mgr', 'level': 50, 'is_system_role': False},
+        )
+        perm, _ = Permission.objects.get_or_create(
+            code='communication.manage',
+            defaults={
+                'name': 'İletişim Yönetimi',
+                'module': 'communication',
+                'permission_type': 'manage',
+            },
+        )
+        RolePermission.objects.get_or_create(role=role_m, permission=perm)
+        UserRole.objects.update_or_create(user=self.manage_user, defaults={'role': role_m})
+
+        self.conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel='WHATSAPP',
+            contact_phone='+905557777777',
+            contact_type=RecipientType.RAW_PHONE,
+            status=ConversationStatus.WAITING,
+            department='COACHING',
+            claimed_by_user=self.claimer,
+        )
+        ClaimService.transfer(self.conv.id, self.claimer, self.other_coach, reason='devret')
+        self.conv.refresh_from_db()
+
+    def test_transfer_sets_claimed_by_target(self):
+        self.assertEqual(self.conv.claimed_by_user_id, self.other_coach.id)
+
+    def test_yonetici_with_coach_profile_sees_transferred(self):
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+
+        self.assertTrue(user_can_access_conversation(self.yonetici, self.conv))
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            self.yonetici,
+            kurum_id=self.kurum.id,
+        )
+        self.assertIn(self.conv.id, qs.values_list('id', flat=True))
+
+    def test_super_admin_sees_transferred(self):
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+
+        self.assertTrue(user_can_access_conversation(self.super_y, self.conv))
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            self.super_y,
+            kurum_id=self.kurum.id,
+        )
+        self.assertIn(self.conv.id, qs.values_list('id', flat=True))
+
+    def test_manage_permission_sees_transferred(self):
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+
+        self.assertTrue(user_can_access_conversation(self.manage_user, self.conv))
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            self.manage_user,
+            kurum_id=self.kurum.id,
+        )
+        self.assertIn(self.conv.id, qs.values_list('id', flat=True))
+
+    def test_unrelated_coach_still_hidden(self):
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+        from apps.coaching.models import CoachProfile
+        from apps.personel.domain.models import Personel
+
+        outsider = User.objects.create_user(username='out_mxf', password='x')
+        p = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='O', soyad='Ut',
+            tc_kimlik_no='55555555562', user=outsider,
+        )
+        CoachProfile.objects.create(teacher=p, capacity=5, is_active=True, is_coach=True)
+
+        self.assertFalse(user_can_access_conversation(outsider, self.conv))
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            outsider,
+            kurum_id=self.kurum.id,
+        )
+        self.assertNotIn(self.conv.id, qs.values_list('id', flat=True))

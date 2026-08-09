@@ -17,6 +17,7 @@ from apps.academic.domain.teacher_availability import (
 from apps.academic.domain.weekly_cycle import WeeklyCycle
 from apps.academic.interfaces.sube_context import mandatory_academic_context
 from apps.academic.services import teacher_availability_service as svc
+from apps.academic.interfaces.permissions import academic_view_permission
 
 
 def _parse_date(val):
@@ -27,6 +28,7 @@ def _parse_date(val):
 
 @csrf_exempt
 @require_http_methods(['GET'])
+@academic_view_permission
 def teacher_availability_teachers_api(request):
     ctx, err = mandatory_academic_context(request)
     if err:
@@ -45,6 +47,7 @@ def teacher_availability_teachers_api(request):
 
 @csrf_exempt
 @require_http_methods(['GET'])
+@academic_view_permission
 def teacher_availability_detail_api(request, personel_id):
     ctx, err = mandatory_academic_context(request)
     if err:
@@ -129,6 +132,7 @@ def teacher_availability_detail_api(request, personel_id):
 
 @csrf_exempt
 @require_http_methods(['GET'])
+@academic_view_permission
 def teacher_availability_grid_api(request, personel_id, calendar_id):
     ctx, err = mandatory_academic_context(request)
     if err:
@@ -150,6 +154,7 @@ def teacher_availability_grid_api(request, personel_id, calendar_id):
 
 @csrf_exempt
 @require_http_methods(['PUT', 'POST'])
+@academic_view_permission
 def teacher_availability_save_api(request, personel_id):
     ctx, err = mandatory_academic_context(request)
     if err:
@@ -259,6 +264,7 @@ def teacher_availability_save_api(request, personel_id):
 
 @csrf_exempt
 @require_http_methods(['DELETE'])
+@academic_view_permission
 def teacher_availability_temp_delete_api(request, personel_id, set_id):
     ctx, err = mandatory_academic_context(request)
     if err:

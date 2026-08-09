@@ -89,8 +89,8 @@ export default function BirebirTelafiClient() {
 
       <PageHeader
         icon={<IconRotateCcw size={19} />}
-        title="Telafi Dersleri"
-        description="Telafi edilecek işaretlenen oturumlar için yeni tarih/saat planlayın; planlanan telafiler kaynak dersine bağlı olarak burada takip edilir."
+        title="Birebir Telafi Dersleri"
+        description="Telafi edilecek işaretlenen birebir dersler için yeni tarih/saat planlayın; planlanan telafiler kaynak dersine bağlı olarak burada takip edilir."
         actions={
           <>
             <button

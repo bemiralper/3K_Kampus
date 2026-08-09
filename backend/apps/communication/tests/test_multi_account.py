@@ -193,6 +193,9 @@ class MultiWhatsAppAccountTests(TestCase):
         self.acc_genel.allowed_roles.set([self.role_muhasebe])  # koç rolü yok
         self.acc_genel.department = CommunicationDepartment.COACHING
         self.acc_genel.save(update_fields=['department'])
+        # Varsayılan departman COACHING; muhasebe hattını koç bypass'ından çıkar
+        self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.save(update_fields=['department'])
 
         # Rolü olmayan kullanıcı + koç profili
         user_coach = User.objects.create_user(username='wa_coach_profile', password='x')

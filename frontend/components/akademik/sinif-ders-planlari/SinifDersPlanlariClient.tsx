@@ -18,6 +18,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
+  CalendarOutlined,
   CopyOutlined,
   DeleteOutlined,
   PlusOutlined,
@@ -26,7 +27,9 @@ import {
   ThunderboltOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useKurum } from '@/lib/contexts/KurumContext';
+import { resolveAkademikBase } from '@/lib/akademik-routes';
 import {
   bulkDeleteClassLessonPlans,
   copyClassLessonPlans,
@@ -64,13 +67,17 @@ function planDisplayShown(row: ClassLessonPlan): string {
 
 export default function SinifDersPlanlariClient() {
   const { activeKurum, activeSube, initialized } = useKurum();
+  const akademikBase = resolveAkademikBase(usePathname());
+  const searchParams = useSearchParams();
+  const urlClassroomId = Number(searchParams.get('classroom_id') || 0) || null;
+  const urlTermId = Number(searchParams.get('term_id') || 0) || null;
 
   const [context, setContext] = useState<ClassLessonPlanContext | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
   const [classSearch, setClassSearch] = useState('');
   const [planSearch, setPlanSearch] = useState('');
-  const [selectedClassroomId, setSelectedClassroomId] = useState<number | null>(null);
-  const [selectedTermId, setSelectedTermId] = useState<number | null>(null);
+  const [selectedClassroomId, setSelectedClassroomId] = useState<number | null>(urlClassroomId);
+  const [selectedTermId, setSelectedTermId] = useState<number | null>(urlTermId);
 
   const [plans, setPlans] = useState<ClassLessonPlan[]>([]);
   const [summary, setSummary] = useState<ClassLessonPlanSummary | null>(null);
@@ -723,6 +730,19 @@ export default function SinifDersPlanlariClient() {
                   onClick={handleSeed}
                 >
                   Alandan doldur
+                </Button>
+              </Tooltip>
+              <Tooltip title="Bu sınıfın haftalık ders programını, seçili dönem önceçilenmiş olarak açar">
+                <Button
+                  icon={<CalendarOutlined />}
+                  disabled={!selectedClassroomId || !selectedTermId}
+                  href={
+                    selectedClassroomId && selectedTermId
+                      ? `${akademikBase}/planlama/ders-programi?classroom_id=${selectedClassroomId}&term_id=${selectedTermId}`
+                      : undefined
+                  }
+                >
+                  Ders Programında Gör
                 </Button>
               </Tooltip>
               <Button

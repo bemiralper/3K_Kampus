@@ -19,7 +19,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.domain import (
@@ -190,8 +191,8 @@ def serialize_grid_response(cells, days, slots):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_schedule_api(request):
     """
     Sınıf programı (Haftalık Grid)
@@ -292,8 +293,8 @@ def class_schedule_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def teacher_schedule_api(request):
     """
     Öğretmen programı (Haftalık Grid)
@@ -371,8 +372,8 @@ def teacher_schedule_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def student_schedule_api(request):
     """
     Öğrenci programı (Haftalık Grid)
@@ -476,8 +477,8 @@ def student_schedule_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def room_schedule_api(request):
     """
     Oda programı (Haftalık Grid)
@@ -561,8 +562,8 @@ def room_schedule_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def daily_flow_api(request):
     """
     Günlük akış (kronolojik liste)

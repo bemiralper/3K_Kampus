@@ -1,0 +1,94 @@
+.sgrid-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.sgrid-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 720px;
+}
+
+.sgrid-table th {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 600;
+  padding: 10px 8px;
+  text-align: center;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.sgrid-corner {
+  min-width: 90px;
+}
+
+.sgrid-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #475569;
+  text-align: center;
+  white-space: nowrap;
+  padding: 8px;
+  border-right: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fbfcfe;
+}
+
+.sgrid-cell {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  border-right: 1px solid #f1f5f9;
+  text-align: center;
+  vertical-align: middle;
+  min-width: 130px;
+}
+
+.sgrid-cell.is-filled {
+  background: #f0f7ff;
+}
+
+.sgrid-cell-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sgrid-lesson {
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.sgrid-sub {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.sgrid-empty {
+  color: #cbd5e1;
+}
+
+.goruntuleme-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.goruntuleme-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+.goruntuleme-filter label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

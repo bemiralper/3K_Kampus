@@ -1,9 +1,11 @@
 type Props = {
   tabLabel: string;
   groupLabel: string;
+  /** Placeholder'ın nedenini kullanıcıya açıklayan ek not (opsiyonel). */
+  reason?: string;
 };
 
-export default function AkademikTabContent({ tabLabel, groupLabel }: Props) {
+export default function AkademikTabContent({ tabLabel, groupLabel, reason }: Props) {
   return (
     <div className="akademik-placeholder-card">
       <span className="akademik-placeholder-icon" aria-hidden>
@@ -14,6 +16,7 @@ export default function AkademikTabContent({ tabLabel, groupLabel }: Props) {
         <strong>{tabLabel}</strong> ekranı <strong>{groupLabel}</strong> bölümünde
         yakında aktif edilecek.
       </p>
+      {reason && <p className="akademik-placeholder-reason">{reason}</p>}
     </div>
   );
 }

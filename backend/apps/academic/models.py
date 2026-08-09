@@ -9,6 +9,10 @@ from apps.academic.domain.weekly_cycle import WeeklyCycle
 from apps.academic.domain.weekly_day import WeeklyDay, DayOfWeek
 from apps.academic.domain.program_grid_cell import ProgramGridCell, CellStatus
 from apps.academic.domain.class_lesson_plan import ClassLessonPlan
+from apps.academic.domain.class_schedule_notify_log import (
+    ClassScheduleNotifyLog,
+    ClassScheduleNotifyStatus,
+)
 from apps.academic.domain.teacher_availability import (
     TeacherAvailabilitySet,
     TeacherAvailabilityCalendar,
@@ -27,6 +31,8 @@ __all__ = [
     'ProgramGridCell',
     'CellStatus',
     'ClassLessonPlan',
+    'ClassScheduleNotifyLog',
+    'ClassScheduleNotifyStatus',
     'TeacherAvailabilitySet',
     'TeacherAvailabilityCalendar',
     'TeacherAvailabilityCell',

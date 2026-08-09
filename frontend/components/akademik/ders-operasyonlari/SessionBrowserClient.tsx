@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   Modal,
+  Segmented,
   Select,
   Space,
   Table,
@@ -77,6 +78,8 @@ type Props = {
   /** Günlük modda ilk yüklemede otomatik üret */
   autoMaterialize?: boolean;
   allowCreate?: boolean;
+  /** Öğretmen yoklaması odaklı ekran: varsayılan "bekleyen" filtresi + aksiyon gruplarını ayır */
+  attendanceFocus?: boolean;
 };
 
 export default function SessionBrowserClient({
@@ -87,6 +90,7 @@ export default function SessionBrowserClient({
   showMaterialize = false,
   autoMaterialize = false,
   allowCreate = false,
+  attendanceFocus = false,
 }: Props) {
   const { activeKurum, activeSube, initialized } = useKurum();
   const [context, setContext] = useState<ClassLessonPlanContext | null>(null);
@@ -115,6 +119,7 @@ export default function SessionBrowserClient({
   const [substituteId, setSubstituteId] = useState<number | null>(null);
   const [form] = Form.useForm();
   const [lastMaterializedKey, setLastMaterializedKey] = useState('');
+  const [attendanceQuickFilter, setAttendanceQuickFilter] = useState<'PENDING' | 'ALL'>('PENDING');
 
   const boot = useCallback(async () => {
     if (!initialized || !activeKurum || !activeSube) return;
@@ -435,56 +440,71 @@ export default function SessionBrowserClient({
         title: 'İşlem',
         key: 'actions',
         width: 280,
-        render: (_, r) => (
-          <div className="ops-actions">
-            {r.status === 'SCHEDULED' ? (
-              <Button size="small" icon={<PlayCircleOutlined />} onClick={() => runAction(r, 'start')}>
-                Başlat
-              </Button>
-            ) : null}
-            {r.status === 'SCHEDULED' || r.status === 'IN_PROGRESS' ? (
-              <Button
-                size="small"
-                type="primary"
-                icon={<CheckOutlined />}
-                onClick={() => runAction(r, 'complete')}
-              >
-                Bitir
-              </Button>
-            ) : null}
-            {r.status === 'SCHEDULED' || r.status === 'IN_PROGRESS' ? (
-              <Button size="small" danger icon={<CloseOutlined />} onClick={() => runAction(r, 'cancel')}>
-                İptal
-              </Button>
-            ) : null}
-            {r.teacher_attendance === 'PENDING' && r.status !== 'CANCELLED' ? (
-              <>
-                <Button size="small" onClick={() => markTeacher(r, 'PRESENT')}>
-                  Geldi
-                </Button>
-                <Button size="small" danger onClick={() => markTeacher(r, 'ABSENT')}>
-                  Gelmedi
-                </Button>
-                <Button
-                  size="small"
-                  icon={<UserSwitchOutlined />}
-                  onClick={() => {
-                    setSubstituteFor(r);
-                    setSubstituteId(null);
-                  }}
-                >
-                  Yedek
-                </Button>
-              </>
-            ) : null}
-          </div>
-        ),
+        render: (_, r) => {
+          const showLifecycle = !attendanceFocus && (r.status === 'SCHEDULED' || r.status === 'IN_PROGRESS');
+          const showAttendance = r.teacher_attendance === 'PENDING' && r.status !== 'CANCELLED';
+          return (
+            <div className="ops-actions">
+              {showLifecycle ? (
+                <span className="ops-action-group">
+                  {r.status === 'SCHEDULED' ? (
+                    <Button size="small" icon={<PlayCircleOutlined />} onClick={() => runAction(r, 'start')}>
+                      Başlat
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<CheckOutlined />}
+                    onClick={() => runAction(r, 'complete')}
+                  >
+                    Bitir
+                  </Button>
+                  <Button size="small" danger icon={<CloseOutlined />} onClick={() => runAction(r, 'cancel')}>
+                    İptal
+                  </Button>
+                </span>
+              ) : null}
+              {showLifecycle && showAttendance ? <span className="ops-action-divider" /> : null}
+              {showAttendance ? (
+                <span className="ops-action-group">
+                  <Button size="small" onClick={() => markTeacher(r, 'PRESENT')}>
+                    Geldi
+                  </Button>
+                  <Button size="small" danger onClick={() => markTeacher(r, 'ABSENT')}>
+                    Gelmedi
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<UserSwitchOutlined />}
+                    onClick={() => {
+                      setSubstituteFor(r);
+                      setSubstituteId(null);
+                    }}
+                  >
+                    Yedek
+                  </Button>
+                </span>
+              ) : null}
+            </div>
+          );
+        },
       },
     );
 
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- actions use latest load/runAction closures
-  }, [fixedKind]);
+  }, [fixedKind, attendanceFocus]);
+
+  const visibleSessions = useMemo(() => {
+    if (!attendanceFocus || attendanceQuickFilter !== 'PENDING') return sessions;
+    return sessions.filter((s) => s.teacher_attendance === 'PENDING' && s.status !== 'CANCELLED');
+  }, [attendanceFocus, attendanceQuickFilter, sessions]);
+
+  const pendingCount = useMemo(
+    () => sessions.filter((s) => s.teacher_attendance === 'PENDING' && s.status !== 'CANCELLED').length,
+    [sessions],
+  );
 
   if (!initialized) return <div className="ops-empty">Bağlam yükleniyor…</div>;
   if (!activeKurum || !activeSube) {
@@ -618,20 +638,35 @@ export default function SessionBrowserClient({
 
       <div className="ops-card">
         <div className="ops-card-head">
-          <Text strong>{sessions.length} oturum</Text>
+          <Text strong>{visibleSessions.length} oturum</Text>
           {fixedKind ? <Tag>{fixedKind}</Tag> : null}
+          {attendanceFocus ? (
+            <Segmented
+              size="small"
+              value={attendanceQuickFilter}
+              onChange={(v) => setAttendanceQuickFilter(v as 'PENDING' | 'ALL')}
+              options={[
+                { label: `Bekleyenler (${pendingCount})`, value: 'PENDING' },
+                { label: 'Tümü', value: 'ALL' },
+              ]}
+              style={{ marginLeft: 'auto' }}
+            />
+          ) : null}
         </div>
         <Table<LessonSession>
           rowKey="id"
           loading={loading}
           columns={columns}
-          dataSource={sessions}
+          dataSource={visibleSessions}
           pagination={{ pageSize: 30, showSizeChanger: true }}
           size="middle"
           locale={{
-            emptyText: showMaterialize
-              ? 'Kayıt yok. “Programdan Üret” ile günlük oturumları oluşturun.'
-              : 'Kayıt yok. “Yeni Oturum” ile ekleyin.',
+            emptyText:
+              attendanceFocus && attendanceQuickFilter === 'PENDING'
+                ? 'Bekleyen öğretmen yoklaması yok — tüm oturumlar için yoklama alınmış.'
+                : showMaterialize
+                  ? 'Kayıt yok. “Programdan Üret” ile günlük oturumları oluşturun.'
+                  : 'Kayıt yok. “Yeni Oturum” ile ekleyin.',
           }}
           scroll={{ x: 1100 }}
         />

@@ -16,6 +16,10 @@ class ScheduleChangeAction(models.TextChoices):
     SESSION_CREATE = 'SESSION_CREATE', 'Oturum Oluşturma'
     SESSION_CANCEL = 'SESSION_CANCEL', 'Oturum İptal'
     SESSION_COMPLETE = 'SESSION_COMPLETE', 'Oturum Tamamlama'
+    PLAN_CREATE = 'PLAN_CREATE', 'Ders Planı Oluşturma'
+    PLAN_DELETE = 'PLAN_DELETE', 'Ders Planı Silme'
+    PLAN_SEED = 'PLAN_SEED', 'Alandan Doldurma'
+    PLAN_COPY = 'PLAN_COPY', 'Sınıfa Kopyalama'
 
 
 class ScheduleChangeLog(models.Model):

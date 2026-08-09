@@ -64,9 +64,9 @@ export const AKADEMIK_GROUPS: AkademikGroupDef[] = [
     tabs: [
       { segment: 'ogrenci-programlari', label: 'Öğrenci Programları' },
       { segment: 'haftalik-program-sablonlari', label: 'Haftalık Program Şablonları' },
-      { segment: 'birebir-ders-oturumlari', label: 'Ders Oturumları' },
-      { segment: 'birebir-yoklamalar', label: 'Yoklamalar' },
-      { segment: 'birebir-telafi-dersleri', label: 'Telafi Dersleri' },
+      { segment: 'birebir-ders-oturumlari', label: 'Birebir Ders Oturumları' },
+      { segment: 'birebir-yoklamalar', label: 'Birebir Yoklamalar' },
+      { segment: 'birebir-telafi-dersleri', label: 'Birebir Telafi Dersleri' },
       { segment: 'premium-paketler', label: 'Premium Paketler' },
       { segment: 'hakedis-takibi', label: 'Hakediş Takibi' },
     ],

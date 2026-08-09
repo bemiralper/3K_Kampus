@@ -6,7 +6,8 @@ Sınıf Ders Çoklu Öğretmen Ataması CRUD API'leri
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.domain.class_lesson_teacher_assignment import TeacherRole, ClassLessonTeacherAssignment
@@ -37,8 +38,8 @@ from apps.academic.interfaces.serializers.class_lesson_teacher_assignment import
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def teacher_roles_api(request):
     """
     GET /api/academic/class-lesson-teachers/roles/
@@ -56,8 +57,8 @@ def teacher_roles_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_teacher_assignment_list_api(request):
     """
     GET /api/academic/class-lesson-teachers/
@@ -130,8 +131,8 @@ def class_lesson_teacher_assignment_list_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_teacher_assignment_detail_api(request, assignment_id):
     """
     GET /api/academic/class-lesson-teachers/{id}/
@@ -167,8 +168,8 @@ def class_lesson_teacher_assignment_detail_api(request, assignment_id):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_teacher_assignment_create_api(request):
     """
     POST /api/academic/class-lesson-teachers/
@@ -230,8 +231,8 @@ def class_lesson_teacher_assignment_create_api(request):
 
 @csrf_exempt
 @api_view(['PUT', 'PATCH'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_teacher_assignment_update_api(request, assignment_id):
     """
     PUT/PATCH /api/academic/class-lesson-teachers/{id}/
@@ -294,8 +295,8 @@ def class_lesson_teacher_assignment_update_api(request, assignment_id):
 
 @csrf_exempt
 @api_view(['DELETE'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_teacher_assignment_delete_api(request, assignment_id):
     """
     DELETE /api/academic/class-lesson-teachers/{id}/

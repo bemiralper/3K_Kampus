@@ -6,7 +6,8 @@ Sınıf Ders Planı CRUD API'leri
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.interfaces.sube_context import (
@@ -25,6 +26,26 @@ from apps.academic.services.active_academic_year import (
     get_active_academic_year,
     ActiveAcademicYearError
 )
+from apps.academic.services.lesson_session_service import log_schedule_change
+from apps.academic.domain.schedule_change_log import ScheduleChangeAction
+
+
+def _log_plan_change(*, action, summary, detail=None, term_id=None, user=None):
+    """SDP aksiyonlarını değişiklik günlüğüne yazar; hata olursa ana akışı bozmaz."""
+    try:
+        term = None
+        if term_id:
+            from apps.term.domain.models import Term
+            term = Term.objects.filter(id=term_id).first()
+        log_schedule_change(
+            action=action,
+            summary=summary[:500],
+            detail=detail or {},
+            term=term,
+            user=user,
+        )
+    except Exception:
+        pass
 from apps.academic.interfaces.serializers.class_lesson_plan import (
     ClassLessonPlanListSerializer,
     ClassLessonPlanCreateSerializer,
@@ -38,8 +59,8 @@ from apps.academic.interfaces.serializers.class_lesson_plan import (
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def active_academic_year_api(request):
     """
     GET /api/academic/class-lesson-plan/active-year/
@@ -71,8 +92,8 @@ def active_academic_year_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_context_api(request):
     """
     GET /api/academic/class-lesson-plan/context/
@@ -100,8 +121,8 @@ def class_lesson_plan_context_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_ders_options_api(request):
     """
     GET /api/academic/class-lesson-plan/ders-options/?classroom_id=
@@ -145,8 +166,8 @@ def class_lesson_plan_ders_options_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_list_api(request):
     """
     GET /api/academic/class-lesson-plan/
@@ -222,8 +243,8 @@ def class_lesson_plan_list_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_detail_api(request, plan_id):
     """
     GET /api/academic/class-lesson-plan/{id}/
@@ -249,8 +270,8 @@ def class_lesson_plan_detail_api(request, plan_id):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_create_api(request):
     """
     POST /api/academic/class-lesson-plan/create/
@@ -316,7 +337,15 @@ def class_lesson_plan_create_api(request):
         }
         
         plan = service.create(data)
-        
+
+        _log_plan_change(
+            action=ScheduleChangeAction.PLAN_CREATE,
+            summary=f'“{plan.sinif.ad}” sınıfına “{plan.ders.ad}” dersi eklendi.',
+            detail={'plan_id': plan.id, 'sinif_id': plan.sinif_id, 'ders_id': plan.ders_id},
+            term_id=plan.term_id,
+            user=request.user,
+        )
+
         response_serializer = ClassLessonPlanDetailSerializer(plan)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         
@@ -341,8 +370,8 @@ def class_lesson_plan_create_api(request):
 
 @csrf_exempt
 @api_view(['PUT', 'PATCH'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_update_api(request, plan_id):
     """
     PUT/PATCH /api/academic/class-lesson-plan/{id}/update/
@@ -401,8 +430,8 @@ def class_lesson_plan_update_api(request, plan_id):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_bulk_delete_api(request):
     """
     POST /api/academic/class-lesson-plan/bulk-delete/
@@ -424,6 +453,12 @@ def class_lesson_plan_bulk_delete_api(request):
         deleted = ClassLessonPlanService().bulk_delete(
             plan_ids, sube_id=ctx['sube_id'],
         )
+        _log_plan_change(
+            action=ScheduleChangeAction.PLAN_DELETE,
+            summary=f'{deleted} ders planı toplu olarak silindi.',
+            detail={'plan_ids': plan_ids, 'deleted_count': deleted},
+            user=request.user,
+        )
         return Response({'deleted_count': deleted})
     except ClassLessonPlanValidationError as e:
         return Response(
@@ -436,8 +471,8 @@ def class_lesson_plan_bulk_delete_api(request):
 
 @csrf_exempt
 @api_view(['DELETE'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_delete_api(request, plan_id):
     """
     DELETE /api/academic/class-lesson-plan/{id}/delete/
@@ -445,13 +480,21 @@ def class_lesson_plan_delete_api(request, plan_id):
     Soft delete - is_active = False
     """
     try:
-        _, _, gate_err = gate_class_lesson_plan_drf(request, plan_id)
+        _, plan, gate_err = gate_class_lesson_plan_drf(request, plan_id)
         if gate_err:
             return gate_err
 
         service = ClassLessonPlanService()
         service.delete(plan_id)
-        
+
+        _log_plan_change(
+            action=ScheduleChangeAction.PLAN_DELETE,
+            summary=f'“{plan.sinif.ad}” sınıfından “{plan.ders.ad}” dersi kaldırıldı.',
+            detail={'plan_id': plan_id, 'sinif_id': plan.sinif_id, 'ders_id': plan.ders_id},
+            term_id=plan.term_id,
+            user=request.user,
+        )
+
         return Response(
             {'message': 'Plan başarıyla silindi.'},
             status=status.HTTP_200_OK
@@ -473,8 +516,8 @@ def class_lesson_plan_delete_api(request, plan_id):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_seed_from_alan_api(request):
     """
     POST /api/academic/class-lesson-plan/seed-from-alan/
@@ -514,6 +557,19 @@ def class_lesson_plan_seed_from_alan_api(request):
             sube_id=ctx['sube_id'],
             default_weekly_hours=hours,
         )
+        if result['created_count']:
+            _log_plan_change(
+                action=ScheduleChangeAction.PLAN_SEED,
+                summary=f'“{result["alan_ad"]}” alanından {result["created_count"]} ders planı oluşturuldu.',
+                detail={
+                    'classroom_id': classroom_id,
+                    'alan_id': result['alan_id'],
+                    'created_count': result['created_count'],
+                    'skipped_existing': result['skipped_existing'],
+                },
+                term_id=term_id,
+                user=request.user,
+            )
         serializer = ClassLessonPlanListSerializer(result['plans'], many=True)
         return Response({
             'alan_id': result['alan_id'],
@@ -539,8 +595,8 @@ def class_lesson_plan_seed_from_alan_api(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_copy_api(request):
     """
     POST /api/academic/class-lesson-plan/copy/
@@ -597,6 +653,24 @@ def class_lesson_plan_copy_api(request):
             copy_teachers=bool(request.data.get('copy_teachers')),
             mode=str(request.data.get('mode') or 'skip_existing'),
         )
+        if result['created_count'] or result['updated_count']:
+            _log_plan_change(
+                action=ScheduleChangeAction.PLAN_COPY,
+                summary=(
+                    f'{len(target_ids)} sınıfa kopyalama: '
+                    f'{result["created_count"]} yeni, {result["updated_count"]} güncellendi, '
+                    f'{result["skipped_count"]} atlandı.'
+                ),
+                detail={
+                    'source_classroom_id': source_id,
+                    'target_classroom_ids': target_ids,
+                    'created_count': result['created_count'],
+                    'updated_count': result['updated_count'],
+                    'skipped_count': result['skipped_count'],
+                },
+                term_id=term_id,
+                user=request.user,
+            )
         return Response(result)
 
     except ClassLessonPlanValidationError as e:
@@ -614,8 +688,8 @@ def class_lesson_plan_copy_api(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def class_lesson_plan_summary_api(request, classroom_id, term_id):
     """
     GET /api/academic/class-lesson-plan/summary/{classroom_id}/{term_id}/
@@ -636,6 +710,7 @@ def class_lesson_plan_summary_api(request, classroom_id, term_id):
         
         # Sınıf ve dönem bilgisi
         from apps.sinif.domain.models import Sinif
+        from apps.sinif.application.placement_helpers import placement_counts_for_term
         from apps.term.domain.models import Term
         
         try:
@@ -646,13 +721,17 @@ def class_lesson_plan_summary_api(request, classroom_id, term_id):
                 {'error': 'Sınıf veya dönem bulunamadı.'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
+
+        # Dönem bazlı yerleştirme sayısı — yıllık `sinif.mevcutluk` ile karışmasın
+        # (öğrenci dönem içinde sınıf değiştirmişse bu iki sayı farklı olabilir).
+        ogrenci_sayisi = placement_counts_for_term(term_id, [classroom_id]).get(classroom_id, 0)
+
         return Response({
             'classroom_id': classroom_id,
             'classroom_name': sinif.ad,
             'classroom_seviye': sinif.sinif_seviyesi.ad if sinif.sinif_seviyesi_id else None,
             'classroom_alan': sinif.alan.ad if sinif.alan_id else None,
-            'ogrenci_sayisi': sinif.mevcutluk,
+            'ogrenci_sayisi': ogrenci_sayisi,
             'term_id': term_id,
             'term_name': term.name,
             'schedule_locked': term.schedule_locked,

@@ -1,0 +1,1 @@
+"""Academic application services."""

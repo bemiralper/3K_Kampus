@@ -129,7 +129,7 @@ ROLES_DATA = [
         'level': 100,
         'is_system_role': True,
         'permissions': [
-            'ogrenci.read', 'sinif.read', 'egitim_tanimlari.read',
+            'ogrenci.read', 'sinif.read', 'sinif.write', 'egitim_tanimlari.read',
             'egitim_paketleri.read', 'rapor.read',
             'ozel_ders.read', 'ozel_ders.write',
         ],

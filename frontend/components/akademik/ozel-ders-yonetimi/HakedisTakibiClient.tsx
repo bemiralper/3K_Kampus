@@ -113,6 +113,9 @@ export default function HakedisTakibiClient() {
   }
 
   async function onCancel(id: number) {
+    if (!window.confirm(`Hakediş #${id} kaydını iptal etmek istediğinize emin misiniz?`)) {
+      return;
+    }
     setBusy(true);
     try {
       await cancelHakedis(id);

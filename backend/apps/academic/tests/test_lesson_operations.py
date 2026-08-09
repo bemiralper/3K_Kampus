@@ -35,6 +35,8 @@ class LessonOperationsApiTest(TestCase):
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Şube A', kod='LOK-A')
         self.year = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
         self.user = User.objects.create_user(username='louser', password='test')
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
         self.client.force_login(self.user)
 
         self.template = ScheduleTemplate.objects.create(

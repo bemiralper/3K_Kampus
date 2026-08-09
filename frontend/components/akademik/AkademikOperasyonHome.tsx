@@ -1,7 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Result } from "antd";
+import dayjs from "dayjs";
 import {
   AKADEMIK_GROUPS,
   AKADEMIK_MODULE_LABEL,
@@ -9,12 +12,84 @@ import {
   akademikTabHref,
   resolveAkademikBase,
 } from "@/lib/akademik-routes";
+import { canReadAkademik } from "@/lib/akademik-permissions";
+import { useAuth } from "@/lib/contexts/AuthContext";
+import { useKurum } from "@/lib/contexts/KurumContext";
+import {
+  fetchClassLessonPlanContext,
+  fetchLessonSessions,
+  fetchTeachersForAvailability,
+} from "@/lib/academic-api";
 import "./akademik-operasyon.css";
+
+type Kpi = {
+  label: string;
+  value: string;
+  hint?: string;
+};
 
 export default function AkademikOperasyonHome() {
   const pathname = usePathname();
   const basePath = resolveAkademikBase(pathname);
   const homeHref = akademikPortalHomeHref(basePath);
+  const { user } = useAuth();
+  const { activeKurum, activeSube, initialized } = useKurum();
+  const [kpis, setKpis] = useState<Kpi[] | null>(null);
+
+  useEffect(() => {
+    if (!initialized || !activeKurum || !activeSube) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [ctx, teachers] = await Promise.all([
+          fetchClassLessonPlanContext(),
+          fetchTeachersForAvailability({ aktif_only: true }),
+        ]);
+        let todaySessions: { status: string }[] = [];
+        if (ctx.active_term_id) {
+          try {
+            todaySessions = await fetchLessonSessions({
+              term_id: ctx.active_term_id,
+              date: dayjs().format("YYYY-MM-DD"),
+            });
+          } catch {
+            todaySessions = [];
+          }
+        }
+        if (cancelled) return;
+        const completed = todaySessions.filter((s) => s.status === "COMPLETED").length;
+        setKpis([
+          { label: "Aktif Sınıf", value: String(ctx.classrooms.length) },
+          { label: "Aktif Öğretmen", value: String(teachers.length) },
+          { label: "Bugünkü Ders", value: String(todaySessions.length) },
+          {
+            label: "Bugün Tamamlanan",
+            value: todaySessions.length ? `${completed}/${todaySessions.length}` : "0",
+          },
+        ]);
+      } catch {
+        if (!cancelled) setKpis(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeKurum, activeSube, initialized]);
+
+  if (user && !canReadAkademik(user.permissions)) {
+    return (
+      <div className="akademik-page">
+        <Result
+          status="403"
+          title="Yetkiniz Yok"
+          subTitle="Akademik Operasyonlar modülünü görüntülemek için gerekli yetkiye sahip değilsiniz."
+          extra={<Link href="/dashboard">Ana Sayfaya Dön</Link>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="akademik-page">
@@ -32,6 +107,17 @@ export default function AkademikOperasyonHome() {
           </p>
         </div>
       </div>
+
+      {kpis && (
+        <div className="akademik-kpi-strip">
+          {kpis.map((kpi) => (
+            <div key={kpi.label} className="akademik-kpi-card">
+              <span className="akademik-kpi-value">{kpi.value}</span>
+              <span className="akademik-kpi-label">{kpi.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="akademik-home-grid">
         {AKADEMIK_GROUPS.map((group) => (

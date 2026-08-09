@@ -303,6 +303,9 @@ export default function BirebirOturumlarClient() {
 
   async function onSetDurum(durum: string) {
     if (!detail) return;
+    if (durum === 'IPTAL' && !window.confirm('Bu ders oturumunu iptal etmek istediğinize emin misiniz?')) {
+      return;
+    }
     setDetailBusy(true);
     try {
       const updated = await setOturumDurum(detail.id, durum, detailNotes || undefined);
@@ -343,8 +346,8 @@ export default function BirebirOturumlarClient() {
 
       <PageHeader
         icon={<IconBookOpen size={19} />}
-        title="Ders Oturumları"
-        description="Şablondan üretilen ve tek seferlik birebir dersler. Satıra tıklayarak durum değiştirin veya öğretmeni güncelleyin; yoklama için Yoklamalar sekmesini kullanın."
+        title="Birebir Ders Oturumları"
+        description="Şablondan üretilen ve tek seferlik birebir dersler. Satıra tıklayarak durum değiştirin veya öğretmeni güncelleyin; yoklama için Birebir Yoklamalar sekmesini kullanın."
         actions={
           <>
             <a className="od-btn od-btn-secondary" href={yoklamaHref}>

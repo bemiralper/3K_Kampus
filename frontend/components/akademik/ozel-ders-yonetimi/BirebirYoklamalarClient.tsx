@@ -202,7 +202,7 @@ export default function BirebirYoklamalarClient() {
 
       <PageHeader
         icon={<IconClipboard size={19} />}
-        title="Yoklamalar"
+        title="Birebir Yoklamalar"
         description="Tek tıkla yoklama alın. Ücret yalnızca İşlendi / Online durumları için hesaplanır; hakediş etiketi anında güncellenir."
         actions={
           <>
@@ -277,7 +277,7 @@ export default function BirebirYoklamalarClient() {
             description="Önce şablondan oturum üretin veya tek seferlik ders oluşturun."
             action={
               <a className="od-btn od-btn-primary" href={oturumlarHref}>
-                Ders Oturumlarına Git
+                Birebir Ders Oturumlarına Git
               </a>
             }
           />

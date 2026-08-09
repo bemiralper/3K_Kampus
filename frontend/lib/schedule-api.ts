@@ -97,6 +97,28 @@ export interface DailyFlowParams {
   version_id?: number;
 }
 
+export interface DailyFlowItem {
+  timeslot_id: number;
+  start: string | null;
+  end: string | null;
+  status: string;
+  status_display: string;
+  lesson: { id: number; name: string } | null;
+  teacher: { id: number; name: string } | null;
+  classroom: { id: number; name: string } | null;
+}
+
+export interface DailyFlowResponse {
+  date: string;
+  day_name: string | null;
+  day_id?: number;
+  version?: { id: number; name: string };
+  egitim_yili?: { id: number; display: string };
+  info?: string;
+  error?: string;
+  items: DailyFlowItem[];
+}
+
 // ==================== VERSION API ====================
 
 /**
@@ -237,14 +259,14 @@ export async function fetchRoomSchedule(params: RoomScheduleParams): Promise<Api
 /**
  * Günlük akış programını getir
  */
-export async function fetchDailyFlow(params: DailyFlowParams): Promise<ApiResponse<ScheduleGridResponse>> {
+export async function fetchDailyFlow(params: DailyFlowParams): Promise<ApiResponse<DailyFlowResponse>> {
   const queryParams = new URLSearchParams();
   queryParams.set("date", params.date);
   if (params.classroom_id) queryParams.set("classroom_id", params.classroom_id.toString());
   if (params.teacher_id) queryParams.set("teacher_id", params.teacher_id.toString());
   if (params.version_id) queryParams.set("version_id", params.version_id.toString());
   
-  return apiGet<ScheduleGridResponse>(`/api/academic/schedule/daily-flow/?${queryParams.toString()}`);
+  return apiGet<DailyFlowResponse>(`/api/academic/schedule/daily-flow/?${queryParams.toString()}`);
 }
 
 // ==================== EXPORT UTILS ====================

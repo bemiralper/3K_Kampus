@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Button,
+  Modal,
   Select,
   Space,
   Table,
@@ -168,16 +169,24 @@ export default function ProgramRevizyonlariClient() {
           <Space wrap style={{ marginBottom: 2 }}>
             <Button
               disabled={!versionId || selected?.is_active}
-              onClick={async () => {
-                if (!versionId) return;
-                try {
-                  await activateAcademicScheduleVersion(versionId);
-                  message.success('Versiyon aktif');
-                  loadVersions();
-                  loadLogs();
-                } catch (e) {
-                  message.error(e instanceof Error ? e.message : 'Aktifleştirme başarısız');
-                }
+              onClick={() => {
+                if (!versionId || !selected) return;
+                Modal.confirm({
+                  title: 'Versiyonu aktif yap',
+                  content: `"${selected.name}" versiyonunu aktif yapmak istediğinize emin misiniz? Bu, ilgili dönemde görüntülenen ders programını değiştirir.`,
+                  okText: 'Aktif Yap',
+                  cancelText: 'Vazgeç',
+                  onOk: async () => {
+                    try {
+                      await activateAcademicScheduleVersion(versionId);
+                      message.success('Versiyon aktif');
+                      loadVersions();
+                      loadLogs();
+                    } catch (e) {
+                      message.error(e instanceof Error ? e.message : 'Aktifleştirme başarısız');
+                    }
+                  },
+                });
               }}
             >
               Aktif Yap

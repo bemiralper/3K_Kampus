@@ -19,6 +19,9 @@ import BirebirYoklamalarClient from '@/components/akademik/ozel-ders-yonetimi/Bi
 import BirebirTelafiClient from '@/components/akademik/ozel-ders-yonetimi/BirebirTelafiClient';
 import PremiumPaketlerClient from '@/components/akademik/ozel-ders-yonetimi/PremiumPaketlerClient';
 import HakedisTakibiClient from '@/components/akademik/ozel-ders-yonetimi/HakedisTakibiClient';
+import SinifProgramiClient from '@/components/akademik/goruntuleme/SinifProgramiClient';
+import OgretmenProgramiClient from '@/components/akademik/goruntuleme/OgretmenProgramiClient';
+import CanliDersDurumuClient from '@/components/akademik/goruntuleme/CanliDersDurumuClient';
 import AkademikTabContent from '@/components/akademik/AkademikTabContent';
 import {
   AKADEMIK_GROUPS,
@@ -50,7 +53,28 @@ export const AKADEMIK_TAB_PAGES: Record<string, React.ComponentType> = {
   'birebir-telafi-dersleri': BirebirTelafiClient,
   'premium-paketler': PremiumPaketlerClient,
   'hakedis-takibi': HakedisTakibiClient,
+  'sinif-programi': SinifProgramiClient,
+  'ogretmen-programi': OgretmenProgramiClient,
+  'canli-ders-durumu': CanliDersDurumuClient,
 };
+
+/** Placeholder sekmeler için ek açıklama — kullanıcıya "neden yok" bilgisini verir. */
+const PLACEHOLDER_REASONS: Record<string, string> = {
+  'otomatik-program-olusturucu':
+    'Otomatik program oluşturma motoru ayrı bir proje kapsamında planlanmaktadır.',
+  'cakisma-merkezi':
+    'Çakışma tespiti şu an Ders Programı ekranındaki hücre bazlı uyarılarla yapılıyor; ayrı bir merkezi ekran için backend çalışması gerekiyor.',
+  'program-kurallari':
+    'Kural motoru (blok/çift ders, ardışık ders limiti vb.) için backend tasarımı henüz yapılmadı.',
+  'derslik-programi':
+    'Ders programı hücrelerinde henüz oda/derslik bilgisi tutulmuyor; bu ekran için backend veri modeli genişletmesi gerekiyor.',
+  'brans-programi':
+    'Branş bazlı program görünümü için ayrı bir backend endpoint’i henüz yok.',
+};
+
+export function akademikPlaceholderReason(tabSegment: string): string | undefined {
+  return PLACEHOLDER_REASONS[tabSegment];
+}
 
 export function generateAkademikStaticParams() {
   return AKADEMIK_GROUPS.flatMap((group) =>
@@ -95,5 +119,11 @@ export function renderAkademikTabPage(
     return <TabComponent />;
   }
 
-  return <AkademikTabContent tabLabel={match.tab.label} groupLabel={match.group.label} />;
+  return (
+    <AkademikTabContent
+      tabLabel={match.tab.label}
+      groupLabel={match.group.label}
+      reason={akademikPlaceholderReason(params.tab)}
+    />
+  );
 }

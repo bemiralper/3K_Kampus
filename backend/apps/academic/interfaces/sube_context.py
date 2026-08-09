@@ -264,3 +264,34 @@ def gate_lesson_teacher_pool_drf(request, pool_id):
 
 def filter_by_sube_id(queryset, sube_id, field_path='sube_id'):
     return queryset.filter(**{field_path: sube_id})
+
+
+def gate_lesson_session_drf(request, session_id):
+    """Ders oturumu (LessonSession) — kurum/şube erişimini doğrular.
+
+    Sınıf oturumları için `sinif.sube_id`, özel/bireysel oturumlar için (sinif
+    boşsa) `term.sube_id` kullanılır. Returns (ctx, session, None) veya
+    (None, None, error_response).
+    """
+    from apps.academic.domain.lesson_session import LessonSession
+
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return None, None, err
+
+    try:
+        session = LessonSession.objects.select_related(
+            'ders', 'ogretmen', 'sinif', 'timeslot', 'substitute_ogretmen', 'private_student', 'term',
+        ).get(pk=session_id, is_active=True)
+    except LessonSession.DoesNotExist:
+        return None, None, Response({'error': 'Oturum bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+    record_sube_id = session.sinif.sube_id if session.sinif_id else (
+        session.term.sube_id if session.term_id else None
+    )
+    gate = assert_academic_sube_access_drf(
+        request, ctx['kurum_id'], record_sube_id, allow_null_sube=False,
+    )
+    if gate:
+        return None, None, gate
+    return ctx, session, None

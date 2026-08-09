@@ -13,6 +13,7 @@ from apps.academic.interfaces.sube_context import (
     mandatory_academic_context,
 )
 from apps.academic.domain.schedule_template import ScheduleTemplate
+from apps.academic.interfaces.permissions import academic_view_permission
 from apps.academic.interfaces.serializers.schedule_template import (
     ScheduleTemplateListSerializer,
     ScheduleTemplateDetailSerializer,
@@ -23,6 +24,7 @@ from apps.academic.interfaces.serializers.schedule_template import (
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def schedule_template_list_api(request):
     """GET /api/academic/schedule-templates/"""
     try:
@@ -46,6 +48,7 @@ def schedule_template_list_api(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def schedule_template_create_api(request):
     """POST /api/academic/schedule-templates/create/"""
     try:
@@ -75,6 +78,7 @@ def schedule_template_create_api(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def schedule_template_detail_api(request, template_id):
     """GET /api/academic/schedule-templates/<id>/"""
     try:
@@ -98,6 +102,7 @@ def schedule_template_detail_api(request, template_id):
 
 @csrf_exempt
 @require_http_methods(["PUT", "PATCH"])
+@academic_view_permission
 def schedule_template_update_api(request, template_id):
     """PUT/PATCH /api/academic/schedule-templates/<id>/update/"""
     try:
@@ -129,6 +134,7 @@ def schedule_template_update_api(request, template_id):
 
 @csrf_exempt
 @require_http_methods(["DELETE"])
+@academic_view_permission
 def schedule_template_delete_api(request, template_id):
     """DELETE /api/academic/schedule-templates/<id>/delete/
 
@@ -167,6 +173,7 @@ def schedule_template_delete_api(request, template_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@academic_view_permission
 def schedule_template_copy_api(request, template_id):
     """POST /api/academic/schedule-templates/<id>/copy/"""
     try:
@@ -229,6 +236,7 @@ def schedule_template_copy_api(request, template_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def schedule_template_usage_api(request, template_id):
     """GET /api/academic/schedule-templates/<id>/usage/"""
     try:
@@ -260,6 +268,7 @@ def schedule_template_usage_api(request, template_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@academic_view_permission
 def schedule_template_export_api(request, template_id):
     """GET /api/academic/schedule-templates/<id>/export/?format=csv|xlsx — kurumsal dışa aktarma."""
     from shared.export.style_manager import ExportColumn, ExportStat, ReportMeta

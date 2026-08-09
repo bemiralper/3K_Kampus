@@ -10,7 +10,8 @@ Ders Programı Otomatik Oluşturma API'leri:
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from apps.academic.interfaces.permissions import AcademicModulePermission
 from rest_framework.response import Response
 
 from apps.academic.services.scheduler_engine import SchedulerService
@@ -40,8 +41,8 @@ def _gate_scheduler_params(request, *, schedule_template_id, weekly_cycle_id, cl
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def run_preview(request):
     """
     Önizleme çalıştır
@@ -100,8 +101,8 @@ def run_preview(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def run_execute(request):
     """
     Gerçek çalıştırma
@@ -160,8 +161,8 @@ def run_execute(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def reset_grid(request):
     """
     Grid sıfırla
@@ -208,8 +209,8 @@ def reset_grid(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def list_runs(request):
     """
     Çalıştırma loglarını listele
@@ -276,8 +277,8 @@ def list_runs(request):
 
 @csrf_exempt
 @api_view(['GET'])
-@authentication_classes([])
-@permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
 def get_run_detail(request, run_id):
     """
     Çalıştırma detayını getir

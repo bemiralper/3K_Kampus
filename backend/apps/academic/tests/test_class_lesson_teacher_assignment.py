@@ -28,6 +28,8 @@ class ClassLessonTeacherAssignmentApiTest(TestCase):
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Şube A', kod='CLTA-A')
         self.year = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
         self.user = User.objects.create_user(username='cltauser', password='test')
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
         self.client.force_login(self.user)
 
         self.role, _ = Role.objects.get_or_create(
