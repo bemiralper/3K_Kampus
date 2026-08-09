@@ -85,8 +85,10 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
 
 def annotate_resource_book_counts(queryset):
     """
-    Ünite/konu/içerik sayıları + toplam soru — correlated Subquery.
-    JOIN + COUNT(DISTINCT) yerine kullan; liste sorgusu şişmesin.
+    Geriye dönük: correlated Subquery anotasyonu.
+
+    Liste/export için tercih edilen yol `attach_resource_book_counts` —
+    satır başına 4 subquery yerine 3 GROUP BY sorgusu çalıştırır.
     """
     unit_sq = (
         ResourceUnit.objects.filter(book_id=OuterRef('pk'), aktif_mi=True)
@@ -148,6 +150,61 @@ def annotate_resource_book_counts(queryset):
             Value(0),
         ),
     )
+
+
+def attach_resource_book_counts(books):
+    """
+    Kitap örneklerine ünite/konu/içerik/soru sayaçlarını bağlar.
+
+    Correlated Subquery yerine sabit sayıda GROUP BY sorgusu kullanır —
+    kitap ve içerik sayısı arttıkça sorgu süresi doğrusal şişmez.
+    """
+    if not books:
+        return books
+
+    book_ids = [b.id for b in books]
+    unit_counts = dict(
+        ResourceUnit.objects.filter(book_id__in=book_ids, aktif_mi=True)
+        .values('book_id')
+        .annotate(c=Count('id'))
+        .values_list('book_id', 'c')
+    )
+    topic_counts = dict(
+        ResourceTopic.objects.filter(
+            unit__book_id__in=book_ids,
+            aktif_mi=True,
+            unit__aktif_mi=True,
+        )
+        .values('unit__book_id')
+        .annotate(c=Count('id'))
+        .values_list('unit__book_id', 'c')
+    )
+    content_rows = (
+        ResourceContent.objects.filter(
+            topic__unit__book_id__in=book_ids,
+            aktif_mi=True,
+            topic__aktif_mi=True,
+            topic__unit__aktif_mi=True,
+        )
+        .values('topic__unit__book_id')
+        .annotate(
+            c=Count('id'),
+            q=Coalesce(Sum('question_count'), Value(0)),
+        )
+    )
+    content_map = {
+        row['topic__unit__book_id']: (row['c'], row['q'])
+        for row in content_rows
+    }
+
+    for book in books:
+        content_c, question_c = content_map.get(book.id, (0, 0))
+        book.db_unit_count = unit_counts.get(book.id, 0)
+        book.db_topic_count = topic_counts.get(book.id, 0)
+        book.db_content_count = content_c
+        book.db_total_question_count = question_c
+
+    return books
 
 
 class BookTypeViewSet(viewsets.ModelViewSet):
@@ -405,10 +462,6 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = filter_books_for_request(super().get_queryset(), self.request)
 
-        # Sayaçlar liste / detay / export için — structure/yazmada JOIN maliyeti olmasın
-        if self.action in ('list', 'retrieve', 'export_books'):
-            queryset = annotate_resource_book_counts(queryset)
-
         # Filtering
         ders_id = self.request.query_params.get('ders')
         sinif_id = self.request.query_params.get('sinif_seviyesi')
@@ -439,7 +492,11 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
         if icerik_tamamlandi is not None:
             queryset = queryset.filter(icerik_tamamlandi_mi=icerik_tamamlandi.lower() == 'true')
         if search:
-            queryset = queryset.filter(ad__icontains=search)
+            search = search.strip()
+            if search:
+                queryset = queryset.filter(
+                    Q(ad__icontains=search) | Q(kod__icontains=search)
+                )
 
         return queryset
     
@@ -573,6 +630,7 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
                 pass
 
         books = list(qs[:5000])
+        attach_resource_book_counts(books)
         rows = build_export_rows(books, column_keys)
         fmt = (request.query_params.get('format') or 'json').lower()
         meta = build_export_meta(request, kurum_id=kurum_id, sube_id=sube_id)
@@ -846,23 +904,27 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_201_CREATED)
     
     def list(self, request, *args, **kwargs):
-        response = super().list(request, *args, **kwargs)
-        data = response.data
-        count = len(data) if isinstance(data, list) else 0
+        queryset = self.filter_queryset(self.get_queryset())
+        books = list(queryset)
+        attach_resource_book_counts(books)
+        serializer = self.get_serializer(books, many=True)
+        data = serializer.data
         resp = Response({
             'success': True,
             'data': data,
-            'count': count,
+            'count': len(data),
         })
         resp['Cache-Control'] = 'no-store'
         resp['Vary'] = 'X-Sube-ID, X-Kurum-ID'
         return resp
     
     def retrieve(self, request, *args, **kwargs):
-        response = super().retrieve(request, *args, **kwargs)
+        instance = self.get_object()
+        attach_resource_book_counts([instance])
+        serializer = self.get_serializer(instance)
         return Response({
             'success': True,
-            'data': response.data
+            'data': serializer.data,
         })
     
     def create(self, request, *args, **kwargs):

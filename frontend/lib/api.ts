@@ -382,6 +382,13 @@ export async function apiFetch<T = unknown>(
       data: data as T,
     };
   } catch (error) {
+    // İptal edilen istekleri çağırana bırak — UI'da hata olarak gösterme
+    if (
+      (error instanceof DOMException && error.name === "AbortError") ||
+      (error instanceof Error && error.name === "AbortError")
+    ) {
+      throw error;
+    }
     if (error instanceof TypeError) {
       return {
         success: false,

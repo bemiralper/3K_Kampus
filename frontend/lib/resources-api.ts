@@ -448,15 +448,18 @@ export async function deleteBookType(id: number): Promise<ApiResponse<void>> {
 /**
  * Kitap listesini getir
  */
-export async function fetchBooks(params?: {
-  ders?: string;
-  sinif_seviyesi?: string;
-  book_type?: string;
-  yayin_yili?: string;
-  publisher?: string;
-  search?: string;
-  icerik_tamamlandi?: string;
-}): Promise<ApiResponse<ResourceBook[]>> {
+export async function fetchBooks(
+  params?: {
+    ders?: string;
+    sinif_seviyesi?: string;
+    book_type?: string;
+    yayin_yili?: string;
+    publisher?: string;
+    search?: string;
+    icerik_tamamlandi?: string;
+  },
+  options?: { signal?: AbortSignal },
+): Promise<ApiResponse<ResourceBook[]>> {
   const searchParams = new URLSearchParams();
   if (params?.ders) searchParams.append('ders', params.ders);
   if (params?.sinif_seviyesi) searchParams.append('sinif_seviyesi', params.sinif_seviyesi);
@@ -467,7 +470,7 @@ export async function fetchBooks(params?: {
   if (params?.icerik_tamamlandi) searchParams.append('icerik_tamamlandi', params.icerik_tamamlandi);
 
   const qs = searchParams.toString();
-  return apiGet<ResourceBook[]>(`/api/resources/books/${qs ? `?${qs}` : ''}`);
+  return apiGet<ResourceBook[]>(`/api/resources/books/${qs ? `?${qs}` : ''}`, options);
 }
 
 export async function fetchPublishers(params?: {

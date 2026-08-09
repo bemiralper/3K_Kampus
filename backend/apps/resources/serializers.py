@@ -249,9 +249,9 @@ class ResourceBookDetailSerializer(serializers.ModelSerializer):
     publisher = serializers.PrimaryKeyRelatedField(read_only=True)
     yayinevi = serializers.SerializerMethodField()
     units = ResourceUnitDetailSerializer(many=True, read_only=True)
-    unit_count = serializers.IntegerField(read_only=True)
-    topic_count = serializers.IntegerField(read_only=True)
-    content_count = serializers.IntegerField(read_only=True)
+    unit_count = serializers.IntegerField(source='db_unit_count', read_only=True, default=0)
+    topic_count = serializers.IntegerField(source='db_topic_count', read_only=True, default=0)
+    content_count = serializers.IntegerField(source='db_content_count', read_only=True, default=0)
     total_question_count = serializers.IntegerField(
         source='db_total_question_count', read_only=True, default=0,
     )

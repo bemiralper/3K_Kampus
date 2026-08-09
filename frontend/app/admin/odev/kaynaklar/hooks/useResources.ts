@@ -210,30 +210,40 @@ export function useResources(opts: UseResourcesOptions = {}) {
   }, []);
 
   // ═══════ FETCH ═══════
+  // Arama istemci tarafında (filteredBooks); her tuşta API çağırmak worker timeout üretir.
+  const booksAbortRef = useRef<AbortController | null>(null);
   const fetchBooksList = useCallback(async () => {
+    booksAbortRef.current?.abort();
+    const ac = new AbortController();
+    booksAbortRef.current = ac;
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchBooks({
-        ders: filterDers || undefined,
-        sinif_seviyesi: filterSinif || undefined,
-        book_type: filterBookType || undefined,
-        yayin_yili: filterYayinYili || undefined,
-        search: searchTerm || undefined,
-        icerik_tamamlandi: filterIcerikTamamlandi || undefined,
-      });
+      const result = await fetchBooks(
+        {
+          ders: filterDers || undefined,
+          sinif_seviyesi: filterSinif || undefined,
+          book_type: filterBookType || undefined,
+          yayin_yili: filterYayinYili || undefined,
+          icerik_tamamlandi: filterIcerikTamamlandi || undefined,
+        },
+        { signal: ac.signal },
+      );
+      if (ac.signal.aborted) return;
       if (result.success && result.data) {
         const list = result.data as ResourceBook[];
         setBooks(list);
         setSelectedBook((prev) => (prev ? list.find((b) => b.id === prev.id) ?? prev : null));
       }
       else setError(result.error || "Kitaplar yüklenemedi");
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (ac.signal.aborted) return;
       setError("Kitaplar yüklenirken hata oluştu");
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
-  }, [filterDers, filterSinif, filterBookType, filterYayinYili, filterIcerikTamamlandi, searchTerm]);
+  }, [filterDers, filterSinif, filterBookType, filterYayinYili, filterIcerikTamamlandi]);
 
   const fetchMetadata = useCallback(async () => {
     try {
