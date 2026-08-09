@@ -212,10 +212,13 @@ export function resolvePreviewVariables(
 ): string {
   // context verilirse üzerine yazar (boş string dahil). Canlı kurum/şube için
   // useLivePreviewContext / buildPreviewContext kullanın.
-  const resolved: Record<string, string> = {
-    ...SAMPLE_PREVIEW_CONTEXT,
-    ...(context || {}),
-  };
+  const resolved: Record<string, string> = { ...SAMPLE_PREVIEW_CONTEXT };
+  if (context) {
+    for (const [key, value] of Object.entries(context)) {
+      if (value == null) continue;
+      resolved[key] = String(value);
+    }
+  }
   return text.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
     Object.prototype.hasOwnProperty.call(resolved, key) ? resolved[key] : match,
   );
