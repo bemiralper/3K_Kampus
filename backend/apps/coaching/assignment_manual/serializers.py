@@ -155,23 +155,29 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
         return f"{obj.student.ad} {obj.student.soyad}" if obj.student else None
     
     def get_lesson_count(self, obj):
-        return obj.lessons.count()
-    
+        # `obj.lessons` liste queryset'inde prefetch_related ile önceden yüklenir;
+        # `.count()` yerine `len(.all())` kullanmak prefetch cache'ini kullanır ve
+        # satır başına ek DB sorgusu (N+1) oluşmasını önler.
+        return len(obj.lessons.all())
+
     def get_task_count(self, obj):
-        return AssignmentTask.objects.filter(lesson_block__assignment=obj).count()
+        return sum(len(lesson.tasks.all()) for lesson in obj.lessons.all())
 
     def get_pending_task_count(self, obj):
-        return AssignmentTask.objects.filter(
-            lesson_block__assignment=obj,
-            completion_status=AssignmentTask.CompletionStatus.PENDING,
-        ).count()
+        return sum(
+            1
+            for lesson in obj.lessons.all()
+            for task in lesson.tasks.all()
+            if task.completion_status == AssignmentTask.CompletionStatus.PENDING
+        )
 
     def get_evaluated_task_count(self, obj):
-        return AssignmentTask.objects.filter(
-            lesson_block__assignment=obj,
-        ).exclude(
-            completion_status=AssignmentTask.CompletionStatus.PENDING,
-        ).count()
+        return sum(
+            1
+            for lesson in obj.lessons.all()
+            for task in lesson.tasks.all()
+            if task.completion_status != AssignmentTask.CompletionStatus.PENDING
+        )
 
     def get_non_submission_reason_display(self, obj):
         if not obj.non_submission_reason:
@@ -209,7 +215,9 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
 
     def get_is_control_locked(self, obj):
         from .lock_utils import is_assignment_control_locked
-        return is_assignment_control_locked(obj)
+        # Liste queryset'i lessons/tasks'ı prefetch_related ile yükler —
+        # use_prefetch=True ile ek DB sorgusu yapılmadan hesaplanır.
+        return is_assignment_control_locked(obj, use_prefetch=True)
 
 
 class ManualAssignmentDeletedSerializer(serializers.ModelSerializer):
@@ -251,7 +259,9 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
     is_late_submission = serializers.BooleanField(read_only=True)
     late_days = serializers.IntegerField(read_only=True)
     is_control_locked = serializers.SerializerMethodField()
-    
+    has_been_notified = serializers.SerializerMethodField()
+    deletion_audit = serializers.SerializerMethodField()
+
     class Meta:
         model = ManualAssignment
         fields = [
@@ -266,7 +276,7 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
             'late_submission_note', 'is_late_submission', 'late_days',
             'non_submission_reason', 'non_submission_note',
             'template_id', 'coach_notes', 'student_notes', 'lessons',
-            'report_summary', 'is_control_locked',
+            'report_summary', 'is_control_locked', 'has_been_notified', 'deletion_audit',
             'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'assigned_date', 'completed_date']
@@ -302,6 +312,44 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
     def get_is_control_locked(self, obj):
         from .lock_utils import is_assignment_control_locked
         return is_assignment_control_locked(obj)
+
+    def get_has_been_notified(self, obj):
+        """Bu ödev için veli/öğrenciye en az bir WhatsApp bildirimi (plan/rapor) gitmiş mi?
+
+        Tamamlanan ödevlerde koçun bildirim göndermeyi unutmaması için
+        Ödev Kontrol/Rapor ekranında görünür bir hatırlatma göstermede kullanılır.
+        """
+        from apps.communication.application.integration_hooks import SOURCE_ODEV
+        from apps.communication.domain.models import Message
+
+        return Message.objects.filter(
+            source_module=SOURCE_ODEV,
+            source_ref_id__startswith=f'{obj.id}:',
+        ).exists()
+
+    def get_deletion_audit(self, obj):
+        """
+        Bu ödev geçmişte silinip geri yüklendiyse (veya şu an silinmişse) silme/
+        geri yükleme audit bilgisini döndürür — restore sonrası bu bilgi kalıcı
+        olarak korunur (bkz. `restore`/`destroy` action'ları), böylece "kim, ne
+        zaman, neden sildi ve kim geri yükledi" görünürlüğü kaybolmaz.
+        Hiç silinmemiş bir ödev için `None` döner.
+        """
+        if not obj.deleted_at:
+            return None
+        deleted_by_name = None
+        if obj.deleted_by:
+            deleted_by_name = obj.deleted_by.get_full_name() or obj.deleted_by.username
+        restored_by_name = None
+        if obj.restored_by:
+            restored_by_name = obj.restored_by.get_full_name() or obj.restored_by.username
+        return {
+            'deleted_at': obj.deleted_at,
+            'deleted_by_name': deleted_by_name,
+            'deletion_reason': obj.deletion_reason,
+            'restored_at': obj.restored_at,
+            'restored_by_name': restored_by_name,
+        }
 
 
 class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
@@ -347,6 +395,12 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         from apps.resources.models import ResourceContent
 
+        student = data.get('student')
+        if student is not None and not getattr(student, 'aktif_mi', True):
+            raise serializers.ValidationError({
+                'student': 'Bu öğrenci pasif durumda. Pasif öğrenciye yeni ödev atanamaz.',
+            })
+
         content_ids = self._collect_task_content_ids(data.get('lessons') or [])
         if not content_ids:
             return data
@@ -374,7 +428,50 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                     f'{label}. Sayfayı yenileyip içeriği tekrar seçin.'
                 ),
             })
+
+        if student is not None and data.get('status') != 'DRAFT':
+            self._check_duplicate_pending_content(student, content_ids, data.get('lessons') or [])
+
         return data
+
+    @staticmethod
+    def _check_duplicate_pending_content(student, content_ids, lessons_data):
+        """Aynı öğrenciye, henüz kontrol edilmemiş aynı içerik tekrar atanmasın.
+
+        Tamamlanmış/iptal edilmiş ödevlerdeki içerikler tekrar atanabilir
+        (örn. konu tekrarı) — sadece hâlâ bekleyen/aktif bir ödevde aynı
+        içerik varsa mükerrer atamayı engelle.
+        """
+        duplicate_ids = set(
+            AssignmentTask.objects.filter(
+                content_id__in=content_ids,
+                completion_status='PENDING',
+                lesson_block__assignment__student=student,
+                lesson_block__assignment__is_active=True,
+                lesson_block__assignment__status__in=['ASSIGNED', 'IN_PROGRESS', 'OVERDUE'],
+            ).values_list('content_id', flat=True)
+        )
+        if not duplicate_ids:
+            return
+
+        titles = []
+        for lesson in lessons_data:
+            for task in lesson.get('tasks') or []:
+                raw = task.get('content_id', task.get('content'))
+                try:
+                    cid = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if cid in duplicate_ids:
+                    title = (task.get('title') or '').strip()
+                    titles.append(f'{title} (#{cid})' if title else f'#{cid}')
+        label = ', '.join(dict.fromkeys(titles))
+        raise serializers.ValidationError({
+            'lessons': (
+                'Bu öğrenciye aşağıdaki içerik(ler) zaten atanmış ve henüz kontrol edilmemiş: '
+                f'{label}. Önce mevcut ödevi kontrol edin/silin, sonra tekrar atayın.'
+            ),
+        })
 
     def create(self, validated_data):
         from django.db import transaction
@@ -461,7 +558,7 @@ class AssignmentPackageItemSerializer(serializers.ModelSerializer):
         model = AssignmentPackageItem
         fields = [
             'id', 'book_id', 'book_name', 'content_id', 'content_name',
-            'content_type', 'topic_name', 'unit_name',
+            'content_type', 'topic_id', 'topic_name', 'unit_id', 'unit_name',
             'question_count', 'page_start', 'page_end', 'order',
         ]
         read_only_fields = ['id']
@@ -516,6 +613,9 @@ class AssignmentPackageWriteSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             validated_data['created_by'] = request.user
+        if request is not None:
+            from shared.context import get_secili_kurum_id
+            validated_data['kurum_id'] = get_secili_kurum_id(request)
         package = AssignmentPackage.objects.create(**validated_data)
         self._sync_items(package, items_data)
         return package

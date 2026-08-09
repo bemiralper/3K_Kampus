@@ -1,11 +1,21 @@
 // ========== Book Structure Panel (Tree View) ==========
 "use client";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { ResourceBook, ResourceUnit, ResourceTopic, ResourceContent } from "../types";
 import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
+import { fetchAnalyticsBookStudents } from "@/lib/resources-api";
 import { DragSortList, DragHandle } from "./DragSortList";
 import { StructureSkeleton } from "./Skeletons";
 import { GroupContentsModal, MoveTopicModal, PrefixNamesModal } from "./Modals";
+
+type BookStudentUser = {
+  assignment_id: number;
+  student_id: number;
+  ad: string;
+  soyad: string;
+  assigned_at?: string | null;
+};
 
 type ContentClipboard = {
   mode: "copy" | "cut";
@@ -302,6 +312,23 @@ export function BookStructure(props: BookStructureProps) {
     readOnly = false,
     fullPage = false,
   } = props;
+
+  // Kullanan öğrenciler drawer
+  const [usersDrawerOpen, setUsersDrawerOpen] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersList, setUsersList] = useState<BookStudentUser[]>([]);
+
+  const openUsersDrawer = async () => {
+    setUsersDrawerOpen(true);
+    setUsersLoading(true);
+    try {
+      const res = await fetchAnalyticsBookStudents(selectedBook.id);
+      setUsersList(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setUsersList([]);
+    }
+    setUsersLoading(false);
+  };
 
   // Structure search
   const [structureSearch, setStructureSearch] = useState("");
@@ -648,6 +675,13 @@ export function BookStructure(props: BookStructureProps) {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={openUsersDrawer}
+              style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, color: "#047857" }}
+              title="Bu kaynağı kullanan öğrencileri göster"
+            >
+              👥 Kullanan Öğrenciler
+            </button>
             {!readOnly && (
               <>
                 <button onClick={() => onDuplicateBook(selectedBook)} style={{ background: "#dbeafe", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, color: "#2563eb" }} title="Kitabı kopyala">
@@ -1089,6 +1123,70 @@ export function BookStructure(props: BookStructureProps) {
         loading={moveTopicLoading}
         onSubmit={() => { void submitMoveTopic(); }}
       />
+
+      {usersDrawerOpen && (
+        <>
+          <div
+            onClick={() => setUsersDrawerOpen(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.35)", zIndex: 1200 }}
+          />
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              right: 0,
+              height: "100vh",
+              width: "min(420px, 100vw)",
+              background: "white",
+              zIndex: 1201,
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "-8px 0 30px rgba(0,0,0,0.15)",
+            }}
+          >
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>👥 Kullanan Öğrenciler</h3>
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>{selectedBook.ad}</p>
+              </div>
+              <button onClick={() => setUsersDrawerOpen(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#64748b" }}>×</button>
+            </div>
+            <div style={{ padding: "16px 24px", overflowY: "auto", flex: 1 }}>
+              {usersLoading ? (
+                <div style={{ color: "#64748b", fontSize: 13 }}>Yükleniyor…</div>
+              ) : usersList.length === 0 ? (
+                <div style={{ color: "#64748b", fontSize: 13 }}>Bu kaynak henüz hiçbir öğrencinin havuzunda değil.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {usersList.map((u) => (
+                    <Link
+                      key={u.assignment_id}
+                      href={`/admin/odev/kaynak-havuzu/${u.student_id}`}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "10px 12px",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 8,
+                        textDecoration: "none",
+                        color: "#0f172a",
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{`${u.ad || ""} ${u.soyad || ""}`.trim() || "—"}</span>
+                      <span style={{ fontSize: 12, color: "#94a3b8" }}>→ Detay</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "14px 24px", borderTop: "1px solid #e2e8f0" }}>
+              <Link href="/admin/odev/analizler" style={{ fontSize: 13, color: "#0061a6", fontWeight: 600 }}>
+                Kaynak Analizlerinde detaylı görüntüle →
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

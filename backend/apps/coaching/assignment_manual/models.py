@@ -268,6 +268,21 @@ class ManualAssignment(models.Model):
         blank=True,
         verbose_name='Silme Sebebi',
     )
+    restored_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Geri Yükleme Tarihi',
+        help_text='Silindikten sonra geri yüklendiyse — silme kaydı (deleted_at/deleted_by/'
+                   'deletion_reason) audit için korunur, sadece is_active tekrar True yapılır.',
+    )
+    restored_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='manual_assignments_restored',
+        verbose_name='Geri Yükleyen Kullanıcı',
+    )
 
     # Sistem
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Oluşturma Tarihi')
@@ -625,6 +640,11 @@ class AssignmentTask(models.Model):
 class AssignmentPackage(models.Model):
     """Ödev paketi — tekrar kullanılabilir ödev şablonu."""
 
+    kurum_id = models.IntegerField(
+        null=True, blank=True, db_index=True, verbose_name='Kurum ID',
+        help_text='Oluşturulduğu kurum — çoklu kurum izolasyonu için. '
+                   'Bu alan boş olan eski kayıtlar geriye dönük uyumluluk için tüm kurumlarda görünür.',
+    )
     name = models.CharField(max_length=255, verbose_name='Paket Adı')
     description = models.TextField(blank=True, verbose_name='Açıklama')
     ders_ad = models.CharField(max_length=255, blank=True, verbose_name='Ders Adı')
@@ -665,7 +685,15 @@ class AssignmentPackageItem(models.Model):
     content_id = models.PositiveIntegerField(verbose_name='İçerik ID')
     content_name = models.CharField(max_length=255, verbose_name='İçerik Adı')
     content_type = models.CharField(max_length=50, verbose_name='İçerik Tipi')
+    topic_id = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name='Konu ID',
+        help_text='Kitap yapısındaki konu ID — Ödev Ver sepetine yüklenirken doğru gruplama için kullanılır.',
+    )
     topic_name = models.CharField(max_length=255, blank=True, verbose_name='Konu Adı')
+    unit_id = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name='Ünite ID',
+        help_text='Kitap yapısındaki ünite ID — Ödev Ver sepetine yüklenirken doğru gruplama için kullanılır.',
+    )
     unit_name = models.CharField(max_length=255, blank=True, verbose_name='Ünite Adı')
     question_count = models.PositiveIntegerField(null=True, blank=True, verbose_name='Soru Sayısı')
     page_start = models.PositiveIntegerField(null=True, blank=True, verbose_name='Başlangıç Sayfası')

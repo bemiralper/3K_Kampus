@@ -447,7 +447,7 @@ export function useResources(opts: UseResourcesOptions = {}) {
         toplam_sayfa: book.toplam_sayfa ? String(book.toplam_sayfa) : "",
         zorluk_min: book.zorluk_min != null ? String(book.zorluk_min) : "",
         zorluk_max: book.zorluk_max != null ? String(book.zorluk_max) : "",
-        isbn: "", kapak_url: book.kapak_url || "", aciklama: book.aciklama || "",
+        isbn: book.isbn || "", kapak_url: book.kapak_url || "", aciklama: book.aciklama || "",
         aktif_mi: book.aktif_mi, icerik_tamamlandi_mi: book.icerik_tamamlandi_mi ?? false, sira: 0,
       });
     } else {
@@ -683,7 +683,7 @@ export function useResources(opts: UseResourcesOptions = {}) {
 
   // ═══════ DELETE HANDLERS ═══════
   const handleDeleteBook = async (bookId: number): Promise<boolean> => {
-    if (!confirm("⚠️ Bu kitabı silmek istediğinize emin misiniz?\nTüm üniteler, konular ve içerikler de silinecektir!")) return false;
+    if (!confirm("⚠️ Bu kitabı silmek istediğinize emin misiniz?\nTüm üniteler, konular ve içerikler de silinecektir!\n(Öğrencilere atanmış bir kaynaksa silme işlemi engellenecek — bunun yerine arşivleyebilirsiniz.)")) return false;
     try {
       const result = await deleteBook(bookId);
       if (result.success) {
@@ -693,7 +693,8 @@ export function useResources(opts: UseResourcesOptions = {}) {
         showToast("✅ Kitap silindi");
         return true;
       }
-      showToast(`❌ ${result.error || "Silme hatası"}`, "error");
+      const errMsg = typeof result.error === "string" ? result.error : "Silme hatası";
+      showToast(`❌ ${errMsg}`, "error");
       return false;
     } catch {
       showToast("❌ Silme sırasında hata oluştu", "error");

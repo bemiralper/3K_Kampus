@@ -6,6 +6,7 @@ import json
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
@@ -215,6 +216,13 @@ def serialize_pool_resource_book(resource):
     }
 
 
+class ManualAssignmentPagination(PageNumberPagination):
+    """Ödev Kontrol listesi için isteğe bağlı sayfalama (page/page_size verilirse aktif olur)."""
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
 class ManualAssignmentViewSet(viewsets.ModelViewSet):
     """
     Manuel Ödev Atama ViewSet
@@ -237,6 +245,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     queryset = ManualAssignment.objects.all()
     authentication_classes = [CsrfExemptSessionAuthentication]
     permission_classes = [IsAuthenticated]
+    pagination_class = ManualAssignmentPagination
     
     def get_serializer_class(self):
         if self.action == 'list':
@@ -283,7 +292,17 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         
         if risk_status:
             queryset = queryset.filter(risk_status=risk_status)
-        
+
+        search_q = (self.request.query_params.get('q') or '').strip()
+        if search_q:
+            queryset = queryset.filter(
+                Q(student__ad__icontains=search_q)
+                | Q(student__soyad__icontains=search_q)
+                | Q(title__icontains=search_q)
+                | Q(coach__first_name__icontains=search_q)
+                | Q(coach__last_name__icontains=search_q)
+            )
+
         return queryset.order_by('-created_at')
 
     def get_object(self):
@@ -306,8 +325,26 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             refresh_manual_assignment_overdue,
         )
 
-        refresh_manual_assignment_overdue()
-        return super().list(request, *args, **kwargs)
+        refresh_manual_assignment_overdue(ctx['kurum_id'])
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Geriye dönük uyumluluk: page parametresi verilmezse sayfalama uygulanmaz
+        # (dashboard/rapor gibi tüm veriyi bekleyen çağrılar bozulmasın).
+        if request.query_params.get('page') or request.query_params.get('page_size'):
+            page = self.paginate_queryset(queryset)
+            serializer = self.get_serializer(page, many=True)
+            paginated = self.paginator.get_paginated_response(serializer.data)
+            return Response({
+                'success': True,
+                'data': serializer.data,
+                'count': paginated.data.get('count'),
+                'next': paginated.data.get('next'),
+                'previous': paginated.data.get('previous'),
+            })
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({'success': True, 'data': serializer.data})
     
     def create(self, request, *args, **kwargs):
         """Ödev oluştur"""
@@ -382,8 +419,13 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         instance.deleted_at = timezone.now()
         instance.deleted_by = request.user
         instance.deletion_reason = deletion_reason
+        # Önceden silinip geri yüklenmiş bir kayıt tekrar siliniyorsa, eski
+        # restore damgası yeni silme olayı için audit'i yanıltmasın diye temizlenir.
+        instance.restored_at = None
+        instance.restored_by = None
         instance.save(update_fields=[
-            'is_active', 'deleted_at', 'deleted_by', 'deletion_reason', 'updated_at',
+            'is_active', 'deleted_at', 'deleted_by', 'deletion_reason',
+            'restored_at', 'restored_by', 'updated_at',
         ])
 
         # ── Takvimden kaldır ──
@@ -404,18 +446,6 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         except Exception as e:
             import logging
             logging.getLogger('takvim.integration').error(f'Ödev takvim sync hatası: {e}')
-
-    @staticmethod
-    def _notify_assignment_whatsapp(assignment, user_id):
-        try:
-            from apps.communication.application.integration_hooks import notify_assignment
-            kurum_id = assignment.student.kurum_id
-            notify_assignment(kurum_id, assignment.id, sent_by_user_id=user_id)
-        except Exception as e:
-            import logging
-            logging.getLogger('communication.integration').error(
-                f'Ödev WhatsApp bildirim hatası: {e}'
-            )
 
     def _remove_from_calendar(self, assignment):
         """Ödevi takvimden kaldır"""
@@ -489,7 +519,45 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(instance)
             return Response({'success': True, 'data': serializer.data})
         return super().retrieve(request, *args, **kwargs)
-    
+
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """
+        Ödev Kontrol liste sayfası üst filtre çipleri için durum bazlı toplamlar.
+        GET /api/coaching/manual-assignments/assignments/stats/
+
+        Not: `status`/`risk_status`/`q` filtreleri kasıtlı olarak yok sayılır —
+        çipler her zaman kullanıcının erişim kapsamındaki TÜM ödevlerin
+        toplamını gösterir (aktif filtreden bağımsız).
+        """
+        ctx, err = mandatory_coaching_context(request)
+        if err:
+            return err
+        self._coaching_ctx = ctx
+
+        from apps.student_resources.services.overdue_status import (
+            refresh_manual_assignment_overdue,
+        )
+
+        refresh_manual_assignment_overdue(ctx['kurum_id'])
+
+        queryset = ManualAssignment.objects.filter(is_active=True)
+        queryset = filter_manual_assignments(queryset, request.user)
+        queryset = filter_queryset_by_student_sube(queryset, ctx['sube_id'])
+
+        return Response({
+            'success': True,
+            'data': {
+                'total': queryset.count(),
+                'draft': queryset.filter(status=ManualAssignment.Status.DRAFT).count(),
+                'assigned': queryset.filter(status=ManualAssignment.Status.ASSIGNED).count(),
+                'in_progress': queryset.filter(status=ManualAssignment.Status.IN_PROGRESS).count(),
+                'completed': queryset.filter(status=ManualAssignment.Status.COMPLETED).count(),
+                'overdue': queryset.filter(status=ManualAssignment.Status.OVERDUE).count(),
+                'at_risk': queryset.filter(risk_status=ManualAssignment.RiskStatus.AT_RISK).count(),
+            },
+        })
+
     @action(detail=False, methods=['get'])
     def student_assignments(self, request):
         """
@@ -499,8 +567,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         from apps.student_resources.services.overdue_status import (
             refresh_manual_assignment_overdue,
         )
-
-        refresh_manual_assignment_overdue()
+        from apps.ogrenci.domain.models import Ogrenci
 
         student_id = request.query_params.get('student_id')
         if not student_id:
@@ -508,7 +575,25 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'success': False,
                 'error': 'student_id parametresi gerekli'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
+        student = Ogrenci.objects.filter(pk=student_id).only('id', 'kurum_id', 'sube_id').first()
+        if not student:
+            return Response({
+                'success': False,
+                'error': 'Öğrenci bulunamadı.'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        gate = assert_coaching_student_sube_access(request, student.kurum_id, student.sube_id)
+        if gate:
+            return gate
+        if not user_can_access_student(request.user, student.id):
+            return Response({
+                'success': False,
+                'error': 'Bu öğrenciye erişim yetkiniz yok.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        refresh_manual_assignment_overdue(student.kurum_id)
+
         assignments = self.get_queryset().filter(student_id=student_id)
         serializer = ManualAssignmentListSerializer(assignments, many=True)
         
@@ -539,10 +624,13 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             refresh_manual_assignment_overdue,
         )
 
-        refresh_manual_assignment_overdue()
+        kurum_id = get_secili_kurum_id(request)
+        refresh_manual_assignment_overdue(kurum_id)
 
         coach = request.user
         assignments = self.get_queryset().filter(coach=coach)
+        if kurum_id:
+            assignments = assignments.filter(student__kurum_id=kurum_id)
         serializer = ManualAssignmentListSerializer(assignments, many=True)
         
         return Response({
@@ -564,9 +652,12 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             refresh_manual_assignment_overdue,
         )
 
-        refresh_manual_assignment_overdue()
+        kurum_id = get_secili_kurum_id(request)
+        refresh_manual_assignment_overdue(kurum_id)
 
         queryset = self.get_queryset().filter(status__in=KONTROL_BADGE_STATUSES)
+        if kurum_id:
+            queryset = queryset.filter(student__kurum_id=kurum_id)
         overdue = queryset.filter(status=ManualAssignment.Status.OVERDUE).count()
         pending = queryset.filter(
             status__in=(
@@ -606,12 +697,17 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'error': 'Bu listeye erişim yetkiniz yok.',
             }, status=status.HTTP_403_FORBIDDEN)
 
+        ctx, err = mandatory_coaching_context(request)
+        if err:
+            return err
+
         queryset = ManualAssignment.objects.filter(
             is_active=False,
         ).select_related(
             'student', 'coach', 'deleted_by',
         ).order_by('-deleted_at')
 
+        queryset = filter_queryset_by_student_sube(queryset, ctx['sube_id'])
         queryset = filter_manual_assignments(queryset, request.user)
         serializer = ManualAssignmentDeletedSerializer(queryset, many=True)
 
@@ -620,7 +716,54 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             'data': serializer.data,
             'count': queryset.count(),
         })
-    
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        """
+        Yanlışlıkla silinen ödevi geri yükle (yalnızca admin).
+        POST /api/coaching/manual-assignments/assignments/{id}/restore/
+        """
+        if not is_resource_admin(request.user):
+            return Response({
+                'success': False,
+                'error': 'Bu işlem için yetkiniz yok.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        assignment = ManualAssignment.objects.filter(
+            pk=pk, is_active=False,
+        ).select_related('student').first()
+        if not assignment:
+            return Response({
+                'success': False,
+                'error': 'Silinmiş ödev bulunamadı.',
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        gate = assert_coaching_student_sube_access(
+            request, assignment.student.kurum_id, assignment.student.sube_id,
+        )
+        if gate:
+            return gate
+
+        # Silme kaydı (deleted_at/deleted_by/deletion_reason) audit görünürlüğü için
+        # BİLEREK temizlenmiyor — "kim, ne zaman, neden sildi" bilgisi kalıcı olarak
+        # kaybolmasın. Sadece is_active tekrar True yapılır ve kim/ne zaman geri
+        # yüklediği ayrı alanlarda (restored_at/restored_by) kayıt altına alınır.
+        assignment.is_active = True
+        assignment.restored_at = timezone.now()
+        assignment.restored_by = request.user
+        assignment.save(update_fields=[
+            'is_active', 'restored_at', 'restored_by', 'updated_at',
+        ])
+
+        # ── Takvim Entegrasyonu — silme sırasında kaldırılan etkinliği geri ekle ──
+        self._sync_to_calendar(assignment, request.user.id)
+
+        return Response({
+            'success': True,
+            'data': ManualAssignmentDetailSerializer(assignment).data,
+            'message': 'Ödev geri yüklendi.',
+        })
+
     @action(detail=False, methods=['get'])
     def content_task_history(self, request):
         """
@@ -631,13 +774,31 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         Aynı content birden fazla ödevde varsa EN SON (en güncel) durumu döner.
         Eski ödev raporları ETKİLENMEZ — sadece frontend bilgi amaçlı kullanır.
         """
+        from apps.ogrenci.domain.models import Ogrenci
+
         student_id = request.query_params.get('student_id')
         if not student_id:
             return Response({
                 'success': False,
                 'error': 'student_id parametresi gerekli'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
+        student = Ogrenci.objects.filter(pk=student_id).only('id', 'kurum_id', 'sube_id').first()
+        if not student:
+            return Response({
+                'success': False,
+                'error': 'Öğrenci bulunamadı.'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        gate = assert_coaching_student_sube_access(request, student.kurum_id, student.sube_id)
+        if gate:
+            return gate
+        if not user_can_access_student(request.user, student.id):
+            return Response({
+                'success': False,
+                'error': 'Bu öğrenciye erişim yetkiniz yok.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
         # Bu öğrencinin aktif, DRAFT olmayan ödevlerindeki tüm görevleri çek
         tasks = AssignmentTask.objects.filter(
             lesson_block__assignment__student_id=student_id,
@@ -1022,7 +1183,12 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             'non_submission_reason', 'non_submission_note',
             'completion_percent', 'status', 'completed_date', 'updated_at'
         ])
-        
+
+        # Bağlı kaynak atamasının ilerlemesi de güncellensin — aksi halde
+        # kaynak havuzu "devam ediyor" gösterirken ödev "tamamlandı (%0)" olur.
+        from .services.progress_sync import sync_source_assignment_progress
+        sync_source_assignment_progress(assignment)
+
         return Response({
             'success': True,
             'data': ManualAssignmentDetailSerializer(assignment).data,
@@ -1498,6 +1664,10 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         try:
             from .notification_service import AssignmentNotificationService
 
+            # Not: gönderim her zaman koçun bilinçli "Gönder" tıklamasıyla tetiklenir ve
+            # alıcılar (veli_ids) modalda elle seçilir — geçmiş gönderimler preview'da
+            # (_recipient_send_history) zaten gösterilir, bu yüzden otomatik "zaten
+            # gönderildi, atla" davranışına gerek yok; her zaman gönderilir.
             result = AssignmentNotificationService().send(
                 kurum_id,
                 int(pk),
@@ -1505,7 +1675,6 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 veli_ids=[int(v) for v in veli_ids if v],
                 include_student=include_student,
                 sent_by_user_id=request.user.id if request.user.is_authenticated else None,
-                force_resend=True,
                 pdf_bytes=pdf_bytes,
                 pdf_filename=pdf_filename,
                 orientation=orientation,
@@ -1777,6 +1946,16 @@ class AssignmentPackageViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = AssignmentPackage.objects.prefetch_related('items').filter(is_active=True)
+
+        # Kurum izolasyonu: yalnızca seçili kurumun paketleri + geçmişte kurum
+        # ataması yapılmadan oluşturulmuş eski kayıtlar (kurum_id=NULL, geriye
+        # dönük uyumluluk) görünür. Bu, staff/admin dahil TÜM kullanıcılar için
+        # geçerlidir — aksi halde bir kurumun admini başka kurumların paketlerini
+        # görebilirdi.
+        kurum_id = get_secili_kurum_id(self.request)
+        if kurum_id:
+            queryset = queryset.filter(Q(kurum_id=kurum_id) | Q(kurum_id__isnull=True))
+
         user = self.request.user
         if user.is_staff or user.is_superuser:
             return queryset.order_by('-updated_at')
@@ -1826,6 +2005,7 @@ class AssignmentPackageViewSet(viewsets.ModelViewSet):
                 usage_count=0,
                 is_active=True,
                 created_by=request.user,
+                kurum_id=get_secili_kurum_id(request) or source.kurum_id,
             )
             for item in source.items.all():
                 AssignmentPackageItem.objects.create(
@@ -1835,7 +2015,9 @@ class AssignmentPackageViewSet(viewsets.ModelViewSet):
                     content_id=item.content_id,
                     content_name=item.content_name,
                     content_type=item.content_type,
+                    topic_id=item.topic_id,
                     topic_name=item.topic_name,
+                    unit_id=item.unit_id,
                     unit_name=item.unit_name,
                     question_count=item.question_count,
                     page_start=item.page_start,

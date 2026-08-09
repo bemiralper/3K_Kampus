@@ -897,6 +897,23 @@ class ResourceBookViewSet(viewsets.ModelViewSet):
     
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        # Öğrenci kaynak ataması varsa (aktif veya geçmiş) silme engellenir —
+        # aksi halde CASCADE tüm atama/ilerleme geçmişini kalıcı olarak siler.
+        assignment_count = instance.student_assignments.count()
+        if assignment_count:
+            active_count = instance.student_assignments.filter(is_active=True).count()
+            return Response({
+                'success': False,
+                'error': (
+                    f'Bu kaynak silinemez: {assignment_count} öğrenci ataması bağlı '
+                    f'({active_count} aktif). Önce atamaları kaldırın veya bu kaynağı '
+                    'arşivleyin (pasife alın).'
+                ),
+                'data': {
+                    'assignment_count': assignment_count,
+                    'active_assignment_count': active_count,
+                },
+            }, status=status.HTTP_400_BAD_REQUEST)
         self.perform_destroy(instance)
         return Response({
             'success': True,

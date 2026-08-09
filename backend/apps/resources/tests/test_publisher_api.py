@@ -63,6 +63,31 @@ class ResourcePublisherApiTest(TestCase):
         self.assertEqual(res.data['data']['books'][0]['ad'], 'BS TYT Mat')
         self.assertTrue(ResourcePublisher.objects.filter(pk=pub.id).exists())
 
+    def test_create_blocks_case_insensitive_duplicate(self):
+        ResourcePublisher.objects.create(kurum=self.kurum, ad='Palme', kisa_ad='PLM')
+
+        res = self.client.post(
+            URL,
+            {'ad': '  palme  ', 'aktif_mi': True},
+            format='json',
+            **self.headers,
+        )
+
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(ResourcePublisher.objects.filter(kurum=self.kurum).count(), 1)
+
+    def test_update_allows_keeping_own_name_case(self):
+        pub = ResourcePublisher.objects.create(kurum=self.kurum, ad='Palme', kisa_ad='PLM')
+
+        res = self.client.patch(
+            f'{URL}{pub.id}/',
+            {'ad': 'Palme'},
+            format='json',
+            **self.headers,
+        )
+
+        self.assertEqual(res.status_code, 200)
+
     def test_delete_ok_when_unused(self):
         pub = ResourcePublisher.objects.create(
             kurum=self.kurum, ad='Boş Yayınevi', kisa_ad='BY',

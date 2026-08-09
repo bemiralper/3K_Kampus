@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useVectorPrint } from "@/lib/useVectorPrint";
 import {
   fetchAssignmentDetail,
   updateTaskCompletionStatus,
@@ -117,6 +116,14 @@ interface AssignmentDetail {
   non_submission_reason: string;
   non_submission_note: string;
   is_control_locked?: boolean;
+  has_been_notified?: boolean;
+  deletion_audit?: {
+    deleted_at: string;
+    deleted_by_name: string | null;
+    deletion_reason: string;
+    restored_at: string | null;
+    restored_by_name: string | null;
+  } | null;
   coach_notes: string;
   student_notes: string;
   lessons: AssignmentLesson[];
@@ -646,6 +653,28 @@ export default function OdevKontrolDetailClient() {
             </div>
           )}
 
+          {/* Silme/Geri Yükleme Audit Bilgisi — geçmişte silinip geri yüklenmiş ödevlerde görünür */}
+          {assignment.deletion_audit && assignment.deletion_audit.restored_at && (
+            <div style={{
+              background: "linear-gradient(135deg, #fefce8 0%, #fef9c3 100%)",
+              border: "1px solid #fde047", borderRadius: 14, padding: "14px 22px",
+              marginBottom: 14, fontSize: 12, color: "#713f12",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 16 }}>↩️</span>
+                <strong>Bu ödev daha önce silinmiş ve geri yüklenmiş</strong>
+              </div>
+              <div style={{ lineHeight: 1.6 }}>
+                {formatDatetime(assignment.deletion_audit.deleted_at)}
+                {assignment.deletion_audit.deleted_by_name && ` · ${assignment.deletion_audit.deleted_by_name} tarafından silindi`}
+                {assignment.deletion_audit.deletion_reason && ` (${assignment.deletion_audit.deletion_reason})`}
+                {" — "}
+                {formatDatetime(assignment.deletion_audit.restored_at)}
+                {assignment.deletion_audit.restored_by_name && ` · ${assignment.deletion_audit.restored_by_name} tarafından geri yüklendi`}
+              </div>
+            </div>
+          )}
+
           {/* Kontrol günü kilidi */}
           {isControlLocked && (
             <div className="ok-control-lock-banner">
@@ -1014,6 +1043,13 @@ export default function OdevKontrolDetailClient() {
                                 </div>
                               )}
 
+                              {task.student_feedback && (
+                                <div style={{ background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)", border: "1px solid #bae6fd", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#0c4a6e" }}>
+                                  <div style={{ fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>💬 Öğrenci Geri Bildirimi</div>
+                                  <span>{task.student_feedback}</span>
+                                </div>
+                              )}
+
                               {task.coach_evaluation_note && editingNoteTaskId !== task.id && (
                                 <div className="ok-note-box">
                                   <span>{task.coach_evaluation_note}</span>
@@ -1148,6 +1184,17 @@ export default function OdevKontrolDetailClient() {
                   Detaylı Sonuç Raporu
                 </Link>
                 <p className="ok-summary-report-hint">Yazdır, PDF indir veya WhatsApp ile paylaş</p>
+                {assignment.status === "COMPLETED" && assignment.has_been_notified === false && (
+                  <div
+                    style={{
+                      marginTop: 8, padding: "8px 10px", borderRadius: 8,
+                      background: "#fffbeb", border: "1px solid #fde68a",
+                      color: "#92400e", fontSize: 12, fontWeight: 600,
+                    }}
+                  >
+                    ⚠️ Bu ödev tamamlandı ama veli/öğrenciye henüz WhatsApp bildirimi gönderilmedi.
+                  </div>
+                )}
                 {assignment.status !== "DRAFT" && (
                   <button
                     type="button"
@@ -1343,625 +1390,3 @@ export default function OdevKontrolDetailClient() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════
-   YAZDIR ÖNİZLEME COMPONENT'İ  — StudyProgramPrintPreview tarzı profesyonel
-   ═══════════════════════════════════════════════════════ */
-const OdevKontrolPrintPreview: React.FC<{ assignment: AssignmentDetail; onClose: () => void }> = ({ assignment, onClose }) => {
-  const printRef = useRef<HTMLDivElement>(null);
-  const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
-
-  const summary = assignment.report_summary;
-  const overallPct = summary?.overall_completion_percent ?? 0;
-  const headerLogoUrl = "/img/beyaz-logo.png";
-  const footerLogoUrl = "/img/3k-logo.png";
-  const currentYear = new Date().getFullYear();
-  const todayStr = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
-
-  /* Escape key */
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
-
-  /* ─── PDF hooks ─── */
-  const [pdfBusy, setPdfBusy] = useState(false);
-
-  const { print: printVector } = useVectorPrint({
-    title: `Ödev Kontrol - ${assignment.student_name}`,
-    orientation,
-    marginMm: "6mm 6mm",
-    externalRef: printRef as React.RefObject<HTMLDivElement>,
-  });
-
-  const handlePDF = useCallback(async () => {
-    setPdfBusy(true);
-    try {
-      await printVector();
-    } finally {
-      setPdfBusy(false);
-    }
-  }, [printVector]);
-
-  const handleDownload = handlePDF;
-
-  const getCompletionLabel = (cs: string) => {
-    switch (cs) {
-      case "DONE": return { label: "Yaptı", color: "#16a34a", bg: "#dcfce7" };
-      case "NOT_DONE": return { label: "Yapmadı", color: "#dc2626", bg: "#fee2e2" };
-      case "PARTIAL": return { label: "Eksik", color: "#d97706", bg: "#fef3c7" };
-      default: return { label: "Beklemede", color: "#94a3b8", bg: "#f1f5f9" };
-    }
-  };
-
-  // Dersleri ders adına göre grupla
-  const grouped = new Map<string, AssignmentLesson[]>();
-  assignment.lessons.forEach(lesson => {
-    const key = lesson.lesson_name || "Ders";
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(lesson);
-  });
-
-  /* ─── İstatistik dağılımları ─── */
-  const allTasks = assignment.lessons.flatMap(l => l.tasks);
-  const statusCounts: Record<string, { label: string; count: number; color: string; icon: string }> = {};
-  allTasks.forEach(t => {
-    const cl = getCompletionLabel(t.completion_status);
-    const k = t.completion_status || "PENDING";
-    if (!statusCounts[k]) statusCounts[k] = { label: cl.label, count: 0, color: cl.color, icon: k === "DONE" ? "✅" : k === "NOT_DONE" ? "❌" : k === "PARTIAL" ? "⚠️" : "⏳" };
-    statusCounts[k].count++;
-  });
-
-  // Ders bazlı dağılım
-  const lessonCounts: Record<string, number> = {};
-  assignment.lessons.forEach(l => {
-    const k = l.lesson_name || "Diğer";
-    lessonCounts[k] = (lessonCounts[k] || 0) + l.tasks.length;
-  });
-
-  /* ─── Ders başına mini chart değerleri ─── */
-  const lessonMaxTasks = Math.max(...Object.values(lessonCounts), 1);
-
-  const blockCols = orientation === "landscape" ? 4 : 3;
-
-  /* ─── Style helpers ─── */
-  const chipS = (bg: string, color: string, border: string): React.CSSProperties => ({
-    padding: "3px 8px", borderRadius: 14, fontSize: 8, fontWeight: 600,
-    background: bg, color, border, display: "inline-flex", alignItems: "center", gap: 2,
-  });
-
-  const statCardStyle: React.CSSProperties = {
-    padding: "7px 10px", borderRadius: 6,
-    border: "1px solid #e2e8f0", background: "#fff",
-  };
-
-  const statCardTitle: React.CSSProperties = {
-    fontSize: 9, fontWeight: 700, color: "#1e293b", marginBottom: 5,
-  };
-
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 2000,
-      background: "rgba(0,0,0,0.6)",
-      display: "flex", alignItems: "flex-start", justifyContent: "center",
-      padding: "16px", overflowY: "auto",
-    }}>
-      <div style={{
-        background: "#fff", borderRadius: 16,
-        maxWidth: orientation === "landscape" ? 1160 : 860,
-        width: "100%",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.3)", marginBottom: 40,
-      }}>
-        {/* ═══ TOOLBAR ═══ */}
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          padding: "12px 24px", borderBottom: "1px solid #e4e9f2",
-          position: "sticky", top: 0, background: "#fff", zIndex: 1, borderRadius: "16px 16px 0 0",
-        }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: "#172b4c" }}>
-            📋 Yazdırma Önizleme
-          </h3>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{
-              display: "flex", borderRadius: 8, overflow: "hidden",
-              border: "1px solid #e2e8f0",
-            }}>
-              <button
-                onClick={() => setOrientation("portrait")}
-                style={{
-                  padding: "6px 14px", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                  background: orientation === "portrait" ? "#0061a6" : "#fff",
-                  color: orientation === "portrait" ? "#fff" : "#64748b",
-                }}
-              >📄 Dikey</button>
-              <button
-                onClick={() => setOrientation("landscape")}
-                style={{
-                  padding: "6px 14px", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                  background: orientation === "landscape" ? "#0061a6" : "#fff",
-                  color: orientation === "landscape" ? "#fff" : "#64748b",
-                }}
-              >📃 Yatay</button>
-            </div>
-
-            <button onClick={handlePDF} disabled={pdfBusy} style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "8px 18px", borderRadius: 8, border: "none",
-              background: pdfBusy ? "#93c5fd" : "#0061a6", color: "#fff", fontSize: 12, fontWeight: 600,
-              cursor: pdfBusy ? "not-allowed" : "pointer",
-            }}>{pdfBusy ? "⏳ Hazırlanıyor..." : "🖨️ PDF Önizle"}</button>
-            <button onClick={handleDownload} disabled={pdfBusy} style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "8px 16px", borderRadius: 8, border: "1px solid #0061a6",
-              background: "#fff", color: "#0061a6", fontSize: 12, fontWeight: 600,
-              cursor: pdfBusy ? "not-allowed" : "pointer",
-            }}>⬇️ İndir</button>
-            <button onClick={onClose} style={{
-              padding: "8px 14px", borderRadius: 8, border: "1px solid #e4e9f2",
-              background: "#fff", color: "#8c98a4", fontSize: 14, fontWeight: 500, cursor: "pointer",
-            }}>✕</button>
-          </div>
-        </div>
-
-        {/* ═══════════ A4 CONTENT ═══════════ */}
-        <div ref={printRef} id="odev-print-area" style={{
-          padding: orientation === "landscape" ? "12px 14px" : "14px 10px",
-          fontFamily: "'Poppins', sans-serif",
-          color: "#172b4c", lineHeight: 1.4,
-          maxWidth: orientation === "landscape" ? 1100 : 860,
-          margin: "0 auto",
-        }}>
-
-          {/* ═══ PREMIUM HEADER ═══ */}
-          <div style={{
-            position: "relative", overflow: "hidden",
-            background: "linear-gradient(135deg, #003d6b 0%, #0061a6 40%, #0085e0 100%)",
-            borderRadius: 10, padding: "12px 16px", marginBottom: 10, color: "#fff",
-          }}>
-            <div style={{ position: "absolute", top: -24, right: -24, width: 80, height: 80, borderRadius: "50%", background: "rgba(255,255,255,0.08)" }} />
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={headerLogoUrl}
-                  alt="3K"
-                  crossOrigin="anonymous"
-                  style={{ width: 36, height: 36, objectFit: "contain", flexShrink: 0 }}
-                />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 0.6, lineHeight: 1.2 }}>3K KAMPÜS</div>
-                  <div style={{
-                    marginTop: 3, display: "inline-block", padding: "1px 8px", borderRadius: 10,
-                    background: "rgba(255,255,255,0.16)", fontSize: 8, fontWeight: 600,
-                    letterSpacing: 1.2, textTransform: "uppercase",
-                  }}>
-                    Ödev Sonuç Raporu
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: "right", flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 15, fontWeight: 700, lineHeight: 1.25,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                }}>
-                  {assignment.title || "İsimsiz Ödev"}
-                </div>
-                <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>
-                  ÖKR-{assignment.id} · {todayStr}
-                </div>
-              </div>
-            </div>
-
-            <div style={{
-              display: "flex", alignItems: "center", gap: 12,
-              background: "rgba(255,255,255,0.12)", borderRadius: 8,
-              padding: "7px 12px",
-            }}>
-              {assignment.student_info?.profil_foto ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={assignment.student_info.profil_foto}
-                  alt={assignment.student_name}
-                  crossOrigin="anonymous"
-                  style={{
-                    width: 34, height: 34, borderRadius: "50%", objectFit: "cover",
-                    border: "1.5px solid rgba(255,255,255,0.5)", flexShrink: 0,
-                  }}
-                />
-              ) : (
-                <div style={{
-                  width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
-                  background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 12, fontWeight: 700,
-                }}>
-                  {assignment.student_name.split(" ").map(w => w.charAt(0)).join("").substring(0, 2)}
-                </div>
-              )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {assignment.student_name}
-                </div>
-                <div style={{ fontSize: 9, opacity: 0.75 }}>
-                  Öğrenci · {assignment.status_display} · {assignment.priority_display} öncelik
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 12, fontSize: 10, opacity: 0.95, flexShrink: 0 }}>
-                {assignment.coach_name && (
-                  <>
-                    <div style={{ textAlign: "center", maxWidth: 90 }}>
-                      <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Koç</div>
-                      <div style={{ fontWeight: 600, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{assignment.coach_name}</div>
-                    </div>
-                    <div style={{ width: 1, background: "rgba(255,255,255,0.3)" }} />
-                  </>
-                )}
-                {summary && (
-                  <>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Görev</div>
-                      <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{summary.total_tasks}</div>
-                    </div>
-                    {summary.total_questions > 0 && (
-                      <>
-                        <div style={{ width: 1, background: "rgba(255,255,255,0.3)" }} />
-                        <div style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Soru</div>
-                          <div style={{ fontWeight: 700, color: "#fbbf24", lineHeight: 1.2 }}>{summary.total_questions}</div>
-                        </div>
-                      </>
-                    )}
-                    <div style={{ width: 1, background: "rgba(255,255,255,0.3)" }} />
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 8, opacity: 0.7, lineHeight: 1.2 }}>Başarı</div>
-                      <div style={{ fontWeight: 700, color: "#34d399", lineHeight: 1.2 }}>%{overallPct}</div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ═══ SUMMARY ROW — chips + mini chart ═══ */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "stretch" }}>
-            {/* Chips */}
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", flex: 1, alignItems: "center" }}>
-              <span style={chipS("#eef2ff", "#4338ca", "1px solid #c7d2fe")}>📚 {grouped.size} Ders</span>
-              <span style={chipS("#ecfdf5", "#059669", "1px solid #a7f3d0")}>📋 {summary?.total_tasks ?? 0} Görev</span>
-              {summary && summary.total_questions > 0 && (
-                <span style={chipS("#fff7ed", "#ea580c", "1px solid #fed7aa")}>✏️ {summary.total_questions} Soru</span>
-              )}
-              {summary && summary.total_pages > 0 && (
-                <span style={chipS("#fdf4ff", "#7c3aed", "1px solid #e9d5ff")}>📄 {summary.total_pages} Sayfa</span>
-              )}
-              {summary && (
-                <span style={chipS("#f0fdf4", "#166534", "1px solid #bbf7d0")}>✅ {summary.done_tasks}/{summary.total_tasks}</span>
-              )}
-              <span style={chipS("#fff1f2", "#be123c", "1px solid #fecdd3")}>📅 {formatDate(assignment.assigned_date)} → {formatDate(assignment.due_date)}</span>
-              {assignment.postpone_count > 0 && (
-                <span style={chipS("#fffbeb", "#b45309", "1px solid #fde68a")}>🔄 {assignment.postpone_count}x Ertelendi</span>
-              )}
-            </div>
-            {/* Mini bar chart — ders başı görev */}
-            {Object.keys(lessonCounts).length > 1 && (
-              <div style={{
-                display: "flex", gap: 3, alignItems: "flex-end",
-                padding: "5px 8px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0",
-                minWidth: 140,
-              }}>
-                <div style={{ fontSize: 7, fontWeight: 600, color: "#475569", marginRight: 3, alignSelf: "center", writingMode: "vertical-lr" as const, transform: "rotate(180deg)", letterSpacing: 1 }}>DERSLER</div>
-                {Object.entries(lessonCounts).map(([name, count]) => {
-                  const pct = lessonMaxTasks > 0 ? (count / lessonMaxTasks) * 100 : 0;
-                  return (
-                    <div key={name} style={{ flex: 1, textAlign: "center" }}>
-                      <div style={{ fontSize: 7, fontWeight: 700, color: "#374151", marginBottom: 1 }}>{count}</div>
-                      <div style={{ height: 24, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-                        <div style={{
-                          width: "60%", minHeight: 3,
-                          height: `${Math.max(pct, 10)}%`,
-                          borderRadius: "2px 2px 0 0",
-                          background: "linear-gradient(180deg, #60a5fa, #3b82f6)",
-                        }} />
-                      </div>
-                      <div style={{ fontSize: 6, fontWeight: 600, color: "#64748b", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 40 }}>
-                        {name.length > 5 ? name.slice(0, 5) + ".." : name}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* ═══ COACH NOTE / DESCRIPTION ═══ */}
-          {(assignment.coach_notes || assignment.description) && (
-            <div style={{
-              padding: "6px 12px", marginBottom: 10,
-              background: "#fffbeb", border: "1px solid #fde68a",
-              borderRadius: 6, fontSize: 9, color: "#92400e", lineHeight: 1.5,
-            }}>
-              {assignment.description && <div><strong>📋 Açıklama:</strong> {assignment.description}</div>}
-              {assignment.coach_notes && <div style={{ marginTop: assignment.description ? 3 : 0 }}><strong>📌 Koç Notu:</strong> {assignment.coach_notes}</div>}
-            </div>
-          )}
-
-          {/* ═══ SORU / SAYFA İSTATİSTİKLERİ ═══ */}
-          {summary && (summary.total_questions > 0 || summary.total_pages > 0) && (
-            <div className="page-break-avoid" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              {summary.total_questions > 0 && (
-                <div style={{ flex: 1, background: "#eff6ff", borderRadius: 8, padding: "6px 10px", border: "1px solid #bfdbfe" }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: "#1d4ed8", marginBottom: 2 }}>📝 Soru İstatistikleri</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: "#1e293b" }}>{summary.completed_questions}/{summary.total_questions}</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "#2563eb" }}>%{summary.question_completion_percent}</span>
-                  </div>
-                  <div style={{ height: 3, background: "#dbeafe", borderRadius: 3, overflow: "hidden", marginTop: 2 }}>
-                    <div style={{ height: "100%", width: `${summary.question_completion_percent}%`, background: "#3b82f6", borderRadius: 3 }} />
-                  </div>
-                </div>
-              )}
-              {summary.total_pages > 0 && (
-                <div style={{ flex: 1, background: "#f5f3ff", borderRadius: 8, padding: "6px 10px", border: "1px solid #ddd6fe" }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: "#7c3aed", marginBottom: 2 }}>📄 Sayfa İstatistikleri</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: "#1e293b" }}>{summary.completed_pages}/{summary.total_pages}</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed" }}>%{summary.page_completion_percent}</span>
-                  </div>
-                  <div style={{ height: 3, background: "#ede9fe", borderRadius: 3, overflow: "hidden", marginTop: 2 }}>
-                    <div style={{ height: "100%", width: `${summary.page_completion_percent}%`, background: "#8b5cf6", borderRadius: 3 }} />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ═══ GEÇ TESLİM / ERTELEME / GETİRİLMEDİ ═══ */}
-          {(assignment.is_late_submission || assignment.postpone_count > 0 || assignment.non_submission_reason) && (
-            <div className="page-break-avoid" style={{ marginBottom: 10, borderRadius: 8, overflow: "hidden", border: "1px solid #fecaca" }}>
-              {assignment.non_submission_reason && (
-                <div style={{ padding: "6px 12px", background: "#fee2e2" }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#dc2626" }}>🚫 Ödev Getirilmedi</div>
-                  <div style={{ fontSize: 9, color: "#991b1b", marginTop: 1 }}>
-                    {assignment.non_submission_reason === "NOT_BROUGHT" ? "Öğrenci ödevi getirmedi" : assignment.non_submission_reason === "NOT_DONE" ? "Öğrenci ödevi yapmamış" : assignment.non_submission_reason === "CONTROL_NOT_POSSIBLE" ? "Ödev kontrolü yapılamadı" : "Diğer"}
-                  </div>
-                  {assignment.non_submission_note && <div style={{ fontSize: 8, color: "#7f1d1d", marginTop: 2 }}>📝 {assignment.non_submission_note}</div>}
-                </div>
-              )}
-              {assignment.is_late_submission && (
-                <div style={{ padding: "6px 12px", background: "#fff1f2", borderTop: assignment.non_submission_reason ? "1px solid #fecaca" : "none" }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#dc2626" }}>⚠️ Geç Teslim — {assignment.late_days} gün</div>
-                  {assignment.late_submission_note && <div style={{ fontSize: 8, color: "#7f1d1d", marginTop: 1 }}>📝 {assignment.late_submission_note}</div>}
-                </div>
-              )}
-              {assignment.postpone_count > 0 && (
-                <div style={{ padding: "6px 12px", background: "#fef3c7", borderTop: "1px solid #fde68a" }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#b45309" }}>📅 {assignment.postpone_count}x Ertelendi</div>
-                  {assignment.postpone_reason && <div style={{ fontSize: 8, color: "#78350f", marginTop: 1 }}>📝 {assignment.postpone_reason}</div>}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ═══ DERS & GÖREV DETAYLARI ═══ */}
-          {Array.from(grouped.entries()).map(([subjectName, lessons]) => {
-            const allSubjectTasks = lessons.flatMap(l => l.tasks);
-            const groupDone = allSubjectTasks.filter(t => t.completion_status === "DONE").length;
-            const groupTotal = allSubjectTasks.length;
-            const groupPct = groupTotal > 0 ? Math.round(groupDone / groupTotal * 100) : 0;
-            const allDone = groupTotal > 0 && groupDone === groupTotal;
-            return (
-              <div key={subjectName} className="page-break-avoid" style={{ marginBottom: 8 }}>
-                {/* Ders Başlığı — StudyProgramPrintPreview day header tarzı */}
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "5px 10px",
-                  background: allDone
-                    ? "linear-gradient(135deg, #059669, #10b981)"
-                    : "linear-gradient(135deg, #0061a6, #3b82f6)",
-                  borderRadius: "6px 6px 0 0",
-                  color: "#fff", fontSize: 10,
-                }}>
-                  <span style={{ fontWeight: 700, fontSize: 11 }}>📖 {subjectName}</span>
-                  <span style={{ fontSize: 8, opacity: 0.85 }}>
-                    {lessons.length} kaynak · {groupTotal} görev · {groupDone}/{groupTotal}
-                    {allDone ? " ✅" : ` · %${groupPct}`}
-                  </span>
-                </div>
-
-                {/* Kaynaklar (Kitaplar) — grid düzeni */}
-                <div style={{ border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 6px 6px", overflow: "hidden" }}>
-                  {lessons.map(lesson => {
-                    // Task'ları content_topic_name'e göre alt-grupla
-                    const topicGroupMap = new Map<string, AssignmentTask[]>();
-                    lesson.tasks.forEach(task => {
-                      const tKey = task.content_topic_name || lesson.topic_name || "__default__";
-                      if (!topicGroupMap.has(tKey)) topicGroupMap.set(tKey, []);
-                      topicGroupMap.get(tKey)!.push(task);
-                    });
-                    const topicEntries = Array.from(topicGroupMap.entries());
-                    const hasMultipleTopics = topicEntries.length > 1;
-
-                    const done = lesson.tasks.filter(t => t.completion_status === "DONE").length;
-                    const total = lesson.tasks.length;
-                    return (
-                      <div key={lesson.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                        {/* Kitap/Kaynak Başlığı */}
-                        <div style={{ padding: "5px 12px 3px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fafbfc" }}>
-                          <div>
-                            {lesson.resource_book_name && <div style={{ fontSize: 10, fontWeight: 600, color: "#334155" }}>📕 {lesson.resource_book_name}</div>}
-                            {!lesson.resource_book_name && <div style={{ fontSize: 10, fontWeight: 600, color: "#94a3b8" }}>📝 Kaynak belirtilmemiş</div>}
-                            {!hasMultipleTopics && lesson.topic_name && <div style={{ fontSize: 8, color: "#64748b", marginTop: 1 }}>📌 {lesson.topic_name}</div>}
-                          </div>
-                          <span style={{ fontSize: 9, fontWeight: 700, color: done === total ? "#16a34a" : "#6366f1" }}>{done}/{total}</span>
-                        </div>
-
-                        {/* Konu Bölümleri ve Görev Tablosu */}
-                        {topicEntries.map(([topicKey, tasks]) => (
-                          <div key={topicKey}>
-                            {hasMultipleTopics && topicKey !== "__default__" && (
-                              <div style={{ padding: "3px 12px 1px 32px", fontSize: 9, fontWeight: 600, color: "#4338ca", display: "flex", alignItems: "center", gap: 4 }}>
-                                📂 {topicKey} <span style={{ fontSize: 8, color: "#818cf8", fontWeight: 500 }}>({tasks.length} görev)</span>
-                              </div>
-                            )}
-                            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
-                              <thead>
-                                <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
-                                  <th style={{ textAlign: "left", padding: "3px 8px 3px 32px", color: "#94a3b8", fontWeight: 500, fontSize: 8 }}>Görev</th>
-                                  <th style={{ textAlign: "center", padding: "3px 6px", color: "#94a3b8", fontWeight: 500, fontSize: 8, width: 55 }}>Durum</th>
-                                  <th style={{ textAlign: "center", padding: "3px 6px", color: "#94a3b8", fontWeight: 500, fontSize: 8, width: 35 }}>%</th>
-                                  <th style={{ textAlign: "center", padding: "3px 6px", color: "#94a3b8", fontWeight: 500, fontSize: 8, width: 55 }}>Soru</th>
-                                  <th style={{ textAlign: "center", padding: "3px 6px", color: "#94a3b8", fontWeight: 500, fontSize: 8, width: 55 }}>Sayfa</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {tasks.map(task => {
-                                  const cl = getCompletionLabel(task.completion_status);
-                                  return (
-                                    <tr key={task.id} style={{ borderBottom: "1px solid #f8fafc" }}>
-                                      <td style={{ padding: "4px 8px 4px 32px", color: "#1e293b", fontWeight: 500, fontSize: 9 }}>
-                                        {task.title}
-                                        {task.is_completion_task && <span style={{ fontSize: 8, color: "#2563eb", marginLeft: 4 }}>🔄 Eksik Tamamlama</span>}
-                                        {task.coach_evaluation_note && <div style={{ fontSize: 8, color: "#6d28d9", fontStyle: "italic", marginTop: 1 }}>💬 {task.coach_evaluation_note}</div>}
-                                      </td>
-                                      <td style={{ padding: "4px 6px", textAlign: "center" }}>
-                                        <span style={{ padding: "1px 6px", borderRadius: 8, fontSize: 8, fontWeight: 600, background: cl.bg, color: cl.color }}>{cl.label}</span>
-                                      </td>
-                                      <td style={{ padding: "4px 6px", textAlign: "center", fontWeight: 700, fontSize: 9, color: task.task_completion_percent >= 75 ? "#16a34a" : task.task_completion_percent >= 50 ? "#d97706" : "#dc2626" }}>
-                                        %{task.task_completion_percent}
-                                      </td>
-                                      <td style={{ padding: "4px 6px", textAlign: "center", color: "#64748b", fontSize: 9 }}>
-                                        {task.question_count ? <span><strong style={{ color: "#1e293b" }}>{task.completed_question_count ?? 0}</strong><span style={{ color: "#94a3b8" }}>/{task.question_count}</span></span> : <span style={{ color: "#cbd5e1" }}>—</span>}
-                                      </td>
-                                      <td style={{ padding: "4px 6px", textAlign: "center", color: "#64748b", fontSize: 9 }}>
-                                        {task.page_count ? <span><strong style={{ color: "#1e293b" }}>{task.completed_page_count ?? 0}</strong><span style={{ color: "#94a3b8" }}>/{task.page_count}</span></span> : <span style={{ color: "#cbd5e1" }}>—</span>}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* ═══ STATISTICS PANEL ═══ */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 8, marginTop: 12, marginBottom: 12,
-          }}>
-            {/* Durum Dağılımı */}
-            <div style={statCardStyle}>
-              <div style={statCardTitle}>📊 Durum Dağılımı</div>
-              {Object.entries(statusCounts).map(([k, v]) => {
-                const pct = Math.round((v.count / (allTasks.length || 1)) * 100);
-                return (
-                  <div key={k} style={{ marginBottom: 3 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, marginBottom: 1 }}>
-                      <span style={{ fontWeight: 600, color: v.color }}>{v.icon} {v.label}</span>
-                      <span style={{ color: "#6b7280" }}>{v.count} (%{pct})</span>
-                    </div>
-                    <div style={{ height: 3, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: v.color, borderRadius: 99 }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Soru / Sayfa Tamamlanma */}
-            <div style={statCardStyle}>
-              <div style={statCardTitle}>📈 Tamamlanma İstatistikleri</div>
-              {summary && summary.total_questions > 0 && (
-                <div style={{ marginBottom: 3 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, marginBottom: 1 }}>
-                    <span style={{ fontWeight: 600, color: "#2563eb" }}>✏️ Soru</span>
-                    <span style={{ color: "#6b7280" }}>{summary.completed_questions}/{summary.total_questions} (%{summary.question_completion_percent})</span>
-                  </div>
-                  <div style={{ height: 3, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-                    <div style={{ width: `${summary.question_completion_percent}%`, height: "100%", background: "#3b82f6", borderRadius: 99 }} />
-                  </div>
-                </div>
-              )}
-              {summary && summary.total_pages > 0 && (
-                <div style={{ marginBottom: 3 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, marginBottom: 1 }}>
-                    <span style={{ fontWeight: 600, color: "#7c3aed" }}>📄 Sayfa</span>
-                    <span style={{ color: "#6b7280" }}>{summary.completed_pages}/{summary.total_pages} (%{summary.page_completion_percent})</span>
-                  </div>
-                  <div style={{ height: 3, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-                    <div style={{ width: `${summary.page_completion_percent}%`, height: "100%", background: "#8b5cf6", borderRadius: 99 }} />
-                  </div>
-                </div>
-              )}
-              {summary && (
-                <div style={{ marginBottom: 3 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, marginBottom: 1 }}>
-                    <span style={{ fontWeight: 600, color: "#059669" }}>✅ Genel</span>
-                    <span style={{ color: "#6b7280" }}>{summary.done_tasks}/{summary.total_tasks} (%{overallPct})</span>
-                  </div>
-                  <div style={{ height: 3, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-                    <div style={{ width: `${overallPct}%`, height: "100%", background: "#10b981", borderRadius: 99 }} />
-                  </div>
-                </div>
-              )}
-              {(!summary || (summary.total_questions === 0 && summary.total_pages === 0)) && (
-                <div style={{ fontSize: 8, color: "#94a3b8", textAlign: "center", padding: 4 }}>Soru/Sayfa verisi yok</div>
-              )}
-            </div>
-
-            {/* Ders Dağılımı */}
-            <div style={statCardStyle}>
-              <div style={statCardTitle}>📚 Ders Dağılımı</div>
-              {Object.entries(lessonCounts).map(([name, count]) => {
-                const pct = Math.round((count / (allTasks.length || 1)) * 100);
-                return (
-                  <div key={name} style={{ marginBottom: 3 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, marginBottom: 1 }}>
-                      <span style={{ fontWeight: 600, color: "#0369a1" }}>📖 {name}</span>
-                      <span style={{ color: "#6b7280" }}>{count} (%{pct})</span>
-                    </div>
-                    <div style={{ height: 3, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: "#0ea5e9", borderRadius: 99 }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ═══ BOTTOM NOTICE ═══ */}
-          <div style={{
-            padding: "6px 12px", marginBottom: 8,
-            background: "#f0f7ff", borderRadius: 6, border: "1px solid #dbeafe",
-            fontSize: 8, color: "#1e40af", lineHeight: 1.6, textAlign: "center",
-          }}>
-            Bu ödev kontrol raporu{assignment.coach_name && <>, öğrenci maestro koçu <strong>{assignment.coach_name}</strong> tarafından</>} hazırlanmıştır. Öğrencinin gelişimi koçluk sürecinde takip edilmektedir.
-          </div>
-
-          {/* ═══ FOOTER ═══ */}
-          <div style={{
-            paddingTop: 6, borderTop: "2px solid #0061a6",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            fontSize: 7, color: "#8c98a4",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={footerLogoUrl} alt="3K" crossOrigin="anonymous" style={{ width: 10, height: 10, objectFit: "contain", opacity: 0.5 }} />
-              <span style={{ fontWeight: 600 }}>3K Kampüs Koçluk &amp; Danışmanlık Merkezi</span>
-            </div>
-            <span>© {currentYear} Tüm hakları saklıdır.</span>
-          </div>
-        </div>
-      </div>
-
-
-    </div>
-  );
-};

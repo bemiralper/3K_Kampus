@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   fetchAssignments,
+  fetchAssignmentsStats,
   assignAssignment,
+  type AssignmentListStats,
 } from "@/lib/resources-api";
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
 import {
@@ -44,18 +46,9 @@ interface Assignment {
   created_at: string;
 }
 
-interface Stats {
-  total: number;
-  draft: number;
-  assigned: number;
-  in_progress: number;
-  completed: number;
-  overdue: number;
-  at_risk: number;
-}
-
 type FilterStatus = "all" | "DRAFT" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
-type FilterRisk = "all" | "ON_TRACK" | "AT_RISK" | "BEHIND" | "PENDING_START";
+// Not: model RiskStatus'ta "BEHIND" değeri yok — gerçek değer "DELAYED" (bkz. models.py RiskStatus).
+type FilterRisk = "all" | "ON_TRACK" | "AT_RISK" | "DELAYED" | "PENDING_START" | "CRITICAL";
 
 const VALID_STATUS_FILTERS = new Set<string>([
   "all", "DRAFT", "ASSIGNED", "IN_PROGRESS", "COMPLETED", "OVERDUE",
@@ -99,70 +92,102 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
       ? (initialStatus as FilterStatus)
       : "all";
 
+  const PAGE_SIZE = 50;
+
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [stats, setStats] = useState<AssignmentListStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>(initialFilter);
   const [filterRisk, setFilterRisk] = useState<FilterRisk>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState<"created" | "due_date" | "progress" | "student">("created");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [toast, setToast] = useState<string | null>(null);
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
-  const loadAssignments = useCallback(async () => {
-    setLoading(true);
+  // Arama kutusu backend'e her tuş vuruşunda gitmesin — 350ms debounce
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const loadStats = useCallback(async () => {
     try {
-      const result = await fetchAssignments();
+      const result = await fetchAssignmentsStats();
+      if (result.success && result.data) setStats(result.data);
+    } catch {
+      /* çipler olmadan da liste çalışabilir */
+    }
+  }, []);
+
+  const requestSeq = useRef(0);
+
+  const loadAssignments = useCallback(async (targetPage: number, append: boolean) => {
+    const seq = ++requestSeq.current;
+    if (append) setLoadingMore(true); else setLoading(true);
+    try {
+      const result = await fetchAssignments({
+        status: filterStatus !== "all" ? filterStatus : undefined,
+        risk_status: filterRisk !== "all" ? filterRisk : undefined,
+        q: debouncedSearch || undefined,
+        page: targetPage,
+        page_size: PAGE_SIZE,
+      });
+      if (seq !== requestSeq.current) return; // eski istek — sonucu at
       if (result.success !== false) {
         const data = result.data || [];
         const list = (Array.isArray(data) ? data : []) as unknown as Assignment[];
-        setAssignments(list);
-        setStats({
-          total: list.length,
-          draft: list.filter((a) => a.status === "DRAFT").length,
-          assigned: list.filter((a) => a.status === "ASSIGNED").length,
-          in_progress: list.filter((a) => a.status === "IN_PROGRESS").length,
-          completed: list.filter((a) => a.status === "COMPLETED").length,
-          overdue: list.filter((a) => a.status === "OVERDUE" || assignmentIsOverdue(a)).length,
-          at_risk: list.filter((a) => a.risk_status === "AT_RISK").length,
-        });
+        setAssignments((prev) => (append ? [...prev, ...list] : list));
+        setHasMore(Boolean(result.next));
+        setPage(targetPage);
+      } else {
+        flash(result.error || "Ödevler yüklenemedi");
       }
     } catch (error) {
       console.error("Ödevler yüklenemedi:", error);
       flash("Ödevler yüklenemedi");
     }
-    setLoading(false);
-  }, []);
+    if (seq === requestSeq.current) {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [filterStatus, filterRisk, debouncedSearch]);
 
-  useEffect(() => { loadAssignments(); }, [loadAssignments]);
+  // Filtre/arama değişince baştan yükle
+  useEffect(() => {
+    loadAssignments(1, false);
+  }, [loadAssignments]);
+
+  useEffect(() => { loadStats(); }, [loadStats]);
+
+  const refreshAll = useCallback(() => {
+    loadAssignments(1, false);
+    loadStats();
+  }, [loadAssignments, loadStats]);
+
+  const loadMore = () => {
+    if (!hasMore || loadingMore) return;
+    loadAssignments(page + 1, true);
+  };
 
   const handleAssignDraft = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     try {
       const result = await assignAssignment(id);
-      if (result.success) { flash("Ödev atandı"); loadAssignments(); }
+      if (result.success) { flash("Ödev atandı"); refreshAll(); }
       else flash(result.error || "Atama başarısız");
     } catch { flash("Atama başarısız"); }
   };
 
   const goDetail = (id: number) => router.push(paths.detail(id));
 
-  const filteredAssignments = assignments.filter((a) => {
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      if (!`${a.student_name} ${a.title} ${a.coach_name || ""}`.toLowerCase().includes(q)) return false;
-    }
-    if (filterStatus !== "all") {
-      if (filterStatus === "OVERDUE") {
-        if (a.status !== "OVERDUE" && !assignmentIsOverdue(a)) return false;
-      } else if (a.status !== filterStatus) return false;
-    }
-    if (filterRisk !== "all" && a.risk_status !== filterRisk) return false;
-    return true;
-  });
-
-  const sortedAssignments = [...filteredAssignments].sort((a, b) => {
+  // Filtreleme (durum/risk/arama) backend'de yapılıyor — burada yalnızca
+  // o an ekranda yüklü sayfanın sıralaması yapılır.
+  const sortedAssignments = [...assignments].sort((a, b) => {
     const aDueToday = assignmentIsDueToday(a) ? 1 : 0;
     const bDueToday = assignmentIsDueToday(b) ? 1 : 0;
     if (aDueToday !== bDueToday) return bDueToday - aDueToday;
@@ -182,7 +207,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
     return sortOrder === "desc" ? -cmp : cmp;
   });
 
-  const dueTodayCount = filteredAssignments.filter((a) => assignmentIsDueToday(a)).length;
+  const dueTodayCount = assignments.filter((a) => assignmentIsDueToday(a)).length;
 
   const renderRowMeta = (a: Assignment) => {
     const overdue = assignmentIsOverdue(a);
@@ -274,7 +299,8 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
             <option value="all">Tüm risk</option>
             <option value="ON_TRACK">Yolunda</option>
             <option value="AT_RISK">Riskli</option>
-            <option value="BEHIND">Geride</option>
+            <option value="DELAYED">Gecikmiş</option>
+            <option value="CRITICAL">Kritik</option>
             <option value="PENDING_START">Başlamadı</option>
           </select>
         )}
@@ -298,7 +324,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
           <button
             type="button"
             className="ok-btn-clear"
-            onClick={() => { setFilterStatus("all"); setFilterRisk("all"); setSearchQuery(""); }}
+            onClick={() => { setFilterStatus("all"); setFilterRisk("all"); setSearchQuery(""); setDebouncedSearch(""); }}
           >
             Temizle
           </button>
@@ -318,7 +344,9 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         </div>
       ) : (
         <>
-          <div className="ok-list-meta">{sortedAssignments.length} kayıt</div>
+          <div className="ok-list-meta">
+            {sortedAssignments.length} kayıt yüklendi{hasMore ? " (daha fazlası var)" : ""}
+          </div>
 
           <div className="ok-list-mobile">
             {sortedAssignments.map((a) => {
@@ -452,6 +480,19 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
               })}
             </tbody>
           </table>
+
+          {hasMore && (
+            <div style={{ textAlign: "center", marginTop: 16 }}>
+              <button
+                type="button"
+                className="ok-btn-secondary"
+                onClick={loadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Yükleniyor..." : "Daha fazla göster"}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

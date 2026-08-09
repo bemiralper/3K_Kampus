@@ -66,9 +66,20 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
     ),
   },
   {
+    id: "odev-paketleri",
+    href: "/coach/odev/paketler",
+    label: "Ödev Paketleri",
+    matchPrefix: "/coach/odev/paketler",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+      </svg>
+    ),
+  },
+  {
     id: "kaynaklar",
     href: "/coach/odev/kaynaklar",
-    label: "Kaynak Kütüphanesi",
+    label: "Eğitim Kaynakları",
     matchPrefix: "/coach/odev/kaynaklar",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -79,7 +90,7 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
   {
     id: "kaynak-havuzu",
     href: "/coach/odev/kaynak-havuzu",
-    label: "Kaynak Havuzu",
+    label: "Kitap Atamaları",
     matchPrefix: "/coach/odev/kaynak-havuzu",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>

@@ -402,7 +402,6 @@ class AssignmentNotificationService:
         veli_ids: list[int] | None = None,
         include_student: bool = False,
         sent_by_user_id: int | None = None,
-        force_resend: bool = False,
         pdf_bytes: bytes | None = None,
         pdf_filename: str | None = None,
         orientation: str = 'portrait',

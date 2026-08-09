@@ -46,6 +46,7 @@ interface AssignmentTask {
   completed_question_count: number | null;
   completed_page_count: number | null;
   coach_evaluation_note: string;
+  student_feedback?: string | null;
   evaluated_at: string | null;
   is_completion_task: boolean;
   previous_task_completion_percent: number | null;
@@ -278,6 +279,14 @@ function ReportTaskRow({ task, topicName }: { task: AssignmentTask; topicName: s
             wordBreak: "break-word",
           }}>
             💬 {task.coach_evaluation_note}
+          </div>
+        )}
+        {task.student_feedback && (
+          <div style={{
+            fontSize: 9, color: "#0369a1", fontStyle: "italic", marginTop: 2, lineHeight: 1.2,
+            wordBreak: "break-word",
+          }}>
+            🗣️ Öğrenci: {task.student_feedback}
           </div>
         )}
       </div>

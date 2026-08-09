@@ -25,17 +25,29 @@ def priority_band(student_count: int, incomplete: bool) -> str:
     return 'dusuk'
 
 
+def _filter_value(request, key: str):
+    """Query param'dan oku; yoksa POST body'den (PDF export ekran filtrelerini
+    JSON body'de gönderiyor — query_params bunu göremez)."""
+    val = request.query_params.get(key)
+    if val:
+        return val
+    body = getattr(request, 'data', None)
+    if body:
+        val = body.get(key)
+        if val:
+            return val
+    return None
+
+
 def _parse_filters(request) -> dict[str, Any]:
-    qp = request.query_params
     return {
-        'ders_id': qp.get('ders') or None,
-        'sinif_id': qp.get('sinif_seviyesi') or None,
-        'publisher_id': qp.get('publisher') or None,
-        'coach_id': qp.get('coach') or None,
-        'icerik': qp.get('icerik') or None,  # tamam|eksik
-        'date_from': qp.get('date_from') or None,
-        'date_to': qp.get('date_to') or None,
-        'min_students': qp.get('min_students') or None,
+        'ders_id': _filter_value(request, 'ders'),
+        'sinif_id': _filter_value(request, 'sinif_seviyesi'),
+        'publisher_id': _filter_value(request, 'publisher'),
+        'coach_id': _filter_value(request, 'coach'),
+        'icerik': _filter_value(request, 'icerik'),  # tamam|eksik
+        'date_from': _filter_value(request, 'date_from'),
+        'date_to': _filter_value(request, 'date_to'),
     }
 
 
@@ -251,6 +263,7 @@ def usage_trend(request, months: int = 6) -> list[dict]:
         StudentResourceAssignment.objects.filter(
             resource_book_id__in=book_ids,
             assigned_at__gte=start,
+            is_active=True,
         )
         .annotate(month=TruncMonth('assigned_at'))
         .values('month')

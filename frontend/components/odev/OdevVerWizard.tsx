@@ -49,6 +49,12 @@ type PendingControlInfo = {
   studentName: string;
 };
 
+type ResourceGapInfo = {
+  studentId: number;
+  studentName: string;
+  missingBookNames: string[];
+};
+
 interface OdevVerWizardProps {
   variant?: OdevVerVariant;
 }
@@ -105,9 +111,12 @@ function mapPackageItemsToCart(items: AssignmentPackageItem[]): SelectedContent[
     contentId: item.content_id,
     contentName: item.content_name,
     contentType: item.content_type,
-    topicId: 0,
+    // Eski paketlerde (migrasyon öncesi) topic_id/unit_id boş olabilir — bu durumda
+    // 0 kullanılır, yani aynı kitaptaki farklı konular tek ders bloğunda toplanır.
+    // Yeni oluşturulan paketlerde gerçek id'ler saklandığı için doğru gruplanır.
+    topicId: item.topic_id ?? 0,
     topicName: item.topic_name || '',
-    unitId: 0,
+    unitId: item.unit_id ?? 0,
     unitName: item.unit_name || '',
     bookId: item.book_id,
     bookName: item.book_name,
@@ -177,6 +186,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   /* ─── Kontrolü tamamlanmamış ödev uyarısı ─── */
   const [pendingControls, setPendingControls] = useState<PendingControlInfo[]>([]);
 
+  /* ─── Çoklu öğrenci: sepet, birincil öğrencinin kaynak listesinden kuruluyor —
+     diğer öğrencilerde aynı kitap kayıtlı olmayabilir. Bunu uyar. ─── */
+  const [resourceGaps, setResourceGaps] = useState<ResourceGapInfo[]>([]);
+
   const kontrolBase = isCoach ? '/coach/odev/kontrol' : '/admin/odev/kontrol';
 
   const checkPendingControls = useCallback(async (studentIds: number[], nameById: Map<number, string>) => {
@@ -201,6 +214,60 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     );
     setPendingControls(found);
   }, []);
+
+  /**
+   * Çoklu öğrenci modunda sepet (kitap/içerik seçimi) sadece birincil öğrencinin
+   * kaynak listesinden kuruluyor. Diğer öğrencilere aynı sepet kopyalanacağı için,
+   * onlarda seçilen kitap(lar) kayıtlı değilse burada uyarı gösteriyoruz — ödev
+   * yine de atanabilir, ama koç/admin bilerek onaylasın.
+   */
+  const checkResourceGaps = useCallback(async (
+    otherStudents: Student[],
+    bookIds: number[],
+    bookNamesById: Map<number, string>,
+  ) => {
+    if (otherStudents.length === 0 || bookIds.length === 0) {
+      setResourceGaps([]);
+      return;
+    }
+    const gaps: ResourceGapInfo[] = [];
+    await Promise.all(
+      otherStudents.map(async (student) => {
+        try {
+          const detail = await fetchStudentResourceDetail(student.id);
+          const ownedBookIds = new Set<number>();
+          if (detail.success && detail.data?.lessons?.length) {
+            for (const lesson of detail.data.lessons) {
+              for (const r of lesson.resources || []) {
+                if (r.resource_book) ownedBookIds.add(r.resource_book);
+              }
+            }
+          }
+          const missing = bookIds.filter((id) => !ownedBookIds.has(id));
+          if (missing.length > 0) {
+            gaps.push({
+              studentId: student.id,
+              studentName: `${student.ad} ${student.soyad}`.trim(),
+              missingBookNames: missing.map((id) => bookNamesById.get(id) || `#${id}`),
+            });
+          }
+        } catch { /* sessiz — uyarı olmadan da atama akışı çalışsın */ }
+      }),
+    );
+    setResourceGaps(gaps);
+  }, []);
+
+  useEffect(() => {
+    if (!multiSelect || selectedStudents.length < 2 || cart.length === 0) {
+      setResourceGaps([]);
+      return;
+    }
+    const primaryId = selectedStudent?.id ?? selectedStudents[0].id;
+    const otherStudents = selectedStudents.filter((s) => s.id !== primaryId);
+    const bookIds = Array.from(new Set(cart.map((c) => c.bookId)));
+    const bookNamesById = new Map(cart.map((c) => [c.bookId, c.bookName]));
+    void checkResourceGaps(otherStudents, bookIds, bookNamesById);
+  }, [multiSelect, selectedStudents, cart, selectedStudent, checkResourceGaps]);
 
   /* ─── URL query param ile öğrenci / paket oto-seçimi ─── */
   const searchParams = useSearchParams();
@@ -690,6 +757,17 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       const hasCompletion = cart.some((c) => isIncompleteHistory(taskHistory[c.contentId]));
       const finalTitle = withCompletionTitleSuffix(title || generateWeeklyTitle(), hasCompletion);
 
+      // Kaynak havuzu ↔ ödev izlenebilirliği: sepet tek bir kitaptan oluşuyorsa
+      // (çoğunlukla haftalık ödev senaryosu) ve tekli öğrenci seçiliyse, bu
+      // öğrencinin o kitaba ait StudentResourceAssignment kaydını bağla.
+      // Toplu (çoklu öğrenci) atamada her öğrencinin kendi kaynak kaydı farklı
+      // olacağından — ve burada yalnızca "birincil" öğrencinin kaynakları
+      // yüklendiğinden — yanlış eşleştirme riski nedeniyle bağlanmıyor.
+      const distinctBookIds = Array.from(new Set(cart.map((c) => c.bookId)));
+      const sourceAssignmentId = (targetStudents.length === 1 && distinctBookIds.length === 1)
+        ? (resources.find((r) => r.resource_book === distinctBookIds[0])?.id ?? null)
+        : null;
+
       let successCount = 0;
       let failCount = 0;
       let lastCreatedId: number | null = null;
@@ -704,6 +782,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           status: backendStatus,
           lessons,
           ...(packageTemplateId ? { template_id: packageTemplateId } : {}),
+          ...(sourceAssignmentId ? { source_assignment: sourceAssignmentId } : {}),
         };
         try {
           const result = await createAssignment(body);
@@ -1014,6 +1093,46 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
                   >
                     Ödev kontrolüne git
                   </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {resourceGaps.length > 0 && (
+          <div
+            role="status"
+            style={{
+              marginBottom: 16,
+              padding: '14px 16px',
+              borderRadius: 12,
+              border: '1.5px solid #93c5fd',
+              background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1e40af', marginBottom: 6 }}>
+              Bazı öğrencilerin kaynak listesinde bu kitap yok
+            </div>
+            <p style={{ margin: '0 0 10px', fontSize: 13, color: '#1e3a8a', lineHeight: 1.45 }}>
+              Sepet, birincil öğrencinin kaynaklarına göre kuruldu. Aşağıdaki öğrenciler bu
+              kitab(ı/ları) kaynak planlarında bulundurmuyor — ödev yine de atanabilir, ancak
+              takip için doğru kitap/öğrenci eşleşmesini kontrol edin.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {resourceGaps.map((g) => (
+                <div
+                  key={g.studentId}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    background: '#fff',
+                    border: '1px solid #bfdbfe',
+                    fontSize: 13,
+                    color: '#1e3a8a',
+                  }}
+                >
+                  <strong>{g.studentName}</strong>
+                  {': '}
+                  {g.missingBookNames.join(', ')} kayıtlı değil
                 </div>
               ))}
             </div>

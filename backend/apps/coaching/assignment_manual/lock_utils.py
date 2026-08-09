@@ -19,10 +19,23 @@ def assignment_due_local_date(assignment) -> date | None:
     return assignment.due_date.date()
 
 
-def assignment_has_control_evaluation(assignment) -> bool:
-    """En az bir görev değerlendirilmiş veya ödev getirilmedi işaretlenmiş."""
+def assignment_has_control_evaluation(assignment, *, use_prefetch: bool = False) -> bool:
+    """
+    En az bir görev değerlendirilmiş veya ödev getirilmedi işaretlenmiş.
+
+    `use_prefetch=True` — çağıran taraf `lessons`/`lessons__tasks` ilişkilerini
+    zaten `prefetch_related` ile yüklediyse (örn. liste serializer'ı), bellekteki
+    prefetch cache üzerinden hesaplar ve ek bir DB sorgusu yapmaz (N+1 önlenir).
+    Varsayılan `False` — tek kayıt (detay/aksiyon) senaryolarında güvenli DB sorgusu.
+    """
     if assignment.non_submission_reason:
         return True
+    if use_prefetch:
+        return any(
+            task.completion_status != AssignmentTask.CompletionStatus.PENDING
+            for lesson in assignment.lessons.all()
+            for task in lesson.tasks.all()
+        )
     return AssignmentTask.objects.filter(
         lesson_block__assignment=assignment,
     ).exclude(
@@ -30,12 +43,12 @@ def assignment_has_control_evaluation(assignment) -> bool:
     ).exists()
 
 
-def is_assignment_control_locked(assignment) -> bool:
+def is_assignment_control_locked(assignment, *, use_prefetch: bool = False) -> bool:
     """
     Ödev kontrolü yapılmış ve kontrol günü (due_date) takvim günü olarak bitmişse kilitli.
     Aynı gün içinde düzenlemeye izin verilir; ertesi günden itibaren kilitlenir.
     """
-    if not assignment_has_control_evaluation(assignment):
+    if not assignment_has_control_evaluation(assignment, use_prefetch=use_prefetch):
         return False
     due = assignment_due_local_date(assignment)
     if not due:

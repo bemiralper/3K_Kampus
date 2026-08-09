@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   bulkArchiveBooks,
   downloadAnalyticsPdf,
@@ -23,13 +24,24 @@ import {
   fetchAnalyticsTopBooks,
   fetchAnalyticsUsageRate,
   fetchAnalyticsUsageTrend,
+  fetchDersler,
   fetchPublishers,
+  fetchSinifSeviyeleri,
+  type Ders,
   type ResourcePublisher,
+  type SinifSeviyesi,
 } from "@/lib/resources-api";
 import { notifyResourcesChanged } from "@/lib/resources-events";
 import SortableTable from "./SortableTable";
 
-type Filters = { publisher?: string; icerik?: string };
+type Filters = {
+  publisher?: string;
+  icerik?: string;
+  ders?: string;
+  sinif_seviyesi?: string;
+  date_from?: string;
+  date_to?: string;
+};
 
 type InnerTab = {
   id: string;
@@ -71,6 +83,8 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
   const [growth, setGrowth] = useState<any[]>([]);
   const [churn, setChurn] = useState<any[]>([]);
   const [pubOptions, setPubOptions] = useState<ResourcePublisher[]>([]);
+  const [dersOptions, setDersOptions] = useState<Ders[]>([]);
+  const [sinifOptions, setSinifOptions] = useState<SinifSeviyesi[]>([]);
   const [searchQ, setSearchQ] = useState("");
   const [searchResult, setSearchResult] = useState<any>(null);
   const [studentDrawer, setStudentDrawer] = useState<{
@@ -92,6 +106,10 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
   const fp = {
     publisher: filters.publisher,
     icerik: filters.icerik,
+    ders: filters.ders,
+    sinif_seviyesi: filters.sinif_seviyesi,
+    date_from: filters.date_from,
+    date_to: filters.date_to,
   };
 
   const load = useCallback(async () => {
@@ -135,7 +153,7 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
     setGrowth(Array.isArray(gr.data) ? gr.data : []);
     setChurn(Array.isArray(ch.data) ? ch.data : []);
     setLoading(false);
-  }, [filters.publisher, filters.icerik, topMetric, idleDays]);
+  }, [filters.publisher, filters.icerik, filters.ders, filters.sinif_seviyesi, filters.date_from, filters.date_to, topMetric, idleDays]);
 
   useEffect(() => {
     load();
@@ -146,6 +164,8 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
       const data = Array.isArray(r.data) ? r.data : (r.data as any)?.results || [];
       setPubOptions(data);
     });
+    fetchDersler().then((r) => setDersOptions(Array.isArray(r.data) ? r.data : []));
+    fetchSinifSeviyeleri().then((r) => setSinifOptions(Array.isArray(r.data) ? r.data : []));
   }, [refreshKey]);
 
   const openStudents = async (bookId: number, ad: string) => {
@@ -244,6 +264,52 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
           <option value="tamam">Tamam</option>
           <option value="eksik">Eksik</option>
         </select>
+        <select
+          className="kk-select"
+          value={filters.ders || ""}
+          onChange={(e) => setFilters({ ...filters, ders: e.target.value || undefined })}
+        >
+          <option value="">Tüm dersler</option>
+          {dersOptions.map((d) => (
+            <option key={d.id} value={d.id}>{d.ad}</option>
+          ))}
+        </select>
+        <select
+          className="kk-select"
+          value={filters.sinif_seviyesi || ""}
+          onChange={(e) => setFilters({ ...filters, sinif_seviyesi: e.target.value || undefined })}
+        >
+          <option value="">Tüm sınıflar</option>
+          {sinifOptions.map((s) => (
+            <option key={s.id} value={s.id}>{s.ad}</option>
+          ))}
+        </select>
+        <input
+          type="date"
+          className="kk-input"
+          title="Başlangıç tarihi (havuza ekleme)"
+          value={filters.date_from || ""}
+          onChange={(e) => setFilters({ ...filters, date_from: e.target.value || undefined })}
+          style={{ width: 140 }}
+        />
+        <input
+          type="date"
+          className="kk-input"
+          title="Bitiş tarihi (havuza ekleme)"
+          value={filters.date_to || ""}
+          onChange={(e) => setFilters({ ...filters, date_to: e.target.value || undefined })}
+          style={{ width: 140 }}
+        />
+        {(filters.ders || filters.sinif_seviyesi || filters.date_from || filters.date_to || filters.publisher || filters.icerik) && (
+          <button
+            type="button"
+            className="kk-btn"
+            style={{ background: "#fee2e2", color: "#dc2626" }}
+            onClick={() => setFilters({})}
+          >
+            Filtreleri Temizle
+          </button>
+        )}
         <button type="button" className="kk-btn kk-btn-on-light" onClick={load} disabled={loading}>
           Yenile
         </button>
@@ -747,7 +813,14 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
                         key: "ad",
                         label: "Öğrenci",
                         type: "text",
-                        render: (s) => `${s.ad || ""} ${s.soyad || ""}`.trim() || "—",
+                        render: (s) => (
+                          <Link
+                            href={`/admin/odev/kaynak-havuzu/${s.student_id}`}
+                            style={{ color: "#0061a6", fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 2 }}
+                          >
+                            {`${s.ad || ""} ${s.soyad || ""}`.trim() || "—"}
+                          </Link>
+                        ),
                       },
                       {
                         key: "assigned_at",

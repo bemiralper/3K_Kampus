@@ -3,6 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.coaching.assignment_manual.models import AssignmentPackage, AssignmentPackageItem
+from apps.kurum.domain.models import Kurum
 
 User = get_user_model()
 
@@ -41,7 +42,9 @@ class AssignmentPackageAPITest(TestCase):
                     'content_id': 10,
                     'content_name': 'Test 1',
                     'content_type': 'TEST',
+                    'topic_id': 301,
                     'topic_name': 'Trigonometri',
+                    'unit_id': 30,
                     'unit_name': 'Ünite 3',
                     'question_count': 20,
                     'page_start': 45,
@@ -54,7 +57,9 @@ class AssignmentPackageAPITest(TestCase):
                     'content_id': 11,
                     'content_name': 'Test 2',
                     'content_type': 'TEST',
+                    'topic_id': 401,
                     'topic_name': 'Logaritma',
+                    'unit_id': 40,
                     'unit_name': 'Ünite 4',
                     'question_count': 15,
                     'page_start': 60,
@@ -78,6 +83,18 @@ class AssignmentPackageAPITest(TestCase):
         package = AssignmentPackage.objects.get(pk=data['id'])
         self.assertEqual(package.items.count(), 2)
         self.assertEqual(package.created_by, self.creator)
+
+        # topic_id/unit_id kalıcı olarak saklanmalı — Ödev Ver sepeti bunlarla
+        # doğru şekilde ünite/konu bazında gruplama yapabilsin.
+        item1 = package.items.get(content_id=10)
+        self.assertEqual(item1.topic_id, 301)
+        self.assertEqual(item1.unit_id, 30)
+        item2 = package.items.get(content_id=11)
+        self.assertEqual(item2.topic_id, 401)
+        self.assertEqual(item2.unit_id, 40)
+        for item in data['items']:
+            self.assertIn('topic_id', item)
+            self.assertIn('unit_id', item)
 
     def test_list_scoped_to_creator(self):
         own = AssignmentPackage.objects.create(
@@ -160,3 +177,44 @@ class AssignmentPackageAPITest(TestCase):
         self.assertEqual(len(copy_data['items']), 1)
         self.assertEqual(copy_data['items'][0]['content_name'], 'Paragraf Testi')
         self.assertEqual(copy_data['created_by'], self.creator.id)
+
+    def test_create_package_scopes_to_selected_kurum(self):
+        kurum = Kurum.objects.create(ad='Paket Kurum A', kod='PKA')
+        self.client.force_authenticate(user=self.creator)
+        self.client.defaults['HTTP_X_KURUM_ID'] = str(kurum.id)
+
+        response = self.client.post(PACKAGES_URL, self.sample_payload, format='json')
+        self.assertEqual(response.status_code, 201)
+
+        package = AssignmentPackage.objects.get(pk=response.data['data']['id'])
+        self.assertEqual(package.kurum_id, kurum.id)
+
+    def test_staff_cannot_see_other_kurum_packages(self):
+        kurum_a = Kurum.objects.create(ad='Paket Kurum A', kod='PKA2')
+        kurum_b = Kurum.objects.create(ad='Paket Kurum B', kod='PKB2')
+
+        pkg_a = AssignmentPackage.objects.create(
+            name='A Kurumu Paketi', ders_ad='Matematik', created_by=self.creator, kurum_id=kurum_a.id,
+        )
+        pkg_b = AssignmentPackage.objects.create(
+            name='B Kurumu Paketi', ders_ad='Fizik', created_by=self.other, kurum_id=kurum_b.id,
+        )
+        # kurum_id atanmadan (eski veri) oluşturulmuş bir paket her kurumdan görünür kalmalı
+        legacy_pkg = AssignmentPackage.objects.create(
+            name='Eski Paket (kurum yok)', ders_ad='Kimya', created_by=self.other,
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        self.client.defaults['HTTP_X_KURUM_ID'] = str(kurum_a.id)
+        response = self.client.get(PACKAGES_URL)
+
+        ids = {item['id'] for item in response.data}
+        self.assertIn(pkg_a.id, ids)
+        self.assertIn(legacy_pkg.id, ids)
+        self.assertNotIn(pkg_b.id, ids)
+
+        self.client.defaults['HTTP_X_KURUM_ID'] = str(kurum_b.id)
+        response_b = self.client.get(PACKAGES_URL)
+        ids_b = {item['id'] for item in response_b.data}
+        self.assertIn(pkg_b.id, ids_b)
+        self.assertNotIn(pkg_a.id, ids_b)

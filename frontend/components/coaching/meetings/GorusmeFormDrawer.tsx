@@ -6,6 +6,10 @@ import { gorusmeService } from '@/app/admin/coaching/meetings/services/gorusme-a
 import KutuphaneConfirmModal from '@/components/kutuphane/KutuphaneConfirmModal';
 import CoachActionSheet from '@/components/coach/CoachActionSheet';
 import {
+  fetchStudentAssignmentStats,
+  type StudentAssignmentStats,
+} from '@/lib/resources-api';
+import {
   type GorusmeCreatePayload,
   type KullaniciBilgi,
   GORUSME_TURLERI,
@@ -134,6 +138,47 @@ function ScoreSelector({
   );
 }
 
+/** Görüşme formunda öğrencinin ödev durumuna hızlı bağlam — koç notlarını yazarken yardımcı olur. */
+function OdevOzetStrip({ stats, coachMode }: { stats: StudentAssignmentStats | null; coachMode?: boolean }) {
+  if (!stats || stats.total === 0) return null;
+  const chips: { label: string; value: number; tone: string }[] = [
+    { label: 'Bekleyen', value: stats.assigned + stats.in_progress, tone: '#0369a1' },
+    { label: 'Geciken', value: stats.overdue, tone: '#dc2626' },
+    { label: 'Tamamlanan', value: stats.completed, tone: '#059669' },
+  ];
+  if (stats.at_risk > 0) chips.push({ label: 'Riskli', value: stats.at_risk, tone: '#d97706' });
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+        padding: coachMode ? '8px 0 4px' : '10px 14px',
+        marginBottom: coachMode ? 0 : 4,
+        background: coachMode ? 'transparent' : '#f8fafc',
+        borderRadius: coachMode ? 0 : 12,
+        border: coachMode ? 'none' : '1px solid #e2e8f0',
+      }}
+    >
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+        📚 Ödev durumu
+      </span>
+      {chips.map((c) => (
+        <span
+          key={c.label}
+          style={{
+            fontSize: 12, fontWeight: 600, color: c.tone,
+            background: `${c.tone}14`, padding: '3px 9px', borderRadius: 8,
+          }}
+        >
+          {c.label}: {c.value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export interface GorusmeFormDrawerProps {
   mode: 'admin' | 'coach';
   initialStudentId?: number;
@@ -172,6 +217,7 @@ export default function GorusmeFormDrawer({
 
   const [newAksiyon, setNewAksiyon] = useState({ aciklama: '', sorumlu: 'ogrenci', deadline: '' });
   const [newHatirlatma, setNewHatirlatma] = useState({ mesaj: '', hatirlatma_tarihi: '', tip: 'genel' });
+  const [odevStats, setOdevStats] = useState<StudentAssignmentStats | null>(null);
 
   const formInitialRef = useRef<string>('');
 
@@ -288,6 +334,19 @@ export default function GorusmeFormDrawer({
     setFormErrors({});
     setError('');
   }, [open, editId, kurumId, lockedStudentId, lockedCoachId, isCoachOnly, kullaniciBilgi]);
+
+  useEffect(() => {
+    const sid = form.ogrenci_id;
+    if (!open || !sid) {
+      setOdevStats(null);
+      return;
+    }
+    let cancelled = false;
+    fetchStudentAssignmentStats(sid).then((res) => {
+      if (!cancelled && res.success && res.data) setOdevStats(res.data);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [open, form.ogrenci_id]);
 
   const addEtiket = (tag: string) => {
     const t = tag.toLowerCase().trim();
@@ -483,6 +542,8 @@ export default function GorusmeFormDrawer({
         />
         <span>Veliye WhatsApp hatırlatması gönder</span>
       </label>
+
+      <OdevOzetStrip stats={odevStats} coachMode />
 
       <div className="coach-form-row">
         <div className="coach-form-field">
@@ -746,6 +807,8 @@ export default function GorusmeFormDrawer({
           </div>
         </div>
       )}
+
+      <OdevOzetStrip stats={odevStats} />
 
       <div className="grid grid-cols-3 gap-4">
         <div>

@@ -312,6 +312,7 @@ export interface ManualAssignment {
   completed_tasks: number;
   progress_percent: number;
   is_control_locked?: boolean;
+  has_been_notified?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -323,7 +324,11 @@ export interface AssignmentPackageItem {
   content_id: number;
   content_name: string;
   content_type: string;
+  /** Kitap yapısındaki konu ID — Ödev Ver sepetine doğru gruplama için gerekli. */
+  topic_id?: number | null;
   topic_name: string;
+  /** Kitap yapısındaki ünite ID — Ödev Ver sepetine doğru gruplama için gerekli. */
+  unit_id?: number | null;
   unit_name: string;
   question_count: number | null;
   page_start: number | null;
@@ -1244,8 +1249,11 @@ export async function bulkAssignResources(data: {
   ownership_type?: string;
   due_date?: string | null;
   notes?: string;
-}): Promise<ApiResponse<{ assigned_count: number }>> {
-  return apiPost<{ assigned_count: number }>('/api/student-resources/assignments/bulk_assign/', data);
+}): Promise<ApiResponse<{ created: number; skipped: number; errors: string[] }>> {
+  return apiPost<{ created: number; skipped: number; errors: string[] }>(
+    '/api/student-resources/assignments/bulk_assign/',
+    data,
+  );
 }
 
 /**
@@ -1345,23 +1353,54 @@ export async function incrementPackageUsage(id: number): Promise<ApiResponse<Ass
 /**
  * Ödev listesini getir
  */
+export interface FetchAssignmentsResult extends ApiResponse<ManualAssignment[]> {
+  count?: number;
+  next?: string | null;
+  previous?: string | null;
+}
+
 export async function fetchAssignments(params?: {
   student_id?: number;
   coach_id?: number;
   status?: string;
   risk_status?: string;
-}): Promise<ApiResponse<ManualAssignment[]>> {
+  /** Öğrenci/ödev/koç adında arama (backend `icontains`) */
+  q?: string;
+  /** Verilirse backend sayfalama devreye girer (yoksa tüm liste döner) */
+  page?: number;
+  page_size?: number;
+}): Promise<FetchAssignmentsResult> {
   const searchParams = new URLSearchParams();
   if (params?.student_id) searchParams.append('student_id', String(params.student_id));
   if (params?.coach_id) searchParams.append('coach_id', String(params.coach_id));
   if (params?.status) searchParams.append('status', params.status);
   if (params?.risk_status) searchParams.append('risk_status', params.risk_status);
+  if (params?.q) searchParams.append('q', params.q);
+  if (params?.page) searchParams.append('page', String(params.page));
+  if (params?.page_size) searchParams.append('page_size', String(params.page_size));
 
   const qs = searchParams.toString();
   const path = qs
     ? `/api/coaching/manual-assignments/assignments/?${qs}`
     : '/api/coaching/manual-assignments/assignments/';
-  return apiGet<ManualAssignment[]>(path);
+  return apiGet<ManualAssignment[]>(path) as Promise<FetchAssignmentsResult>;
+}
+
+export interface AssignmentListStats {
+  total: number;
+  draft: number;
+  assigned: number;
+  in_progress: number;
+  completed: number;
+  overdue: number;
+  at_risk: number;
+}
+
+/**
+ * Ödev Kontrol liste sayfası üst filtre çipleri — aktif filtreden bağımsız toplamlar.
+ */
+export async function fetchAssignmentsStats(): Promise<ApiResponse<AssignmentListStats>> {
+  return apiGet<AssignmentListStats>('/api/coaching/manual-assignments/assignments/stats/');
 }
 
 export interface KontrolBadgeData {
@@ -1447,10 +1486,47 @@ export async function fetchDeletedAssignments(): Promise<ApiResponse<DeletedAssi
 }
 
 /**
+ * Yanlışlıkla silinen ödevi geri yükle (yalnızca admin)
+ */
+export async function restoreAssignment(id: number): Promise<ApiResponse<ManualAssignment>> {
+  return apiPost<ManualAssignment>(
+    `/api/coaching/manual-assignments/assignments/${id}/restore/`,
+    {}
+  );
+}
+
+/**
  * Öğrenciye ait ödevleri getir
  */
 export async function fetchStudentAssignments(studentId: number): Promise<ApiResponse<ManualAssignment[]>> {
   return apiGet<ManualAssignment[]>(`/api/coaching/manual-assignments/assignments/student_assignments/?student_id=${studentId}`);
+}
+
+export interface StudentAssignmentStats {
+  total: number;
+  draft: number;
+  assigned: number;
+  in_progress: number;
+  completed: number;
+  overdue: number;
+  at_risk: number;
+}
+
+/**
+ * Öğrencinin ödev özet istatistikleri (görüşme/plan ekranlarında hızlı bağlam için).
+ */
+export async function fetchStudentAssignmentStats(
+  studentId: number
+): Promise<ApiResponse<StudentAssignmentStats>> {
+  const res = await fetchStudentAssignments(studentId);
+  if (!res.success) return { ...res, data: undefined };
+  const stats = (res as unknown as { stats?: StudentAssignmentStats }).stats;
+  return {
+    success: true,
+    data: stats || {
+      total: 0, draft: 0, assigned: 0, in_progress: 0, completed: 0, overdue: 0, at_risk: 0,
+    },
+  };
 }
 
 /**
@@ -1912,7 +1988,6 @@ export async function sendAssignmentNotify(
     notify_type: AssignmentNotifyType;
     veli_ids?: number[];
     include_student?: boolean;
-    force_resend?: boolean;
     /** Ekrandaki rapor/plan HTML'i — sunucuda vektörel PDF'e çevrilir (legacy) */
     report_html?: string;
     /** Hazır PDF — ödev planı için */
@@ -1944,7 +2019,6 @@ export async function sendAssignmentNotify(
       notify_type: payload.notify_type,
       veli_ids: payload.veli_ids,
       include_student: payload.include_student,
-      force_resend: payload.force_resend ?? true,
       report_html: payload.report_html,
       orientation: payload.orientation,
     },

@@ -58,9 +58,9 @@ function HubInner() {
       <div className="kk-hero">
         <div className="kk-hero-inner">
           <div>
-            <h1>Kaynak Yönetimi</h1>
+            <h1>Kaynak Analizleri</h1>
             <p style={{ margin: "6px 0 0", opacity: 0.9 }}>
-              Analizler, yayınevleri ve toplu eşleştirme
+              Kullanım analizleri, yayınevi kataloğu ve toplu eşleştirme
             </p>
           </div>
         </div>

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { fetchDeletedAssignments, type DeletedAssignmentRow } from "@/lib/resources-api";
+import { fetchDeletedAssignments, restoreAssignment, type DeletedAssignmentRow } from "@/lib/resources-api";
+
 const formatDatetime = (d: string | null) => {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("tr-TR", {
@@ -18,6 +19,9 @@ export default function OdevKontrolDeletedListClient() {
   const [rows, setRows] = useState<DeletedAssignmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,8 +44,26 @@ export default function OdevKontrolDeletedListClient() {
     load();
   }, [load]);
 
+  const handleRestore = async (row: DeletedAssignmentRow) => {
+    if (!confirm(`"${row.title}" (${row.student_name}) ödevini geri yüklemek istediğinize emin misiniz?`)) return;
+    setRestoringId(row.id);
+    try {
+      const result = await restoreAssignment(row.id);
+      if (result.success) {
+        flash("✅ Ödev geri yüklendi");
+        setRows((prev) => prev.filter((r) => r.id !== row.id));
+      } else {
+        flash("❌ " + (result.error || "Geri yükleme başarısız"));
+      }
+    } catch {
+      flash("❌ Geri yükleme başarısız");
+    }
+    setRestoringId(null);
+  };
+
   return (
     <div className="ok-root">
+      {toast && <div className="ok-toast">{toast}</div>}
       <header className="ok-page-header">
         <div className="ok-page-header-text">
           <h1>Silinen Ödevler</h1>
@@ -80,6 +102,7 @@ export default function OdevKontrolDeletedListClient() {
                 <th>Silen</th>
                 <th>Silinme</th>
                 <th>Sebep</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -91,6 +114,17 @@ export default function OdevKontrolDeletedListClient() {
                   <td>{row.deleted_by_name || "—"}</td>
                   <td>{formatDatetime(row.deleted_at)}</td>
                   <td className="reason-cell">{row.deletion_reason}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="ok-btn-secondary"
+                      style={{ padding: "6px 12px", fontSize: 12 }}
+                      disabled={restoringId === row.id}
+                      onClick={() => handleRestore(row)}
+                    >
+                      {restoringId === row.id ? "Geri yükleniyor..." : "↩️ Geri Al"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

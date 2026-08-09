@@ -22,8 +22,9 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/profil/istatistikler": "İstatistiklerim",
   "/coach/odev/kontrol": "Ödev Kontrol",
   "/coach/odev/ver": "Ödev Oluştur",
-  "/coach/odev/kaynaklar": "Kaynak Kütüphanesi",
-  "/coach/odev/kaynak-havuzu": "Kaynak Havuzu",
+  "/coach/odev/paketler": "Ödev Paketleri",
+  "/coach/odev/kaynaklar": "Eğitim Kaynakları",
+  "/coach/odev/kaynak-havuzu": "Kitap Atamaları",
   "/coach/kutuphane": "Kütüphane",
   "/coach/gorusmeler": "Görüşmeler",
   "/coach/gorevler": "Görevler",
@@ -37,9 +38,9 @@ function resolvePageTitle(pathname: string): string {
   if (pathname.startsWith("/coach/ogrenciler/")) return "Öğrenci Profili";
   if (pathname.startsWith("/coach/odev/kontrol/") && pathname.endsWith("/rapor")) return "Ödev Sonuç Raporu";
   if (pathname.startsWith("/coach/odev/kontrol/")) return "Ödev Detayı";
-  if (pathname.startsWith("/coach/odev/kaynak-havuzu/")) return "Kaynak Havuzu · Öğrenci";
-  if (pathname.startsWith("/coach/odev/kaynak-havuzu")) return "Kaynak Havuzu";
-  if (pathname.startsWith("/coach/odev/kaynaklar")) return "Kaynak Kütüphanesi";
+  if (pathname.startsWith("/coach/odev/kaynak-havuzu/")) return "Kitap Atamaları · Öğrenci";
+  if (pathname.startsWith("/coach/odev/kaynak-havuzu")) return "Kitap Atamaları";
+  if (pathname.startsWith("/coach/odev/kaynaklar")) return "Eğitim Kaynakları";
   if (pathname.startsWith("/coach/kutuphane/")) {
     if (pathname.includes("/atamalar")) return "Kütüphane · Öğrenci Atamaları";
     if (pathname.includes("/salonlar")) return "Kütüphane · Salonlar";

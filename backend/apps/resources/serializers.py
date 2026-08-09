@@ -2,6 +2,8 @@
 Resources Serializers
 DRF Serializers for Book-based Content Library
 """
+import re
+
 from rest_framework import serializers
 from apps.egitim_tanimlari.models import SinifSeviyesi
 from .models import (
@@ -78,9 +80,22 @@ class ResourcePublisherSerializer(serializers.ModelSerializer):
             return ''
 
     def validate_ad(self, value):
-        ad = (value or '').strip()
+        ad = re.sub(r'\s+', ' ', (value or '').strip())
         if not ad:
             raise serializers.ValidationError('Yayınevi adı zorunludur.')
+        request = self.context.get('request')
+        kurum_id = get_request_kurum_id(request) if request else None
+        if kurum_id:
+            qs = ResourcePublisher.objects.filter(kurum_id=kurum_id, ad__iexact=ad)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            existing = qs.first()
+            if existing:
+                raise serializers.ValidationError(
+                    f'"{existing.ad}" adıyla bu kurumda zaten bir yayınevi var '
+                    '(büyük/küçük harf farkı sayılmaz). Aynı yayınevini tekrar oluşturmak yerine '
+                    'mevcut kaydı kullanın.'
+                )
         return ad
 
     def create(self, validated_data):

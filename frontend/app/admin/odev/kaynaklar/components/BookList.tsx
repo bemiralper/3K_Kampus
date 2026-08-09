@@ -1,6 +1,6 @@
 // ========== Book List Panel ==========
 "use client";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { BookCover } from "@/components/resources/BookCover";
 import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
 import type { ResourceBook } from "../types";
@@ -14,7 +14,19 @@ interface BookListProps {
   getBookTypeBadgeClass: (renk?: string) => string;
 }
 
+const PAGE_SIZE = 30;
+
 export function BookList({ filteredBooks, selectedBook, loading, onSelectBook, getBookTypeBadgeClass }: BookListProps) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filteredBooks.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredBooks.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedBooks = filteredBooks.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   return (
     <div className="kk-panel">
       <div className="kk-panel-header">
@@ -30,7 +42,7 @@ export function BookList({ filteredBooks, selectedBook, loading, onSelectBook, g
         </div>
       ) : (
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {filteredBooks.map((book) => (
+          {pagedBooks.map((book) => (
             <div
               key={book.id}
               className={`kk-book-item${selectedBook?.id === book.id ? " is-selected" : ""}`}
@@ -63,6 +75,53 @@ export function BookList({ filteredBooks, selectedBook, loading, onSelectBook, g
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {!loading && totalPages > 1 && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          padding: "10px 8px",
+          borderTop: "1px solid #eef2f7",
+        }}>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage <= 1}
+            style={{
+              padding: "4px 10px",
+              border: "1px solid #e2e8f0",
+              borderRadius: 6,
+              background: currentPage <= 1 ? "#f8fafc" : "white",
+              color: currentPage <= 1 ? "#cbd5e1" : "#334155",
+              cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+              fontSize: 12,
+            }}
+          >
+            ‹
+          </button>
+          <span style={{ fontSize: 12, color: "#64748b" }}>
+            {currentPage} / {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage >= totalPages}
+            style={{
+              padding: "4px 10px",
+              border: "1px solid #e2e8f0",
+              borderRadius: 6,
+              background: currentPage >= totalPages ? "#f8fafc" : "white",
+              color: currentPage >= totalPages ? "#cbd5e1" : "#334155",
+              cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+              fontSize: 12,
+            }}
+          >
+            ›
+          </button>
         </div>
       )}
     </div>

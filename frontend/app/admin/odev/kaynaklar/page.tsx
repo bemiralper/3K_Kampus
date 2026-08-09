@@ -50,7 +50,7 @@ export default function KaynaklarPage() {
 
         <div className="kk-hero-inner">
           <div>
-            <h1>Kaynak Kütüphanesi</h1>
+            <h1>Eğitim Kaynakları</h1>
             <p>Şube bazlı kitap, ünite, konu ve içerik yönetimi</p>
           </div>
           <div className="kk-hero-actions">

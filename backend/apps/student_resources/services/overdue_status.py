@@ -6,17 +6,28 @@ from apps.coaching.assignment_manual.models import ManualAssignment
 from apps.student_resources.models import StudentResourceAssignment
 
 
-def refresh_manual_assignment_overdue():
-    """due_date geçmiş ASSIGNED/IN_PROGRESS manuel ödevleri OVERDUE yap."""
+def refresh_manual_assignment_overdue(kurum_id=None):
+    """
+    due_date geçmiş ASSIGNED/IN_PROGRESS manuel ödevleri OVERDUE yap.
+
+    `kurum_id` verilirse güncelleme o kuruma sınırlanır — her istek üzerinde
+    TÜM kurumların tablosunu taraması yerine yalnızca isteği yapan kurumun
+    satırları güncellenir (çoklu kurum ortamında gereksiz UPDATE/kilit önlenir).
+    `kurum_id=None` geriye dönük uyumluluk için tüm kurumları günceller
+    (örn. cron/management command çağrıları).
+    """
     now = timezone.now()
-    return ManualAssignment.objects.filter(
+    queryset = ManualAssignment.objects.filter(
         is_active=True,
         due_date__lt=now,
         status__in=(
             ManualAssignment.Status.ASSIGNED,
             ManualAssignment.Status.IN_PROGRESS,
         ),
-    ).update(status=ManualAssignment.Status.OVERDUE)
+    )
+    if kurum_id:
+        queryset = queryset.filter(student__kurum_id=kurum_id)
+    return queryset.update(status=ManualAssignment.Status.OVERDUE)
 
 
 def refresh_student_resource_overdue():

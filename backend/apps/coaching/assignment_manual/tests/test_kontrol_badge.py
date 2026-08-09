@@ -41,9 +41,18 @@ class KontrolBadgeTest(TestCase):
         self.client.force_authenticate(user=self.coach)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
 
-        self.due_today = timezone.now()
-        self.due_future = timezone.now() + timezone.timedelta(days=3)
-        self.due_past = timezone.now() - timezone.timedelta(days=1)
+        # "Bugün" için gerçek `now()` kullanılmaz — refresh_manual_assignment_overdue()
+        # `due_date < now()` olan her şeyi OVERDUE yapıyor; test isteği gönderene kadar
+        # geçen milisaniyeler bile due_date == now() anını geçmişe düşürüp testi
+        # deterministik olarak bozar. Bugün içinde henüz geçmemiş, gün sonunu aşmayan
+        # bir saat kullan.
+        _now = timezone.now()
+        _end_of_today = _now.replace(hour=23, minute=55, second=0, microsecond=0)
+        self.due_today = min(_now + timezone.timedelta(hours=2), _end_of_today)
+        if self.due_today <= _now:
+            self.due_today = _now + timezone.timedelta(seconds=30)
+        self.due_future = _now + timezone.timedelta(days=3)
+        self.due_past = _now - timezone.timedelta(days=1)
 
     def _create_assignment(self, **kwargs):
         defaults = {

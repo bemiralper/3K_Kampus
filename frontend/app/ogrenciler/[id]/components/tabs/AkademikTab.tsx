@@ -11,6 +11,7 @@ import GenelBakisPanel from '../akademik/GenelBakisPanel';
 import OzelDerslerPanel from '../akademik/OzelDerslerPanel';
 import SinifDersleriPanel from '../akademik/SinifDersleriPanel';
 import AkademikPlaceholderPanel from '../akademik/AkademikPlaceholderPanel';
+import OdevlerPanel from '../akademik/OdevlerPanel';
 import type {
   AkademikKayit,
   AkademikSubId,
@@ -162,12 +163,7 @@ export default function AkademikTab({ ogrenciId, onSwitchTopTab }: AkademikTabPr
           />
         )}
 
-        {activeSub === 'odevler' && (
-          <AkademikPlaceholderPanel
-            title="Ödevler"
-            description="Öğrenci ödev listesi ve teslim durumu yakında bu alanda görünecek."
-          />
-        )}
+        {activeSub === 'odevler' && <OdevlerPanel ogrenciId={ogrenciId} />}
 
         {activeSub === 'analiz' && (
           <AkademikPlaceholderPanel

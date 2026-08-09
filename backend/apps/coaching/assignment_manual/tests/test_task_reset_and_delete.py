@@ -161,6 +161,90 @@ class TaskResetAndDeleteArchiveTest(TestCase):
         self.assertEqual(assignment.deleted_by, self.admin)
         self.assertIn('Yanlış öğrenciye', assignment.deletion_reason)
 
+    def test_restore_brings_back_deleted_assignment(self):
+        data = self._create_assignment()
+        assignment_id = data['id']
+        self.client.delete(
+            f'{ASSIGNMENTS_URL}{assignment_id}/',
+            {'deletion_reason': 'Yanlışlıkla oluşturuldu, geri alınacak.'},
+            format='json',
+        )
+        assignment = ManualAssignment.objects.get(pk=assignment_id)
+        self.assertFalse(assignment.is_active)
+
+        response = self.client.post(f'{ASSIGNMENTS_URL}{assignment_id}/restore/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+
+        assignment.refresh_from_db()
+        self.assertTrue(assignment.is_active)
+        # Silme audit kaydı (kim/ne zaman/neden sildi) BİLEREK korunur — sadece
+        # is_active tekrar True olur ve ayrıca kim/ne zaman geri yüklediği kaydedilir.
+        self.assertIsNotNone(assignment.deleted_at)
+        self.assertEqual(assignment.deleted_by, self.admin)
+        self.assertEqual(assignment.deletion_reason, 'Yanlışlıkla oluşturuldu, geri alınacak.')
+        self.assertIsNotNone(assignment.restored_at)
+        self.assertEqual(assignment.restored_by, self.admin)
+
+        # Detay serializer'da audit bilgisi görünür olmalı
+        self.assertIsNotNone(response.data['data']['deletion_audit'])
+        self.assertEqual(
+            response.data['data']['deletion_audit']['deletion_reason'],
+            'Yanlışlıkla oluşturuldu, geri alınacak.',
+        )
+
+        # Artık normal listede görünmeli
+        listing = self.client.get(ASSIGNMENTS_URL)
+        ids = [a['id'] for a in listing.data['data']]
+        self.assertIn(assignment_id, ids)
+
+    def test_redelete_after_restore_starts_fresh_audit_trail(self):
+        data = self._create_assignment()
+        assignment_id = data['id']
+        self.client.delete(
+            f'{ASSIGNMENTS_URL}{assignment_id}/',
+            {'deletion_reason': 'İlk silme sebebi metni budur.'},
+            format='json',
+        )
+        self.client.post(f'{ASSIGNMENTS_URL}{assignment_id}/restore/', {}, format='json')
+
+        # İkinci kez sil — farklı bir sebep ve (varsayımsal) farklı kullanıcı ile.
+        self.client.delete(
+            f'{ASSIGNMENTS_URL}{assignment_id}/',
+            {'deletion_reason': 'İkinci silme sebebi metni budur.'},
+            format='json',
+        )
+
+        assignment = ManualAssignment.objects.get(pk=assignment_id)
+        self.assertFalse(assignment.is_active)
+        self.assertEqual(assignment.deletion_reason, 'İkinci silme sebebi metni budur.')
+        # Önceki restore damgası yeni silme döngüsü için temizlenmiş olmalı.
+        self.assertIsNone(assignment.restored_at)
+        self.assertIsNone(assignment.restored_by)
+
+    def test_restore_requires_admin(self):
+        data = self._create_assignment()
+        assignment_id = data['id']
+        self.client.delete(
+            f'{ASSIGNMENTS_URL}{assignment_id}/',
+            {'deletion_reason': 'Test amaçlı silme kaydı oluşturuldu.'},
+            format='json',
+        )
+
+        coach_client = APIClient()
+        coach_client.force_authenticate(user=self.coach)
+        coach_client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        coach_client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
+        forbidden = coach_client.post(f'{ASSIGNMENTS_URL}{assignment_id}/restore/', {}, format='json')
+        self.assertEqual(forbidden.status_code, 403)
+
+    def test_restore_nonexistent_or_active_assignment_404(self):
+        data = self._create_assignment()
+        assignment_id = data['id']
+        # Henüz silinmemiş — restore edilemez
+        response = self.client.post(f'{ASSIGNMENTS_URL}{assignment_id}/restore/', {}, format='json')
+        self.assertEqual(response.status_code, 404)
+
     def test_deleted_assignments_admin_only(self):
         data = self._create_assignment()
         assignment_id = data['id']

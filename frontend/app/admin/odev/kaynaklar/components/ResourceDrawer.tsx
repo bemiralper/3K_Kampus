@@ -172,9 +172,17 @@ export function ResourceDrawer(props: DrawerProps) {
 
           {mode === "book" && (
             <div className="kk-form-stack">
-              <div className="kk-field">
-                <label className="kk-label">Kitap Adı *</label>
-                <input type="text" className="kk-input" value={bookForm.ad} onChange={(e) => setBookForm({ ...bookForm, ad: e.target.value })} />
+              <div className="kk-form-grid">
+                <div className="kk-field" style={{ gridColumn: editingId ? undefined : "1 / -1" }}>
+                  <label className="kk-label">Kitap Adı *</label>
+                  <input type="text" className="kk-input" value={bookForm.ad} onChange={(e) => setBookForm({ ...bookForm, ad: e.target.value })} />
+                </div>
+                {editingId && (
+                  <div className="kk-field">
+                    <label className="kk-label">Kod <span className="kk-hint">(otomatik, değiştirilemez)</span></label>
+                    <input type="text" className="kk-input" value={bookForm.kod} disabled readOnly style={{ opacity: 0.7 }} />
+                  </div>
+                )}
               </div>
 
               <div className="kk-form-grid">
@@ -236,6 +244,17 @@ export function ResourceDrawer(props: DrawerProps) {
                   <label className="kk-label">Toplam Sayfa</label>
                   <input type="number" className="kk-input" value={bookForm.toplam_sayfa} onChange={(e) => setBookForm({ ...bookForm, toplam_sayfa: e.target.value })} />
                 </div>
+              </div>
+
+              <div className="kk-field">
+                <label className="kk-label">ISBN</label>
+                <input
+                  type="text"
+                  className="kk-input"
+                  value={bookForm.isbn}
+                  onChange={(e) => setBookForm({ ...bookForm, isbn: e.target.value })}
+                  placeholder="978-..."
+                />
               </div>
 
               <div className="kk-difficulty-box">
@@ -312,6 +331,26 @@ export function ResourceDrawer(props: DrawerProps) {
                   </span>
                 </label>
               </div>
+
+              {editingId && (
+                <div className="kk-field">
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={bookForm.aktif_mi}
+                      onChange={(e) => setBookForm({ ...bookForm, aktif_mi: e.target.checked })}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      <strong>Aktif</strong>
+                      <span className="kk-hint" style={{ display: "block", marginTop: 4 }}>
+                        Pasife alınan kaynak yeni atama ve arama listelerinde görünmez; mevcut öğrenci
+                        atamaları ve geçmiş kayıtlar korunur (kaynağı silmek yerine önerilen yöntem).
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 

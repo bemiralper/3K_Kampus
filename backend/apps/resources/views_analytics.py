@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.authentication import SessionAuthentication
 from django.http import HttpResponse
 
-from .permissions import IsAuthenticatedResourceReadOrAdminWrite
+from .permissions import IsResourceManager
 from .application import analytics as A
 from .application.analytics_pdf import build_analytics_pdf
 
@@ -17,8 +17,10 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
 
 
 class ResourceAnalyticsViewSet(viewsets.ViewSet):
+    """Kaynak analiz/rapor uçları — sadece admin/koç erişebilir (öğrenci/veli hariç)."""
+
     authentication_classes = [CsrfExemptSessionAuthentication]
-    permission_classes = [IsAuthenticated, IsAuthenticatedResourceReadOrAdminWrite]
+    permission_classes = [IsAuthenticated, IsResourceManager]
 
     def list(self, request):
         return Response({'success': True, 'data': A.summary(request)})

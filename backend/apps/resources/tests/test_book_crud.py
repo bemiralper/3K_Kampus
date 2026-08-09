@@ -4,7 +4,9 @@ from rest_framework.test import APIClient
 
 from apps.egitim_tanimlari.models import Ders, SinifSeviyesi
 from apps.kurum.domain.models import Kurum
+from apps.ogrenci.domain.models import Ogrenci
 from apps.resources.models import BookType, ResourceBook
+from apps.student_resources.models import StudentResourceAssignment
 from apps.sube.domain.models import Sube
 
 User = get_user_model()
@@ -236,3 +238,86 @@ class ResourceBookCrudTest(TestCase):
 
         copy = ResourceBook.objects.get(kod='COPY-001')
         self.assertFalse(copy.icerik_tamamlandi_mi)
+
+    def test_delete_book_without_assignments_succeeds(self):
+        book = ResourceBook.objects.create(
+            ad='Silinecek Kitap',
+            kod='DEL-001',
+            kurum=self.kurum,
+            sube=self.sube,
+            book_type=self.book_type,
+            ders=self.ders,
+            sinif_seviyesi=self.sinif_seviyesi,
+            aktif_mi=True,
+        )
+
+        response = self.client.delete(self._book_url(book.id), **self.headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['success'])
+        self.assertFalse(ResourceBook.objects.filter(id=book.id).exists())
+
+    def test_delete_book_with_student_assignment_is_blocked(self):
+        book = ResourceBook.objects.create(
+            ad='Atanmış Kitap',
+            kod='DEL-002',
+            kurum=self.kurum,
+            sube=self.sube,
+            book_type=self.book_type,
+            ders=self.ders,
+            sinif_seviyesi=self.sinif_seviyesi,
+            aktif_mi=True,
+        )
+        student = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Ali',
+            soyad='Veli',
+            aktif_mi=True,
+        )
+        StudentResourceAssignment.objects.create(
+            student=student,
+            resource_book=book,
+            lesson=self.ders,
+            is_active=True,
+        )
+
+        response = self.client.delete(self._book_url(book.id), **self.headers)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data['success'])
+        self.assertIn('assignment_count', response.data['data'])
+        self.assertEqual(response.data['data']['assignment_count'], 1)
+        self.assertTrue(ResourceBook.objects.filter(id=book.id).exists())
+
+    def test_delete_book_with_inactive_assignment_still_blocked(self):
+        """Geçmiş (pasif) atama olsa bile geçmiş veri korunmalı — hard delete engellenmeli."""
+        book = ResourceBook.objects.create(
+            ad='Geçmiş Atamalı Kitap',
+            kod='DEL-003',
+            kurum=self.kurum,
+            sube=self.sube,
+            book_type=self.book_type,
+            ders=self.ders,
+            sinif_seviyesi=self.sinif_seviyesi,
+            aktif_mi=True,
+        )
+        student = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Ayşe',
+            soyad='Yılmaz',
+            aktif_mi=True,
+        )
+        StudentResourceAssignment.objects.create(
+            student=student,
+            resource_book=book,
+            lesson=self.ders,
+            is_active=False,
+        )
+
+        response = self.client.delete(self._book_url(book.id), **self.headers)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['data']['assignment_count'], 1)
+        self.assertEqual(response.data['data']['active_assignment_count'], 0)

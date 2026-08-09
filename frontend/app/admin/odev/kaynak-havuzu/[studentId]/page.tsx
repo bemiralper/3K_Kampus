@@ -22,6 +22,7 @@ import {
 import PurchaseListModal, { formatDifficulty, difficultyStyle } from "../PurchaseListModal";
 import { BookCover } from "@/components/resources/BookCover";
 import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
+import { useToast, ToastBanner } from "../Toast";
 import "../kaynak-havuzu.css";
 
 function getPhotoUrl(path?: string | null): string | undefined {
@@ -38,6 +39,7 @@ export default function StudentResourceDetailPage() {
   const params = useParams();
   const studentId = params.studentId as string;
   const { havuzHref, isCoachMode } = useKaynakPath();
+  const { toast, showToast } = useToast();
 
   // Data state
   const [data, setData] = useState<StudentDetail | null>(null);
@@ -155,11 +157,12 @@ export default function StudentResourceDetailPage() {
       if (result.success) {
         setEditModalOpen(false);
         fetchData();
+        showToast("✅ Kaynak ataması güncellendi");
       } else {
-        alert(result.error || result.message || "Güncelleme hatası");
+        showToast(`❌ ${result.error || result.message || "Güncelleme hatası"}`, "error");
       }
     } catch {
-      alert("Güncelleme hatası");
+      showToast("❌ Güncelleme hatası", "error");
     }
   };
 
@@ -171,12 +174,13 @@ export default function StudentResourceDetailPage() {
       const result = await deleteStudentResourceAssignment(resourceId);
       if (result.success) {
         fetchData();
+        showToast("✅ Kaynak ataması kaldırıldı");
       } else {
-        alert(result.error || result.message || "Silme işlemi başarısız");
+        showToast(`❌ ${result.error || result.message || "Silme işlemi başarısız"}`, "error");
       }
     } catch (error) {
       console.error("Delete error:", error);
-      alert("Silme işlemi başarısız");
+      showToast("❌ Silme işlemi başarısız", "error");
     }
   };
 
@@ -221,16 +225,23 @@ export default function StudentResourceDetailPage() {
         setAddResourceModalOpen(false);
         setAddResourceSelected([]);
         setAddResourceOwnershipType("TO_PURCHASE");
+        const created = result.data?.created ?? 0;
+        const skipped = result.data?.skipped ?? 0;
+        const errorCount = result.data?.errors?.length ?? 0;
+        let msg = `✅ ${created} kaynak eklendi`;
+        if (skipped) msg += ` · ${skipped} zaten atanmıştı, atlandı`;
+        if (errorCount) msg += ` · ${errorCount} hata oluştu`;
+        showToast(msg, errorCount ? "error" : "success");
         fetchData();
       } else {
         const errorMsg = typeof result.error === 'string' 
           ? result.error 
           : JSON.stringify(result.error);
-        alert("Kaynak ekleme hatası: " + errorMsg);
+        showToast(`❌ Kaynak ekleme hatası: ${errorMsg}`, "error");
       }
     } catch (error) {
       console.error("Kaynak ekleme hatası:", error);
-      alert("Kaynak ekleme hatası: Sunucu bağlantı hatası");
+      showToast("❌ Kaynak ekleme hatası: Sunucu bağlantı hatası", "error");
     }
     setAddResourceLoading(false);
   };
@@ -365,7 +376,7 @@ export default function StudentResourceDetailPage() {
           <div style={{ fontSize: "28px", fontWeight: 700, color: "#3b82f6" }}>{data.summary.total_resources}</div>
         </div>
         <div style={{ background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
-          <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "4px" }}>Tamamlanan</div>
+          <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "4px" }} title="Öğrencinin bitirdiği kaynak sayısı">Tamamlanan Kaynak</div>
           <div style={{ fontSize: "28px", fontWeight: 700, color: "#10b981" }}>{data.summary.completed}</div>
         </div>
         <div style={{ background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
@@ -1037,6 +1048,7 @@ export default function StudentResourceDetailPage() {
         onClose={() => setListModalType(null)}
         onCreated={handleListCreated}
       />
+      <ToastBanner toast={toast} />
     </div>
   );
 }

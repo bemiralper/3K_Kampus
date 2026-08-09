@@ -22,3 +22,13 @@ class IsAuthenticatedResourceReadOrAdminWrite(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         return can_manage_resources(request.user)
+
+
+class IsResourceManager(BasePermission):
+    """Kaynak analitikleri/raporları — sadece admin veya aktif koç görebilir.
+
+    Öğrenci/veli gibi diğer authenticated kullanıcılar kurum çapındaki
+    kaynak kullanım istatistiklerini görmemelidir (okuma dahil)."""
+
+    def has_permission(self, request, view):
+        return can_manage_resources(request.user)
