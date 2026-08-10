@@ -15,53 +15,10 @@ interface MetaTemplateSendDrawerProps {
   open: boolean;
   conversationId: string | null;
   contactType?: string | null;
+  /** Admin meta-şablon yönetim linki; koç portalında kapalı. */
+  showManageLink?: boolean;
   onClose: () => void;
   onSent: (message: MessageItem) => void;
-}
-
-const VARIABLE_LABELS: Record<string, string> = {
-  ogrenci_ad: "Öğrenci adı",
-  veli_ad: "Veli adı",
-  personel_ad: "Personel adı",
-  kurum_ad: "Kurum adı",
-  sube: "Şube",
-  sinif: "Sınıf",
-  tarih: "Tarih",
-  saat: "Saat",
-  konu: "Konu",
-  mesaj: "Mesaj",
-  baslik: "Başlık",
-  aciklama: "Açıklama",
-  yoklama_tarihi: "Yoklama tarihi",
-  oturum_ad: "Oturum",
-  giris_saati: "Giriş saati",
-  cikis_saati: "Çıkış saati",
-  salon_ad: "Salon adı",
-  ders_no: "Ders no",
-  taksit_no: "Taksit no",
-  taksit_tutar: "Taksit tutarı",
-  kalan_tutar: "Kalan tutar",
-  vade_tarihi: "Vade tarihi",
-  sozlesme_no: "Sözleşme no",
-  gecikme_gunu: "Gecikme günü",
-  toplam_gecikmis_tutar: "Toplam gecikmiş tutar",
-  taksit_detay_listesi: "Gecikmiş taksit listesi",
-  taksit_sayisi: "Gecikmiş taksit sayısı",
-  max_gecikme_gunu: "En uzun gecikme (gün)",
-  belge_turu: "Belge türü",
-  toplam_tahsilat: "Toplam tahsilat",
-  toplam_gider: "Toplam gider",
-  hafta: "Hafta",
-  hafta_no: "Hafta no",
-  odev_baslik: "Ödev başlığı",
-  teslim_tarihi: "Teslim tarihi",
-  pdf_baslik: "PDF başlığı",
-  koc_ad: "Koç adı",
-  sinav_ad: "Sınav adı",
-};
-
-function variableLabel(key: string): string {
-  return VARIABLE_LABELS[key] || key.replace(/_/g, " ");
 }
 
 function fillBody(body: string, values: Record<string, string>): string {
@@ -72,6 +29,7 @@ export default function MetaTemplateSendDrawer({
   open,
   conversationId,
   contactType,
+  showManageLink = false,
   onClose,
   onSent,
 }: MetaTemplateSendDrawerProps) {
@@ -93,20 +51,24 @@ export default function MetaTemplateSendDrawer({
         const list = res.templates || [];
         setTemplates(list);
         setValues(res.context || {});
-        const audience =
-          res.preferred_audience
-          || ((contactType || "").toUpperCase() === "VELI"
+        // UI niyeti (öğrenci/veli ikonu) API’den önce gelsin — yanlış contact_type’a karşı.
+        const fromProp =
+          (contactType || "").toUpperCase() === "VELI"
             ? "veli"
             : (contactType || "").toUpperCase() === "OGRENCI"
               ? "ogrenci"
-              : null);
-        const preferredName = res.preferred_template_name || (
-          audience === "veli"
+              : null;
+        const audience = fromProp || res.preferred_audience || null;
+        const preferredName =
+          (fromProp
+            ? (fromProp === "veli" ? "sohbet_kocluk_veli" : "sohbet_kocluk_ogrenci")
+            : null)
+          || res.preferred_template_name
+          || (audience === "veli"
             ? "sohbet_kocluk_veli"
             : audience === "ogrenci"
               ? "sohbet_kocluk_ogrenci"
-              : ""
-        );
+              : "");
         const suffix = audience === "veli" ? "_veli" : audience === "ogrenci" ? "_ogrenci" : "";
         const preferred =
           (preferredName ? list.find((t) => t.name === preferredName) : null)
@@ -161,7 +123,6 @@ export default function MetaTemplateSendDrawer({
 
   if (!open) return null;
 
-  // Chat drawer içinde açılınca aynı stacking context'te kalıp arkada kaybolmasın diye body'ye portal.
   const node = (
     <div
       className="comm-drawer-overlay comm-drawer-overlay--stacked"
@@ -236,33 +197,20 @@ export default function MetaTemplateSendDrawer({
           )}
         </div>
 
-        {selected && (selected.variables?.length ?? 0) > 0 && (
-          <div className="comm-meta-send-vars">
-            <h3>Değişkenler</h3>
-            {(selected.variables || []).map((key) => (
-              <label key={key} className="comm-meta-send-var">
-                <span>{variableLabel(key)}</span>
-                <input
-                  type="text"
-                  value={values[key] || ""}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                  placeholder={`{{${key}}}`}
-                />
-              </label>
-            ))}
-          </div>
-        )}
-
         <footer className="comm-drawer-footer comm-meta-send-footer">
-          <Link href="/admin/iletisim/meta-sablonlar" className="comm-btn-secondary" onClick={onClose}>
-            Şablonları yönet
-          </Link>
+          {showManageLink ? (
+            <Link href="/admin/iletisim/meta-sablonlar" className="comm-btn-secondary" onClick={onClose}>
+              Şablonları yönet
+            </Link>
+          ) : (
+            <span />
+          )}
           <button
             type="button"
             className="comm-btn-primary"
             onClick={handleSend}
             disabled={!selected || sending || missing.length > 0}
-            title={missing.length > 0 ? `Doldurulmamış: ${missing.join(", ")}` : undefined}
+            title={missing.length > 0 ? `Eksik bilgi: ${missing.join(", ")}` : undefined}
           >
             {sending ? "Gönderiliyor…" : "Gönder"}
           </button>

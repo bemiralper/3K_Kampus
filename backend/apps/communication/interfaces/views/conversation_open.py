@@ -66,16 +66,37 @@ class ConversationOpenView(CommunicationAPIView):
             ogrenci_id = None
             is_veli_thread = False
         else:
+            # - veli_id → veli sohbeti
+            # - ogrenci_id + öğrencinin kendi telefonu → öğrenci sohbeti
+            #   (aynı kişi identity veli’ye bağlı olsa bile)
+            # - ogrenci_id + veli telefonu (veli_id yok) → resolver ile veli sohbeti
+            # - ikisi de yok → ContactResolver
+            from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+
             if req_veli_id:
                 veli_id = int(req_veli_id)
+            elif req_ogrenci_id and not req_veli_id:
+                student_phone = Ogrenci.objects.filter(
+                    id=int(req_ogrenci_id),
+                ).values_list('telefon', flat=True).first()
+                student_e164 = None
+                if student_phone:
+                    try:
+                        student_e164 = ContactResolver.normalize(student_phone)
+                    except Exception:
+                        student_e164 = None
+                if student_e164 and e164 == student_e164:
+                    veli_id = None
+                elif resolved.veli_id and resolved.contact_type == RecipientType.VELI:
+                    veli_id = resolved.veli_id
+                else:
+                    veli_id = None
             elif resolved.veli_id and resolved.contact_type == RecipientType.VELI:
                 veli_id = resolved.veli_id
             else:
                 veli_id = None
 
             if veli_id:
-                from apps.ogrenci.domain.models import OgrenciVeli
-
                 veli = OgrenciVeli.objects.filter(id=veli_id).select_related('ogrenci').first()
                 ogrenci_id = veli.ogrenci_id if veli else resolved.ogrenci_id
                 if veli and veli.ogrenci and veli.ogrenci.sube_id != sube_id:
@@ -84,8 +105,6 @@ class ConversationOpenView(CommunicationAPIView):
                 ogrenci_id = int(req_ogrenci_id) if req_ogrenci_id else resolved.ogrenci_id
 
             if ogrenci_id:
-                from apps.ogrenci.domain.models import Ogrenci
-
                 student_sube_id = Ogrenci.objects.filter(id=ogrenci_id).values_list('sube_id', flat=True).first()
                 if student_sube_id and int(student_sube_id) != int(sube_id):
                     return Response({'error': 'Kayıt bu şubeye ait değil.'}, status=status.HTTP_403_FORBIDDEN)
@@ -141,6 +160,18 @@ class ConversationOpenView(CommunicationAPIView):
             conversation = ConversationRepository.find_by_phone(
                 kurum_id, Channel.WHATSAPP, e164, channel_config_id=cfg_id,
             )
+            # Öğrenci ikonundan açılışta mevcut veli thread’ini çalma — ayrı öğrenci sohbeti kur.
+            if (
+                conversation
+                and not is_personel_thread
+                and not is_veli_thread
+                and req_ogrenci_id
+                and (
+                    conversation.contact_type == RecipientType.VELI
+                    or conversation.veli_id is not None
+                )
+            ):
+                conversation = None
 
         if conversation:
             if not is_personel_thread:
@@ -187,6 +218,9 @@ class ConversationOpenView(CommunicationAPIView):
                     if conversation.contact_type != RecipientType.OGRENCI:
                         conversation.contact_type = RecipientType.OGRENCI
                         update_fields.append('contact_type')
+                    if conversation.veli_id is not None:
+                        conversation.veli_id = None
+                        update_fields.append('veli_id')
 
             if conversation.sube_id != sube_id:
                 conversation.sube_id = sube_id

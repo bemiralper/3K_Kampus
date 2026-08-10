@@ -310,6 +310,7 @@ export default function MesajlarClient({
         open={metaTemplatesOpen}
         conversationId={selectedId}
         contactType={selected?.contact_type}
+        showManageLink={managerInbox}
         onClose={() => setMetaTemplatesOpen(false)}
         onSent={(msg) => {
           handleTemplateSent(msg);

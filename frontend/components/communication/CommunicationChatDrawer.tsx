@@ -267,7 +267,14 @@ export default function CommunicationChatDrawer({
       <MetaTemplateSendDrawer
         open={metaTemplatesOpen}
         conversationId={conversation?.id ?? null}
-        contactType={conversation?.contact_type}
+        contactType={
+          target?.veliId
+            ? "VELI"
+            : target?.ogrenciId && !target?.veliId
+              ? "OGRENCI"
+              : conversation?.contact_type
+        }
+        showManageLink={adminInbox}
         onClose={() => setMetaTemplatesOpen(false)}
         onSent={handleTemplateSent}
       />

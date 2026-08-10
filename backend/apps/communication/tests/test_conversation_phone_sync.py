@@ -246,6 +246,24 @@ class ConversationOpenVeliThreadTest(TestCase):
         self.assertEqual(data['veli_id'], self.veli.id)
         self.assertNotEqual(data['id'], str(self.student_conv.id))
 
+    def test_open_student_phone_with_ogrenci_id_uses_student_thread(self):
+        """Öğrenci ikonu — veli şablonuna düşmemeli."""
+        response = self.client.post(
+            '/api/communication/conversations/open/',
+            {
+                'phone': '0530 944 99 25',
+                'kurum_id': self.kurum.id,
+                'ogrenci_id': self.ogrenci.id,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['contact_phone'], '+905309449925')
+        self.assertEqual(data['contact_type'], 'OGRENCI')
+        self.assertIsNone(data.get('veli_id'))
+        self.assertEqual(data['id'], str(self.student_conv.id))
+
 
 class DuplicateConversationLookupTest(TestCase):
     """Aynı telefona bağlı birden fazla konuşma varken gönderim çökmemeli."""
