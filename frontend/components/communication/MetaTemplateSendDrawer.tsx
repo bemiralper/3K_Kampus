@@ -99,10 +99,19 @@ export default function MetaTemplateSendDrawer({
             : (contactType || "").toUpperCase() === "OGRENCI"
               ? "ogrenci"
               : null);
+        const preferredName = res.preferred_template_name || (
+          audience === "veli"
+            ? "sohbet_kocluk_veli"
+            : audience === "ogrenci"
+              ? "sohbet_kocluk_ogrenci"
+              : ""
+        );
         const suffix = audience === "veli" ? "_veli" : audience === "ogrenci" ? "_ogrenci" : "";
-        const preferred = suffix
-          ? list.find((t) => (t.name || "").endsWith(suffix))
-          : null;
+        const preferred =
+          (preferredName ? list.find((t) => t.name === preferredName) : null)
+          || (audience ? list.find((t) => t.name === `sohbet_genel_${audience}`) : null)
+          || (suffix ? list.find((t) => (t.name || "").endsWith(suffix)) : null)
+          || null;
         setSelectedId(preferred?.id || list[0]?.id || "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Şablonlar yüklenemedi"))
@@ -121,6 +130,13 @@ export default function MetaTemplateSendDrawer({
       (t) => t.name.toLowerCase().includes(q) || (t.body_named || "").toLowerCase().includes(q),
     );
   }, [templates, search]);
+
+  const audienceHint = useMemo(() => {
+    const name = selected?.name || "";
+    if (name.endsWith("_veli")) return "Veli sohbet şablonu";
+    if (name.endsWith("_ogrenci")) return "Öğrenci sohbet şablonu";
+    return null;
+  }, [selected]);
 
   const missing = useMemo(() => {
     if (!selected) return [];
@@ -157,6 +173,7 @@ export default function MetaTemplateSendDrawer({
             <h2>Kişisel Mesaj Şablonları</h2>
             <p className="comm-drawer-subtitle">
               24 saatlik süre dolduğu için yalnızca onaylı şablon gönderilebilir.
+              {audienceHint ? ` · ${audienceHint}` : ""}
             </p>
           </div>
           <button type="button" className="comm-drawer-close" onClick={onClose} aria-label="Kapat">

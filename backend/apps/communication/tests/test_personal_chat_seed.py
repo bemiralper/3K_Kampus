@@ -6,6 +6,10 @@ from rest_framework.test import APIClient
 from apps.communication.application.personal_chat_template_seed import (
     PersonalChatTemplateSeedService,
     list_personal_chat_template_drafts,
+    preferred_personal_chat_template_name,
+)
+from apps.communication.interfaces.views.conversation_template_send import (
+    _order_personal_templates,
 )
 from apps.communication.application.variable_resolver import resolve_sender_personel_ad
 from apps.communication.domain.enums import (
@@ -51,6 +55,44 @@ class PersonalChatSeedTest(TestCase):
         self.client.force_authenticate(user=self.user)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
         self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
+
+    def test_preferred_name_for_coaching(self):
+        self.assertEqual(
+            preferred_personal_chat_template_name(
+                CommunicationDepartment.COACHING, 'veli',
+            ),
+            'sohbet_kocluk_veli',
+        )
+        self.assertEqual(
+            preferred_personal_chat_template_name(
+                CommunicationDepartment.COACHING, 'ogrenci',
+            ),
+            'sohbet_kocluk_ogrenci',
+        )
+
+    def test_order_prefers_kocluk_over_genel(self):
+        rows = [
+            {'name': 'sohbet_genel_veli', 'id': '1'},
+            {'name': 'sohbet_kocluk_veli', 'id': '2'},
+            {'name': 'sohbet_kocluk_ogrenci', 'id': '3'},
+            {'name': 'sohbet_genel_ogrenci', 'id': '4'},
+        ]
+        veli = _order_personal_templates(
+            rows,
+            preferred_name='sohbet_kocluk_veli',
+            audience='veli',
+        )
+        self.assertEqual([r['name'] for r in veli], [
+            'sohbet_kocluk_veli', 'sohbet_genel_veli',
+        ])
+        ogr = _order_personal_templates(
+            rows,
+            preferred_name='sohbet_kocluk_ogrenci',
+            audience='ogrenci',
+        )
+        self.assertEqual([r['name'] for r in ogr], [
+            'sohbet_kocluk_ogrenci', 'sohbet_genel_ogrenci',
+        ])
 
     def test_drafts_by_department(self):
         acc = list_personal_chat_template_drafts(

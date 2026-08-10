@@ -182,6 +182,12 @@ class ConversationOpenView(CommunicationAPIView):
                     conversation.veli_id = veli_id
                     conversation.contact_type = RecipientType.VELI
                     update_fields.extend(['veli_id', 'contact_type'])
+                elif not is_veli_thread and (req_ogrenci_id or ogrenci_id):
+                    # Öğrenci WhatsApp'ından açılış → sohbet_kocluk_ogrenci tercihi
+                    if conversation.contact_type != RecipientType.OGRENCI:
+                        conversation.contact_type = RecipientType.OGRENCI
+                        update_fields.append('contact_type')
+
             if conversation.sube_id != sube_id:
                 conversation.sube_id = sube_id
                 update_fields.append('sube_id')

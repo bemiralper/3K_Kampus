@@ -97,6 +97,30 @@ _FAMILIES_BY_DEPARTMENT: dict[str, frozenset[str]] = {
     CommunicationDepartment.MANAGEMENT: frozenset({'yonetim', 'genel'}),
 }
 
+_PRIMARY_FAMILY_BY_DEPARTMENT: dict[str, str] = {
+    CommunicationDepartment.ACCOUNTING: 'muhasebe',
+    CommunicationDepartment.COACHING: 'kocluk',
+    CommunicationDepartment.MANAGEMENT: 'yonetim',
+}
+
+
+def preferred_personal_chat_template_name(
+    department: str | None,
+    audience: str | None,
+) -> str | None:
+    """
+    Birim + alıcı için tercih edilen sohbet şablon adı.
+    Örn. COACHING + veli → sohbet_kocluk_veli
+    """
+    aud = (audience or '').strip().lower()
+    if aud not in ('veli', 'ogrenci'):
+        return None
+    family = _PRIMARY_FAMILY_BY_DEPARTMENT.get(
+        (department or '').upper(),
+        'genel',
+    )
+    return f'sohbet_{family}_{aud}'
+
 
 @dataclass(frozen=True)
 class PersonalChatTemplateDraft:

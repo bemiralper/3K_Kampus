@@ -309,6 +309,7 @@ export default function MesajlarClient({
       <MetaTemplateSendDrawer
         open={metaTemplatesOpen}
         conversationId={selectedId}
+        contactType={selected?.contact_type}
         onClose={() => setMetaTemplatesOpen(false)}
         onSent={(msg) => {
           handleTemplateSent(msg);

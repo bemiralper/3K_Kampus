@@ -865,6 +865,8 @@ export async function fetchConversationTemplates(
   session: ConversationSessionInfo;
   context: Record<string, string>;
   preferred_audience?: 'veli' | 'ogrenci' | null;
+  /** Örn. sohbet_kocluk_veli — birim + alıcıya göre */
+  preferred_template_name?: string | null;
 }> {
   return request(`/conversations/${conversationId}/template-messages/`);
 }

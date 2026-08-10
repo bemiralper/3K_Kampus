@@ -15,6 +15,9 @@ from apps.communication.application.communication_service import (
     RecipientQuery,
 )
 from apps.communication.application.meta_template_service import MetaTemplateService
+from apps.communication.application.personal_chat_template_seed import (
+    preferred_personal_chat_template_name,
+)
 from apps.communication.application.session_window import window_for_conversation
 from apps.communication.application.variable_resolver import (
     build_recipient_context_from_conversation,
@@ -28,6 +31,30 @@ from apps.communication.interfaces.serializers.meta_template import (
 from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube
 from apps.communication.interfaces.views.messages import _load_conversation_for_messages
+
+
+def _order_personal_templates(rows: list[dict], *, preferred_name: str | None, audience: str | None):
+    """
+    Alıcıya göre filtrele + birim şablonunu (sohbet_kocluk_*) öne al.
+    Veli → yalnızca *_veli; öğrenci → yalnızca *_ogrenci (varsa).
+    """
+    suffix = f'_{audience}' if audience in ('veli', 'ogrenci') else ''
+    if suffix:
+        audience_rows = [r for r in rows if (r.get('name') or '').endswith(suffix)]
+        if audience_rows:
+            rows = audience_rows
+
+    def sort_key(row: dict):
+        name = row.get('name') or ''
+        if preferred_name and name == preferred_name:
+            return (0, name)
+        if audience and name == f'sohbet_genel_{audience}':
+            return (1, name)
+        if suffix and name.endswith(suffix):
+            return (2, name)
+        return (3, name)
+
+    return sorted(rows, key=sort_key)
 
 
 class ConversationTemplateSendView(CommunicationAPIView):
@@ -56,29 +83,31 @@ class ConversationTemplateSendView(CommunicationAPIView):
             conversation, sender_user=request.user,
         )
         contact_type = (conversation.contact_type or '').upper()
-        preferred_suffix = '_veli' if contact_type == 'VELI' else (
-            '_ogrenci' if contact_type == 'OGRENCI' else ''
+        audience = (
+            'veli' if contact_type == 'VELI'
+            else 'ogrenci' if contact_type == 'OGRENCI'
+            else None
         )
+        department = ''
+        channel = getattr(conversation, 'channel_config', None)
+        if channel is not None:
+            department = getattr(channel, 'department', None) or ''
+        preferred_name = preferred_personal_chat_template_name(department, audience)
+
         data = WhatsAppMetaTemplateSerializer(templates, many=True).data
-        if preferred_suffix:
-            data = sorted(
-                data,
-                key=lambda row: (
-                    0 if (row.get('name') or '').endswith(preferred_suffix) else 1,
-                    row.get('name') or '',
-                ),
-            )
+        data = _order_personal_templates(
+            list(data),
+            preferred_name=preferred_name,
+            audience=audience,
+        )
         for row in data:
             row['preview'] = resolve_variables(row.get('body_named') or '', context)
         return Response({
             'templates': data,
             'session': window_for_conversation(conversation).as_dict(),
             'context': context,
-            'preferred_audience': (
-                'veli' if preferred_suffix == '_veli'
-                else 'ogrenci' if preferred_suffix == '_ogrenci'
-                else None
-            ),
+            'preferred_audience': audience,
+            'preferred_template_name': preferred_name,
         })
 
     def post(self, request, conversation_id):
