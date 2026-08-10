@@ -98,10 +98,9 @@ function WorkRow({ block }: { block: ProgramBlock }) {
     icon: '📝',
     color: '#64748b',
   };
-  const goalMeta =
-    block.goal_type && block.goal_type !== ''
-      ? GOAL_TYPE_META[block.goal_type as GoalType]
-      : null;
+  const goalMeta = block.goal_type
+    ? GOAL_TYPE_META[block.goal_type as GoalType]
+    : null;
   const primary = blockDisplayTitle(block);
   const lesson = block.lesson_name?.trim();
   const resource = block.resource_name?.trim();

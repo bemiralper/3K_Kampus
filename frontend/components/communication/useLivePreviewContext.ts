@@ -32,15 +32,5 @@ export function useLivePreviewContext(
       sube: sube?.ad || sube?.gorunen_ad || "",
       ...(extra || {}),
     });
-  }, [
-    activeKurum?.id,
-    activeKurum?.ad,
-    activeKurum?.gorunen_ad,
-    activeSube?.id,
-    activeSube?.ad,
-    activeSube?.gorunen_ad,
-    kurumlar,
-    subeler,
-    extra,
-  ]);
+  }, [activeKurum, activeSube, kurumlar, subeler, extra]);
 }
