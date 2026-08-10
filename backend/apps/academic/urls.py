@@ -149,6 +149,10 @@ from apps.academic.interfaces.views.lesson_operations import (
     lesson_pay_summary_api,
     schedule_revision_list_api,
     lesson_operations_meta_api,
+    class_period_attendance_list_api,
+    class_period_student_attendance_api,
+    class_attendance_notify_preview_api,
+    class_attendance_notify_send_api,
 )
 
 app_name = 'academic'
@@ -308,4 +312,24 @@ urlpatterns = [
     ),
     path('lesson-pay/summary/', lesson_pay_summary_api, name='lesson-pay-summary'),
     path('schedule/revisions/', schedule_revision_list_api, name='schedule-revision-list'),
+    path(
+        'class-period-attendance/',
+        class_period_attendance_list_api,
+        name='class-period-attendance-list',
+    ),
+    path(
+        'class-period-attendance/<int:pk>/student-attendance/',
+        class_period_student_attendance_api,
+        name='class-period-student-attendance',
+    ),
+    path(
+        'class-attendance/notify/preview/',
+        class_attendance_notify_preview_api,
+        name='class-attendance-notify-preview',
+    ),
+    path(
+        'class-attendance/notify/send/',
+        class_attendance_notify_send_api,
+        name='class-attendance-notify-send',
+    ),
 ]

@@ -314,7 +314,7 @@ def parse_list_params(request):
     return {
         'q': (p.get('q') or '').strip(),
         'all_years': p.get('all_years', '') == '1',
-        'durum': p.get('durum', 'all') if p.get('durum', 'all') in ('aktif', 'pasif', 'all') else 'all',
+        'durum': p.get('durum', 'aktif') if p.get('durum', 'aktif') in ('aktif', 'pasif', 'all') else 'aktif',
         'sinif_seviyesi_ids': sinif_seviyesi_ids,
         'giris_turu': (p.get('giris_turu') or '').strip() or None,
         'kayit_turu': (p.get('kayit_turu') or '').strip() or None,

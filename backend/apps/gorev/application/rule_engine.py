@@ -15,7 +15,6 @@ logger = logging.getLogger('gorev.rule_engine')
 KAYNAK_ODEME = 'odeme_takip'
 KAYNAK_OLCME = 'olcme'
 KAYNAK_OGRENCI = 'ogrenci_inaktif'
-KAYNAK_YOKLAMA = 'yoklama'
 KAYNAK_RESOURCES = 'resources'
 
 
@@ -472,32 +471,8 @@ class GorevRuleEngine:
         )
 
     def on_attendance_absent(self, record, kurum_id: int) -> Optional[Gorev]:
-        if record.durum != 'ABSENT':
-            return None
-
-        coach_user_id = get_primary_coach_user_id(record.ogrenci_id)
-        if not coach_user_id:
-            return None
-
-        from apps.ogrenci.domain.models import Ogrenci
-        try:
-            ogrenci = Ogrenci.objects.get(id=record.ogrenci_id)
-            ad = f'{ogrenci.ad} {ogrenci.soyad}'
-        except Ogrenci.DoesNotExist:
-            ad = f'Öğrenci #{record.ogrenci_id}'
-
-        return self._create(
-            kurum_id=kurum_id,
-            tip_kod='VELI_GORUSME',
-            baslik=f'Veli araması: {ad} (devamsız)',
-            aciklama='Öğrenci devamsızlık yaptı — veli ile görüşme planlayın',
-            son_tarih=timezone.now() + timedelta(days=1),
-            kaynak_modul=KAYNAK_YOKLAMA,
-            kaynak_id=f'yoklama-{record.id}:absent',
-            hedef_tipi=HedefTipi.KULLANICI,
-            hedef_user_ids=[coach_user_id],
-            oncelik=GorevOncelik.YUKSEK,
-        )
+        # Devamsızlık bildirimi WhatsApp ile yapılıyor; otomatik VELI_GORUSME görevi kapalı.
+        return None
 
     def on_tahsilat_created(self, tahsilat, etkilenen_taksitler: list):
         """Tahsilat sonrası ilgili ödeme görevlerini otomatik kapat."""

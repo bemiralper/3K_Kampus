@@ -153,13 +153,13 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         module=MODULE_YOKLAMA,
         label='Yoklama — gelmedi',
         description=(
-            'Kütüphane / yoklama sisteminden “gelmedi” bildirimi. '
-            'Canlı devamsızlık WhatsApp mesajları bu olay üzerinden gider.'
+            'Kütüphane veya sınıf yoklamasından “gelmedi” bildirimi. '
+            'Veli ve öğrenciye gönderilebilir (kütüphane varsayılanı veli).'
         ),
-        recipients=(VELI,),
+        recipients=(VELI, OGRENCI),
         opt_in_category='devamsizlik',
         variables=(
-            'ogrenci_ad', 'veli_ad', 'tarih', 'saat',
+            'ogrenci_ad', 'veli_ad', 'tarih', 'saat', 'sinif',
             'yoklama_tarihi', 'oturum_ad', 'giris_saati', 'cikis_saati',
             'salon_ad', 'ders_no',
         ),
@@ -169,17 +169,24 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 'Sayın velimiz, {{ogrenci_ad}} {{tarih}} tarihinde kuruma gelmemiştir. '
                 'Bilgilerinize sunarız.'
             ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, {{tarih}} tarihinde yoklama kaydınız '
+                '“gelmedi” olarak işlenmiştir. Bilgine sunarız.'
+            ),
         }),
     ),
     NotificationEvent(
         key='yoklama.gec',
         module=MODULE_YOKLAMA,
         label='Yoklama — geç kalma',
-        description='Kütüphane / yoklama sisteminden geç giriş bildirimi.',
-        recipients=(VELI,),
+        description=(
+            'Kütüphane veya sınıf yoklamasından geç giriş bildirimi. '
+            'Veli ve öğrenciye gönderilebilir.'
+        ),
+        recipients=(VELI, OGRENCI),
         opt_in_category='devamsizlik',
         variables=(
-            'ogrenci_ad', 'veli_ad', 'tarih', 'saat',
+            'ogrenci_ad', 'veli_ad', 'tarih', 'saat', 'sinif',
             'yoklama_tarihi', 'oturum_ad', 'giris_saati', 'cikis_saati',
             'salon_ad', 'ders_no',
         ),
@@ -188,6 +195,10 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
             VELI: (
                 'Sayın velimiz, {{ogrenci_ad}} {{tarih}} tarihinde kuruma {{saat}} '
                 'saatinde geç giriş yapmıştır.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, {{tarih}} tarihinde yoklama kaydınız '
+                '“geç” olarak işlenmiştir.'
             ),
         }),
     ),

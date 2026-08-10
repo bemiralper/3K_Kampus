@@ -148,7 +148,7 @@ export default function OgrenciListesiPage() {
     cinsiyet: [],
   });
 
-  const statusFilter: StatusFilter = filters.durum || "all";
+  const statusFilter: StatusFilter = filters.durum || "aktif";
   const sortBy: SortOption =
     filters.sort === "name_desc" ||
     filters.sort === "name_asc" ||
@@ -284,7 +284,7 @@ export default function OgrenciListesiPage() {
     setSelectedIds(new Set());
     const cleared: OgrenciListFilters = {
       q: "",
-      durum: "all",
+      durum: "aktif",
       all_years: false,
       sinif_seviyesi_ids: [],
       sinif_ids: [],

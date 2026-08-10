@@ -13,6 +13,13 @@ from apps.academic.domain.class_schedule_notify_log import (
     ClassScheduleNotifyLog,
     ClassScheduleNotifyStatus,
 )
+from apps.academic.domain.class_period_attendance import (
+    ClassPeriodCode,
+    ClassPeriodAttendanceSession,
+    ClassPeriodAttendanceRecord,
+    ClassAttendanceNotifySource,
+    ClassAttendanceNotificationLog,
+)
 from apps.academic.domain.teacher_availability import (
     TeacherAvailabilitySet,
     TeacherAvailabilityCalendar,
@@ -33,6 +40,11 @@ __all__ = [
     'ClassLessonPlan',
     'ClassScheduleNotifyLog',
     'ClassScheduleNotifyStatus',
+    'ClassPeriodCode',
+    'ClassPeriodAttendanceSession',
+    'ClassPeriodAttendanceRecord',
+    'ClassAttendanceNotifySource',
+    'ClassAttendanceNotificationLog',
     'TeacherAvailabilitySet',
     'TeacherAvailabilityCalendar',
     'TeacherAvailabilityCell',

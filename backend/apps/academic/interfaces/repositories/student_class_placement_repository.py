@@ -8,6 +8,7 @@ from django.db import models
 from django.db.models import QuerySet, Count, F
 
 from apps.academic.domain.student_class_placement import StudentClassPlacement
+from apps.academic.domain.placement_queries import active_student_placements
 from apps.academic.interfaces.repositories.active_year import get_active_academic_year
 
 
@@ -41,10 +42,9 @@ class StudentClassPlacementRepository:
             Yerleşim QuerySet
         """
         active_year = get_active_academic_year()
-        return StudentClassPlacement.objects.filter(
+        return active_student_placements(
             academic_year=active_year,
             classroom_id=classroom_id,
-            is_active=True
         ).select_related(
             'term', 'student', 'classroom', 'group'
         ).order_by('student__ad', 'student__soyad')
@@ -62,11 +62,10 @@ class StudentClassPlacementRepository:
             Yerleşim QuerySet
         """
         active_year = get_active_academic_year()
-        return StudentClassPlacement.objects.filter(
+        return active_student_placements(
             academic_year=active_year,
             classroom_id=classroom_id,
             term_id=term_id,
-            is_active=True
         ).select_related(
             'term', 'student', 'classroom', 'group'
         ).order_by('student__ad', 'student__soyad')
@@ -83,10 +82,9 @@ class StudentClassPlacementRepository:
             Yerleşim QuerySet
         """
         active_year = get_active_academic_year()
-        return StudentClassPlacement.objects.filter(
+        return active_student_placements(
             academic_year=active_year,
             term_id=term_id,
-            is_active=True
         ).select_related(
             'term', 'student', 'classroom', 'group'
         ).order_by('classroom__ad', 'student__ad', 'student__soyad')
@@ -103,10 +101,9 @@ class StudentClassPlacementRepository:
             Yerleşim QuerySet
         """
         active_year = get_active_academic_year()
-        return StudentClassPlacement.objects.filter(
+        return active_student_placements(
             academic_year=active_year,
             group_id=group_id,
-            is_active=True
         ).select_related(
             'term', 'student', 'classroom', 'group'
         ).order_by('student__ad', 'student__soyad')
@@ -144,11 +141,10 @@ class StudentClassPlacementRepository:
             Öğrenci sayısı
         """
         active_year = get_active_academic_year()
-        return StudentClassPlacement.objects.filter(
+        return active_student_placements(
             academic_year=active_year,
             classroom_id=classroom_id,
             term_id=term_id,
-            is_active=True
         ).count()
     
     @staticmethod
@@ -164,11 +160,10 @@ class StudentClassPlacementRepository:
             Öğrenci sayısı
         """
         active_year = get_active_academic_year()
-        return StudentClassPlacement.objects.filter(
+        return active_student_placements(
             academic_year=active_year,
             group_id=group_id,
             term_id=term_id,
-            is_active=True
         ).count()
     
     @staticmethod

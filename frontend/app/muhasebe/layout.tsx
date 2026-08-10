@@ -59,6 +59,13 @@ function resolvePageTitle(pathname: string): string {
     if (pathname.includes("analitik")) return "Kütüphane · Analitik";
     return "Kütüphane";
   }
+  if (pathname.startsWith("/muhasebe/akademik-planlama")) {
+    if (pathname.includes("ders-operasyonlari")) return "Akademik · Ders Operasyonları";
+    if (pathname.includes("ders-programi")) return "Akademik · Ders Programı";
+    if (pathname.includes("planlama")) return "Akademik · Planlama";
+    if (pathname.includes("ozel-ders")) return "Akademik · Özel Ders";
+    return "Akademik Operasyon";
+  }
   const sorted = Object.keys(PAGE_TITLES).sort((a, b) => b.length - a.length);
   const match = sorted.find((p) => pathname.startsWith(p));
   return match ? PAGE_TITLES[match] : "Muhasebe Portalı";

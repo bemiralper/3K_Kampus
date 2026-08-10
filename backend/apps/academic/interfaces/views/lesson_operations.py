@@ -32,6 +32,20 @@ from apps.academic.services.lesson_session_service import (
 )
 from apps.academic.domain.lesson_session import LessonSession, SessionKind, SessionStatus
 from apps.academic.domain.lesson_attendance import StudentAttendanceStatus
+from apps.academic.domain.class_period_attendance import (
+    ClassPeriodAttendanceSession,
+    ClassPeriodCode,
+    ClassAttendanceNotifySource,
+)
+from apps.academic.services.class_period_attendance_service import (
+    get_or_build_period_roster,
+    list_period_sessions_for_date,
+    save_period_attendance,
+    serialize_period_session,
+)
+from apps.academic.application.class_attendance_notify_service import (
+    ClassAttendanceNotificationService,
+)
 from apps.personel.domain.models import Personel
 
 
@@ -313,6 +327,7 @@ def lesson_operations_meta_api(request):
         'student_attendance_statuses': [
             {'value': v, 'label': l} for v, l in StudentAttendanceStatus.choices
         ],
+        'period_codes': [{'value': v, 'label': l} for v, l in ClassPeriodCode.choices],
         'teachers': [
             {'id': t['id'], 'name': f"{t['ad']} {t['soyad']}".strip()} for t in teachers
         ],
@@ -325,4 +340,190 @@ def lesson_operations_meta_api(request):
             }
             for d in dersler
         ],
+    })
+
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
+def class_period_attendance_list_api(request):
+    """GET/POST /api/academic/class-period-attendance/ — günlük sabah/öğleden sonra."""
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+    try:
+        term_id = int(request.data.get('term_id') or request.query_params.get('term_id'))
+        classroom_id = int(
+            request.data.get('classroom_id') or request.query_params.get('classroom_id')
+        )
+    except (TypeError, ValueError):
+        return Response({'error': 'term_id ve classroom_id zorunludur.'}, status=400)
+
+    raw_date = request.data.get('date') or request.query_params.get('date')
+    try:
+        session_date = _parse_date(raw_date) or date.today()
+    except LessonSessionError as e:
+        return _err(e)
+
+    version_raw = request.data.get('version_id') or request.query_params.get('version_id')
+    version_id = int(version_raw) if version_raw else None
+    ensure = request.method == 'POST' or str(
+        request.query_params.get('ensure') or '',
+    ).lower() in ('1', 'true', 'yes')
+
+    try:
+        data = list_period_sessions_for_date(
+            term_id=term_id,
+            session_date=session_date,
+            classroom_id=classroom_id,
+            version_id=version_id,
+            user=request.user,
+            ensure=ensure,
+        )
+        return Response(data)
+    except LessonSessionError as e:
+        return _err(e)
+    except Exception:
+        return Response({
+            'date': session_date.isoformat(),
+            'classroom_id': classroom_id,
+            'periods': [],
+            'sessions': [],
+            'info': (
+                'Bu sınıfın seçilen günde programda dersi yok veya günlük yoklama '
+                'şu an kullanılamıyor. Ders programını kontrol edin.'
+            ),
+            'yoklama_kapali': True,
+        })
+
+
+@csrf_exempt
+@api_view(['GET', 'POST'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
+def class_period_student_attendance_api(request, pk):
+    """GET/POST /api/academic/class-period-attendance/<id>/student-attendance/"""
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+    try:
+        session = ClassPeriodAttendanceSession.objects.select_related('sinif').get(
+            pk=pk, is_active=True,
+        )
+    except ClassPeriodAttendanceSession.DoesNotExist:
+        return Response({'error': 'Oturum bulunamadı.'}, status=404)
+
+    # Şube izolasyonu
+    sube_id = ctx.get('sube_id')
+    if sube_id and session.sinif_id and getattr(session.sinif, 'sube_id', None) not in (None, sube_id):
+        return Response({'error': 'Bu oturuma erişim yok.'}, status=403)
+
+    if request.method == 'GET':
+        return Response({
+            'session': serialize_period_session(session),
+            'roster': get_or_build_period_roster(session),
+            'status_options': [
+                {'value': v, 'label': l} for v, l in StudentAttendanceStatus.choices
+            ],
+        })
+
+    try:
+        records = request.data.get('records') or []
+        roster = save_period_attendance(
+            session_id=pk,
+            records=records,
+            user=request.user,
+        )
+        return Response({'roster': roster, 'saved': len(records)})
+    except LessonSessionError as e:
+        return _err(e)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
+def class_attendance_notify_preview_api(request):
+    """POST /api/academic/class-attendance/notify/preview/"""
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+    source_type = (request.data.get('source_type') or '').upper()
+    try:
+        source_id = int(request.data.get('source_id'))
+    except (TypeError, ValueError):
+        return Response({'error': 'source_id zorunludur.'}, status=400)
+    if source_type not in ClassAttendanceNotifySource.values:
+        return Response({'error': 'source_type LESSON veya PERIOD olmalı.'}, status=400)
+
+    recipient_types = request.data.get('recipient_types') or ['VELI']
+    try:
+        preview = ClassAttendanceNotificationService().preview(
+            ctx['kurum_id'],
+            source_type=source_type,
+            source_id=source_id,
+            recipient_types=recipient_types,
+        )
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=400)
+
+    return Response({
+        'source_type': preview.source_type,
+        'source_id': preview.source_id,
+        'oturum_ad': preview.oturum_ad,
+        'pending_count': preview.pending_count,
+        'recipients': [
+            {
+                'ogrenci_id': r.ogrenci_id,
+                'ogrenci_ad': r.ogrenci_ad,
+                'recipient_type': r.recipient_type,
+                'recipient_id': r.recipient_id,
+                'recipient_ad': r.recipient_ad,
+                'telefon': r.telefon,
+                'event_key': r.event_key,
+                'status': r.status,
+                'body': r.body,
+                'skip_reason': r.skip_reason,
+            }
+            for r in preview.recipients
+        ],
+    })
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
+def class_attendance_notify_send_api(request):
+    """POST /api/academic/class-attendance/notify/send/"""
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+    source_type = (request.data.get('source_type') or '').upper()
+    try:
+        source_id = int(request.data.get('source_id'))
+    except (TypeError, ValueError):
+        return Response({'error': 'source_id zorunludur.'}, status=400)
+    if source_type not in ClassAttendanceNotifySource.values:
+        return Response({'error': 'source_type LESSON veya PERIOD olmalı.'}, status=400)
+
+    recipient_types = request.data.get('recipient_types') or ['VELI']
+    force = bool(request.data.get('force_resend'))
+    try:
+        result = ClassAttendanceNotificationService().send(
+            ctx['kurum_id'],
+            source_type=source_type,
+            source_id=source_id,
+            recipient_types=recipient_types,
+            sent_by_user_id=getattr(request.user, 'id', None),
+            force_resend=force,
+        )
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=400)
+
+    return Response({
+        'sent': result.sent,
+        'skipped': result.skipped,
+        'errors': result.errors,
     })

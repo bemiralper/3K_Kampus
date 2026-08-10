@@ -1487,6 +1487,129 @@ export async function saveLessonStudentAttendance(
   return unwrap(res);
 }
 
+export type ClassPeriodCode = 'MORNING' | 'AFTERNOON';
+
+export type ClassPeriodSession = {
+  id: number;
+  term_id: number;
+  sinif_id: number;
+  sinif_name?: string;
+  session_date: string;
+  period: ClassPeriodCode;
+  period_label: string;
+  schedule_version_id?: number | null;
+};
+
+export type ClassPeriodAvailable = {
+  period: ClassPeriodCode;
+  period_label: string;
+  session_id: number | null;
+  has_lessons: boolean;
+};
+
+export async function ensureClassPeriodAttendance(body: {
+  term_id: number;
+  classroom_id: number;
+  date: string;
+  version_id?: number;
+}): Promise<{
+  date: string;
+  classroom_id: number;
+  periods: ClassPeriodAvailable[];
+  sessions: ClassPeriodSession[];
+  info?: string;
+  yoklama_kapali?: boolean;
+}> {
+  const res = await apiFetch<{
+    date: string;
+    classroom_id: number;
+    periods: ClassPeriodAvailable[];
+    sessions: ClassPeriodSession[];
+    info?: string;
+    yoklama_kapali?: boolean;
+  }>('/api/academic/class-period-attendance/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return unwrap(res);
+}
+
+export async function fetchClassPeriodStudentAttendance(id: number): Promise<{
+  session: ClassPeriodSession;
+  roster: AttendanceRosterRow[];
+  status_options: { value: string; label: string }[];
+}> {
+  const res = await apiFetch<{
+    session: ClassPeriodSession;
+    roster: AttendanceRosterRow[];
+    status_options: { value: string; label: string }[];
+  }>(`/api/academic/class-period-attendance/${id}/student-attendance/`);
+  return unwrap(res);
+}
+
+export async function saveClassPeriodStudentAttendance(
+  id: number,
+  records: { student_id: number; status: string; note?: string }[],
+): Promise<{ roster: AttendanceRosterRow[]; saved: number }> {
+  const res = await apiFetch<{ roster: AttendanceRosterRow[]; saved: number }>(
+    `/api/academic/class-period-attendance/${id}/student-attendance/`,
+    { method: 'POST', body: JSON.stringify({ records }) },
+  );
+  return unwrap(res);
+}
+
+export type ClassAttendanceNotifySource = 'LESSON' | 'PERIOD';
+
+export type ClassAttendanceNotifyRecipient = {
+  ogrenci_id: number;
+  ogrenci_ad: string;
+  recipient_type: 'VELI' | 'OGRENCI';
+  recipient_id: number;
+  recipient_ad: string;
+  telefon: string;
+  event_key: string;
+  status: string;
+  body: string;
+  skip_reason: string;
+};
+
+export async function previewClassAttendanceNotify(body: {
+  source_type: ClassAttendanceNotifySource;
+  source_id: number;
+  recipient_types: Array<'VELI' | 'OGRENCI'>;
+}): Promise<{
+  source_type: string;
+  source_id: number;
+  oturum_ad: string;
+  pending_count: number;
+  recipients: ClassAttendanceNotifyRecipient[];
+}> {
+  const res = await apiFetch<{
+    source_type: string;
+    source_id: number;
+    oturum_ad: string;
+    pending_count: number;
+    recipients: ClassAttendanceNotifyRecipient[];
+  }>('/api/academic/class-attendance/notify/preview/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return unwrap(res);
+}
+
+export async function sendClassAttendanceNotify(body: {
+  source_type: ClassAttendanceNotifySource;
+  source_id: number;
+  recipient_types: Array<'VELI' | 'OGRENCI'>;
+  force_resend?: boolean;
+}): Promise<{ sent: number; skipped: number; errors: string[] }> {
+  const res = await apiFetch<{ sent: number; skipped: number; errors: string[] }>(
+    '/api/academic/class-attendance/notify/send/',
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+  return unwrap(res);
+}
+
 export async function fetchLessonPaySummary(params: {
   term_id: number;
   date_from?: string;

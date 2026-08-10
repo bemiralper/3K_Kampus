@@ -194,7 +194,7 @@ const navItems: MenuItem[] = [
     icon: icons.calendar,
     requiredPermissions: [
       "sinif.read", "sinif.write", "sinif.manage",
-      "egitim_tanimlari.read", "egitim_tanimlari.manage",
+      "egitim_tanimlari.read", "egitim_tanimlari.write", "egitim_tanimlari.manage",
     ],
     children: akademikSidebarChildren(),
   },

@@ -6,6 +6,7 @@ import {
   Button,
   DatePicker,
   Input,
+  Segmented,
   Select,
   Space,
   Table,
@@ -14,26 +15,33 @@ import {
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { ReloadOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import 'dayjs/locale/tr';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import {
+  ensureClassPeriodAttendance,
   fetchAcademicScheduleVersions,
   fetchClassLessonPlanContext,
+  fetchClassPeriodStudentAttendance,
   fetchLessonSessions,
   fetchLessonStudentAttendance,
   materializeLessonSessions,
+  saveClassPeriodStudentAttendance,
   saveLessonStudentAttendance,
   type AcademicScheduleVersion,
   type AttendanceRosterRow,
   type ClassLessonPlanContext,
+  type ClassPeriodSession,
   type LessonSession,
 } from '@/lib/academic-api';
+import ClassAttendanceNotifyModal from '@/components/akademik/ogrenci-yoklamalari/ClassAttendanceNotifyModal';
 import '@/components/akademik/ders-operasyonlari/ops-common.css';
 
 dayjs.locale('tr');
 const { Title, Text } = Typography;
+
+type Mode = 'lesson' | 'daily';
 
 export default function OgrenciYoklamalariClient() {
   const { activeKurum, activeSube, initialized } = useKurum();
@@ -43,12 +51,19 @@ export default function OgrenciYoklamalariClient() {
   const [versionId, setVersionId] = useState<number | null>(null);
   const [classroomId, setClassroomId] = useState<number | null>(null);
   const [date, setDate] = useState<Dayjs>(() => dayjs());
+  const [mode, setMode] = useState<Mode>('lesson');
+
   const [sessions, setSessions] = useState<LessonSession[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
+  const [periodSessions, setPeriodSessions] = useState<ClassPeriodSession[]>([]);
+  const [periodSessionId, setPeriodSessionId] = useState<number | null>(null);
+  const [periodInfo, setPeriodInfo] = useState<string>('');
+
   const [roster, setRoster] = useState<AttendanceRosterRow[]>([]);
   const [statusOptions, setStatusOptions] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
 
   const boot = useCallback(async () => {
     if (!initialized || !activeKurum || !activeSube) return;
@@ -74,7 +89,7 @@ export default function OgrenciYoklamalariClient() {
     });
   }, [termId]);
 
-  const loadSessions = useCallback(async () => {
+  const loadLessonSessions = useCallback(async () => {
     if (!termId) return;
     setLoading(true);
     try {
@@ -96,46 +111,92 @@ export default function OgrenciYoklamalariClient() {
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Oturumlar yüklenemedi');
       setSessions([]);
+      setSessionId(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [classroomId, date, termId, versionId]);
+
+  const loadPeriodSessions = useCallback(async () => {
+    if (!termId || !classroomId) {
+      setPeriodSessions([]);
+      setPeriodSessionId(null);
+      setPeriodInfo('');
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await ensureClassPeriodAttendance({
+        term_id: termId,
+        classroom_id: classroomId,
+        date: date.format('YYYY-MM-DD'),
+        version_id: versionId ?? undefined,
+      });
+      const sessions = data.sessions || [];
+      setPeriodSessions(sessions);
+      setPeriodInfo(
+        data.info
+        || (sessions.length === 0
+          ? 'Bu sınıfın seçilen günde programda dersi yok. Günlük yoklama kapalı.'
+          : ''),
+      );
+      setPeriodSessionId((prev) => {
+        if (prev && sessions.some((s) => s.id === prev)) return prev;
+        return sessions[0]?.id ?? null;
+      });
+    } catch {
+      setPeriodSessions([]);
+      setPeriodSessionId(null);
+      setPeriodInfo(
+        'Bu sınıfın seçilen günde programda dersi yok. Günlük yoklama yalnızca dersi olan günlerde açılır.',
+      );
     } finally {
       setLoading(false);
     }
   }, [classroomId, date, termId, versionId]);
 
   useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+    if (mode === 'lesson') loadLessonSessions();
+    else loadPeriodSessions();
+  }, [mode, loadLessonSessions, loadPeriodSessions]);
+
+  const activeSourceId = mode === 'lesson' ? sessionId : periodSessionId;
 
   const loadRoster = useCallback(async () => {
-    if (!sessionId) {
+    if (!activeSourceId) {
       setRoster([]);
       return;
     }
     try {
-      const data = await fetchLessonStudentAttendance(sessionId);
+      const data =
+        mode === 'lesson'
+          ? await fetchLessonStudentAttendance(activeSourceId)
+          : await fetchClassPeriodStudentAttendance(activeSourceId);
       setRoster(data.roster);
       setStatusOptions(data.status_options || []);
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Yoklama listesi yüklenemedi');
       setRoster([]);
     }
-  }, [sessionId]);
+  }, [activeSourceId, mode]);
 
   useEffect(() => {
     loadRoster();
   }, [loadRoster]);
 
   const save = async () => {
-    if (!sessionId) return;
+    if (!activeSourceId) return;
     setSaving(true);
     try {
-      const result = await saveLessonStudentAttendance(
-        sessionId,
-        roster.map((r) => ({
-          student_id: r.student_id,
-          status: r.status,
-          note: r.note,
-        })),
-      );
+      const payload = roster.map((r) => ({
+        student_id: r.student_id,
+        status: r.status,
+        note: r.note,
+      }));
+      const result =
+        mode === 'lesson'
+          ? await saveLessonStudentAttendance(activeSourceId, payload)
+          : await saveClassPeriodStudentAttendance(activeSourceId, payload);
       setRoster(result.roster);
       message.success('Yoklama kaydedildi');
     } catch (e) {
@@ -215,7 +276,9 @@ export default function OgrenciYoklamalariClient() {
     return <Alert type="warning" showIcon message="Kurum ve şube seçimi gerekli" />;
   }
 
-  const selected = sessions.find((s) => s.id === sessionId);
+  const selectedLesson = sessions.find((s) => s.id === sessionId);
+  const selectedPeriod = periodSessions.find((s) => s.id === periodSessionId);
+  const notifyEligible = roster.some((r) => r.status === 'ABSENT' || r.status === 'LATE');
 
   return (
     <div className="ops-page">
@@ -223,15 +286,44 @@ export default function OgrenciYoklamalariClient() {
         <div>
           <Title level={3} style={{ margin: 0 }}>Öğrenci Yoklamaları</Title>
           <Text type="secondary">
-            Sınıf yerleşimine göre yoklama listesi. Önce oturum seçin, durumları kaydedin.
+            Ders bazlı veya günlük (sabah / öğleden sonra) yoklama. Kaydettikten sonra veliye
+            bildirebilirsiniz.
           </Text>
         </div>
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={() => { boot(); loadSessions(); }}>
+        <Space wrap>
+          <Segmented
+            value={mode}
+            onChange={(v) => setMode(v as Mode)}
+            options={[
+              { label: 'Ders bazlı', value: 'lesson' },
+              { label: 'Günlük', value: 'daily' },
+            ]}
+          />
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              boot();
+              if (mode === 'lesson') loadLessonSessions();
+              else loadPeriodSessions();
+            }}
+          >
             Yenile
           </Button>
-          <Button type="primary" icon={<SaveOutlined />} loading={saving} disabled={!sessionId} onClick={save}>
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            loading={saving}
+            disabled={!activeSourceId}
+            onClick={save}
+          >
             Kaydet
+          </Button>
+          <Button
+            icon={<SendOutlined />}
+            disabled={!activeSourceId || !notifyEligible}
+            onClick={() => setNotifyOpen(true)}
+          >
+            Bildir
           </Button>
         </Space>
       </div>
@@ -275,24 +367,41 @@ export default function OgrenciYoklamalariClient() {
               options={(context?.classrooms || []).map((c) => ({ value: c.id, label: c.ad }))}
             />
           </div>
-          <div className="ops-filter-item" style={{ minWidth: 280 }}>
-            <label>Oturum</label>
-            <Select
-              loading={loading}
-              style={{ minWidth: 280 }}
-              value={sessionId ?? undefined}
-              onChange={setSessionId}
-              placeholder="Ders oturumu seçin"
-              options={sessions.map((s) => ({
-                value: s.id,
-                label: `${s.start_time || ''} ${s.ders?.name || ''} · ${s.ogretmen?.name || ''}`,
-              }))}
-            />
-          </div>
+          {mode === 'lesson' ? (
+            <div className="ops-filter-item" style={{ minWidth: 280 }}>
+              <label>Oturum</label>
+              <Select
+                loading={loading}
+                style={{ minWidth: 280 }}
+                value={sessionId ?? undefined}
+                onChange={setSessionId}
+                placeholder="Ders oturumu seçin"
+                options={sessions.map((s) => ({
+                  value: s.id,
+                  label: `${s.start_time || ''} ${s.ders?.name || ''} · ${s.ogretmen?.name || ''}`,
+                }))}
+              />
+            </div>
+          ) : (
+            <div className="ops-filter-item" style={{ minWidth: 200 }}>
+              <label>Periyot</label>
+              <Select
+                loading={loading}
+                style={{ minWidth: 200 }}
+                value={periodSessionId ?? undefined}
+                onChange={setPeriodSessionId}
+                placeholder="Sabah / Öğleden sonra"
+                options={periodSessions.map((s) => ({
+                  value: s.id,
+                  label: s.period_label,
+                }))}
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      {!sessions.length ? (
+      {mode === 'lesson' && !sessions.length ? (
         <Alert
           type="info"
           showIcon
@@ -301,26 +410,55 @@ export default function OgrenciYoklamalariClient() {
         />
       ) : null}
 
-      <div className="ops-card">
-        <div className="ops-card-head">
-          <Text strong>
-            {selected
-              ? `${selected.ders?.name} · ${selected.sinif?.name} · ${selected.start_time}`
-              : 'Yoklama listesi'}
-          </Text>
-          <Text type="secondary">{roster.length} öğrenci</Text>
-        </div>
-        <Table<AttendanceRosterRow>
-          rowKey="student_id"
-          columns={columns}
-          dataSource={roster}
-          pagination={false}
-          locale={{
-            emptyText:
-              'Liste boş. Sınıfa öğrenci yerleşimi yoksa yoklama satırı oluşmaz.',
-          }}
+      {mode === 'daily' && !periodSessions.length ? (
+        <Alert
+          type="info"
+          showIcon
+          message="Günlük yoklama kapalı"
+          description={
+            periodInfo
+            || 'Bu sınıfın seçilen günde programda dersi yok. Sabah veya öğleden sonra dersi olan günlerde yoklama açılır.'
+          }
         />
-      </div>
+      ) : null}
+
+      {(mode === 'lesson' ? !!sessionId : !!periodSessionId) ? (
+        <div className="ops-card">
+          <div className="ops-card-head">
+            <Text strong>
+              {mode === 'lesson'
+                ? selectedLesson
+                  ? `${selectedLesson.ders?.name} · ${selectedLesson.sinif?.name} · ${selectedLesson.start_time}`
+                  : 'Yoklama listesi'
+                : selectedPeriod
+                  ? `${selectedPeriod.period_label} · ${selectedPeriod.sinif_name || ''}`
+                  : 'Günlük yoklama listesi'}
+            </Text>
+            <Text type="secondary">{roster.length} öğrenci</Text>
+          </div>
+          <Table<AttendanceRosterRow>
+            rowKey="student_id"
+            columns={columns}
+            dataSource={roster}
+            pagination={false}
+            locale={{
+              emptyText:
+                'Liste boş. Sınıfa öğrenci yerleşimi yoksa yoklama satırı oluşmaz.',
+            }}
+          />
+        </div>
+      ) : null}
+
+      {activeSourceId ? (
+        <ClassAttendanceNotifyModal
+          open={notifyOpen}
+          sourceType={mode === 'lesson' ? 'LESSON' : 'PERIOD'}
+          sourceId={activeSourceId}
+          title="Yoklama bildirimi"
+          onClose={() => setNotifyOpen(false)}
+          onSent={(n) => message.success(`${n} bildirim kuyruğa alındı`)}
+        />
+      ) : null}
     </div>
   );
 }

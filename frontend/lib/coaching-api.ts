@@ -244,15 +244,28 @@ export function normalizeAssignmentList(data: unknown): Assignment[] {
   return [];
 }
 
+function isActiveAssignment(a: Assignment): boolean {
+  if (typeof a.is_active === 'boolean') return a.is_active;
+  return !a.end_date;
+}
+
+/**
+ * Aktif koç seçimi.
+ * - honorExplicitActiveCoach: API `active_coach` (null dahil) kesin kabul edilir.
+ * - Aksi halde yalnızca end_date'siz / is_active satırlar.
+ */
 function pickActiveAssignment(
   assignments: Assignment[],
-  activeCoach?: Assignment | null
+  activeCoach?: Assignment | null,
+  options?: { honorExplicitActiveCoach?: boolean },
 ): Assignment | null {
-  if (activeCoach) return activeCoach;
+  if (options?.honorExplicitActiveCoach) {
+    return activeCoach ?? null;
+  }
+  if (activeCoach && isActiveAssignment(activeCoach)) return activeCoach;
   return (
-    assignments.find(a => a.is_primary && (a.is_active ?? !a.end_date)) ??
-    assignments.find(a => a.is_active ?? !a.end_date) ??
-    assignments[0] ??
+    assignments.find((a) => a.is_primary && isActiveAssignment(a)) ??
+    assignments.find((a) => isActiveAssignment(a)) ??
     null
   );
 }
@@ -300,11 +313,18 @@ export async function fetchActiveCoachForStudent(
 ): Promise<ApiResponse<Assignment | null>> {
   const historyRes = await fetchStudentCoachHistory(studentId);
   if (historyRes.success) {
-    const activeCoach = historyRes.active_coach ?? null;
     const assignments = normalizeAssignmentList(historyRes.data);
+    const hasExplicitActiveCoach = Object.prototype.hasOwnProperty.call(
+      historyRes,
+      'active_coach',
+    );
     return {
       success: true,
-      data: pickActiveAssignment(assignments, activeCoach),
+      data: pickActiveAssignment(
+        assignments,
+        hasExplicitActiveCoach ? (historyRes.active_coach ?? null) : undefined,
+        { honorExplicitActiveCoach: hasExplicitActiveCoach },
+      ),
     };
   }
 

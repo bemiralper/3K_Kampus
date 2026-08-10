@@ -987,6 +987,7 @@ def ogrenci_search_api(request):
         kurum_id=ctx['kurum_id'],
         sube_id=ctx['sube_id'],
         aktif_mi=True,
+        ogrenci__aktif_mi=True,
     ).select_related('ogrenci', 'sinif', 'sinif__sinif_seviyesi')
 
     if ctx.get('egitim_yili_id'):

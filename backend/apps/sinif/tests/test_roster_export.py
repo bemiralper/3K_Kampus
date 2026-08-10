@@ -149,3 +149,16 @@ class SinifRosterExportTest(TestCase):
         self.assertEqual(res.status_code, 200)
         row = next(r for r in res.json()['rows'] if r['ad'] == '11-A')
         self.assertEqual(row['ogrenci_sayisi'], 1)
+
+    def test_roster_export_excludes_passive_student(self):
+        self.ogrenci.aktif_mi = False
+        self.ogrenci.save(update_fields=['aktif_mi'])
+        # Yerleşim hâlâ aktif olsa bile pasif öğrenci listede olmamalı
+        res = self.client.get(
+            f'/siniflar/api/roster-export/?format=json&scope=sinif&sinif_id={self.sinif_11a.id}&term_id={self.term.id}',
+            **self._headers(),
+        )
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body['total_students'], 0)
+        self.assertEqual(body['groups'][0]['ogrenci_sayisi'], 0)

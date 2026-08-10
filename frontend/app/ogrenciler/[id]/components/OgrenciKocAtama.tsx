@@ -9,6 +9,7 @@ import {
   createAssignment,
   fetchActiveCoachForStudent,
   fetchCoaches,
+  removeAssignment,
   type Assignment,
   type Coach,
 } from "@/lib/coaching-api";
@@ -155,6 +156,35 @@ export default function OgrenciKocAtama({ studentId, studentName }: OgrenciKocAt
       setError(errMsg);
     } catch {
       setError("Bir hata oluştu.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!activeAssignment?.id) return;
+    if (
+      !window.confirm(
+        `${studentName} öğrencisinden koç atamasını kaldırmak istediğinize emin misiniz?`,
+      )
+    ) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await removeAssignment(activeAssignment.id);
+      if (res.success) {
+        setActiveAssignment(null);
+        setSelectedCoachId("");
+        setSuccess(res.message || "Koç ataması kaldırıldı.");
+        await loadAssignment();
+      } else {
+        setError(coachingActionError(res, "Koç kaldırılamadı."));
+      }
+    } catch {
+      setError("Koç kaldırılırken bir hata oluştu.");
     } finally {
       setSubmitting(false);
     }
@@ -309,6 +339,26 @@ export default function OgrenciKocAtama({ studentId, studentName }: OgrenciKocAt
                 ? "Koçu Değiştir"
                 : "Koç Ata"}
           </button>
+
+          {activeAssignment ? (
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={submitting}
+              style={{
+                padding: "7px 12px",
+                borderRadius: "8px",
+                border: "1px solid #fecaca",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: submitting ? "not-allowed" : "pointer",
+                background: "#fff",
+                color: "#b91c1c",
+              }}
+            >
+              Koçu Kaldır
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -329,8 +379,9 @@ export default function OgrenciKocAtama({ studentId, studentName }: OgrenciKocAt
             maxWidth: "240px",
           }}
         >
-          Koç değiştirmek için yukarıdan yeni koç seçip <strong>Koçu Değiştir</strong>{" "}
-          butonuna basın. Önceki koçun ödev ve görüşme kayıtları silinmez.
+          Koç değiştirmek için yeni koç seçip <strong>Koçu Değiştir</strong> basın.
+          Atamayı tamamen kaldırmak için <strong>Koçu Kaldır</strong> kullanın. Önceki
+          ödev ve görüşme kayıtları silinmez.
         </span>
       )}
     </div>

@@ -85,7 +85,7 @@ export default function AkademikOperasyonHome() {
           status="403"
           title="Yetkiniz Yok"
           subTitle="Akademik Operasyonlar modülünü görüntülemek için gerekli yetkiye sahip değilsiniz."
-          extra={<Link href="/dashboard">Ana Sayfaya Dön</Link>}
+          extra={<Link href={homeHref}>Ana Sayfaya Dön</Link>}
         />
       </div>
     );

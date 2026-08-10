@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.db.models import Q
 
 from apps.academic.domain.student_class_placement import StudentClassPlacement
+from apps.academic.domain.placement_queries import active_student_placements
 from apps.academic.services.active_academic_year import get_active_academic_year
 from apps.academic.services.student_class_placement_service import StudentClassPlacementService
 from apps.ogrenci.domain.models import OgrenciKayit
@@ -16,11 +17,10 @@ def placement_counts_for_term(term_id: int, sinif_ids: list[int]) -> dict[int, i
         return {}
     active_year = get_active_academic_year()
     counts: dict[int, int] = {sid: 0 for sid in sinif_ids}
-    for classroom_id in StudentClassPlacement.objects.filter(
+    for classroom_id in active_student_placements(
         academic_year=active_year,
         term_id=term_id,
         classroom_id__in=sinif_ids,
-        is_active=True,
     ).values_list('classroom_id', flat=True):
         counts[classroom_id] = counts.get(classroom_id, 0) + 1
     return counts
@@ -29,10 +29,9 @@ def placement_counts_for_term(term_id: int, sinif_ids: list[int]) -> dict[int, i
 def students_placed_in_term(term_id: int) -> set[int]:
     active_year = get_active_academic_year()
     return set(
-        StudentClassPlacement.objects.filter(
+        active_student_placements(
             academic_year=active_year,
             term_id=term_id,
-            is_active=True,
         ).values_list('student_id', flat=True)
     )
 
@@ -72,10 +71,9 @@ def _base_kayitlar_query(
 def term_placement_map(term_id: int) -> dict[int, dict]:
     """student_id -> { id, ad } sınıf yerleşimi (aktif dönem)."""
     active_year = get_active_academic_year()
-    rows = StudentClassPlacement.objects.filter(
+    rows = active_student_placements(
         academic_year=active_year,
         term_id=term_id,
-        is_active=True,
     ).select_related('classroom')
     return {
         row.student_id: {'id': row.classroom_id, 'ad': row.classroom.ad}

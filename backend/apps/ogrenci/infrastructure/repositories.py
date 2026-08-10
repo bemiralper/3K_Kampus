@@ -94,6 +94,8 @@ class OgrenciRepository:
             ogrenci.save()
             if aktif_mi_changed:
                 self._sync_kayit_aktif_mi(pk, ogrenci.aktif_mi)
+                if not ogrenci.aktif_mi:
+                    self._deactivate_related(pk)
         return ogrenci
     
     def delete(self, pk):
@@ -103,6 +105,7 @@ class OgrenciRepository:
             ogrenci.aktif_mi = False
             ogrenci.save(update_fields=['aktif_mi'])
             self._sync_kayit_aktif_mi(pk, False)
+            self._deactivate_related(pk)
             return True
         return False
 
@@ -125,6 +128,60 @@ class OgrenciRepository:
             OgrenciKayit.objects.filter(
                 ogrenci_id=ogrenci_id, aktif_mi=True,
             ).update(aktif_mi=False)
+
+    def _deactivate_related(self, ogrenci_id):
+        """Pasife alınca sınıf yerleşimi, koç ve masa atamalarını kapat.
+
+        Yeniden aktifleştirmede yerleşim/atamalar otomatik geri gelmez;
+        öğrenci gerektiğinde yeniden yerleştirilir.
+        """
+        from datetime import date
+
+        try:
+            from apps.academic.domain.student_class_placement import StudentClassPlacement
+            StudentClassPlacement.objects.filter(
+                student_id=ogrenci_id, is_active=True,
+            ).update(is_active=False)
+        except Exception:
+            pass
+
+        try:
+            from apps.coaching.models import CoachStudentAssignment
+            CoachStudentAssignment.objects.filter(
+                student_id=ogrenci_id, end_date__isnull=True,
+            ).update(end_date=date.today())
+        except Exception:
+            pass
+
+        try:
+            from django.utils import timezone
+            from apps.kutuphane.domain.models import (
+                AssignmentStatus,
+                Seat,
+                SeatAssignment,
+                SeatStatus,
+            )
+            active_seats = list(
+                SeatAssignment.objects.filter(
+                    ogrenci_id=ogrenci_id,
+                    durum=AssignmentStatus.ACTIVE,
+                ).values_list('seat_id', flat=True)
+            )
+            SeatAssignment.objects.filter(
+                ogrenci_id=ogrenci_id,
+                durum=AssignmentStatus.ACTIVE,
+            ).update(
+                durum=AssignmentStatus.ENDED,
+                sonlanma_tarihi=timezone.now(),
+                sonlanma_sebebi='Öğrenci pasife alındı',
+            )
+            if active_seats:
+                Seat.objects.filter(
+                    id__in=active_seats,
+                    durum=SeatStatus.OCCUPIED,
+                ).update(durum=SeatStatus.AVAILABLE)
+        except Exception:
+            pass
     
     def hard_delete(self, pk):
         """Öğrenci kalıcı sil"""
@@ -227,5 +284,6 @@ class OgrenciKayitRepository:
         return OgrenciKayit.objects.filter(
             sinif_id=sinif_id,
             egitim_yili_id=egitim_yili_id,
-            aktif_mi=True
+            aktif_mi=True,
+            ogrenci__aktif_mi=True,
         ).count()

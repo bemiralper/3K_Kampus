@@ -602,6 +602,23 @@ class AssignmentService:
         return assignment
 
 
+def _active_seat_assignments_for_library(library_id):
+    """Aktif masa atamaları — pasif öğrenciler hariç."""
+    from apps.ogrenci.domain.models import Ogrenci
+
+    qs = SeatAssignment.objects.filter(
+        library_id=library_id,
+        durum=AssignmentStatus.ACTIVE,
+    ).select_related('seat')
+    ogrenci_ids = list(qs.values_list('ogrenci_id', flat=True))
+    if not ogrenci_ids:
+        return qs.none()
+    active_ids = Ogrenci.objects.filter(
+        id__in=ogrenci_ids, aktif_mi=True,
+    ).values_list('id', flat=True)
+    return qs.filter(ogrenci_id__in=active_ids)
+
+
 class AttendanceService:
     """Yoklama iş mantığı"""
 
@@ -697,10 +714,7 @@ class AttendanceService:
         # ─── Otomatik yoklama kayıtları oluştur ───
         # Bu salondaki aktif masa atamalarına sahip tüm öğrenciler için
         # varsayılan ABSENT durumunda yoklama kaydı oluştur
-        aktif_atamalar = SeatAssignment.objects.filter(
-            library_id=library_id,
-            durum=AssignmentStatus.ACTIVE
-        ).select_related('seat')
+        aktif_atamalar = _active_seat_assignments_for_library(library_id)
 
         # İzinli öğrenci listesini al
         library = session.library
@@ -925,17 +939,6 @@ class AttendanceService:
                 'Yoklama bildirim tespiti başarısız session=%s', session_id,
             )
 
-        try:
-            from apps.gorev.application.rule_engine import hook_attendance_absent
-            for rec in saved_records:
-                if rec.durum == 'ABSENT':
-                    hook_attendance_absent(rec, kurum_id)
-        except Exception:
-            import logging
-            logging.getLogger('gorev.rule_engine').exception(
-                'Devamsızlık görev hook hatası session=%s', session_id,
-            )
-
         return {
             'records': AttendanceRepository.get_records(session_id),
             'saved': saved_count,
@@ -950,10 +953,7 @@ class AttendanceService:
 
         # Eğer session OPEN ise ve hiç kayıt yoksa, aktif atamalardan oluştur
         if session.durum == AttendanceSessionStatus.OPEN and not records.exists():
-            aktif_atamalar = SeatAssignment.objects.filter(
-                library_id=session.library_id,
-                durum=AssignmentStatus.ACTIVE
-            ).select_related('seat')
+            aktif_atamalar = _active_seat_assignments_for_library(session.library_id)
 
             # İzinli öğrenci listesini al
             izinli_ogrenciler = set()
@@ -1006,11 +1006,10 @@ class AttendanceService:
         if not library:
             raise ValueError("Kütüphane bulunamadı")
 
-        # Aktif masa atamalı öğrencileri getir
-        aktif_atamalar = SeatAssignment.objects.filter(
-            library_id=library_id,
-            durum=AssignmentStatus.ACTIVE
-        ).select_related('seat').order_by('seat__masa_no')
+        # Aktif masa atamalı öğrencileri getir (pasif öğrenciler hariç)
+        aktif_atamalar = _active_seat_assignments_for_library(library_id).order_by(
+            'seat__masa_no'
+        )
 
         if not aktif_atamalar.exists():
             return {'library': library, 'tarih': tarih, 'students': [], 'sessions': []}

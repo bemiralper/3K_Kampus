@@ -233,7 +233,7 @@ export function parseFiltersFromSearchParams(params: URLSearchParams): OgrenciLi
 
   return {
     q: params.get('q') || '',
-    durum: (params.get('durum') as OgrenciListFilters['durum']) || 'all',
+    durum: (params.get('durum') as OgrenciListFilters['durum']) || 'aktif',
     all_years: params.get('all_years') === '1',
     sinif_seviyesi_ids: sinifSeviyesiIds,
     sinif_ids: sinifIds,

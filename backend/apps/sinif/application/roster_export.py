@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.academic.domain.student_class_placement import StudentClassPlacement
+from apps.academic.domain.placement_queries import active_student_placements
 from apps.academic.services.active_academic_year import get_active_academic_year
 from apps.ogrenci.domain.models import OgrenciKayit
 from apps.ogrenci.interfaces.list_helpers import (
@@ -114,11 +114,10 @@ def build_roster_groups(siniflar: list[Sinif], term_id: int) -> list[dict[str, A
 
     for sinif in siniflar:
         placements = (
-            StudentClassPlacement.objects.filter(
+            active_student_placements(
                 academic_year=active_year,
                 term_id=term_id,
                 classroom_id=sinif.id,
-                is_active=True,
             )
             .select_related('student')
             .order_by('student__ad', 'student__soyad')
@@ -148,8 +147,10 @@ def build_roster_groups(siniflar: list[Sinif], term_id: int) -> list[dict[str, A
         coach_map = build_primary_coach_name_map(student_ids) if student_ids else {}
 
         rows: list[dict[str, Any]] = []
-        for idx, placement in enumerate(placements, start=1):
+        for placement in placements:
             student = placement.student
+            if not student or not student.aktif_mi:
+                continue
             kayit = kayit_map.get(student.id)
             if kayit:
                 row = serialize_kayit_row(
@@ -188,7 +189,7 @@ def build_roster_groups(siniflar: list[Sinif], term_id: int) -> list[dict[str, A
                     'koc_adi': coach_map.get(student.id, ''),
                 }
 
-            row['sira'] = idx
+            row['sira'] = len(rows) + 1
             row['sinif_ad'] = sinif.ad
             row['sinif_seviyesi'] = sinif.sinif_seviyesi.ad if sinif.sinif_seviyesi else ''
             row['alan'] = kayit.alan.ad if kayit and kayit.alan_id and kayit.alan else ''

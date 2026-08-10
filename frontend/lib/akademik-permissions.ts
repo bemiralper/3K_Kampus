@@ -9,12 +9,14 @@ export const AKADEMIK_READ_PERMISSIONS = [
   "sinif.write",
   "sinif.manage",
   "egitim_tanimlari.read",
+  "egitim_tanimlari.write",
   "egitim_tanimlari.manage",
 ];
 
 export const AKADEMIK_WRITE_PERMISSIONS = [
   "sinif.write",
   "sinif.manage",
+  "egitim_tanimlari.write",
   "egitim_tanimlari.manage",
 ];
 

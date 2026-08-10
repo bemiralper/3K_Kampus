@@ -6,8 +6,9 @@ yetki/login kontrolü olmadan (plain Django view) çalışıyordu. Bu dosya, hem
 yetki modeli sağlar.
 
 Okuma (GET/HEAD/OPTIONS): sinif.read / sinif.write / sinif.manage /
-    egitim_tanimlari.read / egitim_tanimlari.manage
-Yazma (POST/PUT/PATCH/DELETE): sinif.write / sinif.manage / egitim_tanimlari.manage
+    egitim_tanimlari.read / egitim_tanimlari.write / egitim_tanimlari.manage
+Yazma (POST/PUT/PATCH/DELETE): sinif.write / sinif.manage /
+    egitim_tanimlari.write / egitim_tanimlari.manage
 
 `user_has_any_permission` süper kullanıcıyı ve `sistem.admin` yetkisini de
 otomatik olarak kapsar (bkz. shared/permissions.py).
@@ -21,9 +22,12 @@ from shared.permissions import user_has_any_permission
 
 ACADEMIC_READ_CODES = (
     'sinif.read', 'sinif.write', 'sinif.manage',
-    'egitim_tanimlari.read', 'egitim_tanimlari.manage',
+    'egitim_tanimlari.read', 'egitim_tanimlari.write', 'egitim_tanimlari.manage',
 )
-ACADEMIC_WRITE_CODES = ('sinif.write', 'sinif.manage', 'egitim_tanimlari.manage')
+ACADEMIC_WRITE_CODES = (
+    'sinif.write', 'sinif.manage',
+    'egitim_tanimlari.write', 'egitim_tanimlari.manage',
+)
 
 
 def user_can_read_academic(user) -> bool:

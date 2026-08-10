@@ -33,7 +33,7 @@ export default function AkademikGroupLayout({ group, children }: Props) {
           status="403"
           title="Yetkiniz Yok"
           subTitle="Akademik Operasyonlar modülünü görüntülemek için gerekli yetkiye sahip değilsiniz. Erişim gerekiyorsa yöneticinizden 'Sınıf' veya 'Eğitim Tanımları' yetkisi talep edin."
-          extra={<Link href="/dashboard">Ana Sayfaya Dön</Link>}
+          extra={<Link href={homeHref}>Ana Sayfaya Dön</Link>}
         />
       </div>
     );

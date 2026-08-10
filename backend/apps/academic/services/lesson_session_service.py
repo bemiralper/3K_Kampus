@@ -28,7 +28,7 @@ from apps.academic.domain.schedule_change_log import (
     ScheduleChangeLog,
 )
 from apps.academic.domain.schedule_version import ScheduleVersion
-from apps.academic.domain.student_class_placement import StudentClassPlacement
+from apps.academic.domain.placement_queries import active_student_placements
 from apps.academic.domain.weekly_day import WeeklyDay
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.personel.domain.models import Personel
@@ -597,12 +597,12 @@ def get_or_build_student_roster(session: LessonSession) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
     if session.session_kind == SessionKind.PRIVATE and session.private_student_id:
-        students = [session.private_student]
+        st = session.private_student
+        students = [st] if st and getattr(st, 'aktif_mi', True) else []
     elif session.sinif_id:
-        placements = StudentClassPlacement.objects.filter(
+        placements = active_student_placements(
             classroom_id=session.sinif_id,
             term_id=session.term_id,
-            is_active=True,
         ).select_related('student').order_by('student__ad', 'student__soyad')
         students = [p.student for p in placements if p.student_id]
     else:

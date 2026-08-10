@@ -23,6 +23,13 @@ from .lesson_session import (
 from .lesson_attendance import LessonAttendanceRecord, StudentAttendanceStatus
 from .schedule_change_log import ScheduleChangeLog, ScheduleChangeAction
 from .class_schedule_notify_log import ClassScheduleNotifyLog, ClassScheduleNotifyStatus
+from .class_period_attendance import (
+    ClassPeriodCode,
+    ClassPeriodAttendanceSession,
+    ClassPeriodAttendanceRecord,
+    ClassAttendanceNotifySource,
+    ClassAttendanceNotificationLog,
+)
 
 __all__ = [
     'ScheduleTemplate', 
@@ -54,4 +61,9 @@ __all__ = [
     'ScheduleChangeAction',
     'ClassScheduleNotifyLog',
     'ClassScheduleNotifyStatus',
+    'ClassPeriodCode',
+    'ClassPeriodAttendanceSession',
+    'ClassPeriodAttendanceRecord',
+    'ClassAttendanceNotifySource',
+    'ClassAttendanceNotificationLog',
 ]
