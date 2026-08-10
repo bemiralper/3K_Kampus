@@ -23,7 +23,10 @@ from apps.communication.application.variable_resolver import (
     build_recipient_context_from_conversation,
     resolve_variables,
 )
-from apps.communication.domain.enums import MetaTemplateUsage
+from django.conf import settings
+
+from apps.communication.domain.enums import MetaTemplateStatus, MetaTemplateUsage
+from apps.communication.domain.models import WhatsAppMetaTemplate
 from apps.communication.interfaces.serializers import MessageSerializer
 from apps.communication.interfaces.serializers.meta_template import (
     WhatsAppMetaTemplateSerializer,
@@ -31,6 +34,33 @@ from apps.communication.interfaces.serializers.meta_template import (
 from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube
 from apps.communication.interfaces.views.messages import _load_conversation_for_messages
+
+
+def _list_personal_chat_templates(kurum_id: int, channel_config_id=None):
+    """
+    Sohbet «Şablon seç» listesi — yalnızca PERSONAL kapsamı (ALL sistem şablonları değil).
+    development/demo'da henüz Meta onayı almamış sohbet_* taslakları da görünür.
+    """
+    qs = (
+        WhatsAppMetaTemplate.objects
+        .select_related('channel_config', 'created_by')
+        .prefetch_related('app_templates')
+        .filter(kurum_id=kurum_id, usage_scope=MetaTemplateUsage.PERSONAL)
+    )
+    if channel_config_id:
+        qs = qs.filter(channel_config_id=channel_config_id)
+
+    env = (getattr(settings, 'DJANGO_ENV', None) or '').lower()
+    allow_unapproved = bool(settings.DEBUG) or env in ('development', 'demo')
+    if allow_unapproved:
+        qs = qs.filter(status__in=[
+            MetaTemplateStatus.APPROVED,
+            MetaTemplateStatus.PENDING,
+            MetaTemplateStatus.DRAFT,
+        ])
+    else:
+        qs = qs.filter(status=MetaTemplateStatus.APPROVED)
+    return qs.order_by('-updated_at')
 
 
 def _order_personal_templates(rows: list[dict], *, preferred_name: str | None, audience: str | None):
@@ -93,11 +123,9 @@ class ConversationTemplateSendView(CommunicationAPIView):
             except Exception:
                 channel = None
 
-        templates = MetaTemplateService.list_templates(
+        templates = _list_personal_chat_templates(
             kurum_id,
             channel_config_id=channel_config_id,
-            approved_only=True,
-            usage=MetaTemplateUsage.PERSONAL,
         )
         context = build_recipient_context_from_conversation(
             conversation, sender_user=request.user,
