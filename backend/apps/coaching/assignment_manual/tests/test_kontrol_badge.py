@@ -45,12 +45,12 @@ class KontrolBadgeTest(TestCase):
         # `due_date < now()` olan her şeyi OVERDUE yapıyor; test isteği gönderene kadar
         # geçen milisaniyeler bile due_date == now() anını geçmişe düşürüp testi
         # deterministik olarak bozar. Bugün içinde henüz geçmemiş, gün sonunu aşmayan
-        # bir saat kullan.
-        _now = timezone.now()
+        # bir saat kullan. UTC `replace` değil — Europe/Istanbul localdate ile uyumlu.
+        _now = timezone.localtime()
         _end_of_today = _now.replace(hour=23, minute=55, second=0, microsecond=0)
         self.due_today = min(_now + timezone.timedelta(hours=2), _end_of_today)
         if self.due_today <= _now:
-            self.due_today = _now + timezone.timedelta(seconds=30)
+            self.due_today = min(_now + timezone.timedelta(seconds=30), _end_of_today)
         self.due_future = _now + timezone.timedelta(days=3)
         self.due_past = _now - timezone.timedelta(days=1)
 

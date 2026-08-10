@@ -36,12 +36,6 @@ function TestRow({
   const hist = taskHistory[item.contentId];
   const isCompletion = Boolean(item.isCompletionTask)
     || Boolean(hist && (hist.completion_status === "PARTIAL" || hist.completion_status === "NOT_DONE"));
-  const prevPct = item.previousCompletionPercent
-    ?? (hist?.completion_status === "PARTIAL" ? hist.task_completion_percent : null);
-  const prevTitle = item.previousAssignmentTitle
-    || (isCompletion ? hist?.assignment_title : "")
-    || "";
-  const showPrevPct = prevPct != null && prevPct > 0;
   const label = displayTestLabel(item.contentName, topicName);
 
   return (
@@ -54,8 +48,7 @@ function TestRow({
       borderBottom: "1px solid #f0f2f5",
       fontSize: 11,
       color: "#172b4c",
-      background: isCompletion ? "#eff6ff" : "#fff",
-      borderLeft: isCompletion ? "3px solid #3b82f6" : "none",
+      background: "#fff",
     }}>
       <span style={{
         display: "inline-flex",
@@ -76,24 +69,6 @@ function TestRow({
         }}>
           {label}
         </div>
-        {isCompletion && (
-          <div style={{ fontSize: 8, color: "#1d4ed8", fontWeight: 600, marginTop: 1, lineHeight: 1.2 }}>
-            🔄 {showPrevPct ? "Eksik Tamamlama" : "Tekrar (yapılmamıştı)"}
-            {showPrevPct && (
-              <span style={{
-                padding: "0 4px", borderRadius: 3, background: "#dbeafe",
-                fontSize: 7, fontWeight: 700, marginLeft: 4,
-              }}>
-                önceki: %{prevPct}
-              </span>
-            )}
-            {prevTitle && (
-              <span style={{ color: "#64748b", fontWeight: 500, marginLeft: 4 }}>
-                · {prevTitle}
-              </span>
-            )}
-          </div>
-        )}
         {note && !(isCompletion && isAutoCompletionNote(note)) && (
           <div style={{
             fontSize: 9, color: "#0061a6", fontStyle: "italic", marginTop: 1, lineHeight: 1.2,

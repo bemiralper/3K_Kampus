@@ -162,12 +162,14 @@ def auto_distribute(program: WeeklyProgram, assignment_ids: list[int] | None = N
             lesson_block__assignment=asgn
         ).aggregate(s=models.Sum('question_count'))['s'] or 0
 
+        # PDF/kart: ders adı önde; ödev hafta başlığı tekrarlanmasın
+        block_title = (lesson_obj.ad if lesson_obj else '') or asgn.title
         ProgramBlock.objects.create(
             day=target_day,
             source_assignment=asgn,
             source_lesson=first_lesson,
             lesson=lesson_obj,
-            title=asgn.title,
+            title=block_title,
             topic_name=topic,
             resource_name=resource,
             block_type=BlockType.SORU_COZUMU,
@@ -343,13 +345,17 @@ def weekly_summary(program: WeeklyProgram) -> dict:
     """
     Otomatik üretilen haftalık özet kartı verisi.
     Frontend'de hafta sonunda gösterilir.
+    Ödev kontrol günü (week_end) özetten hariç tutulur.
     """
+    from datetime import timedelta
+
     days = program.days.order_by('day_date')
+    study_days = [d for d in days if d.day_date != program.week_end]
     day_data = []
     best_day = None
     worst_day = None
 
-    for d in days:
+    for d in study_days:
         dd = {
             'weekday': d.get_weekday_display(),
             'date': str(d.day_date),
@@ -366,21 +372,25 @@ def weekly_summary(program: WeeklyProgram) -> dict:
         if worst_day is None or d.completion_percent < worst_day['completion']:
             worst_day = dd
 
-    # Seri
+    # Seri (yalnızca çalışma günleri)
     streak = 0
     max_streak = 0
-    for d in days:
+    for d in study_days:
         if d.completion_percent >= 100:
             streak += 1
             max_streak = max(max_streak, streak)
         else:
             streak = 0
 
+    study_end = program.week_end - timedelta(days=1) if program.week_end else program.week_end
+    if study_end and program.week_start and study_end < program.week_start:
+        study_end = program.week_start
+
     return {
         'program_id': program.id,
         'student_id': program.student_id,
         'week_start': str(program.week_start),
-        'week_end': str(program.week_end),
+        'week_end': str(study_end) if study_end else str(program.week_end),
         'total_questions': program.total_question_count,
         'total_blocks': program.total_block_count,
         'completion_percent': program.completion_percent,

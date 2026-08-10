@@ -2,20 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import type { ProgramDay } from '@/lib/study-program-api';
-
-/* ─────────────────────────────────────────────
-   Ödev Bölme Modalı
-   
-   Kullanım:
-   - Havuzdan bir ödev seçilip "Böl" denildiğinde
-   - Takvimde zaten var olan bir blok sağ-tık / ✂️ ile bölünmek istendiğinde
-   
-   Adımlar:
-   1. Hangi günler? (checkbox ile günler seçilir)
-   2. Soru dağılımı (slider veya input ile her güne kaç soru)
-   ───────────────────────────────────────────── */
-
-const WEEKDAY_LABELS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+import { WEEKDAY_LABELS } from '@/lib/study-program-api';
 
 function dayLabel(day: ProgramDay): string {
   const wd = WEEKDAY_LABELS[day.weekday] || `Gün ${day.weekday}`;
@@ -37,7 +24,6 @@ interface SplitModalProps {
   title: string;
   totalQuestions: number;
   days: ProgramDay[];
-  /** Eğer blok zaten bir gündeyse, o günün id'si (opsiyonel — mevcut blok bölme) */
   currentDayId?: number;
 }
 
@@ -49,54 +35,40 @@ export default function SplitModal({
   const [error, setError] = useState('');
   const orderedDays = [...days].sort((a, b) => a.day_date.localeCompare(b.day_date));
 
-  // Modal açıldığında hedefleri sıfırla
   useEffect(() => {
     if (!open) return;
     setTargets([]);
     setError('');
   }, [open]);
 
-  // Gün toggle
   const toggleDay = useCallback((day: ProgramDay) => {
-    setTargets(prev => {
-      const exists = prev.find(t => t.dayId === day.id);
-      if (exists) {
-        return prev.filter(t => t.dayId !== day.id);
-      }
-      return [
-        ...prev,
-        {
-          dayId: day.id,
-          dayLabel: dayLabel(day),
-          questionCount: 0,
-        },
-      ];
+    setTargets((prev) => {
+      const exists = prev.find((t) => t.dayId === day.id);
+      if (exists) return prev.filter((t) => t.dayId !== day.id);
+      return [...prev, { dayId: day.id, dayLabel: dayLabel(day), questionCount: 0 }];
     });
     setError('');
   }, []);
 
-  // Soru değiştiğinde
   const updateQuestion = useCallback((dayId: number, value: number) => {
-    setTargets(prev => prev.map(t => t.dayId === dayId ? { ...t, questionCount: Math.max(0, value) } : t));
+    setTargets((prev) =>
+      prev.map((t) => (t.dayId === dayId ? { ...t, questionCount: Math.max(0, value) } : t)),
+    );
     setError('');
   }, []);
 
-  // Eşit dağıt
   const distributeEvenly = useCallback(() => {
     if (targets.length === 0) return;
     const base = Math.floor(totalQuestions / targets.length);
     const remainder = totalQuestions % targets.length;
-    setTargets(prev =>
-      prev.map((t, i) => ({ ...t, questionCount: base + (i < remainder ? 1 : 0) }))
+    setTargets((prev) =>
+      prev.map((t, i) => ({ ...t, questionCount: base + (i < remainder ? 1 : 0) })),
     );
     setError('');
   }, [targets.length, totalQuestions]);
 
-  // Otomatik dağıt (ilk eklenen günlere eşit)
   useEffect(() => {
-    if (targets.length >= 2) {
-      distributeEvenly();
-    }
+    if (targets.length >= 2) distributeEvenly();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targets.length]);
 
@@ -105,204 +77,303 @@ export default function SplitModal({
 
   const handleConfirm = () => {
     if (targets.length < 2) {
-      setError('En az 2 gün seçmelisiniz.');
+      setError('En az 2 gün seçin.');
       return;
     }
     if (totalQuestions > 0 && diff !== 0) {
-      setError(`Soru toplamı ${diff > 0 ? diff + ' eksik' : Math.abs(diff) + ' fazla'}. Toplam ${totalQuestions} olmalı.`);
+      setError(`Soru toplamı ${diff > 0 ? `${diff} eksik` : `${Math.abs(diff)} fazla`}.`);
       return;
     }
     onConfirm(
-      targets.map(t => t.dayId),
-      targets.map(t => t.questionCount),
+      targets.map((t) => t.dayId),
+      targets.map((t) => t.questionCount),
     );
   };
 
   if (!open) return null;
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      backgroundColor: 'rgba(0,0,0,0.45)',
-    }} onClick={onClose}>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(15, 23, 42, 0.45)',
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
       <div
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         style={{
-          backgroundColor: '#fff', borderRadius: '14px',
-          width: '460px', maxHeight: '90vh', overflow: 'auto',
-          boxShadow: '0 24px 48px rgba(0,0,0,.18)',
-          padding: '24px',
+          backgroundColor: '#fff',
+          borderRadius: 16,
+          width: '100%',
+          maxWidth: 460,
+          maxHeight: '90vh',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 24px 64px rgba(15, 23, 42, 0.22)',
         }}
       >
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#111827' }}>
-            ✂️ Ödevi Günlere Böl
-          </h3>
-          <button onClick={onClose} style={{
-            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#6b7280',
-          }}>×</button>
-        </div>
-
-        {/* Ödev bilgisi */}
         <div style={{
-          backgroundColor: '#f9fafb', borderRadius: '10px', padding: '12px 14px',
-          marginBottom: '16px', border: '1px solid #e5e7eb',
+          padding: '18px 20px 14px',
+          borderBottom: '1px solid #e8eef5',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 12,
         }}>
-          <div style={{ fontWeight: 600, fontSize: '14px', color: '#1f2937', marginBottom: '4px' }}>
-            {title}
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
+              Günlere böl
+            </h3>
+            <p style={{ margin: '6px 0 0', fontSize: 13, color: '#64748b', lineHeight: 1.4 }}>
+              Soruları seçtiğiniz günlere dağıtın.
+            </p>
           </div>
-          <div style={{ fontSize: '13px', color: '#6b7280' }}>
-            Toplam: <strong>{totalQuestions}</strong> soru
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Kapat"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              border: '1px solid #e2e8f0',
+              background: '#f8fafc',
+              color: '#64748b',
+              fontSize: 18,
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
         </div>
 
-        {/* Gün seçimi */}
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>
-            Hangi günlere bölünsün?
-          </div>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {orderedDays.map(day => {
-              const selected = targets.some(t => t.dayId === day.id);
-              const isCurrent = day.id === currentDayId;
-              return (
-                <button
-                  key={day.id}
-                  onClick={() => toggleDay(day)}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    border: selected ? '2px solid #3b82f6' : '1px solid #d1d5db',
-                    backgroundColor: selected ? '#eff6ff' : '#fff',
-                    color: selected ? '#2563eb' : '#374151',
-                    position: 'relative',
-                  }}
-                >
-                  {dayLabel(day)}
-                  {isCurrent && (
-                    <span style={{
-                      position: 'absolute', top: '-4px', right: '-4px',
-                      width: '8px', height: '8px', borderRadius: '50%',
-                      backgroundColor: '#f59e0b',
-                    }} />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Soru dağılımı */}
-        {targets.length >= 2 && (
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              marginBottom: '10px',
-            }}>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
-                Soru Dağılımı
-              </span>
-              <button
-                onClick={distributeEvenly}
-                style={{
-                  padding: '4px 10px', borderRadius: '6px', fontSize: '12px',
-                  fontWeight: 600, border: '1px solid #d1d5db',
-                  background: '#f9fafb', color: '#374151', cursor: 'pointer',
-                }}
-              >
-                ⚖️ Eşit Dağıt
-              </button>
+        <div style={{ padding: 20, overflowY: 'auto' }}>
+          <div style={{
+            background: '#f8fafc',
+            borderRadius: 12,
+            padding: '12px 14px',
+            marginBottom: 18,
+            border: '1px solid #e8eef5',
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', marginBottom: 4 }}>
+              {title}
             </div>
+            <div style={{ fontSize: 13, color: '#64748b' }}>
+              Toplam <strong style={{ color: '#0f172a' }}>{totalQuestions}</strong> soru
+            </div>
+          </div>
 
-            {targets.map((t) => (
-              <div key={t.dayId} style={{
-                display: 'flex', alignItems: 'center', gap: '10px',
-                marginBottom: '8px',
+          <div style={{ marginBottom: 18 }}>
+            <div style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#64748b',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              marginBottom: 8,
+            }}>
+              Günler
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {orderedDays.map((day) => {
+                const selected = targets.some((t) => t.dayId === day.id);
+                const isCurrent = day.id === currentDayId;
+                return (
+                  <button
+                    key={day.id}
+                    type="button"
+                    onClick={() => toggleDay(day)}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: 10,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: selected ? '2px solid #0f766e' : '1px solid #e2e8f0',
+                      backgroundColor: selected ? '#f0fdfa' : '#fff',
+                      color: selected ? '#0f766e' : '#334155',
+                      position: 'relative',
+                    }}
+                  >
+                    {dayLabel(day)}
+                    {isCurrent && (
+                      <span style={{
+                        position: 'absolute',
+                        top: -3,
+                        right: -3,
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        backgroundColor: '#f59e0b',
+                      }} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {targets.length >= 2 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 10,
               }}>
                 <span style={{
-                  width: '40px', fontSize: '13px', fontWeight: 600, color: '#2563eb',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: '#64748b',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
                 }}>
-                  {t.dayLabel}
+                  Soru dağılımı
                 </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={totalQuestions}
-                  value={t.questionCount}
-                  onChange={(e) => updateQuestion(t.dayId, parseInt(e.target.value))}
-                  style={{ flex: 1, accentColor: '#3b82f6' }}
-                />
-                <input
-                  type="number"
-                  min={0}
-                  max={totalQuestions}
-                  value={t.questionCount}
-                  onChange={(e) => updateQuestion(t.dayId, parseInt(e.target.value) || 0)}
+                <button
+                  type="button"
+                  onClick={distributeEvenly}
                   style={{
-                    width: '60px', textAlign: 'center', padding: '4px 6px',
-                    borderRadius: '6px', border: '1px solid #d1d5db',
-                    fontSize: '13px', fontWeight: 600,
+                    padding: '5px 10px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    border: '1px solid #e2e8f0',
+                    background: '#fff',
+                    color: '#334155',
+                    cursor: 'pointer',
                   }}
-                />
+                >
+                  Eşit dağıt
+                </button>
               </div>
-            ))}
 
-            {/* Toplam göstergesi */}
-            <div style={{
-              display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
-              gap: '8px', marginTop: '6px',
-            }}>
-              <span style={{
-                fontSize: '13px',
+              {targets.map((t) => (
+                <div
+                  key={t.dayId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    marginBottom: 10,
+                    padding: '8px 10px',
+                    background: '#f8fafc',
+                    borderRadius: 10,
+                    border: '1px solid #e8eef5',
+                  }}
+                >
+                  <span style={{
+                    width: 72,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: '#0f766e',
+                    flexShrink: 0,
+                  }}>
+                    {t.dayLabel}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={totalQuestions}
+                    value={t.questionCount}
+                    onChange={(e) => updateQuestion(t.dayId, parseInt(e.target.value, 10))}
+                    style={{ flex: 1, accentColor: '#0f766e' }}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={totalQuestions}
+                    value={t.questionCount}
+                    onChange={(e) => updateQuestion(t.dayId, parseInt(e.target.value, 10) || 0)}
+                    style={{
+                      width: 56,
+                      textAlign: 'center',
+                      padding: '6px 4px',
+                      borderRadius: 8,
+                      border: '1px solid #e2e8f0',
+                      fontSize: 13,
+                      fontWeight: 700,
+                    }}
+                  />
+                </div>
+              ))}
+
+              <div style={{
+                textAlign: 'right',
+                fontSize: 13,
                 fontWeight: 700,
                 color: diff === 0 ? '#16a34a' : '#dc2626',
+                marginTop: 4,
               }}>
-                Toplam: {currentTotal} / {totalQuestions}
-                {diff !== 0 && ` (${diff > 0 ? '-' : '+'}${Math.abs(diff)})`}
-              </span>
+                {currentTotal} / {totalQuestions}
+                {diff !== 0 && ` (${diff > 0 ? '−' : '+'}${Math.abs(diff)})`}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Hata */}
-        {error && (
-          <div style={{
-            padding: '8px 12px', borderRadius: '8px',
-            backgroundColor: '#fef2f2', color: '#dc2626',
-            fontSize: '12px', fontWeight: 600, marginBottom: '12px',
-          }}>
-            {error}
-          </div>
-        )}
+          {error && (
+            <div style={{
+              padding: '10px 12px',
+              borderRadius: 10,
+              backgroundColor: '#fef2f2',
+              color: '#dc2626',
+              fontSize: 12,
+              fontWeight: 600,
+            }}>
+              {error}
+            </div>
+          )}
+        </div>
 
-        {/* Eylemler */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+        <div style={{
+          padding: '14px 20px',
+          borderTop: '1px solid #e8eef5',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 8,
+          background: '#f8fafc',
+        }}>
           <button
+            type="button"
             onClick={onClose}
             style={{
-              padding: '8px 18px', borderRadius: '8px', fontSize: '13px',
-              fontWeight: 600, border: '1px solid #d1d5db',
-              background: '#fff', color: '#374151', cursor: 'pointer',
+              padding: '10px 16px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 600,
+              border: '1px solid #e2e8f0',
+              background: '#fff',
+              color: '#334155',
+              cursor: 'pointer',
             }}
           >
             İptal
           </button>
           <button
+            type="button"
             onClick={handleConfirm}
             disabled={targets.length < 2}
             style={{
-              padding: '8px 18px', borderRadius: '8px', fontSize: '13px',
-              fontWeight: 600, border: 'none',
-              background: targets.length < 2 ? '#d1d5db' : '#3b82f6',
-              color: '#fff', cursor: targets.length < 2 ? 'not-allowed' : 'pointer',
+              padding: '10px 18px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 700,
+              border: 'none',
+              background: targets.length < 2 ? '#cbd5e1' : '#0f766e',
+              color: '#fff',
+              cursor: targets.length < 2 ? 'not-allowed' : 'pointer',
             }}
           >
-            ✂️ Böl ve Dağıt
+            Böl ve dağıt
           </button>
         </div>
       </div>

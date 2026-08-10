@@ -69,13 +69,13 @@ export default function CoachIstatistiklerPage() {
             <div className="coach-kpi-mini-value">{ogrenciler.bos_kapasite}</div>
             <div className="coach-kpi-mini-label">Boş kapasite</div>
           </div>
-          <Link href="/coach/ogrenciler" className="coach-kpi-mini is-link">
+          <Link href="/coach/ogrenciler?filter=risk" className="coach-kpi-mini is-link">
             <div className="coach-kpi-mini-value">{ogrenciler.riskli_ogrenci}</div>
             <div className="coach-kpi-mini-label">Riskli öğrenci</div>
           </Link>
-          <Link href="/coach/ogrenciler" className="coach-kpi-mini is-link">
-            <div className="coach-kpi-mini-value">{ogrenciler.gorusme_bekleyen}</div>
-            <div className="coach-kpi-mini-label">Görüşme bekleyen</div>
+          <Link href="/coach/ogrenciler?filter=needs_meeting" className="coach-kpi-mini is-link">
+            <div className="coach-kpi-mini-value">{ogrenciler.odev_takibi}</div>
+            <div className="coach-kpi-mini-label">Ödev takibi</div>
           </Link>
         </div>
       </section>
@@ -99,9 +99,9 @@ export default function CoachIstatistiklerPage() {
             <div className="coach-kpi-mini-value">{odevler.geciken}</div>
             <div className="coach-kpi-mini-label">Geciken</div>
           </Link>
-          <Link href="/coach/odev/kontrol" className="coach-kpi-mini is-link">
+          <Link href="/coach/odev/kontrol?due_today=1" className="coach-kpi-mini is-link">
             <div className="coach-kpi-mini-value">{odevler.bekleyen_kontrol}</div>
-            <div className="coach-kpi-mini-label">Kontrol bekleyen</div>
+            <div className="coach-kpi-mini-label">Bugün kontrol</div>
           </Link>
         </div>
         <div className="coach-stats-period-grid">

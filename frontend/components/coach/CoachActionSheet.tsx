@@ -60,14 +60,15 @@ export default function CoachActionSheet({
       >
         <div className="coach-drawer-handle" aria-hidden="true" />
 
-        <div className="coach-action-sheet-header">
+        <div className={`coach-action-sheet-header${size === 'full' ? ' coach-action-sheet-header-full' : ''}`}>
           <div className="coach-action-sheet-header-text">
             <h2 id="coach-action-sheet-title" className="coach-action-sheet-title">
               {title}
             </h2>
-            {subtitle && <p className="coach-action-sheet-subtitle">{subtitle}</p>}
-            {studentName && (
-              <p className="coach-action-sheet-student">{studentName}</p>
+            {(subtitle || studentName) && (
+              <p className="coach-action-sheet-subtitle">
+                {[subtitle, studentName].filter(Boolean).join(' · ')}
+              </p>
             )}
           </div>
           <button
@@ -80,7 +81,9 @@ export default function CoachActionSheet({
           </button>
         </div>
 
-        <div className="coach-action-sheet-body">{children}</div>
+        <div className={`coach-action-sheet-body${size === 'full' ? ' coach-action-sheet-body-full' : ''}`}>
+          {children}
+        </div>
 
         {footer && <div className="coach-action-sheet-footer">{footer}</div>}
       </div>

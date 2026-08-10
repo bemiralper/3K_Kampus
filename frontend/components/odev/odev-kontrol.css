@@ -173,12 +173,117 @@
   gap: 8px;
 }
 
+/* ── Koç: akordeon + sayfalama ── */
+
 .ok-coach .ok-page-header {
-  padding: 0 0 16px;
-  margin-bottom: 16px;
   border: none;
-  border-radius: 0;
   background: transparent;
+  padding: 8px 0 16px;
+  margin-bottom: 8px;
+  box-shadow: none;
+}
+
+.ok-coach .ok-page-header-text p {
+  color: #64748b;
+}
+
+.ok-coach .ok-filter-chips {
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ok-coach .ok-toolbar {
+  margin-bottom: 12px;
+}
+
+.ok-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 14px;
+}
+
+.ok-pager-meta {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.ok-pager-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.ok-pager-btn {
+  min-width: 36px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ok-pager-btn:hover:not(:disabled) {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.ok-pager-btn.is-active {
+  background: #1f3c88;
+  border-color: #1f3c88;
+  color: #fff;
+}
+
+.ok-pager-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ok-pager-ellipsis {
+  padding: 0 4px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.ok-control-day {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.2;
+}
+
+.ok-control-day-date {
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.ok-control-day.is-due-today .ok-control-day-date {
+  color: #d97706;
+}
+
+.ok-days-until {
+  font-size: 10px;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+.ok-days-until.is-today {
+  color: #d97706;
+}
+
+.ok-days-until.is-late {
+  color: #f87171;
 }
 
 .ok-coach .ok-page-header-text h1 {

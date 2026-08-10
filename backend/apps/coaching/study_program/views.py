@@ -1,12 +1,16 @@
 """
 Çalışma Programı - Views (DRF ViewSets)
 """
+import json
+
+from django.http import HttpResponse
+from django.db import models
+from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status, permissions
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
-from django.db import models
-from django.shortcuts import get_object_or_404
 
 from .models import (
     WeeklyProgram, ProgramDay, ProgramBlock,
@@ -54,6 +58,8 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = WeeklyProgram.objects.select_related('student', 'coach').prefetch_related(
             'days__blocks__lesson',
+            'days__blocks__source_assignment',
+            'days__blocks__source_lesson__lesson',
             'days__feedback',
             'badges',
         )
@@ -251,6 +257,129 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         data = services.weekly_summary(program)
         return Response(data)
 
+    # ── GET /programs/{id}/plan-pdf/ ──
+    @action(detail=True, methods=['get'], url_path='plan-pdf')
+    def plan_pdf(self, request, pk=None):
+        """Sunucu tarafı çalışma programı PDF."""
+        kurum_id = self._get_kurum_id()
+        if not kurum_id:
+            return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
+
+        program = self.get_object()
+        try:
+            from .pdf_service import render_study_program_pdf, study_program_pdf_filename
+
+            pdf_bytes = render_study_program_pdf(program)
+            filename = study_program_pdf_filename(program)
+        except Exception as exc:
+            return Response({'success': False, 'error': f'PDF oluşturulamadı: {exc}'}, status=400)
+
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+
+    # ── GET /programs/{id}/notify-preview/ ──
+    @action(detail=True, methods=['get'], url_path='notify-preview')
+    def notify_preview(self, request, pk=None):
+        """Çalışma programı WhatsApp gönderim önizlemesi."""
+        kurum_id = self._get_kurum_id()
+        if not kurum_id:
+            return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
+
+        self.get_object()  # erişim kontrolü
+        try:
+            from .notify_service import StudyProgramNotifyService
+
+            preview = StudyProgramNotifyService().preview(kurum_id, int(pk))
+        except ValueError as exc:
+            return Response({'success': False, 'error': str(exc)}, status=400)
+
+        return Response({
+            'success': True,
+            'data': {
+                'program_id': preview.program_id,
+                'student_name': preview.student_name,
+                'week_label': preview.week_label,
+                'pdf_title': preview.pdf_title,
+                'send_mode': preview.send_mode,
+                'meta_template_veli': preview.meta_template_veli,
+                'meta_template_ogrenci': preview.meta_template_ogrenci,
+                'recipients': [
+                    {
+                        'recipient_type': r.recipient_type,
+                        'ogrenci_id': r.ogrenci_id,
+                        'veli_id': r.veli_id,
+                        'display_name': r.display_name,
+                        'telefon': r.telefon,
+                        'body': r.body,
+                        'skip_reason': r.skip_reason,
+                    }
+                    for r in preview.recipients
+                ],
+            },
+        })
+
+    # ── POST /programs/{id}/notify-send/ ──
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='notify-send',
+        parser_classes=[MultiPartParser, FormParser, JSONParser],
+    )
+    def notify_send(self, request, pk=None):
+        """Seçili veli / öğrenciye çalışma programı PDF gönder."""
+        kurum_id = self._get_kurum_id()
+        if not kurum_id:
+            return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
+
+        self.get_object()  # erişim kontrolü
+        data = request.data
+
+        veli_ids_raw = data.get('veli_ids') or '[]'
+        if isinstance(veli_ids_raw, str):
+            try:
+                veli_ids = json.loads(veli_ids_raw)
+            except json.JSONDecodeError:
+                veli_ids = []
+        elif isinstance(veli_ids_raw, list):
+            veli_ids = veli_ids_raw
+        else:
+            veli_ids = []
+
+        include_student = data.get('include_student') in (True, 'true', '1', 1)
+        pdf_bytes = None
+        pdf_filename = None
+        uploaded = request.FILES.get('pdf')
+        if uploaded:
+            pdf_bytes = uploaded.read()
+            if len(pdf_bytes) < 2500 or not pdf_bytes.startswith(b'%PDF'):
+                return Response(
+                    {'success': False, 'error': 'Geçersiz veya boş PDF dosyası.'},
+                    status=400,
+                )
+            pdf_filename = uploaded.name or f'calisma-programi-{pk}.pdf'
+
+        try:
+            from .notify_service import StudyProgramNotifyService
+
+            result = StudyProgramNotifyService().send(
+                kurum_id,
+                int(pk),
+                veli_ids=[int(x) for x in veli_ids if str(x).isdigit() or isinstance(x, int)],
+                include_student=include_student,
+                sent_by_user_id=getattr(request.user, 'id', None),
+                pdf_bytes=pdf_bytes,
+                pdf_filename=pdf_filename,
+            )
+        except ValueError as exc:
+            return Response({'success': False, 'error': str(exc)}, status=400)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception('Study program notify failed for %s', pk)
+            return Response({'success': False, 'error': f'Gönderim başarısız: {exc}'}, status=400)
+
+        return Response({'success': True, 'data': result})
+
     # ── POST /programs/{id}/calculate-badges/ ──
     @action(detail=True, methods=['post'], url_path='calculate-badges')
     def calculate_badges(self, request, pk=None):
@@ -365,26 +494,63 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         if lesson_id:
             qs = qs.filter(lessons__lesson_id=lesson_id)
 
-        # Programa atanmış mı? — (assignment_id, source_lesson_id) tuple bazlı
+        # Programa atanmış soru sayıları — (assignment_id, source_lesson_id)
+        # Bölünmüş parçadan biri silinince kalan soru havuza döner.
         planned_pairs = set()
+        planned_q_map = {}
         if program_id:
-            for row in ProgramBlock.objects.filter(
-                day__program_id=program_id,
-                source_assignment__isnull=False,
-            ).values_list('source_assignment_id', 'source_lesson_id'):
-                planned_pairs.add(row)  # (assignment_id, lesson_id|None)
+            for row in (
+                ProgramBlock.objects.filter(
+                    day__program_id=program_id,
+                    source_assignment__isnull=False,
+                )
+                .values('source_assignment_id', 'source_lesson_id')
+                .annotate(planned_q=models.Sum('question_count'))
+            ):
+                key = (row['source_assignment_id'], row['source_lesson_id'])
+                planned_pairs.add(key)
+                planned_q_map[key] = row['planned_q'] or 0
+
+        def _pool_planned_state(assignment_id, source_lesson_id, total_q):
+            """(is_planned, display_question_count) — kalan soruya göre."""
+            has_blocks = (assignment_id, source_lesson_id) in planned_pairs
+            planned_q = planned_q_map.get((assignment_id, source_lesson_id), 0)
+
+            if not has_blocks and source_lesson_id is not None:
+                # Eski tek blok (source_lesson=None): tüm dersleri tamamen planlı say
+                if (assignment_id, None) in planned_pairs:
+                    has_lesson_specific = any(
+                        aid == assignment_id and lid is not None
+                        for aid, lid in planned_pairs
+                    )
+                    if not has_lesson_specific:
+                        return True, total_q
+
+            if total_q <= 0:
+                # Soru bilgisi yoksa blok varlığına göre
+                return has_blocks, total_q
+
+            remaining = max(0, total_q - planned_q)
+            if remaining <= 0:
+                return True, total_q
+            # Kısmen planlıysa havuzda kalan soru sayısı görünsün
+            return False, remaining if has_blocks else total_q
+
+        from apps.coaching.assignment_manual.title_utils import strip_completion_title_suffix
 
         items = []
         for a in qs:
+            clean_title = strip_completion_title_suffix(a.title) or a.title
             lessons = list(a.lessons.all())
             if not lessons:
                 # Dersi olmayan ödev → yine de göster
                 q_count = AssignmentTask.objects.filter(
                     lesson_block__assignment=a
                 ).aggregate(s=models.Sum('question_count'))['s'] or 0
+                is_planned, display_q = _pool_planned_state(a.id, None, q_count)
                 items.append({
                     'id': a.id,
-                    'title': a.title,
+                    'title': clean_title,
                     'status': a.status,
                     'status_display': a.get_status_display(),
                     'priority': a.priority,
@@ -392,30 +558,23 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
                     'lesson_name': None,
                     'topic_name': '',
                     'resource_name': '',
-                    'question_count': q_count,
+                    'question_count': display_q,
                     'assigned_date': a.assigned_date,
                     'due_date': a.due_date,
                     'coach_name': a.coach.get_full_name() if a.coach else None,
-                    'is_planned': (a.id, None) in planned_pairs,
+                    'is_planned': is_planned,
                     'lesson_id': None,
+                    'ders_id': None,
                 })
             else:
                 for lesson in lessons:
                     l_q_count = AssignmentTask.objects.filter(
                         lesson_block=lesson
                     ).aggregate(s=models.Sum('question_count'))['s'] or 0
-                    # Ders bazlı eşleşme; (id, None) yalnızca bu ödevde ders-spesifik
-                    # blok yoksa tüm dersleri planlanmış sayar (tek blok / eski kayıt).
-                    is_planned = (a.id, lesson.id) in planned_pairs
-                    if not is_planned and (a.id, None) in planned_pairs:
-                        has_lesson_specific = any(
-                            aid == a.id and lid is not None for aid, lid in planned_pairs
-                        )
-                        if not has_lesson_specific:
-                            is_planned = True
+                    is_planned, display_q = _pool_planned_state(a.id, lesson.id, l_q_count)
                     items.append({
                         'id': a.id,
-                        'title': a.title,
+                        'title': clean_title,
                         'status': a.status,
                         'status_display': a.get_status_display(),
                         'priority': a.priority,
@@ -423,12 +582,13 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
                         'lesson_name': lesson.lesson.ad if lesson.lesson else None,
                         'topic_name': lesson.topic_name or '',
                         'resource_name': lesson.resource_book.ad if lesson.resource_book else '',
-                        'question_count': l_q_count,
+                        'question_count': display_q,
                         'assigned_date': a.assigned_date,
                         'due_date': a.due_date,
                         'coach_name': a.coach.get_full_name() if a.coach else None,
                         'is_planned': is_planned,
                         'lesson_id': lesson.id,
+                        'ders_id': lesson.lesson_id,
                     })
 
         # status_filter == 'unplanned' → sadece planlanmamışları döndür
@@ -466,6 +626,48 @@ class ProgramBlockViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         block = serializer.save()
+        block.day.refresh_stats()
+        block.day.program.refresh_stats()
+
+    def perform_update(self, serializer):
+        """
+        Çalışma / hedef türü güncellenince aynı ödev parçalarına da uygula.
+        Eşleşme: aynı program + source_lesson; yoksa source_assignment (+ lesson).
+        """
+        old_day_id = serializer.instance.day_id
+        block = serializer.save()
+        changed = serializer.validated_data
+        if ('block_type' in changed) or ('goal_type' in changed):
+            siblings = ProgramBlock.objects.filter(
+                day__program_id=block.day.program_id,
+            ).exclude(pk=block.pk)
+            if block.source_lesson_id:
+                siblings = siblings.filter(source_lesson_id=block.source_lesson_id)
+            elif block.source_assignment_id and block.lesson_id:
+                siblings = siblings.filter(
+                    source_assignment_id=block.source_assignment_id,
+                    lesson_id=block.lesson_id,
+                )
+            elif block.source_assignment_id:
+                siblings = siblings.filter(
+                    source_assignment_id=block.source_assignment_id,
+                    topic_name=block.topic_name,
+                )
+            else:
+                siblings = ProgramBlock.objects.none()
+
+            update_fields = {}
+            if 'block_type' in changed:
+                update_fields['block_type'] = block.block_type
+            if 'goal_type' in changed:
+                update_fields['goal_type'] = block.goal_type
+            if update_fields:
+                siblings.update(**update_fields)
+
+        if block.day_id != old_day_id:
+            old_day = ProgramDay.objects.filter(id=old_day_id).first()
+            if old_day:
+                old_day.refresh_stats()
         block.day.refresh_stats()
         block.day.program.refresh_stats()
 

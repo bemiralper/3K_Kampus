@@ -135,12 +135,37 @@ class CoachMeStatsTest(TestCase):
 
         self.assertEqual(data['ogrenciler']['aktif_ogrenci'], 1)
         self.assertEqual(data['ogrenciler']['kapasite'], 20)
+        self.assertIn('odev_takibi', data['ogrenciler'])
+        self.assertNotIn('gorusme_bekleyen', data['ogrenciler'])
         self.assertEqual(data['odevler']['verilen']['toplam'], 2)
         self.assertEqual(data['odevler']['tamamlanan'], 1)
         self.assertEqual(data['odevler']['geciken'], 1)
+        # Kontrol bekleyen = bugün kontrol (fixture due geçmiş/gelecek → 0)
+        self.assertEqual(data['odevler']['bekleyen_kontrol'], 0)
         self.assertEqual(data['gorusmeler']['ogrenci']['toplam'], 1)
         self.assertEqual(data['gorusmeler']['veli']['toplam'], 1)
         self.assertEqual(data['gorusmeler']['tamamlanan_toplam'], 2)
+
+    def test_me_stats_bekleyen_kontrol_is_due_today(self):
+        """bekleyen_kontrol = kontrol günü bugün olan açık ödevler."""
+        _now = timezone.localtime()
+        _end = _now.replace(hour=23, minute=55, second=0, microsecond=0)
+        due_today = min(_now + timedelta(hours=2), _end)
+        if due_today <= _now:
+            due_today = min(_now + timedelta(seconds=30), _end)
+
+        ManualAssignment.objects.create(
+            coach=self.coach_user,
+            student=self.student,
+            title='Bugün Kontrol',
+            due_date=due_today,
+            assigned_date=_now - timedelta(days=3),
+            status=ManualAssignment.Status.ASSIGNED,
+            is_active=True,
+        )
+        response = self.client.get(ME_STATS_URL)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data']['odevler']['bekleyen_kontrol'], 1)
 
     def test_me_stats_requires_coach_profile(self):
         plain_user = User.objects.create_user(username='plain', password='testpass123')

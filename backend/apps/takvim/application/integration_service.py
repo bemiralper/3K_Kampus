@@ -360,7 +360,7 @@ class CalendarIntegrationService:
         if not assignment.due_date:
             return None
 
-        # Tüm gün event — teslim tarihi (yerel takvim günü; UTC .date() kayması olmasın)
+        # Tüm gün event — teslim / kontrol tarihi (yerel takvim günü; UTC .date() kayması olmasın)
         if hasattr(assignment.due_date, 'date'):
             due_date = (
                 timezone.localtime(assignment.due_date).date()
@@ -391,12 +391,28 @@ class CalendarIntegrationService:
         priority_labels = {'LOW': '🟢', 'MEDIUM': '🟡', 'HIGH': '🟠', 'URGENT': '🔴'}
         priority_icon = priority_labels.get(assignment.priority, '📋')
 
+        student_name = ''
+        sube_id = None
+        try:
+            student = assignment.student
+            student_name = f'{student.ad} {student.soyad}'.strip()
+            sube_id = getattr(student, 'sube_id', None)
+        except Exception:
+            student_name = f'Öğrenci #{assignment.student_id}'
+
+        # Takvimde ödev adı değil öğrenci + kontrol günü bilgisi gösterilir
+        baslik = (
+            f'{priority_icon} {student_name} · Ödev kontrol'
+            if student_name
+            else f'{priority_icon} Ödev kontrol'
+        )
+
         event = self._sync_event(
             kurum_id=kurum_id,
             kaynak_modul=KaynakModul.ODEV,
             kaynak_id=str(assignment.id),
             kategori=EventCategory.ODEV,
-            baslik=f"{priority_icon} Ödev: {assignment.title[:80]}",
+            baslik=baslik,
             baslangic=baslangic,
             bitis=bitis,
             user_id=user_id,
@@ -405,6 +421,7 @@ class CalendarIntegrationService:
             ogrenci_ids=[assignment.student_id],
             tum_gun=True,
             renk='#F97316',
+            sube_id=sube_id,
         )
 
         if event and assignment.status in status_map:

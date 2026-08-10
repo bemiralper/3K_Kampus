@@ -4,6 +4,8 @@
 
 import { apiGet, apiPost, ApiResponse, getContextHeaders } from './api';
 import {
+  COACH_HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS,
+  COACH_HOMEWORK_FOLLOWUP_HELD_DAYS,
   COACH_MEETING_FOLLOWUP_DAYS,
   normalizeCoachRiskLevel,
   type CoachRiskLevel,
@@ -30,7 +32,7 @@ export interface CoachPortalStudent {
   veli_id?: number | null;
   profil_foto?: string | null;
   meeting_today_count?: number;
-  /** Son tamamlanan görüşmeden 14+ gün (RiskEngine.INACTIVITY_DAYS_CRITICAL) */
+  /** 7g+ yeni ödev yok ve kontrol günü 2g+ geçmiş (takip hatırlatması) */
   needs_meeting?: boolean;
 }
 
@@ -73,7 +75,11 @@ function mapPortalStudent(raw: CoachStudentListRaw): CoachPortalStudent {
   };
 }
 
-export { COACH_MEETING_FOLLOWUP_DAYS };
+export {
+  COACH_HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS,
+  COACH_HOMEWORK_FOLLOWUP_HELD_DAYS,
+  COACH_MEETING_FOLLOWUP_DAYS,
+};
 
 export interface FetchCoachStudentsParams {
   search?: string;

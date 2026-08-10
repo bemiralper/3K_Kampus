@@ -20,23 +20,25 @@ from django.utils import timezone
 
 class BlockType(models.TextChoices):
     """Çalışma bloğu tipleri — raporlamada filtrelenebilir."""
-    KONU_OGRENME      = 'KONU_OGRENME',      '📖 Konu Öğrenme'
-    TEKRAR             = 'TEKRAR',             '🔁 Tekrar'
-    SORU_COZUMU        = 'SORU_COZUMU',        '📝 Soru Çözümü'
-    BRANS_DENEMESI     = 'BRANS_DENEMESI',     '🎯 Branş Denemesi'
-    MINI_TEST          = 'MINI_TEST',          '⚡ Mini Test'
-    ANALIZ             = 'ANALIZ',             '📊 Analiz'
-    ZAYIF_KONU         = 'ZAYIF_KONU',         '🧠 Zayıf Konu Çalışması'
-    DENEME             = 'DENEME',             '📋 Deneme'
+    KONU_OGRENME      = 'KONU_OGRENME',      'Konu Çalışması'
+    TEKRAR             = 'TEKRAR',             'Tekrar'
+    SORU_COZUMU        = 'SORU_COZUMU',        'Soru Çözümü'
+    MINI_TEST          = 'MINI_TEST',          'Mini Test'
+    BRANS_DENEMESI     = 'BRANS_DENEMESI',     'Branş Denemesi'
+    DENEME             = 'DENEME',             'Genel Deneme'
+    ANALIZ             = 'ANALIZ',             'Deneme Analizi'
+    # Eski kayıtlar için tutulur; UI'da seçilemez (sistem önerisi)
+    ZAYIF_KONU         = 'ZAYIF_KONU',         'Zayıf konu önerisi'
 
 
 class GoalType(models.TextChoices):
     """Her görevin bağlı olabileceği hedef türleri."""
     NET_ARTIRMA        = 'NET_ARTIRMA',        'Net Artırma'
-    KONU_TAMAMLAMA     = 'KONU_TAMAMLAMA',     'Konu Tamamlama'
-    DENEME_HAZIRLIK    = 'DENEME_HAZIRLIK',    'Deneme Hazırlık'
     EKSIK_KAPATMA      = 'EKSIK_KAPATMA',      'Eksik Kapatma'
-    SURE_HIZLANDIRMA   = 'SURE_HIZLANDIRMA',   'Süre Hızlandırma'
+    SURE_HIZLANDIRMA   = 'SURE_HIZLANDIRMA',   'Hız Geliştirme'
+    KONU_TAMAMLAMA     = 'KONU_TAMAMLAMA',     'Konuyu Pekiştirme'
+    # Eski kayıtlar — UI'da seçilemez
+    DENEME_HAZIRLIK    = 'DENEME_HAZIRLIK',    'Sınava Hazırlık'
 
 
 class BadgeCode(models.TextChoices):
@@ -89,8 +91,14 @@ class WeeklyProgram(models.Model):
     )
 
     # Hafta aralığı (esnek tarih aralığı)
-    week_start = models.DateField('Hafta Başlangıcı', help_text='Program başlangıç tarihi')
-    week_end   = models.DateField('Hafta Bitişi', help_text='Program bitiş tarihi')
+    week_start = models.DateField(
+        'Hafta Başlangıcı',
+        help_text='İlk çalışma günü (ödev verilme gününün ertesi)',
+    )
+    week_end = models.DateField(
+        'Hafta Bitişi',
+        help_text='Ödev kontrol günü (tarih aralığının son günü)',
+    )
 
     # İstatistikler (ön-hesaplanmış — save() ile güncellenir)
     total_question_count  = models.PositiveIntegerField('Toplam Soru', default=0)

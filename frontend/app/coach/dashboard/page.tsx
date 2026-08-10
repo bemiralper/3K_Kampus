@@ -151,7 +151,7 @@ export default function CoachDashboardPage() {
           {riskStudents.length === 0 ? (
             <p className="coach-widget-empty">
               {needsMeetingCount > 0
-                ? `${needsMeetingCount} öğrenci görüşme bekliyor (risk skoru düşük).`
+                ? `${needsMeetingCount} öğrencide ödev takibi gecikti (risk skoru düşük).`
                 : "Takip edilecek risk öğrencisi bulunmuyor."}
             </p>
           ) : (

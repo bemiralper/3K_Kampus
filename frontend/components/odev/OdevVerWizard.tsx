@@ -35,7 +35,7 @@ import AssignmentNotifySendModal from '@/components/odev/AssignmentNotifySendMod
 import {
   buildCompletionNote,
   isIncompleteHistory,
-  withCompletionTitleSuffix,
+  stripCompletionTitleSuffix,
 } from '@/components/odev/odevCompletionHelpers';
 
 export type OdevVerVariant = 'admin' | 'coach';
@@ -88,8 +88,9 @@ function formatLocalDate(d: Date): string {
 }
 
 /**
- * Varsayılan kontrol/teslim tarihi: tam 1 hafta sonra — aynı hafta günü.
- * Örn. Perşembe verilirse → haftaya Perşembe (UTC toISOString kullanma).
+ * Varsayılan ödev kontrol günü: tam 1 hafta sonra — aynı hafta günü.
+ * Örn. Pazartesi verilirse → haftaya Pazartesi.
+ * (Yerel takvim; UTC toISOString kullanma.)
  */
 function getDefaultDueDate(): string {
   const d = new Date();
@@ -754,8 +755,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         };
       });
 
-      const hasCompletion = cart.some((c) => isIncompleteHistory(taskHistory[c.contentId]));
-      const finalTitle = withCompletionTitleSuffix(title || generateWeeklyTitle(), hasCompletion);
+      const finalTitle = stripCompletionTitleSuffix(title || generateWeeklyTitle());
 
       // Kaynak havuzu ↔ ödev izlenebilirliği: sepet tek bir kitaptan oluşuyorsa
       // (çoğunlukla haftalık ödev senaryosu) ve tekli öğrenci seçiliyse, bu
@@ -886,8 +886,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const goToStep = (step: number) => {
     if (!canGoToStep(step)) return;
     if (step === 3) {
-      const hasCompletion = cart.some((c) => isIncompleteHistory(taskHistory[c.contentId]));
-      setTitle((t) => withCompletionTitleSuffix(t || generateWeeklyTitle(), hasCompletion));
+      setTitle((t) => stripCompletionTitleSuffix(t || generateWeeklyTitle()));
     }
     setCurrentStep(step);
   };
@@ -1226,8 +1225,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
                 if (!canGoToStep(currentStep + 1)) return;
                 const next = currentStep + 1;
                 if (next === 3) {
-                  const hasCompletion = cart.some((c) => isIncompleteHistory(taskHistory[c.contentId]));
-                  setTitle((t) => withCompletionTitleSuffix(t || generateWeeklyTitle(), hasCompletion));
+                  setTitle((t) => stripCompletionTitleSuffix(t || generateWeeklyTitle()));
                 }
                 setCurrentStep(next);
               }}

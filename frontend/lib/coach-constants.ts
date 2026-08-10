@@ -2,8 +2,15 @@
  * Koç portalı sabitleri — backend RiskEngine / admin coaching modülü ile uyumlu.
  */
 
-/** RiskEngine.INACTIVITY_DAYS_CRITICAL — görüşme takibi eşiği (gün) */
-export const COACH_MEETING_FOLLOWUP_DAYS = 14;
+/**
+ * Takip hatırlatması (ödev) — backend HOMEWORK_FOLLOWUP_* ile uyumlu.
+ * 7+ gündür yeni ödev almamış ve kontrol günü > 2 gün geçmiş.
+ */
+export const COACH_HOMEWORK_FOLLOWUP_HELD_DAYS = 7;
+export const COACH_HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS = 2;
+
+/** @deprecated Ödev takibi kullanılıyor; geriye uyumluluk için tutuldu */
+export const COACH_MEETING_FOLLOWUP_DAYS = COACH_HOMEWORK_FOLLOWUP_HELD_DAYS;
 
 export type CoachRiskLevel = 'low' | 'medium' | 'high';
 

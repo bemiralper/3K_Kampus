@@ -1,9 +1,11 @@
 """
 Koç portalı — öğrenci listesi ve profil BFF veri katmanı.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Count, Max, Q
+from django.db.models.functions import Coalesce, TruncDate
+from django.utils import timezone as dj_tz
 
 from apps.coaching.assignment_manual.models import ManualAssignment
 from apps.coaching.intelligence.services.risk_engine import RiskEngine
@@ -17,6 +19,12 @@ from apps.coaching.study_program.models import WeeklyProgram
 from apps.ogrenci.domain.models import Ogrenci, OgrenciAdres, OgrenciKayit, OgrenciVeli
 from apps.student_resources.models import StudentResourceAssignment
 from shared.context import get_secili_egitim_yili_id, get_secili_kurum_id
+
+# Takip hatırlatması (ödev):
+# - son ödev verilmesinden bu yana > N gün (yani N gündür ödev almamış)
+# - VE açık ödevde kontrol günü > M gün geçmiş
+HOMEWORK_FOLLOWUP_HELD_DAYS = 7
+HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS = 2
 
 
 def get_coach_student_queryset(user, request, sube_id=None):
@@ -123,20 +131,66 @@ def _risk_map(student_ids):
     return result
 
 
-def _needs_meeting_map(student_ids, last_meeting):
+def _needs_meeting_map(student_ids, last_meeting=None):
     """
-    Takip görüşmesi gerekli mi — RiskEngine.INACTIVITY_DAYS_CRITICAL (14 gün) ile uyumlu.
-    Son tamamlanan görüşmeden bu yana geçen süre veya hiç görüşme yoksa True.
+    Takip hatırlatması (ödev bazlı).
+
+    - Son ödev verilmesinden bu yana 7 günden fazla geçmiş (7+ gündür ödev almamış), VE
+    - Açık ödevde kontrol günü (due_date) 2 günden fazla geçmiş.
+
+    `last_meeting` geriye uyumluluk için kabul edilir, kullanılmaz.
     """
-    threshold = RiskEngine.INACTIVITY_DAYS_CRITICAL
-    today = date.today()
+    if not student_ids:
+        return {}
+
+    today = dj_tz.localdate()
+    tz = dj_tz.get_current_timezone()
+    # (today - d).days > N  ⟺  d <= today - (N + 1)
+    no_homework_cutoff = today - timedelta(days=HOMEWORK_FOLLOWUP_HELD_DAYS + 1)
+    control_cutoff = today - timedelta(days=HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS + 1)
+
+    open_statuses = (
+        ManualAssignment.Status.ASSIGNED,
+        ManualAssignment.Status.IN_PROGRESS,
+        ManualAssignment.Status.OVERDUE,
+    )
+    given_statuses = open_statuses + (
+        ManualAssignment.Status.COMPLETED,
+    )
+
+    # Son verilme tarihi (assigned_date / created_at) — DRAFT/CANCELLED sayılmaz
+    last_given_rows = (
+        ManualAssignment.objects.filter(
+            student_id__in=student_ids,
+            is_active=True,
+            status__in=given_statuses,
+        )
+        .annotate(held_day=TruncDate(Coalesce('assigned_date', 'created_at'), tzinfo=tz))
+        .values('student_id')
+        .annotate(last_held=Max('held_day'))
+    )
+    last_given = {r['student_id']: r['last_held'] for r in last_given_rows}
+
+    # Kontrolü 2g+ geçmiş açık ödevi olanlar
+    stale_control = set(
+        ManualAssignment.objects.filter(
+            student_id__in=student_ids,
+            is_active=True,
+            status__in=open_statuses,
+            due_date__isnull=False,
+        )
+        .annotate(due_day=TruncDate('due_date', tzinfo=tz))
+        .filter(due_day__lte=control_cutoff)
+        .values_list('student_id', flat=True)
+        .distinct()
+    )
+
     result = {}
     for sid in student_ids:
-        last_date = last_meeting.get(sid)
-        if last_date is None:
-            result[sid] = True
-        else:
-            result[sid] = (today - last_date).days >= threshold
+        last_held = last_given.get(sid)
+        # Hiç ödev verilmemiş veya son verilmeden bu yana > 7 gün
+        no_recent_homework = last_held is None or last_held <= no_homework_cutoff
+        result[sid] = no_recent_homework and sid in stale_control
     return result
 
 

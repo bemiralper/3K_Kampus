@@ -170,10 +170,10 @@ export default function ReviewStep({
                 />
               </div>
 
-              {/* Due Date */}
+              {/* Kontrol günü — varsayılan: bugünden +7 (aynı hafta günü) */}
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 4 }}>
-                  Teslim Tarihi
+                  Kontrol Günü
                 </label>
                 <input
                   type="date"
@@ -196,6 +196,9 @@ export default function ReviewStep({
                     fontFamily: 'inherit',
                   }}
                 />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.35 }}>
+                  Varsayılan: haftaya aynı gün (örn. Pzt → haftaya Pzt). Çalışma programı ertesi gün başlar.
+                </div>
               </div>
 
               {/* Priority */}
@@ -389,27 +392,6 @@ export default function ReviewStep({
                                   }}>
                                     {item.contentName}
                                   </div>
-                                  {isCompletion && (
-                                    <div style={{
-                                      fontSize: 10, color: '#2563eb', marginTop: 2,
-                                      display: 'flex', alignItems: 'center', gap: 4,
-                                    }}>
-                                      🔄 Eksik Tamamlama
-                                      {hist.completion_status === 'PARTIAL' && hist.task_completion_percent > 0 && (
-                                        <span style={{
-                                          background: '#dbeafe', padding: '1px 6px',
-                                          borderRadius: 4, fontWeight: 600, fontSize: 9,
-                                        }}>
-                                          önceki: %{hist.task_completion_percent}
-                                        </span>
-                                      )}
-                                      {hist.assignment_title && (
-                                        <span style={{ color: '#60a5fa', fontSize: 9 }}>
-                                          ({hist.assignment_title})
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
                                   {note && !(isCompletion && isAutoCompletionNote(note)) && (
                                     <div style={{ fontSize: 11, color: 'var(--primary)', fontStyle: 'italic', marginTop: 2 }}>
                                       📌 {note}
@@ -538,25 +520,6 @@ export default function ReviewStep({
 
             {/* Ders - Konu Özeti */}
             <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: 12 }}>
-              {(() => {
-                const completionCount = cart.filter(c => {
-                  const h = taskHistory[c.contentId];
-                  return h && (h.completion_status === 'PARTIAL' || h.completion_status === 'NOT_DONE');
-                }).length;
-                return completionCount > 0 ? (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '8px 12px', marginBottom: 10,
-                    background: 'rgba(37,99,235,0.08)', borderRadius: 8,
-                    border: '1px solid rgba(37,99,235,0.15)',
-                  }}>
-                    <span style={{ fontSize: 14 }}>🔄</span>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: '#2563eb' }}>
-                      {completionCount} görev eksik tamamlama
-                    </span>
-                  </div>
-                ) : null;
-              })()}
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                 📋 Verilen Ödevler
               </div>

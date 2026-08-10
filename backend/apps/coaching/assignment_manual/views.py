@@ -143,8 +143,17 @@ def update_assignment_completion_from_tasks(assignment):
         assignment.completed_date = None
         if evaluated > 0:
             assignment.status = ManualAssignment.Status.IN_PROGRESS
-        elif assignment.due_date and assignment.due_date < timezone.now():
-            assignment.status = ManualAssignment.Status.OVERDUE
+        elif assignment.due_date:
+            due = assignment.due_date
+            due_day = (
+                timezone.localtime(due).date()
+                if timezone.is_aware(due)
+                else due.date()
+            )
+            if due_day < timezone.localdate():
+                assignment.status = ManualAssignment.Status.OVERDUE
+            else:
+                assignment.status = ManualAssignment.Status.ASSIGNED
         else:
             assignment.status = ManualAssignment.Status.ASSIGNED
 
@@ -292,6 +301,48 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         
         if risk_status:
             queryset = queryset.filter(risk_status=risk_status)
+
+        due_today = (self.request.query_params.get('due_today') or '').lower()
+        if due_today in ('1', 'true', 'yes'):
+            from django.db.models.functions import TruncDate
+            from django.utils import timezone as dj_tz
+            today = dj_tz.localdate()
+            tz = dj_tz.get_current_timezone()
+            queryset = (
+                queryset.exclude(due_date__isnull=True)
+                .exclude(status__in=(
+                    ManualAssignment.Status.COMPLETED,
+                    ManualAssignment.Status.CANCELLED,
+                    ManualAssignment.Status.DRAFT,
+                ))
+                .annotate(due_day=TruncDate('due_date', tzinfo=tz))
+                .filter(due_day=today)
+            )
+
+        # Takvim birleşimi: kontrol günü aralığı (YYYY-MM-DD)
+        due_from = (self.request.query_params.get('due_from') or '').strip()
+        due_to = (self.request.query_params.get('due_to') or '').strip()
+        if due_from or due_to:
+            from datetime import date as date_cls, datetime as dt_cls, time as time_cls
+            from django.utils import timezone as dj_tz
+
+            tz = dj_tz.get_current_timezone()
+
+            def _parse_day(raw: str):
+                try:
+                    return date_cls.fromisoformat(raw[:10])
+                except ValueError:
+                    return None
+
+            start_d = _parse_day(due_from) if due_from else None
+            end_d = _parse_day(due_to) if due_to else None
+            queryset = queryset.exclude(due_date__isnull=True)
+            if start_d:
+                start_dt = dj_tz.make_aware(dt_cls.combine(start_d, time_cls.min), tz)
+                queryset = queryset.filter(due_date__gte=start_dt)
+            if end_d:
+                end_dt = dj_tz.make_aware(dt_cls.combine(end_d, time_cls.max), tz)
+                queryset = queryset.filter(due_date__lte=end_dt)
 
         search_q = (self.request.query_params.get('q') or '').strip()
         if search_q:
@@ -541,9 +592,26 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
 
         refresh_manual_assignment_overdue(ctx['kurum_id'])
 
+        from django.db.models.functions import TruncDate
+        from django.utils import timezone as dj_tz
+
         queryset = ManualAssignment.objects.filter(is_active=True)
         queryset = filter_manual_assignments(queryset, request.user)
         queryset = filter_queryset_by_student_sube(queryset, ctx['sube_id'])
+
+        today = dj_tz.localdate()
+        tz = dj_tz.get_current_timezone()
+        due_today = (
+            queryset.exclude(due_date__isnull=True)
+            .exclude(status__in=(
+                ManualAssignment.Status.COMPLETED,
+                ManualAssignment.Status.CANCELLED,
+                ManualAssignment.Status.DRAFT,
+            ))
+            .annotate(due_day=TruncDate('due_date', tzinfo=tz))
+            .filter(due_day=today)
+            .count()
+        )
 
         return Response({
             'success': True,
@@ -555,6 +623,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'completed': queryset.filter(status=ManualAssignment.Status.COMPLETED).count(),
                 'overdue': queryset.filter(status=ManualAssignment.Status.OVERDUE).count(),
                 'at_risk': queryset.filter(risk_status=ManualAssignment.RiskStatus.AT_RISK).count(),
+                'due_today': due_today,
             },
         })
 

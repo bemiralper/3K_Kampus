@@ -3,12 +3,12 @@ Koç portalı — giriş yapmış koçun kendi performans istatistikleri.
 """
 from datetime import date, timedelta
 
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.coaching.assignment_manual.models import ManualAssignment
 from apps.coaching.models import CoachStudentAssignment, GorusmeKaydi
 from apps.coaching.services.coach_student_service import (
-    _last_meeting_map,
     _needs_meeting_map,
     _risk_map,
 )
@@ -52,12 +52,6 @@ def gorev_stats_for_user(user_id: int) -> dict:
         'tamamlanamayan': qs.filter(durum=GorevDurum.TAMAMLANMADI).count(),
     }
 
-KONTROL_STATUSES = (
-    ManualAssignment.Status.ASSIGNED,
-    ManualAssignment.Status.IN_PROGRESS,
-    ManualAssignment.Status.OVERDUE,
-)
-
 
 def _period_bounds():
     today = date.today()
@@ -85,20 +79,34 @@ def _count_in_period(qs, date_field, week_start, week_end, month_start, month_en
     }
 
 
+def _due_today_count(assignment_qs):
+    """Kontrol günü bugün olan açık ödev sayısı (Ödev Kontrol / badge ile aynı)."""
+    today = timezone.localdate()
+    tz = timezone.get_current_timezone()
+    return (
+        assignment_qs.filter(status__in=KONTROL_STATUSES)
+        .exclude(due_date__isnull=True)
+        .annotate(due_day=TruncDate('due_date', tzinfo=tz))
+        .filter(due_day=today)
+        .count()
+    )
+
+
 def get_coach_self_stats(coach_profile, user):
     """Giriş yapmış koç için özet istatistikler."""
     week_start, week_end, month_start, month_end = _period_bounds()
     today = date.today()
 
+    # Kapasite ile aynı kapsam: yalnızca birincil aktif atamalar
     student_ids = list(
         CoachStudentAssignment.objects.filter(
             coach=coach_profile,
             end_date__isnull=True,
+            is_primary=True,
         ).values_list('student_id', flat=True)
     )
 
-    last_meeting = _last_meeting_map(student_ids)
-    needs_meeting = _needs_meeting_map(student_ids, last_meeting)
+    needs_followup = _needs_meeting_map(student_ids)
     risk_map = _risk_map(student_ids)
     riskli = sum(
         1 for sid in student_ids
@@ -110,7 +118,7 @@ def get_coach_self_stats(coach_profile, user):
         'kapasite': coach_profile.capacity,
         'bos_kapasite': coach_profile.available_capacity,
         'riskli_ogrenci': riskli,
-        'gorusme_bekleyen': sum(1 for sid in student_ids if needs_meeting.get(sid, False)),
+        'odev_takibi': sum(1 for sid in student_ids if needs_followup.get(sid, False)),
     }
 
     base_assignments = ManualAssignment.objects.filter(
@@ -148,7 +156,7 @@ def get_coach_self_stats(coach_profile, user):
             status__in=(ManualAssignment.Status.ASSIGNED, ManualAssignment.Status.IN_PROGRESS),
         ).count(),
         'geciken': base_assignments.filter(status=ManualAssignment.Status.OVERDUE).count(),
-        'bekleyen_kontrol': base_assignments.filter(status__in=KONTROL_STATUSES).count(),
+        'bekleyen_kontrol': _due_today_count(base_assignments),
     }
 
     gorusme_qs = GorusmeKaydi.objects.filter(koc=coach_profile)

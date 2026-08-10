@@ -3,7 +3,7 @@
  * Çalışma Programı modülü için API fonksiyonları
  */
 
-import { apiGet, apiPost, apiFetch, apiDelete, ApiResponse } from './api';
+import { apiGet, apiPost, apiPostForm, apiFetch, apiDelete, ApiResponse } from './api';
 
 // ═══════════════════════════════════════
 // TYPES
@@ -13,40 +13,61 @@ export type BlockType =
   | 'KONU_OGRENME'
   | 'TEKRAR'
   | 'SORU_COZUMU'
-  | 'BRANS_DENEMESI'
   | 'MINI_TEST'
+  | 'BRANS_DENEMESI'
+  | 'DENEME'
   | 'ANALIZ'
-  | 'ZAYIF_KONU'
-  | 'DENEME';
+  /** Eski kayıtlar — seçilebilir tür değil; sistem önerisi */
+  | 'ZAYIF_KONU';
 
 export type GoalType =
   | 'NET_ARTIRMA'
-  | 'KONU_TAMAMLAMA'
-  | 'DENEME_HAZIRLIK'
   | 'EKSIK_KAPATMA'
-  | 'SURE_HIZLANDIRMA';
+  | 'SURE_HIZLANDIRMA'
+  | 'KONU_TAMAMLAMA'
+  /** Eski kayıtlar — seçilebilir değil */
+  | 'DENEME_HAZIRLIK';
 
 export type LoadLevel = 'IDEAL' | 'YOGUN' | 'ASIRI';
 export type EnergyLevel = 'YUKSEK' | 'NORMAL' | 'DUSUK';
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
+/** Koçun seçebileceği çalışma türleri (ZAYIF_KONU hariç) */
+export const SELECTABLE_BLOCK_TYPES: BlockType[] = [
+  'KONU_OGRENME',
+  'TEKRAR',
+  'SORU_COZUMU',
+  'MINI_TEST',
+  'BRANS_DENEMESI',
+  'DENEME',
+  'ANALIZ',
+];
+
+/** Koçun seçebileceği hedef türleri (DENEME_HAZIRLIK hariç) */
+export const SELECTABLE_GOAL_TYPES: GoalType[] = [
+  'NET_ARTIRMA',
+  'EKSIK_KAPATMA',
+  'SURE_HIZLANDIRMA',
+  'KONU_TAMAMLAMA',
+];
+
 export const BLOCK_TYPE_META: Record<BlockType, { label: string; icon: string; color: string }> = {
-  KONU_OGRENME:   { label: 'Konu Öğrenme',          icon: '📖', color: '#3b82f6' },
-  TEKRAR:         { label: 'Tekrar',                 icon: '🔁', color: '#8b5cf6' },
-  SORU_COZUMU:    { label: 'Soru Çözümü',            icon: '📝', color: '#22c55e' },
-  BRANS_DENEMESI: { label: 'Branş Denemesi',         icon: '🎯', color: '#f97316' },
-  MINI_TEST:      { label: 'Mini Test',              icon: '⚡', color: '#eab308' },
-  ANALIZ:         { label: 'Analiz',                 icon: '📊', color: '#06b6d4' },
-  ZAYIF_KONU:     { label: 'Zayıf Konu Çalışması',  icon: '🧠', color: '#ef4444' },
-  DENEME:         { label: 'Deneme',                 icon: '📋', color: '#0d9488' },
+  KONU_OGRENME:   { label: 'Konu Çalışması',   icon: '📖', color: '#3b82f6' },
+  TEKRAR:         { label: 'Tekrar',            icon: '🔁', color: '#8b5cf6' },
+  SORU_COZUMU:    { label: 'Soru Çözümü',       icon: '📝', color: '#22c55e' },
+  MINI_TEST:      { label: 'Mini Test',         icon: '🧪', color: '#eab308' },
+  BRANS_DENEMESI: { label: 'Branş Denemesi',    icon: '🎯', color: '#f97316' },
+  DENEME:         { label: 'Genel Deneme',      icon: '📋', color: '#0d9488' },
+  ANALIZ:         { label: 'Deneme Analizi',    icon: '📊', color: '#06b6d4' },
+  ZAYIF_KONU:     { label: 'Zayıf konu önerisi', icon: '💡', color: '#ef4444' },
 };
 
 export const GOAL_TYPE_META: Record<GoalType, { label: string; icon: string }> = {
   NET_ARTIRMA:      { label: 'Net Artırma',       icon: '📈' },
-  KONU_TAMAMLAMA:   { label: 'Konu Tamamlama',    icon: '📚' },
-  DENEME_HAZIRLIK:  { label: 'Deneme Hazırlık',   icon: '🎯' },
   EKSIK_KAPATMA:    { label: 'Eksik Kapatma',     icon: '🔧' },
-  SURE_HIZLANDIRMA: { label: 'Süre Hızlandırma',  icon: '⏱️' },
+  SURE_HIZLANDIRMA: { label: 'Hız Geliştirme',    icon: '⏱️' },
+  KONU_TAMAMLAMA:   { label: 'Konuyu Pekiştirme', icon: '📚' },
+  DENEME_HAZIRLIK:  { label: 'Sınava Hazırlık',   icon: '🎯' },
 };
 
 export const PRIORITY_META: Record<Priority, { label: string; color: string; icon: string }> = {
@@ -71,6 +92,7 @@ export interface ProgramBlock {
   id: number;
   day: number;
   source_assignment: number | null;
+  source_assignment_title?: string | null;
   source_task: number | null;
   source_lesson: number | null;
   lesson: number | null;
@@ -199,6 +221,8 @@ export interface HomeworkPoolItem {
   coach_name?: string | null;
   is_planned: boolean;
   lesson_id: number | null;
+  /** egitim_tanimlari.Ders id — AssignmentLesson.lesson */
+  ders_id?: number | null;
 }
 
 export interface WeeklySummary {
@@ -469,13 +493,16 @@ export async function splitHomeworkToDays(
   const totalDur = 0; // havuzda süre bilgisi yok
   const blocks: ProgramBlock[] = [];
 
+  const topic = item.topic_name?.trim() || '';
+  const baseTitle = topic || item.lesson_name || item.title;
   for (let i = 0; i < n; i++) {
     const res = await createBlock({
       day: dayIds[i],
       source_assignment: item.id,
       source_lesson: item.lesson_id,
-      title: `${item.title} (${i + 1}/${n})`,
-      topic_name: item.topic_name || '',
+      lesson: item.ders_id || undefined,
+      title: `${baseTitle} (${i + 1}/${n})`,
+      topic_name: topic,
       resource_name: item.resource_name || '',
       block_type: 'SORU_COZUMU' as BlockType,
       question_count: questionCounts[i],
@@ -526,4 +553,70 @@ export async function fetchBadges(params?: {
   if (params?.program_id) sp.append('program_id', String(params.program_id));
   const qs = sp.toString();
   return apiGet(`${BASE}/badges/${qs ? `?${qs}` : ''}`);
+}
+
+// ─── WhatsApp notify ───
+
+export interface StudyProgramNotifyRecipient {
+  recipient_type: 'veli' | 'ogrenci' | string;
+  ogrenci_id: number;
+  veli_id: number | null;
+  display_name: string;
+  telefon: string;
+  body: string;
+  skip_reason?: string;
+}
+
+export interface StudyProgramNotifyPreview {
+  program_id: number;
+  student_name: string;
+  week_label: string;
+  pdf_title: string;
+  send_mode: 'document' | 'meta_template' | string;
+  meta_template_veli?: string;
+  meta_template_ogrenci?: string;
+  recipients: StudyProgramNotifyRecipient[];
+}
+
+export async function previewStudyProgramNotify(
+  programId: number,
+): Promise<ApiResponse<StudyProgramNotifyPreview>> {
+  return apiGet(`${BASE}/programs/${programId}/notify-preview/`);
+}
+
+export async function sendStudyProgramNotify(
+  programId: number,
+  payload: {
+    veli_ids?: number[];
+    include_student?: boolean;
+    pdf_blob?: Blob;
+    pdf_filename?: string;
+  },
+): Promise<ApiResponse<{
+  sent: number;
+  skipped: number;
+  errors: string[];
+  sent_details?: Array<{
+    recipient_type: string;
+    display_name: string;
+    telefon: string;
+    message_status: string;
+  }>;
+}>> {
+  if (payload.pdf_blob) {
+    const form = new FormData();
+    form.append('veli_ids', JSON.stringify(payload.veli_ids ?? []));
+    form.append('include_student', payload.include_student ? 'true' : 'false');
+    form.append(
+      'pdf',
+      payload.pdf_blob,
+      payload.pdf_filename || `calisma-programi-${programId}.pdf`,
+    );
+    return apiPostForm(`${BASE}/programs/${programId}/notify-send/`, form);
+  }
+
+  return apiPost(`${BASE}/programs/${programId}/notify-send/`, {
+    veli_ids: payload.veli_ids,
+    include_student: payload.include_student,
+  });
 }

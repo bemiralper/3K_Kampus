@@ -2,151 +2,149 @@
 
 import React from 'react';
 import { type HomeworkPoolItem, PRIORITY_META } from '@/lib/study-program-api';
-
-/**
- * Ödev havuzundaki tek bir kart.
- * Ders rengi, konu, soru sayısı, öncelik badge.
- * Drag edilebilir.
- */
-
-// Ders adına göre sabit renk
-const LESSON_COLORS: Record<string, string> = {
-  Matematik: '#3b82f6',
-  'Türkçe': '#ef4444',
-  Fen: '#22c55e',
-  'Fen Bilimleri': '#22c55e',
-  Sosyal: '#f97316',
-  'İngilizce': '#8b5cf6',
-  Din: '#6366f1',
-};
-
-function lessonColor(name: string | null): string {
-  if (!name) return '#6b7280';
-  for (const [key, color] of Object.entries(LESSON_COLORS)) {
-    if (name.toLowerCase().includes(key.toLowerCase())) return color;
-  }
-  return '#6b7280';
-}
+import { lessonAccent } from './blockDisplay';
 
 interface Props {
   item: HomeworkPoolItem;
   onDragStart: (e: React.DragEvent, item: HomeworkPoolItem) => void;
   onSplit?: (item: HomeworkPoolItem) => void;
+  /** Ders grubu altında gösteriliyorsa ders adını kartta tekrarlama */
+  hideLessonName?: boolean;
 }
 
-export default function HomeworkPoolCard({ item, onDragStart, onSplit }: Props) {
-  const lColor = lessonColor(item.lesson_name);
+export default function HomeworkPoolCard({
+  item,
+  onDragStart,
+  onSplit,
+  hideLessonName = false,
+}: Props) {
+  const accent = lessonAccent(item.lesson_name);
   const pri = PRIORITY_META[item.priority as keyof typeof PRIORITY_META];
+  const topic = item.topic_name?.trim();
 
   return (
     <div
       draggable
       onDragStart={(e) => onDragStart(e, item)}
       style={{
-        backgroundColor: '#fff',
-        border: '1px solid #e5e7eb',
-        borderLeft: `4px solid ${lColor}`,
-        borderRadius: '8px',
+        display: 'flex',
+        gap: 10,
+        alignItems: 'flex-start',
         padding: '10px 12px',
+        background: '#fff',
+        borderRadius: 10,
+        border: '1px solid #e8eef5',
+        borderLeft: `3px solid ${accent}`,
         cursor: 'grab',
-        transition: 'box-shadow .15s, transform .15s',
-        opacity: item.is_planned ? 0.45 : 1,
+        transition: 'box-shadow .15s, border-color .15s',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,.1)';
-        e.currentTarget.style.transform = 'translateY(-1px)';
+        e.currentTarget.style.boxShadow = '0 4px 14px rgba(15,23,42,0.08)';
+        e.currentTarget.style.borderColor = '#c7d7ea';
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.boxShadow = 'none';
-        e.currentTarget.style.transform = 'none';
+        e.currentTarget.style.borderColor = '#e8eef5';
       }}
     >
-      {/* Ders badge */}
-      {item.lesson_name && (
-        <span style={{
-          display: 'inline-block',
-          padding: '2px 8px',
-          borderRadius: '10px',
-          fontSize: '11px',
-          fontWeight: 600,
-          backgroundColor: `${lColor}18`,
-          color: lColor,
-          marginBottom: '6px',
-        }}>
-          {item.lesson_name}
-        </span>
-      )}
+      <span
+        aria-hidden
+        style={{
+          color: '#cbd5e1',
+          fontSize: 13,
+          lineHeight: 1.2,
+          marginTop: 2,
+          letterSpacing: -1,
+          userSelect: 'none',
+          flexShrink: 0,
+        }}
+      >
+        ⋮⋮
+      </span>
 
-      {/* Başlık */}
-      <div style={{ fontWeight: 600, fontSize: '13px', color: '#111827', marginBottom: '4px', lineHeight: '1.3' }}>
-        {item.title}
-      </div>
-
-      {/* Konu + Kaynak */}
-      {item.topic_name && (
-        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>{item.topic_name}</div>
-      )}
-      {item.resource_name && (
-        <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '6px' }}>📚 {item.resource_name}</div>
-      )}
-      {item.coach_name && (
-        <div style={{ fontSize: '10px', color: '#6366f1', marginBottom: '6px' }}>
-          Koç: {item.coach_name}
-        </div>
-      )}
-
-      {/* Alt bilgi satırı */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
-          {item.question_count} Soru
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          {onSplit && item.question_count > 1 && !item.is_planned && (
-            <button
-              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onSplit(item); }}
-              style={{
-                padding: '2px 6px',
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 600,
-                border: '1px solid #c7d2fe',
-                backgroundColor: '#eef2ff',
-                color: '#4f46e5',
-                cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '2px',
-              }}
-              title="Günlere bölerek ekle"
-            >
-              ✂️ Böl
-            </button>
-          )}
-        {pri && (
-          <span style={{
-            padding: '1px 6px',
-            borderRadius: '8px',
-            fontSize: '10px',
-            fontWeight: 600,
-            backgroundColor: `${pri.color}18`,
-            color: pri.color,
-          }}>
-            {pri.label}
-          </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {!hideLessonName && item.lesson_name && (
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: accent,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              marginBottom: 3,
+            }}
+          >
+            {item.lesson_name}
+          </div>
         )}
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: '#0f172a',
+            lineHeight: 1.3,
+            wordBreak: 'break-word',
+          }}
+        >
+          {topic || item.lesson_name || item.title || 'İçerik'}
+        </div>
+        {item.resource_name && (
+          <div
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              marginTop: 3,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {item.resource_name}
+          </div>
+        )}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginTop: 6,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>
+            {item.question_count || 0} soru
+          </span>
+          {pri && (
+            <span style={{ fontSize: 10, fontWeight: 600, color: pri.color }}>
+              {pri.label}
+            </span>
+          )}
         </div>
       </div>
 
-      {item.is_planned && (
-        <div style={{
-          marginTop: '6px',
-          fontSize: '10px',
-          color: '#22c55e',
-          fontWeight: 600,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-        }}>
-          ✓ Planlandı
-        </div>
+      {onSplit && item.question_count > 1 && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onSplit(item);
+          }}
+          title="Günlere böl"
+          style={{
+            flexShrink: 0,
+            padding: '6px 8px',
+            borderRadius: 8,
+            border: '1px solid #e2e8f0',
+            background: '#f8fafc',
+            color: '#475569',
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Böl
+        </button>
       )}
     </div>
   );

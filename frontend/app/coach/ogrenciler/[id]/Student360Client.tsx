@@ -163,7 +163,14 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
     if (activeTab !== 'gorusmeler') setTab('gorusmeler');
   };
 
-  const handleProgramOpen = () => setQuery({ action: 'program' });
+  const programIdParam = searchParams.get('program_id');
+  const initialProgramId = programIdParam ? Number(programIdParam) : undefined;
+
+  const handleProgramOpen = (programId?: number) =>
+    setQuery({
+      action: 'program',
+      program_id: programId ? String(programId) : null,
+    });
 
   useEffect(() => {
     if (activeAction === 'odev-ver') {
@@ -227,7 +234,7 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
           <ProgramTab
             key={`program-${tabReloadKey}`}
             studentId={studentId}
-            onOpenProgram={handleProgramOpen}
+            onOpenProgram={(id) => handleProgramOpen(id)}
           />
         );
       case 'kutuphane':
@@ -319,9 +326,12 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
           studentId={studentId}
           studentName={studentDisplayName}
           coachId={user?.coach_profile_id ?? undefined}
+          initialProgramId={
+            initialProgramId && Number.isFinite(initialProgramId) ? initialProgramId : undefined
+          }
           onClose={() => {
             setTabReloadKey((k) => k + 1);
-            closeDrawer();
+            setQuery({ action: null, program_id: null });
           }}
         />
       )}

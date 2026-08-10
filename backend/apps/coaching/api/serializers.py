@@ -168,7 +168,7 @@ class CoachSelfStatsOgrencilerSerializer(serializers.Serializer):
     kapasite = serializers.IntegerField()
     bos_kapasite = serializers.IntegerField()
     riskli_ogrenci = serializers.IntegerField()
-    gorusme_bekleyen = serializers.IntegerField()
+    odev_takibi = serializers.IntegerField()
 
 
 class CoachSelfStatsOdevlerSerializer(serializers.Serializer):

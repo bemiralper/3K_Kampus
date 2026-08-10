@@ -117,21 +117,33 @@ export default function GenelTakvimClient() {
           .filter(Boolean),
       );
 
+      const searchQ = (filters.search || '').trim().toLowerCase();
+      const durum = filters.durum;
+
       const merged: FCEvent[] = [...takvimData];
       for (const g of gorevData) {
-        if (!syncedAtamaIds.has(String(g.id))) {
-          merged.push({
-            ...g,
-            extendedProps: {
-              ...g.extendedProps,
-              kaynak: 'gorev',
-              kaynak_modul: 'gorev',
-              atama_id: g.id,
-              ikon: (g.extendedProps?.ikon as string) || '✅',
-              kategori: 'GOREV',
-            },
-          });
+        if (syncedAtamaIds.has(String(g.id))) continue;
+        if (searchQ && !(g.title || '').toLowerCase().includes(searchQ)) continue;
+        if (durum) {
+          const gd = String(g.extendedProps?.durum || '').toUpperCase();
+          const ok =
+            (durum === 'SCHEDULED' && ['BEKLIYOR', 'BASLADI', 'SCHEDULED'].includes(gd))
+            || (durum === 'IN_PROGRESS' && ['DEVAM_EDIYOR', 'IN_PROGRESS', 'BASLADI'].includes(gd))
+            || (durum === 'COMPLETED' && ['TAMAMLANDI', 'COMPLETED'].includes(gd))
+            || (durum === 'CANCELLED' && ['IPTAL', 'CANCELLED', 'TAMAMLANMADI'].includes(gd));
+          if (!ok) continue;
         }
+        merged.push({
+          ...g,
+          extendedProps: {
+            ...g.extendedProps,
+            kaynak: 'gorev',
+            kaynak_modul: 'gorev',
+            atama_id: g.id,
+            ikon: (g.extendedProps?.ikon as string) || '✅',
+            kategori: 'GOREV',
+          },
+        });
       }
       setEvents(merged);
     } catch { /* */ }
@@ -198,14 +210,24 @@ export default function GenelTakvimClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDonemId, filters]);
 
-  // Hangi günlerde event var (mini takvim noktaları)
-  const eventDates = useMemo(() => {
-    const set = new Set<string>();
-    events.forEach(e => {
-      if (e.start) set.add(e.start.slice(0, 10));
-    });
-    return set;
-  }, [events]);
+  /** Tür sayaçları: dönem + durum vb. sunucu filtrelerine göre canlı */
+  const eventTypesWithCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const gorevTypeId = eventTypes.find(t => t.kategori === 'GOREV')?.id;
+    for (const e of events) {
+      const ep = e.extendedProps || {};
+      const typeId = ep.event_type_id as string | undefined;
+      if (typeId) {
+        counts.set(typeId, (counts.get(typeId) || 0) + 1);
+      } else if ((ep.kaynak === 'gorev' || ep.kaynak_modul === 'gorev') && gorevTypeId) {
+        counts.set(gorevTypeId, (counts.get(gorevTypeId) || 0) + 1);
+      }
+    }
+    return eventTypes.map(t => ({
+      ...t,
+      etkinlik_sayisi: counts.get(t.id) || 0,
+    }));
+  }, [events, eventTypes]);
 
   // Filtrelenmiş eventler — görevler her zaman görünür
   const filteredEvents = useMemo(() =>
@@ -218,6 +240,15 @@ export default function GenelTakvimClient() {
     }),
     [events, activeFilters]
   );
+
+  // Hangi günlerde event var (mini takvim noktaları) — görünür türlere göre
+  const eventDates = useMemo(() => {
+    const set = new Set<string>();
+    filteredEvents.forEach(e => {
+      if (e.start) set.add(e.start.slice(0, 10));
+    });
+    return set;
+  }, [filteredEvents]);
 
   // ════════ FULLCALENDAR CALLBACKS ════════
 
@@ -351,7 +382,7 @@ export default function GenelTakvimClient() {
 
         {/* Filtreler */}
         <CalendarFilterPanel
-          eventTypes={eventTypes}
+          eventTypes={eventTypesWithCounts}
           activeFilters={activeFilters}
           onToggle={handleFilterToggle}
           filters={filters}

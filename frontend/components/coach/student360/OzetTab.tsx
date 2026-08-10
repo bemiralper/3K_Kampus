@@ -123,17 +123,7 @@ function buildPriorities(
     });
   }
 
-  if (programPct != null && Number(programPct) < 40) {
-    items.push({
-      id: 'program-low',
-      icon: 'calendar',
-      tone: 'info',
-      title: `Program tamamlanma %${Math.round(Number(programPct))}`,
-      detail: 'Haftalık program geride',
-      cta: 'Programa git',
-      onClick: () => onNavigateTab?.('program'),
-    });
-  } else if (!program && programPct == null) {
+  if (!program && programPct == null) {
     items.push({
       id: 'no-program',
       icon: 'calendar',
@@ -226,9 +216,9 @@ export default function OzetTab({ profile, onNavigateTab, onAction }: OzetTabPro
         <button type="button" className="s360-metric-card" onClick={() => onNavigateTab?.('program')}>
           <span className="s360-metric-icon"><Student360Icon name="calendar" /></span>
           <span className="s360-metric-copy">
-            <strong>{programPct != null ? `%${Math.round(Number(programPct))}` : '—'}</strong>
-            <span>Program ilerlemesi</span>
-            <small>{programPct != null ? 'Bu hafta' : 'Program oluşturulmamış'}</small>
+            <strong>{program ? 'Var' : '—'}</strong>
+            <span>Çalışma programı</span>
+            <small>{program ? 'Bu hafta' : 'Program oluşturulmamış'}</small>
           </span>
         </button>
         <button

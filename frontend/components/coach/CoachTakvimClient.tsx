@@ -19,10 +19,12 @@ import {
 } from '@/lib/takvim-api';
 import { fetchGorevTakvim } from '@/lib/gorev-api';
 import { fetchCoachStudents } from '@/lib/coach-api';
+import { fetchAssignments } from '@/lib/resources-api';
 import { shortEventLabel } from '@/lib/calendar-event-label';
 
 import MiniCalendar from '@/app/admin/takvim/genel/components/MiniCalendar';
 import CalendarFilterPanel from '@/app/admin/takvim/genel/components/CalendarFilterPanel';
+import CalendarContextBar from '@/app/admin/takvim/genel/components/CalendarContextBar';
 import EventTooltip from '@/app/admin/takvim/genel/components/EventTooltip';
 import EventDetailPopup from '@/app/admin/takvim/genel/components/EventDetailPopup';
 import EventFormDrawer from '@/app/admin/takvim/genel/components/EventFormDrawer';
@@ -40,6 +42,40 @@ const VIEW_LABELS: { key: ViewType; label: string }[] = [
 const COACH_CATEGORIES = new Set([
   'ODEV', 'GORUSME', 'CALISMA', 'DENEME', 'GOREV', 'TATIL', 'ETUT', 'DERS',
 ]);
+
+const COACH_TAKVIM_PREFS_KEY = '3k_coach_takvim_prefs';
+
+type CoachTakvimPrefs = {
+  /** null = henüz kaydedilmemiş → ilk açılışta tüm türler */
+  typeIds: string[] | null;
+  durum?: string;
+  ogrenci_id?: number;
+  search?: string;
+};
+
+function readCoachTakvimPrefs(): CoachTakvimPrefs {
+  if (typeof window === 'undefined') return { typeIds: null };
+  try {
+    const raw = localStorage.getItem(COACH_TAKVIM_PREFS_KEY);
+    if (!raw) return { typeIds: null };
+    const parsed = JSON.parse(raw) as CoachTakvimPrefs;
+    return {
+      typeIds: Array.isArray(parsed.typeIds) ? parsed.typeIds.map(String) : null,
+      durum: parsed.durum || undefined,
+      ogrenci_id: parsed.ogrenci_id ? Number(parsed.ogrenci_id) : undefined,
+      search: parsed.search || undefined,
+    };
+  } catch {
+    return { typeIds: null };
+  }
+}
+
+function writeCoachTakvimPrefs(prefs: CoachTakvimPrefs) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(COACH_TAKVIM_PREFS_KEY, JSON.stringify(prefs));
+  } catch { /* */ }
+}
 
 function gorevMatchesDurum(rawDurum: string | undefined, durum?: string): boolean {
   if (!durum) return true;
@@ -59,18 +95,63 @@ function gorevMatchesDurum(rawDurum: string | undefined, durum?: string): boolea
   return true;
 }
 
+/** Ödev assignment status → takvim durum filtresi */
+function odevMatchesDurum(assignmentStatus: string | undefined, durum?: string): boolean {
+  if (!durum) return true;
+  const s = String(assignmentStatus || '').toUpperCase();
+  if (durum === 'SCHEDULED') return ['ASSIGNED', 'OVERDUE'].includes(s);
+  if (durum === 'IN_PROGRESS') return s === 'IN_PROGRESS';
+  if (durum === 'COMPLETED') return s === 'COMPLETED';
+  if (durum === 'CANCELLED') return s === 'CANCELLED';
+  return true;
+}
+
+function odevCalendarDurum(assignmentStatus: string | undefined): string {
+  const s = String(assignmentStatus || '').toUpperCase();
+  if (s === 'IN_PROGRESS') return 'IN_PROGRESS';
+  if (s === 'COMPLETED') return 'COMPLETED';
+  if (s === 'CANCELLED') return 'CANCELLED';
+  return 'SCHEDULED'; // ASSIGNED / OVERDUE
+}
+
+function toDayKey(iso?: string | null): string {
+  if (!iso) return '';
+  // Yerel gün — UTC slice kaymasını önle
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export default function CoachTakvimClient() {
   const calRef = useRef<FullCalendar>(null);
+  const typesHydratedRef = useRef(false);
 
   const [events, setEvents] = useState<FCEvent[]>([]);
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [students, setStudents] = useState<{ id: number; ad: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [filters, setFilters] = useState<EventFilters>({ coach_scope: true });
+  const [filters, setFilters] = useState<EventFilters>(() => {
+    const prefs = readCoachTakvimPrefs();
+    return {
+      coach_scope: true,
+      durum: prefs.durum,
+      ogrenci_id: prefs.ogrenci_id,
+      search: prefs.search,
+    };
+  });
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebar, setMobileSidebar] = useState(false);
+
+  const [selectedDonemId, setSelectedDonemId] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const stored = localStorage.getItem('3k_active_donem');
+    return stored ? parseInt(stored, 10) : null;
+  });
 
   const [currentView, setCurrentView] = useState<ViewType>('dayGridMonth');
   const [calTitle, setCalTitle] = useState('');
@@ -104,18 +185,28 @@ export default function CoachTakvimClient() {
       };
       if (start) f.baslangic = start;
       if (end) f.bitis = end;
+      if (selectedDonemId) f.donem_id = selectedDonemId;
 
       const gorevParams: Record<string, string> = {};
       if (start) gorevParams.baslangic = start;
       if (end) gorevParams.bitis = end;
 
-      const [takvimRes, gorevRes] = await Promise.all([
+      const dueFrom = start ? toDayKey(start) : undefined;
+      const dueTo = end ? toDayKey(end) : undefined;
+
+      const [takvimRes, gorevRes, odevRes] = await Promise.all([
         fetchEventsCompact(f),
         fetchGorevTakvim(gorevParams),
+        fetchAssignments({
+          due_from: dueFrom,
+          due_to: dueTo,
+          student_id: filters.ogrenci_id,
+        }),
       ]);
 
       const takvimData = takvimRes.success && takvimRes.data ? takvimRes.data : [];
       const gorevData = gorevRes.success && gorevRes.data ? gorevRes.data : [];
+      const odevList = odevRes.success && Array.isArray(odevRes.data) ? odevRes.data : [];
 
       const syncedAtamaIds = new Set(
         takvimData
@@ -123,11 +214,14 @@ export default function CoachTakvimClient() {
           .map(e => String(e.extendedProps?.kaynak_id || e.extendedProps?.atama_id || ''))
           .filter(Boolean),
       );
-
       const searchQ = (filters.search || '').trim().toLowerCase();
       const studentId = filters.ogrenci_id;
+      const odevTypeId = eventTypes.find(t => t.kategori === 'ODEV')?.id;
 
-      const merged: FCEvent[] = [...takvimData];
+      // Ödev senkronlarını düş — başlık/kontrol günü için assignment listesi kaynak olsun
+      const merged: FCEvent[] = takvimData.filter(
+        e => e.extendedProps?.kaynak_modul !== 'odev' && e.extendedProps?.kategori !== 'ODEV',
+      );
       for (const g of gorevData) {
         if (syncedAtamaIds.has(String(g.id))) continue;
         if (studentId) continue; // görevlerde öğrenci yok — öğrenci filtresinde gizle
@@ -146,17 +240,77 @@ export default function CoachTakvimClient() {
           },
         });
       }
+
+      // Ödev kontrol günleri — başlık: "{Öğrenci} · Ödev kontrol"
+      for (const a of odevList) {
+        if (!a?.id || !a.due_date) continue;
+        if (['DRAFT', 'CANCELLED', 'COMPLETED'].includes(String(a.status || '').toUpperCase())) {
+          continue;
+        }
+        if (studentId && a.student !== studentId) continue;
+        if (!odevMatchesDurum(a.status, filters.durum)) continue;
+        const studentName = (a.student_name || '').trim() || 'Öğrenci';
+        const title = `${studentName} · Ödev kontrol`;
+        if (
+          searchQ
+          && !title.toLowerCase().includes(searchQ)
+          && !studentName.toLowerCase().includes(searchQ)
+        ) {
+          continue;
+        }
+        const day = toDayKey(a.due_date);
+        if (!day) continue;
+
+        merged.push({
+          id: `odev-virt-${a.id}`,
+          title, // ikon ayrı (extendedProps.ikon) — başlığa emoji koyma
+          start: day,
+          end: day,
+          allDay: true,
+          color: '#F97316',
+          extendedProps: {
+            kaynak: 'odev',
+            kaynak_modul: 'odev',
+            kaynak_id: String(a.id),
+            assignment_id: a.id,
+            ogrenci_ids: a.student ? [a.student] : [],
+            event_type_id: odevTypeId,
+            kategori: 'ODEV',
+            ikon: '📋',
+            durum: odevCalendarDurum(a.status),
+          },
+        });
+      }
       setEvents(merged);
     } catch { /* */ }
     setLoading(false);
-  }, [filters]);
+  }, [filters, selectedDonemId, eventTypes]);
 
   const loadEventTypes = useCallback(async () => {
     const res = await fetchEventTypes();
     if (res.success && res.data) {
       const coachTypes = res.data.filter(t => COACH_CATEGORIES.has(t.kategori));
       setEventTypes(coachTypes);
-      setActiveFilters(new Set(coachTypes.map(t => t.id)));
+      if (typesHydratedRef.current) return;
+      typesHydratedRef.current = true;
+
+      const prefs = readCoachTakvimPrefs();
+      const availableIds = coachTypes.map(t => t.id);
+      if (prefs.typeIds === null) {
+        // İlk ziyaret: tüm türler açık + kaydet
+        const all = new Set(availableIds);
+        setActiveFilters(all);
+        writeCoachTakvimPrefs({
+          ...prefs,
+          typeIds: availableIds,
+        });
+      } else {
+        // Kayıtlı seçim — kullanıcı tikini kaldırmışsa aynen kalsın
+        const restored = new Set(
+          prefs.typeIds.filter(id => availableIds.includes(id)),
+        );
+        setActiveFilters(restored);
+      }
     }
   }, []);
 
@@ -172,26 +326,16 @@ export default function CoachTakvimClient() {
     }
   }, []);
 
+  // Tür / durum / öğrenci / arama seçimini kalıcı varsayılan yap
   useEffect(() => {
-    if (!events.length) return;
-    setActiveFilters(prev => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const e of events) {
-        const typeId = e.extendedProps?.event_type_id as string | undefined;
-        const kat = e.extendedProps?.kategori as string | undefined;
-        if (typeId && COACH_CATEGORIES.has(kat || '') && !next.has(typeId)) {
-          next.add(typeId);
-          changed = true;
-        }
-        // Görev senkronu — sanal tip yoksa kategori GOREV ile geç
-        if (!typeId && kat === 'GOREV') {
-          /* client filter below handles GOREV by kategori */
-        }
-      }
-      return changed ? next : prev;
+    if (!typesHydratedRef.current) return;
+    writeCoachTakvimPrefs({
+      typeIds: Array.from(activeFilters),
+      durum: filters.durum,
+      ogrenci_id: filters.ogrenci_id,
+      search: filters.search,
     });
-  }, [events]);
+  }, [activeFilters, filters.durum, filters.ogrenci_id, filters.search]);
 
   useEffect(() => {
     loadEventTypes();
@@ -223,15 +367,30 @@ export default function CoachTakvimClient() {
       loadEvents(api.view.activeStart.toISOString(), api.view.activeEnd.toISOString());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [filters, selectedDonemId]);
 
-  const eventDates = useMemo(() => {
-    const set = new Set<string>();
-    events.forEach(e => {
-      if (e.start) set.add(e.start.slice(0, 10));
-    });
-    return set;
-  }, [events]);
+  /** Tür sayaçları: mevcut bağlam + durum/öğrenci/arama sonuçlarına göre canlı */
+  const eventTypesWithCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const gorevTypeId = eventTypes.find(t => t.kategori === 'GOREV')?.id;
+    const odevTypeId = eventTypes.find(t => t.kategori === 'ODEV')?.id;
+    for (const e of events) {
+      const ep = e.extendedProps || {};
+      const typeId = ep.event_type_id as string | undefined;
+      const kat = ep.kategori as string | undefined;
+      if (typeId) {
+        counts.set(typeId, (counts.get(typeId) || 0) + 1);
+      } else if ((ep.kaynak === 'gorev' || ep.kaynak_modul === 'gorev' || kat === 'GOREV') && gorevTypeId) {
+        counts.set(gorevTypeId, (counts.get(gorevTypeId) || 0) + 1);
+      } else if ((ep.kaynak === 'odev' || ep.kaynak_modul === 'odev' || kat === 'ODEV') && odevTypeId) {
+        counts.set(odevTypeId, (counts.get(odevTypeId) || 0) + 1);
+      }
+    }
+    return eventTypes.map(t => ({
+      ...t,
+      etkinlik_sayisi: counts.get(t.id) || 0,
+    }));
+  }, [events, eventTypes]);
 
   const filteredEvents = useMemo(() =>
     events.filter(e => {
@@ -245,11 +404,25 @@ export default function CoachTakvimClient() {
         return activeFilters.has(gorevType.id);
       }
 
+      if (ep.kaynak === 'odev' || ep.kaynak_modul === 'odev' || kat === 'ODEV') {
+        const odevType = eventTypes.find(t => t.kategori === 'ODEV');
+        if (!odevType) return true;
+        return activeFilters.has(odevType.id);
+      }
+
       if (!typeId || activeFilters.size === 0) return true;
       return activeFilters.has(typeId);
     }),
     [events, activeFilters, eventTypes],
   );
+
+  const eventDates = useMemo(() => {
+    const set = new Set<string>();
+    filteredEvents.forEach(e => {
+      if (e.start) set.add(e.start.slice(0, 10));
+    });
+    return set;
+  }, [filteredEvents]);
 
   const handleDatesSet = useCallback((arg: { startStr: string; endStr: string; view: { title: string } }) => {
     setCalTitle(arg.view.title);
@@ -261,6 +434,15 @@ export default function CoachTakvimClient() {
     const ep = arg.event.extendedProps || {};
     if (ep.kaynak === 'gorev' || ep.kaynak_modul === 'gorev') {
       window.location.href = '/coach/gorevler';
+      return;
+    }
+    if (ep.kaynak === 'odev' || ep.kaynak_modul === 'odev') {
+      const aid = ep.assignment_id || ep.kaynak_id;
+      if (aid) {
+        window.location.href = `/coach/odev/kontrol/${aid}`;
+        return;
+      }
+      window.location.href = '/coach/odev/kontrol';
       return;
     }
     try {
@@ -277,7 +459,11 @@ export default function CoachTakvimClient() {
 
   const handleEventDrop = useCallback(async (arg: EventDropArg) => {
     const ep = arg.event.extendedProps || {};
-    if (ep.kaynak === 'gorev' || ep.kaynak_modul === 'gorev') {
+    if (
+      ep.kaynak === 'gorev' || ep.kaynak_modul === 'gorev'
+      || ep.kaynak === 'odev' || ep.kaynak_modul === 'odev'
+      || String(arg.event.id || '').startsWith('odev-virt-')
+    ) {
       arg.revert();
       return;
     }
@@ -290,7 +476,11 @@ export default function CoachTakvimClient() {
 
   const handleEventResize = useCallback(async (arg: EventResizeDoneArg) => {
     const ep = arg.event.extendedProps || {};
-    if (ep.kaynak === 'gorev' || ep.kaynak_modul === 'gorev') {
+    if (
+      ep.kaynak === 'gorev' || ep.kaynak_modul === 'gorev'
+      || ep.kaynak === 'odev' || ep.kaynak_modul === 'odev'
+      || String(arg.event.id || '').startsWith('odev-virt-')
+    ) {
       arg.revert();
       return;
     }
@@ -404,7 +594,7 @@ export default function CoachTakvimClient() {
 
         <CalendarFilterPanel
           variant="coach"
-          eventTypes={eventTypes}
+          eventTypes={eventTypesWithCounts}
           activeFilters={activeFilters}
           onToggle={handleFilterToggle}
           filters={filters}
@@ -414,6 +604,11 @@ export default function CoachTakvimClient() {
       </aside>
 
       <div className="tkv-main">
+        <CalendarContextBar
+          selectedDonemId={selectedDonemId}
+          onDonemChange={setSelectedDonemId}
+        />
+
         <div className="tkv-topbar">
           <div className="tkv-topbar-left">
             <button

@@ -115,3 +115,53 @@ class OverdueStatusTest(TestCase):
         self.assertEqual(updated_all, 1)
         other_assignment.refresh_from_db()
         self.assertEqual(other_assignment.status, ManualAssignment.Status.OVERDUE)
+
+    def test_manual_assignment_not_overdue_on_control_day(self):
+        """Kontrol günü içinde (saat geçmiş olsa bile) OVERDUE yapılmaz."""
+        now = timezone.localtime()
+        due_today_morning = now.replace(hour=0, minute=5, second=0, microsecond=0)
+        if due_today_morning >= now:
+            due_today_morning = now - timedelta(minutes=1)
+
+        assignment = ManualAssignment.objects.create(
+            student=self.student,
+            title='Bugün kontrol',
+            status=ManualAssignment.Status.ASSIGNED,
+            due_date=due_today_morning,
+            is_active=True,
+        )
+
+        updated = refresh_manual_assignment_overdue(self.kurum.id)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.status, ManualAssignment.Status.ASSIGNED)
+        self.assertEqual(updated, 0)
+
+    def test_manual_assignment_reverts_premature_overdue_on_control_day(self):
+        """Yanlışlıkla OVERDUE işaretlenmiş kontrol-günü ödevleri geri alınır."""
+        now = timezone.localtime()
+        due_today = now.replace(hour=23, minute=59, second=0, microsecond=0)
+
+        assignment = ManualAssignment.objects.create(
+            student=self.student,
+            title='Erken overdue',
+            status=ManualAssignment.Status.OVERDUE,
+            due_date=due_today,
+            completion_percent=0,
+            is_active=True,
+        )
+        in_progress = ManualAssignment.objects.create(
+            student=self.student,
+            title='Erken overdue ilerleme',
+            status=ManualAssignment.Status.OVERDUE,
+            due_date=due_today,
+            completion_percent=40,
+            is_active=True,
+        )
+
+        updated = refresh_manual_assignment_overdue(self.kurum.id)
+        self.assertEqual(updated, 2)
+
+        assignment.refresh_from_db()
+        in_progress.refresh_from_db()
+        self.assertEqual(assignment.status, ManualAssignment.Status.ASSIGNED)
+        self.assertEqual(in_progress.status, ManualAssignment.Status.IN_PROGRESS)

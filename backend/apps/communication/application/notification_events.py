@@ -26,6 +26,7 @@ MODULE_FINANS = 'finans'
 MODULE_DUYURU = 'duyuru'
 MODULE_OGRENCI = 'ogrenci'
 MODULE_AKADEMIK = 'akademik'
+MODULE_KOC = 'koc'
 
 MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_ODEV: 'Ödev',
@@ -39,6 +40,7 @@ MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_DUYURU: 'Duyuru',
     MODULE_OGRENCI: 'Öğrenci',
     MODULE_AKADEMIK: 'Akademik',
+    MODULE_KOC: 'Koçluk',
 })
 
 COMMON_VARIABLES = ('kurum_ad', 'sube', 'sinif')
@@ -407,6 +409,32 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 'Merhaba {{ogrenci_ad}},\n\n'
                 '{{sube}} — {{sinif}} sınıfının {{donem}} dönemi haftalık '
                 'ders programın ektedir.\n\n'
+                'Bilgine sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='koc.calisma_programi',
+        module=MODULE_KOC,
+        label='Haftalık çalışma programı (PDF)',
+        description=(
+            'Koç çalışma programı çıktısı PDF olarak veliye ve öğrenciye '
+            'WhatsApp ile gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'hafta', 'koc_ad', 'pdf_baslik'),
+        meta_name_base='calisma_programi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}},\n\n'
+                '{{ogrenci_ad}} öğrencimizin {{hafta}} haftalık çalışma programı ektedir.\n\n'
+                'Bilgilerinize sunarız.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                '{{hafta}} haftalık çalışma programın ektedir.\n\n'
                 'Bilgine sunarız.'
             ),
         }),

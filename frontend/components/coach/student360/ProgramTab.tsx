@@ -17,7 +17,8 @@ function fmtDate(d?: string | null) {
 
 interface ProgramTabProps {
   studentId: number;
-  onOpenProgram?: () => void;
+  /** programId verilirse o program açılır; yoksa editör listesi */
+  onOpenProgram?: (programId?: number) => void;
 }
 
 export default function ProgramTab({ studentId, onOpenProgram }: ProgramTabProps) {
@@ -63,10 +64,14 @@ export default function ProgramTab({ studentId, onOpenProgram }: ProgramTabProps
 
   return (
     <div className="student360-panel">
-      {onOpenProgram && (
+      {onOpenProgram && currentWeek && (
         <div style={{ marginBottom: 16 }}>
-          <button type="button" className="coach-link-btn" onClick={onOpenProgram}>
-            📅 Programı düzenle
+          <button
+            type="button"
+            className="coach-link-btn"
+            onClick={() => onOpenProgram(currentWeek.id)}
+          >
+            Programı düzenle
           </button>
         </div>
       )}
@@ -82,35 +87,39 @@ export default function ProgramTab({ studentId, onOpenProgram }: ProgramTabProps
       )}
 
       {!error && currentWeek ? (
-        <article className="coach-list-card">
+        <article
+          className="coach-list-card"
+          role="button"
+          tabIndex={0}
+          onClick={() => onOpenProgram?.(currentWeek.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onOpenProgram?.(currentWeek.id);
+            }
+          }}
+          style={{ cursor: onOpenProgram ? 'pointer' : 'default' }}
+        >
           <div className="coach-list-card-header">
             <h3 className="coach-list-card-title">Bu hafta</h3>
-            <span className="coach-badge blue">%{currentWeek.completion_percent}</span>
+            {currentWeek.load_level && (
+              <span
+                className="coach-badge"
+                style={{
+                  background: `${LOAD_LEVEL_META[currentWeek.load_level]?.color}22`,
+                  color: LOAD_LEVEL_META[currentWeek.load_level]?.color,
+                }}
+              >
+                {LOAD_LEVEL_META[currentWeek.load_level]?.label || currentWeek.load_level}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 13, color: '#64748b' }}>
             {fmtDate(currentWeek.week_start)} – {fmtDate(currentWeek.week_end)}
           </div>
           <div style={{ fontSize: 13, marginTop: 8 }}>
-            {currentWeek.total_block_count} blok · {currentWeek.total_question_count} soru
+            {currentWeek.total_block_count} içerik · {currentWeek.total_question_count} soru
           </div>
-          <div className="coach-progress-bar">
-            <div
-              className="coach-progress-fill"
-              style={{ width: `${Math.min(100, currentWeek.completion_percent)}%` }}
-            />
-          </div>
-          {currentWeek.load_level && (
-            <span
-              className="coach-badge"
-              style={{
-                marginTop: 8,
-                background: `${LOAD_LEVEL_META[currentWeek.load_level]?.color}22`,
-                color: LOAD_LEVEL_META[currentWeek.load_level]?.color,
-              }}
-            >
-              {LOAD_LEVEL_META[currentWeek.load_level]?.label || currentWeek.load_level}
-            </span>
-          )}
         </article>
       ) : !error ? (
         <div className="coach-empty-state">
@@ -122,7 +131,7 @@ export default function ProgramTab({ studentId, onOpenProgram }: ProgramTabProps
               type="button"
               className="coach-link-btn"
               style={{ marginTop: 12 }}
-              onClick={onOpenProgram}
+              onClick={() => onOpenProgram()}
             >
               Program oluştur
             </button>
@@ -136,12 +145,27 @@ export default function ProgramTab({ studentId, onOpenProgram }: ProgramTabProps
             Geçmiş haftalar
           </h3>
           {programs.slice(1, 5).map((p) => (
-            <article key={p.id} className="coach-list-card">
+            <article
+              key={p.id}
+              className="coach-list-card"
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpenProgram?.(p.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpenProgram?.(p.id);
+                }
+              }}
+              style={{ cursor: onOpenProgram ? 'pointer' : 'default' }}
+            >
               <div className="coach-list-card-header">
                 <h3 className="coach-list-card-title" style={{ fontSize: 14 }}>
                   {fmtDate(p.week_start)} – {fmtDate(p.week_end)}
                 </h3>
-                <span className="coach-badge gray">%{p.completion_percent}</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                {p.total_block_count} içerik · {p.total_question_count} soru
               </div>
             </article>
           ))}

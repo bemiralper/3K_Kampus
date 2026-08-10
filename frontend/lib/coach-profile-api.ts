@@ -33,7 +33,7 @@ export type CoachSelfStats = {
     kapasite: number;
     bos_kapasite: number;
     riskli_ogrenci: number;
-    gorusme_bekleyen: number;
+    odev_takibi: number;
   };
   odevler: {
     verilen: CoachPeriodCount;

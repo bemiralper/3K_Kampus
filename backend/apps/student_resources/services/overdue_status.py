@@ -8,7 +8,12 @@ from apps.student_resources.models import StudentResourceAssignment
 
 def refresh_manual_assignment_overdue(kurum_id=None):
     """
-    due_date geçmiş ASSIGNED/IN_PROGRESS manuel ödevleri OVERDUE yap.
+    Kontrol günü geçmiş ASSIGNED/IN_PROGRESS manuel ödevleri OVERDUE yap.
+
+    Kontrol gününün kendisi gecikme sayılmaz — gecikme, yerel takvimde
+    due_date gününden sonraki günden itibaren başlar (ödev kontrol ekranı
+    ile uyumlu). Yanlışlıkla OVERDUE yapılmış (kontrol günü hâlâ bugün/
+    gelecekte) kayıtlar ASSIGNED veya IN_PROGRESS'e geri alınır.
 
     `kurum_id` verilirse güncelleme o kuruma sınırlanır — her istek üzerinde
     TÜM kurumların tablosunu taraması yerine yalnızca isteği yapan kurumun
@@ -16,18 +21,33 @@ def refresh_manual_assignment_overdue(kurum_id=None):
     `kurum_id=None` geriye dönük uyumluluk için tüm kurumları günceller
     (örn. cron/management command çağrıları).
     """
-    now = timezone.now()
-    queryset = ManualAssignment.objects.filter(
-        is_active=True,
-        due_date__lt=now,
+    today = timezone.localdate()
+    base = ManualAssignment.objects.filter(is_active=True)
+    if kurum_id:
+        base = base.filter(student__kurum_id=kurum_id)
+
+    # Erken OVERDUE: kontrol günü henüz geçmemiş → geri al
+    premature = base.filter(
+        status=ManualAssignment.Status.OVERDUE,
+        due_date__date__gte=today,
+    )
+    reverted = 0
+    reverted += premature.filter(completion_percent__gt=0).update(
+        status=ManualAssignment.Status.IN_PROGRESS,
+    )
+    reverted += premature.filter(completion_percent__lte=0).update(
+        status=ManualAssignment.Status.ASSIGNED,
+    )
+
+    # Gerçek gecikme: kontrol günü < bugün
+    marked = base.filter(
+        due_date__date__lt=today,
         status__in=(
             ManualAssignment.Status.ASSIGNED,
             ManualAssignment.Status.IN_PROGRESS,
         ),
-    )
-    if kurum_id:
-        queryset = queryset.filter(student__kurum_id=kurum_id)
-    return queryset.update(status=ManualAssignment.Status.OVERDUE)
+    ).update(status=ManualAssignment.Status.OVERDUE)
+    return marked + reverted
 
 
 def refresh_student_resource_overdue():

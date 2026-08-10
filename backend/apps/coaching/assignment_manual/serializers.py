@@ -10,6 +10,7 @@ from .models import (
     AssignmentPackage,
     AssignmentPackageItem,
 )
+from .title_utils import strip_completion_title_suffix
 
 
 class AssignmentTaskSerializer(serializers.ModelSerializer):
@@ -192,10 +193,9 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
         return obj.due_date.date()
 
     def get_is_overdue(self, obj):
+        # Kontrol gününün kendisi gecikme değildir (status OVERDUE olsa bile).
         if obj.status in (ManualAssignment.Status.COMPLETED, ManualAssignment.Status.CANCELLED):
             return False
-        if obj.status == ManualAssignment.Status.OVERDUE:
-            return True
         due = self._due_local_date(obj)
         if not due:
             return False
@@ -218,6 +218,11 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
         # Liste queryset'i lessons/tasks'ı prefetch_related ile yükler —
         # use_prefetch=True ile ek DB sorgusu yapılmadan hesaplanır.
         return is_assignment_control_locked(obj, use_prefetch=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['title'] = strip_completion_title_suffix(data.get('title'))
+        return data
 
 
 class ManualAssignmentDeletedSerializer(serializers.ModelSerializer):
@@ -280,6 +285,11 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
             'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'assigned_date', 'completed_date']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['title'] = strip_completion_title_suffix(data.get('title'))
+        return data
     
     def get_coach_name(self, obj):
         return obj.coach.get_full_name() if obj.coach else None

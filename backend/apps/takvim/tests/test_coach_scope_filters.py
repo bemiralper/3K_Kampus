@@ -108,3 +108,20 @@ class CoachScopeCalendarFilterTest(TestCase):
         titles = {e['title'] for e in res.json()['data']}
         self.assertIn('Öğrencim ödevi', titles)
         self.assertNotIn('Başka öğrenci ödevi', titles)
+
+    def test_coach_scope_includes_null_sube_odev(self):
+        """Eski senkronlar sube_id boş bırakmış olabilir — koç kapsamında görünsün."""
+        now = timezone.now()
+        Event.objects.create(
+            kurum_id=self.kurum.id, sube_id=None,
+            event_type=self.type_odev, baslik='Şubesiz ödev kontrol',
+            baslangic=now, bitis=now + timedelta(hours=1),
+            durum=EventStatus.SCHEDULED,
+            ogretmen_id=self.user.id,
+            ogrenci_ids=[self.student.id],
+            kaynak_modul=KaynakModul.ODEV,
+        )
+        res = self._get(coach_scope='1')
+        self.assertEqual(res.status_code, 200)
+        titles = {e['title'] for e in res.json()['data']}
+        self.assertIn('Şubesiz ödev kontrol', titles)

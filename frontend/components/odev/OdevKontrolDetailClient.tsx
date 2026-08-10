@@ -20,6 +20,7 @@ import {
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { getRiskColor, isOverdue } from "@/components/odev/statusTokens";
+import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
 // ─── Types ───
 interface AssignmentTask {
   id: number;
@@ -485,7 +486,7 @@ export default function OdevKontrolDetailClient() {
       <div style={{ marginBottom: 20 }}>
         <Link href={paths.list} className="ok-link-back">← Ödev Kontrol Listesine Dön</Link>
         <div className="ok-detail-header">
-          <h1>{assignment.title || "İsimsiz Ödev"}</h1>
+          <h1>{stripCompletionTitleSuffix(assignment.title) || "İsimsiz Ödev"}</h1>
           <div className="ok-detail-header-meta">
             <span>{assignment.student_name}</span>
             {assignment.coach_name && <span>Koç: {assignment.coach_name}</span>}
@@ -861,64 +862,8 @@ export default function OdevKontrolDetailClient() {
                                   <span style={{ padding: "5px 12px", borderRadius: 24, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.text, border: `1.5px solid ${badge.border}`, whiteSpace: "nowrap", boxShadow: `0 1px 4px ${badge.text}15` }}>
                                     {badge.label}{task.completion_status === "PARTIAL" && ` %${task.task_completion_percent}`}
                                   </span>
-                                  {task.is_completion_task && (
-                                    <span style={{
-                                      padding: "4px 10px",
-                                      borderRadius: 24,
-                                      fontSize: 10,
-                                      fontWeight: 700,
-                                      background: "linear-gradient(135deg, #dbeafe, #eff6ff)",
-                                      color: "#2563eb",
-                                      border: "1.5px solid #93c5fd",
-                                      whiteSpace: "nowrap",
-                                    }}>
-                                      🔄 Eksik Tamamlama
-                                    </span>
-                                  )}
                                 </div>
                               </div>
-
-                              {/* Eksik Tamamlama Bilgi Notu */}
-                              {task.is_completion_task && (
-                                <div style={{
-                                  background: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)",
-                                  border: "1px solid #93c5fd",
-                                  borderRadius: 10,
-                                  padding: "10px 14px",
-                                  marginBottom: 12,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 10,
-                                }}>
-                                  <span style={{ fontSize: 18, flexShrink: 0 }}>🔄</span>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: 12, fontWeight: 700, color: "#1e40af", marginBottom: 2 }}>
-                                      Eksik Tamamlama
-                                    </div>
-                                    <div style={{ fontSize: 11, color: "#3b82f6", lineHeight: 1.4 }}>
-                                      Bu içerik daha önce <strong>&quot;{task.previous_assignment_title || "önceki ödev"}&quot;</strong> ödevinde
-                                      {task.previous_task_completion_percent != null && task.previous_task_completion_percent > 0
-                                        ? <> <strong>%{task.previous_task_completion_percent}</strong> oranında tamamlanmıştı.</>
-                                        : <> yapılamamıştı.</>
-                                      }
-                                      {" "}Kalan kısımların tamamlanması bekleniyor.
-                                    </div>
-                                  </div>
-                                  {task.previous_task_completion_percent != null && task.previous_task_completion_percent > 0 && (
-                                    <div style={{
-                                      background: "white",
-                                      borderRadius: 8,
-                                      padding: "6px 12px",
-                                      textAlign: "center",
-                                      border: "1px solid #bfdbfe",
-                                      flexShrink: 0,
-                                    }}>
-                                      <div style={{ fontSize: 14, fontWeight: 800, color: "#2563eb" }}>%{task.previous_task_completion_percent}</div>
-                                      <div style={{ fontSize: 9, color: "#60a5fa", fontWeight: 600 }}>ÖNCEKİ</div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
 
                               {/* Eksik detayları */}
                               {task.completion_status === "PARTIAL" && (

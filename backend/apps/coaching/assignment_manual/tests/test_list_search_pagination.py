@@ -93,3 +93,39 @@ class AssignmentListSearchPaginationTest(TestCase):
         self.assertEqual(stats['draft'], 1)
         self.assertEqual(stats['assigned'], 3)
         self.assertEqual(stats['completed'], 1)
+
+    def test_due_today_filters_list_and_appears_in_stats(self):
+        """due_today=1: yalnızca kontrol günü bugün + açık durumlar; stats.due_today tutarlı."""
+        _now = timezone.localtime()
+        _end = _now.replace(hour=23, minute=55, second=0, microsecond=0)
+        due_today = min(_now + timezone.timedelta(hours=2), _end)
+        if due_today <= _now:
+            due_today = min(_now + timezone.timedelta(seconds=30), _end)
+
+        ManualAssignment.objects.create(
+            coach=self.coach,
+            student=self.ayse,
+            title='Bugün Kontrol',
+            due_date=due_today,
+            status=ManualAssignment.Status.ASSIGNED,
+            is_active=True,
+        )
+        ManualAssignment.objects.create(
+            coach=self.coach,
+            student=self.ayse,
+            title='Bugün Tamamlanmış',
+            due_date=due_today,
+            status=ManualAssignment.Status.COMPLETED,
+            is_active=True,
+        )
+
+        list_res = self.client.get(ASSIGNMENTS_URL, {'due_today': '1'})
+        self.assertEqual(list_res.status_code, 200)
+        titles = {a['title'] for a in list_res.data['data']}
+        self.assertIn('Bugün Kontrol', titles)
+        self.assertNotIn('Bugün Tamamlanmış', titles)
+        self.assertNotIn('Ayşe Ödev 0', titles)
+
+        stats_res = self.client.get(STATS_URL)
+        self.assertEqual(stats_res.status_code, 200)
+        self.assertEqual(stats_res.data['data']['due_today'], 1)

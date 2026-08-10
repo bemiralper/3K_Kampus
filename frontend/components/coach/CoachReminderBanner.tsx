@@ -7,7 +7,10 @@ import {
   snoozeReminders,
   wasReminderNotifiedThisSession,
 } from '@/lib/coach-students-prefs';
-import { COACH_MEETING_FOLLOWUP_DAYS } from '@/lib/coach-constants';
+import {
+  COACH_HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS,
+  COACH_HOMEWORK_FOLLOWUP_HELD_DAYS,
+} from '@/lib/coach-constants';
 
 interface CoachReminderBannerProps {
   userId: number;
@@ -36,7 +39,11 @@ export default function CoachReminderBanner({
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
 
     const parts: string[] = [];
-    if (needsMeetingCount > 0) parts.push(`${needsMeetingCount} öğrenci görüşme bekliyor`);
+    if (needsMeetingCount > 0) {
+      parts.push(
+        `${needsMeetingCount} öğrenci ${COACH_HOMEWORK_FOLLOWUP_HELD_DAYS}+ gündür ödev almadı (kontrol ${COACH_HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS}g+ geçti)`,
+      );
+    }
     if (overdueStudentCount > 0) parts.push(`${overdueStudentCount} öğrencide geciken ödev var`);
 
     new Notification('3K Koç — Takip hatırlatması', {
@@ -68,7 +75,8 @@ export default function CoachReminderBanner({
         <p>
           {needsMeetingCount > 0 && (
             <button type="button" className="coach-reminder-link" onClick={onFilterNeedsMeeting}>
-              {needsMeetingCount} öğrenci {COACH_MEETING_FOLLOWUP_DAYS}+ gündür görüşülmedi
+              {needsMeetingCount} öğrenci {COACH_HOMEWORK_FOLLOWUP_HELD_DAYS}+ gündür ödev almadı
+              {' '}(kontrol {COACH_HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS}g+ geçti)
             </button>
           )}
           {needsMeetingCount > 0 && overdueStudentCount > 0 && ' · '}

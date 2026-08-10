@@ -1367,6 +1367,11 @@ export async function fetchAssignments(params?: {
   coach_id?: number;
   status?: string;
   risk_status?: string;
+  /** Kontrol günü bugün olan ödevler (due_date = bugün) */
+  due_today?: boolean;
+  /** Takvim: kontrol günü aralığı (YYYY-MM-DD) */
+  due_from?: string;
+  due_to?: string;
   /** Öğrenci/ödev/koç adında arama (backend `icontains`) */
   q?: string;
   /** Verilirse backend sayfalama devreye girer (yoksa tüm liste döner) */
@@ -1378,6 +1383,9 @@ export async function fetchAssignments(params?: {
   if (params?.coach_id) searchParams.append('coach_id', String(params.coach_id));
   if (params?.status) searchParams.append('status', params.status);
   if (params?.risk_status) searchParams.append('risk_status', params.risk_status);
+  if (params?.due_today) searchParams.append('due_today', '1');
+  if (params?.due_from) searchParams.append('due_from', params.due_from);
+  if (params?.due_to) searchParams.append('due_to', params.due_to);
   if (params?.q) searchParams.append('q', params.q);
   if (params?.page) searchParams.append('page', String(params.page));
   if (params?.page_size) searchParams.append('page_size', String(params.page_size));
@@ -1397,6 +1405,8 @@ export interface AssignmentListStats {
   completed: number;
   overdue: number;
   at_risk: number;
+  /** Kontrol günü bugün olan aktif ödev sayısı */
+  due_today?: number;
 }
 
 /**

@@ -332,11 +332,19 @@ class ManualAssignment(models.Model):
         if self.status == self.Status.ASSIGNED:
             if not self.assigned_date or timezone.now() < self.assigned_date:
                 self.risk_status = self.RiskStatus.PENDING_START
-            elif timezone.now() > self.due_date:
-                self.risk_status = self.RiskStatus.DELAYED
-            elif self.actual_accuracy_percent and self.expected_accuracy_percent:
-                if self.actual_accuracy_percent < self.expected_accuracy_percent:
-                    self.risk_status = self.RiskStatus.LOW_ACCURACY
+            else:
+                due_day = None
+                if self.due_date:
+                    due_day = (
+                        timezone.localtime(self.due_date).date()
+                        if timezone.is_aware(self.due_date)
+                        else self.due_date.date()
+                    )
+                if due_day is not None and due_day < timezone.localdate():
+                    self.risk_status = self.RiskStatus.DELAYED
+                elif self.actual_accuracy_percent and self.expected_accuracy_percent:
+                    if self.actual_accuracy_percent < self.expected_accuracy_percent:
+                        self.risk_status = self.RiskStatus.LOW_ACCURACY
         
         super().save(*args, **kwargs)
 

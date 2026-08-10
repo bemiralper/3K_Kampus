@@ -88,15 +88,24 @@ class EventRepository:
             from django.db.models import Q
             from apps.takvim.application.integration_service import KaynakModul
 
+            # Resmi tatiller kurum geneli. Koçluk senkronları (ödev/görüşme/…)
+            # eski kayıtlarda sube_id boş kalmış olabilir — coach_scope varken
+            # bunlar da görünür; aksi halde yalnızca tatil/çevre.
+            null_moduls = [
+                KaynakModul.RESMI_TATIL,
+                KaynakModul.OZEL_DERS_CEVRE,
+            ]
+            if filters.get('coach_scope'):
+                null_moduls.extend([
+                    KaynakModul.ODEV,
+                    KaynakModul.GORUSME,
+                    KaynakModul.CALISMA_PROGRAMI,
+                    KaynakModul.CALISMA_BLOK,
+                    KaynakModul.GOREV,
+                ])
             qs = qs.filter(
                 Q(sube_id=filters['sube_id'])
-                | Q(
-                    sube_id__isnull=True,
-                    kaynak_modul__in=[
-                        KaynakModul.RESMI_TATIL,
-                        KaynakModul.OZEL_DERS_CEVRE,
-                    ],
-                )
+                | Q(sube_id__isnull=True, kaynak_modul__in=null_moduls)
             )
         if filters.get('egitim_yili_id'):
             from django.db.models import Q

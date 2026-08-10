@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -16,6 +16,7 @@ import {
   statusBadgeClass,
   NON_SUBMISSION_LABELS,
 } from "@/components/odev/statusTokens";
+import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
 
 interface Assignment {
   id: number;
@@ -47,7 +48,6 @@ interface Assignment {
 }
 
 type FilterStatus = "all" | "DRAFT" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
-// Not: model RiskStatus'ta "BEHIND" değeri yok — gerçek değer "DELAYED" (bkz. models.py RiskStatus).
 type FilterRisk = "all" | "ON_TRACK" | "AT_RISK" | "DELAYED" | "PENDING_START" | "CRITICAL";
 
 const VALID_STATUS_FILTERS = new Set<string>([
@@ -76,6 +76,58 @@ function assignmentIsDueToday(a: Assignment): boolean {
   return a.is_due_today ?? isDueToday(a.due_date, a.status);
 }
 
+function assignmentTitle(a: Assignment): string {
+  return stripCompletionTitleSuffix(a.title) || "İsimsiz ödev";
+}
+
+/** Kontrol günü = due_date’in takvim günü (gün sonu). Bugüne göre kalan/geçen gün. */
+function daysUntilControlDay(dueDate: string | null): number | null {
+  if (!dueDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
+
+function formatControlCountdown(days: number): string {
+  if (days === 0) return "bugün";
+  if (days === 1) return "1 gün";
+  if (days > 1) return `${days} gün`;
+  if (days === -1) return "1g geçti";
+  return `${Math.abs(days)}g geçti`;
+}
+
+function controlCountdownClass(days: number): string {
+  if (days < 0) return "ok-days-until is-late";
+  if (days === 0) return "ok-days-until is-today";
+  return "ok-days-until";
+}
+
+function buildPageItems(current: number, totalPages: number): Array<number | "ellipsis"> {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const pages = new Set<number>([1, totalPages, current, current - 1, current + 1]);
+  if (current <= 3) {
+    pages.add(2);
+    pages.add(3);
+    pages.add(4);
+  }
+  if (current >= totalPages - 2) {
+    pages.add(totalPages - 1);
+    pages.add(totalPages - 2);
+    pages.add(totalPages - 3);
+  }
+  const sorted = [...pages].filter((p) => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+  const out: Array<number | "ellipsis"> = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push("ellipsis");
+    out.push(sorted[i]);
+  }
+  return out;
+}
+
 type OdevKontrolListClientProps = {
   variant?: "admin" | "coach";
 };
@@ -87,21 +139,26 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
   const isCoach = variant === "coach";
 
   const initialStatus = searchParams.get("status");
-  const initialFilter: FilterStatus =
-    initialStatus && VALID_STATUS_FILTERS.has(initialStatus)
-      ? (initialStatus as FilterStatus)
-      : "all";
+  const hasStatusInUrl = Boolean(initialStatus && VALID_STATUS_FILTERS.has(initialStatus));
+  const initialFilter: FilterStatus = hasStatusInUrl
+    ? (initialStatus as FilterStatus)
+    : "all";
+  // Koç varsayılanı: kontrol günü bugün. URL'de status varsa (dashboard kısayolu) onu koru.
+  const initialDueToday =
+    searchParams.get("due_today") === "1"
+    || searchParams.get("due_today") === "true"
+    || (isCoach && !hasStatusInUrl && searchParams.get("due_today") !== "0");
 
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = isCoach ? 20 : 50;
 
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [stats, setStats] = useState<AssignmentListStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>(initialFilter);
   const [filterRisk, setFilterRisk] = useState<FilterRisk>("all");
+  const [filterDueToday, setFilterDueToday] = useState(initialDueToday);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState<"created" | "due_date" | "progress" | "student">("created");
@@ -109,7 +166,6 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
   const [toast, setToast] = useState<string | null>(null);
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
-  // Arama kutusu backend'e her tuş vuruşunda gitmesin — 350ms debounce
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
     return () => clearTimeout(t);
@@ -126,23 +182,24 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
 
   const requestSeq = useRef(0);
 
-  const loadAssignments = useCallback(async (targetPage: number, append: boolean) => {
+  const loadAssignments = useCallback(async (targetPage: number) => {
     const seq = ++requestSeq.current;
-    if (append) setLoadingMore(true); else setLoading(true);
+    setLoading(true);
     try {
       const result = await fetchAssignments({
         status: filterStatus !== "all" ? filterStatus : undefined,
         risk_status: filterRisk !== "all" ? filterRisk : undefined,
+        due_today: filterDueToday || undefined,
         q: debouncedSearch || undefined,
         page: targetPage,
         page_size: PAGE_SIZE,
       });
-      if (seq !== requestSeq.current) return; // eski istek — sonucu at
+      if (seq !== requestSeq.current) return;
       if (result.success !== false) {
         const data = result.data || [];
         const list = (Array.isArray(data) ? data : []) as unknown as Assignment[];
-        setAssignments((prev) => (append ? [...prev, ...list] : list));
-        setHasMore(Boolean(result.next));
+        setAssignments(list);
+        setTotalCount(typeof result.count === "number" ? result.count : list.length);
         setPage(targetPage);
       } else {
         flash(result.error || "Ödevler yüklenemedi");
@@ -151,27 +208,25 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
       console.error("Ödevler yüklenemedi:", error);
       flash("Ödevler yüklenemedi");
     }
-    if (seq === requestSeq.current) {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, [filterStatus, filterRisk, debouncedSearch]);
+    if (seq === requestSeq.current) setLoading(false);
+  }, [filterStatus, filterRisk, filterDueToday, debouncedSearch, PAGE_SIZE]);
 
-  // Filtre/arama değişince baştan yükle
   useEffect(() => {
-    loadAssignments(1, false);
+    loadAssignments(1);
   }, [loadAssignments]);
 
   useEffect(() => { loadStats(); }, [loadStats]);
 
   const refreshAll = useCallback(() => {
-    loadAssignments(1, false);
+    loadAssignments(page);
     loadStats();
-  }, [loadAssignments, loadStats]);
+  }, [loadAssignments, loadStats, page]);
 
-  const loadMore = () => {
-    if (!hasMore || loadingMore) return;
-    loadAssignments(page + 1, true);
+  const goToPage = (target: number) => {
+    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+    const next = Math.min(Math.max(1, target), totalPages);
+    if (next === page && !loading) return;
+    loadAssignments(next);
   };
 
   const handleAssignDraft = async (e: React.MouseEvent, id: number) => {
@@ -185,29 +240,45 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
 
   const goDetail = (id: number) => router.push(paths.detail(id));
 
-  // Filtreleme (durum/risk/arama) backend'de yapılıyor — burada yalnızca
-  // o an ekranda yüklü sayfanın sıralaması yapılır.
-  const sortedAssignments = [...assignments].sort((a, b) => {
-    const aDueToday = assignmentIsDueToday(a) ? 1 : 0;
-    const bDueToday = assignmentIsDueToday(b) ? 1 : 0;
-    if (aDueToday !== bDueToday) return bDueToday - aDueToday;
+  const sortedAssignments = useMemo(() => {
+    return [...assignments].sort((a, b) => {
+      const aDueToday = assignmentIsDueToday(a) ? 1 : 0;
+      const bDueToday = assignmentIsDueToday(b) ? 1 : 0;
+      if (aDueToday !== bDueToday) return bDueToday - aDueToday;
 
-    let cmp = 0;
-    switch (sortBy) {
-      case "created": cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
-      case "due_date": {
-        const da = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-        const db = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-        cmp = da - db;
-        break;
+      let cmp = 0;
+      switch (sortBy) {
+        case "created": cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
+        case "due_date": {
+          const da = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+          const db = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+          cmp = da - db;
+          break;
+        }
+        case "progress": cmp = a.completion_percent - b.completion_percent; break;
+        case "student": cmp = (a.student_name || "").localeCompare(b.student_name || "", "tr"); break;
       }
-      case "progress": cmp = a.completion_percent - b.completion_percent; break;
-      case "student": cmp = (a.student_name || "").localeCompare(b.student_name || ""); break;
-    }
-    return sortOrder === "desc" ? -cmp : cmp;
-  });
+      return sortOrder === "desc" ? -cmp : cmp;
+    });
+  }, [assignments, sortBy, sortOrder]);
 
-  const dueTodayCount = assignments.filter((a) => assignmentIsDueToday(a)).length;
+  const dueTodayStat = stats?.due_today ?? assignments.filter((a) => assignmentIsDueToday(a)).length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE) || 1);
+
+  const selectStatusFilter = (next: FilterStatus) => {
+    setFilterStatus(next);
+    setFilterRisk("all");
+    setFilterDueToday(false);
+  };
+
+  const selectDueTodayFilter = () => {
+    setFilterDueToday(true);
+    setFilterStatus("all");
+    setFilterRisk("all");
+  };
+  const rangeStart = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, totalCount);
+  const pageItems = buildPageItems(page, totalPages);
 
   const renderRowMeta = (a: Assignment) => {
     const overdue = assignmentIsOverdue(a);
@@ -218,6 +289,120 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
     return { overdue, dueToday, nonSubmissionLabel, isDraft: a.status === "DRAFT" };
   };
 
+  const renderPager = () => {
+    if (totalCount <= PAGE_SIZE) {
+      return (
+        <div className="ok-pager">
+          <span className="ok-pager-meta">{totalCount} ödev</span>
+        </div>
+      );
+    }
+    return (
+      <div className="ok-pager">
+        <span className="ok-pager-meta">
+          {rangeStart}–{rangeEnd} / {totalCount} ödev
+        </span>
+        <div className="ok-pager-controls">
+          <button
+            type="button"
+            className="ok-pager-btn"
+            disabled={page <= 1 || loading}
+            onClick={() => goToPage(page - 1)}
+          >
+            Önceki
+          </button>
+          {pageItems.map((item, idx) =>
+            item === "ellipsis" ? (
+              <span key={`e-${idx}`} className="ok-pager-ellipsis">…</span>
+            ) : (
+              <button
+                key={item}
+                type="button"
+                className={`ok-pager-btn${page === item ? " is-active" : ""}`}
+                disabled={loading}
+                onClick={() => goToPage(item)}
+              >
+                {item}
+              </button>
+            ),
+          )}
+          <button
+            type="button"
+            className="ok-pager-btn"
+            disabled={page >= totalPages || loading}
+            onClick={() => goToPage(page + 1)}
+          >
+            Sonraki
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderControlDay = (a: Assignment, overdue: boolean, dueToday: boolean) => {
+    if (!a.due_date) return <span>—</span>;
+    const days = daysUntilControlDay(a.due_date);
+    const showCountdown =
+      days !== null
+      && a.status !== "COMPLETED"
+      && a.status !== "CANCELLED";
+    return (
+      <span className={`ok-control-day${dueToday || overdue ? " is-due-today" : ""}`}>
+        <span className="ok-control-day-date">{formatDate(a.due_date)}</span>
+        {showCountdown && (
+          <span className={controlCountdownClass(days!)}>{formatControlCountdown(days!)}</span>
+        )}
+      </span>
+    );
+  };
+
+  const renderAssignmentRow = (a: Assignment) => {
+    const { overdue, dueToday, nonSubmissionLabel, isDraft } = renderRowMeta(a);
+    return (
+      <article
+        key={a.id}
+        className={`ok-list-row${dueToday ? " is-due-today" : ""}`}
+        onClick={() => goDetail(a.id)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter") goDetail(a.id); }}
+      >
+        <div className="ok-list-row-header">
+          <div>
+            <h3 className="ok-list-row-title">{assignmentTitle(a)}</h3>
+            <div className="ok-list-row-sub">{a.student_name}</div>
+          </div>
+          <span className={`ok-badge ${statusBadgeClass(a.status)}`}>{a.status_display}</span>
+        </div>
+        <div className="ok-list-row-meta">
+          {renderControlDay(a, overdue, dueToday)}
+          <span>{a.task_count} görev · %{a.completion_percent}</span>
+        </div>
+        <div className="ok-progress">
+          <div className="ok-progress-fill" style={{ width: `${a.completion_percent}%` }} />
+        </div>
+        <div className="ok-list-row-footer">
+          {(a.postpone_count ?? 0) > 0 && (
+            <span className="ok-badge is-warning">{a.postpone_count}x ertelendi</span>
+          )}
+          {nonSubmissionLabel && (
+            <span className="ok-badge is-danger">{nonSubmissionLabel}</span>
+          )}
+          {isDraft && (
+            <button
+              type="button"
+              className="ok-btn-primary"
+              style={{ padding: "4px 12px", fontSize: 12 }}
+              onClick={(e) => handleAssignDraft(e, a.id)}
+            >
+              Ata
+            </button>
+          )}
+        </div>
+      </article>
+    );
+  };
+
   return (
     <div className={`ok-root${isCoach ? " ok-coach" : ""}`}>
       {toast && <div className="ok-toast">{toast}</div>}
@@ -225,7 +410,13 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
       <header className="ok-page-header">
         <div className="ok-page-header-text">
           <h1>Ödev Kontrol</h1>
-          <p>Atanan ödevleri filtreleyin, kontrol edin ve takip edin</p>
+          <p>
+            {isCoach
+              ? (filterDueToday
+                ? "Bugün kontrol günü olan ödevler"
+                : "Öğrencilerinizin ödevlerini kontrol edin")
+              : "Atanan ödevleri filtreleyin, kontrol edin ve takip edin"}
+          </p>
         </div>
         {!isCoach && (
           <div className="ok-header-actions">
@@ -243,6 +434,13 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
 
       {stats && (
         <div className="ok-filter-chips">
+          <button
+            type="button"
+            className={`ok-filter-chip is-warning${filterDueToday ? " is-active" : ""}`}
+            onClick={selectDueTodayFilter}
+          >
+            Kontrol günü<strong>{dueTodayStat}</strong>
+          </button>
           {STATUS_CHIP_LABELS.map((chip) => {
             const value =
               chip.filter === "all" ? stats.total
@@ -255,18 +453,13 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
               <button
                 key={chip.filter}
                 type="button"
-                className={`ok-filter-chip${filterStatus === chip.filter ? " is-active" : ""}`}
-                onClick={() => { setFilterStatus(chip.filter); setFilterRisk("all"); }}
+                className={`ok-filter-chip${!filterDueToday && filterStatus === chip.filter ? " is-active" : ""}`}
+                onClick={() => selectStatusFilter(chip.filter)}
               >
                 {chip.label}<strong>{value}</strong>
               </button>
             );
           })}
-          {dueTodayCount > 0 && (
-            <span className="ok-filter-chip is-warning">
-              Bugün<strong>{dueTodayCount}</strong>
-            </span>
-          )}
         </div>
       )}
 
@@ -280,9 +473,14 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         />
         <select
           className="ok-select"
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value as FilterStatus)}
+          value={filterDueToday ? "due_today" : filterStatus}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "due_today") selectDueTodayFilter();
+            else selectStatusFilter(v as FilterStatus);
+          }}
         >
+          <option value="due_today">Kontrol günü (bugün)</option>
           <option value="all">Tüm durumlar</option>
           <option value="DRAFT">Taslak</option>
           <option value="ASSIGNED">Atanmış</option>
@@ -315,16 +513,22 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         >
           <option value="created-desc">En yeni</option>
           <option value="created-asc">En eski</option>
-          <option value="due_date-asc">Teslim yakın</option>
-          <option value="due_date-desc">Teslim uzak</option>
+          <option value="due_date-asc">Kontrol yakın</option>
+          <option value="due_date-desc">Kontrol uzak</option>
           <option value="progress-desc">İlerleme ↓</option>
           <option value="student-asc">Öğrenci A-Z</option>
         </select>
-        {(filterStatus !== "all" || filterRisk !== "all" || searchQuery) && (
+        {(filterStatus !== "all" || filterRisk !== "all" || filterDueToday || searchQuery) && (
           <button
             type="button"
             className="ok-btn-clear"
-            onClick={() => { setFilterStatus("all"); setFilterRisk("all"); setSearchQuery(""); setDebouncedSearch(""); }}
+            onClick={() => {
+              setFilterStatus("all");
+              setFilterRisk("all");
+              setFilterDueToday(false);
+              setSearchQuery("");
+              setDebouncedSearch("");
+            }}
           >
             Temizle
           </button>
@@ -335,71 +539,33 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         <div className="ok-loading">Yükleniyor...</div>
       ) : sortedAssignments.length === 0 ? (
         <div className="ok-empty">
-          <h3>Ödev bulunamadı</h3>
+          <h3>
+            {filterDueToday ? "Bugün kontrol günü olan ödev yok" : "Ödev bulunamadı"}
+          </h3>
           <p>
-            {searchQuery || filterStatus !== "all" || filterRisk !== "all"
-              ? "Filtrelere uygun kayıt yok."
-              : "Henüz ödev yok."}
+            {filterDueToday
+              ? "Başka durumları görmek için “Toplam” veya “Temizle”ye basabilirsiniz."
+              : searchQuery || filterStatus !== "all" || filterRisk !== "all"
+                ? "Filtrelere uygun kayıt yok."
+                : "Henüz ödev yok."}
           </p>
+          {filterDueToday && (
+            <button
+              type="button"
+              className="ok-btn-secondary"
+              style={{ marginTop: 12 }}
+              onClick={() => selectStatusFilter("all")}
+            >
+              Tüm ödevleri göster
+            </button>
+          )}
         </div>
       ) : (
         <>
-          <div className="ok-list-meta">
-            {sortedAssignments.length} kayıt yüklendi{hasMore ? " (daha fazlası var)" : ""}
-          </div>
+          {renderPager()}
 
           <div className="ok-list-mobile">
-            {sortedAssignments.map((a) => {
-              const { overdue, dueToday, nonSubmissionLabel, isDraft } = renderRowMeta(a);
-              return (
-                <article
-                  key={a.id}
-                  className={`ok-list-row${dueToday ? " is-due-today" : ""}`}
-                  onClick={() => goDetail(a.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === "Enter") goDetail(a.id); }}
-                >
-                  <div className="ok-list-row-header">
-                    <div>
-                      <h3 className="ok-list-row-title">{a.title || "İsimsiz ödev"}</h3>
-                      <div className="ok-list-row-sub">{a.student_name}</div>
-                    </div>
-                    <span className={`ok-badge ${statusBadgeClass(a.status)}`}>{a.status_display}</span>
-                  </div>
-                  <div className="ok-list-row-meta">
-                    {a.due_date && (
-                      <span className={dueToday || overdue ? "is-due-today" : undefined}>
-                        Teslim {formatDate(a.due_date)}
-                        {overdue && " · Gecikti"}
-                      </span>
-                    )}
-                    <span>{a.task_count} görev · %{a.completion_percent}</span>
-                  </div>
-                  <div className="ok-progress">
-                    <div className="ok-progress-fill" style={{ width: `${a.completion_percent}%` }} />
-                  </div>
-                  <div className="ok-list-row-footer">
-                    {(a.postpone_count ?? 0) > 0 && (
-                      <span className="ok-badge is-warning">{a.postpone_count}x ertelendi</span>
-                    )}
-                    {nonSubmissionLabel && (
-                      <span className="ok-badge is-danger">{nonSubmissionLabel}</span>
-                    )}
-                    {isDraft && (
-                      <button
-                        type="button"
-                        className="ok-btn-primary"
-                        style={{ padding: "4px 12px", fontSize: 12 }}
-                        onClick={(e) => handleAssignDraft(e, a.id)}
-                      >
-                        Ata
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
+            {sortedAssignments.map((a) => renderAssignmentRow(a))}
           </div>
 
           <table className="ok-table-list ok-list-desktop">
@@ -407,7 +573,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
               <tr>
                 <th>Öğrenci</th>
                 <th>Ödev</th>
-                <th>Teslim</th>
+                <th>Kontrol</th>
                 <th>Durum</th>
                 <th>İlerleme</th>
                 <th></th>
@@ -424,20 +590,16 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                   >
                     <td>
                       <div className="ok-table-title">{a.student_name}</div>
-                      {a.coach_name && !isCoach && (
+                      {!isCoach && a.coach_name && (
                         <div className="ok-table-sub">{a.coach_name}</div>
                       )}
                     </td>
                     <td>
-                      <div className="ok-table-title">{a.title || "İsimsiz ödev"}</div>
+                      <div className="ok-table-title">{assignmentTitle(a)}</div>
                       <div className="ok-table-sub">{a.task_count} görev</div>
                     </td>
                     <td>
-                      <span className={dueToday || overdue ? "is-due-today" : undefined}>
-                        {formatDate(a.due_date)}
-                        {overdue && " · Gecikti"}
-                        {dueToday && !overdue && " · Bugün"}
-                      </span>
+                      {renderControlDay(a, overdue, dueToday)}
                       {(a.postpone_count ?? 0) > 0 && (
                         <div className="ok-table-sub">{a.postpone_count}x ertelendi</div>
                       )}
@@ -481,18 +643,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
             </tbody>
           </table>
 
-          {hasMore && (
-            <div style={{ textAlign: "center", marginTop: 16 }}>
-              <button
-                type="button"
-                className="ok-btn-secondary"
-                onClick={loadMore}
-                disabled={loadingMore}
-              >
-                {loadingMore ? "Yükleniyor..." : "Daha fazla göster"}
-              </button>
-            </div>
-          )}
+          {renderPager()}
         </>
       )}
     </div>

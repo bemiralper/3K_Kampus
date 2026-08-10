@@ -5,15 +5,9 @@ import {
   type WeeklyProgram,
   type WeeklyProgramListItem,
   type HomeworkPoolItem,
-  type ProgramDay,
   type ProgramBlock,
   type WeeklySummary,
   type BlockType,
-  type GoalType,
-  type Priority,
-  BLOCK_TYPE_META,
-  GOAL_TYPE_META,
-  PRIORITY_META,
   fetchPrograms,
   fetchProgram,
   createProgram,
@@ -36,12 +30,12 @@ import {
   updateDay,
   resetProgram,
   redistributeBlocks,
+  WEEKDAY_LABELS,
 } from '@/lib/study-program-api';
 import { fetchCoaches, fetchCoachStudents, type Coach, type CoachStudent } from '@/lib/coaching-api';
 
 import HomeworkPoolCard from '@/components/admin/coaching/study-program/HomeworkPoolCard';
 import DayColumn from '@/components/admin/coaching/study-program/DayColumn';
-import DailyFeedbackForm from '@/components/admin/coaching/study-program/DailyFeedbackForm';
 import BadgeDisplay from '@/components/admin/coaching/study-program/BadgeDisplay';
 import WeeklySummaryCard from '@/components/admin/coaching/study-program/WeeklySummaryCard';
 import SplitModal from '@/components/admin/coaching/study-program/SplitModal';
@@ -49,25 +43,31 @@ import BlockEditModal from '@/components/admin/coaching/study-program/BlockEditM
 import StudyProgramPrintPreview from '@/components/admin/coaching/study-program/StudyProgramPrintPreview';
 import { useUnsavedChangesGuard } from '@/lib/hooks/useUnsavedChangesGuard';
 import UnsavedChangesModal from '@/components/UnsavedChangesModal';
+import { lessonAccent, primaryBlockLabel } from '@/components/admin/coaching/study-program/blockDisplay';
+import { stripCompletionTitleSuffix } from '@/components/odev/odevCompletionHelpers';
+import {
+  addDays,
+  datesFromHomework,
+  formatDateLocal as formatDate,
+  inclusiveDayCount,
+  isControlDay,
+  studyRangeEnd,
+  toDateInputValue,
+} from '@/components/coaching/study-program/programDateUtils';
 
 export interface StudyProgramEditorProps {
   lockedStudentId?: number;
   lockedCoachId?: number;
+  /** Öğrenci kilitliyken doğrudan bu programı aç */
+  initialProgramId?: number;
   embedded?: boolean;
 }
+
+export { datesFromHomework } from '@/components/coaching/study-program/programDateUtils';
 
 /* ═══════════════════════════════════════════════════════
    YARDIMCI FONKSİYONLAR
    ═══════════════════════════════════════════════════════ */
-
-function formatDate(d: Date): string {
-  // toISOString() UTC kullanır ve timezone farkı yüzünden 1 gün geri kayabilir
-  // Yerel tarih kullan
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
 function formatDateTR(dateStr: string): string {
   const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`);
@@ -77,37 +77,6 @@ function formatDateTR(dateStr: string): string {
 function formatDateShortTR(dateStr: string): string {
   const d = new Date(dateStr.includes('T') ? dateStr : `${dateStr}T12:00:00`);
   return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
-}
-
-function addDays(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
-}
-
-/** ISO / datetime → date input (YYYY-MM-DD), yerel gün */
-function toDateInputValue(iso: string | null | undefined): string {
-  if (!iso) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
-  return formatDate(d);
-}
-
-/** Ödev verilme/kontrol tarihlerinden program aralığı öner */
-function datesFromHomework(hw: HomeworkPoolItem): { start: string; end: string } {
-  let end = toDateInputValue(hw.due_date);
-  let start = toDateInputValue(hw.assigned_date);
-  if (!start && end) {
-    start = formatDate(addDays(new Date(`${end}T12:00:00`), -6));
-  }
-  if (!end && start) {
-    end = formatDate(addDays(new Date(`${start}T12:00:00`), 6));
-  }
-  if (start && end && start > end) {
-    return { start: end, end };
-  }
-  return { start, end };
 }
 
 /** Programın süresi dolmuş mu? (week_end < bugün) */
@@ -125,6 +94,7 @@ function isProgramExpired(prog: { week_end: string }): boolean {
 export default function StudyProgramEditor({
   lockedStudentId,
   lockedCoachId,
+  initialProgramId,
   embedded = false,
 }: StudyProgramEditorProps) {
   /* ─── State ─── */
@@ -153,6 +123,8 @@ export default function StudyProgramEditor({
   const [editWeekStart, setEditWeekStart] = useState('');
   const [editWeekEnd, setEditWeekEnd] = useState('');
   const [rangeSaving, setRangeSaving] = useState(false);
+  const [weekCoachNote, setWeekCoachNote] = useState('');
+  const [weekNoteSaving, setWeekNoteSaving] = useState(false);
 
   // Süresi dolmuş program kilidi
   const isExpired = program ? isProgramExpired(program) : false;
@@ -160,25 +132,88 @@ export default function StudyProgramEditor({
     editWeekStart !== program.week_start || editWeekEnd !== program.week_end
   );
 
-  // Ödev havuzu
+  // Ödev havuzu (takvime eklenenler listede görünmez)
   const [homeworkPool, setHomeworkPool] = useState<HomeworkPoolItem[]>([]);
   const [poolLoading, setPoolLoading] = useState(false);
-  const [poolFilter, setPoolFilter] = useState<{ status: string; search: string }>({
-    status: '',
-    search: '',
-  });
+  /** Program oluşturma ekranı için ham havuz (filtre yok) */
+  const [datePickPool, setDatePickPool] = useState<HomeworkPoolItem[]>([]);
 
   /** Program oluşturma ekranı: ödev başına tek satır */
   const uniqueHomeworkForDates = useMemo(() => {
     const seen = new Set<number>();
     const out: HomeworkPoolItem[] = [];
-    for (const hw of homeworkPool) {
+    for (const hw of datePickPool) {
       if (seen.has(hw.id)) continue;
       seen.add(hw.id);
       out.push(hw);
     }
     return out;
+  }, [datePickPool]);
+
+  /** Sol panel: ders başlığı altında grupla */
+  const poolByLesson = useMemo(() => {
+    const map = new Map<string, HomeworkPoolItem[]>();
+    for (const hw of homeworkPool) {
+      const key = hw.lesson_name?.trim() || 'Diğer';
+      const list = map.get(key) || [];
+      list.push(hw);
+      map.set(key, list);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'tr'));
   }, [homeworkPool]);
+
+  /** Programdaki ödev planı başlıkları (panel üstü) */
+  const programHomeworkTitles = useMemo(() => {
+    if (!program) return [] as string[];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const d of program.days || []) {
+      for (const b of d.blocks || []) {
+        const t = stripCompletionTitleSuffix(b.source_assignment_title);
+        if (!t) continue;
+        const key = t.toLocaleLowerCase('tr-TR');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(t);
+      }
+    }
+    if (out.length === 0) {
+      for (const hw of homeworkPool) {
+        const t = stripCompletionTitleSuffix(hw.title);
+        if (!t) continue;
+        const key = t.toLocaleLowerCase('tr-TR');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(t);
+      }
+    }
+    return out;
+  }, [program, homeworkPool]);
+
+  /** Gün → ders özeti (takvim üstü) — yalnızca ders adı; kontrol günü yok */
+  const dayLessonSummary = useMemo(() => {
+    if (!program) return [] as Array<{ dayLabel: string; lessons: string[]; date: string }>;
+    return [...(program.days || [])]
+      .sort((a, b) => a.day_date.localeCompare(b.day_date))
+      .filter((day) => !isControlDay(day.day_date, program.week_end))
+      .map((day) => {
+        const lessons: string[] = [];
+        const seen = new Set<string>();
+        for (const b of [...day.blocks].sort((x, y) => x.order - y.order)) {
+          const name = b.lesson_name?.trim();
+          if (!name) continue;
+          const key = name.toLocaleLowerCase('tr-TR');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          lessons.push(name);
+        }
+        return {
+          dayLabel: WEEKDAY_LABELS[day.weekday] || 'Gün',
+          lessons,
+          date: day.day_date,
+        };
+      });
+  }, [program]);
 
   // Haftalık özet
   const [summary, setSummary] = useState<WeeklySummary | null>(null);
@@ -190,8 +225,8 @@ export default function StudyProgramEditor({
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateName, setTemplateName] = useState('');
 
-  // Feedback paneli
-  const [feedbackDayId, setFeedbackDayId] = useState<number | null>(null);
+  // İkincil araçlar (şablon, rozet, özet, geçmiş)
+  const [showMoreActions, setShowMoreActions] = useState(false);
 
   // Ödev bölme modalı
   const [splitModalOpen, setSplitModalOpen] = useState(false);
@@ -219,9 +254,6 @@ export default function StudyProgramEditor({
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const toastTimer = useRef<NodeJS.Timeout>();
 
-  // Drag state
-  const [draggingHomework, setDraggingHomework] = useState<HomeworkPoolItem | null>(null);
-
   /* ─── Toast helper ─── */
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -238,8 +270,7 @@ export default function StudyProgramEditor({
             newWeekEnd ||
             splitModalOpen ||
             editingBlock ||
-            showTemplateModal ||
-            feedbackDayId !== null)
+            showTemplateModal)
       ),
     [
       selectedStudent,
@@ -249,7 +280,6 @@ export default function StudyProgramEditor({
       splitModalOpen,
       editingBlock,
       showTemplateModal,
-      feedbackDayId,
     ]
   );
 
@@ -269,16 +299,13 @@ export default function StudyProgramEditor({
     (async () => {
       try {
         const res = await fetchCoaches({ is_active: true });
-        console.log('[StudyProgram] fetchCoaches response:', res);
         if (res.success && res.data) {
           const list = Array.isArray(res.data) ? res.data : (res.data as any).results || [];
           setCoaches(list);
         } else {
-          console.warn('[StudyProgram] fetchCoaches failed:', res.error);
           setError(res.error || 'Koç listesi yüklenemedi. Lütfen giriş yaptığınızdan emin olun.');
         }
-      } catch (err) {
-        console.error('[StudyProgram] fetchCoaches exception:', err);
+      } catch {
         setError('Koç listesi yüklenirken hata oluştu.');
       }
     })();
@@ -290,16 +317,13 @@ export default function StudyProgramEditor({
     (async () => {
       try {
         const res = await fetchCoachStudents(selectedCoach);
-        console.log('[StudyProgram] fetchCoachStudents response:', res);
         if (res.success && res.data) {
           const list = Array.isArray(res.data) ? res.data : (res.data as any).results || [];
           setStudents(list);
           if (!lockedStudentId) setSelectedStudent(null);
-        } else {
-          console.warn('[StudyProgram] fetchCoachStudents failed:', res.error);
         }
-      } catch (err) {
-        console.error('[StudyProgram] fetchCoachStudents exception:', err);
+      } catch {
+        /* sessiz */
       }
     })();
   }, [selectedCoach, lockedStudentId]);
@@ -341,8 +365,9 @@ export default function StudyProgramEditor({
 
   useEffect(() => {
     loadStudentPrograms();
-    setProgram(null);
-  }, [loadStudentPrograms]);
+    // initialProgramId varsa liste yüklenirken programı silme — aşağıda açılacak
+    if (!initialProgramId) setProgram(null);
+  }, [loadStudentPrograms, initialProgramId]);
 
   // Seçili programa ait veriyi yeniden yükle
   const reloadCurrentProgram = useCallback(async () => {
@@ -356,34 +381,54 @@ export default function StudyProgramEditor({
   }, [program?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bir program seç
-  const handleSelectProgram = async (programId: number) => {
+  const handleSelectProgram = useCallback(async (programId: number) => {
     setLoading(true);
     try {
       const detail = await fetchProgram(programId);
-      if (detail.success && detail.data) {
-        setProgram(detail.data);
-        setEditWeekStart(detail.data.week_start);
-        setEditWeekEnd(detail.data.week_end);
-      }
+      if (!detail.success || !detail.data) return;
+      setProgram(detail.data);
+      setEditWeekStart(detail.data.week_start);
+      setEditWeekEnd(detail.data.week_end);
     } catch {
       setError('Program yüklenirken bir hata oluştu');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // Program yüklendiğinde tarih aralığı formunu senkronla
+  // Student 360: kart / düzenle → doğrudan program
+  const autoOpenedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!initialProgramId || !selectedStudent || studentProgramsLoading) return;
+    if (autoOpenedRef.current === initialProgramId) return;
+    if (program?.id === initialProgramId) {
+      autoOpenedRef.current = initialProgramId;
+      return;
+    }
+    autoOpenedRef.current = initialProgramId;
+    void handleSelectProgram(initialProgramId);
+  }, [
+    initialProgramId,
+    selectedStudent,
+    studentProgramsLoading,
+    program?.id,
+    handleSelectProgram,
+  ]);
+
+  // Program yüklendiğinde tarih aralığı + haftalık not formunu senkronla
   useEffect(() => {
     if (program) {
       setEditWeekStart(program.week_start);
       setEditWeekEnd(program.week_end);
+      setWeekCoachNote(program.coach_note || '');
     } else {
       setEditWeekStart('');
       setEditWeekEnd('');
+      setWeekCoachNote('');
     }
-  }, [program?.id, program?.week_start, program?.week_end]);
+  }, [program?.id, program?.week_start, program?.week_end, program?.coach_note]);
 
-  // Ödev havuzu yükle
+  // Ödev havuzu yükle — program varken yalnızca planlanmamış içerikler
   const loadHomeworkPool = useCallback(async () => {
     if (!selectedStudent) return;
     setPoolLoading(true);
@@ -391,25 +436,21 @@ export default function StudyProgramEditor({
       const res = await fetchHomeworkPool({
         student_id: selectedStudent,
         program_id: program?.id,
-        status: poolFilter.status || undefined,
+        status: program?.id ? 'unplanned' : undefined,
       });
       if (res.success && res.data) {
-        let items = Array.isArray(res.data) ? res.data : [];
-        if (poolFilter.search) {
-          const q = poolFilter.search.toLowerCase();
-          items = items.filter(
-            (h) =>
-              h.title.toLowerCase().includes(q) ||
-              (h.lesson_name || '').toLowerCase().includes(q) ||
-              h.topic_name.toLowerCase().includes(q)
-          );
+        const items = Array.isArray(res.data) ? res.data : [];
+        if (program?.id) {
+          setHomeworkPool(items.filter((h) => !h.is_planned));
+        } else {
+          setDatePickPool(items);
+          setHomeworkPool(items);
         }
-        setHomeworkPool(items);
       }
     } catch { /* ignore */ } finally {
       setPoolLoading(false);
     }
-  }, [selectedStudent, program?.id, poolFilter]);
+  }, [selectedStudent, program?.id]);
 
   useEffect(() => { loadHomeworkPool(); }, [loadHomeworkPool]);
 
@@ -446,7 +487,7 @@ export default function StudyProgramEditor({
         setProgram(res.data);
         setEditWeekStart(res.data.week_start);
         setEditWeekEnd(res.data.week_end);
-        const isExisting = !!(res.data as any).total_block_count;
+        const isExisting = !!(res.data as { total_block_count?: number }).total_block_count;
         showToast(isExisting ? 'Mevcut program yüklendi!' : 'Yeni çalışma programı oluşturuldu!');
         loadHomeworkPool();
         loadStudentPrograms(); // listeyi güncelle
@@ -705,16 +746,18 @@ export default function StudyProgramEditor({
   // Drag & Drop: Ödev havuzundan güne bırak
   const handleDropHomework = async (dayId: number, item: HomeworkPoolItem) => {
     try {
+      const topic = item.topic_name?.trim() || '';
       const res = await createBlock({
         day: dayId,
         source_assignment: item.id,
         source_lesson: item.lesson_id,
-        title: item.title,
-        topic_name: item.topic_name || '',
+        lesson: item.ders_id || undefined,
+        title: topic || item.lesson_name || item.title,
+        topic_name: topic,
         resource_name: item.resource_name || '',
         block_type: 'SORU_COZUMU' as BlockType,
         question_count: item.question_count || 0,
-        priority: (item.priority as any) || 'MEDIUM',
+        priority: (item.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT') || 'MEDIUM',
       });
       if (res.success) {
         showToast('Ödev takvime eklendi!');
@@ -736,13 +779,12 @@ export default function StudyProgramEditor({
     } catch { /* ignore */ }
   };
 
-  // Koç notu kaydet
+  // Günlük koç notu kaydet
   const handleCoachNoteSave = async (dayId: number, note: string) => {
     try {
       const res = await updateDay(dayId, { coach_note: note });
       if (res.success) {
         showToast('Koç notu kaydedildi');
-        // Lokal program state'ini güncelle (tam reload gerekmez)
         setProgram((prev) => {
           if (!prev) return prev;
           return {
@@ -755,6 +797,26 @@ export default function StudyProgramEditor({
       }
     } catch {
       showToast('Bir hata oluştu', 'error');
+    }
+  };
+
+  // Haftalık koç notu (PDF'te görünür)
+  const handleWeekCoachNoteSave = async () => {
+    if (!program) return;
+    setWeekNoteSaving(true);
+    try {
+      const res = await updateProgram(program.id, { coach_note: weekCoachNote });
+      if (res.success && res.data) {
+        setProgram(res.data);
+        setWeekCoachNote(res.data.coach_note || '');
+        showToast('Haftalık koç notu kaydedildi');
+      } else {
+        showToast(res.error || 'Not kaydedilemedi', 'error');
+      }
+    } catch {
+      showToast('Bir hata oluştu', 'error');
+    } finally {
+      setWeekNoteSaving(false);
     }
   };
 
@@ -792,7 +854,7 @@ export default function StudyProgramEditor({
     setSplitTarget({
       type: 'block',
       block,
-      title: block.title,
+      title: primaryBlockLabel(block),
       totalQuestions: block.question_count,
       currentDayId: block.day,
     });
@@ -804,7 +866,7 @@ export default function StudyProgramEditor({
     setSplitTarget({
       type: 'homework',
       homework: item,
-      title: item.title,
+      title: item.topic_name?.trim() || item.lesson_name || item.title,
       totalQuestions: item.question_count,
     });
     setSplitModalOpen(true);
@@ -972,19 +1034,7 @@ export default function StudyProgramEditor({
       {/* ─── Hata ─── */}
       {error && (
         <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', padding: '16px', marginBottom: '16px', color: '#dc2626', fontSize: '14px' }}>
-          ❌ {error}
-          {error.includes('giriş') && (
-            <div style={{ marginTop: '8px' }}>
-              <a
-                href="http://localhost:8000/admin/"
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: '#3b82f6', fontWeight: 600, textDecoration: 'underline' }}
-              >
-                Django Admin&apos;den giriş yapın →
-              </a>
-            </div>
-          )}
+          {error}
         </div>
       )}
 
@@ -1040,6 +1090,10 @@ export default function StudyProgramEditor({
                   const selected = dateSourceHomeworkId === hw.id;
                   const assigned = toDateInputValue(hw.assigned_date);
                   const due = toDateInputValue(hw.due_date);
+                  const { start: rangeStart, end: rangeEnd } = datesFromHomework(hw);
+                  const studyEnd = rangeEnd ? studyRangeEnd(rangeEnd) : '';
+                  const studyDays =
+                    rangeStart && studyEnd ? inclusiveDayCount(rangeStart, studyEnd) : 0;
                   return (
                     <button
                       key={hw.id}
@@ -1055,7 +1109,7 @@ export default function StudyProgramEditor({
                       }}
                     >
                       <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
-                        {hw.title || 'İsimsiz ödev'}
+                        {stripCompletionTitleSuffix(hw.title) || 'İsimsiz ödev'}
                       </div>
                       <div style={{ fontSize: 12, color: '#64748b', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         <span>{hw.status_display || hw.status}</span>
@@ -1063,6 +1117,14 @@ export default function StudyProgramEditor({
                         {due && <span>Kontrol: {formatDateShortTR(due)}</span>}
                         {hw.lesson_name && <span>{hw.lesson_name}</span>}
                       </div>
+                      {rangeStart && rangeEnd && (
+                        <div style={{ fontSize: 11, color: '#1d4ed8', marginTop: 6, fontWeight: 600 }}>
+                          Program: {formatDateShortTR(rangeStart)} – {formatDateShortTR(rangeEnd)}
+                          {' '}(son gün kontrol
+                          {assigned ? `; verilme ${formatDateShortTR(assigned)} ertesi başlar` : ''})
+                          {studyDays > 0 ? ` · ${studyDays} çalışma + 1 kontrol` : ''}
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -1085,13 +1147,14 @@ export default function StudyProgramEditor({
                 <div style={{ fontSize: '12px', color: '#6b7280' }}>
                   Ödeve tıklayarak doldurun veya tarihleri manuel seçin
                   {dateSourceHomeworkId ? ' · ödevden dolduruldu' : ''}
+                  {' · '}Ödev Pzt → program Salı başlar, kontrol haftaya Pzt
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-                  Başlangıç Tarihi
+                  İlk çalışma günü
                 </label>
                 <input
                   type="date"
@@ -1100,7 +1163,7 @@ export default function StudyProgramEditor({
                     setNewWeekStart(e.target.value);
                     setDateSourceHomeworkId(null);
                     if (!newWeekEnd || e.target.value > newWeekEnd) {
-                      // Otomatik 6 gün ekle
+                      // Salı…Pzt → kontrol = ilk çalışma + 6
                       const d = new Date(e.target.value + 'T12:00:00');
                       setNewWeekEnd(formatDate(addDays(d, 6)));
                     }
@@ -1113,7 +1176,7 @@ export default function StudyProgramEditor({
               </div>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-                  Bitiş Tarihi
+                  Kontrol günü (son gün)
                 </label>
                 <input
                   type="date"
@@ -1143,19 +1206,8 @@ export default function StudyProgramEditor({
                   cursor: (!newWeekStart || !newWeekEnd) ? 'not-allowed' : 'pointer',
                 }}
               >
-                ＋ Oluştur
+                Oluştur
               </button>
-              {templates.length > 0 && (
-                <button
-                  onClick={() => setShowTemplateModal(true)}
-                  style={{
-                    fontSize: '12px', color: '#3b82f6', background: 'none',
-                    border: 'none', cursor: 'pointer', textDecoration: 'underline',
-                  }}
-                >
-                  📋 Şablondan
-                </button>
-              )}
             </div>
           </div>
 
@@ -1320,7 +1372,7 @@ export default function StudyProgramEditor({
           }}>
             <div>
               <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-                Program başlangıç
+                İlk çalışma günü
               </label>
               <input
                 type="date"
@@ -1331,7 +1383,7 @@ export default function StudyProgramEditor({
             </div>
             <div>
               <label style={{ fontSize: '11px', fontWeight: 600, color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-                Program bitiş
+                Kontrol günü (son gün)
               </label>
               <input
                 type="date"
@@ -1375,301 +1427,365 @@ export default function StudyProgramEditor({
               ...(isExpired ? { opacity: 0.5, pointerEvents: 'none' as const } : {}),
             }}
           >
-            <button onClick={handleAutoDistribute} disabled={isExpired} style={toolbarBtnStyle('#8b5cf6')}>
-              🎯 Ödevleri Dağıt
-            </button>
-            <button onClick={handleRedistribute} disabled={isExpired} style={toolbarBtnStyle('#7c3aed')}>
-              ⚖️ Dengeli Dağıt
-            </button>
-            <button onClick={handleResetProgram} disabled={isExpired} style={toolbarBtnStyle('#ef4444')}>
-              🔄 Sıfırla
-            </button>
-            <button onClick={handleCalcBadges} style={toolbarBtnStyle('#f59e0b')}>
-              🏆 Rozet Hesapla
-            </button>
-            <button onClick={handleShowSummary} style={toolbarBtnStyle('#06b6d4')}>
-              📊 Haftalık Özet
-            </button>
-            <button onClick={() => setShowTemplateModal(true)} style={toolbarBtnStyle('#22c55e')}>
-              📋 Şablon
-            </button>
-            <button onClick={handleShowPastPrograms} style={toolbarBtnStyle('#64748b')}>
-              📜 Geçmiş
+            <button onClick={handleAutoDistribute} disabled={isExpired} style={toolbarBtnStyle('#1f3c88')}>
+              Ödevleri Dağıt
             </button>
             <button onClick={handlePrintPDF} style={toolbarBtnStyle('#0ea5e9')}>
-              🖨️ Yazdır
+              Yazdır
             </button>
+            <button
+              type="button"
+              onClick={() => setShowMoreActions((v) => !v)}
+              style={toolbarBtnStyle('#64748b')}
+            >
+              {showMoreActions ? 'Daha az' : 'Daha fazla'}
+            </button>
+            {showMoreActions && (
+              <>
+                <button onClick={handleRedistribute} disabled={isExpired} style={toolbarBtnStyle('#7c3aed')}>
+                  Dengeli Dağıt
+                </button>
+                <button onClick={handleResetProgram} disabled={isExpired} style={toolbarBtnStyle('#ef4444')}>
+                  Sıfırla
+                </button>
+                <button onClick={handleCalcBadges} style={toolbarBtnStyle('#f59e0b')}>
+                  Rozet Hesapla
+                </button>
+                <button onClick={handleShowSummary} style={toolbarBtnStyle('#06b6d4')}>
+                  Haftalık Özet
+                </button>
+                <button onClick={() => setShowTemplateModal(true)} style={toolbarBtnStyle('#22c55e')}>
+                  Şablon
+                </button>
+                <button onClick={handleShowPastPrograms} style={toolbarBtnStyle('#64748b')}>
+                  Geçmiş
+                </button>
+              </>
+            )}
 
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
-              {/* İstatistik chip'ler */}
               <span style={chipStyle('#eff6ff', '#3b82f6')}>
-                📝 {program.total_question_count} soru
+                {program.total_question_count} soru
               </span>
               <span style={chipStyle('#f0fdf4', '#22c55e')}>
-                ✅ %{program.completion_percent}
+                %{program.completion_percent}
               </span>
               <span style={chipStyle('#fef3c7', '#f59e0b')}>
-                📦 {program.total_block_count} blok
+                {program.total_block_count} çalışma
               </span>
               <button onClick={handleDeleteProgram} style={{ ...toolbarBtnStyle('#ef4444'), padding: '6px 12px' }} title="Programı Sil">
-                🗑️
+                Sil
               </button>
             </div>
           </div>
 
+          {/* Haftalık koç notu — PDF'te görünür */}
+          <div
+            style={{
+              marginBottom: 12,
+              padding: '10px 14px',
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: 10,
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-start',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', marginBottom: 6 }}>
+                📌 Haftalık Koç Notu
+                <span style={{ fontWeight: 500, color: '#b45309', marginLeft: 6 }}>
+                  (PDF&apos;te görünür)
+                </span>
+              </div>
+              <textarea
+                value={weekCoachNote}
+                onChange={(e) => setWeekCoachNote(e.target.value)}
+                disabled={isExpired}
+                rows={2}
+                placeholder="Bu hafta özellikle… (ör. matematik soru hızı, fizik konu tekrarı)"
+                style={{
+                  width: '100%',
+                  resize: 'vertical',
+                  minHeight: 52,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid #fcd34d',
+                  fontSize: 13,
+                  fontFamily: 'inherit',
+                  color: '#78350f',
+                  background: '#fffef7',
+                  outline: 'none',
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleWeekCoachNoteSave}
+              disabled={isExpired || weekNoteSaving || weekCoachNote === (program.coach_note || '')}
+              style={{
+                ...toolbarBtnStyle('#b45309'),
+                alignSelf: 'flex-end',
+                opacity:
+                  isExpired || weekNoteSaving || weekCoachNote === (program.coach_note || '')
+                    ? 0.5
+                    : 1,
+                cursor:
+                  isExpired || weekNoteSaving || weekCoachNote === (program.coach_note || '')
+                    ? 'not-allowed'
+                    : 'pointer',
+              }}
+            >
+              {weekNoteSaving ? '…' : 'Kaydet'}
+            </button>
+          </div>
+
           {/* ─── Split Layout ─── */}
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
             {/* ───── SOL PANEL: ÖDEV HAVUZU ───── */}
             <div
               style={{
-                width: '280px',
-                minWidth: '260px',
+                width: 300,
+                minWidth: 280,
                 flexShrink: 0,
                 backgroundColor: '#fff',
-                borderRadius: '12px',
-                border: '1px solid #e5e7eb',
+                borderRadius: 14,
+                border: '1px solid #e2e8f0',
                 overflow: 'hidden',
-                maxHeight: 'calc(100vh - 260px)',
+                maxHeight: 'calc(100vh - 240px)',
                 display: 'flex',
                 flexDirection: 'column',
+                boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
                 ...(isExpired ? { opacity: 0.5, pointerEvents: 'none' as const } : {}),
               }}
             >
-              {/* Panel header */}
-              <div
-                style={{
-                  padding: '14px 16px',
-                  borderBottom: '1px solid #e5e7eb',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: '#fff',
-                }}
-              >
-                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>📚 Ödev Havuzu</h3>
-                <div style={{ fontSize: '11px', opacity: 0.9, marginTop: '2px' }}>
-                  Sürükle → Takvime bırak
+              <div style={{
+                padding: '14px 14px 12px',
+                borderBottom: '1px solid #e8eef5',
+                background: '#f8fafc',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0f172a' }}>
+                    Ödev havuzu
+                  </h3>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>
+                    {homeworkPool.length} içerik
+                  </span>
                 </div>
-              </div>
-
-              {/* Filtreler */}
-              <div style={{ padding: '10px 12px', borderBottom: '1px solid #f3f4f6' }}>
-                <input
-                  type="text"
-                  placeholder="Ara..."
-                  value={poolFilter.search}
-                  onChange={(e) => setPoolFilter((f) => ({ ...f, search: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid #e5e7eb',
-                    fontSize: '12px',
-                    outline: 'none',
-                    marginBottom: '6px',
-                  }}
-                />
-                <select
-                  value={poolFilter.status}
-                  onChange={(e) => setPoolFilter((f) => ({ ...f, status: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '7px 8px',
-                    borderRadius: '6px',
-                    border: '1px solid #e5e7eb',
-                    fontSize: '12px',
-                    backgroundColor: '#fff',
-                  }}
-                >
-                  <option value="">Tüm Durumlar</option>
-                  <option value="unplanned">Planlanmamış</option>
-                  <option value="ACTIVE">Aktif</option>
-                  <option value="PENDING">Beklemede</option>
-                  <option value="OVERDUE">Gecikmiş</option>
-                </select>
-              </div>
-
-              {/* Ödev listesi */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-                {poolLoading ? (
-                  <div style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '13px' }}>
-                    Yükleniyor...
+                {programHomeworkTitles.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: '#0f766e',
+                      lineHeight: 1.35,
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical' as const,
+                    }}
+                    title={programHomeworkTitles.join(' · ')}
+                  >
+                    {programHomeworkTitles.join(' · ')}
                   </div>
-                ) : homeworkPool.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '24px 12px', color: '#9ca3af' }}>
-                    <div style={{ fontSize: '28px', marginBottom: '8px' }}>📭</div>
-                    <div style={{ fontSize: '12px' }}>Havuzda ödev yok</div>
-                  </div>
-                ) : (
-                  homeworkPool.map((hw) => (
-                    <HomeworkPoolCard
-                      key={`${hw.id}-${hw.lesson_id ?? 'all'}`}
-                      item={hw}
-                      onDragStart={(e, item) => {
-                        e.dataTransfer.setData('homework-pool-item', JSON.stringify(item));
-                        setDraggingHomework(item);
-                      }}
-                      onSplit={program ? handleOpenSplitHomework : undefined}
-                    />
-                  ))
                 )}
               </div>
 
-              <div style={{ padding: '8px 12px', borderTop: '1px solid #f3f4f6', fontSize: '11px', color: '#9ca3af', textAlign: 'center' }}>
-                {homeworkPool.length} ödev
-              </div>
-            </div>
-
-            {/* ───── SAĞ PANEL: GÜNLÜK TAKVİM ───── */}
-            <div style={{ flex: 1, overflowX: 'auto', ...(isExpired ? { opacity: 0.7, pointerEvents: 'none' as const } : {}) }}>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: `repeat(${Math.min((program.days || []).length, 7)}, minmax(150px, 1fr))`,
-                  gap: '8px',
-                }}
-              >
-                {(program.days || [])
-                  .slice()
-                  .sort((a, b) => a.day_date.localeCompare(b.day_date))
-                  .map((day) => (
-                    <DayColumn
-                      key={day.id}
-                      day={day}
-                      onToggleComplete={handleToggleComplete}
-                      onDeleteBlock={handleDeleteBlock}
-                      onEditBlock={(block) => setEditingBlock(block)}
-                      onDropHomework={(dayId, item) => handleDropHomework(dayId, item)}
-                      onDropBlock={(dayId, block) => handleMoveBlock(block.id, dayId)}
-                      onDragBlockStart={(e, block) => {
-                        e.dataTransfer.setData('program-block', JSON.stringify(block));
-                      }}
-                      onReorderBlocks={handleReorderBlocks}
-                      onCoachNoteChange={handleCoachNoteSave}
-                      onSplitBlock={handleOpenSplitBlock}
-                    />
-                  ))}
-              </div>
-            </div>
-          </div>
-
-          {/* ───── ALT PANEL: ROZETLER + ÖNCELİK DAĞILIMI ───── */}
-          <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-            <BadgeDisplay
-              badges={program.badges || []}
-              completionPercent={program.completion_percent}
-            />
-            {showSummary && (
-              <WeeklySummaryCard summary={summary} loading={summaryLoading} />
-            )}
-
-            {/* Öncelik Dağılımı Kartı */}
-            {(() => {
-              const allBlocks = (program.days || []).flatMap((d) => d.blocks);
-              const priCounts: Record<string, number> = {};
-              for (const b of allBlocks) {
-                const key = b.priority || 'MEDIUM';
-                priCounts[key] = (priCounts[key] || 0) + 1;
-              }
-              const total = allBlocks.length || 1;
-              return (
-                <div style={{
-                  backgroundColor: '#fff', borderRadius: '12px',
-                  border: '1px solid #e5e7eb', padding: '16px',
-                }}>
-                  <h4 style={{ margin: '0 0 12px', fontSize: '13px', fontWeight: 700, color: '#111827' }}>
-                    📊 Haftalık Öncelik Dağılımı
-                  </h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {(Object.keys(PRIORITY_META) as Priority[]).map((p) => {
-                      const pm = PRIORITY_META[p];
-                      const count = priCounts[p] || 0;
-                      const pctVal = Math.round((count / total) * 100);
-                      return (
-                        <div key={p}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 600, color: pm.color }}>
-                              {pm.icon} {pm.label}
-                            </span>
-                            <span style={{ fontSize: '11px', color: '#6b7280' }}>
-                              {count} blok ({pctVal}%)
-                            </span>
-                          </div>
-                          <div style={{
-                            width: '100%', height: '6px', backgroundColor: '#f3f4f6',
-                            borderRadius: '99px', overflow: 'hidden',
-                          }}>
-                            <div style={{
-                              width: `${pctVal}%`, height: '100%',
-                              backgroundColor: pm.color, borderRadius: '99px',
-                              transition: 'width .4s',
-                            }} />
-                          </div>
-                        </div>
-                      );
-                    })}
+              <div style={{ flex: 1, overflowY: 'auto', padding: 10 }}>
+                {poolLoading ? (
+                  <div style={{ textAlign: 'center', padding: 28, color: '#94a3b8', fontSize: 13 }}>
+                    Yükleniyor…
                   </div>
+                ) : homeworkPool.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '32px 12px', color: '#94a3b8' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b' }}>
+                      Tüm içerikler planlandı
+                    </div>
+                    <div style={{ fontSize: 12, marginTop: 4 }}>
+                      Takvimden kaldırınca buraya döner.
+                    </div>
+                  </div>
+                ) : (
+                  poolByLesson.map(([lessonName, items]) => {
+                    const accent = lessonAccent(lessonName === 'Diğer' ? null : lessonName);
+                    return (
+                      <div key={lessonName} style={{ marginBottom: 16 }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          margin: '0 2px 8px',
+                        }}>
+                          <span style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 2,
+                            background: accent,
+                            flexShrink: 0,
+                          }} />
+                          <div style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: '#0f172a',
+                            letterSpacing: '0.02em',
+                          }}>
+                            {lessonName}
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8' }}>
+                            {items.length}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {items.map((hw) => (
+                            <HomeworkPoolCard
+                              key={`${hw.id}-${hw.lesson_id ?? 'all'}-${hw.topic_name}`}
+                              item={hw}
+                              hideLessonName
+                              onDragStart={(e, item) => {
+                                e.dataTransfer.setData('homework-pool-item', JSON.stringify(item));
+                              }}
+                              onSplit={program ? handleOpenSplitHomework : undefined}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* ───── SAĞ PANEL: ÖZET + TAKVİM ───── */}
+            <div style={{ flex: 1, minWidth: 0, ...(isExpired ? { opacity: 0.7, pointerEvents: 'none' as const } : {}) }}>
+              {/* Gün–ders özeti */}
+              <div style={{
+                marginBottom: 10,
+                padding: '10px 12px',
+                background: '#fff',
+                borderRadius: 12,
+                border: '1px solid #e2e8f0',
+              }}>
+                <div style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  color: '#94a3b8',
+                  marginBottom: 8,
+                }}>
+                  Plan özeti
                 </div>
-              );
-            })()}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${Math.max(dayLessonSummary.length, 1)}, minmax(0, 1fr))`,
+                  gap: 8,
+                }}>
+                  {dayLessonSummary.map((row) => (
+                    <div
+                      key={row.date}
+                      style={{
+                        minWidth: 0,
+                        padding: '6px 8px',
+                        borderRadius: 8,
+                        background: row.lessons.length ? '#f8fafc' : '#fafafa',
+                        border: '1px solid #eef2f7',
+                      }}
+                    >
+                      <div style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        marginBottom: 4,
+                      }}>
+                        {row.dayLabel}
+                      </div>
+                      {row.lessons.length === 0 ? (
+                        <div style={{ fontSize: 10, color: '#cbd5e1' }}>—</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          {row.lessons.map((lesson) => (
+                            <div
+                              key={lesson}
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: lessonAccent(lesson),
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title={lesson}
+                            >
+                              {lesson}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                {(() => {
+                  const daysForBoard = [...(program.days || [])].sort((a, b) =>
+                    a.day_date.localeCompare(b.day_date),
+                  );
+                  return (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: `repeat(${Math.max(daysForBoard.length, 1)}, minmax(140px, 1fr))`,
+                        gap: '8px',
+                      }}
+                    >
+                      {daysForBoard.map((day) => (
+                        <DayColumn
+                          key={day.id}
+                          day={day}
+                          isControlDay={isControlDay(day.day_date, program.week_end)}
+                          onToggleComplete={handleToggleComplete}
+                          onDeleteBlock={handleDeleteBlock}
+                          onEditBlock={(block) => setEditingBlock(block)}
+                          onDropHomework={(dayId, item) => handleDropHomework(dayId, item)}
+                          onDropBlock={(dayId, block) => handleMoveBlock(block.id, dayId)}
+                          onDragBlockStart={(e, block) => {
+                            e.dataTransfer.setData('program-block', JSON.stringify(block));
+                          }}
+                          onReorderBlocks={handleReorderBlocks}
+                          onCoachNoteChange={handleCoachNoteSave}
+                          onSplitBlock={handleOpenSplitBlock}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
           </div>
+
+          {/* Alt: yalnızca rozet/özet istendiğinde */}
+          {((program.badges && program.badges.length > 0) || showSummary) && (
+            <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {(program.badges?.length ?? 0) > 0 && (
+                <BadgeDisplay
+                  badges={program.badges || []}
+                  completionPercent={program.completion_percent}
+                />
+              )}
+              {showSummary && (
+                <WeeklySummaryCard summary={summary} loading={summaryLoading} />
+              )}
+            </div>
+          )}
         </>
       )}
 
       {/* ═══════════════════════════════════════════════════════
          MODALLER
          ═══════════════════════════════════════════════════════ */}
-
-      {/* Feedback paneli */}
-      {feedbackDayId && program && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,.4)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onClick={() => setFeedbackDayId(null)}
-        >
-          <div
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: '16px',
-              padding: '24px',
-              width: '420px',
-              maxWidth: '90vw',
-              maxHeight: '80vh',
-              overflowY: 'auto',
-              boxShadow: '0 25px 50px rgba(0,0,0,.15)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#111827' }}>📝 Günlük Geri Bildirim</h3>
-              <button onClick={() => setFeedbackDayId(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#9ca3af' }}>×</button>
-            </div>
-            {(() => {
-              const day = program.days.find((d) => d.id === feedbackDayId);
-              if (!day) return <div>Gün bulunamadı</div>;
-              return (
-                <DailyFeedbackForm
-                  dayId={day.id}
-                  feedback={day.feedback}
-                  onSave={(dId, data) => {
-                    import('@/lib/study-program-api').then(({ saveFeedback }) => {
-                      saveFeedback({ day: dId, ...data }).then(() => {
-                        reloadCurrentProgram();
-                        showToast('Geri bildirim kaydedildi!');
-                      });
-                    });
-                  }}
-                />
-              );
-            })()}
-          </div>
-        </div>
-      )}
 
       {/* Şablon modal */}
       {showTemplateModal && (

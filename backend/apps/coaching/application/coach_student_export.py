@@ -10,7 +10,7 @@ EXPORT_COLUMNS = {
     'last_meeting_date': 'Son Görüşme',
     'overdue_homework_count': 'Geciken Ödev',
     'meeting_today_count': 'Bugün Görüşme',
-    'needs_meeting_display': 'Görüşme Gerekli',
+    'needs_meeting_display': 'Ödev Takibi',
     'veli_telefon': 'Veli Telefon',
 }
 
@@ -95,5 +95,5 @@ def build_export_stats(rows: list[dict]):
         ExportStat(label='Toplam Öğrenci', value=toplam, type='integer'),
         ExportStat(label='Riskli', value=riskli, type='integer'),
         ExportStat(label='Geciken Ödevi Olan', value=geciken, type='integer'),
-        ExportStat(label='Görüşme Gerekli', value=gorusme_gerekli, type='integer'),
+        ExportStat(label='Ödev Takibi', value=gorusme_gerekli, type='integer'),
     ]

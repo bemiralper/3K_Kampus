@@ -2,6 +2,7 @@
 Çalışma Programı - Serializers
 """
 from rest_framework import serializers
+from apps.coaching.assignment_manual.title_utils import strip_completion_title_suffix
 from .models import (
     WeeklyProgram, ProgramDay, ProgramBlock,
     DailyFeedback, Badge,
@@ -17,12 +18,14 @@ class ProgramBlockSerializer(serializers.ModelSerializer):
     block_type_display = serializers.CharField(source='get_block_type_display', read_only=True)
     goal_type_display  = serializers.CharField(source='get_goal_type_display', read_only=True)
     priority_display   = serializers.CharField(source='get_priority_display', read_only=True)
-    lesson_name        = serializers.CharField(source='lesson.ad', read_only=True, allow_null=True)
+    lesson_name        = serializers.SerializerMethodField()
+    source_assignment_title = serializers.SerializerMethodField()
 
     class Meta:
         model = ProgramBlock
         fields = [
-            'id', 'day', 'source_assignment', 'source_task', 'source_lesson',
+            'id', 'day', 'source_assignment', 'source_assignment_title',
+            'source_task', 'source_lesson',
             'lesson', 'lesson_name',
             'title', 'topic_name', 'resource_name',
             'block_type', 'block_type_display',
@@ -32,7 +35,21 @@ class ProgramBlockSerializer(serializers.ModelSerializer):
             'is_completed', 'completed_at', 'actual_duration',
             'color', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at', 'source_assignment_title', 'lesson_name']
+
+    def get_lesson_name(self, obj):
+        if obj.lesson_id and getattr(obj.lesson, 'ad', None):
+            return obj.lesson.ad
+        src = getattr(obj, 'source_lesson', None)
+        if src is not None and getattr(src, 'lesson', None) is not None:
+            return src.lesson.ad
+        return None
+
+    def get_source_assignment_title(self, obj):
+        asgn = getattr(obj, 'source_assignment', None)
+        if asgn is None:
+            return None
+        return strip_completion_title_suffix(asgn.title) or None
 
 
 class ProgramBlockCreateSerializer(serializers.ModelSerializer):
@@ -219,7 +236,7 @@ class WeeklyProgramCreateSerializer(serializers.ModelSerializer):
             if delta > 30:
                 raise serializers.ValidationError({'week_end': 'Program süresi en fazla 30 gün olabilir.'})
         else:
-            # week_end verilmediyse, 6 gün ekle (toplam 7 gün)
+            # week_start = ilk çalışma günü → kontrol = +6 (örn. Salı…Pzt)
             data['week_end'] = ws + timedelta(days=6)
 
         return data
@@ -307,6 +324,7 @@ class HomeworkPoolItemSerializer(serializers.Serializer):
     coach_name     = serializers.CharField(allow_null=True, required=False)
     is_planned     = serializers.BooleanField(help_text='Bu ödev programa atanmış mı?')
     lesson_id      = serializers.IntegerField(allow_null=True, required=False)
+    ders_id        = serializers.IntegerField(allow_null=True, required=False)
 
 
 # ─────────────────────────

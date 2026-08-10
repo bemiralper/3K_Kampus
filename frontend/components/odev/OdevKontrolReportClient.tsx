@@ -9,6 +9,7 @@ import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/o
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
 import { MetaCol, assignmentTypeLabel } from "@/components/odev/odevPdfMeta";
 import { displayTestLabel, splitColumnMajor } from "@/components/odev/odevPlanTypes";
+import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
 
 /** Backend completion_utils ile aynı mantık */
 function effectiveTaskCompletionPercent(task: {
@@ -223,8 +224,7 @@ function ReportTaskRow({ task, topicName }: { task: AssignmentTask; topicName: s
       borderBottom: "1px solid #f0f2f5",
       fontSize: 11,
       color: "#172b4c",
-      background: task.is_completion_task ? "#eff6ff" : "#fff",
-      borderLeft: task.is_completion_task ? "3px solid #3b82f6" : "none",
+      background: "#fff",
     }}>
       <span style={{
         display: "inline-flex",
@@ -263,16 +263,6 @@ function ReportTaskRow({ task, topicName }: { task: AssignmentTask; topicName: s
             <span style={{ fontSize: 8, color: "#94a3b8" }}>{assignmentTypeLabel(typeKey)}</span>
           )}
         </div>
-        {task.is_completion_task && (
-          <div style={{ fontSize: 8, color: "#1d4ed8", fontWeight: 600, marginTop: 2, lineHeight: 1.2 }}>
-            🔄 Eksik Tamamlama
-            {task.previous_task_completion_percent != null && task.previous_task_completion_percent > 0 && (
-              <span style={{ color: "#60a5fa", marginLeft: 4 }}>
-                (önceki: %{task.previous_task_completion_percent})
-              </span>
-            )}
-          </div>
-        )}
         {task.coach_evaluation_note && (
           <div style={{
             fontSize: 9, color: "#6d28d9", fontStyle: "italic", marginTop: 2, lineHeight: 1.2,
@@ -666,7 +656,7 @@ export default function OdevKontrolReportClient({
                 fontSize: 15, fontWeight: 700, margin: 0, lineHeight: 1.25,
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}>
-                {report.title || "İsimsiz Ödev"}
+                {stripCompletionTitleSuffix(report.title) || "İsimsiz Ödev"}
               </div>
               <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>
                 ÖSR-{assignmentId} · {todayStr}

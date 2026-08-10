@@ -132,11 +132,13 @@ class CoachStudentApiTest(TestCase):
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
         self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
 
-        self.due_past = timezone.now() - timedelta(days=2)
+        # Ödev takibi: verilme >7 gün, kontrol >2 gün geçmiş
+        self.due_past = timezone.now() - timedelta(days=4)
         ManualAssignment.objects.create(
             coach=self.coach_user,
             student=self.student,
             title='Gecikmiş Ödev',
+            assigned_date=timezone.now() - timedelta(days=10),
             due_date=self.due_past,
             status=ManualAssignment.Status.OVERDUE,
             is_active=True,
@@ -186,6 +188,29 @@ class CoachStudentApiTest(TestCase):
         self.assertEqual(row['meeting_today_count'], 0)
         self.assertTrue(row['needs_meeting'])
         self.assertIn('profil_foto', row)
+
+    def test_needs_meeting_no_recent_homework_and_stale_control(self):
+        """7+ gündür yeni ödev yok + kontrol 2g+ geçmiş → takip; yakın ödev varsa çıkmaz."""
+        ManualAssignment.objects.filter(student=self.student).update(
+            assigned_date=timezone.now() - timedelta(days=10),
+            due_date=timezone.now() - timedelta(days=4),
+        )
+        self.client.force_authenticate(user=self.coach_user)
+        response = self.client.get(STUDENTS_URL)
+        self.assertTrue(response.data['data'][0]['needs_meeting'])
+
+        # Yeni ödev verilmişse (son 7 gün) hatırlatma kalkar
+        ManualAssignment.objects.create(
+            coach=self.coach_user,
+            student=self.student,
+            title='Yeni Ödev',
+            assigned_date=timezone.now() - timedelta(days=2),
+            due_date=timezone.now() + timedelta(days=5),
+            status=ManualAssignment.Status.ASSIGNED,
+            is_active=True,
+        )
+        response = self.client.get(STUDENTS_URL)
+        self.assertFalse(response.data['data'][0]['needs_meeting'])
 
     def test_coach_student_list_meeting_today_count(self):
         GorusmeKaydi.objects.create(

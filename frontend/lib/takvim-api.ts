@@ -77,6 +77,7 @@ export interface FCEventExtendedProps {
   kaynak_modul?: string;
   kaynak_id?: string | number;
   atama_id?: string | number;
+  assignment_id?: number | string;
   kaynak?: string;
 }
 

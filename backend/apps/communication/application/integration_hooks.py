@@ -38,6 +38,7 @@ SOURCE_ODEV = 'odev'
 SOURCE_SINAV = 'sinav'
 SOURCE_DEVAMSIZLIK = 'devamsizlik'
 SOURCE_DUYURU = 'duyuru'
+SOURCE_KOC = 'koc'
 
 
 def _safe_hook(fn, *args, **kwargs) -> SendResult | None:

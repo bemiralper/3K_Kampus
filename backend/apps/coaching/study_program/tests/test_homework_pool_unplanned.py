@@ -5,7 +5,11 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.coaching.assignment_manual.models import AssignmentLesson, ManualAssignment
+from apps.coaching.assignment_manual.models import (
+    AssignmentLesson,
+    AssignmentTask,
+    ManualAssignment,
+)
 from apps.coaching.study_program.models import ProgramBlock, ProgramDay, WeeklyProgram
 from apps.egitim_tanimlari.models import Ders
 from apps.kurum.domain.models import Kurum
@@ -168,3 +172,62 @@ class HomeworkPoolUnplannedFilterTest(TestCase):
         ))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 0)
+
+    def test_split_piece_delete_returns_remaining_to_pool(self):
+        """Bölünmüş parçadan biri silinince kalan soru havuza düşer."""
+        assignment, lesson_mat, _lesson_fiz = self._create_multi_lesson_assignment()
+        AssignmentTask.objects.create(
+            lesson_block=lesson_mat,
+            task_type='SOLVE_TEST',
+            title='Görev',
+            question_count=30,
+            order=0,
+        )
+        day2 = ProgramDay.objects.create(
+            program=self.program,
+            day_date=self.program.week_start + timedelta(days=1),
+            weekday=1,
+        )
+        ProgramBlock.objects.create(
+            day=self.program_day,
+            source_assignment=assignment,
+            source_lesson=lesson_mat,
+            title='Parça 1',
+            question_count=10,
+        )
+        ProgramBlock.objects.create(
+            day=day2,
+            source_assignment=assignment,
+            source_lesson=lesson_mat,
+            title='Parça 2',
+            question_count=10,
+        )
+        # 10 soruluk 3. parça yok → kalan 10 havuzda olmalı
+        response = self.client.get(self._pool_url(
+            student_id=self.student.id,
+            program_id=self.program.id,
+            status='unplanned',
+        ))
+        self.assertEqual(response.status_code, 200)
+        mat_items = [i for i in response.data if i['lesson_id'] == lesson_mat.id]
+        self.assertEqual(len(mat_items), 1)
+        self.assertFalse(mat_items[0]['is_planned'])
+        self.assertEqual(mat_items[0]['question_count'], 10)
+
+        # Üçüncü parça da eklenince havuzdan tamamen kalkar
+        ProgramBlock.objects.create(
+            day=day2,
+            source_assignment=assignment,
+            source_lesson=lesson_mat,
+            title='Parça 3',
+            question_count=10,
+            order=1,
+        )
+        response = self.client.get(self._pool_url(
+            student_id=self.student.id,
+            program_id=self.program.id,
+            status='unplanned',
+        ))
+        self.assertEqual(response.status_code, 200)
+        mat_items = [i for i in response.data if i['lesson_id'] == lesson_mat.id]
+        self.assertEqual(len(mat_items), 0)
