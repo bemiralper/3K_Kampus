@@ -59,8 +59,7 @@ export default function VeliTab({ student }: VeliTabProps) {
               phone={student.veli_telefon}
               ogrenciId={student.id}
               veliId={
-                student.veli_id
-                ?? student.veli?.id
+                student.veli?.id
                 ?? student.veliler?.find((v) => v.varsayilan)?.id
                 ?? student.veliler?.[0]?.id
                 ?? undefined
