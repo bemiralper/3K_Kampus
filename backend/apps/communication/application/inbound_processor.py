@@ -423,6 +423,26 @@ class InboundProcessor:
                 'filename': video.get('filename', 'video.mp4'),
             }
             return MessageType.VIDEO, caption or '[Video]', media_meta
+        # Şablon QUICK_REPLY / interactive buton cevabı
+        if msg_type == 'button':
+            btn = msg.get('button') or {}
+            label = (btn.get('text') or btn.get('payload') or '').strip()
+            return MessageType.TEXT, label or '[Buton]', media_meta
+        if msg_type == 'interactive':
+            interactive = msg.get('interactive') or {}
+            itype = interactive.get('type') or ''
+            if itype == 'button_reply':
+                reply = interactive.get('button_reply') or {}
+                label = (reply.get('title') or reply.get('id') or '').strip()
+                return MessageType.TEXT, label or '[Buton]', media_meta
+            if itype == 'list_reply':
+                reply = interactive.get('list_reply') or {}
+                label = (reply.get('title') or reply.get('description') or '').strip()
+                return MessageType.TEXT, label or '[Liste]', media_meta
+            if itype == 'nfm_reply':
+                reply = interactive.get('nfm_reply') or {}
+                label = (reply.get('body') or reply.get('name') or '').strip()
+                return MessageType.TEXT, label or '[Form]', media_meta
         return MessageType.TEXT, f'[{msg_type}]', media_meta
 
     @staticmethod
