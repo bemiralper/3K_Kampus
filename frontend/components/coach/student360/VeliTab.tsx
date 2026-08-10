@@ -55,7 +55,17 @@ export default function VeliTab({ student }: VeliTabProps) {
             <p className="coach-veli-name">{student.veli_adi}</p>
           )}
           {student.veli_telefon ? (
-            <PhoneContactLinks phone={student.veli_telefon} />
+            <PhoneContactLinks
+              phone={student.veli_telefon}
+              ogrenciId={student.id}
+              veliId={
+                student.veli_id
+                ?? student.veli?.id
+                ?? student.veliler?.find((v) => v.varsayilan)?.id
+                ?? student.veliler?.[0]?.id
+                ?? undefined
+              }
+            />
           ) : (
             <p className="coach-veli-empty">Veli telefonu profilde kayıtlı değil.</p>
           )}
