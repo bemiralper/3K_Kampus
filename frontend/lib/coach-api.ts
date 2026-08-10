@@ -28,6 +28,8 @@ export interface CoachPortalStudent {
   risk_score?: number | null;
   son_gorusme_tarihi: string | null;
   overdue_homework_count?: number;
+  /** Öğrenci kendi telefonu — sohbet_kocluk_ogrenci */
+  telefon?: string | null;
   veli_telefon?: string | null;
   veli_id?: number | null;
   profil_foto?: string | null;
@@ -46,6 +48,7 @@ interface CoachStudentListRaw {
   risk_score?: number | null;
   last_meeting_date?: string | null;
   overdue_homework_count?: number;
+  telefon?: string | null;
   veli_telefon?: string | null;
   veli_id?: number | null;
   profil_foto?: string | null;
@@ -67,6 +70,7 @@ function mapPortalStudent(raw: CoachStudentListRaw): CoachPortalStudent {
     risk_score: raw.risk_score ?? null,
     son_gorusme_tarihi: raw.last_meeting_date ?? null,
     overdue_homework_count: raw.overdue_homework_count ?? 0,
+    telefon: raw.telefon ?? null,
     veli_telefon: raw.veli_telefon ?? null,
     veli_id: raw.veli_id ?? null,
     profil_foto: raw.profil_foto ?? null,

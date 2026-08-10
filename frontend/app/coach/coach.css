@@ -3971,11 +3971,23 @@
   background: #dcfce7;
   border-color: #86efac;
   color: #15803d;
+  position: relative;
 }
 
 .coach-student-action-btn.coach-student-action-btn--whatsapp:hover {
   background: #bbf7d0;
   border-color: #4ade80;
+}
+
+.coach-student-action-btn--wa-veli {
+  background: #ecfdf5;
+}
+
+.coach-wa-chip {
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  margin-left: 1px;
 }
 
 .coach-pin-btn {

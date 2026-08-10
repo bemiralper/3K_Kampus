@@ -249,6 +249,7 @@ function StudentCard({
         </div>
         {!selectMode && (
           <CoachStudentQuickActions
+            ogrenciTelefon={student.telefon}
             veliTelefon={student.veli_telefon}
             veliId={student.veli_id ?? undefined}
             ogrenciId={student.id}
@@ -709,6 +710,7 @@ export default function CoachOgrencilerClient() {
                       </td>
                       <td>
                         <CoachStudentQuickActions
+                          ogrenciTelefon={s.telefon}
                           veliTelefon={s.veli_telefon}
                           veliId={s.veli_id ?? undefined}
                           ogrenciId={s.id}
