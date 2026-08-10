@@ -3753,6 +3753,15 @@
   z-index: 1000;
 }
 
+/* Mesaj drawer üstünde açılan şablon / hazır yanıt katmanı */
+.comm-drawer-overlay--stacked {
+  z-index: 1200;
+}
+
+.comm-drawer-overlay--stacked > .comm-drawer {
+  z-index: 1201;
+}
+
 .comm-drawer {
   position: fixed;
   top: 0;

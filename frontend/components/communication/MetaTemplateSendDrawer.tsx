@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import WhatsAppPreviewBubble from "./WhatsAppPreviewBubble";
 import {
@@ -160,8 +161,13 @@ export default function MetaTemplateSendDrawer({
 
   if (!open) return null;
 
-  return (
-    <div className="comm-drawer-overlay" onClick={onClose} role="presentation">
+  // Chat drawer içinde açılınca aynı stacking context'te kalıp arkada kaybolmasın diye body'ye portal.
+  const node = (
+    <div
+      className="comm-drawer-overlay comm-drawer-overlay--stacked"
+      onClick={onClose}
+      role="presentation"
+    >
       <aside
         className="comm-drawer comm-drawer-templates-v2 comm-drawer--meta-send"
         onClick={(e) => e.stopPropagation()}
@@ -264,4 +270,7 @@ export default function MetaTemplateSendDrawer({
       </aside>
     </div>
   );
+
+  if (typeof document === "undefined") return node;
+  return createPortal(node, document.body);
 }

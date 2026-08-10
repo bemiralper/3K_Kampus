@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import WhatsAppPreviewBubble from "./WhatsAppPreviewBubble";
 import {
@@ -65,8 +66,12 @@ export default function TemplatePickerDrawer({
 
   if (!open) return null;
 
-  return (
-    <div className="comm-drawer-overlay" onClick={onClose} role="presentation">
+  const node = (
+    <div
+      className="comm-drawer-overlay comm-drawer-overlay--stacked"
+      onClick={onClose}
+      role="presentation"
+    >
       <aside
         className={`comm-drawer comm-drawer-templates-v2${inboxMode ? " comm-drawer--inbox-templates" : ""}`}
         onClick={(e) => e.stopPropagation()}
@@ -167,4 +172,7 @@ export default function TemplatePickerDrawer({
       </aside>
     </div>
   );
+
+  if (typeof document === "undefined") return node;
+  return createPortal(node, document.body);
 }
