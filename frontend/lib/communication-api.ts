@@ -868,7 +868,9 @@ export async function fetchConversationTemplates(
   /** Örn. sohbet_kocluk_veli — birim + alıcıya göre */
   preferred_template_name?: string | null;
 }> {
-  return request(`/conversations/${conversationId}/template-messages/`);
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/conversations/${conversationId}/template-messages/${qs}`);
 }
 
 export async function sendConversationTemplate(
@@ -876,9 +878,14 @@ export async function sendConversationTemplate(
   templateId: string,
   variables: Record<string, string>,
 ): Promise<MessageItem> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request(`/conversations/${conversationId}/template-messages/`, {
     method: 'POST',
-    body: JSON.stringify({ template_id: templateId, variables }),
+    body: JSON.stringify({
+      template_id: templateId,
+      variables,
+      kurum_id: kurumId,
+    }),
   });
 }
 

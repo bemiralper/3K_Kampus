@@ -73,9 +73,29 @@ class ConversationTemplateSendView(CommunicationAPIView):
         if err_resp:
             return err_resp
 
+        channel = getattr(conversation, 'channel_config', None)
+        channel_config_id = conversation.channel_config_id or None
+        if channel is None:
+            # Eski sohbetlerde channel_config boş olabilir — koçun erişilebilir
+            # varsayılan hesabını kullan (şablon listesi + sohbet_kocluk_* tercihi).
+            try:
+                from apps.communication.application.account_resolver import (
+                    AccountResolver,
+                )
+                channel = AccountResolver.resolve(
+                    kurum_id=kurum_id,
+                    user=request.user,
+                    sube_id=sube_id,
+                    raise_if_missing=False,
+                )
+                if channel is not None:
+                    channel_config_id = channel.id
+            except Exception:
+                channel = None
+
         templates = MetaTemplateService.list_templates(
             kurum_id,
-            channel_config_id=conversation.channel_config_id or None,
+            channel_config_id=channel_config_id,
             approved_only=True,
             usage=MetaTemplateUsage.PERSONAL,
         )
@@ -88,10 +108,7 @@ class ConversationTemplateSendView(CommunicationAPIView):
             else 'ogrenci' if contact_type == 'OGRENCI'
             else None
         )
-        department = ''
-        channel = getattr(conversation, 'channel_config', None)
-        if channel is not None:
-            department = getattr(channel, 'department', None) or ''
+        department = (getattr(channel, 'department', None) or '') if channel else ''
         preferred_name = preferred_personal_chat_template_name(department, audience)
 
         data = WhatsAppMetaTemplateSerializer(templates, many=True).data

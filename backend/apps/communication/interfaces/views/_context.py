@@ -6,7 +6,10 @@ from apps.communication.interfaces.sube_context import resolve_mandatory_communi
 
 
 def resolve_kurum_id(request) -> int | None:
+    """Query/body → X-Kurum-ID header → session active_kurum_id."""
     kurum_id = request.query_params.get('kurum_id') or request.data.get('kurum_id')
+    if not kurum_id:
+        kurum_id = request.headers.get('X-Kurum-ID')
     if kurum_id:
         try:
             return int(kurum_id)
