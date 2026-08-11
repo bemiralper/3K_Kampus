@@ -43,9 +43,10 @@ class MuhasebePermissionTests(TestCase):
         self.assertIn('finans.manage', perms)
         self.assertIn('communication.read', perms)
         self.assertIn('communication.write', perms)
-        self.assertIn('sinif.read', perms)
-        self.assertIn('sinif.write', perms)
-        self.assertIn('egitim_tanimlari.write', perms)
+        self.assertIn('sinif.manage', perms)
+        self.assertIn('egitim_tanimlari.manage', perms)
+        self.assertIn('ozel_ders.manage', perms)
+        self.assertIn('ozel_ders.hakedis_approve', perms)
         self.assertNotIn('personel.manage', perms)
 
     def test_setup_roles_idempotent(self):

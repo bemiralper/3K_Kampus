@@ -155,8 +155,10 @@ ROLES_DATA = [
         'permissions': [
             'finans.manage', 'ogrenci.read', 'ogrenci.write', 'ogrenci.notes',
             'personel.read', 'personel.write',
-            'sinif.read', 'sinif.write',
-            'egitim_tanimlari.read', 'egitim_tanimlari.write',
+            # Akademik Operasyon — tam yetki (planlama, ders ops, özel ders)
+            'sinif.manage',
+            'egitim_tanimlari.manage',
+            'ozel_ders.manage', 'ozel_ders.hakedis_approve',
             'egitim_paketleri.read', 'egitim_paketleri.write',
             'communication.read', 'communication.write',
             'rapor.read', 'rapor.export',
