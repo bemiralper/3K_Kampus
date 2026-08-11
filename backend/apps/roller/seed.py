@@ -221,6 +221,28 @@ ROLES_DATA = [
             'egitim_tanimlari.read', 'rapor.read',
         ],
     },
+    {
+        'code': 'meta_wa_reviewer',
+        'name': 'Meta WhatsApp İnceleme',
+        'description': (
+            'Meta App Review — diğer modüllerde salt okunur; '
+            'İletişim/WhatsApp’ta mesaj gönder/al'
+        ),
+        'level': 480,
+        'is_system_role': True,
+        'permissions': [
+            # Diğer modüller: sadece görüntüleme
+            'ogrenci.read', 'personel.read', 'finans.read',
+            'kurum.read', 'sube.read',
+            'egitim_tanimlari.read', 'egitim_paketleri.read',
+            'sinif.read', 'rapor.read', 'roller.read',
+            'sistem_yonetimi.read', 'gorev.read', 'gorev.analytics',
+            'yedekleme.read', 'demo.read', 'website.read', 'ozel_ders.read',
+            # İletişim: tam inceleme (gönder / al / hesaplar / inbox)
+            'communication.read', 'communication.write',
+            'communication.manage', 'communication.config', 'communication.bulk',
+        ],
+    },
 ]
 
 
