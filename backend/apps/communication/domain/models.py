@@ -47,6 +47,13 @@ class CommunicationChannelConfig(models.Model):
     name = models.CharField(max_length=120, blank=True, default='', verbose_name='Hesap Adı')
     phone_number_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Phone Number ID')
     waba_id = models.CharField(max_length=64, blank=True, default='', verbose_name='WABA ID')
+    app_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        verbose_name='Meta App ID',
+        help_text='Open Graph fb:app_id ve şablon medya yükleme için. Boşsa token/env ile çözülür.',
+    )
     access_token_encrypted = models.TextField(blank=True, default='', verbose_name='Access Token (encrypted)')
     webhook_verify_token = models.CharField(max_length=128, blank=True, default='', verbose_name='Webhook Verify Token')
     app_secret_encrypted = models.TextField(blank=True, default='', verbose_name='App Secret (encrypted)')

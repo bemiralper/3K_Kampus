@@ -3,12 +3,14 @@ WhatsApp hesapları CRUD + test + şablon senkronu.
 """
 from __future__ import annotations
 
+from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.communication.application.account_resolver import AccountResolveError, AccountResolver
-from apps.communication.application.token_crypto import encrypt_access_token
+from apps.communication.application.app_id_resolver import ensure_account_app_id
+from apps.communication.application.token_crypto import decrypt_access_token, encrypt_access_token
 from apps.communication.domain.enums import Channel, WhatsAppAccountScope
 from apps.communication.domain.models import CommunicationChannelConfig
 from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
@@ -28,6 +30,22 @@ def _serialize_account(cfg: CommunicationChannelConfig, *, kurum_id: int | None 
     if kurum_id is not None:
         data['kurum_id'] = kurum_id
     return data
+
+
+def _maybe_fill_app_id(account: CommunicationChannelConfig, *, plain_token: str | None = None) -> None:
+    """App ID boşsa token/env ile doldur (kayıt sonrası)."""
+    if (account.app_id or '').strip():
+        return
+    token = plain_token
+    if token is None and account.access_token_encrypted:
+        token = decrypt_access_token(account.access_token_encrypted)
+    if not token and not str(getattr(settings, 'WHATSAPP_APP_ID', '') or ''):
+        return
+    try:
+        ensure_account_app_id(account, access_token=token or '')
+    except Exception:
+        # Meta erişilemezse kayıt yine de başarılı kalsın
+        pass
 
 
 class WhatsAppAccountListCreateView(APIView):
@@ -102,6 +120,7 @@ class WhatsAppAccountListCreateView(APIView):
                 account.scope_type = WhatsAppAccountScope.SELECTED_SUBES
                 account.save(update_fields=['scope_type', 'updated_at'])
 
+        _maybe_fill_app_id(account, plain_token=token)
         account = ChannelConfigRepository.get_by_id(kurum_id, account.id)
         return Response(_serialize_account(account, kurum_id=kurum_id), status=status.HTTP_201_CREATED)
 
@@ -163,6 +182,7 @@ class WhatsAppAccountDetailView(APIView):
         if sube_ids is not None:
             account.allowed_subes.set(sube_ids)
 
+        _maybe_fill_app_id(account, plain_token=token)
         account = ChannelConfigRepository.get_by_id(kurum_id, account.id)
         return Response(_serialize_account(account, kurum_id=kurum_id))
 
@@ -189,6 +209,9 @@ class WhatsAppAccountTestView(APIView):
         if not account:
             return Response({'error': 'Hesap bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         result = WhatsAppCloudClient(channel_config=account).test_connection(kurum_id)
+        account.refresh_from_db(fields=['app_id'])
+        if account.app_id and 'app_id' not in result:
+            result['app_id'] = account.app_id
         return Response(result)
 
 

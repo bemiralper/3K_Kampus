@@ -23,6 +23,7 @@ interface FormState {
   name: string;
   phone_number_id: string;
   waba_id: string;
+  app_id: string;
   access_token: string;
   app_secret: string;
   webhook_verify_token: string;
@@ -49,6 +50,7 @@ function emptyForm(): FormState {
     name: "",
     phone_number_id: "",
     waba_id: "",
+    app_id: "",
     access_token: "",
     app_secret: "",
     webhook_verify_token: "",
@@ -78,6 +80,7 @@ export default function AccountFormDrawer({ open, account, onClose, onSaved }: A
             name: account.name || "",
             phone_number_id: account.phone_number_id || "",
             waba_id: account.waba_id || "",
+            app_id: account.app_id || "",
             access_token: "",
             app_secret: "",
             webhook_verify_token: account.webhook_verify_token || "",
@@ -136,6 +139,7 @@ export default function AccountFormDrawer({ open, account, onClose, onSaved }: A
         name: form.name.trim() || undefined,
         phone_number_id: form.phone_number_id.trim(),
         waba_id: form.waba_id.trim(),
+        app_id: form.app_id.trim(),
         webhook_verify_token: form.webhook_verify_token.trim(),
         display_phone: form.display_phone.trim(),
         is_active: form.is_active,
@@ -206,6 +210,19 @@ export default function AccountFormDrawer({ open, account, onClose, onSaved }: A
               onChange={(e) => setForm({ ...form, waba_id: e.target.value })}
               placeholder="WhatsApp Business Account ID"
             />
+          </div>
+          <div className="comm-form-field">
+            <label htmlFor="acc-app-id">Meta App ID</label>
+            <input
+              id="acc-app-id"
+              type="text"
+              value={form.app_id}
+              onChange={(e) => setForm({ ...form, app_id: e.target.value })}
+              placeholder="Boş bırakılırsa token / bağlantı testinden alınır"
+            />
+            <p className="comm-webhook-hint">
+              Open Graph <code>fb:app_id</code> ve şablon medya yükleme için. Meta → App → Settings → Basic.
+            </p>
           </div>
           <div className="comm-form-field">
             <label htmlFor="acc-token">Access Token</label>

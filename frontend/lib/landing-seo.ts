@@ -85,6 +85,8 @@ export function buildLandingMetadata(data: LandingData | null, path = '/'): Meta
   // Next.js head <link> düğümleriyle client tarafı DOM çakışması yaratmaz.
   const faviconUrl = getFaviconUrl(branding);
 
+  const facebookAppId = data?.facebook_app_id?.trim() || undefined;
+
   const metadata: Metadata = {
     title,
     description,
@@ -123,6 +125,8 @@ export function buildLandingMetadata(data: LandingData | null, path = '/'): Meta
       icon: faviconUrl,
       apple: faviconUrl,
     },
+    // name= üretir; property= için root layout head kullanılır — burada yedek
+    ...(facebookAppId ? { other: { 'fb:app_id': facebookAppId } } : {}),
   };
 
   if (settings?.google_site_verification?.trim()) {

@@ -234,9 +234,19 @@ def build_landing_payload(kurum, request):
     except Exception:
         settings_obj = None
 
+    facebook_app_id = ''
+    try:
+        from apps.communication.application.app_id_resolver import (
+            public_facebook_app_id_for_kurum,
+        )
+        facebook_app_id = public_facebook_app_id_for_kurum(kurum.id)
+    except Exception:
+        facebook_app_id = ''
+
     return {
         'kurum': serialize_kurum_branding(kurum, request),
         'settings': serialize_site_settings(settings_obj, request),
+        'facebook_app_id': facebook_app_id or None,
         'social_links': [
             serialize_social_link(l) for l in kurum.site_social_links.filter(aktif=True)
         ],

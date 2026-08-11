@@ -5,6 +5,7 @@ import { AuthProvider } from "@/lib/contexts/AuthContext";
 import AppShellWithAuth from "@/components/layout/AppShellWithAuth";
 import ChunkLoadRecovery from "@/components/ChunkLoadRecovery";
 import PublicMarketingIntegrations from "@/components/landing/PublicMarketingIntegrations";
+import { getLandingPageData } from "@/lib/landing-page-data";
 
 /**
  * Meta Business domain verification (https://3kkampus.com/)
@@ -18,6 +19,10 @@ const FACEBOOK_DOMAIN_VERIFICATION: string | null =
     ? null
     : process.env.NEXT_PUBLIC_FACEBOOK_DOMAIN_VERIFICATION?.trim() ||
       "rzjoujm3azogd4hc17sr0l3x3s2ofo";
+
+/** Env yedek — asıl kaynak aktif WhatsApp hesabındaki Meta App ID (landing API). */
+const FACEBOOK_APP_ID_ENV =
+  process.env.NEXT_PUBLIC_FACEBOOK_APP_ID?.trim() || "";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -40,9 +45,27 @@ export const metadata: Metadata = {
     : {}),
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+async function resolveFacebookAppId(): Promise<string> {
+  if (FACEBOOK_APP_ID_ENV) return FACEBOOK_APP_ID_ENV;
+  try {
+    const data = await getLandingPageData();
+    return data?.facebook_app_id?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const facebookAppId = await resolveFacebookAppId();
+
   return (
     <html lang="tr">
+      <head>
+        {/* property= zorunlu — metadata.other name= üretir; Sharing Debugger property arar */}
+        {facebookAppId ? (
+          <meta property="fb:app_id" content={facebookAppId} />
+        ) : null}
+      </head>
       <body>
         <PublicMarketingIntegrations />
         <ChunkLoadRecovery />

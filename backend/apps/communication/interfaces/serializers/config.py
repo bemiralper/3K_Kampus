@@ -19,7 +19,7 @@ class WhatsAppConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunicationChannelConfig
         fields = [
-            'id', 'channel', 'name', 'phone_number_id', 'waba_id',
+            'id', 'channel', 'name', 'phone_number_id', 'waba_id', 'app_id',
             'webhook_verify_token', 'display_phone', 'is_active',
             'is_default', 'scope_type', 'created_at', 'updated_at',
         ]
@@ -32,7 +32,7 @@ class WhatsAppConfigWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunicationChannelConfig
         fields = [
-            'name', 'phone_number_id', 'waba_id', 'access_token',
+            'name', 'phone_number_id', 'waba_id', 'app_id', 'access_token',
             'webhook_verify_token', 'display_phone', 'is_active',
             'is_default', 'scope_type',
         ]
@@ -59,7 +59,7 @@ class WhatsAppAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunicationChannelConfig
         fields = [
-            'id', 'channel', 'name', 'phone_number_id', 'waba_id',
+            'id', 'channel', 'name', 'phone_number_id', 'waba_id', 'app_id',
             'webhook_verify_token', 'display_phone', 'is_active', 'is_default',
             'scope_type', 'department', 'quota_json', 'last_synced_at',
             'role_ids', 'sube_ids', 'role_names', 'sube_names',
@@ -97,7 +97,7 @@ class WhatsAppAccountWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunicationChannelConfig
         fields = [
-            'name', 'phone_number_id', 'waba_id', 'access_token', 'app_secret',
+            'name', 'phone_number_id', 'waba_id', 'app_id', 'access_token', 'app_secret',
             'webhook_verify_token', 'display_phone', 'is_active', 'is_default',
             'scope_type', 'department', 'quota_json', 'role_ids', 'sube_ids',
         ]

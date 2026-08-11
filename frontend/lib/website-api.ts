@@ -172,6 +172,8 @@ export type YasalMetin = { id: number; tur: string; baslik: string; icerik: stri
 export type LandingData = {
   kurum: KurumBranding & { id?: number; kod?: string; ad?: string };
   settings: SiteSettings | null;
+  /** Meta Open Graph fb:app_id — aktif WhatsApp hesabından */
+  facebook_app_id?: string | null;
   social_links: SocialLink[];
   footer_links: FooterLink[];
   hero_slides: HeroSlide[];

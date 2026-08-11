@@ -278,6 +278,7 @@ export interface WhatsAppConfig {
   id?: string;
   phone_number_id?: string;
   waba_id?: string;
+  app_id?: string;
   webhook_verify_token?: string;
   display_phone?: string;
   is_active?: boolean;
@@ -639,6 +640,7 @@ export interface WhatsAppAccount {
   name: string;
   phone_number_id: string;
   waba_id: string;
+  app_id?: string;
   webhook_verify_token?: string;
   display_phone: string;
   is_active: boolean;
@@ -662,6 +664,7 @@ export interface WhatsAppAccountWritePayload {
   name?: string;
   phone_number_id?: string;
   waba_id?: string;
+  app_id?: string;
   access_token?: string;
   app_secret?: string;
   webhook_verify_token?: string;

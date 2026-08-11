@@ -359,9 +359,22 @@ class WhatsAppCloudClient(BaseChannelClient):
             logger.exception('WhatsApp media upload error kurum=%s', kurum_id)
             return None
 
-    def resolve_app_id(self, access_token: str) -> str:
-        """Şablon medya yüklemesi için Meta App ID (ayar yoksa token'dan çözülür)."""
-        configured = str(getattr(settings, 'WHATSAPP_APP_ID', '') or '')
+    def resolve_app_id(self, access_token: str, *, stored_app_id: str | None = None) -> str:
+        """Meta App ID: hesap alanı → env → token (debug_token).
+
+        stored_app_id=None → channel_config.app_id kullan.
+        stored_app_id='' → kayıtlı değeri atla (zorla yeniden çöz).
+        """
+        if stored_app_id is None:
+            stored = ''
+            if self.channel_config is not None:
+                stored = str(getattr(self.channel_config, 'app_id', '') or '').strip()
+        else:
+            stored = stored_app_id.strip()
+        if stored:
+            return stored
+
+        configured = str(getattr(settings, 'WHATSAPP_APP_ID', '') or '').strip()
         if configured:
             return configured
         if not access_token:
@@ -419,8 +432,8 @@ class WhatsAppCloudClient(BaseChannelClient):
             return {
                 'success': False,
                 'error': (
-                    'Meta App ID belirlenemedi. Sunucuda WHATSAPP_APP_ID ayarını tanımlayın '
-                    'veya access token yetkilerini kontrol edin.'
+                    'Meta App ID belirlenemedi. WhatsApp hesabına App ID girin, '
+                    'sunucuda WHATSAPP_APP_ID tanımlayın veya access token yetkilerini kontrol edin.'
                 ),
             }
 
@@ -679,11 +692,24 @@ class WhatsAppCloudClient(BaseChannelClient):
                 response = client.get(url, headers=headers, params={'fields': 'id,display_phone_number'})
                 data = response.json()
                 if response.is_success:
+                    app_id = ''
+                    if self.channel_config is not None:
+                        from apps.communication.application.app_id_resolver import (
+                            ensure_account_app_id,
+                        )
+                        app_id = ensure_account_app_id(
+                            self.channel_config,
+                            force=True,
+                            access_token=access_token,
+                        )
+                    else:
+                        app_id = self.resolve_app_id(access_token)
                     return {
                         'success': True,
                         'configured': True,
                         'phone_number_id': phone_number_id,
                         'waba_id': config['waba_id'] or None,
+                        'app_id': app_id or None,
                         'display_phone': data.get('display_phone_number'),
                         'token_preview': self.mask_token(access_token),
                         'message': 'Meta API bağlantısı başarılı.',
