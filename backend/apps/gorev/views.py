@@ -15,6 +15,7 @@ from apps.gorev.helpers import (
 )
 from apps.gorev.domain.models import GorevAtama, GorevTekrarSablonu
 from apps.roller.models import UserRole
+from shared.permissions import require_gorev_api
 
 
 def _parse_datetime(val):
@@ -50,6 +51,7 @@ def _can_view_all_gorevler(request, role_code=None):
 
 
 @csrf_exempt
+@require_gorev_api
 def api_gorev_list_create(request):
     kurum_id = _get_kurum_id(request)
     if not kurum_id:
@@ -120,6 +122,7 @@ def api_gorev_list_create(request):
 
 
 @csrf_exempt
+@require_gorev_api
 def api_gorev_detail(request, pk):
     kurum_id = _get_kurum_id(request)
     if not kurum_id:
@@ -162,6 +165,7 @@ def api_gorev_detail(request, pk):
 
 
 @csrf_exempt
+@require_gorev_api
 def api_atama_list(request):
     kurum_id = _get_kurum_id(request)
     user_id = _get_user_id(request)
@@ -241,6 +245,7 @@ def api_atama_filter_options(request):
 
 
 @csrf_exempt
+@require_gorev_api
 def api_atama_detail(request, pk):
     kurum_id = _get_kurum_id(request)
     user_id = _get_user_id(request)
@@ -274,6 +279,7 @@ def api_atama_detail(request, pk):
 
 
 @csrf_exempt
+@require_gorev_api
 def api_gorev_tipler(request):
     kurum_id = _get_kurum_id(request)
     if not kurum_id:
@@ -308,6 +314,7 @@ def api_gorev_tipler(request):
 
 
 @csrf_exempt
+@require_gorev_api
 @require_http_methods(['POST'])
 def api_gorev_tipler_seed(request):
     kurum_id = _get_kurum_id(request)
@@ -411,6 +418,7 @@ def serialize_tekrar_sablon(s):
 
 
 @csrf_exempt
+@require_gorev_api
 def api_tekrar_sablonlari(request):
     kurum_id = _get_kurum_id(request)
     if not kurum_id:
@@ -458,6 +466,7 @@ def api_tekrar_sablonlari(request):
 
 
 @csrf_exempt
+@require_gorev_api
 def api_tekrar_sablon_detail(request, pk):
     kurum_id = _get_kurum_id(request)
     if not kurum_id:

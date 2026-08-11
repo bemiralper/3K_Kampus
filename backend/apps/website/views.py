@@ -63,10 +63,20 @@ def _schema_migration_error_response(exc: Exception):
     }, status=503)
 
 
-def _require_auth(request):
+def _require_auth(request, *, write: bool = False):
+    from shared.permissions import user_has_module_permission, user_has_permission
+
     if not request.user.is_authenticated:
         return JsonResponse({'success': False, 'error': 'Yetkilendirme gerekli'}, status=401)
-    return None
+    if user_has_module_permission(request.user, 'website', write=write):
+        return None
+    if request.user.is_superuser or user_has_permission(request.user, 'sistem.admin'):
+        return None
+    if user_has_permission(request.user, 'kurum.manage'):
+        return None
+    if not write:
+        return None
+    return JsonResponse({'success': False, 'error': 'Bu işlem için yetkiniz yok.'}, status=403)
 
 
 def _upload_image(request, instance, field_name, file_key, max_mb=5):
@@ -175,7 +185,8 @@ def api_public_iletisim(request, kod):
 
 def _admin_kurum(request):
     """Kurumsal site yönetimi — oturumdaki veya mevcut kurum; otomatik oluşturma yok."""
-    err = _require_auth(request)
+    write = request.method not in ('GET', 'HEAD', 'OPTIONS')
+    err = _require_auth(request, write=write)
     if err:
         return None, err
 

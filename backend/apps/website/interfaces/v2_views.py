@@ -65,10 +65,10 @@ def _require_website_auth(request, *, write: bool = False):
         return None
     if user_has_permission(request.user, 'kurum.manage'):
         return None
-    # Geçiş: henüz seed edilmemiş ortamlarda auth yeterli (eski davranış)
+    # Salt okuma: website yetkisi seed edilmemiş eski ortamlarda auth yeterli
     if not write:
         return None
-    return None
+    return JsonResponse({'success': False, 'error': 'Bu işlem için yetkiniz yok.'}, status=403)
 
 
 def _kurum_id(request) -> int | None:

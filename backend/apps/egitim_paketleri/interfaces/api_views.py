@@ -19,6 +19,25 @@ from apps.egitim_paketleri.interfaces.sube_context import (
 )
 from apps.egitim_tanimlari.models import SinifSeviyesi, Alan, Ders
 from shared.context import get_secili_egitim_yili_id
+from shared.permissions import user_has_module_permission
+
+
+class EgitimPaketleriPermissionMixin:
+    """GET → egitim_paketleri.read; yazma → write/manage."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not getattr(request.user, 'is_authenticated', False):
+            return JsonResponse(
+                {'success': False, 'error': 'Oturum açmanız gerekiyor.'},
+                status=401,
+            )
+        write = request.method not in ('GET', 'HEAD', 'OPTIONS')
+        if not user_has_module_permission(request.user, 'egitim_paketleri', write=write):
+            return JsonResponse(
+                {'success': False, 'error': 'Bu işlem için yetkiniz yok.'},
+                status=403,
+            )
+        return super().dispatch(request, *args, **kwargs)
 
 
 def get_kurum_sube_context(request):
@@ -45,7 +64,7 @@ def _require_paket_record(request, record):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class GrupDersiListCreateView(View):
+class GrupDersiListCreateView(EgitimPaketleriPermissionMixin, View):
     """Grup Dersi List ve Create API"""
     
     def get(self, request):
@@ -132,7 +151,7 @@ class GrupDersiListCreateView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class GrupDersiDetailView(View):
+class GrupDersiDetailView(EgitimPaketleriPermissionMixin, View):
     """Grup Dersi Detail, Update, Delete API"""
     
     def get(self, request, pk):
@@ -208,7 +227,7 @@ class GrupDersiDetailView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class OzelDersListCreateView(View):
+class OzelDersListCreateView(EgitimPaketleriPermissionMixin, View):
     """Özel Ders List ve Create API"""
     
     def get(self, request):
@@ -272,7 +291,7 @@ class OzelDersListCreateView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class OzelDersDetailView(View):
+class OzelDersDetailView(EgitimPaketleriPermissionMixin, View):
     """Özel Ders Detail, Update, Delete API"""
     
     def get(self, request, pk):
@@ -339,7 +358,7 @@ class OzelDersDetailView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class DenemeListCreateView(View):
+class DenemeListCreateView(EgitimPaketleriPermissionMixin, View):
     """Deneme List ve Create API"""
     
     def get(self, request):
@@ -401,7 +420,7 @@ class DenemeListCreateView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class DenemeDetailView(View):
+class DenemeDetailView(EgitimPaketleriPermissionMixin, View):
     """Deneme Detail, Update, Delete API"""
     
     def get(self, request, pk):
@@ -466,7 +485,7 @@ class DenemeDetailView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class ReferansVerilerView(View):
+class ReferansVerilerView(EgitimPaketleriPermissionMixin, View):
     """Form için referans verileri"""
     
     def get(self, request):
@@ -516,7 +535,7 @@ class ReferansVerilerView(View):
 # =============================================
 
 @method_decorator(csrf_exempt, name='dispatch')
-class PremiumPaketListCreateView(View):
+class PremiumPaketListCreateView(EgitimPaketleriPermissionMixin, View):
     """Premium Paket List ve Create API"""
 
     def get(self, request):
@@ -588,7 +607,7 @@ class PremiumPaketListCreateView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class PremiumPaketDetailView(View):
+class PremiumPaketDetailView(EgitimPaketleriPermissionMixin, View):
     """Premium Paket Detail, Update, Delete API"""
 
     def get(self, request, pk):
@@ -661,7 +680,7 @@ class PremiumPaketDetailView(View):
 # =============================================
 
 @method_decorator(csrf_exempt, name='dispatch')
-class YayinPaketiListCreateView(View):
+class YayinPaketiListCreateView(EgitimPaketleriPermissionMixin, View):
     """Yayın Paketi List ve Create API"""
 
     def get(self, request):
@@ -718,7 +737,7 @@ class YayinPaketiListCreateView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class YayinPaketiDetailView(View):
+class YayinPaketiDetailView(EgitimPaketleriPermissionMixin, View):
     """Yayın Paketi Detail, Update, Delete API"""
 
     def get(self, request, pk):
@@ -781,7 +800,7 @@ class YayinPaketiDetailView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class EkHizmetListCreateView(View):
+class EkHizmetListCreateView(EgitimPaketleriPermissionMixin, View):
     """Ek Hizmet List ve Create API"""
     
     def get(self, request):
@@ -853,7 +872,7 @@ class EkHizmetListCreateView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class EkHizmetDetailView(View):
+class EkHizmetDetailView(EgitimPaketleriPermissionMixin, View):
     """Ek Hizmet Detail, Update, Delete API"""
     
     def get(self, request, pk):
@@ -924,7 +943,7 @@ class EkHizmetDetailView(View):
 # =============================================
 
 @method_decorator(csrf_exempt, name='dispatch')
-class EkHizmetSatisView(View):
+class EkHizmetSatisView(EgitimPaketleriPermissionMixin, View):
     """Kayıtlı öğrenciye ek hizmet satışı — Integer-Only"""
     
     def post(self, request):
@@ -1027,7 +1046,7 @@ class EkHizmetSatisView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class OgrenciEkHizmetListView(View):
+class OgrenciEkHizmetListView(EgitimPaketleriPermissionMixin, View):
     """Bir öğrencinin mevcut ek hizmetlerini listele"""
     
     def get(self, request, ogrenci_id):
@@ -1067,7 +1086,7 @@ class OgrenciEkHizmetListView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class EkHizmetSatisIptalView(View):
+class EkHizmetSatisIptalView(EgitimPaketleriPermissionMixin, View):
     """Ek hizmet satışını iptal et"""
     
     def delete(self, request, pk):
@@ -1084,7 +1103,7 @@ class EkHizmetSatisIptalView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class OgrenciAraView(View):
+class OgrenciAraView(EgitimPaketleriPermissionMixin, View):
     """Ek hizmet satışı için öğrenci arama"""
     
     def get(self, request):
@@ -1122,7 +1141,7 @@ class OgrenciAraView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class UygunEkHizmetlerView(View):
+class UygunEkHizmetlerView(EgitimPaketleriPermissionMixin, View):
     """Bir öğrenci için uygun ek hizmetleri listele"""
     
     def get(self, request, ogrenci_id):
@@ -1177,7 +1196,7 @@ class UygunEkHizmetlerView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class UygunDenemePaketleriView(View):
+class UygunDenemePaketleriView(EgitimPaketleriPermissionMixin, View):
     """Bir öğrenci için uygun deneme paketlerini listele"""
 
     def get(self, request, ogrenci_id):

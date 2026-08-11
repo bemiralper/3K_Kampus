@@ -25,6 +25,7 @@ from apps.sinif.application.placement_helpers import (
     remove_students_from_sinif,
 )
 from shared.context import get_secili_kurum_id, require_mandatory_sube_id
+from shared.permissions import require_sinif_api
 from shared.sube_context import assert_record_sube_access, resolve_mandatory_sube
 
 
@@ -345,7 +346,7 @@ def sinif_detail_api(request, sinif_id):
 
 
 @csrf_exempt
-
+@require_sinif_api
 @require_http_methods(["POST"])
 def sinif_create_api(request):
     """
@@ -445,7 +446,7 @@ def sinif_create_api(request):
 
 
 @csrf_exempt
-
+@require_sinif_api
 @require_http_methods(["PUT", "PATCH"])
 def sinif_update_api(request, sinif_id):
     """
@@ -550,7 +551,7 @@ def sinif_update_api(request, sinif_id):
 
 
 @csrf_exempt
-
+@require_sinif_api
 @require_http_methods(["DELETE"])
 def sinif_delete_api(request, sinif_id):
     """
@@ -679,6 +680,7 @@ def sinif_atanmamis_ogrenciler_api(request, sinif_id):
 
 
 @csrf_exempt
+@require_sinif_api
 @require_http_methods(["POST"])
 def sinif_ogrenci_ata_api(request, sinif_id):
     """POST /siniflar/api/<id>/ogrenci-ata/ — dönem bazlı toplu atama."""
@@ -736,6 +738,7 @@ def sinif_ogrenci_ata_api(request, sinif_id):
 
 
 @csrf_exempt
+@require_sinif_api
 @require_http_methods(["POST"])
 def sinif_ogrenci_cikar_api(request, sinif_id):
     """POST /siniflar/api/<id>/ogrenci-cikar/ — öğrenciyi bu sınıftan çıkar."""

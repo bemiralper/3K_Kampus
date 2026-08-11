@@ -8,6 +8,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Count, Q
 from django.utils import timezone
 
+from shared.permissions import require_roller_api, require_roller_manage_api
+
 from .models import Role, Permission, RolePermission
 
 
@@ -39,6 +41,7 @@ def _get_role_or_404(pk):
 
 
 @csrf_exempt
+@require_roller_api
 @require_http_methods(["GET"])
 def role_list_api(request):
     """
@@ -95,6 +98,7 @@ def role_list_api(request):
 
 
 @csrf_exempt
+@require_roller_api
 @require_http_methods(["POST"])
 def role_create_api(request):
     """Yeni rol oluştur"""
@@ -181,6 +185,7 @@ def role_create_api(request):
 
 
 @csrf_exempt
+@require_roller_api
 @require_http_methods(["GET", "PUT", "DELETE"])
 def role_detail_api(request, pk):
     """Rol detay, güncelleme ve silme"""
@@ -309,6 +314,7 @@ def role_detail_api(request, pk):
 
 
 @csrf_exempt
+@require_roller_manage_api
 @require_http_methods(["POST"])
 def role_restore_api(request, pk):
     """Silinmiş rolü geri getir"""
@@ -341,6 +347,7 @@ def role_restore_api(request, pk):
 
 
 @csrf_exempt
+@require_roller_api
 @require_http_methods(["GET"])
 def permission_list_api(request):
     """
@@ -391,6 +398,7 @@ def permission_list_api(request):
 
 
 @csrf_exempt
+@require_roller_api
 @require_http_methods(["GET"])
 def role_stats_api(request):
     """Rol istatistikleri"""

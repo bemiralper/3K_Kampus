@@ -14,6 +14,7 @@ from apps.egitim_tanimlari.interfaces.sube_context import (
     assert_tanim_record_access,
     mandatory_tanim_context,
 )
+from shared.permissions import require_egitim_tanimlari_api
 
 
 def _tenant_fields(ctx):
@@ -30,6 +31,7 @@ def _gate_record(request, ctx, record):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def legacy_tanimlar_api(request):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -89,6 +91,7 @@ def legacy_tanimlar_api(request):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def sinif_seviyeleri_list_api(request):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -103,6 +106,7 @@ def sinif_seviyeleri_list_api(request):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def dersler_list_api(request):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -123,6 +127,7 @@ def dersler_list_api(request):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def sinif_seviyesi_list_create_api(request):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -158,6 +163,7 @@ def sinif_seviyesi_list_create_api(request):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def sinif_seviyesi_detail_api(request, seviye_id):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -221,6 +227,7 @@ def sinif_seviyesi_delete_info_api(request, seviye_id):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def alan_list_create_api(request):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -249,6 +256,7 @@ def alan_list_create_api(request):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def alan_detail_api(request, alan_id):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -301,6 +309,7 @@ def alan_delete_info_api(request, alan_id):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def ders_list_create_api(request):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -349,6 +358,7 @@ def ders_list_create_api(request):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def ders_detail_api(request, ders_id):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -419,6 +429,7 @@ def ders_delete_info_api(request, ders_id):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def brans_list_create_api(request):
     ctx, err = mandatory_tanim_context(request)
     if err:
@@ -447,6 +458,7 @@ def brans_list_create_api(request):
 
 
 @csrf_exempt
+@require_egitim_tanimlari_api
 def brans_detail_api(request, brans_id):
     ctx, err = mandatory_tanim_context(request)
     if err:

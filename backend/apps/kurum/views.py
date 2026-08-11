@@ -12,6 +12,7 @@ from apps.kurum.branding import serialize_kurum_branding, serialize_sube_brandin
 from apps.sube.domain.models import Sube
 from apps.sube.serialize import serialize_sube, apply_sube_fields
 from apps.egitim_yili.domain.models import EgitimYili
+from shared.permissions import require_kurum_api, require_sube_api
 
 
 def _kurum_save_error_response(exc: Exception, data: dict | None = None) -> JsonResponse | None:
@@ -194,6 +195,7 @@ def egitim_yili_update(request, egitim_yili_id):
 
 # API Endpoints
 @csrf_exempt
+@require_kurum_api
 def api_kurum_list_create(request):
     """Kurum listele veya oluştur"""
     if request.method == 'GET':
@@ -246,6 +248,7 @@ def api_kurum_list_create(request):
 
 
 @csrf_exempt
+@require_kurum_api
 def api_kurum_detail(request, pk):
     """Kurum detay API - GET, PUT, DELETE"""
     kurum = get_object_or_404(Kurum, pk=pk)
@@ -322,6 +325,7 @@ def api_kurum_delete_info(request, pk):
 
 
 @csrf_exempt
+@require_sube_api
 def api_sube_list_create(request):
     """Şube listele veya oluştur"""
     if request.method == 'GET':
@@ -364,6 +368,7 @@ def api_sube_list_create(request):
 
 
 @csrf_exempt
+@require_sube_api
 def api_sube_detail(request, pk):
     """Şube detay API - GET, PUT, DELETE"""
     sube = get_object_or_404(Sube, pk=pk)
@@ -414,6 +419,7 @@ def api_sube_delete_info(request, pk):
 
 
 @csrf_exempt
+@require_kurum_api
 def api_egitim_yili_list_create(request):
     """Eğitim yılı listele veya oluştur"""
     if request.method == 'GET':
@@ -450,6 +456,7 @@ def api_egitim_yili_list_create(request):
 
 
 @csrf_exempt
+@require_kurum_api
 def api_egitim_yili_detail(request, pk):
     """Eğitim yılı detay API - GET, PUT, DELETE"""
     egitim_yili = get_object_or_404(EgitimYili, pk=pk)
@@ -659,6 +666,7 @@ def api_set_active_context(request):
 
 
 @csrf_exempt
+@require_kurum_api
 def api_kayit_turleri_list_create(request):
     """Öğrenci kayıt türü lookup seçenekleri — listele / oluştur"""
     from apps.kurum.services.kayit_tanimlari_service import (
@@ -691,6 +699,7 @@ def api_kayit_turleri_list_create(request):
 
 
 @csrf_exempt
+@require_kurum_api
 def api_kayit_turleri_detail(request, pk):
     """Kayıt türü — güncelle / sil"""
     from apps.kurum.services.kayit_tanimlari_service import (
@@ -735,6 +744,7 @@ def api_kayit_turleri_detail(request, pk):
 
 
 @csrf_exempt
+@require_kurum_api
 def api_kayit_turleri_seed(request):
     """Varsayılan kayıt tanımlarını oluştur (kayıt türü + cinsiyet)"""
     from apps.kurum.services.kayit_tanimlari_service import (
@@ -857,6 +867,7 @@ def _upload_sube_branding_file(request, sube, field_name, file_key, allowed_type
 
 
 @csrf_exempt
+@require_kurum_api
 def api_kurum_branding_login_logo(request, pk):
     kurum = get_object_or_404(Kurum, pk=pk)
     return _upload_kurum_branding_file(
@@ -866,6 +877,7 @@ def api_kurum_branding_login_logo(request, pk):
 
 
 @csrf_exempt
+@require_kurum_api
 def api_kurum_branding_app_logo(request, pk):
     kurum = get_object_or_404(Kurum, pk=pk)
     return _upload_kurum_branding_file(
@@ -875,6 +887,7 @@ def api_kurum_branding_app_logo(request, pk):
 
 
 @csrf_exempt
+@require_kurum_api
 def api_kurum_branding_favicon(request, pk):
     kurum = get_object_or_404(Kurum, pk=pk)
     return _upload_kurum_branding_file(
@@ -888,6 +901,7 @@ def api_kurum_branding_favicon(request, pk):
 
 
 @csrf_exempt
+@require_sube_api
 def api_sube_branding_login_logo(request, pk):
     sube = get_object_or_404(Sube, pk=pk)
     return _upload_sube_branding_file(
@@ -897,6 +911,7 @@ def api_sube_branding_login_logo(request, pk):
 
 
 @csrf_exempt
+@require_sube_api
 def api_sube_branding_app_logo(request, pk):
     sube = get_object_or_404(Sube, pk=pk)
     return _upload_sube_branding_file(
@@ -906,6 +921,7 @@ def api_sube_branding_app_logo(request, pk):
 
 
 @csrf_exempt
+@require_sube_api
 def api_sube_branding_favicon(request, pk):
     sube = get_object_or_404(Sube, pk=pk)
     return _upload_sube_branding_file(

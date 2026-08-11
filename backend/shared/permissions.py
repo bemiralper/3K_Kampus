@@ -238,6 +238,38 @@ require_ogrenci_delete_api = api_permission_required(
     'ogrenci.delete', 'ogrenci.manage',
     write_codes=('ogrenci.delete', 'ogrenci.manage'),
 )
+require_kurum_api = api_permission_required(
+    'kurum.read', 'kurum.write', 'kurum.manage',
+    write_codes=('kurum.write', 'kurum.manage'),
+)
+require_sube_api = api_permission_required(
+    'sube.read', 'sube.write', 'sube.manage',
+    write_codes=('sube.write', 'sube.manage'),
+)
+require_roller_api = api_permission_required(
+    'roller.read', 'roller.write', 'roller.manage',
+    write_codes=('roller.write', 'roller.manage'),
+)
+require_roller_manage_api = api_permission_required(
+    'roller.manage',
+    write_codes=('roller.manage',),
+)
+require_sinif_api = api_permission_required(
+    'sinif.read', 'sinif.write', 'sinif.manage',
+    write_codes=('sinif.write', 'sinif.manage'),
+)
+require_egitim_tanimlari_api = api_permission_required(
+    'egitim_tanimlari.read', 'egitim_tanimlari.write', 'egitim_tanimlari.manage',
+    write_codes=('egitim_tanimlari.write', 'egitim_tanimlari.manage'),
+)
+require_egitim_paketleri_api = api_permission_required(
+    'egitim_paketleri.read', 'egitim_paketleri.write', 'egitim_paketleri.manage',
+    write_codes=('egitim_paketleri.write', 'egitim_paketleri.manage'),
+)
+require_gorev_api = api_permission_required(
+    'gorev.read', 'gorev.write', 'gorev.manage',
+    write_codes=('gorev.write', 'gorev.manage'),
+)
 
 
 def require_module_permission(module: str, *, manage_only: bool = False):
