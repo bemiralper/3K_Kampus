@@ -230,6 +230,15 @@ require_personel_write_api = api_permission_required(
 )
 require_personel_manage_api = api_permission_required('personel.manage')
 
+require_ogrenci_api = api_permission_required(
+    'ogrenci.read', 'ogrenci.write', 'ogrenci.manage',
+    write_codes=('ogrenci.write', 'ogrenci.manage'),
+)
+require_ogrenci_delete_api = api_permission_required(
+    'ogrenci.delete', 'ogrenci.manage',
+    write_codes=('ogrenci.delete', 'ogrenci.manage'),
+)
+
 
 def require_module_permission(module: str, *, manage_only: bool = False):
     """Personel vb. Django JSON API uçları için modül bazlı izin."""

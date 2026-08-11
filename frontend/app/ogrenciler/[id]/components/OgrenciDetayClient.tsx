@@ -94,10 +94,12 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const { listHref, portalHomeHref } = useOgrenciPath();
-  const canViewNotes = PermissionChecks.hasAnyPermission(user?.permissions || [], [
+  const perms = user?.permissions || [];
+  const canViewNotes = PermissionChecks.hasAnyPermission(perms, [
     ModulePermissions.OGRENCI.NOTES,
     ModulePermissions.OGRENCI.MANAGE,
   ]);
+  const canEditOgrenci = PermissionChecks.canWrite(perms, 'ogrenci');
   const tabs = useMemo(
     () => (canViewNotes ? ALL_TABS : ALL_TABS.filter((t) => t.id !== 'notlar')),
     [canViewNotes],
@@ -118,10 +120,10 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
   };
 
   useEffect(() => {
-    if (searchParams.get('edit') === '1') {
+    if (searchParams.get('edit') === '1' && canEditOgrenci) {
       setShowEditDrawer(true);
     }
-  }, [searchParams]);
+  }, [searchParams, canEditOgrenci]);
 
   useEffect(() => {
     const t = searchParams.get('tab') as TabType | null;
@@ -196,24 +198,26 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
             </svg>
             Geri Dön
           </Link>
-          <button
-            onClick={() => openEditDrawer('kisisel')}
-            className="btn-modern btn-primary"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-            Düzenle
-          </button>
+          {canEditOgrenci ? (
+            <button
+              onClick={() => openEditDrawer('kisisel')}
+              className="btn-modern btn-primary"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Düzenle
+            </button>
+          ) : null}
         </div>
       </div>
 
       <OgrenciProfilKart
         data={data}
-        onEditClick={() => openEditDrawer('kisisel')}
-        onSchoolEditClick={() => openEditDrawer('egitim')}
-        onPhotoUpdate={handlePhotoUpdate}
+        onEditClick={canEditOgrenci ? () => openEditDrawer('kisisel') : undefined}
+        onSchoolEditClick={canEditOgrenci ? () => openEditDrawer('egitim') : undefined}
+        onPhotoUpdate={canEditOgrenci ? handlePhotoUpdate : undefined}
       />
 
       <div className="student-tabs-container">

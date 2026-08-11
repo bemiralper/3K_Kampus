@@ -17,7 +17,12 @@ from datetime import datetime
 from apps.ogrenci.application.services import OgrenciService
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
 from apps.egitim_yili.domain.models import EgitimYili
-from shared.permissions import api_permission_required
+from shared.permissions import (
+    api_permission_required,
+    require_ogrenci_api,
+    require_ogrenci_delete_api,
+    user_has_any_permission,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -598,6 +603,12 @@ def ogrenci_duzenle(request, pk):
     """Öğrenci düzenleme sayfası"""
     ctx = get_current_context(request)
     ogrenci = get_object_or_404(Ogrenci, pk=pk)
+
+    if request.method == 'POST' and not user_has_any_permission(
+        request.user, 'ogrenci.write', 'ogrenci.manage',
+    ):
+        messages.error(request, 'Bu işlem için yetkiniz yok.')
+        return redirect('ogrenci:ogrenci_detay', pk=pk)
     
     if request.method == 'POST':
         service = OgrenciService()
@@ -658,10 +669,11 @@ def ogrenci_delete(request, pk):
 
 
 @csrf_exempt
+@require_ogrenci_api
 def ogrenci_api(request, pk):
     """
     Öğrenci API - GET: Detay, PUT: Güncelle
-    Public endpoint for frontend
+    GET → ogrenci.read; PUT → ogrenci.write/manage
     """
     from apps.ogrenci.domain.models import OgrenciKayit, OgrenciAdres, OgrenciVeli
     
@@ -1017,6 +1029,7 @@ def ogrenci_search_api(request):
 
 
 @csrf_exempt
+@require_ogrenci_api
 def ogrenci_veliler_api(request, pk):
     """
     Öğrenci velileri API - GET: Liste, POST: Yeni veli ekle
@@ -1114,6 +1127,7 @@ def ogrenci_veliler_api(request, pk):
 
 
 @csrf_exempt
+@require_ogrenci_api
 def ogrenci_veli_detail_api(request, pk, veli_id):
     """
     Veli detay API - GET: Detay, PUT: Güncelle, DELETE: Sil
@@ -1194,6 +1208,7 @@ def ogrenci_veli_detail_api(request, pk, veli_id):
 # ==================== ADRES CRUD API ====================
 
 @csrf_exempt
+@require_ogrenci_api
 def ogrenci_adresler_api(request, pk):
     """
     Öğrenci adresleri API - GET: Liste, POST: Yeni adres ekle
@@ -1267,6 +1282,7 @@ def ogrenci_adresler_api(request, pk):
 
 
 @csrf_exempt
+@require_ogrenci_api
 def ogrenci_adres_detail_api(request, pk, adres_id):
     """
     Adres detay API - GET: Detay, PUT: Güncelle, DELETE: Sil
@@ -1377,6 +1393,7 @@ def cinsiyet_secenekleri_api(request):
 
 
 @csrf_exempt
+@require_ogrenci_api
 def ogrenci_profil_foto_api(request, pk):
     """
     Öğrenci profil fotoğrafı API
@@ -1385,6 +1402,7 @@ def ogrenci_profil_foto_api(request, pk):
 
     Şube gate sonrası: aktif koç yalnızca erişebildiği öğrencinin fotosunu
     değiştirebilir; admin / kaynak admin için mevcut şube davranışı korunur.
+    Yazma → ogrenci.write/manage (koç rolünde write var).
     """
     from apps.ogrenci.domain.models import Ogrenci
     import os
@@ -1456,6 +1474,7 @@ def ogrenci_profil_foto_api(request, pk):
 
 
 @csrf_exempt
+@require_ogrenci_delete_api
 def ogrenci_delete_api(request, pk):
     """
     Öğrenci Silme API (soft delete - pasife alma)
@@ -1512,6 +1531,7 @@ def ogrenci_delete_api(request, pk):
 
 
 @csrf_exempt
+@require_ogrenci_api
 def ogrenci_finans_ozet_api(request, pk):
     """
     Öğrenci Finans Özet API

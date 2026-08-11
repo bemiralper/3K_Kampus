@@ -12,6 +12,8 @@ from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
 from apps.ogrenci.infrastructure.repositories import OgrenciRepository
 from apps.personel.domain.models import Personel
+from apps.roller.models import Role, UserRole
+from apps.roller.seed import ensure_default_roles
 from apps.sinif.domain.models import Sinif
 from apps.sube.domain.models import Sube
 from apps.term.domain.models import Term
@@ -101,6 +103,7 @@ class PasifeAlmaSyncTest(TestCase):
 
 class PasifeAlmaListAPITest(TestCase):
     def setUp(self):
+        ensure_default_roles()
         self.client = Client()
         self.kurum = Kurum.objects.create(ad='Pasif List Kurum', kod='PLK')
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='PLK-M')
@@ -122,6 +125,12 @@ class PasifeAlmaListAPITest(TestCase):
             'HTTP_X_SUBE_ID': str(self.sube.id),
             'HTTP_X_EGITIMYILI_ID': str(self.yil.id),
         }
+        user = User.objects.create_user(username='pasif_admin', password='x', is_staff=True)
+        role = Role.objects.get(code='kurum_yoneticisi')
+        UserRole.objects.create(
+            user=user, role=role, kurum=self.kurum, must_change_password=False,
+        )
+        self.client.force_login(user)
 
     def test_list_shows_pasif_after_delete(self):
         res = self.client.delete(
