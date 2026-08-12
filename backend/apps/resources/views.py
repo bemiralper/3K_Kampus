@@ -1063,6 +1063,19 @@ class ResourceUnitViewSet(viewsets.ModelViewSet):
     
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        from apps.coaching.assignment_manual.content_resolve import (
+            assignment_task_count_for_units,
+        )
+        linked = assignment_task_count_for_units([instance.id])
+        if linked:
+            return Response({
+                'success': False,
+                'error': (
+                    f'Bu ünite silinemez: {linked} ödev görevi bağlı. '
+                    'Önce ilgili ödevleri tamamlayın/silin veya içeriği arşivleyin.'
+                ),
+                'data': {'assignment_task_count': linked},
+            }, status=status.HTTP_400_BAD_REQUEST)
         self.perform_destroy(instance)
         return Response({
             'success': True,
@@ -1289,6 +1302,19 @@ class ResourceTopicViewSet(viewsets.ModelViewSet):
     
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        from apps.coaching.assignment_manual.content_resolve import (
+            assignment_task_count_for_topics,
+        )
+        linked = assignment_task_count_for_topics([instance.id])
+        if linked:
+            return Response({
+                'success': False,
+                'error': (
+                    f'Bu konu silinemez: {linked} ödev görevi bağlı. '
+                    'Önce ilgili ödevleri tamamlayın/silin veya içeriği arşivleyin.'
+                ),
+                'data': {'assignment_task_count': linked},
+            }, status=status.HTTP_400_BAD_REQUEST)
         self.perform_destroy(instance)
         return Response({
             'success': True,
@@ -1723,6 +1749,19 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
     
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        from apps.coaching.assignment_manual.content_resolve import (
+            assignment_task_count_for_contents,
+        )
+        linked = assignment_task_count_for_contents([instance.id])
+        if linked:
+            return Response({
+                'success': False,
+                'error': (
+                    f'Bu içerik silinemez: {linked} ödev görevi bağlı. '
+                    'Önce ilgili ödevleri tamamlayın/silin veya içeriği pasife alın.'
+                ),
+                'data': {'assignment_task_count': linked},
+            }, status=status.HTTP_400_BAD_REQUEST)
         self.perform_destroy(instance)
         return Response({
             'success': True,
@@ -1959,6 +1998,20 @@ class ResourceContentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         found_ids = [c.id for c in contents]
+
+        from apps.coaching.assignment_manual.content_resolve import (
+            assignment_task_count_for_contents,
+        )
+        linked = assignment_task_count_for_contents(found_ids)
+        if linked:
+            return Response({
+                'success': False,
+                'error': (
+                    f'Seçilen içerikler silinemez: {linked} ödev görevi bağlı. '
+                    'Önce ilgili ödevleri tamamlayın/silin veya içeriği pasife alın.'
+                ),
+                'data': {'assignment_task_count': linked},
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             deleted_count, _ = ResourceContent.objects.filter(pk__in=found_ids).delete()

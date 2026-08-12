@@ -258,10 +258,43 @@ require_sinif_api = api_permission_required(
     'sinif.read', 'sinif.write', 'sinif.manage',
     write_codes=('sinif.write', 'sinif.manage'),
 )
-require_egitim_tanimlari_api = api_permission_required(
-    'egitim_tanimlari.read', 'egitim_tanimlari.write', 'egitim_tanimlari.manage',
-    write_codes=('egitim_tanimlari.write', 'egitim_tanimlari.manage'),
-)
+def _user_is_active_coach(user) -> bool:
+    """Koç profili olan kullanıcılar ders/sınıf lookup GET için yeterli."""
+    try:
+        from apps.coaching.services.coach_access import get_coach_profile
+        return get_coach_profile(user) is not None
+    except Exception:
+        return False
+
+
+def require_egitim_tanimlari_api(view_func):
+    """
+    Eğitim tanımları API — yazma için rol yetkisi şart.
+    GET/HEAD/OPTIONS: egitim_tanimlari.* veya aktif koç profili
+    (kitap atama / ödev paketleri ders seçicisi).
+    """
+
+    @wraps(view_func)
+    @require_api_login
+    def wrapper(request, *args, **kwargs):
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            allowed = user_has_any_permission(
+                request.user,
+                'egitim_tanimlari.read',
+                'egitim_tanimlari.write',
+                'egitim_tanimlari.manage',
+            ) or _user_is_active_coach(request.user)
+        else:
+            allowed = user_has_any_permission(
+                request.user,
+                'egitim_tanimlari.write',
+                'egitim_tanimlari.manage',
+            )
+        if not allowed:
+            return _permission_denied_json()
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
 require_egitim_paketleri_api = api_permission_required(
     'egitim_paketleri.read', 'egitim_paketleri.write', 'egitim_paketleri.manage',
     write_codes=('egitim_paketleri.write', 'egitim_paketleri.manage'),

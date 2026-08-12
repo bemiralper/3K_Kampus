@@ -142,6 +142,8 @@ ROLES_DATA = [
         'is_system_role': True,
         'permissions': [
             'ogrenci.read', 'ogrenci.write', 'sinif.read', 'rapor.read',
+            # Kitap atama / ödev paketleri ders seçici için lookup
+            'egitim_tanimlari.read',
             'communication.read', 'communication.write', 'communication.bulk',
             'gorev.read', 'gorev.write',
         ],

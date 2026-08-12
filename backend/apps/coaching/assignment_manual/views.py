@@ -868,32 +868,44 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'error': 'Bu öğrenciye erişim yetkiniz yok.',
             }, status=status.HTTP_403_FORBIDDEN)
 
-        # Bu öğrencinin aktif, DRAFT olmayan ödevlerindeki tüm görevleri çek
+        # Bu öğrencinin aktif, DRAFT olmayan ödevlerindeki tüm görevleri çek.
+        # content SET_NULL olmuş (kitap yeniden yapılandırılmış) görevler de dahil —
+        # bunlar content_resolve ile güncel içeriğe eşlenir.
+        from .content_resolve import resolve_content_for_orphan_task
+
         tasks = AssignmentTask.objects.filter(
             lesson_block__assignment__student_id=student_id,
             lesson_block__assignment__is_active=True,
-            content__isnull=False,  # Sadece content bağlı görevler
         ).exclude(
             lesson_block__assignment__status=ManualAssignment.Status.DRAFT
+        ).filter(
+            Q(content__isnull=False) | Q(lesson_block__resource_book_id__isnull=False)
         ).select_related(
             'lesson_block__assignment',
+            'lesson_block__resource_book',
             'content',
             'content__topic',
             'content__topic__unit',
         ).order_by('lesson_block__assignment__created_at')  # Eskiden yeniye
 
-        def _scope_ids(task):
-            content = task.content
-            if not content or not content.topic_id:
-                return None, None
-            topic = content.topic
-            unit_id = topic.unit_id
-            book_id = topic.unit.book_id if topic.unit_id else None
-            return unit_id, book_id
+        def _resolved_content(task):
+            if task.content_id and task.content:
+                return task.content
+            return resolve_content_for_orphan_task(task)
 
-        def _history_row(task, assignment, unit_id, book_id):
+        def _scope_ids(task, content):
+            if content and content.topic_id:
+                topic = content.topic
+                unit_id = topic.unit_id
+                book_id = topic.unit.book_id if topic.unit_id else None
+                return unit_id, book_id
+            # Orphan / eşlenemeyen görevlerde kitap ilerlemesi için lesson_block fallback
+            book_id = getattr(task.lesson_block, 'resource_book_id', None)
+            return None, book_id
+
+        def _history_row(task, assignment, content_id, unit_id, book_id):
             return {
-                'content_id': task.content_id,
+                'content_id': content_id,
                 'completion_status': task.completion_status,
                 'task_completion_percent': task.task_completion_percent,
                 'completed_question_count': task.completed_question_count or 0,
@@ -911,19 +923,23 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         # En son değerlendirilen durumu al
         history = {}
         for task in tasks:
-            cid = task.content_id
+            content = _resolved_content(task)
+            cid = content.id if content else task.content_id
+            if not cid:
+                continue
+
             assignment = task.lesson_block.assignment
-            unit_id, book_id = _scope_ids(task)
+            unit_id, book_id = _scope_ids(task, content)
 
             # PENDING = henüz değerlendirilmemiş, bunu atla (eğer daha önce değerlendirilmiş varsa)
             if task.completion_status == 'PENDING':
                 # Eğer bu content için daha önce bir kayıt yoksa yine de ekle (ama PENDING olarak)
                 if cid not in history:
-                    history[cid] = _history_row(task, assignment, unit_id, book_id)
+                    history[cid] = _history_row(task, assignment, cid, unit_id, book_id)
                 continue
 
             # Değerlendirilmiş görev — her zaman güncelle (eskiden yeniye sıralı olduğu için en son kalır)
-            history[cid] = _history_row(task, assignment, unit_id, book_id)
+            history[cid] = _history_row(task, assignment, cid, unit_id, book_id)
 
         def _effective_pct(row):
             status = row.get('completion_status')
