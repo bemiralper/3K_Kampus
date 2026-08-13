@@ -106,7 +106,8 @@ export function renderAkademikTabPage(
     redirect(akademikTabHref('planlama', 'sinif-ders-planlari', basePath));
   }
   if (params.group === 'ozel-ders-yonetimi' && params.tab === 'resmi-tatiller') {
-    redirect('/admin/takvim/resmi-tatiller');
+    // Muhasebe portalında /admin'e düşmesin
+    redirect(basePath.startsWith('/muhasebe') ? '/muhasebe/takvim' : '/admin/takvim/resmi-tatiller');
   }
 
   const match = findAkademikTab(params.group, params.tab);

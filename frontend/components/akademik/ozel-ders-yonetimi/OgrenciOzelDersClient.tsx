@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import dayjs from 'dayjs';
 import NotlarTab from '@/app/ogrenciler/[id]/components/tabs/NotlarTab';
 import {
@@ -176,6 +176,7 @@ const STAT_ICON: Record<string, React.ReactNode> = {
 };
 
 export default function OgrenciOzelDersClient() {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const ogrenciId = Number(searchParams.get('ogrenci_id') || 0) || null;
   const urlTab = searchParams.get('tab') as OpsTab | null;
@@ -1397,7 +1398,10 @@ export default function OgrenciOzelDersClient() {
               Resmi tatiller ve kurum özel günleri merkezi takvimden yönetilir. Tatil günleri
               planlanan ders adedinden otomatik düşülür.
             </p>
-            <a className="od-btn od-btn-secondary od-btn-sm" href="/admin/takvim/resmi-tatiller">
+            <a
+              className="od-btn od-btn-secondary od-btn-sm"
+              href={pathname.startsWith('/muhasebe') ? '/muhasebe/takvim' : '/admin/takvim/resmi-tatiller'}
+            >
               Resmi Tatiller <IconChevronRight size={13} />
             </a>
           </section>

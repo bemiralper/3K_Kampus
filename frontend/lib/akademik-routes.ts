@@ -99,7 +99,12 @@ export const AKADEMIK_GROUPS: AkademikGroupDef[] = [
 ];
 
 export function resolveAkademikBase(pathname?: string | null): string {
-  if (pathname?.startsWith(MUHASEBE_AKADEMIK_BASE)) return MUHASEBE_AKADEMIK_BASE;
+  const path =
+    pathname ??
+    (typeof window !== 'undefined' ? window.location.pathname : null);
+  if (path?.startsWith(MUHASEBE_AKADEMIK_BASE) || path?.startsWith('/muhasebe/')) {
+    return MUHASEBE_AKADEMIK_BASE;
+  }
   return AKADEMIK_BASE;
 }
 
@@ -107,16 +112,29 @@ export function akademikPortalHomeHref(basePath: string = AKADEMIK_BASE): string
   return basePath.startsWith('/muhasebe') ? '/muhasebe/dashboard' : '/dashboard';
 }
 
-export function akademikGroupHref(groupSlug: string, basePath: string = AKADEMIK_BASE): string {
-  return `${basePath}/${groupSlug.replace(/^\//, '')}`;
+export function akademikGroupHref(groupSlug: string, basePath?: string): string {
+  const base = basePath ?? resolveAkademikBase();
+  return `${base}/${groupSlug.replace(/^\//, '')}`;
 }
 
 export function akademikTabHref(
   groupSlug: string,
   tabSegment: string,
-  basePath: string = AKADEMIK_BASE,
+  basePath?: string,
 ): string {
-  return `${akademikGroupHref(groupSlug, basePath)}/${tabSegment.replace(/^\//, '')}`;
+  const base = basePath ?? resolveAkademikBase();
+  return `${akademikGroupHref(groupSlug, base)}/${tabSegment.replace(/^\//, '')}`;
+}
+
+/** Admin `/akademik-planlama/...` → muhasebe eşdeğeri (portal-only kullanıcılar için). */
+export function toMuhasebeAkademikPath(pathname: string, search: string = ''): string {
+  if (pathname.startsWith(MUHASEBE_AKADEMIK_BASE)) {
+    return `${pathname}${search}`;
+  }
+  if (pathname === AKADEMIK_BASE || pathname.startsWith(`${AKADEMIK_BASE}/`)) {
+    return `${MUHASEBE_AKADEMIK_BASE}${pathname.slice(AKADEMIK_BASE.length)}${search}`;
+  }
+  return `${MUHASEBE_AKADEMIK_BASE}${search}`;
 }
 
 export function findAkademikGroup(groupSlug: string): AkademikGroupDef | undefined {
