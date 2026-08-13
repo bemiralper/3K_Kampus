@@ -60,14 +60,14 @@ const INNER_TABS: { id: OzelDersInnerTab; label: string; icon: ReactNode }[] = [
   },
 ];
 
-const DURUM_ROWS: { key: string; label: string; filter?: string; color: string }[] = [
+const DURUM_ROWS: { key: string; label: string; filter?: string; telafi_durumu?: string; color: string }[] = [
   { key: 'PLANLANDI', label: 'Planlanan', filter: 'PLANLANDI', color: '#64748b' },
   { key: 'ISLENDI', label: 'İşlenen', filter: 'ISLENDI', color: '#16a34a' },
   { key: 'IPTAL', label: 'İptal', filter: 'IPTAL', color: '#dc2626' },
   { key: 'TELAFI', label: 'Telafi', color: '#2563eb' },
   { key: 'OGRENCI_GELMEDI', label: 'Öğrenci Gelmedi', filter: 'OGRENCI_GELMEDI', color: '#f59e0b' },
   { key: 'OGRETMEN_GELMEDI', label: 'Öğretmen İptal', filter: 'OGRETMEN_GELMEDI', color: '#ef4444' },
-  { key: 'TELAFI_EDILECEK', label: 'Telafi Bekliyor', filter: 'TELAFI_EDILECEK', color: '#eab308' },
+  { key: 'TELAFI_BEKLENIYOR', label: 'Telafi Bekliyor', telafi_durumu: 'BEKLENIYOR', color: '#eab308' },
   { key: 'ONLINE', label: 'Online', filter: 'ONLINE', color: '#7c3aed' },
 ];
 
@@ -208,7 +208,10 @@ export default function OzelDerslerPanel({ ogrenciId, innerTab, onInnerTabChange
     return data.timeline.filter((t) => {
       if (branş && String(t.ders_id) !== branş) return false;
       if (ogretmen && String(t.ogretmen_id) !== ogretmen) return false;
-      if (durum && t.durum !== durum) return false;
+      if (durum) {
+        if (durum.startsWith('telafi:')) return false;
+        if (t.durum !== durum) return false;
+      }
       return true;
     });
   }, [data, branş, ogretmen, durum]);
@@ -251,6 +254,7 @@ export default function OzelDerslerPanel({ ogrenciId, innerTab, onInnerTabChange
         ogrenci_id: ogrenciId,
       };
       if (row.filter) params.durum = row.filter;
+      if (row.telafi_durumu) params.telafi_durumu = row.telafi_durumu;
       if (row.key === 'TELAFI') params.oturum_turu = 'TELAFI';
       const list = await fetchOturumlar(params);
       const items = list.filter((o) => o.ders === ders.ders_id);
@@ -345,8 +349,8 @@ export default function OzelDerslerPanel({ ogrenciId, innerTab, onInnerTabChange
           {innerTab === 'gecmis' && (
             <select className="od-select" value={durum} onChange={(e) => setDurum(e.target.value)} aria-label="Durum">
               <option value="">Tüm durumlar</option>
-              {DURUM_ROWS.filter((r) => r.filter).map((r) => (
-                <option key={r.key} value={r.filter}>
+              {DURUM_ROWS.filter((r) => r.filter || r.telafi_durumu).map((r) => (
+                <option key={r.key} value={r.filter || `telafi:${r.telafi_durumu}`}>
                   {r.label}
                 </option>
               ))}

@@ -7,7 +7,7 @@ import { createTelafi, fetchOturumlar, resolveDersLabel, type BirebirOturum } fr
 import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
 import { useDersDisplayPref } from './useDersDisplayPref';
-import { Badge, Drawer, EmptyState, PageHeader, SkeletonCards, SkeletonRows, StatCard, StatGrid, oturumDurumTone } from './ozelDersUi';
+import { Badge, Drawer, EmptyState, PageHeader, SkeletonCards, SkeletonRows, StatCard, StatGrid, oturumDurumTone, telafiDurumTone } from './ozelDersUi';
 import {
   IconAlertTriangle,
   IconCalendar,
@@ -42,7 +42,7 @@ export default function BirebirTelafiClient() {
     try {
       const [c, t] = await Promise.all([
         fetchOturumlar({
-          durum: 'TELAFI_EDILECEK',
+          telafi_durumu: 'BEKLENIYOR',
           start_date: dayjs().subtract(60, 'day').format('YYYY-MM-DD'),
           end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
         }),
@@ -90,7 +90,7 @@ export default function BirebirTelafiClient() {
       <PageHeader
         icon={<IconRotateCcw size={19} />}
         title="Birebir Telafi Dersleri"
-        description="Telafi edilecek işaretlenen birebir dersler için yeni tarih/saat planlayın; planlanan telafiler kaynak dersine bağlı olarak burada takip edilir."
+        description="Telafi bekleyen birebir dersler için yeni tarih/saat planlayın; planlanan telafiler kaynak dersine bağlı olarak burada takip edilir."
         actions={
           <>
             <button
@@ -153,6 +153,11 @@ export default function BirebirTelafiClient() {
                   <div className="od-entity-card-meta">
                     <Badge tone="secondary">{resolveDersLabel(r, useKisaAd)}</Badge>
                     <Badge tone="info">{r.ogretmen_ad}</Badge>
+                    <Badge tone={oturumDurumTone(r.durum)}>{r.durum_display}</Badge>
+                    {r.sebep_display && <Badge tone="warning">{r.sebep_display}</Badge>}
+                    {r.telafi_durumu === 'BEKLENIYOR' && (
+                      <Badge tone={telafiDurumTone(r.telafi_durumu)}>{r.telafi_durumu_display}</Badge>
+                    )}
                   </div>
                   <div className="od-entity-card-footer">
                     <span className="od-cell-muted">Kaynak ders #{r.id}</span>
@@ -210,7 +215,16 @@ export default function BirebirTelafiClient() {
                       </td>
                       <td className="od-cell-primary">{r.ogrenci_ad}</td>
                       <td>{resolveDersLabel(r, useKisaAd)}</td>
-                      <td className="od-cell-muted">#{r.replaces_oturum || '—'}</td>
+                      <td>
+                        {r.kaynak_oturum ? (
+                          <span className="od-cell-muted" title={`Kaynak #${r.kaynak_oturum.id}`}>
+                            Bu ders, {dayjs(r.kaynak_oturum.session_date).format('DD.MM.YYYY')} tarihli
+                            dersin telafisidir
+                          </span>
+                        ) : (
+                          <span className="od-cell-muted">#{r.replaces_oturum || '—'}</span>
+                        )}
+                      </td>
                       <td>
                         <Badge tone={oturumDurumTone(r.durum)}>{r.durum_display}</Badge>
                       </td>

@@ -336,12 +336,25 @@ export function oturumDurumTone(durum: string): BadgeTone {
       return 'info';
     case 'IPTAL':
       return 'danger';
-    case 'TELAFI_EDILECEK':
-      return 'warning';
     case 'OGRENCI_GELMEDI':
       return 'purple';
     case 'OGRETMEN_GELMEDI':
       return 'danger';
+    default:
+      return 'secondary';
+  }
+}
+
+export function telafiDurumTone(telafiDurumu: string): BadgeTone {
+  switch (telafiDurumu) {
+    case 'BEKLENIYOR':
+      return 'warning';
+    case 'PLANLANDI':
+      return 'info';
+    case 'EDILDI':
+      return 'success';
+    case 'GEREKMIYOR':
+      return 'secondary';
     default:
       return 'secondary';
   }
@@ -362,12 +375,13 @@ export function hakedisDurumTone(durum: string): BadgeTone {
 
 export function feeStatus(oturum: {
   durum: string;
+  telafi_durumu?: string;
   has_hakedis: boolean;
 }): { tone: BadgeTone; label: string } {
   if (['IPTAL', 'OGRENCI_GELMEDI', 'OGRETMEN_GELMEDI'].includes(oturum.durum)) {
     return { tone: 'secondary', label: 'Ücret Oluşmaz' };
   }
-  if (oturum.durum === 'TELAFI_EDILECEK') {
+  if (oturum.telafi_durumu === 'BEKLENIYOR') {
     return { tone: 'warning', label: 'Telafi Bekliyor' };
   }
   if (oturum.durum === 'PLANLANDI') {

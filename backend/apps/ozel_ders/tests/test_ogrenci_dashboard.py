@@ -110,7 +110,8 @@ class OgrenciDashboardTests(TestCase):
             ders=self.ders,
             ogretmen=self.ogretmen,
             oturum_turu=OturumTuru.OZEL,
-            durum=OturumDurumu.TELAFI_EDILECEK,
+            durum=OturumDurumu.OGRETMEN_GELMEDI,
+            telafi_durumu='BEKLENIYOR',
             is_active=True,
         )
 

@@ -19,6 +19,29 @@ def _user_role(user):
     return None
 
 
+# Akademik Operasyonlar — muhasebe admin ile aynı tam yetki
+AKADEMIK_FULL_ACCESS_MODULES = frozenset({
+    'sinif',
+    'egitim_tanimlari',
+    'ozel_ders',
+    'egitim_paketleri',
+})
+
+
+def user_has_akademik_full_access(user) -> bool:
+    """Süper admin / sistem.admin / muhasebe → Akademik Operasyonlarda tam yetki."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    role = _user_role(user)
+    if not role:
+        return False
+    if role.has_permission('sistem.admin'):
+        return True
+    return getattr(role, 'code', None) == 'muhasebe'
+
+
 def user_has_permission(user, code: str) -> bool:
     """Kullanıcının belirtilen yetkiye (veya modül manage) sahip olup olmadığını kontrol eder."""
     if not user or not user.is_authenticated:
@@ -32,13 +55,16 @@ def user_has_permission(user, code: str) -> bool:
 
     if role.has_permission('sistem.admin'):
         return True
-    if role.has_permission(code):
-        return True
 
     if '.' in code:
         module = code.split('.', 1)[0]
+        if module in AKADEMIK_FULL_ACCESS_MODULES and user_has_akademik_full_access(user):
+            return True
         if role.has_permission(f'{module}.manage'):
             return True
+
+    if role.has_permission(code):
+        return True
 
     return False
 
@@ -49,6 +75,8 @@ def user_has_any_permission(user, *codes: str) -> bool:
 
 def user_has_module_permission(user, module: str, *, write: bool = False) -> bool:
     """Modül read/write/manage yetkilerini method-aware kontrol eder."""
+    if module in AKADEMIK_FULL_ACCESS_MODULES and user_has_akademik_full_access(user):
+        return True
     if write:
         return user_has_any_permission(user, f'{module}.write', f'{module}.manage')
     return user_has_any_permission(

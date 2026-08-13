@@ -835,6 +835,14 @@ button.od-holiday-chip:hover {
 
 .od-form-hint { font-size: 0.72rem; color: var(--od-muted); }
 
+.od-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
 .od-form-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -939,10 +947,25 @@ button.od-holiday-chip:hover {
   background: #f5faff;
 }
 
+.od-entity-card.needs-attention {
+  border-left: 3px solid #ea580c;
+}
+
 .od-entity-card-top {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.od-entity-card-chevron {
+  flex-shrink: 0;
+  color: var(--od-muted);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.od-entity-card:hover .od-entity-card-chevron {
+  color: var(--od-primary);
+  transform: translateX(2px);
 }
 
 .od-entity-card-name {

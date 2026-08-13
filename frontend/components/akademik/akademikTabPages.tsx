@@ -13,9 +13,9 @@ import EkDerslerClient from '@/components/akademik/ek-dersler/EkDerslerClient';
 import DersUcretleriClient from '@/components/akademik/ders-ucretleri/DersUcretleriClient';
 import ProgramRevizyonlariClient from '@/components/akademik/program-revizyonlari/ProgramRevizyonlariClient';
 import OgrenciProgramlariClient from '@/components/akademik/ozel-ders-yonetimi/OgrenciProgramlariClient';
+import OgrenciOzelDersClient from '@/components/akademik/ozel-ders-yonetimi/OgrenciOzelDersClient';
 import HaftalikSablonlariClient from '@/components/akademik/ozel-ders-yonetimi/HaftalikSablonlariClient';
 import BirebirOturumlarClient from '@/components/akademik/ozel-ders-yonetimi/BirebirOturumlarClient';
-import BirebirYoklamalarClient from '@/components/akademik/ozel-ders-yonetimi/BirebirYoklamalarClient';
 import BirebirTelafiClient from '@/components/akademik/ozel-ders-yonetimi/BirebirTelafiClient';
 import PremiumPaketlerClient from '@/components/akademik/ozel-ders-yonetimi/PremiumPaketlerClient';
 import HakedisTakibiClient from '@/components/akademik/ozel-ders-yonetimi/HakedisTakibiClient';
@@ -47,9 +47,9 @@ export const AKADEMIK_TAB_PAGES: Record<string, React.ComponentType> = {
   'ders-ucretleri': DersUcretleriClient,
   'program-revizyonlari': ProgramRevizyonlariClient,
   'ogrenci-programlari': OgrenciProgramlariClient,
+  'ogrenci-ozel-ders': OgrenciOzelDersClient,
   'haftalik-program-sablonlari': HaftalikSablonlariClient,
   'birebir-ders-oturumlari': BirebirOturumlarClient,
-  'birebir-yoklamalar': BirebirYoklamalarClient,
   'birebir-telafi-dersleri': BirebirTelafiClient,
   'premium-paketler': PremiumPaketlerClient,
   'hakedis-takibi': HakedisTakibiClient,

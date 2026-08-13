@@ -23,13 +23,28 @@ class OturumTuru(models.TextChoices):
 
 
 class OturumDurumu(models.TextChoices):
+    """Yoklama durumu — telafi sonucundan bağımsızdır."""
     PLANLANDI = 'PLANLANDI', 'Planlandı'
     ISLENDI = 'ISLENDI', 'İşlendi'
-    IPTAL = 'IPTAL', 'İptal'
-    TELAFI_EDILECEK = 'TELAFI_EDILECEK', 'Telafi Edilecek'
-    OGRENCI_GELMEDI = 'OGRENCI_GELMEDI', 'Öğrenci Gelmedi'
-    OGRETMEN_GELMEDI = 'OGRETMEN_GELMEDI', 'Öğretmen Gelmedi'
     ONLINE = 'ONLINE', 'Online'
+    OGRETMEN_GELMEDI = 'OGRETMEN_GELMEDI', 'Öğretmen Gelmedi'
+    OGRENCI_GELMEDI = 'OGRENCI_GELMEDI', 'Öğrenci Gelmedi'
+    IPTAL = 'IPTAL', 'İptal'
+
+
+class TelafiDurumu(models.TextChoices):
+    GEREKMIYOR = 'GEREKMIYOR', 'Telafi Gerekmiyor'
+    BEKLENIYOR = 'BEKLENIYOR', 'Telafi Bekleniyor'
+    PLANLANDI = 'PLANLANDI', 'Telafi Planlandı'
+    EDILDI = 'EDILDI', 'Telafi Edildi'
+
+
+class SebepKodu(models.TextChoices):
+    HASTALIK = 'HASTALIK', 'Hastalık'
+    MAZERET = 'MAZERET', 'Mazeret'
+    ACIL = 'ACIL', 'Acil durum'
+    KURUM = 'KURUM', 'Kurum kaynaklı'
+    DIGER = 'DIGER', 'Diğer'
 
 
 class HakedisDurumu(models.TextChoices):
@@ -96,6 +111,15 @@ class BirebirOgrenciProgrami(models.Model):
     )
     baslangic_tarihi = models.DateField()
     bitis_tarihi = models.DateField(null=True, blank=True)
+    # Haftalık şablon grid zaman ayarları (öğrenci/program bazlı)
+    zaman_baslangic = models.CharField(
+        max_length=5,
+        default='09:00',
+        help_text='Grid başlangıç saati (HH:MM)',
+    )
+    zaman_sure_dk = models.PositiveSmallIntegerField(default=50)
+    zaman_ara_dk = models.PositiveSmallIntegerField(default=10)
+    zaman_ders_adet = models.PositiveSmallIntegerField(default=8)
     durum = models.CharField(
         max_length=16,
         choices=ProgramDurumu.choices,
@@ -257,6 +281,19 @@ class BirebirDersOturumu(models.Model):
         default=OturumDurumu.PLANLANDI,
         db_index=True,
     )
+    telafi_durumu = models.CharField(
+        max_length=16,
+        choices=TelafiDurumu.choices,
+        default=TelafiDurumu.GEREKMIYOR,
+        db_index=True,
+    )
+    sebep_kodu = models.CharField(
+        max_length=16,
+        choices=SebepKodu.choices,
+        blank=True,
+        default='',
+    )
+    sebep_aciklama = models.CharField(max_length=255, blank=True, default='')
     replaces_oturum = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,
@@ -286,6 +323,7 @@ class BirebirDersOturumu(models.Model):
             models.Index(fields=['ogretmen', 'session_date']),
             models.Index(fields=['ogrenci', 'session_date']),
             models.Index(fields=['kurum', 'sube', 'session_date']),
+            models.Index(fields=['telafi_durumu', 'session_date']),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -480,3 +518,38 @@ class PremiumPaketDersKota(models.Model):
 
     def __str__(self):
         return f'{self.premium_paket_id}: {self.ders_id} x{self.haftalik_adet}'
+
+
+class BirebirOturumBildirimLog(models.Model):
+    """Özel ders oturumu ↔ veli WhatsApp bildirimi geçmişi (idempotency)."""
+
+    oturum = models.ForeignKey(
+        BirebirDersOturumu,
+        on_delete=models.CASCADE,
+        related_name='bildirim_loglari',
+    )
+    event_key = models.CharField(max_length=64, db_index=True)
+    veli_id = models.PositiveIntegerField(db_index=True)
+    message = models.ForeignKey(
+        'communication.Message',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ozel_ders_bildirim_loglari',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ozel_ders_oturum_bildirim_log'
+        verbose_name = 'Özel Ders Oturum Bildirimi'
+        verbose_name_plural = 'Özel Ders Oturum Bildirimleri'
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['oturum', 'event_key', 'veli_id'],
+                name='unique_ozel_ders_oturum_bildirim',
+            ),
+        ]
+
+    def __str__(self):
+        return f'oturum={self.oturum_id} {self.event_key} veli={self.veli_id}'

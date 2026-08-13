@@ -14,6 +14,8 @@ export type AkademikNavGroup =
 export type AkademikTabItem = {
   segment: string;
   label: string;
+  /** Sidebar/tab nav'da gizle; rota yine çalışır */
+  hidden?: boolean;
 };
 
 export type AkademikGroupDef = {
@@ -63,9 +65,9 @@ export const AKADEMIK_GROUPS: AkademikGroupDef[] = [
     label: 'Özel Ders Yönetimi',
     tabs: [
       { segment: 'ogrenci-programlari', label: 'Öğrenci Programları' },
+      { segment: 'ogrenci-ozel-ders', label: 'Öğrenci Özel Ders' },
       { segment: 'haftalik-program-sablonlari', label: 'Haftalık Program Şablonları' },
       { segment: 'birebir-ders-oturumlari', label: 'Birebir Ders Oturumları' },
-      { segment: 'birebir-yoklamalar', label: 'Birebir Yoklamalar' },
       { segment: 'birebir-telafi-dersleri', label: 'Birebir Telafi Dersleri' },
       { segment: 'premium-paketler', label: 'Premium Paketler' },
       { segment: 'hakedis-takibi', label: 'Hakediş Takibi' },

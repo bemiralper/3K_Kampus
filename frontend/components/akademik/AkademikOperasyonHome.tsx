@@ -78,7 +78,7 @@ export default function AkademikOperasyonHome() {
     };
   }, [activeKurum, activeSube, initialized]);
 
-  if (user && !canReadAkademik(user.permissions)) {
+  if (user && !canReadAkademik(user.permissions || [], user)) {
     return (
       <div className="akademik-page">
         <Result

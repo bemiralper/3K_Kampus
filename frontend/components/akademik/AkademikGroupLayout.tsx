@@ -26,7 +26,7 @@ export default function AkademikGroupLayout({ group, children }: Props) {
   const homeHref = akademikPortalHomeHref(basePath);
   const { user } = useAuth();
 
-  if (user && !canReadAkademik(user.permissions)) {
+  if (user && !canReadAkademik(user.permissions || [], user)) {
     return (
       <div className="akademik-page">
         <Result
@@ -56,7 +56,7 @@ export default function AkademikGroupLayout({ group, children }: Props) {
 
       <nav className="akademik-tab-nav" aria-label={`${group.label} sekmeleri`}>
         <div className="akademik-tab-nav-scroll">
-          {group.tabs.map((tab) => {
+          {group.tabs.filter((tab) => !tab.hidden).map((tab) => {
             const href = akademikTabHref(group.slug, tab.segment, basePath);
             const active = pathname === href || pathname.startsWith(`${href}/`);
             const isPlaceholder = !AKADEMIK_TAB_PAGES[tab.segment];

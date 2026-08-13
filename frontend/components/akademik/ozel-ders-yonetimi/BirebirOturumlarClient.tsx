@@ -7,21 +7,30 @@ import 'dayjs/locale/tr';
 import {
   changeOturumOgretmen,
   createOturum,
+  createTelafi,
   fetchOturumlar,
   fetchTatiller,
   resolveDersLabel,
   setOturumDurum,
   type BirebirOturum,
   type OzelDersTatil,
+  type SetOturumDurumPayload,
 } from '@/lib/ozel-ders-api';
 import { fetchEtkilenenDersler } from '@/lib/takvim-api';
 import { searchKutuphaneStudents, type KutuphaneStudentOption } from '@/lib/kutuphane-student-search';
-import { akademikTabHref } from '@/lib/akademik-routes';
 import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
 import { useDersDisplayPref } from './useDersDisplayPref';
-import { allowedNextDurumlar, OTURUM_DURUM_LABELS, PRIMARY_YOKLAMA_ACTIONS } from './oturumDurum';
+import {
+  allowedNextDurumlar,
+  OTURUM_DURUM_LABELS,
+  PRIMARY_YOKLAMA_ACTIONS,
+  SECONDARY_YOKLAMA_ACTIONS,
+  TELAFI_DURUM_LABEL,
+  yoklamaNeedsDrawer,
+} from './oturumDurum';
 import EtkilenenDerslerDrawer from './EtkilenenDerslerDrawer';
+import YoklamaDurumDrawer from './YoklamaDurumDrawer';
 import {
   Badge,
   Drawer,
@@ -33,12 +42,14 @@ import {
   StatGrid,
   feeStatus,
   oturumDurumTone,
+  telafiDurumTone,
 } from './ozelDersUi';
 import {
   IconAlertTriangle,
   IconBookOpen,
   IconCalendar,
   IconCheckCircle,
+  IconClipboard,
   IconClock,
   IconPlus,
   IconRefresh,
@@ -60,7 +71,6 @@ const ACTION_META: Record<
 > = {
   ISLENDI: { label: 'İşlendi', icon: (s) => <IconCheckCircle size={s} />, tone: 'tone-success' },
   ONLINE: { label: 'Online', icon: (s) => <IconWifi size={s} />, tone: 'tone-blue' },
-  TELAFI_EDILECEK: { label: 'Telafi', icon: (s) => <IconRotateCcw size={s} />, tone: 'tone-warning' },
   OGRENCI_GELMEDI: { label: 'Öğrenci Gelmedi', icon: (s) => <IconUser size={s} />, tone: 'tone-pink' },
   OGRETMEN_GELMEDI: { label: 'Öğretmen Gelmedi', icon: (s) => <IconUsers size={s} />, tone: 'tone-orange' },
   IPTAL: { label: 'İptal', icon: (s) => <IconXCircle size={s} />, tone: 'tone-danger' },
@@ -106,6 +116,7 @@ export default function BirebirOturumlarClient() {
   );
   const [activePreset, setActivePreset] = useState(urlDate ? 'custom' : 'week');
   const [durumFilter, setDurumFilter] = useState('');
+  const [telafiFilter, setTelafiFilter] = useState('');
   const [search, setSearch] = useState('');
   const [createHoliday, setCreateHoliday] = useState<OzelDersTatil | null>(null);
   const [etkilenenDay, setEtkilenenDay] = useState<OzelDersTatil | null>(null);
@@ -115,7 +126,10 @@ export default function BirebirOturumlarClient() {
   const [saving, setSaving] = useState(false);
   const [studentQ, setStudentQ] = useState('');
   const [students, setStudents] = useState<KutuphaneStudentOption[]>([]);
+  const [telafiCandidates, setTelafiCandidates] = useState<BirebirOturum[]>([]);
   const [form, setForm] = useState({
+    ders_turu: 'NORMAL' as 'NORMAL' | 'TELAFI',
+    telafi_kaynak_id: '',
     session_date: dayjs().format('YYYY-MM-DD'),
     start_time: '18:00',
     end_time: '19:00',
@@ -127,11 +141,28 @@ export default function BirebirOturumlarClient() {
     notes: '',
   });
 
+  const [yoklamaTarget, setYoklamaTarget] = useState<{
+    oturumId: number;
+    durum: string;
+    notes?: string;
+    description?: string;
+    onDone?: (updated: BirebirOturum) => void;
+  } | null>(null);
+
   const [detail, setDetail] = useState<BirebirOturum | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
   const [detailTeacher, setDetailTeacher] = useState('');
   const [detailNotes, setDetailNotes] = useState('');
   const [detailShowMore, setDetailShowMore] = useState(false);
+
+  // "Bugünün Yoklaması" hızlı görünümü — tarih/durum filtrelerinden bağımsız,
+  // her zaman bugünün oturumlarını gösterir (dokunmatik, büyük butonlu kart listesi).
+  const [todayOpen, setTodayOpen] = useState(false);
+  const [todayRows, setTodayRows] = useState<BirebirOturum[]>([]);
+  const [todayHoliday, setTodayHoliday] = useState<OzelDersTatil | null>(null);
+  const [todayLoading, setTodayLoading] = useState(false);
+  const [todayBusyId, setTodayBusyId] = useState<number | null>(null);
+  const [todayExpandedId, setTodayExpandedId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!urlDate) return;
@@ -149,6 +180,7 @@ export default function BirebirOturumlarClient() {
           start_date: start,
           end_date: end,
           durum: durumFilter || undefined,
+          telafi_durumu: telafiFilter || undefined,
           program_id: urlProgramId || undefined,
           ogrenci_id: urlOgrenciId || undefined,
         }),
@@ -176,11 +208,33 @@ export default function BirebirOturumlarClient() {
     } finally {
       setLoading(false);
     }
-  }, [ready, start, end, durumFilter, urlProgramId, urlOgrenciId, show]);
+  }, [ready, start, end, durumFilter, telafiFilter, urlProgramId, urlOgrenciId, show]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadToday = useCallback(async () => {
+    if (!ready) return;
+    const today = dayjs().format('YYYY-MM-DD');
+    setTodayLoading(true);
+    try {
+      const [data, tatiller] = await Promise.all([
+        fetchOturumlar({ start_date: today, end_date: today }),
+        fetchTatiller(today, today).catch(() => [] as OzelDersTatil[]),
+      ]);
+      setTodayRows(data.sort((a, b) => a.start_time.localeCompare(b.start_time)));
+      setTodayHoliday(tatiller[0] || null);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Bugünün dersleri yüklenemedi', 'error');
+    } finally {
+      setTodayLoading(false);
+    }
+  }, [ready, show]);
+
+  useEffect(() => {
+    loadToday();
+  }, [loadToday]);
 
   useEffect(() => {
     if (studentQ.trim().length < 2) {
@@ -210,6 +264,29 @@ export default function BirebirOturumlarClient() {
       cancelled = true;
     };
   }, [createOpen, ready, form.session_date]);
+
+  useEffect(() => {
+    if (!createOpen || !ready || form.ders_turu !== 'TELAFI') {
+      setTelafiCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    fetchOturumlar({
+      telafi_durumu: 'BEKLENIYOR',
+      start_date: dayjs().subtract(90, 'day').format('YYYY-MM-DD'),
+      end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
+      ogrenci_id: urlOgrenciId || undefined,
+    })
+      .then((list) => {
+        if (!cancelled) setTelafiCandidates(list);
+      })
+      .catch(() => {
+        if (!cancelled) setTelafiCandidates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [createOpen, ready, form.ders_turu, urlOgrenciId]);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -278,20 +355,33 @@ export default function BirebirOturumlarClient() {
     }
     setSaving(true);
     try {
-      await createOturum({
-        session_date: form.session_date,
-        start_time: form.start_time,
-        end_time: form.end_time,
-        ogrenci_id: Number(form.ogrenci_id),
-        ders_id: Number(form.ders_id),
-        ogretmen_id: Number(form.ogretmen_id),
-        oturum_turu: form.oturum_turu,
-        notes: form.notes || undefined,
-        egitim_yili_id: egitimYiliId,
-      });
+      if (form.ders_turu === 'TELAFI') {
+        if (!form.telafi_kaynak_id) {
+          show('Telafi için kaynak ders seçin.', 'error');
+          return;
+        }
+        await createTelafi(Number(form.telafi_kaynak_id), {
+          session_date: form.session_date,
+          start_time: form.start_time,
+          end_time: form.end_time,
+        });
+        show('Telafi dersi oluşturuldu.');
+      } else {
+        await createOturum({
+          session_date: form.session_date,
+          start_time: form.start_time,
+          end_time: form.end_time,
+          ogrenci_id: Number(form.ogrenci_id),
+          ders_id: Number(form.ders_id),
+          ogretmen_id: Number(form.ogretmen_id),
+          oturum_turu: form.oturum_turu,
+          notes: form.notes || undefined,
+          egitim_yili_id: egitimYiliId,
+        });
+        show('Tek seferlik ders oluşturuldu.');
+      }
       setCreateOpen(false);
       setStudentQ('');
-      show('Tek seferlik ders oluşturuldu.');
       await load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Kayıt başarısız';
@@ -301,22 +391,54 @@ export default function BirebirOturumlarClient() {
     }
   }
 
-  async function onSetDurum(durum: string) {
-    if (!detail) return;
+  function requestDurumChange(
+    oturumId: number,
+    durum: string,
+    opts?: { notes?: string; description?: string; onDone?: (updated: BirebirOturum) => void },
+  ) {
     if (durum === 'IPTAL' && !window.confirm('Bu ders oturumunu iptal etmek istediğinize emin misiniz?')) {
       return;
     }
+    if (yoklamaNeedsDrawer(durum)) {
+      setYoklamaTarget({
+        oturumId,
+        durum,
+        notes: opts?.notes,
+        description: opts?.description,
+        onDone: opts?.onDone,
+      });
+      return;
+    }
+    void applyDurumChange(oturumId, { durum, notes: opts?.notes }, opts?.onDone);
+  }
+
+  async function applyDurumChange(
+    oturumId: number,
+    payload: SetOturumDurumPayload,
+    onDone?: (updated: BirebirOturum) => void,
+  ) {
     setDetailBusy(true);
+    setTodayBusyId(oturumId);
     try {
-      const updated = await setOturumDurum(detail.id, durum, detailNotes || undefined);
-      setDetail(updated);
+      const updated = await setOturumDurum(oturumId, payload);
+      if (detail?.id === updated.id) setDetail(updated);
       setRows((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
-      show(`Durum: ${OTURUM_DURUM_LABELS[durum] || durum}`);
+      setTodayRows((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+      onDone?.(updated);
+      show(`Durum: ${OTURUM_DURUM_LABELS[payload.durum] || payload.durum}`);
+      setYoklamaTarget(null);
+      setTodayExpandedId(null);
     } catch (e) {
       show(e instanceof Error ? e.message : 'Durum güncellenemedi', 'error');
     } finally {
       setDetailBusy(false);
+      setTodayBusyId(null);
     }
+  }
+
+  async function onSetDurum(durum: string) {
+    if (!detail) return;
+    requestDurumChange(detail.id, durum, { notes: detailNotes || undefined });
   }
 
   async function onChangeTeacher() {
@@ -334,11 +456,115 @@ export default function BirebirOturumlarClient() {
     }
   }
 
-  const yoklamaHref = akademikTabHref('ozel-ders-yonetimi', 'birebir-yoklamalar');
+  function markToday(r: BirebirOturum, durum: string) {
+    requestDurumChange(r.id, durum, {
+      description: `${r.ogrenci_ad} · ${resolveDersLabel(r, useKisaAd)}`,
+    });
+  }
+
+  const { todayPending, todayDone } = useMemo(() => {
+    const todayPending = todayRows.filter((r) => r.durum === 'PLANLANDI');
+    const todayDone = todayRows.filter((r) => r.durum !== 'PLANLANDI');
+    return { todayPending, todayDone };
+  }, [todayRows]);
+
+  function renderTodayActions(r: BirebirOturum) {
+    const next = allowedNextDurumlar(r.durum);
+    const primary = PRIMARY_YOKLAMA_ACTIONS.filter((d) => next.includes(d));
+    const secondary = SECONDARY_YOKLAMA_ACTIONS.filter((d) => next.includes(d));
+    const other = next.filter(
+      (d) =>
+        !(PRIMARY_YOKLAMA_ACTIONS as readonly string[]).includes(d) &&
+        !(SECONDARY_YOKLAMA_ACTIONS as readonly string[]).includes(d),
+    );
+    const showMore = todayExpandedId === r.id;
+
+    return (
+      <div className="od-attend-actions">
+        {primary.map((durum) => {
+          const meta = ACTION_META[durum];
+          if (!meta) return null;
+          return (
+            <button
+              key={durum}
+              type="button"
+              className={`od-attend-btn ${meta.tone}${r.durum === durum ? ' is-current' : ''}`}
+              disabled={todayBusyId === r.id}
+              onClick={() => markToday(r, durum)}
+            >
+              {meta.icon(15)} {meta.label}
+            </button>
+          );
+        })}
+        {(secondary.length > 0 || other.length > 0) && (
+          <button
+            type="button"
+            className="od-attend-btn tone-slate"
+            disabled={todayBusyId === r.id}
+            onClick={() => setTodayExpandedId(showMore ? null : r.id)}
+          >
+            {showMore ? 'Gizle' : 'Diğer'}
+          </button>
+        )}
+        {showMore &&
+          [...secondary, ...other].map((durum) => {
+            const meta = ACTION_META[durum];
+            if (!meta) return null;
+            return (
+              <button
+                key={durum}
+                type="button"
+                className={`od-attend-btn ${meta.tone}`}
+                disabled={todayBusyId === r.id}
+                onClick={() => markToday(r, durum)}
+              >
+                {meta.icon(15)} {meta.label}
+              </button>
+            );
+          })}
+      </div>
+    );
+  }
+
+  function renderTodayCard(r: BirebirOturum) {
+    const fee = feeStatus(r);
+    return (
+      <div className="od-attend-card" key={r.id}>
+        <div className="od-attend-time">
+          {r.start_time.slice(0, 5)}
+          <span>{r.end_time.slice(0, 5)}</span>
+        </div>
+        <div className="od-attend-info">
+          <strong>{r.ogrenci_ad}</strong>
+          <span>
+            {resolveDersLabel(r, useKisaAd)} · {r.ogretmen_ad}
+            {r.oda_ad ? ` · ${r.oda_ad}` : ''}
+          </span>
+          <div className="od-attend-tags">
+            <Badge tone={fee.tone}>{fee.label}</Badge>
+            {r.durum !== 'PLANLANDI' && <Badge tone="secondary">{r.durum_display}</Badge>}
+            {r.telafi_durumu && r.telafi_durumu !== 'GEREKMIYOR' && (
+              <Badge tone={telafiDurumTone(r.telafi_durumu)}>
+                {r.telafi_durumu_display || TELAFI_DURUM_LABEL[r.telafi_durumu]}
+              </Badge>
+            )}
+            {r.oturum_turu === 'TELAFI' && <Badge tone="warning">Telafi</Badge>}
+          </div>
+        </div>
+        {renderTodayActions(r)}
+      </div>
+    );
+  }
+
   const nextDurumlar = detail ? allowedNextDurumlar(detail.durum) : [];
-  const canChangeTeacher = detail
-    ? ['PLANLANDI', 'TELAFI_EDILECEK'].includes(detail.durum)
-    : false;
+  const detailSecondary = SECONDARY_YOKLAMA_ACTIONS.filter((d) => nextDurumlar.includes(d));
+  const detailOther = nextDurumlar.filter(
+    (d) =>
+      !(PRIMARY_YOKLAMA_ACTIONS as readonly string[]).includes(d) &&
+      !(SECONDARY_YOKLAMA_ACTIONS as readonly string[]).includes(d),
+  );
+  const canChangeTeacher = detail ? detail.durum === 'PLANLANDI' : false;
+  const telafiKaynak = telafiCandidates.find((c) => String(c.id) === form.telafi_kaynak_id) || null;
 
   return (
     <div className="od-scope">
@@ -347,12 +573,20 @@ export default function BirebirOturumlarClient() {
       <PageHeader
         icon={<IconBookOpen size={19} />}
         title="Birebir Ders Oturumları"
-        description="Şablondan üretilen ve tek seferlik birebir dersler. Satıra tıklayarak durum değiştirin veya öğretmeni güncelleyin; yoklama için Birebir Yoklamalar sekmesini kullanın."
+        description="Şablondan üretilen ve tek seferlik birebir dersler. Satıra tıklayarak durum değiştirin veya öğretmeni güncelleyin."
         actions={
           <>
-            <a className="od-btn od-btn-secondary" href={yoklamaHref}>
-              Yoklamalar
-            </a>
+            <button
+              type="button"
+              className="od-btn od-btn-secondary"
+              onClick={() => {
+                setTodayOpen(true);
+                loadToday();
+              }}
+            >
+              <IconClipboard size={15} /> Bugünün Yoklaması
+              {todayPending.length > 0 ? ` (${todayPending.length})` : ''}
+            </button>
             <button type="button" className="od-btn od-btn-primary" onClick={() => setCreateOpen(true)}>
               <IconPlus size={15} /> Tek Seferlik Ders
             </button>
@@ -413,6 +647,24 @@ export default function BirebirOturumlarClient() {
             ))}
           </select>
         </div>
+        <div className="od-filter-field">
+          <label>Telafi</label>
+          <select className="od-select" value={telafiFilter} onChange={(e) => setTelafiFilter(e.target.value)}>
+            <option value="">Tümü</option>
+            {Object.entries(TELAFI_DURUM_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          className={`od-btn od-btn-secondary od-btn-sm${telafiFilter === 'BEKLENIYOR' ? ' is-active-pref' : ''}`}
+          onClick={() => setTelafiFilter((v) => (v === 'BEKLENIYOR' ? '' : 'BEKLENIYOR'))}
+        >
+          <IconRotateCcw size={14} /> Telafi Bekleyenler
+        </button>
         <div className="od-toolbar-spacer" />
         <div className="od-search">
           <IconSearch size={16} />
@@ -507,6 +759,7 @@ export default function BirebirOturumlarClient() {
                             <th>Öğretmen</th>
                             <th>Tür</th>
                             <th>Durum</th>
+                            <th>Telafi</th>
                             <th>Hakediş</th>
                           </tr>
                         </thead>
@@ -532,6 +785,15 @@ export default function BirebirOturumlarClient() {
                                     {r.durum === 'IPTAL' && <IconXCircle size={11} />}
                                     {r.durum_display}
                                   </Badge>
+                                </td>
+                                <td>
+                                  {r.telafi_durumu && r.telafi_durumu !== 'GEREKMIYOR' ? (
+                                    <Badge tone={telafiDurumTone(r.telafi_durumu)}>
+                                      {r.telafi_durumu_display || TELAFI_DURUM_LABEL[r.telafi_durumu]}
+                                    </Badge>
+                                  ) : (
+                                    <span className="od-cell-muted">—</span>
+                                  )}
                                 </td>
                                 <td>
                                   <Badge tone={fee.tone}>{fee.label}</Badge>
@@ -567,9 +829,9 @@ export default function BirebirOturumlarClient() {
               disabled={
                 saving ||
                 Boolean(createHoliday && !createHoliday.ozel_ders_aktif) ||
-                !form.ogrenci_id ||
-                !form.ders_id ||
-                !form.ogretmen_id
+                (form.ders_turu === 'TELAFI'
+                  ? !form.telafi_kaynak_id
+                  : !form.ogrenci_id || !form.ders_id || !form.ogretmen_id)
               }
             >
               {saving ? 'Kaydediliyor…' : 'Dersi Oluştur'}
@@ -591,16 +853,40 @@ export default function BirebirOturumlarClient() {
               />
             </div>
             <div className="od-form-group">
-              <label>Tür</label>
+              <label>Ders Türü</label>
               <select
-                value={form.oturum_turu}
-                onChange={(e) => setForm((f) => ({ ...f, oturum_turu: e.target.value }))}
+                value={form.ders_turu}
+                onChange={(e) => {
+                  const ders_turu = e.target.value as 'NORMAL' | 'TELAFI';
+                  setForm((f) => ({
+                    ...f,
+                    ders_turu,
+                    telafi_kaynak_id: '',
+                    ogrenci_id: '',
+                    ogrenci_ad: '',
+                    ders_id: '',
+                    ogretmen_id: '',
+                  }));
+                  setStudentQ('');
+                }}
               >
-                <option value="OZEL">Özel Ders</option>
-                <option value="EK">Ek Ders</option>
-                <option value="ETUT">Etüt</option>
+                <option value="NORMAL">Normal</option>
+                <option value="TELAFI">Telafi</option>
               </select>
             </div>
+            {form.ders_turu === 'NORMAL' ? (
+              <div className="od-form-group">
+                <label>Tür</label>
+                <select
+                  value={form.oturum_turu}
+                  onChange={(e) => setForm((f) => ({ ...f, oturum_turu: e.target.value }))}
+                >
+                  <option value="OZEL">Özel Ders</option>
+                  <option value="EK">Ek Ders</option>
+                  <option value="ETUT">Etüt</option>
+                </select>
+              </div>
+            ) : null}
           </div>
           {createHoliday && !createHoliday.ozel_ders_aktif && (
             <div className="od-banner-warning">
@@ -642,12 +928,53 @@ export default function BirebirOturumlarClient() {
           </div>
 
           <div className="od-form-group">
-            <label>
-              Öğrenci <span className="req">*</span>
-            </label>
-            <input placeholder="Ad soyad ile arayın" value={studentQ} onChange={(e) => setStudentQ(e.target.value)} />
+            {form.ders_turu === 'TELAFI' ? (
+              <>
+                <label>
+                  Telafi Kaynağı <span className="req">*</span>
+                </label>
+                <select
+                  required
+                  value={form.telafi_kaynak_id}
+                  onChange={(e) => {
+                    const src = telafiCandidates.find((c) => String(c.id) === e.target.value);
+                    setForm((f) => ({
+                      ...f,
+                      telafi_kaynak_id: e.target.value,
+                      ogrenci_id: src ? String(src.ogrenci) : '',
+                      ogrenci_ad: src?.ogrenci_ad || '',
+                      ders_id: src ? String(src.ders) : '',
+                      ogretmen_id: src ? String(src.ogretmen) : '',
+                      start_time: src?.start_time.slice(0, 5) || f.start_time,
+                      end_time: src?.end_time.slice(0, 5) || f.end_time,
+                    }));
+                  }}
+                >
+                  <option value="">Telafi bekleyen ders seçin</option>
+                  {telafiCandidates.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {dayjs(c.session_date).format('DD.MM.YYYY')} · {c.ogrenci_ad} ·{' '}
+                      {resolveDersLabel(c, useKisaAd)}
+                    </option>
+                  ))}
+                </select>
+                {telafiKaynak && (
+                  <span className="od-form-hint">
+                    {telafiKaynak.ogrenci_ad} · {resolveDersLabel(telafiKaynak, useKisaAd)} ·{' '}
+                    {telafiKaynak.ogretmen_ad}
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                <label>
+                  Öğrenci <span className="req">*</span>
+                </label>
+                <input placeholder="Ad soyad ile arayın" value={studentQ} onChange={(e) => setStudentQ(e.target.value)} />
+              </>
+            )}
           </div>
-          {students.length > 0 && (
+          {form.ders_turu === 'NORMAL' && students.length > 0 && (
             <div className="od-panel-list">
               {students.map((s) => (
                 <div
@@ -669,55 +996,61 @@ export default function BirebirOturumlarClient() {
               ))}
             </div>
           )}
-          {form.ogrenci_id && (
+          {form.ders_turu === 'NORMAL' && form.ogrenci_id && (
             <div className="od-banner-success">
               <IconCheckCircle size={15} /> Seçildi: {form.ogrenci_ad}
             </div>
           )}
 
-          <div className="od-form-group">
-            <label>
-              Ders <span className="req">*</span>
-            </label>
-            <select
-              required
-              value={form.ders_id}
-              onChange={(e) => setForm((f) => ({ ...f, ders_id: e.target.value }))}
-            >
-              <option value="">Seçin</option>
-              {(meta?.dersler || []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {resolveDersLabel({ ders_ad: d.ad, ders_kisa_ad: d.kisa_ad }, useKisaAd)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="od-form-group">
-            <label>
-              Öğretmen <span className="req">*</span>
-            </label>
-            <select
-              required
-              value={form.ogretmen_id}
-              onChange={(e) => setForm((f) => ({ ...f, ogretmen_id: e.target.value }))}
-            >
-              <option value="">Seçin</option>
-              {(meta?.teachers || []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="od-form-group">
-            <label>Not</label>
-            <textarea
-              rows={2}
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              placeholder="Opsiyonel"
-            />
-          </div>
+          {form.ders_turu === 'NORMAL' && (
+            <>
+              <div className="od-form-group">
+                <label>
+                  Ders <span className="req">*</span>
+                </label>
+                <select
+                  required
+                  value={form.ders_id}
+                  onChange={(e) => setForm((f) => ({ ...f, ders_id: e.target.value }))}
+                >
+                  <option value="">Seçin</option>
+                  {(meta?.dersler || []).map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {resolveDersLabel({ ders_ad: d.ad, ders_kisa_ad: d.kisa_ad }, useKisaAd)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="od-form-group">
+                <label>
+                  Öğretmen <span className="req">*</span>
+                </label>
+                <select
+                  required
+                  value={form.ogretmen_id}
+                  onChange={(e) => setForm((f) => ({ ...f, ogretmen_id: e.target.value }))}
+                >
+                  <option value="">Seçin</option>
+                  {(meta?.teachers || []).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+          {form.ders_turu === 'NORMAL' && (
+            <div className="od-form-group">
+              <label>Not</label>
+              <textarea
+                rows={2}
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Opsiyonel"
+              />
+            </div>
+          )}
         </form>
       </Drawer>
 
@@ -731,30 +1064,76 @@ export default function BirebirOturumlarClient() {
             : ''
         }
         footer={
-          <>
-            <a
-              className="od-btn od-btn-secondary"
-              href={yoklamaHref}
-              onClick={() => setDetail(null)}
-            >
-              Yoklamaya Git
-            </a>
-            <div style={{ flex: 1 }} />
-            <button type="button" className="od-btn od-btn-primary" onClick={() => setDetail(null)}>
-              Kapat
-            </button>
-          </>
+          <button type="button" className="od-btn od-btn-primary" onClick={() => setDetail(null)}>
+            Kapat
+          </button>
         }
       >
         {detail && (
           <div className="od-form">
             <div className="od-entity-card-meta">
               <Badge tone={oturumDurumTone(detail.durum)}>{detail.durum_display}</Badge>
+              {detail.telafi_durumu && detail.telafi_durumu !== 'GEREKMIYOR' && (
+                <Badge tone={telafiDurumTone(detail.telafi_durumu)}>
+                  {detail.telafi_durumu_display || TELAFI_DURUM_LABEL[detail.telafi_durumu]}
+                </Badge>
+              )}
               <Badge tone={detail.oturum_turu === 'TELAFI' ? 'warning' : 'secondary'}>
                 {detail.oturum_turu_display}
               </Badge>
               <Badge tone={feeStatus(detail).tone}>{feeStatus(detail).label}</Badge>
             </div>
+
+            {(detail.sebep_display || detail.sebep_aciklama) && (
+              <dl className="od-panel-kv">
+                <dt>Sebep</dt>
+                <dd>
+                  {detail.sebep_display || '—'}
+                  {detail.sebep_aciklama ? ` — ${detail.sebep_aciklama}` : ''}
+                </dd>
+              </dl>
+            )}
+
+            {detail.kaynak_oturum && (
+              <dl className="od-panel-kv">
+                <dt>Kaynak ders</dt>
+                <dd>
+                  Bu ders, {dayjs(detail.kaynak_oturum.session_date).format('DD.MM.YYYY')}{' '}
+                  {detail.kaynak_oturum.start_time.slice(0, 5)} tarihli dersin telafisidir (
+                  {detail.kaynak_oturum.ders_ad})
+                </dd>
+              </dl>
+            )}
+
+            {detail.telafi_oturum && (
+              <dl className="od-panel-kv">
+                <dt>Planlanan telafi</dt>
+                <dd>
+                  {dayjs(detail.telafi_oturum.session_date).format('DD.MM.YYYY')}{' '}
+                  {detail.telafi_oturum.start_time.slice(0, 5)} · {detail.telafi_oturum.durum_display}
+                </dd>
+              </dl>
+            )}
+
+            {detail.bildirimler && detail.bildirimler.length > 0 && (
+              <div className="od-panel-section">
+                <div className="od-panel-section-title">Bildirimler</div>
+                <div className="od-panel-list">
+                  {detail.bildirimler.map((b) => (
+                    <div key={b.id} className="od-panel-list-item">
+                      <strong>{b.event_label}</strong>
+                      <span className="od-cell-muted">
+                        {b.gonderim_tarihi
+                          ? dayjs(b.gonderim_tarihi).format('DD.MM.YYYY HH:mm')
+                          : '—'}{' '}
+                        · {b.status_display}
+                        {b.failed_reason ? ` · ${b.failed_reason}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="od-panel-section">
               <div className="od-panel-section-title">Durum değiştir</div>
@@ -787,9 +1166,7 @@ export default function BirebirOturumlarClient() {
                     </button>
                   )}
                   {detailShowMore &&
-                    nextDurumlar
-                      .filter((d) => !(PRIMARY_YOKLAMA_ACTIONS as readonly string[]).includes(d))
-                      .map((d) => {
+                    [...detailSecondary, ...detailOther].map((d) => {
                         const meta = ACTION_META[d];
                         return (
                           <button
@@ -850,6 +1227,70 @@ export default function BirebirOturumlarClient() {
           </div>
         )}
       </Drawer>
+
+      <Drawer
+        open={todayOpen}
+        onClose={() => setTodayOpen(false)}
+        wide
+        title="Bugünün Yoklaması"
+        description={dayjs().locale('tr').format('D MMMM YYYY, dddd')}
+        footer={
+          <button type="button" className="od-btn od-btn-primary" onClick={() => setTodayOpen(false)}>
+            Kapat
+          </button>
+        }
+      >
+        {todayHoliday && !todayHoliday.ozel_ders_aktif && (
+          <div className="od-banner-warning" role="status">
+            <IconAlertTriangle size={15} />
+            Bugün tatil: <strong>{todayHoliday.title}</strong>. Yoklama beklenmeyebilir.
+          </div>
+        )}
+        {todayHoliday?.ozel_ders_aktif && (
+          <div className="od-banner-success" role="status">
+            Resmi tatil ({todayHoliday.title}) — kurum kararıyla özel ders devam ediyor.
+          </div>
+        )}
+
+        {todayLoading ? (
+          <SkeletonRows rows={4} />
+        ) : todayRows.length === 0 ? (
+          <EmptyState
+            icon={<IconCalendar size={24} />}
+            title="Bugün oturum yok"
+            description="Önce şablondan oturum üretin veya tek seferlik ders oluşturun."
+          />
+        ) : (
+          <>
+            {todayPending.length > 0 && (
+              <div className="od-attend-group">
+                <span className="od-attend-group-label">Bekleyen Yoklama ({todayPending.length})</span>
+                {todayPending.map(renderTodayCard)}
+              </div>
+            )}
+            {todayDone.length > 0 && (
+              <div className="od-attend-group">
+                <span className="od-attend-group-label">İşlenmiş ({todayDone.length})</span>
+                {todayDone.map(renderTodayCard)}
+              </div>
+            )}
+          </>
+        )}
+      </Drawer>
+
+      <YoklamaDurumDrawer
+        open={Boolean(yoklamaTarget)}
+        onClose={() => setYoklamaTarget(null)}
+        durum={yoklamaTarget?.durum || ''}
+        description={yoklamaTarget?.description}
+        notes={yoklamaTarget?.notes}
+        busy={detailBusy || todayBusyId != null}
+        onConfirm={(payload) =>
+          yoklamaTarget
+            ? applyDurumChange(yoklamaTarget.oturumId, payload, yoklamaTarget.onDone)
+            : Promise.resolve()
+        }
+      />
 
       <EtkilenenDerslerDrawer
         open={Boolean(etkilenenDay)}

@@ -45,9 +45,22 @@ class MuhasebePermissionTests(TestCase):
         self.assertIn('communication.write', perms)
         self.assertIn('sinif.manage', perms)
         self.assertIn('egitim_tanimlari.manage', perms)
+        self.assertIn('egitim_paketleri.manage', perms)
         self.assertIn('ozel_ders.manage', perms)
         self.assertIn('ozel_ders.hakedis_approve', perms)
         self.assertNotIn('personel.manage', perms)
+
+    def test_muhasebe_akademik_full_access_like_admin(self):
+        from shared.permissions import (
+            user_has_akademik_full_access,
+            user_has_module_permission,
+            user_has_permission,
+        )
+
+        self.assertTrue(user_has_akademik_full_access(self.muhasebe_user))
+        self.assertTrue(user_has_module_permission(self.muhasebe_user, 'ozel_ders', write=True))
+        self.assertTrue(user_has_module_permission(self.muhasebe_user, 'sinif', write=True))
+        self.assertTrue(user_has_permission(self.muhasebe_user, 'ozel_ders.hakedis_approve'))
 
     def test_setup_roles_idempotent(self):
         ensure_default_roles()

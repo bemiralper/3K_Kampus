@@ -25,6 +25,10 @@ export type BirebirProgram = {
   ozel_ders_paket_ad: string | null;
   baslangic_tarihi: string;
   bitis_tarihi: string | null;
+  zaman_baslangic?: string;
+  zaman_sure_dk?: number;
+  zaman_ara_dk?: number;
+  zaman_ders_adet?: number;
   durum: string;
   durum_display: string;
   notlar: string;
@@ -47,6 +51,35 @@ export type BirebirSlot = {
   oda: number | null;
   oda_ad: string | null;
   aktif: boolean;
+  baslangic_tarihi?: string | null;
+  bitis_tarihi?: string | null;
+};
+
+export type OturumLinkOzet = {
+  id: number;
+  session_date: string;
+  start_time: string;
+  end_time: string;
+  ders_ad: string;
+  ogretmen_ad: string;
+  durum: string;
+  durum_display: string;
+  telafi_durumu: string;
+  telafi_durumu_display: string;
+  oturum_turu: string;
+};
+
+export type OturumBildirim = {
+  id: number;
+  event_key: string;
+  event_label: string;
+  veli_id: number;
+  gonderim_tarihi: string | null;
+  status: string;
+  status_display: string;
+  provider_message_id: string;
+  failed_reason: string;
+  gonderildi: boolean;
 };
 
 export type BirebirOturum = {
@@ -69,9 +102,26 @@ export type BirebirOturum = {
   oturum_turu_display: string;
   durum: string;
   durum_display: string;
+  telafi_durumu: string;
+  telafi_durumu_display: string;
+  sebep_kodu: string;
+  sebep_aciklama: string;
+  sebep_display: string;
   replaces_oturum: number | null;
+  kaynak_oturum?: OturumLinkOzet | null;
+  telafi_oturum?: OturumLinkOzet | null;
+  bildirimler?: OturumBildirim[];
   notes: string;
   has_hakedis: boolean;
+};
+
+export type SetOturumDurumPayload = {
+  durum: string;
+  notes?: string;
+  sebep_kodu?: string;
+  sebep_aciklama?: string;
+  telafi_durumu?: string;
+  send_whatsapp?: boolean;
 };
 
 export type BirebirHakedis = {
@@ -315,6 +365,64 @@ export async function fetchOgrenciOzelDersOzet(
   return unwrap(res);
 }
 
+export type DersOzetKirilimi = {
+  ders_id: number;
+  ders_ad: string;
+  ders_kisa_ad?: string;
+  planlanan_ders: number;
+  islenen_ders: number;
+  kalan_ders: number;
+  telafi_ders: number;
+  ek_ders: number;
+  iptal_ders: number;
+};
+
+export type OgrenciPaketOzeti = { id: number; ad: string };
+
+export type OgrenciDonemOzeti = {
+  ogrenci_id: number;
+  ogrenci_ad: string;
+  sinif_ad: string | null;
+  donem: { baslangic: string; bitis: string };
+  program_ids: number[];
+  ozet: {
+    /** Ders adedi — dakika/saat değil. 1 oturum/1 şablon tekrarı = 1 ders. */
+    planlanan_ders: number;
+    islenen_ders: number;
+    kalan_ders: number;
+    telafi_ders: number;
+    ek_ders: number;
+    iptal_ders: number;
+    tatil_gun_sayisi: number;
+    tatilden_dusulen_ders: number;
+  };
+  /** Bir öğrencinin birden fazla dersi/paketi olabilir — ders bazında kırılım. */
+  dersler: DersOzetKirilimi[];
+  /** Öğrencinin bu dönemdeki tüm aktif paket/programları (tek bir ad değil). */
+  paketler: OgrenciPaketOzeti[];
+  paket: { program_sayisi: number };
+  zaman: {
+    baslangic: string;
+    sure_dk: number;
+    ara_dk: number;
+    ders_adet: number;
+  };
+};
+
+export async function fetchOgrenciDonemOzeti(
+  ogrenciId: number,
+  start_date?: string,
+  end_date?: string,
+) {
+  const res = await apiFetch<OgrenciDonemOzeti>(
+    withQuery(`${BASE}/ogrenci/${ogrenciId}/ozet-donem/`, {
+      start_date,
+      end_date,
+    }),
+  );
+  return unwrap(res);
+}
+
 export async function createOturum(body: Record<string, unknown>) {
   const res = await apiFetch<BirebirOturum>(`${BASE}/oturumlar/`, {
     method: 'POST',
@@ -323,10 +431,18 @@ export async function createOturum(body: Record<string, unknown>) {
   return unwrap(res);
 }
 
-export async function setOturumDurum(id: number, durum: string, notes?: string) {
+export async function setOturumDurum(
+  id: number,
+  durumOrPayload: string | SetOturumDurumPayload,
+  notes?: string,
+) {
+  const body: SetOturumDurumPayload =
+    typeof durumOrPayload === 'string'
+      ? { durum: durumOrPayload, notes }
+      : durumOrPayload;
   const res = await apiFetch<BirebirOturum>(`${BASE}/oturumlar/${id}/durum/`, {
     method: 'POST',
-    body: JSON.stringify({ durum, notes }),
+    body: JSON.stringify(body),
   });
   return unwrap(res);
 }
@@ -415,11 +531,17 @@ export async function seedUcretKurallari(scope: 'global' | 'kurum' | 'sube' = 'g
 export const OTURUM_DURUMLARI = [
   { value: 'PLANLANDI', label: 'Planlandı', color: '#64748b' },
   { value: 'ISLENDI', label: 'İşlendi', color: '#16a34a' },
-  { value: 'IPTAL', label: 'İptal', color: '#dc2626' },
-  { value: 'TELAFI_EDILECEK', label: 'Telafi', color: '#ea580c' },
-  { value: 'OGRENCI_GELMEDI', label: 'Öğrenci Gelmedi', color: '#ca8a04' },
-  { value: 'OGRETMEN_GELMEDI', label: 'Öğretmen Gelmedi', color: '#db2777' },
   { value: 'ONLINE', label: 'Online', color: '#2563eb' },
+  { value: 'OGRETMEN_GELMEDI', label: 'Öğretmen Gelmedi', color: '#db2777' },
+  { value: 'OGRENCI_GELMEDI', label: 'Öğrenci Gelmedi', color: '#ca8a04' },
+  { value: 'IPTAL', label: 'İptal', color: '#dc2626' },
+] as const;
+
+export const TELAFI_DURUMLARI = [
+  { value: 'GEREKMIYOR', label: 'Telafi Gerekmiyor', color: '#64748b' },
+  { value: 'BEKLENIYOR', label: 'Telafi Bekleniyor', color: '#ea580c' },
+  { value: 'PLANLANDI', label: 'Telafi Planlandı', color: '#2563eb' },
+  { value: 'EDILDI', label: 'Telafi Edildi', color: '#16a34a' },
 ] as const;
 
 export const GUN_LABELS = ['', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];

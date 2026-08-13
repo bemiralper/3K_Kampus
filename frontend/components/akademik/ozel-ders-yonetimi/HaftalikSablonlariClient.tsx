@@ -9,6 +9,7 @@ import {
   fetchSlots,
   resolveDersLabel,
   swapSlots,
+  updateProgram,
   updateSlot,
   GUN_LABELS,
   type BirebirProgram,
@@ -17,7 +18,7 @@ import {
 } from '@/lib/ozel-ders-api';
 import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
-import { useDersDisplayPref, useHaftalikSaatConfig } from './useDersDisplayPref';
+import { useDersDisplayPref } from './useDersDisplayPref';
 import {
   Badge,
   Collapsible,
@@ -28,7 +29,6 @@ import {
   SkeletonRows,
   avatarGradient,
   initials,
-  weekBlockColor,
 } from './ozelDersUi';
 import {
   IconCalendar,
@@ -40,9 +40,37 @@ import {
   IconTrash,
   IconUsers,
 } from './icons';
+import HaftalikProgramGrid from './HaftalikProgramGrid';
+import {
+  buildPeriods,
+  timeToMinutes,
+  type PeriodRow,
+} from './haftalikGridUtils';
 import './ozel-ders.css';
 
-const DAYS = [1, 2, 3, 4, 5, 6, 7];
+type HaftalikSaatConfig = {
+  startTime: string;
+  sureDk: number;
+  araDk: number;
+  dersAdet: number;
+};
+
+const DEFAULT_SAAT: HaftalikSaatConfig = {
+  startTime: '09:00',
+  sureDk: 50,
+  araDk: 10,
+  dersAdet: 8,
+};
+
+function configFromProgram(p: BirebirProgram | null | undefined): HaftalikSaatConfig {
+  if (!p) return { ...DEFAULT_SAAT };
+  return {
+    startTime: /^\d{2}:\d{2}$/.test(p.zaman_baslangic || '') ? (p.zaman_baslangic as string) : '09:00',
+    sureDk: Math.max(15, Math.min(180, Number(p.zaman_sure_dk) || 50)),
+    araDk: Math.max(0, Math.min(60, Number(p.zaman_ara_dk ?? 10))),
+    dersAdet: Math.max(1, Math.min(16, Number(p.zaman_ders_adet) || 8)),
+  };
+}
 
 type StudentProgramGroup = {
   ogrenci: number;
@@ -51,6 +79,8 @@ type StudentProgramGroup = {
   primary: BirebirProgram;
   paketAds: string[];
   slotCount: number;
+  baslangic_tarihi: string;
+  bitis_tarihi: string | null;
 };
 
 function groupProgramsByStudent(programs: BirebirProgram[]): StudentProgramGroup[] {
@@ -81,6 +111,10 @@ function groupProgramsByStudent(programs: BirebirProgram[]): StudentProgramGroup
       primary,
       paketAds,
       slotCount: sorted.reduce((s, p) => s + (p.slot_count || 0), 0),
+      baslangic_tarihi: sorted.map((p) => p.baslangic_tarihi).sort()[0],
+      bitis_tarihi: sorted.every((p) => p.bitis_tarihi)
+        ? sorted.map((p) => p.bitis_tarihi!).sort().slice(-1)[0]
+        : null,
     });
   }
   return groups.sort((a, b) =>
@@ -117,72 +151,11 @@ function resolveProgramIdForDers(programs: BirebirProgram[], dersId: number): nu
   return programs[0]?.id ?? null;
 }
 
-type PeriodRow = {
-  key: string;
-  index: number;
-  label: string;
-  baslangic: string;
-  bitis: string;
-  isBreak: boolean;
-};
-
-function timeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + (m || 0);
-}
-
-function minutesToTime(mins: number): string {
-  const clamped = Math.max(0, Math.min(24 * 60 - 1, mins));
-  const h = Math.floor(clamped / 60) % 24;
-  const m = clamped % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-/** Ara satırı üretilmez; ara süresi yalnızca sonraki dersin başlangıcını kaydırır. */
-function buildPeriods(startTime: string, sureDk: number, araDk: number, dersAdet: number): PeriodRow[] {
-  const rows: PeriodRow[] = [];
-  let cursor = timeToMinutes(startTime);
-  for (let i = 1; i <= dersAdet; i += 1) {
-    const baslangic = minutesToTime(cursor);
-    const bitis = minutesToTime(cursor + sureDk);
-    rows.push({
-      key: `ders-${i}`,
-      index: i,
-      label: `${i}. Ders`,
-      baslangic,
-      bitis,
-      isBreak: false,
-    });
-    cursor += sureDk + (i < dersAdet ? araDk : 0);
-  }
-  return rows;
-}
-
-function matchLessonToPeriod(lesson: BirebirSlot, periods: PeriodRow[]): PeriodRow | null {
-  const start = lesson.baslangic.slice(0, 5);
-  const lessonPeriods = periods.filter((p) => !p.isBreak);
-  const exact = lessonPeriods.find((p) => p.baslangic === start);
-  if (exact) return exact;
-  // Eski sürekli-grid kayıtları için en yakın ders satırı
-  const startM = timeToMinutes(start);
-  let best: PeriodRow | null = null;
-  let bestDiff = Infinity;
-  for (const p of lessonPeriods) {
-    const diff = Math.abs(timeToMinutes(p.baslangic) - startM);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = p;
-    }
-  }
-  return bestDiff <= 30 ? best : null;
-}
-
 export default function HaftalikSablonlariClient() {
   const searchParams = useSearchParams();
   const { meta, ready, egitimYiliId, error: metaError } = useOzelDersMeta();
   const { show, node: toastNode } = useOzelDersToast();
   const { useKisaAd, setUseKisaAd } = useDersDisplayPref();
-  const { config, setStartTime, setSureDk, setAraDk, setDersAdet } = useHaftalikSaatConfig();
 
   const urlProgramId = Number(searchParams.get('program_id') || 0) || null;
   const urlOgrenciId = Number(searchParams.get('ogrenci_id') || 0) || null;
@@ -193,6 +166,9 @@ export default function HaftalikSablonlariClient() {
   const [lessons, setLessons] = useState<BirebirSlot[]>([]);
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [config, setConfig] = useState<HaftalikSaatConfig>({ ...DEFAULT_SAAT });
+  const [savingZaman, setSavingZaman] = useState(false);
+  const zamanSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -217,14 +193,9 @@ export default function HaftalikSablonlariClient() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const dragLessonIdRef = useRef<number | null>(null);
-  const suppressClickRef = useRef(false);
-  const dropTargetRef = useRef<string | null>(null);
   const scrollYRef = useRef(0);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const tableScrollTopRef = useRef(0);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [draggingId, setDraggingId] = useState<number | null>(null);
   const [moving, setMoving] = useState(false);
 
   const periods = useMemo(
@@ -288,6 +259,77 @@ export default function HaftalikSablonlariClient() {
   const siblingPrograms = activeStudentGroup?.programs || [];
   const siblingProgramKey = siblingPrograms.map((p) => p.id).join(',');
   const paketDersleri = useMemo(() => mergePaketDersleri(siblingPrograms), [siblingProgramKey]);
+
+  // Seçili öğrencinin programındaki zaman ayarlarını yükle
+  useEffect(() => {
+    setConfig(configFromProgram(activeStudentGroup?.primary || activeProgram));
+  }, [activeStudentGroup?.ogrenci, activeProgram?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (zamanSaveTimer.current) clearTimeout(zamanSaveTimer.current);
+    };
+  }, []);
+
+  const persistZaman = useCallback(
+    (next: HaftalikSaatConfig) => {
+      if (!activeStudentGroup?.programs.length) return;
+      if (zamanSaveTimer.current) clearTimeout(zamanSaveTimer.current);
+      zamanSaveTimer.current = setTimeout(async () => {
+        setSavingZaman(true);
+        const payload = {
+          zaman_baslangic: next.startTime,
+          zaman_sure_dk: next.sureDk,
+          zaman_ara_dk: next.araDk,
+          zaman_ders_adet: next.dersAdet,
+        };
+        try {
+          await Promise.all(
+            activeStudentGroup.programs.map((p) => updateProgram(p.id, payload)),
+          );
+          setPrograms((prev) =>
+            prev.map((p) =>
+              p.ogrenci === activeStudentGroup.ogrenci ? { ...p, ...payload } : p,
+            ),
+          );
+        } catch (e) {
+          show(e instanceof Error ? e.message : 'Zaman ayarları kaydedilemedi', 'error');
+        } finally {
+          setSavingZaman(false);
+        }
+      }, 400);
+    },
+    [activeStudentGroup, show],
+  );
+
+  function setStartTime(v: string) {
+    setConfig((prev) => {
+      const next = { ...prev, startTime: v || '09:00' };
+      persistZaman(next);
+      return next;
+    });
+  }
+  function setSureDk(v: number) {
+    setConfig((prev) => {
+      const next = { ...prev, sureDk: Math.max(15, Math.min(180, Math.round(v) || 50)) };
+      persistZaman(next);
+      return next;
+    });
+  }
+  function setAraDk(v: number) {
+    setConfig((prev) => {
+      const next = { ...prev, araDk: Math.max(0, Math.min(60, Math.round(v) || 0)) };
+      persistZaman(next);
+      return next;
+    });
+  }
+  function setDersAdet(v: number) {
+    setConfig((prev) => {
+      const next = { ...prev, dersAdet: Math.max(1, Math.min(16, Math.round(v) || 8)) };
+      persistZaman(next);
+      return next;
+    });
+  }
 
   const filteredStudents = useMemo(() => {
     const q = studentQuery.trim().toLocaleLowerCase('tr');
@@ -358,17 +400,6 @@ export default function HaftalikSablonlariClient() {
 
   const activeLessons = useMemo(() => lessons.filter((s) => s.aktif), [lessons]);
 
-  const cellMap = useMemo(() => {
-    const map = new Map<string, BirebirSlot>();
-    for (const lesson of activeLessons) {
-      const period = matchLessonToPeriod(lesson, periods);
-      if (!period) continue;
-      const key = `${lesson.gun}:${period.key}`;
-      if (!map.has(key)) map.set(key, lesson);
-    }
-    return map;
-  }, [activeLessons, periods]);
-
   function openCreateAt(gun: number, period: PeriodRow) {
     setForm({
       gun: String(gun),
@@ -408,10 +439,6 @@ export default function HaftalikSablonlariClient() {
   }
 
   function openDetail(lesson: BirebirSlot) {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
     setDetailLesson(lesson);
     const sure = lesson.sure_dk || timeToMinutes(lesson.bitis) - timeToMinutes(lesson.baslangic);
     setEditForm({
@@ -528,60 +555,6 @@ export default function HaftalikSablonlariClient() {
     }
   }
 
-  function onBlockDragStart(e: React.DragEvent, lesson: BirebirSlot) {
-    captureScroll();
-    dragLessonIdRef.current = lesson.id;
-    setDraggingId(lesson.id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(lesson.id));
-    const el = e.currentTarget as HTMLElement;
-    try {
-      e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function endDrag() {
-    dragLessonIdRef.current = null;
-    dropTargetRef.current = null;
-    setDropTarget(null);
-    setDraggingId(null);
-    window.setTimeout(() => {
-      suppressClickRef.current = false;
-    }, 150);
-    // Sürükleme iptalinde de eski scroll konumuna dön
-    restoreScroll();
-  }
-
-  function onCellDragOver(e: React.DragEvent, key: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-    if (dropTargetRef.current !== key) {
-      dropTargetRef.current = key;
-      setDropTarget(key);
-    }
-  }
-
-  function onCellDrop(e: React.DragEvent, gun: number, period: PeriodRow) {
-    e.preventDefault();
-    e.stopPropagation();
-    const id = dragLessonIdRef.current || Number(e.dataTransfer.getData('text/plain'));
-    const lesson = activeLessons.find((s) => s.id === id);
-    suppressClickRef.current = true;
-    endDrag();
-    if (!lesson || period.isBreak || moving) return;
-    const existing = cellMap.get(`${gun}:${period.key}`);
-    if (existing && existing.id !== lesson.id) {
-      void swapLesson(lesson, existing);
-      return;
-    }
-    const current = matchLessonToPeriod(lesson, periods);
-    if (current && current.key === period.key && lesson.gun === gun) return;
-    void moveLesson(lesson, gun, period);
-  }
-
   const dersOptions = useMemo(() => {
     const fromMeta = meta?.dersler || [];
     if (!paketDersleri.length) return fromMeta;
@@ -591,7 +564,7 @@ export default function HaftalikSablonlariClient() {
   }, [meta?.dersler, paketDersleri]);
 
   return (
-    <div className={`od-scope${draggingId ? ' is-dragging' : ''}`}>
+    <div className="od-scope">
       {toastNode}
 
       <PageHeader
@@ -634,7 +607,9 @@ export default function HaftalikSablonlariClient() {
       <Collapsible
         icon={<IconClock size={15} />}
         title="Zaman Ayarları"
-        summary={`${config.startTime} başlangıç · ${config.sureDk} dk ders · ${config.araDk} dk ara · ${config.dersAdet} ders`}
+        summary={`${config.startTime} başlangıç · ${config.sureDk} dk ders · ${config.araDk} dk ara · ${config.dersAdet} ders${
+          activeStudentGroup ? ` · ${activeStudentGroup.ogrenci_ad}` : ''
+        }${savingZaman ? ' · kaydediliyor…' : ''}`}
       >
         <div className="od-toolbar" style={{ padding: 0 }}>
           <div className="od-filter-field">
@@ -643,6 +618,7 @@ export default function HaftalikSablonlariClient() {
               type="time"
               className="od-input"
               value={config.startTime}
+              disabled={!activeStudentGroup}
               onChange={(e) => setStartTime(e.target.value)}
             />
           </div>
@@ -655,6 +631,7 @@ export default function HaftalikSablonlariClient() {
               max={180}
               step={5}
               value={config.sureDk}
+              disabled={!activeStudentGroup}
               onChange={(e) => setSureDk(Number(e.target.value) || 50)}
               style={{ width: 72 }}
             />
@@ -668,6 +645,7 @@ export default function HaftalikSablonlariClient() {
               max={60}
               step={5}
               value={config.araDk}
+              disabled={!activeStudentGroup}
               onChange={(e) => setAraDk(Number(e.target.value))}
               style={{ width: 72 }}
             />
@@ -680,11 +658,15 @@ export default function HaftalikSablonlariClient() {
               min={1}
               max={16}
               value={config.dersAdet}
+              disabled={!activeStudentGroup}
               onChange={(e) => setDersAdet(Number(e.target.value) || 8)}
               style={{ width: 72 }}
             />
           </div>
         </div>
+        <p className="od-form-hint" style={{ margin: '8px 0 0' }}>
+          Bu ayarlar seçili öğrenciye özeldir ve otomatik kaydedilir.
+        </p>
       </Collapsible>
 
       <div className="od-sablon-layout">
@@ -751,6 +733,10 @@ export default function HaftalikSablonlariClient() {
                 <strong>{activeStudentGroup.ogrenci_ad || `Öğrenci #${activeStudentGroup.ogrenci}`}</strong>
                 <span className="od-cell-muted">
                   Tüm paketler tek tabloda · {activeLessons.length} şablon dersi
+                  {' · '}
+                  {activeStudentGroup.baslangic_tarihi}
+                  {' – '}
+                  {activeStudentGroup.bitis_tarihi || 'süresiz'}
                 </span>
               </div>
               <div className="od-paket-switch" aria-label="Paket özeti">
@@ -805,82 +791,18 @@ export default function HaftalikSablonlariClient() {
                 </span>
               </div>
             )}
-            <div className="od-table-scroll" ref={tableScrollRef}>
-              <table className="od-grid-table">
-                <thead>
-                  <tr>
-                    <th className="od-grid-time-col">Saat</th>
-                    {DAYS.map((d) => (
-                      <th key={d}>
-                        <span className="od-week-head-day">{GUN_LABELS[d]}</span>
-                        <span className="od-week-head-count">
-                          {activeLessons.filter((s) => s.gun === d).length} ders
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lessonPeriods.map((period) => (
-                    <tr key={period.key}>
-                      <td className="od-grid-time-col">
-                        <strong>{period.label}</strong>
-                        <span>
-                          {period.baslangic}–{period.bitis}
-                        </span>
-                      </td>
-                      {DAYS.map((gun) => {
-                        const key = `${gun}:${period.key}`;
-                        const lesson = cellMap.get(key);
-                        const isDrop = dropTarget === key;
-                        return (
-                          <td
-                            key={gun}
-                            className={`od-grid-cell${lesson ? ' is-filled' : ''}${isDrop ? ' is-drop' : ''}`}
-                            onDragOver={(e) => onCellDragOver(e, key)}
-                            onDragLeave={() => {
-                              if (dropTargetRef.current === key) {
-                                dropTargetRef.current = null;
-                                setDropTarget(null);
-                              }
-                            }}
-                            onDrop={(e) => onCellDrop(e, gun, period)}
-                            onClick={() => {
-                              if (lesson) openDetail(lesson);
-                              else openCreateAt(gun, period);
-                            }}
-                          >
-                            {lesson ? (
-                              <div
-                                className={`od-grid-lesson${draggingId === lesson.id ? ' is-dragging' : ''}`}
-                                draggable={!moving}
-                                style={{ background: weekBlockColor(lesson.ders_ad || lesson.ders) }}
-                                onDragStart={(e) => {
-                                  e.stopPropagation();
-                                  onBlockDragStart(e, lesson);
-                                }}
-                                onDragEnd={endDrag}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openDetail(lesson);
-                                }}
-                              >
-                                <div className="od-week-block-title">
-                                  {resolveDersLabel(lesson, useKisaAd)}
-                                </div>
-                                <div className="od-week-block-sub">{lesson.ogretmen_ad}</div>
-                              </div>
-                            ) : (
-                              <span className="od-grid-empty">+</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <HaftalikProgramGrid
+              lessons={lessons}
+              periods={periods}
+              useKisaAd={useKisaAd}
+              moving={moving}
+              scrollRef={tableScrollRef}
+              onBeforeDrag={captureScroll}
+              onCreateAt={openCreateAt}
+              onOpenLesson={openDetail}
+              onMove={(lesson, gun, period) => void moveLesson(lesson, gun, period)}
+              onSwap={(a, b) => void swapLesson(a, b)}
+            />
           </div>
         </div>
       ) : activeLessons.length === 0 ? (
@@ -996,7 +918,14 @@ export default function HaftalikSablonlariClient() {
               </div>
             </div>
             <p className="od-cell-muted" style={{ margin: 0 }}>
-              Saat, üstteki Zaman Ayarları panelinden gelir.
+              Saat, üstteki Zaman Ayarları panelinden gelir (bu öğrenciye özel).
+              {activeProgram && (
+                <>
+                  {' '}
+                  Oturumlar {activeProgram.baslangic_tarihi} –{' '}
+                  {activeProgram.bitis_tarihi || 'süresiz'} aralığında üretilir.
+                </>
+              )}
             </p>
           </div>
 

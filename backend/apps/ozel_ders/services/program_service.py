@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from django.db import transaction
@@ -9,6 +10,23 @@ from apps.ozel_ders.domain.models import (
     ProgramDurumu,
 )
 from apps.ozel_ders.services.errors import OzelDersError
+
+_TIME_RE = re.compile(r'^\d{2}:\d{2}$')
+
+
+def _clamp_int(value: Any, *, default: int, min_v: int, max_v: int) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(min_v, min(max_v, n))
+
+
+def _normalize_zaman_baslangic(value: Any, default: str = '09:00') -> str:
+    raw = str(value or '').strip()[:5]
+    if _TIME_RE.match(raw):
+        return raw
+    return default
 
 
 def serialize_program(p: BirebirOgrenciProgrami) -> dict:
@@ -35,6 +53,10 @@ def serialize_program(p: BirebirOgrenciProgrami) -> dict:
         'ozel_ders_paket_ad': p.ozel_ders_paket.ad if p.ozel_ders_paket_id else None,
         'baslangic_tarihi': p.baslangic_tarihi.isoformat(),
         'bitis_tarihi': p.bitis_tarihi.isoformat() if p.bitis_tarihi else None,
+        'zaman_baslangic': p.zaman_baslangic or '09:00',
+        'zaman_sure_dk': p.zaman_sure_dk or 50,
+        'zaman_ara_dk': p.zaman_ara_dk if p.zaman_ara_dk is not None else 10,
+        'zaman_ders_adet': p.zaman_ders_adet or 8,
         'durum': p.durum,
         'durum_display': p.get_durum_display(),
         'notlar': p.notlar,
@@ -88,6 +110,10 @@ def create_program(data: dict[str, Any], *, user=None) -> BirebirOgrenciProgrami
         ozel_ders_paket_id=data.get('ozel_ders_paket_id'),
         baslangic_tarihi=data['baslangic_tarihi'],
         bitis_tarihi=bitis,
+        zaman_baslangic=_normalize_zaman_baslangic(data.get('zaman_baslangic')),
+        zaman_sure_dk=_clamp_int(data.get('zaman_sure_dk'), default=50, min_v=15, max_v=180),
+        zaman_ara_dk=_clamp_int(data.get('zaman_ara_dk'), default=10, min_v=0, max_v=60),
+        zaman_ders_adet=_clamp_int(data.get('zaman_ders_adet'), default=8, min_v=1, max_v=16),
         durum=data.get('durum') or ProgramDurumu.AKTIF,
         notlar=data.get('notlar') or '',
         created_by=user if user and getattr(user, 'is_authenticated', False) else None,
@@ -115,12 +141,30 @@ def update_program(program_id: int, data: dict[str, Any], *, kurum_id: int, sube
         p.baslangic_tarihi = data['baslangic_tarihi']
     if 'bitis_tarihi' in data:
         p.bitis_tarihi = data['bitis_tarihi']
+    if 'zaman_baslangic' in data:
+        p.zaman_baslangic = _normalize_zaman_baslangic(data.get('zaman_baslangic'), p.zaman_baslangic or '09:00')
+    if 'zaman_sure_dk' in data:
+        p.zaman_sure_dk = _clamp_int(data.get('zaman_sure_dk'), default=p.zaman_sure_dk or 50, min_v=15, max_v=180)
+    if 'zaman_ara_dk' in data:
+        p.zaman_ara_dk = _clamp_int(
+            data.get('zaman_ara_dk'),
+            default=p.zaman_ara_dk if p.zaman_ara_dk is not None else 10,
+            min_v=0,
+            max_v=60,
+        )
+    if 'zaman_ders_adet' in data:
+        p.zaman_ders_adet = _clamp_int(
+            data.get('zaman_ders_adet'),
+            default=p.zaman_ders_adet or 8,
+            min_v=1,
+            max_v=16,
+        )
     if 'durum' in data:
         p.durum = data['durum']
     if 'notlar' in data:
         p.notlar = data['notlar'] or ''
 
-    if p.bitis_tarihi and p.bitis_tarihi < p.baslangic_tarihi:
+    if p.bitis_tarihi and p.baslangic_tarihi and p.bitis_tarihi < p.baslangic_tarihi:
         raise OzelDersError('Bitiş tarihi başlangıçtan önce olamaz.', 'bitis_tarihi')
 
     p.save()

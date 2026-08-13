@@ -1,22 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import dayjs from 'dayjs';
 import {
   createProgram,
   fetchHakedis,
   fetchOturumlar,
   fetchProgramlar,
-  fetchSlots,
   fetchTatiller,
   materializeProgram,
   resolveDersLabel,
   syncProgramlar,
-  updateProgram,
-  GUN_LABELS,
-  type BirebirOturum,
   type BirebirProgram,
-  type BirebirSlot,
   type OzelDersTatil,
   type PaketDersi,
 } from '@/lib/ozel-ders-api';
@@ -33,6 +29,9 @@ import {
   PageHeader,
   Segmented,
   SkeletonCards,
+  StatCard,
+  StatGrid,
+  StatSkeleton,
   avatarGradient,
   initials,
   formatCurrency,
@@ -45,13 +44,11 @@ import {
   IconCheckCircle,
   IconChevronRight,
   IconClock,
-  IconPhone,
   IconPlus,
   IconRefresh,
   IconRotateCcw,
   IconSearch,
   IconStar,
-  IconStickyNote,
   IconUser,
   IconUsers,
   IconWallet,
@@ -152,6 +149,7 @@ function groupProgramsByStudent(programs: BirebirProgram[]): StudentProgramGroup
 }
 
 export default function OgrenciProgramlariClient() {
+  const router = useRouter();
   const { ready, egitimYiliId, error: metaError } = useOzelDersMeta();
   const { show, node: toastNode } = useOzelDersToast();
   const { useKisaAd, setUseKisaAd } = useDersDisplayPref();
@@ -177,14 +175,8 @@ export default function OgrenciProgramlariClient() {
     notlar: '',
   });
   const [saving, setSaving] = useState(false);
-
-  const [panelProgram, setPanelProgram] = useState<BirebirProgram | null>(null);
-  const [panelSlots, setPanelSlots] = useState<BirebirSlot[]>([]);
-  const [panelOturumlar, setPanelOturumlar] = useState<BirebirOturum[]>([]);
-  const [panelLoading, setPanelLoading] = useState(false);
-  const [panelNotes, setPanelNotes] = useState('');
-  const [savingNotes, setSavingNotes] = useState(false);
-  const [panelTab, setPanelTab] = useState<'genel' | 'program' | 'gecmis' | 'notlar'>('genel');
+  const [sortBy, setSortBy] = useState<'ad' | 'eksik'>('ad');
+  const [onlyNeedsSablon, setOnlyNeedsSablon] = useState(false);
 
   const [materializeFor, setMaterializeFor] = useState<StudentProgramGroup | null>(null);
   const [matRange, setMatRange] = useState({
@@ -239,7 +231,7 @@ export default function OgrenciProgramlariClient() {
           fetchOturumlar({ start_date: today, end_date: today }),
           fetchOturumlar({ start_date: weekStart, end_date: weekEnd }),
           fetchOturumlar({
-            durum: 'TELAFI_EDILECEK',
+            telafi_durumu: 'BEKLENIYOR',
             start_date: dayjs().subtract(60, 'day').format('YYYY-MM-DD'),
             end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
           }),
@@ -311,22 +303,38 @@ export default function OgrenciProgramlariClient() {
 
   const studentGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const groups = groupProgramsByStudent(rows);
-    if (!q) return groups;
-    return groups.filter((g) => {
-      const haystack = [
-        g.ogrenci_ad,
-        g.notlar,
-        ...g.paketAds,
-        ...g.paketDersleri.map((d) => resolveDersLabel(d, useKisaAd)),
-        ...g.paketDersleri.map((d) => d.ad),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [rows, search, useKisaAd]);
+    let groups = groupProgramsByStudent(rows);
+    if (q) {
+      groups = groups.filter((g) => {
+        const haystack = [
+          g.ogrenci_ad,
+          g.notlar,
+          ...g.paketAds,
+          ...g.paketDersleri.map((d) => resolveDersLabel(d, useKisaAd)),
+          ...g.paketDersleri.map((d) => d.ad),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+    if (onlyNeedsSablon) {
+      groups = groups.filter((g) => g.needsSablon);
+    }
+    if (sortBy === 'eksik') {
+      groups = [...groups].sort((a, b) => {
+        if (a.needsSablon !== b.needsSablon) return a.needsSablon ? -1 : 1;
+        return (a.ogrenci_ad || '').localeCompare(b.ogrenci_ad || '', 'tr');
+      });
+    }
+    return groups;
+  }, [rows, search, useKisaAd, onlyNeedsSablon, sortBy]);
+
+  const needsSablonCount = useMemo(
+    () => groupProgramsByStudent(rows).filter((g) => g.needsSablon).length,
+    [rows],
+  );
 
   function sablonHrefFor(group: StudentProgramGroup) {
     const base = akademikTabHref('ozel-ders-yonetimi', 'haftalik-program-sablonlari');
@@ -361,54 +369,6 @@ export default function OgrenciProgramlariClient() {
       show(err instanceof Error ? err.message : 'Kayıt başarısız', 'error');
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function openPanel(program: BirebirProgram) {
-    setPanelTab('genel');
-    const siblingPrograms = rows.filter((r) => r.ogrenci === program.ogrenci);
-    const mergedPaket = mergePaketDersleri(siblingPrograms.length ? siblingPrograms : [program]);
-    setPanelProgram({
-      ...program,
-      paket_dersleri: mergedPaket,
-      slot_count: siblingPrograms.reduce((s, p) => s + (p.slot_count || 0), program.slot_count || 0),
-    });
-    setPanelNotes(program.notlar || '');
-    setPanelLoading(true);
-    try {
-      const programIds = (siblingPrograms.length ? siblingPrograms : [program]).map((p) => p.id);
-      const [slotLists, oturumlar] = await Promise.all([
-        Promise.all(programIds.map((id) => fetchSlots(id))),
-        fetchOturumlar({
-          ogrenci_id: program.ogrenci,
-          start_date: dayjs().subtract(90, 'day').format('YYYY-MM-DD'),
-          end_date: dayjs().add(14, 'day').format('YYYY-MM-DD'),
-        }),
-      ]);
-      setPanelSlots(slotLists.flat());
-      setPanelOturumlar(
-        oturumlar.sort((a, b) =>
-          a.session_date + a.start_time > b.session_date + b.start_time ? -1 : 1,
-        ),
-      );
-    } catch (e) {
-      show(e instanceof Error ? e.message : 'Öğrenci bilgileri yüklenemedi', 'error');
-    } finally {
-      setPanelLoading(false);
-    }
-  }
-
-  async function saveNotes() {
-    if (!panelProgram) return;
-    setSavingNotes(true);
-    try {
-      await updateProgram(panelProgram.id, { notlar: panelNotes });
-      show('Notlar güncellendi.');
-      setRows((prev) => prev.map((r) => (r.id === panelProgram.id ? { ...r, notlar: panelNotes } : r)));
-    } catch (e) {
-      show(e instanceof Error ? e.message : 'Not kaydedilemedi', 'error');
-    } finally {
-      setSavingNotes(false);
     }
   }
 
@@ -475,13 +435,6 @@ export default function OgrenciProgramlariClient() {
     }
   }
 
-  const todayStr = dayjs().format('YYYY-MM-DD');
-  const lastOturum = panelOturumlar.find((o) => o.session_date <= todayStr);
-  const lastAttended = panelOturumlar.find(
-    (o) => o.session_date <= todayStr && ['ISLENDI', 'ONLINE'].includes(o.durum),
-  );
-  const teacherNames = Array.from(new Set(panelSlots.map((s) => s.ogretmen_ad).filter(Boolean)));
-
   async function onSync() {
     setSyncing(true);
     try {
@@ -503,7 +456,7 @@ export default function OgrenciProgramlariClient() {
       <PageHeader
         icon={<IconUsers size={19} />}
         title="Öğrenci Programları"
-        description="Kayıt ve sözleşmeden gelen özel ders / premium öğrenciler burada listelenir. Paket dersleri görünür; öğretmen ve saat ataması Haftalık Şablonlar ekranından yapılır."
+        description="Kayıt ve sözleşmeden gelen özel ders / premium öğrenciler. Karta tıklayarak öğrencinin özel ders operasyon ekranını açın."
         actions={
           <>
             <button type="button" className="od-btn od-btn-secondary" onClick={onSync} disabled={syncing || !ready}>
@@ -518,18 +471,30 @@ export default function OgrenciProgramlariClient() {
 
       {(error || metaError) && <div className="od-banner-error">{error || metaError}</div>}
 
-      {stats && (
-        <div className="od-insight-bar">
-          <span className="od-insight-item"><IconCalendar size={14} /> <strong>{stats.todaySessions}</strong> bugünkü ders</span>
-          <span className={`od-insight-item${stats.pendingAttendance > 0 ? ' warn' : ''}`}><IconClock size={14} /> <strong>{stats.pendingAttendance}</strong> bekleyen yoklama</span>
-          <span className="od-insight-item"><IconWallet size={14} /> <strong>{formatCurrency(stats.todayEarnings)}</strong> bugünkü hakediş</span>
-          <span className="od-insight-item"><IconUser size={14} /> <strong>{stats.activeStudents}</strong> aktif öğrenci</span>
-          <span className="od-insight-item"><IconAward size={14} /> <strong>{stats.activeTeachers}</strong> aktif öğretmen</span>
-          <span className="od-insight-item"><IconBookOpen size={14} /> <strong>{stats.weekSessions}</strong> bu hafta ders</span>
-          <span className={`od-insight-item${stats.pendingTelafi > 0 ? ' warn' : ''}`}><IconRotateCcw size={14} /> <strong>{stats.pendingTelafi}</strong> telafi bekleyen</span>
-          <span className="od-insight-item"><IconStar size={14} /> <strong>{stats.premiumPackages}</strong> premium paket</span>
-        </div>
-      )}
+      {statsLoading && !stats ? (
+        <StatSkeleton count={8} />
+      ) : stats ? (
+        <StatGrid>
+          <StatCard icon={<IconCalendar size={19} />} tone="blue" value={stats.todaySessions} label="Bugünkü Ders" />
+          <StatCard
+            icon={<IconClock size={19} />}
+            tone={stats.pendingAttendance > 0 ? 'orange' : 'slate'}
+            value={stats.pendingAttendance}
+            label="Bekleyen Yoklama"
+          />
+          <StatCard icon={<IconWallet size={19} />} tone="green" value={formatCurrency(stats.todayEarnings)} label="Bugünkü Hakediş" />
+          <StatCard icon={<IconUser size={19} />} tone="purple" value={stats.activeStudents} label="Aktif Öğrenci" />
+          <StatCard icon={<IconAward size={19} />} tone="teal" value={stats.activeTeachers} label="Aktif Öğretmen" />
+          <StatCard icon={<IconBookOpen size={19} />} tone="blue" value={stats.weekSessions} label="Bu Hafta Ders" />
+          <StatCard
+            icon={<IconRotateCcw size={19} />}
+            tone={stats.pendingTelafi > 0 ? 'red' : 'slate'}
+            value={stats.pendingTelafi}
+            label="Telafi Bekleyen"
+          />
+          <StatCard icon={<IconStar size={19} />} tone="pink" value={stats.premiumPackages} label="Premium Paket" />
+        </StatGrid>
+      ) : null}
 
       <div className="od-toolbar">
         <div className="od-search">
@@ -549,6 +514,23 @@ export default function OgrenciProgramlariClient() {
           value={durumFilter}
           onChange={setDurumFilter}
         />
+        <Segmented
+          options={[
+            { value: 'ad', label: 'Ada Göre' },
+            { value: 'eksik', label: 'Önce Eksik Atama' },
+          ]}
+          value={sortBy}
+          onChange={setSortBy}
+        />
+        <button
+          type="button"
+          className={`od-btn od-btn-secondary od-btn-sm${onlyNeedsSablon ? ' is-active-pref' : ''}`}
+          onClick={() => setOnlyNeedsSablon((v) => !v)}
+          title="Sadece öğretmen/saat ataması eksik olan öğrencileri göster"
+          aria-pressed={onlyNeedsSablon}
+        >
+          <IconAlertTriangle size={13} /> Eksik atama {needsSablonCount > 0 ? `(${needsSablonCount})` : ''}
+        </button>
         <div className="od-toolbar-spacer" />
         <span className="od-cell-muted">{studentGroups.length} öğrenci</span>
         <button
@@ -598,7 +580,14 @@ export default function OgrenciProgramlariClient() {
       ) : (
         <div className="od-grid-cards">
           {studentGroups.map((g) => (
-            <div key={g.ogrenci} className="od-entity-card" onClick={() => openPanel(g.primary)}>
+            <div
+              key={g.ogrenci}
+              className={`od-entity-card${g.needsSablon ? ' needs-attention' : ''}`}
+              onClick={() => {
+                const href = `${akademikTabHref('ozel-ders-yonetimi', 'ogrenci-ozel-ders')}?ogrenci_id=${g.ogrenci}`;
+                router.push(href);
+              }}
+            >
               <div className="od-entity-card-top">
                 <div className="od-avatar" style={{ background: avatarGradient(g.ogrenci) }}>
                   {initials(g.ogrenci_ad)}
@@ -611,6 +600,7 @@ export default function OgrenciProgramlariClient() {
                   </div>
                 </div>
                 <Badge tone={g.durum === 'AKTIF' ? 'success' : 'secondary'}>{g.durum_display}</Badge>
+                <IconChevronRight size={15} className="od-entity-card-chevron" />
               </div>
 
               {g.paketAds.length > 0 && (
@@ -669,6 +659,17 @@ export default function OgrenciProgramlariClient() {
                       onClick={(e) => {
                         e.stopPropagation();
                         setMatResult(null);
+                        const start =
+                          g.baslangic_tarihi && g.baslangic_tarihi > dayjs().format('YYYY-MM-DD')
+                            ? g.baslangic_tarihi
+                            : dayjs().format('YYYY-MM-DD');
+                        const end =
+                          g.bitis_tarihi ||
+                          dayjs(start).add(30, 'day').format('YYYY-MM-DD');
+                        setMatRange({
+                          start_date: start,
+                          end_date: g.bitis_tarihi && end > g.bitis_tarihi ? g.bitis_tarihi : end,
+                        });
                         setMaterializeFor(g);
                       }}
                     >
@@ -847,6 +848,8 @@ export default function OgrenciProgramlariClient() {
                 <input
                   type="date"
                   required
+                  min={materializeFor?.baslangic_tarihi || undefined}
+                  max={materializeFor?.bitis_tarihi || undefined}
                   value={matRange.start_date}
                   onChange={(e) => setMatRange((f) => ({ ...f, start_date: e.target.value }))}
                 />
@@ -856,11 +859,20 @@ export default function OgrenciProgramlariClient() {
                 <input
                   type="date"
                   required
+                  min={matRange.start_date || materializeFor?.baslangic_tarihi || undefined}
+                  max={materializeFor?.bitis_tarihi || undefined}
                   value={matRange.end_date}
                   onChange={(e) => setMatRange((f) => ({ ...f, end_date: e.target.value }))}
                 />
               </div>
             </div>
+            <span className="od-form-hint">
+              Oturumlar yalnızca program tarih aralığında üretilir
+              {materializeFor
+                ? ` (${materializeFor.baslangic_tarihi} – ${materializeFor.bitis_tarihi || 'süresiz'})`
+                : ''}
+              .
+            </span>
             {matHolidays.length > 0 ? (
               <div className="od-banner-warning">
                 <IconAlertTriangle size={15} />
@@ -884,213 +896,6 @@ export default function OgrenciProgramlariClient() {
         )}
       </Drawer>
 
-      {/* Öğrenci Bilgi Paneli */}
-      <Drawer
-        open={Boolean(panelProgram)}
-        onClose={() => setPanelProgram(null)}
-        wide
-        title={panelProgram?.ogrenci_ad || 'Öğrenci'}
-        description="Öğrenci programı, hak ve son işlem özeti"
-      >
-        {panelLoading ? (
-          <div>Yükleniyor…</div>
-        ) : panelProgram ? (
-          <>
-            <div className="od-panel-section">
-              <div className="od-panel-profile">
-                <div className="od-avatar lg" style={{ background: avatarGradient(panelProgram.ogrenci) }}>
-                  {initials(panelProgram.ogrenci_ad)}
-                </div>
-                <div>
-                  <div className="od-panel-profile-name">{panelProgram.ogrenci_ad}</div>
-                  <div className="od-entity-card-meta">
-                    <Badge tone={panelProgram.durum === 'AKTIF' ? 'success' : 'secondary'}>
-                      {panelProgram.durum_display}
-                    </Badge>
-                    {rows
-                      .filter((r) => r.ogrenci === panelProgram.ogrenci)
-                      .map((r) => r.premium_paket_ad || r.ozel_ders_paket_ad)
-                      .filter((v): v is string => Boolean(v))
-                      .filter((v, i, arr) => arr.indexOf(v) === i)
-                      .map((ad) => (
-                        <Badge key={ad} tone="purple">
-                          {ad}
-                        </Badge>
-                      ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <Segmented
-              options={[
-                { value: 'genel', label: 'Genel' },
-                { value: 'program', label: 'Program & Slotlar' },
-                { value: 'gecmis', label: 'Geçmiş' },
-                { value: 'notlar', label: 'Notlar' },
-              ]}
-              value={panelTab}
-              onChange={setPanelTab}
-            />
-
-            {panelTab === 'genel' && (
-              <>
-                <div className="od-panel-section">
-                  <div className="od-panel-section-title">
-                    <IconWallet size={13} /> Paket / Program
-                  </div>
-                  <dl className="od-panel-kv">
-                    <dt>Başlangıç</dt>
-                    <dd>{panelProgram.baslangic_tarihi}</dd>
-                  </dl>
-                  <dl className="od-panel-kv">
-                    <dt>Bitiş</dt>
-                    <dd>{panelProgram.bitis_tarihi || 'Süresiz'}</dd>
-                  </dl>
-                  <dl className="od-panel-kv">
-                    <dt>Haftalık ders</dt>
-                    <dd>{panelSlots.filter((s) => s.aktif).length}</dd>
-                  </dl>
-                </div>
-
-                <div className="od-panel-section">
-                  <div className="od-panel-section-title">
-                    <IconPhone size={13} /> İletişim
-                  </div>
-                  <a
-                    className="od-btn od-btn-secondary od-btn-sm"
-                    href={`/ogrenciler/${panelProgram.ogrenci}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Öğrenci Kartını Aç <IconChevronRight size={13} />
-                  </a>
-                </div>
-              </>
-            )}
-
-            {panelTab === 'program' && (
-              <>
-                <div className="od-panel-section">
-                  <div className="od-panel-section-title">
-                    <IconBookOpen size={13} /> Paketten Gelen Dersler
-                  </div>
-                  {(panelProgram.paket_dersleri?.length ?? 0) === 0 ? (
-                    <span className="od-panel-empty">Pakette tanımlı ders yok.</span>
-                  ) : (
-                    <div className="od-entity-card-meta">
-                      {panelProgram.paket_dersleri!.map((d) => (
-                        <Badge key={d.id} tone="info">
-                          {resolveDersLabel(d, useKisaAd)}
-                          {d.haftalik_adet ? ` · ${d.haftalik_adet}/hafta` : ''}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                  {panelSlots.filter((s) => s.aktif).length === 0 && panelProgram && (
-                    <a
-                      className="od-btn od-btn-primary od-btn-sm"
-                      href={`${akademikTabHref('ozel-ders-yonetimi', 'haftalik-program-sablonlari')}?program_id=${panelProgram.id}&ogrenci_id=${panelProgram.ogrenci}`}
-                      style={{ marginTop: 8, alignSelf: 'flex-start' }}
-                    >
-                      Haftalık şablonda öğretmen atayın
-                    </a>
-                  )}
-                </div>
-
-                <div className="od-panel-section">
-                  <div className="od-panel-section-title">
-                    <IconCalendar size={13} /> Haftalık Program
-                  </div>
-                  {panelSlots.filter((s) => s.aktif).length === 0 ? (
-                    <span className="od-panel-empty">Henüz haftalık ders tanımlı değil.</span>
-                  ) : (
-                    <div className="od-panel-list">
-                      {panelSlots
-                        .filter((s) => s.aktif)
-                        .map((s) => (
-                          <div className="od-panel-list-item" key={s.id}>
-                            <span>
-                              <strong>{GUN_LABELS[s.gun]}</strong> {s.baslangic}–{s.bitis} ·{' '}
-                              {resolveDersLabel(s, useKisaAd)}
-                            </span>
-                            <span className="od-cell-muted">{s.ogretmen_ad}</span>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="od-panel-section">
-                  <div className="od-panel-section-title">
-                    <IconAward size={13} /> Öğretmen(ler)
-                  </div>
-                  {teacherNames.length === 0 ? (
-                    <span className="od-panel-empty">Henüz öğretmen ataması yok.</span>
-                  ) : (
-                    <div className="od-entity-card-meta">
-                      {teacherNames.map((t) => (
-                        <Badge key={t} tone="info">
-                          {t}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {panelTab === 'gecmis' && (
-              <div className="od-panel-section">
-                <div className="od-panel-section-title">
-                  <IconClock size={13} /> Son Ders & Yoklama
-                </div>
-                <dl className="od-panel-kv">
-                  <dt>Son ders</dt>
-                  <dd>
-                    {lastOturum ? `${lastOturum.session_date} · ${lastOturum.durum_display}` : 'Kayıt yok'}
-                  </dd>
-                </dl>
-                <dl className="od-panel-kv">
-                  <dt>Son işlenen yoklama</dt>
-                  <dd>{lastAttended ? lastAttended.session_date : 'Kayıt yok'}</dd>
-                </dl>
-              </div>
-            )}
-
-            {panelTab === 'notlar' && (
-              <div className="od-panel-section">
-                <div className="od-panel-section-title">
-                  <IconStickyNote size={13} /> Notlar
-                </div>
-                <textarea
-                  className="od-form"
-                  style={{
-                    minHeight: 120,
-                    width: '100%',
-                    border: '1px solid var(--od-border)',
-                    borderRadius: 9,
-                    padding: 8,
-                    fontSize: '0.83rem',
-                    fontFamily: 'inherit',
-                  }}
-                  value={panelNotes}
-                  onChange={(e) => setPanelNotes(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="od-btn od-btn-secondary od-btn-sm"
-                  style={{ alignSelf: 'flex-start' }}
-                  disabled={savingNotes || panelNotes === (panelProgram.notlar || '')}
-                  onClick={saveNotes}
-                >
-                  {savingNotes ? 'Kaydediliyor…' : 'Notu Kaydet'}
-                </button>
-              </div>
-            )}
-          </>
-        ) : null}
-      </Drawer>
     </div>
   );
 }

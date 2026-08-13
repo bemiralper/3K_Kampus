@@ -4,6 +4,7 @@ from apps.ozel_ders.domain.models import (  # noqa: F401
     BirebirHaftalikSlot,
     BirebirHakedis,
     BirebirOgrenciProgrami,
+    BirebirOturumBildirimLog,
     HakedisDurumu,
     MesaiModu,
     OturumDurumu,
@@ -11,5 +12,7 @@ from apps.ozel_ders.domain.models import (  # noqa: F401
     OzelDersTatilKarari,
     PremiumPaketDersKota,
     ProgramDurumu,
+    SebepKodu,
+    TelafiDurumu,
     UcretKurali,
 )

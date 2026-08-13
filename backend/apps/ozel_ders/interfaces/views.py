@@ -21,6 +21,7 @@ from apps.ozel_ders.services import ucret_engine
 from apps.ozel_ders.services.conflict_service import list_holidays
 from apps.ozel_ders.services import resmi_tatil_karar_service
 from apps.ozel_ders.services import ogrenci_ozel_ders_dashboard
+from apps.ozel_ders.services import student_lesson_summary
 from apps.ozel_ders.services.errors import OzelDersError
 from shared.permissions import require_module_permission, user_has_permission
 
@@ -259,6 +260,28 @@ def ogrenci_ozet(request, ogrenci_id: int):
         return error_response(exc)
 
 
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def ogrenci_ozet_donem(request, ogrenci_id: int):
+    """Dönem bazlı planlanan / işlenen / kalan özeti (şablon + tatil + oturum)."""
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        start = parse_date_field(request.GET.get('start_date'))
+        end = parse_date_field(request.GET.get('end_date'))
+        data = student_lesson_summary.calculate_student_private_lesson_summary(
+            ogrenci_id=ogrenci_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=start,
+            end_date=end,
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
 # ─── Resmi tatiller (katalog sync + karar) ───────────────────
 
 @csrf_exempt
@@ -363,6 +386,7 @@ def oturum_list_create(request):
                 start_date=request.GET.get('start_date'),
                 end_date=request.GET.get('end_date'),
                 durum=request.GET.get('durum'),
+                telafi_durumu=request.GET.get('telafi_durumu'),
                 oturum_turu=request.GET.get('oturum_turu'),
                 ogretmen_id=_int_or_none(request.GET.get('ogretmen_id')),
                 ogrenci_id=_int_or_none(request.GET.get('ogrenci_id')),
@@ -408,12 +432,20 @@ def oturum_set_durum(request, oturum_id):
         return err
     try:
         body = json_body(request)
+        send_wa = body.get('send_whatsapp')
+        if send_wa is not None and not isinstance(send_wa, bool):
+            send_wa = str(send_wa).lower() in ('1', 'true', 'yes', 'on')
         o = oturum_service.set_durum(
             oturum_id,
             body.get('durum'),
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
             notes=body.get('notes'),
+            sebep_kodu=body.get('sebep_kodu'),
+            sebep_aciklama=body.get('sebep_aciklama'),
+            telafi_durumu=body.get('telafi_durumu'),
+            send_whatsapp=send_wa,
+            user=request.user,
         )
         return JsonResponse({'success': True, 'data': oturum_service.serialize_oturum(o)})
     except OzelDersError as exc:

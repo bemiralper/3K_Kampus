@@ -27,6 +27,7 @@ MODULE_DUYURU = 'duyuru'
 MODULE_OGRENCI = 'ogrenci'
 MODULE_AKADEMIK = 'akademik'
 MODULE_KOC = 'koc'
+MODULE_OZEL_DERS = 'ozel_ders'
 
 MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_ODEV: 'Ödev',
@@ -41,6 +42,7 @@ MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_OGRENCI: 'Öğrenci',
     MODULE_AKADEMIK: 'Akademik',
     MODULE_KOC: 'Koçluk',
+    MODULE_OZEL_DERS: 'Özel Ders',
 })
 
 COMMON_VARIABLES = ('kurum_ad', 'sube', 'sinif')
@@ -512,6 +514,110 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
             OGRENCI: (
                 'Merhaba {{ogrenci_ad}}, doğum günün kutlu olsun! '
                 '{{yas}}. yaşın sağlık ve başarı getirsin.'
+            ),
+        }),
+    ),
+    # ── Özel ders (tek genel Meta şablon değişken seti) ──
+    NotificationEvent(
+        key='ozel_ders.ogretmen_gelmedi',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders — öğretmen gelmedi',
+        description='Özel ders yoklamasında öğretmen gelmedi; veliye telafi bilgisi (tarih belirsiz).',
+        recipients=(VELI,),
+        opt_in_category='devamsizlik',
+        variables=(
+            'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
+        ),
+        meta_name_base='ozel_ders_bilgi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Merhaba {{veli_ad}}, {{ogrenci_ad}} öğrencimizin {{ders_tarihi}} '
+                '{{ders_saati}} {{ders_adi}} özel dersi öğretmen katılımı nedeniyle '
+                'yapılamamıştır. Ders telafi edilecektir. Telafi tarihi kesinleşince '
+                'ayrıca bilgilendirileceksiniz.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.ogrenci_gelmedi',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders — öğrenci gelmedi',
+        description='Özel ders yoklamasında öğrenci gelmedi bildirimi.',
+        recipients=(VELI,),
+        opt_in_category='devamsizlik',
+        variables=(
+            'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
+        ),
+        meta_name_base='ozel_ders_bilgi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Merhaba {{veli_ad}}, {{ogrenci_ad}} öğrencimizin {{ders_tarihi}} '
+                '{{ders_saati}} {{ders_adi}} özel dersine katılım sağlanamamıştır. '
+                'Sebep: {{sebep}}. {{ek_bilgi}}'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.iptal',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders — iptal',
+        description='Özel ders iptal bildirimi.',
+        recipients=(VELI,),
+        opt_in_category='devamsizlik',
+        variables=(
+            'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
+        ),
+        meta_name_base='ozel_ders_bilgi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Merhaba {{veli_ad}}, {{ogrenci_ad}} öğrencimizin {{ders_tarihi}} '
+                '{{ders_saati}} {{ders_adi}} özel dersi iptal edilmiştir. '
+                'Sebep: {{sebep}}. {{ek_bilgi}}'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.telafi_planlandi',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders — telafi planlandı',
+        description=(
+            'Telafi dersi oluşturulduğunda veliye bildirim. '
+            'Mesajda orijinal ders tarihi/saati zorunlu yer alır.'
+        ),
+        recipients=(VELI,),
+        opt_in_category='devamsizlik',
+        variables=(
+            'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
+        ),
+        meta_name_base='ozel_ders_bilgi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Merhaba {{veli_ad}}, {{ogrenci_ad}} öğrencimizin {{ders_tarihi}} '
+                '{{ders_saati}} tarihinde yapılamayan {{ders_adi}} özel dersinin '
+                'telafisi planlanmıştır. {{ek_bilgi}}'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.islendi',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders — işlendi (opt-in)',
+        description='Normal ders sonrası veli bildirimi; varsayılan kapalı, kullanıcı isterse açar.',
+        recipients=(VELI,),
+        opt_in_category='devamsizlik',
+        variables=(
+            'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
+        ),
+        meta_name_base='ozel_ders_bilgi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Merhaba {{veli_ad}}, {{ogrenci_ad}} öğrencimizin {{ders_tarihi}} '
+                '{{ders_saati}} {{ders_adi}} özel dersi gerçekleştirilmiştir.'
             ),
         }),
     ),

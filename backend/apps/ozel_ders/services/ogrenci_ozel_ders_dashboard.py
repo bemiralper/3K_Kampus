@@ -12,6 +12,7 @@ from apps.ozel_ders.domain.models import (
     OturumDurumu,
     OturumTuru,
     ProgramDurumu,
+    TelafiDurumu,
 )
 from apps.ozel_ders.services.errors import OzelDersError
 
@@ -108,7 +109,7 @@ def build_dashboard(
     iptal = sum(1 for o in oturumlar if o.durum == OturumDurumu.IPTAL)
     ogrenci_gelmedi = sum(1 for o in oturumlar if o.durum == OturumDurumu.OGRENCI_GELMEDI)
     ogretmen_gelmedi = sum(1 for o in oturumlar if o.durum == OturumDurumu.OGRETMEN_GELMEDI)
-    telafi_bekleyen = sum(1 for o in oturumlar if o.durum == OturumDurumu.TELAFI_EDILECEK)
+    telafi_bekleyen = sum(1 for o in oturumlar if o.telafi_durumu == TelafiDurumu.BEKLENIYOR)
     telafi_yapilan = sum(1 for o in oturumlar if o.oturum_turu == OturumTuru.TELAFI and o.durum in ATTENDED)
     planlandi = sum(1 for o in oturumlar if o.durum == OturumDurumu.PLANLANDI)
     total_minutes = sum(o.duration_minutes() for o in oturumlar if o.durum in ATTENDED)
@@ -120,7 +121,7 @@ def build_dashboard(
     )]
     future = [
         o for o in oturumlar
-        if o.session_date >= today and o.durum in (OturumDurumu.PLANLANDI, OturumDurumu.TELAFI_EDILECEK, OturumDurumu.ONLINE)
+        if o.session_date >= today and o.durum in (OturumDurumu.PLANLANDI, OturumDurumu.ONLINE)
     ]
     future_sorted = sorted(future, key=lambda o: (o.session_date, o.start_time))
     past_sorted = sorted(past, key=lambda o: (o.session_date, o.start_time), reverse=True)
@@ -256,7 +257,10 @@ def build_dashboard(
                 ),
                 'OGRENCI_GELMEDI': counts.get(OturumDurumu.OGRENCI_GELMEDI, 0),
                 'OGRETMEN_GELMEDI': counts.get(OturumDurumu.OGRETMEN_GELMEDI, 0),
-                'TELAFI_EDILECEK': counts.get(OturumDurumu.TELAFI_EDILECEK, 0),
+                'TELAFI_BEKLENIYOR': sum(
+                    1 for o in oturumlar
+                    if o.ders_id == ders_id and o.telafi_durumu == TelafiDurumu.BEKLENIYOR
+                ),
                 'ONLINE': counts.get(OturumDurumu.ONLINE, 0),
             },
         })

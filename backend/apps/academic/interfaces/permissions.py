@@ -18,7 +18,7 @@ from functools import wraps
 from django.http import JsonResponse
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
-from shared.permissions import user_has_any_permission
+from shared.permissions import user_has_akademik_full_access, user_has_any_permission
 
 ACADEMIC_READ_CODES = (
     'sinif.read', 'sinif.write', 'sinif.manage',
@@ -31,10 +31,14 @@ ACADEMIC_WRITE_CODES = (
 
 
 def user_can_read_academic(user) -> bool:
+    if user_has_akademik_full_access(user):
+        return True
     return bool(user and user.is_authenticated and user_has_any_permission(user, *ACADEMIC_READ_CODES))
 
 
 def user_can_write_academic(user) -> bool:
+    if user_has_akademik_full_access(user):
+        return True
     return bool(user and user.is_authenticated and user_has_any_permission(user, *ACADEMIC_WRITE_CODES))
 
 
@@ -47,6 +51,8 @@ class AcademicModulePermission(BasePermission):
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
+        if user_has_akademik_full_access(request.user):
+            return True
         if request.method in SAFE_METHODS:
             return user_has_any_permission(request.user, *ACADEMIC_READ_CODES)
         return user_has_any_permission(request.user, *ACADEMIC_WRITE_CODES)
@@ -66,7 +72,9 @@ def academic_view_permission(view_func):
                 {'success': False, 'error': 'Oturum açmanız gerekiyor. Lütfen tekrar giriş yapın.'},
                 status=401,
             )
-        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+        if user_has_akademik_full_access(request.user):
+            allowed = True
+        elif request.method in ('GET', 'HEAD', 'OPTIONS'):
             allowed = user_has_any_permission(request.user, *ACADEMIC_READ_CODES)
         else:
             allowed = user_has_any_permission(request.user, *ACADEMIC_WRITE_CODES)

@@ -37,4 +37,9 @@ urlpatterns = [
     path('resmi-tatiller/karar/', views.resmi_tatil_karar, name='ozel-ders-resmi-tatil-karar'),
 
     path('ogrenci/<int:ogrenci_id>/ozet/', views.ogrenci_ozet, name='ozel-ders-ogrenci-ozet'),
+    path(
+        'ogrenci/<int:ogrenci_id>/ozet-donem/',
+        views.ogrenci_ozet_donem,
+        name='ozel-ders-ogrenci-ozet-donem',
+    ),
 ]
