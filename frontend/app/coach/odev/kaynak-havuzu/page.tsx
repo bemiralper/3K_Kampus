@@ -5,8 +5,10 @@ import StudentResourcePoolPage from '@/app/admin/odev/kaynak-havuzu/page';
 
 export default function CoachKaynakHavuzuPage() {
   return (
-    <KaynakPathProvider basePath="coach">
-      <StudentResourcePoolPage />
-    </KaynakPathProvider>
+    <div className="coach-havuz-page">
+      <KaynakPathProvider basePath="coach">
+        <StudentResourcePoolPage />
+      </KaynakPathProvider>
+    </div>
   );
 }

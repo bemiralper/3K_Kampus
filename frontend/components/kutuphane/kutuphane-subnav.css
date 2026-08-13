@@ -63,12 +63,17 @@
   line-height: 1;
 }
 
+.coach-kutuphane-subnav-item {
+  min-height: 44px;
+}
+
 .coach-kutuphane-shell {
   min-height: 100%;
+  min-width: 0;
 }
 
 .coach-kutuphane-content {
-  /* Admin dashboard styles work inside coach shell */
+  min-width: 0;
 }
 
 @media (max-width: 640px) {
@@ -80,5 +85,9 @@
   .kutuphane-subnav-item,
   .coach-kutuphane-subnav-item {
     padding: 7px 12px;
+  }
+
+  .coach-kutuphane-subnav-item {
+    min-height: 44px;
   }
 }

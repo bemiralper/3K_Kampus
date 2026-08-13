@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   fetchAssignmentDetail,
   updateTaskCompletionStatus,
@@ -17,7 +17,7 @@ import {
   deleteAssignment,
   downloadAssignmentServerPdf,
 } from "@/lib/resources-api";
-import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
+import { useOdevKontrolPaths, buildNewAssignmentFromKontrolHref } from "@/components/odev/OdevKontrolPaths";
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { getRiskColor, isOverdue } from "@/components/odev/statusTokens";
 import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
@@ -156,10 +156,16 @@ const getCompletionBadge = (cs: string) => {
 };
 
 // ─── Component ───
-export default function OdevKontrolDetailClient() {
+export default function OdevKontrolDetailClient({
+  variant = "admin",
+}: {
+  variant?: "admin" | "coach";
+}) {
+  const isCoach = variant === "coach";
   const paths = useOdevKontrolPaths();
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const assignmentId = params.id as string;
 
   const [assignment, setAssignment] = useState<AssignmentDetail | null>(null);
@@ -196,11 +202,37 @@ export default function OdevKontrolDetailClient() {
 
   const [showSendModal, setShowSendModal] = useState<"plan" | "report" | null>(null);
   const [pdfDownloadBusy, setPdfDownloadBusy] = useState<"plan" | "report" | null>(null);
+  /** Kontrol yeni tamamlandığında: ödev ver / WhatsApp / kapat seçenekleri */
+  const [showCompletionChooser, setShowCompletionChooser] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   // Kontrol tamamlandı ama tekrar düzenleme modu
   const [isReEditing, setIsReEditing] = useState(false);
 
   const initialLoadDone = useRef(false);
+
+  const expandedStorageKey = `odev-kontrol-expanded:${assignmentId}`;
+  const completionDismissKey = `odev-kontrol-completion-dismissed:${assignmentId}`;
+
+  const persistExpanded = useCallback((next: Set<number>) => {
+    try {
+      sessionStorage.setItem(expandedStorageKey, JSON.stringify([...next]));
+    } catch { /* ignore */ }
+  }, [expandedStorageKey]);
+
+  const openCompletionChooserIfNeeded = useCallback(() => {
+    try {
+      if (sessionStorage.getItem(completionDismissKey) === "1") return;
+    } catch { /* ignore */ }
+    setShowCompletionChooser(true);
+  }, [completionDismissKey]);
+
+  const dismissCompletionChooser = useCallback(() => {
+    try {
+      sessionStorage.setItem(completionDismissKey, "1");
+    } catch { /* ignore */ }
+    setShowCompletionChooser(false);
+  }, [completionDismissKey]);
 
   const fetchAssignment = useCallback(async (): Promise<AssignmentDetail | null> => {
     // Sadece ilk yüklemede loading göster, sonraki refresh'lerde scroll bozulmasın
@@ -210,10 +242,35 @@ export default function OdevKontrolDetailClient() {
       if (result.success !== false && result.data) {
         const data = result.data as unknown as AssignmentDetail;
         setAssignment(data);
-        // Sadece ilk yüklemede dersleri aç, sonraki refresh'lerde mevcut expanded durumu koru
+        // Sadece ilk yüklemede expanded durumunu kur (sessionStorage tercih edilir)
         if (!initialLoadDone.current) {
-          const ids = new Set<number>((data.lessons || []).map((l: AssignmentLesson) => l.id as number));
-          setExpandedLessons(ids);
+          let restored: Set<number> | null = null;
+          try {
+            const raw = sessionStorage.getItem(expandedStorageKey);
+            if (raw) {
+              const ids = (JSON.parse(raw) as unknown[])
+                .map((x) => Number(x))
+                .filter((n) => Number.isFinite(n));
+              restored = new Set(ids);
+            }
+          } catch { /* ignore */ }
+
+          if (restored) {
+            setExpandedLessons(restored);
+          } else {
+            // İlk ziyaret: yalnızca bekleyen görevli dersleri açık tut
+            const pendingIds = new Set<number>(
+              (data.lessons || [])
+                .filter((l: AssignmentLesson) =>
+                  (l.tasks || []).some((t) => t.completion_status === "PENDING"),
+                )
+                .map((l: AssignmentLesson) => l.id as number),
+            );
+            setExpandedLessons(pendingIds);
+            try {
+              sessionStorage.setItem(expandedStorageKey, JSON.stringify([...pendingIds]));
+            } catch { /* ignore */ }
+          }
         }
         setLoading(false);
         initialLoadDone.current = true;
@@ -226,22 +283,35 @@ export default function OdevKontrolDetailClient() {
     setLoading(false);
     initialLoadDone.current = true;
     return null;
-  }, [assignmentId]);
+  }, [assignmentId, expandedStorageKey]);
 
   useEffect(() => { fetchAssignment(); }, [fetchAssignment]);
+
+  /* Ödev verdikten sonra kontrol rapor WhatsApp'ına dönüş */
+  useEffect(() => {
+    if (loading || !assignment) return;
+    if (searchParams.get("notify") !== "report") return;
+    setShowSendModal("report");
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("notify");
+      window.history.replaceState({}, "", url.pathname + (url.search || ""));
+    } catch { /* ignore */ }
+  }, [searchParams, loading, assignment]);
 
   /* ─── Escape key ile modal kapat ─── */
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (showDeleteModal) setShowDeleteModal(false);
+        if (showCompletionChooser) dismissCompletionChooser();
+        else if (showDeleteModal) setShowDeleteModal(false);
         else if (showNotDoneModal) setShowNotDoneModal(false);
         else if (showPostponeModal) setShowPostponeModal(false);
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [showNotDoneModal, showPostponeModal, showDeleteModal]);
+  }, [showNotDoneModal, showPostponeModal, showDeleteModal, showCompletionChooser, dismissCompletionChooser]);
 
   // ─── Canlı Özet Hesaplama (client-side) ───
   const liveSummary = useMemo(() => {
@@ -268,6 +338,30 @@ export default function OdevKontrolDetailClient() {
   }, [assignment]);
 
   // ─── Actions ───
+  const collapseFullyControlledLessons = useCallback((data: AssignmentDetail | null) => {
+    if (!data) return;
+    setExpandedLessons((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const lesson of data.lessons || []) {
+        const tasks = lesson.tasks || [];
+        const controlled =
+          tasks.length > 0 && tasks.every((t) => t.completion_status !== "PENDING");
+        if (controlled && next.has(lesson.id)) {
+          next.delete(lesson.id);
+          changed = true;
+        }
+      }
+      if (changed) {
+        try {
+          sessionStorage.setItem(expandedStorageKey, JSON.stringify([...next]));
+        } catch { /* ignore */ }
+        return next;
+      }
+      return prev;
+    });
+  }, [expandedStorageKey]);
+
   const handleUpdateTaskStatus = async (taskId: number, completionStatus: string, pct?: number) => {
     setSaving(taskId);
     const wasCompleted = assignment?.status === "COMPLETED";
@@ -284,14 +378,60 @@ export default function OdevKontrolDetailClient() {
         flash(completionStatus === "DONE" ? "✅ Yaptı olarak işaretlendi" : completionStatus === "NOT_DONE" ? "❌ Yapmadı olarak işaretlendi" : `⚠️ Eksik: %${pct}`);
         const updated = await fetchAssignment();
         setPartialTaskId(null);
+        collapseFullyControlledLessons(updated);
         if (!wasCompleted && updated?.status === "COMPLETED") {
-          setShowSendModal("report");
+          openCompletionChooserIfNeeded();
         }
       } else {
         flash("❌ " + (result.error || "İşlem başarısız"));
       }
     } catch { flash("❌ Bağlantı hatası"); }
     setSaving(null);
+  };
+
+  const handleBulkUpdateTasks = async (
+    tasks: AssignmentTask[],
+    completionStatus: "DONE" | "NOT_DONE",
+  ) => {
+    if (!assignment || !tasks.length || bulkSaving) return;
+    const locked =
+      !!assignment.non_submission_reason ||
+      !!assignment.is_control_locked ||
+      (assignment.status === "COMPLETED" && !isReEditing);
+    if (locked) return;
+    const targets = tasks.filter((t) => t.completion_status !== completionStatus);
+    if (!targets.length) {
+      flash(completionStatus === "DONE" ? "Hepsi zaten yaptı" : "Hepsi zaten yapmadı");
+      return;
+    }
+    setBulkSaving(true);
+    const wasCompleted = assignment.status === "COMPLETED";
+    try {
+      const results = await Promise.all(
+        targets.map((t) =>
+          updateTaskCompletionStatus(t.id, { completion_status: completionStatus }),
+        ),
+      );
+      const ok = results.filter((r) => r.success).length;
+      const fail = results.length - ok;
+      if (ok > 0) {
+        flash(
+          completionStatus === "DONE"
+            ? `✅ ${ok} görev yaptı işaretlendi${fail ? ` · ${fail} başarısız` : ""}`
+            : `❌ ${ok} görev yapmadı işaretlendi${fail ? ` · ${fail} başarısız` : ""}`,
+        );
+        const updated = await fetchAssignment();
+        collapseFullyControlledLessons(updated);
+        if (!wasCompleted && updated?.status === "COMPLETED") {
+          openCompletionChooserIfNeeded();
+        }
+      } else {
+        flash("❌ Toplu işaretleme başarısız");
+      }
+    } catch {
+      flash("❌ Bağlantı hatası");
+    }
+    setBulkSaving(false);
   };
 
   const handleSaveNote = async (taskId: number) => {
@@ -390,7 +530,7 @@ export default function OdevKontrolDetailClient() {
         setNotDoneReason("NOT_BROUGHT");
         setNotDoneNote("");
         if (!wasCompleted && updated?.status === "COMPLETED") {
-          setShowSendModal("report");
+          openCompletionChooserIfNeeded();
         }
       } else {
         flash("❌ " + (result.error || "İşlem başarısız"));
@@ -458,6 +598,7 @@ export default function OdevKontrolDetailClient() {
     setExpandedLessons(prev => {
       const s = new Set(prev);
       s.has(id) ? s.delete(id) : s.add(id);
+      persistExpanded(s);
       return s;
     });
   };
@@ -474,11 +615,31 @@ export default function OdevKontrolDetailClient() {
   const evaluatedTaskCount = liveSummary ? liveSummary.total - liveSummary.pending : 0;
   const assignHomeworkHref =
     isCompleted && paths.newAssignment
-      ? `${paths.newAssignment}?student=${assignment.student}&locked=1&return=${encodeURIComponent(paths.detail(assignment.id))}`
+      ? buildNewAssignmentFromKontrolHref(paths.newAssignment, {
+          studentId: assignment.student,
+          returnPath: paths.detail(assignment.id),
+          lessonId: assignment.lessons.find((l) => l.lesson)?.lesson ?? null,
+          bookId: assignment.lessons.find((l) => l.resource_book)?.resource_book ?? null,
+          kontrolAssignmentId: assignment.id,
+          kontrolDone: true,
+        })
+      : null;
+
+  /** Ders grubu kontrolü bittiğinde (tüm görevler değerlendirildi) Ödev Ver linki */
+  const lessonAssignHref = (lessonId: number, bookId: number | null) =>
+    paths.newAssignment && assignment.status !== "DRAFT"
+      ? buildNewAssignmentFromKontrolHref(paths.newAssignment, {
+          studentId: assignment.student,
+          returnPath: paths.detail(assignment.id),
+          lessonId,
+          bookId,
+          kontrolAssignmentId: assignment.id,
+          kontrolDone: isCompleted,
+        })
       : null;
 
   return (
-    <div className="ok-root" style={{ maxWidth: 1400, margin: "0 auto" }}>
+    <div className={`ok-root${isCoach ? " ok-coach" : ""}`} style={{ maxWidth: 1400, margin: "0 auto" }}>
 
       {toast && <div className="ok-toast">{toast}</div>}
 
@@ -711,6 +872,7 @@ export default function OdevKontrolDetailClient() {
                 {assignHomeworkHref && (
                   <Link
                     href={assignHomeworkHref}
+                    onClick={dismissCompletionChooser}
                     style={{
                       padding: "9px 18px",
                       background: "linear-gradient(135deg, #6366f1, #4f46e5)",
@@ -722,6 +884,23 @@ export default function OdevKontrolDetailClient() {
                   >
                     📝 Yeni Ödev Ver
                   </Link>
+                )}
+                {assignment.has_been_notified === false && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dismissCompletionChooser();
+                      setShowSendModal("report");
+                    }}
+                    style={{
+                      padding: "9px 18px", background: "white",
+                      color: "#047857", border: "1.5px solid #6ee7b7",
+                      borderRadius: 10, fontSize: 12, fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    WhatsApp Gönder
+                  </button>
                 )}
                 {!isReEditing ? (
                   <button
@@ -771,19 +950,48 @@ export default function OdevKontrolDetailClient() {
                   const groupDone = allTasks.filter(t => t.completion_status === "DONE").length;
                   const groupTotal = allTasks.length;
                   const groupPct = groupTotal > 0 ? Math.round(groupDone / groupTotal * 100) : 0;
+                  // Bu dersin kontrolü bitti = bekleyen (PENDING) görev kalmadı
+                  const groupControlled =
+                    groupTotal > 0 && allTasks.every((t) => t.completion_status !== "PENDING");
                   return (
                     <div key={subjectName} style={{ background: "white", borderRadius: 16, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", border: "1px solid #e8ecf1" }}>
                       {/* Ders Grup Header */}
-                      <div style={{ padding: "16px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", background: groupPct === 100 ? "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)" : "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)", borderBottom: "1px solid #e2e8f0" }}>
-                        <div>
-                          <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", display: "flex", alignItems: "center", gap: 6 }}>📖 {subjectName}{groupPct === 100 && <span style={{ fontSize: 15 }}>✅</span>}</div>
+                      <div style={{ padding: "16px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: groupControlled ? "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)" : "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)", borderBottom: "1px solid #e2e8f0" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", display: "flex", alignItems: "center", gap: 6 }}>📖 {subjectName}{groupControlled && <span style={{ fontSize: 15 }}>✅</span>}</div>
                           <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{lessons.length} kaynak · {groupTotal} görev</div>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                          {groupControlled && (() => {
+                            const seed = lessons.find((l) => l.resource_book) || lessons[0];
+                            const href = seed ? lessonAssignHref(seed.lesson, seed.resource_book) : null;
+                            return href ? (
+                              <Link
+                                href={href}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  dismissCompletionChooser();
+                                }}
+                                style={{
+                                  padding: "7px 12px",
+                                  borderRadius: 8,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  textDecoration: "none",
+                                  background: "#eef2ff",
+                                  border: "1px solid #a5b4fc",
+                                  color: "#4338ca",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                Bu dersten ödev ver
+                              </Link>
+                            ) : null;
+                          })()}
                           <div style={{ textAlign: "right" }}>
-                            <div style={{ fontSize: 15, fontWeight: 700, color: groupPct === 100 ? "#16a34a" : "#6366f1" }}>{groupDone}/{groupTotal}</div>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: groupControlled ? "#16a34a" : "#6366f1" }}>{groupDone}/{groupTotal}</div>
                             <div style={{ width: 100, height: 7, background: "#e2e8f0", borderRadius: 3.5, overflow: "hidden", marginTop: 4 }}>
-                              <div style={{ height: "100%", width: `${groupPct}%`, background: groupPct === 100 ? "linear-gradient(90deg, #10b981, #059669)" : "linear-gradient(90deg, #6366f1, #818cf8)", borderRadius: 3.5, transition: "width 0.5s" }} />
+                              <div style={{ height: "100%", width: `${groupPct}%`, background: groupControlled ? "linear-gradient(90deg, #10b981, #059669)" : "linear-gradient(90deg, #6366f1, #818cf8)", borderRadius: 3.5, transition: "width 0.5s" }} />
                             </div>
                           </div>
                         </div>
@@ -804,7 +1012,38 @@ export default function OdevKontrolDetailClient() {
                         {!lesson.resource_book_name && <div style={{ fontSize: 14, fontWeight: 600, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>📝 Kaynak belirtilmemiş{pct === 100 && <span style={{ fontSize: 13 }}>✅</span>}</div>}
                         {lesson.topic_name && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>📌 {lesson.topic_name}</div>}
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {!isLocked && lesson.tasks.length > 0 && (
+                          <div
+                            style={{ display: "flex", gap: 6 }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              disabled={bulkSaving}
+                              onClick={() => handleBulkUpdateTasks(lesson.tasks, "DONE")}
+                              style={{
+                                padding: "5px 10px", borderRadius: 7, fontSize: 11, fontWeight: 700,
+                                border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
+                                cursor: bulkSaving ? "wait" : "pointer",
+                              }}
+                            >
+                              Tümü Yaptı
+                            </button>
+                            <button
+                              type="button"
+                              disabled={bulkSaving}
+                              onClick={() => handleBulkUpdateTasks(lesson.tasks, "NOT_DONE")}
+                              style={{
+                                padding: "5px 10px", borderRadius: 7, fontSize: 11, fontWeight: 700,
+                                border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                                cursor: bulkSaving ? "wait" : "pointer",
+                              }}
+                            >
+                              Tümü Yapmadı
+                            </button>
+                          </div>
+                        )}
                         <div style={{ textAlign: "right" }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: pct === 100 ? "#16a34a" : "#6366f1" }}>{done}/{total}</div>
                           <div style={{ width: 80, height: 5, background: "#e2e8f0", borderRadius: 2.5, overflow: "hidden", marginTop: 3 }}>
@@ -833,187 +1072,206 @@ export default function OdevKontrolDetailClient() {
                             <div key={topicKey}>
                               {/* Birden fazla content topic varsa alt-başlık göster */}
                               {hasMultipleTopics && topicKey !== "__default__" && (
-                                <div style={{ padding: "8px 22px 6px 42px", background: "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)", borderTop: tIdx > 0 ? "1px solid #c7d2fe" : "none", display: "flex", alignItems: "center", gap: 6 }}>
+                                <div style={{ padding: "8px 22px 6px 42px", background: "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)", borderTop: tIdx > 0 ? "1px solid #c7d2fe" : "none", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                                   <span style={{ fontSize: 13 }}>📂</span>
                                   <span style={{ fontSize: 12, fontWeight: 700, color: "#4338ca" }}>{topicKey}</span>
                                   <span style={{ fontSize: 10, color: "#818cf8", fontWeight: 500 }}>({tasks.length} görev)</span>
+                                  {!isLocked && (
+                                    <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                                      <button
+                                        type="button"
+                                        disabled={bulkSaving}
+                                        onClick={() => handleBulkUpdateTasks(tasks, "DONE")}
+                                        style={{
+                                          padding: "4px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                                          border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
+                                          cursor: bulkSaving ? "wait" : "pointer",
+                                        }}
+                                      >
+                                        Tümü Yaptı
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={bulkSaving}
+                                        onClick={() => handleBulkUpdateTasks(tasks, "NOT_DONE")}
+                                        style={{
+                                          padding: "4px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                                          border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                                          cursor: bulkSaving ? "wait" : "pointer",
+                                        }}
+                                      >
+                                        Tümü Yapmadı
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {tasks.map(task => {
                           const badge = getCompletionBadge(task.completion_status);
                           const isPartialOpen = partialTaskId === task.id;
                           const isSaving = saving === task.id;
-                          const borderColor = task.completion_status === "DONE" ? "#16a34a" : task.completion_status === "NOT_DONE" ? "#dc2626" : task.completion_status === "PARTIAL" ? "#d97706" : "#cbd5e1";
+                          const isEditingNote = editingNoteTaskId === task.id;
+                          const showExtra = isPartialOpen || isEditingNote || !!task.student_feedback || (!!task.coach_evaluation_note && !isEditingNote);
+                          const compactClass =
+                            task.completion_status === "DONE" ? " is-done"
+                              : task.completion_status === "NOT_DONE" ? " is-not-done"
+                              : task.completion_status === "PARTIAL" ? " is-partial"
+                              : "";
+                          const metaBits: string[] = [];
+                          if (task.question_count != null && task.question_count > 0) metaBits.push(`${task.question_count} soru`);
+                          if (task.page_count != null && task.page_count > 0) metaBits.push(`${task.page_count} sf`);
                           return (
-                            <div key={task.id} style={{ padding: "18px 22px 18px 18px", borderTop: "1px solid #e8ecf1", background: task.completion_status === "PENDING" ? "#ffffff" : "#fafbfc", borderLeft: `4px solid ${borderColor}`, marginLeft: 8 }}>
-                              {/* Görev Başlığı + Badge */}
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, gap: 8 }}>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", letterSpacing: -0.2 }}>{task.title}</div>
-                                  <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap", fontSize: 12 }}>
-                                    <span style={{ color: "#94a3b8", background: "#f8fafc", padding: "2px 8px", borderRadius: 6 }}>{task.task_type_display}</span>
-                                    {task.question_count != null && task.question_count > 0 && <span style={{ color: "#6366f1", background: "#eef2ff", padding: "2px 8px", borderRadius: 6, fontWeight: 500 }}>📝 {task.question_count} soru</span>}
-                                    {task.page_count != null && task.page_count > 0 && <span style={{ color: "#8b5cf6", background: "#f5f3ff", padding: "2px 8px", borderRadius: 6, fontWeight: 500 }}>📄 {task.page_count} sayfa</span>}
-                                    {task.estimated_duration_minutes && <span style={{ color: "#94a3b8", background: "#f8fafc", padding: "2px 8px", borderRadius: 6 }}>⏱️ ~{task.estimated_duration_minutes} dk</span>}
-                                  </div>
-                                  {task.description && <div style={{ fontSize: 12, color: "#64748b", marginTop: 6, fontStyle: "italic", lineHeight: 1.5 }}>💬 {task.description}</div>}
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end", flexShrink: 0 }}>
-                                  <span style={{ padding: "5px 12px", borderRadius: 24, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.text, border: `1.5px solid ${badge.border}`, whiteSpace: "nowrap", boxShadow: `0 1px 4px ${badge.text}15` }}>
-                                    {badge.label}{task.completion_status === "PARTIAL" && ` %${task.task_completion_percent}`}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Eksik detayları */}
-                              {task.completion_status === "PARTIAL" && (
-                                <div style={{ background: "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12 }}>
-                                  <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
-                                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>📊 Tamamlanma: <strong style={{ color: "#92400e" }}>%{task.task_completion_percent}</strong></span>
-                                    {task.completed_question_count != null && <span style={{ display: "flex", alignItems: "center", gap: 4 }}>✅ Çözülen: <strong style={{ color: "#16a34a" }}>{task.completed_question_count}</strong> / {task.question_count} soru</span>}
-                                    {task.completed_page_count != null && <span style={{ display: "flex", alignItems: "center", gap: 4 }}>📄 Tamamlanan: <strong style={{ color: "#7c3aed" }}>{task.completed_page_count}</strong> / {task.page_count} sayfa</span>}
-                                  </div>
-                                </div>
-                              )}
-
-                              {task.completion_status === "DONE" && (
-                                <div style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12 }}>
-                                  <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
-                                    {task.completed_question_count != null && task.completed_question_count > 0 && <span>✅ <strong style={{ color: "#16a34a" }}>{task.completed_question_count}</strong> soru çözüldü</span>}
-                                    {task.completed_page_count != null && task.completed_page_count > 0 && <span>📄 <strong style={{ color: "#7c3aed" }}>{task.completed_page_count}</strong> sayfa tamamlandı</span>}
-                                    {task.evaluated_at && <span style={{ color: "#94a3b8" }}>🕐 {formatDatetime(task.evaluated_at)}</span>}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* 3'lü Buton: Yaptı / Yapmadı / Eksik */}
-                              {isLocked ? (
-                                <div className="ok-task-detail-box">
-                                  {isControlLocked
-                                    ? "Kontrol günü sona erdi — bu ödev artık düzenlenemez"
-                                    : isNonSubmission
-                                    ? "Bu ödev kilitli — değişiklik yapılamaz"
-                                    : "Kontrol tamamlandı — düzenlemek için yukarıdaki butonu kullanın"}
-                                </div>
-                              ) : (
-                              <div className="ok-task-actions">
-                                <div className="ok-segment">
-                                  <button
-                                    type="button"
-                                    className={`ok-segment-btn${task.completion_status === "DONE" ? " is-active-done" : ""}`}
-                                    onClick={() => handleUpdateTaskStatus(task.id, "DONE")}
-                                    disabled={isSaving}
-                                  >
-                                    Yaptı
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={`ok-segment-btn${task.completion_status === "NOT_DONE" ? " is-active-not-done" : ""}`}
-                                    onClick={() => handleUpdateTaskStatus(task.id, "NOT_DONE")}
-                                    disabled={isSaving}
-                                  >
-                                    Yapmadı
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={`ok-segment-btn${task.completion_status === "PARTIAL" || isPartialOpen ? " is-active-partial" : ""}`}
-                                    onClick={() => setPartialTaskId(isPartialOpen ? null : task.id)}
-                                    disabled={isSaving}
-                                  >
-                                    Eksik
-                                  </button>
-                                </div>
-                                {task.completion_status !== "PENDING" && (
-                                  <button
-                                    type="button"
-                                    className="ok-btn-reset"
-                                    onClick={() => handleResetTask(task.id)}
-                                    disabled={isSaving}
-                                  >
-                                    Sıfırla
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  className="ok-btn-ghost"
-                                  style={{ marginLeft: "auto" }}
-                                  onClick={() => { setEditingNoteTaskId(editingNoteTaskId === task.id ? null : task.id); setNoteText(task.coach_evaluation_note || ""); }}
-                                >
-                                  {task.coach_evaluation_note ? "Notu Düzenle" : "Not Ekle"}
-                                </button>
-                              </div>
-                              )}
-
-                              {isPartialOpen && (
-                                <div className="ok-partial-panel">
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Tamamlanma yüzdesi seçin:</div>
-                                  <div className="ok-partial-grid">
-                                    {PERCENT_OPTIONS.map(pct => {
-                                      const qCalc = task.question_count ? Math.round(task.question_count * pct / 100) : null;
-                                      const pCalc = task.page_count ? Math.round(task.page_count * pct / 100) : null;
-                                      const isActive = task.task_completion_percent === pct && task.completion_status === "PARTIAL";
-                                      return (
-                                        <button
-                                          key={pct}
-                                          type="button"
-                                          className={`ok-partial-btn${isActive ? " is-active" : ""}`}
-                                          onClick={() => handleUpdateTaskStatus(task.id, "PARTIAL", pct)}
-                                        >
-                                          <div style={{ fontWeight: 700 }}>%{pct}</div>
-                                          {qCalc != null && <div style={{ fontSize: 10, marginTop: 2 }}>{qCalc}/{task.question_count} soru</div>}
-                                          {pCalc != null && <div style={{ fontSize: 10 }}>{pCalc}/{task.page_count} sf</div>}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Not alanı */}
-                              {editingNoteTaskId === task.id && (
-                                <div className="ok-partial-panel">
-                                  <textarea
-                                    className="ok-textarea"
-                                    value={noteText}
-                                    onChange={(e) => setNoteText(e.target.value)}
-                                    placeholder="Koç değerlendirme notu..."
-                                  />
-                                  <div className="ok-modal-footer" style={{ padding: "10px 0 0", border: "none", justifyContent: "flex-end" }}>
-                                    <button type="button" className="ok-btn-ghost" onClick={() => setEditingNoteTaskId(null)}>İptal</button>
-                                    {task.coach_evaluation_note && (
-                                      <button type="button" className="ok-btn-danger" onClick={() => handleDeleteNote(task.id)}>Sil</button>
+                            <div key={task.id}>
+                              <div className={`ok-task-compact${compactClass}`}>
+                                <div className="ok-task-compact-main" title={task.description || undefined}>
+                                  <div className="ok-task-compact-title">{task.title}</div>
+                                  <div className="ok-task-compact-meta">
+                                    <span style={{
+                                      padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 700,
+                                      background: badge.bg, color: badge.text, border: `1px solid ${badge.border}`,
+                                    }}>
+                                      {badge.label}{task.completion_status === "PARTIAL" ? ` %${task.task_completion_percent}` : ""}
+                                    </span>
+                                    {metaBits.map((m) => <span key={m}>{m}</span>)}
+                                    {task.description && (
+                                      <span className="ok-task-compact-desc">
+                                        {task.description}
+                                      </span>
                                     )}
-                                    <button type="button" className="ok-btn-primary" style={{ padding: "8px 16px" }} onClick={() => handleSaveNote(task.id)}>Kaydet</button>
                                   </div>
                                 </div>
-                              )}
 
-                              {task.student_feedback && (
-                                <div style={{ background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)", border: "1px solid #bae6fd", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#0c4a6e" }}>
-                                  <div style={{ fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>💬 Öğrenci Geri Bildirimi</div>
-                                  <span>{task.student_feedback}</span>
-                                </div>
-                              )}
-
-                              {task.coach_evaluation_note && editingNoteTaskId !== task.id && (
-                                <div className="ok-note-box">
-                                  <span>{task.coach_evaluation_note}</span>
-                                  {!isLocked && (
-                                    <div className="ok-note-actions">
+                                {isLocked ? (
+                                  <span style={{ fontSize: 11, color: "#94a3b8", flexShrink: 0 }}>Kilitli</span>
+                                ) : (
+                                  <div className="ok-task-compact-actions">
+                                    <div className="ok-segment">
                                       <button
                                         type="button"
-                                        className="ok-btn-ghost"
-                                        onClick={() => { setEditingNoteTaskId(task.id); setNoteText(task.coach_evaluation_note || ""); }}
+                                        className={`ok-segment-btn${task.completion_status === "DONE" ? " is-active-done" : ""}`}
+                                        onClick={() => handleUpdateTaskStatus(task.id, "DONE")}
+                                        disabled={isSaving}
                                       >
-                                        Düzenle
+                                        Yaptı
                                       </button>
                                       <button
                                         type="button"
-                                        className="ok-btn-danger"
-                                        onClick={() => handleDeleteNote(task.id)}
+                                        className={`ok-segment-btn${task.completion_status === "NOT_DONE" ? " is-active-not-done" : ""}`}
+                                        onClick={() => handleUpdateTaskStatus(task.id, "NOT_DONE")}
+                                        disabled={isSaving}
                                       >
-                                        Sil
+                                        Yapmadı
                                       </button>
+                                      <button
+                                        type="button"
+                                        className={`ok-segment-btn${task.completion_status === "PARTIAL" || isPartialOpen ? " is-active-partial" : ""}`}
+                                        onClick={() => setPartialTaskId(isPartialOpen ? null : task.id)}
+                                        disabled={isSaving}
+                                      >
+                                        Eksik
+                                      </button>
+                                    </div>
+                                    {task.completion_status !== "PENDING" && (
+                                      <button
+                                        type="button"
+                                        className="ok-btn-reset"
+                                        onClick={() => handleResetTask(task.id)}
+                                        disabled={isSaving}
+                                        title="Sıfırla"
+                                      >
+                                        ↺
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="ok-btn-ghost"
+                                      onClick={() => { setEditingNoteTaskId(isEditingNote ? null : task.id); setNoteText(task.coach_evaluation_note || ""); }}
+                                      title={task.coach_evaluation_note ? "Notu düzenle" : "Not ekle"}
+                                    >
+                                      {task.coach_evaluation_note ? "📝" : "＋"}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {showExtra && (
+                                <div className="ok-task-compact-extra" style={{
+                                  borderLeftColor:
+                                    task.completion_status === "DONE" ? "#16a34a"
+                                      : task.completion_status === "NOT_DONE" ? "#dc2626"
+                                      : task.completion_status === "PARTIAL" ? "#d97706"
+                                      : "#e2e8f0",
+                                }}>
+                                  {isPartialOpen && (
+                                    <div className="ok-partial-panel" style={{ marginTop: 8 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Tamamlanma yüzdesi seçin:</div>
+                                      <div className="ok-partial-grid">
+                                        {PERCENT_OPTIONS.map(pct => {
+                                          const qCalc = task.question_count ? Math.round(task.question_count * pct / 100) : null;
+                                          const pCalc = task.page_count ? Math.round(task.page_count * pct / 100) : null;
+                                          const isActive = task.task_completion_percent === pct && task.completion_status === "PARTIAL";
+                                          return (
+                                            <button
+                                              key={pct}
+                                              type="button"
+                                              className={`ok-partial-btn${isActive ? " is-active" : ""}`}
+                                              onClick={() => handleUpdateTaskStatus(task.id, "PARTIAL", pct)}
+                                            >
+                                              <div style={{ fontWeight: 700 }}>%{pct}</div>
+                                              {qCalc != null && <div style={{ fontSize: 10, marginTop: 2 }}>{qCalc}/{task.question_count} soru</div>}
+                                              {pCalc != null && <div style={{ fontSize: 10 }}>{pCalc}/{task.page_count} sf</div>}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {isEditingNote && (
+                                    <div className="ok-partial-panel" style={{ marginTop: 8 }}>
+                                      <textarea
+                                        className="ok-textarea"
+                                        value={noteText}
+                                        onChange={(e) => setNoteText(e.target.value)}
+                                        placeholder="Koç değerlendirme notu..."
+                                      />
+                                      <div className="ok-modal-footer" style={{ padding: "10px 0 0", border: "none", justifyContent: "flex-end" }}>
+                                        <button type="button" className="ok-btn-ghost" onClick={() => setEditingNoteTaskId(null)}>İptal</button>
+                                        {task.coach_evaluation_note && (
+                                          <button type="button" className="ok-btn-danger" onClick={() => handleDeleteNote(task.id)}>Sil</button>
+                                        )}
+                                        <button type="button" className="ok-btn-primary" style={{ padding: "8px 16px" }} onClick={() => handleSaveNote(task.id)}>Kaydet</button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {task.student_feedback && (
+                                    <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 10px", marginTop: 8, fontSize: 11, color: "#0c4a6e" }}>
+                                      <strong>Öğrenci:</strong> {task.student_feedback}
+                                    </div>
+                                  )}
+
+                                  {task.coach_evaluation_note && !isEditingNote && (
+                                    <div className="ok-note-box" style={{ marginTop: 8, marginBottom: 0 }}>
+                                      <span>{task.coach_evaluation_note}</span>
+                                      {!isLocked && (
+                                        <div className="ok-note-actions">
+                                          <button
+                                            type="button"
+                                            className="ok-btn-ghost"
+                                            onClick={() => { setEditingNoteTaskId(task.id); setNoteText(task.coach_evaluation_note || ""); }}
+                                          >
+                                            Düzenle
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="ok-btn-danger"
+                                            onClick={() => handleDeleteNote(task.id)}
+                                          >
+                                            Sil
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -1212,7 +1470,7 @@ export default function OdevKontrolDetailClient() {
                       textDecoration: "none", boxSizing: "border-box",
                     }}
                   >
-                    📝 Bu Öğrenciye Yeni Ödev Ver
+                    📝 Yeni Ödev Ver
                   </Link>
                 )}
               </div>
@@ -1283,6 +1541,68 @@ export default function OdevKontrolDetailClient() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button onClick={() => { setShowNotDoneModal(false); setNotDoneReason("NOT_BROUGHT"); setNotDoneNote(""); }} style={{ padding: "11px 22px", background: "white", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, cursor: "pointer", fontWeight: 500 }}>İptal</button>
               <button onClick={handleMarkAllNotDone} style={{ padding: "11px 26px", background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 3px 12px rgba(239,68,68,0.3)" }}>🚫 Tümünü Yapmadı İşaretle</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showCompletionChooser && assignment && (
+        <>
+          <div
+            onClick={dismissCompletionChooser}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 1000 }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              background: "white", borderRadius: 20, padding: 24, zIndex: 1001,
+              width: "min(440px, calc(100vw - 32px))", boxShadow: "0 24px 80px rgba(0,0,0,0.2)",
+            }}
+          >
+            <div style={{ fontSize: 22, marginBottom: 8 }}>✅</div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 800, color: "#1e293b" }}>Kontrol tamamlandı</h2>
+            <p style={{ margin: "0 0 20px", fontSize: 13, color: "#64748b", lineHeight: 1.5 }}>
+              İsterseniz önce yeni ödev verin; kayıt bitince kontrol raporu için WhatsApp açılır. Ödev vermeden doğrudan mesaj da atabilirsiniz.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {assignHomeworkHref && (
+                <Link
+                  href={assignHomeworkHref}
+                  onClick={dismissCompletionChooser}
+                  style={{
+                    display: "block", textAlign: "center", textDecoration: "none",
+                    padding: "12px 16px", borderRadius: 12, fontWeight: 700, fontSize: 14,
+                    background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff",
+                  }}
+                >
+                  📝 Önce yeni ödev ver
+                </Link>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  dismissCompletionChooser();
+                  setShowSendModal("report");
+                }}
+                style={{
+                  padding: "12px 16px", borderRadius: 12, fontWeight: 700, fontSize: 14,
+                  border: "1.5px solid #6ee7b7", background: "#ecfdf5", color: "#047857", cursor: "pointer",
+                }}
+              >
+                WhatsApp ile kontrol raporu gönder
+              </button>
+              <button
+                type="button"
+                onClick={dismissCompletionChooser}
+                style={{
+                  padding: "11px 16px", borderRadius: 12, fontWeight: 600, fontSize: 13,
+                  border: "1.5px solid #e2e8f0", background: "white", color: "#64748b", cursor: "pointer",
+                }}
+              >
+                Sonra / Kapat
+              </button>
             </div>
           </div>
         </>

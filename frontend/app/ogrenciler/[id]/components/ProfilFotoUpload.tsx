@@ -1,6 +1,45 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
+
+function isNativeCameraDevice() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (/Android|iPhone|iPod/i.test(ua)) return true;
+  if (navigator.maxTouchPoints > 1 && /Mac|iPad/i.test(ua)) return true;
+  return false;
+}
+
+function isAllowedImageFile(file: File) {
+  if (!file.type || file.type === "application/octet-stream") {
+    return /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
+  }
+  return file.type.startsWith("image/");
+}
+
+async function fileToCropDataUrl(file: File): Promise<string> {
+  const heic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+  if (heic && typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return canvas.toDataURL("image/jpeg", 0.92);
+    } catch {
+      throw new Error("Bu fotoğraf formatı desteklenmiyor. JPEG veya PNG kullanın.");
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Dosya okunamadı"));
+    reader.readAsDataURL(file);
+  });
+}
 
 interface ProfilFotoUploadProps {
   ogrenciId: number;
@@ -21,41 +60,39 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const cropImageRef = useRef<HTMLImageElement>(null);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Dosya boyutu kontrolü (5MB)
+  const openCropperForFile = async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
       setError("Dosya boyutu 5MB'dan büyük olamaz");
       return;
     }
-
-    // Dosya türü kontrolü
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    if (!isAllowedImageFile(file)) {
       setError("Sadece JPEG, PNG veya WebP formatları desteklenir");
       return;
     }
-
-    // Dosyayı base64'e çevir ve cropper'ı aç
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setCropImage(event.target?.result as string);
+    try {
+      const dataUrl = await fileToCropDataUrl(file);
+      setCropImage(dataUrl);
       setCropPosition({ x: 0, y: 0 });
       setCropScale(1);
       setShowCropper(true);
       setShowOptions(false);
-    };
-    reader.readAsDataURL(file);
-    
-    // Input'u temizle (aynı dosya tekrar seçilebilsin)
-    e.target.value = '';
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Fotoğraf açılamadı");
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    await openCropperForFile(file);
   };
 
   const uploadPhoto = async (file: File) => {
@@ -115,26 +152,40 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
   };
 
   const startCamera = async () => {
+    setError(null);
+    setShowOptions(false);
+
+    if (isNativeCameraDevice()) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Bu tarayıcı kamerayı desteklemiyor. Dosyadan seçin veya telefon kullanın.");
+      return;
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'user',
-          width: { ideal: 400 },
-          height: { ideal: 400 }
-        } 
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
       setCameraStream(stream);
       setShowCamera(true);
-      setShowOptions(false);
-      
-      // Video elementine stream'i bağla
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      }, 100);
     } catch (err) {
-      setError("Kamera erişimi sağlanamadı");
+      const name = err instanceof DOMException ? err.name : "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        setError("Kamera izni verilmedi. Tarayıcı ayarlarından izin verin.");
+      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+        setError("Kamera bulunamadı. Dosyadan seçmeyi deneyin.");
+      } else {
+        setError("Kamera açılamadı. HTTPS gerekli olabilir veya dosyadan seçin.");
+      }
     }
   };
 
@@ -143,18 +194,18 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
-    // Video boyutlarını al
+    if (!video.videoWidth || !video.videoHeight) {
+      setError("Kamera henüz hazır değil, tekrar deneyin.");
+      return;
+    }
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    
-    // Canvas'a video frame'i çiz
-    const ctx = canvas.getContext('2d');
+
+    const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.drawImage(video, 0, 0);
-      
-      // Canvas'tan data URL al ve cropper'ı aç
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
       stopCamera();
       setCropImage(dataUrl);
       setCropPosition({ x: 0, y: 0 });
@@ -165,11 +216,32 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
 
   const stopCamera = () => {
     if (cameraStream) {
-      cameraStream.getTracks().forEach(track => track.stop());
+      cameraStream.getTracks().forEach((track) => track.stop());
       setCameraStream(null);
     }
     setShowCamera(false);
   };
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!showCamera || !cameraStream || !video) return;
+    video.srcObject = cameraStream;
+    const play = () => {
+      video.play().catch(() => {});
+    };
+    if (video.readyState >= 2) play();
+    else video.addEventListener("loadedmetadata", play);
+    return () => {
+      video.removeEventListener("loadedmetadata", play);
+      video.srcObject = null;
+    };
+  }, [showCamera, cameraStream]);
+
+  useEffect(() => {
+    return () => {
+      cameraStream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [cameraStream]);
 
   // Cropper handlers
   const handleCropMouseDown = useCallback((e: React.MouseEvent) => {
@@ -189,6 +261,23 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
   const handleCropMouseUp = useCallback(() => {
     setIsDragging(false);
   }, []);
+
+  const handleCropTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    setIsDragging(true);
+    setDragStart({ x: t.clientX - cropPosition.x, y: t.clientY - cropPosition.y });
+  }, [cropPosition]);
+
+  const handleCropTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isDragging) return;
+    const t = e.touches[0];
+    if (!t) return;
+    setCropPosition({
+      x: t.clientX - dragStart.x,
+      y: t.clientY - dragStart.y,
+    });
+  }, [isDragging, dragStart]);
 
   const handleCropWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -258,6 +347,8 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
 
   return (
     <div className="profil-foto-upload">
+      {typeof document !== "undefined" && createPortal(
+        <>
       {/* Cropper Modal */}
       {showCropper && cropImage && (
         <div className="cropper-modal-overlay">
@@ -286,6 +377,9 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
                 onMouseMove={handleCropMouseMove}
                 onMouseUp={handleCropMouseUp}
                 onMouseLeave={handleCropMouseUp}
+                onTouchStart={handleCropTouchStart}
+                onTouchMove={handleCropTouchMove}
+                onTouchEnd={handleCropMouseUp}
                 onWheel={handleCropWheel}
               >
                 <div className="cropper-image-container">
@@ -390,6 +484,9 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           </div>
         </div>
       )}
+        </>,
+        document.body
+      )}
 
       {/* Upload Butonu */}
       <button 
@@ -445,9 +542,17 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
         onChange={handleFileSelect}
-        style={{ display: 'none' }}
+        className="foto-hidden-input"
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileSelect}
+        className="foto-hidden-input"
       />
 
       {/* Hata mesajı */}
@@ -463,6 +568,19 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           bottom: -6px;
           right: -6px;
           z-index: 5;
+        }
+
+        .foto-hidden-input {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+          opacity: 0;
         }
 
         .foto-edit-btn {
@@ -578,7 +696,7 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 1000;
+          z-index: 11000;
         }
 
         .camera-modal {
@@ -622,12 +740,17 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
         .camera-view {
           background: #000;
           aspect-ratio: 1;
+          overflow: hidden;
+          position: relative;
         }
 
         .camera-view video {
+          position: absolute;
+          inset: 0;
           width: 100%;
           height: 100%;
           object-fit: cover;
+          background: #000;
         }
 
         .camera-actions {
@@ -684,7 +807,7 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 1000;
+          z-index: 11000;
         }
 
         .cropper-modal {
@@ -752,6 +875,7 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           background: #1f2937;
           cursor: grab;
           isolation: isolate;
+          touch-action: none;
         }
 
         .cropper-area:active {
@@ -897,6 +1021,14 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           border-top-color: white;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
+        }
+      `}</style>
+      <style jsx global>{`
+        .camera-modal-overlay,
+        .cropper-modal-overlay {
+          position: fixed !important;
+          inset: 0 !important;
+          z-index: 11000 !important;
         }
       `}</style>
     </div>

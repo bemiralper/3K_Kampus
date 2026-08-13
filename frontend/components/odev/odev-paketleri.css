@@ -1,0 +1,110 @@
+/* Ödev paketleri — liste + detay + modal */
+
+.opk-page {
+  min-width: 0;
+}
+
+.opk-hero {
+  gap: 16px;
+  min-width: 0;
+}
+
+.opk-hero h1,
+.opk-hero p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.opk-hero button {
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+.opk-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.opk-list {
+  flex: 1;
+  min-width: 0;
+  transition: flex 0.3s;
+}
+
+.opk-list.is-narrow {
+  flex: 0 1 380px;
+  max-width: 380px;
+}
+
+.opk-detail {
+  flex: 1;
+  min-width: 0;
+}
+
+.opk-detail h2 {
+  padding-right: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.opk-modal {
+  width: min(480px, calc(100vw - 24px));
+  max-height: min(90dvh, 720px);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.opk-modal--wide {
+  width: min(700px, calc(100vw - 24px));
+}
+
+@media (max-width: 1100px) {
+  .opk-layout {
+    flex-direction: column;
+  }
+
+  .opk-list.is-narrow {
+    flex: 1 1 auto;
+    max-width: none;
+    width: 100%;
+  }
+
+  .opk-detail {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .opk-hero {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 16px !important;
+  }
+
+  .opk-hero > div:first-child {
+    min-width: 0;
+  }
+
+  .opk-hero h1 {
+    font-size: 18px !important;
+  }
+
+  .opk-field-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .opk-modal,
+  .opk-modal--wide {
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    transform: none !important;
+    width: 100%;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}

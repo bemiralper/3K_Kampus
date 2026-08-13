@@ -5,8 +5,10 @@ import StudentResourceDetailPage from '@/app/admin/odev/kaynak-havuzu/[studentId
 
 export default function CoachKaynakHavuzuDetailPage() {
   return (
-    <KaynakPathProvider basePath="coach">
-      <StudentResourceDetailPage />
-    </KaynakPathProvider>
+    <div className="coach-havuz-page">
+      <KaynakPathProvider basePath="coach">
+        <StudentResourceDetailPage />
+      </KaynakPathProvider>
+    </div>
   );
 }

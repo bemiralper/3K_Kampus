@@ -16,6 +16,7 @@ import {
   type AssignmentPackage,
   type AssignmentPackageItem,
 } from "@/lib/resources-api";
+import "./odev-paketleri.css";
 
 // UI types for content selection from book structure
 interface PackageItemUI {
@@ -451,14 +452,14 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
   const itemCount = (pkg: AssignmentPackage) => pkg.items?.length ?? pkg.item_count ?? 0;
 
   return (
-    <div style={{ padding: 0, fontFamily: "'Poppins', sans-serif" }}>
+    <div className="opk-page" style={{ padding: 0, fontFamily: "'Poppins', sans-serif" }}>
       {toast && (
         <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "#172b4c", color: "#fff", padding: "10px 24px", borderRadius: 100, fontSize: 13, fontWeight: 600, zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,.25)" }}>
           {toast}
         </div>
       )}
 
-      <div style={{ background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)", borderRadius: 16, padding: "32px", marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="opk-hero" style={{ background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)", borderRadius: 16, padding: "32px", marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ width: 64, height: 64, background: "rgba(255,255,255,0.2)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>📦</div>
           <div>
@@ -487,8 +488,8 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
       )}
 
       {!loading && (
-        <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
-          <div style={{ flex: selectedPackage ? "0 0 380px" : "1", transition: "flex 0.3s" }}>
+        <div className="opk-layout">
+          <div className={`opk-list${selectedPackage ? " is-narrow" : ""}`}>
             {filteredPackages.length === 0 ? (
               <div style={{ background: "white", borderRadius: 12, padding: 40, textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>📦</div>
@@ -527,7 +528,7 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
           </div>
 
           {selectedPackage && (
-            <div style={{ flex: 1, background: "white", borderRadius: 16, boxShadow: "0 4px 20px rgba(0,0,0,0.08)", border: "1px solid #e2e8f0", overflow: "hidden" }}>
+            <div className="opk-detail" style={{ background: "white", borderRadius: 16, boxShadow: "0 4px 20px rgba(0,0,0,0.08)", border: "1px solid #e2e8f0", overflow: "hidden" }}>
               <div style={{ background: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)", padding: 24, color: "white", position: "relative" }}>
                 <button onClick={() => setSelectedPackage(null)} style={{ position: "absolute", top: 16, right: 16, background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", color: "white", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
                 <h2 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>{selectedPackage.name}</h2>
@@ -596,7 +597,7 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
       {showCreateModal && (
         <>
           <div onClick={() => setShowCreateModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 16, padding: 32, zIndex: 1001, width: 480, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+          <div className="opk-modal" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 16, padding: 32, zIndex: 1001, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
             <h2 style={{ margin: "0 0 20px", fontSize: 20 }}>📦 Yeni Ödev Paketi</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
@@ -607,7 +608,7 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
                 <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Açıklama</label>
                 <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Paket hakkında kısa açıklama..." style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", minHeight: 80, resize: "vertical" }} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="opk-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Ders</label>
                   <select value={newDers} onChange={e => setNewDers(e.target.value)} style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", background: "white" }}>
@@ -635,7 +636,7 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
       {showEditModal && selectedPackage && (
         <>
           <div onClick={() => setShowEditModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 16, padding: 32, zIndex: 1001, width: 480, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+          <div className="opk-modal" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 16, padding: 32, zIndex: 1001, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
             <h2 style={{ margin: "0 0 20px", fontSize: 20 }}>✏️ Paket Bilgilerini Düzenle</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
@@ -646,7 +647,7 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
                 <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Açıklama</label>
                 <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Paket hakkında kısa açıklama..." style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", minHeight: 80, resize: "vertical" }} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="opk-field-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Ders</label>
                   <select value={editDers} onChange={e => setEditDers(e.target.value)} style={{ width: "100%", padding: "10px 14px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 14, outline: "none", background: "white" }}>
@@ -674,7 +675,7 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
       {showAddContentModal && (
         <>
           <div onClick={() => setShowAddContentModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 16, padding: 32, zIndex: 1001, width: 700, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+          <div className="opk-modal opk-modal--wide" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 16, padding: 32, zIndex: 1001, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <h2 style={{ margin: 0, fontSize: 20 }}>📖 İçerik Ekle</h2>
               <button onClick={() => setShowAddContentModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer" }}>✕</button>

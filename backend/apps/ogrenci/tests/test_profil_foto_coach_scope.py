@@ -106,3 +106,52 @@ class ProfilFotoCoachScopeTest(TestCase):
             **self.headers,
         )
         self.assertEqual(res.status_code, 403)
+
+    def test_teacher_role_coach_can_upload_assigned_student_photo(self):
+        from apps.roller.models import Role, UserRole
+        from apps.roller.seed import ensure_default_roles
+
+        ensure_default_roles()
+        role = Role.objects.get(code='ogretmen')
+        UserRole.objects.create(
+            user=self.coach_user, role=role, kurum=self.kurum, must_change_password=False,
+        )
+        self.client.force_login(self.coach_user)
+        res = self.client.post(
+            FOTO_URL.format(self.assigned.id),
+            {'foto': _jpeg_file('ogretmen-koc.jpg')},
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assigned.refresh_from_db()
+        self.assertTrue(bool(self.assigned.profil_foto))
+
+    def test_teacher_role_without_coach_profile_cannot_upload(self):
+        from apps.roller.models import Role, UserRole
+        from apps.roller.seed import ensure_default_roles
+
+        ensure_default_roles()
+        teacher_user = User.objects.create_user(
+            username='foto_teacher',
+            email='foto_teacher@test.com',
+            password='testpass123',
+        )
+        Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Öğretmen',
+            soyad='Sadece',
+            tc_kimlik_no='33333333333',
+            user=teacher_user,
+        )
+        role = Role.objects.get(code='ogretmen')
+        UserRole.objects.create(
+            user=teacher_user, role=role, kurum=self.kurum, must_change_password=False,
+        )
+        self.client.force_login(teacher_user)
+        res = self.client.post(
+            FOTO_URL.format(self.assigned.id),
+            {'foto': _jpeg_file('ogretmen.jpg')},
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 403)

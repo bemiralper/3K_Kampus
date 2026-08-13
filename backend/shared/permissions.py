@@ -234,6 +234,39 @@ require_ogrenci_api = api_permission_required(
     'ogrenci.read', 'ogrenci.write', 'ogrenci.manage',
     write_codes=('ogrenci.write', 'ogrenci.manage'),
 )
+
+
+def require_ogrenci_foto_api(view_func):
+    """
+    Öğrenci profil fotoğrafı — yazma için ogrenci.write/manage veya aktif koç.
+
+    Koçlar sıklıkla öğretmen rolündedir (yalnızca ogrenci.read); fotoğraf
+    yükleme atandıkları öğrencilerle sınırlı kalır (view içinde kapsam).
+    """
+
+    @wraps(view_func)
+    @require_api_login
+    def wrapper(request, *args, **kwargs):
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            allowed = user_has_any_permission(
+                request.user,
+                'ogrenci.read',
+                'ogrenci.write',
+                'ogrenci.manage',
+            ) or _user_is_active_coach(request.user)
+        else:
+            allowed = user_has_any_permission(
+                request.user,
+                'ogrenci.write',
+                'ogrenci.manage',
+            ) or _user_is_active_coach(request.user)
+        if not allowed:
+            return _permission_denied_json()
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
 require_ogrenci_delete_api = api_permission_required(
     'ogrenci.delete', 'ogrenci.manage',
     write_codes=('ogrenci.delete', 'ogrenci.manage'),

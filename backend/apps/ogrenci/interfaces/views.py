@@ -21,6 +21,7 @@ from shared.permissions import (
     api_permission_required,
     require_ogrenci_api,
     require_ogrenci_delete_api,
+    require_ogrenci_foto_api,
     user_has_any_permission,
 )
 
@@ -1393,7 +1394,7 @@ def cinsiyet_secenekleri_api(request):
 
 
 @csrf_exempt
-@require_ogrenci_api
+@require_ogrenci_foto_api
 def ogrenci_profil_foto_api(request, pk):
     """
     Öğrenci profil fotoğrafı API
@@ -1402,7 +1403,7 @@ def ogrenci_profil_foto_api(request, pk):
 
     Şube gate sonrası: aktif koç yalnızca erişebildiği öğrencinin fotosunu
     değiştirebilir; admin / kaynak admin için mevcut şube davranışı korunur.
-    Yazma → ogrenci.write/manage (koç rolünde write var).
+    Yazma → ogrenci.write/manage veya aktif koç profili.
     """
     from apps.ogrenci.domain.models import Ogrenci
     import os

@@ -27,11 +27,23 @@ function isLeavingCurrentPage(href: string, pathname: string): boolean {
   }
 }
 
+function samePath(a: string, b: string): boolean {
+  try {
+    const ua = new URL(a, window.location.origin);
+    const ub = new URL(b, window.location.origin);
+    return ua.pathname === ub.pathname;
+  } catch {
+    return a === b;
+  }
+}
+
 export interface UseUnsavedChangesGuardOptions {
   isDirty: boolean;
   message?: string;
   title?: string;
   enabled?: boolean;
+  /** Bu yollara giderken uyarı gösterme (örn. kontrole geri dönüş) */
+  safeHrefs?: string[];
 }
 
 export interface LeaveDialogProps {
@@ -55,14 +67,17 @@ export function useUnsavedChangesGuard({
   message = DEFAULT_MESSAGE,
   title,
   enabled = true,
+  safeHrefs = [],
 }: UseUnsavedChangesGuardOptions) {
   const pathname = usePathname();
   const router = useRouter();
   const bypassRef = useRef(false);
   const isDirtyRef = useRef(isDirty);
+  const safeHrefsRef = useRef(safeHrefs);
   const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null);
 
   isDirtyRef.current = isDirty;
+  safeHrefsRef.current = safeHrefs;
 
   const active = enabled && isDirty && !bypassRef.current;
 
@@ -76,6 +91,18 @@ export function useUnsavedChangesGuard({
   const resetBypass = useCallback(() => {
     bypassRef.current = false;
   }, []);
+
+  /** Uyarıyı senkron kapatıp hemen git (kontrole dön vb.) */
+  const forceNavigate = useCallback((href: string, options?: { hard?: boolean }) => {
+    bypassRef.current = true;
+    isDirtyRef.current = false;
+    setPendingNavigation(null);
+    if (options?.hard !== false && typeof window !== "undefined") {
+      window.location.assign(href);
+      return;
+    }
+    router.replace(href);
+  }, [router]);
 
   const executeNavigation = useCallback(
     (navigation: PendingNavigation) => {
@@ -112,6 +139,10 @@ export function useUnsavedChangesGuard({
       }
 
       if (typeof target === "string") {
+        if (safeHrefsRef.current.some((safe) => samePath(safe, target))) {
+          go(target);
+          return;
+        }
         if (!isLeavingCurrentPage(target, pathname)) {
           go(target);
           return;
@@ -134,8 +165,8 @@ export function useUnsavedChangesGuard({
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       // Listener React'in bir sonraki render/effect temizliğine kadar bağlı
-      // kalabilir. Kayıt sonrası markClean() ref'leri senkron güncellediği için
-      // sert yönlendirmede gereksiz tarayıcı uyarısını burada engelle.
+      // kalabilir. Kayıt sonrası markClean() / forceNavigate() ref'leri senkron
+      // güncellediği için sert yönlendirmede gereksiz tarayıcı uyarısını engelle.
       if (bypassRef.current || !isDirtyRef.current) return;
       event.preventDefault();
       event.returnValue = "";
@@ -157,14 +188,18 @@ export function useUnsavedChangesGuard({
       const target = event.target as HTMLElement | null;
       // Ayrılma onay diyaloğundaki tıklamaları yakalama
       if (target?.closest?.("[data-unsaved-modal]")) return;
+      // Bilinçli "geri dön" vb. linkler — uyarı gösterme
+      if (target?.closest?.("[data-unsaved-bypass]")) return;
 
       const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
       if (!anchor) return;
       if (anchor.target === "_blank") return;
       if (anchor.hasAttribute("download")) return;
+      if (anchor.hasAttribute("data-unsaved-bypass")) return;
 
       const href = anchor.getAttribute("href");
       if (!href || !isLeavingCurrentPage(href, pathname)) return;
+      if (safeHrefsRef.current.some((safe) => samePath(safe, href))) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -192,6 +227,14 @@ export function useUnsavedChangesGuard({
     }
   }, [isDirty]);
 
+  // Guard kapatılınca (bilinçli çıkış) açık diyaloğu da kapat
+  useEffect(() => {
+    if (!enabled) {
+      setPendingNavigation(null);
+      bypassRef.current = true;
+    }
+  }, [enabled]);
+
   const leaveDialogProps: LeaveDialogProps = {
     open: pendingNavigation !== null,
     title,
@@ -209,5 +252,6 @@ export function useUnsavedChangesGuard({
     markClean,
     resetBypass,
     requestNavigation,
+    forceNavigate,
   };
 }

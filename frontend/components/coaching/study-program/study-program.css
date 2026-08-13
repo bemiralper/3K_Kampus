@@ -1,0 +1,111 @@
+/* Çalışma programı — responsive board (admin + koç) */
+
+.sp-root {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.sp-board-split {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.sp-pool-panel {
+  width: 300px;
+  min-width: 280px;
+  flex-shrink: 0;
+  background-color: #fff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  max-height: calc(100vh - 240px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.sp-calendar-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-day-grid-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+
+.sp-day-grid {
+  display: grid;
+  gap: 8px;
+  /* PC: ferah sütunlar; dar ekranda CSS override */
+  grid-template-columns: repeat(var(--sp-day-count, 7), minmax(160px, 1fr));
+  min-width: 0;
+}
+
+.sp-plan-summary-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(var(--sp-summary-count, 1), minmax(0, 1fr));
+}
+
+/* Telefon: havuz üstte, takvim yatay kaydırılır */
+@media (max-width: 991px) {
+  .sp-board-split {
+    flex-direction: column;
+  }
+
+  .sp-pool-panel {
+    width: 100%;
+    min-width: 0;
+    max-height: min(42vh, 320px);
+  }
+
+  .sp-calendar-panel {
+    width: 100%;
+  }
+
+  .sp-day-grid {
+    grid-template-columns: repeat(var(--sp-day-count, 7), minmax(150px, 160px));
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .sp-plan-summary-grid {
+    grid-template-columns: repeat(var(--sp-summary-count, 1), minmax(100px, 1fr));
+    overflow-x: auto;
+  }
+}
+
+/* Koç tableti: 72px rail + 280px havuz yan yana sığmaz — 1280’e kadar dikey */
+@media (max-width: 1279px) {
+  .sp-coach-root .sp-board-split {
+    flex-direction: column;
+  }
+
+  .sp-coach-root .sp-pool-panel {
+    width: 100%;
+    min-width: 0;
+    max-height: min(42vh, 320px);
+  }
+
+  .sp-coach-root .sp-day-grid {
+    grid-template-columns: repeat(var(--sp-day-count, 7), minmax(150px, 160px));
+    width: max-content;
+    min-width: 100%;
+  }
+}
+
+@media (min-width: 1280px) {
+  .sp-coach-root .sp-day-grid {
+    grid-template-columns: repeat(var(--sp-day-count, 7), minmax(168px, 1fr));
+  }
+
+  .sp-coach-root .sp-pool-panel {
+    width: 300px;
+    min-width: 280px;
+    max-height: calc(100vh - 200px);
+  }
+}

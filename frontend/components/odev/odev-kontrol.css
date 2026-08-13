@@ -190,6 +190,8 @@
 .ok-coach .ok-filter-chips {
   gap: 6px;
   margin-bottom: 12px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .ok-coach .ok-toolbar {
@@ -343,14 +345,58 @@
   display: none;
 }
 
+.ok-list-desktop-wrap {
+  display: none;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
 @media (min-width: 900px) {
   .ok-list-mobile {
     display: none;
   }
 
+  .ok-list-desktop-wrap {
+    display: block;
+  }
+
   .ok-list-desktop {
     display: table;
   }
+}
+
+/* Koç: kartlar yalnızca telefonda; tablet+ masaüstü tablo (içerik tam genişlik) */
+.ok-coach .ok-list-mobile {
+  display: flex;
+}
+
+.ok-coach .ok-list-desktop-wrap,
+.ok-coach .ok-list-desktop {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .ok-coach .ok-list-mobile {
+    display: none;
+  }
+
+  .ok-coach .ok-list-desktop-wrap {
+    display: block;
+  }
+
+  .ok-coach .ok-list-desktop {
+    display: table;
+  }
+}
+
+.ok-coach .ok-list-row-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.ok-coach .ok-list-row-title {
+  overflow-wrap: anywhere;
 }
 
 .ok-table-list td .is-due-today {
@@ -600,6 +646,93 @@
   border-radius: 10px;
   padding: 14px 18px;
   margin-bottom: 8px;
+}
+
+.ok-task-compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 14px;
+  border-top: 1px solid #e8ecf1;
+  border-left: 3px solid #cbd5e1;
+  margin-left: 8px;
+  background: #fff;
+  min-height: 44px;
+}
+
+.ok-task-compact.is-done {
+  border-left-color: #16a34a;
+  background: #fafefb;
+}
+
+.ok-task-compact.is-not-done {
+  border-left-color: #dc2626;
+  background: #fffafa;
+}
+
+.ok-task-compact.is-partial {
+  border-left-color: #d97706;
+  background: #fffefb;
+}
+
+.ok-task-compact-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ok-task-compact-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ok-task-compact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #94a3b8;
+  align-items: center;
+}
+
+.ok-task-compact-meta span {
+  white-space: nowrap;
+}
+
+.ok-task-compact-desc {
+  color: #64748b;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ok-task-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ok-task-compact .ok-segment-btn {
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.ok-task-compact .ok-btn-ghost,
+.ok-task-compact .ok-btn-reset {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.ok-task-compact-extra {
+  margin-left: 8px;
+  padding: 0 12px 10px 14px;
+  border-left: 3px solid transparent;
 }
 
 .ok-task-detail-box {
@@ -1348,5 +1481,21 @@
   .ok-segment button {
     flex: 1 1 auto;
     min-width: 0;
+  }
+
+  .ok-task-compact {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .ok-task-compact-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .ok-task-compact .ok-segment {
+    flex: 1;
   }
 }

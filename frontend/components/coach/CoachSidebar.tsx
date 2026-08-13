@@ -18,6 +18,7 @@ import { fetchNotificationSummary } from "@/lib/communication-api";
 type CoachSidebarProps = {
   isOpen: boolean;
   isDesktop: boolean;
+  isPhone: boolean;
   mobileDrawerOpen: boolean;
   onToggle: () => void;
   onCloseMobile: () => void;
@@ -37,6 +38,7 @@ function NavChevron({ expanded }: { expanded: boolean }) {
 export default function CoachSidebar({
   isOpen,
   isDesktop,
+  isPhone,
   mobileDrawerOpen,
   onToggle,
   onCloseMobile,
@@ -126,7 +128,7 @@ export default function CoachSidebar({
   };
 
   const closeMobileIfNeeded = () => {
-    if (!isDesktop && mobileDrawerOpen) onCloseMobile();
+    if (mobileDrawerOpen) onCloseMobile();
   };
 
   const renderSubmenuLink = (child: CoachNavChildDef) => {
@@ -240,7 +242,7 @@ export default function CoachSidebar({
     <aside
       className={`coach-sidebar${isOpen ? " is-open" : " is-collapsed"}`}
       id="coach-sidebar"
-      aria-hidden={!isDesktop && !mobileDrawerOpen}
+      aria-hidden={isPhone && !mobileDrawerOpen}
     >
       <div className="coach-sidebar-header">
         <div className="coach-logo-container">
@@ -267,7 +269,7 @@ export default function CoachSidebar({
       </nav>
 
       <div className="coach-sidebar-footer">
-        {isOpen && (
+        {isDesktop && isOpen && (
           <p className="coach-sidebar-hint">Menü sırasını sürükleyerek değiştirebilirsiniz.</p>
         )}
         <button type="button" className="coach-logout-btn" onClick={onLogout} title="Çıkış Yap">

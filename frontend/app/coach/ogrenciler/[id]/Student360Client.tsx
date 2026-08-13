@@ -165,6 +165,14 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
 
   const programIdParam = searchParams.get('program_id');
   const initialProgramId = programIdParam ? Number(programIdParam) : undefined;
+  const weekStartParam = searchParams.get('week_start') || undefined;
+  const weekEndParam = searchParams.get('week_end') || undefined;
+  const homeworkIdParam = useMemo(() => {
+    const raw = searchParams.get('homework_id');
+    if (!raw) return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : undefined;
+  }, [searchParams]);
 
   const handleProgramOpen = (programId?: number) =>
     setQuery({
@@ -329,9 +337,18 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
           initialProgramId={
             initialProgramId && Number.isFinite(initialProgramId) ? initialProgramId : undefined
           }
+          initialWeekStart={weekStartParam}
+          initialWeekEnd={weekEndParam}
+          initialHomeworkId={homeworkIdParam}
           onClose={() => {
             setTabReloadKey((k) => k + 1);
-            setQuery({ action: null, program_id: null });
+            setQuery({
+              action: null,
+              program_id: null,
+              week_start: null,
+              week_end: null,
+              homework_id: null,
+            });
           }}
         />
       )}

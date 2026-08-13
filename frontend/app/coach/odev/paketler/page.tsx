@@ -3,5 +3,9 @@
 import { OdevPaketleriPageContent } from "@/components/odev/OdevPaketleriContent";
 
 export default function CoachOdevPaketleriPage() {
-  return <OdevPaketleriPageContent verBasePath="/coach/odev/ver" />;
+  return (
+    <div className="coach-paketler-page">
+      <OdevPaketleriPageContent verBasePath="/coach/odev/ver" />
+    </div>
+  );
 }

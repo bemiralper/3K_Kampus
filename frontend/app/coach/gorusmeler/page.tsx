@@ -6,8 +6,10 @@ export default function CoachGorusmelerPage() {
   return (
     <div className="coach-gorusmeler-page">
       <header className="coach-page-header">
-        <h2>Görüşmeler</h2>
-        <p>Koçluk görüşmelerinizi planlayın ve takip edin</p>
+        <div className="coach-page-header-text">
+          <h2>Görüşmeler</h2>
+          <p>Koçluk görüşmelerinizi planlayın ve takip edin</p>
+        </div>
       </header>
       <div className="coach-gorusmeler-body">
         <MeetingsClient />

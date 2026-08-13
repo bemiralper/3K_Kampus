@@ -242,6 +242,7 @@ export default function TopluGonderClient({
       subtitle={isCoach ? "Öğrenci ve velilerinize WhatsApp mesajı gönderin" : "WhatsApp toplu mesaj oluşturun ve geçmişi takip edin"}
       icon="📢"
       breadcrumbs={breadcrumbs || defaultBreadcrumbs}
+      className={isCoach ? "comm-page--coach" : undefined}
     >
       <div className="comm-tabbar" style={{ marginBottom: "1rem" }}>
         <div className="comm-tabs" role="tablist" aria-label="Toplu gönderim sekmeleri">

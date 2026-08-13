@@ -48,7 +48,9 @@ export default function CoachTopbar({
       </div>
 
       <div className="coach-topbar-trailing">
-        <AdminPortalReturn variant="compact" />
+        <span className="coach-topbar-admin-return">
+          <AdminPortalReturn variant="compact" />
+        </span>
         <ContextSelector />
         <NotificationBell />
         <UserAccountDropdown

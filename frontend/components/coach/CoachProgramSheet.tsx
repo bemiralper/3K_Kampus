@@ -9,6 +9,10 @@ interface CoachProgramSheetProps {
   coachId?: number;
   /** Verilirse editör doğrudan bu programı açar */
   initialProgramId?: number;
+  /** Ödevden gelen program aralığı (YYYY-MM-DD) */
+  initialWeekStart?: string;
+  initialWeekEnd?: string;
+  initialHomeworkId?: number;
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -18,6 +22,9 @@ export default function CoachProgramSheet({
   studentName,
   coachId,
   initialProgramId,
+  initialWeekStart,
+  initialWeekEnd,
+  initialHomeworkId,
   onClose,
 }: CoachProgramSheetProps) {
   return (
@@ -31,7 +38,11 @@ export default function CoachProgramSheet({
         lockedStudentId={studentId}
         lockedCoachId={coachId}
         initialProgramId={initialProgramId}
+        initialWeekStart={initialWeekStart}
+        initialWeekEnd={initialWeekEnd}
+        initialHomeworkId={initialHomeworkId}
         embedded
+        coachLayout
       />
     </CoachActionSheet>
   );

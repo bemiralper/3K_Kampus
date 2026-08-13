@@ -69,8 +69,10 @@ export default function CoachRaporlarPage() {
   return (
     <div>
       <header className="coach-page-header">
-        <h2>Raporlar</h2>
-        <p>Koç kapsamınızdaki öğrenci özeti</p>
+        <div className="coach-page-header-text">
+          <h2>Raporlar</h2>
+          <p>Koç kapsamınızdaki öğrenci özeti</p>
+        </div>
       </header>
 
       {loading && <div className="coach-loading">Raporlar yükleniyor…</div>}

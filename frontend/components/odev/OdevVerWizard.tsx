@@ -37,6 +37,14 @@ import {
   isIncompleteHistory,
   stripCompletionTitleSuffix,
 } from '@/components/odev/odevCompletionHelpers';
+import {
+  clearOdevVerDraft,
+  loadOdevVerDraft,
+  saveOdevVerDraft,
+} from '@/components/odev/odevVerDraftStorage';
+import {
+  datesFromHomework,
+} from '@/components/coaching/study-program/programDateUtils';
 
 export type OdevVerVariant = 'admin' | 'coach';
 
@@ -179,6 +187,20 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const [showSendAfterSave, setShowSendAfterSave] = useState(false);
   const [sendStudentName, setSendStudentName] = useState('');
   const [sendBusy, setSendBusy] = useState(false);
+  /** WhatsApp sonrası: çalışma programı teklifi (ödev tarihleriyle) */
+  const [studyProgramOffer, setStudyProgramOffer] = useState<{
+    assignmentId: number;
+    studentId: number;
+    dueDate: string;
+    assignedDate: string;
+  } | null>(null);
+  const [showStudyProgramOffer, setShowStudyProgramOffer] = useState(false);
+  const studyProgramOfferRef = useRef<typeof studyProgramOffer>(null);
+  const pendingResetAfterOfferRef = useRef(false);
+
+  useEffect(() => {
+    studyProgramOfferRef.current = studyProgramOffer;
+  }, [studyProgramOffer]);
 
   /* ─── Toast ─── */
   const [toast, setToast] = useState<string | null>(null);
@@ -274,10 +296,48 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const searchParams = useSearchParams();
   const preselectedStudentId = searchParams.get('student');
   const packageIdParam = searchParams.get('package_id');
-  const returnHref = searchParams.get('return');
+  const fromKontrol = searchParams.get('from') === 'kontrol';
+  const kontrolDone = searchParams.get('kontrol_done') === '1';
+  const kontrolIdParam = searchParams.get('kontrol_id');
+  const kontrolListPath = isCoach ? '/coach/odev/kontrol' : '/admin/odev/kontrol';
+  // return bazen kayboluyor; return_to + kontrol_id + liste yedeği
+  const returnHref =
+    searchParams.get('return_to') ||
+    searchParams.get('return') ||
+    (kontrolIdParam ? `${kontrolListPath}/${kontrolIdParam}` : null) ||
+    (fromKontrol ? kontrolListPath : null);
   const studentLocked = searchParams.get('locked') === '1' || (isCoach && !!preselectedStudentId);
+  const sourceKontrolAssignmentId = useMemo(() => {
+    if (kontrolIdParam) {
+      const n = parseInt(kontrolIdParam, 10);
+      return Number.isFinite(n) ? n : null;
+    }
+    const href = returnHref || '';
+    const m = href.match(/\/odev\/kontrol\/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }, [kontrolIdParam, returnHref]);
+  /** Kontrolden gelinen ödevi 'tamamlanmamış' uyarısından çıkar */
+  const visiblePendingControls = useMemo(() => {
+    if (!sourceKontrolAssignmentId) return pendingControls;
+    return pendingControls.filter((pc) => pc.id !== sourceKontrolAssignmentId);
+  }, [pendingControls, sourceKontrolAssignmentId]);
+  const preselectedLessonId = (() => {
+    const raw = searchParams.get('lesson');
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return Number.isNaN(n) ? null : n;
+  })();
+  const preselectedBookId = (() => {
+    const raw = searchParams.get('book');
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return Number.isNaN(n) ? null : n;
+  })();
   const [autoSelected, setAutoSelected] = useState(false);
   const [packageLoaded, setPackageLoaded] = useState(false);
+  const [resourcePrefillDone, setResourcePrefillDone] = useState(false);
+  /** Draft restore tamamlanmadan sessionStorage'a boş yazma */
+  const draftReadyRef = useRef(false);
 
   /* ─── Fetch students on mount ─── */
   useEffect(() => {
@@ -427,6 +487,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
   /* ─── Handlers ─── */
   const pickStudent = (s: Student) => {
+    draftReadyRef.current = false;
     setSelectedStudent(s);
     setSelectedStudents([s]);
     setMultiSelect(false);
@@ -434,27 +495,46 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     fetchTaskHistory(s.id);
     setSelectedResource(null);
     setBookDetails(null);
-    setContentNotes({});
+    setResourcePrefillDone(false);
     void checkPendingControls(
       [s.id],
       new Map([[s.id, `${s.ad} ${s.soyad}`.trim()]]),
     );
 
-    // Paketten gelen bekleyen veriler varsa cart'a yükle, yoksa sıfırla
+    // Paketten gelen bekleyen veriler varsa cart'a yükle
     if (pendingPackageCart && pendingPackageCart.length > 0) {
       setCart(pendingPackageCart);
+      setContentNotes({});
       if (pendingPackageTitle) {
         setTitle(pendingPackageTitle);
       }
       setPendingPackageCart(null);
       setPendingPackageTitle(null);
       setCurrentStep(3); // Direkt önizlemeye geç
+      draftReadyRef.current = true;
       flash(`${s.ad} ${s.soyad} seçildi · 📦 ${pendingPackageCart.length} içerik paketten yüklendi`);
-    } else {
-      setCart([]);
-      setCurrentStep(2);
-      flash(`${s.ad} ${s.soyad} seçildi`);
+      return;
     }
+
+    const draft = loadOdevVerDraft(s.id);
+    if (draft && draft.cart.length > 0) {
+      setCart(draft.cart);
+      setContentNotes(draft.contentNotes || {});
+      if (draft.title) setTitle(draft.title);
+      setNotes(draft.notes || '');
+      if (draft.dueDate) setDueDate(draft.dueDate);
+      if (draft.priority) setPriority(draft.priority);
+      setCurrentStep(draft.currentStep >= 2 && draft.currentStep <= 3 ? draft.currentStep : 2);
+      draftReadyRef.current = true;
+      flash(`${s.ad} ${s.soyad} · önceki seçimler geri yüklendi (${draft.cart.length} içerik)`);
+      return;
+    }
+
+    setCart([]);
+    setContentNotes({});
+    setCurrentStep(2);
+    draftReadyRef.current = true;
+    flash(`${s.ad} ${s.soyad} seçildi`);
   };
 
   const toggleStudentMulti = (s: Student) => {
@@ -513,6 +593,33 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     setSelectedResource(r);
     fetchBook(r.resource_book);
   };
+
+  /* ─── Kontrolden gelen lesson/book ile kaynak ön seçimi ─── */
+  useEffect(() => {
+    if (resourcePrefillDone || resLoading || resources.length === 0) return;
+    if (preselectedBookId == null && preselectedLessonId == null) {
+      setResourcePrefillDone(true);
+      return;
+    }
+
+    let match: StudentResource | undefined;
+    if (preselectedBookId != null) {
+      match =
+        resources.find(
+          (r) =>
+            r.resource_book === preselectedBookId &&
+            (preselectedLessonId == null || r.lesson === preselectedLessonId),
+        ) || resources.find((r) => r.resource_book === preselectedBookId);
+    }
+    if (!match && preselectedLessonId != null) {
+      match = resources.find((r) => r.lesson === preselectedLessonId);
+    }
+    if (match) {
+      pickResource(match);
+    }
+    setResourcePrefillDone(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resources, resLoading, preselectedBookId, preselectedLessonId, resourcePrefillDone]);
 
   const applyCompletionNotes = useCallback((items: SelectedContent[]) => {
     if (!items.length) return;
@@ -671,23 +778,187 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
   const clearCart = () => { setCart([]); setContentNotes({}); };
 
-  const isDirty = useMemo(() => {
-    const hasStudent = multiSelect ? selectedStudents.length > 0 : !!selectedStudent;
-    return (
-      hasStudent ||
-      cart.length > 0 ||
-      currentStep > 1 ||
-      notes.trim().length > 0 ||
-      title !== generateWeeklyTitle()
-    );
-  }, [multiSelect, selectedStudents.length, selectedStudent, cart.length, currentStep, notes, title]);
+  /* ─── Kontrolden dönüşte sepet kalıcılığı ─── */
+  useEffect(() => {
+    if (!draftReadyRef.current || !selectedStudent || multiSelect) return;
+    saveOdevVerDraft({
+      studentId: selectedStudent.id,
+      cart,
+      contentNotes,
+      title,
+      notes,
+      dueDate,
+      priority,
+      currentStep,
+      updatedAt: Date.now(),
+    });
+  }, [selectedStudent, multiSelect, cart, contentNotes, title, notes, dueDate, priority, currentStep]);
 
-  const { leaveDialogProps, markClean } = useUnsavedChangesGuard({
+  const isDirty = useMemo(() => {
+    const hasEdits =
+      cart.length > 0 ||
+      notes.trim().length > 0 ||
+      title !== generateWeeklyTitle();
+
+    // Kontrolden / kilitli öğrenci: yalnızca gerçek düzenleme dirty sayılır
+    if (studentLocked || fromKontrol) {
+      return hasEdits;
+    }
+
+    const hasStudent = multiSelect ? selectedStudents.length > 0 : !!selectedStudent;
+    return hasStudent || hasEdits || currentStep > 1;
+  }, [
+    multiSelect,
+    selectedStudents.length,
+    selectedStudent,
+    cart.length,
+    currentStep,
+    notes,
+    title,
+    studentLocked,
+    fromKontrol,
+  ]);
+
+  const { leaveDialogProps, markClean, forceNavigate } = useUnsavedChangesGuard({
     isDirty,
+    // Kontrolden gelindiğinde geri dönüşü engelleme; normal Ödev Ver'de uyarı kalsın
+    enabled: !fromKontrol,
+    safeHrefs: returnHref ? [returnHref] : [],
     title: 'Ödev Ekranından Ayrıl',
     message:
       'Ödev verme işlemi tamamlanmadan bu sayfadan ayrılmak istediğinize emin misiniz? Seçtiğiniz içerikler kaybolabilir.',
   });
+
+  const goBackToKontrol = () => {
+    if (!returnHref) return;
+    if (selectedStudent && !multiSelect) {
+      saveOdevVerDraft({
+        studentId: selectedStudent.id,
+        cart,
+        contentNotes,
+        title,
+        notes,
+        dueDate,
+        priority,
+        currentStep,
+        updatedAt: Date.now(),
+      });
+    }
+    markClean();
+    if (typeof window === 'undefined') return;
+    // Kontrol bitmişse dönüşte WhatsApp rapor ekranı açılsın
+    if (kontrolDone) {
+      const sep = returnHref.includes('?') ? '&' : '?';
+      window.location.href = `${returnHref}${sep}notify=report`;
+      return;
+    }
+    window.location.href = returnHref;
+  };
+
+  const goToKontrolReportWhatsApp = useCallback(() => {
+    if (!returnHref || !kontrolDone) return;
+    if (selectedStudent && !multiSelect) {
+      saveOdevVerDraft({
+        studentId: selectedStudent.id,
+        cart,
+        contentNotes,
+        title,
+        notes,
+        dueDate,
+        priority,
+        currentStep,
+        updatedAt: Date.now(),
+      });
+    }
+    markClean();
+    const sep = returnHref.includes('?') ? '&' : '?';
+    if (typeof window !== 'undefined') {
+      window.location.href = `${returnHref}${sep}notify=report`;
+    }
+  }, [
+    returnHref,
+    kontrolDone,
+    markClean,
+    selectedStudent,
+    multiSelect,
+    cart,
+    contentNotes,
+    title,
+    notes,
+    dueDate,
+    priority,
+    currentStep,
+  ]);
+
+  const buildStudyProgramHref = useCallback(
+    (offer: {
+      assignmentId: number;
+      studentId: number;
+      dueDate: string;
+      assignedDate: string;
+    }) => {
+      const { start, end } = datesFromHomework({
+        assigned_date: offer.assignedDate,
+        due_date: offer.dueDate,
+      });
+      const params = new URLSearchParams();
+      params.set('student_id', String(offer.studentId));
+      if (start) params.set('week_start', start);
+      if (end) params.set('week_end', end);
+      params.set('homework_id', String(offer.assignmentId));
+      if (isCoach) {
+        return `/coach/odev/calisma-programi?${params.toString()}`;
+      }
+      return `/admin/coaching/study-program?${params.toString()}`;
+    },
+    [isCoach],
+  );
+
+  const finishAfterWhatsApp = useCallback(() => {
+    setShowSendAfterSave(false);
+    setSavedAssignmentId(null);
+    setSendStudentName('');
+    setShowPrint(false);
+    // Gönderildi / kapatıldı fark etmez
+    const offer = studyProgramOfferRef.current;
+    if (offer) {
+      setStudyProgramOffer(offer);
+      setShowStudyProgramOffer(true);
+      return;
+    }
+    if (kontrolDone) {
+      goToKontrolReportWhatsApp();
+    }
+  }, [kontrolDone, goToKontrolReportWhatsApp]);
+
+  const resetAllRef = useRef<(opts?: { preserveSendState?: boolean }) => void>(() => {});
+
+  const dismissStudyProgramOffer = useCallback(() => {
+    setShowStudyProgramOffer(false);
+    setStudyProgramOffer(null);
+    studyProgramOfferRef.current = null;
+    if (pendingResetAfterOfferRef.current) {
+      pendingResetAfterOfferRef.current = false;
+      resetAllRef.current();
+    }
+    if (kontrolDone) {
+      goToKontrolReportWhatsApp();
+    }
+  }, [kontrolDone, goToKontrolReportWhatsApp]);
+
+  const goToStudyProgramFromOffer = useCallback(() => {
+    const offer = studyProgramOfferRef.current;
+    if (!offer) return;
+    const href = buildStudyProgramHref(offer);
+    setShowStudyProgramOffer(false);
+    setStudyProgramOffer(null);
+    studyProgramOfferRef.current = null;
+    pendingResetAfterOfferRef.current = false;
+    markClean();
+    if (typeof window !== 'undefined') {
+      window.location.assign(href);
+    }
+  }, [buildStudyProgramHref, markClean]);
 
   const extractAssignmentId = (data: unknown): number | null => {
     if (!data || typeof data !== 'object') return null;
@@ -813,15 +1084,47 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               : `✅ Ödev kaydedildi — WhatsApp gönderimi açılıyor`)
             : `✅ Ödev kaydedildi — ${studentNames}`;
         flash(msg);
+
+        const offerStudentId =
+          targetStudents.length === 1
+            ? targetStudents[0].id
+            : (targetStudents[targetStudents.length - 1]?.id ?? 0);
+        const offerPayload =
+          status === 'PUBLISHED' && lastCreatedId && offerStudentId
+            ? {
+                assignmentId: lastCreatedId,
+                studentId: offerStudentId,
+                dueDate: dueDate || getDefaultDueDate(),
+                assignedDate: formatLocalDate(new Date()),
+              }
+            : null;
+
+        if (offerPayload) {
+          studyProgramOfferRef.current = offerPayload;
+          setStudyProgramOffer(offerPayload);
+          pendingResetAfterOfferRef.current = true;
+        }
+
+        for (const student of targetStudents) {
+          clearOdevVerDraft(student.id);
+        }
+
         if (openWhatsApp && lastCreatedId) {
           setSavedAssignmentId(lastCreatedId);
           setSendStudentName(lastStudentName || studentNames);
           setShowSendAfterSave(true);
-        } else if (lastCreatedId) {
-          setSavedAssignmentId(lastCreatedId);
-        }
-        if (!keepPrintOpen || openWhatsApp) {
-          resetAll({ preserveSendState: true });
+          setShowPrint(false);
+          // Formu şimdi sıfırlama — WhatsApp + çalışma programı teklifi bitsin
+        } else if (offerPayload) {
+          // WhatsApp yoksa doğrudan çalışma programı teklifi
+          setShowPrint(false);
+          setShowStudyProgramOffer(true);
+        } else if (lastCreatedId && kontrolDone && returnHref) {
+          const sep = returnHref.includes('?') ? '&' : '?';
+          forceNavigate(`${returnHref}${sep}notify=report`, { hard: true });
+          return;
+        } else if (!keepPrintOpen) {
+          resetAll();
         }
       } else {
         flash(`⚠️ ${successCount} başarılı, ${failCount} başarısız — bazı ödevler gönderilemedi`);
@@ -836,6 +1139,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
   const resetAll = (opts?: { preserveSendState?: boolean }) => {
     markClean();
+    if (selectedStudent) {
+      clearOdevVerDraft(selectedStudent.id);
+    }
+    draftReadyRef.current = false;
     setCart([]);
     setSelectedResource(null);
     setBookDetails(null);
@@ -862,6 +1169,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       setMultiSelect(false);
       setSelectedStudents([selectedStudent]);
       setCurrentStep(2);
+      setResourcePrefillDone(false);
+      draftReadyRef.current = true;
       void fetchResources(selectedStudent.id);
       void fetchTaskHistory(selectedStudent.id);
       return;
@@ -873,6 +1182,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     setResources([]);
     setCurrentStep(1);
   };
+  resetAllRef.current = resetAll;
 
   /* ─── Step Navigation ─── */
   const canGoToStep = (step: number): boolean => {
@@ -898,7 +1208,11 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   return (
     <>
       <UnsavedChangesModal {...leaveDialogProps} />
-    <div ref={mainRef} style={{ padding: 0, fontFamily: "'Poppins', sans-serif" }}>
+    <div
+      ref={mainRef}
+      className={`odev-ver-root${isCoach ? " odev-ver-coach" : ""}`}
+      style={{ padding: 0, fontFamily: "'Poppins', sans-serif" }}
+    >
       {/* Toast */}
       {toast && (
         <div style={{
@@ -971,17 +1285,18 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
             </div>
           )}
           {returnHref && (
-            <Link
-              href={returnHref}
+            <button
+              type="button"
+              onClick={goBackToKontrol}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', background: 'rgba(255,255,255,0.2)',
-                borderRadius: 10, color: '#fff',
-                fontSize: 13, fontWeight: 500, textDecoration: 'none',
+                border: 'none', borderRadius: 10, color: '#fff',
+                fontSize: 13, fontWeight: 500, cursor: 'pointer',
               }}
             >
-              ← Geri
-            </Link>
+              ← Kontrole dön
+            </button>
           )}
           <button
             type="button"
@@ -1039,7 +1354,50 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
       {/* Step Content */}
       <div className="wizard-content" style={{ minHeight: 280 }}>
-        {pendingControls.length > 0 && (
+        {fromKontrol && currentStep === 2 && (
+          <div
+            role="status"
+            style={{
+              marginBottom: 16,
+              padding: '14px 16px',
+              borderRadius: 12,
+              border: '1.5px solid #a5b4fc',
+              background: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#3730a3', marginBottom: 4 }}>
+                  {kontrolDone ? 'Kontrol bitti — yeni ödev' : 'Kontrolden devam ediyorsunuz'}
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: '#4338ca', lineHeight: 1.45 }}>
+                  Dersleri sepete ekleyip kaydedin. Geri dönmek için yandaki butonu kullanın.
+                </p>
+              </div>
+              {returnHref && (
+                <button
+                  type="button"
+                  onClick={goBackToKontrol}
+                  style={{
+                    flexShrink: 0,
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: '#4f46e5',
+                    color: '#fff',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(79,70,229,0.35)',
+                  }}
+                >
+                  ← Kontrole dön
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {visiblePendingControls.length > 0 && (
           <div
             role="status"
             style={{
@@ -1057,7 +1415,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               Yeni ödev vermeden önce aşağıdaki ödev(ler)in kontrolünü tamamlamanız önerilir.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {pendingControls.map((pc) => (
+              {visiblePendingControls.map((pc) => (
                 <div
                   key={pc.id}
                   style={{
@@ -1165,6 +1523,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               taskHistory={taskHistory}
               bookProgress={bookProgress}
               unitProgress={unitProgress}
+              initialOpenLessonId={preselectedLessonId}
               onPickResource={pickResource}
               onToggleContent={toggleContent}
               onSelectAllUnit={selectAllUnit}
@@ -1253,6 +1612,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           assignmentId={savedAssignmentId ?? undefined}
           sendBusy={sendBusy || saving}
           onRequestSaveAndSend={() => handleSave('PUBLISHED', { openWhatsApp: true, keepPrintOpen: true })}
+          onNotifyClose={finishAfterWhatsApp}
           onClose={() => setShowPrint(false)}
         />
       )}
@@ -1262,17 +1622,86 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           assignmentId={savedAssignmentId}
           notifyType="plan"
           studentName={sendStudentName}
-          onClose={() => {
-            setShowSendAfterSave(false);
-            setSavedAssignmentId(null);
-            setSendStudentName('');
-          }}
-          onSent={() => {
-            setShowSendAfterSave(false);
-            setSavedAssignmentId(null);
-            setSendStudentName('');
-          }}
+          onClose={finishAfterWhatsApp}
         />
+      )}
+
+      {showStudyProgramOffer && studyProgramOffer && (
+        <>
+          <div
+            role="presentation"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.55)',
+              zIndex: 10000,
+            }}
+            onClick={dismissStudyProgramOffer}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="study-program-offer-title"
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'white',
+              borderRadius: 20,
+              padding: 24,
+              zIndex: 10001,
+              width: 'min(440px, calc(100vw - 32px))',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.2)',
+            }}
+          >
+            <div style={{ fontSize: 22, marginBottom: 8 }}>📅</div>
+            <h2
+              id="study-program-offer-title"
+              style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 800, color: '#1e293b' }}
+            >
+              Bu ödeve çalışma programı hazırla
+            </h2>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
+              Ödevin verilme ve kontrol tarihleri programa aktarılır. İsterseniz şimdi hazırlayın
+              veya daha sonra yapın.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button
+                type="button"
+                onClick={goToStudyProgramFromOffer}
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: 12,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                Çalışma programına geç
+              </button>
+              <button
+                type="button"
+                onClick={dismissStudyProgramOffer}
+                style={{
+                  padding: '11px 16px',
+                  borderRadius: 12,
+                  fontWeight: 600,
+                  fontSize: 13,
+                  border: '1.5px solid #e2e8f0',
+                  background: 'white',
+                  color: '#64748b',
+                  cursor: 'pointer',
+                }}
+              >
+                İptal
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
     </>

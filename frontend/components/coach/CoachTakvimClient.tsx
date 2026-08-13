@@ -615,7 +615,7 @@ export default function CoachTakvimClient() {
               type="button"
               className="tkv-btn-icon"
               onClick={() => {
-                if (window.innerWidth <= 768) setMobileSidebar(!mobileSidebar);
+                if (window.innerWidth < 1280) setMobileSidebar(!mobileSidebar);
                 else setSidebarOpen(!sidebarOpen);
               }}
             >

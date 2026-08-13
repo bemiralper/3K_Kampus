@@ -56,18 +56,11 @@ export default function CoachStudentQuickActions({
           ogrenciId={ogrenciId}
           contactLabel={ogrenciAd || 'Öğrenci'}
           className="coach-student-action-btn coach-student-action-btn--whatsapp coach-student-action-btn--wa-ogrenci"
-          title="Öğrenciye WhatsApp — sohbet_kocluk_ogrenci"
-          size={16}
+          title="Öğrenciye WhatsApp"
+          size={13}
           variant={compact ? 'icon' : 'pill'}
           label="Öğrenci"
-        >
-          {compact ? (
-            <>
-              <span aria-hidden="true">💬</span>
-              <span className="coach-wa-chip">Ö</span>
-            </>
-          ) : undefined}
-        </WhatsAppChatButton>
+        />
       ) : null}
 
       {veliTel && ogrenciId ? (
@@ -77,18 +70,11 @@ export default function CoachStudentQuickActions({
           veliId={veliId}
           contactLabel={ogrenciAd ? `${ogrenciAd} velisi` : 'Veli'}
           className="coach-student-action-btn coach-student-action-btn--whatsapp coach-student-action-btn--wa-veli"
-          title="Veliye WhatsApp — sohbet_kocluk_veli"
-          size={16}
+          title="Veliye WhatsApp"
+          size={13}
           variant={compact ? 'icon' : 'pill'}
           label="Veli"
-        >
-          {compact ? (
-            <>
-              <span aria-hidden="true">💬</span>
-              <span className="coach-wa-chip">V</span>
-            </>
-          ) : undefined}
-        </WhatsAppChatButton>
+        />
       ) : null}
 
       {!ogrTel && !veliTel ? (

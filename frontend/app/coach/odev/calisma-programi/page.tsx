@@ -3,9 +3,11 @@
 import { Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import StudyProgramEditor from '@/components/coaching/study-program/StudyProgramEditor';
+import { useAuth } from '@/lib/contexts/AuthContext';
 
-function StudyProgramPageInner() {
+function CoachStudyProgramInner() {
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const studentId = useMemo(() => {
     const raw = searchParams.get('student_id') || searchParams.get('student');
     if (!raw) return undefined;
@@ -22,19 +24,29 @@ function StudyProgramPageInner() {
   }, [searchParams]);
 
   return (
-    <StudyProgramEditor
-      lockedStudentId={studentId}
-      initialWeekStart={weekStart}
-      initialWeekEnd={weekEnd}
-      initialHomeworkId={homeworkId}
-    />
+    <div className="coach-calisma-page">
+      <header className="coach-page-header">
+        <div className="coach-page-header-text">
+          <h2>Çalışma Programı</h2>
+          <p>Haftalık planı oluşturun, ödev havuzundan günlere dağıtın</p>
+        </div>
+      </header>
+      <StudyProgramEditor
+        lockedStudentId={studentId}
+        lockedCoachId={user?.coach_profile_id ?? undefined}
+        initialWeekStart={weekStart}
+        initialWeekEnd={weekEnd}
+        initialHomeworkId={homeworkId}
+        coachLayout
+      />
+    </div>
   );
 }
 
-export default function StudyProgramPage() {
+export default function CoachStudyProgramPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24 }}>Yükleniyor…</div>}>
-      <StudyProgramPageInner />
+    <Suspense fallback={<div className="coach-empty-state"><p>Yükleniyor…</p></div>}>
+      <CoachStudyProgramInner />
     </Suspense>
   );
 }

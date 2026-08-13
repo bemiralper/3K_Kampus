@@ -54,13 +54,21 @@ import {
   studyRangeEnd,
   toDateInputValue,
 } from '@/components/coaching/study-program/programDateUtils';
+import '@/components/coaching/study-program/study-program.css';
 
 export interface StudyProgramEditorProps {
   lockedStudentId?: number;
   lockedCoachId?: number;
   /** Öğrenci kilitliyken doğrudan bu programı aç */
   initialProgramId?: number;
+  /** Ödevden gelen program aralığı (YYYY-MM-DD) */
+  initialWeekStart?: string;
+  initialWeekEnd?: string;
+  /** Tarih kaynağı ödev id — havuzda vurgulanır */
+  initialHomeworkId?: number;
   embedded?: boolean;
+  /** Koç portalı layout (geniş shell + responsive board) */
+  coachLayout?: boolean;
 }
 
 export { datesFromHomework } from '@/components/coaching/study-program/programDateUtils';
@@ -95,8 +103,13 @@ export default function StudyProgramEditor({
   lockedStudentId,
   lockedCoachId,
   initialProgramId,
+  initialWeekStart,
+  initialWeekEnd,
+  initialHomeworkId,
   embedded = false,
+  coachLayout = false,
 }: StudyProgramEditorProps) {
+  const isCoachUi = embedded || coachLayout;
   /* ─── State ─── */
   // Koç & öğrenci seçimi
   const [coaches, setCoaches] = useState<Coach[]>([]);
@@ -339,6 +352,13 @@ export default function StudyProgramEditor({
       setSelectedStudent(lockedStudentId);
     }
   }, [lockedStudentId]);
+
+  /* Ödev ver ekranından gelen tarih / ödev ön seçimi */
+  useEffect(() => {
+    if (initialWeekStart) setNewWeekStart(initialWeekStart);
+    if (initialWeekEnd) setNewWeekEnd(initialWeekEnd);
+    if (initialHomeworkId) setDateSourceHomeworkId(initialHomeworkId);
+  }, [initialWeekStart, initialWeekEnd, initialHomeworkId]);
 
   // Öğrenci seçildiğinde mevcut programlarını yükle
   const loadStudentPrograms = useCallback(async () => {
@@ -921,9 +941,12 @@ export default function StudyProgramEditor({
   return (
     <>
       <UnsavedChangesModal {...leaveDialogProps} />
-    <div style={{ padding: 0, minHeight: embedded ? 'auto' : '100vh' }}>
+    <div
+      className={`sp-root${isCoachUi ? ' sp-coach-root' : ''}`}
+      style={{ padding: 0, minHeight: isCoachUi ? 'auto' : '100vh' }}
+    >
       {/* ─── HERO HEADER ─── */}
-      {!embedded && (
+      {!embedded && !coachLayout && (
       <div className="hero-header" style={{ marginBottom: '24px' }}>
         <div className="hero-content">
           <div className="hero-icon">
@@ -1542,21 +1565,11 @@ export default function StudyProgramEditor({
           </div>
 
           {/* ─── Split Layout ─── */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+          <div className="sp-board-split">
             {/* ───── SOL PANEL: ÖDEV HAVUZU ───── */}
             <div
+              className="sp-pool-panel"
               style={{
-                width: 300,
-                minWidth: 280,
-                flexShrink: 0,
-                backgroundColor: '#fff',
-                borderRadius: 14,
-                border: '1px solid #e2e8f0',
-                overflow: 'hidden',
-                maxHeight: 'calc(100vh - 240px)',
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
                 ...(isExpired ? { opacity: 0.5, pointerEvents: 'none' as const } : {}),
               }}
             >
@@ -1658,7 +1671,10 @@ export default function StudyProgramEditor({
             </div>
 
             {/* ───── SAĞ PANEL: ÖZET + TAKVİM ───── */}
-            <div style={{ flex: 1, minWidth: 0, ...(isExpired ? { opacity: 0.7, pointerEvents: 'none' as const } : {}) }}>
+            <div
+              className="sp-calendar-panel"
+              style={{ ...(isExpired ? { opacity: 0.7, pointerEvents: 'none' as const } : {}) }}
+            >
               {/* Gün–ders özeti */}
               <div style={{
                 marginBottom: 10,
@@ -1677,11 +1693,12 @@ export default function StudyProgramEditor({
                 }}>
                   Plan özeti
                 </div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: `repeat(${Math.max(dayLessonSummary.length, 1)}, minmax(0, 1fr))`,
-                  gap: 8,
-                }}>
+                <div
+                  className="sp-plan-summary-grid"
+                  style={{
+                    ['--sp-summary-count' as string]: Math.max(dayLessonSummary.length, 1),
+                  }}
+                >
                   {dayLessonSummary.map((row) => (
                     <div
                       key={row.date}
@@ -1728,17 +1745,16 @@ export default function StudyProgramEditor({
                 </div>
               </div>
 
-              <div style={{ overflowX: 'auto' }}>
+              <div className="sp-day-grid-scroll">
                 {(() => {
                   const daysForBoard = [...(program.days || [])].sort((a, b) =>
                     a.day_date.localeCompare(b.day_date),
                   );
                   return (
                     <div
+                      className="sp-day-grid"
                       style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(${Math.max(daysForBoard.length, 1)}, minmax(140px, 1fr))`,
-                        gap: '8px',
+                        ['--sp-day-count' as string]: Math.max(daysForBoard.length, 1),
                       }}
                     >
                       {daysForBoard.map((day) => (

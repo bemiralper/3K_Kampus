@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type {
   StudentResource, BookDetails, Unit, Topic, Content, SelectedContent,
   ResourcesByLesson, CartLessonGroup, ContentTaskHistory, ScopeCompletionMap,
@@ -55,6 +55,8 @@ interface AssignmentStepProps {
   taskHistory: ContentTaskHistory;
   bookProgress?: ScopeCompletionMap;
   unitProgress?: ScopeCompletionMap;
+  /** Kontrolden gelen ders — sol menüde otomatik açılır */
+  initialOpenLessonId?: number | null;
   onPickResource: (r: StudentResource) => void;
   onToggleContent: (c: Content, t: Topic, u: Unit) => void;
   onSelectAllUnit: (u: Unit) => void;
@@ -71,6 +73,7 @@ export default function AssignmentStep({
   resources, selectedResource, bookDetails, cart, contentNotes,
   resLoading, bookLoading, taskHistory,
   bookProgress = {}, unitProgress = {},
+  initialOpenLessonId = null,
   onPickResource, onToggleContent, onSelectAllUnit, onSelectAllTopic,
   onSelectIncompleteUnit, onSelectIncompleteTopic,
   onRemoveContent, onClearCart, onNoteChange, isSelected,
@@ -82,6 +85,41 @@ export default function AssignmentStep({
   const [openCartLessons, setOpenCartLessons] = useState<Record<number, boolean>>({});
   const [noteExpanded, setNoteExpanded] = useState<Record<number, boolean>>({});
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
+
+  useEffect(() => {
+    if (initialOpenLessonId == null || initialOpenLessonId <= 0) return;
+    setOpenLessons((prev) => ({ ...prev, [initialOpenLessonId]: true }));
+  }, [initialOpenLessonId]);
+
+  /* Kitap değişince filtreyi sıfırla */
+  useEffect(() => {
+    setHistoryFilter('all');
+  }, [bookDetails?.id]);
+
+  /* Filtre değişince eşleşen ünite/konuları otomatik aç */
+  useEffect(() => {
+    if (!bookDetails?.units?.length || historyFilter === 'all') return;
+    const nextUnits: Record<number, boolean> = {};
+    const nextTopics: Record<number, boolean> = {};
+    for (const unit of bookDetails.units) {
+      let unitHas = false;
+      for (const topic of unit.topics || []) {
+        const has = (topic.contents || []).some((c) => {
+          const h = taskHistory[c.id] ?? taskHistory[String(c.id) as unknown as number];
+          if (historyFilter === 'partial') return h?.completion_status === 'PARTIAL';
+          if (historyFilter === 'not_done') return h?.completion_status === 'NOT_DONE';
+          return !h || h.completion_status === 'PENDING';
+        });
+        if (has) {
+          unitHas = true;
+          nextTopics[topic.id] = true;
+        }
+      }
+      if (unitHas) nextUnits[unit.id] = true;
+    }
+    setOpenUnits((prev) => ({ ...prev, ...nextUnits }));
+    setOpenTopics((prev) => ({ ...prev, ...nextTopics }));
+  }, [historyFilter, bookDetails, taskHistory]);
 
   /* ─── Group resources: Ders → Kaynak Türü → Kitap ─── */
   const groupedResources: ResourcesByLesson[] = useMemo(() => {
@@ -144,14 +182,31 @@ export default function AssignmentStep({
     return n;
   }, [taskHistory, cart]);
 
+  const getHistory = useCallback((contentId: number) => {
+    return taskHistory[contentId] ?? (taskHistory as Record<string, typeof taskHistory[number]>)[String(contentId)];
+  }, [taskHistory]);
+
   const matchesHistoryFilter = useCallback((contentId: number) => {
-    const h = taskHistory[contentId];
+    const h = getHistory(contentId);
     if (historyFilter === 'all') return true;
     if (historyFilter === 'partial') return h?.completion_status === 'PARTIAL';
     if (historyFilter === 'not_done') return h?.completion_status === 'NOT_DONE';
-    // never: no evaluated history or PENDING only
+    // never (Verilmemiş): geçmiş yok veya sadece PENDING (henüz kontrol edilmemiş atama)
     return !h || h.completion_status === 'PENDING';
-  }, [historyFilter, taskHistory]);
+  }, [historyFilter, getHistory]);
+
+  const filterMatchCount = useMemo(() => {
+    if (!bookDetails?.units || historyFilter === 'all') return null;
+    let n = 0;
+    for (const unit of bookDetails.units) {
+      for (const topic of unit.topics || []) {
+        for (const c of topic.contents || []) {
+          if (matchesHistoryFilter(c.id)) n += 1;
+        }
+      }
+    }
+    return n;
+  }, [bookDetails, historyFilter, matchesHistoryFilter]);
 
   const toggle = (set: React.Dispatch<React.SetStateAction<Record<number, boolean>>>, id: number) =>
     set(prev => ({ ...prev, [id]: !prev[id] }));
@@ -346,11 +401,16 @@ export default function AssignmentStep({
               )}
             </div>
             {bookDetails && (
-              <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 {filterChip('all', 'Hepsi')}
                 {filterChip('partial', 'Eksik')}
                 {filterChip('not_done', 'Yapılmadı')}
                 {filterChip('never', 'Verilmemiş')}
+                {historyFilter !== 'all' && filterMatchCount != null && (
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>
+                    {filterMatchCount} sonuç
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -372,8 +432,24 @@ export default function AssignmentStep({
                 <h4 style={{ fontSize: 15, marginBottom: 4 }}>İçerik bulunamadı</h4>
                 <p style={{ fontSize: 13 }}>Bu kaynakta henüz içerik tanımlanmamış</p>
               </div>
+            ) : historyFilter !== 'all' && filterMatchCount === 0 ? (
+              <div className="empty-state" style={{ padding: '48px 20px' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>🔎</div>
+                <h4 style={{ fontSize: 15, marginBottom: 4 }}>Sonuç yok</h4>
+                <p style={{ fontSize: 13 }}>
+                  Bu filtreye uyan içerik yok. &quot;Hepsi&quot;ne dönün veya başka filtre deneyin.
+                </p>
+              </div>
             ) : (
               bookDetails.units.map((unit: Unit) => {
+                const filteredTopics = (unit.topics || [])
+                  .map((topic) => ({
+                    topic,
+                    contents: (topic.contents || []).filter((c) => matchesHistoryFilter(c.id)),
+                  }))
+                  .filter((t) => historyFilter === 'all' || t.contents.length > 0);
+                if (historyFilter !== 'all' && filteredTopics.length === 0) return null;
+
                 const unitIncomplete = (unit.topics || []).reduce(
                   (s, t) => s + countIncomplete(t.contents),
                   0,
@@ -411,7 +487,9 @@ export default function AssignmentStep({
                         <ScopePct progress={up} titlePrefix="Ünite bitirme" />
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        {unit.topics?.length || 0} konu
+                        {historyFilter === 'all'
+                          ? `${unit.topics?.length || 0} konu`
+                          : `${filteredTopics.reduce((s, t) => s + t.contents.length, 0)} içerik`}
                         {unitIncomplete > 0 && (
                           <span style={{ color: '#2563eb', fontWeight: 600 }}> · {unitIncomplete} eksik</span>
                         )}
@@ -443,7 +521,7 @@ export default function AssignmentStep({
                     </button>
                   </div>
 
-                  {openUnits[unit.id] && unit.topics?.map((topic: Topic) => {
+                  {openUnits[unit.id] && filteredTopics.map(({ topic, contents }) => {
                     const topicIncomplete = countIncomplete(topic.contents);
                     return (
                     <div key={topic.id} style={{ paddingLeft: 20, marginBottom: 2 }}>
@@ -476,7 +554,7 @@ export default function AssignmentStep({
                           )}
                         </div>
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          {topic.contents?.length || 0}
+                          {historyFilter === 'all' ? (topic.contents?.length || 0) : contents.length}
                         </span>
                         {topicIncomplete > 0 && (
                           <button
@@ -504,9 +582,9 @@ export default function AssignmentStep({
                         </button>
                       </div>
 
-                      {openTopics[topic.id] && topic.contents?.filter((c) => matchesHistoryFilter(c.id)).map((content: Content) => {
+                      {openTopics[topic.id] && contents.map((content: Content) => {
                         const selected = isSelected(content.id);
-                        const history = taskHistory[content.id];
+                        const history = getHistory(content.id);
                         const isDone = history?.completion_status === 'DONE';
                         const isPartial = history?.completion_status === 'PARTIAL';
                         const isNotDone = history?.completion_status === 'NOT_DONE';

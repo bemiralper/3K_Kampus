@@ -129,8 +129,10 @@ export default function CoachDashboardPage() {
       </section>
 
       <header className="coach-page-header">
-        <h2>Özet</h2>
-        <p>Atanmış öğrencileriniz ve günlük takip alanları</p>
+        <div className="coach-page-header-text">
+          <h2>Özet</h2>
+          <p>Atanmış öğrencileriniz ve günlük takip alanları</p>
+        </div>
       </header>
 
       {loading && <div className="coach-loading">Özet yükleniyor…</div>}

@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { useVectorPrint } from "@/lib/useVectorPrint";
 import { downloadAssignmentServerPdf, fetchAssignmentReport } from "@/lib/resources-api";
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
-import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
+import { useOdevKontrolPaths, buildNewAssignmentFromKontrolHref } from "@/components/odev/OdevKontrolPaths";
 import { MetaCol, assignmentTypeLabel } from "@/components/odev/odevPdfMeta";
 import { displayTestLabel, splitColumnMajor } from "@/components/odev/odevPlanTypes";
 import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
@@ -1385,7 +1385,10 @@ export default function OdevKontrolReportClient({
           }}
           assignHomeworkHref={
             paths.newAssignment && fullReport?.data.student_info?.id
-              ? `${paths.newAssignment}?student=${fullReport.data.student_info.id}&locked=1&return=${encodeURIComponent(paths.detail(assignmentId))}`
+              ? buildNewAssignmentFromKontrolHref(paths.newAssignment, {
+                  studentId: fullReport.data.student_info.id,
+                  returnPath: paths.detail(assignmentId),
+                })
               : null
           }
         />

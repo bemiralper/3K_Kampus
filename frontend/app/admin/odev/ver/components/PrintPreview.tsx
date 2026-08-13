@@ -20,13 +20,15 @@ interface PrintPreviewProps {
   assignmentId?: number;
   /** Kayıt yoksa önce kaydedip WhatsApp modalını açar */
   onRequestSaveAndSend?: () => void | Promise<void>;
+  /** WhatsApp gönderim penceresi kapanınca (gönderildi / iptal) */
+  onNotifyClose?: () => void;
   sendBusy?: boolean;
   onClose: () => void;
 }
 
 export default function PrintPreview({
   studentName, studentPhoto, coachName, title, notes, dueDate, items, contentNotes, taskHistory = {},
-  assignmentId, onRequestSaveAndSend, sendBusy = false, onClose,
+  assignmentId, onRequestSaveAndSend, onNotifyClose, sendBusy = false, onClose,
 }: PrintPreviewProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -169,7 +171,10 @@ export default function PrintPreview({
           assignmentId={assignmentId}
           notifyType="plan"
           studentName={studentName}
-          onClose={() => setShowSendModal(false)}
+          onClose={() => {
+            setShowSendModal(false);
+            onNotifyClose?.();
+          }}
           onSent={(sent) => {
             setSendToast(`${sent} kişiye WhatsApp ile gönderildi`);
             setTimeout(() => setSendToast(null), 4000);

@@ -25,6 +25,7 @@ import CoachReminderBanner from "@/components/coach/CoachReminderBanner";
 import BulkGorusmeDrawer from "@/components/coach/BulkGorusmeDrawer";
 import GorusmeEkleDrawer from "@/components/coach/GorusmeEkleDrawer";
 import RiskBildirDrawer from "@/components/coach/RiskBildirDrawer";
+import CoachFilterSheet from "@/components/coach/CoachFilterSheet";
 import CoachStudentAvatar from "@/components/coach/students/CoachStudentAvatar";
 import CoachStudentQuickActions from "@/components/coach/students/CoachStudentQuickActions";
 
@@ -320,6 +321,7 @@ export default function CoachOgrencilerClient() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [drawer, setDrawer] = useState<DrawerState>(null);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -455,8 +457,10 @@ export default function CoachOgrencilerClient() {
   return (
     <div className="coach-students-page">
       <header className="coach-page-header">
-        <h2>Öğrencilerim</h2>
-        <p>Atanmış öğrencilerinizi risk, ödev ve görüşme durumuna göre takip edin.</p>
+        <div className="coach-page-header-text">
+          <h2>Öğrencilerim</h2>
+          <p>Atanmış öğrencilerinizi risk, ödev ve görüşme durumuna göre takip edin.</p>
+        </div>
       </header>
 
       {userId > 0 && (
@@ -563,22 +567,24 @@ export default function CoachOgrencilerClient() {
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            className="coach-link-btn"
-            onClick={() => handleExport("csv")}
-            disabled={displayedStudents.length === 0 || exportingFormat !== null}
-          >
-            {exportingFormat === "csv" ? "Hazırlanıyor…" : "CSV ↓"}
-          </button>
-          <button
-            type="button"
-            className="coach-link-btn"
-            onClick={() => handleExport("xlsx")}
-            disabled={displayedStudents.length === 0 || exportingFormat !== null}
-          >
-            {exportingFormat === "xlsx" ? "Hazırlanıyor…" : "Excel ↓"}
-          </button>
+          <div className="coach-toolbar-export">
+            <button
+              type="button"
+              className="coach-link-btn"
+              onClick={() => handleExport("csv")}
+              disabled={displayedStudents.length === 0 || exportingFormat !== null}
+            >
+              {exportingFormat === "csv" ? "Hazırlanıyor…" : "CSV ↓"}
+            </button>
+            <button
+              type="button"
+              className="coach-link-btn"
+              onClick={() => handleExport("xlsx")}
+              disabled={displayedStudents.length === 0 || exportingFormat !== null}
+            >
+              {exportingFormat === "xlsx" ? "Hazırlanıyor…" : "Excel ↓"}
+            </button>
+          </div>
           <button
             type="button"
             className={`coach-link-btn${selectMode ? " is-active" : ""}`}
@@ -591,7 +597,30 @@ export default function CoachOgrencilerClient() {
 
       {exportError && <div className="coach-error">{exportError}</div>}
 
-      <div className="coach-students-filters" role="tablist" aria-label="Hızlı filtreler">
+      <div className="coach-filters-mobile">
+        <button
+          type="button"
+          className="coach-filters-trigger"
+          onClick={() => setFilterSheetOpen(true)}
+        >
+          Filtreler
+          {activeFilter !== "all" && (
+            <span className="coach-filter-count">1</span>
+          )}
+        </button>
+        {activeFilter !== "all" && (
+          <button
+            type="button"
+            className="coach-filter-chip is-active"
+            onClick={() => selectFilter("all")}
+          >
+            {FILTER_OPTIONS.find((f) => f.id === activeFilter)?.label}
+            <span aria-hidden>×</span>
+          </button>
+        )}
+      </div>
+
+      <div className="coach-filters-inline coach-students-filters" role="tablist" aria-label="Hızlı filtreler">
         {FILTER_OPTIONS.map((f) => (
           <button
             key={f.id}
@@ -607,6 +636,32 @@ export default function CoachOgrencilerClient() {
           </button>
         ))}
       </div>
+
+      {filterSheetOpen && (
+        <CoachFilterSheet
+          open
+          title="Filtreler"
+          onClose={() => setFilterSheetOpen(false)}
+        >
+          <div className="coach-filter-sheet-list" role="listbox" aria-label="Öğrenci filtreleri">
+            {FILTER_OPTIONS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className={`coach-filter-chip${activeFilter === f.id ? " is-active" : ""}`}
+                onClick={() => {
+                  selectFilter(f.id);
+                  setFilterSheetOpen(false);
+                }}
+              >
+                <span aria-hidden>{f.icon}</span>
+                {f.label}
+                <span className="coach-filter-count">{filterCounts[f.id]}</span>
+              </button>
+            ))}
+          </div>
+        </CoachFilterSheet>
+      )}
 
       <div className="coach-students-list-panel">
         {loading && (

@@ -368,7 +368,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         onKeyDown={(e) => { if (e.key === "Enter") goDetail(a.id); }}
       >
         <div className="ok-list-row-header">
-          <div>
+          <div className="ok-list-row-heading">
             <h3 className="ok-list-row-title">{assignmentTitle(a)}</h3>
             <div className="ok-list-row-sub">{a.student_name}</div>
           </div>
@@ -568,7 +568,8 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
             {sortedAssignments.map((a) => renderAssignmentRow(a))}
           </div>
 
-          <table className="ok-table-list ok-list-desktop">
+          <div className="ok-list-desktop-wrap">
+            <table className="ok-table-list ok-list-desktop">
             <thead>
               <tr>
                 <th>Öğrenci</th>
@@ -641,7 +642,8 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
 
           {renderPager()}
         </>

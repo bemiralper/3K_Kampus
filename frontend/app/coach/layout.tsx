@@ -22,6 +22,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/profil/istatistikler": "İstatistiklerim",
   "/coach/odev/kontrol": "Ödev Kontrol",
   "/coach/odev/ver": "Ödev Oluştur",
+  "/coach/odev/calisma-programi": "Çalışma Programı",
   "/coach/odev/paketler": "Ödev Paketleri",
   "/coach/odev/kaynaklar": "Eğitim Kaynakları",
   "/coach/odev/kaynak-havuzu": "Kitap Atamaları",
@@ -61,6 +62,7 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
   const {
     isSidebarWide,
     isDesktop,
+    isPhone,
     mobileDrawerOpen,
     toggle: toggleSidebar,
     closeMobileDrawer,
@@ -125,6 +127,7 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
         <CoachSidebar
           isOpen={isSidebarWide}
           isDesktop={isDesktop}
+          isPhone={isPhone}
           mobileDrawerOpen={mobileDrawerOpen}
           onToggle={toggleSidebar}
           onCloseMobile={closeMobileDrawer}

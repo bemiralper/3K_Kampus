@@ -5,8 +5,10 @@ import KaynaklarPage from '@/app/admin/odev/kaynaklar/page';
 
 export default function CoachKaynaklarPage() {
   return (
-    <KaynakPathProvider basePath="coach">
-      <KaynaklarPage />
-    </KaynakPathProvider>
+    <div className="coach-kaynak-page">
+      <KaynakPathProvider basePath="coach">
+        <KaynaklarPage />
+      </KaynakPathProvider>
+    </div>
   );
 }

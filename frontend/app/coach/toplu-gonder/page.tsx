@@ -5,5 +5,9 @@ export const metadata = {
 };
 
 export default function CoachTopluGonderPage() {
-  return <TopluGonderClient mode="coach" />;
+  return (
+    <div className="coach-toplu-gonder-page">
+      <TopluGonderClient mode="coach" />
+    </div>
+  );
 }

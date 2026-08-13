@@ -5,8 +5,10 @@ import BookStructurePageClient from "@/app/admin/odev/kaynaklar/components/BookS
 
 export default function CoachKaynakKitapYapiPage() {
   return (
-    <KaynakPathProvider basePath="coach">
-      <BookStructurePageClient />
-    </KaynakPathProvider>
+    <div className="coach-kaynak-page">
+      <KaynakPathProvider basePath="coach">
+        <BookStructurePageClient />
+      </KaynakPathProvider>
+    </div>
   );
 }
