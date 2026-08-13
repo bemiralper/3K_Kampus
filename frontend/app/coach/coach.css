@@ -2685,7 +2685,7 @@
 }
 
 /* Tablet: 72px rail in-flow, expanded menu overlays content */
-@media (min-width: 768px) and (max-width: 1279px) {
+@media (min-width: 768px) and (max-width: 991px) {
   .coach-shell {
     flex-direction: row;
   }
@@ -2764,7 +2764,7 @@
 }
 
 /* Desktop: persistent sidebar, content pushed */
-@media (min-width: 1280px) {
+@media (min-width: 992px) {
   .coach-shell {
     flex-direction: row;
   }
@@ -2774,6 +2774,10 @@
     z-index: auto;
     width: var(--coach-sidebar-width);
     overflow: hidden;
+  }
+
+  .coach-main {
+    margin-left: 0;
   }
 
   .coach-sidebar-backdrop {
@@ -4657,7 +4661,7 @@
   }
 }
 
-@media (min-width: 1280px) {
+@media (min-width: 992px) {
   .coach-bulk-bar {
     left: calc(var(--coach-sidebar-width) + 24px);
   }

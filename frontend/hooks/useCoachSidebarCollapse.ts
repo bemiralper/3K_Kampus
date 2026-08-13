@@ -8,8 +8,9 @@ const DESKTOP_STORAGE_KEY = "coach-sidebar-expanded";
 export type CoachLayoutMode = "phone" | "tablet" | "desktop";
 
 export function useCoachSidebarCollapse() {
-  const isDesktop = useMediaQuery("(min-width: 1280px)");
-  const isTablet = useMediaQuery("(min-width: 768px) and (max-width: 1279px)");
+  // Desktop sidebar (kalıcı menü) 992px+ — 1280 eşiği laptop'ta menüyü çekmeceye düşürüp kaydırıyordu
+  const isDesktop = useMediaQuery("(min-width: 992px)");
+  const isTablet = useMediaQuery("(min-width: 768px) and (max-width: 991px)");
   const isPhone = !isDesktop && !isTablet;
   const [desktopExpanded, setDesktopExpanded] = useState(true);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
