@@ -4,7 +4,49 @@ DDD Pattern - Application
 """
 from datetime import date
 from apps.ogrenci.infrastructure.repositories import OgrenciRepository, OgrenciKayitRepository
-from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
+from apps.ogrenci.domain.models import Ogrenci, OgrenciAdres, OgrenciKayit
+
+
+def format_ogrenci_adres_text(adres, ilce='', il=''):
+    """GET yanıtındaki birleşik adres metnini üretir (sokak, ilçe, il)."""
+    return ', '.join(filter(None, [adres or '', ilce or '', il or '']))
+
+
+def sync_default_ogrenci_adres(ogrenci, adres_text):
+    """
+    Detay düzenleme formu tek bir `adres` alanı gönderir; GET ise OgrenciAdres
+    satırını tercih eder. PUT yalnızca Ogrenci.adres yazınca yenilemede eski
+    değer döner. Varsayılan (veya son) OgrenciAdres satırını senkronla.
+    """
+    text = (adres_text or '').strip()
+    default = (
+        OgrenciAdres.objects.filter(ogrenci=ogrenci, varsayilan=True).first()
+        or OgrenciAdres.objects.filter(ogrenci=ogrenci).order_by('-id').first()
+    )
+
+    if not default:
+        if text:
+            OgrenciAdres.objects.create(
+                ogrenci=ogrenci,
+                adres=text,
+                adres_turu='ev',
+                varsayilan=True,
+            )
+        return
+
+    suffix_parts = [part for part in (default.ilce, default.il) if part]
+    if suffix_parts:
+        suffix = ', ' + ', '.join(suffix_parts)
+        if text.endswith(suffix):
+            default.adres = text[: -len(suffix)].strip(' ,')
+            default.save(update_fields=['adres', 'updated_at'])
+            return
+
+    default.adres = text
+    default.il = ''
+    default.ilce = ''
+    default.posta_kodu = ''
+    default.save(update_fields=['adres', 'il', 'ilce', 'posta_kodu', 'updated_at'])
 
 
 class OgrenciService:

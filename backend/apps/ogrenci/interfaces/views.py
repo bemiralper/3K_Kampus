@@ -14,7 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db import models
 from datetime import datetime
 
-from apps.ogrenci.application.services import OgrenciService
+from apps.ogrenci.application.services import OgrenciService, sync_default_ogrenci_adres
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
 from apps.egitim_yili.domain.models import EgitimYili
 from shared.permissions import (
@@ -730,6 +730,9 @@ def ogrenci_api(request, pk):
         
         if errors:
             return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+        if 'adres' in update_data:
+            sync_default_ogrenci_adres(updated_ogrenci, update_data['adres'])
 
         # Yıllık kayıt — sınıf / seviye / okul güncellemesi
         kayit_updates = {}
