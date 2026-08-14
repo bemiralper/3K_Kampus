@@ -30,6 +30,7 @@ import {
   saveNotificationBinding,
   seedAcademicScheduleTemplates,
   seedDuyuruMetaTemplates,
+  seedKayitSozlesmeTemplates,
   seedPersonalChatTemplates,
   submitLocalMetaTemplate,
   syncWhatsAppAccountTemplates,
@@ -535,6 +536,39 @@ export default function MetaSablonlarClient() {
     }
   };
 
+  const handleSeedKayitSozlesme = async () => {
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin.");
+      return;
+    }
+    if (!confirm(
+      "Kayıt sözleşmesi Meta taslağı oluşturulsun mu?\n\n"
+      + "• ogrenci_kayit_sozlesme_personel (metin)\n\n"
+      + "LMS şablonu da oluşturulur ve Bildirim Şablonları’nda "
+      + "ogrenci.kayit_sozlesme olayına bağlanır. Meta’ya gönderip onaylatın.",
+    )) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await seedKayitSozlesmeTemplates({
+        channel_config_id: accountId,
+        bind: true,
+      });
+      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
+      setMessage(
+        (res.info || "Kayıt sözleşmesi taslağı hazır.")
+        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
+        + errText,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kayıt sözleşmesi taslağı oluşturulamadı");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSeedPersonalChat = async () => {
     if (!accountId) {
       setError("WhatsApp hesabı seçin.");
@@ -747,6 +781,15 @@ export default function MetaSablonlarClient() {
             title="Planlama → Programı Bildir: sinif_programi_veli / _ogrenci DOCUMENT"
           >
             Ders programı taslakları
+          </button>
+          <button
+            type="button"
+            className="comm-btn-secondary"
+            onClick={handleSeedKayitSozlesme}
+            disabled={!accountId || saving}
+            title="Sözleşme aktif bildirimi: ogrenci_kayit_sozlesme_personel"
+          >
+            Kayıt sözleşmesi taslağı
           </button>
           <button
             type="button"

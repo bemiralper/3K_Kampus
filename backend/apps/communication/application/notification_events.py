@@ -517,6 +517,38 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
             ),
         }),
     ),
+    NotificationEvent(
+        key='ogrenci.kayit_sozlesme',
+        module=MODULE_OGRENCI,
+        label='Yeni kayıt sözleşmesi (yönetici)',
+        description=(
+            'Sözleşme aktif edilince önceden seçilmiş kurum / şube / eğitim '
+            'yöneticilerine WhatsApp özeti gider. Alıcılar bu ekrandan işaretlenir.'
+        ),
+        recipients=(PERSONEL,),
+        opt_in_category='genel',
+        variables=(
+            'ogrenci_ad', 'sinif_seviyesi', 'egitim_paketleri',
+            'kayit_tarihi', 'kayit_yapan', 'personel_ad', 'sozlesme_no',
+        ),
+        meta_name_base='ogrenci_kayit_sozlesme',
+        default_bodies=MappingProxyType({
+            PERSONEL: (
+                'Sisteme yeni bir öğrenci kaydı oluşturuldu.\n'
+                '\n'
+                'Öğrenci Bilgileri\n'
+                'Öğrenci: {{ogrenci_ad}}\n'
+                'Sınıf Seviyesi: {{sinif_seviyesi}}\n'
+                'Paketler: {{egitim_paketleri}}\n'
+                '\n'
+                'Kayıt Bilgileri\n'
+                'Kayıt Tarihi: {{kayit_tarihi}}\n'
+                'Kayıt Yapan: {{kayit_yapan}}\n'
+                '\n'
+                'Bilginize sunarız.'
+            ),
+        }),
+    ),
     # ── Özel ders (tek genel Meta şablon değişken seti) ──
     NotificationEvent(
         key='ozel_ders.ogretmen_gelmedi',

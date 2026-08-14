@@ -1295,3 +1295,54 @@ class BirthdayWishLog(models.Model):
 
     def __str__(self):
         return f'{self.ogrenci_id} — {self.year}'
+
+
+class NotificationStaffRecipient(models.Model):
+    """Olay bazlı personel alıcı seçimi (ör. kayıt sözleşmesi yöneticileri)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='notification_staff_recipients',
+        verbose_name='Kurum',
+    )
+    sube = models.ForeignKey(
+        'sube.Sube',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='notification_staff_recipients',
+        verbose_name='Şube',
+    )
+    event_key = models.CharField(max_length=64, db_index=True, verbose_name='Olay')
+    personel = models.ForeignKey(
+        'personel.Personel',
+        on_delete=models.CASCADE,
+        related_name='notification_staff_recipients',
+        verbose_name='Personel',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'comm_notification_staff_recipient'
+        verbose_name = 'Bildirim Personel Alıcısı'
+        verbose_name_plural = 'Bildirim Personel Alıcıları'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum', 'event_key', 'personel'],
+                condition=models.Q(sube__isnull=True),
+                name='comm_staff_rcpt_kurum_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['kurum', 'sube', 'event_key', 'personel'],
+                condition=models.Q(sube__isnull=False),
+                name='comm_staff_rcpt_sube_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['kurum', 'event_key'], name='comm_staff_rcpt_lookup_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.event_key} → {self.personel_id}'

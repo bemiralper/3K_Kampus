@@ -39,6 +39,7 @@ SOURCE_SINAV = 'sinav'
 SOURCE_DEVAMSIZLIK = 'devamsizlik'
 SOURCE_DUYURU = 'duyuru'
 SOURCE_KOC = 'koc'
+SOURCE_OGRENCI = 'ogrenci'
 
 
 def _safe_hook(fn, *args, **kwargs) -> SendResult | None:
@@ -70,6 +71,7 @@ def already_sent(
     *,
     veli_id: int | None = None,
     ogrenci_id: int | None = None,
+    personel_id: int | None = None,
 ) -> bool:
     qs = Message.objects.filter(
         source_module=source_module,
@@ -80,6 +82,8 @@ def already_sent(
         qs = qs.filter(conversation__veli_id=veli_id)
     if ogrenci_id:
         qs = qs.filter(conversation__ogrenci_id=ogrenci_id)
+    if personel_id:
+        qs = qs.filter(conversation__contact_identity__personel_id=personel_id)
     return qs.exists()
 
 
@@ -1341,3 +1345,113 @@ def _resolve_veli_for_sozlesme(sozlesme, category: str = 'odeme'):
         if ContactResolver.veli_allows_outbound(veli, category):
             return veli
     return None
+
+
+def _user_display_name(user) -> str:
+    if not user:
+        return ''
+    return (user.get_full_name() or user.username or '').strip()
+
+
+def build_kayit_sozlesme_context(sozlesme, personel=None) -> dict:
+    """Sözleşme aktif bildirimi için şablon değişkenleri."""
+    ogrenci = getattr(sozlesme, 'ogrenci', None)
+    kayit = getattr(sozlesme, 'ogrenci_kayit', None)
+    seviye = ''
+    if kayit is not None:
+        if getattr(kayit, 'sinif_seviyesi', None):
+            seviye = kayit.sinif_seviyesi.ad or ''
+        elif getattr(kayit, 'sinif', None) and getattr(kayit.sinif, 'sinif_seviyesi', None):
+            seviye = kayit.sinif.sinif_seviyesi.ad or ''
+
+    paketler = ', '.join(
+        adi for adi in sozlesme.kalemler.order_by('id').values_list('kalem_adi', flat=True) if adi
+    ) or (getattr(sozlesme, 'paket_adi', '') or '')
+
+    kayit_yapan = ''
+    if kayit is not None and getattr(kayit, 'kaydi_alan', None):
+        kayit_yapan = _user_display_name(kayit.kaydi_alan)
+    if not kayit_yapan:
+        kayit_yapan = _user_display_name(getattr(sozlesme, 'olusturan', None))
+
+    kayit_tarihi = ''
+    tarih = getattr(kayit, 'kayit_tarihi', None) if kayit is not None else None
+    if tarih:
+        kayit_tarihi = tarih.strftime('%d.%m.%Y') if hasattr(tarih, 'strftime') else str(tarih)
+
+    personel_ad = ''
+    if personel is not None:
+        personel_ad = f'{personel.ad} {personel.soyad}'.strip()
+
+    kurum = getattr(sozlesme, 'kurum', None)
+    sube = getattr(sozlesme, 'sube', None)
+    return {
+        'ogrenci_ad': getattr(ogrenci, 'tam_ad', '') or '',
+        'sinif_seviyesi': seviye,
+        'sinif': seviye,
+        'egitim_paketleri': paketler,
+        'kayit_tarihi': kayit_tarihi,
+        'kayit_yapan': kayit_yapan,
+        'personel_ad': personel_ad,
+        'sozlesme_no': getattr(sozlesme, 'sozlesme_no', '') or '',
+        'kurum_ad': getattr(kurum, 'ad', '') or '',
+        'sube': getattr(sube, 'ad', '') or '',
+    }
+
+
+def notify_kayit_sozlesme(sozlesme_id: int) -> list[SendResult]:
+    """Sözleşme aktif olunca seçili yöneticilere kayıt özeti gönderir."""
+    from apps.communication.application.staff_recipient_service import (
+        KAYIT_SOZLESME_EVENT,
+        selected_personel_ids,
+    )
+    from apps.odeme_takip.domain.models import Sozlesme
+    from apps.personel.domain.models import Personel
+
+    sozlesme = (
+        Sozlesme.objects.select_related(
+            'ogrenci', 'ogrenci_kayit', 'ogrenci_kayit__sinif_seviyesi',
+            'ogrenci_kayit__sinif', 'ogrenci_kayit__sinif__sinif_seviyesi',
+            'ogrenci_kayit__kaydi_alan', 'olusturan', 'kurum', 'sube',
+        )
+        .prefetch_related('kalemler')
+        .filter(pk=sozlesme_id)
+        .first()
+    )
+    if not sozlesme:
+        logger.warning('kayit_sozlesme bildirimi: sözleşme yok id=%s', sozlesme_id)
+        return []
+
+    kurum_id = sozlesme.kurum_id
+    personel_ids = selected_personel_ids(
+        kurum_id, KAYIT_SOZLESME_EVENT, sube_id=sozlesme.sube_id,
+    )
+    if not personel_ids:
+        logger.info('kayit_sozlesme bildirimi: seçili yönetici yok sozlesme=%s', sozlesme_id)
+        return []
+
+    results: list[SendResult] = []
+    for personel in Personel.objects.filter(id__in=personel_ids, kurum_id=kurum_id):
+        source_id = f'{sozlesme_id}:p{personel.id}'
+        if already_sent(kurum_id, SOURCE_OGRENCI, source_id):
+            continue
+        phone = (personel.cep_telefon or personel.telefon or '').strip()
+        if not phone:
+            logger.info(
+                'kayit_sozlesme bildirimi: telefon yok personel=%s sozlesme=%s',
+                personel.id, sozlesme_id,
+            )
+            continue
+        context = build_kayit_sozlesme_context(sozlesme, personel)
+        result = _safe_hook(
+            dispatch_event,
+            kurum_id,
+            KAYIT_SOZLESME_EVENT,
+            recipient=NotificationRecipient.personel(personel.id),
+            context=context,
+            source=MessageSource(module=SOURCE_OGRENCI, ref_id=source_id),
+            sube_id=sozlesme.sube_id,
+        )
+        if result is not None:
+            results.append(result)
+    return results

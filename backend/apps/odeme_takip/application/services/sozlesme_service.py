@@ -626,6 +626,15 @@ class SozlesmeService:
             'islem_yapan': user,
         })
 
+        if eski_durum != SozlesmeDurum.AKTIF and new_status == SozlesmeDurum.AKTIF:
+            sozlesme_id = sozlesme.pk
+
+            def _notify_aktif():
+                from apps.communication.application.integration_hooks import notify_kayit_sozlesme
+                notify_kayit_sozlesme(sozlesme_id)
+
+            transaction.on_commit(_notify_aktif)
+
         return sozlesme, None
 
     def revert_last_status(self, id, user=None, aciklama=''):

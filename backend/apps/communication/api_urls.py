@@ -31,6 +31,9 @@ from apps.communication.interfaces.views.notification_bindings import (
     NotificationBindingUpsertView,
     NotificationEventCatalogView,
 )
+from apps.communication.interfaces.views.staff_recipients import (
+    NotificationStaffRecipientView,
+)
 from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateCloneView,
     MetaTemplateDetailView,
@@ -42,6 +45,7 @@ from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateResubmitView,
     MetaTemplateSeedAcademicScheduleView,
     MetaTemplateSeedDuyuruView,
+    MetaTemplateSeedKayitSozlesmeView,
     MetaTemplateSeedPersonalChatView,
     MetaTemplateSubmitView,
 )
@@ -121,6 +125,11 @@ urlpatterns = [
         name='meta-template-seed-academic-schedule',
     ),
     path(
+        'meta-templates/seed-kayit-sozlesme/',
+        MetaTemplateSeedKayitSozlesmeView.as_view(),
+        name='meta-template-seed-kayit-sozlesme',
+    ),
+    path(
         'meta-templates/seed-personal-chat/',
         MetaTemplateSeedPersonalChatView.as_view(),
         name='meta-template-seed-personal-chat',
@@ -165,6 +174,11 @@ urlpatterns = [
         'notification-bindings/preview/',
         NotificationBindingPreviewView.as_view(),
         name='notification-bindings-preview',
+    ),
+    path(
+        'notification-staff-recipients/',
+        NotificationStaffRecipientView.as_view(),
+        name='notification-staff-recipients',
     ),
     path(
         'birthday-media/',

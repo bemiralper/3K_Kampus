@@ -1074,6 +1074,37 @@ export async function seedAcademicScheduleTemplates(data: {
   });
 }
 
+/** Yeni kayıt sözleşmesi — yönetici PERSONEL Meta + LMS + bildirim bağlama */
+export async function seedKayitSozlesmeTemplates(data: {
+  channel_config_id: string;
+  sube_id?: number | null;
+  force?: boolean;
+  bind?: boolean;
+}): Promise<{
+  created_app_count: number;
+  updated_app_count: number;
+  skipped_app_count: number;
+  created_meta_count: number;
+  updated_meta_count: number;
+  skipped_meta_count: number;
+  bound_count: number;
+  created_app: string[];
+  updated_app: string[];
+  created_meta: string[];
+  updated_meta: string[];
+  bound: string[];
+  errors: string[];
+  next_steps?: string[];
+  event_keys?: string[];
+  info?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/meta-templates/seed-kayit-sozlesme/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
 export async function uploadMetaTemplateExampleMedia(
   file: File,
   channelConfigId: string,
@@ -1848,6 +1879,47 @@ export async function deleteNotificationBinding(data: {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request('/notification-bindings/', {
     method: 'DELETE',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+export interface NotificationStaffRecipientItem {
+  id: number;
+  ad: string;
+  soyad: string;
+  rol: string;
+  rol_kodu: string;
+  telefon: string;
+  has_phone: boolean;
+  selected: boolean;
+}
+
+export interface NotificationStaffRecipientList {
+  event_key: string;
+  event_label: string;
+  items: NotificationStaffRecipientItem[];
+}
+
+export async function fetchNotificationStaffRecipients(
+  eventKey: string,
+  subeId?: number | null,
+): Promise<NotificationStaffRecipientList> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = new URLSearchParams();
+  if (kurumId) qs.set("kurum_id", kurumId);
+  qs.set("event_key", eventKey);
+  if (subeId) qs.set("sube_id", String(subeId));
+  return request(`/notification-staff-recipients/?${qs}`);
+}
+
+export async function saveNotificationStaffRecipients(data: {
+  event_key: string;
+  personel_ids: number[];
+  sube_id?: number | null;
+}): Promise<NotificationStaffRecipientList> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request("/notification-staff-recipients/", {
+    method: "PUT",
     body: JSON.stringify({ ...data, kurum_id: kurumId }),
   });
 }

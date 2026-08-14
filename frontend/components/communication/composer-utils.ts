@@ -54,6 +54,11 @@ export const TEMPLATE_VARIABLES = [
   { key: "konu", label: "Görüşme konusu", token: "{{konu}}", group: "gorusme" },
 
   { key: "sinav_ad", label: "Sınav adı", token: "{{sinav_ad}}", group: "sinav" },
+
+  { key: "sinif_seviyesi", label: "Sınıf seviyesi", token: "{{sinif_seviyesi}}", group: "kayit" },
+  { key: "egitim_paketleri", label: "Eğitim paketleri", token: "{{egitim_paketleri}}", group: "kayit" },
+  { key: "kayit_tarihi", label: "Kayıt tarihi", token: "{{kayit_tarihi}}", group: "kayit" },
+  { key: "kayit_yapan", label: "Kayıt yapan", token: "{{kayit_yapan}}", group: "kayit" },
 ] as const;
 
 export const TEMPLATE_VARIABLE_GROUP_LABELS: Record<string, string> = {
@@ -64,6 +69,7 @@ export const TEMPLATE_VARIABLE_GROUP_LABELS: Record<string, string> = {
   odev: "Haftalık ödev",
   gorusme: "Görüşme",
   sinav: "Sınav",
+  kayit: "Kayıt sözleşmesi",
 };
 
 /** Strip preview-only metadata; returns API-ready plain text. */
@@ -186,6 +192,10 @@ export const SAMPLE_PREVIEW_CONTEXT: Record<string, string> = {
   koc_ad: "Elif Demir",
   konu: "Sınav hazırlığı",
   sinav_ad: "TYT Deneme 12",
+  sinif_seviyesi: "9. Sınıf",
+  egitim_paketleri: "Grup Ders, Koçluk",
+  kayit_tarihi: "14.08.2026",
+  kayit_yapan: "Ayşe Kayıt",
 };
 
 export type PreviewSampleContext = Partial<typeof SAMPLE_PREVIEW_CONTEXT>;

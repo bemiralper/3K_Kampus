@@ -583,6 +583,7 @@ class DirectRegistrationView(APIView):
                     school=okul,
                     geldigi_okul="",
                     referans=enrollment_data.get("referans") or "",
+                    kaydi_alan=request.user if request.user.is_authenticated else None,
                 )
 
                 # Adres

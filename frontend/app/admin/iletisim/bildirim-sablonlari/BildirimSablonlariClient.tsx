@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CommunicationPageShell } from "@/components/communication";
+import { CommunicationPageShell, WhatsAppPreviewBubble } from "@/components/communication";
 import { headerTypeOf } from "@/components/communication/MetaTemplateSelect";
+import { resolvePreviewVariables } from "@/components/communication/composer-utils";
+import { useLivePreviewContext } from "@/components/communication/useLivePreviewContext";
 import "@/components/communication/communication.css";
 import {
   MessageTemplateItem,
@@ -18,11 +20,15 @@ import {
   deleteNotificationBinding,
   fetchLocalMetaTemplates,
   fetchNotificationEvents,
+  fetchNotificationStaffRecipients,
   fetchTemplates,
   fetchWhatsAppAccounts,
+  NotificationStaffRecipientItem,
   previewNotificationBinding,
   saveNotificationBinding,
+  saveNotificationStaffRecipients,
   seedAcademicScheduleTemplates,
+  seedKayitSozlesmeTemplates,
 } from "@/lib/communication-api";
 import { notifyCommunicationTemplateUsageChanged } from "@/lib/communication-template-usage-sync";
 
@@ -50,6 +56,112 @@ const slotHasCustomBinding = (slot: NotificationEventSlot): boolean =>
         (slot.binding.send_mode && slot.binding.send_mode !== "AUTO")),
   );
 
+function StaffRecipientsPanel({
+  eventKey,
+  subeId,
+  onError,
+  onMessage,
+}: {
+  eventKey: string;
+  subeId: number | null;
+  onError: (msg: string | null) => void;
+  onMessage: (msg: string | null) => void;
+}) {
+  const [items, setItems] = useState<NotificationStaffRecipientItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchNotificationStaffRecipients(eventKey, subeId);
+      setItems(data.items || []);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Yönetici listesi yüklenemedi.");
+    } finally {
+      setLoading(false);
+    }
+  }, [eventKey, subeId, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const toggle = (id: number) => {
+    setItems((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, selected: !row.selected } : row)),
+    );
+  };
+
+  const save = async () => {
+    setSaving(true);
+    onError(null);
+    try {
+      const data = await saveNotificationStaffRecipients({
+        event_key: eventKey,
+        personel_ids: items.filter((row) => row.selected).map((row) => row.id),
+        sube_id: subeId,
+      });
+      setItems(data.items || []);
+      onMessage("Alıcı yöneticiler kaydedildi.");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Alıcılar kaydedilemedi.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="nb-slot">
+      <div className="nb-slot-head">
+        <strong>Alıcı yöneticiler</strong>
+      </div>
+      <p className="tplx-field-hint">
+        Sözleşme aktif edilince işaretlenen kurum / şube / eğitim yöneticilerine WhatsApp gider.
+        Telefonu olmayanlar seçilse bile gönderilmez.
+      </p>
+      {loading ? (
+        <p className="tplx-field-hint">Yöneticiler yükleniyor…</p>
+      ) : items.length === 0 ? (
+        <p className="tplx-field-hint">
+          Bu kurumda kurum / şube / eğitim yöneticisi görevlendirmesi veya
+          yönetici giriş hesabı olan personel yok.
+        </p>
+      ) : (
+        <div className="nb-staff-list">
+          {items.map((row) => (
+            <label
+              key={row.id}
+              className={`nb-staff-row${!row.has_phone ? " is-disabled" : ""}`}
+            >
+              <input
+                type="checkbox"
+                checked={row.selected}
+                onChange={() => toggle(row.id)}
+              />
+              <span>
+                <strong>{row.ad} {row.soyad}</strong>
+                <span className="nb-staff-meta">
+                  {row.rol}
+                  {row.has_phone ? ` · ${row.telefon}` : " · telefon yok"}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        className="comm-btn-secondary"
+        disabled={saving || loading}
+        onClick={() => void save()}
+      >
+        {saving ? "Kaydediliyor…" : "Alıcıları kaydet"}
+      </button>
+    </div>
+  );
+}
+
 export default function BildirimSablonlariClient() {
   const searchParams = useSearchParams();
   const [catalog, setCatalog] = useState<NotificationEventCatalog | null>(null);
@@ -67,9 +179,11 @@ export default function BildirimSablonlariClient() {
   const [loading, setLoading] = useState(true);
   const [savingSlot, setSavingSlot] = useState<string>("");
   const [seedingAcademic, setSeedingAcademic] = useState(false);
+  const [seedingKayit, setSeedingKayit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, NotificationPreviewResult>>({});
+  const livePreviewContext = useLivePreviewContext();
 
   useEffect(() => {
     setActiveSubeId(readActiveSubeId());
@@ -390,6 +504,45 @@ export default function BildirimSablonlariClient() {
     }
   };
 
+  const handleSeedKayitSozlesme = async () => {
+    const accountId = scopeAccountId || accounts[0]?.id || "";
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin (veya en az bir aktif hesap tanımlayın).");
+      return;
+    }
+    if (!confirm(
+      "Kayıt sözleşmesi taslağı oluşturulsun mu?\n\n"
+      + "• ogrenci_kayit_sozlesme_personel (metin)\n\n"
+      + "LMS şablonu + Meta DRAFT üretilir ve bu olayın Personel "
+      + "slotuna bağlanır. Meta’ya gönderip onaylatmanız gerekir.",
+    )) return;
+    setSeedingKayit(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await seedKayitSozlesmeTemplates({
+        channel_config_id: accountId,
+        sube_id: scopeSube ? activeSubeId : null,
+        bind: true,
+      });
+      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
+      setMessage(
+        (res.info || "Kayıt sözleşmesi taslağı hazır.")
+        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
+        + errText,
+      );
+      notifyCommunicationTemplateUsageChanged();
+      await Promise.all([loadCatalog(), reloadTemplateLists()]);
+      setSelectedModule("ogrenci");
+      setSelectedEventKey("ogrenci.kayit_sozlesme");
+      if (!scopeAccountId) setScopeAccountId(accountId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kayıt sözleşmesi taslağı oluşturulamadı.");
+    } finally {
+      setSeedingKayit(false);
+    }
+  };
+
   return (
     <CommunicationPageShell
       title="Bildirim Şablonları"
@@ -409,6 +562,15 @@ export default function BildirimSablonlariClient() {
             title="Planlama → Programı Bildir için veli/öğrenci DOCUMENT taslakları"
           >
             {seedingAcademic ? "Oluşturuluyor…" : "Ders programı taslakları"}
+          </button>
+          <button
+            type="button"
+            className="comm-btn-secondary"
+            onClick={handleSeedKayitSozlesme}
+            disabled={seedingKayit || accounts.length === 0}
+            title="Sözleşme aktif bildirimi için yönetici Meta/LMS taslağı"
+          >
+            {seedingKayit ? "Oluşturuluyor…" : "Kayıt sözleşmesi taslağı"}
           </button>
           <Link className="comm-btn-secondary" href="/admin/iletisim/sablonlar">
             LMS Şablonları
@@ -528,6 +690,15 @@ export default function BildirimSablonlariClient() {
                   Kullanılabilir değişkenler:{" "}
                   {selectedEvent.variables.map((v) => `{{${v}}}`).join(", ")}
                 </p>
+
+                {selectedEvent.key === "ogrenci.kayit_sozlesme" && (
+                  <StaffRecipientsPanel
+                    eventKey={selectedEvent.key}
+                    subeId={scopeSubeId}
+                    onError={setError}
+                    onMessage={setMessage}
+                  />
+                )}
 
                 {selectedEvent.slots.map((slot) => {
                   const key = slotKey(selectedEvent.key, slot.recipient_type);
@@ -734,9 +905,12 @@ export default function BildirimSablonlariClient() {
                             )
                             : "Önizleme yükleniyor…"}
                         </div>
-                        <pre className="nb-preview-body">
-                          {preview?.body || slot.resolved.body || "—"}
-                        </pre>
+                        <WhatsAppPreviewBubble
+                          text={resolvePreviewVariables(
+                            slot.default_body || slot.resolved.body || "",
+                            livePreviewContext,
+                          )}
+                        />
                       </div>
                     </div>
                   );
