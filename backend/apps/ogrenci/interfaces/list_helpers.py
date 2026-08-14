@@ -120,13 +120,50 @@ def _catalog_models():
     }
 
 
-def resolve_kalem_filter_turu(kalem, sozlesme):
+# Sözleşme kalem_turu=paket satırlarının bakılacağı kataloglar (ek hizmet hariç)
+PAKET_CATALOG_TURLERI = ('grup_dersi', 'ozel_ders', 'premium', 'yayin', 'deneme')
+
+
+def build_catalog_id_index():
+    """Tür → {id: ad} — tek seferlik katalog taraması."""
+    return {
+        tur: dict(model.objects.values_list('id', 'ad'))
+        for tur, model in _catalog_models().items()
+    }
+
+
+def resolve_paket_turu_from_catalog(kalem_id, kalem_adi='', catalog_index=None):
+    """
+    kalem_turu=paket olan ek satırın gerçek türünü katalogdan çöz.
+
+    Aynı sayısal ID birden fazla tabloda olabilir; tek eşleşme veya ad
+    eşleşmesi yoksa None döner (yanlış türe atama yapılmaz).
+    """
+    catalog_index = catalog_index if catalog_index is not None else build_catalog_id_index()
+    hits = []
+    for tur in PAKET_CATALOG_TURLERI:
+        names = catalog_index.get(tur) or {}
+        if kalem_id in names:
+            hits.append((tur, names[kalem_id]))
+    if not hits:
+        return None
+    if len(hits) == 1:
+        return hits[0][0]
+    if kalem_adi:
+        named = [tur for tur, ad in hits if ad == kalem_adi]
+        if len(named) == 1:
+            return named[0]
+    return None
+
+
+def resolve_kalem_filter_turu(kalem, sozlesme, catalog_index=None):
     """
     Sözleşme kaleminin filtre türünü belirle.
 
     GrupDersi / OzelDers / Deneme / EkHizmet ayrı tablolardır; aynı sayısal ID
-    farklı türlerde tekrarlanabilir. Bu yüzden tür, yalnızca kayıtlı kalem_turu
-    ve sözleşme.paket_turu üzerinden çözülür — çapraz tablo ID araması yapılmaz.
+    farklı türlerde tekrarlanabilir. Kayıtlı kalem_turu ve sözleşme.paket_turu
+    önceliklidir. Ek paket satırları (kalem_turu=paket, ana paket değil)
+    katalogda tek/ad eşleşmesiyle çözülür.
     """
     from apps.odeme_takip.domain.enums import KalemTuru
 
@@ -145,18 +182,32 @@ def resolve_kalem_filter_turu(kalem, sozlesme):
     if tur in (KalemTuru.EK_HIZMET, KalemTuru.EK_HIZMET_SATISI):
         return 'ek_hizmet'
 
-    if tur == KalemTuru.PAKET and sozlesme:
+    if tur == KalemTuru.PAKET:
+        catalog_tur = resolve_paket_turu_from_catalog(
+            kalem.kalem_id,
+            getattr(kalem, 'kalem_adi', '') or '',
+            catalog_index=catalog_index,
+        )
         if (
-            kalem.kalem_id == sozlesme.paket_id
+            sozlesme
+            and kalem.kalem_id == sozlesme.paket_id
             and sozlesme.paket_turu in FILTER_KALEM_TURU_VALUES
         ):
-            return sozlesme.paket_turu
+            # Aynı sayısal ID başka tabloda da olabilir; ad/katalog çelişirse katalog kazanır
+            if catalog_tur in (None, sozlesme.paket_turu):
+                return sozlesme.paket_turu
+            paket_adi = getattr(sozlesme, 'paket_adi', '') or ''
+            kalem_adi = getattr(kalem, 'kalem_adi', '') or ''
+            if kalem_adi and paket_adi and kalem_adi == paket_adi:
+                return sozlesme.paket_turu
+            return catalog_tur
+        return catalog_tur
 
     return None
 
 
-def kalem_matches_filter(kalem, sozlesme, filter_turu, filter_id):
-    resolved = resolve_kalem_filter_turu(kalem, sozlesme)
+def kalem_matches_filter(kalem, sozlesme, filter_turu, filter_id, catalog_index=None):
+    resolved = resolve_kalem_filter_turu(kalem, sozlesme, catalog_index=catalog_index)
     if resolved == filter_turu and kalem.kalem_id == filter_id:
         return True
 
@@ -181,11 +232,15 @@ def get_ogrenci_ids_by_kalem_filters(sozlesme_qs, filter_specs):
     """Öğrenci ID'leri — seçili kalemlerden en az birine sahip olanlar (OR)."""
     if not filter_specs:
         return set()
+    catalog_index = build_catalog_id_index()
     ogrenci_ids = set()
     for sozlesme in sozlesme_qs.prefetch_related('kalemler'):
         for kalem in sozlesme.kalemler.all():
             for filter_turu, filter_id in filter_specs:
-                if kalem_matches_filter(kalem, sozlesme, filter_turu, filter_id):
+                if kalem_matches_filter(
+                    kalem, sozlesme, filter_turu, filter_id,
+                    catalog_index=catalog_index,
+                ):
                     ogrenci_ids.add(sozlesme.ogrenci_id)
                     break
             else:
@@ -582,7 +637,9 @@ def paginate_queryset(queryset, page, page_size):
     }
 
 
-def _catalog_kalem_adi(tur, kalem_id):
+def _catalog_kalem_adi(tur, kalem_id, catalog_index=None):
+    if catalog_index is not None:
+        return (catalog_index.get(tur) or {}).get(kalem_id)
     models = _catalog_models()
     model = models.get(tur)
     if not model:
@@ -591,17 +648,97 @@ def _catalog_kalem_adi(tur, kalem_id):
     return paket or None
 
 
-def _serialize_kalem_entry(kalem, sozlesme):
-    resolved_tur = resolve_kalem_filter_turu(kalem, sozlesme)
+def _kalem_entry(tur, kalem_id, kalem_adi):
+    return {
+        'kalem_turu': tur,
+        'kalem_id': kalem_id,
+        'kalem_turu_display': KALEM_TURU_LABELS.get(tur, tur),
+        'kalem_adi': kalem_adi or '',
+    }
+
+
+def _serialize_kalem_entry(kalem, sozlesme, catalog_index=None, ek_deneme_map=None):
+    resolved_tur = resolve_kalem_filter_turu(
+        kalem, sozlesme, catalog_index=catalog_index,
+    )
+
+    # Deneme paketi ek hizmet satırı olarak tutuluyorsa deneme olarak yaz
+    if resolved_tur == 'ek_hizmet' and ek_deneme_map:
+        deneme_info = ek_deneme_map.get(kalem.kalem_id)
+        if deneme_info:
+            deneme_id, deneme_adi = deneme_info
+            return _kalem_entry(
+                'deneme',
+                deneme_id,
+                deneme_adi or kalem.kalem_adi or '',
+            )
+
     if not resolved_tur or resolved_tur not in FILTER_KALEM_TURU_VALUES:
         return None
-    kalem_adi = _catalog_kalem_adi(resolved_tur, kalem.kalem_id) or kalem.kalem_adi or ''
-    return {
-        'kalem_turu': resolved_tur,
-        'kalem_id': kalem.kalem_id,
-        'kalem_turu_display': KALEM_TURU_LABELS.get(resolved_tur, resolved_tur),
-        'kalem_adi': kalem_adi,
-    }
+    kalem_adi = (
+        _catalog_kalem_adi(resolved_tur, kalem.kalem_id, catalog_index)
+        or kalem.kalem_adi
+        or ''
+    )
+    return _kalem_entry(resolved_tur, kalem.kalem_id, kalem_adi)
+
+
+def _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index):
+    """Sözleşmede satır olmayan kayıt paketlerini (özel ders / deneme) ekle."""
+    from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+    kayitlar_by_ogrenci = {}
+    for kayit in kayit_list:
+        kayitlar_by_ogrenci.setdefault(kayit.ogrenci_id, []).append(kayit)
+
+    ogrenci_ids = set(kayitlar_by_ogrenci)
+    yil_ids = {k.egitim_yili_id for k in kayit_list if k.egitim_yili_id}
+
+    def _put_for_ogrenci(ogrenci_id, entry, yil_id=None):
+        for kayit in kayitlar_by_ogrenci.get(ogrenci_id, []):
+            if yil_id is not None and kayit.egitim_yili_id != yil_id:
+                continue
+            entries = pair_kalemler.setdefault(
+                (kayit.ogrenci_id, kayit.egitim_yili_id), {},
+            )
+            dedupe = (entry['kalem_turu'], entry['kalem_id'])
+            if dedupe not in entries:
+                entries[dedupe] = entry
+
+    # Yalnızca özel ders / deneme — grup/yayın/ek hizmet zaten sözleşmeden geliyor;
+    # tüm kayıt paketlerini eklemek eski yıl satırlarını bu yıla taşıyabilirdi.
+    for ep in OgrenciEgitimPaketi.objects.filter(
+        ogrenci_id__in=ogrenci_ids,
+        aktif_mi=True,
+        paket_turu__in=('ozel_ders', 'deneme'),
+    ):
+        adi = (
+            ep.paket_adi
+            or (catalog_index.get(ep.paket_turu) or {}).get(ep.paket_id)
+            or ''
+        )
+        _put_for_ogrenci(ep.ogrenci_id, _kalem_entry(ep.paket_turu, ep.paket_id, adi))
+
+    eh_qs = OgrenciEkHizmet.objects.filter(
+        ogrenci_id__in=ogrenci_ids,
+        aktif_mi=True,
+        ek_hizmet__deneme_paketi_id__isnull=False,
+    ).select_related('ek_hizmet', 'ek_hizmet__deneme_paketi')
+    if yil_ids:
+        eh_qs = eh_qs.filter(
+            models.Q(egitim_yili_id__in=yil_ids) | models.Q(egitim_yili_id__isnull=True)
+        )
+
+    for oeh in eh_qs:
+        eh = oeh.ek_hizmet
+        if not eh or not eh.deneme_paketi_id:
+            continue
+        adi = eh.deneme_paketi.ad if eh.deneme_paketi else eh.ad
+        _put_for_ogrenci(
+            oeh.ogrenci_id,
+            _kalem_entry('deneme', eh.deneme_paketi_id, adi),
+            yil_id=oeh.egitim_yili_id,
+        )
 
 
 def build_ogrenci_kalemler_map(kayit_list, filter_kalemler=None):
@@ -609,31 +746,54 @@ def build_ogrenci_kalemler_map(kayit_list, filter_kalemler=None):
     if not kayit_list:
         return {}
 
+    from apps.egitim_paketleri.models import EkHizmet
+    from apps.odeme_takip.domain.enums import KalemTuru, SozlesmeDurum
     from apps.odeme_takip.domain.models import Sozlesme
-    from apps.odeme_takip.domain.enums import SozlesmeDurum
 
     ogrenci_ids = {k.ogrenci_id for k in kayit_list}
     yil_ids = {k.egitim_yili_id for k in kayit_list if k.egitim_yili_id}
     if not ogrenci_ids or not yil_ids:
         return {k.id: [] for k in kayit_list}
 
+    catalog_index = build_catalog_id_index()
     filter_set = set(filter_kalemler) if filter_kalemler else None
     cancelled = [SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS]
     pair_kalemler = {}
-    sozlesmeler = Sozlesme.objects.filter(
-        ogrenci_id__in=ogrenci_ids,
-        egitim_yili_id__in=yil_ids,
-    ).exclude(durum__in=cancelled).prefetch_related('kalemler')
+    sozlesmeler = list(
+        Sozlesme.objects.filter(
+            ogrenci_id__in=ogrenci_ids,
+            egitim_yili_id__in=yil_ids,
+        ).exclude(durum__in=cancelled).prefetch_related('kalemler')
+    )
+
+    ek_ids = {
+        kalem.kalem_id
+        for sozlesme in sozlesmeler
+        for kalem in sozlesme.kalemler.all()
+        if kalem.kalem_turu in (KalemTuru.EK_HIZMET, KalemTuru.EK_HIZMET_SATISI)
+    }
+    ek_deneme_map = {}
+    if ek_ids:
+        for eh in EkHizmet.objects.filter(
+            id__in=ek_ids, deneme_paketi_id__isnull=False,
+        ).select_related('deneme_paketi'):
+            adi = eh.deneme_paketi.ad if eh.deneme_paketi else eh.ad
+            ek_deneme_map[eh.id] = (eh.deneme_paketi_id, adi)
 
     for sozlesme in sozlesmeler:
         key = (sozlesme.ogrenci_id, sozlesme.egitim_yili_id)
         entries = pair_kalemler.setdefault(key, {})
         for kalem in sozlesme.kalemler.all():
-            entry = _serialize_kalem_entry(kalem, sozlesme)
+            entry = _serialize_kalem_entry(
+                kalem, sozlesme,
+                catalog_index=catalog_index,
+                ek_deneme_map=ek_deneme_map,
+            )
             if not entry:
                 continue
-            dedupe_key = (entry['kalem_turu'], entry['kalem_id'])
-            entries[dedupe_key] = entry
+            entries[(entry['kalem_turu'], entry['kalem_id'])] = entry
+
+    _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index)
 
     result = {}
     for kayit in kayit_list:

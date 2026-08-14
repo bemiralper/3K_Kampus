@@ -494,6 +494,7 @@ def ogrenci_akademik_api(request, pk):
     from apps.ogrenci.interfaces.list_helpers import (
         FILTER_KALEM_TURLERI,
         _catalog_kalem_adi,
+        build_catalog_id_index,
         resolve_kalem_filter_turu,
         resolve_sinif_seviyesi_ad,
     )
@@ -520,6 +521,7 @@ def ogrenci_akademik_api(request, pk):
 
     cancelled = [SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS]
     kalem_turu_labels = dict(FILTER_KALEM_TURLERI)
+    catalog_index = build_catalog_id_index()
 
     kayit_list = []
     for kayit in kayitlar:
@@ -532,14 +534,19 @@ def ogrenci_akademik_api(request, pk):
         seen_kalem = set()
         for sozlesme in sozlesmeler:
             for kalem in sozlesme.kalemler.all():
-                resolved_tur = resolve_kalem_filter_turu(kalem, sozlesme)
+                resolved_tur = resolve_kalem_filter_turu(
+                    kalem, sozlesme, catalog_index=catalog_index,
+                )
                 if not resolved_tur:
                     continue
                 dedupe = (resolved_tur, kalem.kalem_id, sozlesme.id)
                 if dedupe in seen_kalem:
                     continue
                 seen_kalem.add(dedupe)
-                kalem_adi = _catalog_kalem_adi(resolved_tur, kalem.kalem_id) or kalem.kalem_adi
+                kalem_adi = (
+                    _catalog_kalem_adi(resolved_tur, kalem.kalem_id, catalog_index)
+                    or kalem.kalem_adi
+                )
                 kalemler.append({
                     'kalem_turu': resolved_tur,
                     'kalem_turu_display': kalem_turu_labels.get(resolved_tur, resolved_tur),
