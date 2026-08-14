@@ -392,6 +392,45 @@ class CariV2ReportExportView(APIView):
         filters_meta.setdefault('report_kind', f'cari_{slug.replace("-", "_")}')
         filters_meta.setdefault('rapor_adi', title)
         filters_meta.setdefault('para_birimi', 'TL')
+        if slug == 'ekstre':
+            filters_meta['report_kind'] = 'cari_ekstre'
+        elif slug == 'hesap-ozeti':
+            filters_meta['report_kind'] = 'cari_ozet'
+        kpis = result.get('kpis') or []
+        if kpis and not filters_meta.get('summary_chips'):
+            filters_meta['summary_chips'] = [
+                {
+                    'label': k.get('label'),
+                    'value': k.get('value'),
+                    'type': 'currency' if k.get('format') == 'tl' else (
+                        'integer' if k.get('format') == 'int' else 'text'
+                    ),
+                }
+                for k in kpis
+                if k.get('label')
+            ]
+        if kpis and not filters_meta.get('cari_ozet_fields'):
+            filters_meta['cari_ozet_fields'] = [
+                {
+                    'label': k.get('label'),
+                    'value': (
+                        f"{k.get('value'):,.2f} ₺".replace(',', 'X').replace('.', ',').replace('X', '.')
+                        if k.get('format') == 'tl'
+                        else k.get('value')
+                    ),
+                }
+                for k in kpis
+                if k.get('label')
+            ]
+        ozet = result.get('ozet') or {}
+        if ozet and not filters_meta.get('report_totals'):
+            filters_meta['report_totals'] = {
+                'devreden_bakiye': ozet.get('devreden'),
+                'kapanis_bakiye': ozet.get('kapanis'),
+                'toplam_borc': ozet.get('toplam_borc'),
+                'toplam_alacak': ozet.get('toplam_alacak'),
+                'net_bakiye': ozet.get('net_bakiye', ozet.get('kapanis')),
+            }
         if request.user.is_authenticated and not filters_meta.get('raporu_olusturan'):
             filters_meta['raporu_olusturan'] = (
                 request.user.get_full_name() or request.user.username

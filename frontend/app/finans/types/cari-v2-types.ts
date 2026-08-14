@@ -218,6 +218,9 @@ export interface CariV2Panel {
     bakiye_durumu: BakiyeDurumu;
     acik_borc: number;
     acik_alacak: number;
+    toplam_gelir?: number;
+    toplam_gider?: number;
+    gelir_gider_fark?: number;
   };
   diger?: {
     net_bakiye: number;

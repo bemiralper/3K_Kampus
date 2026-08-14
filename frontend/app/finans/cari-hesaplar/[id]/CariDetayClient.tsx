@@ -29,15 +29,18 @@ import {
 import { GelirKaydiListItem, GelirKaydiCreatePayload } from "../../types/gelir-types";
 import CariDosyaPanel from "../components/CariDosyaPanel";
 import CariEkstreList from "../components/CariEkstreList";
-import CariEkstreOzet, { cariEkstreOzetExportMeta } from "../components/CariEkstreOzet";
+import CariEkstreOzet, { cariEkstreOzetExportMeta, cariOzetExportFields } from "../components/CariEkstreOzet";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { formatUserDisplayName } from "@/lib/format-user";
 import {
+  computeEkstrePeriodTotals,
   computeRaporTotalsFromOzet,
   defaultRaporBaslangic,
   defaultRaporBitis,
+  ekstrePeriodExportMeta,
   formatReportDateRange,
 } from "../components/cari-report-export-meta";
+import { computeDevredenBakiye, computeKapanisBakiye } from "../components/cari-ekstre-balance";
 import CariQuickStats from "../components/CariQuickStats";
 import CariGelirTable from "../components/CariGelirTable";
 import CariGiderTable from "../components/CariGiderTable";
@@ -396,18 +399,116 @@ export default function CariDetayClient({
       para_birimi: "TL",
     };
 
-    if (activeTab === "ekstre" && cariOzet) {
+    const ozetForExport = cariOzet
+      ? {
+          ...cariOzet,
+          toplam_gelir: hesap?.toplam_gelir,
+          toplam_gider: hesap?.toplam_gider,
+        }
+      : null;
+
+    if (activeTab === "ekstre" && ozetForExport) {
+      const period = computeEkstrePeriodTotals(filteredHareketler);
+      const devreden = computeDevredenBakiye(filteredHareketler);
+      const kapanis = computeKapanisBakiye(filteredHareketler);
       return {
         ...base,
-        ...cariEkstreOzetExportMeta(cariOzet),
+        ...cariEkstreOzetExportMeta(ozetForExport),
+        ...ekstrePeriodExportMeta(filteredHareketler),
         report_kind: "cari_ekstre",
         rapor_adi: "Cari Özet Raporu",
-        report_totals: computeRaporTotalsFromOzet(cariOzet),
+        cari_ozet_fields: cariOzetExportFields(ozetForExport),
+        report_totals: {
+          ...computeRaporTotalsFromOzet(ozetForExport),
+          toplam_borc: period.toplam_borc,
+          toplam_alacak: period.toplam_alacak,
+          net_bakiye: kapanis,
+          devreden_bakiye: devreden,
+          kapanis_bakiye: kapanis,
+          toplam_gelir: Number(hesap?.toplam_gelir || 0),
+          toplam_gider: Number(hesap?.toplam_gider || 0),
+        },
+      };
+    }
+
+    if (activeTab === "gelirler") {
+      const toplamGelir = filteredGelirler.reduce((s, g) => s + Number(g.net_tutar || 0), 0);
+      const tahsil = filteredGelirler.reduce((s, g) => s + Number(g.tahsil_edilen || 0), 0);
+      const kalan = filteredGelirler.reduce((s, g) => s + Number(g.kalan_tutar || 0), 0);
+      return {
+        ...base,
+        report_kind: "cari_ozet",
+        rapor_adi: `Gelir Kayıtları — ${hesap?.gorunen_ad || ""}`,
+        report_totals: {
+          toplam_gelir: toplamGelir,
+          tahsil_edilen: tahsil,
+          kalan: kalan,
+          kayit_sayisi: filteredGelirler.length,
+        },
+        summary_chips: [
+          { label: "Toplam Gelir", value: toplamGelir, type: "currency" },
+          { label: "Tahsil Edilen", value: tahsil, type: "currency" },
+          { label: "Kalan", value: kalan, type: "currency" },
+        ],
+        cari_ozet_fields: [
+          { label: "Cari Adı", value: hesap?.gorunen_ad || hesap?.unvan || "—" },
+          { label: "Toplam Gelir", value: `${fmt(toplamGelir)} ₺` },
+          { label: "Tahsil Edilen", value: `${fmt(tahsil)} ₺` },
+          { label: "Kalan", value: `${fmt(kalan)} ₺` },
+          { label: "Kayıt Sayısı", value: String(filteredGelirler.length) },
+        ],
+      };
+    }
+
+    if (activeTab === "giderler") {
+      const toplamGider = filteredGiderler.reduce((s, g) => s + Number(g.net_tutar || 0), 0);
+      const odenen = filteredGiderler.reduce((s, g) => s + Number(g.odenen_toplam || 0), 0);
+      const kalan = filteredGiderler.reduce((s, g) => s + Number(g.kalan_tutar || 0), 0);
+      return {
+        ...base,
+        report_kind: "cari_ozet",
+        rapor_adi: `Gider Kayıtları — ${hesap?.gorunen_ad || ""}`,
+        report_totals: {
+          toplam_gider: toplamGider,
+          odenen: odenen,
+          kalan: kalan,
+          kayit_sayisi: filteredGiderler.length,
+        },
+        summary_chips: [
+          { label: "Toplam Gider", value: toplamGider, type: "currency" },
+          { label: "Ödenen", value: odenen, type: "currency" },
+          { label: "Kalan", value: kalan, type: "currency" },
+        ],
+        cari_ozet_fields: [
+          { label: "Cari Adı", value: hesap?.gorunen_ad || hesap?.unvan || "—" },
+          { label: "Toplam Gider", value: `${fmt(toplamGider)} ₺` },
+          { label: "Ödenen", value: `${fmt(odenen)} ₺` },
+          { label: "Kalan", value: `${fmt(kalan)} ₺` },
+          { label: "Kayıt Sayısı", value: String(filteredGiderler.length) },
+        ],
+      };
+    }
+
+    if (activeTab === "odemeler") {
+      const toplamOdeme = filteredOdemeler.reduce((s, o) => s + Number(o.tutar || 0), 0);
+      return {
+        ...base,
+        report_kind: "cari_ozet",
+        rapor_adi: `Ödeme Kayıtları — ${hesap?.gorunen_ad || ""}`,
+        report_totals: { toplam_gider: toplamOdeme, kayit_sayisi: filteredOdemeler.length },
+        summary_chips: [
+          { label: "Toplam Ödeme", value: toplamOdeme, type: "currency" },
+        ],
+        cari_ozet_fields: [
+          { label: "Cari Adı", value: hesap?.gorunen_ad || hesap?.unvan || "—" },
+          { label: "Toplam Ödeme", value: `${fmt(toplamOdeme)} ₺` },
+          { label: "Kayıt Sayısı", value: String(filteredOdemeler.length) },
+        ],
       };
     }
 
     return base;
-  }, [kurumId, activeSube?.id, hesap, tabFilters, activeTab, cariOzet, user]);
+  }, [kurumId, activeSube?.id, hesap, tabFilters, activeTab, cariOzet, user, filteredHareketler, filteredGelirler, filteredGiderler, filteredOdemeler]);
 
   const exportRowsForTab = useMemo(() => {
     if (activeTab === "ekstre") return buildEkstreExportRows(filteredHareketler);
@@ -1652,6 +1753,41 @@ export default function CariDetayClient({
                   })()}
                 </div>
               )}
+
+              {islemYetki.alim && islemYetki.satim && (Number(hesap.toplam_gelir) > 0 || Number(hesap.toplam_gider) > 0) && (
+                <div className="detail-section">
+                  <div className="detail-section-header">
+                    <div className="detail-section-icon green">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+                        <polyline points="17 6 23 6 23 12" />
+                      </svg>
+                    </div>
+                    <h4>Gelir / Gider Farkı</h4>
+                  </div>
+                  {(() => {
+                    const gelir = Number(hesap.toplam_gelir) || 0;
+                    const gider = Number(hesap.toplam_gider) || 0;
+                    const fark = gelir - gider;
+                    return (
+                      <div className="analiz-cards">
+                        <div className="analiz-card violet">
+                          <div className="analiz-value">₺{fmt(gelir)}</div>
+                          <div className="analiz-label">Toplam Gelir</div>
+                        </div>
+                        <div className="analiz-card rose">
+                          <div className="analiz-value">₺{fmt(gider)}</div>
+                          <div className="analiz-label">Toplam Gider</div>
+                        </div>
+                        <div className={`analiz-card ${fark >= 0 ? "emerald" : "orange"}`}>
+                          <div className="analiz-value">₺{fmt(fark)}</div>
+                          <div className="analiz-label">Fark (Gelir − Gider)</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
 
@@ -1659,7 +1795,15 @@ export default function CariDetayClient({
           {activeTab === "ekstre" && (
             <>
               <CariEkstreOzet
-                ozet={cariOzet}
+                ozet={
+                  cariOzet
+                    ? {
+                        ...cariOzet,
+                        toplam_gelir: hesap.toplam_gelir,
+                        toplam_gider: hesap.toplam_gider,
+                      }
+                    : null
+                }
                 loading={cariOzetLoading}
                 tarihBaslangic={tabFilters.baslangic || defaultRaporBaslangic()}
                 tarihBitis={tabFilters.bitis || defaultRaporBitis()}

@@ -123,11 +123,16 @@ class CariReportService:
         ]
         devreden = float(compute_devreden_bakiye(row_dicts))
         kapanis = float(compute_kapanis_bakiye(row_dicts))
+        toplam_borc = sum(r['borc'] for r in rows)
+        toplam_alacak = sum(r['alacak'] for r in rows)
 
         return {
             'baslik': f'Cari Ekstre — {hesap.gorunen_ad}',
             'kpis': [
                 {'label': 'Devreden Bakiye', 'value': devreden, 'format': 'tl'},
+                {'label': 'Toplam Borç', 'value': round(toplam_borc, 2), 'format': 'tl'},
+                {'label': 'Toplam Alacak', 'value': round(toplam_alacak, 2), 'format': 'tl'},
+                {'label': 'Net Bakiye', 'value': round(kapanis, 2), 'format': 'tl'},
                 {'label': 'Kapanış Bakiyesi', 'value': kapanis, 'format': 'tl'},
                 {'label': 'Hareket Sayısı', 'value': len(rows), 'format': 'int'},
             ],
@@ -141,7 +146,13 @@ class CariReportService:
                 {'key': 'bakiye', 'label': 'Bakiye', 'format': 'tl'},
             ],
             'rows': rows,
-            'ozet': {'devreden': devreden, 'kapanis': kapanis},
+            'ozet': {
+                'devreden': devreden,
+                'kapanis': kapanis,
+                'toplam_borc': round(toplam_borc, 2),
+                'toplam_alacak': round(toplam_alacak, 2),
+                'net_bakiye': round(kapanis, 2),
+            },
         }
 
     # ─── 2. Hesap Özeti ──────────────────────────
@@ -431,10 +442,12 @@ class CariReportService:
     def _liste_kpis(self, rows):
         toplam_borc = sum(-r['bakiye'] for r in rows if r['bakiye'] < 0)
         toplam_alacak = sum(r['bakiye'] for r in rows if r['bakiye'] > 0)
+        net_bakiye = sum(r['bakiye'] for r in rows)
         return [
             {'label': 'Cari Sayısı', 'value': len(rows), 'format': 'int'},
-            {'label': 'Toplam Borç', 'value': toplam_borc, 'format': 'tl'},
-            {'label': 'Toplam Alacak', 'value': toplam_alacak, 'format': 'tl'},
+            {'label': 'Toplam Borç', 'value': round(toplam_borc, 2), 'format': 'tl'},
+            {'label': 'Toplam Alacak', 'value': round(toplam_alacak, 2), 'format': 'tl'},
+            {'label': 'Net Bakiye', 'value': round(net_bakiye, 2), 'format': 'tl'},
         ]
 
     def _tarih_filtre(self, qs, params, alan):

@@ -168,6 +168,8 @@ export interface CariHesapCariOzet {
   vadesi_gelen: number;
   vadesi_gecmis: number;
   gelecek_vadeli: number;
+  toplam_gelir?: number;
+  toplam_gider?: number;
   vadesi_gelen_odeme?: number;
   vadesi_gelen_tahsilat?: number;
   vadesi_gecmis_odeme?: number;

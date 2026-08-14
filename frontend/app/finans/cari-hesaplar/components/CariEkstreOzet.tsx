@@ -39,12 +39,29 @@ type OzetField = {
 
 export function buildCariEkstreOzetFields(ozet: CariHesapCariOzet): OzetField[] {
   const labels = borcAlacakLabels(ozet.hesap_turu);
-  return [
+  const fields: OzetField[] = [
     { key: "hesap_kodu", label: "Cari Kodu", value: ozet.hesap_kodu || "—" },
     { key: "cari_adi", label: "Cari Adı", value: ozet.gorunen_ad || ozet.unvan },
     { key: "borc", label: labels.borc, value: `${fmt(ozet.toplam_borc)} ₺` },
     { key: "alacak", label: labels.alacak, value: `${fmt(ozet.toplam_alacak)} ₺` },
     { key: "bakiye", label: "Bakiye", value: `${fmt(Math.abs(ozet.bakiye))} ₺${Math.abs(ozet.bakiye) >= 0.005 ? (ozet.bakiye > 0 ? " (B)" : " (A)") : ""}` },
+  ];
+  if (ozet.hesap_turu === "karma") {
+    const gelir = Number(ozet.toplam_gelir || 0);
+    const gider = Number(ozet.toplam_gider || 0);
+    const fark = gelir - gider;
+    fields.push(
+      { key: "gelir", label: "Toplam Gelir", value: `${fmt(gelir)} ₺` },
+      { key: "gider", label: "Toplam Gider", value: `${fmt(gider)} ₺` },
+      {
+        key: "fark",
+        label: "Fark (Gelir − Gider)",
+        value: `${fmt(fark)} ₺`,
+        tone: fark >= 0 ? "default" : "danger",
+      },
+    );
+  }
+  fields.push(
     {
       key: "vadesi_gelen",
       label: "Vadesi Gelen",
@@ -77,7 +94,8 @@ export function buildCariEkstreOzetFields(ozet: CariHesapCariOzet): OzetField[] 
       label: "Son İşlemi Yapan",
       value: ozet.son_islem_yapan || "—",
     },
-  ];
+  );
+  return fields;
 }
 
 export function cariEkstreOzetExportMeta(ozet: CariHesapCariOzet): Record<string, string> {
@@ -86,6 +104,10 @@ export function cariEkstreOzetExportMeta(ozet: CariHesapCariOzet): Record<string
     meta[f.label] = f.value;
   }
   return meta;
+}
+
+export function cariOzetExportFields(ozet: CariHesapCariOzet): { label: string; value: string }[] {
+  return buildCariEkstreOzetFields(ozet).map((f) => ({ label: f.label, value: f.value }));
 }
 
 export default function CariEkstreOzet({

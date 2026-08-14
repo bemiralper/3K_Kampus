@@ -116,7 +116,7 @@ export default function CariBakiyeRaporTable({
 }
 
 export function buildCariRaporExportRows(items: CariHesapRaporItem[]) {
-  return items.map((r) => ({
+  const rows = items.map((r) => ({
     hesap_kodu: r.hesap_kodu || "",
     cari_adi: r.gorunen_ad || r.unvan,
     tur: r.hesap_turu_display,
@@ -130,4 +130,30 @@ export function buildCariRaporExportRows(items: CariHesapRaporItem[]) {
     son_islem_turu: r.son_islem_turu || "",
     son_islem_yapan: r.son_islem_yapan || "",
   }));
+  if (rows.length) {
+    const totals = items.reduce(
+      (acc, r) => {
+        acc.borc += cariRowAcikVerecek(r);
+        acc.alacak += cariRowAcikAlacak(r);
+        acc.bakiye += Number(r.bakiye || 0);
+        return acc;
+      },
+      { borc: 0, alacak: 0, bakiye: 0 },
+    );
+    rows.push({
+      hesap_kodu: "",
+      cari_adi: "TOPLAM",
+      tur: "",
+      borc: fmtExportMoney(totals.borc),
+      alacak: fmtExportMoney(totals.alacak),
+      bakiye: fmtExportMoney(totals.bakiye),
+      vadesi_gelen: "",
+      vadesi_gecmis: "",
+      gelecek_vadeli: "",
+      son_islem_tarihi: "",
+      son_islem_turu: "",
+      son_islem_yapan: "",
+    });
+  }
+  return rows;
 }

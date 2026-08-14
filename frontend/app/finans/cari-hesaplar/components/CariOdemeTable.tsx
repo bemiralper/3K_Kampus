@@ -132,7 +132,7 @@ export default function CariOdemeTable({
 }
 
 export function buildOdemeExportRows(items: CariHareket[]) {
-  return items.map((o) => {
+  const rows = items.map((o) => {
     const meta = getKaynakMeta(o, items);
     const bs = (o.borc_sonrasi ?? 0) - (o.alacak_sonrasi ?? 0);
     return {
@@ -146,4 +146,18 @@ export function buildOdemeExportRows(items: CariHareket[]) {
       aciklama: o.aciklama || o.belge_no || "",
     };
   });
+  if (items.length) {
+    const toplam = items.reduce((s, o) => s + Number(o.tutar || 0), 0);
+    rows.push({
+      tarih: "",
+      tur: "TOPLAM",
+      kaynak: "",
+      kategori: "",
+      odeme_yontemi: "",
+      tutar: fmt(toplam),
+      bakiye_sonrasi: "",
+      aciklama: "",
+    });
+  }
+  return rows;
 }

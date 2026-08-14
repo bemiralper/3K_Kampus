@@ -35,13 +35,83 @@ async function downloadTabExport(
   columns: { key: string; label: string }[],
   rows: Record<string, unknown>[],
 ) {
+  const dataRows = rows.filter((r) => {
+    const marker = String(r.kategori || r.fatura_no || r.islem_turu || r.islem || r.tur || "");
+    return marker !== "TOPLAM";
+  });
+  const sumKey = (key: string) => dataRows.reduce((s, r) => s + Number(r[key] || 0), 0);
+  const titleLower = title.toLowerCase();
+  const filters_meta: Record<string, unknown> = {
+    kurum_id: kurumId,
+    rapor_adi: title,
+    report_kind: titleLower.includes("hareket") || titleLower.includes("tahsilat") || titleLower.includes("ödeme")
+      ? "cari_ekstre"
+      : "cari_ozet",
+  };
+
+  if (columns.some((c) => c.key === "net_tutar") && titleLower.includes("gelir")) {
+    const toplamGelir = sumKey("net_tutar");
+    const tahsil = sumKey("tahsil_edilen");
+    const kalan = sumKey("kalan");
+    filters_meta.report_totals = { toplam_gelir: toplamGelir, tahsil_edilen: tahsil, kalan };
+    filters_meta.summary_chips = [
+      { label: "Toplam Gelir", value: toplamGelir, type: "currency" },
+      { label: "Tahsil Edilen", value: tahsil, type: "currency" },
+      { label: "Kalan", value: kalan, type: "currency" },
+    ];
+    filters_meta.cari_ozet_fields = [
+      { label: "Toplam Gelir", value: `${toplamGelir.toFixed(2)} ₺` },
+      { label: "Tahsil Edilen", value: `${tahsil.toFixed(2)} ₺` },
+      { label: "Kalan", value: `${kalan.toFixed(2)} ₺` },
+    ];
+  } else if (columns.some((c) => c.key === "net_tutar") && titleLower.includes("gider")) {
+    const toplamGider = sumKey("net_tutar");
+    const odenen = sumKey("odenen_toplam");
+    const kalan = sumKey("kalan");
+    filters_meta.report_totals = { toplam_gider: toplamGider, odenen, kalan };
+    filters_meta.summary_chips = [
+      { label: "Toplam Gider", value: toplamGider, type: "currency" },
+      { label: "Ödenen", value: odenen, type: "currency" },
+      { label: "Kalan", value: kalan, type: "currency" },
+    ];
+    filters_meta.cari_ozet_fields = [
+      { label: "Toplam Gider", value: `${toplamGider.toFixed(2)} ₺` },
+      { label: "Ödenen", value: `${odenen.toFixed(2)} ₺` },
+      { label: "Kalan", value: `${kalan.toFixed(2)} ₺` },
+    ];
+  } else if (columns.some((c) => c.key === "borc" || c.key === "alacak")) {
+    let toplamBorc = 0;
+    let toplamAlacak = 0;
+    let lastBakiye = 0;
+    for (const r of dataRows) {
+      toplamBorc += Number(r.borc || 0);
+      toplamAlacak += Number(r.alacak || 0);
+      if (r.bakiye !== "" && r.bakiye != null) lastBakiye = Number(r.bakiye || 0);
+    }
+    filters_meta.report_totals = {
+      toplam_borc: toplamBorc,
+      toplam_alacak: toplamAlacak,
+      net_bakiye: lastBakiye,
+    };
+    filters_meta.summary_chips = [
+      { label: "Toplam Borç", value: toplamBorc, type: "currency" },
+      { label: "Toplam Alacak", value: toplamAlacak, type: "currency" },
+      { label: "Net Bakiye", value: lastBakiye, type: "currency" },
+    ];
+    filters_meta.cari_ozet_fields = [
+      { label: "Toplam Borç", value: `${toplamBorc.toFixed(2)} ₺` },
+      { label: "Toplam Alacak", value: `${toplamAlacak.toFixed(2)} ₺` },
+      { label: "Net Bakiye", value: `${lastBakiye.toFixed(2)} ₺` },
+    ];
+  }
+
   const { blob, filename } = await cariV2Service.tabExport(cariId, {
     format,
     orientation: "landscape",
     title,
     columns,
     rows,
-    filters_meta: { kurum_id: kurumId, rapor_adi: title },
+    filters_meta,
   });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -328,6 +398,20 @@ function TypePanel({ panel }: { panel: CariV2Panel }) {
           <MiniChart data={panel.gider.aylik_grafik} gider />
         </div>
       )}
+      {panel.net && (
+        <div className="cv2-panel">
+          <h3>Gelir / Gider Farkı</h3>
+          <div className="cv2-detail-metrics">
+            <Metric label="Toplam Gelir" value={TL(panel.net.toplam_gelir ?? 0)} tone="pos" />
+            <Metric label="Toplam Gider" value={TL(panel.net.toplam_gider ?? 0)} tone="neg" />
+            <Metric
+              label="Fark (Gelir − Gider)"
+              value={TL(panel.net.gelir_gider_fark ?? 0)}
+              tone={(panel.net.gelir_gider_fark ?? 0) >= 0 ? "pos" : "neg"}
+            />
+          </div>
+        </div>
+      )}
       {panel.diger && (
         <div className="cv2-panel">
           <h3>Hesap Özeti</h3>
@@ -395,6 +479,18 @@ function HareketlerTab({ cariId, kurumId, islemTuru, title }: { cariId: number; 
     alacak: h.yon === "alacak" ? EXP_MONEY(h.tutar) : "",
     bakiye: EXP_MONEY(h.bakiye_sonrasi),
   }));
+  const toplamBorc = rows.reduce((s, h) => s + (h.yon === "borc" ? Number(h.tutar) : 0), 0);
+  const toplamAlacak = rows.reduce((s, h) => s + (h.yon === "alacak" ? Number(h.tutar) : 0), 0);
+  const lastBakiye = rows.length ? Number(rows[rows.length - 1].bakiye_sonrasi) : 0;
+  exportRows.push({
+    islem_tarihi: "",
+    islem_turu: "TOPLAM",
+    aciklama: "",
+    belge_no: "",
+    borc: EXP_MONEY(toplamBorc),
+    alacak: EXP_MONEY(toplamAlacak),
+    bakiye: EXP_MONEY(lastBakiye),
+  });
 
   return (
     <div>
@@ -442,6 +538,19 @@ function TabTable({ cariId, kurumId, title, tab, columns }: { cariId: number; ku
     }
     return out;
   });
+  if (rows.length) {
+    const total: Record<string, unknown> = {};
+    for (const [key, , num] of columns) {
+      if (num) {
+        total[key] = EXP_MONEY(rows.reduce((s, r) => s + Number(r[key] || 0), 0));
+      } else if (key === "kategori" || key === "durum" || key === "fatura_no") {
+        total[key] = key === "kategori" || key === "fatura_no" ? "TOPLAM" : "";
+      } else {
+        total[key] = "";
+      }
+    }
+    exportRows.push(total);
+  }
 
   return (
     <div>

@@ -50,12 +50,14 @@ class CsvExportService:
         columns: Sequence[ExportColumn | dict],
         *,
         meta: ReportMeta | dict[str, Any] | None = None,
+        stats: Sequence[Any] | None = None,
         delimiter: str = ";",
         filename: str | None = None,
         include_letterhead: bool = True,
     ) -> HttpResponse:
         content = cls.build_csv_text(
-            rows, columns, meta=meta, delimiter=delimiter, include_letterhead=include_letterhead,
+            rows, columns, meta=meta, stats=stats, delimiter=delimiter,
+            include_letterhead=include_letterhead,
         )
         title = filename or (
             meta.report_title if isinstance(meta, ReportMeta) else (meta or {}).get("report_title", "rapor")
@@ -71,6 +73,7 @@ class CsvExportService:
         columns: Sequence[ExportColumn | dict],
         *,
         meta: ReportMeta | dict[str, Any] | None = None,
+        stats: Sequence[Any] | None = None,
         delimiter: str = ";",
         include_letterhead: bool = True,
     ) -> str:
@@ -95,6 +98,20 @@ class CsvExportService:
             writer.writerow([f"Oluşturma Tarihi: {sm.format_datetime_display(meta.resolved_generated_at())}"])
             if meta.generated_by:
                 writer.writerow([f"Oluşturan: {meta.generated_by}"])
+            writer.writerow([])
+
+        stat_list = sm.normalize_stats(stats)
+        if stat_list:
+            for stat in stat_list:
+                display = stat.value
+                if stat.type == "currency":
+                    display = sm.format_currency_display(stat.value, stat.currency)
+                elif stat.type in ("integer", "decimal", "percent"):
+                    display = sm.format_cell_display(
+                        stat.value,
+                        ExportColumn(key="_", label="_", type=stat.type, currency=stat.currency),
+                    )
+                writer.writerow([stat.label, display])
             writer.writerow([])
 
         writer.writerow([c.label for c in cols])

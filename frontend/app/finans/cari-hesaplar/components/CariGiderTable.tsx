@@ -117,7 +117,7 @@ export default function CariGiderTable({
 }
 
 export function buildGiderExportRows(items: GiderKaydiListItem[]) {
-  return items.map((g) => ({
+  const rows = items.map((g) => ({
     kategori: g.kategori_adi || "",
     odeme_yontemi: g.odeme_yontemi_adi || "",
     tarih: fmtTarih(g.fatura_tarihi),
@@ -128,4 +128,19 @@ export function buildGiderExportRows(items: GiderKaydiListItem[]) {
     olusturan: g.olusturan_adi || "",
     aciklama: g.aciklama || "",
   }));
+  if (items.length) {
+    const net = items.reduce((s, g) => s + Number(g.net_tutar || 0), 0);
+    rows.push({
+      kategori: "TOPLAM",
+      odeme_yontemi: "",
+      tarih: "",
+      net_tutar: fmt(net),
+      taksit: "",
+      odeme_durumu: "",
+      durum: "",
+      olusturan: "",
+      aciklama: "",
+    });
+  }
+  return rows;
 }

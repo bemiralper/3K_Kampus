@@ -109,19 +109,27 @@ function buildStats(hesap: CariHesap): StatCard[] {
     ];
   }
 
-  /* karma */
+  /* karma — gelir / gider kayıtları farkı */
+  const fark = toplamGelir - toplamGider;
   return [
     {
       key: "toplam-gelir",
       icon: "green",
       value: `₺${fmt(toplamGelir)}`,
-      label: "Toplam Gelir (Satış)",
+      label: "Toplam Gelir",
     },
     {
       key: "toplam-gider",
       icon: "orange",
       value: `₺${fmt(toplamGider)}`,
-      label: "Toplam Gider (Alış)",
+      label: "Toplam Gider",
+    },
+    {
+      key: "fark",
+      icon: fark >= 0 ? "green" : "orange",
+      value: `₺${fmt(fark)}`,
+      label: "Fark (Gelir − Gider)",
+      valueClass: fark >= 0 ? "text-emerald-600" : "text-rose-600",
     },
     {
       key: "gelir-alacagi",
@@ -136,12 +144,6 @@ function buildStats(hesap: CariHesap): StatCard[] {
       value: `₺${fmt(giderBorcu)}`,
       label: "Ödenecek Gider",
       valueClass: giderBorcu > 0 ? "text-rose-600" : "text-emerald-600",
-    },
-    {
-      key: "kayitlar",
-      icon: "purple",
-      value: `${gelirSayisi} / ${giderSayisi}`,
-      label: "Gelir / Gider Kaydı",
     },
   ];
 }

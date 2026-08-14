@@ -142,6 +142,10 @@ class CariV2ServiceTests(TestCase):
         rapor = CariReportService().build('hesap-ozeti', self.kurum.id, self.sube.id, {})
         self.assertEqual(rapor['baslik'], 'Hesap Özeti')
         self.assertTrue(len(rapor['rows']) >= 1)
+        kpi_labels = {k['label'] for k in rapor['kpis']}
+        self.assertIn('Toplam Borç', kpi_labels)
+        self.assertIn('Toplam Alacak', kpi_labels)
+        self.assertIn('Net Bakiye', kpi_labels)
 
     def test_report_ekstre_requires_cari(self):
         rapor = CariReportService().build('ekstre', self.kurum.id, self.sube.id, {})
@@ -155,6 +159,12 @@ class CariV2ServiceTests(TestCase):
         )
         self.assertEqual(rapor['ozet']['kapanis'], 750.0)
         self.assertEqual(len(rapor['rows']), 1)
+        kpi_labels = {k['label'] for k in rapor['kpis']}
+        self.assertIn('Toplam Borç', kpi_labels)
+        self.assertIn('Toplam Alacak', kpi_labels)
+        self.assertIn('Net Bakiye', kpi_labels)
+        self.assertEqual(rapor['ozet']['toplam_borc'], 750.0)
+        self.assertEqual(rapor['ozet']['net_bakiye'], 750.0)
 
 
 class CariV2ApiPermissionTests(TestCase):

@@ -568,6 +568,26 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
                       <span>Bakiyesi Sıfır</span>
                       <strong>{raporTotals.sifir_bakiye_cari}</strong>
                     </div>
+                    <div className="cari-bakiye-rapor-stat">
+                      <span>Toplam Borç</span>
+                      <strong>
+                        {raporTotals.toplam_borc.toLocaleString("tr-TR", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        ₺
+                      </strong>
+                    </div>
+                    <div className="cari-bakiye-rapor-stat">
+                      <span>Toplam Alacak</span>
+                      <strong>
+                        {raporTotals.toplam_alacak.toLocaleString("tr-TR", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        ₺
+                      </strong>
+                    </div>
                     <div className="cari-bakiye-rapor-stat cari-bakiye-rapor-stat--wide">
                       <span>Net Bakiye</span>
                       <strong>

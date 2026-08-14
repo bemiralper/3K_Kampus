@@ -114,14 +114,55 @@ def _genel_toplam_table(
     report_kind: str = "cari_bakiye",
     meta: dict[str, Any] | None = None,
 ) -> str:
+    meta = meta or {}
+    chips = meta.get("summary_chips") or []
+
     if report_kind == "cari_ekstre":
         rows = [
             ("Devreden Bakiye", _fmt_tl(totals.get("devreden_bakiye"))),
-            ("Dönem Toplam Borç", _fmt_tl(totals.get("toplam_borc"))),
-            ("Dönem Toplam Alacak", _fmt_tl(totals.get("toplam_alacak"))),
-            ("Kapanış Bakiye", _fmt_tl(totals.get("kapanis_bakiye") or totals.get("net_bakiye"))),
+            ("Toplam Borç", _fmt_tl(totals.get("toplam_borc"))),
+            ("Toplam Alacak", _fmt_tl(totals.get("toplam_alacak"))),
+            ("Net Bakiye", _fmt_tl(totals.get("kapanis_bakiye") or totals.get("net_bakiye"))),
         ]
+        if "toplam_gelir" in totals or "toplam_gider" in totals:
+            gelir = float(totals.get("toplam_gelir") or 0)
+            gider = float(totals.get("toplam_gider") or 0)
+            rows.extend([
+                ("Toplam Gelir", _fmt_tl(gelir)),
+                ("Toplam Gider", _fmt_tl(gider)),
+                ("Fark (Gelir − Gider)", _fmt_tl(gelir - gider)),
+            ])
         title = "Ekstre Bakiye Özeti"
+    elif chips:
+        rows = []
+        for chip in chips:
+            label = chip.get("label")
+            if not label:
+                continue
+            val = chip.get("value")
+            if chip.get("type") == "currency" or isinstance(val, (int, float)):
+                rows.append((str(label), _fmt_tl(val)))
+            else:
+                rows.append((str(label), _esc(val)))
+        title = "Genel Toplam"
+    elif "toplam_gelir" in totals or "toplam_gider" in totals:
+        rows = []
+        if "toplam_gelir" in totals:
+            rows.append(("Toplam Gelir", _fmt_tl(totals.get("toplam_gelir"))))
+        if "tahsil_edilen" in totals:
+            rows.append(("Tahsil Edilen", _fmt_tl(totals.get("tahsil_edilen"))))
+        if "toplam_gider" in totals:
+            rows.append(("Toplam Gider", _fmt_tl(totals.get("toplam_gider"))))
+        if "odenen" in totals:
+            rows.append(("Ödenen", _fmt_tl(totals.get("odenen"))))
+        if "kalan" in totals:
+            rows.append(("Kalan", _fmt_tl(totals.get("kalan"))))
+        if "toplam_gelir" in totals and "toplam_gider" in totals:
+            rows.append((
+                "Fark (Gelir − Gider)",
+                _fmt_tl(float(totals.get("toplam_gelir") or 0) - float(totals.get("toplam_gider") or 0)),
+            ))
+        title = "Genel Toplam"
     else:
         rows = [
             ("Toplam Cari Sayısı", _format_cell(totals.get("toplam_cari") or totals.get("kayit_sayisi") or 0)),
@@ -130,6 +171,9 @@ def _genel_toplam_table(
             ("Net Bakiye", _fmt_tl(totals.get("net_bakiye"))),
         ]
         title = "Genel Toplam"
+
+    if not rows:
+        return ""
 
     tbody = "".join(
         f"<tr><td>{_esc(lbl)}</td><td class=\"num\">{val}</td></tr>" for lbl, val in rows
@@ -140,7 +184,9 @@ def _genel_toplam_table(
         f"<tbody>{tbody}</tbody></table>"
     )
 
-    if report_kind == "cari_ekstre" and meta:
+    if report_kind == "cari_ekstre" and meta and (
+        meta.get("donem_toplam_borc") or meta.get("donem_toplam_alacak")
+    ):
         donem_rows = [
             ("Devreden Bakiye", _esc(meta.get("devreden_bakiye") or "—")),
             ("Dönem Toplam Borç", _esc(meta.get("donem_toplam_borc") or "—")),
@@ -161,22 +207,17 @@ def _genel_toplam_table(
 
 
 def _ozet_kv_table(meta: dict[str, Any]) -> str:
-    """Tek cari özet alanları (ekstre export üst bilgisi)."""
-    skip = {
-        "kurum_id", "sube_id", "kurum_ad", "sube_ad", "sube", "report_kind",
-        "report_totals", "raporu_olusturan", "tarih_araligi", "baslangic", "bitis",
-        "cari_unvan", "cari_turu", "hesap_turu_label", "durum", "para_birimi",
-        "hesap_turu", "arama", "kayit_sayisi",
-        "arama_filtresi", "kategori_filtresi", "odeme_yontemi_filtresi",
-        "donem_toplam_borc", "donem_toplam_alacak", "donem_net_hareket",
-        "devreden_bakiye", "kapanis_bakiye",
-        "filtrelenmis_hareket_sayisi", "rapor_adi",
-    }
+    """Tek cari özet alanları (ekstre / gelir / gider export üst bilgisi)."""
+    fields = meta.get("cari_ozet_fields") or []
     rows = ""
-    for key, val in meta.items():
-        if key in skip or val in (None, ""):
-            continue
-        rows += f"<tr><td>{_esc(key)}</td><td>{_esc(val)}</td></tr>"
+    if isinstance(fields, list):
+        for item in fields:
+            if not isinstance(item, dict):
+                continue
+            label = item.get("label")
+            if not label:
+                continue
+            rows += f"<tr><td>{_esc(label)}</td><td>{_esc(item.get('value'))}</td></tr>"
     if not rows:
         return ""
     return (

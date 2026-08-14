@@ -106,11 +106,22 @@ class CariPanelService:
         if tur == CariHesapTuru.GIDER_HESABI:
             base['gider'] = self._gider_panel(hesap)
         if tur == CariHesapTuru.KARMA:
+            gelir_agg = GelirKaydi.objects.filter(cari_hesap=hesap).exclude(
+                durum='iptal',
+            ).aggregate(t=Sum('net_tutar'))
+            gider_agg = GiderKaydi.objects.filter(cari_hesap=hesap).exclude(
+                durum='iptal',
+            ).aggregate(t=Sum('net_tutar'))
+            toplam_gelir = float(gelir_agg['t'] or 0)
+            toplam_gider = float(gider_agg['t'] or 0)
             base['net'] = {
                 'net_bakiye': float(hesap.bakiye),
                 'bakiye_durumu': hesap.bakiye_durumu,
                 'acik_borc': float(hesap.acik_borc),
                 'acik_alacak': float(hesap.acik_alacak),
+                'toplam_gelir': toplam_gelir,
+                'toplam_gider': toplam_gider,
+                'gelir_gider_fark': round(toplam_gelir - toplam_gider, 2),
             }
         if tur == CariHesapTuru.DIGER:
             base['diger'] = {

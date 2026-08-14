@@ -118,5 +118,30 @@ export function buildEkstreExportRows(
   for (const h of sorted) {
     rows.push(mapHareketExportRow(h));
   }
+
+  if (sorted.length > 0) {
+    const period = sorted.reduce(
+      (acc, h) => {
+        const tutar = Number(h.tutar || 0);
+        if (h.yon === "alacak") acc.alacak += tutar;
+        else acc.borc += tutar;
+        return acc;
+      },
+      { borc: 0, alacak: 0 },
+    );
+    const kapanis = computeKapanisBakiye(sorted);
+    rows.push({
+      tarih: "",
+      islem: "TOPLAM",
+      aciklama: "",
+      kategori: "",
+      odeme_yontemi: "",
+      islem_yapan: "",
+      alacak: fmtEkstreMoney(period.alacak),
+      borc: fmtEkstreMoney(period.borc),
+      bakiye: formatEkstreBakiyeExport(kapanis),
+    });
+  }
+
   return rows;
 }

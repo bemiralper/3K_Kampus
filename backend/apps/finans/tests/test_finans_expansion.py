@@ -415,6 +415,74 @@ class FinansExpansionTest(TestCase):
         wb = load_workbook(io.BytesIO(response.content))
         self.assertEqual(wb.active.page_setup.orientation, 'landscape')
 
+    def test_export_service_includes_borc_alacak_net_bakiye(self):
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            self.skipTest('openpyxl not installed')
+        rows = [{'ad': 'Kafe', 'borc': 100, 'alacak': 40}]
+        columns = [
+            {'key': 'ad', 'label': 'Cari'},
+            {'key': 'borc', 'label': 'Borç'},
+            {'key': 'alacak', 'label': 'Alacak'},
+        ]
+        filters = {
+            'report_kind': 'cari_ekstre',
+            'report_totals': {
+                'toplam_borc': 100,
+                'toplam_alacak': 40,
+                'net_bakiye': 60,
+            },
+        }
+        xlsx = ExportService.build(
+            'xlsx', rows, columns, title='Cari Özet', filters_meta=filters,
+        )
+        wb = load_workbook(io.BytesIO(xlsx.content))
+        values = []
+        for row in wb.active.iter_rows(values_only=True):
+            values.extend(str(c) for c in row if c is not None)
+        joined = ' '.join(values).upper()
+        self.assertIn('TOPLAM BORÇ', joined)
+        self.assertIn('TOPLAM ALACAK', joined)
+        self.assertIn('NET BAKİYE', joined)
+
+        csv_resp = ExportService.build(
+            'csv', rows, columns, title='Cari Özet', filters_meta=filters,
+        )
+        text = csv_resp.content.decode('utf-8-sig')
+        self.assertIn('Toplam Borç', text)
+        self.assertIn('Toplam Alacak', text)
+        self.assertIn('Net Bakiye', text)
+
+        from apps.finans.application.export.cari_report_html import build_cari_report_html
+        html = build_cari_report_html(
+            title='Cari Özet', columns=columns, rows=rows, filters_meta=filters,
+        )
+        self.assertIn('Toplam Borç', html)
+        self.assertIn('Toplam Alacak', html)
+        self.assertIn('Net Bakiye', html)
+
+        gelir_html = build_cari_report_html(
+            title='Gelir Kayıtları',
+            columns=[{'key': 'net_tutar', 'label': 'Tutar'}],
+            rows=[{'net_tutar': '100.00'}],
+            filters_meta={
+                'report_kind': 'cari_ozet',
+                'report_totals': {'toplam_gelir': 100, 'tahsil_edilen': 40, 'kalan': 60},
+                'summary_chips': [
+                    {'label': 'Toplam Gelir', 'value': 100, 'type': 'currency'},
+                    {'label': 'Tahsil Edilen', 'value': 40, 'type': 'currency'},
+                ],
+                'cari_ozet_fields': [
+                    {'label': 'Cari Adı', 'value': '3K Kafe'},
+                    {'label': 'Toplam Gelir', 'value': '100,00 ₺'},
+                ],
+            },
+        )
+        self.assertIn('Cari Özet', gelir_html)
+        self.assertIn('3K Kafe', gelir_html)
+        self.assertIn('Toplam Gelir', gelir_html)
+
     def test_export_service_pdf(self):
         rows = [{'ad': 'PDF', 'tutar': 1}]
         columns = [{'key': 'ad', 'label': 'Ad'}, {'key': 'tutar', 'label': 'Tutar'}]

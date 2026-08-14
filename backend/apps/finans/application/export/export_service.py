@@ -15,8 +15,23 @@ class ExportService:
 
     _DATE_KEY_HINTS = ('tarih', 'vade', 'date')
     _CURRENCY_KEY_HINTS = (
-        'tutar', 'borc', 'bakiye', 'tahsilat', 'gelir', 'gider',
+        'tutar', 'borc', 'alacak', 'bakiye', 'tahsilat', 'gelir', 'gider',
         'kalan', 'ucret', 'fiyat', 'amount',
+    )
+    _TOTALS_LABEL_KEYS = (
+        ('toplam borç', 'toplam_borc'),
+        ('dönem toplam borç', 'toplam_borc'),
+        ('toplam alacak', 'toplam_alacak'),
+        ('dönem toplam alacak', 'toplam_alacak'),
+        ('net bakiye', 'net_bakiye'),
+        ('kapanış bakiyesi', 'kapanis_bakiye'),
+        ('kapanış bakiye', 'kapanis_bakiye'),
+        ('devreden bakiye', 'devreden_bakiye'),
+        ('net hareket', 'net_hareket'),
+        ('dönem net hareket', 'net_hareket'),
+        ('toplam gelir', 'toplam_gelir'),
+        ('toplam gider', 'toplam_gider'),
+        ('tahsil edilen', 'tahsil_edilen'),
     )
 
     @classmethod
@@ -35,6 +50,7 @@ class ExportService:
             raise ValueError(f'Desteklenmeyen format: {export_format}')
 
         ori = cls._normalize_orientation(orientation)
+        filters_meta = cls._enrich_totals_meta(filters_meta)
 
         if fmt == 'json':
             return cls._build_json(rows, columns, title=title, filters_meta=filters_meta)
@@ -118,16 +134,78 @@ class ExportService:
         )
 
     @classmethod
+    def _enrich_totals_meta(cls, filters_meta: dict[str, Any] | None) -> dict[str, Any]:
+        """KPI / report_totals / summary_chips alanlarını birbirine tamamlar."""
+        meta = dict(filters_meta or {})
+        totals = dict(meta.get('report_totals') or {})
+        chips = list(meta.get('summary_chips') or [])
+        chip_labels = {
+            str(c.get('label') or '').strip().lower()
+            for c in chips
+            if c.get('label')
+        }
+
+        for kpi in meta.get('kpis') or []:
+            label = str(kpi.get('label') or '').strip()
+            if not label:
+                continue
+            if label.lower() not in chip_labels:
+                fmt = kpi.get('format')
+                chips.append({
+                    'label': label,
+                    'value': kpi.get('value'),
+                    'type': 'currency' if fmt == 'tl' else ('integer' if fmt == 'int' else 'text'),
+                })
+                chip_labels.add(label.lower())
+
+        for chip in chips:
+            label = str(chip.get('label') or '').strip().lower()
+            for needle, key in cls._TOTALS_LABEL_KEYS:
+                if label == needle and key not in totals:
+                    totals[key] = chip.get('value')
+
+        for key, label in (
+            ('toplam_borc', 'Toplam Borç'),
+            ('toplam_alacak', 'Toplam Alacak'),
+            ('net_bakiye', 'Net Bakiye'),
+            ('devreden_bakiye', 'Devreden Bakiye'),
+            ('kapanis_bakiye', 'Kapanış Bakiye'),
+            ('toplam_gelir', 'Toplam Gelir'),
+            ('toplam_gider', 'Toplam Gider'),
+        ):
+            val = totals.get(key)
+            if val in (None, ''):
+                continue
+            if label.lower() not in chip_labels:
+                chips.append({'label': label, 'value': val, 'type': 'currency'})
+                chip_labels.add(label.lower())
+
+        if totals:
+            meta['report_totals'] = totals
+        if chips:
+            meta['summary_chips'] = chips
+        return meta
+
+    @classmethod
     def _to_export_stats(cls, filters_meta: dict[str, Any] | None):
         from shared.export.style_manager import ExportStat
 
         meta = filters_meta or {}
         stats: list[ExportStat] = []
+        seen: set[str] = set()
 
         for chip in meta.get('summary_chips') or []:
             lbl = chip.get('label')
-            if lbl:
-                stats.append(ExportStat(label=str(lbl), value=chip.get('value'), type='text'))
+            if not lbl:
+                continue
+            key = str(lbl).strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            chip_type = chip.get('type') or 'text'
+            if chip_type not in ('text', 'currency', 'integer', 'decimal', 'percent'):
+                chip_type = 'text'
+            stats.append(ExportStat(label=str(lbl), value=chip.get('value'), type=chip_type))
 
         for key, label, col_type in (
             ('toplam', 'Toplam', 'integer'),
@@ -136,7 +214,8 @@ class ExportService:
             ('toplam_tutar', 'Toplam Tutar', 'currency'),
             ('toplam_kalan', 'Toplam Kalan', 'currency'),
         ):
-            if key in meta and meta[key] not in (None, ''):
+            if key in meta and meta[key] not in (None, '') and label.lower() not in seen:
+                seen.add(label.lower())
                 stats.append(ExportStat(label=label, value=meta[key], type=col_type))
 
         return stats
@@ -147,8 +226,10 @@ class ExportService:
 
         export_columns = cls._to_export_columns(columns)
         meta = cls._to_report_meta(title, filters_meta)
+        stats = cls._to_export_stats(filters_meta)
         return CsvExportService.export(
-            rows, export_columns, meta=meta, filename=cls._safe_filename(title),
+            rows, export_columns, meta=meta, stats=stats or None,
+            filename=cls._safe_filename(title),
         )
 
     @classmethod

@@ -77,7 +77,7 @@ export default function CariGelirTable({
 }
 
 export function buildGelirExportRows(items: GelirKaydiListItem[]) {
-  return items.map((g) => ({
+  const rows = items.map((g) => ({
     tarih: fmtTarih(g.fatura_tarihi),
     kategori: g.kategori_adi || "",
     odeme_yontemi: g.odeme_yontemi_adi || "",
@@ -87,4 +87,20 @@ export function buildGelirExportRows(items: GelirKaydiListItem[]) {
     durum: g.durum_display || g.durum,
     aciklama: g.aciklama || "",
   }));
+  if (items.length) {
+    const net = items.reduce((s, g) => s + Number(g.net_tutar || 0), 0);
+    const tahsil = items.reduce((s, g) => s + Number(g.tahsil_edilen || 0), 0);
+    const kalan = items.reduce((s, g) => s + Number(g.kalan_tutar || 0), 0);
+    rows.push({
+      tarih: "",
+      kategori: "TOPLAM",
+      odeme_yontemi: "",
+      net_tutar: fmt(net),
+      tahsil_edilen: fmt(tahsil),
+      kalan: fmt(kalan),
+      durum: "",
+      aciklama: "",
+    });
+  }
+  return rows;
 }
