@@ -324,15 +324,22 @@
 .cv2-panel h3 { font-size: 14px; font-weight: 800; color: #0f172a; margin: 0 0 12px; }
 
 /* Grafik (basit sütun) */
-.cv2-chart { display: flex; align-items: flex-end; gap: 6px; height: 140px; padding-top: 8px; }
+.cv2-chart-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid #eef2f6; }
+.cv2-chart-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px;
+}
+.cv2-chart-head strong { font-size: 12px; font-weight: 700; color: #334155; }
+.cv2-chart-head span { font-size: 11px; color: #94a3b8; }
+.cv2-chart { display: flex; align-items: flex-end; gap: 4px; height: 120px; }
 .cv2-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
 .cv2-bar {
-  width: 100%; max-width: 30px; border-radius: 5px 5px 0 0;
+  width: 100%; max-width: 22px; border-radius: 4px 4px 0 0;
   background: linear-gradient(180deg, #38bdf8, #0262a7); min-height: 2px;
   transition: height 0.3s ease;
 }
 .cv2-bar--gider { background: linear-gradient(180deg, #fb7185, #dc2626); }
-.cv2-bar-label { font-size: 9.5px; color: #94a3b8; transform: rotate(-40deg); white-space: nowrap; }
+.cv2-bar--empty { background: #e2e8f0; }
+.cv2-bar-label { font-size: 10px; color: #64748b; white-space: nowrap; }
 
 /* KPI şeridi */
 .cv2-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }

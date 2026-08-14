@@ -7,7 +7,7 @@ Tüm hesaplamalar burada yapılır.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 from django.db.models import Count, F, Sum
 from django.db.models.functions import TruncMonth
@@ -31,8 +31,18 @@ class CariPanelService:
         return self.selector._islem_totals_map([hesap_id]).get(hesap_id, {})
 
     def _aylik_seri(self, qs, tarih_alani, tutar_alani, ay_sayisi=12):
+        """Son N takvim ayını sıfırlarla doldurur; aksi halde grafikte kopuk çubuklar çıkar."""
         bugun = timezone.localdate()
-        ilk_ay = (bugun.replace(day=1) - timedelta(days=ay_sayisi * 31)).replace(day=1)
+        keys = []
+        y, m = bugun.year, bugun.month
+        for _ in range(ay_sayisi):
+            keys.append(f'{y:04d}-{m:02d}')
+            if m == 1:
+                y, m = y - 1, 12
+            else:
+                m -= 1
+        keys.reverse()
+        ilk_ay = date(int(keys[0][:4]), int(keys[0][5:7]), 1)
         rows = (
             qs.filter(**{f'{tarih_alani}__gte': ilk_ay})
             .annotate(ay=TruncMonth(tarih_alani))
@@ -40,10 +50,11 @@ class CariPanelService:
             .annotate(toplam=Sum(tutar_alani))
             .order_by('ay')
         )
-        return [
-            {'ay': r['ay'].strftime('%Y-%m'), 'toplam': float(r['toplam'] or 0)}
+        by_ay = {
+            r['ay'].strftime('%Y-%m'): float(r['toplam'] or 0)
             for r in rows if r['ay']
-        ]
+        }
+        return [{'ay': key, 'toplam': by_ay.get(key, 0.0)} for key in keys]
 
     def _kategori_dagilim(self, qs, kategori_ad_alani, tutar_alani):
         rows = (

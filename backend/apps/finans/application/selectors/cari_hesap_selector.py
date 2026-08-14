@@ -5,6 +5,7 @@ from django.db.models import F, Sum
 from django.utils import timezone
 
 from apps.finans.application.cari_balance import (
+    apply_iade_netting,
     bakiye_durumu_from_net,
     empty_islem_totals,
     net_bakiye,
@@ -116,22 +117,34 @@ class CariHesapSelector:
         return result
 
     def _islem_totals_map(self, hesap_ids):
-        """Cari hesap başına işlem türü toplamları (tek sorgu)."""
+        """Cari hesap başına işlem türü toplamları (tek sorgu).
+
+        Alış/satış/ödeme/tahsilat, ilgili iptal ve düzeltme iadeleri düşülerek
+        netlenir; aksi halde iptal fatura özet kartında görünür kalır.
+        """
         if not hesap_ids:
             return {}
         rows = (
             CariHareket.objects.filter(cari_hesap_id__in=hesap_ids)
-            .values('cari_hesap_id', 'islem_turu')
+            .values('cari_hesap_id', 'islem_turu', 'kaynak_tip')
             .annotate(t=Sum('tutar'))
         )
         result: dict[int, dict[str, float]] = {}
+        iade_by_hesap: dict[int, dict[str, float]] = {}
         for r in rows:
             hid = r['cari_hesap_id']
             if hid not in result:
                 result[hid] = empty_islem_totals()
+                iade_by_hesap[hid] = {}
             tur = r['islem_turu']
+            tutar = float(r['t'] or 0)
             if tur in result[hid]:
-                result[hid][tur] = float(r['t'] or 0)
+                result[hid][tur] += tutar
+            if tur == CariHareketTuru.IADE:
+                kaynak = r['kaynak_tip'] or ''
+                iade_by_hesap[hid][kaynak] = iade_by_hesap[hid].get(kaynak, 0.0) + tutar
+        for hid, totals in result.items():
+            result[hid] = apply_iade_netting(totals, iade_by_hesap.get(hid, {}))
         return result
 
     def _son_hareket_map(self, hesap_ids):

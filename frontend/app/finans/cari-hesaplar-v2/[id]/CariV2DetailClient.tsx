@@ -335,17 +335,38 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
   );
 }
 
-function MiniChart({ data, gider }: { data: AylikNokta[]; gider?: boolean }) {
-  if (!data.length) return <div className="cv2-muted" style={{ fontSize: 12 }}>Grafik verisi yok.</div>;
-  const max = Math.max(...data.map((d) => d.toplam), 1);
+const AY_KISA = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+
+function ayEtiket(ay: string) {
+  const parts = ay.split("-");
+  const month = Number(parts[1] || 1);
+  return AY_KISA[month - 1] || ay;
+}
+
+function MiniChart({ data, title, gider }: { data: AylikNokta[]; title: string; gider?: boolean }) {
+  const points = data.slice(-12);
+  if (!points.some((d) => d.toplam > 0)) return null;
+  const max = Math.max(...points.map((d) => d.toplam), 1);
+  const first = points[0]?.ay || "";
+  const last = points[points.length - 1]?.ay || "";
+  const donem = first && last ? `${ayEtiket(first)} ${first.slice(0, 4)} – ${ayEtiket(last)} ${last.slice(0, 4)}` : "";
   return (
-    <div className="cv2-chart">
-      {data.slice(-12).map((d) => (
-        <div className="cv2-bar-wrap" key={d.ay}>
-          <div className={`cv2-bar ${gider ? "cv2-bar--gider" : ""}`} style={{ height: `${(d.toplam / max) * 100}%` }} title={TL(d.toplam)} />
-          <span className="cv2-bar-label">{d.ay.slice(2)}</span>
-        </div>
-      ))}
+    <div className="cv2-chart-block">
+      <div className="cv2-chart-head">
+        <strong>{title}</strong>
+        {donem && <span>{donem}</span>}
+      </div>
+      <div className="cv2-chart" role="img" aria-label={title}>
+        {points.map((d) => (
+          <div className="cv2-bar-wrap" key={d.ay} title={`${ayEtiket(d.ay)} ${d.ay.slice(0, 4)}: ${TL(d.toplam)}`}>
+            <div
+              className={`cv2-bar ${gider ? "cv2-bar--gider" : ""} ${d.toplam <= 0 ? "cv2-bar--empty" : ""}`}
+              style={{ height: `${Math.max((d.toplam / max) * 100, d.toplam > 0 ? 6 : 2)}%` }}
+            />
+            <span className="cv2-bar-label">{ayEtiket(d.ay)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -361,7 +382,7 @@ function TypePanel({ panel }: { panel: CariV2Panel }) {
             <Metric label="Toplam Tahsilat" value={TL(panel.musteri.toplam_tahsilat)} tone="pos" />
             <Metric label="Açık Alacak" value={TL(panel.musteri.acik_alacak)} tone="pos" />
           </div>
-          <MiniChart data={panel.musteri.satis_analizi} />
+          <MiniChart data={panel.musteri.satis_analizi} title="Son 12 ay satış faturaları" />
         </div>
       )}
       {panel.tedarikci && (
@@ -372,7 +393,7 @@ function TypePanel({ panel }: { panel: CariV2Panel }) {
             <Metric label="Toplam Ödeme" value={TL(panel.tedarikci.toplam_odeme)} tone="neg" />
             <Metric label="Açık Borç" value={TL(panel.tedarikci.acik_borc)} tone="neg" />
           </div>
-          <MiniChart data={panel.tedarikci.tedarik_analizi} gider />
+          <MiniChart data={panel.tedarikci.tedarik_analizi} title="Son 12 ay alış faturaları" gider />
         </div>
       )}
       {panel.gelir && (
@@ -383,7 +404,7 @@ function TypePanel({ panel }: { panel: CariV2Panel }) {
             <Metric label="Tahsil Edilen" value={TL(panel.gelir.tahsil_edilen)} tone="pos" />
             <Metric label="Bekleyen" value={TL(panel.gelir.bekleyen_gelir)} />
           </div>
-          <MiniChart data={panel.gelir.aylik_grafik} />
+          <MiniChart data={panel.gelir.aylik_grafik} title="Son 12 ay gelir faturaları" />
         </div>
       )}
       {panel.gider && (
@@ -395,7 +416,7 @@ function TypePanel({ panel }: { panel: CariV2Panel }) {
             <Metric label="Kalan" value={TL(panel.gider.kalan)} />
             <Metric label="Onay Bekleyen" value={TL(panel.gider.onay_bekleyen)} />
           </div>
-          <MiniChart data={panel.gider.aylik_grafik} gider />
+          <MiniChart data={panel.gider.aylik_grafik} title="Son 12 ay gider faturaları" gider />
         </div>
       )}
       {panel.net && (

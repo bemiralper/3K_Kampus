@@ -12,7 +12,12 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.egitim_yili.domain.models import EgitimYili
-from apps.finans.application.cari_balance import aggregate_list_totals, net_bakiye
+from apps.finans.application.cari_balance import (
+    apply_iade_netting,
+    aggregate_list_totals,
+    empty_islem_totals,
+    net_bakiye,
+)
 from apps.finans.application.cari_hesap_service import CariHesapService
 from apps.finans.application.gelir_service import GelirService
 from apps.finans.application.gelir_tahsilat_service import GelirTahsilatService
@@ -241,6 +246,115 @@ class TedarikciCariHesaplamaTest(CariHesaplamaTestBase):
         self.assertEqual(totals['alis'], 4000.0)
         self.assertEqual(totals['odeme'], 1500.0)
         self.assertEqual(totals['satis'], 0.0)
+
+    def test_toplam_alis_excludes_iptal_gider(self):
+        cari = self._create_tedarikci()
+        gider_svc = GiderService()
+        gider, err = gider_svc.create({
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube.id,
+            'cari_hesap_id': cari.id,
+            'gider_kategorisi_id': self.gider_kat.id,
+            'fatura_tarihi': self.today,
+            'vade_tarihi': self.today,
+            'brut_tutar': Decimal('8000'),
+            'kdv_orani': 0,
+            'olusturan': self.user,
+        })
+        self.assertIsNone(err, err)
+        _, err = gider_svc.iptal_et(gider.id)
+        self.assertIsNone(err, err)
+
+        totals = CariHesapSelector()._islem_totals_map([cari.id])[cari.id]
+        self.assertEqual(totals['alis'], 0.0)
+        self.assertEqual(totals['iade'], 8000.0)
+
+    def test_toplam_alis_uses_latest_after_gider_edit(self):
+        cari = self._create_tedarikci()
+        gider_svc = GiderService()
+        gider, err = gider_svc.create({
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube.id,
+            'cari_hesap_id': cari.id,
+            'gider_kategorisi_id': self.gider_kat.id,
+            'fatura_tarihi': self.today,
+            'vade_tarihi': self.today,
+            'brut_tutar': Decimal('4000'),
+            'kdv_orani': 0,
+            'olusturan': self.user,
+        })
+        self.assertIsNone(err, err)
+        _, err = gider_svc.update(gider.id, {'brut_tutar': Decimal('6000'), 'kdv_orani': 0})
+        self.assertIsNone(err, err)
+
+        totals = CariHesapSelector()._islem_totals_map([cari.id])[cari.id]
+        self.assertEqual(totals['alis'], 6000.0)
+        self.assertEqual(totals['iade'], 4000.0)
+
+    def test_toplam_satis_excludes_iptal_gelir(self):
+        cari = self._create_musteri()
+        gelir_svc = GelirService()
+        gelir, err = gelir_svc.create({
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube.id,
+            'cari_hesap_id': cari.id,
+            'gelir_kategorisi_id': self.gelir_kat.id,
+            'fatura_tarihi': self.today,
+            'vade_tarihi': self.today,
+            'brut_tutar': Decimal('5000'),
+            'kdv_orani': 0,
+            'olusturan': self.user,
+        })
+        self.assertIsNone(err, err)
+        _, err = gelir_svc.iptal_et(gelir.id)
+        self.assertIsNone(err, err)
+
+        totals = CariHesapSelector()._islem_totals_map([cari.id])[cari.id]
+        self.assertEqual(totals['satis'], 0.0)
+        self.assertEqual(totals['iade'], 5000.0)
+
+    def test_toplam_odeme_excludes_iptal_odeme(self):
+        cari = self._create_tedarikci()
+        gider, err = GiderService().create({
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube.id,
+            'cari_hesap_id': cari.id,
+            'gider_kategorisi_id': self.gider_kat.id,
+            'fatura_tarihi': self.today,
+            'vade_tarihi': self.today,
+            'brut_tutar': Decimal('4000'),
+            'kdv_orani': 0,
+            'olusturan': self.user,
+        })
+        self.assertIsNone(err, err)
+        odeme_svc = GiderOdemeService()
+        odeme, err = odeme_svc.odeme_yap({
+            'gider_kaydi_id': gider.id,
+            'tutar': Decimal('1500'),
+            'odeme_tarihi': self.today,
+            'mali_hesap_id': self.mali_hesap.id,
+            'odeme_yontemi_id': self.odeme_yontemi.id,
+            'islem_yapan': self.user,
+        })
+        self.assertIsNone(err, err)
+        _, err = odeme_svc.odeme_iptal(odeme.id)
+        self.assertIsNone(err, err)
+
+        totals = CariHesapSelector()._islem_totals_map([cari.id])[cari.id]
+        self.assertEqual(totals['alis'], 4000.0)
+        self.assertEqual(totals['odeme'], 0.0)
+
+
+class ApplyIadeNettingUnitTest(TestCase):
+    def test_gider_iade_drops_alis_only(self):
+        totals = empty_islem_totals()
+        totals['alis'] = 10000.0
+        totals['satis'] = 2000.0
+        totals['iade'] = 8000.0
+        netted = apply_iade_netting(totals, {'GiderKaydi': 8000.0})
+        self.assertEqual(netted['alis'], 2000.0)
+        self.assertEqual(netted['satis'], 2000.0)
+        self.assertEqual(netted['iade'], 8000.0)
 
 
 class CariListeToplamTest(CariHesaplamaTestBase):

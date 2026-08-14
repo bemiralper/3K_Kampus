@@ -18,9 +18,11 @@ from django.utils import timezone
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.finans.application.cari_v2.cari_command_service import CariCommandService
 from apps.finans.application.cari_v2.cari_dashboard_service import CariDashboardService
+from apps.finans.application.cari_v2.cari_panel_service import CariPanelService
 from apps.finans.application.cari_v2.cari_query_service import CariQueryService
 from apps.finans.application.cari_v2.cari_report_service import CariReportService
 from apps.finans.application.cari_v2.cari_risk_service import hesapla_risk
+from apps.finans.domain.gelir_kaydi import GelirKaydi
 from apps.finans.constants.cari_types import CariHareketYonu, CariHesapTuru
 from apps.finans.domain.cari_hesap import CariHesap
 from apps.roller.models import Role, UserRole
@@ -49,6 +51,15 @@ class CariV2ServiceTests(TestCase):
         hesap, err = CariCommandService().create(data, islem_yapan=self.user)
         self.assertIsNone(err, err)
         return hesap
+
+    def test_aylik_seri_fills_last_12_months(self):
+        seri = CariPanelService()._aylik_seri(
+            GelirKaydi.objects.none(), 'fatura_tarihi', 'net_tutar',
+        )
+        self.assertEqual(len(seri), 12)
+        self.assertTrue(all(p['toplam'] == 0 for p in seri))
+        bugun = timezone.localdate()
+        self.assertEqual(seri[-1]['ay'], f'{bugun.year:04d}-{bugun.month:02d}')
 
     # ─── Risk servisi ────────────────────────────
     def test_risk_normal_when_no_limit_no_overdue(self):

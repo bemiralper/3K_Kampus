@@ -8,6 +8,9 @@ Bakiye modeli (iki kova):
 
 İşlem türü toplamları (islem_turu bazında, yön bağımsız):
   satis, alis, tahsilat, odeme, iade, mahsup
+
+Özet kartlardaki alış/satış/ödeme/tahsilat, iptal ve düzeltme iadeleri
+düşülmüş net tutardır. Ham iade toplamı `iade` kovasında kalır.
 """
 from __future__ import annotations
 
@@ -22,9 +25,33 @@ ISLEM_TURU_KEYS = (
     CariHareketTuru.MAHSUP,
 )
 
+# İade hareketinin kaynak_tip'i → hangi özet kovadan düşüleceği.
+# Gider/gelir iptal ve tutar düzeltmesi eski alış/satışı silmez; ters kayıt IADE'dir.
+IADE_NET_HEDEF = {
+    'GiderKaydi': CariHareketTuru.ALIS,
+    'GelirKaydi': CariHareketTuru.SATIS,
+    'GiderOdeme': CariHareketTuru.ODEME,
+    'GelirTahsilat': CariHareketTuru.TAHSILAT,
+    'SerbestOdemeIptal': CariHareketTuru.ODEME,
+}
+
 
 def empty_islem_totals() -> dict[str, float]:
     return {k: 0.0 for k in ISLEM_TURU_KEYS}
+
+
+def apply_iade_netting(totals: dict, iade_by_kaynak: dict) -> dict:
+    """İptal/düzeltme iadelerini ilgili alış-satış-ödeme-tahsilat toplamından düşer."""
+    netted = dict(totals)
+    for kaynak, tutar in (iade_by_kaynak or {}).items():
+        hedef = IADE_NET_HEDEF.get(kaynak)
+        if not hedef:
+            continue
+        netted[hedef] = max(
+            0.0,
+            round(float(netted.get(hedef, 0) or 0) - float(tutar or 0), 2),
+        )
+    return netted
 
 
 # GelirTahsilat servisi her tahsilat için otomatik bir CariHareket(TAHSILAT)
