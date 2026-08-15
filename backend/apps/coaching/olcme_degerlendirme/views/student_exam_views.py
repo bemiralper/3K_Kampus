@@ -25,6 +25,7 @@ from ..services.scoring import (
     calculate_percentile,
     calculate_std_dev,
 )
+from ..services.scoring_settings import resolve_puan_yili
 
 from apps.ogrenci.domain.models import Ogrenci
 
@@ -80,7 +81,8 @@ def student_exam_results(request, student_id):
 
     logger.info('[student_exam_results] student_id=%s (%s %s)', student_id, ogrenci.ad, ogrenci.soyad)
 
-    ranking_year = int(request.query_params.get('ranking_year', 2025))
+    raw_year = request.query_params.get('ranking_year')
+    request_year = int(raw_year) if raw_year not in (None, '') else None
     exam_type_filter = request.query_params.get('exam_type')  # opsiyonel filtre
 
     # Öğrencinin tüm cevaplarını al
@@ -139,13 +141,14 @@ def student_exam_results(request, student_id):
             if not ss.section.is_sub_section:
                 section_net_totals[sec_name].append(net_val)
 
+        year = resolve_puan_yili(exam, request_year)
         # Puan hesapla
-        score_data = calculate_score_for_exam(exam, sec_nets)
+        score_data = calculate_score_for_exam(exam, sec_nets, year=year)
         puan = score_data['puan']
         ham_puan = score_data['ham_puan']
 
         # Sıralama tahmini
-        ranking_data = estimate_ranking(puan, exam.exam_type, ranking_year)
+        ranking_data = estimate_ranking(puan, exam.exam_type, year)
 
         # Kurum içi sıralama: bu sınavdaki tüm cevaplar
         all_exam_answers = (
@@ -161,7 +164,7 @@ def student_exam_results(request, student_id):
             ea_sec_nets = {}
             for ess in ea.section_scores.all():
                 ea_sec_nets[ess.section.name] = _safe_float(ess.net)
-            ea_score = calculate_score_for_exam(exam, ea_sec_nets)['puan']
+            ea_score = calculate_score_for_exam(exam, ea_sec_nets, year=year)['puan']
             all_exam_scores.append(ea_score)
 
         all_exam_scores_sorted = sorted(all_exam_scores, reverse=True)

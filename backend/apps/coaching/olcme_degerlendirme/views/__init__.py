@@ -39,6 +39,14 @@ from .analysis_views import (
     exam_analysis_strategy,
     exam_analysis_comparison,
 )
+from .karne_views import (
+    exam_karne_pdf,
+    exam_karneler_pdf,
+    exam_karne_notify_preview,
+    exam_karne_notify_send,
+    exam_karne_notify_bulk_preview,
+    exam_karne_notify_bulk_send,
+)
 from .student_exam_views import student_exam_results
 from .curriculum_views import (
     subject_list,
@@ -76,6 +84,12 @@ __all__ = [
     'exam_analysis_questions',
     'exam_analysis_strategy',
     'exam_analysis_comparison',
+    'exam_karne_pdf',
+    'exam_karneler_pdf',
+    'exam_karne_notify_preview',
+    'exam_karne_notify_send',
+    'exam_karne_notify_bulk_preview',
+    'exam_karne_notify_bulk_send',
     'student_exam_results',
     # Curriculum
     'subject_list',

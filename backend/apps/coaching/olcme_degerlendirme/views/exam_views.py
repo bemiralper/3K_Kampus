@@ -566,6 +566,7 @@ class ExamViewSet(viewsets.ModelViewSet):
             wrong_answer_count=original.wrong_answer_count,
             per_section_penalty=original.per_section_penalty,
             score_coefficients=original.score_coefficients,
+            puan_yili=original.puan_yili,
             booklet_type=original.booklet_type,
             booklet_auto_detect=original.booklet_auto_detect,
             kurum_id=ctx['kurum_id'],

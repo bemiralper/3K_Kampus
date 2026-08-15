@@ -1943,12 +1943,12 @@
 
 /* ── Öğrenci Detay Modal ───────────────────────────────────────────────── */
 .studentDetailModal {
-  background: #fff;
-  border-radius: 16px;
-  padding: 24px;
-  max-width: 900px;
-  width: 95%;
-  max-height: 90vh;
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 0;
+  max-width: 860px;
+  width: 96%;
+  max-height: 92vh;
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0,0,0,0.25);
 }
@@ -2622,4 +2622,473 @@
   background: #eff6ff !important;
   border-color: var(--primary, #0262a7) !important;
   box-shadow: inset 0 0 0 1px var(--primary, #0262a7);
+}
+
+/* ── Sınav sonuç karnesi ───────────────────────────────────────────────── */
+.karneToolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(241, 245, 249, 0.94);
+  border-bottom: 1px solid #e2e8f0;
+}
+.karne {
+  background: #fff;
+  color: #0f172a;
+}
+.karnePage {
+  padding: 0 0 18px;
+}
+.karnePage + .karnePage {
+  border-top: 8px solid #e2e8f0;
+}
+.karneBanner {
+  background: #0262a7;
+  color: #fff;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 76px;
+}
+.karneLogo {
+  height: 52px;
+  width: auto;
+  max-width: 148px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.karneBannerText {
+  min-width: 0;
+  flex: 1;
+}
+.karneKurum {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+.karneBannerWhen {
+  margin-left: auto;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  opacity: 0.92;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.karneExamBar {
+  background: #e8f1fa;
+  color: #014a7f;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  padding: 6px 12px;
+  letter-spacing: 0.02em;
+}
+.karneStudentBar {
+  display: grid;
+  grid-template-columns: 68px 1fr auto;
+  align-items: stretch;
+  border: 1px solid #0262a7;
+  border-top: none;
+  margin: 0 12px;
+  min-height: 88px;
+  overflow: visible;
+}
+.karnePhotoWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: #fff;
+  border-right: 1px solid #0262a7;
+}
+.karnePhoto {
+  width: 52px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 3px;
+  display: block;
+}
+.karnePhotoFallback {
+  width: 52px;
+  height: 64px;
+  background: #0262a7;
+  color: #fff;
+  font-weight: 800;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+}
+.karneStudentMain {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 10px 14px;
+  min-width: 0;
+}
+.karneStudentNameRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.karneStudentName {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  min-width: 0;
+  color: #0262a7;
+}
+.karneStudentNameBlock {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 2px;
+}
+.karneRankCaption {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+.karneRankCaption[data-rank="1"] { color: #b8860b; }
+.karneRankCaption[data-rank="2"] { color: #64748b; }
+.karneRankCaption[data-rank="3"] { color: #b45309; }
+.karneRozet {
+  width: 56px;
+  height: 68px;
+  flex-shrink: 0;
+  display: block;
+  filter: drop-shadow(0 2px 3px rgba(15, 23, 42, 0.22));
+}
+.karneRozetDisc { fill: #1a1a1a; }
+.karneRozetNum {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+}
+.karneRozet[data-rank="1"] .karneRozetStopHi { stop-color: #fff4b8; }
+.karneRozet[data-rank="1"] .karneRozetStopMid { stop-color: #ffd000; }
+.karneRozet[data-rank="1"] .karneRozetStopLo { stop-color: #b8860b; }
+.karneRozet[data-rank="2"] .karneRozetStopHi { stop-color: #ffffff; }
+.karneRozet[data-rank="2"] .karneRozetStopMid { stop-color: #c5cdd6; }
+.karneRozet[data-rank="2"] .karneRozetStopLo { stop-color: #7b8794; }
+.karneRozet[data-rank="3"] .karneRozetStopHi { stop-color: #f0c19a; }
+.karneRozet[data-rank="3"] .karneRozetStopMid { stop-color: #cd7f32; }
+.karneRozet[data-rank="3"] .karneRozetStopLo { stop-color: #8a4b1f; }
+.karneStudentNo {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  padding: 10px 14px;
+  border-left: 1px solid #0262a7;
+  white-space: nowrap;
+}
+.karneStudentNoLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: #014a7f;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.karneStudentNoValue {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.karneSummary {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin: 12px;
+}
+.karneSummaryBox {
+  background: #fff;
+  border: 1px solid #d6e4f0;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(2, 98, 167, 0.08);
+  text-align: center;
+  padding: 8px 4px 10px;
+  position: relative;
+  overflow: hidden;
+}
+.karneSummaryBox::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: #0262a7;
+}
+.karneSummaryLabel {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.karneSummaryValue {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.1;
+}
+.karneTableWrap {
+  margin: 0 12px 12px;
+  overflow-x: auto;
+}
+.karneTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.karneTable th,
+.karneTable td {
+  border: 1px solid #9ec2de;
+  padding: 4px 6px;
+  text-align: center;
+  vertical-align: middle;
+}
+.karneTable th {
+  background: #0262a7;
+  color: #fff;
+  font-weight: 700;
+  font-size: 10px;
+}
+.karneTable td.karneLeft { text-align: left; font-weight: 600; }
+.karneTable tbody tr:nth-child(even) { background: #f4f8fc; }
+.karneTable tbody tr.karneMainRow { background: #d7e8f6; font-weight: 700; }
+.karneBelow { color: #dc2626; font-weight: 700; }
+.karneAbove { color: #0f172a; }
+.karneGridBlock {
+  margin: 0 12px 10px;
+}
+.karneGridTitle {
+  background: #0262a7;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+.karneGrid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.karneGrid th,
+.karneGrid td {
+  border: 1px solid #9ec2de;
+  text-align: center;
+  padding: 2px 0;
+  font-size: 9px;
+  line-height: 1.15;
+  overflow: hidden;
+}
+.karneGrid th {
+  background: #e8f1fa;
+  color: #014a7f;
+  font-weight: 700;
+}
+.karneGrid .karneQ { background: #0262a7; color: #fff; font-weight: 700; }
+.karneOk { color: #0f172a; font-weight: 700; }
+.karneWrong { color: #dc2626; font-weight: 700; font-size: 8px; }
+.karneEmpty { color: transparent; }
+.karneTopicCols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px;
+}
+.karneTopicHead {
+  background: #0262a7;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 8px;
+  margin-top: 8px;
+}
+.karneTopicSub {
+  background: #3d8bc4;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+}
+.karneTopicTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  margin-bottom: 6px;
+}
+.karneTopicTable th,
+.karneTopicTable td {
+  border: 1px solid #c5d9ea;
+  padding: 2px 5px;
+}
+.karneTopicTable th {
+  background: #5aa0d2;
+  color: #fff;
+  font-weight: 700;
+  font-size: 9px;
+  text-align: center;
+}
+.karneTopicTable td:first-child { text-align: left; }
+.karneTopicTable td:not(:first-child) { text-align: center; }
+.karneTopicTable tbody tr:nth-child(even) { background: #f8fafc; }
+.karneYearNote {
+  margin: 0 12px 8px;
+  font-size: 10px;
+  color: #64748b;
+  text-align: right;
+}
+.karneSectionTitle {
+  margin: 4px 12px 8px;
+  background: #0262a7;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 10px;
+}
+.karnePos { color: #16a34a; font-weight: 700; }
+.karneMuted { color: #94a3b8; }
+.karneBarLegend {
+  display: flex;
+  gap: 14px;
+  margin: 0 12px 8px;
+  font-size: 11px;
+  color: #64748b;
+}
+.karneBarLegend span { display: flex; align-items: center; gap: 5px; }
+.karneBarLegend span::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.karneBarStudent::before { background: #0262a7; }
+.karneBarSinif::before { background: #7c3aed; }
+.karneBarKurum::before { background: #d97706; }
+.karneBarList { margin: 0 12px 14px; }
+.karneCompareCard {
+  background: #f8fafc;
+  border: 1px solid #d6e4f0;
+  border-radius: 8px;
+  padding: 8px 10px 10px;
+  margin-bottom: 8px;
+}
+.karneBarName { font-weight: 800; color: #0f172a; font-size: 12px; margin-bottom: 4px; }
+.karneBarLine {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 240px) 3.4em;
+  gap: 8px;
+  align-items: center;
+  margin-top: 3px;
+  font-size: 10px;
+  color: #64748b;
+}
+.karneBarLine strong {
+  text-align: right;
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.karneBarTrack {
+  height: 5px;
+  max-width: 240px;
+  background: #eef2f7;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.karneBarFill {
+  height: 100%;
+  border-radius: 99px;
+}
+.karneBarFillStudent { background: #0262a7; }
+.karneBarFillSinif { background: #7c3aed; }
+.karneBarFillKurum { background: #d97706; }
+.karneVerimGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 0 12px 14px;
+}
+.karneVerimCard {
+  background: #f4f8fc;
+  border: 1px solid #d6e4f0;
+  border-top: 3px solid #0262a7;
+  border-radius: 6px;
+  padding: 8px 6px;
+  text-align: center;
+}
+.karneVerimVal { font-size: 18px; font-weight: 800; line-height: 1.1; }
+.karneVerimName { font-size: 10px; color: #64748b; margin-top: 3px; }
+.karneVerimPot { font-size: 10px; color: #d97706; font-weight: 700; margin-top: 2px; }
+.karneAreaPair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 12px 12px;
+}
+.karneAreaCard { border-radius: 6px; overflow: hidden; border: 1px solid #e2e8f0; }
+.karneAreaHead {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 10px;
+  text-align: center;
+}
+.karneAreaStrong { background: #16a34a; }
+.karneAreaWeak { background: #dc2626; }
+.karneAreaBody { padding: 8px 10px; background: #f8fafc; min-height: 48px; }
+.karneAreaItem { font-size: 12px; color: #14532d; margin-bottom: 4px; }
+.karneAreaItemWeak { font-size: 12px; color: #7f1d1d; margin-bottom: 4px; }
+
+@media print {
+  .karneToolbar { display: none !important; }
+  .studentDetailModal {
+    box-shadow: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    background: #fff !important;
+  }
+  .karnePage { page-break-after: always; }
+  .karnePage:last-child { page-break-after: auto; }
+}
+
+@media (max-width: 720px) {
+  .karneSummary { grid-template-columns: repeat(3, 1fr); }
+  .karneVerimGrid { grid-template-columns: repeat(2, 1fr); }
+  .karneAreaPair { grid-template-columns: 1fr; }
+  .karneBarLine { grid-template-columns: 48px minmax(0, 1fr) 3.4em; }
+  .karneBarTrack { max-width: none; }
+  .karneTopicCols { grid-template-columns: 1fr; }
+  .karneStudentBar { grid-template-columns: 68px 1fr; }
+  .karneStudentNo {
+    grid-column: 2;
+    align-items: flex-start;
+    border-left: none;
+    border-top: 1px solid #0262a7;
+    padding-top: 6px;
+  }
+  .karneBannerWhen { font-size: 11px; }
 }

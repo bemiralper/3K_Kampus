@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { analysisApi } from '../../../../components/olcme/api';
+import { analysisApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import type {
   ExamDetail,
   AnalysisSummary,
@@ -80,8 +80,10 @@ export default function AnalysisTab({ exam }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Sıralama yılı
-  const [rankingYear, setRankingYear] = useState<number>(2025);
+  // Sıralama yılı — sınav yılı veya kurum varsayılanı
+  const [rankingYear, setRankingYear] = useState<number>(exam.puan_yili ?? 2025);
+  const [managedYears, setManagedYears] = useState<number[]>([2024, 2025, 2026]);
+  const [kurumDefaultYear, setKurumDefaultYear] = useState<number>(2025);
 
   // Student detail modal
   const [selectedStudent, setSelectedStudent] = useState<StudentAnalysis | null>(null);
@@ -98,23 +100,34 @@ export default function AnalysisTab({ exam }: Props) {
     setPortalRoot(document.body);
   }, []);
 
+  useEffect(() => {
+    puanAyarlariApi.get().then(d => {
+      setManagedYears(d.managed_years);
+      setKurumDefaultYear(d.default_puan_yili);
+      if (!exam.puan_yili) {
+        setRankingYear(d.default_puan_yili);
+      }
+    }).catch(() => {});
+  }, [exam.puan_yili]);
+
   /* ── LOADERS ─────────────────────────────────────────────────────────────── */
 
   const loadSummary = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await analysisApi.summary(exam.id, sessionFilter);
+      const data = await analysisApi.summary(exam.id, sessionFilter, rankingYear);
       setSummary(data);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [exam.id, sessionFilter]);
+  }, [exam.id, sessionFilter, rankingYear]);
 
   const loadSections = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await analysisApi.sections(exam.id, sessionFilter);
       setSections(data.sections);
@@ -127,6 +140,7 @@ export default function AnalysisTab({ exam }: Props) {
 
   const loadStudents = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await analysisApi.students(exam.id, sessionFilter, undefined, rankingYear);
       setStudents(data.students);
@@ -139,6 +153,7 @@ export default function AnalysisTab({ exam }: Props) {
 
   const loadClasses = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await analysisApi.classes(exam.id, sessionFilter);
       setClasses(data.classes);
@@ -151,6 +166,7 @@ export default function AnalysisTab({ exam }: Props) {
 
   const loadRankings = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await analysisApi.rankings(exam.id, sessionFilter, rankingYear);
       setRankings(data.rankings);
@@ -169,6 +185,7 @@ export default function AnalysisTab({ exam }: Props) {
 
   const loadQuestions = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await analysisApi.questions(exam.id, sessionFilter, questionSectionFilter);
       setQuestions(data.questions);
@@ -181,6 +198,7 @@ export default function AnalysisTab({ exam }: Props) {
 
   const loadStrategies = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await analysisApi.strategy(exam.id, sessionFilter);
       setStrategies(data.strategies);
@@ -193,6 +211,7 @@ export default function AnalysisTab({ exam }: Props) {
 
   const loadComparisons = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const data = await analysisApi.comparison(exam.id);
       setComparisons(data.comparisons);
@@ -278,6 +297,8 @@ export default function AnalysisTab({ exam }: Props) {
           onSelect={setSelectedStudent}
           examName={exam.name}
           examType={exam.exam_type}
+          examId={exam.id}
+          rankingYear={rankingYear}
         />
       )}
       {!loading && activePanel === 'siniflar' && <ClassesPanel classes={classes} />}
@@ -296,6 +317,8 @@ export default function AnalysisTab({ exam }: Props) {
           avgNet={rankingAvgNet}
           puanTurleriAvgs={rankingPuanTurleriAvgs}
           sinifAvgs={rankingSinifAvgs}
+          years={managedYears}
+          defaultYear={exam.puan_yili ?? kurumDefaultYear}
         />
       )}
       {!loading && activePanel === 'sorular' && (
@@ -315,6 +338,7 @@ export default function AnalysisTab({ exam }: Props) {
           student={selectedStudent}
           examId={exam.id}
           examType={exam.exam_type}
+          rankingYear={rankingYear}
           onClose={() => setSelectedStudent(null)}
         />,
         portalRoot,

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
-import { examApi } from '../../../../components/olcme/api';
+import { examApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import {
   EXAM_TYPES,
   BOOKLET_TYPES,
@@ -39,6 +39,8 @@ export default function YeniSinavPage() {
   const [denemeHizmetleri, setDenemeHizmetleri]  = useState<LookupItem[]>([]);
   const [denemePaketleri, setDenemePaketleri]    = useState<LookupItem[]>([]);
   const [seviyeFilter, setSeviyeFilter]          = useState<number | ''>('');
+  const [kurumDefaultYear, setKurumDefaultYear]  = useState(2025);
+  const [managedYears, setManagedYears]          = useState<number[]>([2024, 2025, 2026]);
 
   /* Şablon */
   type TemplateSec = { name: string; question_start: number; question_end: number; question_count: number; order: number };
@@ -58,6 +60,10 @@ export default function YeniSinavPage() {
     examApi.sinifSeviyeleri().then(setSinifSeviyeleri).catch(() => {});
     examApi.denemeHizmetleri().then(setDenemeHizmetleri).catch(() => {});
     examApi.denemePaketleri().then(setDenemePaketleri).catch(() => {});
+    puanAyarlariApi.get().then(d => {
+      setKurumDefaultYear(d.default_puan_yili);
+      setManagedYears(d.managed_years);
+    }).catch(() => {});
   }, []);
 
   /* Sınav türü → süre otomatik */
@@ -210,6 +216,18 @@ export default function YeniSinavPage() {
                       <option value="3">3 yanlış → 1 doğruyu götürür</option>
                       <option value="4">4 yanlış → 1 doğruyu götürür</option>
                       <option value="5">5 yanlış → 1 doğruyu götürür</option>
+                    </select>
+                  </div>
+                  <div className={s.formGroup}>
+                    <label>Puan yılı</label>
+                    <select
+                      value={form.puan_yili ?? ''}
+                      onChange={e => setField('puan_yili', e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">Kurum varsayılanı ({kurumDefaultYear})</option>
+                      {managedYears.map(y => (
+                        <option key={y} value={y}>{y} YKS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
+                      ))}
                     </select>
                   </div>
                   <div className={s.formGroupFull}>
@@ -551,6 +569,12 @@ export default function YeniSinavPage() {
                   <span>Yanlış Düzeltme</span>
                   <span className={s.summaryVal}>
                     {form.wrong_answer_count === '0' ? 'Ceza Yok' : `${form.wrong_answer_count} yanlış → 1 doğru`}
+                  </span>
+                </div>
+                <div className={s.summaryRow}>
+                  <span>Puan yılı</span>
+                  <span className={s.summaryVal}>
+                    {form.puan_yili ? `${form.puan_yili} YKS` : `Kurum varsayılanı (${kurumDefaultYear})`}
                   </span>
                 </div>
               </div>

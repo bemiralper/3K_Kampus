@@ -375,6 +375,31 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         }),
     ),
     NotificationEvent(
+        key='sinav.karne',
+        module=MODULE_SINAV,
+        label='Sınav karnesi (PDF)',
+        description=(
+            'Ölçme → öğrenci listesinden sınav sonuç belgesi (karne) PDF olarak '
+            'veliye ve öğrenciye WhatsApp ile gönderilir '
+            '(DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'sinav_ad', 'puan', 'net', 'pdf_baslik'),
+        meta_name_base='sinav_karne',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın velimiz, {{ogrenci_ad}} öğrencimizin "{{sinav_ad}}" '
+                'sınav sonuç belgesi ektedir. Puan: {{puan}}, net: {{net}}.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, "{{sinav_ad}}" sınav sonuç belgen ektedir. '
+                'Puan: {{puan}}, net: {{net}}.'
+            ),
+        }),
+    ),
+    NotificationEvent(
         key='takvim.etkinlik',
         module=MODULE_TAKVIM,
         label='Takvim etkinliği bildirimi',

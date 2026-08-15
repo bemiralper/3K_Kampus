@@ -7,6 +7,15 @@ from ..services.exam_templates import (
     create_sections_from_template,
     get_default_duration,
 )
+from ..models.scoring_settings import MANAGED_PUAN_YILLARI
+
+
+def _validate_puan_yili(value):
+    if value is None:
+        return value
+    if value not in MANAGED_PUAN_YILLARI:
+        raise serializers.ValidationError('Puan yılı 2024, 2025 veya 2026 olmalıdır.')
+    return value
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -176,6 +185,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             'exam_date', 'duration_minutes',
             'result_publish_date', 'answer_key_publish_date',
             'wrong_answer_count', 'per_section_penalty', 'score_coefficients',
+            'puan_yili',
             'booklet_type', 'booklet_type_display', 'booklet_auto_detect',
             'linked_tyt_exam', 'linked_tyt_exam_name',
             'section_count', 'total_questions', 'session_count',
@@ -206,9 +216,16 @@ class ExamCreateSerializer(serializers.ModelSerializer):
             'sinif_ids',
             'deneme_hizmeti', 'deneme_paketi',
             'wrong_answer_count', 'per_section_penalty',
+            'puan_yili',
             'booklet_type', 'booklet_auto_detect',
             'apply_template',
         ]
+        extra_kwargs = {
+            'puan_yili': {'required': False, 'allow_null': True},
+        }
+
+    def validate_puan_yili(self, value):
+        return _validate_puan_yili(value)
 
     def create(self, validated_data):
         apply_template = validated_data.pop('apply_template', True)
@@ -265,11 +282,18 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
             'exam_date', 'duration_minutes',
             'result_publish_date', 'answer_key_publish_date',
             'wrong_answer_count', 'per_section_penalty', 'score_coefficients',
+            'puan_yili',
             'booklet_type', 'booklet_auto_detect',
             'linked_tyt_exam', 'is_active', 'is_template',
             'sinif_ids',
             'deneme_hizmeti', 'deneme_paketi',
         ]
+        extra_kwargs = {
+            'puan_yili': {'required': False, 'allow_null': True},
+        }
+
+    def validate_puan_yili(self, value):
+        return _validate_puan_yili(value)
 
     def validate(self, attrs):
         if self.instance and self.instance.is_locked:

@@ -42,13 +42,31 @@ export const AYT_ALAN_DERSLERI: Record<string, string[]> = {
 export type SortField = 'net' | 'puan' | 'say' | 'ea' | 'soz' | 'kurum_sira';
 
 export const SORT_OPTIONS: { value: SortField; label: string }[] = [
+  { value: 'puan', label: 'Puan (yüksek → düşük)' },
   { value: 'kurum_sira', label: 'Kurum Sırası' },
   { value: 'net', label: 'Toplam Net' },
-  { value: 'puan', label: 'TYT / SAY Puan' },
   { value: 'say', label: 'SAY Puan' },
   { value: 'ea', label: 'EA Puan' },
   { value: 'soz', label: 'SÖZ Puan' },
 ];
+
+export function sortOptionsForExam(examType?: string) {
+  if (examType === 'YKS_AYT') return SORT_OPTIONS;
+  return SORT_OPTIONS.filter(o => !['say', 'ea', 'soz'].includes(o.value));
+}
+
+const SORT_HEADER_LABELS: Record<SortField, string> = {
+  puan: 'Puan',
+  kurum_sira: 'Kurum sırası',
+  net: 'Net',
+  say: 'SAY puan',
+  ea: 'EA puan',
+  soz: 'SÖZ puan',
+};
+
+function sortHeaderLabel(field: SortField): string {
+  return SORT_HEADER_LABELS[field] || field;
+}
 
 /* Renkler */
 const PRIMARY = [2, 98, 167] as const;
@@ -85,12 +103,36 @@ async function loadFonts(): Promise<{ regular: string; bold: string }> {
   return fontLoadedPromise;
 }
 
-async function loadLogoBase64(): Promise<string | null> {
+type LogoAsset = { dataUri: string; width: number; height: number };
+
+function getImageDimensions(dataUri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth || img.width || 1,
+        height: img.naturalHeight || img.height || 1,
+      });
+    };
+    img.onerror = () => resolve({ width: 1, height: 1 });
+    img.src = dataUri;
+  });
+}
+
+function fitLogoBox(naturalW: number, naturalH: number, maxW: number, maxH: number) {
+  if (naturalW <= 0 || naturalH <= 0) return { width: maxW, height: maxH };
+  const scale = Math.min(maxW / naturalW, maxH / naturalH);
+  return { width: naturalW * scale, height: naturalH * scale };
+}
+
+async function loadLogoBase64(): Promise<LogoAsset | null> {
   try {
-    const resp = await fetch('/img/3k-logo.png');
+    const resp = await fetch('/img/beyaz-logo.png');
     if (!resp.ok) return null;
     const buf = await resp.arrayBuffer();
-    return 'data:image/png;base64,' + arrayBufferToBase64(buf);
+    const dataUri = 'data:image/png;base64,' + arrayBufferToBase64(buf);
+    const dims = await getImageDimensions(dataUri);
+    return { dataUri, ...dims };
   } catch { return null; }
 }
 
@@ -119,7 +161,7 @@ function sortRankings(data: RankingItem[], field: SortField): RankingItem[] {
   return arr;
 }
 
-function sortStudents(data: StudentAnalysis[], field: SortField): StudentAnalysis[] {
+export function sortStudents(data: StudentAnalysis[], field: SortField): StudentAnalysis[] {
   const arr = [...data];
   switch (field) {
     case 'net':        arr.sort((a, b) => b.toplam_net - a.toplam_net); break;
@@ -146,18 +188,26 @@ export function isSectionForAlan(sectionName: string, alanKodu: string | null): 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function addPdfHeader(
-  doc: jsPDF, logo: string | null,
+  doc: jsPDF, logo: LogoAsset | null,
   examName: string, subtitle: string, filterInfo: string,
   katilim?: { kurs: number },
 ): number {
   const pw = doc.internal.pageSize.getWidth();
   const m = 10;
+  const headerH = 22;
 
   doc.setFillColor(...PRIMARY);
-  doc.rect(0, 0, pw, 22, 'F');
+  doc.rect(0, 0, pw, headerH, 'F');
 
   let tx = m;
-  if (logo) { try { doc.addImage(logo, 'PNG', m, 2.5, 17, 17); tx = m + 20; } catch { /* */ } }
+  if (logo) {
+    try {
+      const fitted = fitLogoBox(logo.width, logo.height, 28, 16);
+      const logoY = (headerH - fitted.height) / 2;
+      doc.addImage(logo.dataUri, 'PNG', m, logoY, fitted.width, fitted.height);
+      tx = m + fitted.width + 4;
+    } catch { /* */ }
+  }
 
   doc.setFont('Roboto', 'bold');  doc.setFontSize(12); doc.setTextColor(...WHITE);
   doc.text(examName, tx, 10);
@@ -379,7 +429,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   // Suffix: [Toplam] [DYN|Net] ... [ptPuan ptKurs ptGenel]... [KurumPct] [TahSira] [TRPct]
   const suffixAfterPT: string[] = [];
   if (columns.showKurumYuzdelik) suffixAfterPT.push('K%');
-  if (columns.showTahminiSiralama) suffixAfterPT.push('Tah.Sıra');
+  if (columns.showTahminiSiralama) suffixAfterPT.push(`Tah.Sıra (${referansYil})`);
   if (columns.showYuzdelikDilim) suffixAfterPT.push('TR%');
 
   // ═══ GROUP yapısı (DYB modunda) ═══
@@ -412,9 +462,12 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   // Toplam sütun sayısı hesabı
   const secColCount = columns.showDYB ? body_secs.length * 3 : visible.length;
   const ptColCount = ptList.length * 3;
-  // Toplam col: PFX + secCols + 1(T.Net) + ptCols + suffixAfterPT
-  const TOTAL = PFX + secColCount + 1 + ptColCount + suffixAfterPT.length;
+  const showTytPuan = !showPT;
+  const tytPuanCols = showTytPuan ? 1 : 0;
+  // Toplam col: PFX + secCols + 1(T.Net) + [Puan] + ptCols + suffixAfterPT
+  const TOTAL = PFX + secColCount + 1 + tytPuanCols + ptColCount + suffixAfterPT.length;
   const TNET_COL = PFX + secColCount; // T.Net sütun indeksi
+  const PUAN_COL = TNET_COL + 1;
 
   // ═══ HEADER satırları oluştur ═══
   let headRows: string[][];
@@ -455,11 +508,12 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
       });
     });
 
-    // T.Net
+    // T.Net + TYT Puan
     r2[TNET_COL] = 'T.Net';
+    if (showTytPuan) r2[PUAN_COL] = 'Puan';
 
     // Puan Türleri
-    let ptci = TNET_COL + 1;
+    let ptci = TNET_COL + 1 + tytPuanCols;
     ptList.forEach(pt => {
       ptStarts.push(ptci);
       r0[ptci] = pt;
@@ -482,6 +536,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
       h.push(`${label} (${qc})`);
     });
     h.push('T.Net');
+    if (showTytPuan) h.push('Puan');
     ptList.forEach(pt => { ptStarts.push(h.length); h.push(pt, 'Kurs', 'Genel'); });
     suffixAfterPT.forEach(s => h.push(s));
     headRows = [h];
@@ -533,8 +588,9 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
     });
 
     row[TNET_COL] = avgNet ? avgNet.toFixed(2) : '';
+    if (showTytPuan) row[PUAN_COL] = avgScore != null ? avgScore.toFixed(2) : '';
 
-    let pci = TNET_COL + 1;
+    let pci = TNET_COL + 1 + tytPuanCols;
     ptList.forEach(pt => {
       row[pci] = puanTurleriAvgs?.[pt] ? puanTurleriAvgs[pt].toFixed(2) : '';
       pci += 3;
@@ -574,11 +630,12 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
       }
     });
 
-    // T.Net
+    // T.Net + TYT Puan
     row[TNET_COL] = r.toplam_net.toFixed(2);
+    if (showTytPuan) row[PUAN_COL] = r.puan != null ? String(r.puan) : '';
 
     // Puan türleri: Puan | Kurs Sıra | Genel Tahmini Sıra (alan-bazlı)
-    let pci = TNET_COL + 1;
+    let pci = TNET_COL + 1 + tytPuanCols;
     ptList.forEach(pt => {
       const ptInfo = r.puan_turleri?.[pt];
       row[pci] = ptInfo?.puan != null ? String(ptInfo.puan) : '';
@@ -590,7 +647,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
     });
 
     // Son suffix
-    let sci = TNET_COL + 1 + ptColCount;
+    let sci = TNET_COL + 1 + tytPuanCols + ptColCount;
     if (columns.showKurumYuzdelik) row[sci++] = `%${r.kurum_ici_yuzdelik}`;
     if (columns.showTahminiSiralama) row[sci++] = r.tahmini_siralama ? r.tahmini_siralama.toLocaleString('tr-TR') : '';
     if (columns.showYuzdelikDilim) row[sci++] = r.yuzdelik_dilim ? `%${r.yuzdelik_dilim}` : '';
@@ -602,15 +659,15 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   const parts: string[] = [];
   if (alanFilter) parts.push(`Alan: ${ALAN_LABELS[alanFilter] || alanFilter}`);
   if (sinifFilter) parts.push(`Sınıf: ${sinifFilter}`);
-  parts.push(`Sıralama: ${SORT_OPTIONS.find(o => o.value === effectiveSort)?.label || effectiveSort}`);
+  parts.push(`Tahmini sıralama yılı: ${referansYil}`);
+  parts.push(`Sıralama: ${sortHeaderLabel(effectiveSort)}`);
   parts.push(`${filtered.length} öğrenci`);
 
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   registerFonts(doc, fonts);
 
   const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType;
-  const sl = SORT_OPTIONS.find(o => o.value === effectiveSort)?.label || '';
-  const startY = addPdfHeader(doc, logo, examName, `${tl} Sıralama (${sl} sıralı)`, parts.join('  ·  '), { kurs: filtered.length });
+  const startY = addPdfHeader(doc, logo, examName, `${tl} Sıralama (${sortHeaderLabel(effectiveSort)} sıralı)`, parts.join('  ·  '), { kurs: filtered.length });
 
   // Lookup setleri
   const grpSet = new Set(grpStarts);
@@ -674,10 +731,14 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
               data.cell.colSpan = 0;
             }
           }
-          // T.Net → rowSpan=3
+          // T.Net / TYT Puan → rowSpan=3
           else if (ci === TNET_COL) {
             data.cell.rowSpan = 3; data.cell.styles.valign = 'middle';
             data.cell.text = ['T.Net'];
+          }
+          else if (showTytPuan && ci === PUAN_COL) {
+            data.cell.rowSpan = 3; data.cell.styles.valign = 'middle';
+            data.cell.text = ['Puan'];
           }
           // PT grup başlangıcı → colSpan=3
           else if (ptStartSet.has(ci)) {
@@ -685,7 +746,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
             data.cell.styles.halign = 'center';
           }
           // PT grubun geri kalan sütunları → gizle
-          else if (ci > TNET_COL && ci < TNET_COL + 1 + ptColCount) {
+          else if (ci >= TNET_COL + 1 + tytPuanCols && ci < TNET_COL + 1 + tytPuanCols + ptColCount) {
             // pt child mi?
             let isPtChild = false;
             for (const ps of ptStarts) { if (ci > ps && ci < ps + 3) { isPtChild = true; break; } }
@@ -707,8 +768,8 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
             else if (secSet.has(ci)) { data.cell.colSpan = 3; data.cell.styles.halign = 'center'; data.cell.styles.fontSize = 5; }
             else { data.cell.colSpan = 0; }
           }
-          else if (ci === TNET_COL) { data.cell.colSpan = 0; }
-          else if (ci > TNET_COL && ci < TNET_COL + 1 + ptColCount) {
+          else if (ci === TNET_COL || (showTytPuan && ci === PUAN_COL)) { data.cell.colSpan = 0; }
+          else if (ci >= TNET_COL + 1 + tytPuanCols && ci < TNET_COL + 1 + tytPuanCols + ptColCount) {
             // PT satır1: Puan|Kurs|Genel — her hücre kendi başına
           }
           else { data.cell.colSpan = 0; }
@@ -716,11 +777,11 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
 
         if (ri === 2) {
           if (ci < PFX) { data.cell.colSpan = 0; }
-          else if (ci === TNET_COL) { data.cell.colSpan = 0; }
+          else if (ci === TNET_COL || (showTytPuan && ci === PUAN_COL)) { data.cell.colSpan = 0; }
           // PT area satır2 → gizle (row0+row1'de dolu)
-          else if (ci > TNET_COL && ci < TNET_COL + 1 + ptColCount) { data.cell.colSpan = 0; }
+          else if (ci >= TNET_COL + 1 + tytPuanCols && ci < TNET_COL + 1 + tytPuanCols + ptColCount) { data.cell.colSpan = 0; }
           // Son suffix → gizle (row0'da rowSpan=3)
-          else if (ci >= TNET_COL + 1 + ptColCount) { data.cell.colSpan = 0; }
+          else if (ci >= TNET_COL + 1 + tytPuanCols + ptColCount) { data.cell.colSpan = 0; }
         }
       }
 
@@ -745,7 +806,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
 
   // ═══ GRAFİK SAYFASI ═══
   if (columns.showCharts && body_secs.length > 0 && sectionAvgs) {
-    drawChartPage(doc, fonts, body_secs, sectionAvgs, sinifAvgs, avgScore, puanTurleriAvgs, isAyt, examName, tl);
+    drawChartPage(doc, fonts, body_secs, sectionAvgs, sinifAvgs, avgScore, puanTurleriAvgs, isAyt, examName, tl, referansYil);
   }
 
   addPdfFooter(doc);
@@ -758,147 +819,163 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
 /*  GRAFİK SAYFASI                                                            */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+type ChartItem = { label: string; value: number };
+type ChartKind = 'net' | 'puan' | 'sinif';
+type ChartCard = { title: string; items: ChartItem[]; kind: ChartKind };
+
 function drawChartPage(
   doc: jsPDF, _fonts: { regular: string; bold: string },
   secs: RankingSectionInfo[],
   secAvgs: Record<string, SectionAvgInfo>,
   sinifAvgs: Record<string, SinifAvgInfo> | undefined,
-  avgScore: number | undefined,
+  _avgScore: number | undefined,
   ptAvgs: Record<string, number> | undefined,
   isAyt: boolean,
   examName: string, typeLabel: string,
+  referansYil: number,
 ) {
   doc.addPage('a4', 'landscape');
   const pw = doc.internal.pageSize.getWidth();
-  const m = 10;
+  const ph = doc.internal.pageSize.getHeight();
+  const m = 12;
+  const headerH = 20;
+  const footerH = 12;
 
   doc.setFillColor(...PRIMARY);
-  doc.rect(0, 0, pw, 14, 'F');
-  doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(...WHITE);
-  doc.text(`${examName} — İstatistik Grafikleri`, m, 9);
+  doc.rect(0, 0, pw, headerH, 'F');
+  doc.setFillColor(14, 165, 233);
+  doc.rect(0, headerH, pw, 1.2, 'F');
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(12); doc.setTextColor(...WHITE);
+  const title = `${examName} — İstatistik Grafikleri`;
+  doc.text(title.length > 72 ? title.slice(0, 70) + '…' : title, m, 9);
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(8);
+  doc.setTextColor(186, 230, 253);
+  doc.text(`${typeLabel}  ·  Tahmini sıralama yılı: ${referansYil}`, m, 16);
 
-  let y = 22;
-  const cw = pw - 2 * m;
+  const contentTop = headerH + 8;
+  const contentH = ph - footerH - 4 - contentTop;
+  const contentW = pw - 2 * m;
+  const gap = 5;
 
-  // ── 1. ALAN/DERS NET ORTALAMALARI ──
-  doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(...DARK);
-  doc.text('TEST BAZLI NET ORTALAMALARI', m, y);
-  y += 4;
+  const cards: ChartCard[] = [{
+    title: 'Test Bazlı Net Ortalamaları',
+    kind: 'net',
+    items: secs.map(s => ({
+      label: s.name,
+      value: secAvgs[String(s.id)]?.avg_net ?? 0,
+    })),
+  }];
 
-  const names = secs.map(s => s.name);
-  const vals = names.map(n => secAvgs[n]?.avg_net ?? 0);
-  const mx = Math.max(...vals, 1);
-  const bh = 35;
-  const bw = Math.min(cw / (names.length * 1.4 + 0.5), 16);
-  const gap = bw * 0.4;
-  const tw = names.length * bw + (names.length - 1) * gap;
-  const sx = m + (cw - tw) / 2;
-
-  // Grid
-  doc.setDrawColor(230, 230, 230);
-  for (let i = 0; i <= 4; i++) {
-    const gy = y + bh - (bh / 4) * i;
-    doc.line(m, gy, m + cw, gy);
-    doc.setFont('Roboto', 'normal'); doc.setFontSize(4.5); doc.setTextColor(...GRAY);
-    doc.text(((mx / 4) * i).toFixed(0), m - 1, gy + 1, { align: 'right' });
+  if (isAyt && ptAvgs && Object.keys(ptAvgs).length > 0) {
+    cards.push({
+      title: 'Puan Türü Ortalamaları',
+      kind: 'puan',
+      items: Object.keys(ptAvgs).map(k => ({ label: k, value: ptAvgs[k] ?? 0 })),
+    });
   }
 
-  names.forEach((nm, i) => {
-    const v = vals[i];
-    const h = (v / mx) * bh;
-    const x = sx + i * (bw + gap);
-    doc.setFillColor(2, 132, 199);
-    doc.rect(x, y + bh - h, bw, h, 'F');
-    doc.setFont('Roboto', 'bold'); doc.setFontSize(4); doc.setTextColor(...DARK);
-    doc.text(v.toFixed(1), x + bw / 2, y + bh - h - 1, { align: 'center' });
-    doc.setFont('Roboto', 'normal'); doc.setFontSize(3.5); doc.setTextColor(...GRAY);
-    const sn = nm.length > 10 ? nm.substring(0, 9) + '.' : nm;
-    doc.text(sn, x + bw / 2, y + bh + 3, { align: 'center' });
-  });
+  if (sinifAvgs && Object.keys(sinifAvgs).length > 1) {
+    cards.push({
+      title: 'Şube Karşılaştırma (Ort. Net)',
+      kind: 'sinif',
+      items: Object.keys(sinifAvgs).sort().map(k => ({
+        label: `${k} (${sinifAvgs[k].student_count})`,
+        value: sinifAvgs[k].avg_net,
+      })),
+    });
+  }
 
-  y += bh + 12;
+  type Rect = { x: number; y: number; w: number; h: number };
+  let rects: Rect[] = [];
+  if (cards.length === 1) {
+    rects = [{ x: m, y: contentTop, w: contentW, h: contentH }];
+  } else if (cards.length === 2) {
+    const hw = (contentW - gap) / 2;
+    rects = [
+      { x: m, y: contentTop, w: hw, h: contentH },
+      { x: m + hw + gap, y: contentTop, w: hw, h: contentH },
+    ];
+  } else {
+    const topH = contentH * 0.48;
+    const botH = contentH - topH - gap;
+    const hw = (contentW - gap) / 2;
+    rects = [
+      { x: m, y: contentTop, w: contentW, h: topH },
+      { x: m, y: contentTop + topH + gap, w: hw, h: botH },
+      { x: m + hw + gap, y: contentTop + topH + gap, w: hw, h: botH },
+    ];
+  }
 
-  // ── 2. PUAN ORT. ──
-  if (isAyt && ptAvgs && Object.keys(ptAvgs).length > 0) {
-    doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(...DARK);
-    doc.text('PUAN TÜRÜ ORTALAMALARI', m, y);
-    y += 4;
+  cards.forEach((card, i) => drawStatCard(doc, rects[i], card));
+}
 
-    const pn = Object.keys(ptAvgs);
-    const pv = pn.map(k => ptAvgs[k] ?? 0);
-    const pm = Math.max(...pv, 100);
-    const pbw = 20; const pg = 15; const pbh = 28;
-    const ptw = pn.length * pbw + (pn.length - 1) * pg;
-    const psx = m + (cw - ptw) / 2;
+function drawStatCard(doc: jsPDF, rect: { x: number; y: number; w: number; h: number }, card: ChartCard) {
+  const { x, y, w, h } = rect;
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(x + 0.5, y + 0.5, w, h, 2.4, 2.4, 'F');
+  doc.setFillColor(...WHITE);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.25);
+  doc.roundedRect(x, y, w, h, 2.4, 2.4, 'FD');
+  doc.setFillColor(...PRIMARY);
+  doc.rect(x, y, 2.2, h, 'F');
 
-    doc.setDrawColor(230, 230, 230);
-    for (let i = 0; i <= 4; i++) {
-      const gy = y + pbh - (pbh / 4) * i;
-      doc.line(m, gy, m + cw, gy);
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(4.5); doc.setTextColor(...GRAY);
-      doc.text(((pm / 4) * i).toFixed(0), m - 1, gy + 1, { align: 'right' });
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(...DARK);
+  doc.text(card.title, x + 8, y + 7);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.2);
+  doc.line(x + 8, y + 10, x + w - 5, y + 10);
+
+  drawHBars(doc, x + 8, y + 13, w - 14, h - 18, card.items, card.kind);
+}
+
+function drawHBars(
+  doc: jsPDF, x: number, y: number, w: number, h: number,
+  items: ChartItem[], kind: ChartKind,
+) {
+  if (!items.length || h < 8 || w < 40) return;
+  const twoCol = items.length > 8 && w > 150;
+  const colGap = 8;
+  const colW = twoCol ? (w - colGap) / 2 : w;
+  const colCount = twoCol ? 2 : 1;
+  const perCol = Math.ceil(items.length / colCount);
+  const rowH = Math.min(14, h / perCol);
+  const fontSize = rowH >= 12 ? 7 : rowH >= 9 ? 6 : 5;
+  const maxV = Math.max(...items.map(it => it.value), kind === 'puan' ? 100 : 1);
+  const labelW = Math.min(40, colW * 0.30);
+  const valW = 14;
+  const barW = Math.max(20, colW - labelW - valW - 3);
+  const trackH = Math.min(5.5, Math.max(3, rowH - 5));
+  const ptColors: Record<string, number[]> = { SAY: [220, 38, 38], EA: [202, 138, 4], SOZ: [22, 163, 74] };
+  const sinifColors = [[59, 130, 246], [249, 115, 22], [16, 185, 129], [139, 92, 246], [236, 72, 153]];
+
+  items.forEach((it, i) => {
+    const col = twoCol ? Math.floor(i / perCol) : 0;
+    const row = twoCol ? i % perCol : i;
+    const bx = x + col * (colW + colGap);
+    const by = y + row * rowH;
+    if (by + trackH > y + h) return;
+
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(fontSize); doc.setTextColor(...DARK);
+    const lbl = it.label.length > 16 ? it.label.substring(0, 15) + '.' : it.label;
+    doc.text(lbl, bx, by + rowH * 0.62);
+
+    const trackY = by + (rowH - trackH) / 2;
+    doc.setFillColor(241, 245, 249);
+    doc.roundedRect(bx + labelW, trackY, barW, trackH, 1.1, 1.1, 'F');
+    const fill = it.value > 0 ? Math.max((it.value / maxV) * barW, 1.4) : 0;
+    if (fill > 0) {
+      let c = [2, 132, 199];
+      if (kind === 'puan') c = ptColors[it.label] || c;
+      if (kind === 'sinif') c = sinifColors[i % sinifColors.length];
+      doc.setFillColor(c[0], c[1], c[2]);
+      doc.roundedRect(bx + labelW, trackY, fill, trackH, 1.1, 1.1, 'F');
     }
 
-    const ptColors: Record<string, number[]> = { SAY: [220, 38, 38], EA: [234, 179, 8], SOZ: [34, 197, 94] };
-    pn.forEach((k, i) => {
-      const v = pv[i];
-      const h = (v / pm) * pbh;
-      const x = psx + i * (pbw + pg);
-      const c = ptColors[k] || [2, 132, 199];
-      doc.setFillColor(c[0], c[1], c[2]);
-      doc.rect(x, y + pbh - h, pbw, h, 'F');
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(5); doc.setTextColor(...DARK);
-      doc.text(v.toFixed(1), x + pbw / 2, y + pbh - h - 1.5, { align: 'center' });
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(5.5); doc.setTextColor(...GRAY);
-      doc.text(k, x + pbw / 2, y + pbh + 4, { align: 'center' });
-    });
-
-    y += pbh + 14;
-  }
-
-  // ── 3. ŞUBE KARŞILAŞTIRMA ──
-  if (sinifAvgs && Object.keys(sinifAvgs).length > 1) {
-    doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(...DARK);
-    doc.text('ŞUBE KARŞILAŞTIRMA (Ortalama Net)', m, y);
-    y += 4;
-
-    const sn2 = Object.keys(sinifAvgs).sort();
-    const sv = sn2.map(k => sinifAvgs[k].avg_net);
-    const sm = Math.max(...sv, 1);
-    const sbw2 = Math.min(cw / (sn2.length * 1.5 + 0.5), 22);
-    const sg = sbw2 * 0.4; const sbh = 25;
-    const stw = sn2.length * sbw2 + (sn2.length - 1) * sg;
-    const ssx = m + (cw - stw) / 2;
-
-    doc.setDrawColor(230, 230, 230);
-    for (let i = 0; i <= 4; i++) { const gy = y + sbh - (sbh / 4) * i; doc.line(m, gy, m + cw, gy); }
-
-    const sc = [[59, 130, 246], [249, 115, 22], [16, 185, 129], [139, 92, 246], [236, 72, 153]];
-    sn2.forEach((k, i) => {
-      const v = sv[i]; const h = (v / sm) * sbh;
-      const x = ssx + i * (sbw2 + sg); const clr = sc[i % sc.length];
-      doc.setFillColor(clr[0], clr[1], clr[2]);
-      doc.rect(x, y + sbh - h, sbw2, h, 'F');
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(4.5); doc.setTextColor(...DARK);
-      doc.text(v.toFixed(1), x + sbw2 / 2, y + sbh - h - 1, { align: 'center' });
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(4); doc.setTextColor(...GRAY);
-      doc.text(k.length > 8 ? k.substring(0, 7) + '.' : k, x + sbw2 / 2, y + sbh + 3, { align: 'center' });
-      doc.setFontSize(3);
-      doc.text(`(${sinifAvgs[k].student_count} öğr.)`, x + sbw2 / 2, y + sbh + 6, { align: 'center' });
-    });
-
-    y += sbh + 10;
-    let lx = m;
-    doc.setFont('Roboto', 'normal'); doc.setFontSize(5);
-    sn2.forEach((k, i) => {
-      const clr = sc[i % sc.length];
-      doc.setFillColor(clr[0], clr[1], clr[2]);
-      doc.rect(lx, y - 2, 3, 3, 'F');
-      doc.setTextColor(...DARK);
-      doc.text(`${k} (Ort: ${sinifAvgs[k].avg_net.toFixed(1)}, Puan: ${sinifAvgs[k].avg_puan.toFixed(1)})`, lx + 4, y);
-      lx += 55;
-    });
-  }
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(fontSize);
+    doc.setTextColor(...PRIMARY);
+    doc.text(it.value.toFixed(1), bx + labelW + barW + 2, by + rowH * 0.62);
+  });
 }
 
 

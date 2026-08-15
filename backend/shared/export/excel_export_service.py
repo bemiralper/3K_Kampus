@@ -146,9 +146,14 @@ class ExcelExportService:
             ("Kurum", meta.kurum_ad or "—"),
             ("Şube", meta.sube_ad or "—"),
             ("Eğitim Yılı", meta.egitim_yili or "—"),
+        ]
+        extra_year = (meta.extra or {}).get("tahmini_siralama_yili")
+        if extra_year:
+            info_pairs.append(("Tahmini Sıralama Yılı", str(extra_year)))
+        info_pairs.extend([
             ("Oluşturma Tarihi", sm.format_datetime_display(meta.resolved_generated_at())),
             ("Oluşturan", meta.generated_by or "—"),
-        ]
+        ])
         for label, value in info_pairs:
             label_cell = ws.cell(row=row, column=1, value=f"{label} :")
             label_cell.font = Font(name=sm.FONT_NAME, size=10, bold=True, color="475569")

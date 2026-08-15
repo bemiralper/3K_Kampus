@@ -3,12 +3,15 @@
 import { useState } from 'react';
 import InfoTip from './InfoTip';
 import PdfExportModal from '../PdfExportModal';
+import KarneNotifyModal from './KarneNotifyModal';
+import KarneBulkNotifyModal from './KarneBulkNotifyModal';
+import { analysisApi } from '../api';
 import { ALAN_LABELS } from '../pdfExport';
 import type { StudentAnalysis } from '../types';
 import s from '../../../app/admin/olcme-degerlendirme/olcme.module.css';
 
 export default function StudentsPanel({
-  students, search, onSearch, onSelect, examName, examType,
+  students, search, onSearch, onSelect, examName, examType, examId, rankingYear,
 }: {
   students: StudentAnalysis[];
   search: string;
@@ -16,9 +19,25 @@ export default function StudentsPanel({
   onSelect: (s: StudentAnalysis) => void;
   examName: string;
   examType: string;
+  examId: number;
+  rankingYear?: number;
 }) {
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [alanViewFilter, setAlanViewFilter] = useState<string | null>(null);
+  const [pdfBusyId, setPdfBusyId] = useState<number | null>(null);
+  const [notifyStudent, setNotifyStudent] = useState<StudentAnalysis | null>(null);
+  const [showBulkNotify, setShowBulkNotify] = useState(false);
+
+  const downloadOne = async (st: StudentAnalysis) => {
+    setPdfBusyId(st.answer_id);
+    try {
+      await analysisApi.downloadKarnePdf(examId, st.answer_id, rankingYear);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'PDF indirilemedi');
+    } finally {
+      setPdfBusyId(null);
+    }
+  };
 
   if (!students.length && !search) {
     return <div className={s.analysisEmpty}>Öğrenci verisi yok.</div>;
@@ -61,6 +80,13 @@ export default function StudentsPanel({
           >
             📄 PDF
           </button>
+          <button
+            className={s.analysisBtnSmall}
+            onClick={() => setShowBulkNotify(true)}
+            style={{ background: '#059669', color: '#fff', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            💬 Toplu WhatsApp
+          </button>
         </div>
       </div>
 
@@ -68,11 +94,33 @@ export default function StudentsPanel({
       {showPdfModal && (
         <PdfExportModal
           mode="students"
+          examId={examId}
+          rankingYear={rankingYear}
           examName={examName}
           examType={examType}
           students={students}
           uniqueSiniflar={uniqueSiniflar}
           onClose={() => setShowPdfModal(false)}
+        />
+      )}
+      {showBulkNotify && (
+        <KarneBulkNotifyModal
+          examId={examId}
+          examName={examName}
+          examType={examType}
+          students={students}
+          uniqueSiniflar={uniqueSiniflar}
+          rankingYear={rankingYear}
+          onClose={() => setShowBulkNotify(false)}
+        />
+      )}
+      {notifyStudent && (
+        <KarneNotifyModal
+          examId={examId}
+          answerId={notifyStudent.answer_id}
+          studentName={notifyStudent.student_name}
+          rankingYear={rankingYear}
+          onClose={() => setNotifyStudent(null)}
         />
       )}
 
@@ -131,9 +179,27 @@ export default function StudentsPanel({
                   {st.weak_areas.map(a => a.name).join(', ') || '—'}
                 </td>
                 <td>
-                  <button className={s.analysisBtnSmall} onClick={() => onSelect(st)} title="Detay">
-                    🔍
-                  </button>
+                  <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                    <button className={s.analysisBtnSmall} onClick={() => onSelect(st)} title="Detay">
+                      🔍
+                    </button>
+                    <button
+                      className={s.analysisBtnSmall}
+                      onClick={() => downloadOne(st)}
+                      title="Karne PDF"
+                      disabled={pdfBusyId === st.answer_id}
+                    >
+                      {pdfBusyId === st.answer_id ? '…' : '📄'}
+                    </button>
+                    <button
+                      className={s.analysisBtnSmall}
+                      onClick={() => setNotifyStudent(st)}
+                      title="WhatsApp ile gönder"
+                      disabled={!st.student_id}
+                    >
+                      💬
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

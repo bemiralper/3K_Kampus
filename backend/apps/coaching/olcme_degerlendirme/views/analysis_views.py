@@ -12,6 +12,7 @@ Tüm analiz endpoint'leri:
 """
 import math
 import logging
+import os
 from collections import defaultdict
 from decimal import Decimal
 
@@ -30,7 +31,7 @@ from rest_framework.response import Response
 from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
 
 from ..models import (
-    Exam, ExamSection, ExamSession,
+    Exam, ExamSection, ExamSession, ExamSessionModel,
     AnswerKey, AnswerKeyItem,
     StudentAnswer, StudentSectionScore,
     Outcome,
@@ -67,12 +68,23 @@ def _get_student_alan(student, egitim_yili):
             ogrenci=student,
             egitim_yili=egitim_yili,
             aktif_mi=True,
-        ).select_related('sinif__alan').first()
-        if kayit and kayit.sinif and kayit.sinif.alan:
+        ).select_related('alan', 'sinif__alan').first()
+        if not kayit:
+            return None
+        if kayit.alan:
+            return kayit.alan.kod
+        if kayit.sinif and kayit.sinif.alan:
             return kayit.sinif.alan.kod
     except Exception:
         pass
     return None
+
+
+def _sinif_ad(kayit):
+    """Kayıt varsa ve sınıf atanmışsa sınıf adını döner; aksi halde boş string."""
+    if kayit and kayit.sinif_id and kayit.sinif:
+        return kayit.sinif.ad or ''
+    return ''
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -84,7 +96,9 @@ def _get_exam_or_404(request, exam_pk):
     if err:
         return None, err
     try:
-        exam = Exam.objects.prefetch_related('sections', 'sections__sub_sections').get(pk=exam.pk)
+        exam = Exam.objects.select_related('kurum', 'sube').prefetch_related(
+            'sections', 'sections__sub_sections',
+        ).get(pk=exam.pk)
     except Exam.DoesNotExist:
         return None, Response({'error': 'Sınav bulunamadı.'}, status=404)
     return exam, None
@@ -102,10 +116,103 @@ def _get_session_answers(exam, session_id=None):
     return qs
 
 
+def _pick_exam_session_for_answer(sessions, answer):
+    """Öğrencinin girdiği sınav oturumunu seçer (çoklu oturumda)."""
+    if not sessions:
+        return None
+    if len(sessions) == 1:
+        return sessions[0]
+
+    dat_created = getattr(getattr(answer, 'session', None), 'created_at', None)
+    pool = list(sessions)
+    if dat_created:
+        same_day = [s for s in pool if s.session_date and s.session_date == dat_created.date()]
+        if len(same_day) == 1:
+            return same_day[0]
+        if same_day:
+            pool = same_day
+
+    scored_ids = set()
+    for ss in answer.section_scores.all():
+        if (ss.correct or 0) + (ss.wrong or 0) + (ss.empty or 0) > 0:
+            scored_ids.add(ss.section_id)
+    best, best_overlap = None, 0
+    for sess in pool:
+        ids = set(sess.sections.values_list('id', flat=True))
+        if not ids:
+            continue
+        overlap = len(ids & scored_ids)
+        if overlap > best_overlap:
+            best, best_overlap = sess, overlap
+    if best and best_overlap:
+        return best
+
+    from datetime import time as time_cls
+    dated = [s for s in pool if s.session_date]
+    if dated:
+        dated.sort(key=lambda s: (s.session_date, s.start_time or time_cls.min, s.order, s.id))
+        return dated[0]
+    return pool[0]
+
+
+def _student_session_fields(exam, answer):
+    """Öğrencinin oturum tarihi ve başlama saati."""
+    sessions = list(
+        ExamSessionModel.objects.filter(exam=exam)
+        .prefetch_related('sections')
+        .order_by('order', 'id')
+    )
+    chosen = _pick_exam_session_for_answer(sessions, answer)
+    session_date = chosen.session_date if chosen else None
+    start_time = chosen.start_time if chosen else None
+    session_name = (chosen.name or '') if chosen else ''
+    if not session_date:
+        session_date = exam.exam_date
+    return {
+        'session_name': session_name,
+        'session_date': session_date.isoformat() if session_date else None,
+        'session_start_time': start_time.strftime('%H:%M') if start_time else None,
+    }
+
+
+def _student_photo_fields(student):
+    """Öğrenci profil foto URL (UI) ve dosya yolu (PDF)."""
+    if not student:
+        return None, None
+    foto = getattr(student, 'profil_foto', None)
+    if not foto:
+        return None, None
+    url = None
+    path = None
+    try:
+        url = foto.url or None
+    except (ValueError, AttributeError):
+        url = None
+    try:
+        path = foto.path
+        if not path or not os.path.isfile(path):
+            path = None
+    except (ValueError, AttributeError, OSError):
+        path = None
+    return url, path
+
+
 def _safe_float(val):
     if val is None:
         return 0.0
     return float(val)
+
+
+def _resolve_ranking_year(request, exam):
+    raw = request.query_params.get('ranking_year')
+    request_year = None
+    if raw not in (None, ''):
+        try:
+            request_year = int(raw)
+        except (TypeError, ValueError):
+            request_year = None
+    from ..services.scoring_settings import resolve_puan_yili
+    return resolve_puan_yili(exam, request_year)
 
 
 def _median(values):
@@ -134,6 +241,108 @@ def _build_section_map(exam):
             'parent_id': sec.parent_section_id,
         }
     return sec_map
+
+
+def _exam_type_short(exam_type: str) -> str:
+    return {
+        'YKS_TYT': 'TYT',
+        'YKS_AYT': 'AYT',
+        'LGS': 'LGS',
+        'DENEME': 'Deneme',
+    }.get(exam_type or '', exam_type or '')
+
+
+def _pick_answer_key(exam, booklet: str):
+    qs = exam.answer_keys.all()
+    if booklet:
+        found = qs.filter(booklet=booklet).first()
+        if found:
+            return found
+    return qs.filter(is_primary=True).first() or qs.first()
+
+
+def _build_answer_grids(exam, comparison: dict) -> list:
+    grids = []
+    for sec in exam.sections.filter(is_sub_section=False).order_by('order'):
+        questions = []
+        for q in range(sec.question_start, sec.question_end + 1):
+            comp = comparison.get(str(q)) or {}
+            questions.append({
+                'q': q,
+                'given': (comp.get('given') or '').strip().upper(),
+                'correct': (comp.get('correct') or '').strip().upper(),
+                'result': comp.get('result') or 'empty',
+            })
+        if questions:
+            grids.append({
+                'section_id': sec.id,
+                'section_name': sec.name,
+                'questions': questions,
+            })
+    return grids
+
+
+def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
+    from collections import OrderedDict
+
+    ak = _pick_answer_key(exam, booklet)
+    if not ak:
+        return []
+    items = (
+        ak.items
+        .select_related('section', 'section__parent_section', 'outcome__topic')
+        .order_by('section__order', 'question_number')
+    )
+    blocks_map: OrderedDict = OrderedDict()
+    for item in items:
+        label = ''
+        if item.outcome_id:
+            if getattr(item.outcome, 'topic_id', None):
+                label = item.outcome.topic.name
+            if not label:
+                label = item.outcome.text or ''
+        if not label:
+            label = (item.imported_outcome_text or '').strip()
+        if not label:
+            continue
+        sec = item.section
+        parent_name = sec.parent_section.name if sec.parent_section_id else sec.name
+        table_name = sec.name
+        block = blocks_map.setdefault(parent_name, OrderedDict())
+        table = block.setdefault(table_name, OrderedDict())
+        row = table.setdefault(label, {'soru': 0, 'dogru': 0, 'yanlis': 0, 'bos': 0})
+        row['soru'] += 1
+        result = (comparison.get(str(item.question_number)) or {}).get('result')
+        if result == 'correct':
+            row['dogru'] += 1
+        elif result == 'wrong':
+            row['yanlis'] += 1
+        else:
+            row['bos'] += 1
+
+    topic_blocks = []
+    for parent_name, tables in blocks_map.items():
+        topic_blocks.append({
+            'heading': parent_name,
+            'tables': [
+                {
+                    'title': tname,
+                    'rows': [
+                        {
+                            'name': name,
+                            'soru': vals['soru'],
+                            'dogru': vals['dogru'],
+                            'yanlis': vals['yanlis'],
+                            'bos': vals['bos'],
+                            'basari': round(vals['dogru'] / vals['soru'] * 100) if vals['soru'] else 0,
+                        }
+                        for name, vals in trows.items()
+                    ],
+                }
+                for tname, trows in tables.items()
+            ],
+        })
+    return topic_blocks
 
 
 def _build_scoring_nets(answer, exam) -> dict:
@@ -188,6 +397,7 @@ def exam_analysis_summary(request, exam_pk):
         return err
 
     session_id = request.query_params.get('session_id')
+    ranking_year = _resolve_ranking_year(request, exam)
     answers = _get_session_answers(exam, session_id)
 
     if not answers.exists():
@@ -212,11 +422,11 @@ def exam_analysis_summary(request, exam_pk):
         sec_nets = _build_scoring_nets(a, exam)
         if is_ayt:
             tyt_nets = _get_linked_tyt_nets(exam, a.student_id, a.raw_student_name, a.raw_student_id) if hasattr(exam, 'linked_tyt_exam') and exam.linked_tyt_exam else {}
-            all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets)
+            all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets, year=ranking_year, kurum_id=exam.kurum_id)
             ayt_all_scores.append(all_scores_data)
             scores.append(all_scores_data['SAY']['puan'])
         else:
-            score_data = calculate_score_for_exam(exam, sec_nets, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
+            score_data = calculate_score_for_exam(exam, sec_nets, year=ranking_year, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
             scores.append(score_data['puan'])
 
     avg_net = sum(nets) / len(nets) if nets else 0
@@ -446,7 +656,7 @@ def exam_analysis_students(request, exam_pk):
 
     session_id = request.query_params.get('session_id')
     student_id = request.query_params.get('student_id')
-    ranking_year = int(request.query_params.get('ranking_year', 2025))
+    ranking_year = _resolve_ranking_year(request, exam)
 
     answers = _get_session_answers(exam, session_id)
     if not answers.exists():
@@ -476,7 +686,7 @@ def exam_analysis_students(request, exam_pk):
         # AYT sınavlarında 3 puan türünü hesapla
         if is_ayt:
             tyt_nets = _get_linked_tyt_nets(exam, a.student_id, a.raw_student_name, a.raw_student_id) if hasattr(exam, 'linked_tyt_exam') and exam.linked_tyt_exam else {}
-            all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets)
+            all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets, year=ranking_year, kurum_id=exam.kurum_id)
             score_data = all_scores_data['SAY']  # Varsayılan sıralama için SAY puanı
             puan_turleri_student = {
                 pt: {
@@ -488,7 +698,7 @@ def exam_analysis_students(request, exam_pk):
                 for pt, d in all_scores_data.items()
             }
         else:
-            score_data = calculate_score_for_exam(exam, sec_nets, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
+            score_data = calculate_score_for_exam(exam, sec_nets, year=ranking_year, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
             puan_turleri_student = None
 
         ranking_data = estimate_ranking(score_data['puan'], exam.exam_type, ranking_year)
@@ -507,8 +717,7 @@ def exam_analysis_students(request, exam_pk):
                 egitim_yili=exam.egitim_yili,
                 aktif_mi=True,
             ).select_related('sinif').first()
-            if kayit:
-                sinif_adi = kayit.sinif.ad
+            sinif_adi = _sinif_ad(kayit)
 
         student_list.append({
             'answer_id': a.id,
@@ -600,7 +809,12 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
     except StudentAnswer.DoesNotExist:
         return Response({'error': 'Öğrenci cevabı bulunamadı.'}, status=404)
 
-    ranking_year = int(request.query_params.get('ranking_year', 2025))
+    ranking_year = _resolve_ranking_year(request, exam)
+    return Response(build_student_detail_payload(exam, answer, ranking_year))
+
+
+def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=True):
+    """Öğrenci karne / detay sözlüğü — analiz modalı ve PDF aynı kaynağı kullanır."""
     sec_map = _build_section_map(exam)
 
     # ── Tüm cevaplar (kurum ortalaması için) ──────────────────────────────
@@ -634,15 +848,18 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
         ).select_related('sinif').first()
 
         if kayit:
-            sinif_adi = kayit.sinif.ad
-            # Aynı sınıftaki diğer öğrencileri bul
-            sinif_student_ids = list(
-                OgrenciKayit.objects.filter(
-                    sinif=kayit.sinif,
-                    egitim_yili=exam.egitim_yili,
-                    aktif_mi=True,
-                ).values_list('ogrenci_id', flat=True)
-            )
+            sinif_adi = _sinif_ad(kayit)
+            # Aynı sınıftaki diğer öğrencileri bul (sınıf atanmamışsa kıyaslama yok)
+            if not kayit.sinif_id:
+                sinif_student_ids = []
+            else:
+                sinif_student_ids = list(
+                    OgrenciKayit.objects.filter(
+                        sinif=kayit.sinif,
+                        egitim_yili=exam.egitim_yili,
+                        aktif_mi=True,
+                    ).values_list('ogrenci_id', flat=True)
+                )
             sinif_answers = all_answers.filter(student_id__in=sinif_student_ids)
             sinif_nets = [_safe_float(a.total_net) for a in sinif_answers]
             sinif_student_count = len(sinif_nets)
@@ -710,7 +927,7 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
 
     if is_ayt:
         tyt_nets = _get_linked_tyt_nets(exam, answer.student_id, answer.raw_student_name, answer.raw_student_id) if hasattr(exam, 'linked_tyt_exam') and exam.linked_tyt_exam else {}
-        all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets)
+        all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets, year=ranking_year, kurum_id=exam.kurum_id)
         score_data = all_scores_data['SAY']
         puan_turleri_detail = {
             pt: {
@@ -722,7 +939,7 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
             for pt, d in all_scores_data.items()
         }
     else:
-        score_data = calculate_score_for_exam(exam, sec_nets, student_id=answer.student_id, raw_student_name=answer.raw_student_name, raw_student_id=answer.raw_student_id)
+        score_data = calculate_score_for_exam(exam, sec_nets, year=ranking_year, student_id=answer.student_id, raw_student_name=answer.raw_student_name, raw_student_id=answer.raw_student_id)
         puan_turleri_detail = None
 
     ranking_data = estimate_ranking(score_data['puan'], exam.exam_type, ranking_year)
@@ -739,7 +956,7 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
 
     # ── Net gelişim trendi ────────────────────────────────────────────────
     net_trend = []
-    if answer.student:
+    if include_trend and answer.student:
         past_answers = (
             StudentAnswer.objects
             .filter(
@@ -773,11 +990,43 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
     dogruluk_orani = round((answer.total_correct / attempted) * 100, 1) if attempted else 0
 
     student_name = f'{answer.student.ad} {answer.student.soyad}' if answer.student else (answer.raw_student_name or answer.raw_student_id)
+    profil_foto, profil_foto_path = _student_photo_fields(answer.student)
 
-    return Response({
+    comparison = answer.comparison or {}
+    answer_grids = _build_answer_grids(exam, comparison)
+    topic_blocks = _build_topic_blocks(exam, comparison, answer.booklet or '')
+
+    kurum_scores = []
+    pt_score_lists = {'SAY': [], 'EA': [], 'SOZ': []}
+    for other in all_answers:
+        other_nets = _build_scoring_nets(other, exam)
+        if is_ayt:
+            tyt_nets_o = _get_linked_tyt_nets(exam, other.student_id, other.raw_student_name, other.raw_student_id) if getattr(exam, 'linked_tyt_exam_id', None) else {}
+            all_pt = calculate_all_ayt_scores(other_nets, tyt_nets_o, year=ranking_year, kurum_id=exam.kurum_id)
+            kurum_scores.append(all_pt['SAY']['puan'])
+            for pt in pt_score_lists:
+                if pt in all_pt:
+                    pt_score_lists[pt].append(all_pt[pt]['puan'])
+        else:
+            other_score = calculate_score_for_exam(
+                exam, other_nets, year=ranking_year,
+                student_id=other.student_id,
+                raw_student_name=other.raw_student_name,
+                raw_student_id=other.raw_student_id,
+            )
+            kurum_scores.append(other_score['puan'])
+    kurum_avg_puan = round(sum(kurum_scores) / len(kurum_scores), 3) if kurum_scores else 0
+    puan_turleri_avgs = {
+        pt: round(sum(vals) / len(vals), 3) if vals else 0
+        for pt, vals in pt_score_lists.items()
+    } if is_ayt else {}
+
+    return {
         'answer_id': answer.id,
         'student_id': answer.student_id,
         'student_name': student_name,
+        'profil_foto': profil_foto,
+        'profil_foto_path': profil_foto_path,
         'raw_student_id': answer.raw_student_id,
         'sinif': sinif_adi,
         'sinif_student_count': sinif_student_count,
@@ -804,7 +1053,17 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
         'dogruluk_orani': dogruluk_orani,
         'toplam_bos_potansiyel': total_bos_potansiyel,
         'referans_yil': ranking_data.get('referans_yil', 2025),
-    })
+        'exam_name': exam.name,
+        'exam_type': exam.exam_type,
+        'exam_type_label': _exam_type_short(exam.exam_type),
+        'kurum_ad': getattr(exam.kurum, 'ad', '') if exam.kurum_id else '',
+        'sube_ad': getattr(exam.sube, 'ad', '') if exam.sube_id else '',
+        **_student_session_fields(exam, answer),
+        'kurum_avg_puan': kurum_avg_puan,
+        'puan_turleri_avgs': puan_turleri_avgs,
+        'answer_grids': answer_grids,
+        'topic_blocks': topic_blocks,
+    }
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -845,8 +1104,8 @@ def exam_analysis_classes(request, exam_pk):
 
     for a in answers:
         sinif_info = student_sinif_map.get(a.student_id)
-        sinif_name = sinif_info['sinif__ad'] if sinif_info else 'Sınıfsız'
-        sinif_id = sinif_info['sinif__id'] if sinif_info else 0
+        sinif_name = (sinif_info.get('sinif__ad') if sinif_info else None) or 'Sınıfsız'
+        sinif_id = (sinif_info.get('sinif__id') if sinif_info else None) or 0
 
         key = f'{sinif_id}_{sinif_name}'
         class_data[key]['sinif_id'] = sinif_id
@@ -908,7 +1167,7 @@ def exam_analysis_rankings(request, exam_pk):
         return err
 
     session_id = request.query_params.get('session_id')
-    ranking_year = int(request.query_params.get('ranking_year', 2025))
+    ranking_year = _resolve_ranking_year(request, exam)
     answers = _get_session_answers(exam, session_id)
 
     if not answers.exists():
@@ -944,7 +1203,7 @@ def exam_analysis_rankings(request, exam_pk):
 
         if is_ayt:
             tyt_nets = _get_linked_tyt_nets(exam, a.student_id, a.raw_student_name, a.raw_student_id) if hasattr(exam, 'linked_tyt_exam') and exam.linked_tyt_exam else {}
-            all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets)
+            all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets, year=ranking_year, kurum_id=exam.kurum_id)
             score_data = all_scores_data['SAY']
             # Her puan türü için puan + tahmini sıralama
             _pt_type_map = {'SAY': 'YKS_AYT', 'EA': 'YKS_AYT_EA', 'SOZ': 'YKS_AYT_SOZ'}
@@ -957,7 +1216,7 @@ def exam_analysis_rankings(request, exam_pk):
                     'yuzdelik_dilim': pt_est.get('yuzdelik_dilim'),
                 }
         else:
-            score_data = calculate_score_for_exam(exam, sec_nets, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
+            score_data = calculate_score_for_exam(exam, sec_nets, year=ranking_year, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
             puan_turleri_r = None
 
         est = estimate_ranking(score_data['puan'], exam.exam_type, ranking_year)
@@ -971,8 +1230,7 @@ def exam_analysis_rankings(request, exam_pk):
                 egitim_yili=exam.egitim_yili,
                 aktif_mi=True,
             ).select_related('sinif').first()
-            if kayit:
-                sinif_adi = kayit.sinif.ad
+            sinif_adi = _sinif_ad(kayit)
 
         ranking_list.append({
             'answer_id': a.id,
@@ -1076,22 +1334,39 @@ def exam_analysis_rankings(request, exam_pk):
 
     export_format = (request.query_params.get('format') or '').lower()
     if export_format in ('csv', 'xlsx'):
-        from apps.coaching.application.olcme_rankings_export import (
-            build_export_columns,
-            build_export_meta,
-            build_export_rows,
-            build_export_stats,
-        )
-        from shared.export import CsvExportService, ExcelExportService
+        from apps.coaching.application.olcme_rankings_export import export_rankings_file
 
-        rows = build_export_rows(ranking_list, is_ayt=is_ayt)
-        columns = build_export_columns(is_ayt=is_ayt)
-        meta = build_export_meta(request, exam, report_title=f'{exam.name} — Sıralama Sonuçları')
-        filename = f'{exam.name}_siralama'
-        if export_format == 'xlsx':
-            stats = build_export_stats(ranking_list, avg_net=avg_net_val, avg_score=avg_score_val)
-            return ExcelExportService.export(rows, columns, meta=meta, stats=stats, filename=filename)
-        return CsvExportService.export(rows, columns, meta=meta, filename=filename)
+        alan_filter = request.query_params.get('alan') or ''
+        export_list = list(ranking_list)
+        if alan_filter:
+            export_list = [r for r in export_list if r.get('alan') == alan_filter]
+            pt_key = {'SAYISAL': 'SAY', 'ESIT_AGIRLIK': 'EA', 'SOZEL': 'SOZ'}.get(alan_filter)
+            if pt_key:
+                export_list.sort(
+                    key=lambda r: ((r.get('puan_turleri') or {}).get(pt_key) or {}).get('puan') or r.get('puan') or 0,
+                    reverse=True,
+                )
+            else:
+                export_list.sort(key=lambda r: r.get('puan') or 0, reverse=True)
+        else:
+            export_list.sort(key=lambda r: r.get('puan') or 0, reverse=True)
+        for idx, r in enumerate(export_list, 1):
+            r['kurum_ici_sira'] = idx
+
+        return export_rankings_file(
+            export_format,
+            export_list,
+            exam=exam,
+            request=request,
+            is_ayt=is_ayt,
+            sections=sections_info,
+            section_avgs=section_avgs,
+            sinif_avgs=sinif_avgs,
+            puan_turleri_avgs=puan_turleri_avgs,
+            ranking_year=ranking_year,
+            avg_net=avg_net_val,
+            avg_score=avg_score_val,
+        )
 
     return Response({
         'rankings': ranking_list,

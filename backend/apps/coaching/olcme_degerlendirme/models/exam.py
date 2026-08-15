@@ -105,6 +105,12 @@ class Exam(models.Model):
     score_coefficients = models.JSONField(
         'Puan Katsayıları', default=dict, blank=True,
     )
+    puan_yili = models.PositiveSmallIntegerField(
+        'Puan Yılı',
+        null=True,
+        blank=True,
+        help_text='Boşsa kurum varsayılan puan yılı kullanılır.',
+    )
 
     # ── KİTAPÇIK ─────────────────────────────────────────────────────────────
     booklet_type = models.CharField(

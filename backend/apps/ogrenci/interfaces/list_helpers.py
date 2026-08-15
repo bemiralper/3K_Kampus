@@ -1,6 +1,7 @@
 """
 Öğrenci listesi API — paylaşılan filtre, arama, serileştirme ve sayfalama.
 """
+import os
 import re
 from datetime import datetime
 
@@ -124,12 +125,39 @@ def _catalog_models():
 PAKET_CATALOG_TURLERI = ('grup_dersi', 'ozel_ders', 'premium', 'yayin', 'deneme')
 
 
+_CATALOG_INDEX_CACHE_KEY = 'ogrenci:kalem_catalog_id_index'
+_CATALOG_INDEX_CACHE_TTL = 60
+
+
+def _catalog_index_cache_enabled():
+    import sys
+
+    from django.conf import settings
+
+    if 'test' in sys.argv:
+        return False
+    env = (
+        getattr(settings, 'LMS_ENVIRONMENT', '')
+        or os.environ.get('DJANGO_ENV', '')
+    ).lower()
+    return env not in ('test', 'testing')
+
+
 def build_catalog_id_index():
-    """Tür → {id: ad} — tek seferlik katalog taraması."""
-    return {
+    """Tür → {id: ad} — tek seferlik katalog taraması (60 sn cache)."""
+    from django.core.cache import cache
+
+    if _catalog_index_cache_enabled():
+        cached = cache.get(_CATALOG_INDEX_CACHE_KEY)
+        if cached is not None:
+            return cached
+    index = {
         tur: dict(model.objects.values_list('id', 'ad'))
         for tur, model in _catalog_models().items()
     }
+    if _catalog_index_cache_enabled():
+        cache.set(_CATALOG_INDEX_CACHE_KEY, index, _CATALOG_INDEX_CACHE_TTL)
+    return index
 
 
 def resolve_paket_turu_from_catalog(kalem_id, kalem_adi='', catalog_index=None):

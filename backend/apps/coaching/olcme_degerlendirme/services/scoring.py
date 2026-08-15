@@ -96,16 +96,43 @@ def _normalize_section_name(name: str, context: str = 'tyt') -> str:
     return common.get(name, name)
 
 
+FACTORY_TABLES = {
+    'TYT': TYT_KATSAYILAR,
+    'AYT_SAY': AYT_SAY_KATSAYILAR,
+    'AYT_EA': AYT_EA_KATSAYILAR,
+    'AYT_SOZ': AYT_SOZ_KATSAYILAR,
+}
+
+
+def get_factory_coefficients(kind: str, year: int) -> dict:
+    """
+    Hardcoded ÖSYM tablosu. 2026 henüz yok — 2025 kopyası döner.
+    """
+    table = FACTORY_TABLES.get(kind, TYT_KATSAYILAR)
+    lookup_year = year
+    if lookup_year not in table:
+        if lookup_year == 2026 and 2025 in table:
+            lookup_year = 2025
+        else:
+            available = sorted(table.keys())
+            lookup_year = min(available, key=lambda y: abs(y - year))
+    return dict(table[lookup_year])
+
+
 def _get_tyt_coefficients(year: int = 2025) -> dict:
     """Verilen yıl için TYT katsayılarını getir, yoksa en yakını kullan."""
-    if year in TYT_KATSAYILAR:
-        return TYT_KATSAYILAR[year]
-    available = sorted(TYT_KATSAYILAR.keys())
-    closest = min(available, key=lambda y: abs(y - year))
-    return TYT_KATSAYILAR[closest]
+    return get_factory_coefficients('TYT', year)
 
 
-def calculate_tyt_score(section_nets: dict, diploma_notu: float = 0, year: int = 2025) -> dict:
+def _lookup_db_coefficients(kurum_id, year: int, kind: str):
+    if not kurum_id:
+        return None
+    from .scoring_settings import resolve_coefficients
+    return resolve_coefficients(kurum_id, year, kind)
+
+
+def calculate_tyt_score(section_nets: dict, diploma_notu: float = 0, year: int = 2025,
+                        coefficients: dict = None) -> dict:
     """
     TYT puan hesaplama — ÖSYM katsayılarıyla.
 
@@ -114,7 +141,7 @@ def calculate_tyt_score(section_nets: dict, diploma_notu: float = 0, year: int =
 
     section_nets: {"Türkçe": 26.25, "Sosyal Bilimler": 9.75, "Temel Matematik": 17.5, "Fen Bilimleri": 4.5}
     """
-    coef = _get_tyt_coefficients(year)
+    coef = dict(coefficients) if coefficients else _get_tyt_coefficients(year)
     base = coef['_base']
 
     toplam_net = 0.0
@@ -149,7 +176,8 @@ def calculate_tyt_score(section_nets: dict, diploma_notu: float = 0, year: int =
 
 
 def calculate_ayt_score(section_nets: dict, tyt_nets: dict = None, puan_turu: str = 'SAY',
-                         diploma_notu: float = 0, year: int = 2025) -> dict:
+                         diploma_notu: float = 0, year: int = 2025,
+                         coefficients: dict = None) -> dict:
     """
     AYT puan hesaplama — ÖSYM katsayılarıyla.
 
@@ -158,14 +186,11 @@ def calculate_ayt_score(section_nets: dict, tyt_nets: dict = None, puan_turu: st
 
     puan_turu: 'SAY', 'EA', 'SOZ'
     """
-    if puan_turu == 'EA':
-        coef_table = AYT_EA_KATSAYILAR
-    elif puan_turu == 'SOZ':
-        coef_table = AYT_SOZ_KATSAYILAR
+    if coefficients:
+        coef = dict(coefficients)
     else:
-        coef_table = AYT_SAY_KATSAYILAR
-
-    coef = coef_table.get(year, coef_table[max(coef_table.keys())])
+        kind = {'EA': 'AYT_EA', 'SOZ': 'AYT_SOZ'}.get(puan_turu, 'AYT_SAY')
+        coef = get_factory_coefficients(kind, year)
     base = coef['_base']
 
     ham_puan = base
@@ -228,7 +253,8 @@ def calculate_ayt_score(section_nets: dict, tyt_nets: dict = None, puan_turu: st
 
 
 def calculate_all_ayt_scores(section_nets: dict, tyt_nets: dict = None,
-                             diploma_notu: float = 0, year: int = 2025) -> dict:
+                             diploma_notu: float = 0, year: int = 2025,
+                             kurum_id: int = None) -> dict:
     """
     AYT sınavı için SAY, EA, SÖZ puanlarını aynı anda hesapla.
 
@@ -239,9 +265,12 @@ def calculate_all_ayt_scores(section_nets: dict, tyt_nets: dict = None,
     }
     """
     results = {}
+    kind_map = {'SAY': 'AYT_SAY', 'EA': 'AYT_EA', 'SOZ': 'AYT_SOZ'}
     for puan_turu in ('SAY', 'EA', 'SOZ'):
+        coef = _lookup_db_coefficients(kurum_id, year, kind_map[puan_turu])
         results[puan_turu] = calculate_ayt_score(
-            section_nets, tyt_nets, puan_turu, diploma_notu, year
+            section_nets, tyt_nets, puan_turu, diploma_notu, year,
+            coefficients=coef,
         )
     return results
 
@@ -258,16 +287,21 @@ def calculate_score_for_exam(exam, section_nets: dict, year: int = 2025,
     puan_turu: AYT puan türü ('SAY', 'EA', 'SOZ')
     """
     exam_type = exam.exam_type
+    kurum_id = getattr(exam, 'kurum_id', None)
 
     if exam_type == 'YKS_TYT':
-        return calculate_tyt_score(section_nets, year=year)
+        coef = _lookup_db_coefficients(kurum_id, year, 'TYT')
+        return calculate_tyt_score(section_nets, year=year, coefficients=coef)
     elif exam_type == 'YKS_AYT':
         # AYT için TYT netleri linked exam'dan gelir
         tyt_nets = _get_linked_tyt_nets(exam, student_id, raw_student_name, raw_student_id)
-        return calculate_ayt_score(section_nets, tyt_nets, puan_turu=puan_turu, year=year)
+        kind = {'EA': 'AYT_EA', 'SOZ': 'AYT_SOZ'}.get(puan_turu, 'AYT_SAY')
+        coef = _lookup_db_coefficients(kurum_id, year, kind)
+        return calculate_ayt_score(section_nets, tyt_nets, puan_turu=puan_turu, year=year, coefficients=coef)
     else:
         # Genel sınav: TYT formülüyle hesapla
-        return calculate_tyt_score(section_nets, year=year)
+        coef = _lookup_db_coefficients(kurum_id, year, 'TYT')
+        return calculate_tyt_score(section_nets, year=year, coefficients=coef)
 
 
 def _normalize_name_for_matching(name: str) -> str:

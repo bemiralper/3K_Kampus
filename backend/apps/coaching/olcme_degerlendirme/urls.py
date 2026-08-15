@@ -24,10 +24,21 @@ from .views.analysis_views import (
     exam_analysis_strategy,
     exam_analysis_comparison,
 )
+from .views.karne_views import (
+    exam_karne_pdf,
+    exam_karneler_pdf,
+    exam_karne_notify_preview,
+    exam_karne_notify_send,
+    exam_karne_notify_bulk_preview,
+    exam_karne_notify_bulk_send,
+)
 from .views.mapping_template_views import (
     list_mapping_templates, create_mapping_template, delete_mapping_template,
 )
 from .views.student_exam_views import student_exam_results
+from .views.scoring_settings_views import (
+    puan_ayarlari, puan_ayarlari_katsayilar, puan_ayarlari_reset,
+)
 from .views.curriculum_views import (
     subject_list, subject_detail,
     topic_list, topic_detail,
@@ -70,6 +81,11 @@ urlpatterns = [
     path('exams/mapping-templates/create/', create_mapping_template, name='mapping-template-create'),
     path('exams/mapping-templates/<int:template_pk>/', delete_mapping_template, name='mapping-template-delete'),
 
+    # Puan katsayısı ayarları — router'dan önce
+    path('puan-ayarlari/', puan_ayarlari, name='olcme-puan-ayarlari'),
+    path('puan-ayarlari/katsayilar/<int:year>/', puan_ayarlari_katsayilar, name='olcme-puan-katsayilar'),
+    path('puan-ayarlari/katsayilar/<int:year>/reset/', puan_ayarlari_reset, name='olcme-puan-katsayilar-reset'),
+
     path('', include(router.urls)),
     # Answer keys (nested under exam)
     path('exams/<int:exam_pk>/answer-keys/', answer_key_list, name='answer-key-list'),
@@ -97,6 +113,12 @@ urlpatterns = [
     path('student-exams/<int:student_id>/', student_exam_results, name='student-exam-results'),
     path('exams/<int:exam_pk>/analysis/sections/', exam_analysis_sections, name='analysis-sections'),
     path('exams/<int:exam_pk>/analysis/students/', exam_analysis_students, name='analysis-students'),
+    path('exams/<int:exam_pk>/analysis/students/karneler-pdf/', exam_karneler_pdf, name='analysis-karneler-pdf'),
+    path('exams/<int:exam_pk>/analysis/students/notify-bulk-preview/', exam_karne_notify_bulk_preview, name='analysis-karne-notify-bulk-preview'),
+    path('exams/<int:exam_pk>/analysis/students/notify-bulk/', exam_karne_notify_bulk_send, name='analysis-karne-notify-bulk-send'),
+    path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/karne-pdf/', exam_karne_pdf, name='analysis-karne-pdf'),
+    path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/notify-preview/', exam_karne_notify_preview, name='analysis-karne-notify-preview'),
+    path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/notify/', exam_karne_notify_send, name='analysis-karne-notify-send'),
     path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/detail/', exam_analysis_student_detail, name='analysis-student-detail'),
     path('exams/<int:exam_pk>/analysis/classes/', exam_analysis_classes, name='analysis-classes'),
     path('exams/<int:exam_pk>/analysis/rankings/', exam_analysis_rankings, name='analysis-rankings'),

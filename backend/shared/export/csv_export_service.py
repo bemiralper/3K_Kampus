@@ -37,6 +37,9 @@ class CsvExportService:
             writer.writerow([f"Şube: {meta.sube_ad}"])
         if meta.egitim_yili:
             writer.writerow([f"Eğitim Yılı: {meta.egitim_yili}"])
+        extra_year = (meta.extra or {}).get("tahmini_siralama_yili")
+        if extra_year:
+            writer.writerow([f"Tahmini Sıralama Yılı: {extra_year}"])
         writer.writerow([meta.report_title or ""])
         writer.writerow([f"Oluşturma Tarihi: {sm.format_datetime_display(meta.resolved_generated_at())}"])
         if meta.generated_by:
@@ -87,18 +90,7 @@ class CsvExportService:
         writer = csv.writer(buf, delimiter=delimiter, lineterminator="\r\n")
 
         if include_letterhead and meta is not None:
-            writer.writerow([sm.SOFTWARE_FULL_NAME])
-            if meta.kurum_ad:
-                writer.writerow([f"Kurum: {meta.kurum_ad}"])
-            if meta.sube_ad:
-                writer.writerow([f"Şube: {meta.sube_ad}"])
-            if meta.egitim_yili:
-                writer.writerow([f"Eğitim Yılı: {meta.egitim_yili}"])
-            writer.writerow([meta.report_title or ""])
-            writer.writerow([f"Oluşturma Tarihi: {sm.format_datetime_display(meta.resolved_generated_at())}"])
-            if meta.generated_by:
-                writer.writerow([f"Oluşturan: {meta.generated_by}"])
-            writer.writerow([])
+            cls.write_letterhead_rows(writer, meta)
 
         stat_list = sm.normalize_stats(stats)
         if stat_list:

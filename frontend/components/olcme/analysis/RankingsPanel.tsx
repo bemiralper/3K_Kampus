@@ -16,11 +16,13 @@ const ALAN_TO_PT: Record<string, string> = {
   SOZEL: 'SOZ',
 };
 
-export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYearChange, sections, examId, sessionId, examName, examType, sectionAvgs, avgNet, puanTurleriAvgs, sinifAvgs }: {
+export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYearChange, sections, examId, sessionId, examName, examType, sectionAvgs, avgNet, puanTurleriAvgs, sinifAvgs, years, defaultYear }: {
   rankings: RankingItem[];
   meta: { top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number };
   rankingYear: number;
   onRankingYearChange: (y: number) => void;
+  years?: number[];
+  defaultYear?: number;
   sections: RankingSectionInfo[];
   examId: number;
   sessionId?: number;
@@ -39,7 +41,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
   const handleTableExport = async (format: 'xlsx' | 'csv') => {
     setExporting(format);
     try {
-      const blob = await analysisApi.exportRankings(format, examId, sessionId, rankingYear);
+      const blob = await analysisApi.exportRankings(format, examId, sessionId, rankingYear, alanViewFilter);
       downloadBlob(blob, `${examName}_Siralama.${format}`.replace(/\s+/g, '_'));
     } catch (err) {
       console.error('Sıralama dışa aktarma hatası:', err);
@@ -204,15 +206,17 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
             </label>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>Referans Yılı:</label>
+            <label style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>Puan yılı:</label>
             <select
               className={s.analysisSelect}
               value={rankingYear}
               onChange={e => onRankingYearChange(Number(e.target.value))}
             >
-              <option value={2025}>2025 YKS</option>
-              <option value={2024}>2024 YKS</option>
-              <option value={2023}>2023 YKS</option>
+              {(years?.length ? years : [2024, 2025, 2026]).map(y => (
+                <option key={y} value={y}>
+                  {y} YKS{y === defaultYear ? ' (varsayılan)' : ''}{y === 2026 ? ' — henüz resmi değil' : ''}
+                </option>
+              ))}
             </select>
           </div>
           {/* Excel / CSV Dışa Aktar Butonları */}

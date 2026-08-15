@@ -15,6 +15,7 @@ from .session import ExamSession
 from .result import StudentAnswer, StudentSectionScore
 from .curriculum import Subject, Topic, Outcome, SubOutcome
 from .mapping_template import MappingTemplate
+from .scoring_settings import OlcmePuanAyar, OlcmeKatsayiSeti
 
 __all__ = [
     'Exam', 'ExamSection', 'ExamSessionModel',
@@ -23,4 +24,5 @@ __all__ = [
     'StudentAnswer', 'StudentSectionScore',
     'Subject', 'Topic', 'Outcome', 'SubOutcome',
     'MappingTemplate',
+    'OlcmePuanAyar', 'OlcmeKatsayiSeti',
 ]

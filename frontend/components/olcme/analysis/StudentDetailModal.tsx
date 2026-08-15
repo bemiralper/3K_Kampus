@@ -1,30 +1,233 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import InfoTip from './InfoTip';
+import { useState, useEffect, useCallback, useRef, useId } from 'react';
 import { analysisApi } from '../api';
-import type { StudentAnalysis, StudentDetailResponse } from '../types';
+import KarneNotifyModal from './KarneNotifyModal';
+import type { StudentAnalysis, StudentDetailResponse, StudentDetailSectionItem } from '../types';
+import { resolveCoachPhotoUrl } from '@/lib/coach-media';
 import s from '../../../app/admin/olcme-degerlendirme/olcme.module.css';
 
-export default function StudentDetailModal({ student, examId, examType, onClose }: { student: StudentAnalysis; examId: number; examType?: string; onClose: () => void }) {
+function fmt(n: number | null | undefined, digits = 2) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return n.toLocaleString('tr-TR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function fmtInt(n: number | null | undefined) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return n.toLocaleString('tr-TR');
+}
+
+function avgClass(v: number, avg: number) {
+  if (avg == null) return s.karneAbove;
+  return v + 0.001 < avg ? s.karneBelow : s.karneAbove;
+}
+
+function verimColor(v: number) {
+  if (v >= 70) return '#16a34a';
+  if (v >= 40) return '#d97706';
+  return '#dc2626';
+}
+
+function diffLabel(n: number) {
+  if (Math.abs(n) < 0.05) return { text: '—', cls: s.karneMuted };
+  if (n > 0) return { text: `+${n.toFixed(1)}`, cls: s.karnePos };
+  return { text: `−${Math.abs(n).toFixed(1)}`, cls: s.karneBelow };
+}
+
+function studentInitials(name: string) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toLocaleUpperCase('tr-TR');
+  return (parts[0][0] + parts[parts.length - 1][0]).toLocaleUpperCase('tr-TR');
+}
+
+function formatSessionWhen(detail: StudentDetailResponse) {
+  const parts: string[] = [];
+  if (detail.session_date) {
+    const d = new Date(`${detail.session_date}T00:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      parts.push(d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }));
+    }
+  }
+  if (detail.session_start_time) parts.push(detail.session_start_time.slice(0, 5));
+  return parts.join('  ·  ');
+}
+
+function top3Rank(detail: StudentDetailResponse) {
+  const rank = Number(detail.kurum_ici_sira);
+  return rank >= 1 && rank <= 3 ? rank : 0;
+}
+
+function kurumRankLabel(rank: number) {
+  return `Kurum ${rank}. si`;
+}
+
+function KarneRozet({ rank }: { rank: number }) {
+  const uid = useId().replace(/:/g, '');
+  const metal = `rm${uid}`;
+  const leaves = [
+    [17, 74, 58], [13, 66, 42], [11, 57, 26], [12, 48, 12], [15, 40, -2], [19, 33, -16],
+  ];
+  return (
+    <svg className={s.karneRozet} data-rank={rank} viewBox="0 0 80 96" aria-hidden>
+      <defs>
+        <linearGradient id={metal} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" className={s.karneRozetStopHi} />
+          <stop offset="42%" className={s.karneRozetStopMid} />
+          <stop offset="100%" className={s.karneRozetStopLo} />
+        </linearGradient>
+      </defs>
+      <g fill={`url(#${metal})`}>
+        {leaves.map(([x, y, r], i) => (
+          <ellipse key={`l${i}`} cx={x} cy={y} rx="6.4" ry="3" transform={`rotate(${r} ${x} ${y})`} />
+        ))}
+        {leaves.map(([x, y, r], i) => (
+          <ellipse key={`r${i}`} cx={80 - x} cy={y} rx="6.4" ry="3" transform={`rotate(${-r} ${80 - x} ${y})`} />
+        ))}
+        <path d="M40 86 L44 78 H36 Z" />
+      </g>
+      <circle cx="40" cy="52" r="26.5" fill={`url(#${metal})`} />
+      <circle cx="40" cy="52" r="21.2" className={s.karneRozetDisc} />
+      <circle cx="40" cy="52" r="21.2" fill="none" stroke={`url(#${metal})`} strokeWidth="1.3" />
+      <g fill={`url(#${metal})`}>
+        <path d="M25 30 L29.2 16.5 C29.8 15 32.2 15 32.8 16.5 L36.2 26 L40 12.2 C40.4 10.8 43.6 10.8 44 12.2 L47.8 26 L51.2 16.5 C51.8 15 54.2 15 54.8 16.5 L59 30 Z" />
+        <circle cx="29.4" cy="15.6" r="2.15" />
+        <circle cx="54.6" cy="15.6" r="2.15" />
+        <path d="M40 10.4 L42.4 15.2 L40 14.1 L37.6 15.2 Z" />
+      </g>
+      <text x="40" y="61" textAnchor="middle" fill={`url(#${metal})`} className={s.karneRozetNum}>
+        {rank}
+      </text>
+    </svg>
+  );
+}
+
+function KarneHeader({ detail }: { detail: StudentDetailResponse }) {
+  const photo = resolveCoachPhotoUrl(detail.profil_foto);
+  const branch = (detail.sube_ad || detail.kurum_ad || '3K KAMPÜS').toLocaleUpperCase('tr-TR');
+  const when = formatSessionWhen(detail);
+  const medal = top3Rank(detail);
+  return (
+    <>
+      <div className={s.karneBanner}>
+        <img src="/img/beyaz-logo.png" alt="3K Kampüs" className={s.karneLogo} />
+        <div className={s.karneBannerText}>
+          <p className={s.karneKurum}>{branch}</p>
+        </div>
+        {when && <div className={s.karneBannerWhen}>{when}</div>}
+      </div>
+      <div className={s.karneExamBar}>{(detail.exam_name || 'Sınav').toLocaleUpperCase('tr-TR')}</div>
+      <div className={s.karneStudentBar}>
+        <div className={s.karnePhotoWrap}>
+          {photo ? (
+            <img src={photo} alt="" className={s.karnePhoto} />
+          ) : (
+            <div className={s.karnePhotoFallback}>{studentInitials(detail.student_name)}</div>
+          )}
+        </div>
+        <div className={s.karneStudentMain}>
+          <div className={s.karneStudentNameRow}>
+            {medal > 0 && <KarneRozet rank={medal} />}
+            <div className={s.karneStudentNameBlock}>
+              <span className={s.karneStudentName}>
+                {detail.student_name}
+              </span>
+              {medal > 0 && (
+                <span className={s.karneRankCaption} data-rank={medal}>
+                  {kurumRankLabel(medal)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className={s.karneStudentNo}>
+          <span className={s.karneStudentNoLabel}>Öğr. No</span>
+          <span className={s.karneStudentNoValue}>{detail.raw_student_id || '—'}</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AnswerGrid({
+  title,
+  questions,
+}: {
+  title: string;
+  questions: { q: number; given: string; correct: string; result: string }[];
+}) {
+  if (!questions.length) return null;
+  const chunk = 20;
+  const rows: typeof questions[] = [];
+  for (let i = 0; i < questions.length; i += chunk) rows.push(questions.slice(i, i + chunk));
+
+  return (
+    <div className={s.karneGridBlock}>
+      <div className={s.karneGridTitle}>{title} — Cevap Anahtarı</div>
+      {rows.map((part, ri) => (
+        <table key={ri} className={s.karneGrid}>
+          <thead>
+            <tr>
+              {part.map((q, i) => (
+                <th key={q.q} className={s.karneQ}>{i + 1 + ri * chunk}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {part.map(q => {
+                const empty = !q.given || q.result === 'empty';
+                const wrong = q.result === 'wrong';
+                return (
+                  <td
+                    key={`g-${q.q}`}
+                    className={empty ? s.karneEmpty : wrong ? s.karneWrong : s.karneOk}
+                  >
+                    {empty ? '.' : wrong ? q.given.toLocaleLowerCase('tr-TR') : q.given}
+                  </td>
+                );
+              })}
+            </tr>
+            <tr>
+              {part.map(q => (
+                <td key={`c-${q.q}`} className={s.karneOk}>{q.correct || ''}</td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      ))}
+    </div>
+  );
+}
+
+export default function StudentDetailModal({
+  student, examId, examType, rankingYear, onClose,
+}: {
+  student: StudentAnalysis;
+  examId: number;
+  examType?: string;
+  rankingYear?: number;
+  onClose: () => void;
+}) {
   const [detail, setDetail] = useState<StudentDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
   const [detailError, setDetailError] = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [showNotify, setShowNotify] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const karneRef = useRef<HTMLDivElement>(null);
 
-  // API'den zengin detay verisini çek
   useEffect(() => {
     let cancelled = false;
     setDetailLoading(true);
     setDetailError('');
-    analysisApi.studentDetail(examId, student.answer_id)
+    analysisApi.studentDetail(examId, student.answer_id, rankingYear)
       .then(data => { if (!cancelled) setDetail(data); })
       .catch(err => { if (!cancelled) setDetailError(err.message); })
       .finally(() => { if (!cancelled) setDetailLoading(false); });
     return () => { cancelled = true; };
-  }, [examId, student.answer_id]);
+  }, [examId, student.answer_id, rankingYear]);
 
-  // Overlay tıklama — sadece overlay'e tıklandıysa kapat (TypeError fix)
   const handleOverlayClick = useCallback((e: React.MouseEvent) => {
     if (e.target === overlayRef.current) {
       e.stopPropagation();
@@ -32,420 +235,369 @@ export default function StudentDetailModal({ student, examId, examType, onClose 
     }
   }, [onClose]);
 
-  // ESC ile kapatma
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Karşılaştırma bar yardımcısı
-  const CompBar = ({ label, studentVal, sinifVal, kurumVal, maxVal }: { label: string; studentVal: number; sinifVal: number; kurumVal: number; maxVal: number }) => {
-    const cap = Math.max(maxVal, 1);
-    const pctS = Math.min(100, (studentVal / cap) * 100);
-    const pctSinif = Math.min(100, (sinifVal / cap) * 100);
-    const pctKurum = Math.min(100, (kurumVal / cap) * 100);
-    const diffK = studentVal - kurumVal;
-    const diffSn = studentVal - sinifVal;
-    return (
-      <div className={s.compBarItem}>
-        <div className={s.compBarLabel}>
-          <span>{label}</span>
-          <span style={{ display: 'flex', gap: 6 }}>
-            <span className={`${s.compBarDiff} ${diffSn > 0 ? s.compBarDiffPos : diffSn < 0 ? s.compBarDiffNeg : s.compBarDiffNeutral}`}>
-              Sınıf: {diffSn > 0 ? '+' : ''}{diffSn.toFixed(1)}
-            </span>
-            <span className={`${s.compBarDiff} ${diffK > 0 ? s.compBarDiffPos : diffK < 0 ? s.compBarDiffNeg : s.compBarDiffNeutral}`}>
-              Kurum: {diffK > 0 ? '+' : ''}{diffK.toFixed(1)}
-            </span>
-          </span>
-        </div>
-        <div className={s.compBarTrack}>
-          <div className={`${s.compBarFill} ${s.compBarFillKurum}`} style={{ width: `${pctKurum}%` }} />
-          <div className={`${s.compBarFill} ${s.compBarFillSinif}`} style={{ width: `${pctSinif}%` }} />
-          <div className={`${s.compBarFill} ${s.compBarFillStudent}`} style={{ width: `${pctS}%` }} />
-        </div>
-      </div>
-    );
+  const printKarne = () => {
+    const node = karneRef.current;
+    if (!node) return;
+    const printWin = window.open('', '_blank');
+    if (!printWin) return;
+    const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(el => el.outerHTML).join('');
+    printWin.document.write(`<!DOCTYPE html><html><head><title>${student.student_name} — Sınav Sonuç Belgesi</title>${styles}
+      <style>
+        @page { size: A4 portrait; margin: 8mm; }
+        body { margin: 0; background: #fff; }
+        .${s.karneToolbar} { display: none !important; }
+        .${s.studentDetailModal} { box-shadow: none !important; max-height: none !important; overflow: visible !important; max-width: 100% !important; width: 100% !important; background: #fff !important; }
+        .${s.karnePage} { page-break-after: always; }
+        .${s.karnePage}:last-child { page-break-after: auto; }
+      </style></head><body>${node.outerHTML}</body></html>`);
+    printWin.document.close();
+    setTimeout(() => { printWin.print(); }, 400);
   };
 
-  // Doğruluk oranı gauge
-  const Gauge = ({ pct, color }: { pct: number; color: string }) => {
-    const r = 34;
-    const circ = 2 * Math.PI * r;
-    const offset = circ - (Math.min(pct, 100) / 100) * circ;
-    return (
-      <div className={s.gaugeCircle}>
-        <svg viewBox="0 0 80 80">
-          <circle className={s.gaugeTrack} cx="40" cy="40" r={r} />
-          <circle className={s.gaugeFill} cx="40" cy="40" r={r} stroke={color} strokeDasharray={circ} strokeDashoffset={offset} />
-        </svg>
-        <span className={s.gaugeText}>%{pct.toFixed(0)}</span>
-      </div>
-    );
-  };
+  const isAyt = (detail?.exam_type || examType) === 'YKS_AYT';
+  const typeLabel = detail?.exam_type_label || (isAyt ? 'AYT' : 'TYT');
+
+  const sectionRows = (() => {
+    if (!detail) return [] as { sd: StudentDetailSectionItem; main: boolean }[];
+    const mains = detail.section_details.filter(sd => !sd.is_sub_section);
+    const subs = detail.section_details.filter(sd => sd.is_sub_section);
+    const rows: { sd: StudentDetailSectionItem; main: boolean }[] = [];
+    mains.forEach(sd => {
+      rows.push({ sd, main: true });
+      subs.filter(sub => sub.parent_id === sd.section_id).forEach(sub => rows.push({ sd: sub, main: false }));
+    });
+    subs.filter(sub => !mains.some(m => m.section_id === sub.parent_id)).forEach(sub => {
+      rows.push({ sd: sub, main: false });
+    });
+    return rows;
+  })();
+
+  const rankingRows = (() => {
+    if (!detail) return [];
+    if (isAyt && detail.puan_turleri) {
+      return (['SAY', 'EA', 'SOZ'] as const).map(pt => ({
+        label: pt === 'SOZ' ? 'SÖZ' : pt,
+        puan: detail.puan_turleri![pt].puan,
+        avg: detail.puan_turleri_avgs?.[pt] ?? detail.kurum_avg_puan ?? 0,
+      }));
+    }
+    return [{ label: typeLabel, puan: detail.puan, avg: detail.kurum_avg_puan ?? 0 }];
+  })();
+
+  const topicMid = detail?.topic_blocks ? Math.ceil(detail.topic_blocks.length / 2) : 0;
+  const topicLeft = detail?.topic_blocks?.slice(0, topicMid) || [];
+  const topicRight = detail?.topic_blocks?.slice(topicMid) || [];
 
   return (
     <div className={s.matchDialogOverlay} ref={overlayRef} onClick={handleOverlayClick}>
       <div className={s.studentDetailModal} onClick={e => e.stopPropagation()}>
-        <div className={s.studentDetailHeader}>
-          <h3>{student.student_name}</h3>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => {
-                const modal = document.querySelector(`.${s.studentDetailModal}`) as HTMLElement;
-                if (!modal) return;
-                const printWin = window.open('', '_blank');
-                if (!printWin) return;
-                // Stilleri kopyala
-                const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-                  .map(el => el.outerHTML).join('');
-                printWin.document.write(`<!DOCTYPE html><html><head><title>${student.student_name} — Öğrenci Raporu</title>${styles}
-                  <style>body{padding:20px;background:#fff;font-family:system-ui,-apple-system,sans-serif;}
-                  .${s.matchDialogOverlay}{position:static!important;background:none!important;}
-                  .${s.studentDetailModal}{box-shadow:none!important;max-height:none!important;overflow:visible!important;max-width:100%!important;}
-                  @media print{body{padding:0;}.${s.analysisBtnSmall}{display:none!important;}}</style>
-                  </head><body>${modal.outerHTML}</body></html>`);
-                printWin.document.close();
-                setTimeout(() => { printWin.print(); }, 500);
-              }}
-              className={s.analysisBtnSmall}
-              title="Yazdır"
-            >
-              🖨️
-            </button>
-            <button onClick={onClose} className={s.analysisBtnSmall}>✕</button>
-          </div>
+        <div className={s.karneToolbar}>
+          <button onClick={printKarne} className={s.analysisBtnSmall} title="Yazdır" disabled={!detail}>🖨️</button>
+          <button
+            onClick={async () => {
+              setPdfBusy(true);
+              try {
+                await analysisApi.downloadKarnePdf(examId, student.answer_id, rankingYear);
+              } catch (err) {
+                alert(err instanceof Error ? err.message : 'PDF indirilemedi');
+              } finally {
+                setPdfBusy(false);
+              }
+            }}
+            className={s.analysisBtnSmall}
+            title="Karne PDF indir"
+            disabled={!detail || pdfBusy}
+          >
+            {pdfBusy ? '…' : '📄'}
+          </button>
+          <button
+            onClick={() => setShowNotify(true)}
+            className={s.analysisBtnSmall}
+            title="WhatsApp ile gönder"
+            disabled={!detail || !student.student_id}
+          >
+            💬
+          </button>
+          <button onClick={onClose} className={s.analysisBtnSmall}>✕</button>
         </div>
-        <p className={s.studentDetailSubtitle}>
-          {student.sinif || '—'} · #{student.raw_student_id}
-        </p>
+        {showNotify && (
+          <KarneNotifyModal
+            examId={examId}
+            answerId={student.answer_id}
+            studentName={student.student_name}
+            rankingYear={rankingYear}
+            onClose={() => setShowNotify(false)}
+          />
+        )}
 
         {detailLoading && (
-          <div className={s.studentDetailLoading}>⏳ Detay yükleniyor…</div>
+          <div className={s.studentDetailLoading}>⏳ Sonuç belgesi yükleniyor…</div>
         )}
-
-        {detailError && (
-          <div className={s.analysisError}>⚠️ {detailError}</div>
-        )}
+        {detailError && <div className={s.analysisError}>⚠️ {detailError}</div>}
 
         {!detailLoading && !detailError && detail && (
-          <>
-            {/* ── Genel Performans ─────────────────────────────────────── */}
-            <div className={s.analysisGrid4}>
-              <div className={s.analysisMiniStat}>
-                <span className={s.miniStatValue}>{detail.toplam_net}</span>
-                <span className={s.miniStatLabel}>Toplam Net</span>
-              </div>
-              <div className={s.analysisMiniStat}>
-                <span className={s.miniStatValue} style={{ color: '#0262a7' }}>{detail.puan}</span>
-                <span className={s.miniStatLabel}>Puan</span>
-              </div>
-              <div className={s.analysisMiniStat}>
-                <span className={s.miniStatValue}>
-                  {detail.sinif_rank}/{detail.sinif_student_count}
-                </span>
-                <span className={s.miniStatLabel}>Sınıf Sırası</span>
-              </div>
-              <div className={s.analysisMiniStat}>
-                <span className={s.miniStatValue}>{detail.kurum_ici_sira}/{detail.toplam_ogrenci}</span>
-                <span className={s.miniStatLabel}>Kurum Sırası</span>
-              </div>
-            </div>
+          <div className={s.karne} ref={karneRef}>
+            <div className={s.karnePage}>
+              <KarneHeader detail={detail} />
 
-            {/* ── AYT Puan Türleri (SAY / EA / SÖZ) ───────────────────── */}
-            {examType !== 'YKS_TYT' && detail.puan_turleri && (
-              <div style={{ marginTop: 8, marginBottom: 8 }}>
-                <div className={s.analysisGrid3}>
-                  {(['SAY', 'EA', 'SOZ'] as const).map(pt => {
-                    const d = detail.puan_turleri![pt];
-                    const label = pt === 'SOZ' ? 'SÖZ' : pt;
-                    const color = pt === 'SAY' ? '#0262a7' : pt === 'EA' ? '#7c3aed' : '#059669';
-                    return (
-                      <div key={pt} className={s.analysisMiniStat} style={{ borderLeft: `3px solid ${color}`, paddingLeft: 8 }}>
-                        <span className={s.miniStatValue} style={{ color }}>{d.puan}</span>
-                        <span className={s.miniStatLabel}>{label} Puanı</span>
-                        <span style={{ fontSize: 10, color: '#94a3b8' }}>
-                          AYT: {d.ayt_net} · TYT: {d.tyt_net}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+              <div className={s.karneSummary}>
+                {[
+                  ['Soru', detail.total_questions],
+                  ['Doğru', detail.total_correct],
+                  ['Yanlış', detail.total_wrong],
+                  ['Boş', detail.total_empty],
+                  ['Net', detail.toplam_net],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className={s.karneSummaryBox}>
+                    <span className={s.karneSummaryLabel}>{label}</span>
+                    <span className={s.karneSummaryValue}>
+                      {label === 'Net' ? fmt(Number(value), 2) : fmtInt(Number(value))}
+                    </span>
+                  </div>
+                ))}
               </div>
-            )}
 
-            <div className={s.analysisGrid4}>
-              <div className={s.analysisMiniStat}>
-                <span className={s.miniStatValue}>
-                  {detail.tahmini_siralama ? detail.tahmini_siralama.toLocaleString('tr-TR') : '—'}
-                </span>
-                <span className={s.miniStatLabel}>Tah. TR Sırası ({detail.referans_yil}) <InfoTip tip="tahminiSiralama" /></span>
+              <div className={s.karneYearNote}>
+                Tahmini sıralama yılı: {detail.referans_yil} · Puan sıralı
               </div>
-              <div className={s.analysisMiniStat}>
-                <span className={s.miniStatValue}>
-                  <span className={`${s.percentileBadge} ${detail.kurum_ici_yuzdelik >= 75 ? s.percentileHigh : detail.kurum_ici_yuzdelik >= 50 ? s.percentileMid : s.percentileLow}`}>
-                    %{detail.kurum_ici_yuzdelik}
-                  </span>
-                </span>
-                <span className={s.miniStatLabel}>Yüzdelik <InfoTip tip="yuzdelikDilim" /></span>
-              </div>
-              <div className={s.analysisMiniStat}>
-                <span className={s.miniStatValue} style={{ color: '#16a34a' }}>{detail.total_correct}</span>
-                <span className={s.miniStatLabel}>Toplam Doğru</span>
-              </div>
-              <div className={s.analysisMiniStat}>
-                <span className={s.miniStatValue} style={{ color: '#ef4444' }}>{detail.total_wrong}</span>
-                <span className={s.miniStatLabel}>Toplam Yanlış</span>
-              </div>
-            </div>
 
-            {/* ── Doğruluk Oranı + Genel İstatistikler ────────────────── */}
-            <div className={s.studentDetailSection}>
-              <h4><span className="sectionIcon">🎯</span> Genel Metrikler</h4>
-              <div className={s.gaugeWrap}>
-                <Gauge pct={detail.dogruluk_orani} color={detail.dogruluk_orani >= 70 ? '#16a34a' : detail.dogruluk_orani >= 50 ? '#f59e0b' : '#ef4444'} />
-                <div className={s.gaugeInfo}>
-                  <div>Doğruluk Oranı <InfoTip tip="dogrulukOrani" />: <strong>%{detail.dogruluk_orani.toFixed(1)}</strong></div>
-                  <div>Toplam Boş Potansiyel <InfoTip tip="bosPotansiyel" />: <strong>{detail.toplam_bos_potansiyel.toFixed(1)} net</strong></div>
-                  <div>Kurum Ort. Net: <strong>{detail.kurum_avg_net}</strong> · Sınıf Ort. Net: <strong>{detail.sinif_avg_net}</strong></div>
-                  <div>Toplam Boş: <strong>{detail.total_empty}</strong> / {detail.total_questions} soru</div>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Ders Karşılaştırma Tablosu ──────────────────────────── */}
-            <div className={s.studentDetailSection}>
-              <h4><span className="sectionIcon">📚</span> Alan/Ders Bazlı Performans</h4>
-              <div className={s.analysisTableWrap}>
-                <table className={s.analysisTable}>
+              <div className={s.karneTableWrap}>
+                <table className={s.karneTable}>
                   <thead>
                     <tr>
-                      <th>Alan/Ders</th>
-                      <th style={{ textAlign: 'center' }}>D</th>
-                      <th style={{ textAlign: 'center' }}>Y</th>
-                      <th style={{ textAlign: 'center' }}>B</th>
-                      <th style={{ textAlign: 'center' }}>Net</th>
-                      <th style={{ textAlign: 'center' }}>Verimlilik <InfoTip tip="verimlilik" /></th>
-                      <th style={{ textAlign: 'center' }}>Sınıf Ort.</th>
-                      <th style={{ textAlign: 'center' }}>Fark <InfoTip tip="diffSinif" /></th>
-                      <th style={{ textAlign: 'center' }}>Kurum Ort.</th>
-                      <th style={{ textAlign: 'center' }}>Fark <InfoTip tip="diffKurum" /></th>
-                      <th style={{ textAlign: 'center' }}>Hata <InfoTip tip="hataOrani" /></th>
+                      <th rowSpan={2}>Puan Türü</th>
+                      <th rowSpan={2}>Puan</th>
+                      <th rowSpan={2}>Kurum Ort.</th>
+                      <th colSpan={3}>Sıralamalar</th>
+                    </tr>
+                    <tr>
+                      <th>Sınıf</th>
+                      <th>Kurum</th>
+                      <th>Tah. TR</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(() => {
-                      // Alanlar + derslerini grupla
-                      const mainSections = detail.section_details.filter(sd => !sd.is_sub_section);
-                      const subSections = detail.section_details.filter(sd => sd.is_sub_section);
-                      const rows: React.ReactNode[] = [];
-                      mainSections.forEach(sd => {
-                        // Ana bölüm satırı
-                        rows.push(
-                          <tr key={sd.section_id} style={{ background: '#f8fafc' }}>
-                            <td style={{ fontWeight: 700 }}>{sd.section_name}</td>
-                            <td style={{ textAlign: 'center', color: '#16a34a', fontWeight: 600 }}>{sd.correct}</td>
-                            <td style={{ textAlign: 'center', color: '#ef4444', fontWeight: 600 }}>{sd.wrong}</td>
-                            <td style={{ textAlign: 'center', color: '#94a3b8', fontWeight: 600 }}>{sd.empty}</td>
-                            <td style={{ textAlign: 'center', fontWeight: 700 }}>{sd.net}</td>
-                            <td style={{ textAlign: 'center', fontWeight: 600, color: sd.verimlilik >= 70 ? '#16a34a' : sd.verimlilik >= 40 ? '#f59e0b' : '#ef4444' }}>
-                              %{sd.verimlilik.toFixed(0)}
-                            </td>
-                            <td style={{ textAlign: 'center', color: '#7c3aed', fontWeight: 600 }}>{sd.sinif_avg_net}</td>
-                            <td style={{ textAlign: 'center', fontWeight: 600, color: sd.diff_sinif > 0 ? '#16a34a' : sd.diff_sinif < 0 ? '#ef4444' : '#64748b' }}>
-                              {sd.diff_sinif > 0 ? '▲' : sd.diff_sinif < 0 ? '▼' : '—'} {sd.diff_sinif !== 0 ? Math.abs(sd.diff_sinif).toFixed(1) : ''}
-                            </td>
-                            <td style={{ textAlign: 'center', color: '#f59e0b', fontWeight: 600 }}>{sd.kurum_avg_net}</td>
-                            <td style={{ textAlign: 'center', fontWeight: 600, color: sd.diff_kurum > 0 ? '#16a34a' : sd.diff_kurum < 0 ? '#ef4444' : '#64748b' }}>
-                              {sd.diff_kurum > 0 ? '▲' : sd.diff_kurum < 0 ? '▼' : '—'} {sd.diff_kurum !== 0 ? Math.abs(sd.diff_kurum).toFixed(1) : ''}
-                            </td>
-                            <td style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: sd.hata_orani > 30 ? '#ef4444' : '#64748b' }}>
-                              %{sd.hata_orani.toFixed(0)}
-                            </td>
-                          </tr>
-                        );
-                        // Ders satırları (Fizik, Kimya, Biyoloji, Geometri vb.)
-                        subSections.filter(sub => sub.parent_id === sd.section_id).forEach(sub => {
-                          rows.push(
-                            <tr key={sub.section_id}>
-                              <td style={{ paddingLeft: 24, fontSize: 12, color: '#475569' }}>↳ {sub.section_name}</td>
-                              <td style={{ textAlign: 'center', color: '#16a34a', fontSize: 12 }}>{sub.correct}</td>
-                              <td style={{ textAlign: 'center', color: '#ef4444', fontSize: 12 }}>{sub.wrong}</td>
-                              <td style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>{sub.empty}</td>
-                              <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 12 }}>{sub.net}</td>
-                              <td style={{ textAlign: 'center', fontSize: 12, color: sub.verimlilik >= 70 ? '#16a34a' : sub.verimlilik >= 40 ? '#f59e0b' : '#ef4444' }}>
-                                %{sub.verimlilik.toFixed(0)}
-                              </td>
-                              <td style={{ textAlign: 'center', color: '#7c3aed', fontSize: 12 }}>{sub.sinif_avg_net}</td>
-                              <td style={{ textAlign: 'center', fontSize: 12, color: sub.diff_sinif > 0 ? '#16a34a' : sub.diff_sinif < 0 ? '#ef4444' : '#64748b' }}>
-                                {sub.diff_sinif > 0 ? '▲' : sub.diff_sinif < 0 ? '▼' : '—'} {sub.diff_sinif !== 0 ? Math.abs(sub.diff_sinif).toFixed(1) : ''}
-                              </td>
-                              <td style={{ textAlign: 'center', color: '#f59e0b', fontSize: 12 }}>{sub.kurum_avg_net}</td>
-                              <td style={{ textAlign: 'center', fontSize: 12, color: sub.diff_kurum > 0 ? '#16a34a' : sub.diff_kurum < 0 ? '#ef4444' : '#64748b' }}>
-                                {sub.diff_kurum > 0 ? '▲' : sub.diff_kurum < 0 ? '▼' : '—'} {sub.diff_kurum !== 0 ? Math.abs(sub.diff_kurum).toFixed(1) : ''}
-                              </td>
-                              <td style={{ textAlign: 'center', fontSize: 11, color: sub.hata_orani > 30 ? '#ef4444' : '#64748b' }}>
-                                %{sub.hata_orani.toFixed(0)}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      });
-                      // Herhangi bir alana bağlı olmayan bağımsız dersler
-                      subSections.filter(sub => !mainSections.some(m => m.section_id === sub.parent_id)).forEach(sub => {
-                        rows.push(
-                          <tr key={sub.section_id}>
-                            <td style={{ paddingLeft: 24, fontSize: 12, color: '#475569' }}>↳ {sub.section_name}</td>
-                            <td style={{ textAlign: 'center', color: '#16a34a', fontSize: 12 }}>{sub.correct}</td>
-                            <td style={{ textAlign: 'center', color: '#ef4444', fontSize: 12 }}>{sub.wrong}</td>
-                            <td style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>{sub.empty}</td>
-                            <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 12 }}>{sub.net}</td>
-                            <td style={{ textAlign: 'center', fontSize: 12, color: sub.verimlilik >= 70 ? '#16a34a' : sub.verimlilik >= 40 ? '#f59e0b' : '#ef4444' }}>
-                              %{sub.verimlilik.toFixed(0)}
-                            </td>
-                            <td style={{ textAlign: 'center', color: '#7c3aed', fontSize: 12 }}>{sub.sinif_avg_net}</td>
-                            <td style={{ textAlign: 'center', fontSize: 12, color: sub.diff_sinif > 0 ? '#16a34a' : sub.diff_sinif < 0 ? '#ef4444' : '#64748b' }}>
-                              {sub.diff_sinif > 0 ? '▲' : sub.diff_sinif < 0 ? '▼' : '—'} {sub.diff_sinif !== 0 ? Math.abs(sub.diff_sinif).toFixed(1) : ''}
-                            </td>
-                            <td style={{ textAlign: 'center', color: '#f59e0b', fontSize: 12 }}>{sub.kurum_avg_net}</td>
-                            <td style={{ textAlign: 'center', fontSize: 12, color: sub.diff_kurum > 0 ? '#16a34a' : sub.diff_kurum < 0 ? '#ef4444' : '#64748b' }}>
-                              {sub.diff_kurum > 0 ? '▲' : sub.diff_kurum < 0 ? '▼' : '—'} {sub.diff_kurum !== 0 ? Math.abs(sub.diff_kurum).toFixed(1) : ''}
-                            </td>
-                            <td style={{ textAlign: 'center', fontSize: 11, color: sub.hata_orani > 30 ? '#ef4444' : '#64748b' }}>
-                              %{sub.hata_orani.toFixed(0)}
-                            </td>
-                          </tr>
-                        );
-                      });
-                      return rows;
-                    })()}
+                    {rankingRows.map((row, i) => (
+                      <tr key={row.label}>
+                        <td className={s.karneLeft}>{row.label}</td>
+                        <td>{fmt(row.puan, 3)}</td>
+                        <td>{fmt(row.avg, 3)}</td>
+                        <td>{i === 0 && detail.sinif_rank ? detail.sinif_rank : i === 0 ? '—' : ''}</td>
+                        <td>{i === 0 ? detail.kurum_ici_sira : ''}</td>
+                        <td>{i === 0 ? (detail.tahmini_siralama ? fmtInt(detail.tahmini_siralama) : '—') : ''}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td className={s.karneLeft} colSpan={3}>Katılımlar</td>
+                      <td>{detail.sinif_student_count || '—'}</td>
+                      <td>{detail.toplam_ogrenci}</td>
+                      <td>—</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
+
+              <div className={s.karneTableWrap}>
+                <table className={s.karneTable}>
+                  <thead>
+                    <tr>
+                      <th rowSpan={2} style={{ textAlign: 'left' }}>Ders / Test</th>
+                      <th rowSpan={2}>Soru</th>
+                      <th rowSpan={2}>Doğru</th>
+                      <th rowSpan={2}>Yanlış</th>
+                      <th rowSpan={2}>Net</th>
+                      <th rowSpan={2}>Başarı %</th>
+                      <th colSpan={2}>Ortalamalar</th>
+                    </tr>
+                    <tr>
+                      <th>Sınıf</th>
+                      <th>Kurum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sectionRows.map(({ sd, main }) => (
+                      <tr key={sd.section_id} className={main ? s.karneMainRow : undefined}>
+                        <td className={s.karneLeft}>{sd.section_name}</td>
+                        <td>{sd.question_count}</td>
+                        <td>{sd.correct}</td>
+                        <td>{sd.wrong}</td>
+                        <td>{fmt(sd.net, 2)}</td>
+                        <td>{Math.round(sd.verimlilik)}</td>
+                        <td className={avgClass(sd.net, sd.sinif_avg_net)}>{fmt(sd.sinif_avg_net, 2)}</td>
+                        <td className={avgClass(sd.net, sd.kurum_avg_net)}>{fmt(sd.kurum_avg_net, 2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {(detail.answer_grids || []).map(grid => (
+                <AnswerGrid key={grid.section_id} title={grid.section_name} questions={grid.questions} />
+              ))}
             </div>
 
-            {/* ── Ders Karşılaştırma Barları ──────────────────────────── */}
-            <div className={s.studentDetailSection}>
-              <h4><span className="sectionIcon">📊</span> Karşılaştırma (Net)</h4>
-              <div className={s.compBarLegend}>
-                <span className={s.legendStudent}>Öğrenci</span>
-                <span className={s.legendSinif}>Sınıf Ort.</span>
-                <span className={s.legendKurum}>Kurum Ort.</span>
+            <div className={s.karnePage}>
+              <div className={s.karneSectionTitle}>Alan / Ders Bazlı Performans</div>
+              <div className={s.karneTableWrap}>
+                <table className={s.karneTable}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left' }}>Alan / Ders</th>
+                      <th>D</th><th>Y</th><th>B</th><th>Net</th>
+                      <th>Verim %</th>
+                      <th>Sınıf</th><th>Fark</th>
+                      <th>Kurum</th><th>Fark</th>
+                      <th>Hata</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sectionRows.map(({ sd, main }) => {
+                      const ds = diffLabel(sd.diff_sinif);
+                      const dk = diffLabel(sd.diff_kurum);
+                      return (
+                        <tr key={`p-${sd.section_id}`} className={main ? s.karneMainRow : undefined}>
+                          <td className={s.karneLeft}>{sd.section_name}</td>
+                          <td>{sd.correct}</td>
+                          <td>{sd.wrong}</td>
+                          <td>{sd.empty}</td>
+                          <td>{fmt(sd.net, 2)}</td>
+                          <td style={{ color: verimColor(sd.verimlilik), fontWeight: 700 }}>{Math.round(sd.verimlilik)}</td>
+                          <td>{fmt(sd.sinif_avg_net, 2)}</td>
+                          <td className={ds.cls}>{ds.text}</td>
+                          <td>{fmt(sd.kurum_avg_net, 2)}</td>
+                          <td className={dk.cls}>{dk.text}</td>
+                          <td className={sd.hata_orani > 30 ? s.karneBelow : undefined}>%{Math.round(sd.hata_orani)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className={s.compBarGroup}>
-                {detail.section_details.map(sd => (
-                  <CompBar
-                    key={sd.section_id}
-                    label={sd.section_name}
-                    studentVal={sd.net}
-                    sinifVal={sd.sinif_avg_net}
-                    kurumVal={sd.kurum_avg_net}
-                    maxVal={sd.question_count}
-                  />
-                ))}
-              </div>
-            </div>
 
-            {/* ── Verimlilik & Boş Potansiyel ─────────────────────────── */}
-            <div className={s.studentDetailSection}>
-              <h4><span className="sectionIcon">⚡</span> Verimlilik & Potansiyel Analizi</h4>
-              <div className={s.detailStatRow}>
-                {detail.section_details.map(sd => (
-                  <div key={sd.section_id} className={s.detailStatItem}>
-                    <div className={s.detailStatValue} style={{ color: sd.verimlilik >= 70 ? '#16a34a' : sd.verimlilik >= 40 ? '#f59e0b' : '#ef4444' }}>
-                      %{sd.verimlilik.toFixed(0)}
+              <div className={s.karneSectionTitle}>Karşılaştırma (Net)</div>
+              <div className={s.karneBarLegend}>
+                <span className={s.karneBarStudent}>Öğrenci</span>
+                <span className={s.karneBarSinif}>Sınıf</span>
+                <span className={s.karneBarKurum}>Kurum</span>
+              </div>
+              <div className={s.karneBarList}>
+                {sectionRows.filter(r => r.main).map(({ sd }) => {
+                  const cap = Math.max(sd.question_count || 1, 1);
+                  const lines = [
+                    { label: 'Öğrenci', value: sd.net, fill: s.karneBarFillStudent, color: '#0262a7' },
+                    { label: 'Sınıf', value: sd.sinif_avg_net, fill: s.karneBarFillSinif, color: '#7c3aed' },
+                    { label: 'Kurum', value: sd.kurum_avg_net, fill: s.karneBarFillKurum, color: '#d97706' },
+                  ];
+                  return (
+                    <div key={`b-${sd.section_id}`} className={s.karneCompareCard}>
+                      <div className={s.karneBarName}>{sd.section_name}</div>
+                      {lines.map(line => (
+                        <div key={line.label} className={s.karneBarLine}>
+                          <span>{line.label}</span>
+                          <div className={s.karneBarTrack}>
+                            <div className={`${s.karneBarFill} ${line.fill}`} style={{ width: `${Math.min(100, (line.value / cap) * 100)}%` }} />
+                          </div>
+                          <strong style={{ color: line.color }}>{fmt(line.value, 1)}</strong>
+                        </div>
+                      ))}
                     </div>
-                    <div className={s.detailStatLabel}>{sd.section_name}</div>
+                  );
+                })}
+              </div>
+
+              <div className={s.karneSectionTitle}>Verimlilik &amp; Potansiyel Analizi</div>
+              <div className={s.karneVerimGrid}>
+                {detail.section_details.map(sd => (
+                  <div key={`v-${sd.section_id}`} className={s.karneVerimCard} style={{ borderTopColor: verimColor(sd.verimlilik) }}>
+                    <div className={s.karneVerimVal} style={{ color: verimColor(sd.verimlilik) }}>
+                      %{Math.round(sd.verimlilik)}
+                    </div>
+                    <div className={s.karneVerimName}>{sd.section_name}</div>
                     {sd.bos_potansiyel > 0 && (
-                      <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
-                        +{sd.bos_potansiyel.toFixed(1)} pot.
-                      </div>
+                      <div className={s.karneVerimPot}>+{fmt(sd.bos_potansiyel, 1)} pot.</div>
                     )}
                   </div>
                 ))}
               </div>
+
+              <div className={s.karneSectionTitle}>Güçlü ve Zayıf Alanlar</div>
+              <div className={s.karneAreaPair}>
+                <div className={s.karneAreaCard}>
+                  <div className={`${s.karneAreaHead} ${s.karneAreaStrong}`}>Güçlü Alanlar</div>
+                  <div className={s.karneAreaBody}>
+                    {detail.strong_areas.length
+                      ? detail.strong_areas.map(a => (
+                        <div key={a.name} className={s.karneAreaItem}>
+                          <b>{a.name}</b> · {fmt(a.net, 2)} net
+                        </div>
+                      ))
+                      : <div className={s.karneMuted}>—</div>}
+                  </div>
+                </div>
+                <div className={s.karneAreaCard}>
+                  <div className={`${s.karneAreaHead} ${s.karneAreaWeak}`}>Zayıf Alanlar</div>
+                  <div className={s.karneAreaBody}>
+                    {detail.weak_areas.length
+                      ? detail.weak_areas.map(a => (
+                        <div key={a.name} className={s.karneAreaItemWeak}>
+                          <b>{a.name}</b> · {fmt(a.net, 2)} net
+                        </div>
+                      ))
+                      : <div className={s.karneMuted}>—</div>}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* ── Net Gelişim Trendi ───────────────────────────────────── */}
-            {detail.net_trend && detail.net_trend.length > 1 && (
-              <div className={s.studentDetailSection}>
-                <h4><span className="sectionIcon">📈</span> Net Gelişim Trendi</h4>
-                <div className={s.trendChart}>
-                  {detail.net_trend.map((t, i) => {
-                    const maxNet = Math.max(...detail.net_trend.map(x => x.toplam_net), 1);
-                    const pct = (t.toplam_net / maxNet) * 100;
-                    return (
-                      <div key={i} className={s.trendChartItem}>
-                        <div className={s.trendChartBar}>
-                          <div className={s.trendChartFill} style={{ height: `${pct}%` }} />
-                        </div>
-                        <div className={s.trendChartVal}>{t.toplam_net}</div>
-                        <div className={s.trendChartLabel}>{t.exam_name}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Ders bazlı trend tablosu */}
-                {detail.net_trend.some(t => t.section_nets && Object.keys(t.section_nets).length > 0) && (
-                  <div className={s.analysisTableWrap} style={{ marginTop: 10 }}>
-                    <table className={s.analysisTable}>
-                      <thead>
-                        <tr>
-                          <th>Sınav</th>
-                          <th style={{ textAlign: 'center' }}>Toplam</th>
-                          {Object.keys(detail.net_trend.find(t => Object.keys(t.section_nets || {}).length > 0)?.section_nets || {}).map(sn => (
-                            <th key={sn} style={{ textAlign: 'center' }}>{sn}</th>
+            {!!detail.topic_blocks?.length && (
+              <div className={s.karnePage}>
+                <div className={s.karneTopicCols}>
+                  {[topicLeft, topicRight].map((col, ci) => (
+                    <div key={ci}>
+                      {col.map(block => (
+                        <div key={block.heading}>
+                          <div className={s.karneTopicHead}>{block.heading}</div>
+                          {block.tables.map(table => (
+                            <div key={table.title}>
+                              {table.title !== block.heading && (
+                                <div className={s.karneTopicSub}>{table.title}</div>
+                              )}
+                              <table className={s.karneTopicTable}>
+                                <thead>
+                                  <tr>
+                                    <th style={{ textAlign: 'left' }}>{table.title}</th>
+                                    <th>S</th><th>D</th><th>Y</th><th>B</th><th>%</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {table.rows.map(row => (
+                                    <tr key={row.name}>
+                                      <td>{row.name}</td>
+                                      <td>{row.soru}</td>
+                                      <td>{row.dogru}</td>
+                                      <td>{row.yanlis}</td>
+                                      <td>{row.bos}</td>
+                                      <td>{row.basari}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.net_trend.map((t, i) => (
-                          <tr key={i}>
-                            <td style={{ fontSize: 12 }}>{t.exam_name}</td>
-                            <td style={{ textAlign: 'center', fontWeight: 700 }}>{t.toplam_net}</td>
-                            {Object.values(t.section_nets || {}).map((v, j) => (
-                              <td key={j} style={{ textAlign: 'center' }}>{v}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
-
-            {/* ── Güçlü / Zayıf Alanlar ──────────────────────────────── */}
-            <div style={{ display: 'flex', gap: 16, marginTop: 20 }}>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: '#16a34a' }}>✅ Güçlü Alanlar</h4>
-                {detail.strong_areas.length ? detail.strong_areas.map(a => (
-                  <div key={a.name} style={{ fontSize: 13 }}>{a.name}: <strong>{a.net}</strong> net</div>
-                )) : <div style={{ fontSize: 12, color: '#94a3b8' }}>—</div>}
-              </div>
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: '#ef4444' }}>⚠️ Zayıf Alanlar</h4>
-                {detail.weak_areas.length ? detail.weak_areas.map(a => (
-                  <div key={a.name} style={{ fontSize: 13 }}>{a.name}: <strong>{a.net}</strong> net</div>
-                )) : <div style={{ fontSize: 12, color: '#94a3b8' }}>—</div>}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Fallback: API yüklenirken basit bilgi göster */}
-        {detailLoading && (
-          <div className={s.analysisGrid4} style={{ marginTop: 12 }}>
-            <div className={s.analysisMiniStat}>
-              <span className={s.miniStatValue}>{student.toplam_net}</span>
-              <span className={s.miniStatLabel}>Toplam Net</span>
-            </div>
-            <div className={s.analysisMiniStat}>
-              <span className={s.miniStatValue} style={{ color: '#0262a7' }}>{student.puan}</span>
-              <span className={s.miniStatLabel}>Puan</span>
-            </div>
           </div>
         )}
       </div>

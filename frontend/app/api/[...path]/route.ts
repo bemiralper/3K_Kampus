@@ -11,6 +11,43 @@ const API_PREFIXED_PATHS = new Set([
   'ozel-ders',
 ]);
 
+function isTransientSocketError(error: unknown): boolean {
+  const detail = error instanceof Error ? error.message : String(error);
+  const cause =
+    error instanceof Error && error.cause instanceof Error
+      ? error.cause.message
+      : error instanceof Error && error.cause
+        ? String(error.cause)
+        : '';
+  return /UND_ERR_SOCKET|other side closed|ECONNRESET|socket hang up|ECONNREFUSED/i.test(
+    `${detail} ${cause}`,
+  );
+}
+
+async function fetchBackend(
+  url: string,
+  init: RequestInit,
+  retries: number,
+): Promise<Response> {
+  try {
+    const response = await fetch(url, init);
+    if (
+      retries > 0
+      && (response.status === 502 || response.status === 503)
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 280));
+      return fetchBackend(url, init, retries - 1);
+    }
+    return response;
+  } catch (error) {
+    if (retries > 0 && isTransientSocketError(error)) {
+      await new Promise((resolve) => setTimeout(resolve, 280));
+      return fetchBackend(url, init, retries - 1);
+    }
+    throw error;
+  }
+}
+
 /** undici fetch rejects hop-by-hop headers forwarded from the browser/nginx chain */
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
@@ -98,13 +135,17 @@ async function proxyRequest(request: NextRequest, path: string) {
   console.log(`[API Proxy] ${request.method} ${url}`);
   console.log(`[API Proxy] Forwarding cookies:`, headers.get('Cookie'));
 
+  const fetchInit: RequestInit = {
+    method: request.method,
+    headers,
+    body,
+    redirect: 'manual',
+  };
+  const safeRetry =
+    !isEventStream && ['GET', 'HEAD'].includes(request.method.toUpperCase());
+
   try {
-    const response = await fetch(url, {
-      method: request.method,
-      headers,
-      body,
-      redirect: 'manual',
-    });
+    const response = await fetchBackend(url, fetchInit, safeRetry ? 1 : 0);
 
     // Handle 204 No Content — NextResponse cannot have a body with status 204
     if (response.status === 204) {

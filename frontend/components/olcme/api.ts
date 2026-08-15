@@ -3,6 +3,8 @@
 //  frontend/components/olcme/api.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getContextHeaders } from '@/lib/api';
+import { downloadPdfBlob } from '@/lib/download-file';
 import type {
   ExamDetail,
   ExamListItem,
@@ -34,6 +36,9 @@ import type {
   OutcomeItem,
   SubOutcomeItem,
   MatchResult,
+  PuanAyarlari,
+  PuanYilSeti,
+  KatsayiKind,
 } from './types';
 
 const BASE = '/api/coaching/olcme-degerlendirme/exams';
@@ -63,7 +68,7 @@ function extractValidationErrors(err: Record<string, unknown>): string | null {
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(url, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...getContextHeaders(), ...options.headers },
     ...options,
   });
   if (!res.ok) {
@@ -80,7 +85,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 /* Boş string tarih/datetime/sayısal alanları null'a çevir (Django DateField/DateTimeField/IntegerField boş string kabul etmez) */
 function cleanPayload(data: Record<string, unknown>): Record<string, unknown> {
-  const nullIfEmpty = ['exam_date', 'result_publish_date', 'answer_key_publish_date', 'duration_minutes'];
+  const nullIfEmpty = ['exam_date', 'result_publish_date', 'answer_key_publish_date', 'duration_minutes', 'puan_yili'];
   const cleaned = { ...data };
   for (const key of nullIfEmpty) {
     if (key in cleaned && cleaned[key] === '') {
@@ -387,8 +392,11 @@ export const mappingTemplateApi = {
 
 export const analysisApi = {
   /** Genel sınav özet paneli */
-  summary: (examId: number, sessionId?: number) => {
-    const qs = sessionId ? `?session_id=${sessionId}` : '';
+  summary: (examId: number, sessionId?: number, rankingYear?: number) => {
+    const params = new URLSearchParams();
+    if (sessionId) params.set('session_id', String(sessionId));
+    if (rankingYear) params.set('ranking_year', String(rankingYear));
+    const qs = params.toString() ? `?${params}` : '';
     return request<AnalysisSummary>(`${BASE}/${examId}/analysis/summary/${qs}`);
   },
 
@@ -454,11 +462,13 @@ export const analysisApi = {
     examId: number,
     sessionId?: number,
     rankingYear?: number,
+    alan?: string | null,
   ): Promise<Blob> => {
     const params = new URLSearchParams();
     params.set('format', format);
     if (sessionId) params.set('session_id', String(sessionId));
     if (rankingYear) params.set('ranking_year', String(rankingYear));
+    if (alan) params.set('alan', alan);
     const res = await fetch(`${BASE}/${examId}/analysis/rankings/?${params}`, {
       credentials: 'include',
     });
@@ -467,7 +477,168 @@ export const analysisApi = {
     }
     return res.blob();
   },
+
+  downloadKarnePdf: async (examId: number, answerId: number, rankingYear?: number) => {
+    const params = new URLSearchParams();
+    if (rankingYear) params.set('ranking_year', String(rankingYear));
+    const qs = params.toString() ? `?${params}` : '';
+    const res = await fetch(`${BASE}/${examId}/analysis/students/${answerId}/karne-pdf/${qs}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) throw new Error('Karne PDF indirilemedi');
+    const blob = await res.blob();
+    const name = filenameFromDisposition(res.headers.get('content-disposition'), `karne-${answerId}.pdf`);
+    await downloadPdfBlob(blob, name);
+  },
+
+  downloadKarnelerPdf: async (examId: number, answerIds: number[], rankingYear?: number) => {
+    if (!answerIds.length) throw new Error('İndirilecek öğrenci seçilmedi');
+    const params = new URLSearchParams();
+    params.set('answer_ids', answerIds.join(','));
+    if (rankingYear) params.set('ranking_year', String(rankingYear));
+    const res = await fetch(`${BASE}/${examId}/analysis/students/karneler-pdf/?${params}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Karneler PDF indirilemedi');
+    }
+    const blob = await res.blob();
+    const name = filenameFromDisposition(res.headers.get('content-disposition'), `karneler-${examId}.pdf`);
+    await downloadPdfBlob(blob, name);
+  },
+
+  karneNotifyPreview: (examId: number, answerId: number, rankingYear?: number) => {
+    const qs = rankingYear ? `?ranking_year=${rankingYear}` : '';
+    return request<KarneNotifyPreviewResponse>(
+      `${BASE}/${examId}/analysis/students/${answerId}/notify-preview/${qs}`,
+    );
+  },
+
+  karneNotifyBulkPreview: (examId: number, answerIds: number[]) => {
+    const params = new URLSearchParams();
+    params.set('answer_ids', answerIds.join(','));
+    return request<KarneBulkPreviewResponse>(
+      `${BASE}/${examId}/analysis/students/notify-bulk-preview/?${params}`,
+    );
+  },
+
+  karneNotifyBulkSend: (
+    examId: number,
+    payload: { answer_ids: number[]; include_veli: boolean; include_student: boolean },
+    rankingYear?: number,
+  ) => {
+    const qs = rankingYear ? `?ranking_year=${rankingYear}` : '';
+    return request<KarneBulkSendResponse>(
+      `${BASE}/${examId}/analysis/students/notify-bulk/${qs}`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
+  karneNotifySend: (
+    examId: number,
+    answerId: number,
+    payload: { veli_ids: number[]; include_student: boolean },
+    rankingYear?: number,
+  ) => {
+    const qs = rankingYear ? `?ranking_year=${rankingYear}` : '';
+    return request<KarneNotifySendResponse>(
+      `${BASE}/${examId}/analysis/students/${answerId}/notify/${qs}`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
 };
+
+export interface KarneNotifyRecipient {
+  recipient_type: 'veli' | 'ogrenci' | string;
+  ogrenci_id: number;
+  veli_id: number | null;
+  display_name: string;
+  telefon: string;
+  body: string;
+  skip_reason: string;
+}
+
+export interface KarneNotifyPreviewResponse {
+  success: boolean;
+  error?: string;
+  data?: {
+    exam_id: number;
+    answer_id: number;
+    exam_name: string;
+    student_name: string;
+    pdf_title: string;
+    send_mode: 'document' | 'meta_template' | string;
+    meta_template_veli?: string;
+    meta_template_ogrenci?: string;
+    recipients: KarneNotifyRecipient[];
+  };
+}
+
+export interface KarneBulkStudentRow {
+  answer_id: number;
+  student_name: string;
+  veli_count: number;
+  has_student: boolean;
+  skip_reason: string;
+  send_mode?: string;
+}
+
+export interface KarneBulkPreviewResponse {
+  success: boolean;
+  error?: string;
+  data?: {
+    exam_id: number;
+    exam_name: string;
+    students: KarneBulkStudentRow[];
+    sendable: number;
+    total: number;
+  };
+}
+
+export interface KarneBulkSendResponse {
+  success: boolean;
+  error?: string;
+  data?: {
+    sent: number;
+    skipped: number;
+    errors: string[];
+    student_results?: Array<{
+      answer_id: number;
+      student_name: string;
+      sent: number;
+      errors: string[];
+    }>;
+  };
+}
+
+export interface KarneNotifySendResponse {
+  success: boolean;
+  error?: string;
+  data?: {
+    sent: number;
+    skipped: number;
+    errors: string[];
+    sent_details?: Array<{
+      recipient_type: string;
+      display_name: string;
+      telefon: string;
+      message_status: string;
+    }>;
+  };
+}
+
+function filenameFromDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const star = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star?.[1]) {
+    try { return decodeURIComponent(star[1]); } catch { /* ignore */ }
+  }
+  const plain = header.match(/filename="([^"]+)"/i);
+  return plain?.[1] || fallback;
+}
 
 // ── Öğrenci Sınav Sekmesi API ───────────────────────────────────────────────
 
@@ -620,4 +791,30 @@ export const curriculumApi = {
       `${CURRICULUM_BASE}/unlink-section/`,
       { method: 'POST', body: JSON.stringify({ section_id: sectionId }) },
     ),
+};
+
+const PUAN_AYAR_BASE = '/api/coaching/olcme-degerlendirme/puan-ayarlari';
+
+export const puanAyarlariApi = {
+  get: () => request<PuanAyarlari>(`${PUAN_AYAR_BASE}/`),
+
+  updateDefault: (default_puan_yili: number) =>
+    request<PuanAyarlari>(`${PUAN_AYAR_BASE}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ default_puan_yili }),
+    }),
+
+  getYear: (year: number) =>
+    request<PuanYilSeti>(`${PUAN_AYAR_BASE}/katsayilar/${year}/`),
+
+  saveYear: (year: number, sets: Partial<Record<KatsayiKind, { coefficients: Record<string, number> }>>) =>
+    request<PuanYilSeti>(`${PUAN_AYAR_BASE}/katsayilar/${year}/`, {
+      method: 'PUT',
+      body: JSON.stringify({ sets }),
+    }),
+
+  resetYear: (year: number) =>
+    request<PuanYilSeti>(`${PUAN_AYAR_BASE}/katsayilar/${year}/reset/`, {
+      method: 'POST',
+    }),
 };

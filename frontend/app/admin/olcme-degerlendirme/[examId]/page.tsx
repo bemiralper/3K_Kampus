@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
-import { examApi } from '../../../../components/olcme/api';
+import { examApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import {
   EXAM_TYPES,
   EXAM_STATUS,
@@ -252,8 +252,17 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
   const [loadingTyt, setLoadingTyt] = useState(false);
   const [linkingTyt, setLinkingTyt] = useState(false);
   const [showTytSelect, setShowTytSelect] = useState(false);
+  const [kurumDefaultYear, setKurumDefaultYear] = useState(2025);
+  const [managedYears, setManagedYears] = useState<number[]>([2024, 2025, 2026]);
 
   const isAyt = exam.exam_type === 'YKS_AYT';
+
+  useEffect(() => {
+    puanAyarlariApi.get().then(d => {
+      setKurumDefaultYear(d.default_puan_yili);
+      setManagedYears(d.managed_years);
+    }).catch(() => {});
+  }, []);
 
   /* ── düzenleme formu state ─── */
   const [editForm, setEditForm] = useState({
@@ -266,6 +275,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
     booklet_auto_detect: exam.booklet_auto_detect,
     result_publish_date: exam.result_publish_date?.slice(0, 16) || '',
     answer_key_publish_date: exam.answer_key_publish_date?.slice(0, 16) || '',
+    puan_yili: exam.puan_yili ?? '',
   });
 
   /* ── oturum ekleme formu ─── */
@@ -315,6 +325,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
       booklet_auto_detect: exam.booklet_auto_detect,
       result_publish_date: exam.result_publish_date?.slice(0, 16) || '',
       answer_key_publish_date: exam.answer_key_publish_date?.slice(0, 16) || '',
+      puan_yili: exam.puan_yili ?? '',
     });
   };
 
@@ -334,6 +345,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
         booklet_auto_detect: editForm.booklet_auto_detect,
         result_publish_date: editForm.result_publish_date || null,
         answer_key_publish_date: editForm.answer_key_publish_date || null,
+        puan_yili: editForm.puan_yili === '' ? null : Number(editForm.puan_yili),
       } as Partial<ExamDetail>);
       setEditing(false);
       onRefresh();
@@ -426,6 +438,10 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                 <InfoItem label="Süre" value={exam.duration_minutes ? `${exam.duration_minutes} dk` : '—'} />
                 <InfoItem label="Kitapçık" value={labelOf(BOOKLET_TYPES, exam.booklet_type)} />
                 <InfoItem label="Yanlış Düzeltme" value={wrongText} />
+                <InfoItem
+                  label="Puan yılı"
+                  value={exam.puan_yili ? `${exam.puan_yili} YKS` : `Kurum varsayılanı (${kurumDefaultYear})`}
+                />
                 <InfoItem label="Sınav Tarihleri" value={sessionDateSummary(sessions)} />
                 <InfoItem label="Sınav Yayın Tarihi" value={fmtDateTime(exam.result_publish_date)} />
                 <InfoItem label="Cevap Anahtarı Yayın Tarihi" value={fmtDateTime(exam.answer_key_publish_date)} />
@@ -451,6 +467,18 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   <label>Yanlış Sayısı</label>
                   <input type="number" value={ef.wrong_answer_count}
                     onChange={e => setEf({ wrong_answer_count: e.target.value })} min="0" />
+                </div>
+                <div className={s.formGroup}>
+                  <label>Puan yılı</label>
+                  <select
+                    value={ef.puan_yili}
+                    onChange={e => setEf({ puan_yili: e.target.value === '' ? '' : Number(e.target.value) })}
+                  >
+                    <option value="">Kurum varsayılanı ({kurumDefaultYear})</option>
+                    {managedYears.map(y => (
+                      <option key={y} value={y}>{y} YKS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className={s.formGroup}>
                   <label>Sonuç Yayın Tarihi</label>

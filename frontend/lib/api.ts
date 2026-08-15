@@ -308,13 +308,23 @@ export async function apiFetch<T = unknown>(
     headers["X-CSRFToken"] = csrfToken;
   }
 
-  try {
-    const response = await fetch(url, {
+  const run = () =>
+    fetch(url, {
       ...options,
       method,
       headers,
       credentials: "include",
     });
+
+  try {
+    let response = await run();
+    if (
+      !isMutating
+      && (response.status === 502 || response.status === 503)
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 280));
+      response = await run();
+    }
 
     if (response.status === 401) {
       try {

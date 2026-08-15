@@ -3,12 +3,15 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  exportRankingsPdf, exportStudentsPdf,
-  ALAN_LABELS, SORT_OPTIONS, AYT_ALAN_DERSLERI, isSectionForAlan,
+  exportRankingsPdf,
+  ALAN_LABELS, AYT_ALAN_DERSLERI, isSectionForAlan,
   DEFAULT_COLUMN_CONFIG,
+  sortOptionsForExam,
+  sortStudents,
   type SortField, type PdfColumnConfig,
   type SectionAvgInfo, type SinifAvgInfo,
 } from './pdfExport';
+import { analysisApi } from './api';
 import type { RankingItem, StudentAnalysis, RankingSectionInfo } from './types';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -37,6 +40,8 @@ interface RankingsProps extends BaseProps {
 
 interface StudentsProps extends BaseProps {
   mode: 'students';
+  examId: number;
+  rankingYear?: number;
   students: StudentAnalysis[];
   rankings?: never;
   sections?: never;
@@ -58,7 +63,7 @@ export default function PdfExportModal(props: PdfExportModalProps) {
   useEffect(() => { setPortalRoot(document.body); }, []);
 
   /* ── Genel filtreler ── */
-  const [sortBy, setSortBy] = useState<SortField>('kurum_sira');
+  const [sortBy, setSortBy] = useState<SortField>(examType === 'YKS_AYT' ? 'kurum_sira' : 'puan');
   const [alanFilter, setAlanFilter] = useState<string | null>(null);
   const [sinifFilter, setSinifFilter] = useState<string | null>(null);
 
@@ -134,15 +139,28 @@ export default function PdfExportModal(props: PdfExportModalProps) {
           sinifAvgs: props.sinifAvgs,
         });
       } else {
-        await exportStudentsPdf({
-          examName,
-          examType,
-          students: props.students,
-          sortBy,
-          alanFilter,
-          sinifFilter,
-          columns,
-        });
+        let filtered = [...props.students];
+        if (alanFilter) filtered = filtered.filter(st => st.alan === alanFilter);
+        if (sinifFilter) filtered = filtered.filter(st => st.sinif === sinifFilter);
+        let effectiveSort = sortBy;
+        if (alanFilter && sortBy === 'kurum_sira') {
+          const alanSortMap: Record<string, SortField> = { SAYISAL: 'say', ESIT_AGIRLIK: 'ea', SOZEL: 'soz' };
+          effectiveSort = alanSortMap[alanFilter] || sortBy;
+        }
+        filtered = sortStudents(filtered, effectiveSort);
+        if (!filtered.length) {
+          alert('Seçilen filtrelere uyan öğrenci yok.');
+          return;
+        }
+        if (filtered.length > 80) {
+          alert('Tek seferde en fazla 80 karne indirilebilir. Filtreyi daraltın.');
+          return;
+        }
+        await analysisApi.downloadKarnelerPdf(
+          props.examId,
+          filtered.map(st => st.answer_id),
+          props.rankingYear,
+        );
       }
       onClose();
     } catch (err) {
@@ -204,7 +222,7 @@ export default function PdfExportModal(props: PdfExportModalProps) {
               📄 PDF Dışa Aktarma
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: 12, opacity: 0.85 }}>
-              {mode === 'rankings' ? 'Sıralama Tablosu' : 'Öğrenci Listesi'} · {examName}
+              {mode === 'rankings' ? 'Sıralama Tablosu' : 'Öğrenci Karneleri'} · {examName}
             </p>
           </div>
           <button
@@ -223,7 +241,7 @@ export default function PdfExportModal(props: PdfExportModalProps) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
             <FieldGroup label="Sıralama Kriteri">
               <select value={sortBy} onChange={e => setSortBy(e.target.value as SortField)} style={selectStyle}>
-                {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {sortOptionsForExam(examType).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </FieldGroup>
             <FieldGroup label="Alan Filtresi">
@@ -233,7 +251,7 @@ export default function PdfExportModal(props: PdfExportModalProps) {
                   applyAlanPreset(v);
                 } else {
                   setAlanFilter(null);
-                  setSortBy('kurum_sira');
+                  setSortBy(examType === 'YKS_AYT' ? 'kurum_sira' : 'puan');
                 }
               }} style={selectStyle}>
                 <option value="">Tümü</option>
@@ -291,8 +309,15 @@ export default function PdfExportModal(props: PdfExportModalProps) {
             </>
           )}
 
+          {mode === 'students' && (
+            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: 12, fontSize: 12, color: '#0369a1', marginBottom: 20 }}>
+              Seçilen her öğrenci için orijinal sınav sonuç belgesi (karne) tek PDF dosyasında indirilir.
+            </div>
+          )}
+
           {/* ─── 3. SÜTUN SEÇENEKLERİ ─── */}
-          <SectionTitle icon="📊" title="Sütun Seçenekleri" />
+          {mode === 'rankings' && <SectionTitle icon="📊" title="Sütun Seçenekleri" />}
+          {mode === 'rankings' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 20 }}>
             <CheckItem
               label="Öğrenci No (Ö.No)"
@@ -359,9 +384,10 @@ export default function PdfExportModal(props: PdfExportModalProps) {
               />
             )}
           </div>
+          )}
 
           {/* ─── 4. PUAN TÜRLERİ (Sadece AYT) ─── */}
-          {isAyt && (
+          {mode === 'rankings' && isAyt && (
             <>
           <SectionTitle icon="🎯" title="Puan Türleri" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
@@ -399,10 +425,8 @@ export default function PdfExportModal(props: PdfExportModalProps) {
               </>
             ) : (
               <>
-                {columns.showDYB ? 'D/Y/B detaylı' : 'Özet'} ·{' '}
-                {isAyt ? (columns.showPuanTurleri ? columns.visiblePuanTurleri.join('/') : 'Puan türleri gizli') : ''}{isAyt ? ' · ' : ''}
-                {columns.showTahminiSiralama ? 'Tah. sıralama ✓' : 'Tah. sıralama ✗'} ·{' '}
-                {alanFilter ? ALAN_LABELS[alanFilter] : 'Tüm alanlar'}
+                Orijinal karne PDF · {alanFilter ? ALAN_LABELS[alanFilter] : 'Tüm alanlar'}
+                {sinifFilter ? ` · ${sinifFilter}` : ''}
               </>
             )}
           </div>
@@ -432,6 +456,8 @@ export default function PdfExportModal(props: PdfExportModalProps) {
           >
             {generating ? (
               <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span> Oluşturuluyor…</>
+            ) : mode === 'students' ? (
+              <>📄 Karneleri İndir</>
             ) : (
               <>📄 PDF Oluştur ve İndir</>
             )}

@@ -115,6 +115,7 @@ export interface ExamDetail extends ExamListItem {
   wrong_answer_count: number;
   per_section_penalty: boolean;
   score_coefficients: Record<string, unknown>;
+  puan_yili: number | null;
   booklet_type: string;
   booklet_type_display: string;
   booklet_auto_detect: boolean;
@@ -146,6 +147,7 @@ export interface ExamCreateForm {
   deneme_paketi: number | null;
   wrong_answer_count: string;
   per_section_penalty: boolean;
+  puan_yili: number | null;
   booklet_type: string;
   booklet_auto_detect: boolean;
   apply_template: boolean;
@@ -164,6 +166,7 @@ export const EXAM_CREATE_FORM_DEFAULT: ExamCreateForm = {
   deneme_paketi:        null,
   wrong_answer_count:   '4',
   per_section_penalty:  true,
+  puan_yili:            null,
   booklet_type:         'NONE',
   booklet_auto_detect:  true,
   apply_template:       true,
@@ -545,6 +548,7 @@ export interface StudentDetailResponse {
   answer_id: number;
   student_id: number | null;
   student_name: string;
+  profil_foto?: string | null;
   raw_student_id: string;
   sinif: string;
   sinif_student_count: number;
@@ -575,6 +579,28 @@ export interface StudentDetailResponse {
   dogruluk_orani: number;
   toplam_bos_potansiyel: number;
   referans_yil: number;
+  exam_name?: string;
+  exam_type?: string;
+  exam_type_label?: string;
+  kurum_ad?: string;
+  sube_ad?: string;
+  session_name?: string;
+  session_date?: string | null;
+  session_start_time?: string | null;
+  kurum_avg_puan?: number;
+  puan_turleri_avgs?: Record<string, number>;
+  answer_grids?: {
+    section_id: number;
+    section_name: string;
+    questions: { q: number; given: string; correct: string; result: string }[];
+  }[];
+  topic_blocks?: {
+    heading: string;
+    tables: {
+      title: string;
+      rows: { name: string; soru: number; dogru: number; yanlis: number; bos: number; basari: number }[];
+    }[];
+  }[];
 }
 
 export interface ClassAnalysis {
@@ -724,4 +750,25 @@ export interface StudentExamResponse {
   exams: StudentExamResult[];
   kpi: StudentExamKPI | null;
   net_trend: StudentExamTrend[];
+}
+
+export type KatsayiKind = 'TYT' | 'AYT_SAY' | 'AYT_EA' | 'AYT_SOZ';
+
+export interface KatsayiSeti {
+  kind: KatsayiKind;
+  kind_display: string;
+  coefficients: Record<string, number>;
+  is_published: boolean;
+}
+
+export interface PuanYilSeti {
+  year: number;
+  is_published: boolean;
+  sets: Record<KatsayiKind, KatsayiSeti>;
+}
+
+export interface PuanAyarlari {
+  default_puan_yili: number;
+  managed_years: number[];
+  years: PuanYilSeti[];
 }
