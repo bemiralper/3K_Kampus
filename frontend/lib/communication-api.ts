@@ -676,6 +676,8 @@ export interface WhatsAppAccountWritePayload {
   quota_json?: Record<string, unknown>;
   role_ids?: number[];
   sube_ids?: number[];
+  same_meta_account?: boolean;
+  source_account_id?: string;
 }
 
 export async function fetchWhatsAppAccounts(params?: {
@@ -1228,9 +1230,32 @@ export async function openConversationByPhone(
   });
 }
 
-export function conversationInboxPath(conversationId: string, admin = false): string {
-  const base = admin ? '/admin/iletisim/mesajlar' : '/coach/mesajlar';
-  return `${base}?conversation=${conversationId}`;
+export type InboxPortal = 'admin' | 'coach' | 'muhasebe';
+
+export function resolveInboxPortal(pathname: string): InboxPortal {
+  if (pathname.startsWith('/muhasebe')) return 'muhasebe';
+  if (pathname.startsWith('/coach')) return 'coach';
+  return 'admin';
+}
+
+export function conversationInboxBase(portal: InboxPortal): string {
+  if (portal === 'admin') return '/admin/iletisim/mesajlar';
+  if (portal === 'muhasebe') return '/muhasebe/iletisim/mesajlar';
+  return '/coach/mesajlar';
+}
+
+export function conversationTemplatesPath(portal: InboxPortal): string {
+  if (portal === 'muhasebe') return '/muhasebe/iletisim/sablonlar';
+  return '/admin/iletisim/sablonlar';
+}
+
+export function conversationInboxPath(
+  conversationId: string,
+  portal: boolean | InboxPortal = false,
+): string {
+  const resolved: InboxPortal =
+    portal === true ? 'admin' : portal === false ? 'coach' : portal;
+  return `${conversationInboxBase(resolved)}?conversation=${conversationId}`;
 }
 
 /** Veli sohbetinde "… velisi" alt satırı; öğrenci sohbetinde veli adı (varsa). */

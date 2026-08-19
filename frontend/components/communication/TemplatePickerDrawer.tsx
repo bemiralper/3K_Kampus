@@ -3,12 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import WhatsAppPreviewBubble from "./WhatsAppPreviewBubble";
 import {
   categoryLabelMap,
+  conversationTemplatesPath,
   fetchTemplateCategories,
   fetchTemplates,
   MessageTemplateItem,
+  resolveInboxPortal,
   TEMPLATE_AUDIENCE_LABELS,
   TemplateCategoryItem,
 } from "@/lib/communication-api";
@@ -28,6 +31,8 @@ export default function TemplatePickerDrawer({
   readOnly = false,
   inboxMode = false,
 }: TemplatePickerDrawerProps) {
+  const pathname = usePathname() || "";
+  const templatesHref = conversationTemplatesPath(resolveInboxPortal(pathname));
   const [templates, setTemplates] = useState<MessageTemplateItem[]>([]);
   const [categories, setCategories] = useState<TemplateCategoryItem[]>([]);
   const [category, setCategory] = useState("");
@@ -164,7 +169,7 @@ export default function TemplatePickerDrawer({
 
         {inboxMode && (
           <footer className="comm-drawer-footer">
-            <Link href="/admin/iletisim/sablonlar" className="comm-btn-secondary" onClick={onClose}>
+            <Link href={templatesHref} className="comm-btn-secondary" onClick={onClose}>
               Şablonları yönet
             </Link>
           </footer>

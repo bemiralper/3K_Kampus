@@ -4391,6 +4391,42 @@
   gap: 0.75rem;
 }
 
+.comm-meta-choice-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.comm-meta-choice {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--comm-border);
+  border-radius: var(--comm-radius-sm);
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.comm-meta-choice:hover {
+  border-color: var(--comm-primary);
+  box-shadow: 0 0 0 3px var(--comm-primary-light);
+}
+
+.comm-meta-choice strong {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.9375rem;
+  color: var(--comm-text);
+}
+
+.comm-meta-choice span {
+  display: block;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--comm-text-muted);
+}
+
 .comm-account-card-title {
   margin: 0;
   font-size: 1rem;

@@ -11,6 +11,7 @@ import MuhasebeTopbar from "@/components/muhasebe/MuhasebeTopbar";
 import { useMuhasebeSidebarCollapse } from "@/hooks/useMuhasebeSidebarCollapse";
 import GorevEkranMesajiOverlay from "@/components/gorev/GorevEkranMesajiOverlay";
 import { ActiveKurumBranding } from "@/components/branding/KurumLogo";
+import { CommunicationChatProvider } from "@/components/communication/CommunicationChatProvider";
 import "./muhasebe.css";
 
 const PAGE_TITLES: Record<string, string> = {
@@ -19,6 +20,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/muhasebe/ogrenci/liste": "Öğrenci Listesi",
   "/muhasebe/ogrenci/yeni-kayit": "Yeni Kayıt",
   "/muhasebe/odeme-takip": "Sözleşme/Tahsilat",
+  "/muhasebe/iletisim/mesajlar": "WhatsApp",
+  "/muhasebe/iletisim/sablonlar": "WhatsApp Şablonları",
   "/muhasebe/finans": "Finans",
   "/muhasebe/personel": "Personel",
   "/muhasebe/personel/gorevlendirmeler": "Görevlendirmeler",
@@ -44,6 +47,10 @@ function resolvePageTitle(pathname: string): string {
     return "Finans";
   }
   if (pathname.startsWith("/muhasebe/odeme-takip/")) return "Sözleşme/Tahsilat";
+  if (pathname.startsWith("/muhasebe/iletisim")) {
+    if (pathname.includes("sablonlar")) return "WhatsApp · Şablonlar";
+    return "WhatsApp";
+  }
   if (pathname.startsWith("/muhasebe/kurum/")) {
     if (pathname.includes("kimlik-cakismalari")) return "Kimlik Çakışmaları";
     if (pathname.includes("egitim-paketleri")) return "Eğitim Paketleri";
@@ -128,6 +135,7 @@ export default function MuhasebeLayout({ children }: { children: ReactNode }) {
 
   return (
     <KurumProvider>
+      <CommunicationChatProvider inboxPortal="muhasebe">
       <div className={`muhasebe-shell${shellClass}`}>
         <Suspense fallback={null}>
           <MuhasebeSidebar
@@ -164,6 +172,7 @@ export default function MuhasebeLayout({ children }: { children: ReactNode }) {
       </div>
       <ActiveKurumBranding />
       <GorevEkranMesajiOverlay />
+      </CommunicationChatProvider>
     </KurumProvider>
   );
 }

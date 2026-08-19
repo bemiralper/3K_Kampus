@@ -210,19 +210,31 @@ def lms_body_matches_event(event_key: str, body: str) -> bool:
     return True
 
 
-def _discover_meta_by_name(kurum_id: int, event: NotificationEvent, recipient_type: str):
+def _discover_meta_by_name(
+    kurum_id: int,
+    event: NotificationEvent,
+    recipient_type: str,
+    *,
+    channel_config_id=None,
+):
     from apps.communication.domain.models import WhatsAppMetaTemplate
 
     names = event.meta_name_candidates(recipient_type)
     if not names:
         return None
-    candidates = list(
-        WhatsAppMetaTemplate.objects.filter(
-            kurum_id=kurum_id,
-            status=MetaTemplateStatus.APPROVED,
-            name__in=names,
-        ).select_related('channel_config'),
-    )
+    qs = WhatsAppMetaTemplate.objects.filter(
+        kurum_id=kurum_id,
+        status=MetaTemplateStatus.APPROVED,
+        name__in=names,
+    ).select_related('channel_config')
+    if channel_config_id:
+        from apps.communication.application.account_resolver import AccountResolver
+        ids = AccountResolver.shared_waba_account_ids(kurum_id, channel_config_id)
+        scoped = qs.filter(channel_config_id__in=ids or [channel_config_id])
+        # Aynı WABA / başka hesap kaydındaki onaylı şablon da geçerli
+        candidates = list(scoped) if scoped.exists() else list(qs)
+    else:
+        candidates = list(qs)
     if not candidates:
         return None
     # Katalogdaki isim sırası önceliklidir
@@ -239,6 +251,42 @@ def _discover_meta_by_name(kurum_id: int, event: NotificationEvent, recipient_ty
                 return tpl
         return None
     return candidates[0]
+
+
+def _align_meta_to_account(resolved: ResolvedTemplate, kurum_id: int, channel_config_id) -> None:
+    """Gönderim hattını rol numarasına sabitle; şablonu aynı WABA'da paylaş."""
+    from apps.communication.application.account_resolver import AccountResolver
+    from apps.communication.domain.models import WhatsAppMetaTemplate
+
+    resolved.channel_config_id = str(channel_config_id)
+    meta = resolved.meta_template
+    if meta is None:
+        return
+    if str(meta.channel_config_id) == str(channel_config_id):
+        return
+    shared_ids = {
+        str(item)
+        for item in AccountResolver.shared_waba_account_ids(kurum_id, channel_config_id)
+    }
+    if str(meta.channel_config_id) in shared_ids:
+        return
+    twin = WhatsAppMetaTemplate.objects.filter(
+        kurum_id=kurum_id,
+        name=meta.name,
+        status=MetaTemplateStatus.APPROVED,
+        channel_config_id__in=[channel_config_id, *shared_ids],
+    ).select_related('channel_config')
+    if meta.language:
+        lang_twin = twin.filter(language=meta.language).first()
+        if lang_twin:
+            resolved.meta_template = lang_twin
+            return
+    found = twin.first()
+    if found:
+        resolved.meta_template = found
+        return
+    # Onaylı şablonu düşürme — 24 saat kapalıyken gönderim kilitlenmesin.
+    # Gönderim yine rolün numarasından (channel_config_id) yapılır.
 
 
 def resolve_binding(
@@ -307,13 +355,17 @@ def resolve_binding(
         rejected_bound_meta = True
 
     if not resolved.meta_template and resolved.send_mode != NotificationSendMode.FREEFORM_ONLY:
-        discovered = _discover_meta_by_name(kurum_id, event, recipient_type)
+        discovered = _discover_meta_by_name(
+            kurum_id, event, recipient_type, channel_config_id=channel_config_id,
+        )
         if discovered and _meta_template_matches_event(event_key, discovered):
             resolved.meta_template = discovered
             if resolved.source == SOURCE_EVENT_DEFAULT or rejected_bound_meta:
                 resolved.source = SOURCE_META_NAME
 
-    if resolved.meta_template and not resolved.channel_config_id:
+    if channel_config_id:
+        _align_meta_to_account(resolved, kurum_id, channel_config_id)
+    elif resolved.meta_template and not resolved.channel_config_id:
         resolved.channel_config_id = str(resolved.meta_template.channel_config_id)
 
     body = ''

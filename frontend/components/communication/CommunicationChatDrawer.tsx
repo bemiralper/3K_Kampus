@@ -12,6 +12,7 @@ import { useConversationThread } from "@/hooks/useConversationThread";
 import {
   accountLabel,
   conversationInboxPath,
+  type InboxPortal,
   ConversationListItem,
   fetchAccessibleWhatsAppAccounts,
   openConversationByPhone,
@@ -24,6 +25,7 @@ interface CommunicationChatDrawerProps {
   onClose: () => void;
   target: ChatOpenParams | null;
   adminInbox?: boolean;
+  inboxPortal?: InboxPortal;
 }
 
 const DEPT_LABELS: Record<string, string> = {
@@ -40,7 +42,9 @@ export default function CommunicationChatDrawer({
   onClose,
   target,
   adminInbox = false,
+  inboxPortal,
 }: CommunicationChatDrawerProps) {
+  const portal: InboxPortal = inboxPortal ?? (adminInbox ? "admin" : "coach");
   const [conversation, setConversation] = useState<ConversationListItem | null>(null);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -62,10 +66,7 @@ export default function CommunicationChatDrawer({
         if (cancelled) return;
         const list = accessible.accounts || [];
         setAccounts(list);
-        const initial =
-          accessible.default_account_id
-          || list[0]?.id
-          || "";
+        const initial = accessible.default_account_id || list[0]?.id || "";
         setAccountId((prev) => prev || initial);
       } catch {
         if (!cancelled) {
@@ -180,7 +181,7 @@ export default function CommunicationChatDrawer({
           <div className="comm-chat-drawer-header-actions">
             {conversation?.id && (
               <Link
-                href={conversationInboxPath(conversation.id, adminInbox)}
+                href={conversationInboxPath(conversation.id, portal)}
                 className="comm-btn-secondary comm-chat-drawer-fullscreen"
                 onClick={handleClose}
               >
@@ -274,7 +275,7 @@ export default function CommunicationChatDrawer({
               ? "OGRENCI"
               : conversation?.contact_type
         }
-        showManageLink={adminInbox}
+        showManageLink={portal === "admin"}
         onClose={() => setMetaTemplatesOpen(false)}
         onSent={handleTemplateSent}
       />

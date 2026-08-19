@@ -169,7 +169,15 @@ class CommunicationService:
                 thread_ogrenci_id = resolved.ogrenci_id or recipients.ogrenci_id
                 thread_veli_id = resolved.veli_id or recipients.veli_id
                 thread_contact_type = resolved.contact_type
-            conversation, _ = ConversationRepository.get_or_create_for_contact(
+            send_cfg = None
+            if content.channel_config_id:
+                from apps.communication.domain.models import CommunicationChannelConfig
+
+                send_cfg = CommunicationChannelConfig.objects.filter(
+                    id=content.channel_config_id,
+                    kurum_id=kurum_id,
+                ).first()
+            conversation, created = ConversationRepository.get_or_create_for_contact(
                 kurum_id=kurum_id,
                 channel=channel,
                 contact_phone=e164,
@@ -177,7 +185,11 @@ class CommunicationService:
                 contact_identity=resolved.identity,
                 ogrenci_id=thread_ogrenci_id,
                 veli_id=thread_veli_id,
+                channel_config=send_cfg,
+                channel_config_id=content.channel_config_id,
             )
+            if created and sender_user_id:
+                self._tag_accounting_conversation(conversation, sender_user_id)
 
         message_type = content.message_type
         if content.template_name:
@@ -353,6 +365,22 @@ class CommunicationService:
             return SendResult(success=False, errors=['Kampanya bulunamadı.'])
         result = CampaignService().retry_failed(campaign)
         return SendResult(success=True, provider_response=result)
+
+    @staticmethod
+    def _tag_accounting_conversation(conversation, sender_user_id: int) -> None:
+        """Muhasebe personelinin yeni sohbetini ACCOUNTING kuyruğuna düşür."""
+        from django.contrib.auth import get_user_model
+
+        from apps.communication.application.account_resolver import _is_accounting_staff
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        user = get_user_model().objects.filter(id=sender_user_id).first()
+        if not user or not _is_accounting_staff(user):
+            return
+        if conversation.department == CommunicationDepartment.ACCOUNTING:
+            return
+        conversation.department = CommunicationDepartment.ACCOUNTING
+        conversation.save(update_fields=['department', 'updated_at'])
 
     def preview_campaign(
         self,

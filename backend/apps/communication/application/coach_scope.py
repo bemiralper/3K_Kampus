@@ -12,7 +12,12 @@ from apps.coaching.services.coach_access import (
     is_resource_admin,
     scoped_student_ids,
 )
-from apps.communication.domain.enums import ConversationStatus, RecipientType
+from apps.communication.domain.enums import (
+    CommunicationDepartment,
+    ConversationStatus,
+    MessageDirection,
+    RecipientType,
+)
 from shared.permissions import user_has_any_permission
 
 COACH_AUDIENCE_TYPES = frozenset({'coach_students', 'coach_parents', 'custom_ids', 'filtered'})
@@ -238,6 +243,17 @@ def filter_by_accessible_whatsapp_accounts(
     # Hesap atanmamış eski sohbetler yalnızca erişilebilir varsayılan hesaba düşer
     if default_ids:
         account_q |= Q(channel_config_id__isnull=True)
+    from apps.communication.application.account_resolver import _is_accounting_staff
+
+    if _is_accounting_staff(user):
+        # Makbuz/şablon gönderimi koç hattına düşse bile muhasebe kendi
+        # gönderimini ve ACCOUNTING departmanındaki sohbetleri görsün.
+        account_q |= Q(department=CommunicationDepartment.ACCOUNTING)
+        account_q |= Q(
+            messages__sender_user_id=user.id,
+            messages__direction=MessageDirection.OUTBOUND,
+        )
+        return qs.filter(account_q).distinct()
     return qs.filter(account_q)
 
 
@@ -290,6 +306,10 @@ def _user_can_access_conversation_account(user, conversation) -> bool:
         cfg = CommunicationChannelConfig.objects.filter(id=conversation.channel_config_id).first()
 
     sube_id = getattr(conversation, 'sube_id', None)
+    from apps.communication.application.account_resolver import _is_accounting_staff
+
+    if _is_accounting_staff(user) and _accounting_owns_conversation(user, conversation):
+        return True
     if cfg is None:
         # Legacy sohbet: yalnızca varsayılan hesaba erişimi olan görebilir
         accessible = AccountResolver.list_accessible(
@@ -300,6 +320,18 @@ def _user_can_access_conversation_account(user, conversation) -> bool:
         return any(c.is_default for c in accessible)
 
     return AccountResolver.user_can_access_account(user, cfg, sube_id)
+
+
+def _accounting_owns_conversation(user, conversation) -> bool:
+    if getattr(conversation, 'department', None) == CommunicationDepartment.ACCOUNTING:
+        return True
+    from apps.communication.domain.models import Message
+
+    return Message.objects.filter(
+        conversation=conversation,
+        sender_user_id=user.id,
+        direction=MessageDirection.OUTBOUND,
+    ).exists()
 
 
 def user_can_access_conversation(user, conversation) -> bool:

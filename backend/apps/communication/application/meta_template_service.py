@@ -510,7 +510,16 @@ class MetaTemplateService:
             status=MetaTemplateStatus.APPROVED,
         )
         if channel_config_id:
-            qs = qs.filter(channel_config_id=channel_config_id)
+            exact = qs.filter(channel_config_id=channel_config_id).select_related('channel_config').first()
+            if exact:
+                return exact
+            from apps.communication.application.account_resolver import AccountResolver
+            shared = AccountResolver.shared_waba_account_ids(kurum_id, channel_config_id)
+            if shared:
+                found = qs.filter(channel_config_id__in=shared).select_related('channel_config').first()
+                if found:
+                    return found
+            return qs.select_related('channel_config').first()
         return qs.select_related('channel_config').first()
 
     @staticmethod

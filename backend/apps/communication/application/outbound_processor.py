@@ -28,7 +28,7 @@ from apps.communication.infrastructure.channels.dispatcher import ChannelDispatc
 from apps.communication.infrastructure.media_storage import (
     ensure_public_upload,
     get_public_media_url,
-    local_file_path,
+    materialize_local_file,
 )
 from apps.communication.infrastructure.repository import OutboundQueueRepository
 
@@ -61,12 +61,11 @@ def _resolve_media_id(client, kurum_id: int, attachment) -> tuple[str | None, st
     if attachment.provider_media_id:
         return attachment.provider_media_id, None
 
-    path = local_file_path(attachment.file)
+    path, is_temp = materialize_local_file(attachment.file)
     mime = attachment.mime_type or 'application/octet-stream'
-    if path:
-        upload_kwargs = {}
-        if hasattr(client, 'upload_media'):
-            # Dosya adı Meta için önemli (özellikle PDF DOCUMENT)
+    media_id = None
+    try:
+        if path and hasattr(client, 'upload_media'):
             fname = getattr(attachment, 'original_name', '') or ''
             try:
                 media_id = client.upload_media(
@@ -74,12 +73,17 @@ def _resolve_media_id(client, kurum_id: int, attachment) -> tuple[str | None, st
                 )
             except TypeError:
                 media_id = client.upload_media(kurum_id, path, mime)
-        else:
-            media_id = None
         if media_id:
             attachment.provider_media_id = media_id
             attachment.save(update_fields=['provider_media_id'])
             return media_id, None
+    finally:
+        if is_temp and path:
+            import os
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
     ensure_public_upload(attachment.file, mime_type=mime)
     link = get_public_media_url(attachment.file)
@@ -134,6 +138,17 @@ def _send_options(item) -> dict:
     return opts if isinstance(opts, dict) else {}
 
 
+def _stamp_conversation_channel(conversation, item) -> None:
+    """Gönderilen hattı sohbete yaz — inbox hesabı ile eşleşsin."""
+    if conversation is None or conversation.channel_config_id:
+        return
+    cfg = _resolve_channel_config(item)
+    if cfg is None:
+        return
+    conversation.channel_config_id = cfg.id
+    conversation.save(update_fields=['channel_config_id', 'updated_at'])
+
+
 def _resolve_channel_config(item):
     message = item.message
     conversation = getattr(message, 'conversation', None)
@@ -179,6 +194,25 @@ def _build_template_media_header(client, kurum_id, message, meta_tpl) -> dict | 
         media_id=media_id,
         link=link,
         filename=attachment.original_name or '',
+    )
+
+
+def _media_header_error(client, message, meta_tpl) -> str:
+    header_type = meta_template_header_type(meta_tpl) if meta_tpl else 'DOCUMENT'
+    attachment = message.attachments.first() if message else None
+    if not attachment or not attachment.file:
+        return (
+            f'Meta şablon {header_type} header bekliyor ancak PDF/medya eki yok.'
+        )
+    detail = (getattr(client, 'last_media_error', '') or '').strip()
+    base = (
+        f'Meta şablon {header_type} header bekliyor ancak PDF/medya '
+        'Meta’ya yüklenemedi (media_id yok).'
+    )
+    if detail:
+        return f'{base} {detail}'
+    return (
+        f'{base} WhatsApp hesabı token/phone_number_id ve sunucu dosya erişimini kontrol edin.'
     )
 
 
@@ -346,8 +380,17 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                     status=MetaTemplateStatus.APPROVED,
                 )
                 if channel_config_id:
-                    qs = qs.filter(channel_config_id=channel_config_id)
-                meta_tpl = qs.select_related('channel_config').first()
+                    from apps.communication.application.account_resolver import AccountResolver
+                    shared = AccountResolver.shared_waba_account_ids(
+                        item.kurum_id, channel_config_id,
+                    )
+                    scoped = qs.filter(channel_config_id__in=shared or [channel_config_id])
+                    meta_tpl = (
+                        scoped.select_related('channel_config').first()
+                        or qs.select_related('channel_config').first()
+                    )
+                else:
+                    meta_tpl = qs.select_related('channel_config').first()
             if meta_tpl is None:
                 # Yerelde kayıt yoksa eski davranış (legacy body_template)
                 # ama yerel REJECTED/PAUSED kaydı varsa engelle
@@ -397,11 +440,7 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 elif meta_template_header_type(meta_tpl) in ('DOCUMENT', 'IMAGE', 'VIDEO'):
                     result = {
                         'success': False,
-                        'error': (
-                            'Meta şablon DOCUMENT/IMAGE/VIDEO header bekliyor ancak '
-                            'PDF/medya Meta’ya yüklenemedi (media_id yok). '
-                            'WhatsApp hesabı token/phone_number_id ve sunucu dosya erişimini kontrol edin.'
-                        ),
+                        'error': _media_header_error(client, message, meta_tpl),
                     }
                     OutboundQueueRepository.mark_failed(
                         item, result['error'], permanent=True,
@@ -445,6 +484,7 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
             if msgs:
                 provider_id = msgs[0].get('id', '')
             OutboundQueueRepository.mark_sent(item, provider_id)
+            _stamp_conversation_channel(conversation, item)
             if item.campaign_id:
                 _safe_refresh_campaign_stats(item.campaign_id)
             return True

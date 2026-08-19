@@ -25,6 +25,30 @@ REQUEST_TIMEOUT = 30.0
 UPLOAD_TIMEOUT = 120.0
 APP_ID_CACHE_TTL = 60 * 60 * 24
 
+
+def phone_digits(value: str) -> str:
+    return ''.join(ch for ch in (value or '') if ch.isdigit())
+
+
+def phone_tail(value: str, length: int = 10) -> str:
+    digits = phone_digits(value)
+    return digits[-length:] if len(digits) >= length else digits
+
+
+def looks_like_msisdn(value: str) -> bool:
+    """Meta Phone Number ID değil, görünen telefon numarası gibi mi?"""
+    raw = (value or '').strip()
+    if not raw:
+        return False
+    if raw.startswith('+') or raw.startswith('00'):
+        return True
+    digits = phone_digits(raw)
+    if digits.startswith('90') and 10 <= len(digits) <= 13:
+        return True
+    if digits.startswith('0') and 10 <= len(digits) <= 11:
+        return True
+    return False
+
 META_ERROR_HINTS = {
     100: (
         'Geçersiz parametre — şablon değişken sayısı/adı, dil kodu (tr/tr_TR), '
@@ -36,6 +60,12 @@ META_ERROR_HINTS = {
     132015: 'Şablon duraklatıldı — Meta Business Manager\'dan kontrol edin.',
     131026: 'Mesaj teslim edilemedi — alıcı numarası geçersiz olabilir.',
     131047: '24 saatlik oturum dışı — onaylı şablon kullanın.',
+    133010: (
+        'Bu Phone Number ID Meta Cloud API’de kayıtlı değil. '
+        'Görünen telefon numarasını değil, WhatsApp Manager → Telefon numaraları '
+        'içindeki Phone number ID değerini yazın. Numara yeni eklendiyse önce '
+        'Meta’da Cloud API kaydını tamamlayın.'
+    ),
 }
 
 # Meta'nın İngilizce detay metinleri → uygulanabilir Türkçe açıklama.
@@ -74,6 +104,16 @@ META_MESSAGE_HINTS = (
         'Başlık metninde yeni satır, emoji, yıldız (*) veya biçimlendirme '
         'karakterleri kullanılamaz. Düz tek satır yazın.',
     ),
+    (
+        'account not registered',
+        'Phone Number ID Cloud API’de kayıtlı değil — görünen numara değil, '
+        'Meta’daki Phone number ID kullanılmalı.',
+    ),
+    (
+        'does not exist in the cloud api',
+        'Phone Number ID Cloud API’de yok. WhatsApp Manager’dan doğru ID’yi kopyalayın '
+        'veya numarayı Cloud API’ye kaydedin.',
+    ),
 )
 
 
@@ -82,6 +122,8 @@ class WhatsAppCloudClient(BaseChannelClient):
 
     def __init__(self, channel_config=None):
         self.channel_config = channel_config
+        self.last_media_error = ''
+        self._phone_number_id_override = ''
 
     def with_config(self, channel_config) -> 'WhatsAppCloudClient':
         """Hesap bazlı client kopyası (paylaşılan dispatcher için)."""
@@ -95,16 +137,21 @@ class WhatsAppCloudClient(BaseChannelClient):
             (db_config.access_token_encrypted if db_config else '')
             or settings.WHATSAPP_ACCESS_TOKEN
         )
+        access_token = decrypt_access_token(raw_token)
+        if not access_token and db_config is not None:
+            from apps.communication.application.account_resolver import AccountResolver
+            access_token = AccountResolver.sibling_access_token(db_config)
         return {
             'phone_number_id': (
-                (db_config.phone_number_id if db_config else '')
+                self._phone_number_id_override
+                or (db_config.phone_number_id if db_config else '')
                 or settings.WHATSAPP_PHONE_NUMBER_ID
             ),
             'waba_id': (
                 (db_config.waba_id if db_config else '')
                 or settings.WHATSAPP_WABA_ID
             ),
-            'access_token': decrypt_access_token(raw_token),
+            'access_token': access_token,
             'verify_token': (
                 (db_config.webhook_verify_token if db_config else '')
                 or settings.WHATSAPP_VERIFY_TOKEN
@@ -323,15 +370,63 @@ class WhatsAppCloudClient(BaseChannelClient):
         file_name: str | None = None,
     ) -> str | None:
         """Graph POST /{phone_number_id}/media — media_id döndürür."""
+        self.last_media_error = ''
+        config = self._resolve_config(kurum_id)
+        media_id = self._post_media_upload(
+            config, file_path, mime_type, file_name=file_name,
+        )
+        if media_id:
+            return media_id
+        # Seçili hatta bozuk token varsa aynı kurumdaki geçerli token ile tekrar dene.
+        # phone_number_id değişmez — medya gönderen numaraya ait olmalı.
+        db_config = self.channel_config
+        if db_config is not None:
+            from apps.communication.application.account_resolver import AccountResolver
+            alt = AccountResolver.sibling_access_token(db_config)
+            if alt and alt != config.get('access_token'):
+                retry_config = {**config, 'access_token': alt}
+                media_id = self._post_media_upload(
+                    retry_config, file_path, mime_type, file_name=file_name,
+                )
+                if media_id:
+                    return media_id
+                config = retry_config
+        if '133010' in (self.last_media_error or ''):
+            resolved = self.resolve_cloud_phone_number_id(kurum_id, config)
+            if resolved and resolved != config.get('phone_number_id'):
+                self._phone_number_id_override = resolved
+                retry_config = {**config, 'phone_number_id': resolved}
+                media_id = self._post_media_upload(
+                    retry_config, file_path, mime_type, file_name=file_name,
+                )
+                if media_id:
+                    self._persist_phone_number_id(resolved)
+                    return media_id
+            if looks_like_msisdn(config.get('phone_number_id') or ''):
+                extra = (
+                    ' Girilen değer görünen telefon numarasına benziyor; '
+                    'Meta Phone number ID (uzun sayı) olmalı.'
+                )
+                if extra not in (self.last_media_error or ''):
+                    self.last_media_error = f'{self.last_media_error}{extra}'
+        return None
+
+    def _post_media_upload(
+        self,
+        config: dict[str, str],
+        file_path: str,
+        mime_type: str,
+        *,
+        file_name: str | None = None,
+    ) -> str | None:
         from apps.communication.application.template_media_header import sanitize_document_filename
 
-        config = self._resolve_config(kurum_id)
         phone_number_id = config['phone_number_id']
         access_token = config['access_token']
 
         if not phone_number_id or not access_token:
-            logger.info('WhatsApp stub upload — kurum=%s', kurum_id)
-            return f'stub_media_{kurum_id}'
+            logger.info('WhatsApp stub upload — phone/token missing')
+            return f'stub_media_{phone_number_id or "missing"}'
 
         url = f'{GRAPH_API_BASE}/{phone_number_id}/media'
         headers = {'Authorization': f'Bearer {access_token}'}
@@ -342,7 +437,7 @@ class WhatsAppCloudClient(BaseChannelClient):
             guessed = 'application/pdf'
 
         try:
-            with open(file_path, 'rb') as fh, httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+            with open(file_path, 'rb') as fh, httpx.Client(timeout=UPLOAD_TIMEOUT) as client:
                 response = client.post(
                     url,
                     headers=headers,
@@ -353,11 +448,65 @@ class WhatsAppCloudClient(BaseChannelClient):
                 if response.is_success:
                     return data.get('id') or None
                 error_msg = self._format_api_error(data, response.text)
-                logger.warning('WhatsApp media upload failed kurum=%s: %s', kurum_id, error_msg)
+                self.last_media_error = error_msg
+                logger.warning('WhatsApp media upload failed: %s', error_msg)
                 return None
         except (OSError, httpx.HTTPError) as exc:
-            logger.exception('WhatsApp media upload error kurum=%s', kurum_id)
+            self.last_media_error = str(exc)
+            logger.exception('WhatsApp media upload error')
             return None
+
+    def list_waba_phone_numbers(self, kurum_id: int) -> list[dict[str, Any]]:
+        """GET /{waba_id}/phone_numbers — Cloud API hatları."""
+        config = self._resolve_config(kurum_id)
+        waba_id = (config.get('waba_id') or '').strip()
+        access_token = config.get('access_token') or ''
+        if not waba_id or not access_token:
+            return []
+        url = f'{GRAPH_API_BASE}/{waba_id}/phone_numbers'
+        headers = {'Authorization': f'Bearer {access_token}'}
+        try:
+            with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+                response = client.get(
+                    url,
+                    headers=headers,
+                    params={'fields': 'id,display_phone_number,verified_name'},
+                )
+                data = response.json()
+                if response.is_success:
+                    return list(data.get('data') or [])
+        except httpx.HTTPError:
+            logger.exception('WABA phone_numbers list failed')
+        return []
+
+    def resolve_cloud_phone_number_id(
+        self, kurum_id: int, config: dict[str, str],
+    ) -> str | None:
+        """Kayıtlı görünen numarayı WABA listesindeki gerçek Phone Number ID’ye çevir."""
+        current = (config.get('phone_number_id') or '').strip()
+        display = ''
+        if self.channel_config is not None:
+            display = (getattr(self.channel_config, 'display_phone', None) or '').strip()
+        needles = {
+            tail for tail in (phone_tail(current), phone_tail(display)) if tail
+        }
+        if not needles:
+            return None
+        for item in self.list_waba_phone_numbers(kurum_id):
+            item_id = str(item.get('id') or '').strip()
+            item_display = str(item.get('display_phone_number') or '')
+            if item_id and phone_tail(item_display) in needles:
+                return item_id
+        return None
+
+    def _persist_phone_number_id(self, phone_number_id: str) -> None:
+        cfg = self.channel_config
+        if cfg is None or not phone_number_id:
+            return
+        if (cfg.phone_number_id or '') == phone_number_id:
+            return
+        cfg.phone_number_id = phone_number_id
+        cfg.save(update_fields=['phone_number_id', 'updated_at'])
 
     def resolve_app_id(self, access_token: str, *, stored_app_id: str | None = None) -> str:
         """Meta App ID: hesap alanı → env → token (debug_token).

@@ -119,10 +119,48 @@ def local_file_path(file_field) -> str | None:
     if not file_field:
         return None
     name = file_field.name if hasattr(file_field, 'name') else str(file_field)
-    if hasattr(file_field, 'path'):
-        path = file_field.path
-        if os.path.isfile(path):
-            return path
-    if default_storage.exists(name):
-        return default_storage.path(name)
+    try:
+        if hasattr(file_field, 'path'):
+            path = file_field.path
+            if path and os.path.isfile(path):
+                return path
+    except (NotImplementedError, ValueError, OSError):
+        pass
+    try:
+        if name and default_storage.exists(name):
+            path = default_storage.path(name)
+            if path and os.path.isfile(path):
+                return path
+    except (NotImplementedError, ValueError, OSError):
+        pass
     return None
+
+
+def materialize_local_file(file_field) -> tuple[str | None, bool]:
+    """
+    Upload için yerel yol. Storage uzaksa geçici dosyaya indirir.
+
+    Dönüş: (path, is_temp) — is_temp ise çağıran silmeli.
+    """
+    import tempfile
+
+    existing = local_file_path(file_field)
+    if existing:
+        return existing, False
+    if not file_field:
+        return None, False
+    name = file_field.name if hasattr(file_field, 'name') else str(file_field)
+    if not name:
+        return None, False
+    try:
+        if not default_storage.exists(name):
+            return None, False
+        suffix = os.path.splitext(name)[1] or '.bin'
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        with default_storage.open(name, 'rb') as fh:
+            tmp.write(fh.read())
+        tmp.close()
+        return tmp.name, True
+    except (OSError, ValueError):
+        logger.exception('Medya geçici dosyaya yazılamadı name=%s', name)
+        return None, False

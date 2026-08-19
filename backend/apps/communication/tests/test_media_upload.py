@@ -108,3 +108,117 @@ class MediaUploadTest(TestCase):
         )
         att.refresh_from_db()
         self.assertEqual(att.provider_media_id, 'meta_media_xyz')
+
+
+class SharedAccountTokenTest(TestCase):
+    def setUp(self):
+        from apps.communication.domain.enums import Channel
+        from apps.communication.domain.models import CommunicationChannelConfig
+
+        self.kurum = Kurum.objects.create(ad='Token Paylaşım', kod='TKNPY')
+        self.coach = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Koç',
+            phone_number_id='pn_coach',
+            waba_id='waba-shared',
+            access_token_encrypted='EAAB_coach_ok',
+            is_active=True,
+            is_default=True,
+        )
+        self.muhasebe = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Muhasebe',
+            phone_number_id='pn_muh',
+            waba_id='waba-shared',
+            access_token_encrypted='',
+            is_active=True,
+            is_default=False,
+        )
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN='')
+    def test_second_number_inherits_sibling_token(self):
+        client = WhatsAppCloudClient(channel_config=self.muhasebe)
+        cfg = client._resolve_config(self.kurum.id)
+        self.assertEqual(cfg['phone_number_id'], 'pn_muh')
+        self.assertEqual(cfg['access_token'], 'EAAB_coach_ok')
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN='')
+    def test_upload_retries_with_sibling_token_when_own_token_fails(self):
+        self.muhasebe.access_token_encrypted = 'EAAB_muh_bad'
+        self.muhasebe.save(update_fields=['access_token_encrypted'])
+        client = WhatsAppCloudClient(channel_config=self.muhasebe)
+
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            tmp.write(b'%PDF-1.4\n')
+            tmp_path = tmp.name
+
+        try:
+            def _post(config, *args, **kwargs):
+                if config.get('access_token') == 'EAAB_coach_ok':
+                    return 'media_from_sibling'
+                client.last_media_error = 'Invalid OAuth access token'
+                return None
+
+            with patch.object(WhatsAppCloudClient, '_post_media_upload', side_effect=_post):
+                media_id = client.upload_media(self.kurum.id, tmp_path, 'application/pdf')
+            self.assertEqual(media_id, 'media_from_sibling')
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    def test_resolve_cloud_id_matches_display_phone(self):
+        from apps.communication.infrastructure.channels.whatsapp_cloud import (
+            looks_like_msisdn,
+        )
+
+        self.assertTrue(looks_like_msisdn('+905551112233'))
+        self.assertTrue(looks_like_msisdn('905551112233'))
+        self.assertFalse(looks_like_msisdn('123456789012345'))
+
+        client = WhatsAppCloudClient(channel_config=self.muhasebe)
+        self.muhasebe.display_phone = '+90 555 111 22 33'
+        self.muhasebe.save(update_fields=['display_phone'])
+        with patch.object(
+            WhatsAppCloudClient,
+            'list_waba_phone_numbers',
+            return_value=[
+                {'id': '109988776655', 'display_phone_number': '+90 555 111 22 33'},
+            ],
+        ):
+            resolved = client.resolve_cloud_phone_number_id(
+                self.kurum.id,
+                {'phone_number_id': '905551112233', 'waba_id': 'waba-shared', 'access_token': 'x'},
+            )
+        self.assertEqual(resolved, '109988776655')
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN='')
+    def test_upload_resolves_msisdn_after_133010(self):
+        self.muhasebe.access_token_encrypted = 'EAAB_coach_ok'
+        self.muhasebe.phone_number_id = '905551112233'
+        self.muhasebe.display_phone = '+905551112233'
+        self.muhasebe.save(update_fields=['access_token_encrypted', 'phone_number_id', 'display_phone'])
+        client = WhatsAppCloudClient(channel_config=self.muhasebe)
+
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            tmp.write(b'%PDF-1.4\n')
+            tmp_path = tmp.name
+
+        try:
+            def _post(config, *args, **kwargs):
+                if config.get('phone_number_id') == '109988776655':
+                    return 'media_fixed_id'
+                client.last_media_error = '(#133010) Account not registered'
+                return None
+
+            with patch.object(WhatsAppCloudClient, '_post_media_upload', side_effect=_post), patch.object(
+                WhatsAppCloudClient,
+                'list_waba_phone_numbers',
+                return_value=[{'id': '109988776655', 'display_phone_number': '+90 555 111 22 33'}],
+            ):
+                media_id = client.upload_media(self.kurum.id, tmp_path, 'application/pdf')
+            self.assertEqual(media_id, 'media_fixed_id')
+            self.muhasebe.refresh_from_db()
+            self.assertEqual(self.muhasebe.phone_number_id, '109988776655')
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)

@@ -78,9 +78,12 @@ class AccountResolver:
             return list(qs.order_by('-is_default', 'name'))
 
         is_coach = _is_active_coach(user)
+        is_accounting = _is_accounting_staff(user)
         candidates = []
         for cfg in qs.order_by('-is_default', 'name'):
-            if not _account_role_allows(cfg, role_id, is_coach=is_coach):
+            if not _account_role_allows(
+                cfg, role_id, is_coach=is_coach, is_accounting=is_accounting,
+            ):
                 continue
             if not _sube_allowed(cfg, sube_id):
                 continue
@@ -118,12 +121,13 @@ class AccountResolver:
         user=None,
         sube_id: int | None = None,
         preferred_id=None,
+        prefer_department: str | None = None,
         allow_inactive: bool = False,
         raise_if_missing: bool = True,
     ) -> CommunicationChannelConfig | None:
         """
         preferred_id verilmişse önce onu doğrular (erişim + kapsam).
-        Yoksa erişilebilir hesaplardan varsayılan / tek aday seçer.
+        Yoksa kullanıcının rolüne bağlanan numarayı seçer; varsayılan hat bunu ezmez.
         """
         if preferred_id:
             cfg = CommunicationChannelConfig.objects.filter(
@@ -176,12 +180,126 @@ class AccountResolver:
                 )
             return None
 
-        defaults = [c for c in accessible if c.is_default]
-        if len(defaults) == 1:
-            return defaults[0]
-        if len(accessible) == 1:
-            return accessible[0]
-        return defaults[0] if defaults else accessible[0]
+        return _pick_accessible_account(
+            accessible, user=user, prefer_department=prefer_department,
+        )
+
+    @staticmethod
+    def for_department(
+        kurum_id: int,
+        department: str,
+        *,
+        sube_id: int | None = None,
+        user=None,
+    ) -> CommunicationChannelConfig | None:
+        """Departman hattı — ödeme/finans gönderiminde muhasebe numarasını seçer."""
+        cfg = AccountResolver.resolve(
+            kurum_id=kurum_id,
+            user=user,
+            sube_id=sube_id,
+            prefer_department=department,
+            raise_if_missing=False,
+        )
+        if cfg is not None and cfg.department == department:
+            return cfg
+
+        qs = CommunicationChannelConfig.objects.filter(
+            kurum_id=kurum_id,
+            channel=Channel.WHATSAPP,
+            is_active=True,
+            department=department,
+        ).prefetch_related('allowed_subes', 'allowed_roles')
+        for candidate in qs.order_by('-is_default', 'name'):
+            if not _sube_allowed(candidate, sube_id):
+                continue
+            if user is not None and not _user_can_use(candidate, user, sube_id):
+                continue
+            return candidate
+        if user is None:
+            for candidate in qs.order_by('-is_default', 'name'):
+                if _sube_allowed(candidate, sube_id):
+                    return candidate
+        return None
+
+    @staticmethod
+    def shared_waba_account_ids(kurum_id: int, channel_config_id) -> list:
+        """Aynı WABA'daki tüm hesap id'leri — şablon numaralar arasında paylaşılır."""
+        if not channel_config_id:
+            return []
+        cfg = CommunicationChannelConfig.objects.filter(
+            id=channel_config_id,
+            kurum_id=kurum_id,
+            channel=Channel.WHATSAPP,
+        ).first()
+        if cfg is None:
+            return [channel_config_id]
+        ids = [cfg.id]
+        waba = (cfg.waba_id or '').strip()
+        if not waba:
+            return ids
+        ids.extend(
+            CommunicationChannelConfig.objects.filter(
+                kurum_id=kurum_id,
+                channel=Channel.WHATSAPP,
+                waba_id=waba,
+            ).exclude(id=cfg.id).values_list('id', flat=True)
+        )
+        return ids
+
+    @staticmethod
+    def sibling_access_token(cfg: CommunicationChannelConfig | None) -> str:
+        """İkinci numara çoğu zaman token'sız kaydedilir; aynı kurum/WABA token'ını kullan."""
+        if cfg is None:
+            return ''
+        from apps.communication.application.token_crypto import decrypt_access_token
+
+        qs = CommunicationChannelConfig.objects.filter(
+            kurum_id=cfg.kurum_id,
+            channel=Channel.WHATSAPP,
+            is_active=True,
+        ).exclude(pk=cfg.pk).exclude(access_token_encrypted='')
+        waba = (cfg.waba_id or '').strip()
+        candidates: list[CommunicationChannelConfig] = []
+        if waba:
+            candidates.extend(qs.filter(waba_id=waba).order_by('-is_default', 'name'))
+        seen = {item.pk for item in candidates}
+        candidates.extend(
+            item for item in qs.order_by('-is_default', 'name') if item.pk not in seen
+        )
+        for sibling in candidates:
+            token = decrypt_access_token(sibling.access_token_encrypted)
+            if token:
+                return token
+        return ''
+
+    @staticmethod
+    def source_for_shared_meta(kurum_id: int, source_account_id=None) -> CommunicationChannelConfig | None:
+        """Aynı Meta'ya eklenen ikinci numara için kaynak hesap."""
+        if source_account_id:
+            found = CommunicationChannelConfig.objects.filter(
+                id=source_account_id,
+                kurum_id=kurum_id,
+                channel=Channel.WHATSAPP,
+            ).first()
+            if found is not None:
+                return found
+        from apps.communication.infrastructure.repository import ChannelConfigRepository
+        return ChannelConfigRepository.get_whatsapp_config(kurum_id)
+
+    @staticmethod
+    def apply_shared_meta_credentials(data: dict, source: CommunicationChannelConfig) -> dict:
+        """Token / WABA / App ID / webhook — kaynak hesaptan kopyala (boş alanlar)."""
+        if not (data.get('waba_id') or '').strip():
+            data['waba_id'] = source.waba_id or ''
+        if not (data.get('app_id') or '').strip():
+            data['app_id'] = source.app_id or ''
+        if not (data.get('webhook_verify_token') or '').strip():
+            data['webhook_verify_token'] = source.webhook_verify_token or ''
+        if not data.get('access_token_encrypted') and source.access_token_encrypted:
+            data['access_token_encrypted'] = source.access_token_encrypted
+        if not data.get('app_secret_encrypted') and source.app_secret_encrypted:
+            data['app_secret_encrypted'] = source.app_secret_encrypted
+        return data
 
     @staticmethod
     def get_by_id(kurum_id: int, account_id) -> CommunicationChannelConfig | None:
@@ -200,6 +318,45 @@ class AccountResolver:
             is_active=True,
             channel=Channel.WHATSAPP,
         ).first()
+
+
+def _cfg_role_ids(cfg: CommunicationChannelConfig) -> list[int]:
+    cache = getattr(cfg, '_prefetched_objects_cache', None) or {}
+    if 'allowed_roles' in cache:
+        return [role.id for role in cfg.allowed_roles.all()]
+    return list(cfg.allowed_roles.values_list('id', flat=True))
+
+
+def _pick_accessible_account(accessible, *, user, prefer_department: str | None):
+    """
+    Rolüne bağlanan numara önce gelir.
+
+    Koç rolü A numarasında, muhasebe B numarasında ise herkes kendi
+    rolünün hattını kullanır. Varsayılan (is_default) hat bunu ezemez.
+    Aynı rol birden fazla hatta varsa, yalnızca o rolün olduğu hat tercih edilir.
+    """
+    role_id = _user_role_id(user)
+    pool = list(accessible)
+    if role_id:
+        role_matched = [cfg for cfg in pool if role_id in _cfg_role_ids(cfg)]
+        if role_matched:
+            dedicated = [
+                cfg for cfg in role_matched
+                if set(_cfg_role_ids(cfg)) == {role_id}
+            ]
+            pool = dedicated or role_matched
+
+    if prefer_department:
+        dept_matches = [cfg for cfg in pool if cfg.department == prefer_department]
+        if dept_matches:
+            pool = dept_matches
+
+    defaults = [cfg for cfg in pool if cfg.is_default]
+    if len(defaults) == 1:
+        return defaults[0]
+    if len(pool) == 1:
+        return pool[0]
+    return defaults[0] if defaults else pool[0]
 
 
 def _has_sistem_admin(user) -> bool:
@@ -229,11 +386,25 @@ def _role_allowed(cfg: CommunicationChannelConfig, role_id: int | None) -> bool:
     return role_id in role_ids
 
 
+def _is_accounting_staff(user) -> bool:
+    """Muhasebe / finans yetkili — ACCOUNTING hattına rol listesi boş kalsa da erişir."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    try:
+        from shared.permissions import user_has_any_permission
+        if not user_has_any_permission(user, 'communication.read', 'communication.write'):
+            return False
+        return user_has_any_permission(user, 'finans.read', 'finans.manage')
+    except Exception:
+        return False
+
+
 def _account_role_allows(
     cfg: CommunicationChannelConfig,
     role_id: int | None,
     *,
     is_coach: bool = False,
+    is_accounting: bool = False,
 ) -> bool:
     """
     Rol kapsamı + koç güvenli ağı.
@@ -245,6 +416,8 @@ def _account_role_allows(
     if _role_allowed(cfg, role_id):
         return True
     if is_coach and cfg.department == CommunicationDepartment.COACHING:
+        return True
+    if is_accounting and cfg.department == CommunicationDepartment.ACCOUNTING:
         return True
     return False
 
@@ -263,5 +436,8 @@ def _user_can_use(cfg: CommunicationChannelConfig, user, sube_id: int | None) ->
     if _has_comm_manage(user):
         return True
     return _account_role_allows(
-        cfg, _user_role_id(user), is_coach=_is_active_coach(user),
+        cfg,
+        _user_role_id(user),
+        is_coach=_is_active_coach(user),
+        is_accounting=_is_accounting_staff(user),
     ) and _sube_allowed(cfg, sube_id)

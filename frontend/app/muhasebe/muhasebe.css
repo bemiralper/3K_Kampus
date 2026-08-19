@@ -198,6 +198,45 @@
   margin: 0 auto;
 }
 
+.muhasebe-shell:has(.comm-page--inbox) {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.muhasebe-main:has(.comm-page--inbox) {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.muhasebe-content:has(.comm-page--inbox) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  padding: 10px 12px 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.muhasebe-nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .muhasebe-nav-bottom {
   position: fixed;
   left: 0;
@@ -715,6 +754,7 @@
   }
 
   .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-nav-label,
+  .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-nav-badge,
   .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-logout-btn,
   .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-nav-chevron,
   .muhasebe-shell.muhasebe-shell-collapsed .muhasebe-nav-submenu {

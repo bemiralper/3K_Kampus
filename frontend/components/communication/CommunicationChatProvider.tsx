@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import CommunicationChatDrawer from "./CommunicationChatDrawer";
+import type { InboxPortal } from "@/lib/communication-api";
 
 export interface ChatOpenParams {
   phone: string;
@@ -26,12 +27,15 @@ const CommunicationChatContext = createContext<CommunicationChatContextValue | n
 interface CommunicationChatProviderProps {
   children: ReactNode;
   adminInbox?: boolean;
+  inboxPortal?: InboxPortal;
 }
 
 export function CommunicationChatProvider({
   children,
   adminInbox = false,
+  inboxPortal,
 }: CommunicationChatProviderProps) {
+  const portal: InboxPortal = inboxPortal ?? (adminInbox ? "admin" : "coach");
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState<ChatOpenParams | null>(null);
 
@@ -52,7 +56,7 @@ export function CommunicationChatProvider({
         open={open}
         onClose={handleClose}
         target={target}
-        adminInbox={adminInbox}
+        inboxPortal={portal}
       />
     </CommunicationChatContext.Provider>
   );

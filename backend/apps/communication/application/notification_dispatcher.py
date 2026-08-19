@@ -11,7 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.communication.application.communication_service import MessageSource, SendResult
-from apps.communication.application.notification_events import get_event
+from apps.communication.application.notification_events import (
+    MODULE_FINANS,
+    MODULE_ODEME,
+    get_event,
+)
 from apps.communication.application.notification_template_resolver import (
     ResolvedTemplate,
     resolve_binding,
@@ -357,6 +361,34 @@ def _session_fallback(preview: NotificationPreview, context: dict) -> dict | Non
     }
 
 
+def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -> str | None:
+    """Gönderenin rolüne bağlanan WhatsApp numarası; cron finans işinde muhasebe hattı."""
+    from apps.communication.application.account_resolver import AccountResolver
+    from apps.communication.domain.enums import CommunicationDepartment
+
+    sender = None
+    if sent_by_user_id:
+        from django.contrib.auth import get_user_model
+        sender = get_user_model().objects.filter(id=sent_by_user_id).first()
+    if sender is not None:
+        cfg = AccountResolver.resolve(
+            kurum_id=kurum_id,
+            user=sender,
+            sube_id=sube_id,
+            raise_if_missing=False,
+        )
+        return str(cfg.id) if cfg else None
+    if event is not None and event.module in (MODULE_ODEME, MODULE_FINANS):
+        cfg = AccountResolver.for_department(
+            kurum_id,
+            CommunicationDepartment.ACCOUNTING,
+            sube_id=sube_id,
+            user=None,
+        )
+        return str(cfg.id) if cfg else None
+    return None
+
+
 def dispatch_event(
     kurum_id: int,
     event_key: str,
@@ -404,14 +436,18 @@ def dispatch_event(
         personel_id=recipient.personel_id,
         channel=channel,
     )
+    channel_config_id = _preferred_channel_config_id(
+        event, kurum_id, sube_id=sube_id, sent_by_user_id=sent_by_user_id,
+    )
     resolved = resolve_binding(
         kurum_id, event_key, recipient.recipient_type,
-        sube_id=sube_id, channel_config_id=None, channel=channel,
+        sube_id=sube_id, channel_config_id=channel_config_id, channel=channel,
     )
     preview = build_preview(
         kurum_id, event_key, recipient.recipient_type,
         context=context,
         sube_id=sube_id,
+        channel_config_id=channel_config_id,
         has_attachment=not attachment.is_empty,
         resolved=resolved,
         fallback_body=fallback_body,

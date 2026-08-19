@@ -74,6 +74,26 @@ class MultiWhatsAppAccountTests(TestCase):
         self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
         self.acc_kadikoy.allowed_subes.set([self.sube_a])
 
+    def test_resolve_uses_role_assigned_number_not_default(self):
+        """Koç varsayılan hatta olsa da muhasebe kendi rolünün numarasını kullanır."""
+        self.acc_genel.allowed_roles.set([self.role_koc])
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
+
+        cfg_m = AccountResolver.resolve(
+            kurum_id=self.kurum.id,
+            user=self.user_m,
+            sube_id=self.sube_a.id,
+            raise_if_missing=False,
+        )
+        cfg_k = AccountResolver.resolve(
+            kurum_id=self.kurum.id,
+            user=self.user_k,
+            sube_id=self.sube_a.id,
+            raise_if_missing=False,
+        )
+        self.assertEqual(cfg_m.id, self.acc_kadikoy.id)
+        self.assertEqual(cfg_k.id, self.acc_genel.id)
+
     def test_resolver_role_and_sube(self):
         cfg = AccountResolver.resolve(
             kurum_id=self.kurum.id,
@@ -219,3 +239,310 @@ class MultiWhatsAppAccountTests(TestCase):
         ids = {a.id for a in accessible}
         self.assertIn(self.acc_genel.id, ids)
         self.assertNotIn(self.acc_kadikoy.id, ids)
+
+    def test_accounting_staff_accesses_accounting_account_without_role(self):
+        """finans + communication yetkili, allowed_roles'ta olmasa da ACCOUNTING hattını görür."""
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        self.acc_genel.allowed_roles.set([self.role_koc])
+        self.acc_genel.department = CommunicationDepartment.COACHING
+        self.acc_genel.save(update_fields=['department'])
+        self.acc_kadikoy.allowed_roles.set([self.role_koc])
+        self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.save(update_fields=['department'])
+
+        accessible = AccountResolver.list_accessible(
+            kurum_id=self.kurum.id,
+            user=self.user_m,
+            sube_id=self.sube_a.id,
+        )
+        ids = {a.id for a in accessible}
+        self.assertIn(self.acc_kadikoy.id, ids)
+        self.assertNotIn(self.acc_genel.id, ids)
+
+    def test_accounting_sees_own_outbound_on_other_account(self):
+        """Makbuz koç hattına düşse bile gönderen muhasebe sohbeti görür."""
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+        from apps.communication.domain.enums import (
+            ConversationStatus,
+            MessageDirection,
+            MessageStatus,
+        )
+        from apps.communication.domain.models import Message
+
+        self.acc_genel.allowed_roles.set([self.role_koc])
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            channel=Channel.WHATSAPP,
+            contact_phone='905551110003',
+            status=ConversationStatus.OPEN,
+            channel_config=self.acc_genel,
+        )
+        Message.objects.create(
+            conversation=conv,
+            direction=MessageDirection.OUTBOUND,
+            body='Tahsilat makbuzu',
+            status=MessageStatus.SENT,
+            sender_user=self.user_m,
+            source_module='odeme',
+        )
+
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            self.user_m,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube_a.id,
+        )
+        self.assertIn(conv.id, set(qs.values_list('id', flat=True)))
+
+    def test_accounting_sees_accounting_department_on_other_account(self):
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+        from apps.communication.domain.enums import CommunicationDepartment, ConversationStatus
+
+        self.acc_genel.allowed_roles.set([self.role_koc])
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            channel=Channel.WHATSAPP,
+            contact_phone='905551110004',
+            status=ConversationStatus.OPEN,
+            channel_config=self.acc_genel,
+            department=CommunicationDepartment.ACCOUNTING,
+        )
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            self.user_m,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube_a.id,
+        )
+        self.assertIn(conv.id, set(qs.values_list('id', flat=True)))
+
+    def test_send_stamps_channel_config_and_accounting_department(self):
+        from unittest.mock import patch
+
+        from apps.communication.application.communication_service import (
+            CommunicationService,
+            MessageContent,
+            RecipientQuery,
+        )
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        self.acc_kadikoy.department = CommunicationDepartment.COACHING
+        self.acc_kadikoy.save(update_fields=['department'])
+
+        with patch(
+            'apps.communication.application.communication_service.process_queue_item',
+            return_value=True,
+        ):
+            result = CommunicationService().send(
+                self.kurum.id,
+                recipients=RecipientQuery(phone='+905551110055'),
+                content=MessageContent(
+                    text='Tahsilat makbuzu ektedir.',
+                    template_name='odeme_makbuzu_veli',
+                    channel_config_id=str(self.acc_kadikoy.id),
+                ),
+                sender_user_id=self.user_m.id,
+                process_immediately=True,
+            )
+        self.assertTrue(result.success)
+        conv = Conversation.objects.get(kurum=self.kurum, contact_phone='+905551110055')
+        self.assertEqual(conv.channel_config_id, self.acc_kadikoy.id)
+        self.assertEqual(conv.department, CommunicationDepartment.ACCOUNTING)
+
+    def test_for_department_prefers_accounting_over_default_coaching(self):
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        self.acc_genel.department = CommunicationDepartment.COACHING
+        self.acc_genel.is_default = True
+        self.acc_genel.save(update_fields=['department', 'is_default'])
+        self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.save(update_fields=['department'])
+
+        cfg = AccountResolver.for_department(
+            self.kurum.id,
+            CommunicationDepartment.ACCOUNTING,
+            sube_id=self.sube_a.id,
+            user=self.user_m,
+        )
+        self.assertIsNotNone(cfg)
+        self.assertEqual(cfg.id, self.acc_kadikoy.id)
+
+    def test_odeme_dispatch_uses_accounting_account(self):
+        """Gönderen muhasebe rolündeyse makbuz o role bağlanan numaradan çözülür."""
+        from apps.communication.application.notification_dispatcher import (
+            NotificationRecipient,
+            dispatch_event,
+        )
+        from apps.communication.domain.enums import CommunicationDepartment, MetaTemplateStatus
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+        from django.utils import timezone
+
+        self.acc_genel.department = CommunicationDepartment.COACHING
+        self.acc_genel.is_default = True
+        self.acc_genel.save(update_fields=['department', 'is_default'])
+        self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
+        self.acc_kadikoy.save(update_fields=['department'])
+
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_genel,
+            name='odeme_makbuzu_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Sayın velimiz, makbuz ektedir.',
+            header_json={'type': 'DOCUMENT'},
+            approved_at=timezone.now(),
+        )
+        acc_tpl = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_kadikoy,
+            name='odeme_makbuzu_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Sayın velimiz, makbuz ektedir.',
+            header_json={'type': 'DOCUMENT'},
+            approved_at=timezone.now(),
+        )
+
+        preview = dispatch_event(
+            self.kurum.id,
+            'odeme.makbuz',
+            recipient=NotificationRecipient.veli(1),
+            sube_id=self.sube_a.id,
+            sent_by_user_id=self.user_m.id,
+            dry_run=True,
+        )
+        self.assertIsNotNone(preview)
+        self.assertEqual(str(preview.channel_config_id), str(self.acc_kadikoy.id))
+        self.assertEqual(preview.meta_template_name, acc_tpl.name)
+
+    def test_odeme_reuses_approved_template_from_other_account_on_same_waba(self):
+        """Şablon koç hesabında kayıtlı olsa da muhasebe numarasından Meta ile gider."""
+        from apps.communication.application.notification_dispatcher import (
+            NotificationAttachment,
+            NotificationRecipient,
+            dispatch_event,
+        )
+        from apps.communication.domain.enums import MetaTemplateStatus
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+        from django.utils import timezone
+
+        self.acc_genel.allowed_roles.set([self.role_koc])
+        self.acc_genel.waba_id = 'waba-shared'
+        self.acc_genel.save(update_fields=['waba_id'])
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
+        self.acc_kadikoy.waba_id = 'waba-shared'
+        self.acc_kadikoy.save(update_fields=['waba_id'])
+
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_genel,
+            name='odeme_makbuzu_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Sayın velimiz, makbuz ektedir.',
+            header_json={'type': 'DOCUMENT'},
+            approved_at=timezone.now(),
+        )
+
+        preview = dispatch_event(
+            self.kurum.id,
+            'odeme.makbuz',
+            recipient=NotificationRecipient.veli(1),
+            attachment=NotificationAttachment(filename='makbuz.pdf', file_bytes=b'%PDF-1'),
+            sube_id=self.sube_a.id,
+            sent_by_user_id=self.user_m.id,
+            dry_run=True,
+        )
+        self.assertTrue(preview.would_send)
+        self.assertTrue(preview.uses_meta)
+        self.assertEqual(preview.meta_template_name, 'odeme_makbuzu_veli')
+        self.assertEqual(str(preview.channel_config_id), str(self.acc_kadikoy.id))
+
+    def test_odeme_reuses_template_when_waba_id_missing(self):
+        """WABA id boş olsa bile onaylı makbuz şablonu düşürülmez."""
+        from apps.communication.application.notification_dispatcher import (
+            NotificationAttachment,
+            NotificationRecipient,
+            dispatch_event,
+        )
+        from apps.communication.domain.enums import MetaTemplateStatus
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+        from django.utils import timezone
+
+        self.acc_genel.allowed_roles.set([self.role_koc])
+        self.acc_genel.waba_id = ''
+        self.acc_genel.save(update_fields=['waba_id'])
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
+        self.acc_kadikoy.waba_id = ''
+        self.acc_kadikoy.save(update_fields=['waba_id'])
+
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_genel,
+            name='odeme_makbuzu_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Sayın velimiz, makbuz ektedir.',
+            header_json={'type': 'DOCUMENT'},
+            approved_at=timezone.now(),
+        )
+
+        preview = dispatch_event(
+            self.kurum.id,
+            'odeme.makbuz',
+            recipient=NotificationRecipient.veli(1),
+            attachment=NotificationAttachment(filename='makbuz.pdf', file_bytes=b'%PDF-1'),
+            sube_id=self.sube_a.id,
+            sent_by_user_id=self.user_m.id,
+            dry_run=True,
+        )
+        self.assertTrue(preview.would_send, preview.blocked_reason or preview.warnings)
+        self.assertTrue(preview.uses_meta)
+        self.assertEqual(preview.meta_template_name, 'odeme_makbuzu_veli')
+        self.assertEqual(str(preview.channel_config_id), str(self.acc_kadikoy.id))
+
+    def test_apply_shared_meta_copies_credentials(self):
+        """Aynı Meta'ya eklenen ikinci hat token/WABA/App ID'yi kaynak hesaptan alır."""
+        from apps.communication.application.account_resolver import AccountResolver
+
+        self.acc_genel.access_token_encrypted = 'EAAB_shared'
+        self.acc_genel.waba_id = 'waba-1'
+        self.acc_genel.app_id = 'app-1'
+        self.acc_genel.webhook_verify_token = 'verify-1'
+        self.acc_genel.app_secret_encrypted = 'secret-1'
+        self.acc_genel.save(update_fields=[
+            'access_token_encrypted', 'waba_id', 'app_id',
+            'webhook_verify_token', 'app_secret_encrypted',
+        ])
+        data = AccountResolver.apply_shared_meta_credentials(
+            {'phone_number_id': 'pn_new'},
+            self.acc_genel,
+        )
+        self.assertEqual(data['phone_number_id'], 'pn_new')
+        self.assertEqual(data['access_token_encrypted'], 'EAAB_shared')
+        self.assertEqual(data['waba_id'], 'waba-1')
+        self.assertEqual(data['app_id'], 'app-1')
+        self.assertEqual(data['webhook_verify_token'], 'verify-1')
+        self.assertEqual(data['app_secret_encrypted'], 'secret-1')
+        source = AccountResolver.source_for_shared_meta(self.kurum.id, self.acc_genel.id)
+        self.assertEqual(source.id, self.acc_genel.id)
+
+    def test_muhasebe_account_uses_sibling_token_for_send(self):
+        """Muhasebe hattında token yoksa koç hesabının token'ı, muhasebe phone_number_id ile kullanılır."""
+        from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
+
+        self.acc_genel.access_token_encrypted = 'EAAB_koc_token'
+        self.acc_genel.waba_id = 'waba-shared'
+        self.acc_genel.save(update_fields=['access_token_encrypted', 'waba_id'])
+        self.acc_kadikoy.access_token_encrypted = ''
+        self.acc_kadikoy.waba_id = 'waba-shared'
+        self.acc_kadikoy.save(update_fields=['access_token_encrypted', 'waba_id'])
+
+        client = WhatsAppCloudClient(channel_config=self.acc_kadikoy)
+        cfg = client._resolve_config(self.kurum.id)
+        self.assertEqual(cfg['phone_number_id'], 'pn_kadikoy')
+        self.assertEqual(cfg['access_token'], 'EAAB_koc_token')

@@ -73,6 +73,7 @@ interface TemplateEditorPanelProps {
   onSubmit: (e: FormEvent) => void;
   onCancel: () => void;
   onDelete?: () => void;
+  audienceOptions?: [string, string][];
 }
 
 export default function TemplateEditorPanel({
@@ -86,7 +87,9 @@ export default function TemplateEditorPanel({
   onSubmit,
   onCancel,
   onDelete,
+  audienceOptions,
 }: TemplateEditorPanelProps) {
+  const audienceChoices = audienceOptions ?? Object.entries(TEMPLATE_AUDIENCE_LABELS);
   const activeCategories = useMemo(
     () => categories.filter((c) => c.is_active),
     [categories],
@@ -246,7 +249,7 @@ export default function TemplateEditorPanel({
                     value={form.audience_scope}
                     onChange={(e) => onChange({ ...form, audience_scope: e.target.value })}
                   >
-                    {Object.entries(TEMPLATE_AUDIENCE_LABELS).map(([k, v]) => (
+                    {audienceChoices.map(([k, v]) => (
                       <option key={k} value={k}>{v}</option>
                     ))}
                   </select>

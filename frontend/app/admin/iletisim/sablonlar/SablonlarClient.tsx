@@ -61,11 +61,21 @@ function headerPayloadFromForm(form: TemplateEditorForm) {
   };
 }
 
-export default function SablonlarClient() {
+export default function SablonlarClient({
+  portal = "admin",
+}: {
+  portal?: "admin" | "muhasebe";
+}) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const initialCategory = searchParams.get("category") || "";
+  const defaultAudience = portal === "muhasebe" ? "muhasebe" : "admin";
+  const audienceOptions = useMemo(() => {
+    const entries = Object.entries(TEMPLATE_AUDIENCE_LABELS);
+    if (portal !== "muhasebe") return entries;
+    return entries.filter(([key]) => key === "muhasebe");
+  }, [portal]);
 
   const [templates, setTemplates] = useState<MessageTemplateItem[]>([]);
   const [categories, setCategories] = useState<TemplateCategoryItem[]>([]);
@@ -74,23 +84,26 @@ export default function SablonlarClient() {
   const [categoryFilter, setCategoryFilter] = useState(initialCategory);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<MessageTemplateItem | null>(null);
-  const [form, setForm] = useState<TemplateEditorForm>(EMPTY_FORM);
+  const [form, setForm] = useState<TemplateEditorForm>({
+    ...EMPTY_FORM,
+    audience_scope: defaultAudience,
+  });
   const [composerState, setComposerState] = useState<ComposerState>(createComposerState(""));
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
-  const [newCategoryAudience, setNewCategoryAudience] = useState("admin");
+  const [newCategoryAudience, setNewCategoryAudience] = useState(defaultAudience);
   const [categorySaving, setCategorySaving] = useState(false);
   const [search, setSearch] = useState("");
 
   const labels = useMemo(() => categoryLabelMap(categories), [categories]);
 
   const loadCategories = useCallback(async () => {
-    const res = await fetchTemplateCategories(false, true);
+    const res = await fetchTemplateCategories(false, portal !== "muhasebe");
     setCategories(res.categories);
     return res.categories;
-  }, []);
+  }, [portal]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,7 +141,11 @@ export default function SablonlarClient() {
   };
 
   const resetForm = (category?: string) => {
-    setForm({ ...EMPTY_FORM, category: category || categoryFilter || "ozel" });
+    setForm({
+      ...EMPTY_FORM,
+      category: category || categoryFilter || "ozel",
+      audience_scope: defaultAudience,
+    });
     setComposerState(createComposerState(""));
   };
 
@@ -300,10 +317,17 @@ export default function SablonlarClient() {
       subtitle="Hazır yanıtları kategorilere göre yönetin"
       icon="📋"
       className="tplx tplx-page"
-      breadcrumbs={[
-        { label: "İletişim", href: "/admin/iletisim/toplu-gonder" },
-        { label: "Şablonlar" },
-      ]}
+      breadcrumbs={
+        portal === "muhasebe"
+          ? [
+              { label: "WhatsApp", href: "/muhasebe/iletisim/mesajlar" },
+              { label: "Şablonlar" },
+            ]
+          : [
+              { label: "İletişim", href: "/admin/iletisim/toplu-gonder" },
+              { label: "Şablonlar" },
+            ]
+      }
       actions={
         <button type="button" className="comm-btn-primary" onClick={openCreate}>
           + Yeni Şablon
@@ -427,7 +451,7 @@ export default function SablonlarClient() {
             onChange={(e) => setNewCategoryAudience(e.target.value)}
             aria-label="Hedef birim"
           >
-            {Object.entries(TEMPLATE_AUDIENCE_LABELS).map(([k, v]) => (
+            {audienceOptions.map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
             ))}
           </select>
@@ -505,7 +529,7 @@ export default function SablonlarClient() {
                     {t.system_usages.map((u, idx) => (
                       <span key={`${u.module}-${u.role}-${idx}`}>
                         {idx > 0 ? " · " : ""}
-                        {u.event_key ? (
+                        {u.event_key && portal !== "muhasebe" ? (
                           <a
                             href={`/admin/iletisim/bildirim-sablonlari?event=${encodeURIComponent(u.event_key)}`}
                             onClick={(e) => e.stopPropagation()}
@@ -558,6 +582,7 @@ export default function SablonlarClient() {
               form={form}
               categories={categories}
               saving={saving}
+              audienceOptions={audienceOptions}
               onChange={setForm}
               composerState={composerState}
               onComposerChange={setComposerState}

@@ -272,6 +272,7 @@ export default function WhatsAppHesaplariClient() {
       <AccountFormDrawer
         open={drawerOpen}
         account={editing}
+        existingAccounts={accounts}
         onClose={() => setDrawerOpen(false)}
         onSaved={load}
       />

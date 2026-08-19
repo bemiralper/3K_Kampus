@@ -89,6 +89,8 @@ class WhatsAppAccountListCreateView(APIView):
         app_secret = data.pop('app_secret', None)
         role_ids = data.pop('role_ids', None)
         sube_ids = data.pop('sube_ids', None)
+        same_meta = bool(data.pop('same_meta_account', False))
+        source_account_id = data.pop('source_account_id', None)
 
         phone_number_id = data.get('phone_number_id', '')
         if phone_number_id and ChannelConfigRepository.phone_number_id_taken(phone_number_id):
@@ -101,6 +103,16 @@ class WhatsAppAccountListCreateView(APIView):
             data['access_token_encrypted'] = encrypt_access_token(token)
         if app_secret:
             data['app_secret_encrypted'] = encrypt_access_token(app_secret)
+
+        if same_meta:
+            source = AccountResolver.source_for_shared_meta(kurum_id, source_account_id)
+            if source is None:
+                return Response(
+                    {'error': 'Aynı Meta hesabından kopyalanacak mevcut WhatsApp hattı bulunamadı.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            data = AccountResolver.apply_shared_meta_credentials(data, source)
+            data.setdefault('is_active', True)
 
         data.setdefault('name', data.get('display_phone') or 'WhatsApp Hesabı')
         data.setdefault('channel', Channel.WHATSAPP)
@@ -156,6 +168,8 @@ class WhatsAppAccountDetailView(APIView):
         app_secret = data.pop('app_secret', None)
         role_ids = data.pop('role_ids', None)
         sube_ids = data.pop('sube_ids', None)
+        data.pop('same_meta_account', None)
+        data.pop('source_account_id', None)
 
         phone_number_id = data.get('phone_number_id', account.phone_number_id)
         if phone_number_id and ChannelConfigRepository.phone_number_id_taken(

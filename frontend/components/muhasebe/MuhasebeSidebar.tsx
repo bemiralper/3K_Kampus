@@ -12,6 +12,7 @@ import {
   type MuhasebeNavChildDef,
 } from "@/components/muhasebe/muhasebeNavItems";
 import { useMuhasebeMenuOrder } from "@/hooks/useMuhasebeMenuOrder";
+import { fetchNotificationSummary } from "@/lib/communication-api";
 
 type MuhasebeSidebarProps = {
   isOpen: boolean;
@@ -84,8 +85,27 @@ export default function MuhasebeSidebar({
   const [subDragOver, setSubDragOver] = useState<{ parentId: string; id: string } | null>(null);
   const [subDragPosition, setSubDragPosition] = useState<"before" | "after">("after");
   const pendingExpandRef = useRef<string | null>(null);
+  const [mesajlarBadge, setMesajlarBadge] = useState(0);
 
   const navItems = useMemo(() => getOrderedItems(), [getOrderedItems]);
+
+  useEffect(() => {
+    const refreshMesajlar = () => {
+      fetchNotificationSummary()
+        .then((data) => setMesajlarBadge(data.unread_count ?? 0))
+        .catch(() => setMesajlarBadge(0));
+    };
+    refreshMesajlar();
+    const id = setInterval(refreshMesajlar, 30_000);
+    const onRefresh = () => refreshMesajlar();
+    window.addEventListener("lms:notifications-refresh", onRefresh);
+    window.addEventListener("lms:communication-inbox", onRefresh);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("lms:notifications-refresh", onRefresh);
+      window.removeEventListener("lms:communication-inbox", onRefresh);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
@@ -103,18 +123,30 @@ export default function MuhasebeSidebar({
     setExpandedMenus(activeParent ? [activeParent.id] : []);
   }, [isOpen, pathname]);
 
+  const withBadges = useCallback(
+    (items: MuhasebeNavItemDef[]) =>
+      items.map((item) =>
+        item.id === "iletisim" && mesajlarBadge > 0
+          ? { ...item, badge: mesajlarBadge }
+          : item,
+      ),
+    [mesajlarBadge],
+  );
+
   const filteredNavItems = useMemo(() => {
-    if (!searchQuery.trim()) return navItems;
-    const q = searchQuery.toLocaleLowerCase("tr-TR");
-    return navItems.filter((item) => {
-      if (item.label.toLocaleLowerCase("tr-TR").includes(q)) return true;
-      return item.children?.some((c) => c.label.toLocaleLowerCase("tr-TR").includes(q));
-    });
-  }, [navItems, searchQuery]);
+    const source = !searchQuery.trim()
+      ? navItems
+      : navItems.filter((item) => {
+          const q = searchQuery.toLocaleLowerCase("tr-TR");
+          if (item.label.toLocaleLowerCase("tr-TR").includes(q)) return true;
+          return item.children?.some((c) => c.label.toLocaleLowerCase("tr-TR").includes(q));
+        });
+    return withBadges(source);
+  }, [navItems, searchQuery, withBadges]);
 
   const pinnedItems = useMemo(
-    () => navItems.filter((item) => pinnedIds.includes(item.id)),
-    [navItems, pinnedIds],
+    () => withBadges(navItems.filter((item) => pinnedIds.includes(item.id))),
+    [navItems, pinnedIds, withBadges],
   );
 
   const toggleSubmenu = (id: string) => {
@@ -236,9 +268,15 @@ export default function MuhasebeSidebar({
     ));
   };
 
+  const renderBadge = (count?: number) =>
+    count != null && count > 0 ? (
+      <span className="muhasebe-nav-badge">{count > 99 ? "99+" : count}</span>
+    ) : null;
+
   const renderNavItem = (item: MuhasebeNavItemDef) => {
     const hasChildren = !!item.children?.length;
     const active = isMuhasebeNavActive(pathname, item);
+    const badge = item.badge;
     const isExpanded = expandedMenus.includes(item.id);
     const isPinned = pinnedIds.includes(item.id);
     const isDragOver = dragOverId === item.id && dragId !== item.id;
@@ -280,6 +318,7 @@ export default function MuhasebeSidebar({
               {isOpen && (
                 <>
                   <span className="muhasebe-nav-label">{item.label}</span>
+                  {renderBadge(badge)}
                   <NavChevron expanded={isExpanded} />
                 </>
               )}
@@ -348,6 +387,7 @@ export default function MuhasebeSidebar({
             {active && <span className="muhasebe-nav-active-bar" aria-hidden />}
             <span className="muhasebe-nav-icon">{item.icon}</span>
             {isOpen && <span className="muhasebe-nav-label">{item.label}</span>}
+            {isOpen && renderBadge(badge)}
           </Link>
           {isOpen && (
             <button
@@ -438,6 +478,7 @@ export default function MuhasebeSidebar({
                       {active && <span className="muhasebe-nav-active-bar" aria-hidden />}
                       <span className="muhasebe-nav-icon">{item.icon}</span>
                       <span className="muhasebe-nav-label">{item.label}</span>
+                      {renderBadge(item.badge)}
                     </Link>
                   </li>
                 );

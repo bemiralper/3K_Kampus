@@ -93,6 +93,8 @@ class WhatsAppAccountWriteSerializer(serializers.ModelSerializer):
         required=False,
         allow_empty=True,
     )
+    same_meta_account = serializers.BooleanField(required=False, default=False)
+    source_account_id = serializers.UUIDField(required=False, allow_null=True)
 
     class Meta:
         model = CommunicationChannelConfig
@@ -100,6 +102,7 @@ class WhatsAppAccountWriteSerializer(serializers.ModelSerializer):
             'name', 'phone_number_id', 'waba_id', 'app_id', 'access_token', 'app_secret',
             'webhook_verify_token', 'display_phone', 'is_active', 'is_default',
             'scope_type', 'department', 'quota_json', 'role_ids', 'sube_ids',
+            'same_meta_account', 'source_account_id',
         ]
 
 

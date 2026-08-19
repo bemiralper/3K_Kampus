@@ -31,12 +31,15 @@ interface MesajlarClientProps {
   showAccountFilter?: boolean;
   /** Yönetici / süper yönetici inbox — claim gizleme yok, dönem varsayılanı tümü. */
   managerInbox?: boolean;
+  /** Meta şablon yönetimi linki (admin). Muhasebe portalında kapalı. */
+  showMetaManageLink?: boolean;
 }
 
 export default function MesajlarClient({
   initialConversationId,
   showAccountFilter = false,
   managerInbox = false,
+  showMetaManageLink,
 }: MesajlarClientProps) {
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId ?? null);
@@ -92,14 +95,8 @@ export default function MesajlarClient({
       .then((res) => {
         const list = res.accounts || [];
         setAccounts(list);
-        // Yönetici: tek hesap / varsayılanı önceden seç. Koç: boş bırak → erişilebilir tüm hesaplar.
-        if (showAccountFilter && !accountId) {
-          if (list.length === 1) {
-            setAccountId(list[0].id);
-          } else if (res.default_account_id) {
-            setAccountId(res.default_account_id);
-          }
-        }
+        // Hesabı otomatik seçme: makbuz/şablon gönderimleri başka hatta
+        // veya hesapsız sohbette kalınca listeden düşüyordu. Filtre isteğe bağlı.
       })
       .catch(() => setAccounts([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnızca mount'ta varsayılan hesap
@@ -310,7 +307,7 @@ export default function MesajlarClient({
         open={metaTemplatesOpen}
         conversationId={selectedId}
         contactType={selected?.contact_type}
-        showManageLink={managerInbox}
+        showManageLink={showMetaManageLink ?? managerInbox}
         onClose={() => setMetaTemplatesOpen(false)}
         onSent={(msg) => {
           handleTemplateSent(msg);
