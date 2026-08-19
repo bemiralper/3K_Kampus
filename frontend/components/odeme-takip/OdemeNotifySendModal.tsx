@@ -45,6 +45,59 @@ function recipientKey(r: OdemeNotifyRecipient): string {
   return `veli:${r.ogrenci_id}:${r.veli_id}`;
 }
 
+const RECIPIENT_PREF_KEY = "odeme-notify-recipient-pref-v1";
+
+type RecipientPrefMap = Record<string, string[]>;
+
+function loadRecipientPref(ogrenciId: number): string[] | null {
+  try {
+    const raw = localStorage.getItem(RECIPIENT_PREF_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as RecipientPrefMap;
+    const keys = parsed[String(ogrenciId)];
+    return Array.isArray(keys) ? keys : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveRecipientPref(ogrenciId: number, selectedKeys: string[]) {
+  try {
+    const raw = localStorage.getItem(RECIPIENT_PREF_KEY);
+    const parsed = (raw ? JSON.parse(raw) : {}) as RecipientPrefMap;
+    parsed[String(ogrenciId)] = selectedKeys;
+    localStorage.setItem(RECIPIENT_PREF_KEY, JSON.stringify(parsed));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function initialExcluded(
+  recipients: OdemeNotifyRecipient[],
+  notifyType: OdemeNotifyType,
+): Set<string> {
+  const excluded = new Set<string>();
+  const ogrenciId = recipients.find((r) => r.ogrenci_id)?.ogrenci_id;
+  const saved = ogrenciId ? loadRecipientPref(ogrenciId) : null;
+  const savedSet = saved ? new Set(saved) : null;
+
+  for (const r of recipients) {
+    const key = recipientKey(r);
+    if (r.skip_reason) {
+      excluded.add(key);
+      continue;
+    }
+    if (savedSet) {
+      if (!savedSet.has(key)) excluded.add(key);
+      continue;
+    }
+    if (notifyType === "makbuz" && r.recipient_type === "ogrenci") {
+      excluded.add(key);
+    }
+  }
+  return excluded;
+}
+
 function formatSendHistory(r: OdemeNotifyRecipient): string | null {
   const count = r.send_count ?? 0;
   if (count <= 0) return null;
@@ -88,11 +141,7 @@ export default function OdemeNotifySendModal({
         if (!cancelled) {
           setPreviewTitle(res.data.sozlesme_no || "");
           setRecipients(res.data.recipients || []);
-          const initialExcluded = new Set<string>();
-          for (const r of res.data.recipients || []) {
-            if (r.skip_reason) initialExcluded.add(recipientKey(r));
-          }
-          setExcluded(initialExcluded);
+          setExcluded(initialExcluded(res.data.recipients || [], notifyType));
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Hata");
@@ -131,6 +180,10 @@ export default function OdemeNotifySendModal({
         .filter((r) => r.recipient_type === "veli" && r.veli_id)
         .map((r) => r.veli_id as number);
       const includeStudent = sendable.some((r) => r.recipient_type === "ogrenci");
+      const ogrenciId = sendable[0]?.ogrenci_id ?? recipients[0]?.ogrenci_id;
+      if (ogrenciId) {
+        saveRecipientPref(ogrenciId, sendable.map(recipientKey));
+      }
 
       setSendPhase("PDF hazırlanıyor…");
 
@@ -184,7 +237,7 @@ export default function OdemeNotifySendModal({
       className="odev-notify-overlay"
       onClick={(e) => { if (e.target === e.currentTarget && !sending) onClose(); }}
       style={{
-        position: "fixed", inset: 0, zIndex: 3000,
+        position: "fixed", inset: 0, zIndex: 4500,
         background: "rgba(15,23,42,0.55)", display: "flex",
         alignItems: "center", justifyContent: "center", padding: 16,
       }}

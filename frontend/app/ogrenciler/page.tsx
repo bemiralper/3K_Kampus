@@ -110,6 +110,9 @@ export default function OgrenciListesiPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState(filters.q || "");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPushedSearchRef = useRef<string | null>(null);
+  const searchInputRef = useRef(searchInput);
+  searchInputRef.current = searchInput;
   const [popupOgrenci, setPopupOgrenci] = useState<OgrenciData | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OgrenciData | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -212,7 +215,16 @@ export default function OgrenciListesiPage() {
   useEffect(() => {
     const parsed = parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString()));
     setFilters(parsed);
-    setSearchInput(parsed.q || "");
+    const urlQ = parsed.q || "";
+    // Kendi debounce'umuzun URL yansımasıysa input'u geri yazma —
+    // yazarken harf kaybına yol açıyordu.
+    if (lastPushedSearchRef.current !== null && urlQ === lastPushedSearchRef.current) {
+      return;
+    }
+    lastPushedSearchRef.current = urlQ;
+    if (searchInputRef.current !== urlQ) {
+      setSearchInput(urlQ);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -247,6 +259,7 @@ export default function OgrenciListesiPage() {
     debounceRef.current = setTimeout(() => {
       const q = searchInput.trim();
       if (q !== (filters.q || "")) {
+        lastPushedSearchRef.current = q;
         updateFilters({ q, page: 1 });
       }
     }, 320);
@@ -257,6 +270,7 @@ export default function OgrenciListesiPage() {
 
   const handleSearchClear = () => {
     setSearchInput("");
+    lastPushedSearchRef.current = "";
     updateFilters({ q: "", page: 1 });
   };
 

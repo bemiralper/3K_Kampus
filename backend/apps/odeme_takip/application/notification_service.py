@@ -65,7 +65,9 @@ class OdemeNotifyPreview:
 class OdemeNotificationService:
     def _get_sozlesme(self, sozlesme_id: int, kurum_id: int) -> Sozlesme | None:
         return (
-            Sozlesme.objects.select_related('ogrenci', 'veli', 'kurum')
+            Sozlesme.objects.select_related(
+                'ogrenci', 'ogrenci__sube', 'veli', 'kurum', 'sube',
+            )
             .filter(id=sozlesme_id, kurum_id=kurum_id)
             .first()
         )
@@ -73,11 +75,46 @@ class OdemeNotificationService:
     def _get_tahsilat(self, tahsilat_id: int, kurum_id: int) -> Tahsilat | None:
         return (
             Tahsilat.objects.select_related(
-                'sozlesme', 'sozlesme__ogrenci', 'sozlesme__veli', 'sozlesme__kurum',
+                'sozlesme', 'sozlesme__ogrenci', 'sozlesme__ogrenci__sube',
+                'sozlesme__veli', 'sozlesme__kurum', 'sozlesme__sube',
             )
             .filter(id=tahsilat_id, sozlesme__kurum_id=kurum_id)
             .first()
         )
+
+    @staticmethod
+    def _sube_ad(sozlesme: Sozlesme | None) -> str:
+        if not sozlesme:
+            return ''
+        sube = getattr(sozlesme, 'sube', None)
+        if sube is None:
+            ogrenci = getattr(sozlesme, 'ogrenci', None)
+            sube = getattr(ogrenci, 'sube', None) if ogrenci else None
+        return (getattr(sube, 'ad', '') or '').strip()
+
+    def _template_context(
+        self,
+        *,
+        notify_type: str,
+        sozlesme: Sozlesme | None,
+        ogrenci_ad: str,
+        sozlesme_no: str,
+        veli_ad: str = '',
+    ) -> dict:
+        from apps.communication.application.variable_resolver import aktif_sinif_ad
+
+        ogrenci = sozlesme.ogrenci if sozlesme else None
+        kurum_ad = sozlesme.kurum.ad if sozlesme and sozlesme.kurum else ''
+        return {
+            'ogrenci_ad': ogrenci_ad,
+            'veli_ad': veli_ad,
+            'belge_turu': pdf_title_label(notify_type),
+            'sozlesme_no': sozlesme_no,
+            'pdf_baslik': pdf_title_label(notify_type),
+            'kurum_ad': kurum_ad,
+            'sube': self._sube_ad(sozlesme),
+            'sinif': aktif_sinif_ad(ogrenci) if ogrenci else '',
+        }
 
     def _mask_phone(self, phone: str) -> str:
         p = (phone or '').strip()
@@ -395,6 +432,7 @@ class OdemeNotificationService:
         sozlesme_no = preview.sozlesme_no
         ogrenci_ad = preview.student_name
         extra_line = preview.extra_label
+        sube_id = sozlesme.sube_id if sozlesme else None
 
         for item in preview.recipients:
             if item.recipient_type == 'veli':
@@ -416,13 +454,13 @@ class OdemeNotificationService:
                     kurum_id,
                     notify_event_key(notify_type),
                     recipient=NotificationRecipient.veli(item.veli_id),
-                    context={
-                        'ogrenci_ad': ogrenci_ad,
-                        'veli_ad': item.display_name,
-                        'belge_turu': pdf_title_label(notify_type),
-                        'sozlesme_no': sozlesme_no,
-                        'pdf_baslik': pdf_title_label(notify_type),
-                    },
+                    context=self._template_context(
+                        notify_type=notify_type,
+                        sozlesme=sozlesme,
+                        ogrenci_ad=ogrenci_ad,
+                        sozlesme_no=sozlesme_no,
+                        veli_ad=item.display_name,
+                    ),
                     attachment=NotificationAttachment(
                         filename=filename, file_bytes=pdf_bytes,
                     ),
@@ -430,6 +468,7 @@ class OdemeNotificationService:
                         module=SOURCE_ODEME,
                         ref_id=self._source_id(notify_type, entity_id, f'veli:{item.veli_id}'),
                     ),
+                    sube_id=sube_id,
                     sent_by_user_id=sent_by_user_id,
                     fallback_body=short_body,
                 )
@@ -467,12 +506,12 @@ class OdemeNotificationService:
                     kurum_id,
                     notify_event_key(notify_type),
                     recipient=NotificationRecipient.ogrenci(item.ogrenci_id),
-                    context={
-                        'ogrenci_ad': ogrenci_ad,
-                        'belge_turu': pdf_title_label(notify_type),
-                        'sozlesme_no': sozlesme_no,
-                        'pdf_baslik': pdf_title_label(notify_type),
-                    },
+                    context=self._template_context(
+                        notify_type=notify_type,
+                        sozlesme=sozlesme,
+                        ogrenci_ad=ogrenci_ad,
+                        sozlesme_no=sozlesme_no,
+                    ),
                     attachment=NotificationAttachment(
                         filename=filename, file_bytes=pdf_bytes,
                     ),
@@ -480,6 +519,7 @@ class OdemeNotificationService:
                         module=SOURCE_ODEME,
                         ref_id=self._source_id(notify_type, entity_id, 'ogrenci'),
                     ),
+                    sube_id=sube_id,
                     sent_by_user_id=sent_by_user_id,
                     fallback_body=short_body,
                 )

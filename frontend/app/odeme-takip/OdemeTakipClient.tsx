@@ -1056,7 +1056,7 @@ export default function OdemeTakipClient() {
 
       {notifyToast && (
         <div style={{
-          position: "fixed", bottom: 24, right: 24, zIndex: 4000,
+          position: "fixed", bottom: 24, right: 24, zIndex: 4600,
           maxWidth: 420, padding: "12px 16px", borderRadius: 10,
           background: "#ecfdf5", border: "1px solid #6ee7b7", color: "#065f46",
           fontSize: 13, lineHeight: 1.5, boxShadow: "0 8px 24px rgba(0,0,0,0.12)",

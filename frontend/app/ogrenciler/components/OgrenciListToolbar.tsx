@@ -125,12 +125,15 @@ export default function OgrenciListToolbar({
           </span>
           <input
             ref={inputRef}
-            type="search"
+            type="text"
+            inputMode="search"
             className="ogrenci-search-input"
             placeholder="Ad, soyad, okul no veya TC ile ara..."
             value={searchInput}
             onChange={(e) => onSearchInputChange(e.target.value)}
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
             spellCheck={false}
           />
           <span className="ogrenci-search-kbd">⌘K</span>

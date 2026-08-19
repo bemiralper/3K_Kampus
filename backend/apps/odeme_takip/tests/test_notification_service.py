@@ -35,3 +35,46 @@ class OdemeNotifyServiceTests(SimpleTestCase):
         mock_veliler.assert_called_once_with(ogrenci)
         self.assertEqual(len(recipients), 2)
         self.assertEqual(recipients[0].display_name, 'Test Veli')
+
+    def test_template_context_fills_sube(self):
+        sozlesme = MagicMock()
+        sozlesme.kurum.ad = '3K Kampüs'
+        sozlesme.sube.ad = 'Melikgazi'
+        sozlesme.ogrenci = MagicMock()
+
+        with patch(
+            'apps.communication.application.variable_resolver.aktif_sinif_ad',
+            return_value='9-A',
+        ):
+            ctx = OdemeNotificationService()._template_context(
+                notify_type='makbuz',
+                sozlesme=sozlesme,
+                ogrenci_ad='Yusuf Bejan Kemaloğlu',
+                sozlesme_no='SZ-1',
+                veli_ad='Necati Kemaloğlu',
+            )
+
+        self.assertEqual(ctx['sube'], 'Melikgazi')
+        self.assertEqual(ctx['kurum_ad'], '3K Kampüs')
+        self.assertEqual(ctx['veli_ad'], 'Necati Kemaloğlu')
+        self.assertEqual(ctx['sinif'], '9-A')
+        self.assertNotIn('{{', ctx['sube'])
+
+
+class MakbuzPdfFilenameTests(SimpleTestCase):
+    def test_filename_includes_student_and_makbuz_no(self):
+        from apps.odeme_takip.application.odeme_notify_utils import build_makbuz_pdf_filename
+
+        ogrenci = MagicMock()
+        ogrenci.ad = 'Ayşe'
+        ogrenci.soyad = 'Yılmaz'
+        sozlesme = MagicMock()
+        sozlesme.ogrenci = ogrenci
+        tahsilat = MagicMock()
+        tahsilat.id = 42
+        tahsilat.sozlesme = sozlesme
+
+        self.assertEqual(
+            build_makbuz_pdf_filename(tahsilat),
+            'Ayşe-Yılmaz-Tahsilat-Makbuzu-MKB-000042.pdf',
+        )
