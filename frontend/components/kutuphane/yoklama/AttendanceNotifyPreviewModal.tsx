@@ -41,6 +41,7 @@ export default function AttendanceNotifyPreviewModal({
   const [preview, setPreview] = useState<AttendanceNotifyPreviewResponse | null>(null);
   const [error, setError] = useState("");
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const ogrenciKey = (ogrenciIds || []).join(",");
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +49,10 @@ export default function AttendanceNotifyPreviewModal({
       setLoading(true);
       setError("");
       try {
-        const res = await previewAttendanceNotify(libraryId, sessionId, eventType, ogrenciIds);
+        const ids = ogrenciKey
+          ? ogrenciKey.split(",").map((id) => Number(id)).filter((id) => id > 0)
+          : undefined;
+        const res = await previewAttendanceNotify(libraryId, sessionId, eventType, ids);
         if (!res.success || !res.data) {
           throw new Error((res as { error?: string }).error || "Önizleme yüklenemedi");
         }
@@ -60,7 +64,7 @@ export default function AttendanceNotifyPreviewModal({
       }
     })();
     return () => { cancelled = true; };
-  }, [libraryId, sessionId, eventType, ogrenciIds]);
+  }, [libraryId, sessionId, eventType, ogrenciKey]);
 
   const sendable = useMemo(() => {
     if (!preview) return [];
@@ -134,10 +138,13 @@ export default function AttendanceNotifyPreviewModal({
 
           {loading ? (
             <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>Önizleme yükleniyor…</div>
-          ) : error ? (
-            <div style={{ padding: 24, color: "#dc2626", fontSize: 13 }}>{error}</div>
           ) : (
             <div className="yok-preview-list">
+              {error && (
+                <div style={{ padding: "14px 22px", color: "#dc2626", fontSize: 13, background: "#fef2f2" }}>
+                  {error}
+                </div>
+              )}
               {(preview?.recipients ?? []).map((r) => {
                 const key = `${r.ogrenci_id}:${r.veli_id}`;
                 const skipped = Boolean(r.skip_reason) || !r.veli_id;
@@ -157,13 +164,14 @@ export default function AttendanceNotifyPreviewModal({
                       <span>
                         {r.veli_ad || "Veli yok"} {r.telefon ? `· ${r.telefon}` : ""}
                         {r.skip_reason ? ` · ${r.skip_reason}` : ""}
+                        {!r.skip_reason && r.warning ? ` · ${r.warning}` : ""}
                       </span>
                     </div>
                     <div className="yok-preview-message">{r.body || "—"}</div>
                   </div>
                 );
               })}
-              {preview && preview.recipients.length === 0 && (
+              {preview && preview.recipients.length === 0 && !error && (
                 <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>
                   Bu kriterde bildirilecek öğrenci bulunamadı.
                 </div>

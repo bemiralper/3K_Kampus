@@ -222,6 +222,7 @@ export interface AttendanceNotifyRecipientPreview {
   telefon: string;
   body: string;
   skip_reason: string;
+  warning?: string;
 }
 
 export interface AttendanceNotifyPreviewResponse {

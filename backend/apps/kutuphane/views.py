@@ -1612,6 +1612,7 @@ def api_attendance_notify_preview(request, library_id, session_id):
                         'telefon': r.telefon,
                         'body': r.body,
                         'skip_reason': r.skip_reason,
+                        'warning': r.warning,
                     }
                     for r in preview.recipients
                 ],

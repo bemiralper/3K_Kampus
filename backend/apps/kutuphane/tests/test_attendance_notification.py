@@ -149,3 +149,59 @@ class AttendanceNotificationServiceTest(TestCase):
         )
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0]['event_type'], AttendanceNotificationEventType.LATE)
+
+
+class AttendanceNotifyPreviewSendableTest(TestCase):
+    """24s pencere uyarısı '0 veliye gönder' üretmemeli."""
+
+    def setUp(self):
+        from datetime import date
+
+        from apps.kurum.domain.models import Kurum
+        from apps.kutuphane.domain.models import AttendanceRecord, AttendanceSession, Library
+        from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+        from apps.sube.domain.models import Sube
+
+        self.kurum = Kurum.objects.create(ad='Yoklama Preview', kod='YPREV')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='YPREV-M')
+        self.library = Library.objects.create(
+            kurum_id=self.kurum.id, sube_id=self.sube.id, ad='Salon', kod='YP-1', kapasite=20,
+        )
+        self.ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Ali', soyad='Yılmaz', aktif_mi=True,
+        )
+        self.veli = OgrenciVeli.objects.create(
+            ogrenci=self.ogrenci,
+            veli_turu='anne',
+            ad='Ayşe',
+            soyad='Yılmaz',
+            telefon='05551234567',
+            varsayilan=True,
+            sms_bildirimleri=['duyuru', 'devamsizlik'],
+        )
+        self.session = AttendanceSession.objects.create(
+            library=self.library,
+            tarih=date(2026, 8, 21),
+            acan_id=1,
+        )
+        AttendanceRecord.objects.create(
+            attendance_session=self.session,
+            ogrenci_id=self.ogrenci.id,
+            durum=AttendanceStatus.ABSENT,
+            kaydeden_id=1,
+        )
+        self.service = AttendanceNotificationService()
+
+    def test_closed_window_warning_keeps_recipient_sendable(self):
+        preview = self.service.preview(
+            self.kurum.id,
+            self.session.id,
+            AttendanceNotificationEventType.ABSENT,
+        )
+        self.assertEqual(preview.eligible_count, 1)
+        self.assertEqual(preview.pending_count, 1)
+        self.assertEqual(len(preview.recipients), 1)
+        item = preview.recipients[0]
+        self.assertEqual(item.veli_id, self.veli.id)
+        self.assertFalse(item.skip_reason)
+        self.assertTrue(item.body)

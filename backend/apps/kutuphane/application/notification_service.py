@@ -56,6 +56,7 @@ class NotifyRecipientPreview:
     telefon: str
     body: str
     skip_reason: str = ''
+    warning: str = ''
 
 
 @dataclass
@@ -258,6 +259,7 @@ class AttendanceNotificationService:
                 )
                 body = resolve_variables(template.body, ctx)
                 skip = ''
+                warning = ''
                 if veli.id in sent_veli:
                     skip = 'Daha önce gönderildi'
                 elif not ContactResolver.veli_allows_outbound(veli, OPT_IN_CATEGORY):
@@ -274,12 +276,15 @@ class AttendanceNotificationService:
                         dry_run=True,
                     )
                     if dry is not None:
+                        send_mode = getattr(dry, 'send_mode', '') or ''
                         blocked = getattr(dry, 'blocked_reason', '') or ''
-                        if blocked:
-                            skip = blocked
-                        elif not getattr(dry, 'would_send', True):
-                            warnings = getattr(dry, 'warnings', None) or []
-                            skip = warnings[0] if warnings else 'Bu bildirim gönderilemez'
+                        warnings = getattr(dry, 'warnings', None) or []
+                        # 24s pencere / Meta uyarısı butonu sıfırlamasın;
+                        # yalnızca gerçekten kapalı bildirim atlanır.
+                        if send_mode == 'DISABLED':
+                            skip = blocked or (warnings[0] if warnings else 'Bu bildirim kapalı')
+                        else:
+                            warning = blocked or (warnings[0] if warnings else '')
 
                 recipients.append(NotifyRecipientPreview(
                     ogrenci_id=record.ogrenci_id,
@@ -289,6 +294,7 @@ class AttendanceNotificationService:
                     telefon=phone[:4] + '***' + phone[-2:] if len(phone) > 6 else '***',
                     body=body,
                     skip_reason=skip,
+                    warning=warning,
                 ))
 
         pending = [r for r in recipients if not r.skip_reason]
