@@ -207,6 +207,16 @@ function withQuery(path: string, params?: Record<string, string | number | undef
   return q ? `${path}?${q}` : path;
 }
 
+export type OzelDersMeta = {
+  teachers: { id: number; name: string }[];
+  dersler: { id: number; ad: string; kod: string; kisa_ad?: string }[];
+};
+
+export async function fetchOzelDersMeta() {
+  const res = await apiFetch<OzelDersMeta>(`${BASE}/meta/`);
+  return unwrap(res);
+}
+
 export async function fetchProgramlar(params?: Record<string, string | number | undefined>) {
   const res = await apiFetch<BirebirProgram[]>(withQuery(`${BASE}/programlar/`, params));
   return unwrap(res);

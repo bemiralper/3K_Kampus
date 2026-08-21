@@ -112,13 +112,15 @@ def calculate_student_private_lesson_summary(
 
     ders_breakdown: dict[int, dict] = {}
 
-    def _ders_entry(ders_id: int, ders_obj=None) -> dict:
+    def _ders_entry(ders_id: int, ders_obj=None, *, ders_ad: str = '', ders_kisa_ad: str = '') -> dict:
+        ad = (ders_ad or getattr(ders_obj, 'ad', None) or '').strip()
+        kisa = (ders_kisa_ad or getattr(ders_obj, 'kisa_ad', None) or '').strip()
         entry = ders_breakdown.get(ders_id)
         if entry is None:
             entry = {
                 'ders_id': ders_id,
-                'ders_ad': (getattr(ders_obj, 'ad', None) or '').strip(),
-                'ders_kisa_ad': (getattr(ders_obj, 'kisa_ad', None) or '').strip(),
+                'ders_ad': ad,
+                'ders_kisa_ad': kisa,
                 'planlanan_ders': 0,
                 'islenen_ders': 0,
                 'kalan_ders': 0,
@@ -127,9 +129,9 @@ def calculate_student_private_lesson_summary(
                 'iptal_ders': 0,
             }
             ders_breakdown[ders_id] = entry
-        elif ders_obj is not None and not entry['ders_ad']:
-            entry['ders_ad'] = (getattr(ders_obj, 'ad', None) or '').strip()
-            entry['ders_kisa_ad'] = (getattr(ders_obj, 'kisa_ad', None) or '').strip()
+        elif ad and not entry['ders_ad']:
+            entry['ders_ad'] = ad
+            entry['ders_kisa_ad'] = kisa
         return entry
 
     # Planlanan: şablonun dönem içindeki her tekrarı 1 "ders" — tatiller hariç.
@@ -168,6 +170,16 @@ def calculate_student_private_lesson_summary(
     telafi_ders = 0
     ek_ders = 0
     iptal_ders = 0
+
+    from apps.ozel_ders.services.sync_service import resolve_paket_dersleri
+
+    for p in programs:
+        for d in resolve_paket_dersleri(p):
+            _ders_entry(
+                d['id'],
+                ders_ad=d.get('ad', ''),
+                ders_kisa_ad=d.get('kisa_ad', ''),
+            )
 
     for o in oturum_qs.only('durum', 'oturum_turu', 'ders_id', 'ders__ad', 'ders__kisa_ad'):
         entry = _ders_entry(o.ders_id, o.ders)

@@ -1,18 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchLessonOpsMeta, type LessonOpsMeta } from '@/lib/academic-api';
+import { fetchOzelDersMeta, type OzelDersMeta } from '@/lib/ozel-ders-api';
 import { useKurum } from '@/lib/contexts/KurumContext';
 
 export function useOzelDersMeta() {
   const { activeKurum, activeSube, activeEgitimYili, initialized } = useKurum();
-  const [meta, setMeta] = useState<LessonOpsMeta | null>(null);
+  const [meta, setMeta] = useState<OzelDersMeta | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!initialized || !activeKurum || !activeSube) return;
     let cancelled = false;
-    fetchLessonOpsMeta()
+    fetchOzelDersMeta()
       .then((m) => {
         if (!cancelled) setMeta(m);
       })

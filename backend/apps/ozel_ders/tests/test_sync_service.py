@@ -12,8 +12,11 @@ from apps.ozel_ders.domain.models import (
     BirebirOgrenciProgrami,
     PremiumPaketDersKota,
 )
+from apps.odeme_takip.domain.enums import KalemTuru, SozlesmeDurum
+from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi
 from apps.ozel_ders.services.sync_service import (
     ensure_program_for_package,
+    ensure_program_from_sozlesme,
     resolve_paket_dersleri,
     sync_sube_programs,
 )
@@ -138,6 +141,29 @@ class SyncServiceTests(TestCase):
         self.assertEqual(dersler[0]['haftalik_adet'], 2)
         self.assertEqual(dersler[0]['varsayilan_sure_dk'], 50)
 
+    def test_resolve_paket_dersleri_infers_from_paket_adi(self):
+        paket = OzelDers.objects.create(
+            ad='Matematik Özel Ders',
+            kod='MATOZ',
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            brut_fiyat=1000,
+        )
+        program, action = ensure_program_for_package(
+            ogrenci_id=self.ogrenci.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            egitim_yili_id=self.ey.id,
+            paket_turu='ozel_ders',
+            paket_id=paket.id,
+        )
+        self.assertEqual(action, 'created')
+        dersler = resolve_paket_dersleri(program)
+        self.assertEqual(len(dersler), 1)
+        self.assertEqual(dersler[0]['id'], self.ders2.id)
+        self.assertEqual(dersler[0]['ad'], 'Matematik')
+
     def test_non_syncable_paket_noop(self):
         program, action = ensure_program_for_package(
             ogrenci_id=self.ogrenci.id,
@@ -176,3 +202,39 @@ class SyncServiceTests(TestCase):
         )
         self.assertEqual(summary2['skipped'], 1)
         self.assertEqual(summary2['created'], 0)
+
+    def test_sozlesme_kalem_creates_program(self):
+        sozlesme = Sozlesme.objects.create(
+            sozlesme_no='SZ-OD-KALEM',
+            ogrenci=self.ogrenci,
+            egitim_yili=self.ey,
+            kurum=self.kurum,
+            sube=self.sube,
+            baslangic_tarihi=date(2025, 9, 1),
+            bitis_tarihi=date(2026, 6, 15),
+            paket_turu='grup_dersi',
+            paket_id=99,
+            paket_adi='Grup',
+            brut_tutar=1000,
+            net_tutar=1000,
+            durum=SozlesmeDurum.AKTIF,
+        )
+        SozlesmeKalemi.objects.create(
+            sozlesme=sozlesme,
+            kalem_turu=KalemTuru.OZEL_DERS,
+            kalem_id=self.ozel_paket.id,
+            kalem_adi=self.ozel_paket.ad,
+            brut_tutar=1000,
+            net_tutar=1000,
+        )
+        program, action = ensure_program_from_sozlesme(sozlesme)
+        self.assertEqual(action, 'created')
+        self.assertEqual(program.ozel_ders_paket_id, self.ozel_paket.id)
+        self.assertTrue(
+            OgrenciEgitimPaketi.objects.filter(
+                ogrenci=self.ogrenci,
+                paket_turu='ozel_ders',
+                paket_id=self.ozel_paket.id,
+                aktif_mi=True,
+            ).exists()
+        )

@@ -51,12 +51,15 @@ def build_sozlesme_pdf_filename(sozlesme: Sozlesme, notify_type: str) -> str:
     return f'{ad}-Odeme-Belgesi.pdf'
 
 
+def format_makbuz_no(tahsilat_id: int) -> str:
+    return f'MKB-{tahsilat_id:06d}'
+
+
 def build_makbuz_pdf_filename(tahsilat: Tahsilat) -> str:
     sz = tahsilat.sozlesme
     ogrenci = sz.ogrenci if sz else None
     ad = _safe_filename_part(f'{ogrenci.ad}-{ogrenci.soyad}' if ogrenci else 'Ogrenci')
-    makbuz = tahsilat.referans_no or f'MKB-{tahsilat.id}'
-    makbuz_part = _safe_filename_part(str(makbuz))
+    makbuz_part = _safe_filename_part(format_makbuz_no(tahsilat.id))
     return f'{ad}-Tahsilat-Makbuzu-{makbuz_part}.pdf'
 
 

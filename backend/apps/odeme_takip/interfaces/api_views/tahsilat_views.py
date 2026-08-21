@@ -10,6 +10,10 @@ from apps.odeme_takip.permissions import (
 )
 from rest_framework.response import Response
 
+from apps.odeme_takip.application.odeme_notify_utils import (
+    build_makbuz_pdf_filename,
+    format_makbuz_no,
+)
 from apps.odeme_takip.application.services.tahsilat_service import TahsilatService
 from apps.odeme_takip.application.services.sozlesme_service import SozlesmeService
 from apps.odeme_takip.interfaces.api_views.sozlesme_views import _serialize_tahsilat
@@ -197,7 +201,8 @@ def tahsilat_makbuz(request, pk):
 
     data = {
         # Makbuz bilgileri
-        'makbuz_no': f'MKB-{th.id:06d}',
+        'makbuz_no': format_makbuz_no(th.id),
+        'pdf_filename': build_makbuz_pdf_filename(th),
         'tahsilat_id': th.id,
         'tahsilat_tarihi': str(th.tahsilat_tarihi) if th.tahsilat_tarihi else None,
         'kayit_tarihi': str(th.created_at) if th.created_at else None,

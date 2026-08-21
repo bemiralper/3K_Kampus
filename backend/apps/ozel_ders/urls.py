@@ -3,6 +3,7 @@ from django.urls import path
 from apps.ozel_ders.interfaces import views
 
 urlpatterns = [
+    path('meta/', views.meta, name='ozel-ders-meta'),
     path('programlar/', views.program_list_create, name='ozel-ders-programlar'),
     path('programlar/sync/', views.program_sync, name='ozel-ders-programlar-sync'),
     path('programlar/<int:program_id>/', views.program_detail, name='ozel-ders-program-detail'),

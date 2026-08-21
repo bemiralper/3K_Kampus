@@ -195,6 +195,23 @@ def build_dashboard(
             if row['bitis'] is None or s.program.bitis_tarihi > row['bitis']:
                 row['bitis'] = s.program.bitis_tarihi
 
+    from apps.ozel_ders.services.sync_service import resolve_paket_dersleri
+
+    for p in programs:
+        for d in resolve_paket_dersleri(p):
+            by_ders.setdefault(d['id'], {
+                'ders_id': d['id'],
+                'ders_ad': d.get('ad') or str(d['id']),
+                'ders_kisa_ad': (d.get('kisa_ad') or '').strip(),
+                'ogretmen_id': None,
+                'ogretmen_ad': '',
+                'program_ids': {p.id},
+                'baslangic': p.baslangic_tarihi,
+                'bitis': p.bitis_tarihi,
+                'slot_weekly': 0,
+                'durum_counts': defaultdict(int),
+            })['program_ids'].add(p.id)
+
     for o in oturumlar:
         row = by_ders.setdefault(o.ders_id, {
             'ders_id': o.ders_id,

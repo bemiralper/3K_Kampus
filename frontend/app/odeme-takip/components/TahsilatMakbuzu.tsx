@@ -2,10 +2,11 @@
 
 import { useRef, useEffect, useState } from "react";
 import { API_BASE, apiHeaders } from "../helpers";
-import { generateMakbuzPdf, type MakbuzPdfData } from "./makbuzPdfGenerator";
+import { buildMakbuzPdfFilename, generateMakbuzPdf, type MakbuzPdfData } from "./makbuzPdfGenerator";
 
 interface MakbuzData {
   makbuz_no: string;
+  pdf_filename?: string;
   tahsilat_id: number;
   tahsilat_tarihi: string | null;
   kayit_tarihi: string | null;
@@ -176,13 +177,14 @@ export default function TahsilatMakbuzu({ tahsilatId, onClose, printMode, printT
 
   useEffect(() => {
     if (printMode && data && !loading && !error) {
+      document.title = buildMakbuzPdfFilename(data).replace(/\.pdf$/i, "");
       document.body.setAttribute("data-pdf-ready", "true");
     }
   }, [printMode, data, loading, error]);
 
   const handlePrint = () => {
     const el = contentRef.current;
-    if (!el) return;
+    if (!el || !data) return;
     setPdfBusy(true);
 
     const htmlContent = el.innerHTML;
@@ -205,7 +207,7 @@ export default function TahsilatMakbuzu({ tahsilatId, onClose, printMode, printT
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Tahsilat Makbuzu</title>
+<title>${buildMakbuzPdfFilename(data).replace(/\.pdf$/i, "")}</title>
 <style>
   @page { size: A4 portrait; margin: 10mm 12mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }

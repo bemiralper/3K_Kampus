@@ -156,8 +156,15 @@ class IndirimService:
         return indirim, None
 
     def _recalculate_net(self, sozlesme):
-        """Onaylanan indirimlerin toplamını hesapla → net tutarı güncelle"""
-        toplam = self.repo.get_onaylanan_toplam(sozlesme.id)
+        """Onaylanan sözleşme indirimleri + kalem indirimleri → net tutarı güncelle"""
+        from apps.odeme_takip.domain.models import SozlesmeKalemi
+
+        sozlesme_indirim = self.repo.get_onaylanan_toplam(sozlesme.id)
+        kalem_indirim = sum(
+            k.indirim_tutari or 0
+            for k in SozlesmeKalemi.objects.filter(sozlesme=sozlesme)
+        )
+        toplam = sozlesme_indirim + kalem_indirim
         sozlesme.toplam_indirim_tutari = toplam
         sozlesme.net_tutar = sozlesme.kdv_dahil_tutar - toplam
         sozlesme.save(update_fields=['toplam_indirim_tutari', 'net_tutar'])

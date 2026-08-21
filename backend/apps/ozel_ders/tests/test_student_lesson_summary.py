@@ -222,3 +222,33 @@ class StudentLessonSummaryTests(TestCase):
         self.assertEqual(by_ad['Fizik']['planlanan_ders'], 4)
         self.assertEqual(by_ad['Fizik']['islenen_ders'], 1)
         self.assertEqual(by_ad['Fizik']['kalan_ders'], 3)
+
+    def test_paket_dersleri_appear_without_slots(self):
+        from apps.egitim_paketleri.models import OzelDers
+
+        paket = OzelDers.objects.create(
+            ad='Kimya Birebir',
+            kod='KIMBB',
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            brut_fiyat=1000,
+        )
+        kimya = Ders.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Kimya', kod='KIM-S', kisa_ad='Kim',
+        )
+        paket.dersler.add(kimya)
+        BirebirOgrenciProgrami.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            ogrenci=self.ogrenci,
+            ozel_ders_paket=paket,
+            baslangic_tarihi=self.start,
+            bitis_tarihi=self.end,
+            durum=ProgramDurumu.AKTIF,
+        )
+        data = self._summary()
+        by_ad = {d['ders_ad']: d for d in data['dersler']}
+        self.assertIn('Kimya', by_ad)
+        self.assertEqual(by_ad['Kimya']['planlanan_ders'], 0)

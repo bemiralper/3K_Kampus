@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from django.db import transaction
@@ -129,3 +129,42 @@ def materialize_program(
         'holiday_dates': sorted(holiday_dates),
         'warnings': warnings,
     }
+
+
+def materialize_active_programs(
+    *,
+    kurum_id: int,
+    sube_id: int,
+    start_date: date | str,
+    end_date: date | str,
+    user=None,
+    max_days: int = 62,
+) -> dict:
+    """Aktif programların şablon slotlarından tarih aralığı için oturum üretir (idempotent)."""
+    start = _parse_date(start_date)
+    end = _parse_date(end_date)
+    if end < start:
+        return {'created': 0, 'programs': 0}
+    if (end - start).days > max_days:
+        end = start + timedelta(days=max_days)
+
+    program_ids = list(
+        BirebirHaftalikSlot.objects.filter(
+            aktif=True,
+            program__kurum_id=kurum_id,
+            program__sube_id=sube_id,
+            program__durum=ProgramDurumu.AKTIF,
+        ).values_list('program_id', flat=True).distinct()
+    )
+    created = 0
+    for program_id in program_ids:
+        result = materialize_program(
+            program_id,
+            kurum_id=kurum_id,
+            sube_id=sube_id,
+            start_date=start,
+            end_date=end,
+            user=user,
+        )
+        created += result.get('created') or 0
+    return {'created': created, 'programs': len(program_ids)}

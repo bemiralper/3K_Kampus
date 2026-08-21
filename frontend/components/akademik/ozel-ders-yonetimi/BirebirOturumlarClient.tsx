@@ -9,11 +9,13 @@ import {
   createOturum,
   createTelafi,
   fetchOturumlar,
+  fetchProgramlar,
   fetchTatiller,
   resolveDersLabel,
   setOturumDurum,
   type BirebirOturum,
   type OzelDersTatil,
+  type PaketDersi,
   type SetOturumDurumPayload,
 } from '@/lib/ozel-ders-api';
 import { fetchEtkilenenDersler } from '@/lib/takvim-api';
@@ -126,6 +128,7 @@ export default function BirebirOturumlarClient() {
   const [saving, setSaving] = useState(false);
   const [studentQ, setStudentQ] = useState('');
   const [students, setStudents] = useState<KutuphaneStudentOption[]>([]);
+  const [studentDersler, setStudentDersler] = useState<PaketDersi[]>([]);
   const [telafiCandidates, setTelafiCandidates] = useState<BirebirOturum[]>([]);
   const [form, setForm] = useState({
     ders_turu: 'NORMAL' as 'NORMAL' | 'TELAFI',
@@ -235,6 +238,40 @@ export default function BirebirOturumlarClient() {
   useEffect(() => {
     loadToday();
   }, [loadToday]);
+
+  useEffect(() => {
+    if (!form.ogrenci_id) {
+      setStudentDersler([]);
+      return;
+    }
+    let cancelled = false;
+    fetchProgramlar({ ogrenci_id: Number(form.ogrenci_id), durum: 'AKTIF' })
+      .then((progs) => {
+        if (cancelled) return;
+        const map = new Map<number, PaketDersi>();
+        for (const p of progs) {
+          for (const d of p.paket_dersleri || []) map.set(d.id, d);
+        }
+        setStudentDersler(Array.from(map.values()));
+      })
+      .catch(() => {
+        if (!cancelled) setStudentDersler([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.ogrenci_id]);
+
+  const createDersOptions = useMemo(() => {
+    if (studentDersler.length) {
+      return studentDersler.map((d) => ({
+        id: d.id,
+        ad: d.ad,
+        kisa_ad: d.kisa_ad,
+      }));
+    }
+    return meta?.dersler || [];
+  }, [studentDersler, meta?.dersler]);
 
   useEffect(() => {
     if (studentQ.trim().length < 2) {
@@ -730,8 +767,8 @@ export default function BirebirOturumlarClient() {
               title="Bu aralıkta oturum yok"
               description={
                 holidays.length
-                  ? `Aralıkta ${holidays.length} tatil günü var. Öğrenci Programları’ndan oturum üretin veya tek seferlik ders ekleyin.`
-                  : 'Öğrenci Programları’ndan oturum üretin veya tek seferlik ders ekleyin.'
+                  ? `Aralıkta ${holidays.length} tatil günü var. Haftalık şablonu olan programların dersleri otomatik üretilir; şablonu olmayanlar için tek seferlik ders ekleyin.`
+                  : 'Haftalık şablonu olan programların dersleri bu aralıkta otomatik üretilir. Şablonu yoksa Haftalık Program Şablonları’ndan saat/öğretmen atayın veya tek seferlik ders ekleyin.'
               }
             />
           ) : (
@@ -1014,7 +1051,7 @@ export default function BirebirOturumlarClient() {
                   onChange={(e) => setForm((f) => ({ ...f, ders_id: e.target.value }))}
                 >
                   <option value="">Seçin</option>
-                  {(meta?.dersler || []).map((d) => (
+                  {createDersOptions.map((d) => (
                     <option key={d.id} value={d.id}>
                       {resolveDersLabel({ ders_ad: d.ad, ders_kisa_ad: d.kisa_ad }, useKisaAd)}
                     </option>

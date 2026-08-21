@@ -308,7 +308,7 @@ export default function SozlesmelerTab({
             kalem_turu: seciliKalemTuru,
             kalem_id: secenek.id,
             kalem_adi: secenek.ad,
-            brut_tutar: secenek.fiyat,
+            brut_tutar: secenekFiyat,
             kdv_orani: secenek.kdv_orani,
             indirim_orani: oran,
             indirim_tutari: indirimTutar,

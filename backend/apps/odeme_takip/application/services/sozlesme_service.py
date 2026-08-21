@@ -5,8 +5,12 @@ Sözleşme Service
 Integer-Only: Tüm parasal hesaplamalar tam sayı aritmetiğiyle yapılır.
 Decimal KULLANILMAZ.
 """
+import logging
+
 from django.db import transaction
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from apps.egitim_paketleri.models import hesapla_kdv
 from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi, SozlesmeGecmisi
@@ -52,19 +56,22 @@ class SozlesmeService:
         )
 
     def _classify_kalem(self, kalem, sozlesme=None):
-        from apps.egitim_paketleri.models import Deneme, GrupDersi, OzelDers
+        from apps.egitim_paketleri.models import Deneme, GrupDersi, OzelDers, PremiumPaket
 
         tur = kalem.kalem_turu
         if tur in (KalemTuru.GRUP_DERSI, PaketTuru.GRUP_DERSI):
             return PaketTuru.GRUP_DERSI
         if tur in (KalemTuru.OZEL_DERS, PaketTuru.OZEL_DERS):
             return PaketTuru.OZEL_DERS
+        if tur in (KalemTuru.PREMIUM, PaketTuru.PREMIUM):
+            return PaketTuru.PREMIUM
         if tur in (KalemTuru.DENEME, PaketTuru.DENEME):
             return PaketTuru.DENEME
         if tur == KalemTuru.PAKET and sozlesme:
             if sozlesme.paket_id == kalem.kalem_id and sozlesme.paket_turu in (
                 PaketTuru.GRUP_DERSI,
                 PaketTuru.OZEL_DERS,
+                PaketTuru.PREMIUM,
                 PaketTuru.DENEME,
             ):
                 return sozlesme.paket_turu
@@ -73,9 +80,51 @@ class SozlesmeService:
             return PaketTuru.GRUP_DERSI
         if OzelDers.objects.filter(id=kid).exists():
             return PaketTuru.OZEL_DERS
+        if PremiumPaket.objects.filter(id=kid).exists():
+            return PaketTuru.PREMIUM
         if Deneme.objects.filter(id=kid).exists():
             return PaketTuru.DENEME
         return None
+
+    def _kalem_totals_extra(self, sozlesme, exclude_kalem=None):
+        """Sözleşme tutarı ile kalem toplamı arasındaki mevcut farkı koru."""
+        qs = SozlesmeKalemi.objects.filter(sozlesme=sozlesme)
+        if exclude_kalem is not None:
+            qs = qs.exclude(pk=exclude_kalem.pk)
+        kalemler = list(qs)
+        return {
+            'extra_net': (sozlesme.net_tutar or 0) - sum(k.net_tutar or 0 for k in kalemler),
+            'extra_brut': (sozlesme.brut_tutar or 0) - sum(k.brut_tutar or 0 for k in kalemler),
+            'extra_indirim': (sozlesme.toplam_indirim_tutari or 0) - sum(k.indirim_tutari or 0 for k in kalemler),
+            'extra_kdv': (sozlesme.kdv_tutari or 0) - sum(k.kdv_tutari or 0 for k in kalemler),
+        }
+
+    def _apply_totals_from_kalemler(self, sozlesme, extra):
+        kalemler = list(SozlesmeKalemi.objects.filter(sozlesme=sozlesme))
+        sozlesme.brut_tutar = max(0, sum(k.brut_tutar or 0 for k in kalemler) + extra.get('extra_brut', 0))
+        sozlesme.kdv_tutari = max(0, sum(k.kdv_tutari or 0 for k in kalemler) + extra.get('extra_kdv', 0))
+        sozlesme.kdv_dahil_tutar = sozlesme.brut_tutar
+        sozlesme.toplam_indirim_tutari = max(
+            0, sum(k.indirim_tutari or 0 for k in kalemler) + extra.get('extra_indirim', 0)
+        )
+        sozlesme.net_tutar = max(0, sum(k.net_tutar or 0 for k in kalemler) + extra.get('extra_net', 0))
+        sozlesme.save(update_fields=[
+            'brut_tutar', 'kdv_tutari', 'kdv_dahil_tutar',
+            'toplam_indirim_tutari', 'net_tutar', 'updated_at',
+        ])
+
+    def _sync_ozel_ders_kalem(self, sozlesme, kalem, *, removed=False, user=None):
+        try:
+            from apps.ozel_ders.services.sync_service import (
+                deactivate_program_for_sozlesme_kalem,
+                ensure_program_from_sozlesme_kalem,
+            )
+            if removed:
+                deactivate_program_for_sozlesme_kalem(sozlesme, kalem, user=user)
+            else:
+                ensure_program_from_sozlesme_kalem(sozlesme, kalem, user=user)
+        except Exception:
+            logger.exception('Özel ders program senkronu başarısız (sozlesme=%s kalem=%s)', sozlesme.id, getattr(kalem, 'id', None))
 
     def _normalize_storage_kalem_turu(self, raw):
         mapping = {
@@ -377,12 +426,12 @@ class SozlesmeService:
             'islem_yapan': user,
         })
 
-        # Özel ders / premium → birebir program (yalnızca ders listesi; öğretmen elle)
+        # Özel ders / premium → birebir program (kök paket + kalemler)
         try:
             from apps.ozel_ders.services.sync_service import ensure_program_from_sozlesme
             ensure_program_from_sozlesme(sozlesme, user=user)
         except Exception:
-            pass
+            logger.exception('Özel ders program senkronu başarısız (sozlesme=%s)', sozlesme.id)
 
         return sozlesme, None
 
@@ -584,6 +633,13 @@ class SozlesmeService:
             'islem_yapan': user,
         })
 
+        if kalemler_raw is not None:
+            try:
+                from apps.ozel_ders.services.sync_service import ensure_program_from_sozlesme
+                ensure_program_from_sozlesme(sozlesme, user=user)
+            except Exception:
+                logger.exception('Özel ders program senkronu başarısız (sozlesme=%s)', sozlesme.id)
+
         return sozlesme, None
 
     # ─── DURUM DEĞİŞTİR (State Machine) ─
@@ -686,7 +742,12 @@ class SozlesmeService:
         if not sozlesme:
             return
 
-        toplam_indirim = self.indirim_repo.get_onaylanan_toplam(sozlesme_id)
+        sozlesme_indirim = self.indirim_repo.get_onaylanan_toplam(sozlesme_id)
+        kalem_indirim = sum(
+            k.indirim_tutari or 0
+            for k in SozlesmeKalemi.objects.filter(sozlesme=sozlesme)
+        )
+        toplam_indirim = sozlesme_indirim + kalem_indirim
         eski_net = sozlesme.net_tutar
 
         sozlesme.toplam_indirim_tutari = toplam_indirim
@@ -710,6 +771,16 @@ class SozlesmeService:
         if not sozlesme:
             return None, {"error": "Sözleşme bulunamadı"}
 
+        if sozlesme.durum not in [SozlesmeDurum.TASLAK, SozlesmeDurum.AKTIF]:
+            return None, {"error": "Sadece taslak veya aktif sözleşmelere kalem eklenebilir"}
+
+        try:
+            with transaction.atomic():
+                return self._kalem_ekle_atomic(sozlesme, kalem_data, user)
+        except ValueError as exc:
+            return None, {"error": str(exc)}
+
+    def _kalem_ekle_atomic(self, sozlesme, kalem_data, user=None):
         if sozlesme.durum not in [SozlesmeDurum.TASLAK, SozlesmeDurum.AKTIF]:
             return None, {"error": "Sadece taslak veya aktif sözleşmelere kalem eklenebilir"}
 
@@ -821,7 +892,7 @@ class SozlesmeService:
                     f"Deneme paketi değiştirildi: {existing.kalem_adi} → {kalem_data['kalem_adi']}",
                 )
 
-        # Özel ders / ek hizmet: aynı paket tekrar eklenemez
+        # Özel ders / premium / ek hizmet: aynı paket tekrar eklenemez
         elif paket_kind == PaketTuru.OZEL_DERS:
             for k in SozlesmeKalemi.objects.filter(sozlesme=sozlesme):
                 if (
@@ -829,6 +900,13 @@ class SozlesmeService:
                     and k.kalem_id == kalem_id
                 ):
                     return None, {"error": "Bu özel ders paketi zaten sözleşmede mevcut"}
+        elif paket_kind == PaketTuru.PREMIUM:
+            for k in SozlesmeKalemi.objects.filter(sozlesme=sozlesme):
+                if (
+                    self._classify_kalem(k, sozlesme) == PaketTuru.PREMIUM
+                    and k.kalem_id == kalem_id
+                ):
+                    return None, {"error": "Bu premium paket zaten sözleşmede mevcut"}
         elif storage_turu in (KalemTuru.EK_HIZMET, KalemTuru.EK_HIZMET_SATISI):
             mevcut = SozlesmeKalemi.objects.filter(
                 sozlesme=sozlesme,
@@ -845,6 +923,9 @@ class SozlesmeService:
         k_kalem_net = k_fiyat["net_tutar"]
         k_indirim = k_fiyat["indirim_tutari"]
 
+        extra = self._kalem_totals_extra(sozlesme)
+        eski_net = sozlesme.net_tutar
+
         kalem = SozlesmeKalemi.objects.create(
             sozlesme=sozlesme,
             kalem_turu=storage_turu,
@@ -859,26 +940,11 @@ class SozlesmeService:
             net_tutar=k_kalem_net,
         )
 
-        # Sözleşme tutarlarını güncelle
-        eski_net = sozlesme.net_tutar
-        sozlesme.brut_tutar += k_brut
-        sozlesme.kdv_tutari += k_fiyat["kdv_tutari"]
-        sozlesme.kdv_dahil_tutar += k_brut
-        sozlesme.toplam_indirim_tutari += k_indirim
-        sozlesme.net_tutar += k_kalem_net
-        sozlesme.save(
-            update_fields=[
-                "brut_tutar",
-                "kdv_tutari",
-                "kdv_dahil_tutar",
-                "toplam_indirim_tutari",
-                "net_tutar",
-                "updated_at",
-            ]
-        )
+        self._apply_totals_from_kalemler(sozlesme, extra)
+        sozlesme.refresh_from_db(fields=['brut_tutar', 'kdv_tutari', 'kdv_dahil_tutar', 'toplam_indirim_tutari', 'net_tutar'])
 
         if sozlesme.durum == SozlesmeDurum.AKTIF:
-            self._fark_dagit(sozlesme, k_kalem_net)
+            self._fark_dagit(sozlesme, sozlesme.net_tutar - eski_net)
         else:
             self.taksit_service.recreate_plan(
                 sozlesme=sozlesme,
@@ -886,6 +952,8 @@ class SozlesmeService:
                 ilk_odeme_tarihi=sozlesme.ilk_odeme_tarihi or sozlesme.baslangic_tarihi,
                 periyot=sozlesme.taksit_periyodu,
             )
+
+        self._sync_ozel_ders_kalem(sozlesme, kalem, user=user)
 
         self.gecmis_repo.create(
             {
@@ -920,24 +988,25 @@ class SozlesmeService:
         if kalem.kalem_turu == KalemTuru.PAKET:
             return None, {'error': 'Ana paket kalemi çıkarılamaz'}
 
+        try:
+            with transaction.atomic():
+                return self._kalem_cikar_atomic(sozlesme, kalem, user)
+        except ValueError as exc:
+            return None, {'error': str(exc)}
+
+    def _kalem_cikar_atomic(self, sozlesme, kalem, user=None):
         kalem_net = kalem.net_tutar
         kalem_adi = kalem.kalem_adi
         eski_net = sozlesme.net_tutar
+        extra = self._kalem_totals_extra(sozlesme)
 
-        sozlesme.brut_tutar -= kalem.brut_tutar
-        sozlesme.kdv_tutari -= kalem.kdv_tutari
-        sozlesme.kdv_dahil_tutar -= kalem.brut_tutar
-        sozlesme.toplam_indirim_tutari -= kalem.indirim_tutari
-        sozlesme.net_tutar -= kalem_net
-        sozlesme.save(update_fields=[
-            'brut_tutar', 'kdv_tutari', 'kdv_dahil_tutar',
-            'toplam_indirim_tutari', 'net_tutar', 'updated_at',
-        ])
-
+        self._sync_ozel_ders_kalem(sozlesme, kalem, removed=True, user=user)
         kalem.delete()
+        self._apply_totals_from_kalemler(sozlesme, extra)
+        sozlesme.refresh_from_db(fields=['brut_tutar', 'kdv_tutari', 'kdv_dahil_tutar', 'toplam_indirim_tutari', 'net_tutar'])
 
         if sozlesme.durum == SozlesmeDurum.AKTIF:
-            self._fark_dagit(sozlesme, -kalem_net)
+            self._fark_dagit(sozlesme, sozlesme.net_tutar - eski_net)
         else:
             self.taksit_service.recreate_plan(
                 sozlesme=sozlesme,
@@ -967,6 +1036,9 @@ class SozlesmeService:
         from apps.odeme_takip.domain.models import Taksit
         from apps.odeme_takip.domain.enums import TaksitDurum
 
+        if not fark_tutar:
+            return
+
         kalan_taksitler = list(
             Taksit.objects.filter(
                 sozlesme_id=sozlesme.id,
@@ -977,6 +1049,12 @@ class SozlesmeService:
         if not kalan_taksitler:
             return
 
+        if fark_tutar < 0:
+            kapasite = sum(max(0, (t.tutar or 0) - (t.odenen_tutar or 0)) for t in kalan_taksitler)
+            if kapasite <= 0:
+                return
+            fark_tutar = max(fark_tutar, -kapasite)
+
         adet = len(kalan_taksitler)
         ek_per_taksit = fark_tutar // adet
         fark_kalan = fark_tutar - (ek_per_taksit * adet)
@@ -986,8 +1064,10 @@ class SozlesmeService:
             if i == adet - 1:
                 ek += fark_kalan
 
-            taksit.tutar += ek
-            taksit.kalan_tutar += ek
+            odenen = taksit.odenen_tutar or 0
+            yeni_tutar = max(odenen, (taksit.tutar or 0) + ek)
+            taksit.tutar = yeni_tutar
+            taksit.kalan_tutar = max(0, yeni_tutar - odenen)
             taksit.save(update_fields=['tutar', 'kalan_tutar'])
 
     # ─── SÖZLEŞME NO ÜRETİCİ ────────────

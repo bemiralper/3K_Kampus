@@ -12,6 +12,7 @@ from apps.ozel_ders.interfaces.context import (
 from apps.ozel_ders.services import bordro_bridge
 from apps.ozel_ders.services import hakedis_service
 from apps.ozel_ders.services import materialize_service
+from apps.ozel_ders.services import meta_service
 from apps.ozel_ders.services import oturum_service
 from apps.ozel_ders.services import premium_kota_service
 from apps.ozel_ders.services import program_service
@@ -33,6 +34,23 @@ def _int_or_none(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+# ─── Meta (ders / öğretmen seçenekleri) ─────────────────────
+
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def meta(request):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    return JsonResponse({
+        'success': True,
+        'data': meta_service.build_meta(
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+        ),
+    })
 
 
 # ─── Programs ───────────────────────────────────────────────
@@ -380,11 +398,24 @@ def oturum_list_create(request):
         return err
     try:
         if request.method == 'GET':
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
+            if start_date and end_date:
+                try:
+                    materialize_service.materialize_active_programs(
+                        kurum_id=ctx['kurum_id'],
+                        sube_id=ctx['sube_id'],
+                        start_date=start_date,
+                        end_date=end_date,
+                        user=request.user,
+                    )
+                except OzelDersError:
+                    pass
             data = oturum_service.list_oturumlar(
                 kurum_id=ctx['kurum_id'],
                 sube_id=ctx['sube_id'],
-                start_date=request.GET.get('start_date'),
-                end_date=request.GET.get('end_date'),
+                start_date=start_date,
+                end_date=end_date,
                 durum=request.GET.get('durum'),
                 telafi_durumu=request.GET.get('telafi_durumu'),
                 oturum_turu=request.GET.get('oturum_turu'),

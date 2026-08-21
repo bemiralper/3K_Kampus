@@ -49,6 +49,7 @@ interface MakbuzGecmis {
 
 export interface MakbuzPdfData {
   makbuz_no: string;
+  pdf_filename?: string;
   tahsilat_id: number;
   tahsilat_tarihi: string | null;
   kayit_tarihi: string | null;
@@ -74,6 +75,29 @@ export interface MakbuzPdfData {
   taksitler: MakbuzTaksit[];
   tahsilat_gecmisi: MakbuzGecmis[];
   islem_yapan: string;
+}
+
+function safeFilenamePart(value: string): string {
+  const cleaned = (value || "")
+    .trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/[\s_]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || "Belge";
+}
+
+/** WhatsApp eki ve tarayıcı indirmesi aynı kuralı kullanır. */
+export function buildMakbuzPdfFilename(data: Pick<MakbuzPdfData, "ogrenci" | "makbuz_no" | "tahsilat_id" | "pdf_filename">): string {
+  if (data.pdf_filename?.trim()) {
+    return data.pdf_filename.trim().endsWith(".pdf")
+      ? data.pdf_filename.trim()
+      : `${data.pdf_filename.trim()}.pdf`;
+  }
+  const ad = data.ogrenci
+    ? safeFilenamePart(`${data.ogrenci.ad || ""}-${data.ogrenci.soyad || ""}`)
+    : "Ogrenci";
+  const makbuz = safeFilenamePart(data.makbuz_no || (data.tahsilat_id ? `MKB-${String(data.tahsilat_id).padStart(6, "0")}` : "Makbuz"));
+  return `${ad}-Tahsilat-Makbuzu-${makbuz}.pdf`;
 }
 
 /* ─────────────────── Sabitler ─────────────────── */
@@ -638,10 +662,11 @@ export async function generateMakbuzPdf(
   /* ═══════════════════════════════════════════════
      ÇIKTI
      ═══════════════════════════════════════════════ */
-  const fileName = `makbuz-${data.makbuz_no || data.tahsilat_id}`;
+  const fileName = buildMakbuzPdfFilename(data);
+  doc.setProperties({ title: fileName.replace(/\.pdf$/i, "") });
 
   if (mode === "download") {
-    await downloadJsPdf(doc, `${fileName}.pdf`);
+    await downloadJsPdf(doc, fileName);
   } else {
     const blob = doc.output("blob");
     const url = URL.createObjectURL(blob);

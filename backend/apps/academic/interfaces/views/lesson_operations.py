@@ -314,13 +314,12 @@ def lesson_operations_meta_api(request):
             sube_id=ctx['sube_id'],
         ).order_by('ad', 'soyad').values('id', 'ad', 'soyad')[:300]
     )
+    ders_qs = Ders.objects.filter(aktif_mi=True, kurum_id=ctx['kurum_id'])
     dersler = list(
-        Ders.objects.filter(
-            aktif_mi=True,
-            kurum_id=ctx['kurum_id'],
-            sube_id=ctx['sube_id'],
-        ).order_by('ad').values('id', 'ad', 'kod', 'kisa_ad')[:500]
+        ders_qs.filter(sube_id=ctx['sube_id']).order_by('ad').values('id', 'ad', 'kod', 'kisa_ad')[:500]
     )
+    if not dersler:
+        dersler = list(ders_qs.order_by('ad').values('id', 'ad', 'kod', 'kisa_ad')[:500])
     return Response({
         'session_kinds': [{'value': v, 'label': l} for v, l in SessionKind.choices],
         'session_statuses': [{'value': v, 'label': l} for v, l in SessionStatus.choices],
