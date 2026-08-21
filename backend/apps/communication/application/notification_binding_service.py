@@ -6,6 +6,7 @@ from __future__ import annotations
 from apps.communication.application.notification_dispatcher import build_preview
 from apps.communication.application.notification_events import (
     MODULE_LABELS,
+    MODULE_YOKLAMA,
     NOTIFICATION_EVENTS,
     build_meta_example_body,
     get_event,
@@ -162,6 +163,8 @@ def list_event_catalog(
             'module_label': event.module_label,
             'label': event.label,
             'description': event.description,
+            'group': event.group,
+            'group_label': event.group_label,
             'has_document': event.has_document,
             'has_image': event.has_image,
             'opt_in_category': event.opt_in_category,
@@ -171,12 +174,18 @@ def list_event_catalog(
             'slots': slots,
         })
 
+    modules = []
+    for key, label in MODULE_LABELS.items():
+        if key == MODULE_YOKLAMA:
+            if any(e['module'] == key and e.get('group') == 'kutuphane' for e in events):
+                modules.append({'key': 'yoklama:kutuphane', 'label': 'Yoklama — Kütüphane'})
+            if any(e['module'] == key and e.get('group') == 'sinif' for e in events):
+                modules.append({'key': 'yoklama:sinif', 'label': 'Yoklama — Sınıf'})
+            continue
+        if any(e['module'] == key for e in events):
+            modules.append({'key': key, 'label': label})
     return {
-        'modules': [
-            {'key': key, 'label': label}
-            for key, label in MODULE_LABELS.items()
-            if any(e['module'] == key for e in events)
-        ],
+        'modules': modules,
         'events': events,
         'send_modes': [
             {'value': value, 'label': label}

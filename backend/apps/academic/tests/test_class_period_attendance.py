@@ -297,10 +297,15 @@ class ClassPeriodAttendanceApiTest(TestCase):
         }
 
     def test_event_catalog_includes_ogrenci(self):
-        for key in ('yoklama.gelmedi', 'yoklama.gec'):
+        for key in ('yoklama.gelmedi', 'yoklama.gec', 'sinif.yoklama.gelmedi', 'sinif.yoklama.gec'):
             event = get_event(key)
             self.assertIn(RecipientType.OGRENCI, event.recipients)
             self.assertIn(RecipientType.OGRENCI, event.default_bodies)
+        kutuphane = get_event('yoklama.gelmedi')
+        sinif = get_event('sinif.yoklama.gelmedi')
+        self.assertEqual(kutuphane.group, 'kutuphane')
+        self.assertEqual(sinif.group, 'sinif')
+        self.assertNotEqual(kutuphane.meta_name_base, sinif.meta_name_base)
 
     def test_ensure_creates_morning_and_afternoon(self):
         res = self.client.post(

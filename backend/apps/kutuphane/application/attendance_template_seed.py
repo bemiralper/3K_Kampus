@@ -123,4 +123,30 @@ def ensure_attendance_notification_setup(kurum_id: int, *, sube_id: int | None =
         updated = True
     if updated:
         config.save()
+    _seed_kutuphane_yoklama_meta_drafts(kurum_id, sube_id=sube_id)
     return config
+
+
+def _seed_kutuphane_yoklama_meta_drafts(kurum_id: int, *, sube_id: int | None) -> None:
+    """Onaylı yoksa kütüphane yoklama Meta taslaklarını WhatsApp hesaplarına ekler."""
+    try:
+        from apps.communication.application.kutuphane_yoklama_template_seed import (
+            KutuphaneYoklamaTemplateSeedService,
+        )
+        from apps.communication.infrastructure.repository import ChannelConfigRepository
+    except Exception:
+        return
+    accounts = list(ChannelConfigRepository.list_whatsapp(kurum_id, active_only=True))
+    if not accounts:
+        return
+    for account in accounts:
+        try:
+            KutuphaneYoklamaTemplateSeedService.seed(
+                kurum_id,
+                sube_id=sube_id,
+                channel_config_id=account.id,
+                skip_existing=True,
+                bind=True,
+            )
+        except Exception:
+            continue

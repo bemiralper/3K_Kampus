@@ -39,8 +39,8 @@ SOURCE_MODULE = 'akademik_yoklama'
 OPT_IN_CATEGORY = 'devamsizlik'
 
 STATUS_TO_EVENT = {
-    StudentAttendanceStatus.ABSENT: 'yoklama.gelmedi',
-    StudentAttendanceStatus.LATE: 'yoklama.gec',
+    StudentAttendanceStatus.ABSENT: 'sinif.yoklama.gelmedi',
+    StudentAttendanceStatus.LATE: 'sinif.yoklama.gec',
 }
 
 NOTIFY_STATUSES = frozenset(STATUS_TO_EVENT)

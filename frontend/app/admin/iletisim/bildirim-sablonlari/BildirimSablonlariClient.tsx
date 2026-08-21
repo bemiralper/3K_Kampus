@@ -29,6 +29,7 @@ import {
   saveNotificationStaffRecipients,
   seedAcademicScheduleTemplates,
   seedKayitSozlesmeTemplates,
+  seedKutuphaneYoklamaTemplates,
 } from "@/lib/communication-api";
 import { notifyCommunicationTemplateUsageChanged } from "@/lib/communication-template-usage-sync";
 
@@ -47,6 +48,18 @@ const readActiveSubeId = (): number | null => {
 
 const sameAccount = (tpl: WhatsAppMetaTemplateItem, accountId: string): boolean =>
   String(tpl.channel_config || "") === String(accountId || "");
+
+function moduleEventMatches(modKey: string, event: NotificationEventItem): boolean {
+  if (modKey.startsWith("yoklama:")) {
+    return event.module === "yoklama" && event.group === modKey.slice("yoklama:".length);
+  }
+  return event.module === modKey;
+}
+
+function eventModuleKey(event: NotificationEventItem): string {
+  if (event.module === "yoklama" && event.group) return `yoklama:${event.group}`;
+  return event.module;
+}
 
 const slotHasCustomBinding = (slot: NotificationEventSlot): boolean =>
   Boolean(
@@ -180,6 +193,7 @@ export default function BildirimSablonlariClient() {
   const [savingSlot, setSavingSlot] = useState<string>("");
   const [seedingAcademic, setSeedingAcademic] = useState(false);
   const [seedingKayit, setSeedingKayit] = useState(false);
+  const [seedingKutuphane, setSeedingKutuphane] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, NotificationPreviewResult>>({});
@@ -222,7 +236,7 @@ export default function BildirimSablonlariClient() {
     }
     const match = catalog.events.find((e) => e.key === eventKey);
     if (match) {
-      setSelectedModule(match.module);
+      setSelectedModule(eventModuleKey(match));
       setSelectedEventKey(match.key);
     }
     setUrlEventApplied(true);
@@ -543,6 +557,45 @@ export default function BildirimSablonlariClient() {
     }
   };
 
+  const handleSeedKutuphaneYoklama = async () => {
+    const accountId = scopeAccountId || accounts[0]?.id || "";
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin (veya en az bir aktif hesap tanımlayın).");
+      return;
+    }
+    if (!confirm(
+      "Kütüphane yoklama taslakları oluşturulsun mu?\n\n"
+      + "• yoklama_gelmedi_veli / yoklama_gec_veli / yoklama_cikis_veli\n\n"
+      + "Onaylı şablonlara dokunulmaz. Eksik olanlar Meta DRAFT olarak eklenir "
+      + "ve Yoklama → Kütüphane olaylarına bağlanır.",
+    )) return;
+    setSeedingKutuphane(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await seedKutuphaneYoklamaTemplates({
+        channel_config_id: accountId,
+        sube_id: scopeSube ? activeSubeId : null,
+        bind: true,
+      });
+      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
+      setMessage(
+        (res.info || "Kütüphane yoklama taslakları hazır.")
+        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
+        + errText,
+      );
+      notifyCommunicationTemplateUsageChanged();
+      await Promise.all([loadCatalog(), reloadTemplateLists()]);
+      setSelectedModule("yoklama:kutuphane");
+      setSelectedEventKey("yoklama.gelmedi");
+      if (!scopeAccountId) setScopeAccountId(accountId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kütüphane yoklama taslakları oluşturulamadı.");
+    } finally {
+      setSeedingKutuphane(false);
+    }
+  };
+
   return (
     <CommunicationPageShell
       title="Bildirim Şablonları"
@@ -562,6 +615,15 @@ export default function BildirimSablonlariClient() {
             title="Planlama → Programı Bildir için veli/öğrenci DOCUMENT taslakları"
           >
             {seedingAcademic ? "Oluşturuluyor…" : "Ders programı taslakları"}
+          </button>
+          <button
+            type="button"
+            className="comm-btn-secondary"
+            onClick={handleSeedKutuphaneYoklama}
+            disabled={seedingKutuphane || accounts.length === 0}
+            title="Kütüphane yoklama gelmedi/geç/çıkış Meta taslakları"
+          >
+            {seedingKutuphane ? "Oluşturuluyor…" : "Kütüphane yoklama taslakları"}
           </button>
           <button
             type="button"
@@ -617,8 +679,8 @@ export default function BildirimSablonlariClient() {
         </div>
         <p className="tplx-field-hint">
           Düzenlenen kapsam: <strong>{scopeLabel}</strong>. Daha özel bir kapsamda tanım yoksa
-          sistem sırasıyla şube, hesap ve kurum varsayılanına düşer. Devamsızlık için{" "}
-          <strong>Yoklama</strong> olaylarını kullanın (gelmedi / geç / çıkış).
+          sistem sırasıyla şube, hesap ve kurum varsayılanına düşer.           Devamsızlık için <strong>Yoklama</strong> altında{" "}
+          <strong>Kütüphane</strong> ve <strong>Sınıf</strong> olaylarını ayrı kullanın.
         </p>
       </div>
 
@@ -631,7 +693,7 @@ export default function BildirimSablonlariClient() {
               <p className="tplx-field-hint">Gösterilecek bildirim modülü yok.</p>
             ) : (
               (catalog?.modules || []).map((mod) => {
-                const modEvents = events.filter((e) => e.module === mod.key);
+                const modEvents = events.filter((e) => moduleEventMatches(mod.key, e));
                 const boundCount = modEvents.filter((e) =>
                   e.slots.some(slotHasCustomBinding),
                 ).length;

@@ -11,11 +11,17 @@ import "./yoklama-notify.css";
 
 const EVENT_META: Record<
   AttendanceNotifyEventType,
-  { title: string; className: string; category: string; templateKey: keyof AttendanceNotifyConfig }
+  {
+    title: string;
+    className: string;
+    category: string;
+    eventKey: string;
+    templateKey: keyof AttendanceNotifyConfig;
+  }
 > = {
-  ABSENT: { title: "Gelmedi", className: "absent", category: "yoklama_gelmedi", templateKey: "absent_template" },
-  LATE: { title: "Geç kalma", className: "late", category: "yoklama_gec", templateKey: "late_template" },
-  EXIT: { title: "Çıkış", className: "exit", category: "yoklama_cikis", templateKey: "exit_template" },
+  ABSENT: { title: "Gelmedi", className: "absent", category: "yoklama_gelmedi", eventKey: "yoklama.gelmedi", templateKey: "absent_template" },
+  LATE: { title: "Geç kalma", className: "late", category: "yoklama_gec", eventKey: "yoklama.gec", templateKey: "late_template" },
+  EXIT: { title: "Çıkış", className: "exit", category: "yoklama_cikis", eventKey: "yoklama.cikis", templateKey: "exit_template" },
 };
 
 const DELIVERY_LABELS: Record<NotifyDeliveryStatus, string> = {
@@ -49,7 +55,7 @@ interface AttendanceNotifyPanelProps {
 export default function AttendanceNotifyPanel({
   status,
   config,
-  templatesBasePath = "/admin/iletisim/sablonlar",
+  templatesBasePath = "/admin/iletisim/bildirim-sablonlari",
   onNotify,
   onOpenSettings,
 }: AttendanceNotifyPanelProps) {
@@ -130,7 +136,7 @@ export default function AttendanceNotifyPanel({
             <div className="yok-notify-template-head">
               <strong>{meta.title} şablonu</strong>
               <Link
-                href={`${templatesBasePath}?category=${meta.category}`}
+                href={`${templatesBasePath}?event=${encodeURIComponent(meta.eventKey)}`}
                 className="yok-notify-btn secondary"
                 style={{ textDecoration: "none", padding: "6px 10px", fontSize: 12 }}
               >

@@ -986,7 +986,9 @@ function YoklamaTab({
 }) {
   const { activeKurum } = useKurum();
   const { isCoachMode } = useKutuphanePath();
-  const templatesBasePath = isCoachMode ? '/coach/iletisim/sablonlar' : '/admin/iletisim/sablonlar';
+  const templatesBasePath = isCoachMode
+    ? '/coach/iletisim/bildirim-sablonlari'
+    : '/admin/iletisim/bildirim-sablonlari';
 
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);

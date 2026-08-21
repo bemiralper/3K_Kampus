@@ -279,6 +279,10 @@ class BindingServiceTest(TestCase):
         self.assertEqual(len(catalog['events']), len(visible))
         self.assertNotIn('devamsizlik.bildirim', [e['key'] for e in catalog['events']])
         self.assertNotIn('devamsizlik', [m['key'] for m in catalog['modules']])
+        module_keys = [m['key'] for m in catalog['modules']]
+        self.assertIn('yoklama:kutuphane', module_keys)
+        self.assertIn('yoklama:sinif', module_keys)
+        self.assertNotIn('yoklama', module_keys)
         for event in catalog['events']:
             self.assertTrue(event['slots'])
 
@@ -287,7 +291,11 @@ class BindingServiceTest(TestCase):
             self.kurum.id,
             event_key='yoklama.gelmedi',
             recipient_type=RecipientType.VELI,
-            context={'ogrenci_ad': 'Ali Yılmaz', 'tarih': '03.08.2026'},
+            context={
+                'ogrenci_ad': 'Ali Yılmaz',
+                'tarih': '03.08.2026',
+                'yoklama_tarihi': '03.08.2026',
+            },
         )
         self.assertIn('Ali Yılmaz', payload['body'])
         self.assertIn('03.08.2026', payload['body'])

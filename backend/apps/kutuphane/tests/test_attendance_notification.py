@@ -96,8 +96,10 @@ class BuildAttendanceContextTest(TestCase):
             rendered = resolve_variables(body, ctx)
             self.assertNotIn('{{', rendered, msg=f'{key} unresolved: {rendered}')
             self.assertIn('28.06.2026', rendered)
-            if key != 'yoklama.gelmedi':
+            if key == 'yoklama.gec':
                 self.assertIn('09:42', rendered)
+            if key == 'yoklama.cikis':
+                self.assertIn('17:30', rendered)
 
 
 class AttendanceNotificationServiceTest(TestCase):
