@@ -48,6 +48,18 @@ def can_access_all_coaches(user) -> bool:
 
 
 def get_active_coach_student_ids(coach_profile):
+    """Yönetici sayısı ile aynı: yalnızca aktif birincil atama."""
+    from apps.coaching.models import CoachStudentAssignment
+
+    return CoachStudentAssignment.objects.filter(
+        coach=coach_profile,
+        is_primary=True,
+        end_date__isnull=True,
+    ).values_list('student_id', flat=True)
+
+
+def get_active_assignment_student_ids(coach_profile):
+    """Aktif tüm atamalar (birincil + yardımcı). Sohbet görünürlüğü için."""
     from apps.coaching.models import CoachStudentAssignment
 
     return CoachStudentAssignment.objects.filter(
@@ -60,23 +72,11 @@ def scoped_student_ids(user):
     """
     Erişilebilir öğrenci ID'leri.
     None → admin, filtre yok.
-    Koç → yalnızca atandığı (ve ilişkili ödev/kaynak) öğrenciler.
+    Koç → yalnızca aktif birincil atama (ödev/kaynak eski öğrenciyi listede tutmaz).
     """
     coach_profile = get_coach_profile(user)
     if coach_profile is not None:
-        allowed = set(get_active_coach_student_ids(coach_profile))
-        from apps.student_resources.models import StudentResourceAssignment
-        from apps.coaching.assignment_manual.models import ManualAssignment
-
-        allowed.update(
-            StudentResourceAssignment.objects.filter(coach=user, is_active=True)
-            .values_list('student_id', flat=True)
-        )
-        allowed.update(
-            ManualAssignment.objects.filter(coach=user, is_active=True)
-            .values_list('student_id', flat=True)
-        )
-        return allowed
+        return set(get_active_coach_student_ids(coach_profile))
 
     if is_resource_admin(user):
         return None

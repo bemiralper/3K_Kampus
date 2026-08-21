@@ -344,20 +344,41 @@ def _serialize_attendance_session(s):
     }
 
 
-def _serialize_attendance_record(r):
-    # ogrenci_adi resolve
-    ogrenci_adi = ''
-    try:
-        from apps.ogrenci.domain.models import Ogrenci
-        o = Ogrenci.objects.filter(id=r.ogrenci_id).values('ad', 'soyad').first()
-        if o:
-            ogrenci_adi = f"{o['ad'].strip()} {o['soyad'].strip()}"
-    except Exception:
-        ogrenci_adi = f'Öğrenci #{r.ogrenci_id}'
+def _attendance_student_info_map(ogrenci_ids):
+    """Yoklama satırı için öğrenci adı + veli iletişim (toplu)."""
+    from apps.ogrenci.application.veli_contact import default_veli_contacts_map
+    from apps.ogrenci.domain.models import Ogrenci
+
+    ids = [int(x) for x in ogrenci_ids if x]
+    names = {}
+    if ids:
+        for o in Ogrenci.objects.filter(id__in=ids).values('id', 'ad', 'soyad'):
+            names[o['id']] = f"{(o['ad'] or '').strip()} {(o['soyad'] or '').strip()}".strip()
+    contacts = default_veli_contacts_map(ids)
+    info = {}
+    for oid in ids:
+        contact = contacts.get(oid) or {}
+        info[oid] = {
+            'ogrenci_adi': names.get(oid) or f'Öğrenci #{oid}',
+            'veli_ad': contact.get('ad') or '',
+            'veli_telefon': contact.get('telefon') or '',
+        }
+    return info
+
+
+def _serialize_attendance_records(records):
+    info = _attendance_student_info_map([r.ogrenci_id for r in records])
+    return [_serialize_attendance_record(r, info.get(r.ogrenci_id)) for r in records]
+
+
+def _serialize_attendance_record(r, student_info=None):
+    info = student_info or _attendance_student_info_map([r.ogrenci_id]).get(r.ogrenci_id) or {}
     return {
         'id': str(r.id),
         'ogrenci_id': r.ogrenci_id,
-        'ogrenci_adi': ogrenci_adi,
+        'ogrenci_adi': info.get('ogrenci_adi') or f'Öğrenci #{r.ogrenci_id}',
+        'veli_ad': info.get('veli_ad') or '',
+        'veli_telefon': info.get('veli_telefon') or '',
         'seat_id': str(r.seat_id) if r.seat_id else None,
         'masa_no': r.seat.masa_no if r.seat else '',
         'durum': r.durum,
@@ -1446,7 +1467,7 @@ def api_attendance_session_detail(request, library_id, pk):
             'success': True,
             'data': {
                 'session': _serialize_attendance_session(detail['session']),
-                'records': [_serialize_attendance_record(r) for r in detail['records']]
+                'records': _serialize_attendance_records(detail['records'])
             }
         })
     return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
@@ -1509,7 +1530,7 @@ def api_attendance_records(request, library_id, session_id):
         records = AttendanceRepository.get_records(session_id)
         return JsonResponse({
             'success': True,
-            'data': [_serialize_attendance_record(r) for r in records]
+            'data': _serialize_attendance_records(records)
         })
 
     elif request.method == 'POST':
@@ -1523,7 +1544,7 @@ def api_attendance_records(request, library_id, session_id):
             return JsonResponse({
                 'success': True,
                 'data': {
-                    'records': [_serialize_attendance_record(r) for r in records],
+                    'records': _serialize_attendance_records(records),
                     'saved': saved_count,
                     'pending_notifications': result.get('pending_notifications', []),
                 },

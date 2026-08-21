@@ -168,6 +168,34 @@ class CoachStudentApiTest(TestCase):
             konu='Motivasyon görüşmesi',
         )
 
+    def test_removed_student_leaves_coach_list_even_with_homework(self):
+        """Atama bitince ödev kaydı kalsa bile öğrenci koç listesinden düşer."""
+        assignment = CoachStudentAssignment.objects.get(
+            coach=self.coach_profile, student=self.student, end_date__isnull=True,
+        )
+        assignment.end_date = date.today()
+        assignment.save(update_fields=['end_date'])
+
+        self.client.force_authenticate(user=self.coach_user)
+        response = self.client.get(STUDENTS_URL)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 0)
+
+    def test_non_primary_assignment_does_not_appear_on_roster(self):
+        CoachStudentAssignment.objects.filter(
+            coach=self.coach_profile, student=self.student,
+        ).update(end_date=date.today(), is_primary=False)
+        CoachStudentAssignment.objects.create(
+            coach=self.coach_profile,
+            student=self.student,
+            start_date=date.today(),
+            is_primary=False,
+        )
+        self.client.force_authenticate(user=self.coach_user)
+        response = self.client.get(STUDENTS_URL)
+        self.assertEqual(response.data['count'], 0)
+        self.assertEqual(self.coach_profile.current_student_count, 0)
+
     def test_coach_student_list_scoped(self):
         self.client.force_authenticate(user=self.coach_user)
         response = self.client.get(STUDENTS_URL)

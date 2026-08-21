@@ -579,6 +579,7 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
         assigned_ogrenci_ids = CoachStudentAssignment.objects.filter(
             coach_id__in=params['coach_ids'],
             end_date__isnull=True,
+            is_primary=True,
         ).values_list('student_id', flat=True)
         qs = qs.filter(ogrenci_id__in=assigned_ogrenci_ids)
 

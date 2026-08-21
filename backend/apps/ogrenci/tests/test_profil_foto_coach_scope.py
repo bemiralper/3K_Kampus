@@ -1,4 +1,4 @@
-"""Koç profil-foto erişim kapsamı — atanmamış öğrenci 403."""
+"""Koç profil-foto erişim kapsamı — şube içi kütüphane operasyonu açık."""
 from datetime import date
 from io import BytesIO
 
@@ -76,15 +76,34 @@ class ProfilFotoCoachScopeTest(TestCase):
             'HTTP_X_SUBE_ID': str(self.sube.id),
         }
 
-    def test_coach_cannot_upload_photo_for_unassigned_student(self):
+    def test_coach_can_upload_photo_for_unassigned_student_in_same_sube(self):
+        """Kütüphane atamalarında tüm şube öğrencileri görünür; foto da oradan yüklenir."""
         self.client.force_login(self.coach_user)
         res = self.client.post(
             FOTO_URL.format(self.unassigned.id),
             {'foto': _jpeg_file()},
             **self.headers,
         )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.unassigned.refresh_from_db()
+        self.assertTrue(bool(self.unassigned.profil_foto))
+
+    def test_coach_cannot_upload_photo_for_other_sube_student(self):
+        other_sube = Sube.objects.create(kurum=self.kurum, ad='Diğer', kod='FSK-D')
+        other_student = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=other_sube,
+            ad='Zeynep',
+            soyad='Başka',
+            aktif_mi=True,
+        )
+        self.client.force_login(self.coach_user)
+        res = self.client.post(
+            FOTO_URL.format(other_student.id),
+            {'foto': _jpeg_file('diger.jpg')},
+            **self.headers,
+        )
         self.assertEqual(res.status_code, 403)
-        self.assertIn('yetkiniz yok', res.json().get('error', '').lower())
 
     def test_coach_can_upload_photo_for_assigned_student(self):
         self.client.force_login(self.coach_user)
@@ -99,13 +118,13 @@ class ProfilFotoCoachScopeTest(TestCase):
         self.assigned.refresh_from_db()
         self.assertTrue(bool(self.assigned.profil_foto))
 
-    def test_coach_cannot_delete_photo_for_unassigned_student(self):
+    def test_coach_can_delete_photo_for_unassigned_student_in_same_sube(self):
         self.client.force_login(self.coach_user)
         res = self.client.delete(
             FOTO_URL.format(self.unassigned.id),
             **self.headers,
         )
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 200, res.content)
 
     def test_teacher_role_coach_can_upload_assigned_student_photo(self):
         from apps.roller.models import Role, UserRole

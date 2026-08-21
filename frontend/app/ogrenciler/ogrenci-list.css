@@ -335,6 +335,12 @@
   display: block;
 }
 
+.avatar-circle.avatar-photo.is-zoomable {
+  border: 0;
+  padding: 0;
+  cursor: zoom-in;
+}
+
 .ogrenci-search-highlight {
   background: linear-gradient(135deg, #fef08a, #fde047);
   color: inherit;

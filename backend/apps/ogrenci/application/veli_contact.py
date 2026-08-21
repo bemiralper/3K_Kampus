@@ -27,11 +27,7 @@ def list_outbound_veliler(ogrenci) -> list[tuple]:
     Mesaj gönderimi için (veli, telefon) çiftleri.
     Aynı E.164 numarası bir kez döner; varsayılan veli önce gelir.
     """
-    from apps.ogrenci.domain.models import OgrenciVeli
-
-    veliler = list(
-        OgrenciVeli.objects.filter(ogrenci=ogrenci).order_by('-varsayilan', '-id')
-    )
+    veliler = list(ogrenci.veliler.order_by('-varsayilan', '-id'))
     legacy = (getattr(ogrenci, 'veli_telefon', '') or '').strip()
     results: list[tuple] = []
     seen_e164: set[str] = set()
@@ -100,11 +96,35 @@ def default_veli_contact(ogrenci_id: int) -> dict | None:
     """Öğrenci başına varsayılan veli telefonu ve id (koç listesi vb.)."""
     from apps.ogrenci.domain.models import Ogrenci
 
-    ogrenci = Ogrenci.objects.filter(id=ogrenci_id).first()
+    ogrenci = Ogrenci.objects.filter(id=ogrenci_id).prefetch_related('veliler').first()
     if not ogrenci:
         return None
+    return default_veli_contact_from_instance(ogrenci)
+
+
+def default_veli_contacts_map(ogrenci_ids) -> dict[int, dict]:
+    """Birden fazla öğrenci için varsayılan veli adı/telefonu (N+1 yok)."""
+    from apps.ogrenci.domain.models import Ogrenci
+
+    ids = [int(x) for x in ogrenci_ids if x]
+    if not ids:
+        return {}
+    result: dict[int, dict] = {}
+    qs = Ogrenci.objects.filter(id__in=ids).prefetch_related('veliler')
+    for ogrenci in qs:
+        contact = default_veli_contact_from_instance(ogrenci)
+        if contact:
+            result[ogrenci.id] = contact
+    return result
+
+
+def default_veli_contact_from_instance(ogrenci) -> dict | None:
     pairs = list_outbound_veliler(ogrenci)
     if not pairs:
         return None
     veli, phone = pairs[0]
-    return {'id': veli.id, 'telefon': phone}
+    return {
+        'id': veli.id,
+        'telefon': phone,
+        'ad': (getattr(veli, 'tam_ad', '') or '').strip(),
+    }

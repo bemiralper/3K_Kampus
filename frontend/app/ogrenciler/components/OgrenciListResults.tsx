@@ -1,11 +1,40 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useOgrenciPath } from '@/components/ogrenci/OgrenciPathProvider';
+import CoachPhotoLightbox from '@/components/coach/CoachPhotoLightbox';
 import type { EgitimKalemiRow, OgrenciListColumnId } from '../lib/ogrenci-list-utils';
 import { LIST_COLUMNS } from '../lib/ogrenci-list-utils';
 import OgrenciBelgeMenu, { type OgrenciBelgeTipi } from './OgrenciBelgeMenu';
+
+function OgrenciListPhoto({
+  src,
+  name,
+  small = false,
+}: {
+  src: string;
+  name: string;
+  small?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className={`avatar-circle avatar-photo${small ? ' small' : ''} is-zoomable`}
+        onClick={() => setOpen(true)}
+        title="Fotoğrafı büyüt"
+        aria-label={`${name} — fotoğrafı büyüt`}
+      >
+        <img src={src} alt="" />
+      </button>
+      {open && (
+        <CoachPhotoLightbox photoUrl={src} alt={name} onClose={() => setOpen(false)} />
+      )}
+    </>
+  );
+}
 
 export type OgrenciRow = {
   id: number;
@@ -159,9 +188,7 @@ function renderDataCell(
         <td key={colId}>
           <div className="cell-with-icon">
             {ogrenci.profil_foto ? (
-              <div className="avatar-circle avatar-photo">
-                <img src={ogrenci.profil_foto} alt={`${ogrenci.ad} ${ogrenci.soyad}`} />
-              </div>
+              <OgrenciListPhoto src={ogrenci.profil_foto} name={`${ogrenci.ad} ${ogrenci.soyad}`} />
             ) : (
               <div className={`avatar-circle ${ctx.getAvatarColor(ctx.index)}`}>
                 {ctx.getInitials(ogrenci.ad, ogrenci.soyad)}
@@ -435,9 +462,7 @@ export default function OgrenciListResults({
                   />
                 )}
                 {ogrenci.profil_foto ? (
-                  <div className="avatar-circle avatar-photo small">
-                    <img src={ogrenci.profil_foto} alt="" />
-                  </div>
+                  <OgrenciListPhoto src={ogrenci.profil_foto} name={`${ogrenci.ad} ${ogrenci.soyad}`} small />
                 ) : (
                   <div className={`avatar-circle small ${getAvatarColor(index)}`}>
                     {getInitials(ogrenci.ad, ogrenci.soyad)}

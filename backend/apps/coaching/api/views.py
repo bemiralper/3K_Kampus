@@ -389,7 +389,7 @@ class CoachViewSet(viewsets.ModelViewSet):
         # active_only parametresi (varsayılan true)
         active_only = request.query_params.get('active_only', 'true')
         if active_only.lower() in ['true', '1', 'yes']:
-            assignments = assignments.filter(end_date__isnull=True)
+            assignments = assignments.filter(end_date__isnull=True, is_primary=True)
         
         assignments = assignments.order_by('-is_primary', '-start_date')
         
@@ -527,14 +527,17 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         
         # active_only filtresi
         active_only = self.request.query_params.get('active_only', 'true')
-        if active_only.lower() in ['true', '1', 'yes']:
+        active_only_on = active_only.lower() in ['true', '1', 'yes']
+        if active_only_on:
             queryset = queryset.filter(end_date__isnull=True)
-        
-        # is_primary filtresi
+
+        # is_primary filtresi — aktif listede varsayılan birincil (yönetici sayısı ile aynı)
         is_primary = self.request.query_params.get('is_primary')
         if is_primary is not None:
             is_primary_bool = is_primary.lower() in ['true', '1', 'yes']
             queryset = queryset.filter(is_primary=is_primary_bool)
+        elif active_only_on:
+            queryset = queryset.filter(is_primary=True)
 
         # Non-admin koç yalnızca kendi atamalarını okuyabilir
         if not can_access_all_coaches(self.request.user):
@@ -600,6 +603,17 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                     created_by=request.user if request.user.is_authenticated else None
                 )
 
+            from apps.coaching.services.coach_change import (
+                sync_student_assigned_coach,
+                transfer_from_last_ended_primary,
+            )
+            sync_student_assigned_coach(instance.student_id)
+            if instance.is_primary:
+                transfer_from_last_ended_primary(
+                    student_id=instance.student_id,
+                    to_coach=instance.coach,
+                )
+
             try:
                 from apps.coaching.services.assignment_notification import (
                     CoachingAssignmentNotificationService,
@@ -631,10 +645,19 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         coach = instance.coach
         student = instance.student
-        
-        # Soft delete - end_date'i bugün olarak ayarla
-        instance.end_date = date.today()
-        instance.save()
+
+        from apps.coaching.services.coach_change import (
+            end_active_assignments,
+            sync_student_assigned_coach,
+        )
+
+        # Aynı öğrenci-koç çiftindeki tüm aktif atamaları kapat (birincil + artık yardımcı)
+        end_active_assignments(
+            student_id=student.id,
+            coach_id=coach.id,
+            end_on=date.today(),
+        )
+        sync_student_assigned_coach(student.id)
 
         try:
             from apps.coaching.services.assignment_notification import (
@@ -713,6 +736,18 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                     ))
                 
                 created = CoachStudentAssignment.objects.bulk_create(assignments)
+
+            from apps.coaching.services.coach_change import (
+                sync_student_assigned_coach,
+                transfer_from_last_ended_primary,
+            )
+            for student in students:
+                sync_student_assigned_coach(student.id)
+                if is_primary:
+                    transfer_from_last_ended_primary(
+                        student_id=student.id,
+                        to_coach=coach,
+                    )
 
             if created:
                 try:
@@ -801,10 +836,11 @@ class AssignmentViewSet(viewsets.ModelViewSet):
 
         return Response({
             'success': True,
-            'message': 'Koç değişikliği tamamlandı. Öğrenci geçmişi korundu.',
+            'message': 'Koç değişikliği tamamlandı. Ödev, görüşme ve plan yeni koça taşındı.',
             'data': {
                 'previous_assignment': previous_data,
                 'new_assignment': new_data,
+                'transferred': result.transferred or {},
             },
         })
 

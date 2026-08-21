@@ -909,6 +909,12 @@ export default function OgrenciListesiPage() {
           height: 100%;
           object-fit: cover;
         }
+
+        .avatar-circle.avatar-photo.is-zoomable {
+          border: 0;
+          padding: 0;
+          cursor: zoom-in;
+        }
         
         /* Silme onay overlay */
         .modal-overlay {

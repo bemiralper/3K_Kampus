@@ -45,9 +45,17 @@ interface ProfilFotoUploadProps {
   ogrenciId: number;
   currentPhoto?: string | null;
   onSuccess: (newPhotoUrl: string | null) => void;
+  variant?: "overlay" | "cell";
+  studentName?: string;
 }
 
-export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }: ProfilFotoUploadProps) {
+export default function ProfilFotoUpload({
+  ogrenciId,
+  currentPhoto,
+  onSuccess,
+  variant = "overlay",
+  studentName,
+}: ProfilFotoUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
@@ -345,8 +353,18 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
     setCropScale(1);
   };
 
+  const isCell = variant === "cell";
+  const pickFromGallery = () => {
+    setShowOptions(false);
+    fileInputRef.current?.click();
+  };
+  const pickFromCamera = () => {
+    setShowOptions(false);
+    startCamera();
+  };
+
   return (
-    <div className="profil-foto-upload">
+    <div className={`profil-foto-upload${isCell ? " is-cell" : ""}`}>
       {typeof document !== "undefined" && createPortal(
         <>
       {/* Cropper Modal */}
@@ -488,14 +506,30 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
         document.body
       )}
 
-      {/* Upload Butonu */}
-      <button 
-        onClick={() => setShowOptions(!showOptions)}
-        className="foto-edit-btn"
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          setShowOptions(!showOptions);
+        }}
+        className={isCell ? "foto-cell-trigger" : "foto-edit-btn"}
         disabled={isUploading}
-        title="Fotoğraf Ekle/Değiştir"
+        title={currentPhoto ? "Fotoğrafı değiştir" : "Fotoğraf ekle"}
+        aria-label={currentPhoto ? "Fotoğrafı değiştir" : "Fotoğraf ekle"}
       >
-        {isUploading ? (
+        {isCell ? (
+          <span className={`foto-cell-badge${currentPhoto ? "" : " is-empty"}`}>
+            {isUploading ? (
+              <span className="upload-spinner" />
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+            )}
+          </span>
+        ) : isUploading ? (
           <div className="upload-spinner"></div>
         ) : (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -505,37 +539,65 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
         )}
       </button>
 
-      {/* Seçenekler Dropdown */}
-      {showOptions && (
+      {showOptions && !isCell && (
         <>
           <div className="foto-options-backdrop" onClick={() => setShowOptions(false)} />
           <div className="foto-options-menu">
-            <button onClick={() => fileInputRef.current?.click()} className="foto-option-item">
+            <button type="button" onClick={pickFromGallery} className="foto-option-item">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              <span>Dosyadan Seç</span>
+              <span>Galeriden seç</span>
             </button>
-            <button onClick={startCamera} className="foto-option-item">
+            <button type="button" onClick={pickFromCamera} className="foto-option-item">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                 <circle cx="12" cy="13" r="4" />
               </svg>
-              <span>Kamera ile Çek</span>
+              <span>Kameradan çek</span>
             </button>
             {currentPhoto && (
-              <button onClick={handleDelete} className="foto-option-item danger">
+              <button type="button" onClick={handleDelete} className="foto-option-item danger">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="3 6 5 6 21 6" />
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 </svg>
-                <span>Fotoğrafı Sil</span>
+                <span>Fotoğrafı sil</span>
               </button>
             )}
           </div>
         </>
+      )}
+
+      {showOptions && isCell && typeof document !== "undefined" && createPortal(
+        <div className="foto-sheet-overlay" onClick={() => { setShowOptions(false); setError(null); }}>
+          <div className="foto-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Fotoğraf">
+            <div className="foto-sheet-head">
+              <div>
+                <strong>Fotoğraf</strong>
+                {studentName ? <p>{studentName}</p> : null}
+              </div>
+              <button type="button" className="foto-sheet-close" onClick={() => { setShowOptions(false); setError(null); }}>
+                Kapat
+              </button>
+            </div>
+            {error && <div className="foto-sheet-error">{error}</div>}
+            <button type="button" className="foto-sheet-action" onClick={pickFromCamera}>
+              Kameradan çek
+            </button>
+            <button type="button" className="foto-sheet-action" onClick={pickFromGallery}>
+              Galeriden seç
+            </button>
+            {currentPhoto && (
+              <button type="button" className="foto-sheet-action is-danger" onClick={handleDelete}>
+                Fotoğrafı sil
+              </button>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Gizli file input */}
@@ -555,8 +617,7 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
         className="foto-hidden-input"
       />
 
-      {/* Hata mesajı */}
-      {error && (
+      {error && !isCell && (
         <div className="foto-upload-error">
           {error}
         </div>
@@ -570,6 +631,15 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           z-index: 5;
         }
 
+        .profil-foto-upload.is-cell {
+          inset: auto;
+          right: -6px;
+          bottom: -6px;
+          width: 24px;
+          height: 24px;
+          z-index: 4;
+        }
+
         .foto-hidden-input {
           position: absolute;
           width: 1px;
@@ -581,6 +651,40 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           white-space: nowrap;
           border: 0;
           opacity: 0;
+        }
+
+        .foto-cell-trigger {
+          width: 24px;
+          height: 24px;
+          border: 0;
+          padding: 0;
+          border-radius: 7px;
+          background: transparent;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .foto-cell-trigger:disabled {
+          cursor: wait;
+        }
+
+        .foto-cell-badge {
+          width: 22px;
+          height: 22px;
+          border-radius: 7px;
+          background: #0f172a;
+          color: #fff;
+          border: 2px solid #fff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+        }
+
+        .foto-cell-badge.is-empty {
+          background: #0369a1;
         }
 
         .foto-edit-btn {
@@ -1029,6 +1133,85 @@ export default function ProfilFotoUpload({ ogrenciId, currentPhoto, onSuccess }:
           position: fixed !important;
           inset: 0 !important;
           z-index: 11000 !important;
+        }
+        .foto-sheet-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.45);
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          z-index: 12000;
+          padding: 16px;
+        }
+        .foto-sheet {
+          width: 100%;
+          max-width: 360px;
+          background: #fff;
+          border-radius: 16px;
+          padding: 16px;
+          box-shadow: 0 18px 40px rgba(15, 23, 42, 0.22);
+        }
+        .foto-sheet-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 14px;
+        }
+        .foto-sheet-head strong {
+          display: block;
+          font-size: 16px;
+          color: #0f172a;
+        }
+        .foto-sheet-head p {
+          margin: 2px 0 0;
+          font-size: 13px;
+          color: #64748b;
+        }
+        .foto-sheet-close {
+          border: 0;
+          background: #f1f5f9;
+          color: #334155;
+          border-radius: 8px;
+          padding: 6px 10px;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .foto-sheet-error {
+          background: #fef2f2;
+          color: #b91c1c;
+          border-radius: 8px;
+          padding: 8px 10px;
+          font-size: 13px;
+          margin-bottom: 10px;
+        }
+        .foto-sheet-action {
+          width: 100%;
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          color: #0f172a;
+          border-radius: 10px;
+          padding: 12px 14px;
+          font-size: 15px;
+          font-weight: 600;
+          text-align: left;
+          cursor: pointer;
+          margin-bottom: 8px;
+        }
+        .foto-sheet-action:hover {
+          background: #f1f5f9;
+        }
+        .foto-sheet-action.is-danger {
+          color: #b91c1c;
+          background: #fef2f2;
+          border-color: #fecaca;
+        }
+        @media (min-width: 640px) {
+          .foto-sheet-overlay {
+            align-items: center;
+          }
         }
       `}</style>
     </div>

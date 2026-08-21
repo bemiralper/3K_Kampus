@@ -14,6 +14,7 @@ import { searchKutuphaneStudents } from '@/lib/kutuphane-student-search';
 import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
 import KutuphaneConfirmModal from '@/components/kutuphane/KutuphaneConfirmModal';
 import KutuphaneToast from '@/components/kutuphane/KutuphaneToast';
+import KutuphaneStudentPhotoCell from '@/components/kutuphane/KutuphaneStudentPhotoCell';
 
 interface OgrenciItem {
   id: number;
@@ -257,6 +258,7 @@ export default function AtamalarPage() {
   const [studentFilter, setStudentFilter] = useState('all');
   const [studentSearch, setStudentSearch] = useState('');
   const [studentSummary, setStudentSummary] = useState<any>(null);
+  const [onlyMissingPhoto, setOnlyMissingPhoto] = useState(false);
 
   // Modal
   const [showModal, setShowModal] = useState(false);
@@ -449,6 +451,15 @@ export default function AtamalarPage() {
   const canGoNext = step === 1 ? !!selectedOgrenci : step === 2 ? (!!formData.seat_id || !!formData.locker_id) : true;
   const sm = studentSummary || { toplam: 0, masa_var: 0, dolap_var: 0, ikisi_var: 0 };
   const hicbiriYok = sm.toplam - sm.masa_var - sm.dolap_var + sm.ikisi_var;
+  const missingPhotoCount = students.filter((s) => !s.profil_foto).length;
+  const visibleStudents = onlyMissingPhoto ? students.filter((s) => !s.profil_foto) : students;
+
+  const handlePhotoUpdated = (ogrenciId: number, url: string | null) => {
+    setStudents((prev) => prev.map((s) => (
+      s.ogrenci_id === ogrenciId ? { ...s, profil_foto: url } : s
+    )));
+    setSuccessMsg(url ? 'Profil fotoğrafı güncellendi' : 'Profil fotoğrafı silindi');
+  };
 
   return (
     <div className="atamalar-page">
@@ -528,6 +539,7 @@ export default function AtamalarPage() {
         .filter-select { padding: 10px 14px; border-radius: 10px; border: 1.5px solid #e5e7eb; font-size: 14px; background: #f9fafb; min-width: 180px; color: #374151; cursor: pointer; outline: none; }
         .filter-refresh { padding: 10px 18px; border-radius: 10px; border: 1.5px solid #e5e7eb; font-size: 14px; cursor: pointer; background: #fff; color: #374151; font-weight: 500; display: flex; align-items: center; gap: 6px; transition: all 0.15s; }
         .filter-refresh:hover { background: #f3f4f6; }
+        .filter-refresh.is-active { border-color: #0ea5e9; background: #f0f9ff; color: #0369a1; }
         .filter-count { margin-left: auto; font-size: 13px; color: #9ca3af; font-weight: 500; }
 
         /* ─── Table ─── */
@@ -698,8 +710,16 @@ export default function AtamalarPage() {
           <option value="dolap_var">🔒 Dolabı Olanlar</option>
           <option value="ikisi_var">✅ İkisi de Olanlar</option>
         </select>
+        <button
+          type="button"
+          className={`filter-refresh${onlyMissingPhoto ? ' is-active' : ''}`}
+          onClick={() => setOnlyMissingPhoto((v) => !v)}
+          title="Fotoğrafı olmayan öğrenciler"
+        >
+          📷 Fotosuz{missingPhotoCount ? ` (${missingPhotoCount})` : ''}
+        </button>
         <button className="filter-refresh" onClick={() => loadStudents()} disabled={loading}>🔄 Yenile</button>
-        <div className="filter-count">{students.length} öğrenci listeleniyor</div>
+        <div className="filter-count">{visibleStudents.length} öğrenci listeleniyor</div>
       </div>
 
       {/* ═══ STUDENT TABLE ═══ */}
@@ -709,7 +729,7 @@ export default function AtamalarPage() {
             <div className="spinner-large" />
             <div style={{ fontSize: 15, fontWeight: 500 }}>Öğrenciler yükleniyor...</div>
           </div>
-        ) : students.length === 0 ? (
+        ) : visibleStudents.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">👥</div>
             <h3 style={{ fontSize: 18, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Öğrenci bulunamadı</h3>
@@ -734,21 +754,18 @@ export default function AtamalarPage() {
                 </tr>
               </thead>
               <tbody>
-                {students.map((s, idx) => (
+                {visibleStudents.map((s, idx) => (
                   <tr key={s.ogrenci_id} style={{ animationDelay: `${idx * 0.02}s` }}>
                     {/* Öğrenci */}
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        {s.profil_foto ? (
-                          <img src={s.profil_foto} alt={s.ogrenci_adi}
-                            style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', flexShrink: 0, border: `2px solid ${s.masa && s.dolap ? '#22c55e' : s.masa || s.dolap ? '#3b82f6' : '#e5e7eb'}` }}
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden-avatar'); }}
-                          />
-                        ) : null}
-                        <div className={`avatar-circle ${s.masa && s.dolap ? 'avatar-green' : s.masa || s.dolap ? 'avatar-blue' : 'avatar-gray'} ${s.profil_foto ? 'hidden-avatar' : ''}`}
-                          style={{ width: 38, height: 38, borderRadius: 10 }}>
-                          {s.ogrenci_adi.charAt(0).toUpperCase()}
-                        </div>
+                        <KutuphaneStudentPhotoCell
+                          ogrenciId={s.ogrenci_id}
+                          ogrenciAdi={s.ogrenci_adi}
+                          profilFoto={s.profil_foto}
+                          accent={s.masa && s.dolap ? '#22c55e' : s.masa || s.dolap ? '#3b82f6' : '#e5e7eb'}
+                          onUpdated={(url) => handlePhotoUpdated(s.ogrenci_id, url)}
+                        />
                         <div style={{ fontWeight: 600, fontSize: 14, color: '#111827' }}>{s.ogrenci_adi}</div>
                       </div>
                     </td>

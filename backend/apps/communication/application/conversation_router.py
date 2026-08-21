@@ -33,6 +33,18 @@ def ticket_routing_enabled() -> bool:
     return bool(getattr(settings, 'COMMUNICATION_TICKET_ROUTING', True))
 
 
+def sync_assigned_coach_for_student(ogrenci_id: int | None) -> None:
+    """Atama değişince öğrencinin sohbetlerindeki assigned_coach alanını güncelle."""
+    if not ogrenci_id:
+        return
+    coach = resolve_primary_coach(ogrenci_id)
+    qs = Conversation.objects.filter(ogrenci_id=ogrenci_id)
+    if coach:
+        qs.exclude(assigned_coach_id=coach.id).update(assigned_coach_id=coach.id)
+    else:
+        qs.filter(assigned_coach__isnull=False).update(assigned_coach=None)
+
+
 def resolve_primary_coach(ogrenci_id: int | None):
     """Öğrencinin aktif primary koçu; yoksa ilk aktif atama."""
     if not ogrenci_id:

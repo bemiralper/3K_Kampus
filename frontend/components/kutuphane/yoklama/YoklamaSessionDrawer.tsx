@@ -58,6 +58,28 @@ interface YoklamaSessionDrawerProps {
 
 const STATUS_ORDER: AttendanceStatus[] = ["PRESENT", "ABSENT", "LATE", "EXCUSED", "NOT_AT_DESK"];
 
+function telHref(phone?: string | null): string | null {
+  const digits = (phone || "").replace(/[^\d+]/g, "");
+  return digits ? `tel:${digits}` : null;
+}
+
+function VeliCallLink({ record }: { record: AttendanceRecord }) {
+  const href = telHref(record.veli_telefon);
+  if (!href) {
+    return (
+      <span className="yok-veli-none" title="Veli telefonu kayıtlı değil">
+        Telefon yok
+      </span>
+    );
+  }
+  const label = record.veli_ad ? `${record.veli_ad} ara` : "Veli ara";
+  return (
+    <a href={href} className="yok-veli-call" title={label} onClick={(e) => e.stopPropagation()}>
+      📞 Ara veli
+    </a>
+  );
+}
+
 function StatusChips({
   durum,
   izinli,
@@ -239,6 +261,9 @@ export default function YoklamaSessionDrawer({
             {r.izinli_mi && <Badge label="İZİNLİ" color="#4338ca" bg="#e0e7ff" />}
           </div>
         </td>
+        <td style={tdStyle}>
+          <VeliCallLink record={r} />
+        </td>
         <td style={{ ...tdStyle, minWidth: 280 }}>
           {canEdit ? (
             <>
@@ -302,6 +327,7 @@ export default function YoklamaSessionDrawer({
               )}
             </div>
             <div className="yok-att-card-desk">{r.masa_no ? `Masa ${r.masa_no}` : "Masa atanmamış"}</div>
+            <div className="yok-att-card-veli"><VeliCallLink record={r} /></div>
           </div>
           <span className="yok-att-card-num">#{idx + 1}</span>
         </div>
@@ -336,7 +362,7 @@ export default function YoklamaSessionDrawer({
   return (
     <div style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
-        style={{ ...modalBoxStyle(920), maxHeight: "90vh", display: "flex", flexDirection: "column" }}
+        style={{ ...modalBoxStyle(1000), maxHeight: "90vh", display: "flex", flexDirection: "column" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ ...modalHeaderStyle, flexShrink: 0 }}>
@@ -470,6 +496,7 @@ export default function YoklamaSessionDrawer({
                         <th style={{ ...thStyle, width: 30 }}>#</th>
                         <th style={thStyle}>Masa</th>
                         <th style={thStyle}>Öğrenci</th>
+                        <th style={{ ...thStyle, width: 110 }}>Veli</th>
                         <th style={{ ...thStyle, minWidth: 280 }}>Durum</th>
                         <th style={thStyle}>Not</th>
                         <th style={{ ...thStyle, width: 88 }}>

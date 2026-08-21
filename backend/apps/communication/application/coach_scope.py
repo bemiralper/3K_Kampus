@@ -8,6 +8,7 @@ from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 
 from apps.coaching.services.coach_access import (
+    get_active_assignment_student_ids,
     get_coach_profile,
     is_resource_admin,
     scoped_student_ids,
@@ -78,7 +79,7 @@ def _legacy_filter_conversations_for_user(qs, user):
 
     coach_profile = get_coach_profile(user)
     if coach_profile:
-        allowed = scoped_student_ids(user)
+        allowed = set(get_active_assignment_student_ids(coach_profile))
         # Kayıtsız numara (RAW_PHONE) — koçlar "yeni gelen" olarak görebilsin.
         unmatched = (
             Q(contact_type=RecipientType.RAW_PHONE)
@@ -137,7 +138,7 @@ def filter_conversations_for_user(
     coach_profile = get_coach_profile(user)
     if coach_profile:
         from apps.communication.domain.enums import CommunicationDepartment
-        allowed = scoped_student_ids(user) or set()
+        allowed = set(get_active_assignment_student_ids(coach_profile))
         scoped_students_q = Q(ogrenci_id__in=allowed) if allowed else Q(pk__in=[])
         visibility = (
             Q(assigned_coach=coach_profile)
@@ -347,9 +348,7 @@ def user_can_access_conversation(user, conversation) -> bool:
             if conversation.assigned_coach_id == coach_profile.id:
                 return True
             if conversation.ogrenci_id:
-                allowed = scoped_student_ids(user)
-                if allowed is None:
-                    return True
+                allowed = set(get_active_assignment_student_ids(coach_profile))
                 return conversation.ogrenci_id in allowed
             return False
         if _has_staff_messaging_access(user):
@@ -367,7 +366,7 @@ def user_can_access_conversation(user, conversation) -> bool:
             return True
         if conversation.claimed_by_user_id == user.id:
             return True
-        allowed = scoped_student_ids(user) or set()
+        allowed = set(get_active_assignment_student_ids(coach_profile))
         # Yardımcı koç: atandığı öğrencinin sohbetlerini görür (primary olmasa da)
         if conversation.ogrenci_id and conversation.ogrenci_id in allowed:
             return True

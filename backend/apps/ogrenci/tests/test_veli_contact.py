@@ -3,7 +3,11 @@ from django.test import TestCase
 
 from apps.kurum.domain.models import Kurum
 from apps.sube.domain.models import Sube
-from apps.ogrenci.application.veli_contact import default_veli_contact, list_outbound_veliler
+from apps.ogrenci.application.veli_contact import (
+    default_veli_contact,
+    default_veli_contacts_map,
+    list_outbound_veliler,
+)
 from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
 
 
@@ -52,3 +56,16 @@ class VeliContactTest(TestCase):
         pairs = list_outbound_veliler(self.ogrenci)
         self.assertEqual(len(pairs), 1)
         self.assertTrue(OgrenciVeli.objects.filter(ogrenci=self.ogrenci).exists())
+
+    def test_contacts_map_includes_name(self):
+        OgrenciVeli.objects.create(
+            ogrenci=self.ogrenci,
+            veli_turu='anne',
+            ad='Ayşe',
+            soyad='Veli',
+            telefon='05321112233',
+            varsayilan=True,
+        )
+        mapped = default_veli_contacts_map([self.ogrenci.id])
+        self.assertEqual(mapped[self.ogrenci.id]['ad'], 'Ayşe Veli')
+        self.assertIn('532', mapped[self.ogrenci.id]['telefon'].replace(' ', ''))

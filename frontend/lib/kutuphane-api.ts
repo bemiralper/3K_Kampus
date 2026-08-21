@@ -176,6 +176,8 @@ export interface AttendanceRecord {
   yoklama_oturumu_id: string;
   ogrenci_id: number;
   ogrenci_adi?: string;
+  veli_ad?: string;
+  veli_telefon?: string;
   seat_id?: string;
   masa_no?: string;
   durum: AttendanceStatus;
