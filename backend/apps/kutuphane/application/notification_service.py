@@ -202,6 +202,8 @@ class AttendanceNotificationService:
         session_id,
         event_type: str,
         ogrenci_ids: list[int] | None = None,
+        *,
+        sent_by_user_id: int | None = None,
     ) -> NotifyPreviewResult:
         from apps.kurum.domain.models import Kurum
         from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
@@ -260,6 +262,24 @@ class AttendanceNotificationService:
                     skip = 'Daha önce gönderildi'
                 elif not ContactResolver.veli_allows_outbound(veli, OPT_IN_CATEGORY):
                     skip = 'Veli devamsızlık bildirimini kabul etmemiş'
+                else:
+                    dry = dispatch_event(
+                        kurum_id,
+                        EVENT_TO_NOTIFICATION_KEY[event_type],
+                        recipient=NotificationRecipient.veli(veli.id),
+                        context=ctx,
+                        sube_id=getattr(ogrenci, 'sube_id', None),
+                        sent_by_user_id=sent_by_user_id,
+                        fallback_body=body,
+                        dry_run=True,
+                    )
+                    if dry is not None:
+                        blocked = getattr(dry, 'blocked_reason', '') or ''
+                        if blocked:
+                            skip = blocked
+                        elif not getattr(dry, 'would_send', True):
+                            warnings = getattr(dry, 'warnings', None) or []
+                            skip = warnings[0] if warnings else 'Bu bildirim gönderilemez'
 
                 recipients.append(NotifyRecipientPreview(
                     ogrenci_id=record.ogrenci_id,
@@ -297,7 +317,10 @@ class AttendanceNotificationService:
         from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
         from apps.communication.domain.models import Message
 
-        preview = self.preview(kurum_id, session_id, event_type, ogrenci_ids)
+        preview = self.preview(
+            kurum_id, session_id, event_type, ogrenci_ids,
+            sent_by_user_id=sent_by_user_id,
+        )
         config = self.get_config(kurum_id)
         template = self._template_for_event(config, event_type)
         session = self._get_session(session_id)
@@ -390,6 +413,10 @@ class AttendanceNotificationService:
                 dispatch_process_outbound_queue()
             except Exception:
                 logger.exception('Outbound queue dispatch failed after yoklama notify')
+        elif not result.errors:
+            reasons = [item.skip_reason for item in preview.recipients if item.skip_reason]
+            unique = list(dict.fromkeys(reasons))
+            result.errors.extend(unique[:3] or ['Gönderilecek uygun alıcı kalmadı.'])
 
         return result
 

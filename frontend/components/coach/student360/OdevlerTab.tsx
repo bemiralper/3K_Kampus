@@ -51,6 +51,7 @@ interface StudentAssignmentItem {
   is_overdue?: boolean;
   is_due_today?: boolean;
   is_control_locked?: boolean;
+  can_override_control_lock?: boolean;
   coach_name?: string | null;
   created_at?: string;
 }

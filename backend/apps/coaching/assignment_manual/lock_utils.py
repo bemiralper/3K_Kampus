@@ -10,6 +10,35 @@ CONTROL_LOCK_MESSAGE = (
     'Kontrol günü sona erdiği için bu ödev artık düzenlenemez veya silinemez.'
 )
 
+CONTROL_LOCK_OVERRIDE_ROLES = frozenset({
+    'super_admin',
+    'admin',
+    'kurum_yoneticisi',
+    'sube_yoneticisi',
+    'egitim_yoneticisi',
+    'mudur',
+    'mudir_yardimcisi',
+    'sube_muduru',
+})
+
+
+def can_override_assignment_control_lock(user) -> bool:
+    """
+    Yönetici, kontrol günü geçmiş ödevi düzenleyebilir / yeniden aktif edebilir.
+
+    Koç profili olsa bile rol/süper kullanıcı yeterlidir — unutulan
+    ertelemede sonraki haftanın işini yeniden girmek zorunda kalmasınlar.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if getattr(user, 'is_superuser', False):
+        return True
+    try:
+        role_code = user.user_role.role.code
+    except Exception:
+        return False
+    return role_code in CONTROL_LOCK_OVERRIDE_ROLES
+
 
 def assignment_due_local_date(assignment) -> date | None:
     if not assignment.due_date:

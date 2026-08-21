@@ -312,6 +312,7 @@ export interface ManualAssignment {
   completed_tasks: number;
   progress_percent: number;
   is_control_locked?: boolean;
+  can_override_control_lock?: boolean;
   has_been_notified?: boolean;
   created_at: string;
   updated_at: string;
@@ -1587,6 +1588,19 @@ export async function postponeAssignment(
 ): Promise<ApiResponse<ManualAssignment>> {
   return apiPost<ManualAssignment>(
     `/api/coaching/manual-assignments/assignments/${assignmentId}/postpone/`,
+    data
+  );
+}
+
+/**
+ * Kontrol günü geçmiş ödevi yönetici yeniden aktif eder (erteleme hakkı tüketilmez).
+ */
+export async function reactivateAssignment(
+  assignmentId: number,
+  data: { new_due_date: string; reason?: string }
+): Promise<ApiResponse<ManualAssignment>> {
+  return apiPost<ManualAssignment>(
+    `/api/coaching/manual-assignments/assignments/${assignmentId}/reactivate/`,
     data
   );
 }

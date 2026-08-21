@@ -14,6 +14,7 @@ from apps.communication.application.communication_service import MessageSource, 
 from apps.communication.application.notification_events import (
     MODULE_FINANS,
     MODULE_ODEME,
+    MODULE_YOKLAMA,
     get_event,
 )
 from apps.communication.application.notification_template_resolver import (
@@ -329,23 +330,27 @@ def _send_document(
 def _send_text(
     hooks, kurum_id, recipient, *,
     body, opt_in_category, source, sent_by_user_id, session_fallback=None,
+    channel_config_id=None,
 ):
     if recipient.recipient_type == RecipientType.VELI:
         return hooks.send_text_to_veli(
             kurum_id, recipient.veli_id, body, opt_in_category,
             source.module, source.ref_id, sent_by_user_id=sent_by_user_id,
             session_fallback=session_fallback,
+            channel_config_id=channel_config_id,
         )
     if recipient.recipient_type == RecipientType.OGRENCI:
         return hooks.send_text_to_ogrenci(
             kurum_id, recipient.ogrenci_id, body,
             source.module, source.ref_id, sent_by_user_id=sent_by_user_id,
             session_fallback=session_fallback,
+            channel_config_id=channel_config_id,
         )
     return hooks.send_text_to_personel(
         kurum_id, recipient.personel_id, body, source.module, source.ref_id,
         phone=recipient.phone, sent_by_user_id=sent_by_user_id,
         session_fallback=session_fallback,
+        channel_config_id=channel_config_id,
     )
 
 
@@ -362,7 +367,7 @@ def _session_fallback(preview: NotificationPreview, context: dict) -> dict | Non
 
 
 def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -> str | None:
-    """Gönderenin rolüne bağlanan WhatsApp numarası; cron finans işinde muhasebe hattı."""
+    """Olayın departman hattı; yoklama/ödev koçluk, ödeme muhasebe."""
     from apps.communication.application.account_resolver import AccountResolver
     from apps.communication.domain.enums import CommunicationDepartment
 
@@ -370,20 +375,33 @@ def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -
     if sent_by_user_id:
         from django.contrib.auth import get_user_model
         sender = get_user_model().objects.filter(id=sent_by_user_id).first()
+
+    event_module = getattr(event, 'module', None)
+    if event_module == MODULE_YOKLAMA:
+        cfg = AccountResolver.for_department(
+            kurum_id,
+            CommunicationDepartment.COACHING,
+            sube_id=sube_id,
+            user=sender,
+        )
+        if cfg is not None:
+            return str(cfg.id)
+    if event_module in (MODULE_ODEME, MODULE_FINANS):
+        cfg = AccountResolver.for_department(
+            kurum_id,
+            CommunicationDepartment.ACCOUNTING,
+            sube_id=sube_id,
+            user=sender,
+        )
+        if cfg is not None:
+            return str(cfg.id)
+
     if sender is not None:
         cfg = AccountResolver.resolve(
             kurum_id=kurum_id,
             user=sender,
             sube_id=sube_id,
             raise_if_missing=False,
-        )
-        return str(cfg.id) if cfg else None
-    if event is not None and event.module in (MODULE_ODEME, MODULE_FINANS):
-        cfg = AccountResolver.for_department(
-            kurum_id,
-            CommunicationDepartment.ACCOUNTING,
-            sube_id=sube_id,
-            user=None,
         )
         return str(cfg.id) if cfg else None
     return None
@@ -533,4 +551,5 @@ def dispatch_event(
         source=source,
         sent_by_user_id=sent_by_user_id,
         session_fallback=session_fallback,
+        channel_config_id=preview.channel_config_id,
     )

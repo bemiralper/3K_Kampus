@@ -24,7 +24,7 @@ interface AttendanceNotifyPreviewModalProps {
   ogrenciIds?: number[];
   sessionTitle?: string;
   onClose: () => void;
-  onSent: (sent: number) => void;
+  onSent: (sent: number, errors?: string[]) => void;
 }
 
 export default function AttendanceNotifyPreviewModal({
@@ -102,7 +102,16 @@ export default function AttendanceNotifyPreviewModal({
       if (!res.success) {
         throw new Error((res as { error?: string }).error || "Gönderim başarısız");
       }
-      onSent(res.data?.sent ?? 0);
+      const sent = res.data?.sent ?? 0;
+      const errors = res.data?.errors ?? [];
+      if (sent === 0) {
+        setError(
+          errors[0]
+          || "Mesaj gönderilemedi. WhatsApp hattı veya 24 saatlik pencere / Meta şablonunu kontrol edin.",
+        );
+        return;
+      }
+      onSent(sent, errors);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gönderim hatası");

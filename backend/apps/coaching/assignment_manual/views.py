@@ -69,7 +69,11 @@ from apps.coaching.interfaces.sube_context import (
     filter_queryset_by_student_sube,
     mandatory_coaching_context,
 )
-from .lock_utils import CONTROL_LOCK_MESSAGE, is_assignment_control_locked
+from .lock_utils import (
+    CONTROL_LOCK_MESSAGE,
+    can_override_assignment_control_lock,
+    is_assignment_control_locked,
+)
 from shared.context import get_secili_kurum_id
 
 VALID_NON_SUBMISSION_REASONS = frozenset(
@@ -84,8 +88,10 @@ KONTROL_BADGE_STATUSES = (
 )
 
 
-def control_lock_response(assignment):
-    """Kontrol günü kilidi aktifse 403 Response döner."""
+def control_lock_response(assignment, user=None):
+    """Kontrol günü kilidi aktifse 403 Response döner. Yönetici kilidi aşabilir."""
+    if can_override_assignment_control_lock(user):
+        return None
     if is_assignment_control_locked(assignment):
         return Response({
             'success': False,
@@ -435,7 +441,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         """Ödev güncelle"""
         instance = self.get_object()
-        locked = control_lock_response(instance)
+        locked = control_lock_response(instance, request.user)
         if locked:
             return locked
         partial = kwargs.pop('partial', False)
@@ -462,7 +468,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         instance = self.get_object()
-        locked = control_lock_response(instance)
+        locked = control_lock_response(instance, request.user)
         if locked:
             return locked
 
@@ -1119,7 +1125,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         Body: {"risk_status": "AT_RISK"}
         """
         assignment = self.get_object()
-        locked = control_lock_response(assignment)
+        locked = control_lock_response(assignment, request.user)
         if locked:
             return locked
         risk_status = request.data.get('risk_status')
@@ -1147,7 +1153,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         Body: {"new_due_date": "2026-03-01T23:59:00Z", "reason": "..."}
         """
         assignment = self.get_object()
-        locked = control_lock_response(assignment)
+        locked = control_lock_response(assignment, request.user)
         if locked:
             return locked
         new_due_date = request.data.get('new_due_date')
@@ -1199,6 +1205,84 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             'data': ManualAssignmentDetailSerializer(assignment).data,
             'message': f'Ödev ertelendi ({assignment.postpone_count}/{assignment.max_postpone})'
         })
+
+    @action(detail=True, methods=['post'])
+    def reactivate(self, request, pk=None):
+        """
+        Kontrol günü geçmiş ödevi yönetici yeniden aktif eder.
+        Erteleme hakkını tüketmez; yeni kontrol günü verilir.
+
+        POST /api/coaching/manual-assignments/assignments/{id}/reactivate/
+        Body: {"new_due_date": "2026-08-27T23:59:00", "reason": "..."}
+        """
+        assignment = self.get_object()
+        if not can_override_assignment_control_lock(request.user):
+            return Response({
+                'success': False,
+                'error': 'Kontrol günü geçmiş ödevi yalnızca yönetici yeniden aktif edebilir.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        new_due_date = request.data.get('new_due_date')
+        reason = (request.data.get('reason') or '').strip()
+        if not new_due_date:
+            return Response({
+                'success': False,
+                'error': 'Yeni kontrol günü gerekli',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        from datetime import datetime
+
+        try:
+            parsed_date = datetime.fromisoformat(str(new_due_date).replace('Z', '+00:00'))
+        except (ValueError, AttributeError, TypeError):
+            return Response({
+                'success': False,
+                'error': 'Geçersiz tarih formatı',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        parsed_local = (
+            timezone.localtime(parsed_date) if timezone.is_aware(parsed_date) else parsed_date
+        )
+        if parsed_local.date() < timezone.localdate():
+            return Response({
+                'success': False,
+                'error': 'Yeni kontrol günü bugünden önce olamaz',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not assignment.original_due_date:
+            assignment.original_due_date = assignment.due_date
+
+        assignment.due_date = parsed_date
+        if reason:
+            assignment.postpone_reason = reason
+
+        if assignment.status in (
+            ManualAssignment.Status.COMPLETED,
+            ManualAssignment.Status.OVERDUE,
+            ManualAssignment.Status.CANCELLED,
+        ):
+            assignment.status = (
+                ManualAssignment.Status.IN_PROGRESS
+                if assignment.completion_percent > 0
+                else ManualAssignment.Status.ASSIGNED
+            )
+            if assignment.completed_date:
+                assignment.completed_date = None
+
+        if assignment.non_submission_reason:
+            assignment.non_submission_reason = ''
+            assignment.non_submission_note = ''
+
+        assignment.save()
+        self._sync_to_calendar(assignment, request.user.id)
+
+        return Response({
+            'success': True,
+            'data': ManualAssignmentDetailSerializer(
+                assignment, context={'request': request},
+            ).data,
+            'message': 'Ödev yeniden aktif edildi. Kontrol günü güncellendi.',
+        })
     
     @action(detail=True, methods=['post'])
     def update_late_note(self, request, pk=None):
@@ -1208,7 +1292,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         Body: {"late_submission_note": "Hastalık nedeniyle..."}
         """
         assignment = self.get_object()
-        locked = control_lock_response(assignment)
+        locked = control_lock_response(assignment, request.user)
         if locked:
             return locked
         note = request.data.get('late_submission_note', '')
@@ -1229,7 +1313,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         Body: {"reason": "NOT_BROUGHT", "note": "..."}
         """
         assignment = self.get_object()
-        locked = control_lock_response(assignment)
+        locked = control_lock_response(assignment, request.user)
         if locked:
             return locked
         reason = request.data.get('reason', 'OTHER')
@@ -1287,7 +1371,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         POST /api/coaching/manual-assignments/assignments/{id}/reset_all_tasks/
         """
         assignment = self.get_object()
-        locked = control_lock_response(assignment)
+        locked = control_lock_response(assignment, request.user)
         if locked:
             return locked
 
@@ -1838,7 +1922,7 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         POST /api/coaching/assignment-tasks/{id}/mark_completed/
         """
         task = self.get_object()
-        locked = control_lock_response(task.lesson_block.assignment)
+        locked = control_lock_response(task.lesson_block.assignment, request.user)
         if locked:
             return locked
         actual_duration = (
@@ -1872,7 +1956,7 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         }
         """
         task = self.get_object()
-        locked = control_lock_response(task.lesson_block.assignment)
+        locked = control_lock_response(task.lesson_block.assignment, request.user)
         if locked:
             return locked
         completion_status = request.data.get('completion_status')
@@ -1907,7 +1991,7 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         POST /api/coaching/manual-assignments/tasks/{id}/reset_task_status/
         """
         task = self.get_object()
-        locked = control_lock_response(task.lesson_block.assignment)
+        locked = control_lock_response(task.lesson_block.assignment, request.user)
         if locked:
             return locked
 
@@ -1934,7 +2018,7 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         Body: {"coach_evaluation_note": "..."}
         """
         task = self.get_object()
-        locked = control_lock_response(task.lesson_block.assignment)
+        locked = control_lock_response(task.lesson_block.assignment, request.user)
         if locked:
             return locked
         note = request.data.get('coach_evaluation_note', '')

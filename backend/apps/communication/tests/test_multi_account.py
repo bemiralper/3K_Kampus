@@ -419,6 +419,46 @@ class MultiWhatsAppAccountTests(TestCase):
         self.assertEqual(str(preview.channel_config_id), str(self.acc_kadikoy.id))
         self.assertEqual(preview.meta_template_name, acc_tpl.name)
 
+    def test_yoklama_dispatch_uses_coaching_not_sender_accounting_line(self):
+        """Kütüphane yoklaması, gönderen muhasebe rolünde olsa da koçluk hattından gider."""
+        from apps.communication.application.notification_dispatcher import (
+            NotificationRecipient,
+            dispatch_event,
+        )
+        from apps.communication.domain.enums import CommunicationDepartment, MetaTemplateStatus
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+        from django.utils import timezone
+
+        self.acc_genel.department = CommunicationDepartment.COACHING
+        self.acc_genel.is_default = True
+        self.acc_genel.save(update_fields=['department', 'is_default'])
+        self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
+        self.acc_kadikoy.save(update_fields=['department'])
+
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_genel,
+            name='yoklama_gelmedi_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Sayın velimiz, {{ogrenci_ad}} gelmedi.',
+            approved_at=timezone.now(),
+        )
+
+        preview = dispatch_event(
+            self.kurum.id,
+            'yoklama.gelmedi',
+            recipient=NotificationRecipient.veli(1),
+            context={'ogrenci_ad': 'Ali', 'tarih': '21.08.2026'},
+            sube_id=self.sube_a.id,
+            sent_by_user_id=self.user_m.id,
+            dry_run=True,
+        )
+        self.assertIsNotNone(preview)
+        self.assertEqual(str(preview.channel_config_id), str(self.acc_genel.id))
+        self.assertEqual(preview.meta_template_name, 'yoklama_gelmedi_veli')
+
     def test_odeme_reuses_approved_template_from_other_account_on_same_waba(self):
         """Şablon koç hesabında kayıtlı olsa da muhasebe numarasından Meta ile gider."""
         from apps.communication.application.notification_dispatcher import (

@@ -1225,11 +1225,17 @@ function YoklamaTab({
     setPreviewOgrenciIds(ogrenciIds);
   };
 
-  const handleNotifySent = async (sent: number) => {
+  const handleNotifySent = async (sent: number, errors?: string[]) => {
     if (sent > 0) {
       showToastMsg('success', `${sent} veliye WhatsApp mesajı iletildi`);
+      if (errors?.length) {
+        showToastMsg('error', errors[0]);
+      }
     } else {
-      showToastMsg('error', 'Mesaj gönderilemedi — önizlemede atlanan alıcıları kontrol edin');
+      showToastMsg(
+        'error',
+        errors?.[0] || 'Mesaj gönderilemedi. WhatsApp hattı veya şablon ayarını kontrol edin.',
+      );
     }
     if (detailSession) await loadNotifyData(detailSession.id);
     setPendingBanner(null);

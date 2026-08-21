@@ -136,6 +136,7 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
     is_overdue = serializers.SerializerMethodField()
     is_due_today = serializers.SerializerMethodField()
     is_control_locked = serializers.SerializerMethodField()
+    can_override_control_lock = serializers.SerializerMethodField()
     
     class Meta:
         model = ManualAssignment
@@ -146,7 +147,8 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
             'assigned_date', 'due_date', 'completion_percent',
             'lesson_count', 'task_count', 'pending_task_count', 'evaluated_task_count',
             'postpone_count', 'non_submission_reason', 'non_submission_reason_display',
-            'is_overdue', 'is_due_today', 'is_control_locked', 'created_at'
+            'is_overdue', 'is_due_today', 'is_control_locked',
+            'can_override_control_lock', 'created_at'
         ]
     
     def get_coach_name(self, obj):
@@ -219,6 +221,11 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
         # use_prefetch=True ile ek DB sorgusu yapılmadan hesaplanır.
         return is_assignment_control_locked(obj, use_prefetch=True)
 
+    def get_can_override_control_lock(self, obj):
+        from .lock_utils import can_override_assignment_control_lock
+        request = self.context.get('request')
+        return can_override_assignment_control_lock(getattr(request, 'user', None))
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['title'] = strip_completion_title_suffix(data.get('title'))
@@ -264,6 +271,7 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
     is_late_submission = serializers.BooleanField(read_only=True)
     late_days = serializers.IntegerField(read_only=True)
     is_control_locked = serializers.SerializerMethodField()
+    can_override_control_lock = serializers.SerializerMethodField()
     has_been_notified = serializers.SerializerMethodField()
     deletion_audit = serializers.SerializerMethodField()
 
@@ -281,7 +289,8 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
             'late_submission_note', 'is_late_submission', 'late_days',
             'non_submission_reason', 'non_submission_note',
             'template_id', 'coach_notes', 'student_notes', 'lessons',
-            'report_summary', 'is_control_locked', 'has_been_notified', 'deletion_audit',
+            'report_summary', 'is_control_locked', 'can_override_control_lock',
+            'has_been_notified', 'deletion_audit',
             'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'assigned_date', 'completed_date']
@@ -322,6 +331,11 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
     def get_is_control_locked(self, obj):
         from .lock_utils import is_assignment_control_locked
         return is_assignment_control_locked(obj)
+
+    def get_can_override_control_lock(self, obj):
+        from .lock_utils import can_override_assignment_control_lock
+        request = self.context.get('request')
+        return can_override_assignment_control_lock(getattr(request, 'user', None))
 
     def get_has_been_notified(self, obj):
         """Bu ödev için veli/öğrenciye en az bir WhatsApp bildirimi (plan/rapor) gitmiş mi?

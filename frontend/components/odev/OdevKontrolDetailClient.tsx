@@ -10,6 +10,7 @@ import {
   resetAllTaskCompletionStatuses,
   updateTaskEvaluationNote,
   postponeAssignment,
+  reactivateAssignment,
   updateAssignmentRiskStatus,
   assignAssignment,
   updateLateNote,
@@ -117,6 +118,7 @@ interface AssignmentDetail {
   non_submission_reason: string;
   non_submission_note: string;
   is_control_locked?: boolean;
+  can_override_control_lock?: boolean;
   has_been_notified?: boolean;
   deletion_audit?: {
     deleted_at: string;
@@ -179,6 +181,12 @@ export default function OdevKontrolDetailClient({
   const [showPostponeModal, setShowPostponeModal] = useState(false);
   const [postponeDate, setPostponeDate] = useState("");
   const [postponeReason, setPostponeReason] = useState("");
+
+  // Yönetici: kilitli ödevi yeniden aktif et
+  const [showReactivateModal, setShowReactivateModal] = useState(false);
+  const [reactivateDate, setReactivateDate] = useState("");
+  const [reactivateReason, setReactivateReason] = useState("");
+  const [reactivating, setReactivating] = useState(false);
 
   // Eksik % seçimi aktif görev
   const [partialTaskId, setPartialTaskId] = useState<number | null>(null);
@@ -395,9 +403,11 @@ export default function OdevKontrolDetailClient({
   ) => {
     if (!assignment || !tasks.length || bulkSaving) return;
     const locked =
-      !!assignment.non_submission_reason ||
-      !!assignment.is_control_locked ||
-      (assignment.status === "COMPLETED" && !isReEditing);
+      !assignment.can_override_control_lock && (
+        !!assignment.non_submission_reason ||
+        !!assignment.is_control_locked ||
+        (assignment.status === "COMPLETED" && !isReEditing)
+      );
     if (locked) return;
     const targets = tasks.filter((t) => t.completion_status !== completionStatus);
     if (!targets.length) {
@@ -482,6 +492,45 @@ export default function OdevKontrolDetailClient({
         flash("❌ " + (result.error || "Erteleme başarısız"));
       }
     } catch { flash("❌ Bağlantı hatası"); }
+  };
+
+  const defaultReactivateDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  const openReactivateModal = () => {
+    setReactivateDate(defaultReactivateDate());
+    setReactivateReason("");
+    setShowReactivateModal(true);
+  };
+
+  const handleReactivate = async () => {
+    if (!reactivateDate || !assignment || reactivating) return;
+    setReactivating(true);
+    try {
+      const result = await reactivateAssignment(assignment.id, {
+        new_due_date: reactivateDate + "T23:59:00",
+        reason: reactivateReason,
+      });
+      if (result.success) {
+        flash("✅ " + (result.message || "Ödev yeniden aktif edildi"));
+        setIsReEditing(true);
+        await fetchAssignment();
+        setShowReactivateModal(false);
+        setReactivateDate("");
+        setReactivateReason("");
+      } else {
+        flash("❌ " + (result.error || "Yeniden aktif etme başarısız"));
+      }
+    } catch {
+      flash("❌ Bağlantı hatası");
+    }
+    setReactivating(false);
   };
 
   const handleUpdateRisk = async (riskStatus: string) => {
@@ -609,9 +658,14 @@ export default function OdevKontrolDetailClient({
 
   const overdue = isOverdue(assignment.due_date, assignment.status);
   const isNonSubmission = !!assignment.non_submission_reason;
-  const isControlLocked = !!assignment.is_control_locked;
+  const isPastControlLock = !!assignment.is_control_locked;
+  const canOverrideLock = !!assignment.can_override_control_lock;
+  const isControlLocked = isPastControlLock && !canOverrideLock;
+  const canReactivate = isPastControlLock && (canOverrideLock || !isCoach);
   const isCompleted = assignment.status === "COMPLETED";
-  const isLocked = isNonSubmission || isControlLocked || (isCompleted && !isReEditing);
+  const isLocked = canOverrideLock
+    ? false
+    : isNonSubmission || isControlLocked || (isCompleted && !isReEditing);
   const evaluatedTaskCount = liveSummary ? liveSummary.total - liveSummary.pending : 0;
   const assignHomeworkHref =
     isCompleted && paths.newAssignment
@@ -661,7 +715,7 @@ export default function OdevKontrolDetailClient({
             )}
           </div>
           <div className="ok-detail-actions">
-            {evaluatedTaskCount > 0 && !isControlLocked && (
+            {evaluatedTaskCount > 0 && !isLocked && (
               <button
                 type="button"
                 className="ok-btn-secondary"
@@ -678,6 +732,15 @@ export default function OdevKontrolDetailClient({
             >
               Ertele ({assignment.postpone_count}/{assignment.max_postpone})
             </button>
+            {canReactivate && (
+              <button
+                type="button"
+                className="ok-btn-secondary"
+                onClick={openReactivateModal}
+              >
+                Aktif hale getir
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -838,15 +901,27 @@ export default function OdevKontrolDetailClient({
           )}
 
           {/* Kontrol günü kilidi */}
-          {isControlLocked && (
-            <div className="ok-control-lock-banner">
+          {isPastControlLock && (
+            <div className={`ok-control-lock-banner${canReactivate ? " is-unlockable" : ""}`}>
               <span style={{ fontSize: 18 }}>🔒</span>
-              <div>
+              <div style={{ flex: 1 }}>
                 <strong>Kontrol günü sona erdi</strong>
                 <div style={{ fontSize: 12, marginTop: 2, opacity: 0.9 }}>
-                  Bu ödev değerlendirilmiş ve teslim günü geçmiş; artık düzenlenemez veya silinemez.
+                  {canReactivate
+                    ? "Ödev kilitli görünüyor. Yönetici olarak düzenleyebilir veya yeni kontrol günü vererek yeniden aktif edebilirsiniz."
+                    : "Bu ödev değerlendirilmiş ve teslim günü geçmiş; artık düzenlenemez veya silinemez."}
                 </div>
               </div>
+              {canReactivate && (
+                <button
+                  type="button"
+                  className="ok-btn-secondary"
+                  onClick={openReactivateModal}
+                  style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                >
+                  Aktif hale getir
+                </button>
+              )}
             </div>
           )}
 
@@ -1501,6 +1576,58 @@ export default function OdevKontrolDetailClient({
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button onClick={() => setShowPostponeModal(false)} style={{ padding: "11px 22px", background: "white", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, cursor: "pointer", fontWeight: 500 }}>İptal</button>
               <button onClick={handlePostpone} disabled={!postponeDate} style={{ padding: "11px 26px", background: postponeDate ? "linear-gradient(135deg, #f59e0b, #d97706)" : "#d1d5db", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: postponeDate ? "pointer" : "default", boxShadow: postponeDate ? "0 3px 12px rgba(245,158,11,0.3)" : "none" }}>📅 Ertele</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showReactivateModal && (
+        <>
+          <div onClick={() => !reactivating && setShowReactivateModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 1000 }} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 20, padding: 24, zIndex: 1001, width: "min(460px, calc(100vw - 32px))", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}>
+            <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 800, color: "#1e293b" }}>Ödevi aktif hale getir</h2>
+            <p style={{ margin: "0 0 20px", fontSize: 13, color: "#64748b" }}>
+              Kontrol günü geçmiş ödev yeniden açılır. Erteleme hakkı kullanılmaz.
+              Mevcut teslim: <strong>{formatDate(assignment.due_date)}</strong>
+            </p>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#334155" }}>Yeni kontrol günü *</label>
+              <input
+                type="date"
+                value={reactivateDate}
+                min={new Date().toISOString().split("T")[0]}
+                onChange={(e) => setReactivateDate(e.target.value)}
+                style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, outline: "none" }}
+              />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#334155" }}>Sebep (isteğe bağlı)</label>
+              <textarea
+                value={reactivateReason}
+                onChange={(e) => setReactivateReason(e.target.value)}
+                placeholder="Neden yeniden aktif ediliyor..."
+                style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, outline: "none", minHeight: 80, resize: "vertical" }}
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button type="button" onClick={() => setShowReactivateModal(false)} disabled={reactivating} style={{ padding: "11px 22px", background: "white", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, cursor: "pointer", fontWeight: 500 }}>İptal</button>
+              <button
+                type="button"
+                onClick={handleReactivate}
+                disabled={!reactivateDate || reactivating}
+                style={{
+                  padding: "11px 26px",
+                  background: reactivateDate && !reactivating ? "linear-gradient(135deg, #2563eb, #1d4ed8)" : "#d1d5db",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 10,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: reactivateDate && !reactivating ? "pointer" : "default",
+                }}
+              >
+                {reactivating ? "Kaydediliyor..." : "Aktif hale getir"}
+              </button>
             </div>
           </div>
         </>

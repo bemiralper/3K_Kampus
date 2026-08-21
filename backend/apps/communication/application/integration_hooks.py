@@ -97,6 +97,7 @@ def send_text_to_veli(
     *,
     sent_by_user_id: int | None = None,
     session_fallback: dict | None = None,
+    channel_config_id: str | None = None,
 ) -> SendResult | None:
     from apps.ogrenci.domain.models import OgrenciVeli
 
@@ -110,7 +111,11 @@ def send_text_to_veli(
         _service.send,
         kurum_id,
         recipients=_veli_recipient_query(veli, category=category),
-        content=MessageContent(text=body, session_fallback=session_fallback),
+        content=MessageContent(
+            text=body,
+            session_fallback=session_fallback,
+            channel_config_id=channel_config_id,
+        ),
         source=MessageSource(module=source_module, ref_id=source_id),
         sender_user_id=sent_by_user_id,
         process_immediately=True,
@@ -126,6 +131,7 @@ def send_text_to_ogrenci(
     *,
     sent_by_user_id: int | None = None,
     session_fallback: dict | None = None,
+    channel_config_id: str | None = None,
 ) -> SendResult | None:
     from apps.ogrenci.domain.models import Ogrenci
 
@@ -138,7 +144,11 @@ def send_text_to_ogrenci(
         _service.send,
         kurum_id,
         recipients=RecipientQuery(phone=ogrenci.telefon, ogrenci_id=ogrenci_id),
-        content=MessageContent(text=body, session_fallback=session_fallback),
+        content=MessageContent(
+            text=body,
+            session_fallback=session_fallback,
+            channel_config_id=channel_config_id,
+        ),
         source=MessageSource(module=source_module, ref_id=source_id),
         sender_user_id=sent_by_user_id,
         process_immediately=True,
@@ -622,6 +632,7 @@ def send_text_to_personel(
     category: str = 'genel',
     sent_by_user_id: int | None = None,
     session_fallback: dict | None = None,
+    channel_config_id: str | None = None,
 ) -> SendResult | None:
     recipients = _personel_recipient_query(
         kurum_id, personel_id, phone=phone, category=category,
@@ -633,7 +644,11 @@ def send_text_to_personel(
         _service.send,
         kurum_id,
         recipients=recipients,
-        content=MessageContent(text=body, session_fallback=session_fallback),
+        content=MessageContent(
+            text=body,
+            session_fallback=session_fallback,
+            channel_config_id=channel_config_id,
+        ),
         source=MessageSource(module=source_module, ref_id=source_id),
         sender_user_id=sent_by_user_id,
         process_immediately=True,

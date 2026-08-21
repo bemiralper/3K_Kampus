@@ -1593,6 +1593,7 @@ def api_attendance_notify_preview(request, library_id, session_id):
             session_id,
             event_type,
             _parse_ogrenci_ids_param(request),
+            sent_by_user_id=_get_user_id(request),
         )
         return JsonResponse({
             'success': True,
