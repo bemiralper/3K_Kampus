@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Sozlesme } from "../types";
-import { formatCurrency, formatDate, API_BASE, postHeaders, fetchWithTimeout, odemeTuruLabel, taksitPeriyoduLabel, egitimTuruLabel, gecmisIslemTuruText, islemYapanText } from "../helpers";
+import { formatCurrency, formatDate, API_BASE, apiHeaders, postHeaders, fetchWithTimeout, odemeTuruLabel, taksitPeriyoduLabel, egitimTuruLabel, gecmisIslemTuruText, islemYapanText } from "../helpers";
 import { normalizeDateInput } from "../utils/taksitPlan";
 import SozlesmeNotlarEditor from "./SozlesmeNotlarEditor";
 import { SozlesmeNot, parseNotlarJson, serializeNotlarForApi } from "@/lib/sozlesme-notlar";
@@ -57,7 +57,10 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
   const fetchDetail = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/`, { credentials: "include" });
+      const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/`, {
+        credentials: "include",
+        headers: apiHeaders(),
+      });
       const data: Sozlesme = await res.json();
       setSozlesme(data);
       setForm({

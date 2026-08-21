@@ -196,3 +196,25 @@ class OdemeTakipSubeIsolationAPITest(TestCase):
         err = res.json().get('error', '')
         self.assertNotIn('sube_id parametresi', err)
         self.assertNotIn('aktif şube bağlamı', err)
+
+    def test_sozlesme_detail_without_header_uses_session(self):
+        session = self.client.session
+        session['active_kurum_id'] = self.kurum.id
+        session['active_sube_id'] = self.sube_b.id
+        session.save()
+        res = self.client.get(f'{API}/sozlesmeler/{self.sozlesme_b.id}/')
+        self.assertEqual(res.status_code, 200)
+
+    def test_sube_header_updates_session_for_next_request(self):
+        """Sözleşme oluşturma header'ı session'ı günceller; belge isteği header'sız da açılır."""
+        session = self.client.session
+        session['active_kurum_id'] = self.kurum.id
+        session['active_sube_id'] = self.sube_a.id
+        session.save()
+        first = self.client.get(
+            f'{API}/sozlesmeler/{self.sozlesme_b.id}/',
+            **self._headers(self.sube_b),
+        )
+        self.assertEqual(first.status_code, 200)
+        follow = self.client.get(f'{API}/sozlesmeler/{self.sozlesme_b.id}/')
+        self.assertEqual(follow.status_code, 200)

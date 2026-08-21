@@ -1149,7 +1149,10 @@ export default function SozlesmeOlusturClient() {
     if (!isEditMode || editLoaded) return;
     const loadEditData = async () => {
       try {
-        const r = await fetch(`${API_BASE}/sozlesmeler/${editId}/`, { credentials: "include" });
+        const r = await fetch(`${API_BASE}/sozlesmeler/${editId}/`, {
+          credentials: "include",
+          headers: apiHeaders(),
+        });
         if (!r.ok) { setError("Sözleşme bulunamadı"); return; }
         const sz = await r.json();
         if (!(["taslak", "aktif"].includes(sz.durum))) { setError("Sadece taslak veya aktif sözleşmeler düzenlenebilir"); return; }

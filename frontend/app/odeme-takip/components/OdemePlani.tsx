@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { API_BASE } from "../helpers";
+import { API_BASE, apiHeaders } from "../helpers";
 import { useVectorPrint } from "@/lib/useVectorPrint";
 import { sendPaymentReminder } from "@/lib/communication-api";
 
@@ -103,11 +103,9 @@ export default function OdemePlani({ sozlesmeId, onClose, printMode, printToken,
   useEffect(() => {
     const load = async () => {
       try {
-        const headers: Record<string, string> = {};
-        if (printToken) headers["X-Print-Token"] = printToken;
         const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/`, {
           credentials: "include",
-          headers,
+          headers: apiHeaders(printToken ? { "X-Print-Token": printToken } : undefined),
         });
         if (!res.ok) {
           setError("Sözleşme verisi yüklenemedi");

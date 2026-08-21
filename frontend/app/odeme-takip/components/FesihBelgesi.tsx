@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { API_BASE } from "../helpers";
+import { API_BASE, apiHeaders } from "../helpers";
 import { FesihDetay } from "../types";
 
 /* ── Kurum ana rengi ── */
@@ -35,7 +35,10 @@ export default function FesihBelgesi({ sozlesmeId, onClose }: Props) {
   const fetchFesih = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/fesih/`, { credentials: "include" });
+      const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/fesih/`, {
+        credentials: "include",
+        headers: apiHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setFesih(data);

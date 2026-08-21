@@ -14,6 +14,12 @@ class ActiveContextMiddleware:
         self.get_response = get_response
         
     def __call__(self, request):
+        # Header varsa session'ı da güncelle — belgeler gibi header'sız
+        # istekler topbar'daki şube ile aynı kalsın.
+        self._sync_header_to_session(request, 'kurum', 'X-Kurum-ID')
+        self._sync_header_to_session(request, 'sube', 'X-Sube-ID')
+        self._sync_header_to_session(request, 'egitim_yili', 'X-EgitimYili-ID')
+
         # Get active context from session
         request.active_kurum_id = request.session.get(
             settings.TENANT_SESSION_KEYS['kurum']
@@ -39,6 +45,19 @@ class ActiveContextMiddleware:
         
         response = self.get_response(request)
         return response
+
+    def _sync_header_to_session(self, request, key, header_name):
+        raw = request.headers.get(header_name)
+        if not raw:
+            return
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return
+        session_key = settings.TENANT_SESSION_KEYS[key]
+        if request.session.get(session_key) != value:
+            request.session[session_key] = value
+            request.session.modified = True
     
     def _set_context(self, request, key, value):
         """Set context value in session"""

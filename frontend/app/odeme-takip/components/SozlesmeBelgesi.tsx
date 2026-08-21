@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { API_BASE } from "../helpers";
+import { API_BASE, apiHeaders } from "../helpers";
 import { notlarForPdf, parseNotlarJson } from "@/lib/sozlesme-notlar";
 
 /* ── Kurum ana rengi ── */
@@ -343,11 +343,9 @@ export default function SozlesmeBelgesi({
   useEffect(() => {
     const load = async () => {
       try {
-        const headers: Record<string, string> = {};
-        if (printToken) headers["X-Print-Token"] = printToken;
         const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/`, {
           credentials: "include",
-          headers,
+          headers: apiHeaders(printToken ? { "X-Print-Token": printToken } : undefined),
         });
         if (!res.ok) {
           let detail = "";
