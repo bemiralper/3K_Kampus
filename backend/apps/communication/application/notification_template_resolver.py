@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.communication.application.notification_events import (
+    NOTIFICATION_EVENTS,
     NotificationEvent,
     get_event,
 )
@@ -169,13 +170,19 @@ def _legacy_templates(kurum_id: int, event_key: str, recipient_type: str):
         return None, None
 
 
-def _meta_template_matches_event(event_key: str, meta_tpl) -> bool:
-    """
-    Plan/rapor Meta şablonlarının yanlış olaya bağlanmasını engelle.
+def _allowed_meta_names(event: NotificationEvent) -> set[str]:
+    names = {event.meta_name_base.lower()}
+    for recipient in event.recipients:
+        names.update(n.lower() for n in event.meta_name_candidates(recipient) if n)
+    return names
 
-    Örn. odev.plan → odev_raporu_* veya gövdede «kontrol raporu» → reddet.
+
+def _meta_template_matches_event(event_key: str, meta_tpl) -> bool:
+    """Bağlı Meta şablonu bu olaya mı ait?
+
+    Plan/rapor karışmasını ve yoklama←ödev gibi çapraz bağları reddeder.
     """
-    if not meta_tpl or event_key not in ('odev.plan', 'odev.rapor'):
+    if not meta_tpl:
         return True
     name = (getattr(meta_tpl, 'name', None) or '').lower()
     body = (getattr(meta_tpl, 'body_named', None) or '').lower()
@@ -187,13 +194,38 @@ def _meta_template_matches_event(event_key: str, meta_tpl) -> bool:
         if 'kontrol rapor' in body and 'plan' not in body:
             return False
         return True
+    if event_key == 'odev.rapor':
+        if any(token in name for token in ('odev_plani', 'odev-plani', 'haftalik_odev_plani')):
+            return False
+        if ('ödev planı' in body or 'odev plani' in body) and 'rapor' not in blob:
+            return False
+        return True
 
-    # odev.rapor
-    if any(token in name for token in ('odev_plani', 'odev-plani', 'haftalik_odev_plani')):
-        return False
-    if ('ödev planı' in body or 'odev plani' in body) and 'rapor' not in blob:
-        return False
+    event = get_event(event_key)
+    if event is None or not name:
+        return True
+    allowed = _allowed_meta_names(event)
+    if name in allowed or name.startswith(f'{event.meta_name_base.lower()}_'):
+        return True
+    for other in NOTIFICATION_EVENTS:
+        if other.key == event_key:
+            continue
+        other_names = _allowed_meta_names(other)
+        if name in other_names or name.startswith(f'{other.meta_name_base.lower()}_'):
+            return False
     return True
+
+
+def display_template_body(resolved: ResolvedTemplate) -> str:
+    """UI / yoklama kartında gösterilecek metin: onaylı Meta gövdesi, yoksa LMS."""
+    meta = resolved.meta_template
+    if (
+        meta
+        and getattr(meta, 'body_named', None)
+        and _meta_template_matches_event(resolved.event_key, meta)
+    ):
+        return meta.body_named
+    return resolved.body or ''
 
 
 def lms_body_matches_event(event_key: str, body: str) -> bool:
@@ -354,14 +386,18 @@ def resolve_binding(
         resolved.meta_template = None
         rejected_bound_meta = True
 
-    if not resolved.meta_template and resolved.send_mode != NotificationSendMode.FREEFORM_ONLY:
-        discovered = _discover_meta_by_name(
-            kurum_id, event, recipient_type, channel_config_id=channel_config_id,
+    if resolved.send_mode != NotificationSendMode.FREEFORM_ONLY:
+        needs_discovery = not resolved.meta_template or (
+            resolved.meta_template.status != MetaTemplateStatus.APPROVED
         )
-        if discovered and _meta_template_matches_event(event_key, discovered):
-            resolved.meta_template = discovered
-            if resolved.source == SOURCE_EVENT_DEFAULT or rejected_bound_meta:
-                resolved.source = SOURCE_META_NAME
+        if needs_discovery:
+            discovered = _discover_meta_by_name(
+                kurum_id, event, recipient_type, channel_config_id=channel_config_id,
+            )
+            if discovered and _meta_template_matches_event(event_key, discovered):
+                resolved.meta_template = discovered
+                if resolved.source == SOURCE_EVENT_DEFAULT or rejected_bound_meta:
+                    resolved.source = SOURCE_META_NAME
 
     if channel_config_id:
         _align_meta_to_account(resolved, kurum_id, channel_config_id)
@@ -369,7 +405,14 @@ def resolve_binding(
         resolved.channel_config_id = str(resolved.meta_template.channel_config_id)
 
     body = ''
-    if resolved.message_template and resolved.message_template.is_active:
+    if (
+        resolved.meta_template
+        and resolved.meta_template.status == MetaTemplateStatus.APPROVED
+        and (resolved.meta_template.body_named or '').strip()
+        and _meta_template_matches_event(event_key, resolved.meta_template)
+    ):
+        body = resolved.meta_template.body_named
+    elif resolved.message_template and resolved.message_template.is_active:
         candidate = resolved.message_template.body or ''
         if lms_body_matches_event(event_key, candidate):
             body = candidate

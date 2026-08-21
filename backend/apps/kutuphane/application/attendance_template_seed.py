@@ -132,10 +132,15 @@ def _seed_kutuphane_yoklama_meta_drafts(kurum_id: int, *, sube_id: int | None) -
     try:
         from apps.communication.application.kutuphane_yoklama_template_seed import (
             KutuphaneYoklamaTemplateSeedService,
+            repair_kutuphane_yoklama_bindings,
         )
         from apps.communication.infrastructure.repository import ChannelConfigRepository
     except Exception:
         return
+    try:
+        repair_kutuphane_yoklama_bindings(kurum_id)
+    except Exception:
+        pass
     accounts = list(ChannelConfigRepository.list_whatsapp(kurum_id, active_only=True))
     if not accounts:
         return

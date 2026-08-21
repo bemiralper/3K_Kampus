@@ -257,7 +257,8 @@ class AttendanceNotificationService:
                     veli=veli,
                     kurum=kurum,
                 )
-                body = resolve_variables(template.body, ctx)
+                fallback_body = resolve_variables(template.body, ctx)
+                body = fallback_body
                 skip = ''
                 warning = ''
                 if veli.id in sent_veli:
@@ -272,10 +273,12 @@ class AttendanceNotificationService:
                         context=ctx,
                         sube_id=getattr(ogrenci, 'sube_id', None),
                         sent_by_user_id=sent_by_user_id,
-                        fallback_body=body,
+                        fallback_body=fallback_body,
                         dry_run=True,
                     )
                     if dry is not None:
+                        if getattr(dry, 'body', ''):
+                            body = dry.body
                         send_mode = getattr(dry, 'send_mode', '') or ''
                         blocked = getattr(dry, 'blocked_reason', '') or ''
                         warnings = getattr(dry, 'warnings', None) or []
@@ -501,15 +504,34 @@ class AttendanceNotificationService:
         return config
 
     def serialize_config(self, config) -> dict:
-        def tpl_info(tpl):
-            if not tpl:
+        from apps.communication.application.notification_template_resolver import (
+            display_template_body,
+            resolve_binding,
+        )
+        from apps.communication.domain.enums import RecipientType
+
+        def tpl_info(tpl, event_key: str):
+            if not tpl and not event_key:
                 return None
-            return {'id': str(tpl.id), 'name': tpl.name, 'body': tpl.body, 'category': tpl.category}
+            resolved = resolve_binding(config.kurum_id, event_key, RecipientType.VELI)
+            display_body = display_template_body(resolved) or (tpl.body if tpl else '')
+            if not tpl and not display_body:
+                return None
+            return {
+                'id': str(tpl.id) if tpl else None,
+                'name': (
+                    resolved.meta_template.name
+                    if resolved.meta_template
+                    else (resolved.message_template.name if resolved.message_template else (tpl.name if tpl else ''))
+                ),
+                'body': display_body,
+                'category': tpl.category if tpl else '',
+            }
 
         return {
             'kurum_id': config.kurum_id,
             'is_active': config.is_active,
-            'absent_template': tpl_info(config.absent_template),
-            'late_template': tpl_info(config.late_template),
-            'exit_template': tpl_info(config.exit_template),
+            'absent_template': tpl_info(config.absent_template, 'yoklama.gelmedi'),
+            'late_template': tpl_info(config.late_template, 'yoklama.gec'),
+            'exit_template': tpl_info(config.exit_template, 'yoklama.cikis'),
         }

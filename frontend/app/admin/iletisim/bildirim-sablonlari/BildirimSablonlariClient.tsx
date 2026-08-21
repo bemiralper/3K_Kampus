@@ -969,7 +969,13 @@ export default function BildirimSablonlariClient() {
                         </div>
                         <WhatsAppPreviewBubble
                           text={resolvePreviewVariables(
-                            slot.default_body || slot.resolved.body || "",
+                            preview?.body
+                              || boundMeta?.body_named
+                              || slot.resolved.display_body
+                              || slot.resolved.meta_template_body
+                              || slot.resolved.body
+                              || slot.default_body
+                              || "",
                             livePreviewContext,
                           )}
                         />

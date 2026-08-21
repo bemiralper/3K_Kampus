@@ -11,7 +11,10 @@ from apps.communication.application.notification_events import (
     build_meta_example_body,
     get_event,
 )
-from apps.communication.application.notification_template_resolver import resolve_binding
+from apps.communication.application.notification_template_resolver import (
+    display_template_body,
+    resolve_binding,
+)
 from apps.communication.domain.enums import Channel, NotificationSendMode, RecipientType
 from apps.communication.domain.models import (
     MessageTemplate,
@@ -154,6 +157,14 @@ def list_event_catalog(
                         resolved.message_template.name if resolved.message_template else ''
                     ),
                     'body': resolved.body,
+                    'meta_template_body': (
+                        resolved.meta_template.body_named
+                        if resolved.meta_template and resolved.meta_template.body_named
+                        else ''
+                    ),
+                    'display_body': display_template_body(resolved) or event.default_body(
+                        recipient_type
+                    ),
                     'warnings': resolved.warnings,
                 },
             })

@@ -1789,6 +1789,8 @@ export interface NotificationResolvedInfo {
   meta_template_status: string;
   message_template_name: string;
   body: string;
+  meta_template_body?: string;
+  display_body?: string;
   warnings: string[];
 }
 

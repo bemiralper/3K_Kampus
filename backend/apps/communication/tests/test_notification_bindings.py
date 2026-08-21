@@ -233,6 +233,51 @@ class ResolverScopeTest(TestCase):
         self.assertFalse(resolved.body_from_template)
         self.assertIn('planı ektedir', resolved.body.lower())
 
+    def test_rejects_homework_meta_bound_to_yoklama(self):
+        wrong = self._meta('odev_raporu_veli', header_type='NONE')
+        wrong.body_named = 'Ödev değerlendirme raporu ektedir.'
+        wrong.save(update_fields=['body_named'])
+        NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            event_key='yoklama.gelmedi',
+            recipient_type=RecipientType.VELI,
+            channel=Channel.WHATSAPP,
+            meta_template=wrong,
+        )
+        approved = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='yoklama_devamsizlik_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='🚨 Merhaba {{veli_ad}}, {{ogrenci_ad}} gelmedi.',
+            approved_at=timezone.now(),
+        )
+        resolved = resolve_binding(
+            self.kurum.id, 'yoklama.gelmedi', RecipientType.VELI,
+            sube_id=self.sube.id,
+        )
+        self.assertEqual(resolved.meta_template.id, approved.id)
+        self.assertIn('gelmedi', resolved.body)
+        self.assertNotIn('raporu', resolved.body.lower())
+
+    def test_catalog_display_body_uses_bound_meta_not_default(self):
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='yoklama_devamsizlik_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='🚨 Merhaba {{veli_ad}}, öğrencimiz gelmedi.',
+            approved_at=timezone.now(),
+        )
+        catalog = list_event_catalog(self.kurum.id)
+        event = next(e for e in catalog['events'] if e['key'] == 'yoklama.gelmedi')
+        slot = next(s for s in event['slots'] if s['recipient_type'] == RecipientType.VELI)
+        self.assertIn('🚨', slot['resolved']['display_body'])
+        self.assertNotEqual(slot['resolved']['display_body'], slot['default_body'])
+
 
 class BindingServiceTest(TestCase):
     def setUp(self):

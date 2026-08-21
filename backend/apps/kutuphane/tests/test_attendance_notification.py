@@ -207,3 +207,34 @@ class AttendanceNotifyPreviewSendableTest(TestCase):
         self.assertEqual(item.veli_id, self.veli.id)
         self.assertFalse(item.skip_reason)
         self.assertTrue(item.body)
+
+    def test_serialize_config_shows_approved_meta_body(self):
+        from django.utils import timezone
+
+        from apps.communication.domain.enums import Channel, MetaTemplateStatus
+        from apps.communication.domain.models import (
+            CommunicationChannelConfig,
+            WhatsAppMetaTemplate,
+        )
+
+        account = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Koçluk',
+            phone_number_id='pn-yprev',
+            waba_id='waba-yprev',
+            is_active=True,
+            is_default=True,
+        )
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=account,
+            name='yoklama_devamsizlik_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='🚨 Merhaba {{veli_ad}}, {{ogrenci_ad}} gelmedi.',
+            approved_at=timezone.now(),
+        )
+        config = self.service.get_config(self.kurum.id)
+        payload = self.service.serialize_config(config)
+        self.assertIn('🚨', payload['absent_template']['body'])
