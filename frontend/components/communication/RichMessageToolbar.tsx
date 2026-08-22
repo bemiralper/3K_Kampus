@@ -5,6 +5,7 @@ import {
   ComposerState,
   insertAtCursor,
   TEMPLATE_VARIABLES,
+  FORMAT_SHORTCUT_HINTS,
   wrapSelection,
 } from "./composer-utils";
 import EmojiPickerPortal from "./EmojiPickerPortal";
@@ -77,10 +78,10 @@ export default function RichMessageToolbar({
       group: "format",
       action: () => setShowEmoji((v) => !v),
     },
-    { id: "bold", icon: "B", label: "Kalın (*metin*)", group: "format", action: () => applyWrap("*") },
-    { id: "italic", icon: "I", label: "İtalik (_metin_)", group: "format", action: () => applyWrap("_") },
-    { id: "strike", icon: "S", label: "Üstü çizili (~metin~)", group: "format", action: () => applyWrap("~") },
-    { id: "mono", icon: "M", label: "Monospace (```metin```)", group: "format", action: () => applyWrap("```") },
+    { id: "bold", icon: "B", label: `Kalın (*metin*) · ${FORMAT_SHORTCUT_HINTS.bold}`, group: "format", action: () => applyWrap("*") },
+    { id: "italic", icon: "I", label: `İtalik (_metin_) · ${FORMAT_SHORTCUT_HINTS.italic}`, group: "format", action: () => applyWrap("_") },
+    { id: "strike", icon: "S", label: `Üstü çizili (~metin~) · ${FORMAT_SHORTCUT_HINTS.strike}`, group: "format", action: () => applyWrap("~") },
+    { id: "mono", icon: "M", label: `Monospace (\`\`\`metin\`\`\`) · ${FORMAT_SHORTCUT_HINTS.mono}`, group: "format", action: () => applyWrap("```") },
   ];
 
   const mediaTools: ToolDef[] = [

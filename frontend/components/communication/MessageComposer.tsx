@@ -16,6 +16,8 @@ import {
   PreviewFontSize,
   TEMPLATE_VARIABLES,
   WHATSAPP_MAX_LENGTH,
+  FORMAT_SHORTCUT_HINTS,
+  formatShortcutMarker,
   wrapSelection,
 } from "./composer-utils";
 import WhatsAppPreviewBubble from "./WhatsAppPreviewBubble";
@@ -143,6 +145,14 @@ export default function MessageComposer({
   const segments = messageSegments(charCount);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!disabled && !loading) {
+      const marker = formatShortcutMarker(e);
+      if (marker) {
+        e.preventDefault();
+        applyFormat(marker);
+        return;
+      }
+    }
     if (onSend && e.key === "Enter" && !e.shiftKey && compact) {
       e.preventDefault();
       if (!disabled && !loading && (state.text.trim() || allowSendWithoutText)) onSend();
@@ -170,7 +180,7 @@ export default function MessageComposer({
             type="button"
             className="comm-toolbar-btn"
             aria-label="Kalın"
-            title="Kalın (*metin*)"
+            title={`Kalın (*metin*) · ${FORMAT_SHORTCUT_HINTS.bold}`}
             disabled={disabled || loading}
             onClick={() => applyFormat("*")}
           >
@@ -180,7 +190,7 @@ export default function MessageComposer({
             type="button"
             className="comm-toolbar-btn"
             aria-label="İtalik"
-            title="İtalik (_metin_)"
+            title={`İtalik (_metin_) · ${FORMAT_SHORTCUT_HINTS.italic}`}
             disabled={disabled || loading}
             onClick={() => applyFormat("_")}
             style={{ fontStyle: "italic" }}
@@ -191,7 +201,7 @@ export default function MessageComposer({
             type="button"
             className="comm-toolbar-btn"
             aria-label="Üstü çizili"
-            title="Üstü çizili (~metin~)"
+            title={`Üstü çizili (~metin~) · ${FORMAT_SHORTCUT_HINTS.strike}`}
             disabled={disabled || loading}
             onClick={() => applyFormat("~")}
             style={{ textDecoration: "line-through" }}
@@ -202,7 +212,7 @@ export default function MessageComposer({
             type="button"
             className="comm-toolbar-btn mono"
             aria-label="Monospace"
-            title="Monospace (```metin```)"
+            title={`Monospace (\`\`\`metin\`\`\`) · ${FORMAT_SHORTCUT_HINTS.mono}`}
             disabled={disabled || loading}
             onClick={() => applyFormat("```")}
           >
@@ -341,7 +351,9 @@ export default function MessageComposer({
           )}
           {!compact && (
             <span className="comm-preview-note" style={{ marginLeft: 8 }}>
-              Renkler yalnızca önizlemede
+              {FORMAT_SHORTCUT_HINTS.bold} kalın · {FORMAT_SHORTCUT_HINTS.italic} italik ·{" "}
+              {FORMAT_SHORTCUT_HINTS.strike} üstü çizili · {FORMAT_SHORTCUT_HINTS.mono} mono
+              {" · "}Renkler yalnızca önizlemede
             </span>
           )}
         </div>

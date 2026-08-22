@@ -85,6 +85,33 @@ export function createComposerState(text = ""): ComposerState {
   return { text, previewFontSize: "normal" };
 }
 
+/** WhatsApp biçim kısayolu: Ctrl/⌘+B kalın, I italik, Shift+X üstü çizili, Shift+M mono. */
+export function formatShortcutMarker(e: {
+  code?: string;
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey?: boolean;
+}): string | null {
+  if (e.altKey) return null;
+  if (!(e.metaKey || e.ctrlKey)) return null;
+  const code = e.code || "";
+  const key = e.key.toLowerCase();
+  if ((code === "KeyB" || key === "b") && !e.shiftKey) return "*";
+  if ((code === "KeyI" || key === "i") && !e.shiftKey) return "_";
+  if ((code === "KeyX" || key === "x") && e.shiftKey) return "~";
+  if ((code === "KeyM" || key === "m") && e.shiftKey) return "```";
+  return null;
+}
+
+export const FORMAT_SHORTCUT_HINTS = {
+  bold: "Ctrl/⌘+B",
+  italic: "Ctrl/⌘+I",
+  strike: "Ctrl/⌘+Shift+X",
+  mono: "Ctrl/⌘+Shift+M",
+} as const;
+
 export function wrapSelection(
   text: string,
   selectionStart: number,
