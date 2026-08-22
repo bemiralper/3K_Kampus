@@ -2,11 +2,14 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { CommunicationPageShell } from "@/components/communication";
+import MessageComposer from "@/components/communication/MessageComposer";
 import TemplateVariablePanel from "@/components/communication/TemplateVariablePanel";
 import { useTextareaInsert } from "@/components/communication/useTextareaInsert";
 import {
+  createComposerState,
   parseWhatsAppText,
   resolvePreviewVariables,
+  type ComposerState,
 } from "@/components/communication/composer-utils";
 import { useLivePreviewContext } from "@/components/communication/useLivePreviewContext";
 import "@/components/communication/communication.css";
@@ -1227,15 +1230,16 @@ export default function MetaSablonlarClient() {
                     </div>
                     <div className="tplx-section-body">
                       <div className="tplx-field">
-                        <textarea
+                        <MessageComposer
                           id="meta-body"
-                          ref={setBodyNode}
-                          rows={7}
-                          value={form.body_named}
+                          value={createComposerState(form.body_named)}
+                          onChange={(state: ComposerState) =>
+                            setForm((f) => ({ ...f, body_named: state.text }))
+                          }
+                          showPreview={false}
                           disabled={locked}
-                          onChange={(e) => setForm((f) => ({ ...f, body_named: e.target.value }))}
                           placeholder="Merhaba {{veli_ad}}, {{ogrenci_ad}} için bilgilendirme…"
-                          required
+                          onTextareaMount={setBodyNode}
                         />
                         <p className="tplx-field-hint">
                           Anlamlı değişkenler kullanın; Meta&apos;nın numaralı parametreleri arka planda

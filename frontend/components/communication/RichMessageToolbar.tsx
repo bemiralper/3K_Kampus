@@ -9,6 +9,7 @@ import {
   wrapSelection,
 } from "./composer-utils";
 import EmojiPickerPortal from "./EmojiPickerPortal";
+import FormatShortcutHelp from "./FormatShortcutHelp";
 
 interface RichMessageToolbarProps {
   composerState: ComposerState;
@@ -140,6 +141,7 @@ export default function RichMessageToolbar({
                 {tool.icon}
               </button>
             ))}
+            {group === "format" ? <FormatShortcutHelp /> : null}
           </div>
         ))}
       </div>

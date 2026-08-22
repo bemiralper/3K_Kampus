@@ -47,9 +47,7 @@ MODULE_LABELS: Mapping[str, str] = MappingProxyType({
 
 COMMON_VARIABLES = ('kurum_ad', 'sube', 'sinif')
 KUTUPHANE_ETUT_VARIABLES = (
-    'sabah_ilk_etut_saati',
-    'ogle_ilk_etut_saati',
-    'aksam_ilk_etut_saati',
+    'ilk_etut_saati',
 )
 
 

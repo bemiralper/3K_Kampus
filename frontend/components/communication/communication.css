@@ -490,6 +490,72 @@
   font-size: 0.75rem;
 }
 
+.comm-toolbar-btn-label {
+  margin-left: 5px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.comm-shortcut-help {
+  position: relative;
+}
+
+.comm-shortcut-help-btn {
+  min-width: auto;
+  padding: 0 8px;
+  font-size: 0.75rem;
+}
+
+.comm-shortcut-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 260px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--comm-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+}
+
+.comm-shortcut-popover-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--comm-text-muted);
+  margin-bottom: 8px;
+}
+
+.comm-shortcut-popover ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.comm-shortcut-popover li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 13px;
+  color: var(--comm-text);
+}
+
+.comm-shortcut-popover code {
+  font-size: 11px;
+  color: var(--comm-text-muted);
+}
+
+.comm-shortcut-popover kbd {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #f1f5f9;
+  color: #334155;
+}
+
 .comm-compose-body {
   position: relative;
 }

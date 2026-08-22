@@ -39,6 +39,7 @@ SAMPLE_VALUES: dict[str, str] = {
     'cikis_saati': '16:10',
     'salon_ad': 'A Salonu',
     'ders_no': '3',
+    'ilk_etut_saati': '08:30',
     'sabah_ilk_etut_saati': '08:30',
     'ogle_ilk_etut_saati': '13:00',
     'aksam_ilk_etut_saati': '18:00',

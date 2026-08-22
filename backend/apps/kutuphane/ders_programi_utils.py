@@ -14,6 +14,7 @@ FIRST_ETUT_VAR_KEYS = {
     'AFTERNOON': 'ogle_ilk_etut_saati',
     'EVENING': 'aksam_ilk_etut_saati',
 }
+ILK_ETUT_VAR = 'ilk_etut_saati'
 
 
 def is_v2_ders_saatleri(data: dict | None) -> bool:
@@ -139,7 +140,17 @@ def first_etut_baslangic(period_block: dict | None) -> str:
 
 
 def empty_first_etut_times() -> dict[str, str]:
-    return {key: '' for key in FIRST_ETUT_VAR_KEYS.values()}
+    out = {key: '' for key in FIRST_ETUT_VAR_KEYS.values()}
+    out[ILK_ETUT_VAR] = ''
+    return out
+
+
+def ilk_etut_saati_for_period(times: dict[str, str], period_code: str | None) -> str:
+    """Yoklama periyoduna (MORNING/AFTERNOON/EVENING) göre ilk etüt giriş saati."""
+    key = FIRST_ETUT_VAR_KEYS.get((period_code or '').upper())
+    if not key:
+        return ''
+    return times.get(key, '') or ''
 
 
 def first_etut_times_for_weekday(

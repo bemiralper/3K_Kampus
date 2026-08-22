@@ -247,5 +247,9 @@ def build_attendance_context(
         sube_id=program_sube,
         gun=gun,
     ))
+    from apps.kutuphane.ders_programi_utils import ilk_etut_saati_for_period
+
+    period = getattr(session, 'periyot_kodu', None) if session else None
+    ctx['ilk_etut_saati'] = ilk_etut_saati_for_period(ctx, period)
 
     return ctx

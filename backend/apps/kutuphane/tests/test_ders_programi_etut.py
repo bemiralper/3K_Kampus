@@ -97,6 +97,7 @@ class FirstEtutMessageContextTest(TestCase):
         session = SimpleNamespace(
             tarih=date(2026, 8, 3),
             ders_no=1,
+            periyot_kodu='MORNING',
             library=SimpleNamespace(ad='A Salonu', sube_id=self.sube.id),
             sube_ders_programi=self.program,
             get_periyot_kodu_display=lambda: 'Sabah',
@@ -109,14 +110,36 @@ class FirstEtutMessageContextTest(TestCase):
             veli=SimpleNamespace(tam_ad='Ayşe Hanım'),
             kurum=self.kurum,
         )
+        self.assertEqual(ctx['ilk_etut_saati'], '08:15')
         self.assertEqual(ctx['sabah_ilk_etut_saati'], '08:15')
         self.assertEqual(ctx['ogle_ilk_etut_saati'], '13:05')
         self.assertEqual(ctx['aksam_ilk_etut_saati'], '17:45')
         body = resolve_variables(
-            'Sabah {{sabah_ilk_etut_saati}} / Öğle {{ogle_ilk_etut_saati}} / Akşam {{aksam_ilk_etut_saati}}',
+            'İlk etüt {{ilk_etut_saati}}',
             ctx,
         )
-        self.assertEqual(body, 'Sabah 08:15 / Öğle 13:05 / Akşam 17:45')
+        self.assertEqual(body, 'İlk etüt 08:15')
+
+        session.periyot_kodu = 'AFTERNOON'
+        session.get_periyot_kodu_display = lambda: 'Öğleden sonra'
+        ctx_ogle = build_attendance_context(
+            session=session,
+            record=record,
+            ogrenci=self.ogrenci,
+            veli=SimpleNamespace(tam_ad='Ayşe Hanım'),
+            kurum=self.kurum,
+        )
+        self.assertEqual(ctx_ogle['ilk_etut_saati'], '13:05')
+
+        session.periyot_kodu = 'EVENING'
+        ctx_aksam = build_attendance_context(
+            session=session,
+            record=record,
+            ogrenci=self.ogrenci,
+            veli=SimpleNamespace(tam_ad='Ayşe Hanım'),
+            kurum=self.kurum,
+        )
+        self.assertEqual(ctx_aksam['ilk_etut_saati'], '17:45')
 
     def test_recipient_context_uses_active_sube_program(self):
         ctx = build_recipient_context(
@@ -126,12 +149,9 @@ class FirstEtutMessageContextTest(TestCase):
             sube_ad=self.sube.ad,
         )
         self.assertEqual(ctx['sabah_ilk_etut_saati'], '08:15')
-        self.assertEqual(ctx['ogle_ilk_etut_saati'], '13:05')
-        self.assertEqual(ctx['aksam_ilk_etut_saati'], '17:45')
+        self.assertEqual(ctx.get('ilk_etut_saati', ''), '')
 
     def test_yoklama_catalog_exposes_etut_variables(self):
         for key in ('yoklama.gelmedi', 'yoklama.gec', 'yoklama.cikis'):
             names = get_event(key).all_variables()
-            self.assertIn('sabah_ilk_etut_saati', names)
-            self.assertIn('ogle_ilk_etut_saati', names)
-            self.assertIn('aksam_ilk_etut_saati', names)
+            self.assertIn('ilk_etut_saati', names)

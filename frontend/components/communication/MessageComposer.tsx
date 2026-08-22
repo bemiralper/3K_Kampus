@@ -22,6 +22,7 @@ import {
 } from "./composer-utils";
 import WhatsAppPreviewBubble from "./WhatsAppPreviewBubble";
 import RichMessageToolbar from "./RichMessageToolbar";
+import FormatShortcutHelp from "./FormatShortcutHelp";
 import "./communication.css";
 
 import EmojiPickerPortal from "./EmojiPickerPortal";
@@ -184,7 +185,7 @@ export default function MessageComposer({
             disabled={disabled || loading}
             onClick={() => applyFormat("*")}
           >
-            B
+            B<span className="comm-toolbar-btn-label">Kalın</span>
           </button>
           <button
             type="button"
@@ -195,7 +196,7 @@ export default function MessageComposer({
             onClick={() => applyFormat("_")}
             style={{ fontStyle: "italic" }}
           >
-            I
+            I<span className="comm-toolbar-btn-label">İtalik</span>
           </button>
           <button
             type="button"
@@ -206,7 +207,7 @@ export default function MessageComposer({
             onClick={() => applyFormat("~")}
             style={{ textDecoration: "line-through" }}
           >
-            S
+            S<span className="comm-toolbar-btn-label">Üstü çizili</span>
           </button>
           <button
             type="button"
@@ -216,8 +217,9 @@ export default function MessageComposer({
             disabled={disabled || loading}
             onClick={() => applyFormat("```")}
           >
-            M
+            M<span className="comm-toolbar-btn-label">Mono</span>
           </button>
+          <FormatShortcutHelp />
         </div>
 
         <div className="comm-compose-toolbar-divider" aria-hidden="true" />

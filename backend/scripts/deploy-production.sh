@@ -282,7 +282,14 @@ if [[ "$SKIP_FRONTEND" != true && -d "$FRONTEND_DIR" ]]; then
     run_as_app_user npm install
   fi
   log "frontend: eski .next siliniyor (bozuk/karma build önlemi)"
-  run_as_app_user rm -rf .next
+  # Önceki root npm build'i .next'i root bırakır; lms kullanıcısı rm'de EACCES alır.
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown -R "$LMS_RUN_USER:$LMS_RUN_GROUP" "$FRONTEND_DIR/.next" 2>/dev/null || true
+    rm -rf "$FRONTEND_DIR/.next"
+    chown "$LMS_RUN_USER:$LMS_RUN_GROUP" "$FRONTEND_DIR"
+  else
+    run_as_app_user rm -rf .next
+  fi
   run_as_app_user npm run build
   webpack_file="$(run_as_app_user bash -c 'ls -1 .next/static/chunks/webpack-*.js 2>/dev/null | head -1')"
   if [[ -z "$webpack_file" || ! -f "$webpack_file" ]]; then
