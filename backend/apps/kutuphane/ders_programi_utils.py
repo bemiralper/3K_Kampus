@@ -8,13 +8,19 @@ from typing import Any
 PERIOD_CODES = ('MORNING', 'AFTERNOON', 'EVENING', 'CUSTOM')
 DAY_KEYS = tuple(str(i) for i in range(7))
 
-# Mesaj şablonları — periyodun ilk etüt giriş saati
+# Mesaj şablonları — periyodun ilk etüt giriş / son etüt çıkış saati
 FIRST_ETUT_VAR_KEYS = {
     'MORNING': 'sabah_ilk_etut_saati',
     'AFTERNOON': 'ogle_ilk_etut_saati',
     'EVENING': 'aksam_ilk_etut_saati',
 }
+LAST_ETUT_VAR_KEYS = {
+    'MORNING': 'sabah_son_etut_cikis_saati',
+    'AFTERNOON': 'ogle_son_etut_cikis_saati',
+    'EVENING': 'aksam_son_etut_cikis_saati',
+}
 ILK_ETUT_VAR = 'ilk_etut_saati'
+SON_ETUT_VAR = 'son_etut_cikis_saati'
 
 
 def is_v2_ders_saatleri(data: dict | None) -> bool:
@@ -121,36 +127,56 @@ def get_period_for_day(gunluk: dict, gun: int, period_code: str) -> dict:
     return day.get(period_code) or empty_period_block()
 
 
+def _ders_no(d: dict, missing: int) -> int:
+    try:
+        return int(d.get('ders_no') or missing)
+    except (TypeError, ValueError):
+        return missing
+
+
 def first_etut_baslangic(period_block: dict | None) -> str:
     """Periyottaki 1. etüdün giriş (başlangıç) saati, HH:MM."""
     dersler = list((period_block or {}).get('dersler') or [])
     timed = [d for d in dersler if d.get('baslangic')]
     if not timed:
         return ''
-
-    def sort_key(d: dict) -> tuple[int, str]:
-        try:
-            no = int(d.get('ders_no') or 999)
-        except (TypeError, ValueError):
-            no = 999
-        return (no, str(d.get('baslangic')))
-
-    timed.sort(key=sort_key)
+    timed.sort(key=lambda d: (_ders_no(d, 999), str(d.get('baslangic'))))
     return str(timed[0]['baslangic'])[:5]
+
+
+def last_etut_bitis(period_block: dict | None) -> str:
+    """Periyottaki son etüdün çıkış (bitiş) saati, HH:MM."""
+    dersler = list((period_block or {}).get('dersler') or [])
+    timed = [d for d in dersler if d.get('bitis')]
+    if not timed:
+        return ''
+    timed.sort(key=lambda d: (_ders_no(d, -1), str(d.get('bitis'))))
+    return str(timed[-1]['bitis'])[:5]
 
 
 def empty_first_etut_times() -> dict[str, str]:
     out = {key: '' for key in FIRST_ETUT_VAR_KEYS.values()}
+    out.update({key: '' for key in LAST_ETUT_VAR_KEYS.values()})
     out[ILK_ETUT_VAR] = ''
+    out[SON_ETUT_VAR] = ''
     return out
+
+
+def _period_time(times: dict[str, str], keys: dict[str, str], period_code: str | None) -> str:
+    key = keys.get((period_code or '').upper())
+    if not key:
+        return ''
+    return times.get(key, '') or ''
 
 
 def ilk_etut_saati_for_period(times: dict[str, str], period_code: str | None) -> str:
     """Yoklama periyoduna (MORNING/AFTERNOON/EVENING) göre ilk etüt giriş saati."""
-    key = FIRST_ETUT_VAR_KEYS.get((period_code or '').upper())
-    if not key:
-        return ''
-    return times.get(key, '') or ''
+    return _period_time(times, FIRST_ETUT_VAR_KEYS, period_code)
+
+
+def son_etut_cikis_saati_for_period(times: dict[str, str], period_code: str | None) -> str:
+    """Yoklama periyoduna (MORNING/AFTERNOON/EVENING) göre son etüt çıkış saati."""
+    return _period_time(times, LAST_ETUT_VAR_KEYS, period_code)
 
 
 def first_etut_times_for_weekday(
@@ -158,11 +184,13 @@ def first_etut_times_for_weekday(
     gun: int,
     gun_bazli: dict | None = None,
 ) -> dict[str, str]:
-    """Şube ders programından o günün sabah/öğle/akşam ilk etüt giriş saatleri."""
+    """Şube ders programından o günün sabah/öğle/akşam ilk giriş ve son çıkış saatleri."""
     gunluk = normalize_ders_saatleri(ders_saatleri, gun_bazli)
     out = empty_first_etut_times()
     for code, key in FIRST_ETUT_VAR_KEYS.items():
         out[key] = first_etut_baslangic(get_period_for_day(gunluk, gun, code))
+    for code, key in LAST_ETUT_VAR_KEYS.items():
+        out[key] = last_etut_bitis(get_period_for_day(gunluk, gun, code))
     return out
 
 

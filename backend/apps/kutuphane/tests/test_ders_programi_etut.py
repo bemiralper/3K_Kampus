@@ -14,6 +14,7 @@ from apps.kurum.domain.models import Kurum
 from apps.kutuphane.ders_programi_utils import (
     first_etut_baslangic,
     first_etut_times_for_weekday,
+    last_etut_bitis,
 )
 from apps.kutuphane.domain.models import SubeDersProgrami
 from apps.ogrenci.domain.models import Ogrenci
@@ -33,12 +34,28 @@ class FirstEtutTimesUnitTest(SimpleTestCase):
     def test_empty_period_is_blank(self):
         self.assertEqual(first_etut_baslangic({}), '')
         self.assertEqual(first_etut_baslangic(None), '')
+        self.assertEqual(last_etut_bitis({}), '')
+        self.assertEqual(last_etut_bitis(None), '')
+
+    def test_last_etut_uses_highest_ders_no_bitis(self):
+        block = {
+            'dersler': [
+                {'ders_no': 1, 'baslangic': '08:30', 'bitis': '09:10'},
+                {'ders_no': 3, 'baslangic': '10:20', 'bitis': '11:00'},
+                {'ders_no': 2, 'baslangic': '09:20', 'bitis': '10:00'},
+            ],
+        }
+        self.assertEqual(first_etut_baslangic(block), '08:30')
+        self.assertEqual(last_etut_bitis(block), '11:00')
 
     def test_weekday_times_from_v2_schedule(self):
         data = {
             '0': {
                 'MORNING': {
-                    'dersler': [{'ders_no': 1, 'baslangic': '08:30', 'bitis': '09:10'}],
+                    'dersler': [
+                        {'ders_no': 1, 'baslangic': '08:30', 'bitis': '09:10'},
+                        {'ders_no': 2, 'baslangic': '09:20', 'bitis': '10:00'},
+                    ],
                 },
                 'AFTERNOON': {
                     'dersler': [{'ders_no': 1, 'baslangic': '13:10', 'bitis': '13:50'}],
@@ -50,14 +67,20 @@ class FirstEtutTimesUnitTest(SimpleTestCase):
         }
         times = first_etut_times_for_weekday(data, 0)
         self.assertEqual(times['sabah_ilk_etut_saati'], '08:30')
+        self.assertEqual(times['sabah_son_etut_cikis_saati'], '10:00')
         self.assertEqual(times['ogle_ilk_etut_saati'], '13:10')
+        self.assertEqual(times['ogle_son_etut_cikis_saati'], '13:50')
         self.assertEqual(times['aksam_ilk_etut_saati'], '18:00')
+        self.assertEqual(times['aksam_son_etut_cikis_saati'], '18:40')
 
     def test_missing_day_period_is_blank(self):
         times = first_etut_times_for_weekday({'0': {}}, 6)
         self.assertEqual(times['sabah_ilk_etut_saati'], '')
         self.assertEqual(times['ogle_ilk_etut_saati'], '')
         self.assertEqual(times['aksam_ilk_etut_saati'], '')
+        self.assertEqual(times['sabah_son_etut_cikis_saati'], '')
+        self.assertEqual(times['ogle_son_etut_cikis_saati'], '')
+        self.assertEqual(times['aksam_son_etut_cikis_saati'], '')
 
 
 class FirstEtutMessageContextTest(TestCase):
@@ -78,13 +101,22 @@ class FirstEtutMessageContextTest(TestCase):
             },
             ders_saatleri={
                 'MORNING': {
-                    'dersler': [{'ders_no': 1, 'baslangic': '08:15', 'bitis': '08:55'}],
+                    'dersler': [
+                        {'ders_no': 1, 'baslangic': '08:15', 'bitis': '08:55'},
+                        {'ders_no': 2, 'baslangic': '09:05', 'bitis': '09:45'},
+                    ],
                 },
                 'AFTERNOON': {
-                    'dersler': [{'ders_no': 1, 'baslangic': '13:05', 'bitis': '13:45'}],
+                    'dersler': [
+                        {'ders_no': 1, 'baslangic': '13:05', 'bitis': '13:45'},
+                        {'ders_no': 2, 'baslangic': '13:55', 'bitis': '14:35'},
+                    ],
                 },
                 'EVENING': {
-                    'dersler': [{'ders_no': 1, 'baslangic': '17:45', 'bitis': '18:25'}],
+                    'dersler': [
+                        {'ders_no': 1, 'baslangic': '17:45', 'bitis': '18:25'},
+                        {'ders_no': 2, 'baslangic': '18:35', 'bitis': '19:15'},
+                    ],
                 },
             },
         )
@@ -111,14 +143,15 @@ class FirstEtutMessageContextTest(TestCase):
             kurum=self.kurum,
         )
         self.assertEqual(ctx['ilk_etut_saati'], '08:15')
+        self.assertEqual(ctx['son_etut_cikis_saati'], '09:45')
         self.assertEqual(ctx['sabah_ilk_etut_saati'], '08:15')
         self.assertEqual(ctx['ogle_ilk_etut_saati'], '13:05')
         self.assertEqual(ctx['aksam_ilk_etut_saati'], '17:45')
         body = resolve_variables(
-            'İlk etüt {{ilk_etut_saati}}',
+            'İlk etüt {{ilk_etut_saati}} / Son çıkış {{son_etut_cikis_saati}}',
             ctx,
         )
-        self.assertEqual(body, 'İlk etüt 08:15')
+        self.assertEqual(body, 'İlk etüt 08:15 / Son çıkış 09:45')
 
         session.periyot_kodu = 'AFTERNOON'
         session.get_periyot_kodu_display = lambda: 'Öğleden sonra'
@@ -130,6 +163,7 @@ class FirstEtutMessageContextTest(TestCase):
             kurum=self.kurum,
         )
         self.assertEqual(ctx_ogle['ilk_etut_saati'], '13:05')
+        self.assertEqual(ctx_ogle['son_etut_cikis_saati'], '14:35')
 
         session.periyot_kodu = 'EVENING'
         ctx_aksam = build_attendance_context(
@@ -140,6 +174,7 @@ class FirstEtutMessageContextTest(TestCase):
             kurum=self.kurum,
         )
         self.assertEqual(ctx_aksam['ilk_etut_saati'], '17:45')
+        self.assertEqual(ctx_aksam['son_etut_cikis_saati'], '19:15')
 
     def test_recipient_context_uses_active_sube_program(self):
         ctx = build_recipient_context(
@@ -149,9 +184,12 @@ class FirstEtutMessageContextTest(TestCase):
             sube_ad=self.sube.ad,
         )
         self.assertEqual(ctx['sabah_ilk_etut_saati'], '08:15')
+        self.assertEqual(ctx['sabah_son_etut_cikis_saati'], '09:45')
         self.assertEqual(ctx.get('ilk_etut_saati', ''), '')
+        self.assertEqual(ctx.get('son_etut_cikis_saati', ''), '')
 
     def test_yoklama_catalog_exposes_etut_variables(self):
         for key in ('yoklama.gelmedi', 'yoklama.gec', 'yoklama.cikis'):
             names = get_event(key).all_variables()
             self.assertIn('ilk_etut_saati', names)
+            self.assertIn('son_etut_cikis_saati', names)

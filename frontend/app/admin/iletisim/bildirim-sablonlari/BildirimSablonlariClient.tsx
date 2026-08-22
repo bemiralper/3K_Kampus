@@ -268,7 +268,7 @@ export default function BildirimSablonlariClient() {
 
   const events = catalog?.events || [];
   const moduleEvents = useMemo(
-    () => events.filter((e) => !selectedModule || e.module === selectedModule),
+    () => events.filter((e) => !selectedModule || moduleEventMatches(selectedModule, e)),
     [events, selectedModule],
   );
 

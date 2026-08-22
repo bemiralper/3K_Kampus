@@ -30,6 +30,7 @@ export const TEMPLATE_VARIABLES = [
   { key: "salon_ad", label: "Salon adı", token: "{{salon_ad}}", group: "yoklama" },
   { key: "ders_no", label: "Ders no", token: "{{ders_no}}", group: "yoklama" },
   { key: "ilk_etut_saati", label: "İlk etüt giriş saati (oturuma göre)", token: "{{ilk_etut_saati}}", group: "yoklama" },
+  { key: "son_etut_cikis_saati", label: "Son etüt çıkış saati (oturuma göre)", token: "{{son_etut_cikis_saati}}", group: "yoklama" },
 
   { key: "taksit_tutar", label: "Taksit tutarı", token: "{{taksit_tutar}}", group: "finans" },
   { key: "vade_tarihi", label: "Vade tarihi", token: "{{vade_tarihi}}", group: "finans" },
@@ -200,6 +201,7 @@ export const SAMPLE_PREVIEW_CONTEXT: Record<string, string> = {
   salon_ad: "A Salonu",
   ders_no: "3",
   ilk_etut_saati: "08:30",
+  son_etut_cikis_saati: "12:10",
   taksit_tutar: "2.500",
   vade_tarihi: "15.07.2026",
   taksit_no: "3",
