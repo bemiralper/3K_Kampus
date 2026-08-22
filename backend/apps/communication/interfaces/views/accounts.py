@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from apps.communication.application.account_resolver import AccountResolveError, AccountResolver
 from apps.communication.application.app_id_resolver import ensure_account_app_id
 from apps.communication.application.token_crypto import decrypt_access_token, encrypt_access_token
-from apps.communication.domain.enums import Channel, WhatsAppAccountScope
+from apps.communication.domain.enums import Channel
 from apps.communication.domain.models import CommunicationChannelConfig
 from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient
 from apps.communication.infrastructure.repository import ChannelConfigRepository
@@ -91,8 +91,31 @@ class WhatsAppAccountListCreateView(APIView):
         sube_ids = data.pop('sube_ids', None)
         same_meta = bool(data.pop('same_meta_account', False))
         source_account_id = data.pop('source_account_id', None)
+        data.pop('reuse_existing_number', None)
+        copy_bindings = bool(data.pop('copy_bindings', True))
 
         phone_number_id = data.get('phone_number_id', '')
+        existing_same_kurum = AccountResolver.find_active_by_phone(kurum_id, phone_number_id)
+        if existing_same_kurum is not None:
+            scope_type = data.get('scope_type')
+            link = AccountResolver.assign_subes(
+                existing_same_kurum,
+                sube_ids,
+                scope_type=scope_type,
+                replace=False,
+                copy_bindings=copy_bindings,
+            )
+            if role_ids is not None:
+                existing_same_kurum.allowed_roles.set(role_ids)
+            existing_same_kurum = ChannelConfigRepository.get_by_id(
+                kurum_id, existing_same_kurum.id,
+            )
+            payload = _serialize_account(existing_same_kurum, kurum_id=kurum_id)
+            payload['reused'] = True
+            payload['added_sube_ids'] = link['added_sube_ids']
+            payload['copied_bindings'] = link['copied_bindings']
+            return Response(payload, status=status.HTTP_200_OK)
+
         if phone_number_id and ChannelConfigRepository.phone_number_id_taken(phone_number_id):
             return Response(
                 {'error': 'Bu Phone Number ID başka bir aktif hesapta kullanılıyor.'},
@@ -126,11 +149,14 @@ class WhatsAppAccountListCreateView(APIView):
 
         if role_ids is not None:
             account.allowed_roles.set(role_ids)
-        if sube_ids is not None:
-            account.allowed_subes.set(sube_ids)
-            if sube_ids and account.scope_type != WhatsAppAccountScope.SELECTED_SUBES:
-                account.scope_type = WhatsAppAccountScope.SELECTED_SUBES
-                account.save(update_fields=['scope_type', 'updated_at'])
+        if sube_ids is not None or data.get('scope_type'):
+            AccountResolver.assign_subes(
+                account,
+                sube_ids,
+                scope_type=data.get('scope_type') or account.scope_type,
+                replace=True,
+                copy_bindings=copy_bindings,
+            )
 
         _maybe_fill_app_id(account, plain_token=token)
         account = ChannelConfigRepository.get_by_id(kurum_id, account.id)
@@ -170,6 +196,8 @@ class WhatsAppAccountDetailView(APIView):
         sube_ids = data.pop('sube_ids', None)
         data.pop('same_meta_account', None)
         data.pop('source_account_id', None)
+        data.pop('reuse_existing_number', None)
+        copy_bindings = bool(data.pop('copy_bindings', True))
 
         phone_number_id = data.get('phone_number_id', account.phone_number_id)
         if phone_number_id and ChannelConfigRepository.phone_number_id_taken(
@@ -193,8 +221,14 @@ class WhatsAppAccountDetailView(APIView):
 
         if role_ids is not None:
             account.allowed_roles.set(role_ids)
-        if sube_ids is not None:
-            account.allowed_subes.set(sube_ids)
+        if sube_ids is not None or data.get('scope_type'):
+            AccountResolver.assign_subes(
+                account,
+                sube_ids,
+                scope_type=data.get('scope_type') or account.scope_type,
+                replace=True,
+                copy_bindings=copy_bindings,
+            )
 
         _maybe_fill_app_id(account, plain_token=token)
         account = ChannelConfigRepository.get_by_id(kurum_id, account.id)

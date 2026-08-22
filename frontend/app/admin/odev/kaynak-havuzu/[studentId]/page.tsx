@@ -12,6 +12,7 @@ import {
   fetchAvailableResources,
   bulkAssignResources,
   updatePurchaseListItemStatus,
+  finishRoutineQuotaBook,
   type StudentResourceAssignment,
   type StudentResourceLesson,
   type StudentResourceDetail,
@@ -43,6 +44,7 @@ export default function StudentResourceDetailPage() {
 
   // Data state
   const [data, setData] = useState<StudentDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [allDersler, setAllDersler] = useState<Ders[]>([]);
 
@@ -77,14 +79,29 @@ export default function StudentResourceDetailPage() {
   // Fetch student detail
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const result = await fetchStudentResourceDetail(studentId);
       if (result.success && result.data) {
-        setData(result.data);
-        setExpandedLessons(result.data.lessons.map((l: Lesson) => l.lesson_id));
+        const lessons = Array.isArray(result.data.lessons) ? result.data.lessons : [];
+        setData({ ...result.data, lessons });
+        setExpandedLessons(
+          lessons
+            .map((l: Lesson) => l.lesson_id)
+            .filter((id): id is number => typeof id === "number"),
+        );
+      } else {
+        setData(null);
+        setLoadError(
+          typeof result.error === "string" && result.error.trim()
+            ? result.error
+            : "Öğrenci detayı yüklenemedi.",
+        );
       }
     } catch (error) {
       console.error("Error fetching student detail:", error);
+      setData(null);
+      setLoadError("Öğrenci detayı yüklenemedi.");
     }
     setLoading(false);
   }, [studentId]);
@@ -163,6 +180,25 @@ export default function StudentResourceDetailPage() {
       }
     } catch {
       showToast("❌ Güncelleme hatası", "error");
+    }
+  };
+
+  const handleFinishBook = async (resource: Resource) => {
+    if (resource.status === "COMPLETED") return;
+    try {
+      const result = await finishRoutineQuotaBook({
+        student_id: Number(studentId),
+        assignment_id: resource.id,
+        resource_book: resource.resource_book,
+      });
+      if (result.success) {
+        showToast("Kitap bitti olarak işaretlendi");
+        fetchData();
+      } else {
+        showToast(result.error || "İşlem başarısız", "error");
+      }
+    } catch {
+      showToast("İşlem başarısız", "error");
     }
   };
 
@@ -283,11 +319,20 @@ export default function StudentResourceDetailPage() {
     );
   }
 
-  if (!data) {
+  if (!data?.student) {
     return (
       <div className="kh-page">
         <div style={{ textAlign: "center", padding: "60px", color: "#64748b" }}>
-          Öğrenci bulunamadı
+          <p style={{ margin: "0 0 12px", fontWeight: 600 }}>Öğrenci bulunamadı</p>
+          {loadError && (
+            <p style={{ margin: 0, fontSize: 14 }}>{loadError}</p>
+          )}
+          <Link
+            href={havuzHref()}
+            style={{ display: "inline-block", marginTop: 16, color: "#3b82f6" }}
+          >
+            ← Öğrenci listesine dön
+          </Link>
         </div>
       </div>
     );
@@ -334,7 +379,7 @@ export default function StudentResourceDetailPage() {
               />
             ) : (
               <span style={{ fontSize: "24px", color: "#94a3b8", fontWeight: 600 }}>
-                {data.student.ad.charAt(0)}{data.student.soyad.charAt(0)}
+                {(data.student.ad || "?").charAt(0)}{(data.student.soyad || "").charAt(0)}
               </span>
             )}
           </div>
@@ -581,7 +626,7 @@ export default function StudentResourceDetailPage() {
       <h2 style={{ fontSize: 16, fontWeight: 700, color: "#1e293b", marginBottom: 12 }}>
         Atanan Kaynaklar
       </h2>
-      {data.lessons.length === 0 ? (
+      {(data.lessons ?? []).length === 0 ? (
         <div style={{
           background: "white",
           padding: "60px",
@@ -607,8 +652,8 @@ export default function StudentResourceDetailPage() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {data.lessons.map(lesson => (
-            <div key={lesson.lesson_id} style={{ background: "white", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", overflow: "hidden" }}>
+          {(data.lessons ?? []).map(lesson => (
+            <div key={lesson.lesson_id ?? lesson.lesson_name} style={{ background: "white", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)", overflow: "hidden" }}>
               {/* Lesson Header */}
               <div
                 onClick={() => toggleLesson(lesson.lesson_id)}
@@ -756,6 +801,16 @@ export default function StudentResourceDetailPage() {
                             </td>
                             <td style={{ padding: "12px 8px", textAlign: "center" }}>
                               <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                {(resource.resource_type_kod === "PARAGRAF" || resource.resource_type_kod === "PROBLEM")
+                                  && resource.status !== "COMPLETED" && (
+                                  <button
+                                    onClick={() => handleFinishBook(resource)}
+                                    style={{ padding: "6px 8px", background: "#ecfdf5", border: "none", borderRadius: "4px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}
+                                    title="Kitabı bitir"
+                                  >
+                                    Bitir
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => openEditModal(resource)}
                                   style={{ padding: "6px 8px", background: "#f1f5f9", border: "none", borderRadius: "4px", cursor: "pointer" }}

@@ -678,6 +678,8 @@ export interface WhatsAppAccountWritePayload {
   sube_ids?: number[];
   same_meta_account?: boolean;
   source_account_id?: string;
+  reuse_existing_number?: boolean;
+  copy_bindings?: boolean;
 }
 
 export async function fetchWhatsAppAccounts(params?: {

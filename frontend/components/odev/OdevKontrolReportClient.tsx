@@ -8,7 +8,7 @@ import { downloadAssignmentServerPdf, fetchAssignmentReport } from "@/lib/resour
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { useOdevKontrolPaths, buildNewAssignmentFromKontrolHref } from "@/components/odev/OdevKontrolPaths";
 import { MetaCol, assignmentTypeLabel } from "@/components/odev/odevPdfMeta";
-import { displayTestLabel, splitColumnMajor } from "@/components/odev/odevPlanTypes";
+import { displayTestLabel, quotaBookIcon, quotaKindLabel, splitColumnMajor } from "@/components/odev/odevPlanTypes";
 import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
 
 /** Backend completion_utils ile aynı mantık */
@@ -57,6 +57,7 @@ interface AssignmentTask {
   content_unit_name?: string | null;
   content_unit_id?: number | null;
   content_sira?: number | null;
+  quota_kind?: string;
   order?: number;
 }
 
@@ -138,6 +139,17 @@ interface TopicCumulative {
   cumulative_completion_percent: number;
 }
 
+interface BookCumulative {
+  resource_book: number;
+  resource_book_name: string;
+  quota_kind: string;
+  current_total_questions: number;
+  current_completed_questions: number;
+  cumulative_total_questions: number;
+  cumulative_completed_questions: number;
+  cumulative_assignment_count: number;
+}
+
 interface ReportData {
   id: number;
   student_name: string;
@@ -171,6 +183,7 @@ interface FullReportData {
   data: ReportData;
   overall_stats: OverallStats;
   topic_cumulative: TopicCumulative[];
+  book_cumulative: BookCumulative[];
 }
 
 // ─── Helpers ───
@@ -259,7 +272,15 @@ function ReportTaskRow({ task, topicName }: { task: AssignmentTask; topicName: s
           <span style={{ fontSize: 10, fontWeight: 700, color: pctColor(effPct) }}>
             %{effPct}
           </span>
-          {typeKey && typeKey !== "SOLVE_TEST" && typeKey !== "TEST_SET" && (
+          {task.quota_kind && (
+            <span style={{
+              fontSize: 8, fontWeight: 700,
+              color: task.quota_kind === "PROBLEM" ? "#b45309" : "#0369a1",
+            }}>
+              {quotaBookIcon(task.quota_kind)} {quotaKindLabel(task.quota_kind)}
+            </span>
+          )}
+          {typeKey && typeKey !== "SOLVE_TEST" && typeKey !== "TEST_SET" && typeKey !== "QUOTA" && !task.quota_kind && (
             <span style={{ fontSize: 8, color: "#94a3b8" }}>{assignmentTypeLabel(typeKey)}</span>
           )}
         </div>
@@ -291,6 +312,44 @@ function ReportTaskRow({ task, topicName }: { task: AssignmentTask; topicName: s
         minWidth: 64,
       }}>
         {qText}
+      </div>
+    </div>
+  );
+}
+
+function BookCumulativeBlock({ bookCum }: { bookCum: BookCumulative }) {
+  if (!bookCum || bookCum.cumulative_total_questions <= 0) return null;
+  const kindLabel = quotaKindLabel(bookCum.quota_kind) || "Kitap";
+  return (
+    <div style={{
+      margin: "8px 10px 8px",
+      padding: "8px 12px",
+      background: bookCum.quota_kind === "PROBLEM"
+        ? "linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)"
+        : "linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%)",
+      borderRadius: 8,
+      border: bookCum.quota_kind === "PROBLEM" ? "1px solid #fdba74" : "1px solid #7dd3fc",
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700,
+        color: bookCum.quota_kind === "PROBLEM" ? "#b45309" : "#0369a1",
+        marginBottom: 6,
+      }}>
+        {quotaBookIcon(bookCum.quota_kind)} {kindLabel} kitabı — bugüne kadar
+        {bookCum.cumulative_assignment_count > 1 && (
+          <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75, marginLeft: 6 }}>
+            ({bookCum.cumulative_assignment_count} ödev)
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b" }}>
+        {bookCum.cumulative_completed_questions}
+        <span style={{ fontSize: 12, fontWeight: 500, color: "#94a3b8" }}>
+          {" "}/ {bookCum.cumulative_total_questions} soru
+        </span>
+      </div>
+      <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>
+        Bu ödevde: {bookCum.current_completed_questions}/{bookCum.current_total_questions} soru
       </div>
     </div>
   );
@@ -433,6 +492,7 @@ export default function OdevKontrolReportClient({
           data: result.data as unknown as ReportData,
           overall_stats: (result.overall_stats || {}) as unknown as OverallStats,
           topic_cumulative: (result.topic_cumulative || []) as unknown as TopicCumulative[],
+          book_cumulative: (result.book_cumulative || []) as unknown as BookCumulative[],
         });
       }
     } catch (e) {
@@ -852,6 +912,17 @@ export default function OdevKontrolReportClient({
           </div>
         )}
 
+        {report.description && (
+          <div style={{
+            padding: "8px 12px", marginBottom: 12,
+            background: "#fffbeb", border: "1px solid #fde68a",
+            borderRadius: 8, fontSize: 11, color: "#92400e", lineHeight: 1.5,
+          }}>
+            <strong>📌 Koç Notu:</strong>
+            <div style={{ whiteSpace: "pre-line", marginTop: 4 }}>{report.description}</div>
+          </div>
+        )}
+
         {/* ====== BOLUM 2: DEGERLENDIRME + GÖREV DURUMLARI ====== */}
         <div className="ok-report-eval-panel">
           {/* Sol: Değerlendirme + İlerleme barı */}
@@ -1132,7 +1203,7 @@ export default function OdevKontrolReportClient({
                         overflowWrap: "anywhere",
                         lineHeight: 1.35,
                       }}>
-                        <span>📖 {book.bookName}
+                        <span>{quotaBookIcon(book.units.flatMap((u) => u.topics.flatMap((t) => t.tasks.map((task) => task.quota_kind)))[0])} {book.bookName}
                           <span style={{ fontSize: 9, fontWeight: 400, color: "#6b7280", marginLeft: 6 }}>
                             ({book.totalTasks} görev)
                           </span>
@@ -1142,8 +1213,11 @@ export default function OdevKontrolReportClient({
                         </span>
                       </div>
 
-                      {book.units.map((unit) => (
+                      {book.units.map((unit) => {
+                        const quotaOnly = unit.topics.every((t) => t.tasks.every((task) => task.quota_kind));
+                        return (
                         <div key={`${book.bookId}-${unit.unitId}`}>
+                          {!quotaOnly && (
                           <div style={{
                             padding: "6px 14px",
                             background: "#f0f4f8",
@@ -1157,9 +1231,11 @@ export default function OdevKontrolReportClient({
                           }}>
                             📂 {unit.unitName}
                           </div>
+                          )}
 
                           {unit.topics.map((topic) => {
                             const topicAvg = weightedTaskAvg(topic.tasks);
+                            const topicQ = topic.tasks.reduce((s, t) => s + (t.question_count || 0), 0);
                             const [leftTasks, rightTasks] = splitColumnMajor(topic.tasks);
                             return (
                               <div key={`${unit.unitId}-${topic.topicId}`} className="ok-report-topic">
@@ -1183,7 +1259,7 @@ export default function OdevKontrolReportClient({
                                   }}>
                                     {topic.topicName}
                                     <span style={{ fontSize: 9, fontWeight: 400, color: "#94a3b8", marginLeft: 6 }}>
-                                      ({topic.tasks.length} görev)
+                                      ({topic.tasks.length} görev{topicQ > 0 ? ` · ${topicQ} soru` : ""})
                                     </span>
                                   </div>
                                   <span style={{
@@ -1223,12 +1299,21 @@ export default function OdevKontrolReportClient({
                                   )}
                                 </div>
 
-                                {topic.topicCum && <TopicCumulativeBlock topicCum={topic.topicCum} />}
+                                {topic.tasks.some((task) => task.quota_kind)
+                                  ? (() => {
+                                      const kind = topic.tasks.find((task) => task.quota_kind)?.quota_kind;
+                                      const bookCum = fullReport?.book_cumulative?.find(
+                                        (b) => b.resource_book === book.bookId && (!kind || b.quota_kind === kind),
+                                      );
+                                      return bookCum ? <BookCumulativeBlock bookCum={bookCum} /> : null;
+                                    })()
+                                  : topic.topicCum && <TopicCumulativeBlock topicCum={topic.topicCum} />}
                               </div>
                             );
                           })}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ));
                 })()}

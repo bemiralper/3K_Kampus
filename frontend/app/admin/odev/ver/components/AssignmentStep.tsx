@@ -5,7 +5,10 @@ import type {
   StudentResource, BookDetails, Unit, Topic, Content, SelectedContent,
   ResourcesByLesson, CartLessonGroup, ContentTaskHistory, ScopeCompletionMap,
 } from '../types';
+import { isRoutineQuotaResource } from '../types';
+import type { LastQuotaDefault } from '@/lib/resources-api';
 import { completionBadgeLabel, isIncompleteHistory } from '@/components/odev/odevCompletionHelpers';
+import QuotaAssignCards from './QuotaAssignCards';
 import '../odev-ver.css';
 
 type HistoryFilter = 'all' | 'partial' | 'not_done' | 'never';
@@ -58,12 +61,15 @@ interface AssignmentStepProps {
   /** Kontrolden gelen ders — sol menüde otomatik açılır */
   initialOpenLessonId?: number | null;
   onPickResource: (r: StudentResource) => void;
+  onAddQuota: (resource: StudentResource, daily: number) => void;
+  lastQuotaDefaults?: Partial<Record<'PARAGRAF' | 'PROBLEM', LastQuotaDefault | null>>;
   onToggleContent: (c: Content, t: Topic, u: Unit) => void;
   onSelectAllUnit: (u: Unit) => void;
   onSelectAllTopic: (t: Topic, u: Unit) => void;
   onSelectIncompleteUnit: (u: Unit) => void;
   onSelectIncompleteTopic: (t: Topic, u: Unit) => void;
   onRemoveContent: (id: number) => void;
+  onRemoveContents: (ids: number[]) => void;
   onClearCart: () => void;
   onNoteChange: (id: number, note: string) => void;
   isSelected: (id: number) => boolean;
@@ -74,15 +80,17 @@ export default function AssignmentStep({
   resLoading, bookLoading, taskHistory,
   bookProgress = {}, unitProgress = {},
   initialOpenLessonId = null,
-  onPickResource, onToggleContent, onSelectAllUnit, onSelectAllTopic,
+  onPickResource, onAddQuota, lastQuotaDefaults = {},
+  onToggleContent, onSelectAllUnit, onSelectAllTopic,
   onSelectIncompleteUnit, onSelectIncompleteTopic,
-  onRemoveContent, onClearCart, onNoteChange, isSelected,
+  onRemoveContent, onRemoveContents, onClearCart, onNoteChange, isSelected,
 }: AssignmentStepProps) {
   const [openLessons, setOpenLessons] = useState<Record<number, boolean>>({});
   const [openTypes, setOpenTypes] = useState<Record<string, boolean>>({});
   const [openUnits, setOpenUnits] = useState<Record<number, boolean>>({});
   const [openTopics, setOpenTopics] = useState<Record<number, boolean>>({});
   const [openCartLessons, setOpenCartLessons] = useState<Record<number, boolean>>({});
+  const [openCartTopics, setOpenCartTopics] = useState<Record<string, boolean>>({});
   const [noteExpanded, setNoteExpanded] = useState<Record<number, boolean>>({});
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 
@@ -124,7 +132,7 @@ export default function AssignmentStep({
   /* ─── Group resources: Ders → Kaynak Türü → Kitap ─── */
   const groupedResources: ResourcesByLesson[] = useMemo(() => {
     const map = new Map<number, ResourcesByLesson>();
-    resources.forEach(r => {
+    resources.filter((r) => !isRoutineQuotaResource(r)).forEach(r => {
       if (!map.has(r.lesson)) {
         map.set(r.lesson, { lessonId: r.lesson, lessonName: r.lesson_name, types: [] });
       }
@@ -143,6 +151,14 @@ export default function AssignmentStep({
     });
     return Array.from(map.values());
   }, [resources]);
+
+  const lessonsWithRegularHomework = useMemo(() => {
+    const ids = new Set<number>();
+    for (const item of cart) {
+      if (!item.quotaKind) ids.add(item.lessonId);
+    }
+    return ids;
+  }, [cart]);
 
   /* ─── Group cart: Ders → Konu → Kaynak ─── */
   const cartGroups: CartLessonGroup[] = useMemo(() => {
@@ -217,7 +233,24 @@ export default function AssignmentStep({
     if (type === 'TEST_SET') return '📝';
     if (type === 'PAGE_RANGE') return '📄';
     if (type === 'VIDEO') return '🎬';
+    if (type === 'QUOTA') return '🎯';
     return '📖';
+  };
+
+  const quotaMark = (item: SelectedContent) => {
+    if (item.quotaKind === 'PROBLEM') {
+      return { icon: '🔢', label: 'Problem', color: '#b45309', bg: 'rgba(180,83,9,0.08)', border: '#fbbf24' };
+    }
+    if (item.quotaKind === 'PARAGRAF') {
+      return { icon: '📄', label: 'Paragraf', color: '#0369a1', bg: 'rgba(3,105,161,0.08)', border: '#38bdf8' };
+    }
+    return null;
+  };
+
+  const clearBtnStyle: React.CSSProperties = {
+    padding: '3px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)',
+    background: 'rgba(239,68,68,0.08)', fontSize: 10, fontWeight: 600,
+    color: 'var(--danger)', cursor: 'pointer', flexShrink: 0,
   };
 
   const filterChip = (key: HistoryFilter, label: string) => (
@@ -248,9 +281,17 @@ export default function AssignmentStep({
         </div>
         <div>
           <h3>Ödev İçeriği Seçimi</h3>
-          <p>Sol menüden kaynak seçin, içerikleri işaretleyin</p>
+          <p>Paragraf / problem kartlarından veya sol menüden kaynak seçin</p>
         </div>
       </div>
+
+      <QuotaAssignCards
+        resources={resources}
+        cart={cart}
+        lastDefaults={lastQuotaDefaults}
+        onAdd={onAddQuota}
+        onRemove={onRemoveContent}
+      />
 
       {/* 3-Column Layout */}
       <div className="odev-assign-grid">
@@ -304,6 +345,9 @@ export default function AssignmentStep({
                       fontSize: 10,
                     }}>▶</span>
                     <span style={{ flex: 1 }}>{lesson.lessonName}</span>
+                    {lessonsWithRegularHomework.has(lesson.lessonId) && (
+                      <span title="Bu dersten ödev seçildi" style={{ color: '#16a34a', fontSize: 14, lineHeight: 1 }}>✓</span>
+                    )}
                     <span className="badge-modern primary" style={{ fontSize: 10, padding: '2px 6px' }}>
                       {lesson.types.reduce((s, t) => s + t.books.length, 0)}
                     </span>
@@ -363,7 +407,7 @@ export default function AssignmentStep({
                             }}
                           >
                             <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              📘 {book.bookName}
+                              {isRoutineQuotaResource(book.resource) ? '🎯' : '📘'} {book.bookName}
                             </span>
                             <ScopePct progress={bp} titlePrefix="Kitap bitirme" wholeBook />
                           </button>
@@ -509,6 +553,15 @@ export default function AssignmentStep({
                         Eksikler ({unitIncomplete})
                       </button>
                     )}
+                    {cart.some((c) => c.unitId === unit.id) && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveContents(cart.filter((c) => c.unitId === unit.id).map((c) => c.id))}
+                        style={clearBtnStyle}
+                      >
+                        Temizle
+                      </button>
+                    )}
                     <button
                       onClick={() => onSelectAllUnit(unit)}
                       style={{
@@ -568,6 +621,15 @@ export default function AssignmentStep({
                             title="Bu konudaki eksik / yapılmayanlar"
                           >
                             Eksikler ({topicIncomplete})
+                          </button>
+                        )}
+                        {cart.some((c) => c.topicId === topic.id) && (
+                          <button
+                            type="button"
+                            onClick={() => onRemoveContents(cart.filter((c) => c.topicId === topic.id).map((c) => c.id))}
+                            style={clearBtnStyle}
+                          >
+                            Temizle
                           </button>
                         )}
                         <button
@@ -791,50 +853,104 @@ export default function AssignmentStep({
                   overflow: 'hidden',
                 }}>
                   {/* Lesson header */}
-                  <button
-                    onClick={() => toggle(setOpenCartLessons, lesson.lessonId)}
+                  <div
                     style={{
                       width: '100%',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 8,
                       padding: '10px 12px',
-                      border: 'none',
                       background: 'linear-gradient(135deg, rgba(0,97,166,0.08), rgba(0,97,166,0.03))',
-                      cursor: 'pointer',
-                      textAlign: 'left',
                     }}
                   >
-                    <span style={{
-                      fontSize: 9,
-                      transition: 'transform 0.2s',
-                      transform: openCartLessons[lesson.lessonId] ? 'rotate(90deg)' : 'rotate(0)',
-                    }}>▶</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>
-                        {lesson.lessonName}
+                    <button
+                      type="button"
+                      onClick={() => toggle(setOpenCartLessons, lesson.lessonId)}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', gap: 8,
+                        border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', padding: 0,
+                      }}
+                    >
+                      <span style={{
+                        fontSize: 9,
+                        transition: 'transform 0.2s',
+                        transform: openCartLessons[lesson.lessonId] ? 'rotate(90deg)' : 'rotate(0)',
+                      }}>▶</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>
+                          {lesson.lessonName}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                          {lesson.totalQuestions > 0 && `${lesson.totalQuestions} soru`}
+                          {lesson.totalQuestions > 0 && lesson.totalPages > 0 && ' · '}
+                          {lesson.totalPages > 0 && `${lesson.totalPages} sayfa`}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
-                        {lesson.totalQuestions > 0 && `${lesson.totalQuestions} soru`}
-                        {lesson.totalQuestions > 0 && lesson.totalPages > 0 && ' · '}
-                        {lesson.totalPages > 0 && `${lesson.totalPages} sayfa`}
-                      </div>
-                    </div>
-                    <span className="badge-modern primary" style={{ fontSize: 10, padding: '2px 6px' }}>
-                      {lesson.topics.reduce((s, t) => s + t.items.length, 0)}
-                    </span>
-                  </button>
+                      <span className="badge-modern primary" style={{ fontSize: 10, padding: '2px 6px' }}>
+                        {lesson.topics.reduce((s, t) => s + t.items.length, 0)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveContents(lesson.topics.flatMap((t) => t.items.map((i) => i.content.id)))}
+                      style={clearBtnStyle}
+                    >
+                      Temizle
+                    </button>
+                  </div>
 
                   {openCartLessons[lesson.lessonId] && (
                     <div style={{ padding: '4px 8px 8px' }}>
-                      {lesson.topics.map(topic => (
+                      {lesson.topics.map(topic => {
+                        const topicKey = `${lesson.lessonId}:${topic.topicId}`;
+                        const topicOpen = Boolean(openCartTopics[topicKey]);
+                        const hasQuota = topic.items.some((i) => i.content.quotaKind);
+                        const topicQuestions = topic.items.reduce((s, i) => s + (i.content.questionCount || 0), 0);
+                        return (
                         <div key={topic.topicId} style={{ marginBottom: 4 }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-color)', padding: '6px 4px 4px', borderBottom: '1px solid var(--border-color)' }}>
-                            {topic.topicName}
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '6px 4px 4px',
+                            borderBottom: '1px solid var(--border-color)',
+                          }}>
+                            <button
+                              type="button"
+                              onClick={() => setOpenCartTopics((p) => ({ ...p, [topicKey]: !p[topicKey] }))}
+                              style={{
+                                flex: 1, display: 'flex', alignItems: 'center', gap: 6,
+                                border: 'none', background: 'transparent', cursor: 'pointer',
+                                textAlign: 'left', padding: 0,
+                              }}
+                            >
+                              <span style={{
+                                fontSize: 8, color: 'var(--text-muted)',
+                                transform: topicOpen ? 'rotate(90deg)' : 'rotate(0)',
+                                transition: 'transform 0.2s',
+                              }}>▶</span>
+                              <span style={{
+                                fontSize: 11, fontWeight: 600,
+                                color: hasQuota ? (topic.items[0]?.content.quotaKind === 'PROBLEM' ? '#b45309' : '#0369a1') : 'var(--text-color)',
+                              }}>
+                                {hasQuota ? quotaMark(topic.items[0].content)?.icon : ''} {topic.topicName}
+                              </span>
+                              {topicQuestions > 0 && (
+                                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', marginLeft: 4 }}>
+                                  {topicQuestions} soru
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onRemoveContents(topic.items.map((i) => i.content.id))}
+                              style={clearBtnStyle}
+                            >
+                              Temizle
+                            </button>
                           </div>
-                          {topic.items.map(({ content: item }) => {
+                          {topicOpen && topic.items.map(({ content: item }) => {
                             const hist = taskHistory[item.contentId];
                             const incomplete = isIncompleteHistory(hist);
+                            const mark = quotaMark(item);
                             return (
                             <div
                               key={item.id}
@@ -844,12 +960,14 @@ export default function AssignmentStep({
                                 gap: 8,
                                 padding: '6px 4px',
                                 borderBottom: '1px solid rgba(0,0,0,0.04)',
-                                borderLeft: incomplete ? '3px solid #3b82f6' : '3px solid transparent',
-                                background: incomplete ? 'rgba(37,99,235,0.05)' : 'transparent',
+                                borderLeft: mark
+                                  ? `3px solid ${mark.border}`
+                                  : incomplete ? '3px solid #3b82f6' : '3px solid transparent',
+                                background: mark ? mark.bg : incomplete ? 'rgba(37,99,235,0.05)' : 'transparent',
                                 borderRadius: 4,
                               }}
                             >
-                              <span style={{ fontSize: 14 }}>{getContentIcon(item.contentType)}</span>
+                              <span style={{ fontSize: 14 }}>{mark?.icon || getContentIcon(item.contentType)}</span>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{
                                   fontSize: 11, color: 'var(--text-color)',
@@ -857,7 +975,8 @@ export default function AssignmentStep({
                                 }}>
                                   {item.contentName}
                                 </div>
-                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                <div style={{ fontSize: 10, color: mark?.color || 'var(--text-muted)' }}>
+                                  {mark ? `${mark.label} · ` : ''}
                                   {item.questionCount ? `${item.questionCount} soru` : ''}
                                   {item.pageCount ? `${item.questionCount ? ' · ' : ''}${item.pageCount} sayfa` : ''}
                                 </div>
@@ -887,7 +1006,8 @@ export default function AssignmentStep({
                             );
                           })}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

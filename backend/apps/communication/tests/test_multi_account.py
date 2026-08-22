@@ -571,6 +571,116 @@ class MultiWhatsAppAccountTests(TestCase):
         source = AccountResolver.source_for_shared_meta(self.kurum.id, self.acc_genel.id)
         self.assertEqual(source.id, self.acc_genel.id)
 
+    def test_assign_subes_adds_second_branch_without_new_account(self):
+        """Aynı numara ikinci şubeye bağlanır; yeni hesap açılmaz."""
+        from apps.communication.application.account_resolver import AccountResolver
+        from apps.communication.domain.enums import RecipientType
+        from apps.communication.domain.models import NotificationTemplateBinding
+
+        NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            channel_config=self.acc_kadikoy,
+            event_key='odev.plan',
+            recipient_type=RecipientType.VELI,
+            channel=Channel.WHATSAPP,
+        )
+        result = AccountResolver.assign_subes(
+            self.acc_kadikoy,
+            [self.sube_a.id, self.sube_b.id],
+            scope_type=WhatsAppAccountScope.SELECTED_SUBES,
+            replace=True,
+            copy_bindings=True,
+        )
+        self.assertEqual(result['added_sube_ids'], [self.sube_b.id])
+        self.assertEqual(result['copied_bindings'], 1)
+        self.assertEqual(
+            set(self.acc_kadikoy.allowed_subes.values_list('id', flat=True)),
+            {self.sube_a.id, self.sube_b.id},
+        )
+        self.assertTrue(
+            NotificationTemplateBinding.objects.filter(
+                kurum=self.kurum,
+                sube=self.sube_b,
+                channel_config=self.acc_kadikoy,
+                event_key='odev.plan',
+                recipient_type=RecipientType.VELI,
+            ).exists()
+        )
+
+    def test_reuse_existing_phone_does_not_cross_kurum(self):
+        other = Kurum.objects.create(ad='Başka Kurum', kod='TWAM2')
+        found = AccountResolver.find_active_by_phone(other.id, 'pn_kadikoy')
+        self.assertIsNone(found)
+        self.assertEqual(
+            AccountResolver.find_active_by_phone(self.kurum.id, 'pn_kadikoy').id,
+            self.acc_kadikoy.id,
+        )
+
+    def test_create_reuses_same_phone_for_additional_sube(self):
+        from rest_framework.test import APIClient
+
+        admin = User.objects.create_superuser(
+            username='wa_admin', email='wa@test.com', password='x',
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube_a.id)
+
+        before = CommunicationChannelConfig.objects.filter(kurum=self.kurum).count()
+        res = client.post(
+            '/api/communication/accounts/',
+            {
+                'phone_number_id': 'pn_kadikoy',
+                'reuse_existing_number': True,
+                'scope_type': WhatsAppAccountScope.SELECTED_SUBES,
+                'sube_ids': [self.sube_a.id, self.sube_b.id],
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertTrue(res.data.get('reused'))
+        self.assertEqual(res.data['id'], str(self.acc_kadikoy.id))
+        self.assertEqual(
+            CommunicationChannelConfig.objects.filter(kurum=self.kurum).count(),
+            before,
+        )
+        self.acc_kadikoy.refresh_from_db()
+        self.assertEqual(
+            set(self.acc_kadikoy.allowed_subes.values_list('id', flat=True)),
+            {self.sube_a.id, self.sube_b.id},
+        )
+
+    def test_create_rejects_phone_owned_by_other_kurum(self):
+        from rest_framework.test import APIClient
+
+        other = Kurum.objects.create(ad='Yabancı Kurum', kod='TWAMX')
+        other_sube = Sube.objects.create(kurum=other, ad='Yabancı', kod='YX')
+        admin = User.objects.create_superuser(
+            username='wa_admin2', email='wa2@test.com', password='x',
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        client.defaults['HTTP_X_KURUM_ID'] = str(other.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(other_sube.id)
+        res = client.post(
+            '/api/communication/accounts/',
+            {
+                'phone_number_id': 'pn_kadikoy',
+                'reuse_existing_number': True,
+                'sube_ids': [other_sube.id],
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn('Phone Number ID', res.data.get('error', ''))
+        self.assertFalse(
+            CommunicationChannelConfig.objects.filter(
+                kurum=other, phone_number_id='pn_kadikoy',
+            ).exists()
+        )
+
     def test_muhasebe_account_uses_sibling_token_for_send(self):
         """Muhasebe hattında token yoksa koç hesabının token'ı, muhasebe phone_number_id ile kullanılır."""
         from apps.communication.infrastructure.channels.whatsapp_cloud import WhatsAppCloudClient

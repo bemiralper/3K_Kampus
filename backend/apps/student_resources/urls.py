@@ -4,11 +4,16 @@
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import StudentResourceAssignmentViewSet, ResourcePurchaseListViewSet
+from .views import (
+    StudentResourceAssignmentViewSet,
+    ResourcePurchaseListViewSet,
+    StudentRoutineQuotaViewSet,
+)
 
 router = DefaultRouter()
 router.register('assignments', StudentResourceAssignmentViewSet, basename='student-resource-assignment')
 router.register('purchase-lists', ResourcePurchaseListViewSet, basename='purchase-list')
+router.register('routine-quotas', StudentRoutineQuotaViewSet, basename='student-routine-quota')
 
 urlpatterns = [
     path('', include(router.urls)),

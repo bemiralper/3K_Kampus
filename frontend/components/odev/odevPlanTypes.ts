@@ -10,6 +10,7 @@ export interface PlanContentItemView {
   pageCount: number;
   /** Kaynak kitaptaki sıra (ResourceContent.sira) */
   contentSira?: number | null;
+  quotaKind?: 'PARAGRAF' | 'PROBLEM';
   /** Kayıtlı tekrar / eksik tamamlama görevi */
   isCompletionTask?: boolean;
   previousCompletionPercent?: number | null;
@@ -206,6 +207,9 @@ export function buildPlanGroupsFromAssignment(assignment: ManualAssignment): Pla
           questionCount: q,
           pageCount: p,
           contentSira: task.content_sira ?? task.order ?? null,
+          quotaKind: task.quota_kind === 'PARAGRAF' || task.quota_kind === 'PROBLEM'
+            ? task.quota_kind
+            : undefined,
           isCompletionTask: Boolean(task.is_completion_task),
           previousCompletionPercent: task.previous_task_completion_percent ?? null,
           previousAssignmentTitle: task.previous_assignment_title || "",
@@ -236,6 +240,7 @@ export function buildPlanGroupsFromSelected(
     questionCount: number | null;
     pageCount: number | null;
     contentSira?: number | null;
+    quotaKind?: 'PARAGRAF' | 'PROBLEM';
   }>,
   contentNotes: Record<number, string> = {},
 ): PlanLessonGroup[] {
@@ -276,6 +281,7 @@ export function buildPlanGroupsFromSelected(
         questionCount: q,
         pageCount: p,
         contentSira: item.contentSira ?? null,
+        quotaKind: item.quotaKind,
       },
     });
   }
@@ -300,6 +306,34 @@ export function countPlanItems(groups: PlanLessonGroup[]): number {
       ),
     0,
   );
+}
+
+export function quotaBookIcon(kind?: string | null): string {
+  if (kind === 'PROBLEM') return '🔢';
+  if (kind === 'PARAGRAF') return '📄';
+  return '📖';
+}
+
+export function quotaKindLabel(kind?: string | null): string {
+  if (kind === 'PROBLEM') return 'Problem';
+  if (kind === 'PARAGRAF') return 'Paragraf';
+  return '';
+}
+
+export function bookQuotaKind(book: PlanBookGroup): 'PARAGRAF' | 'PROBLEM' | undefined {
+  for (const unit of book.units) {
+    for (const topic of unit.topics) {
+      for (const item of topic.items) {
+        if (item.content.quotaKind) return item.content.quotaKind;
+      }
+    }
+  }
+  return undefined;
+}
+
+export function unitIsQuotaOnly(unit: PlanUnitGroup): boolean {
+  const items = unit.topics.flatMap((t) => t.items);
+  return items.length > 0 && items.every((i) => Boolean(i.content.quotaKind));
 }
 
 export function countPlanBooks(groups: PlanLessonGroup[]): number {

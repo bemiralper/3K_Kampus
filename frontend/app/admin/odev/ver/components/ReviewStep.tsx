@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import type { Student, SelectedContent, CartLessonGroup, ContentTaskHistory } from '../types';
 import { isAutoCompletionNote } from '@/components/odev/odevCompletionHelpers';
+import { parseNotesList, serializeNotesList } from '../notesList';
 import '../odev-ver.css';
 
 interface ReviewStepProps {
@@ -22,9 +23,121 @@ interface ReviewStepProps {
   onDueDateChange: (v: string) => void;
   onPriorityChange: (v: string) => void;
   onRemove: (id: number) => void;
+  onRemoveMany?: (ids: number[]) => void;
   onSave: (status: 'PUBLISHED' | 'DRAFT') => void;
   onPrint: () => void;
   getPhotoUrl: (path?: string | null) => string | undefined;
+}
+
+function GeneralNotesEditor({ notes, onChange }: { notes: string; onChange: (v: string) => void }) {
+  const items = parseNotesList(notes);
+  const [draft, setDraft] = useState('');
+
+  const commit = (next: string[]) => onChange(serializeNotesList(next));
+
+  const addNote = () => {
+    const text = draft.trim();
+    if (!text) return;
+    commit([...items, text]);
+    setDraft('');
+  };
+
+  return (
+    <div style={{ gridColumn: '1 / -1' }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 6 }}>
+        Genel Not (opsiyonel)
+      </label>
+      {items.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+          {items.map((text, index) => (
+            <div
+              key={`${index}-${text.slice(0, 12)}`}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 8,
+                padding: '8px 10px', borderRadius: 8,
+                border: '1px solid var(--border-color)', background: 'var(--card-bg)',
+              }}
+            >
+              <span style={{
+                minWidth: 22, height: 22, borderRadius: 999, background: 'rgba(0,97,166,0.1)',
+                color: 'var(--primary)', fontSize: 11, fontWeight: 800,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {index + 1}
+              </span>
+              <div style={{ flex: 1, fontSize: 13, color: 'var(--text-color)', lineHeight: 1.45 }}>{text}</div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() => {
+                    const next = [...items];
+                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                    commit(next);
+                  }}
+                  style={{ border: 'none', background: 'transparent', cursor: index === 0 ? 'default' : 'pointer', opacity: index === 0 ? 0.3 : 0.7 }}
+                  title="Yukarı"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  disabled={index === items.length - 1}
+                  onClick={() => {
+                    const next = [...items];
+                    [next[index + 1], next[index]] = [next[index], next[index + 1]];
+                    commit(next);
+                  }}
+                  style={{ border: 'none', background: 'transparent', cursor: index === items.length - 1 ? 'default' : 'pointer', opacity: index === items.length - 1 ? 0.3 : 0.7 }}
+                  title="Aşağı"
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  onClick={() => commit(items.filter((_, i) => i !== index))}
+                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--danger)' }}
+                  title="Sil"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addNote();
+            }
+          }}
+          placeholder="Yeni not ekle..."
+          style={{
+            flex: 1, padding: '10px 14px', border: '1px solid var(--border-color)',
+            borderRadius: 8, fontSize: 13, fontFamily: 'inherit', color: 'var(--text-color)',
+            background: 'var(--card-bg)',
+          }}
+        />
+        <button
+          type="button"
+          onClick={addNote}
+          disabled={!draft.trim()}
+          style={{
+            padding: '0 14px', borderRadius: 8, border: 'none',
+            background: draft.trim() ? 'var(--primary)' : 'var(--border-color)',
+            color: '#fff', fontSize: 13, fontWeight: 700, cursor: draft.trim() ? 'pointer' : 'default',
+          }}
+        >
+          Ekle
+        </button>
+      </div>
+    </div>
+  );
 }
 
 const PRIORITY_OPTIONS = [
@@ -37,7 +150,7 @@ const PRIORITY_OPTIONS = [
 export default function ReviewStep({
   student, selectedStudents = [], cart, contentNotes, title, notes, dueDate, priority, coachName,
   saving, taskHistory = {}, onTitleChange, onNotesChange, onDueDateChange, onPriorityChange, onRemove,
-  onSave, onPrint, getPhotoUrl,
+  onRemoveMany, onSave, onPrint, getPhotoUrl,
 }: ReviewStepProps) {
   /* ─── Cart grouped by lesson ─── */
   const cartGroups: CartLessonGroup[] = useMemo(() => {
@@ -66,6 +179,12 @@ export default function ReviewStep({
   const totalP = cart.reduce((s, c) => s + (c.pageCount || 0), 0);
 
   const [openLessons, setOpenLessons] = useState<Set<number>>(new Set());
+  const [openTopics, setOpenTopics] = useState<Set<string>>(new Set());
+
+  const removeMany = (ids: number[]) => {
+    if (onRemoveMany) onRemoveMany(ids);
+    else ids.forEach((id) => onRemove(id));
+  };
 
   const toggleLesson = (lessonId: number) => {
     setOpenLessons(prev => {
@@ -88,7 +207,18 @@ export default function ReviewStep({
     if (type === 'TEST_SET') return '📝';
     if (type === 'PAGE_RANGE') return '📄';
     if (type === 'VIDEO') return '🎬';
+    if (type === 'QUOTA') return '🎯';
     return '📖';
+  };
+
+  const quotaMark = (item: SelectedContent) => {
+    if (item.quotaKind === 'PROBLEM') {
+      return { icon: '🔢', label: 'Problem', color: '#b45309', bg: 'rgba(180,83,9,0.08)', border: '#fbbf24' };
+    }
+    if (item.quotaKind === 'PARAGRAF') {
+      return { icon: '📄', label: 'Paragraf', color: '#0369a1', bg: 'rgba(3,105,161,0.08)', border: '#38bdf8' };
+    }
+    return null;
   };
 
   return (
@@ -233,28 +363,7 @@ export default function ReviewStep({
                 </div>
               </div>
 
-              {/* Notes */}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 4 }}>
-                  Genel Not (opsiyonel)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={e => onNotesChange(e.target.value)}
-                  placeholder="Öğrenciye genel not veya talimat..."
-                  rows={3}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 8,
-                    fontSize: 13,
-                    resize: 'vertical',
-                    fontFamily: 'inherit',
-                    color: 'var(--text-color)',
-                  }}
-                />
-              </div>
+              <GeneralNotesEditor notes={notes} onChange={onNotesChange} />
             </div>
           </div>
 
@@ -315,6 +424,7 @@ export default function ReviewStep({
                 return (
                   <div key={lesson.lessonId} style={{ marginBottom: 8 }}>
                     {/* Accordion header */}
+                    <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
                     <button
                       onClick={() => toggleLesson(lesson.lessonId)}
                       style={{
@@ -355,6 +465,18 @@ export default function ReviewStep({
                         {lesson.totalPages > 0 && `${lesson.totalPages} sayfa`}
                       </span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => removeMany(lesson.topics.flatMap((t) => t.items.map((i) => i.content.id)))}
+                      style={{
+                        padding: '0 10px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)',
+                        background: 'rgba(239,68,68,0.08)', fontSize: 11, fontWeight: 600,
+                        color: 'var(--danger)', cursor: 'pointer',
+                      }}
+                    >
+                      Temizle
+                    </button>
+                    </div>
 
                     {/* Accordion body */}
                     {isOpen && (
@@ -365,14 +487,56 @@ export default function ReviewStep({
                         padding: '8px 4px 4px',
                         background: 'var(--card-bg)',
                       }}>
-                        {lesson.topics.map(topic => (
+                        {lesson.topics.map(topic => {
+                          const topicKey = `${lesson.lessonId}:${topic.topicId}`;
+                          const topicOpen = openTopics.has(topicKey);
+                          const mark0 = quotaMark(topic.items[0]?.content);
+                          const topicQuestions = topic.items.reduce((s, i) => s + (i.content.questionCount || 0), 0);
+                          return (
                           <div key={topic.topicId} style={{ paddingLeft: 12, marginBottom: 8 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-color)', marginBottom: 4, paddingLeft: 4 }}>
-                              {topic.topicName}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                              <button
+                                type="button"
+                                onClick={() => setOpenTopics((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(topicKey)) next.delete(topicKey);
+                                  else next.add(topicKey);
+                                  return next;
+                                })}
+                                style={{
+                                  flex: 1, display: 'flex', alignItems: 'center', gap: 6,
+                                  border: 'none', background: 'transparent', cursor: 'pointer',
+                                  textAlign: 'left', padding: 0, fontSize: 12, fontWeight: 600,
+                                  color: mark0?.color || 'var(--text-color)',
+                                }}
+                              >
+                                <span style={{
+                                  fontSize: 9, transform: topicOpen ? 'rotate(90deg)' : 'rotate(0)',
+                                  transition: 'transform 0.2s',
+                                }}>▶</span>
+                                {mark0 ? `${mark0.icon} ` : ''}{topic.topicName}
+                                {topicQuestions > 0 && (
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
+                                    {topicQuestions} soru
+                                  </span>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeMany(topic.items.map((i) => i.content.id))}
+                                style={{
+                                  padding: '2px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)',
+                                  background: 'rgba(239,68,68,0.08)', fontSize: 10, fontWeight: 600,
+                                  color: 'var(--danger)', cursor: 'pointer',
+                                }}
+                              >
+                                Temizle
+                              </button>
                             </div>
-                            {topic.items.map(({ content: item, note }) => {
+                            {topicOpen && topic.items.map(({ content: item, note }) => {
                               const hist = taskHistory[item.contentId];
                               const isCompletion = hist && (hist.completion_status === 'PARTIAL' || hist.completion_status === 'NOT_DONE');
+                              const mark = quotaMark(item);
                               return (
                               <div key={item.id} style={{
                                 display: 'flex',
@@ -381,10 +545,10 @@ export default function ReviewStep({
                                 padding: '6px 8px',
                                 borderRadius: 6,
                                 marginBottom: 2,
-                                background: isCompletion ? 'rgba(37,99,235,0.06)' : 'rgba(0,0,0,0.02)',
-                                borderLeft: isCompletion ? '3px solid #3b82f6' : '3px solid transparent',
+                                background: mark ? mark.bg : isCompletion ? 'rgba(37,99,235,0.06)' : 'rgba(0,0,0,0.02)',
+                                borderLeft: mark ? `3px solid ${mark.border}` : isCompletion ? '3px solid #3b82f6' : '3px solid transparent',
                               }}>
-                                <span style={{ fontSize: 14 }}>{getContentIcon(item.contentType)}</span>
+                                <span style={{ fontSize: 14 }}>{mark?.icon || getContentIcon(item.contentType)}</span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{
                                     fontSize: 12, color: 'var(--text-color)',
@@ -398,7 +562,8 @@ export default function ReviewStep({
                                     </div>
                                   )}
                                 </div>
-                                <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: 10, color: mark?.color || 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                  {mark ? `${mark.label} · ` : ''}
                                   {item.questionCount ? `${item.questionCount}s` : ''}
                                   {item.pageCount ? `${item.questionCount ? '/' : ''}${item.pageCount}p` : ''}
                                 </div>
@@ -414,7 +579,8 @@ export default function ReviewStep({
                               );
                             })}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

@@ -12,7 +12,7 @@ import RoleService from "@/app/roles/role.service";
 import type { Role } from "@/app/roles/role.types";
 import { getSubeler } from "@/app/kurum-yonetimi/sube-tanimlari/services";
 
-type MetaMode = "ask" | "same" | "other";
+type MetaMode = "ask" | "same" | "other" | "link";
 
 interface AccountFormDrawerProps {
   open: boolean;
@@ -85,6 +85,7 @@ export default function AccountFormDrawer({
   const [error, setError] = useState<string | null>(null);
   const [metaMode, setMetaMode] = useState<MetaMode>("other");
   const [sourceAccountId, setSourceAccountId] = useState("");
+  const [copyBindings, setCopyBindings] = useState(true);
 
   useEffect(() => {
     if (!open) return;
@@ -114,6 +115,7 @@ export default function AccountFormDrawer({
       || existingAccounts[0]?.id
       || "";
     setSourceAccountId(defaultSource);
+    setCopyBindings(true);
     if (account) {
       setMetaMode("other");
     } else if (existingAccounts.length > 0) {
@@ -128,8 +130,26 @@ export default function AccountFormDrawer({
     RoleService.listRoles({ is_active: true })
       .then((res) => setRoles(res.success ? res.roles : []))
       .catch(() => setRoles([]));
+    const rawKurum = typeof window !== "undefined" ? window.localStorage.getItem("3k_active_kurum") : null;
+    let kurumId: number | null = null;
+    if (rawKurum) {
+      try {
+        const parsed = JSON.parse(rawKurum);
+        const value = typeof parsed === "object" && parsed ? parsed.id : parsed;
+        kurumId = Number(value);
+      } catch {
+        kurumId = Number(rawKurum);
+      }
+    }
     getSubeler()
-      .then((list) => setSubeler(list || []))
+      .then((list) => {
+        const rows = (list || []) as Array<{ id: number; ad: string; kurum_id?: number }>;
+        setSubeler(
+          Number.isFinite(kurumId) && kurumId
+            ? rows.filter((row) => !row.kurum_id || row.kurum_id === kurumId)
+            : rows,
+        );
+      })
       .catch(() => setSubeler([]));
   }, [open]);
 
@@ -137,6 +157,21 @@ export default function AccountFormDrawer({
 
   const sourceAccount = existingAccounts.find((item) => item.id === sourceAccountId) || existingAccounts[0];
   const sameMeta = !account && metaMode === "same";
+  const linkExisting = !account && metaMode === "link";
+
+  const applySourceAccount = (item: WhatsAppAccount | undefined) => {
+    if (!item) return;
+    setForm((prev) => ({
+      ...prev,
+      name: item.name || prev.name,
+      phone_number_id: item.phone_number_id || "",
+      display_phone: item.display_phone || "",
+      department: item.department || prev.department,
+      scope_type: item.scope_type || "ALL_SUBES",
+      role_ids: item.role_ids || [],
+      sube_ids: item.sube_ids || [],
+    }));
+  };
 
   const toggleRole = (id: number) => {
     setForm((prev) => ({
@@ -158,40 +193,64 @@ export default function AccountFormDrawer({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!form.phone_number_id.trim()) {
+    if (linkExisting && !sourceAccount) {
+      setError("Bağlanacak mevcut WhatsApp hesabını seçin.");
+      return;
+    }
+    if (form.scope_type === "SELECTED_SUBES" && form.sube_ids.length === 0) {
+      setError("En az bir şube seçin veya kapsamı «Tüm şubeler» yapın.");
+      return;
+    }
+    if (!linkExisting && !form.phone_number_id.trim()) {
       setError("Phone Number ID zorunludur.");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const payload: WhatsAppAccountWritePayload = sameMeta
+      const payload: WhatsAppAccountWritePayload = linkExisting
         ? {
-            name: form.name.trim() || undefined,
-            phone_number_id: form.phone_number_id.trim(),
-            display_phone: form.display_phone.trim(),
-            is_active: true,
-            department: form.department,
-            role_ids: form.role_ids,
-            same_meta_account: true,
-            source_account_id: sourceAccount?.id,
-          }
-        : {
-            name: form.name.trim() || undefined,
-            phone_number_id: form.phone_number_id.trim(),
-            waba_id: form.waba_id.trim(),
-            app_id: form.app_id.trim(),
-            webhook_verify_token: form.webhook_verify_token.trim(),
-            display_phone: form.display_phone.trim(),
-            is_active: form.is_active,
-            is_default: form.is_default,
+            phone_number_id: sourceAccount?.phone_number_id,
+            reuse_existing_number: true,
             scope_type: form.scope_type,
-            department: form.department,
-            role_ids: form.role_ids,
             sube_ids: form.scope_type === "SELECTED_SUBES" ? form.sube_ids : [],
-          };
-      if (!sameMeta && form.access_token.trim()) payload.access_token = form.access_token.trim();
-      if (!sameMeta && form.app_secret.trim()) payload.app_secret = form.app_secret.trim();
+            copy_bindings: copyBindings,
+          }
+        : sameMeta
+          ? {
+              name: form.name.trim() || undefined,
+              phone_number_id: form.phone_number_id.trim(),
+              display_phone: form.display_phone.trim(),
+              is_active: true,
+              department: form.department,
+              role_ids: form.role_ids,
+              scope_type: form.scope_type,
+              sube_ids: form.scope_type === "SELECTED_SUBES" ? form.sube_ids : [],
+              same_meta_account: true,
+              source_account_id: sourceAccount?.id,
+              copy_bindings: copyBindings,
+            }
+          : {
+              name: form.name.trim() || undefined,
+              phone_number_id: form.phone_number_id.trim(),
+              waba_id: form.waba_id.trim(),
+              app_id: form.app_id.trim(),
+              webhook_verify_token: form.webhook_verify_token.trim(),
+              display_phone: form.display_phone.trim(),
+              is_active: form.is_active,
+              is_default: form.is_default,
+              scope_type: form.scope_type,
+              department: form.department,
+              role_ids: form.role_ids,
+              sube_ids: form.scope_type === "SELECTED_SUBES" ? form.sube_ids : [],
+              copy_bindings: copyBindings,
+            };
+      if (!sameMeta && !linkExisting && form.access_token.trim()) {
+        payload.access_token = form.access_token.trim();
+      }
+      if (!sameMeta && !linkExisting && form.app_secret.trim()) {
+        payload.app_secret = form.app_secret.trim();
+      }
 
       if (account) {
         await updateWhatsAppAccount(account.id, payload);
@@ -211,9 +270,11 @@ export default function AccountFormDrawer({
     ? "Hesabı Düzenle"
     : metaMode === "ask"
       ? "Yeni WhatsApp hattı"
-      : sameMeta
-        ? "Yeni numara (aynı Meta)"
-        : "Yeni WhatsApp Hesabı";
+      : linkExisting
+        ? "Mevcut numarayı şubelere bağla"
+        : sameMeta
+          ? "Yeni numara (aynı Meta)"
+          : "Yeni WhatsApp Hesabı";
 
   return (
     <>
@@ -231,19 +292,34 @@ export default function AccountFormDrawer({
         {metaMode === "ask" ? (
           <div className="comm-form-grid">
             <p className="comm-field-hint" style={{ margin: 0 }}>
-              Bu numara mevcut WhatsApp Business hesabına mı ait?
+              Aynı numarayı birden fazla şubede kullanabilirsiniz. Token ve WABA’yı tekrar girmeniz gerekmez.
             </p>
             <div className="comm-meta-choice-grid">
-              <button type="button" className="comm-meta-choice" onClick={() => setMetaMode("same")}>
-                <strong>Evet, aynı Meta hesabı</strong>
+              <button
+                type="button"
+                className="comm-meta-choice"
+                onClick={() => {
+                  setMetaMode("link");
+                  applySourceAccount(sourceAccount);
+                }}
+              >
+                <strong>Mevcut numarayı şubelere bağla</strong>
                 <span>
-                  Yalnızca Phone Number ID girilir. Token, WABA ve App ID
+                  {sourceAccount
+                    ? `«${accountLabel(sourceAccount)}» hattını başka şubelerde de kullanın. Ayarlar kopyalanır.`
+                    : "Kayıtlı WhatsApp numarasını ek şubelere bağlayın. Ayarlar kopyalanır."}
+                </span>
+              </button>
+              <button type="button" className="comm-meta-choice" onClick={() => setMetaMode("same")}>
+                <strong>Yeni numara, aynı Meta hesabı</strong>
+                <span>
+                  Farklı bir Phone Number ID girilir. Token, WABA ve App ID
                   {sourceAccount ? ` «${accountLabel(sourceAccount)}»` : " mevcut hat"}
                   {" "}üzerinden kullanılır.
                 </span>
               </button>
               <button type="button" className="comm-meta-choice" onClick={() => setMetaMode("other")}>
-                <strong>Hayır, farklı Meta hesabı</strong>
+                <strong>Yeni numara, farklı Meta hesabı</strong>
                 <span>Token, WABA, App ID ve diğer bilgileri bu numara için ayrı gireceksiniz.</span>
               </button>
             </div>
@@ -255,17 +331,27 @@ export default function AccountFormDrawer({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="comm-form-grid">
-            {sameMeta && existingAccounts.length > 1 && (
+            {(sameMeta || linkExisting) && existingAccounts.length > 0 && (
               <div className="comm-form-field">
-                <label htmlFor="acc-source">Kaynak Meta hesabı</label>
+                <label htmlFor="acc-source">
+                  {linkExisting ? "Bağlanacak numara" : "Kaynak Meta hesabı"}
+                </label>
                 <select
                   id="acc-source"
                   value={sourceAccountId}
-                  onChange={(e) => setSourceAccountId(e.target.value)}
+                  onChange={(e) => {
+                    setSourceAccountId(e.target.value);
+                    if (linkExisting) {
+                      applySourceAccount(
+                        existingAccounts.find((item) => item.id === e.target.value),
+                      );
+                    }
+                  }}
                 >
                   {existingAccounts.map((item) => (
                     <option key={item.id} value={item.id}>
                       {accountLabel(item)}
+                      {item.display_phone ? ` · ${item.display_phone}` : ""}
                       {item.is_default ? " (varsayılan)" : ""}
                     </option>
                   ))}
@@ -278,34 +364,44 @@ export default function AccountFormDrawer({
                 Token, WABA ve App ID kopyalanır. Bu formda yalnızca yeni hattın Phone Number ID’si gerekir.
               </p>
             )}
-
-            <div className="comm-form-field">
-              <label htmlFor="acc-name">Hesap adı</label>
-              <input
-                id="acc-name"
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder={sameMeta ? "Örn: Muhasebe WhatsApp" : "Örn: Merkez Kampüs WhatsApp"}
-              />
-            </div>
-            <div className="comm-form-field">
-              <label htmlFor="acc-phone-id">Phone Number ID *</label>
-              <input
-                id="acc-phone-id"
-                type="text"
-                value={form.phone_number_id}
-                onChange={(e) => setForm({ ...form, phone_number_id: e.target.value })}
-                placeholder="Örn: 123456789012345"
-                required
-              />
-              <p className="comm-webhook-hint">
-                Görünen numara (+90 5XX…) değil. WhatsApp Manager → Telefon numaraları
-                içindeki <strong>Phone number ID</strong> (uzun sayı).
+            {linkExisting && (
+              <p className="comm-field-hint" style={{ margin: 0 }}>
+                Token, WABA ve App ID tekrar girilmez. Numara seçili şubelerde de kullanılmaya başlar;
+                şube özel bildirim ayarları kopyalanır.
               </p>
-            </div>
+            )}
 
-            {!sameMeta && (
+            {!linkExisting && (
+              <div className="comm-form-field">
+                <label htmlFor="acc-name">Hesap adı</label>
+                <input
+                  id="acc-name"
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder={sameMeta ? "Örn: Muhasebe WhatsApp" : "Örn: Merkez Kampüs WhatsApp"}
+                />
+              </div>
+            )}
+            {!linkExisting && (
+              <div className="comm-form-field">
+                <label htmlFor="acc-phone-id">Phone Number ID *</label>
+                <input
+                  id="acc-phone-id"
+                  type="text"
+                  value={form.phone_number_id}
+                  onChange={(e) => setForm({ ...form, phone_number_id: e.target.value })}
+                  placeholder="Örn: 123456789012345"
+                  required
+                />
+                <p className="comm-webhook-hint">
+                  Görünen numara (+90 5XX…) değil. WhatsApp Manager → Telefon numaraları
+                  içindeki <strong>Phone number ID</strong> (uzun sayı).
+                </p>
+              </div>
+            )}
+
+            {!sameMeta && !linkExisting && (
               <>
                 <div className="comm-form-field">
                   <label htmlFor="acc-waba">WABA ID</label>
@@ -362,18 +458,20 @@ export default function AccountFormDrawer({
               </>
             )}
 
-            <div className="comm-form-field">
-              <label htmlFor="acc-display">Görünen Numara</label>
-              <input
-                id="acc-display"
-                type="text"
-                value={form.display_phone}
-                onChange={(e) => setForm({ ...form, display_phone: e.target.value })}
-                placeholder="+90 5XX XXX XX XX"
-              />
-            </div>
+            {!linkExisting && (
+              <div className="comm-form-field">
+                <label htmlFor="acc-display">Görünen Numara</label>
+                <input
+                  id="acc-display"
+                  type="text"
+                  value={form.display_phone}
+                  onChange={(e) => setForm({ ...form, display_phone: e.target.value })}
+                  placeholder="+90 5XX XXX XX XX"
+                />
+              </div>
+            )}
 
-            {!sameMeta && (
+            {!sameMeta && !linkExisting && (
               <div style={{ display: "flex", gap: "1.25rem", flexWrap: "wrap" }}>
                 <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
                   <input
@@ -394,57 +492,72 @@ export default function AccountFormDrawer({
               </div>
             )}
 
-            <div className="comm-form-field">
-              <label htmlFor="acc-department">Departman</label>
-              <select
-                id="acc-department"
-                value={form.department}
-                onChange={(e) => setForm({ ...form, department: e.target.value })}
-              >
-                {DEPARTMENTS.map((d) => (
-                  <option key={d.id} value={d.id}>{d.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {!sameMeta && (
-              <>
-                <div className="comm-form-field">
-                  <label htmlFor="acc-scope">Kapsam</label>
-                  <select
-                    id="acc-scope"
-                    value={form.scope_type}
-                    onChange={(e) => setForm({ ...form, scope_type: e.target.value as WhatsAppAccountScope })}
-                  >
-                    <option value="ALL_SUBES">Tüm şubeler</option>
-                    <option value="SELECTED_SUBES">Seçili şubeler</option>
-                  </select>
-                </div>
-
-                {form.scope_type === "SELECTED_SUBES" && (
-                  <div className="comm-form-field">
-                    <label>Şubeler</label>
-                    <div className="comm-checkbox-grid">
-                      {subeler.length === 0 ? (
-                        <p className="comm-studio-muted">Şube bulunamadı.</p>
-                      ) : (
-                        subeler.map((s) => (
-                          <label key={s.id} className="comm-checkbox-item">
-                            <input
-                              type="checkbox"
-                              checked={form.sube_ids.includes(s.id)}
-                              onChange={() => toggleSube(s.id)}
-                            />
-                            <span>{s.ad}</span>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
+            {!linkExisting && (
+              <div className="comm-form-field">
+                <label htmlFor="acc-department">Departman</label>
+                <select
+                  id="acc-department"
+                  value={form.department}
+                  onChange={(e) => setForm({ ...form, department: e.target.value })}
+                >
+                  {DEPARTMENTS.map((d) => (
+                    <option key={d.id} value={d.id}>{d.label}</option>
+                  ))}
+                </select>
+              </div>
             )}
 
+            <div className="comm-form-field">
+              <label htmlFor="acc-scope">Şube kapsamı</label>
+              <select
+                id="acc-scope"
+                value={form.scope_type}
+                onChange={(e) => setForm({ ...form, scope_type: e.target.value as WhatsAppAccountScope })}
+              >
+                <option value="ALL_SUBES">Tüm şubeler</option>
+                <option value="SELECTED_SUBES">Seçili şubeler</option>
+              </select>
+              <p className="comm-field-hint" style={{ margin: "6px 0 0" }}>
+                Aynı numara birden fazla şubede kullanılabilir. Token ve WABA tekrar girilmez.
+              </p>
+            </div>
+
+            {form.scope_type === "SELECTED_SUBES" && (
+              <div className="comm-form-field">
+                <label>Şubeler</label>
+                <div className="comm-checkbox-grid">
+                  {subeler.length === 0 ? (
+                    <p className="comm-studio-muted">Şube bulunamadı.</p>
+                  ) : (
+                    subeler.map((s) => (
+                      <label key={s.id} className="comm-checkbox-item">
+                        <input
+                          type="checkbox"
+                          checked={form.sube_ids.includes(s.id)}
+                          onChange={() => toggleSube(s.id)}
+                        />
+                        <span>{s.ad}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {(linkExisting || sameMeta || account) && form.scope_type === "SELECTED_SUBES" && (
+              <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={copyBindings}
+                  onChange={(e) => setCopyBindings(e.target.checked)}
+                />
+                <span style={{ fontSize: "0.8125rem", lineHeight: 1.4 }}>
+                  Yeni eklenen şubelere bildirim şablon eşlemelerini kopyala
+                </span>
+              </label>
+            )}
+
+            {!linkExisting && (
             <div className="comm-form-field">
               <label>Bu hesabı kullanabilecek roller (boş = tüm roller — dikkatli kullanın)</label>
               <p className="comm-field-hint" style={{ margin: "0 0 8px", fontSize: 12, color: "#64748b" }}>
@@ -468,6 +581,7 @@ export default function AccountFormDrawer({
                 )}
               </div>
             </div>
+            )}
 
             <div className="comm-drawer-footer" style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
               {!account && existingAccounts.length > 0 && (
@@ -484,7 +598,7 @@ export default function AccountFormDrawer({
                 İptal
               </button>
               <button type="submit" className="comm-btn-primary" disabled={submitting}>
-                {submitting ? "Kaydediliyor…" : account ? "Güncelle" : "Oluştur"}
+                {submitting ? "Kaydediliyor…" : account ? "Güncelle" : linkExisting ? "Şubelere bağla" : "Oluştur"}
               </button>
             </div>
           </form>

@@ -44,6 +44,8 @@ SUBE_WRITABLE_FIELDS = (
 
 
 def apply_sube_fields(sube, data: dict) -> None:
+    old_ad = (sube.ad or '').strip()
+    old_gorunen = (getattr(sube, 'gorunen_ad', None) or '').strip()
     if 'kurum_id' in data:
         sube.kurum_id = data.get('kurum_id')
     for field in SUBE_WRITABLE_FIELDS:
@@ -55,3 +57,9 @@ def apply_sube_fields(sube, data: dict) -> None:
                 setattr(sube, field, bool(value))
             else:
                 setattr(sube, field, (value or '').strip() if isinstance(value, str) else (value or ''))
+    # Şube adı değişince eski görünen adı (ör. Merkez Şube) geride bırakma
+    if 'ad' in data:
+        new_ad = (sube.ad or '').strip()
+        incoming_gorunen = (data.get('gorunen_ad') or '').strip() if 'gorunen_ad' in data else None
+        if new_ad and incoming_gorunen is None and (not old_gorunen or old_gorunen == old_ad):
+            sube.gorunen_ad = new_ad

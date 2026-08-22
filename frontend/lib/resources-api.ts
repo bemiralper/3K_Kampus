@@ -163,6 +163,7 @@ export interface StudentResourceAssignment {
   resource_book: number;
   resource_name: string;
   resource_type: string;
+  resource_type_kod?: string;
   resource_type_renk: string;
   resource_yayin_yili: number | null;
   resource_yayinevi: string;
@@ -269,6 +270,8 @@ export interface AssignmentTask {
   content_unit_name?: string | null;
   content_unit_id?: number | null;
   content_sira?: number | null;
+  quota_kind?: string;
+  remaining_question_count?: number | null;
   order?: number;
   question_count: number | null;
   page_count: number | null;
@@ -389,6 +392,7 @@ export interface AssignmentCreatePayload {
       is_completion_task?: boolean;
       previous_task_completion_percent?: number | null;
       previous_assignment_title?: string;
+      quota_kind?: 'PARAGRAF' | 'PROBLEM' | '';
     }[];
   }[];
 }
@@ -1180,6 +1184,104 @@ export async function fetchStudentResourceDetail(studentId: number | string): Pr
   return apiGet<StudentResourceDetail>(`/api/student-resources/assignments/student_detail/?student_id=${studentId}`);
 }
 
+export type RoutineQuotaKind = 'PARAGRAF' | 'PROBLEM';
+
+export interface StudentRoutineQuota {
+  id: number;
+  student: number;
+  kind: RoutineQuotaKind;
+  kind_display: string;
+  daily_question_count: number;
+  weekly_question_count: number;
+  resource_book: number;
+  resource_book_name: string;
+  resource_publisher: string;
+  resource_type_kod: string;
+  source_assignment: number | null;
+  status: 'ACTIVE' | 'BOOK_FINISHED' | 'PAUSED';
+  status_display: string;
+  started_on: string;
+  finished_on: string | null;
+  planned_days: number;
+  planned_question_total: number;
+  has_pending_assignment: boolean;
+}
+
+export interface RoutineQuotaBookOption {
+  id: number;
+  ad: string;
+  yayinevi: string;
+  ders_id: number;
+  ders_ad: string;
+  kind: RoutineQuotaKind;
+}
+
+export interface LastQuotaDefault {
+  kind: RoutineQuotaKind;
+  resource_book: number | null;
+  resource_book_name: string;
+  daily_question_count: number;
+  weekly_question_count: number;
+}
+
+export type LastQuotaDefaults = Record<RoutineQuotaKind, LastQuotaDefault | null>;
+
+export async function fetchLastQuotaDefaults(
+  studentId: number,
+): Promise<ApiResponse<LastQuotaDefaults>> {
+  return apiGet<LastQuotaDefaults>(
+    `/api/coaching/manual-assignments/assignments/last_quota_defaults/?student_id=${studentId}`,
+  );
+}
+
+export async function fetchStudentRoutineQuotas(
+  studentId: number,
+): Promise<ApiResponse<StudentRoutineQuota[]>> {
+  return apiGet<StudentRoutineQuota[]>(
+    `/api/student-resources/routine-quotas/?student_id=${studentId}`,
+  );
+}
+
+export async function upsertStudentRoutineQuota(data: {
+  student: number;
+  kind: RoutineQuotaKind;
+  daily_question_count: number;
+  resource_book: number;
+  started_on?: string;
+}): Promise<ApiResponse<StudentRoutineQuota>> {
+  return apiPost<StudentRoutineQuota>('/api/student-resources/routine-quotas/', data);
+}
+
+export async function markRoutineQuotaFinished(
+  quotaId: number,
+  finishedOn?: string,
+): Promise<ApiResponse<StudentRoutineQuota>> {
+  return apiPost<StudentRoutineQuota>(
+    `/api/student-resources/routine-quotas/${quotaId}/mark_finished/`,
+    finishedOn ? { finished_on: finishedOn } : {},
+  );
+}
+
+export async function finishRoutineQuotaBook(data: {
+  student_id: number;
+  resource_book?: number;
+  assignment_id?: number;
+  finished_on?: string;
+}): Promise<ApiResponse<StudentRoutineQuota | { assignment_id: number; status: string }>> {
+  return apiPost('/api/student-resources/routine-quotas/finish_book/', data);
+}
+
+export async function fetchRoutineQuotaBooks(
+  kind: RoutineQuotaKind,
+  studentId?: number,
+): Promise<ApiResponse<RoutineQuotaBookOption[]>> {
+  const qs = new URLSearchParams({ kind });
+  if (studentId) qs.set('student_id', String(studentId));
+  return apiGet<RoutineQuotaBookOption[]>(
+    `/api/student-resources/routine-quotas/available_books/?${qs.toString()}`,
+  );
+}
+
 /**
  * Öğrenci kaynak atamasını güncelle (PUT)
  */
@@ -1652,6 +1754,7 @@ export async function updateTaskCompletionStatus(
   data: {
     completion_status: string;
     task_completion_percent?: number;
+    completed_question_count?: number;
     coach_evaluation_note?: string;
   }
 ): Promise<ApiResponse<AssignmentTask>> {
@@ -1853,6 +1956,7 @@ export interface AssignmentReportResponse {
   data: AssignmentReportData;
   overall_stats: AssignmentReportOverallStats;
   topic_cumulative: Record<string, unknown>[];
+  book_cumulative: Record<string, unknown>[];
   lesson_cumulative: Record<string, unknown>[];
   recent_trend: Record<string, unknown>[];
 }

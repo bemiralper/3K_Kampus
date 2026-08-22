@@ -3,6 +3,8 @@ Bildirim şablon eşlemesi yönetim servisi — katalog listeleme ve upsert.
 """
 from __future__ import annotations
 
+from django.db.models import Q
+
 from apps.communication.application.notification_dispatcher import build_preview
 from apps.communication.application.notification_events import (
     MODULE_LABELS,
@@ -263,6 +265,70 @@ def upsert_binding(
         },
     )
     return binding
+
+
+def copy_sube_scoped_settings(
+    kurum_id: int,
+    source_sube_id: int,
+    target_sube_ids: list[int],
+    *,
+    channel_config_id=None,
+) -> int:
+    """Şube özel bildirim eşlemelerini ve personel alıcılarını yeni şubelere kopyala.
+
+    Kurum / hesap varsayılanları zaten yeni şubeye düşer; yalnızca kaynak şubede
+    tanımlanmış satırlar çoğaltılır. Hedefte kayıt varsa üzerine yazılmaz.
+    """
+    from apps.communication.domain.models import NotificationStaffRecipient
+
+    if not source_sube_id or not target_sube_ids:
+        return 0
+    targets = [int(sid) for sid in target_sube_ids if sid and int(sid) != int(source_sube_id)]
+    if not targets:
+        return 0
+
+    copied = 0
+    source_bindings = NotificationTemplateBinding.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=source_sube_id,
+    )
+    if channel_config_id:
+        source_bindings = source_bindings.filter(
+            Q(channel_config_id=channel_config_id) | Q(channel_config_id__isnull=True),
+        )
+    for binding in source_bindings:
+        for target_id in targets:
+            _, created = NotificationTemplateBinding.objects.get_or_create(
+                kurum_id=kurum_id,
+                sube_id=target_id,
+                channel_config_id=binding.channel_config_id,
+                event_key=binding.event_key,
+                recipient_type=binding.recipient_type,
+                channel=binding.channel,
+                defaults={
+                    'meta_template_id': binding.meta_template_id,
+                    'message_template_id': binding.message_template_id,
+                    'send_mode': binding.send_mode,
+                    'is_active': binding.is_active,
+                    'updated_by_id': binding.updated_by_id,
+                },
+            )
+            if created:
+                copied += 1
+
+    for row in NotificationStaffRecipient.objects.filter(
+        kurum_id=kurum_id, sube_id=source_sube_id,
+    ):
+        for target_id in targets:
+            _, created = NotificationStaffRecipient.objects.get_or_create(
+                kurum_id=kurum_id,
+                sube_id=target_id,
+                event_key=row.event_key,
+                personel_id=row.personel_id,
+            )
+            if created:
+                copied += 1
+    return copied
 
 
 def delete_binding(

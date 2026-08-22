@@ -1,5 +1,177 @@
 /* Ödev Ver wizard — responsive layouts */
 
+.odev-quota-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.odev-quota-card {
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 14px 16px 16px;
+  min-width: 0;
+}
+
+.odev-quota-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.odev-quota-card-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.odev-quota-card-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.odev-quota-chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  flex-shrink: 0;
+}
+
+.odev-quota-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin: 0 0 5px;
+}
+
+.odev-quota-select,
+.odev-quota-input {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-color);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.odev-quota-select {
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.odev-quota-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.odev-quota-step {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-color);
+}
+
+.odev-quota-input {
+  width: 64px;
+  height: 32px;
+  text-align: center;
+  font-weight: 800;
+  font-size: 15px;
+  padding: 0 6px;
+}
+
+.odev-quota-weekly {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.odev-quota-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.odev-quota-preset {
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.odev-quota-preset.is-active {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+
+.odev-quota-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.odev-quota-add,
+.odev-quota-remove {
+  border: none;
+  border-radius: 8px;
+  height: 34px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.odev-quota-add {
+  flex: 1;
+  color: #fff;
+}
+
+.odev-quota-add:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.odev-quota-remove {
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.odev-quota-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .odev-quota-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .odev-assign-grid {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) 320px;

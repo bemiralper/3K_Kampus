@@ -144,7 +144,7 @@ export default function WhatsAppHesaplariClient() {
     return (
       <CommunicationPageShell
         title="WhatsApp Hesapları"
-        subtitle="Kurum genelinde birden fazla WhatsApp hattı yönetimi"
+        subtitle="Aynı numarayı birden fazla şubeye bağlayın; token tekrar girilmez"
         icon="📱"
         breadcrumbs={[{ label: "İletişim" }, { label: "WhatsApp Hesapları" }]}
       >
@@ -156,7 +156,7 @@ export default function WhatsAppHesaplariClient() {
   return (
     <CommunicationPageShell
       title="WhatsApp Hesapları"
-      subtitle="Şubelere ve rollere göre paylaştırılan çoklu WhatsApp hatlarını yönetin"
+      subtitle="Aynı numarayı birden fazla şubeye bağlayın. Token, WABA ve şablon ayarlarını her şube için tekrar girmeniz gerekmez."
       icon="📱"
       breadcrumbs={[{ label: "İletişim" }, { label: "WhatsApp Hesapları" }]}
       actions={

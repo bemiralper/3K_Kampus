@@ -90,6 +90,7 @@ class StudentResourceAssignment(models.Model):
     
     # Tarihler
     assigned_at = models.DateTimeField('Atanma Tarihi', auto_now_add=True)
+    started_on = models.DateField('Başlama Tarihi', null=True, blank=True)
     due_date = models.DateField('Son Tarih', null=True, blank=True)
     completed_at = models.DateTimeField('Tamamlanma Tarihi', null=True, blank=True)
     
@@ -347,6 +348,104 @@ class ResourcePurchaseListItem(models.Model):
             if not self.difficulty_snapshot:
                 self.difficulty_snapshot = _book_difficulty_display(book)
         super().save(*args, **kwargs)
+
+
+class StudentRoutineQuota(models.Model):
+    """Öğrenciye atanmış paragraf/problem günlük kota planı (içeriksiz ödev)."""
+
+    WEEKLY_MULTIPLIER = 7
+
+    class Kind(models.TextChoices):
+        PARAGRAF = 'PARAGRAF', 'Paragraf'
+        PROBLEM = 'PROBLEM', 'Problem'
+
+    class Status(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Aktif'
+        BOOK_FINISHED = 'BOOK_FINISHED', 'Kitap Bitti'
+        PAUSED = 'PAUSED', 'Duraklatıldı'
+
+    student = models.ForeignKey(
+        'ogrenci.Ogrenci',
+        on_delete=models.CASCADE,
+        related_name='routine_quotas',
+        verbose_name='Öğrenci',
+    )
+    kind = models.CharField(
+        'Tür',
+        max_length=20,
+        choices=Kind.choices,
+    )
+    daily_question_count = models.PositiveIntegerField(
+        'Günlük Soru Sayısı',
+    )
+    resource_book = models.ForeignKey(
+        'resources.ResourceBook',
+        on_delete=models.PROTECT,
+        related_name='routine_quotas',
+        verbose_name='Kaynak Kitap',
+    )
+    source_assignment = models.ForeignKey(
+        StudentResourceAssignment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='routine_quotas',
+        verbose_name='Kaynak Havuzu Ataması',
+    )
+    status = models.CharField(
+        'Durum',
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+    )
+    started_on = models.DateField('Başlama Tarihi')
+    finished_on = models.DateField('Bitiş Tarihi', null=True, blank=True)
+    coach = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='student_routine_quotas',
+        verbose_name='Koç',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'student_routine_quota'
+        verbose_name = 'Paragraf/Problem Kota Planı'
+        verbose_name_plural = 'Paragraf/Problem Kota Planları'
+        ordering = ['-started_on', '-id']
+        indexes = [
+            models.Index(fields=['student', 'kind', 'status']),
+            models.Index(fields=['student', 'status']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['student', 'kind'],
+                condition=Q(status='ACTIVE'),
+                name='unique_active_routine_quota_per_kind',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.get_kind_display()} ({self.daily_question_count}/gün)"
+
+    @property
+    def weekly_question_count(self):
+        return (self.daily_question_count or 0) * self.WEEKLY_MULTIPLIER
+
+    @property
+    def planned_days(self):
+        from django.utils import timezone
+        if not self.started_on:
+            return 0
+        end = self.finished_on or timezone.now().date()
+        return max(0, (end - self.started_on).days + 1)
+
+    @property
+    def planned_question_total(self):
+        return (self.daily_question_count or 0) * self.planned_days
 
 
 def _book_difficulty_display(book):

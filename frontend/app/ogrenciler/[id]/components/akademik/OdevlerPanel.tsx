@@ -113,15 +113,21 @@ export default function OdevlerPanel({ ogrenciId }: Props) {
 
   if (loading) {
     return (
-      <div className="akademik-loading">
-        <div className="akademik-spinner" />
-        <p>Ödevler yükleniyor...</p>
+      <div>
+        <div className="akademik-loading">
+          <div className="akademik-spinner" />
+          <p>Ödevler yükleniyor...</p>
+        </div>
       </div>
     );
   }
 
   if (error) {
-    return <div className="alert-modern alert-error">{error}</div>;
+    return (
+      <div>
+        <div className="alert-modern alert-error">{error}</div>
+      </div>
+    );
   }
 
   return (

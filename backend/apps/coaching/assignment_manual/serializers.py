@@ -24,6 +24,7 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
     content_unit_name = serializers.SerializerMethodField()
     content_unit_id = serializers.SerializerMethodField()
     content_sira = serializers.SerializerMethodField()
+    remaining_question_count = serializers.SerializerMethodField()
 
     class Meta:
         model = AssignmentTask
@@ -31,9 +32,10 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
             'id', 'lesson_block', 'content', 'content_id',
             'content_topic_name', 'content_topic_id',
             'content_unit_name', 'content_unit_id', 'content_sira',
+            'quota_kind',
             'task_type', 'task_type_display',
             'title', 'description', 'is_required',
-            'question_count', 'page_count',
+            'question_count', 'page_count', 'remaining_question_count',
             'estimated_duration_minutes', 'order', 'status', 'status_display',
             'completion_status', 'completion_status_display',
             'task_completion_percent', 'completed_question_count', 'completed_page_count',
@@ -70,6 +72,14 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
         if obj.content is not None and getattr(obj.content, 'sira', None) is not None:
             return obj.content.sira
         return None
+
+    def get_remaining_question_count(self, obj):
+        if obj.question_count is None:
+            return None
+        if obj.completion_status == AssignmentTask.CompletionStatus.PENDING:
+            return obj.question_count
+        completed = obj.completed_question_count or 0
+        return max(0, obj.question_count - completed)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -425,36 +435,37 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                 'student': 'Bu öğrenci pasif durumda. Pasif öğrenciye yeni ödev atanamaz.',
             })
 
-        content_ids = self._collect_task_content_ids(data.get('lessons') or [])
-        if not content_ids:
-            return data
-
-        existing = set(
-            ResourceContent.objects.filter(id__in=content_ids).values_list('id', flat=True)
-        )
-        missing = sorted({cid for cid in content_ids if cid not in existing})
-        if missing:
-            titles = []
-            for lesson in data.get('lessons') or []:
-                for task in lesson.get('tasks') or []:
-                    raw = task.get('content_id', task.get('content'))
-                    try:
-                        cid = int(raw)
-                    except (TypeError, ValueError):
-                        continue
-                    if cid in missing:
-                        title = (task.get('title') or '').strip()
-                        titles.append(f'{title} (#{cid})' if title else f'#{cid}')
-            label = ', '.join(dict.fromkeys(titles))  # sıra koruyarak tekilleştir
-            raise serializers.ValidationError({
-                'lessons': (
-                    'Seçilen kaynak içerik(ler) artık sistemde yok (silinmiş veya taşınmış olabilir): '
-                    f'{label}. Sayfayı yenileyip içeriği tekrar seçin.'
-                ),
-            })
+        lessons_data = data.get('lessons') or []
+        content_ids = self._collect_task_content_ids(lessons_data)
+        if content_ids:
+            existing = set(
+                ResourceContent.objects.filter(id__in=content_ids).values_list('id', flat=True)
+            )
+            missing = sorted({cid for cid in content_ids if cid not in existing})
+            if missing:
+                titles = []
+                for lesson in lessons_data:
+                    for task in lesson.get('tasks') or []:
+                        raw = task.get('content_id', task.get('content'))
+                        try:
+                            cid = int(raw)
+                        except (TypeError, ValueError):
+                            continue
+                        if cid in missing:
+                            title = (task.get('title') or '').strip()
+                            titles.append(f'{title} (#{cid})' if title else f'#{cid}')
+                label = ', '.join(dict.fromkeys(titles))  # sıra koruyarak tekilleştir
+                raise serializers.ValidationError({
+                    'lessons': (
+                        'Seçilen kaynak içerik(ler) artık sistemde yok (silinmiş veya taşınmış olabilir): '
+                        f'{label}. Sayfayı yenileyip içeriği tekrar seçin.'
+                    ),
+                })
 
         if student is not None and data.get('status') != 'DRAFT':
-            self._check_duplicate_pending_content(student, content_ids, data.get('lessons') or [])
+            if content_ids:
+                self._check_duplicate_pending_content(student, content_ids, lessons_data)
+            self._check_duplicate_pending_quota(student, lessons_data)
 
         return data
 
@@ -494,6 +505,39 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
             'lessons': (
                 'Bu öğrenciye aşağıdaki içerik(ler) zaten atanmış ve henüz kontrol edilmemiş: '
                 f'{label}. Önce mevcut ödevi kontrol edin/silin, sonra tekrar atayın.'
+            ),
+        })
+
+    @staticmethod
+    def _check_duplicate_pending_quota(student, lessons_data):
+        kinds = []
+        for lesson in lessons_data or []:
+            for task in lesson.get('tasks') or []:
+                kind = (task.get('quota_kind') or '').strip()
+                if kind:
+                    kinds.append(kind)
+        if not kinds:
+            return
+        duplicate = set(
+            AssignmentTask.objects.filter(
+                quota_kind__in=kinds,
+                completion_status='PENDING',
+                lesson_block__assignment__student=student,
+                lesson_block__assignment__is_active=True,
+                lesson_block__assignment__status__in=['ASSIGNED', 'IN_PROGRESS', 'OVERDUE'],
+            ).values_list('quota_kind', flat=True)
+        )
+        if not duplicate:
+            return
+        labels = {
+            AssignmentTask.QuotaKind.PARAGRAF: 'Paragraf',
+            AssignmentTask.QuotaKind.PROBLEM: 'Problem',
+        }
+        label = ', '.join(labels.get(k, k) for k in dict.fromkeys(kinds) if k in duplicate)
+        raise serializers.ValidationError({
+            'lessons': (
+                'Bu öğrenciye aşağıdaki kota ödevi zaten atanmış ve henüz kontrol edilmemiş: '
+                f'{label}.'
             ),
         })
 
@@ -547,6 +591,15 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                         content_id = task_data.pop('content', None)
                     else:
                         task_data.pop('content', None)
+                    if content_id in ('', 0, '0'):
+                        content_id = None
+
+                    quota_kind = (task_data.get('quota_kind') or '').strip()
+                    if quota_kind and quota_kind not in AssignmentTask.QuotaKind.values:
+                        raise serializers.ValidationError({
+                            'lessons': f'Geçersiz kota türü: {quota_kind}',
+                        })
+                    task_data['quota_kind'] = quota_kind
 
                     if content_id:
                         content = ResourceContent.objects.filter(id=content_id).first()
@@ -569,9 +622,16 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                                 content.page_end - content.page_start + 1
                             )
 
+                    allowed = {
+                        'task_type', 'title', 'description', 'question_count', 'page_count',
+                        'is_required', 'estimated_duration_minutes', 'order',
+                        'is_completion_task', 'previous_task_completion_percent',
+                        'previous_assignment_title', 'quota_kind', 'content_id',
+                    }
+                    clean = {k: v for k, v in task_data.items() if k in allowed}
                     AssignmentTask.objects.create(
                         lesson_block=lesson,
-                        **task_data
+                        **clean
                     )
 
         return assignment

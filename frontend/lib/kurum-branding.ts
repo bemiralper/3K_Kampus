@@ -147,9 +147,21 @@ export function getSubePrintLogo(sube: SubeBrandingInput | null | undefined): {
 export function rememberPreferredFavicon(branding: KurumBranding | null | undefined) {
   if (typeof window === 'undefined') return;
   const url = (branding?.favicon_url || '').trim();
-  if (!url) return;
+  if (!url) {
+    clearPreferredFavicon();
+    return;
+  }
   try {
     sessionStorage.setItem(PREFERRED_FAVICON_KEY, url);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearPreferredFavicon() {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(PREFERRED_FAVICON_KEY);
   } catch {
     /* ignore */
   }
@@ -351,9 +363,12 @@ export function brandingFromContext(
 ): KurumBranding {
   const base = kurum ? brandingFromKurum(kurum) : DEFAULT_BRANDING;
   if (!sube) return base;
+  // Sekme / sidebar, context seçicideki şube adıyla aynı olsun.
+  // Eski gorunen_ad (ör. "Merkez Şube") şube adı "3K Kampüs" iken başlığı ezmesin.
+  const subeAd = (sube.ad || '').trim();
   return mergeBranding({
     ...base,
-    gorunen_ad: pickOverride(sube.gorunen_ad, sube.ad || base.gorunen_ad),
+    gorunen_ad: subeAd || pickOverride(sube.gorunen_ad, base.gorunen_ad),
     slogan: pickOverride(sube.slogan, base.slogan),
     login_logo_url: sube.login_logo_url ?? base.login_logo_url,
     app_logo_url: sube.app_logo_url ?? base.app_logo_url,

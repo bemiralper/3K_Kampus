@@ -17,7 +17,9 @@ import type {
   SelectedContent,
   ContentTaskHistory,
   ScopeCompletionMap,
+  RoutineQuotaKind,
 } from '@/app/admin/odev/ver/types';
+import { isRoutineQuotaResource, routineQuotaKindOf } from '@/app/admin/odev/ver/types';
 import {
   fetchOgrenciList,
   fetchStudentResourcesByStudent,
@@ -28,8 +30,12 @@ import {
   fetchAssignmentPackage,
   fetchAssignments,
   incrementPackageUsage,
+  fetchLastQuotaDefaults,
+  fetchRoutineQuotaBooks,
+  upsertStudentRoutineQuota,
   type AssignmentPackageItem,
   type ManualAssignment,
+  type LastQuotaDefaults,
 } from '@/lib/resources-api';
 import AssignmentNotifySendModal from '@/components/odev/AssignmentNotifySendModal';
 import {
@@ -114,6 +120,42 @@ function dueDateToApi(dateStr: string): string {
   return `${dateStr}T23:59:00`;
 }
 
+function quotaCartId(kind: RoutineQuotaKind, bookId: number): number {
+  return kind === 'PARAGRAF' ? -bookId : -(bookId + 1_000_000_000);
+}
+
+function quotaKindLabel(kind: RoutineQuotaKind): string {
+  return kind === 'PARAGRAF' ? 'Paragraf' : 'Problem';
+}
+
+function buildQuotaCartItem(
+  resource: StudentResource,
+  daily: number,
+): SelectedContent | null {
+  const kind = routineQuotaKindOf(resource);
+  if (!kind || daily < 1) return null;
+  const weekly = daily * 7;
+  const label = quotaKindLabel(kind);
+  return {
+    id: quotaCartId(kind, resource.resource_book),
+    contentId: 0,
+    contentName: `${label} — ${weekly} soru`,
+    contentType: 'QUOTA',
+    topicId: kind === 'PARAGRAF' ? -1 : -2,
+    topicName: label,
+    unitId: 0,
+    unitName: '',
+    bookId: resource.resource_book,
+    bookName: resource.resource_name,
+    lessonId: resource.lesson,
+    lessonName: resource.lesson_name,
+    questionCount: weekly,
+    pageCount: null,
+    quotaKind: kind,
+    dailyQuestionCount: daily,
+  };
+}
+
 function mapPackageItemsToCart(items: AssignmentPackageItem[]): SelectedContent[] {
   return items.map(item => ({
     id: item.content_id,
@@ -170,6 +212,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const [taskHistory, setTaskHistory] = useState<ContentTaskHistory>({});
   const [bookProgress, setBookProgress] = useState<ScopeCompletionMap>({});
   const [unitProgress, setUnitProgress] = useState<ScopeCompletionMap>({});
+  const [lastQuotaDefaults, setLastQuotaDefaults] = useState<LastQuotaDefaults>({
+    PARAGRAF: null,
+    PROBLEM: null,
+  });
 
   /* ─── Paketten gelen bekleyen veriler ─── */
   const [pendingPackageCart, setPendingPackageCart] = useState<SelectedContent[] | null>(null);
@@ -416,13 +462,36 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   }, [preselectedStudentId, students, studentsLoaded, autoSelected]);
 
   /* ─── Fetch student resources ─── */
+  const mergeQuotaCatalogBooks = async (sid: number, existing: StudentResource[]) => {
+    const [paragraf, problem] = await Promise.all([
+      fetchRoutineQuotaBooks('PARAGRAF', sid),
+      fetchRoutineQuotaBooks('PROBLEM', sid),
+    ]);
+    const catalog = [
+      ...(paragraf.success && Array.isArray(paragraf.data) ? paragraf.data : []),
+      ...(problem.success && Array.isArray(problem.data) ? problem.data : []),
+    ];
+    const catalogById = new Map(catalog.map((b) => [b.id, b]));
+    return existing
+      .filter((r) => (r.status || '').toUpperCase() !== 'COMPLETED')
+      .map((r) => {
+        const cat = catalogById.get(r.resource_book);
+        if (!cat) return r;
+        return {
+          ...r,
+          resource_type_kod: r.resource_type_kod || cat.kind,
+          publisher: r.publisher || cat.yayinevi,
+        };
+      });
+  };
+
   const fetchResources = async (sid: number) => {
     setResLoading(true);
     setResources([]);
     try {
+      let flat: StudentResource[] = [];
       const detail = await fetchStudentResourceDetail(sid);
       if (detail.success && detail.data?.lessons?.length) {
-        const flat: StudentResource[] = [];
         for (const lesson of detail.data.lessons) {
           for (const r of lesson.resources || []) {
             if (!r.resource_book) continue;
@@ -432,26 +501,26 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               resource_name: r.resource_name,
               resource_type: r.resource_type,
               resource_type_display: r.resource_type,
+              resource_type_kod: r.resource_type_kod,
               publication_year: r.resource_yayin_yili ?? undefined,
+              publisher: r.resource_yayinevi,
               lesson: lesson.lesson_id || r.lesson || 0,
               lesson_name: lesson.lesson_name || r.lesson_name || 'Ders',
+              status: r.status,
             });
           }
         }
-        setResources(flat);
-        return;
-      }
-
-      const result = await fetchStudentResourcesByStudent(sid);
-      if (result.success && result.data) {
-        setResources(
-          (result.data as StudentResource[]).map((r) => ({
+      } else {
+        const result = await fetchStudentResourcesByStudent(sid);
+        if (result.success && result.data) {
+          flat = (result.data as StudentResource[]).map((r) => ({
             ...r,
             lesson: r.lesson || 0,
             lesson_name: r.lesson_name || 'Ders',
-          }))
-        );
+          }));
+        }
       }
+      setResources(await mergeQuotaCatalogBooks(sid, flat));
     } catch { flash('❌ Kaynaklar yüklenemedi'); }
     finally {
       setResLoading(false);
@@ -459,6 +528,20 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   };
 
   /* ─── Fetch content task history for student ─── */
+  const fetchQuotaDefaults = async (sid: number) => {
+    try {
+      const result = await fetchLastQuotaDefaults(sid);
+      if (result.success && result.data) {
+        setLastQuotaDefaults({
+          PARAGRAF: result.data.PARAGRAF || null,
+          PROBLEM: result.data.PROBLEM || null,
+        });
+        return;
+      }
+    } catch { /* varsayılan boş */ }
+    setLastQuotaDefaults({ PARAGRAF: null, PROBLEM: null });
+  };
+
   const fetchTaskHistory = async (sid: number) => {
     try {
       const result = await fetchContentTaskHistory(sid);
@@ -493,6 +576,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     setMultiSelect(false);
     fetchResources(s.id);
     fetchTaskHistory(s.id);
+    void fetchQuotaDefaults(s.id);
     setSelectedResource(null);
     setBookDetails(null);
     setResourcePrefillDone(false);
@@ -591,7 +675,19 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
   const pickResource = (r: StudentResource) => {
     setSelectedResource(r);
+    if (isRoutineQuotaResource(r)) {
+      setBookDetails(null);
+      setBookLoading(false);
+      return;
+    }
     fetchBook(r.resource_book);
+  };
+
+  const addQuotaToCart = (resource: StudentResource, daily: number) => {
+    const item = buildQuotaCartItem(resource, daily);
+    if (!item || !item.quotaKind) return;
+    setCart((prev) => [...prev.filter((c) => c.quotaKind !== item.quotaKind), item]);
+    flash(`${item.topicName} ödevi sepete eklendi (${item.questionCount} soru)`);
   };
 
   /* ─── Kontrolden gelen lesson/book ile kaynak ön seçimi ─── */
@@ -654,9 +750,18 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     applyCompletionNotes([item]);
   }, [bookDetails, selectedResource, cart, applyCompletionNotes]);
 
+  const removeContents = (ids: number[]) => {
+    const idSet = new Set(ids);
+    setCart((prev) => prev.filter((c) => !idSet.has(c.id)));
+    setContentNotes((prev) => {
+      const n = { ...prev };
+      ids.forEach((id) => { delete n[id]; });
+      return n;
+    });
+  };
+
   const removeContent = (id: number) => {
-    setCart(prev => prev.filter(c => c.id !== id));
-    setContentNotes(prev => { const n = { ...prev }; delete n[id]; return n; });
+    removeContents([id]);
   };
 
   const toggleContent = useCallback((c: Content, t: Topic, u: Unit) => {
@@ -991,7 +1096,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       // Kitap → Ünite → Konu blokları (konu sınırları korunur; PDF hiyerarşisi bozulmaz)
       const grouped: Record<string, SelectedContent[]> = {};
       cart.forEach((c) => {
-        const k = `${c.bookId}:${c.unitId}:${c.topicId}`;
+        const k = c.quotaKind ? `${c.bookId}:quota:${c.quotaKind}` : `${c.bookId}:${c.unitId}:${c.topicId}`;
         if (!grouped[k]) grouped[k] = [];
         grouped[k].push(c);
       });
@@ -1004,16 +1109,20 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           notes: '',
           order: lessonOrder,
           tasks: contents.map((c, taskOrder) => {
-            const hist = taskHistory[c.contentId];
+            const hist = c.quotaKind ? undefined : taskHistory[c.contentId];
             const isCompletion = isIncompleteHistory(hist);
             const autoNote = isCompletion ? buildCompletionNote(hist) : '';
             return {
-              task_type: c.contentType === 'TEST_SET' ? 'SOLVE_TEST' : c.contentType === 'PAGE_RANGE' ? 'SOLVE_PDF' : c.contentType === 'VIDEO' ? 'WATCH_VIDEO' : 'REVIEW_TOPIC',
+              task_type: c.quotaKind ? 'SOLVE_TEST' : c.contentType === 'TEST_SET' ? 'SOLVE_TEST' : c.contentType === 'PAGE_RANGE' ? 'SOLVE_PDF' : c.contentType === 'VIDEO' ? 'WATCH_VIDEO' : 'REVIEW_TOPIC',
               title: c.contentName,
               description: (contentNotes[c.id] || '').trim() || autoNote,
-              content_id: c.contentId,
-              question_count: c.questionCount || null,
-              page_count: c.pageCount || (c.startPage && c.endPage ? c.endPage - c.startPage + 1 : null),
+              ...(c.quotaKind
+                ? { quota_kind: c.quotaKind, question_count: c.questionCount || null }
+                : {
+                    content_id: c.contentId,
+                    question_count: c.questionCount || null,
+                    page_count: c.pageCount || (c.startPage && c.endPage ? c.endPage - c.startPage + 1 : null),
+                  }),
               is_required: true,
               order: taskOrder,
               is_completion_task: isCompletion,
@@ -1043,6 +1152,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       let failCount = 0;
       let lastCreatedId: number | null = null;
       let lastStudentName = '';
+      const quotaItems = cart.filter((c) => c.quotaKind);
       for (const student of targetStudents) {
         const body = {
           student: student.id,
@@ -1064,6 +1174,16 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               lastCreatedId = createdId;
               lastStudentName = `${student.ad} ${student.soyad}`.trim();
             }
+            await Promise.all(quotaItems.map((item) => {
+              const daily = item.dailyQuestionCount
+                || Math.max(1, Math.round((item.questionCount || 7) / 7));
+              return upsertStudentRoutineQuota({
+                student: student.id,
+                kind: item.quotaKind as RoutineQuotaKind,
+                daily_question_count: daily,
+                resource_book: item.bookId,
+              }).catch(() => undefined);
+            }));
           } else {
             failCount++;
           }
@@ -1525,12 +1645,15 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               unitProgress={unitProgress}
               initialOpenLessonId={preselectedLessonId}
               onPickResource={pickResource}
+              onAddQuota={addQuotaToCart}
+              lastQuotaDefaults={lastQuotaDefaults}
               onToggleContent={toggleContent}
               onSelectAllUnit={selectAllUnit}
               onSelectAllTopic={selectAllTopic}
               onSelectIncompleteUnit={selectIncompleteFromUnit}
               onSelectIncompleteTopic={selectIncompleteFromTopic}
               onRemoveContent={removeContent}
+              onRemoveContents={removeContents}
               onClearCart={clearCart}
               onNoteChange={(id: number, v: string) => setContentNotes(p => ({ ...p, [id]: v }))}
               isSelected={isContentSelected}
@@ -1556,6 +1679,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               onDueDateChange={setDueDate}
               onPriorityChange={setPriority}
               onRemove={removeContent}
+              onRemoveMany={removeContents}
               onSave={handleSave}
               onPrint={() => setShowPrint(true)}
               getPhotoUrl={getPhotoUrl}

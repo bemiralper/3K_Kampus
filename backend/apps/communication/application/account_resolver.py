@@ -319,6 +319,89 @@ class AccountResolver:
             channel=Channel.WHATSAPP,
         ).first()
 
+    @staticmethod
+    def find_active_by_phone(
+        kurum_id: int,
+        phone_number_id: str,
+        *,
+        exclude_id=None,
+    ) -> CommunicationChannelConfig | None:
+        """Aynı kurumdaki aktif hat — başka kuruma sızmaz."""
+        if not phone_number_id:
+            return None
+        qs = CommunicationChannelConfig.objects.filter(
+            kurum_id=kurum_id,
+            channel=Channel.WHATSAPP,
+            phone_number_id=phone_number_id,
+            is_active=True,
+        ).prefetch_related('allowed_subes', 'allowed_roles')
+        if exclude_id:
+            qs = qs.exclude(id=exclude_id)
+        return qs.first()
+
+    @staticmethod
+    def assign_subes(
+        account: CommunicationChannelConfig,
+        sube_ids: list[int] | None,
+        *,
+        scope_type: str | None = None,
+        replace: bool = True,
+        copy_bindings: bool = True,
+    ) -> dict:
+        """
+        Mevcut WhatsApp numarasını şubelere bağla.
+
+        Token / WABA tekrar girilmez. SELECTED_SUBES'te yeni eklenen şubelere
+        kaynak şubenin bildirim eşlemeleri kopyalanır.
+        """
+        from apps.communication.application.notification_binding_service import (
+            copy_sube_scoped_settings,
+        )
+        from apps.sube.domain.models import Sube
+
+        wanted_scope = scope_type or account.scope_type
+        previous = set(account.allowed_subes.values_list('id', flat=True))
+        requested = [int(sid) for sid in (sube_ids or []) if sid]
+
+        if wanted_scope == WhatsAppAccountScope.ALL_SUBES:
+            account.scope_type = WhatsAppAccountScope.ALL_SUBES
+            if previous:
+                account.allowed_subes.clear()
+            account.save(update_fields=['scope_type', 'updated_at'])
+            return {
+                'added_sube_ids': [],
+                'copied_bindings': 0,
+                'scope_type': account.scope_type,
+            }
+
+        valid = set(
+            Sube.objects.filter(
+                kurum_id=account.kurum_id,
+                id__in=requested,
+            ).values_list('id', flat=True)
+        )
+        target = valid if replace else (previous | valid)
+        added = sorted(target - previous)
+
+        account.scope_type = WhatsAppAccountScope.SELECTED_SUBES
+        account.save(update_fields=['scope_type', 'updated_at'])
+        account.allowed_subes.set(target)
+
+        copied = 0
+        source_id = next(iter(previous), None)
+        if copy_bindings and added and source_id:
+            copied = copy_sube_scoped_settings(
+                account.kurum_id,
+                source_id,
+                added,
+                channel_config_id=account.id,
+            )
+        return {
+            'added_sube_ids': added,
+            'copied_bindings': copied,
+            'scope_type': account.scope_type,
+        }
+
 
 def _cfg_role_ids(cfg: CommunicationChannelConfig) -> list[int]:
     cache = getattr(cfg, '_prefetched_objects_cache', None) or {}

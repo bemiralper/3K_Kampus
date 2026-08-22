@@ -3,7 +3,12 @@
 """
 
 from rest_framework import serializers
-from .models import StudentResourceAssignment, ResourcePurchaseList, ResourcePurchaseListItem
+from .models import (
+    StudentResourceAssignment,
+    ResourcePurchaseList,
+    ResourcePurchaseListItem,
+    StudentRoutineQuota,
+)
 
 
 class StudentResourceAssignmentSerializer(serializers.ModelSerializer):
@@ -32,7 +37,7 @@ class StudentResourceAssignmentSerializer(serializers.ModelSerializer):
             'status', 'status_display',
             'ownership_type', 'ownership_type_display',
             'progress_percent',
-            'assigned_at', 'due_date', 'completed_at',
+            'assigned_at', 'started_on', 'due_date', 'completed_at',
             'notes', 'is_active', 'is_overdue',
             'created_at', 'updated_at'
         ]
@@ -61,7 +66,7 @@ class StudentResourceAssignmentWriteSerializer(serializers.ModelSerializer):
         model = StudentResourceAssignment
         fields = [
             'id', 'student', 'coach', 'lesson', 'resource_book',
-            'status', 'ownership_type', 'progress_percent', 'due_date', 'notes'
+            'status', 'ownership_type', 'progress_percent', 'started_on', 'due_date', 'notes'
         ]
     
     def validate(self, data):
@@ -326,6 +331,60 @@ class ResourcePurchaseListUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ResourcePurchaseList
         fields = ['status', 'notes', 'stationery_name', 'stationery_address']
+
+
+class StudentRoutineQuotaSerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(source='get_kind_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    resource_book_name = serializers.CharField(source='resource_book.ad', read_only=True)
+    resource_publisher = serializers.SerializerMethodField()
+    resource_type_kod = serializers.CharField(source='resource_book.book_type.kod', read_only=True)
+    weekly_question_count = serializers.IntegerField(read_only=True)
+    planned_days = serializers.IntegerField(read_only=True)
+    planned_question_total = serializers.IntegerField(read_only=True)
+    has_pending_assignment = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StudentRoutineQuota
+        fields = [
+            'id', 'student', 'kind', 'kind_display',
+            'daily_question_count', 'weekly_question_count',
+            'resource_book', 'resource_book_name', 'resource_publisher',
+            'resource_type_kod', 'source_assignment',
+            'status', 'status_display',
+            'started_on', 'finished_on',
+            'planned_days', 'planned_question_total',
+            'has_pending_assignment',
+            'coach', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'source_assignment', 'status', 'finished_on',
+            'coach', 'created_at', 'updated_at',
+        ]
+
+    def get_resource_publisher(self, obj):
+        book = obj.resource_book
+        if not book:
+            return ''
+        return book.yayinevi or ''
+
+    def get_has_pending_assignment(self, obj):
+        pending = self.context.get('pending_kinds')
+        if pending is None:
+            return False
+        return obj.kind in pending and obj.status == StudentRoutineQuota.Status.ACTIVE
+
+
+class StudentRoutineQuotaWriteSerializer(serializers.Serializer):
+    student = serializers.IntegerField()
+    kind = serializers.ChoiceField(choices=StudentRoutineQuota.Kind.choices)
+    daily_question_count = serializers.IntegerField(min_value=1)
+    resource_book = serializers.IntegerField()
+    started_on = serializers.DateField(required=False, allow_null=True)
+
+
+class StudentRoutineQuotaFinishSerializer(serializers.Serializer):
+    finished_on = serializers.DateField(required=False, allow_null=True)
 
 
 class PurchaseListItemStatusSerializer(serializers.Serializer):

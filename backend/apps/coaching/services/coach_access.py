@@ -18,24 +18,33 @@ def get_coach_profile(user):
     return None
 
 
+_RESOURCE_ADMIN_ROLES = ('super_admin', 'admin', 'mudur', 'mudir_yardimcisi')
+
+
+def _has_resource_admin_role(user):
+    try:
+        return user.user_role.role.code in _RESOURCE_ADMIN_ROLES
+    except Exception:
+        return False
+
+
 def is_resource_admin(user):
     """
     Kurum yöneticisi / admin — tüm öğrencilere erişim.
 
-    Aktif koç profili varsa False döner: is_staff olan rehberler kurum geneli
-    öğrenci listesi görmemeli; koç kapsamı (scoped_student_ids) uygulanır.
+    Süper kullanıcı ve super_admin / admin / müdür rolleri koç profilinden
+    önce gelir: Kitap Atamaları detayı yönetici olarak açılabilmeli.
+
+    is_staff olan rehberler (rolü yönetici değil) aktif koç profili varsa
+    kurum geneli liste görmez; koç kapsamı (scoped_student_ids) uygulanır.
     """
     if not user or not user.is_authenticated:
         return False
+    if user.is_superuser or _has_resource_admin_role(user):
+        return True
     if get_coach_profile(user) is not None:
         return False
-    if user.is_superuser or user.is_staff:
-        return True
-    try:
-        role_code = user.user_role.role.code
-        return role_code in ('super_admin', 'admin', 'mudur', 'mudir_yardimcisi')
-    except Exception:
-        return False
+    return bool(user.is_staff)
 
 
 def can_access_all_coaches(user) -> bool:
@@ -74,12 +83,12 @@ def scoped_student_ids(user):
     None → admin, filtre yok.
     Koç → yalnızca aktif birincil atama (ödev/kaynak eski öğrenciyi listede tutmaz).
     """
+    if is_resource_admin(user):
+        return None
+
     coach_profile = get_coach_profile(user)
     if coach_profile is not None:
         return set(get_active_coach_student_ids(coach_profile))
-
-    if is_resource_admin(user):
-        return None
 
     allowed = set()
     from apps.student_resources.models import StudentResourceAssignment
@@ -103,7 +112,10 @@ def user_can_access_student(user, student_id):
     allowed = scoped_student_ids(user)
     if allowed is None:
         return True
-    return int(student_id) in allowed
+    try:
+        return int(student_id) in allowed
+    except (TypeError, ValueError):
+        return False
 
 
 def filter_by_student_scope(queryset, user, student_field='student_id'):

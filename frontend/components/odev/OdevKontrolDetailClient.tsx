@@ -33,6 +33,8 @@ interface AssignmentTask {
   description: string;
   is_required: boolean;
   question_count: number | null;
+  remaining_question_count?: number | null;
+  quota_kind?: string;
   page_count: number | null;
   estimated_duration_minutes: number | null;
   order: number;
@@ -190,6 +192,7 @@ export default function OdevKontrolDetailClient({
 
   // Eksik % seçimi aktif görev
   const [partialTaskId, setPartialTaskId] = useState<number | null>(null);
+  const [partialSolvedCount, setPartialSolvedCount] = useState<string>('');
 
   // Not ekleme
   const [editingNoteTaskId, setEditingNoteTaskId] = useState<number | null>(null);
@@ -370,20 +373,31 @@ export default function OdevKontrolDetailClient({
     });
   }, [expandedStorageKey]);
 
-  const handleUpdateTaskStatus = async (taskId: number, completionStatus: string, pct?: number) => {
+  const handleUpdateTaskStatus = async (
+    taskId: number,
+    completionStatus: string,
+    pct?: number,
+    solvedCount?: number,
+  ) => {
     setSaving(taskId);
     const wasCompleted = assignment?.status === "COMPLETED";
     try {
       const body: {
         completion_status: string;
         task_completion_percent?: number;
+        completed_question_count?: number;
       } = { completion_status: completionStatus };
-      if (completionStatus === "PARTIAL" && pct !== undefined) {
+      if (completionStatus === "PARTIAL" && solvedCount !== undefined) {
+        body.completed_question_count = solvedCount;
+      } else if (completionStatus === "PARTIAL" && pct !== undefined) {
         body.task_completion_percent = pct;
       }
       const result = await updateTaskCompletionStatus(taskId, body);
       if (result.success) {
-        flash(completionStatus === "DONE" ? "✅ Yaptı olarak işaretlendi" : completionStatus === "NOT_DONE" ? "❌ Yapmadı olarak işaretlendi" : `⚠️ Eksik: %${pct}`);
+        const partialLabel = solvedCount !== undefined
+          ? `⚠️ Eksik: ${solvedCount} soru`
+          : `⚠️ Eksik: %${pct}`;
+        flash(completionStatus === "DONE" ? "✅ Yaptı olarak işaretlendi" : completionStatus === "NOT_DONE" ? "❌ Yapmadı olarak işaretlendi" : partialLabel);
         const updated = await fetchAssignment();
         setPartialTaskId(null);
         collapseFullyControlledLessons(updated);
@@ -1193,7 +1207,18 @@ export default function OdevKontrolDetailClient({
                               : task.completion_status === "PARTIAL" ? " is-partial"
                               : "";
                           const metaBits: string[] = [];
-                          if (task.question_count != null && task.question_count > 0) metaBits.push(`${task.question_count} soru`);
+                          if (task.quota_kind && task.question_count != null) {
+                            const solved = task.completed_question_count ?? 0;
+                            const remaining = task.remaining_question_count
+                              ?? Math.max(0, task.question_count - solved);
+                            if (task.completion_status === 'PARTIAL') {
+                              metaBits.push(`${solved} / ${task.question_count} (kalan ${remaining})`);
+                            } else {
+                              metaBits.push(`${task.question_count} soru`);
+                            }
+                          } else if (task.question_count != null && task.question_count > 0) {
+                            metaBits.push(`${task.question_count} soru`);
+                          }
                           if (task.page_count != null && task.page_count > 0) metaBits.push(`${task.page_count} sf`);
                           return (
                             <div key={task.id}>
@@ -1240,7 +1265,18 @@ export default function OdevKontrolDetailClient({
                                       <button
                                         type="button"
                                         className={`ok-segment-btn${task.completion_status === "PARTIAL" || isPartialOpen ? " is-active-partial" : ""}`}
-                                        onClick={() => setPartialTaskId(isPartialOpen ? null : task.id)}
+                                        onClick={() => {
+                                          if (isPartialOpen) {
+                                            setPartialTaskId(null);
+                                          } else {
+                                            setPartialTaskId(task.id);
+                                            setPartialSolvedCount(
+                                              task.completed_question_count != null
+                                                ? String(task.completed_question_count)
+                                                : '',
+                                            );
+                                          }
+                                        }}
                                         disabled={isSaving}
                                       >
                                         Eksik
@@ -1277,7 +1313,46 @@ export default function OdevKontrolDetailClient({
                                       : task.completion_status === "PARTIAL" ? "#d97706"
                                       : "#e2e8f0",
                                 }}>
-                                  {isPartialOpen && (
+                                  {isPartialOpen && task.quota_kind && (
+                                    <div className="ok-partial-panel" style={{ marginTop: 8 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 8 }}>
+                                        Çözülen soru sayısı
+                                      </div>
+                                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={task.question_count || undefined}
+                                          value={partialSolvedCount}
+                                          onChange={(e) => setPartialSolvedCount(e.target.value)}
+                                          style={{
+                                            width: 96, padding: "8px 10px", border: "1px solid #e2e8f0",
+                                            borderRadius: 8, fontSize: 13,
+                                          }}
+                                        />
+                                        <span style={{ fontSize: 12, color: "#64748b" }}>
+                                          / {task.question_count ?? "?"}
+                                          {task.question_count != null && partialSolvedCount !== "" && (
+                                            <> · kalan {Math.max(0, task.question_count - (parseInt(partialSolvedCount, 10) || 0))}</>
+                                          )}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          className="ok-segment-btn is-active-partial"
+                                          disabled={isSaving || partialSolvedCount === ""}
+                                          onClick={() => handleUpdateTaskStatus(
+                                            task.id,
+                                            "PARTIAL",
+                                            undefined,
+                                            parseInt(partialSolvedCount, 10),
+                                          )}
+                                        >
+                                          Kaydet
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {isPartialOpen && !task.quota_kind && (
                                     <div className="ok-partial-panel" style={{ marginTop: 8 }}>
                                       <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Tamamlanma yüzdesi seçin:</div>
                                       <div className="ok-partial-grid">
@@ -1374,7 +1449,7 @@ export default function OdevKontrolDetailClient({
           {/* Notlar */}
           {(assignment.coach_notes || assignment.student_notes || assignment.description) && (
             <div style={{ background: "white", borderRadius: 16, padding: 24, marginTop: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.04)", border: "1px solid #f1f5f9" }}>
-              {assignment.description && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📋 Açıklama</div><p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.7, background: "#f8fafc", padding: "10px 14px", borderRadius: 10, border: "1px solid #f1f5f9" }}>{assignment.description}</p></div>}
+              {assignment.description && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📋 Açıklama</div><p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.7, background: "#f8fafc", padding: "10px 14px", borderRadius: 10, border: "1px solid #f1f5f9", whiteSpace: "pre-line" }}>{assignment.description}</p></div>}
               {assignment.coach_notes && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>🎓 Koç Notları</div><p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.7, background: "#f5f3ff", padding: "10px 14px", borderRadius: 10, border: "1px solid #ede9fe" }}>{assignment.coach_notes}</p></div>}
               {assignment.student_notes && <div><div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📝 Öğrenci Notları</div><p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.7, background: "#f0fdf4", padding: "10px 14px", borderRadius: 10, border: "1px solid #dcfce7" }}>{assignment.student_notes}</p></div>}
             </div>

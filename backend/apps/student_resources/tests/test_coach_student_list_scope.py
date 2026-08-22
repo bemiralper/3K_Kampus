@@ -117,3 +117,56 @@ class CoachStudentResourceScopeTest(TestCase):
         self.assertEqual(delete.status_code, 200, delete.content)
         self.assignment.refresh_from_db()
         self.assertFalse(self.assignment.is_active)
+
+    def test_staff_coach_cannot_open_unassigned_student_detail(self):
+        res = self.client.get(
+            '/api/student-resources/assignments/student_detail/',
+            {'student_id': self.other.id},
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_super_admin_with_coach_profile_opens_any_student_detail(self):
+        from apps.roller.models import Role, UserRole
+
+        admin = User.objects.create_user(
+            username='havuz.super@test.local',
+            password='test',
+            is_staff=True,
+        )
+        role, _ = Role.objects.get_or_create(
+            code='super_admin',
+            defaults={'name': 'Süper Yönetici', 'level': 0, 'is_system_role': True},
+        )
+        UserRole.objects.update_or_create(user=admin, defaults={'role': role})
+        personel = Personel.objects.create(
+            user=admin,
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Süper',
+            soyad='Yönetici',
+            tc_kimlik_no='33333333333',
+        )
+        CoachProfile.objects.create(
+            teacher=personel,
+            is_coach=True,
+            is_active=True,
+        )
+
+        self.client.force_authenticate(user=admin)
+        listed = self.client.get(STUDENT_LIST_URL, **self.headers)
+        self.assertEqual(listed.status_code, 200)
+        ids = {row['id'] for row in listed.json()['data']}
+        self.assertIn(self.mine.id, ids)
+        self.assertIn(self.other.id, ids)
+
+        detail = self.client.get(
+            '/api/student-resources/assignments/student_detail/',
+            {'student_id': self.other.id},
+            **self.headers,
+        )
+        self.assertEqual(detail.status_code, 200, detail.content)
+        payload = detail.json()
+        self.assertTrue(payload.get('success'))
+        self.assertEqual(payload['data']['student']['id'], self.other.id)
+        self.assertEqual(payload['data']['student']['ad'], 'Baska')

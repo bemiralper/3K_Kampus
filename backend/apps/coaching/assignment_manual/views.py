@@ -840,6 +840,40 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=['get'])
+    def last_quota_defaults(self, request):
+        """Son paragraf/problem ödevindeki kitap ve günlük soru sayısı."""
+        from apps.ogrenci.domain.models import Ogrenci
+        from apps.student_resources.services.routine_quota import last_quota_defaults_for_student
+
+        student_id = request.query_params.get('student_id')
+        if not student_id:
+            return Response({
+                'success': False,
+                'error': 'student_id parametresi gerekli',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        student = Ogrenci.objects.filter(pk=student_id).only('id', 'kurum_id', 'sube_id').first()
+        if not student:
+            return Response({
+                'success': False,
+                'error': 'Öğrenci bulunamadı.',
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        gate = assert_coaching_student_sube_access(request, student.kurum_id, student.sube_id)
+        if gate:
+            return gate
+        if not user_can_access_student(request.user, student.id):
+            return Response({
+                'success': False,
+                'error': 'Bu öğrenciye erişim yetkiniz yok.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        return Response({
+            'success': True,
+            'data': last_quota_defaults_for_student(student.id),
+        })
+
+    @action(detail=False, methods=['get'])
     def content_task_history(self, request):
         """
         Öğrencinin daha önce verilen görevlerin content bazlı geçmişi.
@@ -1586,6 +1620,50 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             v['question_completion_percent'] = round(
                 (v['completed_questions'] / v['total_questions'] * 100) if v['total_questions'] > 0 else 0
             )
+
+        # ═══ 3b) Paragraf/problem kitabı — o güne kadar çözülen soru ═══
+        book_cumulative = []
+        seen_quota_books = set()
+        as_of = assignment.created_at or timezone.now()
+        for lesson in current_lessons:
+            book_id = lesson.resource_book_id
+            if not book_id:
+                continue
+            kinds = [
+                (t.quota_kind or '').strip()
+                for t in lesson.tasks.all()
+                if (t.quota_kind or '').strip()
+            ]
+            if not kinds:
+                continue
+            kind = kinds[0]
+            key = (book_id, kind)
+            if key in seen_quota_books:
+                continue
+            seen_quota_books.add(key)
+
+            book_tasks = AssignmentTask.objects.filter(
+                quota_kind=kind,
+                lesson_block__resource_book_id=book_id,
+                lesson_block__assignment__student=assignment.student,
+                lesson_block__assignment__is_active=True,
+                lesson_block__assignment__created_at__lte=as_of,
+            ).exclude(lesson_block__assignment__status='DRAFT')
+            current_book_tasks = [t for t in lesson.tasks.all() if (t.quota_kind or '').strip() == kind]
+            cum_total_q = sum(t.question_count or 0 for t in book_tasks)
+            cum_done_q = sum(t.completed_question_count or 0 for t in book_tasks)
+            book_cumulative.append({
+                'resource_book': book_id,
+                'resource_book_name': lesson.resource_book.ad if lesson.resource_book else '',
+                'quota_kind': kind,
+                'current_total_questions': sum(t.question_count or 0 for t in current_book_tasks),
+                'current_completed_questions': sum(t.completed_question_count or 0 for t in current_book_tasks),
+                'cumulative_total_questions': cum_total_q,
+                'cumulative_completed_questions': cum_done_q,
+                'cumulative_assignment_count': book_tasks.values(
+                    'lesson_block__assignment'
+                ).distinct().count(),
+            })
         
         # ═══ 4) Son 8 ödevin tamamlanma trendi ═══
         recent_assignments = all_assignments.exclude(
@@ -1619,6 +1697,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             'data': detail_data,
             'overall_stats': overall_stats,
             'topic_cumulative': topic_cumulative,
+            'book_cumulative': book_cumulative,
             'lesson_cumulative': list(lesson_cumulative.values()),
             'recent_trend': recent_trend,
         })
@@ -1968,11 +2047,22 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
                 'error': 'Ge\u00e7ersiz tamamlanma durumu. DONE, NOT_DONE veya PARTIAL olmal\u0131.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        if (
+            completion_status == 'PARTIAL'
+            and getattr(task, 'quota_kind', '')
+            and request.data.get('completed_question_count') is None
+        ):
+            return Response({
+                'success': False,
+                'error': 'Eksik için çözülen soru sayısı girilmeli.',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         note = request.data.get('coach_evaluation_note', '')
         self._apply_task_completion_status(
             task,
             completion_status,
             task_completion_percent=request.data.get('task_completion_percent'),
+            completed_question_count=request.data.get('completed_question_count'),
             coach_evaluation_note=note if note else None,
         )
         task.save()
@@ -2037,10 +2127,25 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         completion_status,
         *,
         task_completion_percent=None,
+        completed_question_count=None,
         coach_evaluation_note=None,
         actual_duration_minutes=None,
     ):
         """G\u00f6rev tamamlanma alanlar\u0131n\u0131 tek yerden g\u00fcncelle (kaydetmez)."""
+        if completion_status == 'PARTIAL' and completed_question_count is not None:
+            try:
+                solved = int(completed_question_count)
+            except (TypeError, ValueError):
+                solved = None
+            if solved is not None and task.question_count:
+                if solved <= 0:
+                    completion_status = 'NOT_DONE'
+                elif solved >= task.question_count:
+                    completion_status = 'DONE'
+                    completed_question_count = task.question_count
+                else:
+                    completed_question_count = solved
+
         task.completion_status = completion_status
         task.evaluated_at = timezone.now()
 
@@ -2062,11 +2167,33 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
             task.completed_page_count = 0
 
         elif completion_status == 'PARTIAL':
+            task.status = AssignmentTask.TaskStatus.PARTIAL
+            task.completed_at = None
+
+            if completed_question_count is not None and task.question_count:
+                try:
+                    solved = int(completed_question_count)
+                except (TypeError, ValueError):
+                    solved = None
+                if solved is not None:
+                    solved = max(1, min(task.question_count - 1, solved))
+                    task.completed_question_count = solved
+                    task.task_completion_percent = max(
+                        1, min(99, round(solved * 100 / task.question_count))
+                    )
+                    if task.page_count:
+                        task.completed_page_count = round(
+                            task.page_count * task.task_completion_percent / 100
+                        )
+                    else:
+                        task.completed_page_count = None
+                    if actual_duration_minutes is not None:
+                        task.actual_duration_minutes = actual_duration_minutes
+                    return
+
             pct = task_completion_percent if task_completion_percent is not None else 50
             pct = max(10, min(90, round(pct / 10) * 10))
             task.task_completion_percent = pct
-            task.status = AssignmentTask.TaskStatus.PARTIAL
-            task.completed_at = None
 
             if task.question_count:
                 task.completed_question_count = round(task.question_count * pct / 100)

@@ -493,6 +493,19 @@ class AssignmentTask(models.Model):
         verbose_name='Kaynak İçerik',
         help_text='Görevin ait olduğu kaynak içerik'
     )
+
+    class QuotaKind(models.TextChoices):
+        PARAGRAF = 'PARAGRAF', 'Paragraf'
+        PROBLEM = 'PROBLEM', 'Problem'
+
+    quota_kind = models.CharField(
+        'Kota Türü',
+        max_length=20,
+        blank=True,
+        default='',
+        choices=QuotaKind.choices,
+        help_text='İçeriksiz paragraf/problem kota görevi. Boşsa normal içerik görevi.',
+    )
     
     task_type = models.CharField(
         max_length=20,

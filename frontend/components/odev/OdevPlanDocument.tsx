@@ -2,7 +2,7 @@
 
 import { forwardRef } from "react";
 import type { ContentTaskHistory, PlanContentItemView, PlanLessonGroup } from "./odevPlanTypes";
-import { countPlanBooks, displayTestLabel, splitColumnMajor } from "./odevPlanTypes";
+import { bookQuotaKind, countPlanBooks, displayTestLabel, quotaBookIcon, quotaKindLabel, splitColumnMajor, unitIsQuotaOnly } from "./odevPlanTypes";
 import { MetaCol, assignmentTypeLabel } from "./odevPdfMeta";
 import { isAutoCompletionNote } from "./odevCompletionHelpers";
 
@@ -77,7 +77,12 @@ function TestRow({
             📌 {note}
           </div>
         )}
-        {item.contentType && item.contentType !== "SOLVE_TEST" && item.contentType !== "TEST_SET" && (
+        {item.quotaKind && (
+          <div style={{ fontSize: 9, fontWeight: 700, color: item.quotaKind === 'PROBLEM' ? '#b45309' : '#0369a1', marginTop: 2 }}>
+            {quotaBookIcon(item.quotaKind)} {quotaKindLabel(item.quotaKind)}
+          </div>
+        )}
+        {item.contentType && item.contentType !== "SOLVE_TEST" && item.contentType !== "TEST_SET" && item.contentType !== "QUOTA" && (
           <div style={{ fontSize: 8, color: "#94a3b8", marginTop: 1 }}>
             {assignmentTypeLabel(item.contentType)}
           </div>
@@ -306,7 +311,8 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
           background: "#fffbeb", border: "1px solid #fde68a",
           borderRadius: 6, fontSize: 11, color: "#92400e", lineHeight: 1.5,
         }}>
-          <strong>📌 Koç Notu:</strong> {notes}
+          <strong>📌 Koç Notu:</strong>
+          <div style={{ whiteSpace: "pre-line", marginTop: 4 }}>{notes}</div>
         </div>
       )}
 
@@ -354,7 +360,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
                       wordBreak: "break-word", overflowWrap: "anywhere",
                       lineHeight: 1.35,
                     }}>
-                      <span>📖 {book.bookName}</span>
+                      <span>{quotaBookIcon(bookQuotaKind(book))} {book.bookName}</span>
                       <span style={{ fontSize: 9, fontWeight: 400, color: "#6b7280", flexShrink: 0 }}>
                         ({bookTaskCount} görev
                         {book.totalQuestions > 0 ? ` · ${book.totalQuestions} soru` : ""})
@@ -362,6 +368,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
                     </div>
                     {book.units.map((unit) => (
                       <div key={`${book.bookId}-${unit.unitId}`}>
+                        {!unitIsQuotaOnly(unit) && (
                         <div style={{
                           padding: "6px 14px", background: "#f0f4f8",
                           fontSize: 11, fontWeight: 600, color: "#0061a6",
@@ -371,7 +378,9 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
                         }}>
                           📂 {unit.unitName}
                         </div>
+                        )}
                         {unit.topics.map((topic) => {
+                          const topicQ = topic.items.reduce((s, i) => s + (i.content.questionCount || 0), 0);
                           const [leftItems, rightItems] = splitColumnMajor(topic.items);
                           return (
                             <div key={`${unit.unitId}-${topic.topicId}`}>
@@ -388,6 +397,11 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
                                 lineHeight: 1.35,
                               }}>
                                 {topic.topicName}
+                                {topicQ > 0 && (
+                                  <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
+                                    {topicQ} soru
+                                  </span>
+                                )}
                               </div>
                               <div style={{
                                 display: "grid",

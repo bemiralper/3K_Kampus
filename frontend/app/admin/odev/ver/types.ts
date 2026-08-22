@@ -22,9 +22,30 @@ export interface StudentResource {
   resource_name: string;
   resource_type: string;
   resource_type_display?: string;
+  resource_type_kod?: string;
   publication_year?: number;
+  publisher?: string;
   lesson: number;
   lesson_name: string;
+  status?: string;
+}
+
+export type RoutineQuotaKind = 'PARAGRAF' | 'PROBLEM';
+
+export function isRoutineQuotaResource(r: Pick<StudentResource, 'resource_type_kod' | 'resource_type'>): boolean {
+  const kod = (r.resource_type_kod || '').toUpperCase();
+  if (kod === 'PARAGRAF' || kod === 'PROBLEM') return true;
+  const ad = (r.resource_type || '').toLocaleLowerCase('tr');
+  return ad === 'paragraf' || ad === 'problem';
+}
+
+export function routineQuotaKindOf(r: Pick<StudentResource, 'resource_type_kod' | 'resource_type'>): RoutineQuotaKind | null {
+  const kod = (r.resource_type_kod || '').toUpperCase();
+  if (kod === 'PARAGRAF' || kod === 'PROBLEM') return kod;
+  const ad = (r.resource_type || '').toLocaleLowerCase('tr');
+  if (ad === 'paragraf') return 'PARAGRAF';
+  if (ad === 'problem') return 'PROBLEM';
+  return null;
 }
 
 export interface Content {
@@ -98,6 +119,9 @@ export interface SelectedContent {
   startPage?: number | null;
   endPage?: number | null;
   note?: string;
+  quotaKind?: RoutineQuotaKind;
+  quotaPlanId?: number;
+  dailyQuestionCount?: number;
 }
 
 export interface SavedAssignment {

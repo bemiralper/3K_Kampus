@@ -6,6 +6,7 @@ Koç: Sadece kendi öğrencileri
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import SessionAuthentication
@@ -13,7 +14,12 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import StudentResourceAssignment, ResourcePurchaseList, ResourcePurchaseListItem
+from .models import (
+    StudentResourceAssignment,
+    ResourcePurchaseList,
+    ResourcePurchaseListItem,
+    StudentRoutineQuota,
+)
 from .filters import (
     filter_books_by_student_sinif_seviyesi,
     filter_resource_books_by_type_publisher,
@@ -816,12 +822,16 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
                 id=student_id,
                 aktif_mi=True,
                 kurum_id=ctx['kurum_id'],
-                sube_id=ctx['sube_id'],
             )
         except Ogrenci.DoesNotExist:
             return Response({
                 'success': False,
                 'error': 'Öğrenci bulunamadı'
+            }, status=status.HTTP_404_NOT_FOUND)
+        if student.sube_id and int(student.sube_id) != int(ctx['sube_id']):
+            return Response({
+                'success': False,
+                'error': 'Öğrenci seçili şubede değil.'
             }, status=status.HTTP_404_NOT_FOUND)
 
         gate = assert_student_resource_record_sube_access(request, student)
@@ -894,6 +904,7 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
                 'resource_book': a.resource_book_id,
                 'resource_name': a.resource_book.ad if a.resource_book else '',
                 'resource_type': a.resource_book.book_type.ad if a.resource_book and a.resource_book.book_type else '',
+                'resource_type_kod': a.resource_book.book_type.kod if a.resource_book and a.resource_book.book_type else '',
                 'resource_type_renk': a.resource_book.book_type.renk if a.resource_book and a.resource_book.book_type else '#e2e8f0',
                 'resource_yayin_yili': a.resource_book.yayin_yili if a.resource_book else None,
                 'resource_yayinevi': a.resource_book.yayinevi if a.resource_book else '',
@@ -1461,3 +1472,272 @@ class ResourcePurchaseListViewSet(viewsets.ModelViewSet):
                 'recent_purchase_lists': lists_data
             }
         })
+
+
+class StudentRoutineQuotaViewSet(viewsets.ViewSet):
+    """Paragraf / problem kota planları."""
+
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def _context(self, request):
+        ctx, err = mandatory_student_resources_context(request)
+        return ctx, err
+
+    def _get_student(self, request, student_id):
+        from apps.ogrenci.domain.models import Ogrenci
+
+        if not student_id:
+            return None, Response(
+                {'success': False, 'error': 'student_id gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not user_can_access_student(request.user, student_id):
+            return None, Response(
+                {'success': False, 'error': 'Bu öğrenciye erişim yok.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        student = Ogrenci.objects.filter(pk=student_id).first()
+        if not student:
+            return None, Response(
+                {'success': False, 'error': 'Öğrenci bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        gate = assert_student_resource_record_sube_access(request, student)
+        if gate:
+            return None, gate
+        return student, None
+
+    def _serialize_many(self, qs, student_id=None):
+        from apps.student_resources.services.routine_quota import pending_quota_kinds_for_student
+        from apps.student_resources.serializers import StudentRoutineQuotaSerializer
+
+        pending = pending_quota_kinds_for_student(student_id) if student_id else set()
+        return StudentRoutineQuotaSerializer(
+            qs, many=True, context={'pending_kinds': pending},
+        ).data
+
+    def list(self, request):
+        ctx, err = self._context(request)
+        if err:
+            return err
+        student_id = request.query_params.get('student_id') or request.query_params.get('student')
+        student, err = self._get_student(request, student_id)
+        if err:
+            return err
+        qs = StudentRoutineQuota.objects.filter(student=student).select_related(
+            'resource_book', 'resource_book__book_type', 'resource_book__publisher',
+        )
+        return Response({
+            'success': True,
+            'data': self._serialize_many(qs, student.id),
+        })
+
+    def create(self, request):
+        from apps.student_resources.serializers import StudentRoutineQuotaWriteSerializer, StudentRoutineQuotaSerializer
+        from apps.student_resources.services.routine_quota import upsert_quota
+
+        ctx, err = self._context(request)
+        if err:
+            return err
+        serializer = StudentRoutineQuotaWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        student, err = self._get_student(request, data['student'])
+        if err:
+            return err
+        try:
+            quota = upsert_quota(
+                student=student,
+                kind=data['kind'],
+                daily_question_count=data['daily_question_count'],
+                resource_book=data['resource_book'],
+                started_on=data.get('started_on'),
+                coach=request.user if request.user.is_authenticated else None,
+            )
+        except ValidationError as exc:
+            return Response(
+                {'success': False, 'error': exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        pending = set()
+        from apps.student_resources.services.routine_quota import pending_quota_kinds_for_student
+        pending = pending_quota_kinds_for_student(student.id)
+        return Response({
+            'success': True,
+            'data': StudentRoutineQuotaSerializer(quota, context={'pending_kinds': pending}).data,
+            'message': 'Kota planı kaydedildi.',
+        }, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, pk=None):
+        return self.create(request)
+
+    def retrieve(self, request, pk=None):
+        from apps.student_resources.serializers import StudentRoutineQuotaSerializer
+        from apps.student_resources.services.routine_quota import pending_quota_kinds_for_student
+
+        ctx, err = self._context(request)
+        if err:
+            return err
+        quota = StudentRoutineQuota.objects.select_related(
+            'resource_book', 'resource_book__book_type', 'student',
+        ).filter(pk=pk).first()
+        if not quota:
+            return Response(
+                {'success': False, 'error': 'Kota planı bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        student, err = self._get_student(request, quota.student_id)
+        if err:
+            return err
+        pending = pending_quota_kinds_for_student(quota.student_id)
+        return Response({
+            'success': True,
+            'data': StudentRoutineQuotaSerializer(quota, context={'pending_kinds': pending}).data,
+        })
+
+    @action(detail=True, methods=['post'])
+    def mark_finished(self, request, pk=None):
+        from apps.student_resources.serializers import (
+            StudentRoutineQuotaFinishSerializer,
+            StudentRoutineQuotaSerializer,
+        )
+        from apps.student_resources.services.routine_quota import mark_quota_finished
+
+        ctx, err = self._context(request)
+        if err:
+            return err
+        quota = StudentRoutineQuota.objects.select_related(
+            'resource_book', 'source_assignment', 'student',
+        ).filter(pk=pk).first()
+        if not quota:
+            return Response(
+                {'success': False, 'error': 'Kota planı bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        student, err = self._get_student(request, quota.student_id)
+        if err:
+            return err
+        body = StudentRoutineQuotaFinishSerializer(data=request.data or {})
+        body.is_valid(raise_exception=True)
+        try:
+            quota = mark_quota_finished(
+                quota,
+                finished_on=body.validated_data.get('finished_on'),
+                coach=request.user if request.user.is_authenticated else None,
+            )
+        except ValidationError as exc:
+            return Response(
+                {'success': False, 'error': exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({
+            'success': True,
+            'data': StudentRoutineQuotaSerializer(quota).data,
+            'message': 'Kitap bitti olarak işaretlendi.',
+        })
+
+    @action(detail=False, methods=['post'])
+    def finish_book(self, request):
+        """Kaynak havuzu kısayolu: öğrenci + kitap ile aktif planı bitir."""
+        from apps.student_resources.serializers import StudentRoutineQuotaSerializer
+        from apps.student_resources.services.routine_quota import (
+            complete_pool_assignment,
+            mark_quota_finished,
+        )
+
+        ctx, err = self._context(request)
+        if err:
+            return err
+        student_id = request.data.get('student_id') or request.data.get('student')
+        book_id = request.data.get('resource_book') or request.data.get('resource_book_id')
+        assignment_id = request.data.get('assignment_id')
+        student, err = self._get_student(request, student_id)
+        if err:
+            return err
+
+        quota = None
+        if assignment_id:
+            quota = StudentRoutineQuota.objects.filter(
+                student=student,
+                source_assignment_id=assignment_id,
+                status=StudentRoutineQuota.Status.ACTIVE,
+            ).select_related('resource_book', 'source_assignment').first()
+        if quota is None and book_id:
+            quota = StudentRoutineQuota.objects.filter(
+                student=student,
+                resource_book_id=book_id,
+                status=StudentRoutineQuota.Status.ACTIVE,
+            ).select_related('resource_book', 'source_assignment').first()
+
+        finished_on = request.data.get('finished_on') or timezone.now().date()
+        if isinstance(finished_on, str):
+            from datetime import date as date_cls
+            finished_on = date_cls.fromisoformat(finished_on)
+
+        if quota:
+            try:
+                quota = mark_quota_finished(quota, finished_on=finished_on, coach=request.user)
+            except ValidationError as exc:
+                return Response(
+                    {'success': False, 'error': exc.detail},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response({
+                'success': True,
+                'data': StudentRoutineQuotaSerializer(quota).data,
+                'message': 'Kitap bitti olarak işaretlendi.',
+            })
+
+        pool = None
+        if assignment_id:
+            pool = StudentResourceAssignment.objects.filter(
+                pk=assignment_id, student=student, is_active=True,
+            ).first()
+        elif book_id:
+            pool = StudentResourceAssignment.objects.filter(
+                student=student, resource_book_id=book_id, is_active=True,
+            ).first()
+        if not pool:
+            return Response(
+                {'success': False, 'error': 'Kaynak veya kota planı bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        complete_pool_assignment(pool, finished_on)
+        return Response({
+            'success': True,
+            'data': {'assignment_id': pool.id, 'status': pool.status},
+            'message': 'Kitap bitti olarak işaretlendi.',
+        })
+
+    @action(detail=False, methods=['get'])
+    def available_books(self, request):
+        from apps.student_resources.services.routine_quota import available_books_for_kind
+
+        ctx, err = self._context(request)
+        if err:
+            return err
+        kind = (request.query_params.get('kind') or '').upper()
+        if kind not in StudentRoutineQuota.Kind.values:
+            return Response(
+                {'success': False, 'error': 'kind PARAGRAF veya PROBLEM olmalı.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        student_id = request.query_params.get('student_id') or request.query_params.get('student')
+        if student_id:
+            student, err = self._get_student(request, student_id)
+            if err:
+                return err
+        books = available_books_for_kind(kind, ctx['kurum_id'], ctx['sube_id'])
+        data = [
+            {
+                'id': b.id,
+                'ad': b.ad,
+                'yayinevi': b.yayinevi or '',
+                'ders_id': b.ders_id,
+                'ders_ad': b.ders.ad if b.ders_id else '',
+                'kind': kind,
+            }
+            for b in books
+        ]
+        return Response({'success': True, 'data': data})

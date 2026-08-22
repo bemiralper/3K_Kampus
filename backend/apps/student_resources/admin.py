@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import StudentResourceAssignment
+from .models import StudentResourceAssignment, StudentRoutineQuota
 
 
 @admin.register(StudentResourceAssignment)
@@ -9,3 +9,12 @@ class StudentResourceAssignmentAdmin(admin.ModelAdmin):
     search_fields = ['student__ad', 'student__soyad', 'resource_book__ad']
     raw_id_fields = ['student', 'coach', 'lesson', 'resource_book']
     date_hierarchy = 'assigned_at'
+
+
+@admin.register(StudentRoutineQuota)
+class StudentRoutineQuotaAdmin(admin.ModelAdmin):
+    list_display = ['student', 'kind', 'daily_question_count', 'resource_book', 'status', 'started_on', 'finished_on']
+    list_filter = ['kind', 'status']
+    search_fields = ['student__ad', 'student__soyad', 'resource_book__ad']
+    raw_id_fields = ['student', 'coach', 'resource_book', 'source_assignment']
+    date_hierarchy = 'started_on'
