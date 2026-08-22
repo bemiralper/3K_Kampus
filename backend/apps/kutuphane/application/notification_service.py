@@ -82,7 +82,7 @@ class AttendanceNotificationService:
 
     def _get_session(self, session_id) -> AttendanceSession | None:
         return (
-            AttendanceSession.objects.select_related('library')
+            AttendanceSession.objects.select_related('library', 'sube_ders_programi')
             .filter(id=session_id)
             .first()
         )

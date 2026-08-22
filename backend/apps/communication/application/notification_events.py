@@ -46,6 +46,11 @@ MODULE_LABELS: Mapping[str, str] = MappingProxyType({
 })
 
 COMMON_VARIABLES = ('kurum_ad', 'sube', 'sinif')
+KUTUPHANE_ETUT_VARIABLES = (
+    'sabah_ilk_etut_saati',
+    'ogle_ilk_etut_saati',
+    'aksam_ilk_etut_saati',
+)
 
 
 @dataclass(frozen=True)
@@ -167,7 +172,7 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         variables=(
             'ogrenci_ad', 'veli_ad', 'tarih', 'saat',
             'yoklama_tarihi', 'oturum_ad', 'giris_saati', 'cikis_saati',
-            'salon_ad', 'ders_no',
+            'salon_ad', 'ders_no', *KUTUPHANE_ETUT_VARIABLES,
         ),
         meta_name_base='yoklama_gelmedi',
         legacy_meta_names=MappingProxyType({
@@ -197,7 +202,7 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         variables=(
             'ogrenci_ad', 'veli_ad', 'tarih', 'saat',
             'yoklama_tarihi', 'oturum_ad', 'giris_saati', 'cikis_saati',
-            'salon_ad', 'ders_no',
+            'salon_ad', 'ders_no', *KUTUPHANE_ETUT_VARIABLES,
         ),
         meta_name_base='yoklama_gec',
         default_bodies=MappingProxyType({
@@ -224,7 +229,7 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         variables=(
             'ogrenci_ad', 'veli_ad', 'tarih', 'saat',
             'yoklama_tarihi', 'oturum_ad', 'giris_saati', 'cikis_saati',
-            'salon_ad', 'ders_no',
+            'salon_ad', 'ders_no', *KUTUPHANE_ETUT_VARIABLES,
         ),
         meta_name_base='yoklama_cikis',
         default_bodies=MappingProxyType({

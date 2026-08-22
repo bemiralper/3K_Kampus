@@ -8,6 +8,13 @@ from typing import Any
 PERIOD_CODES = ('MORNING', 'AFTERNOON', 'EVENING', 'CUSTOM')
 DAY_KEYS = tuple(str(i) for i in range(7))
 
+# Mesaj şablonları — periyodun ilk etüt giriş saati
+FIRST_ETUT_VAR_KEYS = {
+    'MORNING': 'sabah_ilk_etut_saati',
+    'AFTERNOON': 'ogle_ilk_etut_saati',
+    'EVENING': 'aksam_ilk_etut_saati',
+}
+
 
 def is_v2_ders_saatleri(data: dict | None) -> bool:
     if not data or not isinstance(data, dict):
@@ -111,6 +118,41 @@ def get_period_for_day(gunluk: dict, gun: int, period_code: str) -> dict:
     day_key = str(int(gun) % 7)
     day = gunluk.get(day_key) or empty_day_schedule()
     return day.get(period_code) or empty_period_block()
+
+
+def first_etut_baslangic(period_block: dict | None) -> str:
+    """Periyottaki 1. etüdün giriş (başlangıç) saati, HH:MM."""
+    dersler = list((period_block or {}).get('dersler') or [])
+    timed = [d for d in dersler if d.get('baslangic')]
+    if not timed:
+        return ''
+
+    def sort_key(d: dict) -> tuple[int, str]:
+        try:
+            no = int(d.get('ders_no') or 999)
+        except (TypeError, ValueError):
+            no = 999
+        return (no, str(d.get('baslangic')))
+
+    timed.sort(key=sort_key)
+    return str(timed[0]['baslangic'])[:5]
+
+
+def empty_first_etut_times() -> dict[str, str]:
+    return {key: '' for key in FIRST_ETUT_VAR_KEYS.values()}
+
+
+def first_etut_times_for_weekday(
+    ders_saatleri: dict | None,
+    gun: int,
+    gun_bazli: dict | None = None,
+) -> dict[str, str]:
+    """Şube ders programından o günün sabah/öğle/akşam ilk etüt giriş saatleri."""
+    gunluk = normalize_ders_saatleri(ders_saatleri, gun_bazli)
+    out = empty_first_etut_times()
+    for code, key in FIRST_ETUT_VAR_KEYS.items():
+        out[key] = first_etut_baslangic(get_period_for_day(gunluk, gun, code))
+    return out
 
 
 def validate_gunluk_ders_saatleri(gunluk: dict) -> None:

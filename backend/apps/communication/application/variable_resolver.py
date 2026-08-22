@@ -63,6 +63,9 @@ def build_recipient_context(
     if sube_ad:
         ctx['sube'] = sube_ad
 
+    sube_id = getattr(ogrenci, 'sube_id', None) if ogrenci is not None else None
+    ctx.update(kutuphane_first_etut_times(sube_id=sube_id))
+
     return ctx
 
 
@@ -160,6 +163,39 @@ def _format_time(value) -> str:
     return str(value)
 
 
+def kutuphane_first_etut_times(
+    *,
+    program=None,
+    sube_id=None,
+    gun: int | None = None,
+) -> dict[str, str]:
+    """Kütüphane ders programındaki ilk etüt giriş saatleri (sabah / öğle / akşam)."""
+    from apps.kutuphane.ders_programi_utils import (
+        empty_first_etut_times,
+        first_etut_times_for_weekday,
+    )
+
+    empty = empty_first_etut_times()
+    if program is None and sube_id:
+        try:
+            from apps.kutuphane.infrastructure.repository import SubeDersProgramiRepository
+
+            program = SubeDersProgramiRepository.get_by_sube(int(sube_id))
+        except (TypeError, ValueError):
+            program = None
+    if program is None:
+        return empty
+    if gun is None:
+        from django.utils import timezone
+
+        gun = timezone.localdate().weekday()
+    return first_etut_times_for_weekday(
+        getattr(program, 'ders_saatleri', None),
+        gun,
+        getattr(program, 'gun_bazli_aktiflik', None),
+    )
+
+
 def build_attendance_context(
     *,
     session,
@@ -199,5 +235,17 @@ def build_attendance_context(
     # yoklama_tarihi/giris_saati/cikis_saati kullanır — ikisini de doldur.
     ctx['tarih'] = ctx['yoklama_tarihi']
     ctx['saat'] = ctx['giris_saati'] or ctx['cikis_saati'] or ''
+
+    program = getattr(session, 'sube_ders_programi', None) if session else None
+    library_sube = getattr(library, 'sube_id', None)
+    program_sube = getattr(ogrenci, 'sube_id', None) or library_sube
+    gun = None
+    if session and getattr(session, 'tarih', None):
+        gun = session.tarih.weekday()
+    ctx.update(kutuphane_first_etut_times(
+        program=program,
+        sube_id=program_sube,
+        gun=gun,
+    ))
 
     return ctx
