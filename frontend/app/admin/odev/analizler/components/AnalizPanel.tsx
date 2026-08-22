@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   bulkArchiveBooks,
@@ -50,14 +50,14 @@ type InnerTab = {
 };
 
 const INNER_TABS: InnerTab[] = [
-  { id: "ozet", label: "Özet", pdfType: "genel" },
-  { id: "kullanim", label: "Kullanım", pdfType: "top" },
+  { id: "ozet", label: "Özet", pdfType: "ozet" },
+  { id: "kullanim", label: "Kullanım", pdfType: "kullanim" },
   { id: "yayinevi", label: "Yayınevi", pdfType: "yayinevi" },
   { id: "ders", label: "Ders", pdfType: "ders" },
-  { id: "icerik", label: "İçerik", pdfType: "eksik" },
-  { id: "koc", label: "Koç", pdfType: "genel" },
-  { id: "atil", label: "Atıl", pdfType: "genel" },
-  { id: "degisim", label: "Değişim", pdfType: "genel" },
+  { id: "icerik", label: "İçerik", pdfType: "icerik" },
+  { id: "koc", label: "Koç", pdfType: "koc" },
+  { id: "atil", label: "Atıl", pdfType: "atil" },
+  { id: "degisim", label: "Değişim", pdfType: "degisim" },
 ];
 
 export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number }) {
@@ -102,6 +102,10 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
   const [idleSelected, setIdleSelected] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+  const [pdfIcerikTamam, setPdfIcerikTamam] = useState(true);
+  const [pdfIcerikEksik, setPdfIcerikEksik] = useState(true);
+  const pdfMenuRef = useRef<HTMLDivElement | null>(null);
 
   const fp = {
     publisher: filters.publisher,
@@ -220,10 +224,33 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
     load();
   };
 
-  const makePdf = async () => {
+  useEffect(() => {
+    if (!pdfMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!pdfMenuRef.current?.contains(e.target as Node)) {
+        setPdfMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [pdfMenuOpen]);
+
+  useEffect(() => {
+    setPdfMenuOpen(false);
+  }, [innerTab]);
+
+  const makePdf = async (icerikOverride?: string) => {
     const tabMeta = INNER_TABS.find((t) => t.id === innerTab) || INNER_TABS[0];
+    const icerik = icerikOverride !== undefined ? icerikOverride || undefined : fp.icerik;
     setPdfBusy(true);
-    const blob = await downloadAnalyticsPdf({ report_type: tabMeta.pdfType, ...fp });
+    setPdfMenuOpen(false);
+    const blob = await downloadAnalyticsPdf({
+      report_type: tabMeta.pdfType,
+      ...fp,
+      icerik,
+      metric: innerTab === "kullanim" ? topMetric : undefined,
+      days: innerTab === "atil" ? idleDays || undefined : undefined,
+    });
     setPdfBusy(false);
     if (!blob) {
       alert("PDF oluşturulamadı");
@@ -231,10 +258,20 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
     }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
+    const icerikSuffix = icerik ? `-${icerik}` : "";
+    a.download = `kaynak-analiz-${tabMeta.id}${icerikSuffix}.pdf`;
     a.href = url;
-    a.download = `kaynak-${tabMeta.id}-${tabMeta.pdfType}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadKullanimPdf = () => {
+    if (!pdfIcerikTamam && !pdfIcerikEksik) return;
+    if (pdfIcerikTamam && pdfIcerikEksik) {
+      makePdf("");
+      return;
+    }
+    makePdf(pdfIcerikTamam ? "tamam" : "eksik");
   };
 
   const kpi = [
@@ -356,15 +393,77 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
             {t.label}
           </button>
         ))}
-        <button
-          type="button"
-          className="kk-btn kk-btn-active-on-light"
-          style={{ marginLeft: "auto" }}
-          disabled={pdfBusy}
-          onClick={makePdf}
+        <div
+          ref={pdfMenuRef}
+          style={{ marginLeft: "auto", position: "relative", display: "flex", alignItems: "center" }}
         >
-          {pdfBusy ? "PDF…" : "Bu sekme PDF"}
-        </button>
+          {innerTab === "kullanim" ? (
+            <>
+              <button
+                type="button"
+                className="kk-btn kk-btn-active-on-light"
+                disabled={pdfBusy}
+                onClick={() => setPdfMenuOpen((open) => !open)}
+              >
+                {pdfBusy ? "PDF…" : "PDF indir"}
+              </button>
+              {pdfMenuOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    right: 0,
+                    zIndex: 20,
+                    minWidth: 220,
+                    background: "#fff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.12)",
+                    padding: 12,
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", marginBottom: 8 }}>
+                    İçerik
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 13, color: "#0f172a" }}>
+                    <input
+                      type="checkbox"
+                      checked={pdfIcerikTamam}
+                      onChange={(e) => setPdfIcerikTamam(e.target.checked)}
+                    />
+                    Tamam
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13, color: "#0f172a" }}>
+                    <input
+                      type="checkbox"
+                      checked={pdfIcerikEksik}
+                      onChange={(e) => setPdfIcerikEksik(e.target.checked)}
+                    />
+                    Eksik
+                  </label>
+                  <button
+                    type="button"
+                    className="kk-btn kk-btn-active-on-light"
+                    style={{ width: "100%" }}
+                    disabled={pdfBusy || (!pdfIcerikTamam && !pdfIcerikEksik)}
+                    onClick={downloadKullanimPdf}
+                  >
+                    İndir
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              className="kk-btn kk-btn-active-on-light"
+              disabled={pdfBusy}
+              onClick={() => makePdf()}
+            >
+              {pdfBusy ? "PDF…" : "PDF indir"}
+            </button>
+          )}
+        </div>
       </div>
 
       {loading && <div style={{ color: "#64748b", marginBottom: 12 }}>Güncelleniyor…</div>}
@@ -773,7 +872,10 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
               },
             ]}
           />
-          <h3>Churn</h3>
+          <h3>Havuza giriş-çıkış</h3>
+          <p style={{ marginTop: -8, marginBottom: 10, fontSize: 13, color: "#64748b" }}>
+            Kitabın öğrenci havuzuna kaç kez eklendiği ve kaç kez çıkarıldığı. Net = eklenme − kaldırma.
+          </p>
           <SortableTable
             rows={churn}
             rowKey={(r) => r.id}

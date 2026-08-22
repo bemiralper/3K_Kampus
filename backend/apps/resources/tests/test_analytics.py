@@ -6,6 +6,10 @@ from rest_framework.test import APIClient
 from apps.egitim_tanimlari.models import Ders, SinifSeviyesi
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci
+from apps.resources.application.analytics_pdf import (
+    build_analytics_html,
+    normalize_report_type,
+)
 from apps.resources.models import BookType, ResourceBook, ResourcePublisher
 from apps.sube.domain.models import Sube
 from apps.student_resources.models import StudentResourceAssignment
@@ -172,3 +176,82 @@ class ResourceAnalyticsDataTest(TestCase):
         self.assertEqual(len(rows), 23)
         self.assertTrue(all(r['student_count'] > 0 for r in rows))
         self.assertNotIn('Kitap B', [r['ad'] for r in rows])
+
+    def _analytics_request(self, data):
+        class _Req:
+            pass
+
+        req = _Req()
+        req.query_params = data
+        req.GET = data
+        req.data = data
+        req.session = {}
+        req.headers = {
+            'X-Kurum-ID': str(self.kurum.id),
+            'X-Sube-ID': str(self.sube.id),
+        }
+        req.active_kurum_id = self.kurum.id
+        req.active_sube_id = self.sube.id
+        return req
+
+    def test_normalize_report_type_aliases_and_tabs(self):
+        self.assertEqual(normalize_report_type('genel'), 'ozet')
+        self.assertEqual(normalize_report_type('top'), 'kullanim')
+        self.assertEqual(normalize_report_type('eksik'), 'icerik')
+        self.assertEqual(normalize_report_type('koc'), 'koc')
+        self.assertEqual(normalize_report_type('unknown'), 'ozet')
+
+    def test_each_tab_html_is_dedicated(self):
+        heading = {
+            'ozet': 'Aksiyon Gerekenler',
+            'kullanim': 'Kullanılan Kitaplar',
+            'yayinevi': 'Yayınevi Kullanımı',
+            'ders': 'Ders Bazlı Analiz',
+            'icerik': 'İçeriği Eksik',
+            'koc': 'Koç Bazlı Kullanım',
+            'atil': 'Atıl Kaynaklar',
+            'degisim': 'Havuz büyüme',
+        }
+        foreign = {
+            'ozet': 'Kullanılan Kitaplar',
+            'kullanim': 'Koç Bazlı Kullanım',
+            'yayinevi': 'Atıl Kaynaklar',
+            'ders': 'Havuz büyüme',
+            'icerik': 'Koç Bazlı Kullanım',
+            'koc': 'Kullanılan Kitaplar',
+            'atil': 'Yayınevi Kullanımı',
+            'degisim': 'İçeriği Eksik',
+        }
+        for report_type, must_have in heading.items():
+            html_doc = build_analytics_html(self._analytics_request({}), report_type)
+            self.assertIn(must_have, html_doc, report_type)
+            self.assertNotIn(foreign[report_type], html_doc, report_type)
+
+    def test_kullanim_pdf_respects_icerik_filter(self):
+        self.book_a.icerik_tamamlandi_mi = False
+        self.book_a.save(update_fields=['icerik_tamamlandi_mi'])
+        complete = ResourceBook.objects.create(
+            ad='Kitap Tamam', kod='KT', kurum=self.kurum, sube=self.sube,
+            book_type=self.book_type, ders=self.ders, sinif_seviyesi=self.sinif,
+            publisher=self.publisher_a, aktif_mi=True, icerik_tamamlandi_mi=True,
+        )
+        StudentResourceAssignment.objects.create(
+            student=self.student, resource_book=complete, lesson=self.ders,
+            is_active=True, assigned_at=timezone.now(),
+        )
+
+        eksik_html = build_analytics_html(
+            self._analytics_request({'icerik': 'eksik'}),
+            'kullanim',
+        )
+        self.assertIn('İçerik: Eksik', eksik_html)
+        self.assertIn('Kitap A', eksik_html)
+        self.assertNotIn('Kitap Tamam', eksik_html)
+
+        tamam_html = build_analytics_html(
+            self._analytics_request({'icerik': 'tamam'}),
+            'kullanim',
+        )
+        self.assertIn('İçerik: Tamam', tamam_html)
+        self.assertIn('Kitap Tamam', tamam_html)
+        self.assertNotIn('Kitap A', tamam_html)

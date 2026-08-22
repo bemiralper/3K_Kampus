@@ -8,7 +8,7 @@ from django.http import HttpResponse
 
 from .permissions import IsResourceManager
 from .application import analytics as A
-from .application.analytics_pdf import build_analytics_pdf
+from .application.analytics_pdf import build_analytics_pdf, normalize_report_type
 
 
 class CsrfExemptSessionAuthentication(SessionAuthentication):
@@ -135,7 +135,7 @@ class ResourceAnalyticsViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['post'], url_path='report-pdf')
     def report_pdf(self, request):
-        report_type = request.data.get('report_type') or 'genel'
+        report_type = normalize_report_type(request.data.get('report_type') or 'ozet')
         try:
             pdf_bytes = build_analytics_pdf(request, report_type=report_type)
         except Exception as exc:
