@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   bulkArchiveBooks,
@@ -120,7 +120,7 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
       fetchAnalyticsSummary(fp),
       fetchAnalyticsActionItems(fp),
       fetchAnalyticsPriority(fp),
-      fetchAnalyticsTopBooks({ ...fp, metric: topMetric, limit: "20" }),
+      fetchAnalyticsTopBooks({ ...fp, metric: "any", used_only: "true", limit: "all" }),
       fetchAnalyticsPublishers(fp),
       fetchAnalyticsByLesson(fp),
       fetchAnalyticsIncomplete(fp),
@@ -153,11 +153,25 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
     setGrowth(Array.isArray(gr.data) ? gr.data : []);
     setChurn(Array.isArray(ch.data) ? ch.data : []);
     setLoading(false);
-  }, [filters.publisher, filters.icerik, filters.ders, filters.sinif_seviyesi, filters.date_from, filters.date_to, topMetric, idleDays]);
+  }, [filters.publisher, filters.icerik, filters.ders, filters.sinif_seviyesi, filters.date_from, filters.date_to, idleDays]);
 
   useEffect(() => {
     load();
   }, [load, refreshKey]);
+
+  const usageRows = useMemo(() => {
+    const key = topMetric === "intensity" ? "intensity" : "student_count";
+    return topBooks
+      .filter((r) => (Number(r[key]) || 0) > 0)
+      .slice()
+      .sort((a, b) => {
+        const diff = (Number(b[key]) || 0) - (Number(a[key]) || 0);
+        if (diff !== 0) return diff;
+        return String(a.ad || "").localeCompare(String(b.ad || ""), "tr", {
+          sensitivity: "base",
+        });
+      });
+  }, [topBooks, topMetric]);
 
   useEffect(() => {
     fetchPublishers({ aktif: "true" }).then((r) => {
@@ -409,7 +423,7 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
             {" · "}
             <strong style={{ color: "#0f172a" }}>Ödev kullanımı:</strong> Kitabın ödev / çalışma programında kaç kez seçildiği.
           </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
             <button
               type="button"
               className={`kk-btn ${topMetric === "students" ? "kk-btn-active-on-light" : "kk-btn-on-light"}`}
@@ -426,10 +440,19 @@ export default function AnalizPanel({ refreshKey = 0 }: { refreshKey?: number })
             >
               Ödev kullanımına göre
             </button>
+            <span style={{ marginLeft: "auto", fontSize: 13, color: "#64748b", fontWeight: 600 }}>
+              {usageRows.length} kullanılan kitap
+            </span>
           </div>
           <SortableTable
-            rows={topBooks}
+            key={topMetric}
+            rows={usageRows}
             rowKey={(r) => r.id}
+            emptyLabel={
+              topMetric === "intensity"
+                ? "Ödev / çalışma programında seçilmiş kitap yok"
+                : "Henüz hiçbir öğrencinin havuzunda kitap yok"
+            }
             columns={[
               { key: "ad", label: "Kitap", type: "text" },
               { key: "publisher_ad", label: "Yayınevi", type: "text", render: (r) => r.publisher_ad || "—" },

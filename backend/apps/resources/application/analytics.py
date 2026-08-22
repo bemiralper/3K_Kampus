@@ -172,10 +172,24 @@ def book_usage_rows(request) -> list[dict]:
     return rows
 
 
-def top_books(request, metric: str = 'students', limit: int = 20) -> list[dict]:
+def top_books(
+    request,
+    metric: str = 'students',
+    limit: int = 20,
+    used_only: bool = False,
+) -> list[dict]:
     rows = book_usage_rows(request)
+    if used_only:
+        if metric == 'intensity':
+            rows = [r for r in rows if r['intensity'] > 0]
+        elif metric == 'students':
+            rows = [r for r in rows if r['student_count'] > 0]
+        else:
+            rows = [r for r in rows if r['student_count'] > 0 or r['intensity'] > 0]
     key = 'intensity' if metric == 'intensity' else 'student_count'
     rows.sort(key=lambda r: (-r[key], r['ad']))
+    if not limit:
+        return rows
     return rows[:limit]
 
 

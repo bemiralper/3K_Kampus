@@ -4,6 +4,7 @@
  */
 
 import { apiGet, apiPost, apiPostForm, apiPut, apiPatch, apiDelete, ApiResponse, extractApiError } from './api';
+import { notifyResourcesChanged } from './resources-events';
 
 // ═══════════════════════════════════════════════════════
 // TYPES - Kaynak Kütüphanesi (Resources)
@@ -1241,7 +1242,11 @@ export async function fetchAvailableResources(params: {
  * Öğrenci kaynak atamasını sil
  */
 export async function deleteStudentResourceAssignment(id: number): Promise<ApiResponse<void>> {
-  return apiDelete<void>(`/api/student-resources/assignments/${id}/`);
+  const result = await apiDelete<void>(`/api/student-resources/assignments/${id}/`);
+  if (result.success) {
+    notifyResourcesChanged({ type: "pool-unassign" });
+  }
+  return result;
 }
 
 /**
@@ -1254,10 +1259,14 @@ export async function bulkAssignResources(data: {
   due_date?: string | null;
   notes?: string;
 }): Promise<ApiResponse<{ created: number; skipped: number; errors: string[] }>> {
-  return apiPost<{ created: number; skipped: number; errors: string[] }>(
+  const result = await apiPost<{ created: number; skipped: number; errors: string[] }>(
     '/api/student-resources/assignments/bulk_assign/',
     data,
   );
+  if (result.success && (result.data?.created ?? 0) > 0) {
+    notifyResourcesChanged({ type: "pool-assign" });
+  }
+  return result;
 }
 
 /**
@@ -1455,7 +1464,11 @@ export async function fetchAssignmentDetail(
  * Ödev oluştur
  */
 export async function createAssignment(data: AssignmentCreatePayload): Promise<ApiResponse<ManualAssignment>> {
-  return apiPost<ManualAssignment>('/api/coaching/manual-assignments/assignments/', data);
+  const result = await apiPost<ManualAssignment>('/api/coaching/manual-assignments/assignments/', data);
+  if (result.success) {
+    notifyResourcesChanged({ type: "assignment-create" });
+  }
+  return result;
 }
 
 /**

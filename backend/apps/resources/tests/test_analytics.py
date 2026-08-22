@@ -128,3 +128,47 @@ class ResourceAnalyticsDataTest(TestCase):
         total = sum(row['assignments'] for row in res.data['data'])
         # Sadece book_a'nın aktif ataması sayılmalı (book_b pasif).
         self.assertEqual(total, 1)
+
+    def _create_used_books(self, count: int):
+        books = []
+        for i in range(count):
+            book = ResourceBook.objects.create(
+                ad=f'Ek Kitap {i:02d}',
+                kod=f'EK{i:02d}',
+                kurum=self.kurum,
+                sube=self.sube,
+                book_type=self.book_type,
+                ders=self.ders,
+                sinif_seviyesi=self.sinif,
+                publisher=self.publisher_a,
+                aktif_mi=True,
+            )
+            StudentResourceAssignment.objects.create(
+                student=self.student,
+                resource_book=book,
+                lesson=self.ders,
+                is_active=True,
+                assigned_at=timezone.now(),
+            )
+            books.append(book)
+        return books
+
+    def test_top_books_default_limit_is_20(self):
+        self._create_used_books(22)
+        res = self.client.get(f'{ANALYTICS_URL}top-books/', **self.headers)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.data['data']), 20)
+
+    def test_top_books_used_only_returns_all_used_without_limit(self):
+        self._create_used_books(22)
+        res = self.client.get(
+            f'{ANALYTICS_URL}top-books/',
+            {'used_only': 'true', 'limit': 'all', 'metric': 'students'},
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        rows = res.data['data']
+        # book_a + 22 ek kitap; book_b pasif atama olduğu için used_only dışında kalır
+        self.assertEqual(len(rows), 23)
+        self.assertTrue(all(r['student_count'] > 0 for r in rows))
+        self.assertNotIn('Kitap B', [r['ad'] for r in rows])

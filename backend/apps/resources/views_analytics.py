@@ -36,8 +36,23 @@ class ResourceAnalyticsViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'], url_path='top-books')
     def top_books(self, request):
         metric = request.query_params.get('metric') or 'students'
-        limit = int(request.query_params.get('limit') or 20)
-        return Response({'success': True, 'data': A.top_books(request, metric=metric, limit=limit)})
+        limit_raw = request.query_params.get('limit')
+        if limit_raw is None or limit_raw == '':
+            limit = 20
+        elif str(limit_raw).lower() in ('0', 'all', 'none', 'unlimited'):
+            limit = 0
+        else:
+            try:
+                limit = max(0, int(limit_raw))
+            except (TypeError, ValueError):
+                limit = 20
+        used_only = str(request.query_params.get('used_only') or '').lower() in (
+            '1', 'true', 'yes',
+        )
+        return Response({
+            'success': True,
+            'data': A.top_books(request, metric=metric, limit=limit, used_only=used_only),
+        })
 
     @action(detail=False, methods=['get'], url_path='publishers')
     def publishers(self, request):
