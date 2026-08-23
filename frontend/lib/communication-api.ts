@@ -2050,6 +2050,40 @@ export async function saveNotificationStaffRecipients(data: {
   });
 }
 
+export interface NotificationSchedule {
+  event_key: string;
+  is_enabled: boolean;
+  send_time: string;
+  report_kinds?: "ozet" | "detay" | "ikisi";
+  last_sent_on: string | null;
+}
+
+export async function fetchNotificationSchedule(
+  eventKey: string,
+  subeId?: number | null,
+): Promise<NotificationSchedule> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = new URLSearchParams();
+  if (kurumId) qs.set("kurum_id", kurumId);
+  qs.set("event_key", eventKey);
+  if (subeId) qs.set("sube_id", String(subeId));
+  return request(`/notification-schedules/?${qs}`);
+}
+
+export async function saveNotificationSchedule(data: {
+  event_key: string;
+  is_enabled: boolean;
+  send_time: string;
+  report_kinds?: "ozet" | "detay" | "ikisi";
+  sube_id?: number | null;
+}): Promise<NotificationSchedule> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request("/notification-schedules/", {
+    method: "PUT",
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
 export async function previewNotificationBinding(data: {
   event_key: string;
   recipient_type: string;

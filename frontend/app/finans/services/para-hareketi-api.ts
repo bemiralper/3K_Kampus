@@ -61,7 +61,10 @@ export const gunSonuService = {
     return `/gun-sonu/?${buildQuery({ ...rest, rapor })}`;
   },
 
-  whatsappPreview(body: { kurum_id: number }): Promise<GunSonuWhatsappPreviewResponse> {
+  whatsappPreview(body: {
+    kurum_id: number;
+    rapor_tipi?: "ozet" | "detay";
+  }): Promise<GunSonuWhatsappPreviewResponse> {
     return finansRequest("/gun-sonu/whatsapp/preview/", {
       method: "POST",
       body: JSON.stringify(body),
@@ -74,6 +77,7 @@ export const gunSonuService = {
     notlar?: string;
     message?: string;
     recipient_ids?: number[];
+    rapor_tipi?: "ozet" | "detay";
   }): Promise<GunSonuWhatsappSendResponse> {
     return finansRequest("/gun-sonu/whatsapp/send/", {
       method: "POST",

@@ -34,7 +34,17 @@ docker compose -f docker-compose.dev.yml --env-file .env.docker up --build
 
 - Uygulama: http://localhost:3000
 - Backend (doğrudan): http://localhost:8000
-- PostgreSQL (host): `localhost:5433` (Mac Homebrew PG ile çakışmaz)
+- PostgreSQL (host): `localhost:5433` (Mac Homebrew PG `:5432` ile çakışmaz)
+
+**Canlı veri bu 5433’tür.** Host `manage.py migrate` Docker DB açıkken otomatik buraya gider.
+Açık komut (yanlış DB yok):
+
+```bash
+./scripts/docker-manage.sh migrate
+./scripts/docker-manage.sh shell
+```
+
+Native Homebrew (`:5432`) için `LMS_USE_HOST_DB=1`. İki kopya `lms_db` tutmayın.
 
 Admin:
 
@@ -122,6 +132,9 @@ Canlı Hetzner systemd deploy: [`production-deploy.md`](./production-deploy.md) 
 ```bash
 # Dev log
 docker compose -f docker-compose.dev.yml logs -f backend frontend
+
+# migrate / shell (host Homebrew PG'ye gitmez)
+./scripts/docker-manage.sh migrate
 
 # Dev durdur (veri kalır)
 docker compose -f docker-compose.dev.yml down

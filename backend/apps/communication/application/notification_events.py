@@ -593,21 +593,29 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
     NotificationEvent(
         key='finans.gun_sonu',
         module=MODULE_FINANS,
-        label='Gün sonu raporu (PDF)',
+        label='Gün sonu raporları (PDF)',
         description=(
-            'Gün sonu finansal özet raporu mali hesap yetkilisine gönderilir '
-            '(DOCUMENT header Meta şablonu gerekir).'
+            'Özet sayfasından gün sonu, detay sayfasından detay PDF’i '
+            'ayrı gönderilir. Otomatik ayarda hangisinin gideceği seçilir. '
+            'Tek Meta şablonunda {{rapor_ad}}, {{toplam_giren}}, '
+            '{{toplam_cikan}} kullanılır. DOCUMENT header gerekir.'
         ),
         recipients=(PERSONEL,),
         opt_in_category='genel',
         has_document=True,
-        variables=('personel_ad', 'tarih', 'toplam_tahsilat', 'toplam_gider', 'pdf_baslik'),
+        variables=(
+            'tarih', 'rapor_ad', 'pdf_baslik', 'personel_ad',
+            'toplam_giren', 'toplam_cikan',
+        ),
         meta_name_base='gun_sonu_raporu',
         default_bodies=MappingProxyType({
             PERSONEL: (
-                'Merhaba {{personel_ad}}, {{tarih}} tarihli gün sonu raporu ektedir. '
-                'Toplam tahsilat {{toplam_tahsilat}} TL, toplam gider {{toplam_gider}} TL. '
-                'Detay PDF ekindedir.'
+                'Değerli Yetkilimiz,\n'
+                '{{tarih}} tarihine ait {{rapor_ad}} ekte PDF olarak '
+                'bilgilerinize sunulmuştur.\n\n'
+                'Kuruma giren: {{toplam_giren}} TL\n'
+                'Kurumdan çıkan: {{toplam_cikan}} TL\n\n'
+                'İyi çalışmalar dileriz.'
             ),
         }),
     ),

@@ -14,7 +14,7 @@ class MaliHesapYetkilisiSerializer(serializers.ModelSerializer):
     class Meta:
         model = MaliHesapYetkilisi
         fields = [
-            'id', 'mali_hesap', 'personel', 'personel_ad',
+            'id', 'kurum', 'mali_hesap', 'personel', 'personel_ad',
             'ad_soyad', 'rol', 'telefon', 'email', 'notlar',
             'siralama', 'created_at', 'updated_at',
         ]

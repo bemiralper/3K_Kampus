@@ -34,6 +34,9 @@ from apps.communication.interfaces.views.notification_bindings import (
 from apps.communication.interfaces.views.staff_recipients import (
     NotificationStaffRecipientView,
 )
+from apps.communication.interfaces.views.notification_schedules import (
+    NotificationScheduleView,
+)
 from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateCloneView,
     MetaTemplateDetailView,
@@ -185,6 +188,11 @@ urlpatterns = [
         'notification-staff-recipients/',
         NotificationStaffRecipientView.as_view(),
         name='notification-staff-recipients',
+    ),
+    path(
+        'notification-schedules/',
+        NotificationScheduleView.as_view(),
+        name='notification-schedules',
     ),
     path(
         'birthday-media/',

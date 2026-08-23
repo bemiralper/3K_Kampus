@@ -11,6 +11,10 @@ def main():
     if backend_dir not in sys.path:
         sys.path.insert(0, backend_dir)
 
+    # Docker :5433 açıksa host migrate/shell canlı DB'ye gitsin (Homebrew :5432 değil).
+    from shared.dev_db_target import apply_host_docker_db_if_needed
+    apply_host_docker_db_if_needed(backend_dir=backend_dir)
+
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
     try:
         from django.core.management import execute_from_command_line

@@ -4,11 +4,22 @@ import { useCallback, useEffect, useState } from "react";
 import { gunSonuService } from "@/app/finans/services/para-hareketi-api";
 import type { GunSonuWhatsappRecipient } from "@/app/finans/types/para-hareketi-types";
 
+function fmtTl(value?: number | null) {
+  return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 0 }).format(value || 0);
+}
+
 interface GunSonuWhatsappModalProps {
   kurumId: number;
   gun: string;
   notlar: string;
+  raporTipi: "ozet" | "detay";
   meta?: { tarih?: string; sube?: string; baslik?: string };
+  gunlukOzet?: {
+    toplam_alinan?: number;
+    toplam_tahsilat?: number;
+    toplam_gider?: number;
+    toplam_iade?: number;
+  };
   onClose: () => void;
   onSent?: (sent: number) => void;
 }
@@ -17,7 +28,9 @@ export default function GunSonuWhatsappModal({
   kurumId,
   gun,
   notlar,
+  raporTipi,
   meta,
+  gunlukOzet,
   onClose,
   onSent,
 }: GunSonuWhatsappModalProps) {
@@ -26,27 +39,26 @@ export default function GunSonuWhatsappModal({
   const [error, setError] = useState("");
   const [recipients, setRecipients] = useState<GunSonuWhatsappRecipient[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [message, setMessage] = useState("");
   const [sentCount, setSentCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    setMessage(
-      `📊 *${meta?.baslik || "Gün Sonu Finans Raporu"}*
-Tarih: ${meta?.tarih || gun}
-Şube: ${meta?.sube || ""}
-
-Detaylı özet rapor ekte yer almaktadır.`,
-    );
-  }, [meta?.baslik, meta?.tarih, meta?.sube, gun]);
+  const tarih = meta?.tarih || gun;
+  const toplamGiren = fmtTl(gunlukOzet?.toplam_alinan ?? gunlukOzet?.toplam_tahsilat);
+  const toplamCikan = fmtTl((gunlukOzet?.toplam_gider || 0) + (gunlukOzet?.toplam_iade || 0));
+  const ozetSatirlari = `Kuruma giren: ${toplamGiren} TL\nKurumdan çıkan: ${toplamCikan} TL`;
+  const raporAd = raporTipi === "detay" ? "Gün Sonu Detay Raporu" : "Gün Sonu Raporu";
+  const messageBody = `Değerli Yetkilimiz,\n${tarih} tarihine ait ${raporAd} ekte PDF olarak bilgilerinize sunulmuştur.\n\n${ozetSatirlari}\n\nİyi çalışmalar dileriz.`;
 
   const loadPreview = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await gunSonuService.whatsappPreview({ kurum_id: kurumId });
+      const res = await gunSonuService.whatsappPreview({
+        kurum_id: kurumId,
+        rapor_tipi: raporTipi,
+      });
       const list = res.recipients || [];
       setRecipients(list);
-      setSelected(new Set(list.map((r) => r.id)));
+      const preselected = list.filter((r) => r.selected !== false).map((r) => r.id);
+      setSelected(new Set(preselected.length ? preselected : list.map((r) => r.id)));
       if (res.warning && !list.length) {
         setError(res.warning);
       }
@@ -55,7 +67,7 @@ Detaylı özet rapor ekte yer almaktadır.`,
     } finally {
       setLoading(false);
     }
-  }, [kurumId]);
+  }, [kurumId, raporTipi]);
 
   useEffect(() => {
     loadPreview();
@@ -82,8 +94,8 @@ Detaylı özet rapor ekte yer almaktadır.`,
         kurum_id: kurumId,
         gun,
         notlar,
-        message,
         recipient_ids: Array.from(selected),
+        rapor_tipi: raporTipi,
       });
       setSentCount(res.sent);
       onSent?.(res.sent);
@@ -103,7 +115,7 @@ Detaylı özet rapor ekte yer almaktadır.`,
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-gray-800">WhatsApp ile Gönder</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Gün sonu özet raporu PDF olarak iletilir</p>
+            <p className="text-xs text-gray-500 mt-0.5">{raporAd} PDF’i seçili yetkililere gider</p>
           </div>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
@@ -111,7 +123,7 @@ Detaylı özet rapor ekte yer almaktadır.`,
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {sentCount !== null && sentCount > 0 ? (
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-800">
-              {sentCount} yöneticiye rapor gönderildi.
+              {sentCount} yetkiliye rapor gönderildi.
             </div>
           ) : null}
 
@@ -119,19 +131,17 @@ Detaylı özet rapor ekte yer almaktadır.`,
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">{error}</div>
           )}
 
-          <div>
-            <label className="text-xs font-semibold text-gray-500 block mb-1">Mesaj</label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={5}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none resize-none"
-            />
+          <div className="space-y-2">
+            <span className="text-xs font-semibold text-gray-500 block">Gönderilecek mesaj</span>
+            <div className="px-3 py-2 border border-gray-100 rounded-xl bg-gray-50">
+              <div className="text-[11px] font-semibold text-emerald-700 mb-1">{raporAd}</div>
+              <p className="text-sm text-gray-700 whitespace-pre-line m-0">{messageBody}</p>
+            </div>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-500">Alıcılar (Mali Hesap Yetkilileri)</span>
+              <span className="text-xs font-semibold text-gray-500">Alıcılar (yetkili / yöneticiler)</span>
               {!loading && recipients.length > 0 && (
                 <button
                   type="button"
@@ -146,7 +156,9 @@ Detaylı özet rapor ekte yer almaktadır.`,
               <div className="py-8 text-center text-sm text-gray-400">Yükleniyor…</div>
             ) : recipients.length === 0 ? (
               <div className="py-6 text-center text-sm text-gray-400">
-                Tanımlı yetkili bulunamadı. Mali hesap ayarlarından yetkili telefonu ekleyin.
+                {error
+                  ? "Alıcı listesi yüklenemedi."
+                  : "Gönderilecek kişi yok. Finans → Mali Hesaplar → Yetkililer’den tüm hesaplar için yetkili ekleyin."}
               </div>
             ) : (
               <ul className="space-y-2 max-h-48 overflow-y-auto">
@@ -184,7 +196,7 @@ Detaylı özet rapor ekte yer almaktadır.`,
               onClick={handleSend}
               className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl disabled:opacity-50"
             >
-              {sending ? "Gönderiliyor…" : "PDF Gönder"}
+              {sending ? "Gönderiliyor…" : "WhatsApp Gönder"}
             </button>
           ) : null}
         </div>

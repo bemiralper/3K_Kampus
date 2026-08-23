@@ -1362,3 +1362,67 @@ class NotificationStaffRecipient(models.Model):
 
     def __str__(self):
         return f'{self.event_key} → {self.personel_id}'
+
+
+class NotificationAutoSchedule(models.Model):
+    """Olay bazlı otomatik gönderim saati (ör. gün sonu raporları)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='notification_auto_schedules',
+        verbose_name='Kurum',
+    )
+    sube = models.ForeignKey(
+        'sube.Sube',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='notification_auto_schedules',
+        verbose_name='Şube',
+    )
+    event_key = models.CharField(max_length=64, db_index=True, verbose_name='Olay')
+    is_enabled = models.BooleanField(default=False, verbose_name='Otomatik gönderim')
+    report_kinds = models.CharField(
+        max_length=16,
+        default='ozet',
+        verbose_name='Otomatik rapor',
+        help_text='ozet | detay | ikisi',
+    )
+    send_time = models.TimeField(default='18:00', verbose_name='Gönderim saati')
+    last_sent_on = models.DateField(
+        null=True, blank=True, verbose_name='Son gönderilen rapor tarihi',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='notification_auto_schedules',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_notification_auto_schedule'
+        verbose_name = 'Bildirim Otomatik Zamanlama'
+        verbose_name_plural = 'Bildirim Otomatik Zamanlamalar'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum', 'event_key'],
+                condition=models.Q(sube__isnull=True),
+                name='comm_auto_sched_kurum_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['kurum', 'sube', 'event_key'],
+                condition=models.Q(sube__isnull=False),
+                name='comm_auto_sched_sube_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['event_key', 'is_enabled'], name='comm_auto_sched_due_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.event_key} {self.send_time} enabled={self.is_enabled}'

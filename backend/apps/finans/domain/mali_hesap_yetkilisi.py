@@ -1,23 +1,34 @@
 """
 Mali Hesap Yetkilisi Domain Model
-Bir mali hesaptan sorumlu/bilgilendirilecek kişilerin kaydı.
+Kurumdaki tüm mali hesaplardan sorumlu/bilgilendirilecek kişilerin kaydı.
 
 Not: Bu kayıt SADECE bilgilendirme amaçlıdır — herhangi bir yetki/erişim
 kontrolüne bağlı DEĞİLDİR. Sistemdeki tüm kullanıcılar mevcut izinlerine
-göre işlem yapmaya devam eder; burası yalnızca "bu hesaptan kim sorumlu"
+göre işlem yapmaya devam eder; burası yalnızca "mali hesaplardan kim sorumlu"
 sorusuna cevap vermek için bir kişi rehberidir.
 """
 from django.db import models
 
 
 class MaliHesapYetkilisi(models.Model):
-    """Mali hesaba bağlı, bilgilendirme amaçlı yetkili/sorumlu kişi kaydı."""
+    """Kurumdaki tüm mali hesaplardan sorumlu, bilgilendirme amaçlı kişi."""
 
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='mali_hesap_yetkilileri',
+        verbose_name='Kurum',
+        null=True,
+        blank=True,
+    )
     mali_hesap = models.ForeignKey(
         'finans.MaliHesap',
         on_delete=models.CASCADE,
         related_name='yetkililer',
         verbose_name='Mali Hesap',
+        null=True,
+        blank=True,
+        help_text='Boşsa yetkili tüm mali hesaplardan sorumludur.',
     )
     personel = models.ForeignKey(
         'personel.Personel',
@@ -55,6 +66,9 @@ class MaliHesapYetkilisi(models.Model):
         verbose_name = 'Mali Hesap Yetkilisi'
         verbose_name_plural = 'Mali Hesap Yetkilileri'
         ordering = ['siralama', 'ad_soyad']
+        indexes = [
+            models.Index(fields=['kurum'], name='finans_mh_yetkili_kurum_idx'),
+        ]
 
     def __str__(self):
         return self.gorunen_ad

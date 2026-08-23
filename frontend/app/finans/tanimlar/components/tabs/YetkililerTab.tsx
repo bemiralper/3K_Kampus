@@ -159,7 +159,7 @@ export default function YetkililerTab({ kurumId, maliHesapId, onToast }: Props) 
     <div className="bg-white">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-50">
         <p className="text-xs text-gray-400 m-0">
-          Yönetici ve muhasebe personelinden seçin — bilgilendirme amaçlı iletişim kaydı.
+          Bu kişiler tüm mali hesaplardan sorumludur. Her hesap için ayrı eklemenize gerek yok.
         </p>
         <button
           onClick={openCreate}
@@ -178,7 +178,8 @@ export default function YetkililerTab({ kurumId, maliHesapId, onToast }: Props) 
         </div>
       ) : data.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-sm text-gray-400">Bu hesaba yetkili tanımlanmamış</p>
+          <p className="text-sm text-gray-400">Henüz kurum yetkilisi yok</p>
+          <p className="text-xs text-gray-400 mt-1">Eklediğiniz kişi tüm kasa ve banka hesaplarından sorumlu olur.</p>
         </div>
       ) : (
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -186,6 +187,7 @@ export default function YetkililerTab({ kurumId, maliHesapId, onToast }: Props) 
             <div key={y.id} className="border border-gray-100 rounded-xl p-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-gray-800 truncate">{y.ad_soyad || y.personel_ad || "İsimsiz"}</div>
+                <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">Tüm mali hesaplar</div>
                 {y.rol && <div className="text-xs text-emerald-600 font-semibold mt-0.5">{y.rol}</div>}
                 {y.telefon && <div className="text-xs text-gray-500 mt-1">📞 {y.telefon}</div>}
                 {y.email && <div className="text-xs text-gray-500 mt-0.5">✉️ {y.email}</div>}

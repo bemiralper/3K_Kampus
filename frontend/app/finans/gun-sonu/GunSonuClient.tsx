@@ -43,6 +43,15 @@ function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
   const [detayError, setDetayError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [whatsappAuto, setWhatsappAuto] = useState<{
+    enabled: boolean;
+    sendTime: string;
+    reportKinds: "ozet" | "detay" | "ikisi";
+  }>({
+    enabled: false,
+    sendTime: "18:00",
+    reportKinds: "ozet",
+  });
 
   const load = useCallback(async () => {
     if (!activeKurum?.id) { setLoading(false); return; }
@@ -90,6 +99,24 @@ function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => { if (viewTab === "detay") loadDetay(); }, [viewTab, loadDetay]);
 
+  useEffect(() => {
+    if (!activeKurum?.id) return;
+    let cancelled = false;
+    gunSonuService.whatsappPreview({ kurum_id: activeKurum.id }).then((res) => {
+      if (cancelled) return;
+      setWhatsappAuto({
+        enabled: Boolean(res.auto_enabled),
+        sendTime: res.send_time || "18:00",
+        reportKinds: res.report_kinds || "ozet",
+      });
+    }).catch(() => {
+      if (!cancelled) {
+        setWhatsappAuto({ enabled: false, sendTime: "18:00", reportKinds: "ozet" });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [activeKurum?.id, activeSube?.id]);
+
   const rapor = ozet?.ozet_rapor;
 
   const buildExportPath = useCallback(
@@ -113,6 +140,11 @@ function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
 
   const isToday = gun === todayIso();
   const isYesterday = gun === yesterdayIso();
+  const currentRapor: "ozet" | "detay" = viewTab === "detay" ? "detay" : "ozet";
+  const autoBlocksThis =
+    whatsappAuto.enabled &&
+    (whatsappAuto.reportKinds === "ikisi" || whatsappAuto.reportKinds === currentRapor);
+  const showWhatsapp = viewTab === "rapor" || viewTab === "detay";
 
   if (!activeKurum) {
     return (
@@ -155,14 +187,32 @@ function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
             disabled={loading || (viewTab === "detay" ? detayLoading || !detay : !ozet)}
             label={viewTab === "detay" ? "Detay Rapor İndir" : "Rapor İndir"}
           />
+          {showWhatsapp && (
           <button
             type="button"
             className="gs-btn gs-btn--whatsapp"
-            disabled={loading || !ozet}
-            onClick={() => setWhatsappOpen(true)}
+            disabled={
+              loading
+              || (viewTab === "detay" ? detayLoading || !detay : !ozet)
+              || autoBlocksThis
+            }
+            title={
+              autoBlocksThis
+                ? `Bu rapor otomatik gidiyor (${whatsappAuto.sendTime}). Bildirim Şablonları’ndan kapatabilirsiniz.`
+                : viewTab === "detay"
+                  ? "Seçili yetkililere gün sonu detay PDF’i gönder"
+                  : "Seçili yetkililere gün sonu PDF’i gönder"
+            }
+            onClick={() => {
+              if (autoBlocksThis) return;
+              setWhatsappOpen(true);
+            }}
           >
-            💬 WhatsApp Gönder
+            {autoBlocksThis
+              ? `💬 Otomatik ${whatsappAuto.sendTime}`
+              : "💬 WhatsApp Gönder"}
           </button>
+          )}
         </div>
       </div>
 
@@ -212,7 +262,9 @@ function GunSonuInner({ embedded = false }: { embedded?: boolean }) {
           kurumId={activeKurum.id}
           gun={gun}
           notlar={notlar}
+          raporTipi={currentRapor}
           meta={rapor?.meta}
+          gunlukOzet={rapor?.gunluk_ozet}
           onClose={() => setWhatsappOpen(false)}
         />
       )}

@@ -23,6 +23,8 @@ if _extra_allowed_hosts:
     ALLOWED_HOSTS = list(dict.fromkeys(ALLOWED_HOSTS + _extra_allowed_hosts))
 
 # Database
+# Docker :5433 açıksa host manage.py (shared.dev_db_target) bu değerleri
+# Docker Postgres'e çevirir. Native Homebrew için LMS_USE_HOST_DB=1.
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',

@@ -22,7 +22,6 @@ from apps.finans.application.gun_sonu_finans_helpers import (
 from apps.finans.application.gun_sonu_service import GunSonuService
 from apps.finans.constants.cari_types import GelirDurum
 from apps.finans.constants.gider_types import GiderDurum, OdemeDurum
-from apps.finans.domain.financial_account import MaliHesap
 from apps.finans.domain.gelir_kaydi import GelirKaydi
 from apps.finans.domain.gelir_tahsilat import GelirTahsilat
 from apps.finans.domain.gider_kaydi import GiderKaydi
@@ -142,22 +141,18 @@ class GunSonuReportService:
         }
 
     def list_whatsapp_recipients(self, kurum_id: int, sube_id: int | None = None) -> list[dict]:
-        hesap_qs = MaliHesap.objects.filter(sube__kurum_id=kurum_id, aktif_mi=True)
-        if sube_id:
-            hesap_qs = hesap_qs.filter(sube_id=sube_id)
-
         seen_phones: set[str] = set()
         recipients: list[dict] = []
 
         yetkililer = (
-            MaliHesapYetkilisi.objects.filter(
-                mali_hesap__in=hesap_qs,
-            )
+            MaliHesapYetkilisi.objects.filter(kurum_id=kurum_id)
             .select_related('mali_hesap', 'personel')
             .order_by('siralama', 'ad_soyad')
         )
         for y in yetkililer:
             phone = (y.telefon or '').strip()
+            if not phone and y.personel_id:
+                phone = (y.personel.cep_telefon or y.personel.telefon or '').strip()
             if not phone:
                 continue
             key = phone.replace(' ', '')
@@ -171,7 +166,9 @@ class GunSonuReportService:
                 'rol': y.rol or '',
                 'telefon': phone,
                 'telefon_maskeli': self._mask_phone(phone),
-                'mali_hesap_ad': y.mali_hesap.ad if y.mali_hesap_id else '',
+                'mali_hesap_ad': (
+                    y.mali_hesap.ad if y.mali_hesap_id else 'Tüm mali hesaplar'
+                ),
             })
         return recipients
 

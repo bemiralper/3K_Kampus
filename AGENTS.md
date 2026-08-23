@@ -13,11 +13,13 @@ There are two Django entrypoints in the tree. Only one is current:
   `config.settings.development` via `DJANGO_ENV` (`development`/`demo`/`test`/`production`).
 - The root `manage.py` + `core/settings.py` is **legacy** and does not load as-is; ignore it.
 
-### Services & how to run them (dev mode)
-- **PostgreSQL** must be running first. It is not auto-started on a fresh boot:
-  `sudo pg_ctlcluster 16 main start`
-  DB config (from `config/settings/development.py`): db `lms_db`, user `taner` (no password),
-  host `localhost:5432`. Local TCP auth is set to `trust` in `pg_hba.conf`. Tests use `test_lms_db`.
+### Which database is live (do not mix)
+- **Docker açıkken (port 8000 = Docker):** canlı veri `localhost:5433` (compose `lms-dev`, user `lms`).
+  Host `backend/manage.py migrate` bu porta yönlenir. Tercih: `./scripts/docker-manage.sh migrate`.
+  Homebrew `localhost:5432` / `lms_db` **kullanılmıyor** — oraya migrate etme.
+  Native Homebrew için `LMS_USE_HOST_DB=1`. `DJANGO_ENV=test` host test DB'sinde kalır.
+- **Native (Docker kapalı):** PostgreSQL önce ayağa kalkmalı (`sudo pg_ctlcluster 16 main start`).
+  DB: `lms_db`, user `taner` (şifresiz), `localhost:5432`. Testler: `test_lms_db`.
 - **Demo database** (separate from live data): `DJANGO_ENV=demo`, default DB `lms_demo_db`.
   Setup: `cd backend && DJANGO_ENV=demo python manage.py setup_demo_database --seed --create-admin`
   Run: `DJANGO_ENV=demo python manage.py runserver 0.0.0.0:8000` or `./scripts/run-demo.sh`.
@@ -31,9 +33,10 @@ There are two Django entrypoints in the tree. Only one is current:
 
 ### Docker (optional — native workflow unchanged)
 - Dev: `cp .env.docker.example .env.docker` then `./scripts/docker-dev.sh` (see [docs/deployment/docker.md](docs/deployment/docker.md))
+- Manage.py in the running stack: `./scripts/docker-manage.sh migrate` (or `shell`, `showmigrations`, …)
 - Prod: `cp .env.production.docker.example .env.production.docker` then `./scripts/docker-prod-deploy.sh`
 - Compose files: `docker-compose.dev.yml`, `docker-compose.prod.yml` — ports 5433/3000/8000 (dev); prod HTTP default 8080
-- Docker DB data is separate from Homebrew `lms_db`; systemd/Hetzner deploy (`deploy-production.sh`) is unaffected until you switch
+- Docker volume ≠ Homebrew `lms_db`. systemd/Hetzner (`deploy-production.sh`) is unaffected until you switch.
 
 ### Non-obvious gotchas
 - **Browser login over http:** `development.py` uses `SESSION_COOKIE_SAMESITE='Lax'` and
@@ -101,6 +104,7 @@ Background workers are management commands by default; optional Celery + Redis w
 | `python manage.py process_communication_queue` | Sends queued WhatsApp/SMS outbound messages | Every 1 min |
 | `python manage.py check_conversation_sla` | Marks unanswered coach threads as NEEDS_SUPPORT (default 30 min) | Every 1 min |
 | `python manage.py send_payment_reminders` | Enqueues overdue/upcoming taksit reminders (`--days-ahead=3`, `--dry-run`) | Daily 09:00 |
+| `python manage.py send_gun_sonu_reports` | Saat gelen gün sonu raporlarını (özet / detay / ikisi) yetkililere gönderir (`--dry-run`, `--date`) | Every 5 min |
 | `python manage.py send_birthday_wishes` | Doğum günü olan öğrencilere IMAGE Meta/şablon + havuz görseli gönderir (`--dry-run`, `--date`, `--kurum-id`) | Daily 00:01 |
 | `python manage.py backfill_conversation_names` | Sohbetlerde görünen kişi adını `contact_name` alanına yazar (istek başına canlı eşleme yapılmasın diye) — `--kurum-id`, `--dry-run` | Tek seferlik / gerektikçe |
 

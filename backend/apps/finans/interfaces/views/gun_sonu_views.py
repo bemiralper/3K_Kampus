@@ -1,11 +1,14 @@
 """
 Gün Sonu View — günlük tahsilat/ödeme özeti, özet rapor export ve WhatsApp.
 """
+import logging
 from datetime import date
 
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
+
+logger = logging.getLogger(__name__)
 
 from apps.finans.application.export.gun_sonu_detay_export_service import GunSonuDetayExportService
 from apps.finans.application.export.gun_sonu_export_service import GunSonuExportService
@@ -123,12 +126,22 @@ class GunSonuWhatsappPreviewView(APIView):
         if err:
             return err
 
-        result = GunSonuWhatsappService.preview(kurum_id, sube_id)
+        rapor_tipi = (request.data.get('rapor_tipi') or 'ozet').strip().lower()
+        try:
+            result = GunSonuWhatsappService.preview(
+                kurum_id, sube_id, rapor_tipi=rapor_tipi,
+            )
+        except Exception:
+            logger.exception('Gün sonu WhatsApp önizleme hatası')
+            return Response(
+                {'error': 'Alıcı listesi alınamadı. Şube seçimini kontrol edin.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response(result)
 
 
 class GunSonuWhatsappSendView(APIView):
-    """POST → Gün sonu özet raporunu WhatsApp ile gönder."""
+    """POST → Açık sekmedeki gün sonu raporunu (özet veya detay) WhatsApp ile gönder."""
 
     permission_classes = [FinansManageAndCommunicationWritePermission]
 
@@ -151,25 +164,35 @@ class GunSonuWhatsappSendView(APIView):
         notlar = request.data.get('notlar') or ''
         recipient_ids = request.data.get('recipient_ids')
         message = request.data.get('message') or ''
-
-        report = GunSonuReportService().build_ozet_rapor(
-            kurum_id,
-            gun,
-            sube_id,
-            hazirlayan=_hazirlayan(request),
-            notlar=notlar,
-        )
+        rapor_tipi = (request.data.get('rapor_tipi') or 'ozet').strip().lower()
 
         ids = None
         if isinstance(recipient_ids, list) and recipient_ids:
             ids = [int(x) for x in recipient_ids]
 
-        result = GunSonuWhatsappService.send(
-            kurum_id,
-            report,
-            recipient_ids=ids,
-            message=message,
-            sender_user_id=request.user.id if request.user.is_authenticated else None,
-        )
+        try:
+            result = GunSonuWhatsappService.send(
+                kurum_id,
+                gun=gun,
+                sube_id=sube_id,
+                recipient_ids=ids,
+                message=message,
+                sender_user_id=request.user.id if request.user.is_authenticated else None,
+                notlar=notlar,
+                hazirlayan=_hazirlayan(request),
+                rapor_tipi=rapor_tipi,
+            )
+        except Exception:
+            logger.exception('Gün sonu WhatsApp gönderim hatası')
+            return Response(
+                {
+                    'success': False,
+                    'sent': 0,
+                    'total': 0,
+                    'errors': ['Gönderim sırasında bir hata oluştu.'],
+                    'results': [],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         status_code = 200 if result.get('success') else 400
         return Response(result, status=status_code)

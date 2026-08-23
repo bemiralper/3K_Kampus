@@ -22,11 +22,13 @@ import {
   deleteNotificationBinding,
   fetchLocalMetaTemplates,
   fetchNotificationEvents,
+  fetchNotificationSchedule,
   fetchNotificationStaffRecipients,
   fetchTemplates,
   fetchWhatsAppAccounts,
   previewNotificationBinding,
   saveNotificationBinding,
+  saveNotificationSchedule,
   saveNotificationStaffRecipients,
   seedAcademicScheduleTemplates,
   seedKayitSozlesmeTemplates,
@@ -139,11 +141,13 @@ function slotKeyOf(eventKey: string, recipientType: string): string {
 function StaffRecipientsPanel({
   eventKey,
   subeId,
+  hint,
   onError,
   onMessage,
 }: {
   eventKey: string;
   subeId: number | null;
+  hint?: string;
   onError: (msg: string | null) => void;
   onMessage: (msg: string | null) => void;
 }) {
@@ -199,8 +203,8 @@ function StaffRecipientsPanel({
         <div>
           <strong>Alıcı yöneticiler</strong>
           <p className="nbx-hint">
-            Sözleşme aktif edilince işaretlenen kurum / şube / eğitim yöneticilerine WhatsApp
-            gider. Telefonu olmayanlar seçilse bile gönderilmez.
+            {hint ||
+              "İşaretlenen kurum / şube / eğitim yöneticilerine WhatsApp gider. Telefonu olmayanlar seçilse bile gönderilmez."}
           </p>
         </div>
         <span className="nbx-badge">{selectedCount} seçili</span>
@@ -247,6 +251,139 @@ function StaffRecipientsPanel({
         onClick={() => void save()}
       >
         {saving ? "Kaydediliyor…" : "Alıcıları kaydet"}
+      </button>
+    </div>
+  );
+}
+
+function AutoSchedulePanel({
+  eventKey,
+  subeId,
+  onError,
+  onMessage,
+}: {
+  eventKey: string;
+  subeId: number | null;
+  onError: (msg: string | null) => void;
+  onMessage: (msg: string | null) => void;
+}) {
+  const [enabled, setEnabled] = useState(false);
+  const [sendTime, setSendTime] = useState("18:00");
+  const [reportKinds, setReportKinds] = useState<"ozet" | "detay" | "ikisi">("ozet");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchNotificationSchedule(eventKey, subeId);
+      setEnabled(Boolean(data.is_enabled));
+      setSendTime(data.send_time || "18:00");
+      setReportKinds(data.report_kinds || "ozet");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Otomatik gönderim ayarı yüklenemedi.");
+    } finally {
+      setLoading(false);
+    }
+  }, [eventKey, subeId, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const save = async () => {
+    setSaving(true);
+    onError(null);
+    try {
+      const data = await saveNotificationSchedule({
+        event_key: eventKey,
+        is_enabled: enabled,
+        send_time: sendTime,
+        report_kinds: reportKinds,
+        sube_id: subeId,
+      });
+      setEnabled(Boolean(data.is_enabled));
+      setSendTime(data.send_time || "18:00");
+      setReportKinds(data.report_kinds || "ozet");
+      const kindLabel =
+        data.report_kinds === "detay"
+          ? "detay rapor"
+          : data.report_kinds === "ikisi"
+            ? "özet ve detay"
+            : "gün sonu raporu";
+      onMessage(
+        data.is_enabled
+          ? `Otomatik ${kindLabel} gönderimi ${data.send_time} için açıldı. Seçilen raporun sayfasındaki manuel gönderim kapandı.`
+          : "Otomatik gönderim kapatıldı. Sayfalardan elle gönderilebilir.",
+      );
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Otomatik gönderim kaydedilemedi.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="nbx-staff" style={{ marginTop: 16 }}>
+      <div className="nbx-staff-head">
+        <div>
+          <strong>Otomatik gönderim</strong>
+          <p className="nbx-hint">
+            Açıkken her gün bu saatte seçtiğiniz rapor gider. Seçilen raporun
+            sayfasındaki manuel WhatsApp kapanır.
+          </p>
+        </div>
+        <span className={`nbx-badge${enabled ? " is-success" : ""}`}>
+          {enabled ? "Açık" : "Kapalı"}
+        </span>
+      </div>
+      {loading ? (
+        <div className="nbx-skeleton" style={{ height: 44 }} />
+      ) : (
+        <div className="nbx-staff-list" style={{ gap: 12 }}>
+          <label className={`nbx-staff-row${enabled ? " is-selected" : ""}`}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(ev) => setEnabled(ev.target.checked)}
+            />
+            <span className="nbx-staff-text">
+              <strong>Her gün otomatik gönder</strong>
+            </span>
+          </label>
+          <label className="nbx-field" style={{ margin: 0 }}>
+            <span className="nbx-hint">Hangi rapor gitsin</span>
+            <select
+              className="nbx-select"
+              value={reportKinds}
+              onChange={(ev) =>
+                setReportKinds(ev.target.value as "ozet" | "detay" | "ikisi")
+              }
+              disabled={!enabled}
+            >
+              <option value="ozet">Gün Sonu Raporu</option>
+              <option value="detay">Gün Sonu Detay Raporu</option>
+              <option value="ikisi">İkisi de (ayrı mesajlar)</option>
+            </select>
+          </label>
+          <label className="nbx-field" style={{ margin: 0 }}>
+            <span className="nbx-hint">Gönderim saati</span>
+            <input
+              type="time"
+              value={sendTime}
+              onChange={(ev) => setSendTime(ev.target.value || "18:00")}
+              disabled={!enabled}
+            />
+          </label>
+        </div>
+      )}
+      <button
+        type="button"
+        className="nbx-mini-btn"
+        disabled={saving || loading}
+        onClick={() => void save()}
+      >
+        {saving ? "Kaydediliyor…" : "Zamanlamayı kaydet"}
       </button>
     </div>
   );
@@ -1483,8 +1620,22 @@ export default function BildirimSablonlariClient() {
                     </div>
                   </div>
 
-                  {selectedEvent.key === "ogrenci.kayit_sozlesme" && (
+                  {(selectedEvent.key === "ogrenci.kayit_sozlesme" ||
+                    selectedEvent.key === "finans.gun_sonu") && (
                     <StaffRecipientsPanel
+                      eventKey={selectedEvent.key}
+                      subeId={scopeSubeId}
+                      hint={
+                        selectedEvent.key === "finans.gun_sonu"
+                          ? "Özet sayfasından gün sonu, detay sayfasından detay PDF’i gider. Otomatik ayarda hangisinin gideceğini seçin. Meta: {{tarih}}, {{rapor_ad}}, {{toplam_giren}}, {{toplam_cikan}}."
+                          : "Sözleşme aktif edilince işaretlenen kurum / şube / eğitim yöneticilerine WhatsApp gider. Telefonu olmayanlar seçilse bile gönderilmez."
+                      }
+                      onError={setError}
+                      onMessage={setMessage}
+                    />
+                  )}
+                  {selectedEvent.key === "finans.gun_sonu" && (
+                    <AutoSchedulePanel
                       eventKey={selectedEvent.key}
                       subeId={scopeSubeId}
                       onError={setError}

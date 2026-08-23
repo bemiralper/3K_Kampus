@@ -34,9 +34,15 @@ class GunSonuDetayExportService:
         return cls._build_xlsx(report, title, orientation=ori)
 
     @classmethod
+    def render_pdf_bytes(cls, report: dict, *, orientation: str = 'landscape') -> bytes:
+        from apps.finans.application.export.export_service import ExportService
+        ori = ExportService._normalize_orientation(orientation)
+        html_doc = build_gun_sonu_detay_html(report, orientation=ori)
+        return render_html_to_pdf(html_doc, landscape=(ori == 'landscape'))
+
+    @classmethod
     def _build_pdf(cls, report: dict, title: str, *, orientation: str) -> HttpResponse:
-        html_doc = build_gun_sonu_detay_html(report, orientation=orientation)
-        pdf_bytes = render_html_to_pdf(html_doc, landscape=(orientation == 'landscape'))
+        pdf_bytes = cls.render_pdf_bytes(report, orientation=orientation)
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{cls._safe_filename(title)}.pdf"'
         return response

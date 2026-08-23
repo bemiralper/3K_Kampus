@@ -93,7 +93,8 @@ export interface MaliHesapAgacResponse {
 
 export interface MaliHesapYetkilisi {
   id: number;
-  mali_hesap: number;
+  kurum?: number | null;
+  mali_hesap: number | null;
   personel: number | null;
   personel_ad: string | null;
   ad_soyad: string;

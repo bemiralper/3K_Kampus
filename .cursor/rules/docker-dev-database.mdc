@@ -1,0 +1,13 @@
+---
+description: Docker açıkken migrate/shell canlı Postgres :5433 kullanır; host :5432'ye dokunma
+alwaysApply: true
+---
+
+# Docker geliştirme veritabanı
+
+Port 8000 Docker'daysa canlı veri **Docker Postgres (`localhost:5433`, compose `lms-dev`)** içindedir. Homebrew `localhost:5432` / `lms_db` kullanılmaz.
+
+- Migrate, shell, dbshell: `./scripts/docker-manage.sh migrate` veya `docker compose -f docker-compose.dev.yml --env-file .env.docker exec backend python manage.py …`
+- Host `backend/manage.py` Docker :5433 açıksa oraya yönlenir. Native Homebrew için `LMS_USE_HOST_DB=1`.
+- `DJANGO_ENV=test` host test DB'sinde kalır (veya container içinde `env DJANGO_ENV=test`).
+- Host :5432'deki boş/kopya `lms_db` üzerine migrate etme.

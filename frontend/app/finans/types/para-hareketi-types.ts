@@ -352,12 +352,17 @@ export interface GunSonuWhatsappRecipient {
   telefon: string;
   telefon_maskeli: string;
   mali_hesap_ad: string;
+  selected?: boolean;
 }
 
 export interface GunSonuWhatsappPreviewResponse {
   recipients: GunSonuWhatsappRecipient[];
   count: number;
   warning: string | null;
+  auto_enabled?: boolean;
+  auto_blocks?: boolean;
+  send_time?: string;
+  report_kinds?: "ozet" | "detay" | "ikisi";
 }
 
 export interface GunSonuWhatsappSendResponse {
