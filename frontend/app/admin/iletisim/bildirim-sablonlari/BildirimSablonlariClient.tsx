@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CommunicationPageShell, WhatsAppPreviewBubble } from "@/components/communication";
 import { headerTypeOf } from "@/components/communication/MetaTemplateSelect";
 import { resolvePreviewVariables } from "@/components/communication/composer-utils";
@@ -15,6 +15,7 @@ import {
   NotificationEventSlot,
   NotificationPreviewResult,
   NotificationSendMode,
+  NotificationStaffRecipientItem,
   WhatsAppAccount,
   WhatsAppMetaTemplateItem,
   deleteNotificationBinding,
@@ -23,7 +24,6 @@ import {
   fetchNotificationStaffRecipients,
   fetchTemplates,
   fetchWhatsAppAccounts,
-  NotificationStaffRecipientItem,
   previewNotificationBinding,
   saveNotificationBinding,
   saveNotificationStaffRecipients,
@@ -38,6 +38,38 @@ const RECIPIENT_LABELS: Record<string, string> = {
   OGRENCI: "Öğrenci",
   PERSONEL: "Personel",
 };
+
+const RECIPIENT_ICONS: Record<string, string> = {
+  VELI: "👪",
+  OGRENCI: "🎓",
+  PERSONEL: "🧑‍💼",
+};
+
+const SEND_MODE_SHORT: Record<string, string> = {
+  AUTO: "Otomatik",
+  META_ONLY: "Meta şablonu",
+  FREEFORM_ONLY: "Serbest mesaj",
+  DISABLED: "Kapalı",
+};
+
+const SEND_MODE_HINT: Record<string, string> = {
+  AUTO: "24 saatlik pencere açıkken serbest mesaj, kapalıyken onaylı Meta şablonu gönderilir.",
+  META_ONLY: "Her zaman onaylı Meta şablonu gönderilir.",
+  FREEFORM_ONLY: "Yalnızca 24 saatlik pencere açıkken serbest mesaj gönderilir.",
+  DISABLED: "Bu bildirim hiç gönderilmez.",
+};
+
+const STATUS_FILTERS = [
+  { key: "all", label: "Tümü" },
+  { key: "bound", label: "Bağlı" },
+  { key: "default", label: "Varsayılan" },
+  { key: "warn", label: "Uyarı" },
+  { key: "off", label: "Kapalı" },
+] as const;
+
+type StatusFilter = (typeof STATUS_FILTERS)[number]["key"];
+
+const EMPTY_EVENTS: NotificationEventItem[] = [];
 
 const readActiveSubeId = (): number | null => {
   if (typeof window === "undefined") return null;
@@ -56,18 +88,39 @@ function moduleEventMatches(modKey: string, event: NotificationEventItem): boole
   return event.module === modKey;
 }
 
-function eventModuleKey(event: NotificationEventItem): string {
-  if (event.module === "yoklama" && event.group) return `yoklama:${event.group}`;
-  return event.module;
-}
-
 const slotHasCustomBinding = (slot: NotificationEventSlot): boolean =>
   Boolean(
     slot.binding &&
       (slot.binding.meta_template_id ||
         slot.binding.message_template_id ||
-        (slot.binding.send_mode && slot.binding.send_mode !== "AUTO")),
+        (slot.binding.send_mode && slot.binding.send_mode !== "AUTO") ||
+        slot.binding.is_active === false),
   );
+
+const slotSendMode = (slot: NotificationEventSlot): NotificationSendMode =>
+  (slot.binding?.send_mode || slot.resolved.send_mode || "AUTO") as NotificationSendMode;
+
+interface EventStatus {
+  bound: boolean;
+  warn: boolean;
+  off: boolean;
+  inactive: boolean;
+}
+
+function eventStatus(event: NotificationEventItem): EventStatus {
+  return {
+    bound: event.slots.some(slotHasCustomBinding),
+    warn: event.slots.some((slot) => (slot.resolved.warnings || []).length > 0),
+    off: event.slots.some((slot) => slotSendMode(slot) === "DISABLED"),
+    inactive: event.slots.some((slot) => slot.binding?.is_active === false),
+  };
+}
+
+function slotKeyOf(eventKey: string, recipientType: string): string {
+  return `${eventKey}:${recipientType}`;
+}
+
+/* ─────────────── Alıcı yöneticiler (kayıt sözleşmesi) ─────────────── */
 
 function StaffRecipientsPanel({
   eventKey,
@@ -124,37 +177,46 @@ function StaffRecipientsPanel({
     }
   };
 
+  const selectedCount = items.filter((row) => row.selected).length;
+
   return (
-    <div className="nb-slot">
-      <div className="nb-slot-head">
-        <strong>Alıcı yöneticiler</strong>
+    <div className="nbx-staff">
+      <div className="nbx-staff-head">
+        <div>
+          <strong>Alıcı yöneticiler</strong>
+          <p className="nbx-hint">
+            Sözleşme aktif edilince işaretlenen kurum / şube / eğitim yöneticilerine WhatsApp
+            gider. Telefonu olmayanlar seçilse bile gönderilmez.
+          </p>
+        </div>
+        <span className="nbx-badge">{selectedCount} seçili</span>
       </div>
-      <p className="tplx-field-hint">
-        Sözleşme aktif edilince işaretlenen kurum / şube / eğitim yöneticilerine WhatsApp gider.
-        Telefonu olmayanlar seçilse bile gönderilmez.
-      </p>
+
       {loading ? (
-        <p className="tplx-field-hint">Yöneticiler yükleniyor…</p>
+        <div className="nbx-staff-list">
+          <div className="nbx-skeleton" style={{ height: 44 }} />
+          <div className="nbx-skeleton" style={{ height: 44 }} />
+        </div>
       ) : items.length === 0 ? (
-        <p className="tplx-field-hint">
-          Bu kurumda kurum / şube / eğitim yöneticisi görevlendirmesi veya
-          yönetici giriş hesabı olan personel yok.
+        <p className="nbx-hint">
+          Bu kurumda kurum / şube / eğitim yöneticisi görevlendirmesi veya yönetici giriş hesabı
+          olan personel yok.
         </p>
       ) : (
-        <div className="nb-staff-list">
+        <div className="nbx-staff-list">
           {items.map((row) => (
             <label
               key={row.id}
-              className={`nb-staff-row${!row.has_phone ? " is-disabled" : ""}`}
+              className={`nbx-staff-row${!row.has_phone ? " is-disabled" : ""}${
+                row.selected ? " is-selected" : ""
+              }`}
             >
-              <input
-                type="checkbox"
-                checked={row.selected}
-                onChange={() => toggle(row.id)}
-              />
-              <span>
-                <strong>{row.ad} {row.soyad}</strong>
-                <span className="nb-staff-meta">
+              <input type="checkbox" checked={row.selected} onChange={() => toggle(row.id)} />
+              <span className="nbx-staff-text">
+                <strong>
+                  {row.ad} {row.soyad}
+                </strong>
+                <span className="nbx-staff-meta">
                   {row.rol}
                   {row.has_phone ? ` · ${row.telefon}` : " · telefon yok"}
                 </span>
@@ -163,9 +225,10 @@ function StaffRecipientsPanel({
           ))}
         </div>
       )}
+
       <button
         type="button"
-        className="comm-btn-secondary"
+        className="nbx-mini-btn"
         disabled={saving || loading}
         onClick={() => void save()}
       >
@@ -175,8 +238,341 @@ function StaffRecipientsPanel({
   );
 }
 
+/* ─────────────── Alıcı slotu (Veli / Öğrenci / Personel) ─────────────── */
+
+interface SlotCardProps {
+  event: NotificationEventItem;
+  slot: NotificationEventSlot;
+  sendModes: Array<{ value: NotificationSendMode; label: string }>;
+  metaOptions: WhatsAppMetaTemplateItem[];
+  lmsOptions: MessageTemplateItem[];
+  boundMeta: WhatsAppMetaTemplateItem | null;
+  busy: boolean;
+  preview: NotificationPreviewResult | undefined;
+  previewLoading: boolean;
+  scopeAccountId: string;
+  previewContext: Record<string, string>;
+  copiedKey: string;
+  onCopy: (text: string, key: string) => void;
+  onPersist: (
+    event: NotificationEventItem,
+    slot: NotificationEventSlot,
+    patch: Partial<{
+      meta_template_id: string | null;
+      message_template_id: string | null;
+      send_mode: NotificationSendMode;
+      is_active: boolean;
+    }>,
+  ) => void;
+  onReset: (event: NotificationEventItem, slot: NotificationEventSlot) => void;
+  onRefreshPreview: (event: NotificationEventItem, slot: NotificationEventSlot) => void;
+}
+
+function SlotCard({
+  event,
+  slot,
+  sendModes,
+  metaOptions,
+  lmsOptions,
+  boundMeta,
+  busy,
+  preview,
+  previewLoading,
+  scopeAccountId,
+  previewContext,
+  copiedKey,
+  onCopy,
+  onPersist,
+  onReset,
+  onRefreshPreview,
+}: SlotCardProps) {
+  const [showExample, setShowExample] = useState(false);
+  const fieldId = useId();
+
+  const key = slotKeyOf(event.key, slot.recipient_type);
+  const custom = slotHasCustomBinding(slot);
+  const mode = slotSendMode(slot);
+  const inactive = slot.binding?.is_active === false;
+  const warnings = slot.resolved.warnings || [];
+
+  const headerFilterHint = event.has_image
+    ? "Yalnızca IMAGE başlıklı Meta şablonları listelenir."
+    : event.has_document
+      ? "Yalnızca DOCUMENT (PDF) başlıklı Meta şablonları listelenir."
+      : "Yalnızca metin başlıklı (TEXT / başlıksız) Meta şablonları listelenir.";
+
+  const createHref = (() => {
+    const qs = new URLSearchParams({
+      event: event.key,
+      recipient: slot.recipient_type,
+      bind: "1",
+    });
+    if (scopeAccountId) qs.set("account", scopeAccountId);
+    return `/admin/iletisim/meta-sablonlar?${qs.toString()}`;
+  })();
+
+  const resolvedBody =
+    preview?.body ||
+    boundMeta?.body_named ||
+    slot.resolved.display_body ||
+    slot.resolved.meta_template_body ||
+    slot.resolved.body ||
+    slot.default_body ||
+    "";
+
+  const previewBody = showExample
+    ? slot.meta_example_body || slot.default_body || resolvedBody
+    : resolvedBody;
+
+  return (
+    <div className={`nbx-slot${inactive ? " is-inactive" : ""}`}>
+      <div className="nbx-slot-head">
+        <span className="nbx-slot-avatar" aria-hidden="true">
+          {RECIPIENT_ICONS[slot.recipient_type] || "💬"}
+        </span>
+        <div className="nbx-slot-ident">
+          <span className="nbx-slot-name">
+            {RECIPIENT_LABELS[slot.recipient_type] || slot.recipient_type}
+          </span>
+          <span className="nbx-slot-sub">{slot.resolved.source_label}</span>
+        </div>
+
+        <span className={`nbx-badge${custom ? " is-success" : ""}`}>
+          {custom ? "Bu kapsamda tanımlı" : "Varsayılan"}
+        </span>
+        {inactive && <span className="nbx-badge is-danger">Pasif</span>}
+        {warnings.length > 0 && (
+          <span className="nbx-badge is-warn">{warnings.length} uyarı</span>
+        )}
+
+        <div className="nbx-slot-actions">
+          {inactive && (
+            <button
+              type="button"
+              className="nbx-mini-btn"
+              disabled={busy}
+              onClick={() => onPersist(event, slot, { is_active: true })}
+            >
+              Aktifleştir
+            </button>
+          )}
+          <Link className="nbx-mini-btn" href={createHref}>
+            Şablon oluştur
+          </Link>
+          {slot.binding && (
+            <button
+              type="button"
+              className="nbx-mini-btn is-danger"
+              disabled={busy}
+              onClick={() => onReset(event, slot)}
+            >
+              Varsayılana dön
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="nbx-mode">
+        <span className="nbx-field-label">Gönderim modu</span>
+        <div className="nbx-seg" role="group" aria-label="Gönderim modu">
+          {sendModes.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className={mode === item.value ? "is-active" : ""}
+              title={item.label}
+              disabled={busy}
+              onClick={() => onPersist(event, slot, { send_mode: item.value })}
+            >
+              {SEND_MODE_SHORT[item.value] || item.label}
+            </button>
+          ))}
+        </div>
+        <p className="nbx-hint">{SEND_MODE_HINT[mode] || ""}</p>
+      </div>
+
+      <div className="nbx-slot-body">
+        <div className="nbx-slot-fields">
+          <div className="nbx-field">
+            <label className="nbx-field-label" htmlFor={`${fieldId}-meta`}>
+              Meta şablonu
+            </label>
+            <select
+              id={`${fieldId}-meta`}
+              className="nbx-select"
+              disabled={busy}
+              value={slot.binding?.meta_template_id || ""}
+              onChange={(e) =>
+                onPersist(event, slot, { meta_template_id: e.target.value || null })
+              }
+            >
+              <option value="">
+                {slot.resolved.meta_template_name
+                  ? `Otomatik — ${slot.resolved.meta_template_name}`
+                  : "Otomatik / yok"}
+              </option>
+              {metaOptions.map((tpl) => {
+                const htype = headerTypeOf(tpl);
+                const accountTag =
+                  !scopeAccountId && tpl.channel_config_name
+                    ? ` · ${tpl.channel_config_name}`
+                    : "";
+                return (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name}
+                    {htype && htype !== "NONE" ? ` [${htype}]` : ""}
+                    {` (${tpl.language})`}
+                    {tpl.status !== "APPROVED" ? ` — ${tpl.status_label || tpl.status}` : ""}
+                    {accountTag}
+                  </option>
+                );
+              })}
+            </select>
+            <p className="nbx-hint">
+              {headerFilterHint}{" "}
+              {scopeAccountId
+                ? "Seçili WhatsApp hesabına ait şablonlar."
+                : "Tüm hesaplar — hesap adı seçenek sonunda görünür."}{" "}
+              ({metaOptions.length} şablon)
+            </p>
+            {boundMeta && boundMeta.status !== "APPROVED" && (
+              <p className="nbx-hint is-warn">
+                Bu şablon Meta onayında değil ({boundMeta.status_label || boundMeta.status});
+                pencere kapalıyken gönderilemez.
+                {boundMeta.rejected_reason ? ` Red sebebi: ${boundMeta.rejected_reason}` : ""}
+              </p>
+            )}
+            <div className="nbx-field-links">
+              <button
+                type="button"
+                className={`nbx-copy${copiedKey === `meta:${key}` ? " is-copied" : ""}`}
+                onClick={() => onCopy(slot.suggested_meta_name, `meta:${key}`)}
+                title="Önerilen Meta şablon adını kopyala"
+              >
+                {copiedKey === `meta:${key}` ? "Kopyalandı" : slot.suggested_meta_name}
+              </button>
+              {slot.binding?.meta_template_id && (
+                <Link
+                  className="nbx-inline-link"
+                  href={`/admin/iletisim/meta-sablonlar?account=${
+                    boundMeta?.channel_config || scopeAccountId || ""
+                  }`}
+                >
+                  Meta şablonlarda aç →
+                </Link>
+              )}
+            </div>
+          </div>
+
+          <div className="nbx-field">
+            <label className="nbx-field-label" htmlFor={`${fieldId}-lms`}>
+              LMS şablonu (serbest mesaj)
+            </label>
+            <select
+              id={`${fieldId}-lms`}
+              className="nbx-select"
+              disabled={busy}
+              value={slot.binding?.message_template_id || ""}
+              onChange={(e) =>
+                onPersist(event, slot, { message_template_id: e.target.value || null })
+              }
+            >
+              <option value="">
+                {slot.resolved.message_template_name
+                  ? `Otomatik — ${slot.resolved.message_template_name}`
+                  : "Varsayılan metin"}
+              </option>
+              {lmsOptions.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name}
+                </option>
+              ))}
+            </select>
+            <p className="nbx-hint">
+              24 saatlik pencere açıkken bu metin serbest mesaj olarak gider.
+            </p>
+            {slot.binding?.message_template_id && (
+              <div className="nbx-field-links">
+                <Link className="nbx-inline-link" href="/admin/iletisim/sablonlar">
+                  LMS şablonlarda aç →
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {warnings.map((warning) => (
+            <div key={warning} className="comm-alert comm-alert-warning">
+              {warning}
+            </div>
+          ))}
+        </div>
+
+        <div className="nbx-preview">
+          <div className="nbx-preview-head">
+            <div className="nbx-seg nbx-seg-sm" role="group" aria-label="Önizleme kaynağı">
+              <button
+                type="button"
+                className={!showExample ? "is-active" : ""}
+                onClick={() => setShowExample(false)}
+              >
+                Gönderilecek
+              </button>
+              <button
+                type="button"
+                className={showExample ? "is-active" : ""}
+                onClick={() => setShowExample(true)}
+              >
+                Meta örneği
+              </button>
+            </div>
+            <button
+              type="button"
+              className="nbx-mini-btn"
+              disabled={busy || previewLoading}
+              onClick={() => onRefreshPreview(event, slot)}
+            >
+              {previewLoading ? "…" : "Yenile"}
+            </button>
+          </div>
+
+          <p className="nbx-hint">
+            {previewLoading && !preview
+              ? "Önizleme yükleniyor…"
+              : preview
+                ? [
+                    preview.uses_meta
+                      ? `Meta şablonu: ${preview.meta_template_name}${
+                          preview.meta_template_language ? ` (${preview.meta_template_language})` : ""
+                        }`
+                      : "Serbest mesaj olarak gönderilir",
+                    preview.source_label,
+                    preview.would_send ? null : "bu bildirim kapalı",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : "Önizleme alınamadı."}
+          </p>
+
+          <WhatsAppPreviewBubble text={resolvePreviewVariables(previewBody, previewContext)} />
+
+          {(preview?.warnings || []).map((warning) => (
+            <p key={warning} className="nbx-hint is-warn">
+              {warning}
+            </p>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────── Sayfa ─────────────── */
+
 export default function BildirimSablonlariClient() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [catalog, setCatalog] = useState<NotificationEventCatalog | null>(null);
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [metaTemplates, setMetaTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
@@ -185,23 +581,36 @@ export default function BildirimSablonlariClient() {
 
   const [scopeSube, setScopeSube] = useState(false);
   const [scopeAccountId, setScopeAccountId] = useState("");
-  const [selectedModule, setSelectedModule] = useState<string>("");
-  const [selectedEventKey, setSelectedEventKey] = useState<string>("");
+  const [moduleFilter, setModuleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [search, setSearch] = useState("");
+  const [selectedEventKey, setSelectedEventKey] = useState("");
   const [urlEventApplied, setUrlEventApplied] = useState(false);
 
   const [loading, setLoading] = useState(true);
-  const [savingSlot, setSavingSlot] = useState<string>("");
-  const [seedingAcademic, setSeedingAcademic] = useState(false);
-  const [seedingKayit, setSeedingKayit] = useState(false);
-  const [seedingKutuphane, setSeedingKutuphane] = useState(false);
+  const [savingSlot, setSavingSlot] = useState("");
+  const [previewLoading, setPreviewLoading] = useState<Record<string, boolean>>({});
+  const [seeding, setSeeding] = useState("");
+  const [seedOpen, setSeedOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, NotificationPreviewResult>>({});
-  const livePreviewContext = useLivePreviewContext();
+  const [copiedKey, setCopiedKey] = useState("");
+
+  const seedRef = useRef<HTMLDivElement | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewContext = useLivePreviewContext();
 
   useEffect(() => {
     setActiveSubeId(readActiveSubeId());
   }, []);
+
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
 
   const scopeSubeId = scopeSube ? activeSubeId : null;
   const scopeChannelConfigId = scopeAccountId || null;
@@ -216,31 +625,15 @@ export default function BildirimSablonlariClient() {
       });
       setCatalog(data);
       setPreviews({});
-      setSelectedModule((current) => {
-        if (current && data.modules.some((m) => m.key === current)) return current;
-        return data.modules[0]?.key || "";
-      });
+      setModuleFilter((current) =>
+        current && data.modules.some((m) => m.key === current) ? current : "",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bildirim olayları yüklenemedi.");
     } finally {
       setLoading(false);
     }
   }, [scopeSubeId, scopeChannelConfigId]);
-
-  useEffect(() => {
-    if (!catalog || urlEventApplied) return;
-    const eventKey = (searchParams.get("event") || "").trim();
-    if (!eventKey) {
-      setUrlEventApplied(true);
-      return;
-    }
-    const match = catalog.events.find((e) => e.key === eventKey);
-    if (match) {
-      setSelectedModule(eventModuleKey(match));
-      setSelectedEventKey(match.key);
-    }
-    setUrlEventApplied(true);
-  }, [catalog, searchParams, urlEventApplied]);
 
   useEffect(() => {
     void loadCatalog();
@@ -266,18 +659,86 @@ export default function BildirimSablonlariClient() {
     void reloadTemplateLists();
   }, [reloadTemplateLists]);
 
-  const events = catalog?.events || [];
-  const moduleEvents = useMemo(
-    () => events.filter((e) => !selectedModule || moduleEventMatches(selectedModule, e)),
-    [events, selectedModule],
-  );
+  const events = catalog?.events || EMPTY_EVENTS;
+  const urlEventKey = (searchParams.get("event") || "").trim();
 
+  // Katalog gelince seçimi geçerli tut (URL'den gelen olay varsa ona öncelik)
   useEffect(() => {
-    setSelectedEventKey((current) => {
-      if (current && moduleEvents.some((e) => e.key === current)) return current;
-      return moduleEvents[0]?.key || "";
+    if (!events.length) return;
+    if (!urlEventApplied && urlEventKey) return;
+    setSelectedEventKey((current) =>
+      current && events.some((e) => e.key === current) ? current : events[0].key,
+    );
+  }, [events, urlEventApplied, urlEventKey]);
+
+  // ?event=... derin bağlantısı
+  useEffect(() => {
+    if (!catalog || urlEventApplied) return;
+    if (urlEventKey && catalog.events.some((e) => e.key === urlEventKey)) {
+      setSelectedEventKey(urlEventKey);
+    }
+    setUrlEventApplied(true);
+  }, [catalog, urlEventApplied, urlEventKey]);
+
+  // Seçim değişince adres çubuğunu güncelle (paylaşılabilir bağlantı)
+  useEffect(() => {
+    if (!urlEventApplied || !selectedEventKey || urlEventKey === selectedEventKey) return;
+    const qs = new URLSearchParams(searchParams.toString());
+    qs.set("event", selectedEventKey);
+    router.replace(`${pathname}?${qs.toString()}`, { scroll: false });
+  }, [selectedEventKey, urlEventApplied, urlEventKey, searchParams, pathname, router]);
+
+  const filteredEvents = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase("tr");
+    return events.filter((event) => {
+      if (moduleFilter && !moduleEventMatches(moduleFilter, event)) return false;
+
+      if (statusFilter !== "all") {
+        const status = eventStatus(event);
+        if (statusFilter === "bound" && !status.bound) return false;
+        if (statusFilter === "default" && status.bound) return false;
+        if (statusFilter === "warn" && !status.warn) return false;
+        if (statusFilter === "off" && !status.off && !status.inactive) return false;
+      }
+
+      if (!term) return true;
+      const haystack = [
+        event.label,
+        event.key,
+        event.description,
+        event.module_label,
+        event.group_label,
+        event.meta_name_base,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("tr");
+      return haystack.includes(term);
     });
-  }, [moduleEvents]);
+  }, [events, moduleFilter, statusFilter, search]);
+
+  const railGroups = useMemo(() => {
+    const modules = catalog?.modules || [];
+    return modules
+      .map((mod) => ({
+        ...mod,
+        items: filteredEvents.filter((event) => moduleEventMatches(mod.key, event)),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [catalog, filteredEvents]);
+
+  const stats = useMemo(() => {
+    let bound = 0;
+    let warn = 0;
+    let off = 0;
+    for (const event of events) {
+      const status = eventStatus(event);
+      if (status.bound) bound += 1;
+      if (status.warn) warn += 1;
+      if (status.off || status.inactive) off += 1;
+    }
+    return { total: events.length, bound, warn, off };
+  }, [events]);
 
   const selectedEvent = useMemo(
     () => events.find((e) => e.key === selectedEventKey) || null,
@@ -285,22 +746,19 @@ export default function BildirimSablonlariClient() {
   );
 
   const metaOptionsFor = useCallback(
-    (
-      event: NotificationEventItem,
-      boundId?: string | null,
-    ): WhatsAppMetaTemplateItem[] => {
+    (event: NotificationEventItem, boundId?: string | null): WhatsAppMetaTemplateItem[] => {
       const scoped = scopeAccountId
         ? metaTemplates.filter((t) => sameAccount(t, scopeAccountId))
         : metaTemplates;
 
-      let required: string[] | null = null;
+      let required: string[];
       if (event.has_image) required = ["IMAGE"];
       else if (event.has_document) required = ["DOCUMENT"];
-      // Serbest metin olaylarında medya başlıklı şablonları gizleme —
+      // Serbest metin olaylarında medya başlıklı şablonları gizle —
       // yanlışlıkla DOCUMENT seçilmesin; yine de bağlı olanı göster.
       else required = ["NONE", "TEXT"];
 
-      let list = scoped.filter((t) => required!.includes(headerTypeOf(t)));
+      let list = scoped.filter((t) => required.includes(headerTypeOf(t)));
 
       // Bağlı şablon filtre dışında kaldıysa (eski header / başka hesap) yine de göster
       if (boundId) {
@@ -330,25 +788,19 @@ export default function BildirimSablonlariClient() {
   const lmsOptionsFor = useCallback(
     (event: NotificationEventItem) => {
       const base = event.meta_name_base || "";
+      const rank = (name: string) => {
+        const lower = name.toLowerCase();
+        if (base && lower.includes(base.replace(/_/g, " "))) return 0;
+        if (base && lower.includes(base.split("_")[0] || "")) return 1;
+        return 2;
+      };
       return [...lmsTemplates].sort((a, b) => {
-        const aHit = base && a.name.toLowerCase().includes(base.replace(/_/g, " "))
-          ? 0
-          : base && a.name.toLowerCase().includes(base.split("_")[0] || "")
-            ? 1
-            : 2;
-        const bHit = base && b.name.toLowerCase().includes(base.replace(/_/g, " "))
-          ? 0
-          : base && b.name.toLowerCase().includes(base.split("_")[0] || "")
-            ? 1
-            : 2;
-        if (aHit !== bHit) return aHit - bHit;
-        return a.name.localeCompare(b.name, "tr");
+        const diff = rank(a.name) - rank(b.name);
+        return diff !== 0 ? diff : a.name.localeCompare(b.name, "tr");
       });
     },
     [lmsTemplates],
   );
-
-  const slotKey = (eventKey: string, recipientType: string) => `${eventKey}:${recipientType}`;
 
   const persist = useCallback(
     async (
@@ -361,7 +813,7 @@ export default function BildirimSablonlariClient() {
         is_active: boolean;
       }>,
     ) => {
-      const key = slotKey(event.key, slot.recipient_type);
+      const key = slotKeyOf(event.key, slot.recipient_type);
       setSavingSlot(key);
       setError(null);
       setMessage(null);
@@ -387,7 +839,9 @@ export default function BildirimSablonlariClient() {
             sube_id: scopeSubeId,
             channel_config_id: scopeChannelConfigId,
           });
-          setMessage(`${event.label} — ${RECIPIENT_LABELS[slot.recipient_type]} varsayılana döndü.`);
+          setMessage(
+            `${event.label} — ${RECIPIENT_LABELS[slot.recipient_type]} varsayılana döndü.`,
+          );
           notifyCommunicationTemplateUsageChanged();
         } else if (isEmptyDefault && !slot.binding) {
           setMessage("Zaten varsayılan ayar kullanılıyor.");
@@ -414,7 +868,7 @@ export default function BildirimSablonlariClient() {
 
   const resetSlot = useCallback(
     async (event: NotificationEventItem, slot: NotificationEventSlot) => {
-      const key = slotKey(event.key, slot.recipient_type);
+      const key = slotKeyOf(event.key, slot.recipient_type);
       setSavingSlot(key);
       setError(null);
       setMessage(null);
@@ -439,7 +893,8 @@ export default function BildirimSablonlariClient() {
 
   const loadPreview = useCallback(
     async (event: NotificationEventItem, slot: NotificationEventSlot) => {
-      const key = slotKey(event.key, slot.recipient_type);
+      const key = slotKeyOf(event.key, slot.recipient_type);
+      setPreviewLoading((prev) => ({ ...prev, [key]: true }));
       try {
         const result = await previewNotificationBinding({
           event_key: event.key,
@@ -450,6 +905,8 @@ export default function BildirimSablonlariClient() {
         setPreviews((prev) => ({ ...prev, [key]: result }));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Önizleme alınamadı.");
+      } finally {
+        setPreviewLoading((prev) => ({ ...prev, [key]: false }));
       }
     },
     [scopeSubeId, scopeChannelConfigId],
@@ -470,201 +927,267 @@ export default function BildirimSablonlariClient() {
     };
   }, [selectedEvent, loadPreview]);
 
-  const scopeLabel = scopeSube && activeSubeId
-    ? scopeAccountId
-      ? "Şube + WhatsApp hesabı"
-      : "Şube"
-    : scopeAccountId
-      ? "WhatsApp hesabı"
-      : "Kurum varsayılanı";
+  useEffect(() => {
+    if (!seedOpen) return;
+    const onPointerDown = (ev: MouseEvent) => {
+      if (seedRef.current && !seedRef.current.contains(ev.target as Node)) setSeedOpen(false);
+    };
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setSeedOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [seedOpen]);
 
-  const handleSeedAcademicSchedule = async () => {
-    const accountId = scopeAccountId || accounts[0]?.id || "";
-    if (!accountId) {
-      setError("WhatsApp hesabı seçin (veya en az bir aktif hesap tanımlayın).");
-      return;
+  const copyText = useCallback((text: string, key: string) => {
+    if (!text) return;
+    const done = () => {
+      setCopiedKey(key);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopiedKey(""), 1400);
+    };
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => undefined);
     }
-    if (!confirm(
-      "Sınıf ders programı taslakları oluşturulsun mu?\n\n"
-      + "• sinif_programi_veli (DOCUMENT)\n"
-      + "• sinif_programi_ogrenci (DOCUMENT)\n\n"
-      + "LMS şablonları + Meta DRAFT üretilir ve bu olayın Veli/Öğrenci "
-      + "slotlarına bağlanır. Örnek PDF yükleyip Meta onayına göndermeniz gerekir.",
-    )) return;
-    setSeedingAcademic(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const res = await seedAcademicScheduleTemplates({
-        channel_config_id: accountId,
-        sube_id: scopeSube ? activeSubeId : null,
-        bind: true,
-      });
-      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
-      setMessage(
-        (res.info || "Akademik program taslakları hazır.")
-        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
-        + errText,
-      );
-      notifyCommunicationTemplateUsageChanged();
-      await Promise.all([loadCatalog(), reloadTemplateLists()]);
-      setSelectedModule("akademik");
-      setSelectedEventKey("akademik.sinif_programi");
-      if (!scopeAccountId) setScopeAccountId(accountId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Akademik program taslakları oluşturulamadı.");
-    } finally {
-      setSeedingAcademic(false);
-    }
-  };
+  }, []);
 
-  const handleSeedKayitSozlesme = async () => {
-    const accountId = scopeAccountId || accounts[0]?.id || "";
-    if (!accountId) {
-      setError("WhatsApp hesabı seçin (veya en az bir aktif hesap tanımlayın).");
-      return;
-    }
-    if (!confirm(
-      "Kayıt sözleşmesi taslağı oluşturulsun mu?\n\n"
-      + "• ogrenci_kayit_sozlesme_personel (metin)\n\n"
-      + "LMS şablonu + Meta DRAFT üretilir ve bu olayın Personel "
-      + "slotuna bağlanır. Meta’ya gönderip onaylatmanız gerekir.",
-    )) return;
-    setSeedingKayit(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const res = await seedKayitSozlesmeTemplates({
-        channel_config_id: accountId,
-        sube_id: scopeSube ? activeSubeId : null,
-        bind: true,
-      });
-      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
-      setMessage(
-        (res.info || "Kayıt sözleşmesi taslağı hazır.")
-        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
-        + errText,
-      );
-      notifyCommunicationTemplateUsageChanged();
-      await Promise.all([loadCatalog(), reloadTemplateLists()]);
-      setSelectedModule("ogrenci");
-      setSelectedEventKey("ogrenci.kayit_sozlesme");
-      if (!scopeAccountId) setScopeAccountId(accountId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kayıt sözleşmesi taslağı oluşturulamadı.");
-    } finally {
-      setSeedingKayit(false);
-    }
-  };
+  const scopeLabel =
+    scopeSube && activeSubeId
+      ? scopeAccountId
+        ? "Şube + WhatsApp hesabı"
+        : "Şube"
+      : scopeAccountId
+        ? "WhatsApp hesabı"
+        : "Kurum varsayılanı";
 
-  const handleSeedKutuphaneYoklama = async () => {
-    const accountId = scopeAccountId || accounts[0]?.id || "";
-    if (!accountId) {
-      setError("WhatsApp hesabı seçin (veya en az bir aktif hesap tanımlayın).");
-      return;
-    }
-    if (!confirm(
-      "Kütüphane yoklama taslakları oluşturulsun mu?\n\n"
-      + "• yoklama_gelmedi_veli / yoklama_gec_veli / yoklama_cikis_veli\n\n"
-      + "Onaylı şablonlara dokunulmaz. Eksik olanlar Meta DRAFT olarak eklenir "
-      + "ve Yoklama → Kütüphane olaylarına bağlanır.",
-    )) return;
-    setSeedingKutuphane(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const res = await seedKutuphaneYoklamaTemplates({
-        channel_config_id: accountId,
-        sube_id: scopeSube ? activeSubeId : null,
-        bind: true,
-      });
-      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
-      setMessage(
-        (res.info || "Kütüphane yoklama taslakları hazır.")
-        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
-        + errText,
-      );
-      notifyCommunicationTemplateUsageChanged();
-      await Promise.all([loadCatalog(), reloadTemplateLists()]);
-      setSelectedModule("yoklama:kutuphane");
-      setSelectedEventKey("yoklama.gelmedi");
-      if (!scopeAccountId) setScopeAccountId(accountId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kütüphane yoklama taslakları oluşturulamadı.");
-    } finally {
-      setSeedingKutuphane(false);
-    }
-  };
+  const runSeed = useCallback(
+    async (
+      kind: "academic" | "kutuphane" | "kayit",
+      confirmText: string,
+      fallbackInfo: string,
+      failText: string,
+      focusEventKey: string,
+      seedFn: (payload: {
+        channel_config_id: string;
+        sube_id: number | null;
+        bind: boolean;
+      }) => Promise<{ info?: string; next_steps?: string[]; errors?: string[] }>,
+    ) => {
+      const accountId = scopeAccountId || accounts[0]?.id || "";
+      if (!accountId) {
+        setError("WhatsApp hesabı seçin (veya en az bir aktif hesap tanımlayın).");
+        return;
+      }
+      if (!confirm(confirmText)) return;
+      setSeeding(kind);
+      setSeedOpen(false);
+      setError(null);
+      setMessage(null);
+      try {
+        const res = await seedFn({
+          channel_config_id: accountId,
+          sube_id: scopeSube ? activeSubeId : null,
+          bind: true,
+        });
+        const errText = (res.errors || []).length ? ` Hatalar: ${(res.errors || []).join("; ")}` : "";
+        setMessage(
+          (res.info || fallbackInfo) +
+            (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "") +
+            errText,
+        );
+        notifyCommunicationTemplateUsageChanged();
+        await Promise.all([loadCatalog(), reloadTemplateLists()]);
+        setModuleFilter("");
+        setStatusFilter("all");
+        setSearch("");
+        setSelectedEventKey(focusEventKey);
+        if (!scopeAccountId) setScopeAccountId(accountId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : failText);
+      } finally {
+        setSeeding("");
+      }
+    },
+    [scopeAccountId, accounts, scopeSube, activeSubeId, loadCatalog, reloadTemplateLists],
+  );
+
+  const handleSeedAcademicSchedule = () =>
+    runSeed(
+      "academic",
+      "Sınıf ders programı taslakları oluşturulsun mu?\n\n" +
+        "• sinif_programi_veli (DOCUMENT)\n" +
+        "• sinif_programi_ogrenci (DOCUMENT)\n\n" +
+        "LMS şablonları + Meta DRAFT üretilir ve bu olayın Veli/Öğrenci " +
+        "slotlarına bağlanır. Örnek PDF yükleyip Meta onayına göndermeniz gerekir.",
+      "Akademik program taslakları hazır.",
+      "Akademik program taslakları oluşturulamadı.",
+      "akademik.sinif_programi",
+      seedAcademicScheduleTemplates,
+    );
+
+  const handleSeedKutuphaneYoklama = () =>
+    runSeed(
+      "kutuphane",
+      "Kütüphane yoklama taslakları oluşturulsun mu?\n\n" +
+        "• yoklama_gelmedi_veli / yoklama_gec_veli / yoklama_cikis_veli\n\n" +
+        "Onaylı şablonlara dokunulmaz. Eksik olanlar Meta DRAFT olarak eklenir " +
+        "ve Yoklama → Kütüphane olaylarına bağlanır.",
+      "Kütüphane yoklama taslakları hazır.",
+      "Kütüphane yoklama taslakları oluşturulamadı.",
+      "yoklama.gelmedi",
+      seedKutuphaneYoklamaTemplates,
+    );
+
+  const handleSeedKayitSozlesme = () =>
+    runSeed(
+      "kayit",
+      "Kayıt sözleşmesi taslağı oluşturulsun mu?\n\n" +
+        "• ogrenci_kayit_sozlesme_personel (metin)\n\n" +
+        "LMS şablonu + Meta DRAFT üretilir ve bu olayın Personel " +
+        "slotuna bağlanır. Meta’ya gönderip onaylatmanız gerekir.",
+      "Kayıt sözleşmesi taslağı hazır.",
+      "Kayıt sözleşmesi taslağı oluşturulamadı.",
+      "ogrenci.kayit_sozlesme",
+      seedKayitSozlesmeTemplates,
+    );
+
+  const seedItems = [
+    {
+      kind: "academic",
+      title: "Ders programı taslakları",
+      desc: "Planlama → Programı Bildir için veli/öğrenci PDF şablonları",
+      run: handleSeedAcademicSchedule,
+    },
+    {
+      kind: "kutuphane",
+      title: "Kütüphane yoklama taslakları",
+      desc: "Gelmedi / geç kalma / çıkış Meta şablonları",
+      run: handleSeedKutuphaneYoklama,
+    },
+    {
+      kind: "kayit",
+      title: "Kayıt sözleşmesi taslağı",
+      desc: "Sözleşme aktif bildirimi için yönetici şablonu",
+      run: handleSeedKayitSozlesme,
+    },
+  ];
 
   return (
     <CommunicationPageShell
       title="Bildirim Şablonları"
-      subtitle="Otomatik bildirimlerde hangi Meta / LMS şablonunun kullanılacağını buradan bağlayın. Bağlanan şablonlar Şablonlar ve Meta Şablonlar sayfalarında “Aktif” görünür."
+      subtitle="Otomatik bildirimlerde hangi Meta / LMS şablonunun kullanılacağını buradan bağlayın."
       icon="🔗"
       breadcrumbs={[
         { label: "İletişim", href: "/admin/iletisim/panel" },
         { label: "Bildirim Şablonları" },
       ]}
       actions={
-        <>
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            onClick={handleSeedAcademicSchedule}
-            disabled={seedingAcademic || accounts.length === 0}
-            title="Planlama → Programı Bildir için veli/öğrenci DOCUMENT taslakları"
-          >
-            {seedingAcademic ? "Oluşturuluyor…" : "Ders programı taslakları"}
-          </button>
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            onClick={handleSeedKutuphaneYoklama}
-            disabled={seedingKutuphane || accounts.length === 0}
-            title="Kütüphane yoklama gelmedi/geç/çıkış Meta taslakları"
-          >
-            {seedingKutuphane ? "Oluşturuluyor…" : "Kütüphane yoklama taslakları"}
-          </button>
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            onClick={handleSeedKayitSozlesme}
-            disabled={seedingKayit || accounts.length === 0}
-            title="Sözleşme aktif bildirimi için yönetici Meta/LMS taslağı"
-          >
-            {seedingKayit ? "Oluşturuluyor…" : "Kayıt sözleşmesi taslağı"}
-          </button>
+        <div className="nbx-head-actions">
+          <div className="nbx-menu" ref={seedRef}>
+            <button
+              type="button"
+              className="comm-btn-secondary"
+              aria-expanded={seedOpen}
+              disabled={accounts.length === 0 || Boolean(seeding)}
+              onClick={() => setSeedOpen((v) => !v)}
+            >
+              {seeding ? "Oluşturuluyor…" : "Hazır taslaklar"} ▾
+            </button>
+            {seedOpen && (
+              <div className="nbx-menu-panel" role="menu">
+                {seedItems.map((item) => (
+                  <button
+                    key={item.kind}
+                    type="button"
+                    className="nbx-menu-item"
+                    role="menuitem"
+                    disabled={Boolean(seeding)}
+                    onClick={() => void item.run()}
+                  >
+                    <strong>{item.title}</strong>
+                    <span>{item.desc}</span>
+                  </button>
+                ))}
+                <p className="nbx-menu-note">
+                  Taslaklar {scopeAccountId ? "seçili" : "ilk aktif"} WhatsApp hesabına eklenir ve
+                  ilgili olaylara bağlanır.
+                </p>
+              </div>
+            )}
+          </div>
           <Link className="comm-btn-secondary" href="/admin/iletisim/sablonlar">
             LMS Şablonları
           </Link>
           <Link className="comm-btn-secondary" href="/admin/iletisim/meta-sablonlar">
             Meta Şablonları
           </Link>
-        </>
+        </div>
       }
       maxWidth="full"
     >
-      {error && <div className="comm-alert comm-alert-danger">{error}</div>}
-      {message && <div className="comm-alert comm-alert-success">{message}</div>}
+      {(error || message) && (
+        <div className="nbx-alerts">
+          {error && (
+            <div className="comm-alert comm-alert-danger nbx-alert">
+              <span>{error}</span>
+              <button
+                type="button"
+                className="nbx-alert-close"
+                aria-label="Kapat"
+                onClick={() => setError(null)}
+              >
+                ×
+              </button>
+            </div>
+          )}
+          {message && (
+            <div className="comm-alert comm-alert-success nbx-alert">
+              <span>{message}</span>
+              <button
+                type="button"
+                className="nbx-alert-close"
+                aria-label="Kapat"
+                onClick={() => setMessage(null)}
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="comm-card nb-scope">
-        <div className="nb-scope-fields">
-          <label className="comm-form-field">
-            <span>Kapsam</span>
+      <div className="nbx-toolbar">
+        <div className="nbx-toolbar-row">
+          <div className="nbx-field">
+            <span className="nbx-field-label">Kapsam</span>
+            <div className="nbx-seg" role="group" aria-label="Kapsam">
+              <button
+                type="button"
+                className={!scopeSube ? "is-active" : ""}
+                onClick={() => setScopeSube(false)}
+              >
+                Kurum
+              </button>
+              <button
+                type="button"
+                className={scopeSube ? "is-active" : ""}
+                disabled={!activeSubeId}
+                title={activeSubeId ? "Aktif şube" : "Aktif şube seçili değil"}
+                onClick={() => setScopeSube(true)}
+              >
+                Aktif şube
+              </button>
+            </div>
+          </div>
+
+          <label className="nbx-field">
+            <span className="nbx-field-label">WhatsApp hesabı</span>
             <select
-              className="tplx-select"
-              value={scopeSube ? "sube" : "kurum"}
-              onChange={(e) => setScopeSube(e.target.value === "sube")}
-              disabled={!activeSubeId}
-            >
-              <option value="kurum">Kurum varsayılanı</option>
-              <option value="sube">Aktif şube</option>
-            </select>
-          </label>
-          <label className="comm-form-field">
-            <span>WhatsApp hesabı</span>
-            <select
-              className="tplx-select"
+              className="nbx-select"
               value={scopeAccountId}
               onChange={(e) => setScopeAccountId(e.target.value)}
             >
@@ -676,314 +1199,304 @@ export default function BildirimSablonlariClient() {
               ))}
             </select>
           </label>
+
+          <label className="nbx-field">
+            <span className="nbx-field-label">Modül</span>
+            <select
+              className="nbx-select"
+              value={moduleFilter}
+              onChange={(e) => setModuleFilter(e.target.value)}
+            >
+              <option value="">Tüm modüller</option>
+              {(catalog?.modules || []).map((mod) => (
+                <option key={mod.key} value={mod.key}>
+                  {mod.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="nbx-field nbx-field-grow">
+            <span className="nbx-field-label">Ara</span>
+            <div className="nbx-search">
+              <span className="nbx-search-icon" aria-hidden="true">
+                🔍
+              </span>
+              <input
+                type="search"
+                value={search}
+                placeholder="Olay adı, anahtar veya açıklama…"
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setSearch("");
+                }}
+              />
+            </div>
+          </div>
         </div>
-        <p className="tplx-field-hint">
-          Düzenlenen kapsam: <strong>{scopeLabel}</strong>. Daha özel bir kapsamda tanım yoksa
-          sistem sırasıyla şube, hesap ve kurum varsayılanına düşer.           Devamsızlık için <strong>Yoklama</strong> altında{" "}
-          <strong>Kütüphane</strong> ve <strong>Sınıf</strong> olaylarını ayrı kullanın.
-        </p>
+
+        <div className="nbx-toolbar-row nbx-toolbar-row-end">
+          <div className="nbx-chips">
+            {STATUS_FILTERS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`nbx-chip${statusFilter === item.key ? " is-active" : ""}`}
+                onClick={() => setStatusFilter(item.key)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <p className="nbx-scope-note">
+            Düzenlenen kapsam: <strong>{scopeLabel}</strong>. Daha özel kapsamda tanım yoksa sistem
+            sırasıyla şube, hesap ve kurum varsayılanına düşer.
+          </p>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="comm-card">Yükleniyor…</div>
+      <div className="nbx-stats">
+        <div className="nbx-stat">
+          <span className="nbx-stat-icon" aria-hidden="true">
+            🔔
+          </span>
+          <span>
+            <span className="nbx-stat-value">{stats.total}</span>
+            <span className="nbx-stat-label">Bildirim olayı</span>
+          </span>
+        </div>
+        <div className="nbx-stat is-bound">
+          <span className="nbx-stat-icon" aria-hidden="true">
+            ✅
+          </span>
+          <span>
+            <span className="nbx-stat-value">{stats.bound}</span>
+            <span className="nbx-stat-label">Bu kapsamda tanımlı</span>
+          </span>
+        </div>
+        <div className="nbx-stat is-warn">
+          <span className="nbx-stat-icon" aria-hidden="true">
+            ⚠️
+          </span>
+          <span>
+            <span className="nbx-stat-value">{stats.warn}</span>
+            <span className="nbx-stat-label">Uyarılı olay</span>
+          </span>
+        </div>
+        <div className="nbx-stat is-off">
+          <span className="nbx-stat-icon" aria-hidden="true">
+            🚫
+          </span>
+          <span>
+            <span className="nbx-stat-value">{stats.off}</span>
+            <span className="nbx-stat-label">Kapalı / pasif</span>
+          </span>
+        </div>
+      </div>
+
+      {loading && !catalog ? (
+        <div className="nbx-layout">
+          <aside className="nbx-rail">
+            <div className="nbx-rail-body">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="nbx-skeleton" style={{ height: 38, margin: 6 }} />
+              ))}
+            </div>
+          </aside>
+          <section className="nbx-detail">
+            <div className="nbx-detail-card" style={{ padding: 18 }}>
+              <div className="nbx-skeleton" style={{ height: 26, width: "40%" }} />
+              <div className="nbx-skeleton" style={{ height: 16, width: "70%", marginTop: 12 }} />
+              <div className="nbx-skeleton" style={{ height: 180, marginTop: 20 }} />
+            </div>
+          </section>
+        </div>
       ) : (
-        <div className="nb-layout">
-          <aside className="comm-card nb-sidebar">
-            {(catalog?.modules || []).length === 0 ? (
-              <p className="tplx-field-hint">Gösterilecek bildirim modülü yok.</p>
-            ) : (
-              (catalog?.modules || []).map((mod) => {
-                const modEvents = events.filter((e) => moduleEventMatches(mod.key, e));
-                const boundCount = modEvents.filter((e) =>
-                  e.slots.some(slotHasCustomBinding),
-                ).length;
-                return (
-                  <div key={mod.key} className="nb-module">
+        <div className="nbx-layout">
+          <aside className="nbx-rail">
+            <div className="nbx-rail-head">
+              <span>Olaylar</span>
+              <span>
+                {filteredEvents.length}/{stats.total}
+              </span>
+            </div>
+            <div className="nbx-rail-body">
+              {railGroups.length === 0 ? (
+                <p className="nbx-empty">
+                  Filtreye uyan bildirim olayı yok.
+                  {(search || statusFilter !== "all" || moduleFilter) && (
                     <button
                       type="button"
-                      className={`nb-module-btn${selectedModule === mod.key ? " is-active" : ""}`}
-                      onClick={() => setSelectedModule(mod.key)}
+                      className="nbx-inline-link"
+                      onClick={() => {
+                        setSearch("");
+                        setStatusFilter("all");
+                        setModuleFilter("");
+                      }}
                     >
-                      <span>{mod.label}</span>
-                      {boundCount > 0 && (
-                        <span className="nb-doc-chip nb-bound-chip">{boundCount}</span>
-                      )}
+                      Filtreleri temizle
                     </button>
-                    {selectedModule === mod.key && (
-                      <ul className="nb-event-list">
-                        {modEvents.map((e) => (
-                          <li key={e.key}>
-                            <button
-                              type="button"
-                              className={`nb-event-btn${selectedEventKey === e.key ? " is-active" : ""}`}
-                              onClick={() => setSelectedEventKey(e.key)}
-                            >
-                              {e.label}
-                              {e.slots.some(slotHasCustomBinding) && (
-                                <span className="nb-doc-chip nb-bound-chip">Bağlı</span>
-                              )}
-                              {e.has_document && <span className="nb-doc-chip">PDF</span>}
-                              {e.has_image && <span className="nb-doc-chip">GÖRSEL</span>}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                  )}
+                </p>
+              ) : (
+                railGroups.map((group) => (
+                  <div key={group.key} className="nbx-rail-group">
+                    <div className="nbx-rail-group-label">{group.label}</div>
+                    {group.items.map((event) => {
+                      const status = eventStatus(event);
+                      const dotClass = status.off || status.inactive
+                        ? "is-off"
+                        : status.warn
+                          ? "is-warn"
+                          : status.bound
+                            ? "is-bound"
+                            : "";
+                      return (
+                        <button
+                          key={event.key}
+                          type="button"
+                          className={`nbx-rail-item${
+                            selectedEventKey === event.key ? " is-active" : ""
+                          }`}
+                          onClick={() => setSelectedEventKey(event.key)}
+                        >
+                          <span className={`nbx-rail-dot ${dotClass}`} aria-hidden="true" />
+                          <span className="nbx-rail-text">
+                            <span className="nbx-rail-label">{event.label}</span>
+                            <span className="nbx-rail-meta">
+                              {event.slots
+                                .map((s) => RECIPIENT_LABELS[s.recipient_type] || s.recipient_type)
+                                .join(" · ")}
+                            </span>
+                          </span>
+                          {event.has_document && <span className="nbx-tag">PDF</span>}
+                          {event.has_image && <span className="nbx-tag is-image">GÖRSEL</span>}
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              })
-            )}
+                ))
+              )}
+            </div>
           </aside>
 
-          <section className="nb-detail">
+          <section className="nbx-detail">
             {!selectedEvent ? (
-              <div className="comm-card">Soldan bir olay seçin.</div>
-            ) : (
-              <div className="comm-card">
-                <header className="nb-event-head">
-                  <div>
-                    <h2>{selectedEvent.label}</h2>
-                    {selectedEvent.description && <p>{selectedEvent.description}</p>}
-                  </div>
-                  <code className="nb-event-key">{selectedEvent.key}</code>
-                </header>
-
-                <p className="tplx-field-hint">
-                  Kullanılabilir değişkenler:{" "}
-                  {selectedEvent.variables.map((v) => `{{${v}}}`).join(", ")}
+              <div className="nbx-detail-card nbx-detail-empty">
+                <span aria-hidden="true">🔔</span>
+                <strong>Bildirim olayı seçin</strong>
+                <p className="nbx-hint">
+                  Soldaki listeden bir olay seçerek Meta / LMS şablon eşlemesini düzenleyin.
                 </p>
-
-                {selectedEvent.key === "ogrenci.kayit_sozlesme" && (
-                  <StaffRecipientsPanel
-                    eventKey={selectedEvent.key}
-                    subeId={scopeSubeId}
-                    onError={setError}
-                    onMessage={setMessage}
-                  />
-                )}
-
-                {selectedEvent.slots.map((slot) => {
-                  const key = slotKey(selectedEvent.key, slot.recipient_type);
-                  const busy = savingSlot === key;
-                  const preview = previews[key];
-                  const options = metaOptionsFor(
-                    selectedEvent,
-                    slot.binding?.meta_template_id,
-                  );
-                  const lmsOptions = lmsOptionsFor(selectedEvent);
-                  const boundMeta = slot.binding?.meta_template_id
-                    ? metaTemplates.find(
-                      (t) => String(t.id) === String(slot.binding?.meta_template_id),
-                    )
-                    : null;
-                  const headerFilterHint = selectedEvent.has_image
-                    ? "Yalnızca IMAGE başlıklı Meta şablonları listelenir."
-                    : selectedEvent.has_document
-                      ? "Yalnızca DOCUMENT (PDF) başlıklı Meta şablonları listelenir."
-                      : "Yalnızca metin başlıklı (TEXT / başlıksız) Meta şablonları listelenir.";
-                  const createHref = (() => {
-                    const qs = new URLSearchParams({
-                      event: selectedEvent.key,
-                      recipient: slot.recipient_type,
-                      bind: "1",
-                    });
-                    if (scopeAccountId) qs.set("account", scopeAccountId);
-                    return `/admin/iletisim/meta-sablonlar?${qs.toString()}`;
-                  })();
-                  return (
-                    <div key={key} className="nb-slot">
-                      <div className="nb-slot-head">
-                        <strong>{RECIPIENT_LABELS[slot.recipient_type]}</strong>
-                        <span className="comm-status-badge">{slot.resolved.source_label}</span>
-                        {slotHasCustomBinding(slot) ? (
-                          <span className="comm-status-badge is-success">Bu kapsamda tanımlı</span>
-                        ) : (
-                          <span className="tplx-field-hint">Bu kapsamda özel tanım yok</span>
-                        )}
-                      </div>
-
-                      <div className="nb-slot-grid">
-                        <label className="comm-form-field">
-                          <span>Meta şablonu</span>
-                          <select
-                            className="tplx-select"
-                            disabled={busy}
-                            value={slot.binding?.meta_template_id || ""}
-                            onChange={(e) =>
-                              persist(selectedEvent, slot, {
-                                meta_template_id: e.target.value || null,
-                              })
-                            }
-                          >
-                            <option value="">
-                              {slot.resolved.meta_template_name
-                                ? `Otomatik — ${slot.resolved.meta_template_name}`
-                                : "Otomatik / yok"}
-                            </option>
-                            {options.map((tpl) => {
-                              const htype = headerTypeOf(tpl);
-                              const accountTag =
-                                !scopeAccountId && tpl.channel_config_name
-                                  ? ` · ${tpl.channel_config_name}`
-                                  : "";
-                              return (
-                                <option key={tpl.id} value={tpl.id}>
-                                  {tpl.name}
-                                  {htype && htype !== "NONE" ? ` [${htype}]` : ""}
-                                  {` (${tpl.language})`}
-                                  {tpl.status !== "APPROVED"
-                                    ? ` — ${tpl.status_label || tpl.status}`
-                                    : ""}
-                                  {accountTag}
-                                </option>
-                              );
-                            })}
-                          </select>
-                          <p className="tplx-field-hint">
-                            {headerFilterHint}
-                            {scopeAccountId
-                              ? " Seçili WhatsApp hesabına ait şablonlar."
-                              : " Tüm hesaplar — hesap adı seçenek sonunda görünür."}
-                            {` (${options.length} şablon)`}
-                          </p>
-                          {boundMeta && boundMeta.status !== "APPROVED" && (
-                            <p className="tplx-field-hint" style={{ color: "#b45309" }}>
-                              Bu şablon henüz Meta onayında değil; pencere kapalıyken
-                              gönderilemez. Meta’ya gönderip onaylatın.
-                            </p>
-                          )}
-                          {slot.binding?.meta_template_id && (
-                            <Link
-                              className="tplx-field-hint"
-                              href={`/admin/iletisim/meta-sablonlar?account=${
-                                boundMeta?.channel_config || scopeAccountId || ""
-                              }`}
-                              style={{ display: "inline-block", marginTop: 4 }}
-                            >
-                              Meta şablonlarda aç →
-                            </Link>
-                          )}
-                        </label>
-
-                        <label className="comm-form-field">
-                          <span>LMS şablonu (serbest mesaj)</span>
-                          <select
-                            className="tplx-select"
-                            disabled={busy}
-                            value={slot.binding?.message_template_id || ""}
-                            onChange={(e) =>
-                              persist(selectedEvent, slot, {
-                                message_template_id: e.target.value || null,
-                              })
-                            }
-                          >
-                            <option value="">
-                              {slot.resolved.message_template_name
-                                ? `Otomatik — ${slot.resolved.message_template_name}`
-                                : "Varsayılan metin"}
-                            </option>
-                            {lmsOptions.map((tpl) => (
-                              <option key={tpl.id} value={tpl.id}>
-                                {tpl.name}
-                              </option>
-                            ))}
-                          </select>
-                          {slot.binding?.message_template_id && (
-                            <Link
-                              className="tplx-field-hint"
-                              href="/admin/iletisim/sablonlar"
-                              style={{ display: "inline-block", marginTop: 4 }}
-                            >
-                              LMS şablonlarda aç →
-                            </Link>
-                          )}
-                        </label>
-
-                        <label className="comm-form-field">
-                          <span>Gönderim modu</span>
-                          <select
-                            className="tplx-select"
-                            disabled={busy}
-                            value={slot.binding?.send_mode || slot.resolved.send_mode}
-                            onChange={(e) =>
-                              persist(selectedEvent, slot, {
-                                send_mode: e.target.value as NotificationSendMode,
-                              })
-                            }
-                          >
-                            {(catalog?.send_modes || []).map((mode) => (
-                              <option key={mode.value} value={mode.value}>
-                                {mode.label}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="tplx-field-hint">
-                            Kapalı = gönderilmez. Meta only = her zaman şablon.
-                            Serbest = yalnızca 24s penceresinde.
-                          </p>
-                        </label>
-                      </div>
-
-                      {slot.resolved.warnings.map((warning) => (
-                        <div key={warning} className="comm-alert comm-alert-warning">
-                          {warning}
-                        </div>
-                      ))}
-
-                      <div className="comm-btn-row">
-                        <button
-                          type="button"
-                          className="comm-btn-secondary"
-                          disabled={busy}
-                          onClick={() => loadPreview(selectedEvent, slot)}
-                        >
-                          Önizlemeyi yenile
-                        </button>
-                        {slot.binding && (
-                          <button
-                            type="button"
-                            className="comm-btn-secondary"
-                            disabled={busy}
-                            onClick={() => resetSlot(selectedEvent, slot)}
-                          >
-                            Varsayılana dön
-                          </button>
-                        )}
-                        <Link className="comm-btn-secondary" href={createHref}>
-                          Bu olay için şablon oluştur
-                        </Link>
-                      </div>
-
-                      <div className="nb-preview">
-                        <div className="tplx-field-hint">
-                          {preview
-                            ? (
-                              <>
-                                {preview.uses_meta
-                                  ? `Meta şablonu ile gönderilecek: ${preview.meta_template_name}`
-                                  : "Serbest mesaj olarak gönderilecek"}
-                                {!preview.would_send && " — bu bildirim kapalı"}
-                              </>
-                            )
-                            : "Önizleme yükleniyor…"}
-                        </div>
-                        <WhatsAppPreviewBubble
-                          text={resolvePreviewVariables(
-                            preview?.body
-                              || boundMeta?.body_named
-                              || slot.resolved.display_body
-                              || slot.resolved.meta_template_body
-                              || slot.resolved.body
-                              || slot.default_body
-                              || "",
-                            livePreviewContext,
-                          )}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
+            ) : (
+              <>
+                <div className="nbx-detail-card">
+                  <header className="nbx-detail-head">
+                    <div className="nbx-detail-title">
+                      <div>
+                        <span className="nbx-detail-crumb">
+                          {selectedEvent.module_label}
+                          {selectedEvent.group_label ? ` · ${selectedEvent.group_label}` : ""}
+                        </span>
+                        <h2>{selectedEvent.label}</h2>
+                        {selectedEvent.description && (
+                          <p className="nbx-detail-desc">{selectedEvent.description}</p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className={`nbx-key${copiedKey === `key:${selectedEvent.key}` ? " is-copied" : ""}`}
+                        title="Olay anahtarını kopyala"
+                        onClick={() => copyText(selectedEvent.key, `key:${selectedEvent.key}`)}
+                      >
+                        {selectedEvent.key}
+                      </button>
+                    </div>
+
+                    <div className="nbx-badges">
+                      {selectedEvent.has_document && <span className="nbx-badge">PDF ekli</span>}
+                      {selectedEvent.has_image && <span className="nbx-badge">Görsel ekli</span>}
+                      {selectedEvent.opt_in_category && (
+                        <span className="nbx-badge">
+                          İzin kategorisi: {selectedEvent.opt_in_category}
+                        </span>
+                      )}
+                      <span className="nbx-badge">
+                        {selectedEvent.slots.length} alıcı rolü
+                      </span>
+                    </div>
+                  </header>
+
+                  <div className="nbx-vars">
+                    <div className="nbx-vars-head">
+                      <span className="nbx-field-label">Kullanılabilir değişkenler</span>
+                      <span className="nbx-hint">Tıklayınca kopyalanır</span>
+                    </div>
+                    <div className="nbx-var-list">
+                      {selectedEvent.variables.map((variable) => {
+                        const token = `{{${variable}}}`;
+                        const ck = `var:${selectedEvent.key}:${variable}`;
+                        return (
+                          <button
+                            key={variable}
+                            type="button"
+                            className={`nbx-var${copiedKey === ck ? " is-copied" : ""}`}
+                            onClick={() => copyText(token, ck)}
+                          >
+                            {copiedKey === ck ? "kopyalandı" : token}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {selectedEvent.key === "ogrenci.kayit_sozlesme" && (
+                    <StaffRecipientsPanel
+                      eventKey={selectedEvent.key}
+                      subeId={scopeSubeId}
+                      onError={setError}
+                      onMessage={setMessage}
+                    />
+                  )}
+                </div>
+
+                <div className="nbx-detail-card">
+                  {selectedEvent.slots.map((slot) => {
+                    const key = slotKeyOf(selectedEvent.key, slot.recipient_type);
+                    return (
+                      <SlotCard
+                        key={key}
+                        event={selectedEvent}
+                        slot={slot}
+                        sendModes={catalog?.send_modes || []}
+                        metaOptions={metaOptionsFor(
+                          selectedEvent,
+                          slot.binding?.meta_template_id,
+                        )}
+                        lmsOptions={lmsOptionsFor(selectedEvent)}
+                        boundMeta={
+                          slot.binding?.meta_template_id
+                            ? metaTemplates.find(
+                                (t) => String(t.id) === String(slot.binding?.meta_template_id),
+                              ) || null
+                            : null
+                        }
+                        busy={savingSlot === key}
+                        preview={previews[key]}
+                        previewLoading={Boolean(previewLoading[key])}
+                        scopeAccountId={scopeAccountId}
+                        previewContext={previewContext}
+                        copiedKey={copiedKey}
+                        onCopy={copyText}
+                        onPersist={persist}
+                        onReset={resetSlot}
+                        onRefreshPreview={loadPreview}
+                      />
+                    );
+                  })}
+                </div>
+              </>
             )}
           </section>
         </div>
