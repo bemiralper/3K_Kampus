@@ -201,6 +201,7 @@ export default function MetaSablonlarClient() {
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [accountId, setAccountId] = useState("");
   const [templates, setTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
+  const [sharedWabaCount, setSharedWabaCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -259,20 +260,19 @@ export default function MetaSablonlarClient() {
   }, [toolsOpen]);
 
   const loadAccounts = useCallback(async () => {
-    const res = await fetchWhatsAppAccounts();
+    const res = await fetchWhatsAppAccounts({ activeOnly: true });
     const list = res.accounts || [];
     setAccounts(list);
-    if (!accountId && list.length) {
+    setAccountId((prev) => {
+      if (prev && list.some((a) => a.id === prev)) return prev;
       const params = typeof window !== "undefined"
         ? new URLSearchParams(window.location.search)
         : null;
       const fromUrl = params?.get("account") || "";
-      const preferred = fromUrl && list.some((a) => a.id === fromUrl)
-        ? fromUrl
-        : (list.find((a) => a.is_default) || list[0]).id;
-      setAccountId(preferred);
-    }
-  }, [accountId]);
+      if (fromUrl && list.some((a) => a.id === fromUrl)) return fromUrl;
+      return list.find((a) => a.is_default)?.id || list[0]?.id || "";
+    });
+  }, []);
 
   // Durum filtresi istemcide uygulanır; metrik kutuları gerçek sayıları göstersin.
   const load = useCallback(async () => {
@@ -287,6 +287,7 @@ export default function MetaSablonlarClient() {
         template_group: groupFilter || undefined,
       });
       setTemplates(res.templates || []);
+      setSharedWabaCount(res.shared_waba_account_count || 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Şablonlar yüklenemedi");
     } finally {
@@ -561,7 +562,13 @@ export default function MetaSablonlarClient() {
     setError(null);
     try {
       const res = await syncWhatsAppAccountTemplates(accountId);
-      setMessage(`${res.upserted ?? res.templates?.length ?? 0} şablon senkronize edildi.`);
+      const n = res.upserted ?? res.templates?.length ?? 0;
+      const accounts = res.accounts_synced || 1;
+      setMessage(
+        accounts > 1
+          ? `${n} şablon senkronize edildi (${accounts} hesap, aynı WABA).`
+          : `${n} şablon senkronize edildi.`,
+      );
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Senkron başarısız");
@@ -1042,6 +1049,18 @@ export default function MetaSablonlarClient() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {accountId && sharedWabaCount > 1 && (
+        <div className="sbx-alerts">
+          <div className="sbx-alert is-info">
+            <span aria-hidden="true">🔗</span>
+            <span>
+              Bu hat ile aynı WABA’da {sharedWabaCount} hesap var. Şablonlar ortak listelenir
+              (ad+dil tekilleştirilir). Senkron tüm hesaplara yazılır.
+            </span>
+          </div>
         </div>
       )}
 

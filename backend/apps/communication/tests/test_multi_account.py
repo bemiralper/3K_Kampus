@@ -696,3 +696,124 @@ class MultiWhatsAppAccountTests(TestCase):
         cfg = client._resolve_config(self.kurum.id)
         self.assertEqual(cfg['phone_number_id'], 'pn_kadikoy')
         self.assertEqual(cfg['access_token'], 'EAAB_koc_token')
+
+    def test_delete_soft_deactivates_active_account(self):
+        from rest_framework.test import APIClient
+
+        admin = User.objects.create_superuser(
+            username='wa_del_soft', email='wa_del_soft@test.com', password='x',
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube_a.id)
+
+        res = client.delete(f'/api/communication/accounts/{self.acc_kadikoy.id}/')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertTrue(res.data.get('deactivated'))
+        self.acc_kadikoy.refresh_from_db()
+        self.assertFalse(self.acc_kadikoy.is_active)
+
+    def test_list_active_only_hides_inactive(self):
+        from rest_framework.test import APIClient
+
+        self.acc_kadikoy.is_active = False
+        self.acc_kadikoy.save(update_fields=['is_active'])
+        admin = User.objects.create_superuser(
+            username='wa_list_act', email='wa_list_act@test.com', password='x',
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube_a.id)
+
+        all_res = client.get('/api/communication/accounts/')
+        active_res = client.get('/api/communication/accounts/?active=1')
+        self.assertEqual(all_res.status_code, 200)
+        self.assertEqual(active_res.status_code, 200)
+        all_ids = {a['id'] for a in all_res.data['accounts']}
+        active_ids = {a['id'] for a in active_res.data['accounts']}
+        self.assertIn(str(self.acc_kadikoy.id), all_ids)
+        self.assertNotIn(str(self.acc_kadikoy.id), active_ids)
+        self.assertIn(str(self.acc_genel.id), active_ids)
+
+    def test_permanent_delete_requires_inactive_and_force_when_deps(self):
+        from rest_framework.test import APIClient
+        from apps.communication.domain.enums import MetaTemplateCategory, MetaTemplateStatus
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+
+        admin = User.objects.create_superuser(
+            username='wa_del_hard', email='wa_del_hard@test.com', password='x',
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube_a.id)
+
+        # Aktifken permanent reddedilir
+        res = client.delete(
+            f'/api/communication/accounts/{self.acc_kadikoy.id}/?permanent=1',
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertEqual(res.data.get('code'), 'still_active')
+
+        self.acc_kadikoy.is_active = False
+        self.acc_kadikoy.save(update_fields=['is_active'])
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_kadikoy,
+            name='test_delete_tpl',
+            language='tr',
+            meta_category=MetaTemplateCategory.UTILITY,
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Merhaba',
+        )
+
+        blocked = client.delete(
+            f'/api/communication/accounts/{self.acc_kadikoy.id}/?permanent=1',
+        )
+        self.assertEqual(blocked.status_code, 409, blocked.data)
+        self.assertEqual(blocked.data.get('code'), 'has_dependencies')
+        self.assertGreaterEqual(blocked.data['dependencies']['meta_templates'], 1)
+        self.assertTrue(
+            CommunicationChannelConfig.objects.filter(id=self.acc_kadikoy.id).exists(),
+        )
+
+        forced = client.delete(
+            f'/api/communication/accounts/{self.acc_kadikoy.id}/?permanent=1&force=1',
+        )
+        self.assertEqual(forced.status_code, 200, forced.data)
+        self.assertTrue(forced.data.get('deleted'))
+        self.assertFalse(
+            CommunicationChannelConfig.objects.filter(id=self.acc_kadikoy.id).exists(),
+        )
+        self.assertFalse(
+            WhatsAppMetaTemplate.objects.filter(name='test_delete_tpl').exists(),
+        )
+
+    def test_permanent_delete_empty_inactive_without_force(self):
+        from rest_framework.test import APIClient
+
+        empty = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Boş Pasif',
+            phone_number_id='pn_empty_passive',
+            is_active=False,
+            is_default=False,
+            scope_type=WhatsAppAccountScope.ALL_SUBES,
+        )
+        admin = User.objects.create_superuser(
+            username='wa_del_empty', email='wa_del_empty@test.com', password='x',
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube_a.id)
+
+        res = client.delete(f'/api/communication/accounts/{empty.id}/?permanent=1')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertTrue(res.data.get('deleted'))
+        self.assertFalse(
+            CommunicationChannelConfig.objects.filter(id=empty.id).exists(),
+        )

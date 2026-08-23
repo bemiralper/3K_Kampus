@@ -208,11 +208,13 @@ class FinanceTemplateSeedService:
             if not channel_config_id:
                 continue
 
-            meta_exists = WhatsAppMetaTemplate.objects.filter(
+            meta_exists = MetaTemplateService.find_on_shared_waba(
+                kurum_id,
                 channel_config_id=channel_config_id,
                 name=draft.meta_name,
                 language='tr',
-            ).exists()
+                prefer_approved=False,
+            ) is not None
             if meta_exists and skip_existing:
                 skipped_meta.append(draft.meta_name)
                 continue

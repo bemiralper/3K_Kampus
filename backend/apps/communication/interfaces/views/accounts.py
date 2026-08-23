@@ -241,9 +241,85 @@ class WhatsAppAccountDetailView(APIView):
         account = ChannelConfigRepository.get_by_id(kurum_id, account_id)
         if not account:
             return Response({'error': 'Hesap bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+        permanent = _truthy(request.query_params.get('permanent'))
+        force = _truthy(request.query_params.get('force'))
+        # DELETE gövdesi çoğu istemcide boş; JSON parse hatası olmasın diye güvenli oku.
+        if not permanent or not force:
+            try:
+                body = getattr(request, 'data', None) or {}
+            except Exception:
+                body = {}
+            if isinstance(body, dict):
+                permanent = permanent or _truthy(body.get('permanent'))
+                force = force or _truthy(body.get('force'))
+
+        # Kalıcı silme yalnızca pasif hesaplarda
+        if permanent:
+            if account.is_active:
+                return Response(
+                    {
+                        'error': 'Aktif hesap kalıcı silinemez. Önce pasifleştirin.',
+                        'code': 'still_active',
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            deps = _account_dependency_counts(account)
+            if deps['total'] > 0 and not force:
+                return Response(
+                    {
+                        'error': (
+                            'Bu hesaba bağlı kayıtlar var. Silinirse Meta şablonları ve '
+                            'bildirim eşlemeleri de silinir; sohbet/kampanya bağlantısı kopar.'
+                        ),
+                        'code': 'has_dependencies',
+                        'dependencies': deps,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            account_id_str = str(account.id)
+            account.delete()
+            return Response({
+                'success': True,
+                'deleted': True,
+                'id': account_id_str,
+                'dependencies': deps,
+            })
+
+        # Varsayılan: soft pasifleştir
+        if not account.is_active:
+            return Response({
+                'success': True,
+                'deactivated': False,
+                'already_inactive': True,
+                'id': str(account.id),
+            })
         account.is_active = False
         account.save(update_fields=['is_active', 'updated_at'])
-        return Response({'success': True, 'id': str(account.id)})
+        return Response({
+            'success': True,
+            'deactivated': True,
+            'id': str(account.id),
+        })
+
+
+def _truthy(value) -> bool:
+    return value in (True, 1, '1', 'true', 'True', 'yes', 'YES')
+
+
+def _account_dependency_counts(account: CommunicationChannelConfig) -> dict:
+    """Kalıcı silmeden önce bağlı kayıt özeti."""
+    meta_templates = account.meta_templates.count()
+    notification_bindings = account.notification_template_bindings.count()
+    conversations = account.conversations.count()
+    campaigns = account.campaigns.count()
+    return {
+        'meta_templates': meta_templates,
+        'notification_bindings': notification_bindings,
+        'conversations': conversations,
+        'campaigns': campaigns,
+        'total': meta_templates + notification_bindings + conversations + campaigns,
+    }
 
 
 class WhatsAppAccountTestView(APIView):

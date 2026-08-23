@@ -11,6 +11,7 @@ from apps.communication.domain.models import WhatsAppMetaTemplate
 
 class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     channel_config_name = serializers.SerializerMethodField()
+    waba_id = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
     meta_category_label = serializers.SerializerMethodField()
@@ -25,7 +26,7 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = WhatsAppMetaTemplate
         fields = [
-            'id', 'channel_config', 'channel_config_name',
+            'id', 'channel_config', 'channel_config_name', 'waba_id',
             'name', 'language', 'meta_category', 'meta_category_label',
             'status', 'status_label', 'meta_template_id',
             'usage_scope', 'usage_scope_label',
@@ -50,6 +51,10 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
         if not cfg:
             return ''
         return cfg.name or cfg.display_phone or str(cfg.id)
+
+    def get_waba_id(self, obj) -> str:
+        cfg = getattr(obj, 'channel_config', None)
+        return (cfg.waba_id or '') if cfg else ''
 
     def get_created_by_name(self, obj) -> str:
         if obj.created_by:

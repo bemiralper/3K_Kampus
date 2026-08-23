@@ -132,27 +132,19 @@ def _find_active_app_template(kurum_id: int, draft: KutuphaneYoklamaTemplateDraf
     return qs.filter(name=draft.app_name).first()
 
 
-def _find_meta_for_draft(channel_config_id, draft: KutuphaneYoklamaTemplateDraft):
-    """Onaylı aday (legacy isimler dahil) varsa onu kullan; yoksa taslak ada bak."""
+def _find_meta_for_draft(kurum_id, channel_config_id, draft: KutuphaneYoklamaTemplateDraft):
+    """Onaylı aday (legacy isimler dahil) varsa onu kullan; yoksa taslak ada bak. WABA paylaşımlı."""
     event = get_event(draft.event_key)
     names = list(event.meta_name_candidates(draft.recipient_type)) if event else [draft.meta_name]
     if draft.meta_name not in names:
         names.append(draft.meta_name)
-    qs = WhatsAppMetaTemplate.objects.filter(
+    return MetaTemplateService.find_on_shared_waba(
+        kurum_id,
         channel_config_id=channel_config_id,
+        names=names,
         language='tr',
-        name__in=names,
+        prefer_approved=True,
     )
-    order = {name: idx for idx, name in enumerate(names)}
-    approved = list(qs.filter(status=MetaTemplateStatus.APPROVED))
-    if approved:
-        approved.sort(key=lambda tpl: order.get(tpl.name, len(order)))
-        return approved[0]
-    existing = list(qs)
-    if existing:
-        existing.sort(key=lambda tpl: order.get(tpl.name, len(order)))
-        return existing[0]
-    return None
 
 
 def repair_kutuphane_yoklama_bindings(kurum_id: int) -> dict[str, Any]:
@@ -281,7 +273,7 @@ class KutuphaneYoklamaTemplateSeedService:
 
             meta = None
             if channel_config_id:
-                meta = _find_meta_for_draft(channel_config_id, draft)
+                meta = _find_meta_for_draft(kurum_id, channel_config_id, draft)
                 if meta:
                     if (
                         meta.status == MetaTemplateStatus.DRAFT

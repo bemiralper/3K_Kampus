@@ -26,7 +26,6 @@ from apps.communication.application.variable_resolver import (
 from django.conf import settings
 
 from apps.communication.domain.enums import MetaTemplateStatus, MetaTemplateUsage
-from apps.communication.domain.models import WhatsAppMetaTemplate
 from apps.communication.interfaces.serializers import MessageSerializer
 from apps.communication.interfaces.serializers.meta_template import (
     WhatsAppMetaTemplateSerializer,
@@ -40,18 +39,17 @@ def _list_personal_chat_templates(kurum_id: int, channel_config_id=None):
     """
     Sohbet «Şablon seç» listesi — yalnızca PERSONAL kapsamı (ALL sistem şablonları değil).
     development/demo'da henüz Meta onayı almamış sohbet_* taslakları da görünür.
+    Aynı WABA’daki hesapların şablonları birleşik (dedupe) listelenir.
     """
-    qs = (
-        WhatsAppMetaTemplate.objects
-        .select_related('channel_config', 'created_by')
-        .prefetch_related('app_templates')
-        .filter(kurum_id=kurum_id, usage_scope=MetaTemplateUsage.PERSONAL)
-    )
-    if channel_config_id:
-        qs = qs.filter(channel_config_id=channel_config_id)
-
     env = (getattr(settings, 'DJANGO_ENV', None) or '').lower()
     allow_unapproved = bool(settings.DEBUG) or env in ('development', 'demo')
+
+    qs = MetaTemplateService.list_templates(
+        kurum_id,
+        channel_config_id=channel_config_id,
+        include_shared_waba=True,
+        dedupe=True,
+    ).filter(usage_scope=MetaTemplateUsage.PERSONAL)
     if allow_unapproved:
         qs = qs.filter(status__in=[
             MetaTemplateStatus.APPROVED,

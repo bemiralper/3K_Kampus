@@ -47,10 +47,19 @@ class MetaTemplateListCreateView(APIView):
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
+        account_id = (
+            request.query_params.get('account_id')
+            or request.query_params.get('channel_config_id')
+        )
+        include_shared = request.query_params.get('include_shared_waba', '1') not in (
+            '0', 'false', 'False', 'no',
+        )
+        dedupe = request.query_params.get('dedupe', '1') not in (
+            '0', 'false', 'False', 'no',
+        )
         qs = MetaTemplateService.list_templates(
             kurum_id,
-            channel_config_id=request.query_params.get('account_id')
-            or request.query_params.get('channel_config_id'),
+            channel_config_id=account_id,
             status=request.query_params.get('status') or None,
             meta_category=request.query_params.get('meta_category') or None,
             language=request.query_params.get('language') or None,
@@ -58,10 +67,18 @@ class MetaTemplateListCreateView(APIView):
             approved_only=request.query_params.get('approved_only') in ('1', 'true', 'True'),
             usage=request.query_params.get('usage') or None,
             template_group=request.query_params.get('template_group') or None,
+            include_shared_waba=include_shared,
+            dedupe=dedupe,
+        )
+        shared_ids = (
+            MetaTemplateService.shared_account_ids(kurum_id, account_id)
+            if account_id else []
         )
         return Response({
             'templates': WhatsAppMetaTemplateSerializer(qs, many=True).data,
             'total': qs.count(),
+            'shared_waba_account_ids': [str(i) for i in shared_ids],
+            'shared_waba_account_count': len(shared_ids),
         })
 
     def post(self, request):

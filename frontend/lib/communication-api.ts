@@ -72,6 +72,26 @@ export class SessionWindowClosedError extends Error {
   }
 }
 
+export interface WhatsAppAccountDependencies {
+  meta_templates: number;
+  notification_bindings: number;
+  conversations: number;
+  campaigns: number;
+  total: number;
+}
+
+/** Pasif hesabı kalıcı silerken bağlı kayıt varsa fırlatılır (409). */
+export class AccountDeleteBlockedError extends Error {
+  readonly code = 'has_dependencies';
+  readonly dependencies: WhatsAppAccountDependencies;
+
+  constructor(message: string, dependencies: WhatsAppAccountDependencies) {
+    super(message);
+    this.name = 'AccountDeleteBlockedError';
+    this.dependencies = dependencies;
+  }
+}
+
 function errorFromBody(body: Record<string, unknown>, status: number): Error {
   const raw = body.error ?? body.detail ?? body.details;
   const message =
@@ -82,6 +102,12 @@ function errorFromBody(body: Record<string, unknown>, status: number): Error {
     return new SessionWindowClosedError(
       message,
       body.session as ConversationSessionInfo | undefined,
+    );
+  }
+  if (body.code === 'has_dependencies' && body.dependencies && typeof body.dependencies === 'object') {
+    return new AccountDeleteBlockedError(
+      message,
+      body.dependencies as WhatsAppAccountDependencies,
     );
   }
   return new Error(message);
@@ -732,10 +758,24 @@ export async function updateWhatsAppAccount(
   });
 }
 
-export async function deleteWhatsAppAccount(id: string): Promise<{ success: boolean; id: string }> {
+export async function deleteWhatsAppAccount(
+  id: string,
+  opts?: { permanent?: boolean; force?: boolean },
+): Promise<{
+  success: boolean;
+  id: string;
+  deleted?: boolean;
+  deactivated?: boolean;
+  already_inactive?: boolean;
+  dependencies?: WhatsAppAccountDependencies;
+}> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
-  return request(`/accounts/${id}/${qs}`, { method: 'DELETE' });
+  const search = new URLSearchParams();
+  if (kurumId) search.set('kurum_id', kurumId);
+  if (opts?.permanent) search.set('permanent', '1');
+  if (opts?.force) search.set('force', '1');
+  const qs = search.toString();
+  return request(`/accounts/${id}/${qs ? `?${qs}` : ''}`, { method: 'DELETE' });
 }
 
 export async function testWhatsAppAccount(
@@ -752,6 +792,8 @@ export async function syncWhatsAppAccountTemplates(id: string): Promise<{
   success: boolean;
   templates?: MetaWhatsAppTemplate[];
   upserted?: number;
+  accounts_synced?: number;
+  shared_waba_account_ids?: string[];
   error?: string;
 }> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
@@ -804,6 +846,8 @@ export interface WhatsAppMetaTemplateItem {
   id: string;
   channel_config: string;
   channel_config_name?: string;
+  /** Hesabın WABA ID’si — aynı WABA’daki şablonları birleştirmek için */
+  waba_id?: string;
   name: string;
   language: string;
   meta_category: MetaTemplateCategory | string;
@@ -854,7 +898,14 @@ export async function fetchLocalMetaTemplates(params?: {
   approved_only?: boolean;
   usage?: MetaTemplateUsage;
   template_group?: string;
-}): Promise<{ templates: WhatsAppMetaTemplateItem[]; total: number }> {
+  include_shared_waba?: boolean;
+  dedupe?: boolean;
+}): Promise<{
+  templates: WhatsAppMetaTemplateItem[];
+  total: number;
+  shared_waba_account_ids?: string[];
+  shared_waba_account_count?: number;
+}> {
   const qs = new URLSearchParams();
   if (params?.account_id) qs.set('account_id', params.account_id);
   if (params?.status) qs.set('status', params.status);
@@ -864,6 +915,8 @@ export async function fetchLocalMetaTemplates(params?: {
   if (params?.approved_only) qs.set('approved_only', '1');
   if (params?.usage) qs.set('usage', params.usage);
   if (params?.template_group) qs.set('template_group', params.template_group);
+  if (params?.include_shared_waba === false) qs.set('include_shared_waba', '0');
+  if (params?.dedupe === false) qs.set('dedupe', '0');
   const suffix = qs.toString() ? `?${qs}` : '';
   return request(`/meta-templates/${suffix}`);
 }

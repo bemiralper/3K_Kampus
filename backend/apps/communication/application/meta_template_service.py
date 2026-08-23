@@ -33,6 +33,8 @@ from apps.communication.infrastructure.repository import ChannelConfigRepository
 logger = logging.getLogger(__name__)
 
 _NAME_RE = re.compile(r'^[a-z0-9_]+$')
+_SEMANTIC_VAR_RE = re.compile(r'\{\{[A-Za-z_][A-Za-z0-9_]*\}\}')
+_NUMBERED_VAR_RE = re.compile(r'\{\{\d+\}\}')
 
 
 class MetaTemplateServiceError(Exception):
@@ -48,6 +50,29 @@ class MetaTemplateService:
         cleaned = (name or '').strip().lower().replace(' ', '_').replace('-', '_')
         cleaned = re.sub(r'[^a-z0-9_]', '', cleaned)
         return cleaned
+
+    @staticmethod
+    def _has_semantic_named_vars(text: str) -> bool:
+        """{{ogrenci_ad}} gibi anlamlı değişken var mı? ({{1}} sayılmaz)."""
+        return bool(_SEMANTIC_VAR_RE.search(text or ''))
+
+    @staticmethod
+    def _has_numbered_vars(text: str) -> bool:
+        return bool(_NUMBERED_VAR_RE.search(text or ''))
+
+    @classmethod
+    def _ensure_named_body(cls, template: WhatsAppMetaTemplate) -> None:
+        """
+        Meta sync sonrası gövde {{1}} kalmasın.
+        variable_map varsa numaralı → named; map yoksa named gövdeden map üret.
+        """
+        body = template.body_named or ''
+        vmap = dict(template.variable_map_json or {})
+        if not vmap and cls._has_semantic_named_vars(body):
+            vmap = build_variable_map(body)
+            template.variable_map_json = vmap
+        if vmap and cls._has_numbered_vars(body):
+            template.body_named = numbered_to_named(body, vmap)
 
     @classmethod
     def validate_name(cls, name: str) -> str:
@@ -70,6 +95,92 @@ class MetaTemplateService:
         )
 
     @staticmethod
+    def _status_rank(status: str) -> int:
+        order = {
+            MetaTemplateStatus.APPROVED: 0,
+            MetaTemplateStatus.PENDING: 1,
+            MetaTemplateStatus.SUBMITTED: 2,
+            MetaTemplateStatus.DRAFT: 3,
+            MetaTemplateStatus.PAUSED: 4,
+            MetaTemplateStatus.REJECTED: 5,
+            MetaTemplateStatus.DISABLED: 6,
+        }
+        return order.get(status, 9)
+
+    @classmethod
+    def dedupe_by_name_language(
+        cls,
+        templates: list[WhatsAppMetaTemplate],
+        *,
+        preferred_account_id=None,
+    ) -> list[WhatsAppMetaTemplate]:
+        """Aynı (name, language) için tek satır — seçili hesap / onay / güncellik öncelikli."""
+        preferred = str(preferred_account_id) if preferred_account_id else ''
+
+        def score(tpl: WhatsAppMetaTemplate) -> tuple:
+            exact = 0 if preferred and str(tpl.channel_config_id) == preferred else 1
+            has_map = 0 if tpl.variable_map_json else 1
+            ts = -(tpl.updated_at.timestamp() if tpl.updated_at else 0)
+            return (exact, cls._status_rank(tpl.status), has_map, ts)
+
+        winners: dict[tuple[str, str], WhatsAppMetaTemplate] = {}
+        for tpl in templates:
+            key = (tpl.name, tpl.language)
+            prev = winners.get(key)
+            if prev is None or score(tpl) < score(prev):
+                winners[key] = tpl
+        return list(winners.values())
+
+    @staticmethod
+    def shared_account_ids(kurum_id: int, channel_config_id) -> list:
+        if not channel_config_id:
+            return []
+        from apps.communication.application.account_resolver import AccountResolver
+        return AccountResolver.shared_waba_account_ids(kurum_id, channel_config_id)
+
+    @classmethod
+    def find_on_shared_waba(
+        cls,
+        kurum_id: int,
+        *,
+        channel_config_id,
+        name: str | None = None,
+        names: list[str] | None = None,
+        language: str = 'tr',
+        prefer_approved: bool = True,
+    ) -> WhatsAppMetaTemplate | None:
+        """Aynı WABA’daki hesaplarda name/language ile şablon bul."""
+        shared = cls.shared_account_ids(kurum_id, channel_config_id)
+        if not shared:
+            return None
+        qs = WhatsAppMetaTemplate.objects.filter(
+            kurum_id=kurum_id,
+            channel_config_id__in=shared,
+            language=language or 'tr',
+        )
+        name_list = list(names or [])
+        if name and name not in name_list:
+            name_list.append(name)
+        if name_list:
+            qs = qs.filter(name__in=name_list)
+        order = {n: idx for idx, n in enumerate(name_list)}
+        rows = list(qs.select_related('channel_config'))
+        if not rows:
+            return None
+        if prefer_approved:
+            approved = [r for r in rows if r.status == MetaTemplateStatus.APPROVED]
+            if approved:
+                rows = approved
+        rows.sort(
+            key=lambda tpl: (
+                order.get(tpl.name, len(order)),
+                0 if str(tpl.channel_config_id) == str(channel_config_id) else 1,
+                cls._status_rank(tpl.status),
+            ),
+        )
+        return rows[0]
+
+    @staticmethod
     def list_templates(
         kurum_id: int,
         *,
@@ -81,6 +192,8 @@ class MetaTemplateService:
         approved_only: bool = False,
         usage: str | None = None,
         template_group: str | None = None,
+        include_shared_waba: bool = True,
+        dedupe: bool = True,
     ) -> QuerySet[WhatsAppMetaTemplate]:
         qs = (
             WhatsAppMetaTemplate.objects
@@ -92,7 +205,11 @@ class MetaTemplateService:
             # ALL kapsamı her ekranda görünür
             qs = qs.filter(usage_scope__in=[usage, MetaTemplateUsage.ALL])
         if channel_config_id:
-            qs = qs.filter(channel_config_id=channel_config_id)
+            if include_shared_waba:
+                shared = MetaTemplateService.shared_account_ids(kurum_id, channel_config_id)
+                qs = qs.filter(channel_config_id__in=shared or [channel_config_id])
+            else:
+                qs = qs.filter(channel_config_id=channel_config_id)
         if status:
             qs = qs.filter(status=status)
         if meta_category:
@@ -105,6 +222,20 @@ class MetaTemplateService:
             qs = qs.filter(name__icontains=search.strip())
         if template_group:
             qs = qs.filter(template_group=template_group.strip())
+
+        if dedupe and channel_config_id:
+            winners = MetaTemplateService.dedupe_by_name_language(
+                list(qs),
+                preferred_account_id=channel_config_id,
+            )
+            winner_ids = [tpl.id for tpl in winners]
+            return (
+                WhatsAppMetaTemplate.objects
+                .select_related('channel_config', 'created_by')
+                .prefetch_related('app_templates')
+                .filter(id__in=winner_ids)
+                .order_by('-updated_at')
+            )
         return qs.order_by('-updated_at')
 
     @classmethod
@@ -140,11 +271,23 @@ class MetaTemplateService:
             buttons_json=buttons_json or [],
         )
 
-        if WhatsAppMetaTemplate.objects.filter(
-            channel_config=account, name=name, language=language,
-        ).exists():
+        shared = cls.shared_account_ids(kurum_id, account.id)
+        existing = (
+            WhatsAppMetaTemplate.objects
+            .filter(
+                channel_config_id__in=shared or [account.id],
+                name=name,
+                language=language,
+            )
+            .select_related('channel_config')
+            .first()
+        )
+        if existing:
+            owner = existing.channel_config
+            owner_label = (owner.name or owner.display_phone or 'başka hesap') if owner else 'başka hesap'
             raise MetaTemplateServiceError(
-                'Bu hesapta aynı ad ve dilde şablon zaten var.',
+                f'Aynı WABA altında bu ad ve dilde şablon zaten var ({owner_label}). '
+                'Yeni kopya oluşturmak yerine mevcut kaydı kullanın veya düzenleyin.',
             )
 
         return WhatsAppMetaTemplate.objects.create(
@@ -371,14 +514,27 @@ class MetaTemplateService:
             template.components_json = components
             body, header, footer, buttons, _ = infer_named_body_from_meta_components(components)
             # Header tipi (DOCUMENT/IMAGE/…) her sync'te güncellenir — UI filtreleri buna bakar.
-            # Named gövde korunurken yalnızca header/footer/buttons yapısal alanlar yazılır.
-            if not preserve_named or not template.body_named:
-                if template.variable_map_json:
-                    template.body_named = numbered_to_named(body, template.variable_map_json)
+            prior_body = template.body_named or ''
+            keep_named = preserve_named and bool(prior_body) and (
+                cls._has_semantic_named_vars(prior_body) or bool(template.variable_map_json)
+            )
+            if keep_named:
+                if not template.buttons_json and buttons:
+                    template.buttons_json = buttons
+                if not template.footer_text and footer:
+                    template.footer_text = footer[:60]
+            else:
+                vmap = dict(template.variable_map_json or {})
+                if not vmap and cls._has_semantic_named_vars(prior_body):
+                    vmap = build_variable_map(prior_body)
+                    template.variable_map_json = vmap
+                if vmap:
+                    template.body_named = numbered_to_named(body, vmap)
                     if header.get('type') == 'TEXT' and header.get('text'):
-                        header['text'] = numbered_to_named(
-                            header['text'], template.variable_map_json,
-                        )
+                        header['text'] = numbered_to_named(header['text'], vmap)
+                elif cls._has_semantic_named_vars(prior_body):
+                    # Map yok ama yerel named gövde var — Meta numaralarını yazma.
+                    pass
                 else:
                     template.body_named = body
                 template.footer_text = footer[:60]
@@ -392,8 +548,7 @@ class MetaTemplateService:
                 if prev.get('media_handle') and not merged.get('media_handle'):
                     merged['media_handle'] = prev['media_handle']
                 if (
-                    preserve_named
-                    and template.body_named
+                    keep_named
                     and prev.get('type') == 'TEXT'
                     and merged.get('type') == 'TEXT'
                     and prev.get('text')
@@ -402,6 +557,8 @@ class MetaTemplateService:
                 template.header_json = merged
         if status == MetaTemplateStatus.APPROVED and not template.approved_at:
             template.approved_at = timezone.now()
+        # Sync sonrası {{1}} kaldıysa map ile named'e çevir (bozuk kayıtları da iyileştirir)
+        cls._ensure_named_body(template)
 
     @classmethod
     @transaction.atomic
@@ -409,6 +566,13 @@ class MetaTemplateService:
         cls,
         account: CommunicationChannelConfig,
     ) -> dict[str, Any]:
+        """
+        Meta WABA şablonlarını çeker; aynı WABA’daki tüm yerel hesaplara yazar.
+
+        Böylece ikinci numaraya ayrıca sync gerekmez ve listede eksik kalmaz.
+        Yerel alanlar (usage_scope, template_group, variable_map, named body)
+        kardeş kayıttan kopyalanır.
+        """
         client = WhatsAppCloudClient(channel_config=account)
         result = client.list_message_templates(account.kurum_id)
         if not result.get('success'):
@@ -416,39 +580,150 @@ class MetaTemplateService:
                 'success': False,
                 'error': result.get('error') or 'Senkron başarısız.',
                 'upserted': 0,
+                'accounts_synced': 0,
                 'templates': [],
             }
 
+        sibling_ids = cls.shared_account_ids(account.kurum_id, account.id) or [account.id]
+        siblings = list(
+            CommunicationChannelConfig.objects.filter(
+                kurum_id=account.kurum_id,
+                id__in=sibling_ids,
+                channel=account.channel,
+            )
+        )
+        if not siblings:
+            siblings = [account]
+
+        donor_by_key: dict[tuple[str, str], WhatsAppMetaTemplate] = {}
+        for existing in WhatsAppMetaTemplate.objects.filter(channel_config_id__in=sibling_ids):
+            key = (existing.name, existing.language)
+            prev = donor_by_key.get(key)
+
+            def _donor_score(tpl: WhatsAppMetaTemplate) -> tuple:
+                return (
+                    0 if cls._has_semantic_named_vars(tpl.body_named or '') else 1,
+                    0 if tpl.variable_map_json else 1,
+                    -(tpl.updated_at.timestamp() if tpl.updated_at else 0),
+                )
+
+            if prev is None or _donor_score(existing) < _donor_score(prev):
+                donor_by_key[key] = existing
+
+        payloads = result.get('templates') or []
         upserted = 0
-        for payload in result.get('templates') or []:
-            name = payload.get('name') or ''
-            language = payload.get('language') or 'tr'
-            if not name:
-                continue
-            tpl, created = WhatsAppMetaTemplate.objects.get_or_create(
-                channel_config=account,
-                name=name,
-                language=language,
-                defaults={
+        now = timezone.now()
+
+        for sibling in siblings:
+            for payload in payloads:
+                name = payload.get('name') or ''
+                language = payload.get('language') or 'tr'
+                if not name:
+                    continue
+                key = (name, language)
+                donor = donor_by_key.get(key)
+                defaults: dict[str, Any] = {
                     'kurum_id': account.kurum_id,
                     'meta_category': (payload.get('category') or MetaTemplateCategory.UTILITY),
                     'status': map_meta_status(payload.get('status') or ''),
-                },
-            )
-            preserve = bool(tpl.variable_map_json) and not created
-            cls._apply_meta_payload(tpl, payload, preserve_named=preserve)
-            # Sync ile gelenlerde body hâlâ {{1}} olabilir — map yoksa numaralı kalsın
-            if created and tpl.body_named and not tpl.variable_map_json:
-                # Otomatik map yok; kullanıcı bağlayacak. components zaten set.
-                pass
-            tpl.save()
-            upserted += 1
+                }
+                if donor and donor.channel_config_id != sibling.id:
+                    defaults['usage_scope'] = donor.usage_scope or MetaTemplateUsage.ALL
+                    defaults['template_group'] = donor.template_group or ''
+                    if donor.variable_map_json:
+                        defaults['variable_map_json'] = donor.variable_map_json
+                    if donor.body_named:
+                        defaults['body_named'] = donor.body_named
 
-        account.last_synced_at = timezone.now()
-        account.save(update_fields=['last_synced_at', 'updated_at'])
+                tpl, created = WhatsAppMetaTemplate.objects.get_or_create(
+                    channel_config=sibling,
+                    name=name,
+                    language=language,
+                    defaults=defaults,
+                )
+                if created and donor and donor.channel_config_id != sibling.id:
+                    if donor.variable_map_json and not tpl.variable_map_json:
+                        tpl.variable_map_json = donor.variable_map_json
+                    if donor.body_named:
+                        tpl.body_named = donor.body_named
+                    if donor.usage_scope:
+                        tpl.usage_scope = donor.usage_scope
+                    if donor.template_group:
+                        tpl.template_group = donor.template_group
+
+                preserve = (
+                    cls._has_semantic_named_vars(tpl.body_named or '')
+                    or bool(tpl.variable_map_json)
+                    or bool(
+                        donor and (
+                            cls._has_semantic_named_vars(donor.body_named or '')
+                            or donor.variable_map_json
+                        )
+                    )
+                )
+                cls._apply_meta_payload(tpl, payload, preserve_named=preserve)
+                # Kardeş named gövdeyi numaralı kopyanın üzerine yaz
+                if (
+                    donor
+                    and cls._has_semantic_named_vars(donor.body_named or '')
+                    and (
+                        not cls._has_semantic_named_vars(tpl.body_named or '')
+                        or cls._has_numbered_vars(tpl.body_named or '')
+                    )
+                ):
+                    tpl.body_named = donor.body_named
+                    if donor.variable_map_json:
+                        tpl.variable_map_json = donor.variable_map_json
+                cls._ensure_named_body(tpl)
+                tpl.save()
+                upserted += 1
+                cur = donor_by_key.get(key)
+                if cur is None or (
+                    cls._has_semantic_named_vars(tpl.body_named or '')
+                    and not cls._has_semantic_named_vars(cur.body_named or '')
+                ) or (tpl.variable_map_json and not cur.variable_map_json):
+                    donor_by_key[key] = tpl
+
+            sibling.last_synced_at = now
+            sibling.save(update_fields=['last_synced_at', 'updated_at'])
+
+        # Son geçiş: numbered kalanları en iyi donor ile düzelt
+        for key, donor in donor_by_key.items():
+            if not (
+                cls._has_semantic_named_vars(donor.body_named or '')
+                or donor.variable_map_json
+            ):
+                continue
+            for sibling in siblings:
+                row = WhatsAppMetaTemplate.objects.filter(
+                    channel_config=sibling,
+                    name=key[0],
+                    language=key[1],
+                ).first()
+                if row is None:
+                    continue
+                changed = False
+                if donor.variable_map_json and not row.variable_map_json:
+                    row.variable_map_json = donor.variable_map_json
+                    changed = True
+                if cls._has_semantic_named_vars(donor.body_named or '') and (
+                    not cls._has_semantic_named_vars(row.body_named or '')
+                    or cls._has_numbered_vars(row.body_named or '')
+                ):
+                    row.body_named = donor.body_named
+                    changed = True
+                before = row.body_named
+                cls._ensure_named_body(row)
+                if row.body_named != before or changed:
+                    row.save(update_fields=[
+                        'body_named', 'variable_map_json', 'updated_at',
+                    ])
+
         return {
             'success': True,
             'upserted': upserted,
+            'accounts_synced': len(siblings),
+            'shared_waba_account_ids': [str(s.id) for s in siblings],
             'templates': list(
                 cls.list_templates(account.kurum_id, channel_config_id=account.id)
                 .values('id', 'name', 'language', 'status', 'meta_category')[:200]

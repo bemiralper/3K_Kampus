@@ -39,7 +39,7 @@ export default function RoleEditDrawer({ isOpen, role, mode, onClose, onSuccess 
       const [permResponse, roleResponse, accountsResponse] = await Promise.all([
         RoleService.listPermissions(),
         RoleService.getRole(role.id),
-        fetchWhatsAppAccounts().catch(() => ({ accounts: [], total: 0 })),
+        fetchWhatsAppAccounts({ activeOnly: true }).catch(() => ({ accounts: [], total: 0 })),
       ]);
       
       if (permResponse.success) {

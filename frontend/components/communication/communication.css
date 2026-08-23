@@ -7703,6 +7703,12 @@
   color: #9f1239;
 }
 
+.sbx-alert.is-info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e3a8a;
+}
+
 .sbx-alert.is-success {
   background: #f0fdf5;
   border-color: #bbf7d0;

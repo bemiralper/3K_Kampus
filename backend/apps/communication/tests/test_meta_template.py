@@ -218,6 +218,59 @@ class MetaTemplateServiceTest(TestCase):
             MetaTemplateService.update_draft(tpl, body_named='Changed')
 
     @patch.object(WhatsAppCloudClient, 'list_message_templates')
+    def test_sync_preserves_named_vars_and_heals_numbered(self, mock_list):
+        """Meta {{1}} dönse bile variable_map / named gövde korunur; bozuk {{1}} iyileşir."""
+        mock_list.return_value = {
+            'success': True,
+            'templates': [{
+                'id': 'm-lib',
+                'name': 'kutuphane_gelmedi_veli',
+                'language': 'tr',
+                'status': 'APPROVED',
+                'category': 'UTILITY',
+                'components': [
+                    {
+                        'type': 'BODY',
+                        'text': (
+                            'Değerli Velimiz,\nÖğrencimiz {{1}} bugün kütüphane '
+                            '{{2}} oturumununa katılmamıştır.'
+                        ),
+                    },
+                ],
+            }],
+        }
+        # Önce named + map
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='kutuphane_gelmedi_veli',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named=(
+                'Değerli Velimiz,\nÖğrencimiz {{ogrenci_ad}} bugün kütüphane '
+                '{{oturum}} oturumununa katılmamıştır.'
+            ),
+            variable_map_json={'1': 'ogrenci_ad', '2': 'oturum'},
+        )
+        result = MetaTemplateService.sync_account(self.account)
+        self.assertTrue(result['success'])
+        tpl = WhatsAppMetaTemplate.objects.get(name='kutuphane_gelmedi_veli')
+        self.assertIn('{{ogrenci_ad}}', tpl.body_named)
+        self.assertIn('{{oturum}}', tpl.body_named)
+        self.assertNotIn('{{1}}', tpl.body_named)
+
+        # Simüle bozulmuş kayıt (yalnızca numaralı gövde + map)
+        tpl.body_named = (
+            'Değerli Velimiz,\nÖğrencimiz {{1}} bugün kütüphane '
+            '{{2}} oturumununa katılmamıştır.'
+        )
+        tpl.save(update_fields=['body_named', 'updated_at'])
+        MetaTemplateService.sync_account(self.account)
+        tpl.refresh_from_db()
+        self.assertIn('{{ogrenci_ad}}', tpl.body_named)
+        self.assertNotIn('{{1}}', tpl.body_named)
+
+    @patch.object(WhatsAppCloudClient, 'list_message_templates')
     def test_sync_upserts(self, mock_list):
         mock_list.return_value = {
             'success': True,

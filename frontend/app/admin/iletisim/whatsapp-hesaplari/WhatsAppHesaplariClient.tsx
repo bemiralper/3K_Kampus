@@ -4,16 +4,33 @@ import { useCallback, useEffect, useState } from "react";
 import { CommunicationPageShell } from "@/components/communication";
 import "@/components/communication/communication.css";
 import {
+  AccountDeleteBlockedError,
   deleteWhatsAppAccount,
   fetchWhatsAppAccounts,
   fetchWhatsAppConfig,
   syncWhatsAppAccountTemplates,
   testWhatsAppAccount,
   WhatsAppAccount,
+  WhatsAppAccountDependencies,
   WhatsAppConfig,
 } from "@/lib/communication-api";
 import AccountFormDrawer from "./AccountFormDrawer";
 import WebhookInfoCard from "./WebhookInfoCard";
+
+function formatDependencies(deps: WhatsAppAccountDependencies): string {
+  const lines: string[] = [];
+  if (deps.meta_templates) lines.push(`• ${deps.meta_templates} Meta şablonu (silinir)`);
+  if (deps.notification_bindings) {
+    lines.push(`• ${deps.notification_bindings} bildirim eşlemesi (silinir)`);
+  }
+  if (deps.conversations) {
+    lines.push(`• ${deps.conversations} sohbet (hesap bağlantısı kopar)`);
+  }
+  if (deps.campaigns) {
+    lines.push(`• ${deps.campaigns} kampanya (hesap bağlantısı kopar)`);
+  }
+  return lines.join("\n");
+}
 
 function StatusBadge({ account }: { account: WhatsAppAccount }) {
   if (!account.configured) {
@@ -120,11 +137,46 @@ export default function WhatsAppHesaplariClient() {
     }
     setActionId(`deactivate-${account.id}`);
     setError(null);
+    setMessage(null);
     try {
       await deleteWhatsAppAccount(account.id);
+      setMessage(`${account.name || account.display_phone} pasifleştirildi.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "İşlem başarısız");
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const handlePermanentDelete = async (account: WhatsAppAccount) => {
+    const label = account.name || account.display_phone || "WhatsApp hesabı";
+    if (
+      !confirm(
+        `"${label}" hesabını kalıcı olarak silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz.`,
+      )
+    ) {
+      return;
+    }
+    setActionId(`delete-${account.id}`);
+    setError(null);
+    setMessage(null);
+    try {
+      try {
+        await deleteWhatsAppAccount(account.id, { permanent: true });
+      } catch (err) {
+        if (!(err instanceof AccountDeleteBlockedError)) throw err;
+        const detail = formatDependencies(err.dependencies);
+        const ok = confirm(
+          `${err.message}\n\n${detail}\n\nYine de kalıcı silinsin mi?`,
+        );
+        if (!ok) return;
+        await deleteWhatsAppAccount(account.id, { permanent: true, force: true });
+      }
+      setMessage(`"${label}" kalıcı olarak silindi.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Silme başarısız");
     } finally {
       setActionId(null);
     }
@@ -253,7 +305,7 @@ export default function WhatsAppHesaplariClient() {
                 >
                   {actionId === `sync-${account.id}` ? "Senkronize ediliyor…" : "Şablonları Senkronize Et"}
                 </button>
-                {account.is_active && (
+                {account.is_active ? (
                   <button
                     type="button"
                     className="comm-btn-secondary comm-btn-danger"
@@ -261,6 +313,15 @@ export default function WhatsAppHesaplariClient() {
                     onClick={() => handleDeactivate(account)}
                   >
                     {actionId === `deactivate-${account.id}` ? "…" : "Pasifleştir"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="comm-btn-secondary comm-btn-danger"
+                    disabled={actionId === `delete-${account.id}`}
+                    onClick={() => handlePermanentDelete(account)}
+                  >
+                    {actionId === `delete-${account.id}` ? "…" : "Kalıcı Sil"}
                   </button>
                 )}
               </div>

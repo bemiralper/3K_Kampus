@@ -159,11 +159,13 @@ class CampaignDuyuruTemplateSeedService:
         errors: list[str] = []
 
         for draft in drafts:
-            existing = WhatsAppMetaTemplate.objects.filter(
+            existing = MetaTemplateService.find_on_shared_waba(
+                kurum_id,
                 channel_config_id=channel_config_id,
                 name=draft.meta_name,
                 language='tr',
-            ).first()
+                prefer_approved=False,
+            )
             if existing:
                 if (
                     existing.status == MetaTemplateStatus.DRAFT

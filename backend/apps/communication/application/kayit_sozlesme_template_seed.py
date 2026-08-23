@@ -173,11 +173,13 @@ class KayitSozlesmeTemplateSeedService:
 
             meta = None
             if channel_config_id:
-                meta = WhatsAppMetaTemplate.objects.filter(
+                meta = MetaTemplateService.find_on_shared_waba(
+                    kurum_id,
                     channel_config_id=channel_config_id,
                     name=draft.meta_name,
                     language='tr',
-                ).first()
+                    prefer_approved=False,
+                )
                 if meta:
                     if (
                         meta.status == MetaTemplateStatus.DRAFT

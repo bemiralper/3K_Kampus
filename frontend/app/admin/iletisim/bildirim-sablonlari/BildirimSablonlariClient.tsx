@@ -79,8 +79,21 @@ const readActiveSubeId = (): number | null => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
-const sameAccount = (tpl: WhatsAppMetaTemplateItem, accountId: string): boolean =>
-  String(tpl.channel_config || "") === String(accountId || "");
+const sameAccountOrWaba = (
+  tpl: WhatsAppMetaTemplateItem,
+  accountId: string,
+  accounts: WhatsAppAccount[],
+): boolean => {
+  if (!accountId) return true;
+  if (String(tpl.channel_config || "") === String(accountId)) return true;
+  const selected = accounts.find((a) => String(a.id) === String(accountId));
+  const selectedWaba = (selected?.waba_id || "").trim();
+  if (!selectedWaba) return false;
+  const tplWaba = (tpl.waba_id || "").trim();
+  if (tplWaba && tplWaba === selectedWaba) return true;
+  const tplAccount = accounts.find((a) => String(a.id) === String(tpl.channel_config || ""));
+  return Boolean(tplAccount?.waba_id && tplAccount.waba_id.trim() === selectedWaba);
+};
 
 function moduleEventMatches(modKey: string, event: NotificationEventItem): boolean {
   if (modKey.startsWith("yoklama:")) {
@@ -746,7 +759,7 @@ export default function BildirimSablonlariClient() {
   const metaOptionsFor = useCallback(
     (event: NotificationEventItem, boundId?: string | null): WhatsAppMetaTemplateItem[] => {
       const scoped = scopeAccountId
-        ? metaTemplates.filter((t) => sameAccount(t, scopeAccountId))
+        ? metaTemplates.filter((t) => sameAccountOrWaba(t, scopeAccountId, accounts))
         : metaTemplates;
 
       let required: string[];
@@ -780,7 +793,7 @@ export default function BildirimSablonlariClient() {
         return a.name.localeCompare(b.name, "tr");
       });
     },
-    [metaTemplates, scopeAccountId],
+    [metaTemplates, scopeAccountId, accounts],
   );
 
   const lmsOptionsFor = useCallback(
