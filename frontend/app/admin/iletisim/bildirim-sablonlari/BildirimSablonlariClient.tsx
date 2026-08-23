@@ -325,18 +325,28 @@ function SlotCard({
     return `/admin/iletisim/meta-sablonlar?${qs.toString()}`;
   })();
 
-  const resolvedBody =
-    preview?.body ||
+  // Seçili Meta gövdesi (PENDING dahil) — kullanıcı seçtiği metni görmeli.
+  // Gönderim yolu yalnızca APPROVED kullanır; preview?.body o yüzden varsayılan/LMS olabilir.
+  const selectedMetaBody = (
     boundMeta?.body_named ||
-    slot.resolved.display_body ||
     slot.resolved.meta_template_body ||
+    ""
+  ).trim();
+  const sendBody = (
+    preview?.body ||
+    slot.resolved.display_body ||
     slot.resolved.body ||
     slot.default_body ||
-    "";
+    ""
+  ).trim();
 
   const previewBody = showExample
-    ? slot.meta_example_body || slot.default_body || resolvedBody
-    : resolvedBody;
+    ? selectedMetaBody || slot.meta_example_body || sendBody
+    : selectedMetaBody || sendBody;
+
+  const metaPending =
+    Boolean(boundMeta) && boundMeta!.status !== "APPROVED" && Boolean(selectedMetaBody);
+  const metaBodyMissing = Boolean(boundMeta) && !selectedMetaBody;
 
   return (
     <div className={`nbx-slot${inactive ? " is-inactive" : ""}`}>
@@ -526,14 +536,15 @@ function SlotCard({
                 className={!showExample ? "is-active" : ""}
                 onClick={() => setShowExample(false)}
               >
-                Gönderilecek
+                Önizleme
               </button>
               <button
                 type="button"
                 className={showExample ? "is-active" : ""}
                 onClick={() => setShowExample(true)}
+                disabled={!boundMeta && !slot.meta_example_body}
               >
-                Meta örneği
+                Seçili Meta
               </button>
             </div>
             <button
@@ -549,19 +560,29 @@ function SlotCard({
           <p className="nbx-hint">
             {previewLoading && !preview
               ? "Önizleme yükleniyor…"
-              : preview
-                ? [
-                    preview.uses_meta
-                      ? `Meta şablonu: ${preview.meta_template_name}${
-                          preview.meta_template_language ? ` (${preview.meta_template_language})` : ""
-                        }`
-                      : "Serbest mesaj olarak gönderilir",
-                    preview.source_label,
-                    preview.would_send ? null : "bu bildirim kapalı",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
-                : "Önizleme alınamadı."}
+              : metaBodyMissing
+                ? "Seçili Meta şablonunun gövdesi boş (senkron sonrası silinmiş olabilir). Meta Şablonlar’dan düzenleyin."
+                : metaPending && !showExample
+                  ? `Seçili şablon henüz onaylı değil (${boundMeta?.status_label || boundMeta?.status}); önizleme şablon metnini gösterir. Pencere kapalıyken Meta ile gönderilemez.`
+                  : preview
+                    ? [
+                        preview.uses_meta
+                          ? `Meta şablonu: ${preview.meta_template_name}${
+                              preview.meta_template_language
+                                ? ` (${preview.meta_template_language})`
+                                : ""
+                            }`
+                          : selectedMetaBody
+                            ? "Şablon metni · onay sonrası Meta ile gider"
+                            : "Serbest mesaj olarak gönderilir",
+                        preview.source_label,
+                        preview.would_send ? null : "bu bildirim kapalı",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : selectedMetaBody
+                      ? "Seçili Meta şablon metni"
+                      : "Önizleme alınamadı."}
           </p>
 
           <WhatsAppPreviewBubble text={resolvePreviewVariables(previewBody, previewContext)} />
