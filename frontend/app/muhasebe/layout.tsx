@@ -12,6 +12,7 @@ import { useMuhasebeSidebarCollapse } from "@/hooks/useMuhasebeSidebarCollapse";
 import GorevEkranMesajiOverlay from "@/components/gorev/GorevEkranMesajiOverlay";
 import { ActiveKurumBranding } from "@/components/branding/KurumLogo";
 import { CommunicationChatProvider } from "@/components/communication/CommunicationChatProvider";
+import MobileTableCards from "@/components/mobile/MobileTableCards";
 import "./muhasebe.css";
 
 const PAGE_TITLES: Record<string, string> = {
@@ -180,7 +181,10 @@ export default function MuhasebeLayout({ children }: { children: ReactNode }) {
             onToggleSidebar={toggleSidebar}
             onLogout={handleLogout}
           />
-          <main className="muhasebe-content">{children}</main>
+          <main className="muhasebe-content mobile-cards">
+            <MobileTableCards />
+            {children}
+          </main>
         </div>
 
         <MuhasebeBottomNav onMenuClick={toggleSidebar} menuOpen={mobileDrawerOpen} />

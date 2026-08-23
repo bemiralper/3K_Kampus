@@ -62,6 +62,20 @@
 .fdash-btn:hover { background: #f9fafb; }
 .fdash-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
+@media (max-width: 899px) {
+  .fdash-btn {
+    min-height: 36px;
+  }
+
+  .fdash-shortcut {
+    min-height: 56px;
+  }
+
+  .fdash-title {
+    font-size: 18px;
+  }
+}
+
 /* ── Bölüm ──────────────────────────────── */
 .fdash-block { margin-bottom: 18px; }
 .fdash-block-label {
