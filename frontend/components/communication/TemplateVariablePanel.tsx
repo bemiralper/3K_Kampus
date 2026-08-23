@@ -9,11 +9,14 @@ interface TemplateVariablePanelProps {
   onInsert: (token: string) => void;
   /** Kategori slug — haftalik_odev için ödev grubu öne alınır */
   category?: string;
+  /** Verilirse yalnızca bu değişkenler listelenir */
+  allowedKeys?: string[];
 }
 
 export default function TemplateVariablePanel({
   onInsert,
   category,
+  allowedKeys,
 }: TemplateVariablePanelProps) {
   const groups: string[] = Array.from(
     new Set(TEMPLATE_VARIABLES.map((v) => v.group || "genel")),
@@ -28,7 +31,11 @@ export default function TemplateVariablePanel({
     <div className="comm-sablon-var-panel">
       <div className="comm-sablon-var-panel-title">Değişken ekle</div>
       {orderedGroups.map((group) => {
-        const items = TEMPLATE_VARIABLES.filter((v) => (v.group || "genel") === group);
+        const items = TEMPLATE_VARIABLES.filter((v) => {
+          if ((v.group || "genel") !== group) return false;
+          if (allowedKeys?.length) return allowedKeys.includes(v.key);
+          return true;
+        });
         if (!items.length) return null;
         return (
           <div key={group} className="comm-sablon-var-group">

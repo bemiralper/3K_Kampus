@@ -9,6 +9,7 @@ from apps.communication.domain.models import MessageTemplate
 class MessageTemplateSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     category_label = serializers.SerializerMethodField()
+    template_group_label = serializers.SerializerMethodField()
     system_usages = serializers.SerializerMethodField()
     is_system_active = serializers.SerializerMethodField()
     odev_pdf_role = serializers.SerializerMethodField()
@@ -18,7 +19,8 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = MessageTemplate
         fields = [
-            'id', 'category', 'category_label', 'audience_scope', 'name', 'body',
+            'id', 'category', 'category_label', 'audience_scope',
+            'template_group', 'template_group_label', 'name', 'body',
             'header_json', 'footer_text',
             'variables_json', 'attachment_ids_json',
             'is_active', 'usage_count', 'stats_sent', 'stats_read', 'stats_failed',
@@ -34,6 +36,10 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
     def get_category_label(self, obj) -> str:
         labels = self.context.get('category_labels') or {}
         return labels.get(obj.category, obj.category)
+
+    def get_template_group_label(self, obj) -> str:
+        from apps.communication.application.notification_events import template_group_label
+        return template_group_label(obj.template_group)
 
     def get_created_by_name(self, obj) -> str:
         if obj.created_by:
@@ -73,6 +79,9 @@ class MessageTemplateWriteSerializer(serializers.Serializer):
     footer_text = serializers.CharField(required=False, allow_blank=True, default='', max_length=60)
     category = serializers.CharField(required=False, default='ozel')
     audience_scope = serializers.CharField(required=False, default='genel')
+    template_group = serializers.CharField(
+        required=False, allow_blank=True, max_length=64, default='',
+    )
     variables_json = serializers.JSONField(required=False, default=list)
     attachment_ids_json = serializers.JSONField(required=False, default=list)
     is_active = serializers.BooleanField(required=False, default=True)

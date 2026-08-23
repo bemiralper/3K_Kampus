@@ -25,6 +25,7 @@ from apps.communication.application.notification_events import (
     NOTIFICATION_EVENTS,
     build_meta_example_body,
     get_event,
+    template_group_for_event_key,
 )
 from apps.communication.application.notification_template_resolver import (
     _meta_template_matches_event,
@@ -271,6 +272,7 @@ class KutuphaneYoklamaTemplateSeedService:
                     footer_text='',
                     category=draft.category,
                     audience_scope=draft.audience_scope,
+                    template_group=template_group_for_event_key(draft.event_key),
                     variables_json=list(draft.variables),
                     created_by=user,
                     is_active=True,
@@ -315,6 +317,7 @@ class KutuphaneYoklamaTemplateSeedService:
                             header_json={},
                             footer_text='',
                             usage_scope=draft.usage_scope,
+                            template_group=template_group_for_event_key(draft.event_key),
                             user=user,
                         )
                         created_meta.append(draft.meta_name)

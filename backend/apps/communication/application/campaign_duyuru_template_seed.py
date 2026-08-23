@@ -200,6 +200,7 @@ class CampaignDuyuruTemplateSeedService:
                     header_json=dict(draft.header_json),
                     footer_text='',
                     usage_scope=MetaTemplateUsage.CAMPAIGN,
+                    template_group='duyuru',
                     user=user,
                 )
                 created.append(draft.meta_name)

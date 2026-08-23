@@ -1,10 +1,20 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { CommunicationPageShell } from "@/components/communication";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { CommunicationPageShell, NotificationEventPicker } from "@/components/communication";
 import MessageComposer from "@/components/communication/MessageComposer";
 import TemplateVariablePanel from "@/components/communication/TemplateVariablePanel";
+import type { EventSlotSelection } from "@/components/communication/notification-event-utils";
+import { catalogTemplateGroups } from "@/components/communication/notification-event-utils";
 import { useTextareaInsert } from "@/components/communication/useTextareaInsert";
+import { useSheetChrome } from "@/components/communication/useSheetChrome";
 import {
   createComposerState,
   parseWhatsAppText,
@@ -20,6 +30,7 @@ import {
   MetaTemplateButton,
   MetaTemplateHeader,
   MetaTemplateUsage,
+  NotificationEventCatalog,
   cloneLocalMetaTemplate,
   createAppTemplateFromMeta,
   createLocalMetaTemplate,
@@ -45,7 +56,7 @@ import {
   useRefreshOnCommunicationTemplateUsageChange,
 } from "@/lib/communication-template-usage-sync";
 
-const STATUS_BADGE: Record<string, string> = {
+const STATUS_TONE: Record<string, string> = {
   DRAFT: "is-draft",
   SUBMITTED: "is-pending",
   PENDING: "is-pending",
@@ -70,6 +81,25 @@ const CATEGORY_LABELS: Record<string, string> = {
   MARKETING: "Pazarlama",
   AUTHENTICATION: "Doğrulama",
 };
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  tr: "Türkçe",
+  en: "English",
+  en_US: "English (US)",
+};
+
+/** Metrik kutularının filtre değerleri; İnceleniyor = PENDING + SUBMITTED. */
+const PENDING_ANY = "PENDING_ANY";
+
+const STATUS_SELECT_OPTIONS: [string, string][] = [
+  ["", "Tüm durumlar"],
+  ["APPROVED", "Onaylandı"],
+  [PENDING_ANY, "İnceleniyor"],
+  ["DRAFT", "Taslak"],
+  ["REJECTED", "Reddedildi"],
+  ["PAUSED", "Duraklatıldı"],
+  ["DISABLED", "Devre dışı"],
+];
 
 const HEADER_MEDIA_LABEL: Record<string, string> = {
   IMAGE: "🖼 Görsel başlık",
@@ -162,7 +192,10 @@ const emptyForm = () => ({
   buttons: [] as MetaTemplateButton[],
   also_create_app_template: true,
   app_template_name: "",
+  template_group: "",
 });
+
+const VIEW_STORAGE_KEY = "comm.metaTemplates.view";
 
 export default function MetaSablonlarClient() {
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
@@ -173,11 +206,18 @@ export default function MetaSablonlarClient() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
   const [languageFilter, setLanguageFilter] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setView] = useState<"grid" | "rows">("grid");
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [eventCatalog, setEventCatalog] = useState<NotificationEventCatalog | null>(null);
   const [editing, setEditing] = useState<WhatsAppMetaTemplateItem | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pane, setPane] = useState<"edit" | "preview">("edit");
   const [form, setForm] = useState(emptyForm());
   const [bindContext, setBindContext] = useState<{
     eventKey: string;
@@ -185,6 +225,38 @@ export default function MetaSablonlarClient() {
     bind: boolean;
   } | null>(null);
   const { setNode: setBodyNode, insert: insertIntoBody } = useTextareaInsert();
+  const toolsRef = useRef<HTMLDivElement | null>(null);
+
+  const closeSheet = useCallback(() => {
+    if (saving) return;
+    setSheetOpen(false);
+  }, [saving]);
+
+  useSheetChrome(sheetOpen, closeSheet);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    if (stored === "rows" || stored === "grid") setView(stored);
+  }, []);
+
+  const changeView = (next: "grid" | "rows") => {
+    setView(next);
+    window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 280);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    if (!toolsOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!toolsRef.current?.contains(e.target as Node)) setToolsOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [toolsOpen]);
 
   const loadAccounts = useCallback(async () => {
     const res = await fetchWhatsAppAccounts();
@@ -202,16 +274,17 @@ export default function MetaSablonlarClient() {
     }
   }, [accountId]);
 
+  // Durum filtresi istemcide uygulanır; metrik kutuları gerçek sayıları göstersin.
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await fetchLocalMetaTemplates({
         account_id: accountId || undefined,
-        status: statusFilter || undefined,
         meta_category: categoryFilter || undefined,
         language: languageFilter || undefined,
-        search: search.trim() || undefined,
+        search: debouncedSearch || undefined,
+        template_group: groupFilter || undefined,
       });
       setTemplates(res.templates || []);
     } catch (err) {
@@ -219,11 +292,51 @@ export default function MetaSablonlarClient() {
     } finally {
       setLoading(false);
     }
-  }, [accountId, statusFilter, categoryFilter, languageFilter, search]);
+  }, [accountId, categoryFilter, groupFilter, languageFilter, debouncedSearch]);
 
   useEffect(() => {
     loadAccounts().catch(() => setError("WhatsApp hesapları yüklenemedi"));
   }, [loadAccounts]);
+
+  useEffect(() => {
+    fetchNotificationEvents()
+      .then(setEventCatalog)
+      .catch(() => setEventCatalog(null));
+  }, []);
+
+  const templateGroups = useMemo(() => catalogTemplateGroups(eventCatalog), [eventCatalog]);
+
+  const applyEventSelection = useCallback((selection: EventSlotSelection | null, bind = true) => {
+    if (!selection) {
+      setBindContext(null);
+      setForm((f) => ({ ...f, template_group: "" }));
+      return;
+    }
+    const { event, slot, groupKey } = selection;
+    setBindContext({ eventKey: event.key, recipient: slot.recipient_type, bind });
+    setForm((f) => ({
+      ...f,
+      name: slot.suggested_meta_name || f.name,
+      body_named: slot.meta_example_body || f.body_named,
+      usage_scope: "SYSTEM",
+      template_group: groupKey,
+      header: event.has_document
+        ? ({ type: "DOCUMENT" } as MetaTemplateHeader)
+        : event.has_image
+          ? ({ type: "IMAGE" } as MetaTemplateHeader)
+          : f.header?.type && f.header.type !== "NONE"
+            ? f.header
+            : ({ type: "NONE" } as MetaTemplateHeader),
+      also_create_app_template: true,
+      app_template_name: `${event.label} — ${
+        slot.recipient_type === "VELI"
+          ? "Veli"
+          : slot.recipient_type === "OGRENCI"
+            ? "Öğrenci"
+            : "Personel"
+      }`,
+    }));
+  }, []);
 
   useEffect(() => {
     if (accountId) load();
@@ -242,22 +355,24 @@ export default function MetaSablonlarClient() {
     const shouldBind = params.get("bind") === "1";
     if (!eventKey || !recipient) return;
 
-    setBindContext({ eventKey, recipient, bind: shouldBind });
-
     let cancelled = false;
     (async () => {
       try {
         const catalog = await fetchNotificationEvents();
         if (cancelled) return;
+        setEventCatalog(catalog);
         const event = catalog.events.find((e) => e.key === eventKey);
         const slot = event?.slots.find((s) => s.recipient_type === recipient);
         if (!event || !slot) return;
+        const groupKey = event.template_group
+          || (event.module === "yoklama" && event.group ? `yoklama:${event.group}` : event.module);
         setEditing(null);
         setForm({
           ...emptyForm(),
           name: slot.suggested_meta_name,
           body_named: slot.meta_example_body,
           usage_scope: "SYSTEM",
+          template_group: groupKey,
           header: event.has_document
             ? ({ type: "DOCUMENT" } as MetaTemplateHeader)
             : event.has_image
@@ -266,7 +381,9 @@ export default function MetaSablonlarClient() {
           also_create_app_template: true,
           app_template_name: `${event.label} — ${recipient === "VELI" ? "Veli" : recipient === "OGRENCI" ? "Öğrenci" : "Personel"}`,
         });
-        setDrawerOpen(true);
+        setBindContext({ eventKey, recipient, bind: shouldBind });
+        setPane("edit");
+        setSheetOpen(true);
         setMessage(
           shouldBind
             ? `${event.label} olayı için şablon taslağı hazır. Kaydedince bu olaya otomatik bağlanır.`
@@ -289,8 +406,10 @@ export default function MetaSablonlarClient() {
 
   const openCreate = () => {
     setEditing(null);
+    setBindContext(null);
     setForm(emptyForm());
-    setDrawerOpen(true);
+    setPane("edit");
+    setSheetOpen(true);
     setMessage(null);
     setError(null);
   };
@@ -308,8 +427,10 @@ export default function MetaSablonlarClient() {
       buttons: (t.buttons_json as MetaTemplateButton[]) || [],
       also_create_app_template: false,
       app_template_name: "",
+      template_group: t.template_group || "",
     });
-    setDrawerOpen(true);
+    setPane("edit");
+    setSheetOpen(true);
     setMessage(null);
     setError(null);
   };
@@ -324,6 +445,7 @@ export default function MetaSablonlarClient() {
     footer_text: form.footer_text,
     header_json: form.header?.type && form.header.type !== "NONE" ? form.header : {},
     buttons_json: form.buttons,
+    template_group: form.template_group || "",
     also_create_app_template: !editing && !!form.also_create_app_template,
     app_template_name:
       !editing && form.also_create_app_template
@@ -348,7 +470,9 @@ export default function MetaSablonlarClient() {
           || editing.status === "SUBMITTED";
         const updated = await updateLocalMetaTemplate(
           editing.id,
-          isLocked ? { usage_scope: form.usage_scope } : payload(),
+          isLocked
+            ? { usage_scope: form.usage_scope, template_group: form.template_group || "" }
+            : payload(),
         );
         setMessage(
           isLocked
@@ -651,7 +775,7 @@ export default function MetaSablonlarClient() {
     setSaving(true);
     try {
       await deleteLocalMetaTemplate(editing.id, editing.status !== "DRAFT");
-      setDrawerOpen(false);
+      setSheetOpen(false);
       setEditing(null);
       await load();
     } catch (err) {
@@ -714,6 +838,7 @@ export default function MetaSablonlarClient() {
     () => templateContentIssues(form.body_named, form.header, form.footer_text),
     [form.body_named, form.header, form.footer_text],
   );
+
   const counts = useMemo(() => {
     const base = { total: templates.length, approved: 0, pending: 0, rejected: 0, draft: 0 };
     templates.forEach((t) => {
@@ -725,20 +850,120 @@ export default function MetaSablonlarClient() {
     return base;
   }, [templates]);
 
+  const visibleTemplates = useMemo(() => {
+    if (!statusFilter) return templates;
+    return templates.filter((t) => (
+      statusFilter === PENDING_ANY
+        ? t.status === "PENDING" || t.status === "SUBMITTED"
+        : t.status === statusFilter
+    ));
+  }, [templates, statusFilter]);
+
+  const groupLabelOf = (key: string) =>
+    templateGroups.find((g) => g.key === key)?.label || key;
+
+  const activeFilters = [
+    statusFilter && {
+      key: "status",
+      label: STATUS_SELECT_OPTIONS.find(([k]) => k === statusFilter)?.[1] || statusFilter,
+      clear: () => setStatusFilter(""),
+    },
+    categoryFilter && {
+      key: "category",
+      label: CATEGORY_LABELS[categoryFilter] || categoryFilter,
+      clear: () => setCategoryFilter(""),
+    },
+    groupFilter && {
+      key: "group",
+      label: groupLabelOf(groupFilter),
+      clear: () => setGroupFilter(""),
+    },
+    languageFilter && {
+      key: "language",
+      label: LANGUAGE_LABELS[languageFilter] || languageFilter,
+      clear: () => setLanguageFilter(""),
+    },
+  ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
+
+  const clearFilters = () => {
+    setStatusFilter("");
+    setCategoryFilter("");
+    setGroupFilter("");
+    setLanguageFilter("");
+    setSearch("");
+  };
+
+  const metrics: {
+    key: string;
+    icon: string;
+    tone: string;
+    value: number;
+    label: string;
+    filter: string;
+  }[] = [
+    { key: "total", icon: "🗂", tone: "", value: counts.total, label: "Tüm şablonlar", filter: "" },
+    { key: "approved", icon: "✅", tone: "is-green", value: counts.approved, label: "Onaylı", filter: "APPROVED" },
+    { key: "pending", icon: "⏳", tone: "is-amber", value: counts.pending, label: "İnceleniyor", filter: PENDING_ANY },
+    { key: "rejected", icon: "⛔", tone: "is-rose", value: counts.rejected, label: "Reddedildi", filter: "REJECTED" },
+    { key: "draft", icon: "📝", tone: "is-violet", value: counts.draft, label: "Taslak", filter: "DRAFT" },
+  ];
+
+  const tools: { key: string; title: string; desc: string; onClick: () => void }[] = [
+    {
+      key: "sync",
+      title: "⟳ Meta’dan güncelle",
+      desc: "Meta’daki şablonları ve onay durumlarını içeri çeker.",
+      onClick: handleSync,
+    },
+    {
+      key: "import",
+      title: "Uygulamaya aktar",
+      desc: "Eşleşmeyen Meta şablonlarını uygulama şablonlarına kopyalar.",
+      onClick: handleImportAppTemplates,
+    },
+    {
+      key: "personal",
+      title: "Sohbet taslakları",
+      desc: "Personel–veli/öğrenci sohbet açılış PERSONAL şablonları.",
+      onClick: handleSeedPersonalChat,
+    },
+    {
+      key: "schedule",
+      title: "Ders programı taslakları",
+      desc: "sinif_programi_veli / _ogrenci (DOCUMENT) + LMS eşleri.",
+      onClick: handleSeedAcademicSchedule,
+    },
+    {
+      key: "sozlesme",
+      title: "Kayıt sözleşmesi taslağı",
+      desc: "ogrenci_kayit_sozlesme_personel şablonu ve bağlaması.",
+      onClick: handleSeedKayitSozlesme,
+    },
+    {
+      key: "duyuru",
+      title: "Toplu mesaj taslakları",
+      desc: "Duyuru · hatırlatma · bilgilendirme (metin / görsel / PDF).",
+      onClick: handleSeedDuyuruTemplates,
+    },
+  ];
+
+  const now = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  const headerIssues = contentIssues.filter((i) => i.toLocaleLowerCase("tr").includes("başlık"));
+
   return (
     <CommunicationPageShell
       title="Meta Şablonları"
       subtitle="WhatsApp Business şablonlarını Meta Business Manager açmadan yönetin"
       icon="🟢"
-      className="tplx tplx-page"
+      className="sbx sbx-page"
       breadcrumbs={[
         { label: "İletişim", href: "/admin/iletisim/toplu-gonder" },
         { label: "Meta Şablonları" },
       ]}
       actions={
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+        <div className="sbx-head-actions">
           <select
-            className="tplx-select"
+            className="sbx-select"
             value={accountId}
             onChange={(e) => setAccountId(e.target.value)}
             aria-label="WhatsApp hesabı"
@@ -750,62 +975,45 @@ export default function MetaSablonlarClient() {
               </option>
             ))}
           </select>
+
+          <div className="sbx-menu" ref={toolsRef}>
+            <button
+              type="button"
+              className="sbx-btn"
+              onClick={() => setToolsOpen((v) => !v)}
+              disabled={!accountId || saving}
+              aria-expanded={toolsOpen}
+              aria-haspopup="menu"
+            >
+              Araçlar ▾
+            </button>
+            {toolsOpen && (
+              <div className="sbx-menu-panel" role="menu">
+                {tools.map((tool, idx) => (
+                  <div key={tool.key}>
+                    {idx === 2 && <div className="sbx-menu-sep" />}
+                    <button
+                      type="button"
+                      className="sbx-menu-item"
+                      role="menuitem"
+                      disabled={saving}
+                      onClick={() => {
+                        setToolsOpen(false);
+                        tool.onClick();
+                      }}
+                    >
+                      <strong>{tool.title}</strong>
+                      <span>{tool.desc}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
-            className="comm-btn-secondary"
-            onClick={handleSync}
-            disabled={!accountId || saving}
-          >
-            ⟳ Meta&apos;dan Güncelle
-          </button>
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            onClick={handleImportAppTemplates}
-            disabled={!accountId || saving}
-            title="Eşleşmeyen Meta şablonlarını uygulama şablonlarına kopyalar"
-          >
-            Uygulamaya aktar
-          </button>
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            onClick={handleSeedPersonalChat}
-            disabled={!accountId || saving}
-            title="Personel–veli/öğrenci sohbet açılış PERSONAL taslakları"
-          >
-            Sohbet taslakları
-          </button>
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            onClick={handleSeedAcademicSchedule}
-            disabled={!accountId || saving}
-            title="Planlama → Programı Bildir: sinif_programi_veli / _ogrenci DOCUMENT"
-          >
-            Ders programı taslakları
-          </button>
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            onClick={handleSeedKayitSozlesme}
-            disabled={!accountId || saving}
-            title="Sözleşme aktif bildirimi: ogrenci_kayit_sozlesme_personel"
-          >
-            Kayıt sözleşmesi taslağı
-          </button>
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            onClick={handleSeedDuyuruTemplates}
-            disabled={!accountId || saving}
-            title="Duyuru + hatırlatma + bilgilendirme CAMPAIGN taslakları (veli/öğrenci × metin/görsel/PDF)"
-          >
-            Toplu mesaj taslakları
-          </button>
-          <button
-            type="button"
-            className="comm-btn-primary"
+            className="sbx-btn is-primary"
             onClick={openCreate}
             disabled={!accountId}
           >
@@ -814,264 +1022,346 @@ export default function MetaSablonlarClient() {
         </div>
       }
     >
-      {error && <div className="comm-alert comm-alert-danger">{error}</div>}
-      {message && <div className="comm-alert comm-alert-success">{message}</div>}
+      {(error || message) && (
+        <div className="sbx-alerts">
+          {error && (
+            <div className="sbx-alert is-danger" role="alert">
+              <span aria-hidden="true">⛔</span>
+              <span>{error}</span>
+              <button type="button" className="sbx-alert-x" onClick={() => setError(null)} aria-label="Kapat">
+                ×
+              </button>
+            </div>
+          )}
+          {message && (
+            <div className="sbx-alert is-success">
+              <span aria-hidden="true">✅</span>
+              <span>{message}</span>
+              <button type="button" className="sbx-alert-x" onClick={() => setMessage(null)} aria-label="Kapat">
+                ×
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="tplx-hero">
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon" aria-hidden="true">🗂</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{counts.total}</span>
-            <span className="tplx-hero-label">Şablon</span>
-          </span>
-        </div>
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon" aria-hidden="true">✅</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{counts.approved}</span>
-            <span className="tplx-hero-label">Onaylı</span>
-          </span>
-        </div>
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon is-amber" aria-hidden="true">⏳</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{counts.pending}</span>
-            <span className="tplx-hero-label">İnceleniyor</span>
-          </span>
-        </div>
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon is-rose" aria-hidden="true">⛔</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{counts.rejected}</span>
-            <span className="tplx-hero-label">Reddedildi</span>
-          </span>
-        </div>
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon is-violet" aria-hidden="true">📝</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{counts.draft}</span>
-            <span className="tplx-hero-label">Taslak</span>
-          </span>
-        </div>
+      <div className="sbx-metrics">
+        {metrics.map((m) => (
+          <button
+            key={m.key}
+            type="button"
+            className={`sbx-metric${statusFilter === m.filter ? " is-active" : ""}`}
+            onClick={() => setStatusFilter(m.filter)}
+            aria-pressed={statusFilter === m.filter}
+          >
+            <span className={`sbx-metric-icon ${m.tone}`} aria-hidden="true">{m.icon}</span>
+            <span className="sbx-metric-text">
+              <span className="sbx-metric-value">{m.value}</span>
+              <span className="sbx-metric-label">{m.label}</span>
+            </span>
+          </button>
+        ))}
       </div>
 
-      <div className="tplx-toolbar">
-        <div className="tplx-chips" role="tablist" aria-label="Durum filtresi">
+      <div className="sbx-filterbar">
+        <div className="sbx-filterbar-top">
+          <label className="sbx-search">
+            <span className="sbx-search-icon" aria-hidden="true">🔍</span>
+            <input
+              type="search"
+              placeholder="Şablon adı veya metin ara…"
+              aria-label="Şablon ara"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
           <button
             type="button"
-            role="tab"
-            aria-selected={statusFilter === ""}
-            className={`tplx-chip${statusFilter === "" ? " is-active" : ""}`}
-            onClick={() => setStatusFilter("")}
+            className="sbx-btn sbx-filter-toggle"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
           >
-            Tümü
+            Filtreler
+            {activeFilters.length > 0 && (
+              <span className="sbx-filter-badge">{activeFilters.length}</span>
+            )}
           </button>
-          {Object.entries(STATUS_LABELS).map(([key, label]) => (
+          <div className="sbx-view" role="group" aria-label="Görünüm">
             <button
-              key={key}
               type="button"
-              role="tab"
-              aria-selected={statusFilter === key}
-              className={`tplx-chip${statusFilter === key ? " is-active" : ""}`}
-              onClick={() => setStatusFilter(statusFilter === key ? "" : key)}
+              className={view === "grid" ? "is-active" : ""}
+              onClick={() => changeView("grid")}
             >
-              {label}
+              ▦ Kart
             </button>
-          ))}
+            <button
+              type="button"
+              className={view === "rows" ? "is-active" : ""}
+              onClick={() => changeView("rows")}
+            >
+              ☰ Liste
+            </button>
+          </div>
         </div>
 
-        <select
-          className="tplx-select"
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          aria-label="Kategori filtresi"
-        >
-          <option value="">Tüm kategoriler</option>
-          <option value="UTILITY">Bilgilendirme</option>
-          <option value="MARKETING">Pazarlama</option>
-          <option value="AUTHENTICATION">Doğrulama</option>
-        </select>
-        <select
-          className="tplx-select"
-          value={languageFilter}
-          onChange={(e) => setLanguageFilter(e.target.value)}
-          aria-label="Dil filtresi"
-        >
-          <option value="">Tüm diller</option>
-          <option value="tr">Türkçe</option>
-          <option value="en">English</option>
-          <option value="en_US">English (US)</option>
-        </select>
+        <div className={`sbx-filter-grid${filtersOpen ? " is-open" : ""}`}>
+          <select
+            className="sbx-select"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label="Durum filtresi"
+          >
+            {STATUS_SELECT_OPTIONS.map(([value, label]) => (
+              <option key={value || "all"} value={value}>{label}</option>
+            ))}
+          </select>
+          <select
+            className="sbx-select"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            aria-label="Kategori filtresi"
+          >
+            <option value="">Tüm kategoriler</option>
+            <option value="UTILITY">Bilgilendirme</option>
+            <option value="MARKETING">Pazarlama</option>
+            <option value="AUTHENTICATION">Doğrulama</option>
+          </select>
+          <select
+            className="sbx-select"
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+            aria-label="Şablon grubu filtresi"
+          >
+            <option value="">Tüm gruplar</option>
+            {templateGroups.map((group) => (
+              <option key={group.key} value={group.key}>{group.label}</option>
+            ))}
+          </select>
+          <select
+            className="sbx-select"
+            value={languageFilter}
+            onChange={(e) => setLanguageFilter(e.target.value)}
+            aria-label="Dil filtresi"
+          >
+            <option value="">Tüm diller</option>
+            <option value="tr">Türkçe</option>
+            <option value="en">English</option>
+            <option value="en_US">English (US)</option>
+          </select>
+        </div>
 
-        <label className="tplx-search">
-          <span className="tplx-search-icon" aria-hidden="true">🔍</span>
-          <input
-            type="search"
-            placeholder="Şablon ara…"
-            aria-label="Şablon ara"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </label>
+        {activeFilters.length > 0 && (
+          <div className="sbx-pills">
+            {activeFilters.map((f) => (
+              <span key={f.key} className="sbx-pill">
+                {f.label}
+                <button type="button" onClick={f.clear} aria-label={`${f.label} filtresini kaldır`}>
+                  ×
+                </button>
+              </span>
+            ))}
+            <button type="button" className="sbx-pill-clear" onClick={clearFilters}>
+              Tümünü temizle
+            </button>
+          </div>
+        )}
       </div>
 
       {!accountId && !loading ? (
-        <div className="tplx-empty">
-          <span className="tplx-empty-icon" aria-hidden="true">📱</span>
+        <div className="sbx-empty">
+          <span className="sbx-empty-icon" aria-hidden="true">📱</span>
           <h3>WhatsApp hesabı seçin</h3>
           <p>
-            Şablonlar hesap bazında yönetilir. Yukarıdan bir WhatsApp Business hesabı seçtiğinizde
-            şablonlar listelenir.
+            Şablonlar hesap bazında yönetilir. Yukarıdan bir WhatsApp Business hesabı
+            seçtiğinizde şablonlar listelenir.
           </p>
         </div>
       ) : loading ? (
-        <div className="tplx-grid" aria-busy="true" aria-label="Yükleniyor">
+        <div className="sbx-grid" aria-busy="true" aria-label="Yükleniyor">
           {[0, 1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="tplx-skeleton-card" />
+            <div key={i} className="sbx-skeleton" />
           ))}
         </div>
-      ) : !templates.length ? (
-        <div className="tplx-empty">
-          <span className="tplx-empty-icon" aria-hidden="true">✨</span>
-          <h3>Şablon bulunamadı</h3>
+      ) : !visibleTemplates.length ? (
+        <div className="sbx-empty">
+          <span className="sbx-empty-icon" aria-hidden="true">{activeFilters.length || search ? "🔍" : "✨"}</span>
+          <h3>{activeFilters.length || search ? "Sonuç bulunamadı" : "Henüz şablon yok"}</h3>
           <p>
-            Yeni bir şablon oluşturup Meta onayına gönderin ya da Meta hesabınızdaki mevcut
-            şablonları tek tıkla içeri aktarın.
+            {activeFilters.length || search
+              ? "Filtreleri gevşetip yeniden deneyin ya da yeni bir şablon oluşturun."
+              : "Yeni bir şablon oluşturup Meta onayına gönderin ya da Meta hesabınızdaki mevcut şablonları tek tıkla içeri aktarın."}
           </p>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "center" }}>
-            <button type="button" className="comm-btn-secondary" onClick={handleSync} disabled={saving}>
-              Meta&apos;dan içe aktar
+          <div className="sbx-empty-actions">
+            {(activeFilters.length || search) && (
+              <button type="button" className="sbx-btn" onClick={clearFilters}>
+                Filtreleri temizle
+              </button>
+            )}
+            <button type="button" className="sbx-btn" onClick={handleSync} disabled={saving || !accountId}>
+              Meta’dan içe aktar
             </button>
-            <button type="button" className="comm-btn-primary" onClick={openCreate}>
+            <button type="button" className="sbx-btn is-primary" onClick={openCreate} disabled={!accountId}>
               + Yeni şablon
             </button>
           </div>
         </div>
       ) : (
-        <div className="tplx-grid">
-          {templates.map((t) => {
-            const tone = STATUS_BADGE[t.status] || "is-draft";
-            return (
-              <article key={t.id} className={`tplx-card ${tone}`}>
-                <button
-                  type="button"
-                  className="tplx-card-main"
-                  onClick={() => openEdit(t)}
-                  aria-label={`${t.name} şablonunu aç`}
-                >
-                  <div className="tplx-card-head">
-                    <span className="tplx-card-title">
-                      {t.name}
-                      <span className="tplx-card-sub">
-                        {CATEGORY_LABELS[t.meta_category] || t.meta_category} · {t.language}
-                        {t.usage_scope && t.usage_scope !== "ALL" && (
-                          <> · {t.usage_scope_label
-                            || META_TEMPLATE_USAGE_LABELS[t.usage_scope as MetaTemplateUsage]}</>
-                        )}
-                      </span>
-                    </span>
-                    <div className="tplx-badges">
-                      {t.is_system_active && (
-                        <span className="tplx-badge is-live">
-                          <span className="tplx-badge-dot" aria-hidden="true" />
-                          Aktif
+        <>
+          <div className="sbx-resultbar">
+            <span>
+              {visibleTemplates.length} şablon
+              {visibleTemplates.length !== counts.total ? ` / ${counts.total}` : ""}
+            </span>
+          </div>
+          <div className={`sbx-grid${view === "rows" ? " is-rows" : ""}`}>
+            {visibleTemplates.map((t) => {
+              const tone = STATUS_TONE[t.status] || "is-draft";
+              return (
+                <article key={t.id} className={`sbx-card ${tone}`}>
+                  <button
+                    type="button"
+                    className="sbx-card-open"
+                    onClick={() => openEdit(t)}
+                    aria-label={`${t.name} şablonunu aç`}
+                  >
+                    <div className="sbx-card-top">
+                      <div className="sbx-card-headline">
+                        <span className="sbx-card-title">{t.name}</span>
+                        <span className="sbx-card-meta">
+                          <span>{CATEGORY_LABELS[t.meta_category] || t.meta_category}</span>
+                          <span>· {LANGUAGE_LABELS[t.language] || t.language}</span>
+                          {t.template_group && t.template_group_label && (
+                            <span>· {t.template_group_label}</span>
+                          )}
+                          {t.usage_scope && t.usage_scope !== "ALL" && (
+                            <span>
+                              ·{" "}
+                              {t.usage_scope_label
+                                || META_TEMPLATE_USAGE_LABELS[t.usage_scope as MetaTemplateUsage]}
+                            </span>
+                          )}
                         </span>
-                      )}
-                      <span className={`tplx-badge ${tone}`}>
-                        <span className="tplx-badge-dot" aria-hidden="true" />
-                        {t.status_label || STATUS_LABELS[t.status] || t.status}
+                      </div>
+                      <div className="sbx-badges">
+                        {t.is_system_active && (
+                          <span className="sbx-badge is-live">
+                            <span className="sbx-dot" aria-hidden="true" />
+                            Aktif
+                          </span>
+                        )}
+                        <span className={`sbx-badge ${tone}`}>
+                          <span className="sbx-dot" aria-hidden="true" />
+                          {t.status_label || STATUS_LABELS[t.status] || t.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="sbx-card-snippet">{t.body_named || ""}</p>
+
+                    {t.is_system_active && t.system_usages?.length ? (
+                      <p className="sbx-card-usage">
+                        <span aria-hidden="true">⚡</span>
+                        {t.system_usages.map((u) => u.label).join(" · ")}
+                      </p>
+                    ) : null}
+
+                    {t.status === "REJECTED" && t.rejected_reason ? (
+                      <p className="sbx-card-usage is-danger">
+                        <span aria-hidden="true">⛔</span>
+                        {t.rejected_reason}
+                      </p>
+                    ) : null}
+
+                    <div className="sbx-card-foot">
+                      <span>📈 {t.usage_count ?? 0} gönderim</span>
+                      {t.app_template_id && <span>🔗 Uygulama eşi var</span>}
+                      <span>
+                        {t.approved_at
+                          ? `Onay: ${new Date(t.approved_at).toLocaleDateString("tr-TR")}`
+                          : t.updated_at
+                            ? new Date(t.updated_at).toLocaleDateString("tr-TR")
+                            : "—"}
                       </span>
                     </div>
-                  </div>
-
-                  <p className="tplx-card-snippet">
-                    {(t.body_named || "").slice(0, 130)}
-                    {(t.body_named || "").length > 130 ? "…" : ""}
-                  </p>
-
-                  {t.is_system_active && t.system_usages?.length ? (
-                    <p className="tplx-card-usage">
-                      <span aria-hidden="true">⚡</span>
-                      {t.system_usages.map((u) => u.label).join(" · ")}
-                    </p>
-                  ) : null}
-
-                  {t.status === "REJECTED" && t.rejected_reason ? (
-                    <p className="tplx-card-usage" style={{ color: "#be123c" }}>
-                      <span aria-hidden="true">⛔</span>
-                      {t.rejected_reason}
-                    </p>
-                  ) : null}
-
-                  <div className="tplx-card-foot">
-                    <span>📈 {t.usage_count ?? 0} gönderim</span>
-                    <span>
-                      {t.approved_at
-                        ? `Onay: ${new Date(t.approved_at).toLocaleDateString("tr-TR")}`
-                        : t.updated_at
-                          ? new Date(t.updated_at).toLocaleDateString("tr-TR")
-                          : "—"}
-                    </span>
-                  </div>
-                </button>
-
-                <div className="tplx-card-actions">
-                  <button type="button" className="tplx-card-action" onClick={() => openEdit(t)}>
-                    {t.status === "APPROVED" ? "Görüntüle" : "Düzenle"}
                   </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
+
+                  <div className="sbx-card-actions">
+                    <button type="button" className="sbx-btn is-sm" onClick={() => openEdit(t)}>
+                      {t.status === "APPROVED" ? "Görüntüle" : "Düzenle"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </>
       )}
 
-      {drawerOpen && (
+      {sheetOpen && (
         <>
-          <div
-            className="comm-drawer-overlay"
-            role="presentation"
-            onClick={() => !saving && setDrawerOpen(false)}
-          />
+          <div className="sbx-scrim" role="presentation" onClick={closeSheet} />
           <aside
-            className="tplx comm-drawer tplx-drawer"
+            className="sbx-sheet"
+            data-pane={pane}
             role="dialog"
             aria-modal="true"
             aria-labelledby="meta-sablon-title"
           >
-            <form className="tplx-drawer-form" onSubmit={handleSave}>
-              <div className="tplx-drawer-head">
-                <div>
+            <form className="sbx-sheet-form" onSubmit={handleSave}>
+              <header className="sbx-sheet-head">
+                <div className="sbx-sheet-head-text">
+                  <span className="sbx-sheet-eyebrow">Meta şablonu</span>
                   <h2 id="meta-sablon-title">{editing ? editing.name : "Yeni Meta Şablonu"}</h2>
                   <p>
                     {editing
-                      ? `${STATUS_LABELS[editing.status] || editing.status} · ${CATEGORY_LABELS[editing.meta_category] || editing.meta_category} · ${editing.language}`
+                      ? `${CATEGORY_LABELS[editing.meta_category] || editing.meta_category} · ${editing.language}`
                       : "Meta onayına gönderilecek WhatsApp şablonu oluşturun."}
                   </p>
                 </div>
-                <div className="tplx-drawer-head-actions">
+                <div className="sbx-sheet-head-side">
                   {editing && (
-                    <span className={`tplx-badge ${STATUS_BADGE[editing.status] || "is-draft"}`}>
-                      <span className="tplx-badge-dot" aria-hidden="true" />
+                    <span className={`sbx-badge ${STATUS_TONE[editing.status] || "is-draft"}`}>
+                      <span className="sbx-dot" aria-hidden="true" />
                       {STATUS_LABELS[editing.status] || editing.status}
                     </span>
                   )}
                   <button
                     type="button"
-                    className="tplx-icon-btn"
-                    onClick={() => setDrawerOpen(false)}
+                    className="sbx-iconbtn"
+                    onClick={closeSheet}
                     aria-label="Kapat"
                   >
                     ×
                   </button>
                 </div>
+              </header>
+
+              <div className="sbx-sheet-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={pane === "edit"}
+                  className={pane === "edit" ? "is-active" : ""}
+                  onClick={() => setPane("edit")}
+                >
+                  Düzenle
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={pane === "preview"}
+                  className={pane === "preview" ? "is-active" : ""}
+                  onClick={() => setPane("preview")}
+                >
+                  Önizleme
+                </button>
               </div>
 
-              <div className="tplx-drawer-body">
-                <div className="tplx-drawer-main">
+              <div className="sbx-sheet-body">
+                <div className="sbx-sheet-main">
                   {editing?.status === "REJECTED" && (
-                    <div className="tplx-note is-danger">
-                      <span className="tplx-note-icon" aria-hidden="true">⛔</span>
+                    <div className="sbx-note is-danger">
+                      <span aria-hidden="true">⛔</span>
                       <div>
                         <strong>Meta bu şablonu reddetti: {editing.rejected_reason || "—"}</strong>
                         {editing.rejected_detail && <p>{editing.rejected_detail}</p>}
@@ -1087,45 +1377,48 @@ export default function MetaSablonlarClient() {
                   )}
 
                   {locked && (
-                    <div className="tplx-note is-warn">
-                      <span className="tplx-note-icon" aria-hidden="true">🔒</span>
+                    <div className="sbx-note is-warn">
+                      <span aria-hidden="true">🔒</span>
                       <div>
                         <strong>
                           İçerik kilitli ({STATUS_LABELS[editing!.status] || editing!.status})
                         </strong>
                         <p>
-                          Meta gövdesi / başlık değiştirilemez.{" "}
-                          <strong>Kullanım alanı</strong> yerelde kalır — aşağıdan kaydedebilirsiniz.
-                          İçerik değişikliği için &quot;Kopyala&quot; ile yeni sürüm oluşturun.
+                          Meta gövdesi ve başlığı değiştirilemez. <strong>Kullanım alanı</strong> ve{" "}
+                          <strong>şablon grubu</strong> yerelde kalır; kaydedebilirsiniz. İçerik
+                          değişikliği için “Kopyala” ile yeni sürüm oluşturun.
                         </p>
                       </div>
                     </div>
                   )}
 
-                  <section className="tplx-section">
-                    <div className="tplx-section-head">
+                  <section className="sbx-block">
+                    <div className="sbx-block-head">
                       <span aria-hidden="true">🏷</span> Kimlik
                     </div>
-                    <div className="tplx-section-body">
-                      <div className="tplx-field">
-                        <label htmlFor="meta-name">Şablon adı</label>
+                    <div className="sbx-block-body">
+                      <div className="sbx-field">
+                        <label className="sbx-label" htmlFor="meta-name">Şablon adı</label>
                         <input
                           id="meta-name"
+                          className="sbx-input"
                           value={form.name}
                           disabled={!!editing || locked}
                           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                           placeholder="hosgeldin_mesaji"
                           required
                         />
-                        <p className="tplx-field-hint">
+                        <p className="sbx-hint">
                           Yalnızca küçük harf ve alt çizgi. Oluşturduktan sonra değiştirilemez.
                         </p>
                       </div>
-                      <div className="tplx-row">
-                        <div className="tplx-field">
-                          <label htmlFor="meta-lang">Dil</label>
+
+                      <div className="sbx-row">
+                        <div className="sbx-field">
+                          <label className="sbx-label" htmlFor="meta-lang">Dil</label>
                           <select
                             id="meta-lang"
+                            className="sbx-select"
                             value={form.language}
                             disabled={locked}
                             onChange={(e) => setForm((f) => ({ ...f, language: e.target.value }))}
@@ -1135,10 +1428,11 @@ export default function MetaSablonlarClient() {
                             <option value="en_US">English US (en_US)</option>
                           </select>
                         </div>
-                        <div className="tplx-field">
-                          <label htmlFor="meta-cat">Kategori</label>
+                        <div className="sbx-field">
+                          <label className="sbx-label" htmlFor="meta-cat">Meta kategorisi</label>
                           <select
                             id="meta-cat"
+                            className="sbx-select"
                             value={form.meta_category}
                             disabled={locked}
                             onChange={(e) => setForm((f) => ({ ...f, meta_category: e.target.value }))}
@@ -1149,32 +1443,62 @@ export default function MetaSablonlarClient() {
                           </select>
                         </div>
                       </div>
-                      <div className="tplx-field">
-                        <label htmlFor="meta-usage">Kullanım alanı</label>
-                        <select
-                          id="meta-usage"
-                          value={form.usage_scope}
-                          onChange={(e) => setForm((f) => ({
-                            ...f,
-                            usage_scope: e.target.value as MetaTemplateUsage,
-                          }))}
-                        >
-                          {(Object.keys(META_TEMPLATE_USAGE_LABELS) as MetaTemplateUsage[]).map(
-                            (scope) => (
-                              <option key={scope} value={scope}>
-                                {META_TEMPLATE_USAGE_LABELS[scope]}
-                              </option>
-                            ),
-                          )}
-                        </select>
-                        <p className="tplx-field-hint">
-                          Şablonun hangi ekranda seçilebileceğini belirler. Onaydan sonra da
-                          değiştirilebilir.
-                        </p>
-                      </div>
+
                       {!editing && (
-                        <div className="tplx-field">
-                          <label className="tplx-check-row">
+                        <NotificationEventPicker
+                          catalog={eventCatalog}
+                          eventKey={bindContext?.eventKey}
+                          recipient={bindContext?.recipient}
+                          onSelect={(selection) => applyEventSelection(selection, true)}
+                        />
+                      )}
+
+                      <div className="sbx-row">
+                        <div className="sbx-field">
+                          <label className="sbx-label" htmlFor="meta-group">Şablon grubu</label>
+                          <select
+                            id="meta-group"
+                            className="sbx-select"
+                            value={form.template_group || ""}
+                            onChange={(e) => setForm((f) => ({ ...f, template_group: e.target.value }))}
+                          >
+                            <option value="">Genel</option>
+                            {templateGroups.map((group) => (
+                              <option key={group.key} value={group.key}>{group.label}</option>
+                            ))}
+                          </select>
+                          <p className="sbx-hint">
+                            Bildirim sayfasındaki grup. Meta’ya gönderilmez; olay seçilince otomatik dolar.
+                          </p>
+                        </div>
+                        <div className="sbx-field">
+                          <label className="sbx-label" htmlFor="meta-usage">Kullanım alanı</label>
+                          <select
+                            id="meta-usage"
+                            className="sbx-select"
+                            value={form.usage_scope}
+                            onChange={(e) => setForm((f) => ({
+                              ...f,
+                              usage_scope: e.target.value as MetaTemplateUsage,
+                            }))}
+                          >
+                            {(Object.keys(META_TEMPLATE_USAGE_LABELS) as MetaTemplateUsage[]).map(
+                              (scope) => (
+                                <option key={scope} value={scope}>
+                                  {META_TEMPLATE_USAGE_LABELS[scope]}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                          <p className="sbx-hint">
+                            Şablonun hangi ekranda seçilebileceğini belirler. Onaydan sonra da değişir.
+                          </p>
+                        </div>
+                      </div>
+
+                      {!editing && (
+                        <>
+                          <label className="sbx-check">
                             <input
                               type="checkbox"
                               checked={!!form.also_create_app_template}
@@ -1183,17 +1507,23 @@ export default function MetaSablonlarClient() {
                                 also_create_app_template: e.target.checked,
                               }))}
                             />
-                            <span>Aynı metinle uygulama şablonu da oluştur</span>
+                            <span>
+                              Aynı metinle uygulama şablonu da oluştur
+                              <small>
+                                24 saatlik pencere açıkken uygulama, kapalıyken Meta şablonu
+                                kullanılır. Metinler eşleştirilir.
+                              </small>
+                            </span>
                           </label>
-                          <p className="tplx-field-hint">
-                            24 saatlik pencere açıkken uygulama şablonu, kapalıyken Meta şablonu
-                            kullanılır. Metinler eşleştirilir.
-                          </p>
+
                           {form.also_create_app_template && (
-                            <div className="tplx-field" style={{ marginTop: "0.55rem" }}>
-                              <label htmlFor="meta-app-name">Uygulama şablon adı</label>
+                            <div className="sbx-field">
+                              <label className="sbx-label" htmlFor="meta-app-name">
+                                Uygulama şablon adı
+                              </label>
                               <input
                                 id="meta-app-name"
+                                className="sbx-input"
                                 value={form.app_template_name}
                                 onChange={(e) => setForm((f) => ({
                                   ...f,
@@ -1203,8 +1533,9 @@ export default function MetaSablonlarClient() {
                               />
                             </div>
                           )}
+
                           {bindContext && (
-                            <label className="tplx-check-row" style={{ marginTop: "0.75rem" }}>
+                            <label className="sbx-check">
                               <input
                                 type="checkbox"
                                 checked={!!bindContext.bind}
@@ -1214,62 +1545,63 @@ export default function MetaSablonlarClient() {
                               />
                               <span>
                                 Kaydedince bildirim olayına bağla
-                                {" "}
-                                <code>{bindContext.eventKey}</code>
+                                <small>{bindContext.eventKey}</small>
                               </span>
                             </label>
                           )}
-                        </div>
+                        </>
                       )}
                     </div>
                   </section>
 
-                  <section className="tplx-section">
-                    <div className="tplx-section-head">
+                  <section className="sbx-block">
+                    <div className="sbx-block-head">
                       <span aria-hidden="true">✍️</span> Mesaj içeriği
                     </div>
-                    <div className="tplx-section-body">
-                      <div className="tplx-field">
-                        <MessageComposer
-                          id="meta-body"
-                          value={createComposerState(form.body_named)}
-                          onChange={(state: ComposerState) =>
-                            setForm((f) => ({ ...f, body_named: state.text }))
-                          }
-                          showPreview={false}
-                          disabled={locked}
-                          placeholder="Merhaba {{veli_ad}}, {{ogrenci_ad}} için bilgilendirme…"
-                          onTextareaMount={setBodyNode}
-                        />
-                        <p className="tplx-field-hint">
-                          Anlamlı değişkenler kullanın; Meta&apos;nın numaralı parametreleri arka planda
-                          otomatik oluşturulur.
-                        </p>
-                        {contentIssues.length > 0 && (
-                          <div className="comm-alert comm-alert-warning" style={{ marginTop: "0.5rem" }}>
-                            <strong>Meta bu şablonu reddeder:</strong>
-                            <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem" }}>
+                    <div className="sbx-block-body">
+                      <MessageComposer
+                        id="meta-body"
+                        value={createComposerState(form.body_named)}
+                        onChange={(state: ComposerState) =>
+                          setForm((f) => ({ ...f, body_named: state.text }))
+                        }
+                        showPreview={false}
+                        disabled={locked}
+                        placeholder="Merhaba {{veli_ad}}, {{ogrenci_ad}} için bilgilendirme…"
+                        onTextareaMount={setBodyNode}
+                      />
+                      <p className="sbx-hint">
+                        Anlamlı değişkenler kullanın; Meta’nın numaralı parametreleri arka planda
+                        otomatik oluşturulur.
+                      </p>
+                      {contentIssues.length > 0 && (
+                        <div className="sbx-note is-warn">
+                          <span aria-hidden="true">⚠️</span>
+                          <div>
+                            <strong>Meta bu şablonu reddeder</strong>
+                            <ul>
                               {contentIssues.map((issue) => (
                                 <li key={issue}>{issue}</li>
                               ))}
                             </ul>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                       {!locked && <TemplateVariablePanel onInsert={insertVariable} />}
                     </div>
                   </section>
 
-                  <section className="tplx-section">
-                    <div className="tplx-section-head">
+                  <section className="sbx-block">
+                    <div className="sbx-block-head">
                       <span aria-hidden="true">🧩</span> Başlık &amp; alt bilgi
                     </div>
-                    <div className="tplx-section-body">
-                      <div className="tplx-row">
-                        <div className="tplx-field">
-                          <label htmlFor="meta-header-type">Başlık türü</label>
+                    <div className="sbx-block-body">
+                      <div className="sbx-row">
+                        <div className="sbx-field">
+                          <label className="sbx-label" htmlFor="meta-header-type">Başlık türü</label>
                           <select
                             id="meta-header-type"
+                            className="sbx-select"
                             value={form.header.type || "NONE"}
                             disabled={locked}
                             onChange={(e) => setForm((f) => ({
@@ -1285,10 +1617,11 @@ export default function MetaSablonlarClient() {
                           </select>
                         </div>
                         {form.header.type === "TEXT" && (
-                          <div className="tplx-field">
-                            <label htmlFor="meta-header-text">Başlık metni</label>
+                          <div className="sbx-field">
+                            <label className="sbx-label" htmlFor="meta-header-text">Başlık metni</label>
                             <input
                               id="meta-header-text"
+                              className="sbx-input"
                               value={form.header.text || ""}
                               disabled={locked}
                               onChange={(e) => setForm((f) => ({
@@ -1296,30 +1629,33 @@ export default function MetaSablonlarClient() {
                                 header: { ...f.header, text: e.target.value },
                               }))}
                             />
-                            <p className="tplx-field-hint">
+                            <p className="sbx-hint">
                               Yeni satır, emoji, yıldız (*) ve biçimlendirme (* _ ~ `) kullanılamaz.
                             </p>
                           </div>
                         )}
                       </div>
-                      {contentIssues.some((i) => i.toLocaleLowerCase("tr").includes("başlık")) && (
-                        <div className="comm-alert comm-alert-warning" style={{ marginTop: "0.5rem" }}>
-                          <strong>Başlık Meta kurallarına uymuyor:</strong>
-                          <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem" }}>
-                            {contentIssues
-                              .filter((i) => i.toLocaleLowerCase("tr").includes("başlık"))
-                              .map((issue) => (
+
+                      {headerIssues.length > 0 && (
+                        <div className="sbx-note is-warn">
+                          <span aria-hidden="true">⚠️</span>
+                          <div>
+                            <strong>Başlık Meta kurallarına uymuyor</strong>
+                            <ul>
+                              {headerIssues.map((issue) => (
                                 <li key={issue}>{issue}</li>
                               ))}
-                          </ul>
+                            </ul>
+                          </div>
                         </div>
                       )}
 
                       {["IMAGE", "VIDEO", "DOCUMENT"].includes(form.header.type || "") && !locked && (
-                        <div className="tplx-field">
-                          <span className="tplx-label">Örnek medya (Meta onayı için zorunlu)</span>
+                        <div className="sbx-field">
+                          <span className="sbx-label">Örnek medya (Meta onayı için zorunlu)</span>
                           <input
                             type="file"
+                            className="sbx-input"
                             accept={
                               form.header.type === "IMAGE" ? "image/*"
                                 : form.header.type === "VIDEO" ? "video/*"
@@ -1328,57 +1664,63 @@ export default function MetaSablonlarClient() {
                             onChange={(e) => onHeaderMedia(e.target.files?.[0] || null)}
                           />
                           {form.header.example_handle && (
-                            <p className="tplx-field-hint">✅ Örnek medya yüklendi.</p>
+                            <p className="sbx-hint">✅ Örnek medya yüklendi.</p>
                           )}
                         </div>
                       )}
 
-                      <div className="tplx-field">
-                        <label htmlFor="meta-footer">Alt bilgi (isteğe bağlı)</label>
+                      <div className="sbx-field">
+                        <label className="sbx-label" htmlFor="meta-footer">
+                          Alt bilgi (isteğe bağlı)
+                        </label>
                         <input
                           id="meta-footer"
+                          className="sbx-input"
                           maxLength={60}
                           value={form.footer_text}
                           disabled={locked}
                           placeholder="Örn. 3K Kampüs — Bilgilendirme mesajı"
                           onChange={(e) => setForm((f) => ({ ...f, footer_text: e.target.value }))}
                         />
-                        <p className="tplx-field-hint">{form.footer_text.length}/60 karakter</p>
+                        <p className="sbx-hint">{form.footer_text.length}/60 karakter</p>
                       </div>
                     </div>
                   </section>
 
-                  <section className="tplx-section">
-                    <div className="tplx-section-head">
+                  <section className="sbx-block">
+                    <div className="sbx-block-head">
                       <span aria-hidden="true">🔘</span> Butonlar
                     </div>
-                    <div className="tplx-section-body">
+                    <div className="sbx-block-body">
                       {!locked && (
-                        <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                          <button type="button" className="tplx-mini-btn" onClick={() => addButton("QUICK_REPLY")}>
+                        <div className="sbx-btnbar">
+                          <button type="button" className="sbx-btn is-sm" onClick={() => addButton("QUICK_REPLY")}>
                             + Hızlı yanıt
                           </button>
-                          <button type="button" className="tplx-mini-btn" onClick={() => addButton("URL")}>
+                          <button type="button" className="sbx-btn is-sm" onClick={() => addButton("URL")}>
                             + Bağlantı
                           </button>
-                          <button type="button" className="tplx-mini-btn" onClick={() => addButton("PHONE_NUMBER")}>
+                          <button type="button" className="sbx-btn is-sm" onClick={() => addButton("PHONE_NUMBER")}>
                             + Telefon
                           </button>
                         </div>
                       )}
 
                       {form.buttons.length === 0 ? (
-                        <p className="tplx-field-hint" style={{ margin: 0 }}>
-                          Henüz buton yok. En fazla 3 buton ekleyebilirsiniz.
-                        </p>
+                        <p className="sbx-hint">Henüz buton yok. En fazla 3 buton ekleyebilirsiniz.</p>
                       ) : (
                         <div>
                           {form.buttons.map((btn, idx) => (
-                            <div key={idx} className="tplx-btn-row">
-                              <span className="tplx-btn-type">
-                                {btn.type === "QUICK_REPLY" ? "Yanıt" : btn.type === "URL" ? "Link" : "Telefon"}
+                            <div key={idx} className="sbx-btnrow">
+                              <span className="sbx-btnrow-type">
+                                {btn.type === "QUICK_REPLY"
+                                  ? "Hızlı yanıt"
+                                  : btn.type === "URL"
+                                    ? "Bağlantı"
+                                    : "Telefon"}
                               </span>
                               <input
+                                className="sbx-input"
                                 value={btn.text || ""}
                                 disabled={locked}
                                 placeholder="Buton metni"
@@ -1386,6 +1728,7 @@ export default function MetaSablonlarClient() {
                               />
                               {btn.type === "URL" && (
                                 <input
+                                  className="sbx-input"
                                   value={btn.url || ""}
                                   disabled={locked}
                                   placeholder="https://site.com/{{odeme_link}}"
@@ -1394,6 +1737,7 @@ export default function MetaSablonlarClient() {
                               )}
                               {(btn.type === "PHONE_NUMBER" || btn.type === "PHONE") && (
                                 <input
+                                  className="sbx-input"
                                   value={btn.phone_number || btn.phone || ""}
                                   disabled={locked}
                                   placeholder="+90555…"
@@ -1403,9 +1747,8 @@ export default function MetaSablonlarClient() {
                               {!locked && (
                                 <button
                                   type="button"
-                                  className="tplx-mini-btn is-danger"
+                                  className="sbx-btn is-sm is-danger"
                                   onClick={() => removeButton(idx)}
-                                  aria-label="Butonu kaldır"
                                 >
                                   Kaldır
                                 </button>
@@ -1416,185 +1759,194 @@ export default function MetaSablonlarClient() {
                       )}
                     </div>
                   </section>
+
+                  {editing && (
+                    <section className="sbx-block">
+                      <div className="sbx-block-head">
+                        <span aria-hidden="true">🛠</span> Şablon işlemleri
+                      </div>
+                      <div className="sbx-block-body">
+                        <div className="sbx-btnbar">
+                          <button type="button" className="sbx-btn is-sm" disabled={saving} onClick={handleClone}>
+                            Kopyala
+                          </button>
+                          {editing.status !== "DRAFT" && (
+                            <button
+                              type="button"
+                              className="sbx-btn is-sm"
+                              disabled={saving}
+                              onClick={() => runAction(
+                                "Durum güncellendi",
+                                () => refreshLocalMetaTemplateStatus(editing.id),
+                              )}
+                            >
+                              ⟳ Meta durumunu sorgula
+                            </button>
+                          )}
+                          {!editing.app_template_id && (
+                            <button
+                              type="button"
+                              className="sbx-btn is-sm"
+                              disabled={saving || !(editing.body_named || "").trim()}
+                              onClick={handleCreateAppFromEditing}
+                            >
+                              Uygulamaya aktar
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="sbx-btn is-sm is-danger"
+                            disabled={saving}
+                            onClick={handleDelete}
+                          >
+                            Sil
+                          </button>
+                        </div>
+                        <p className="sbx-hint">
+                          {editing.app_template_id
+                            ? `Uygulama şablonu bağlı: ${editing.app_template_name || "—"}.`
+                            : "Uygulama şablonu henüz bağlı değil; 24 saatlik pencere açıkken serbest mesaj gönderebilmek için aktarın."}
+                        </p>
+                      </div>
+                    </section>
+                  )}
                 </div>
 
-                <aside className="tplx-drawer-side">
-                  <div className="tplx-preview-title">
-                    <span>WhatsApp önizleme</span>
-                    <span>{(form.body_named || "").length} karakter</span>
-                  </div>
-
-                  <div className="tplx-preview-stack">
-                    <div className="tplx-bubble">
-                      {form.header.type === "TEXT" && form.header.text && (
-                        <p className="tplx-bubble-header">
-                          {resolvePreviewVariables(form.header.text, livePreviewContext)}
+                <aside className="sbx-sheet-side">
+                  <div className="sbx-preview">
+                    <div className="sbx-preview-head">
+                      <span>WhatsApp önizleme</span>
+                      <span>{(form.body_named || "").length} karakter</span>
+                    </div>
+                    <div className="sbx-preview-canvas">
+                      <div className="sbx-bubble">
+                        {form.header.type === "TEXT" && form.header.text && (
+                          <p className="sbx-bubble-header">
+                            {resolvePreviewVariables(form.header.text, livePreviewContext)}
+                          </p>
+                        )}
+                        {["IMAGE", "VIDEO", "DOCUMENT"].includes(form.header.type || "") && (
+                          <div className="sbx-bubble-media">
+                            {HEADER_MEDIA_LABEL[form.header.type || ""] || "Medya"}
+                          </div>
+                        )}
+                        <p className="sbx-bubble-text">
+                          {previewText.trim()
+                            ? previewSegments.map((seg, i) =>
+                                seg.type === "bold" ? (
+                                  <strong key={i}>{seg.content}</strong>
+                                ) : seg.type === "italic" ? (
+                                  <em key={i}>{seg.content}</em>
+                                ) : seg.type === "strike" ? (
+                                  <s key={i}>{seg.content}</s>
+                                ) : seg.type === "mono" ? (
+                                  <code key={i}>{seg.content}</code>
+                                ) : seg.type === "variable" ? (
+                                  <span key={i} className="wa-var">{seg.content}</span>
+                                ) : (
+                                  <span key={i}>{seg.content}</span>
+                                ),
+                              )
+                            : "Mesajınız burada görünecek…"}
                         </p>
-                      )}
-                      {["IMAGE", "VIDEO", "DOCUMENT"].includes(form.header.type || "") && (
-                        <div className="tplx-bubble-media">
-                          {HEADER_MEDIA_LABEL[form.header.type || ""] || "Medya"}
+                        {form.footer_text && (
+                          <p className="sbx-bubble-footer">{form.footer_text}</p>
+                        )}
+                        <div className="sbx-bubble-meta">
+                          <span>{now}</span>
+                          <span aria-hidden="true">✓✓</span>
+                        </div>
+                      </div>
+                      {form.buttons.length > 0 && (
+                        <div className="sbx-bubble-buttons">
+                          {form.buttons.map((b, i) => (
+                            <div key={i} className="sbx-bubble-button">
+                              {b.type === "URL"
+                                ? "🔗 "
+                                : b.type === "PHONE_NUMBER" || b.type === "PHONE"
+                                  ? "📞 "
+                                  : "↩ "}
+                              {b.text || "Buton"}
+                            </div>
+                          ))}
                         </div>
                       )}
-                      <p className="tplx-bubble-text">
-                        {previewText.trim()
-                          ? previewSegments.map((seg, i) =>
-                              seg.type === "bold" ? (
-                                <strong key={i}>{seg.content}</strong>
-                              ) : seg.type === "italic" ? (
-                                <em key={i}>{seg.content}</em>
-                              ) : seg.type === "strike" ? (
-                                <s key={i}>{seg.content}</s>
-                              ) : seg.type === "mono" ? (
-                                <code key={i}>{seg.content}</code>
-                              ) : seg.type === "variable" ? (
-                                <span key={i} className="wa-var">{seg.content}</span>
-                              ) : (
-                                <span key={i}>{seg.content}</span>
-                              ),
-                            )
-                          : "Mesajınız burada görünecek…"}
-                      </p>
-                      {form.footer_text && (
-                        <p className="tplx-bubble-footer">{form.footer_text}</p>
-                      )}
-                      <div className="tplx-bubble-meta">
-                        <span>
-                          {new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                        <span aria-hidden="true">✓✓</span>
-                      </div>
                     </div>
-                    {form.buttons.length > 0 && (
-                      <div className="tplx-bubble-buttons">
-                        {form.buttons.map((b, i) => (
-                          <div key={i} className="tplx-bubble-button">
-                            {b.type === "URL" ? "🔗 " : b.type === "PHONE_NUMBER" || b.type === "PHONE" ? "📞 " : "↩ "}
-                            {b.text || "Buton"}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
-                  <div>
-                    <div className="tplx-preview-title" style={{ marginBottom: "0.4rem" }}>
+                  <div className="sbx-preview">
+                    <div className="sbx-preview-head">
                       <span>Kullanılan değişkenler</span>
                       <span>{usedVariables.length}</span>
                     </div>
                     {usedVariables.length ? (
-                      <div className="tplx-map-list">
+                      <div className="sbx-varlist">
                         {usedVariables.map((v) => (
-                          <span key={v} className="tplx-map-pill">
-                            <b>{v}</b>
-                          </span>
+                          <span key={v} className="sbx-varpill">{v}</span>
                         ))}
                       </div>
                     ) : (
-                      <p className="tplx-field-hint" style={{ margin: 0 }}>
-                        Değişken eklemek için soldaki listeden tıklayın.
+                      <p className="sbx-hint">
+                        Değişken eklemek için “Mesaj içeriği” altındaki listeden tıklayın.
                       </p>
                     )}
                   </div>
 
-                  <div className="tplx-note is-info">
-                    <span className="tplx-note-icon" aria-hidden="true">🔒</span>
+                  <div className="sbx-note is-info">
+                    <span aria-hidden="true">🔒</span>
                     <div>
                       <strong>Meta parametreleri otomatik</strong>
                       <p>
-                        Numaralı parametreler kaydederken arka planda üretilir; gönderim sırasında
-                        öğrenci, veli ve finans kayıtlarından otomatik doldurulur.
+                        Numaralı parametreler kaydederken arka planda üretilir; gönderimde öğrenci,
+                        veli ve finans kayıtlarından otomatik doldurulur.
                       </p>
                     </div>
                   </div>
                 </aside>
               </div>
 
-              <div className="tplx-drawer-foot">
-                <div className="tplx-foot-left">
-                  {editing && (
-                    <>
-                      <button type="button" className="tplx-mini-btn" disabled={saving} onClick={handleClone}>
-                        Kopyala
-                      </button>
-                      {!editing.app_template_id && (
-                        <button
-                          type="button"
-                          className="tplx-mini-btn"
-                          disabled={saving || !(editing.body_named || "").trim()}
-                          onClick={handleCreateAppFromEditing}
-                          title="Aynı metinle uygulama şablonu oluştur"
-                        >
-                          Uygulamaya aktar
-                        </button>
-                      )}
-                      {editing.app_template_id && (
-                        <span className="tplx-field-hint" style={{ margin: 0 }}>
-                          Uygulama: {editing.app_template_name || "bağlı"}
-                        </span>
-                      )}
+              <footer className="sbx-sheet-foot">
+                <button type="button" className="sbx-btn" onClick={closeSheet} disabled={saving}>
+                  Kapat
+                </button>
+                <span className="sbx-foot-spacer" />
+                {editing ? (
+                  <>
+                    <button
+                      type="submit"
+                      className={locked ? "sbx-btn is-primary" : "sbx-btn"}
+                      disabled={saving}
+                      title={
+                        locked
+                          ? "Yalnızca kullanım alanı ve şablon grubu kaydedilir; Meta içeriği değişmez"
+                          : undefined
+                      }
+                    >
+                      {saving ? "Kaydediliyor…" : locked ? "Yerel alanları kaydet" : "Kaydet"}
+                    </button>
+                    {(editing.status === "DRAFT" || editing.status === "REJECTED") && (
                       <button
                         type="button"
-                        className="tplx-mini-btn is-danger"
-                        disabled={saving}
-                        onClick={handleDelete}
+                        className="sbx-btn is-primary"
+                        disabled={saving || contentIssues.length > 0}
+                        title={contentIssues.length > 0 ? contentIssues.join(" ") : undefined}
+                        onClick={() => runAction(
+                          "Meta'ya gönderildi",
+                          () => (editing.status === "REJECTED"
+                            ? resubmitLocalMetaTemplate(editing.id)
+                            : submitLocalMetaTemplate(editing.id)),
+                        )}
                       >
-                        Sil
+                        {editing.status === "REJECTED" ? "Yeniden onaya gönder" : "Meta’ya gönder"}
                       </button>
-                    </>
-                  )}
-                </div>
-
-                {editing && editing.status !== "DRAFT" && (
-                  <button
-                    type="button"
-                    className="comm-btn-secondary"
-                    disabled={saving}
-                    onClick={() => runAction("Durum güncellendi", () => refreshLocalMetaTemplateStatus(editing.id))}
-                  >
-                    ⟳ Meta durumunu sorgula
-                  </button>
-                )}
-                {editing && (
-                  <button
-                    type="submit"
-                    className={locked ? "comm-btn-primary" : "comm-btn-secondary"}
-                    disabled={saving}
-                    title={
-                      locked
-                        ? "Yalnızca kullanım alanı (yerel) kaydedilir; Meta içeriği değişmez"
-                        : undefined
-                    }
-                  >
-                    {saving
-                      ? "Kaydediliyor…"
-                      : locked
-                        ? "Kullanım alanını kaydet"
-                        : "Kaydet"}
-                  </button>
-                )}
-                {editing && (editing.status === "DRAFT" || editing.status === "REJECTED") && (
-                  <button
-                    type="button"
-                    className="comm-btn-primary"
-                    disabled={saving || contentIssues.length > 0}
-                    title={contentIssues.length > 0 ? contentIssues.join(" ") : undefined}
-                    onClick={() => runAction(
-                      "Meta'ya gönderildi",
-                      () => (editing.status === "REJECTED"
-                        ? resubmitLocalMetaTemplate(editing.id)
-                        : submitLocalMetaTemplate(editing.id)),
                     )}
-                  >
-                    {editing.status === "REJECTED" ? "Yeniden onaya gönder" : "Meta'ya gönder"}
-                  </button>
-                )}
-                {!editing && (
-                  <button type="submit" className="comm-btn-primary" disabled={saving}>
+                  </>
+                ) : (
+                  <button type="submit" className="sbx-btn is-primary" disabled={saving}>
                     {saving ? "Kaydediliyor…" : "Taslağı oluştur"}
                   </button>
                 )}
-              </div>
+              </footer>
             </form>
           </aside>
         </>

@@ -93,6 +93,7 @@ class TemplatePairingService:
             audience_scope=audience_scope or TemplateAudienceScope.GENEL,
             variables_json=variables,
             meta_template_id=meta.id,
+            template_group=meta.template_group or '',
         )
 
     @staticmethod
@@ -143,6 +144,7 @@ class TemplatePairingService:
                 header_json=resolved_header or {},
                 footer_text=resolved_footer or '',
                 usage_scope=usage_scope or MetaTemplateUsage.ALL,
+                template_group=template.template_group or '',
                 user=user,
             )
         except MetaTemplateServiceError as exc:

@@ -15,6 +15,8 @@ export { default as SendConfirmModal } from "./SendConfirmModal";
 export { default as TemplatePickerDrawer } from "./TemplatePickerDrawer";
 export { default as MetaTemplateSendDrawer } from "./MetaTemplateSendDrawer";
 export { default as CommunicationPageShell } from "./CommunicationPageShell";
+export { default as NotificationEventPicker } from "./NotificationEventPicker";
+export { default as TemplateBindingSelect } from "./TemplateBindingSelect";
 export { CommunicationChatProvider, useCommunicationChat } from "./CommunicationChatProvider";
 export { default as CommunicationChatDrawer } from "./CommunicationChatDrawer";
 export { default as WhatsAppChatButton } from "./WhatsAppChatButton";

@@ -62,11 +62,10 @@ class KutuphaneYoklamaSeedTest(TestCase):
         )
         self.assertEqual(result['errors'], [])
         self.assertGreater(len(result['created_meta']), 0)
-        self.assertTrue(
-            WhatsAppMetaTemplate.objects.filter(
-                channel_config=self.account, name='yoklama_gelmedi_veli',
-            ).exists()
+        meta = WhatsAppMetaTemplate.objects.get(
+            channel_config=self.account, name='yoklama_gelmedi_veli',
         )
+        self.assertEqual(meta.template_group, 'yoklama:kutuphane')
         self.assertTrue(
             NotificationTemplateBinding.objects.filter(
                 kurum=self.kurum,

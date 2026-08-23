@@ -80,6 +80,7 @@ class MetaTemplateService:
         search: str | None = None,
         approved_only: bool = False,
         usage: str | None = None,
+        template_group: str | None = None,
     ) -> QuerySet[WhatsAppMetaTemplate]:
         qs = (
             WhatsAppMetaTemplate.objects
@@ -102,6 +103,8 @@ class MetaTemplateService:
             qs = qs.filter(status=MetaTemplateStatus.APPROVED)
         if search:
             qs = qs.filter(name__icontains=search.strip())
+        if template_group:
+            qs = qs.filter(template_group=template_group.strip())
         return qs.order_by('-updated_at')
 
     @classmethod
@@ -118,6 +121,7 @@ class MetaTemplateService:
         footer_text: str = '',
         buttons_json: list | None = None,
         usage_scope: str = MetaTemplateUsage.ALL,
+        template_group: str = '',
         user=None,
     ) -> WhatsAppMetaTemplate:
         account = ChannelConfigRepository.get_by_id(kurum_id, channel_config_id)
@@ -151,6 +155,7 @@ class MetaTemplateService:
             meta_category=meta_category,
             status=MetaTemplateStatus.DRAFT,
             usage_scope=usage_scope or MetaTemplateUsage.ALL,
+            template_group=(template_group or '').strip()[:64],
             body_named=body_named or '',
             header_json=header_json or {},
             footer_text=(footer_text or '')[:60],
@@ -168,6 +173,15 @@ class MetaTemplateService:
         if template.usage_scope != usage_scope:
             template.usage_scope = usage_scope
             template.save(update_fields=['usage_scope', 'updated_at'])
+        return template
+
+    @staticmethod
+    def set_template_group(template: WhatsAppMetaTemplate, template_group: str | None) -> WhatsAppMetaTemplate:
+        """Yerel şablon grubu — Meta'ya gönderilmez, onaylı şablonda da değişebilir."""
+        next_group = (template_group or '').strip()[:64]
+        if template.template_group != next_group:
+            template.template_group = next_group
+            template.save(update_fields=['template_group', 'updated_at'])
         return template
 
     @classmethod

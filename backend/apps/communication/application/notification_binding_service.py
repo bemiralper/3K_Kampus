@@ -9,6 +9,9 @@ from apps.communication.application.notification_dispatcher import build_preview
 from apps.communication.application.notification_events import (
     MODULE_LABELS,
     MODULE_YOKLAMA,
+    list_template_groups,
+    template_group_for_event,
+    template_group_label,
     NOTIFICATION_EVENTS,
     build_meta_example_body,
     get_event,
@@ -184,6 +187,8 @@ def list_event_catalog(
             'variables': list(event.all_variables()),
             'meta_name_base': event.meta_name_base,
             'hidden_in_ui': event.hidden_in_ui,
+            'template_group': template_group_for_event(event),
+            'template_group_label': template_group_label(template_group_for_event(event)),
             'slots': slots,
         })
 
@@ -204,6 +209,7 @@ def list_event_catalog(
             {'value': value, 'label': label}
             for value, label in NotificationSendMode.choices
         ],
+        'template_groups': list_template_groups(),
     }
 
 

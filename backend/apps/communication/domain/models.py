@@ -527,6 +527,14 @@ class MessageTemplate(models.Model):
         verbose_name='Kategori',
         db_index=True,
     )
+    template_group = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        verbose_name='Şablon Grubu',
+        db_index=True,
+        help_text='Bildirim olayı modülü (odev, yoklama:kutuphane). Meta’ya gönderilmez.',
+    )
     audience_scope = models.CharField(
         max_length=32,
         choices=TemplateAudienceScope.choices,
@@ -619,6 +627,14 @@ class WhatsAppMetaTemplate(models.Model):
         default=MetaTemplateUsage.ALL,
         verbose_name='Kullanım Alanı',
         db_index=True,
+    )
+    template_group = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        verbose_name='Şablon Grubu',
+        db_index=True,
+        help_text='Bildirim olayı modülü (odev, yoklama:kutuphane). Meta’ya gönderilmez.',
     )
     meta_template_id = models.CharField(max_length=64, blank=True, default='', verbose_name='Meta Template ID')
     body_named = models.TextField(blank=True, default='', verbose_name='Gövde (named değişkenler)')

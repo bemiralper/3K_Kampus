@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { CommunicationPageShell, WhatsAppPreviewBubble } from "@/components/communication";
+import { CommunicationPageShell, TemplateBindingSelect, WhatsAppPreviewBubble } from "@/components/communication";
 import { headerTypeOf } from "@/components/communication/MetaTemplateSelect";
+import { eventTemplateGroup } from "@/components/communication/notification-event-utils";
 import { resolvePreviewVariables } from "@/components/communication/composer-utils";
 import { useLivePreviewContext } from "@/components/communication/useLivePreviewContext";
 import "@/components/communication/communication.css";
@@ -394,47 +395,46 @@ function SlotCard({
       <div className="nbx-slot-body">
         <div className="nbx-slot-fields">
           <div className="nbx-field">
-            <label className="nbx-field-label" htmlFor={`${fieldId}-meta`}>
-              Meta şablonu
-            </label>
-            <select
+            <TemplateBindingSelect
               id={`${fieldId}-meta`}
-              className="nbx-select"
-              disabled={busy}
+              label="Meta şablonu"
               value={slot.binding?.meta_template_id || ""}
-              onChange={(e) =>
-                onPersist(event, slot, { meta_template_id: e.target.value || null })
-              }
-            >
-              <option value="">
-                {slot.resolved.meta_template_name
+              emptyLabel={
+                slot.resolved.meta_template_name
                   ? `Otomatik — ${slot.resolved.meta_template_name}`
-                  : "Otomatik / yok"}
-              </option>
-              {metaOptions.map((tpl) => {
+                  : "Otomatik / yok"
+              }
+              eventGroup={eventTemplateGroup(event)}
+              disabled={busy}
+              hint={`${headerFilterHint} ${
+                scopeAccountId
+                  ? "Seçili WhatsApp hesabına ait şablonlar."
+                  : "Tüm hesaplar — hesap adı seçenek sonunda görünür."
+              } (${metaOptions.length} şablon)`}
+              onChange={(id) => onPersist(event, slot, { meta_template_id: id || null })}
+              options={metaOptions.map((tpl) => {
                 const htype = headerTypeOf(tpl);
                 const accountTag =
                   !scopeAccountId && tpl.channel_config_name
                     ? ` · ${tpl.channel_config_name}`
                     : "";
-                return (
-                  <option key={tpl.id} value={tpl.id}>
-                    {tpl.name}
-                    {htype && htype !== "NONE" ? ` [${htype}]` : ""}
-                    {` (${tpl.language})`}
-                    {tpl.status !== "APPROVED" ? ` — ${tpl.status_label || tpl.status}` : ""}
-                    {accountTag}
-                  </option>
-                );
+                const base = (event.meta_name_base || "").toLowerCase();
+                return {
+                  id: String(tpl.id),
+                  name: tpl.name,
+                  groupKey: tpl.template_group || "",
+                  groupLabel: tpl.template_group_label || "",
+                  status: tpl.status_label || tpl.status,
+                  recommended: Boolean(base && (tpl.name || "").toLowerCase().includes(base)),
+                  meta: [
+                    htype && htype !== "NONE" ? `[${htype}]` : "",
+                    `(${tpl.language})`,
+                    tpl.status !== "APPROVED" ? `— ${tpl.status_label || tpl.status}` : "",
+                    accountTag,
+                  ].filter(Boolean).join(" "),
+                };
               })}
-            </select>
-            <p className="nbx-hint">
-              {headerFilterHint}{" "}
-              {scopeAccountId
-                ? "Seçili WhatsApp hesabına ait şablonlar."
-                : "Tüm hesaplar — hesap adı seçenek sonunda görünür."}{" "}
-              ({metaOptions.length} şablon)
-            </p>
+            />
             {boundMeta && boundMeta.status !== "APPROVED" && (
               <p className="nbx-hint is-warn">
                 Bu şablon Meta onayında değil ({boundMeta.status_label || boundMeta.status});
@@ -465,32 +465,30 @@ function SlotCard({
           </div>
 
           <div className="nbx-field">
-            <label className="nbx-field-label" htmlFor={`${fieldId}-lms`}>
-              LMS şablonu (serbest mesaj)
-            </label>
-            <select
+            <TemplateBindingSelect
               id={`${fieldId}-lms`}
-              className="nbx-select"
-              disabled={busy}
+              label="LMS şablonu (serbest mesaj)"
               value={slot.binding?.message_template_id || ""}
-              onChange={(e) =>
-                onPersist(event, slot, { message_template_id: e.target.value || null })
-              }
-            >
-              <option value="">
-                {slot.resolved.message_template_name
+              emptyLabel={
+                slot.resolved.message_template_name
                   ? `Otomatik — ${slot.resolved.message_template_name}`
-                  : "Varsayılan metin"}
-              </option>
-              {lmsOptions.map((tpl) => (
-                <option key={tpl.id} value={tpl.id}>
-                  {tpl.name}
-                </option>
-              ))}
-            </select>
-            <p className="nbx-hint">
-              24 saatlik pencere açıkken bu metin serbest mesaj olarak gider.
-            </p>
+                  : "Varsayılan metin"
+              }
+              eventGroup={eventTemplateGroup(event)}
+              disabled={busy}
+              hint="24 saatlik pencere açıkken bu metin serbest mesaj olarak gider."
+              onChange={(id) => onPersist(event, slot, { message_template_id: id || null })}
+              options={lmsOptions.map((tpl) => {
+                const base = (event.meta_name_base || "").replace(/_/g, " ").toLowerCase();
+                return {
+                  id: String(tpl.id),
+                  name: tpl.name,
+                  groupKey: tpl.template_group || "",
+                  groupLabel: tpl.template_group_label || "",
+                  recommended: Boolean(base && tpl.name.toLowerCase().includes(base)),
+                };
+              })}
+            />
             {slot.binding?.message_template_id && (
               <div className="nbx-field-links">
                 <Link className="nbx-inline-link" href="/admin/iletisim/sablonlar">

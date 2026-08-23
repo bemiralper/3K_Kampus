@@ -25,6 +25,7 @@ from apps.communication.application.notification_events import (
     NOTIFICATION_EVENTS,
     build_meta_example_body,
     get_event,
+    template_group_for_event_key,
 )
 from apps.communication.application.template_category_service import TemplateCategoryService
 from apps.communication.domain.enums import (
@@ -169,6 +170,7 @@ class AcademicScheduleTemplateSeedService:
                     footer_text=draft.footer_text or '',
                     category=draft.category,
                     audience_scope=draft.audience_scope,
+                    template_group=template_group_for_event_key(draft.event_key),
                     variables_json=list(draft.variables),
                     created_by=user,
                     is_active=True,
@@ -216,6 +218,7 @@ class AcademicScheduleTemplateSeedService:
                             header_json=dict(draft.header_json or {}),
                             footer_text=draft.footer_text or '',
                             usage_scope=draft.usage_scope,
+                            template_group=template_group_for_event_key(draft.event_key),
                             user=user,
                         )
                         created_meta.append(draft.meta_name)

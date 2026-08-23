@@ -57,6 +57,7 @@ class MetaTemplateListCreateView(APIView):
             search=request.query_params.get('search') or None,
             approved_only=request.query_params.get('approved_only') in ('1', 'true', 'True'),
             usage=request.query_params.get('usage') or None,
+            template_group=request.query_params.get('template_group') or None,
         )
         return Response({
             'templates': WhatsAppMetaTemplateSerializer(qs, many=True).data,
@@ -92,6 +93,7 @@ class MetaTemplateListCreateView(APIView):
                 footer_text=data.get('footer_text') or '',
                 buttons_json=data.get('buttons_json') or [],
                 usage_scope=data.get('usage_scope'),
+                template_group=data.get('template_group') or '',
                 user=request.user,
             )
         except MetaTemplateServiceError as exc:
@@ -176,7 +178,7 @@ class MetaTemplateDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         data = ser.validated_data
-        # Kullanım alanı Meta'ya gitmeyen yerel bir alan; onaylı şablonda da değişebilir.
+        # Kullanım alanı / şablon grubu Meta'ya gitmeyen yerel alanlar; onaylıda da değişebilir.
         usage_touched = 'usage_scope' in request.data
         if usage_touched:
             try:
@@ -184,6 +186,8 @@ class MetaTemplateDetailView(APIView):
             except MetaTemplateServiceError as exc:
                 return _err(exc)
             tpl.refresh_from_db()
+        if 'template_group' in request.data:
+            tpl = MetaTemplateService.set_template_group(tpl, data.get('template_group') or '')
         editable = {
             key: data.get(key)
             for key in (

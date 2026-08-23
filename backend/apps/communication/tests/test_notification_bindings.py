@@ -330,6 +330,16 @@ class BindingServiceTest(TestCase):
         self.assertNotIn('yoklama', module_keys)
         for event in catalog['events']:
             self.assertTrue(event['slots'])
+            self.assertTrue(event['template_group'])
+            self.assertTrue(event['template_group_label'])
+        yoklama = next(e for e in catalog['events'] if e['key'] == 'yoklama.gelmedi')
+        self.assertEqual(yoklama['template_group'], 'yoklama:kutuphane')
+        ozel = next(e for e in catalog['events'] if e['key'] == 'ozel_ders.iptal')
+        self.assertEqual(ozel['template_group'], 'ozel_ders')
+        group_keys = [g['key'] for g in catalog['template_groups']]
+        self.assertIn('yoklama:kutuphane', group_keys)
+        self.assertIn('ozel_ders', group_keys)
+        self.assertNotIn('devamsizlik', group_keys)
 
     def test_preview_fills_sample_variables(self):
         payload = preview_binding(

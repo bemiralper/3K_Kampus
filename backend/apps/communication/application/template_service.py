@@ -70,6 +70,7 @@ class TemplateService:
         header_json: dict | None = None,
         footer_text: str = '',
         meta_template_id=None,
+        template_group: str = '',
     ) -> MessageTemplate:
         scope = audience_scope or TemplateAudienceScope.GENEL
         assert_can_write_template(user, scope)
@@ -92,6 +93,7 @@ class TemplateService:
             variables_json=variables_json or [],
             attachment_ids_json=attachment_ids_json or [],
             meta_template_id=self._validated_meta_template_id(kurum_id, meta_template_id),
+            template_group=(template_group or '').strip()[:64],
             created_by=user,
             is_active=True,
         )
@@ -175,11 +177,14 @@ class TemplateService:
         allowed = {
             'name', 'body', 'category', 'audience_scope',
             'variables_json', 'attachment_ids_json', 'is_active',
-            'meta_template_id', 'header_json', 'footer_text',
+            'meta_template_id', 'header_json', 'footer_text', 'template_group',
         }
         for key, value in fields.items():
-            if key in allowed:
-                setattr(template, key, value)
+            if key not in allowed:
+                continue
+            if key == 'template_group':
+                value = (value or '').strip()[:64]
+            setattr(template, key, value)
         template.save()
         return template
 

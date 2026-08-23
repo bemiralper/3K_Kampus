@@ -8,6 +8,8 @@ import TemplateEditorPanel, {
   templateFormToComposer,
   TemplateEditorForm,
 } from "@/components/communication/TemplateEditorPanel";
+import { catalogTemplateGroups } from "@/components/communication/notification-event-utils";
+import { useSheetChrome } from "@/components/communication/useSheetChrome";
 import "@/components/communication/communication.css";
 import { ComposerState, createComposerState } from "@/components/communication/composer-utils";
 import {
@@ -16,14 +18,20 @@ import {
   createTemplateCategory,
   deleteTemplate,
   deleteTemplateCategory,
+  fetchNotificationEvents,
   fetchTemplateCategories,
   fetchTemplates,
   MessageTemplateItem,
+  NotificationEventCatalog,
+  saveNotificationBinding,
   TEMPLATE_AUDIENCE_LABELS,
   TemplateCategoryItem,
   updateTemplate,
 } from "@/lib/communication-api";
-import { useRefreshOnCommunicationTemplateUsageChange } from "@/lib/communication-template-usage-sync";
+import {
+  notifyCommunicationTemplateUsageChanged,
+  useRefreshOnCommunicationTemplateUsageChange,
+} from "@/lib/communication-template-usage-sync";
 
 const EMPTY_FORM: TemplateEditorForm = {
   name: "",
@@ -38,7 +46,19 @@ const EMPTY_FORM: TemplateEditorForm = {
   also_create_meta_template: false,
   meta_channel_config_id: "",
   meta_template_name: "",
+  template_group: "",
+  bind_event_key: "",
+  bind_recipient: "",
+  bind_on_save: false,
 };
+
+const VIEW_STORAGE_KEY = "comm.appTemplates.view";
+
+const USAGE_OPTIONS: [string, string][] = [
+  ["", "Tüm şablonlar"],
+  ["system", "Sistemde aktif"],
+  ["free", "Bağımsız (serbest)"],
+];
 
 function headerFieldsFromTemplate(t: MessageTemplateItem) {
   const h = t.header_json || {};
@@ -82,7 +102,8 @@ export default function SablonlarClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState(initialCategory);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pane, setPane] = useState<"edit" | "preview">("edit");
   const [editing, setEditing] = useState<MessageTemplateItem | null>(null);
   const [form, setForm] = useState<TemplateEditorForm>({
     ...EMPTY_FORM,
@@ -96,8 +117,32 @@ export default function SablonlarClient({
   const [newCategoryAudience, setNewCategoryAudience] = useState(defaultAudience);
   const [categorySaving, setCategorySaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
+  const [audienceFilter, setAudienceFilter] = useState("");
+  const [usageFilter, setUsageFilter] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setView] = useState<"grid" | "rows">("grid");
+  const [eventCatalog, setEventCatalog] = useState<NotificationEventCatalog | null>(null);
 
   const labels = useMemo(() => categoryLabelMap(categories), [categories]);
+  const templateGroups = useMemo(() => catalogTemplateGroups(eventCatalog), [eventCatalog]);
+
+  const closeSheet = useCallback(() => {
+    setSheetOpen(false);
+    setEditing(null);
+  }, []);
+
+  useSheetChrome(sheetOpen, closeSheet);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    if (stored === "rows" || stored === "grid") setView(stored);
+  }, []);
+
+  const changeView = (next: "grid" | "rows") => {
+    setView(next);
+    window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+  };
 
   const loadCategories = useCallback(async () => {
     const res = await fetchTemplateCategories(false, portal !== "muhasebe");
@@ -124,6 +169,12 @@ export default function SablonlarClient({
   }, [load]);
 
   useRefreshOnCommunicationTemplateUsageChange(load);
+
+  useEffect(() => {
+    fetchNotificationEvents()
+      .then(setEventCatalog)
+      .catch(() => setEventCatalog(null));
+  }, []);
 
   useEffect(() => {
     const fromUrl = searchParams.get("category") || "";
@@ -153,7 +204,8 @@ export default function SablonlarClient({
     setEditing(null);
     resetForm();
     setSuccessMsg(null);
-    setDrawerOpen(true);
+    setPane("edit");
+    setSheetOpen(true);
   };
 
   const openEdit = (t: MessageTemplateItem) => {
@@ -166,15 +218,12 @@ export default function SablonlarClient({
       audience_scope: t.audience_scope || "genel",
       odev_pdf_role: t.odev_pdf_role || "",
       meta_template_id: t.meta_template || "",
+      template_group: t.template_group || "",
     });
     setComposerState(templateFormToComposer(t.body));
     setSuccessMsg(null);
-    setDrawerOpen(true);
-  };
-
-  const closeDrawer = () => {
-    setDrawerOpen(false);
-    setEditing(null);
+    setPane("edit");
+    setSheetOpen(true);
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -190,12 +239,16 @@ export default function SablonlarClient({
       header_type: _ht,
       header_text: _hx,
       footer_text: _ft,
+      bind_event_key,
+      bind_recipient,
+      bind_on_save,
       ...rest
     } = composerToTemplateForm(form, composerState);
     const headerFields = headerPayloadFromForm(form);
     const payload = {
       ...rest,
       ...headerFields,
+      template_group: form.template_group || "",
       meta_template_id: meta_template_id || null,
       also_create_meta_template: !editing && !!also_create_meta_template,
       meta_channel_config_id:
@@ -213,17 +266,36 @@ export default function SablonlarClient({
         setSuccessMsg("Şablon güncellendi.");
       } else {
         const created = await createTemplate(payload);
+        let bindNote = "";
+        if (bind_on_save && bind_event_key && bind_recipient) {
+          try {
+            await saveNotificationBinding({
+              event_key: bind_event_key,
+              recipient_type: bind_recipient as "VELI" | "OGRENCI" | "PERSONEL",
+              message_template_id: created.id,
+              meta_template_id: created.pairing?.meta_template?.id || null,
+              send_mode: "AUTO",
+              is_active: true,
+            });
+            notifyCommunicationTemplateUsageChanged();
+            bindNote = " Bildirim olayına bağlandı.";
+          } catch (bindErr) {
+            bindNote = ` Şablon oluştu ancak olaya bağlanamadı: ${
+              bindErr instanceof Error ? bindErr.message : "hata"
+            }`;
+          }
+        }
         const metaName = created.pairing?.meta_template?.name;
         setSuccessMsg(
-          created.info
+          (created.info
             || (
               metaName
                 ? `Şablon oluşturuldu ve Meta taslağı eklendi (${metaName}). ${created.pairing?.info || ""}`
                 : "Şablon oluşturuldu."
-            ),
+            )) + bindNote,
         );
       }
-      closeDrawer();
+      closeSheet();
       resetForm();
       await load();
     } catch (err) {
@@ -248,7 +320,7 @@ export default function SablonlarClient({
         setSuccessMsg(res.warning);
       }
       if (editing?.id === tpl.id) {
-        closeDrawer();
+        closeSheet();
         resetForm();
       }
       await load();
@@ -304,19 +376,58 @@ export default function SablonlarClient({
   );
 
   const visibleTemplates = useMemo(() => {
-    if (!search.trim()) return templates;
     const q = search.trim().toLowerCase();
-    return templates.filter(
-      (t) => t.name.toLowerCase().includes(q) || t.body.toLowerCase().includes(q),
-    );
-  }, [templates, search]);
+    return templates.filter((t) => {
+      if (q && !t.name.toLowerCase().includes(q) && !t.body.toLowerCase().includes(q)) {
+        return false;
+      }
+      if (groupFilter && (t.template_group || "") !== groupFilter) return false;
+      if (audienceFilter && (t.audience_scope || "genel") !== audienceFilter) return false;
+      if (usageFilter === "system" && !t.is_system_active) return false;
+      if (usageFilter === "free" && t.is_system_active) return false;
+      return true;
+    });
+  }, [templates, search, groupFilter, audienceFilter, usageFilter]);
+
+  const activeFilters = [
+    groupFilter && {
+      key: "group",
+      label: templateGroups.find((g) => g.key === groupFilter)?.label || groupFilter,
+      clear: () => setGroupFilter(""),
+    },
+    audienceFilter && {
+      key: "audience",
+      label: TEMPLATE_AUDIENCE_LABELS[audienceFilter] || audienceFilter,
+      clear: () => setAudienceFilter(""),
+    },
+    usageFilter && {
+      key: "usage",
+      label: USAGE_OPTIONS.find(([k]) => k === usageFilter)?.[1] || usageFilter,
+      clear: () => setUsageFilter(""),
+    },
+  ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
+
+  const clearFilters = () => {
+    setGroupFilter("");
+    setAudienceFilter("");
+    setUsageFilter("");
+    setSearch("");
+  };
+
+  const metrics = [
+    { key: "count", icon: "📋", tone: "", value: templates.length, label: "Şablon" },
+    { key: "sent", icon: "📤", tone: "is-blue", value: totals.sent, label: "Gönderildi" },
+    { key: "read", icon: "👁", tone: "is-green", value: totals.read, label: "Okundu" },
+    { key: "failed", icon: "⚠", tone: "is-rose", value: totals.failed, label: "Başarısız" },
+    { key: "cats", icon: "🗂", tone: "is-violet", value: activeCategories.length, label: "Kategori" },
+  ];
 
   return (
     <CommunicationPageShell
       title="Şablonlar"
-      subtitle="Hazır yanıtları kategorilere göre yönetin"
+      subtitle="Hazır yanıtları kategori ve gruplara göre yönetin"
       icon="📋"
-      className="tplx tplx-page"
+      className="sbx sbx-page"
       breadcrumbs={
         portal === "muhasebe"
           ? [
@@ -329,117 +440,106 @@ export default function SablonlarClient({
             ]
       }
       actions={
-        <button type="button" className="comm-btn-primary" onClick={openCreate}>
-          + Yeni Şablon
-        </button>
+        <div className="sbx-head-actions">
+          <button type="button" className="sbx-btn is-primary" onClick={openCreate}>
+            + Yeni Şablon
+          </button>
+        </div>
       }
     >
-      {error && <div className="comm-alert comm-alert-danger">{error}</div>}
-      {successMsg && <div className="comm-alert comm-alert-success">{successMsg}</div>}
+      {(error || successMsg) && (
+        <div className="sbx-alerts">
+          {error && (
+            <div className="sbx-alert is-danger" role="alert">
+              <span aria-hidden="true">⛔</span>
+              <span>{error}</span>
+              <button type="button" className="sbx-alert-x" onClick={() => setError(null)} aria-label="Kapat">
+                ×
+              </button>
+            </div>
+          )}
+          {successMsg && (
+            <div className="sbx-alert is-success">
+              <span aria-hidden="true">✅</span>
+              <span>{successMsg}</span>
+              <button
+                type="button"
+                className="sbx-alert-x"
+                onClick={() => setSuccessMsg(null)}
+                aria-label="Kapat"
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="tplx-hero">
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon" aria-hidden="true">📋</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{templates.length}</span>
-            <span className="tplx-hero-label">Şablon</span>
-          </span>
-        </div>
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon is-blue" aria-hidden="true">📤</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{totals.sent.toLocaleString("tr-TR")}</span>
-            <span className="tplx-hero-label">Gönderildi</span>
-          </span>
-        </div>
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon" aria-hidden="true">👁</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{totals.read.toLocaleString("tr-TR")}</span>
-            <span className="tplx-hero-label">Okundu</span>
-          </span>
-        </div>
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon is-rose" aria-hidden="true">⚠</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{totals.failed.toLocaleString("tr-TR")}</span>
-            <span className="tplx-hero-label">Başarısız</span>
-          </span>
-        </div>
-        <div className="tplx-hero-cell">
-          <span className="tplx-hero-icon is-violet" aria-hidden="true">🗂</span>
-          <span className="tplx-hero-text">
-            <span className="tplx-hero-value">{activeCategories.length}</span>
-            <span className="tplx-hero-label">Kategori</span>
-          </span>
-        </div>
+      <div className="sbx-metrics">
+        {metrics.map((m) => (
+          <div key={m.key} className="sbx-metric is-static">
+            <span className={`sbx-metric-icon ${m.tone}`} aria-hidden="true">{m.icon}</span>
+            <span className="sbx-metric-text">
+              <span className="sbx-metric-value">{m.value.toLocaleString("tr-TR")}</span>
+              <span className="sbx-metric-label">{m.label}</span>
+            </span>
+          </div>
+        ))}
       </div>
 
-      <div className="tplx-toolbar">
-        <div className="tplx-chips" role="tablist" aria-label="Şablon kategorileri">
+      <div className="sbx-chiprow" role="tablist" aria-label="Şablon kategorileri">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={categoryFilter === ""}
+          className={`sbx-chip${categoryFilter === "" ? " is-active" : ""}`}
+          onClick={() => selectCategory("")}
+        >
+          Tümü
+          <span className="sbx-chip-count">{totalTemplateCount}</span>
+        </button>
+        {activeCategories.map((cat) => (
           <button
+            key={cat.id}
             type="button"
             role="tab"
-            aria-selected={categoryFilter === ""}
-            className={`tplx-chip${categoryFilter === "" ? " is-active" : ""}`}
-            onClick={() => selectCategory("")}
+            aria-selected={categoryFilter === cat.slug}
+            className={`sbx-chip${categoryFilter === cat.slug ? " is-active" : ""}`}
+            onClick={() => selectCategory(cat.slug)}
+            title={TEMPLATE_AUDIENCE_LABELS[cat.audience_scope] || cat.audience_scope}
           >
-            Tümü
-            <span className="tplx-chip-count">{totalTemplateCount}</span>
+            {cat.label}
+            <span className="sbx-chip-count">{cat.template_count ?? 0}</span>
+            {(cat.template_count ?? 0) === 0 && (
+              <span
+                role="button"
+                tabIndex={0}
+                className="sbx-chip-x"
+                aria-label={`${cat.label} kategorisini kaldır`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteCategory(cat);
+                }}
+              >
+                ×
+              </span>
+            )}
           </button>
-          {activeCategories.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              role="tab"
-              aria-selected={categoryFilter === cat.slug}
-              className={`tplx-chip${categoryFilter === cat.slug ? " is-active" : ""}`}
-              onClick={() => selectCategory(cat.slug)}
-              title={TEMPLATE_AUDIENCE_LABELS[cat.audience_scope] || cat.audience_scope}
-            >
-              {cat.label}
-              <span className="tplx-chip-count">{cat.template_count ?? 0}</span>
-              {(cat.template_count ?? 0) === 0 && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="tplx-chip-x"
-                  aria-label={`${cat.label} kategorisini kaldır`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteCategory(cat);
-                  }}
-                >
-                  ×
-                </span>
-              )}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="tplx-chip is-dashed"
-            onClick={() => setShowCategoryForm((v) => !v)}
-          >
-            + Kategori
-          </button>
-        </div>
-
-        <label className="tplx-search">
-          <span className="tplx-search-icon" aria-hidden="true">🔍</span>
-          <input
-            type="search"
-            placeholder="Şablon veya metin ara…"
-            aria-label="Şablon ara"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </label>
+        ))}
+        <button
+          type="button"
+          className="sbx-chip is-add"
+          onClick={() => setShowCategoryForm((v) => !v)}
+        >
+          + Kategori
+        </button>
       </div>
 
       {showCategoryForm && (
-        <form className="tplx-inline-form" onSubmit={handleAddCategory}>
+        <form className="sbx-inline-form" onSubmit={handleAddCategory}>
           <input
             type="text"
+            className="sbx-input"
             placeholder="Yeni kategori adı"
             value={newCategoryLabel}
             onChange={(e) => setNewCategoryLabel(e.target.value)}
@@ -447,6 +547,7 @@ export default function SablonlarClient({
             autoFocus
           />
           <select
+            className="sbx-select"
             value={newCategoryAudience}
             onChange={(e) => setNewCategoryAudience(e.target.value)}
             aria-label="Hedef birim"
@@ -455,124 +556,234 @@ export default function SablonlarClient({
               <option key={k} value={k}>{v}</option>
             ))}
           </select>
-          <button type="submit" className="comm-btn-primary" disabled={categorySaving}>
+          <button type="submit" className="sbx-btn is-primary" disabled={categorySaving}>
             {categorySaving ? "Ekleniyor…" : "Ekle"}
           </button>
-          <button type="button" className="comm-btn-secondary" onClick={() => setShowCategoryForm(false)}>
+          <button type="button" className="sbx-btn" onClick={() => setShowCategoryForm(false)}>
             İptal
           </button>
         </form>
       )}
 
+      <div className="sbx-filterbar">
+        <div className="sbx-filterbar-top">
+          <label className="sbx-search">
+            <span className="sbx-search-icon" aria-hidden="true">🔍</span>
+            <input
+              type="search"
+              placeholder="Şablon veya metin ara…"
+              aria-label="Şablon ara"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="sbx-btn sbx-filter-toggle"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+          >
+            Filtreler
+            {activeFilters.length > 0 && (
+              <span className="sbx-filter-badge">{activeFilters.length}</span>
+            )}
+          </button>
+          <div className="sbx-view" role="group" aria-label="Görünüm">
+            <button
+              type="button"
+              className={view === "grid" ? "is-active" : ""}
+              onClick={() => changeView("grid")}
+            >
+              ▦ Kart
+            </button>
+            <button
+              type="button"
+              className={view === "rows" ? "is-active" : ""}
+              onClick={() => changeView("rows")}
+            >
+              ☰ Liste
+            </button>
+          </div>
+        </div>
+
+        <div className={`sbx-filter-grid${filtersOpen ? " is-open" : ""}`}>
+          <select
+            className="sbx-select"
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+            aria-label="Şablon grubu filtresi"
+          >
+            <option value="">Tüm gruplar</option>
+            {templateGroups.map((group) => (
+              <option key={group.key} value={group.key}>{group.label}</option>
+            ))}
+          </select>
+          <select
+            className="sbx-select"
+            value={audienceFilter}
+            onChange={(e) => setAudienceFilter(e.target.value)}
+            aria-label="Hedef kitle filtresi"
+          >
+            <option value="">Tüm hedef kitleler</option>
+            {audienceOptions.map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+          <select
+            className="sbx-select"
+            value={usageFilter}
+            onChange={(e) => setUsageFilter(e.target.value)}
+            aria-label="Kullanım filtresi"
+          >
+            {USAGE_OPTIONS.map(([value, label]) => (
+              <option key={value || "all"} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        {activeFilters.length > 0 && (
+          <div className="sbx-pills">
+            {activeFilters.map((f) => (
+              <span key={f.key} className="sbx-pill">
+                {f.label}
+                <button type="button" onClick={f.clear} aria-label={`${f.label} filtresini kaldır`}>
+                  ×
+                </button>
+              </span>
+            ))}
+            <button type="button" className="sbx-pill-clear" onClick={clearFilters}>
+              Tümünü temizle
+            </button>
+          </div>
+        )}
+      </div>
+
       {loading ? (
-        <div className="tplx-grid" aria-busy="true" aria-label="Yükleniyor">
+        <div className="sbx-grid" aria-busy="true" aria-label="Yükleniyor">
           {[0, 1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="tplx-skeleton-card" />
+            <div key={i} className="sbx-skeleton" />
           ))}
         </div>
       ) : visibleTemplates.length === 0 ? (
-        <div className="tplx-empty">
-          <span className="tplx-empty-icon" aria-hidden="true">{search ? "🔍" : "✨"}</span>
-          <h3>{search ? "Sonuç bulunamadı" : "Henüz şablon yok"}</h3>
+        <div className="sbx-empty">
+          <span className="sbx-empty-icon" aria-hidden="true">
+            {search || activeFilters.length ? "🔍" : "✨"}
+          </span>
+          <h3>{search || activeFilters.length ? "Sonuç bulunamadı" : "Henüz şablon yok"}</h3>
           <p>
-            {search
-              ? `"${search}" aramasıyla eşleşen şablon yok. Farklı bir kelime deneyin veya filtreyi temizleyin.`
+            {search || activeFilters.length
+              ? "Arama veya filtrelerle eşleşen şablon yok. Farklı bir kelime deneyin ya da filtreleri temizleyin."
               : "Sık kullandığınız mesajları şablona dönüştürün; tek tıkla gönderin, değişkenler otomatik dolsun."}
           </p>
-          {search ? (
-            <button type="button" className="comm-btn-secondary" onClick={() => setSearch("")}>
-              Aramayı temizle
+          <div className="sbx-empty-actions">
+            {(search || activeFilters.length > 0) && (
+              <button type="button" className="sbx-btn" onClick={clearFilters}>
+                Filtreleri temizle
+              </button>
+            )}
+            <button type="button" className="sbx-btn is-primary" onClick={openCreate}>
+              + Yeni şablon
             </button>
-          ) : (
-            <button type="button" className="comm-btn-primary" onClick={openCreate}>
-              + İlk şablonu oluştur
-            </button>
-          )}
+          </div>
         </div>
       ) : (
-        <div className="tplx-grid">
-          {visibleTemplates.map((t) => (
-            <article
-              key={t.id}
-              className={`tplx-card${t.is_system_active ? " is-flagged" : ""}`}
-            >
-              <button
-                type="button"
-                className="tplx-card-main"
-                onClick={() => openEdit(t)}
-                aria-label={`${t.name} şablonunu düzenle`}
-              >
-                <div className="tplx-card-head">
-                  <span className="tplx-card-title">{t.name}</span>
-                  <div className="tplx-badges">
-                    {t.is_system_active && (
-                      <span className="tplx-badge is-live">
-                        <span className="tplx-badge-dot" aria-hidden="true" />
-                        Aktif
-                      </span>
-                    )}
-                    {!categoryFilter && (
-                      <span className="tplx-badge is-ghost">
-                        {t.category_label || labels[t.category] || t.category}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <p className="tplx-card-snippet">
-                  {t.body.slice(0, 130)}{t.body.length > 130 ? "…" : ""}
-                </p>
-
-                {t.is_system_active && t.system_usages?.length ? (
-                  <p className="tplx-card-usage">
-                    <span aria-hidden="true">⚡</span>
-                    {t.system_usages.map((u, idx) => (
-                      <span key={`${u.module}-${u.role}-${idx}`}>
-                        {idx > 0 ? " · " : ""}
-                        {u.event_key && portal !== "muhasebe" ? (
-                          <a
-                            href={`/admin/iletisim/bildirim-sablonlari?event=${encodeURIComponent(u.event_key)}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {u.label}
-                          </a>
-                        ) : (
-                          u.label
-                        )}
-                      </span>
-                    ))}
-                  </p>
-                ) : null}
-
-                <div className="tplx-card-foot">
-                  <span>👥 {TEMPLATE_AUDIENCE_LABELS[t.audience_scope || "genel"]}</span>
-                  <span>{t.usage_count} kullanım</span>
-                </div>
-              </button>
-
-              <div className="tplx-card-actions">
-                <button type="button" className="tplx-card-action" onClick={() => openEdit(t)}>
-                  Düzenle
-                </button>
+        <>
+          <div className="sbx-resultbar">
+            <span>
+              {visibleTemplates.length} şablon
+              {visibleTemplates.length !== templates.length ? ` / ${templates.length}` : ""}
+            </span>
+          </div>
+          <div className={`sbx-grid${view === "rows" ? " is-rows" : ""}`}>
+            {visibleTemplates.map((t) => (
+              <article key={t.id} className={`sbx-card${t.is_system_active ? " is-live" : ""}`}>
                 <button
                   type="button"
-                  className="tplx-card-action is-danger"
-                  aria-label={`${t.name} sil`}
-                  onClick={() => handleDelete(t)}
+                  className="sbx-card-open"
+                  onClick={() => openEdit(t)}
+                  aria-label={`${t.name} şablonunu düzenle`}
                 >
-                  Sil
+                  <div className="sbx-card-top">
+                    <div className="sbx-card-headline">
+                      <span className="sbx-card-title">{t.name}</span>
+                      <span className="sbx-card-meta">
+                        <span>{t.category_label || labels[t.category] || t.category}</span>
+                        <span>· {TEMPLATE_AUDIENCE_LABELS[t.audience_scope || "genel"]}</span>
+                        {t.template_group && t.template_group_label && (
+                          <span>· {t.template_group_label}</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="sbx-badges">
+                      {t.is_system_active && (
+                        <span className="sbx-badge is-live">
+                          <span className="sbx-dot" aria-hidden="true" />
+                          Aktif
+                        </span>
+                      )}
+                      {t.meta_template_name && (
+                        <span className="sbx-badge is-group">Meta eşi</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="sbx-card-snippet">{t.body}</p>
+
+                  {t.is_system_active && t.system_usages?.length ? (
+                    <p className="sbx-card-usage">
+                      <span aria-hidden="true">⚡</span>
+                      <span>
+                        {t.system_usages.map((u, idx) => (
+                          <span key={`${u.module}-${u.role}-${idx}`}>
+                            {idx > 0 ? " · " : ""}
+                            {u.event_key && portal !== "muhasebe" ? (
+                              <a
+                                href={`/admin/iletisim/bildirim-sablonlari?event=${encodeURIComponent(u.event_key)}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {u.label}
+                              </a>
+                            ) : (
+                              u.label
+                            )}
+                          </span>
+                        ))}
+                      </span>
+                    </p>
+                  ) : null}
+
+                  <div className="sbx-card-foot">
+                    <span>📤 {t.stats_sent.toLocaleString("tr-TR")} gönderim</span>
+                    <span>👁 {t.stats_read.toLocaleString("tr-TR")} okundu</span>
+                    {t.stats_failed > 0 && <span>⚠ {t.stats_failed} hata</span>}
+                  </div>
                 </button>
-              </div>
-            </article>
-          ))}
-        </div>
+
+                <div className="sbx-card-actions">
+                  <button type="button" className="sbx-btn is-sm" onClick={() => openEdit(t)}>
+                    Düzenle
+                  </button>
+                  <button
+                    type="button"
+                    className="sbx-btn is-sm is-danger"
+                    aria-label={`${t.name} sil`}
+                    onClick={() => handleDelete(t)}
+                  >
+                    Sil
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
       )}
 
-      {drawerOpen && (
+      {sheetOpen && (
         <>
-          <div className="comm-drawer-overlay" onClick={closeDrawer} role="presentation" />
-          <div
-            className="tplx comm-drawer tplx-drawer"
+          <div className="sbx-scrim" onClick={closeSheet} role="presentation" />
+          <aside
+            className="sbx-sheet"
+            data-pane={pane}
             role="dialog"
             aria-modal="true"
             aria-labelledby="sablon-drawer-title"
@@ -587,10 +798,13 @@ export default function SablonlarClient({
               composerState={composerState}
               onComposerChange={setComposerState}
               onSubmit={handleSubmit}
-              onCancel={closeDrawer}
+              onCancel={closeSheet}
               onDelete={editing ? () => handleDelete(editing) : undefined}
+              eventCatalog={eventCatalog}
+              pane={pane}
+              onPaneChange={setPane}
             />
-          </div>
+          </aside>
         </>
       )}
     </CommunicationPageShell>

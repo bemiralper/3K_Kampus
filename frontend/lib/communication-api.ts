@@ -839,6 +839,8 @@ export interface WhatsAppMetaTemplateItem {
     event_key?: string;
   }>;
   is_system_active?: boolean;
+  template_group?: string;
+  template_group_label?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -851,6 +853,7 @@ export async function fetchLocalMetaTemplates(params?: {
   search?: string;
   approved_only?: boolean;
   usage?: MetaTemplateUsage;
+  template_group?: string;
 }): Promise<{ templates: WhatsAppMetaTemplateItem[]; total: number }> {
   const qs = new URLSearchParams();
   if (params?.account_id) qs.set('account_id', params.account_id);
@@ -860,6 +863,7 @@ export async function fetchLocalMetaTemplates(params?: {
   if (params?.search) qs.set('search', params.search);
   if (params?.approved_only) qs.set('approved_only', '1');
   if (params?.usage) qs.set('usage', params.usage);
+  if (params?.template_group) qs.set('template_group', params.template_group);
   const suffix = qs.toString() ? `?${qs}` : '';
   return request(`/meta-templates/${suffix}`);
 }
@@ -910,6 +914,7 @@ export async function createLocalMetaTemplate(data: {
   app_template_name?: string;
   app_template_category?: string;
   app_template_audience_scope?: string;
+  template_group?: string;
 }): Promise<WhatsAppMetaTemplateItem & {
   pairing?: { app_template?: MessageTemplateItem; info?: string };
   info?: string;
@@ -931,6 +936,7 @@ export async function updateLocalMetaTemplate(
     header_json: MetaTemplateHeader;
     footer_text: string;
     buttons_json: MetaTemplateButton[];
+    template_group: string;
   }>,
 ): Promise<WhatsAppMetaTemplateItem> {
   return request(`/meta-templates/${id}/`, {
@@ -1467,6 +1473,8 @@ export interface MessageTemplateItem {
   meta_template?: string | null;
   meta_template_name?: string;
   meta_template_status?: string;
+  template_group?: string;
+  template_group_label?: string;
 }
 
 export interface CampaignAttachmentItem {
@@ -1818,6 +1826,8 @@ export interface NotificationEventItem {
   opt_in_category: string;
   variables: string[];
   meta_name_base: string;
+  template_group?: string;
+  template_group_label?: string;
   slots: NotificationEventSlot[];
 }
 
@@ -1884,6 +1894,7 @@ export interface NotificationEventCatalog {
   modules: Array<{ key: string; label: string }>;
   events: NotificationEventItem[];
   send_modes: Array<{ value: NotificationSendMode; label: string }>;
+  template_groups?: Array<{ key: string; label: string }>;
 }
 
 export interface NotificationPreviewResult {
@@ -2021,6 +2032,7 @@ export async function createTemplate(data: {
   meta_template_name?: string;
   meta_language?: string;
   meta_category?: string;
+  template_group?: string;
 }): Promise<MessageTemplateItem & {
   pairing?: { meta_template?: WhatsAppMetaTemplateItem; info?: string };
   info?: string;
@@ -2044,6 +2056,7 @@ export async function updateTemplate(
     is_active: boolean;
     odev_pdf_role: string;
     meta_template_id: string | null;
+    template_group: string;
   }>,
 ): Promise<MessageTemplateItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);

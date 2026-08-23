@@ -15,6 +15,7 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     status_label = serializers.SerializerMethodField()
     meta_category_label = serializers.SerializerMethodField()
     usage_scope_label = serializers.SerializerMethodField()
+    template_group_label = serializers.SerializerMethodField()
     variables = serializers.SerializerMethodField()
     app_template_id = serializers.SerializerMethodField()
     app_template_name = serializers.SerializerMethodField()
@@ -28,6 +29,7 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
             'name', 'language', 'meta_category', 'meta_category_label',
             'status', 'status_label', 'meta_template_id',
             'usage_scope', 'usage_scope_label',
+            'template_group', 'template_group_label',
             'body_named', 'header_json', 'footer_text', 'buttons_json',
             'components_json', 'variable_map_json', 'variables',
             'app_template_id', 'app_template_name',
@@ -62,6 +64,10 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
 
     def get_usage_scope_label(self, obj) -> str:
         return dict(MetaTemplateUsage.choices).get(obj.usage_scope, obj.usage_scope)
+
+    def get_template_group_label(self, obj) -> str:
+        from apps.communication.application.notification_events import template_group_label
+        return template_group_label(obj.template_group)
 
     def _first_app_template(self, obj):
         cache = getattr(obj, '_prefetched_objects_cache', {}) or {}
@@ -115,6 +121,9 @@ class WhatsAppMetaTemplateWriteSerializer(serializers.Serializer):
         choices=MetaTemplateUsage.choices,
         required=False,
         default=MetaTemplateUsage.ALL,
+    )
+    template_group = serializers.CharField(
+        required=False, allow_blank=True, max_length=64, default='',
     )
     body_named = serializers.CharField(required=False, allow_blank=True, default='')
     header_json = serializers.JSONField(required=False, default=dict)

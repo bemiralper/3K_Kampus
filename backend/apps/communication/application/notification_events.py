@@ -45,6 +45,53 @@ MODULE_LABELS: Mapping[str, str] = MappingProxyType({
     MODULE_OZEL_DERS: 'Özel Ders',
 })
 
+YOKLAMA_GROUP_LABELS: Mapping[str, str] = MappingProxyType({
+    'kutuphane': 'Yoklama — Kütüphane',
+    'sinif': 'Yoklama — Sınıf',
+})
+
+
+def template_group_for_event(event: 'NotificationEvent | None') -> str:
+    """Bildirim olayının yerel şablon grubu anahtarı (`yoklama:kutuphane`, `odeme`)."""
+    if event is None:
+        return ''
+    if event.module == MODULE_YOKLAMA and event.group:
+        return f'{MODULE_YOKLAMA}:{event.group}'
+    return event.module or ''
+
+
+def template_group_for_event_key(event_key: str | None) -> str:
+    if not event_key:
+        return ''
+    return template_group_for_event(get_event(event_key))
+
+
+def template_group_label(group_key: str | None) -> str:
+    key = (group_key or '').strip()
+    if not key:
+        return 'Genel'
+    if key.startswith(f'{MODULE_YOKLAMA}:'):
+        suffix = key.split(':', 1)[1]
+        return YOKLAMA_GROUP_LABELS.get(
+            suffix, f'{MODULE_LABELS.get(MODULE_YOKLAMA, MODULE_YOKLAMA)} — {suffix}',
+        )
+    return MODULE_LABELS.get(key, key)
+
+
+def list_template_groups() -> list[dict[str, str]]:
+    """UI filtreleri için benzersiz şablon grupları."""
+    seen: set[str] = set()
+    items: list[dict[str, str]] = []
+    for event in NOTIFICATION_EVENTS:
+        if event.hidden_in_ui:
+            continue
+        key = template_group_for_event(event)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        items.append({'key': key, 'label': template_group_label(key)})
+    return items
+
 COMMON_VARIABLES = ('kurum_ad', 'sube', 'sinif')
 KUTUPHANE_ETUT_VARIABLES = (
     'ilk_etut_saati',
