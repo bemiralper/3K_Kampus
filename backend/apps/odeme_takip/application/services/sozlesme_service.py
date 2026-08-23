@@ -686,8 +686,12 @@ class SozlesmeService:
             sozlesme_id = sozlesme.pk
 
             def _notify_aktif():
-                from apps.communication.application.integration_hooks import notify_kayit_sozlesme
+                from apps.communication.application.integration_hooks import (
+                    notify_kayit_sozlesme,
+                    notify_ogrenci_hosgeldin,
+                )
                 notify_kayit_sozlesme(sozlesme_id)
+                notify_ogrenci_hosgeldin(sozlesme_id)
 
             transaction.on_commit(_notify_aktif)
 

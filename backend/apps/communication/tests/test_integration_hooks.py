@@ -21,7 +21,9 @@ from apps.communication.application.integration_hooks import (
     notify_assignment,
     notify_gorusme_reminder,
     notify_kayit_sozlesme,
+    notify_ogrenci_hosgeldin,
     notify_payment_reminder,
+    HOSGELDIN_OGRENCI_EVENT,
 )
 from apps.communication.application.notification_events import get_event
 from apps.communication.application.staff_recipient_service import (
@@ -267,6 +269,14 @@ class KayitSozlesmeNotifyTests(TestCase):
         self.assertIn('egitim_paketleri', event.variables)
         self.assertIn('PERSONEL', event.recipients)
 
+    def test_event_catalog_has_hosgeldin(self):
+        event = get_event(HOSGELDIN_OGRENCI_EVENT)
+        self.assertIsNotNone(event)
+        self.assertFalse(event.hidden_in_ui)
+        self.assertIn('OGRENCI', event.recipients)
+        self.assertEqual(event.suggested_meta_name('OGRENCI'), 'hosgeldin_mesaji_ogrenci')
+        self.assertIn('hogeldin_mesaji_ogrenci', event.meta_name_candidates('OGRENCI'))
+
     def test_context_joins_packages_and_kayit_yapan(self):
         ctx = build_kayit_sozlesme_context(self.sozlesme)
         self.assertEqual(ctx['ogrenci_ad'], 'Ali Yılmaz')
@@ -310,6 +320,52 @@ class KayitSozlesmeNotifyTests(TestCase):
         self.assertIsNone(err, err)
         self.assertEqual(soz.durum, SozlesmeDurum.AKTIF)
         self.assertEqual(Message.objects.filter(source_module=SOURCE_OGRENCI).count(), 1)
+
+    def test_hosgeldin_skips_when_student_has_no_phone(self):
+        self.assertEqual((self.student.telefon or '').strip(), '')
+        result = notify_ogrenci_hosgeldin(self.sozlesme.id)
+        self.assertIsNone(result)
+        self.assertEqual(Message.objects.filter(source_module=SOURCE_OGRENCI).count(), 0)
+
+    @patch.object(WhatsAppCloudClient, 'send_text')
+    def test_hosgeldin_sends_when_student_has_phone(self, mock_send):
+        mock_send.return_value = {'success': True, 'messages': [{'id': 'wamid.hosgeldin1'}]}
+        self.student.telefon = '05321112233'
+        self.student.save(update_fields=['telefon'])
+        open_session_window(self.kurum.id, self.student.telefon)
+        result = notify_ogrenci_hosgeldin(self.sozlesme.id)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.success)
+        msg = Message.objects.filter(
+            source_module=SOURCE_OGRENCI, source_ref_id=f'{self.sozlesme.id}:hosgeldin',
+        ).first()
+        self.assertIsNotNone(msg)
+        self.assertIn('Ali Yılmaz', msg.body)
+        self.assertIn('hoş geldin', msg.body.lower())
+
+        again = notify_ogrenci_hosgeldin(self.sozlesme.id)
+        self.assertIsNone(again)
+        self.assertEqual(
+            Message.objects.filter(source_ref_id=f'{self.sozlesme.id}:hosgeldin').count(),
+            1,
+        )
+
+    @patch.object(WhatsAppCloudClient, 'send_text')
+    def test_change_status_aktif_sends_hosgeldin_to_student(self, mock_send):
+        from apps.odeme_takip.application.services.sozlesme_service import SozlesmeService
+
+        mock_send.return_value = {'success': True, 'messages': [{'id': 'wamid.hosgeldin2'}]}
+        self.student.telefon = '05321112233'
+        self.student.save(update_fields=['telefon'])
+        open_session_window(self.kurum.id, self.student.telefon)
+        with self.captureOnCommitCallbacks(execute=True):
+            soz, err = SozlesmeService().change_status(self.sozlesme.id, SozlesmeDurum.AKTIF)
+        self.assertIsNone(err, err)
+        self.assertEqual(soz.durum, SozlesmeDurum.AKTIF)
+        self.assertEqual(
+            Message.objects.filter(source_ref_id=f'{self.sozlesme.id}:hosgeldin').count(),
+            1,
+        )
 
     def test_taslak_create_does_not_notify(self):
         self.assertEqual(self.sozlesme.durum, SozlesmeDurum.TASLAK)

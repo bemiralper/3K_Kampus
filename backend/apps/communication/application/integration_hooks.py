@@ -40,6 +40,7 @@ SOURCE_DEVAMSIZLIK = 'devamsizlik'
 SOURCE_DUYURU = 'duyuru'
 SOURCE_KOC = 'koc'
 SOURCE_OGRENCI = 'ogrenci'
+HOSGELDIN_OGRENCI_EVENT = 'ogrenci.hosgeldin'
 
 
 def _safe_hook(fn, *args, **kwargs) -> SendResult | None:
@@ -1470,3 +1471,47 @@ def notify_kayit_sozlesme(sozlesme_id: int) -> list[SendResult]:
         if result is not None:
             results.append(result)
     return results
+
+
+def notify_ogrenci_hosgeldin(sozlesme_id: int) -> SendResult | None:
+    """Sözleşme aktif olunca öğrencinin WhatsApp numarasına hoş geldin gönderir."""
+    from apps.odeme_takip.domain.models import Sozlesme
+
+    sozlesme = (
+        Sozlesme.objects.select_related(
+            'ogrenci', 'ogrenci_kayit', 'ogrenci_kayit__sinif_seviyesi',
+            'ogrenci_kayit__sinif', 'ogrenci_kayit__sinif__sinif_seviyesi',
+            'ogrenci_kayit__kaydi_alan', 'olusturan', 'kurum', 'sube',
+        )
+        .prefetch_related('kalemler')
+        .filter(pk=sozlesme_id)
+        .first()
+    )
+    if not sozlesme:
+        logger.warning('hosgeldin bildirimi: sözleşme yok id=%s', sozlesme_id)
+        return None
+
+    ogrenci = getattr(sozlesme, 'ogrenci', None)
+    phone = (getattr(ogrenci, 'telefon', None) or '').strip()
+    if ogrenci is None or not phone:
+        logger.info(
+            'hosgeldin bildirimi: öğrenci telefonu yok sozlesme=%s',
+            sozlesme_id,
+        )
+        return None
+
+    kurum_id = sozlesme.kurum_id
+    source_id = f'{sozlesme_id}:hosgeldin'
+    if already_sent(kurum_id, SOURCE_OGRENCI, source_id, ogrenci_id=ogrenci.id):
+        return None
+
+    context = build_kayit_sozlesme_context(sozlesme)
+    return _safe_hook(
+        dispatch_event,
+        kurum_id,
+        HOSGELDIN_OGRENCI_EVENT,
+        recipient=NotificationRecipient.ogrenci(ogrenci.id),
+        context=context,
+        source=MessageSource(module=SOURCE_OGRENCI, ref_id=source_id),
+        sube_id=sozlesme.sube_id,
+    )

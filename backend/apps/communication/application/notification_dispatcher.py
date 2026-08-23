@@ -17,6 +17,12 @@ from apps.communication.application.notification_events import (
     MODULE_YOKLAMA,
     get_event,
 )
+
+# Sözleşme / kayıt bildirimleri öğrenci modülünde ama muhasebe hattından gider.
+_ACCOUNTING_EVENT_KEYS = frozenset({
+    'ogrenci.hosgeldin',
+    'ogrenci.kayit_sozlesme',
+})
 from apps.communication.application.notification_template_resolver import (
     ResolvedTemplate,
     resolve_binding,
@@ -377,6 +383,7 @@ def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -
         sender = get_user_model().objects.filter(id=sent_by_user_id).first()
 
     event_module = getattr(event, 'module', None)
+    event_key = getattr(event, 'key', None)
     if event_module == MODULE_YOKLAMA:
         cfg = AccountResolver.for_department(
             kurum_id,
@@ -386,7 +393,7 @@ def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -
         )
         if cfg is not None:
             return str(cfg.id)
-    if event_module in (MODULE_ODEME, MODULE_FINANS):
+    if event_module in (MODULE_ODEME, MODULE_FINANS) or event_key in _ACCOUNTING_EVENT_KEYS:
         cfg = AccountResolver.for_department(
             kurum_id,
             CommunicationDepartment.ACCOUNTING,

@@ -647,6 +647,36 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         }),
     ),
     NotificationEvent(
+        key='ogrenci.hosgeldin',
+        module=MODULE_OGRENCI,
+        label='Hoş geldin mesajı (öğrenci)',
+        description=(
+            'Sözleşme aktif edilince öğrencinin WhatsApp (cep) numarası varsa '
+            'muhasebe hattından otomatik hoş geldin mesajı gider. Numara yoksa atlanır.'
+        ),
+        recipients=(OGRENCI,),
+        opt_in_category='duyuru',
+        variables=(
+            'ogrenci_ad', 'sinif_seviyesi', 'egitim_paketleri',
+            'kayit_tarihi', 'sozlesme_no',
+        ),
+        meta_name_base='hosgeldin_mesaji',
+        legacy_meta_names=MappingProxyType({
+            OGRENCI: (
+                'hogeldin_mesaji_ogrenci',
+                'hosgeldin_ogrenci',
+                'hosgeldin',
+            ),
+        }),
+        default_bodies=MappingProxyType({
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                '{{kurum_ad}} ailesine hoş geldin. Şuben {{sube}}.\n\n'
+                'Başarılar dileriz.'
+            ),
+        }),
+    ),
+    NotificationEvent(
         key='ogrenci.kayit_sozlesme',
         module=MODULE_OGRENCI,
         label='Yeni kayıt sözleşmesi (yönetici)',

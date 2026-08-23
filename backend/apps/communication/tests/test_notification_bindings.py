@@ -323,6 +323,10 @@ class BindingServiceTest(TestCase):
         visible = [e for e in NOTIFICATION_EVENTS if not e.hidden_in_ui]
         self.assertEqual(len(catalog['events']), len(visible))
         self.assertNotIn('devamsizlik.bildirim', [e['key'] for e in catalog['events']])
+        self.assertIn('ogrenci.hosgeldin', [e['key'] for e in catalog['events']])
+        hosgeldin = next(e for e in catalog['events'] if e['key'] == 'ogrenci.hosgeldin')
+        self.assertEqual(hosgeldin['slots'][0]['recipient_type'], 'OGRENCI')
+        self.assertEqual(hosgeldin['slots'][0]['suggested_meta_name'], 'hosgeldin_mesaji_ogrenci')
         self.assertNotIn('devamsizlik', [m['key'] for m in catalog['modules']])
         module_keys = [m['key'] for m in catalog['modules']]
         self.assertIn('yoklama:kutuphane', module_keys)

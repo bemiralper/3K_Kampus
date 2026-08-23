@@ -419,6 +419,44 @@ class MultiWhatsAppAccountTests(TestCase):
         self.assertEqual(str(preview.channel_config_id), str(self.acc_kadikoy.id))
         self.assertEqual(preview.meta_template_name, acc_tpl.name)
 
+    def test_hosgeldin_dispatch_uses_accounting_account(self):
+        """Sözleşme hoş geldin mesajı, gönderen olmasa da muhasebe numarasından gider."""
+        from apps.communication.application.notification_dispatcher import (
+            NotificationRecipient,
+            dispatch_event,
+        )
+        from apps.communication.domain.enums import CommunicationDepartment, MetaTemplateStatus
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+        from django.utils import timezone
+
+        self.acc_genel.department = CommunicationDepartment.COACHING
+        self.acc_genel.is_default = True
+        self.acc_genel.save(update_fields=['department', 'is_default'])
+        self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.save(update_fields=['department'])
+
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_kadikoy,
+            name='hogeldin_mesaji_ogrenci',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Merhaba {{ogrenci_ad}}, {{kurum_ad}} ailesine hoş geldin.',
+            approved_at=timezone.now(),
+        )
+
+        preview = dispatch_event(
+            self.kurum.id,
+            'ogrenci.hosgeldin',
+            recipient=NotificationRecipient.ogrenci(1),
+            context={'ogrenci_ad': 'Ali Yılmaz'},
+            sube_id=self.sube_a.id,
+            dry_run=True,
+        )
+        self.assertIsNotNone(preview)
+        self.assertEqual(str(preview.channel_config_id), str(self.acc_kadikoy.id))
+        self.assertEqual(preview.meta_template_name, 'hogeldin_mesaji_ogrenci')
+
     def test_yoklama_dispatch_uses_coaching_not_sender_accounting_line(self):
         """Kütüphane yoklaması, gönderen muhasebe rolünde olsa da koçluk hattından gider."""
         from apps.communication.application.notification_dispatcher import (
