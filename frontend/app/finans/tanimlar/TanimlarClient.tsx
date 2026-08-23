@@ -7,6 +7,7 @@ import MaliHesaplarTree from "./components/MaliHesaplarTree";
 import MaliHesapDetailPanel from "./components/MaliHesapDetailPanel";
 import MaliHesapForm from "./components/MaliHesapForm";
 import type { MaliHesap, MaliHesapAgacSube } from "../types/financial-account-types";
+import "./tanimlar.css";
 
 function TanimlarInner({ embedded = false }: { embedded?: boolean }) {
   const { homeHref, portalHomeHref } = useFinansPath();
@@ -118,8 +119,8 @@ function TanimlarInner({ embedded = false }: { embedded?: boolean }) {
       )}
 
       {/* Tree + Detail Split Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start" style={{ minHeight: "60vh" }}>
-        <div className="lg:sticky lg:top-4" style={{ height: "calc(100vh - 180px)", minHeight: 480 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start fin-tanimlar-split">
+        <div className="lg:sticky lg:top-4 fin-tanimlar-pane">
           <MaliHesaplarTree
             kurumId={kurumId}
             subeId={activeSube?.id}
@@ -131,7 +132,7 @@ function TanimlarInner({ embedded = false }: { embedded?: boolean }) {
           />
         </div>
 
-        <div style={{ height: "calc(100vh - 180px)", minHeight: 480 }}>
+        <div className="fin-tanimlar-pane">
           {selectedId ? (
             <MaliHesapDetailPanel
               kurumId={kurumId}
@@ -201,7 +202,7 @@ function TanimlarInner({ embedded = false }: { embedded?: boolean }) {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[3500] px-5 py-3.5 rounded-xl text-sm font-semibold text-white shadow-lg flex items-center gap-2
+        <div className={`mobile-above-nav fixed bottom-6 right-6 z-[3500] px-5 py-3.5 rounded-xl text-sm font-semibold text-white shadow-lg flex items-center gap-2
           ${toast.type === "success" ? "bg-gradient-to-r from-emerald-600 to-emerald-700" :
             toast.type === "error" ? "bg-gradient-to-r from-red-600 to-red-700" :
             "bg-gradient-to-r from-blue-600 to-blue-700"}`}>

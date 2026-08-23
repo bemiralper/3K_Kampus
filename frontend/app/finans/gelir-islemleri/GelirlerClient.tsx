@@ -820,7 +820,7 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
 
       {/* ═══ Toast ═══ */}
       {(success || error) && (
-        <div className="fixed bottom-6 right-6 z-[250] animate-in slide-in-from-bottom-4 fade-in duration-300">
+        <div className="mobile-above-nav fixed bottom-6 right-6 z-[250] animate-in slide-in-from-bottom-4 fade-in duration-300">
           <div className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl border backdrop-blur-xl ${
             success
               ? "bg-emerald-50/95 border-emerald-200 text-emerald-700"

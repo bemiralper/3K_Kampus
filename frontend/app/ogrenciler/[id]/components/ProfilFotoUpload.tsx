@@ -788,7 +788,8 @@ export default function ProfilFotoUpload({
           padding: 8px 12px;
           border-radius: 8px;
           font-size: 12px;
-          white-space: nowrap;
+          /* Dar ekranda taşmaması için sarsın */
+          max-width: min(280px, 80vw);
           z-index: 10;
         }
 

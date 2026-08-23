@@ -91,8 +91,8 @@ export default function HareketlerTab({ kurumId, maliHesapId }: Props) {
           <option value="giris">Yalnızca giriş</option>
           <option value="cikis">Yalnızca çıkış</option>
         </select>
-        <div className="ml-auto flex flex-col items-end gap-0.5 text-xs">
-          <div className="flex items-center gap-4">
+        <div className="ml-auto flex flex-col items-start gap-0.5 text-xs sm:items-end">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="text-emerald-600 font-semibold">Toplam Giriş: {fmtTL(toplamGiris)}</span>
             <span className="text-red-500 font-semibold">Toplam Çıkış: {fmtTL(toplamCikis)}</span>
             <span className={`font-semibold ${netBakiye < 0 ? "text-red-500" : "text-gray-700"}`}>

@@ -283,3 +283,48 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* ============================================================
+   Finans kabuğu — telefon / tablet
+   ============================================================ */
+
+@media (max-width: 899px) {
+  /* Kırıntı yolu tek satırda kaymadan kaysın, bağlantılar parmakla tutulabilsin */
+  .finans-breadcrumb {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+    margin-top: 0;
+    margin-bottom: 4px;
+  }
+
+  .finans-breadcrumb::-webkit-scrollbar {
+    display: none;
+  }
+
+  .finans-breadcrumb > a,
+  .finans-breadcrumb > span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 2px;
+    flex-shrink: 0;
+  }
+}
+
+/* Finans modallarındaki iki kolonlu form satırları.
+   Daha önce satır içi grid stiliyle yazılmıştı; telefonda 170px'lik
+   alanlar oluşuyordu. */
+.fin-form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .fin-form-grid-2 {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}

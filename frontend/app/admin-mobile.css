@@ -112,7 +112,11 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 1040;
+    /* 1040 idi: modül içindeki çekmece/modal katmanları (150–1001 arası)
+       çubuğun altında kalıyor, "Kaydet" düğmeleri erişilemiyordu.
+       Sayfa içeriğinin üstünde kalacak kadar yüksek, örtü katmanlarının
+       altında kalacak kadar düşük bir değer. */
+    z-index: 120;
     background: #fff;
     border-top: 1px solid #e2e8f0;
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -129,6 +133,14 @@
     height: var(--admin-bottom-nav-h);
   }
 
+  /* li display:flex olmadan link kendi içerik yüksekliğinde kalıyor ve
+     dokunma alanı 56px yerine ~23px oluyordu */
+  .admin-bottom-nav-list > li {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
   .admin-bottom-nav-link {
     display: flex;
     flex-direction: column;
@@ -136,8 +148,9 @@
     justify-content: center;
     gap: 2px;
     width: 100%;
+    height: 100%;
     min-width: 0;
-    padding: 6px 4px;
+    padding: 4px;
     border: none;
     background: transparent;
     color: #64748b;
@@ -146,10 +159,20 @@
     text-decoration: none;
     cursor: pointer;
     line-height: 1.1;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .admin-bottom-nav-icon {
+    font-size: 17px;
+    line-height: 1;
   }
 
   .admin-bottom-nav-link.is-active {
     color: #0262a7;
+  }
+
+  .admin-bottom-nav-link:active {
+    background: #f1f5f9;
   }
 
   .admin-bottom-nav-label {
@@ -335,5 +358,209 @@
   .app-content .table-container {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ==================== MOBİL TEMEL ==================== */
+
+@media (max-width: 991px) {
+  /* Sayfanın kendisi asla yatay kaymasın; kaydırma yalnızca
+     bilinçli olarak overflow-x tanımlanmış konteynerlerde olsun */
+  .app-container.admin-mobile-shell .app-main,
+  .app-container.admin-mobile-shell .app-content,
+  .muhasebe-shell .muhasebe-main,
+  .muhasebe-shell .muhasebe-content {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  /* iOS Safari 16px altındaki alanlara odaklanınca sayfayı yakınlaştırır.
+     Yakınlaştırma sonrası düzen bozulur ve kullanıcı geri döndüremez. */
+  .app-content input:not([type='checkbox']):not([type='radio']),
+  .app-content select,
+  .app-content textarea,
+  .muhasebe-content input:not([type='checkbox']):not([type='radio']),
+  .muhasebe-content select,
+  .muhasebe-content textarea,
+  .drawer-right input:not([type='checkbox']):not([type='radio']),
+  .drawer-right select,
+  .drawer-right textarea,
+  .modal-content input:not([type='checkbox']):not([type='radio']),
+  .modal-content select,
+  .modal-content textarea {
+    font-size: 16px;
+  }
+
+  /* Topbar ikonları — 36px yerine parmak dostu 40px */
+  .app-container.admin-mobile-shell .sidebar-toggle-btn,
+  .app-container.admin-mobile-shell .topbar-icon-btn,
+  .app-container.admin-mobile-shell .toggle-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* Kurum/şube bağlam şeridi */
+  .app-container.admin-mobile-shell .ctx-compact-btn {
+    min-height: 42px;
+  }
+}
+
+/* Asgari dokunma hedefi.
+   Genişlik tabanlı: `pointer: coarse` fareli tabletlerde ve masaüstü
+   tarayıcı emülasyonunda eşleşmediği için güvenilir değil. */
+@media (max-width: 991px) {
+  /* Yönetici kabuğu `.app-content`, muhasebe portalı `.muhasebe-content`
+     kullanıyor; iki portalda da aynı dokunma hedefleri geçerli olmalı. */
+  .app-content .btn,
+  .app-content .btn-primary,
+  .app-content .btn-secondary,
+  .app-content .btn-outline,
+  .app-content .tab-modern,
+  .app-content .pagination a,
+  .app-content .pagination button,
+  .muhasebe-content .btn,
+  .muhasebe-content .btn-primary,
+  .muhasebe-content .btn-secondary,
+  .muhasebe-content .btn-outline,
+  .muhasebe-content .tab-modern,
+  .muhasebe-content .pagination a,
+  .muhasebe-content .pagination button {
+    min-height: 40px;
+  }
+
+  .app-content input[type='checkbox'],
+  .app-content input[type='radio'],
+  .muhasebe-content input[type='checkbox'],
+  .muhasebe-content input[type='radio'] {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Modüllerin çoğu Tailwind/AntD ile yazıldığı için `.btn` sınıfı yok.
+     Buradaki ortak taban, 24–30px kalan düğmeleri parmak dostu yapar.
+     ant-switch / ant-tabs gibi kendi yüksekliği anlamlı olanlar dışarıda. */
+  .app-content button:not(.ant-switch):not(.ant-tabs-tab-btn):not(.ant-select-item):not(
+      .ant-picker-cell
+    ),
+  .app-content [role='button']:not(.ant-switch):not(.ant-select-item),
+  .app-content select,
+  .app-content input:not([type='checkbox']):not([type='radio']),
+  .app-content textarea,
+  .app-content .ant-select-selector,
+  .app-content .ant-picker,
+  .muhasebe-content button:not(.ant-switch):not(.ant-tabs-tab-btn):not(
+      .ant-select-item
+    ):not(.ant-picker-cell),
+  .muhasebe-content [role='button']:not(.ant-switch):not(.ant-select-item),
+  .muhasebe-content select,
+  .muhasebe-content input:not([type='checkbox']):not([type='radio']),
+  .muhasebe-content textarea,
+  .muhasebe-content .ant-select-selector,
+  .muhasebe-content .ant-picker {
+    min-height: 36px;
+  }
+
+  /* Sadece ikon taşıyan düğmeler kare kalsın */
+  .app-content button[aria-label]:not(.ant-switch),
+  .app-content button:has(> svg:only-child),
+  .muhasebe-content button[aria-label]:not(.ant-switch),
+  .muhasebe-content button:has(> svg:only-child) {
+    min-width: 36px;
+  }
+}
+
+/* Sabit katmanlar — çentikli ekranlarda güvenli alan */
+@media (max-width: 991px) {
+  .drawer-right,
+  .drawer-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .app-container.admin-mobile-shell .sidebar {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* Tablet (768–991px) — mobil kabuk ama iki kolon sığar */
+@media (min-width: 768px) and (max-width: 991px) {
+  .app-container.admin-mobile-shell .app-content {
+    padding: 16px;
+  }
+
+  .hero-header > .btn-hero,
+  .hero-header > a.btn-hero,
+  .hero-header > button.btn-hero {
+    width: auto;
+  }
+
+  .page-header {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .page-header-right {
+    width: auto;
+  }
+}
+
+/* ==================== ANT DESIGN FİLTRE SATIRLARI ====================
+   Finans sayfalarındaki filtre çubukları <Space> ve <Segmented> ile
+   kurulmuş. Space'te `wrap` verilmediğinde ve Segmented 4–5 seçenek
+   taşıdığında satır telefon genişliğini aşıyor; kabuk `overflow-x:
+   hidden` olduğu için içerik erişilemez hale geliyor. */
+
+@media (max-width: 899px) {
+  .app-content .ant-space:not(.ant-space-vertical),
+  .muhasebe-content .ant-space:not(.ant-space-vertical) {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  /* Segmented kendi içinde kaysın; sarmalamak seçenekleri bozuyor */
+  .app-content .ant-segmented,
+  .muhasebe-content .ant-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .app-content .ant-segmented::-webkit-scrollbar,
+  .muhasebe-content .ant-segmented::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Sekme çubuğu yanındaki dışa aktarma düğmeleri sekmelerle aynı satırı
+     paylaşıyor; telefonda alt satıra insin */
+  .app-content .ant-tabs-nav,
+  .muhasebe-content .ant-tabs-nav {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .app-content .ant-tabs-nav .ant-tabs-extra-content,
+  .muhasebe-content .ant-tabs-nav .ant-tabs-extra-content {
+    width: 100%;
+  }
+
+  /* Sabit genişlikli AntD alanları kabuk genişliğini aşmasın */
+  .app-content .ant-input-number,
+  .app-content .ant-picker,
+  .app-content .ant-select,
+  .muhasebe-content .ant-input-number,
+  .muhasebe-content .ant-picker,
+  .muhasebe-content .ant-select {
+    max-width: 100%;
+  }
+}
+
+/* Alt gezinme çubuğunun üstünde durması gereken sabit katmanlar
+   (bildirim baloncukları vb.) */
+@media (max-width: 991px) {
+  .mobile-above-nav {
+    bottom: calc(
+      var(--admin-bottom-nav-h, 56px) + 12px + env(safe-area-inset-bottom, 0px)
+    ) !important;
   }
 }

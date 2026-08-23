@@ -1,0 +1,24 @@
+/* Mali hesaplar: ağaç + detay bölünmüş düzeni.
+   Yükseklikler satır içi stildeydi ve telefonda iki panel de 480px'e
+   zorlanıyordu (ekranın tamamı boş alan). */
+
+.fin-tanimlar-split {
+  min-height: 60vh;
+}
+
+.fin-tanimlar-pane {
+  height: calc(100vh - 180px);
+  min-height: 480px;
+}
+
+@media (max-width: 1023px) {
+  /* Tek kolona düşen düzende panel içeriği kadar yükselsin */
+  .fin-tanimlar-split {
+    min-height: 0;
+  }
+
+  .fin-tanimlar-pane {
+    height: auto;
+    min-height: 0;
+  }
+}

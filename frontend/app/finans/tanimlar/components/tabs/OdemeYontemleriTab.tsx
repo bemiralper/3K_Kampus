@@ -172,7 +172,7 @@ export default function OdemeYontemleriTab({ kurumId, maliHesapId, onToast, onCh
 
   return (
     <div className="bg-white">
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-50">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-gray-50">
         <p className="text-xs text-gray-400 m-0">Bu mali hesaba tanımlı ödeme yöntemleri. Tahsilat/gider formlarında sadece bu liste görünür.</p>
         <button
           onClick={openCreate}

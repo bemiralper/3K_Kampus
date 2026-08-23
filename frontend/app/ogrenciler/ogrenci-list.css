@@ -2245,7 +2245,9 @@
   padding: 4px 8px;
 }
 
-@media (max-width: 768px) {
+/* Tablet dikeyde de (820px) 10+ sütunlu tablo okunmaz; kart listesi 900px'e
+   kadar geçerli — finans modülüyle aynı eşik */
+@media (max-width: 899px) {
   .ogrenci-desktop-table {
     display: none;
   }
@@ -2259,7 +2261,7 @@
   }
 }
 
-@media (min-width: 769px) {
+@media (min-width: 900px) {
   .ogrenci-mobile-list {
     display: none !important;
   }
@@ -3009,7 +3011,9 @@
   color: #475569;
 }
 
-@media (pointer: coarse) {
+/* Hover'ı olmayan cihazlarda satır üstüne gelme diye bir şey yok;
+   düğme her zaman görünür olmalı */
+@media (pointer: coarse), (hover: none), (max-width: 1200px) {
   .ogrenci-quick-info-btn {
     opacity: 1;
   }
@@ -3311,4 +3315,121 @@
   background: #025a94;
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(2, 98, 167, 0.32);
+}
+
+
+/* ============================================================
+   TELEFON + TABLET DİKEY (<900px) — dokunma ve taşma düzeltmeleri
+   ============================================================ */
+
+@media (max-width: 899px) {
+  /* Araç çubuğu tek satırda sığmıyordu; sıralama seçicisi ekrandan taşıyordu */
+  .ogrenci-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ogrenci-toolbar-left,
+  .ogrenci-toolbar-right {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .ogrenci-toolbar-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 40px;
+    padding: 9px 12px;
+  }
+
+  .ogrenci-col-picker-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .ogrenci-col-picker-wrap > .ogrenci-toolbar-btn {
+    width: 100%;
+  }
+
+  .ogrenci-sort-select {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+  }
+
+  .ogrenci-clear-filters {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+
+  /* Dokunma hedefleri */
+  .ogrenci-row-checkbox {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ogrenci-quick-info-btn,
+  .row-action-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .ogrenci-mobile-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ogrenci-mobile-card-actions .ogrenci-quick-info-btn {
+    min-height: 40px;
+  }
+
+  /* Ad satırının tamamı tıklanabilir olsun (sadece metin genişliği değil) */
+  .ogrenci-mobile-name {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 30px;
+    font-size: 15px;
+  }
+
+  /* Sonuç sayacı ve sayfalama */
+  .ogrenci-results-meta {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ogrenci-pagination {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ogrenci-pagination button,
+  .ogrenci-pagination a {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+/* Tablet dikey (600–899px): tek sütun liste yerine 2 sütunlu kart ızgarası */
+@media (min-width: 600px) and (max-width: 899px) {
+  .ogrenci-mobile-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 12px 16px 16px;
+  }
+
+  .ogrenci-mobile-card {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: #fff;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 10px;
+  }
 }

@@ -236,7 +236,7 @@ export default function VirmanModal({ mode, onClose, onSuccess }: VirmanModalPro
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div className="fin-form-grid-2" style={{ marginBottom: 12 }}>
         <FinansModalField label="Transfer Tarihi">
           <input type="date" value={tarih} onChange={(e) => setTarih(e.target.value)} style={finansModalInputStyle} />
         </FinansModalField>

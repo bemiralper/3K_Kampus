@@ -242,7 +242,9 @@
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 200;
+  /* Yönetici kabuğuyla aynı değer: modül çekmeceleri (150–1001) çubuğun
+     üstünde kalabilsin */
+  z-index: 120;
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--muhasebe-border-soft);
@@ -256,11 +258,21 @@
   list-style: none;
 }
 
+/* Her sekme eşit genişlikte ve dokunma alanı hücrenin tamamı olmalı;
+   aksi halde parmakla ikonun tam üstüne basmak gerekiyor. */
+.muhasebe-nav-bottom .muhasebe-nav-list > li {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .muhasebe-nav-bottom .muhasebe-nav-link {
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
   padding: 8px 4px;
   font-size: 11px;
+  width: 100%;
   min-height: 56px;
 }
 
@@ -366,7 +378,9 @@
 }
 
 .muhasebe-nav-submenu.is-open {
-  max-height: 320px;
+  /* Finans alt menüsü 20'den fazla öğe içeriyor; 320px'de son maddeler
+     kırpılıyordu */
+  max-height: 1200px;
   opacity: 1;
 }
 
@@ -501,6 +515,13 @@
     gap: 8px;
   }
 
+  /* Yönetici kabuğuyla aynı parmak dostu ölçü */
+  .muhasebe-topbar-menu-btn,
+  .muhasebe-sidebar-toggle {
+    width: 40px;
+    height: 40px;
+  }
+
   .muhasebe-topbar-title {
     font-size: 15px;
     line-height: 1.25;
@@ -587,7 +608,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    left: min(280px, 88vw);
+    left: 0;
     z-index: 210;
     border: none;
     padding: 0;

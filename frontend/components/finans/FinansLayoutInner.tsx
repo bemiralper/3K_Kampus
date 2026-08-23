@@ -2,9 +2,11 @@
 
 import React from "react";
 import "@/components/finans/finans-drawer.css";
+import "@/components/finans/finans-list.css";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
+import MobileTableCards from "@/components/mobile/MobileTableCards";
 import { isTahsilatRaporlarFinansPath } from "@/lib/muhasebe-routes";
 
 const MODULE_SEGMENTS: Record<string, string> = {
@@ -54,8 +56,9 @@ export function FinansLayoutInner({ children }: { children: React.ReactNode }) {
     /^\d+/.test(relativePath.split("/")[1] || "");
 
   return (
-    <div className="section">
-      <nav className="flex items-center gap-1.5 text-[12px] text-gray-400 mb-1 -mt-1">
+    <div className="section finans-shell mobile-cards">
+      <MobileTableCards />
+      <nav className="finans-breadcrumb flex items-center gap-1.5 text-[12px] text-gray-400 mb-1 -mt-1">
         <Link href={portalHomeHref} className="hover:text-gray-600 transition-colors">Ana Sayfa</Link>
         <svg className="w-3 h-3 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
         {isDashboard ? (

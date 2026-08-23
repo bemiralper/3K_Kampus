@@ -70,8 +70,11 @@ export default function FinansDataTable<T extends string, Row>({
     );
   }
 
+  // Kart modunda (<900px) ilk sütun kart başlığı, işlem sütunu kart altlığı olur
+  const primaryCol = displayOrder[0];
+
   return (
-    <div className="finans-table-wrap finans-table-wrap--modern">
+    <div className="finans-table-wrap finans-table-wrap--modern mobile-cards-scroll-off">
       <table className="table-modern table-modern--cari">
         <thead>
           <tr>{displayOrder.map((colId) => renderHeader(colId))}</tr>
@@ -85,6 +88,14 @@ export default function FinansDataTable<T extends string, Row>({
                   <td
                     key={colId}
                     data-col={colId}
+                    data-label={col.label}
+                    data-role={
+                      colId === primaryCol
+                        ? 'primary'
+                        : ACTION_COLUMN_IDS.has(colId)
+                          ? 'actions'
+                          : undefined
+                    }
                     style={{ textAlign: col.align }}
                     className="finans-td-modern"
                   >
@@ -99,3 +110,10 @@ export default function FinansDataTable<T extends string, Row>({
     </div>
   );
 }
+
+const ACTION_COLUMN_IDS: ReadonlySet<string> = new Set([
+  'islemler',
+  'islem',
+  'aksiyon',
+  'aksiyonlar',
+]);

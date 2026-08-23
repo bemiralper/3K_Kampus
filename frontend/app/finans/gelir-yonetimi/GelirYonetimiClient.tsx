@@ -736,7 +736,7 @@ export default function GelirYonetimiClient({ embedded }: GelirYonetimiClientPro
 
       {/* Toast */}
       {toast && (
-        <div className={`kat-toast ${toast.type}`}>
+        <div className={`kat-toast mobile-above-nav ${toast.type}`}>
           {toast.type === "success" && (
             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />

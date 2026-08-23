@@ -9,7 +9,7 @@ type Props = {
   hint?: string;
   href?: string;
   icon?: ReactNode;
-  tone?: 'blue' | 'green' | 'amber' | 'slate' | 'violet';
+  tone?: 'blue' | 'green' | 'amber' | 'slate' | 'violet' | 'rose';
 };
 
 export default function DashKpiCard({
@@ -22,12 +22,19 @@ export default function DashKpiCard({
 }: Props) {
   const inner = (
     <>
-      <div className="adm-kpi__top">
-        {icon && <span className="adm-kpi__icon">{icon}</span>}
+      <span className="adm-kpi__icon" aria-hidden="true">
+        {icon || '•'}
+      </span>
+      <span className="adm-kpi__text">
         <span className="adm-kpi__label">{label}</span>
-      </div>
-      <div className="adm-kpi__value">{value}</div>
-      {hint && <div className="adm-kpi__hint">{hint}</div>}
+        <span className="adm-kpi__value">{value}</span>
+        {hint && <span className="adm-kpi__hint">{hint}</span>}
+      </span>
+      {href && (
+        <span className="adm-kpi__chev" aria-hidden="true">
+          ›
+        </span>
+      )}
     </>
   );
 

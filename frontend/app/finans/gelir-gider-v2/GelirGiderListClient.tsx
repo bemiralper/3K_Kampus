@@ -25,6 +25,7 @@ import {
   Alert,
   App as AntApp,
   Grid,
+  Pagination,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { MenuProps } from "antd";
@@ -47,6 +48,7 @@ import {
 import dayjs from "dayjs";
 import Link from "next/link";
 import { useKurum } from "@/lib/contexts/KurumContext";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import { ggService } from "./gg-v2-api";
 import { cekSenetV2Service } from "../services/cek-senet-v2-api";
@@ -128,6 +130,11 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
 
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [visibleCols, setVisibleCols] = useState<string[]>(DEFAULT_VISIBLE);
+
+  // Telefon ve tablet dikeyde 8 sütunlu tablo okunmaz; kart görünümü zorunlu.
+  // viewMode'a yazmıyoruz, masaüstü tercihi korunsun.
+  const isNarrow = useMediaQuery("(max-width: 899px)");
+  const effectiveView: ViewMode = isNarrow ? "card" : viewMode;
 
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -519,25 +526,31 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
 
       {/* Araç çubuğu */}
       <Card size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
-        <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
-          <Space wrap>
+        <Space
+          wrap
+          direction={isNarrow ? "vertical" : "horizontal"}
+          style={{ width: "100%", justifyContent: "space-between" }}
+        >
+          <Space wrap style={isNarrow ? { width: "100%" } : undefined}>
             <Input
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="Ara (belge no, cari, açıklama, kategori)"
+              placeholder={isNarrow ? "Ara" : "Ara (belge no, cari, açıklama, kategori)"}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 300 }}
+              style={{ width: isNarrow ? "100%" : 300 }}
             />
-            <Segmented
-              value={viewMode}
-              onChange={(v) => setViewMode(v as ViewMode)}
-              options={[
-                { value: "table", icon: <TableOutlined />, title: "Tablo" },
-                { value: "compact", icon: <BarsOutlined />, title: "Yoğun" },
-                { value: "card", icon: <AppstoreOutlined />, title: "Kart" },
-              ]}
-            />
+            {!isNarrow && (
+              <Segmented
+                value={viewMode}
+                onChange={(v) => setViewMode(v as ViewMode)}
+                options={[
+                  { value: "table", icon: <TableOutlined />, title: "Tablo" },
+                  { value: "compact", icon: <BarsOutlined />, title: "Yoğun" },
+                  { value: "card", icon: <AppstoreOutlined />, title: "Kart" },
+                ]}
+              />
+            )}
             {(() => {
               const adet = modul === "gelir"
                 ? (cekPortfoy?.tahsil_bekleyen?.adet ?? 0)
@@ -564,7 +577,7 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
               );
             })()}
           </Space>
-          <Space wrap>
+          <Space wrap style={isNarrow ? { width: "100%" } : undefined}>
             <Button
               icon={<FilterOutlined />}
               type={showFilters || Object.keys(filters).length ? "primary" : "default"}
@@ -573,13 +586,18 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
             >
               Filtreler{Object.keys(filters).length ? ` (${Object.keys(filters).length})` : ""}
             </Button>
-            <Dropdown menu={{ items: colMenu }} trigger={["click"]} placement="bottomRight">
-              <Button icon={<SettingOutlined />}>Kolonlar</Button>
-            </Dropdown>
-            <Dropdown menu={{ items: viewsMenu }} trigger={["click"]} placement="bottomRight">
-              <Button>Görünümler{savedViews.length ? ` (${savedViews.length})` : ""}</Button>
-            </Dropdown>
-            <Button onClick={openSaveView}>Görünüm Kaydet</Button>
+            {/* Kart görünümünde kolon seçimi ve kayıtlı görünümler işlevsiz */}
+            {!isNarrow && (
+              <>
+                <Dropdown menu={{ items: colMenu }} trigger={["click"]} placement="bottomRight">
+                  <Button icon={<SettingOutlined />}>Kolonlar</Button>
+                </Dropdown>
+                <Dropdown menu={{ items: viewsMenu }} trigger={["click"]} placement="bottomRight">
+                  <Button>Görünümler{savedViews.length ? ` (${savedViews.length})` : ""}</Button>
+                </Dropdown>
+                <Button onClick={openSaveView}>Görünüm Kaydet</Button>
+              </>
+            )}
             <Dropdown menu={{ items: exportMenu }} trigger={["click"]} placement="bottomRight">
               <Button icon={<DownloadOutlined />} loading={exporting}>Dışa Aktar</Button>
             </Dropdown>
@@ -597,7 +615,7 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
       )}
 
       {/* İçerik */}
-      {viewMode === "card" ? (
+      {effectiveView === "card" ? (
         <Row gutter={[12, 12]}>
           {items.length === 0 && !loading ? (
             <Col span={24}><Empty description="Kayıt bulunamadı" /></Col>
@@ -609,12 +627,54 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
                   onClick={() => openEdit(r)}
                   title={<span style={{ fontSize: 14 }}>{r.cari_hesap?.unvan || "—"}</span>}
                   extra={<Tag color={durumRenk(r.durum)}>{r.durum_label}</Tag>}
+                  actions={[
+                    ...((modul === "gider" ? r.odenebilir_mi : r.tahsil_edilebilir_mi)
+                      ? [
+                          <Button
+                            key="odeme"
+                            type="text"
+                            size="small"
+                            icon={<DollarOutlined />}
+                            style={{ color: "#16a34a" }}
+                            onClick={(e) => { e.stopPropagation(); openOdeme(r); }}
+                          >
+                            {modul === "gider" ? "Öde" : "Tahsil"}
+                          </Button>,
+                        ]
+                      : []),
+                    <Button
+                      key="edit"
+                      type="text"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={(e) => { e.stopPropagation(); openEdit(r); }}
+                    >
+                      Düzenle
+                    </Button>,
+                    <Popconfirm
+                      key="delete"
+                      title="Kayıt silinsin mi?"
+                      okText="Sil"
+                      cancelText="Vazgeç"
+                      onConfirm={() => onDelete(r)}
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Sil
+                      </Button>
+                    </Popconfirm>,
+                  ]}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, gap: 10 }}>
                     <span style={{ color: "#64748b" }}>{kategoriOf(cfg, r)?.ad || "—"}</span>
                     <strong style={{ color: cfg.renk }}>{TL(r.net_tutar)}</strong>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8", marginTop: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8", marginTop: 6, gap: 10 }}>
                     <span>{DATE(r.fatura_tarihi)}</span>
                     <span>Kalan: {TL(r.kalan_tutar)}</span>
                   </div>
@@ -622,11 +682,31 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
               </Col>
             ))
           )}
+          {/* Kart görünümünde sayfalama yoktu; mobilde tek yol bu olduğu için eklendi */}
+          {total > 0 && (
+            <Col span={24}>
+              <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
+                <Pagination
+                  current={page}
+                  pageSize={pageSize}
+                  total={total}
+                  simple={isNarrow}
+                  showSizeChanger={!isNarrow}
+                  pageSizeOptions={["10", "25", "50", "100"]}
+                  showTotal={(t) => `Toplam ${t} kayıt`}
+                  onChange={(p, ps) => {
+                    setPage(p);
+                    if (ps) setPageSize(ps);
+                  }}
+                />
+              </div>
+            </Col>
+          )}
         </Row>
       ) : (
         <Table<GGListItem>
           rowKey="id"
-          size={viewMode === "compact" ? "small" : "middle"}
+          size={effectiveView === "compact" ? "small" : "middle"}
           loading={loading}
           columns={columns}
           dataSource={items}

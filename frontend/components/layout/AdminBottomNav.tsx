@@ -10,9 +10,9 @@ type Props = {
 };
 
 const ITEMS = [
-  { href: "/dashboard", label: "Panel", match: (p: string) => p === "/dashboard" || p.startsWith("/dashboard/") },
-  { href: "/ogrenciler", label: "Öğrenci", match: (p: string) => p.startsWith("/ogrenciler") },
-  { href: "/odeme-takip", label: "Tahsilat", match: (p: string) => p.startsWith("/odeme-takip") },
+  { href: "/dashboard", label: "Panel", icon: "📊", match: (p: string) => p === "/dashboard" || p.startsWith("/dashboard/") },
+  { href: "/ogrenciler", label: "Öğrenci", icon: "🎓", match: (p: string) => p.startsWith("/ogrenciler") },
+  { href: "/finans", label: "Finans", icon: "💰", match: (p: string) => p.startsWith("/finans") || p.startsWith("/odeme-takip") },
 ] as const;
 
 export default function AdminBottomNav({ onMenuClick, menuOpen, onSearchClick }: Props) {
@@ -30,6 +30,9 @@ export default function AdminBottomNav({ onMenuClick, menuOpen, onSearchClick }:
                 className={`admin-bottom-nav-link${active ? " is-active" : ""}`}
                 aria-current={active ? "page" : undefined}
               >
+                <span className="admin-bottom-nav-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
                 <span className="admin-bottom-nav-label">{item.label}</span>
               </Link>
             </li>
@@ -42,6 +45,9 @@ export default function AdminBottomNav({ onMenuClick, menuOpen, onSearchClick }:
             onClick={onSearchClick}
             aria-label="Ara"
           >
+            <span className="admin-bottom-nav-icon" aria-hidden="true">
+              🔍
+            </span>
             <span className="admin-bottom-nav-label">Ara</span>
           </button>
         </li>
@@ -53,6 +59,9 @@ export default function AdminBottomNav({ onMenuClick, menuOpen, onSearchClick }:
             aria-label="Menü"
             aria-expanded={menuOpen}
           >
+            <span className="admin-bottom-nav-icon" aria-hidden="true">
+              ☰
+            </span>
             <span className="admin-bottom-nav-label">Menü</span>
           </button>
         </li>

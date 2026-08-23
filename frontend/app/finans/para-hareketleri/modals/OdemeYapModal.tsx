@@ -146,7 +146,7 @@ export default function OdemeYapModal({ onClose, onSuccess }: OdemeYapModalProps
         )}
       </FinansModalField>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="fin-form-grid-2">
         <FinansModalField label="Tutar (₺)">
           <input type="number" min={1} value={tutar} onChange={(e) => setTutar(e.target.value)} style={finansModalInputStyle} />
         </FinansModalField>
@@ -195,7 +195,7 @@ export default function OdemeYapModal({ onClose, onSuccess }: OdemeYapModalProps
           <FinansModalField label="Vade Tarihi">
             <input type="date" value={vadeTarihi} onChange={(e) => setVadeTarihi(e.target.value)} style={finansModalInputStyle} />
           </FinansModalField>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="fin-form-grid-2">
             <FinansModalField label="Çek/Senet No">
               <input type="text" value={cekSenetNo} onChange={(e) => setCekSenetNo(e.target.value)} style={finansModalInputStyle} />
             </FinansModalField>

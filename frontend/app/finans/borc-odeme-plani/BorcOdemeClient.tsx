@@ -125,13 +125,13 @@ export default function BorcOdemeClient({ embedded }: BorcOdemeClientProps = {})
     <div className={embedded ? "" : "space-y-5"}>
       {/* Toast Notifications */}
       {error && (
-        <div className="fixed bottom-6 right-6 z-[250] px-5 py-3.5 rounded-xl text-sm font-semibold text-white shadow-lg flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-700">
+        <div className="mobile-above-nav fixed bottom-6 right-6 z-[250] px-5 py-3.5 rounded-xl text-sm font-semibold text-white shadow-lg flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-700">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           {error}
         </div>
       )}
       {success && (
-        <div className="fixed bottom-6 right-6 z-[250] px-5 py-3.5 rounded-xl text-sm font-semibold text-white shadow-lg flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700">
+        <div className="mobile-above-nav fixed bottom-6 right-6 z-[250] px-5 py-3.5 rounded-xl text-sm font-semibold text-white shadow-lg flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
           {success}
         </div>
@@ -746,10 +746,10 @@ function OdemeDrawer({
   return (
     <>
       {/* Backdrop */}
-      {open && <div className="fixed inset-0 bg-black/30 z-[150] transition-opacity" onClick={onClose} />}
+      {open && <div className="fixed inset-0 bg-black/30 z-[1150] transition-opacity" onClick={onClose} />}
 
       {/* Drawer */}
-      <div className={`fixed top-0 right-0 h-full w-full max-w-[520px] bg-white shadow-2xl z-[200] transition-transform duration-300 flex flex-col ${open ? "translate-x-0" : "translate-x-full"}`}>
+      <div className={`fixed top-0 right-0 h-full w-full max-w-[520px] bg-white shadow-2xl z-[1200] transition-transform duration-300 flex flex-col ${open ? "translate-x-0" : "translate-x-full"}`}>
         {/* Header */}
         <div className="px-6 py-5 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
@@ -770,7 +770,7 @@ function OdemeDrawer({
           </div>
 
           {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="bg-white/80 rounded-xl p-3 border border-gray-100">
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Tutar</div>
               <div className="text-sm font-bold text-gray-800">{fmt(Number(taksit.tutar))}</div>
@@ -815,7 +815,7 @@ function OdemeDrawer({
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold">₺</span>
             </div>
             {/* Quick amount buttons */}
-            <div className="flex gap-2 mt-2">
+            <div className="flex flex-wrap gap-2 mt-2">
               {quickAmounts.map((q) => (
                 <button
                   key={q.label}

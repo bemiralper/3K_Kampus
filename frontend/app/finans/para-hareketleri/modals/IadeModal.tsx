@@ -137,7 +137,7 @@ export default function IadeModal({ onClose, onSuccess }: IadeModalProps) {
         </FinansModalField>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="fin-form-grid-2">
         <FinansModalField label="İade Tutarı (₺)">
           <input type="number" min={1} value={tutar} onChange={(e) => setTutar(e.target.value)} style={finansModalInputStyle} />
         </FinansModalField>
@@ -146,7 +146,7 @@ export default function IadeModal({ onClose, onSuccess }: IadeModalProps) {
         </FinansModalField>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="fin-form-grid-2">
         <FinansModalField label="Mali Hesap (opsiyonel)" hint="Paranın çıktığı kasa/banka hesabı">
           <select
             value={maliHesapId}

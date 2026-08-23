@@ -1,0 +1,80 @@
+/* Öğrenci bilgi düzenleme çekmecesi.
+   Bileşenin geri kalanı satır içi stille yazılmış; sadece kırılma noktası
+   gerektiren düzen kuralları burada, çünkü satır içi stil media query
+   alamıyor. */
+
+.obd-drawer {
+  width: 600px;
+  max-width: 90vw;
+}
+
+.obd-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* Telefon ve tablet dikey */
+@media (max-width: 899px) {
+  .obd-drawer {
+    /* Yarım ekran çekmece yerine tam ekran: 351px'e sıkışan iki kolonlu
+       form kullanılamıyordu */
+    width: 100%;
+    max-width: 100%;
+    left: 0;
+  }
+
+  .obd-grid-2 {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .obd-header {
+    padding: 14px 16px !important;
+  }
+
+  .obd-body {
+    padding: 16px !important;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .obd-footer {
+    padding: 12px 16px !important;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    flex-wrap: wrap;
+  }
+
+  .obd-footer > button {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
+
+  /* Adım şeridi: uzun etiketler 3 düğmeye sığmıyor, yatay kaysın */
+  .obd-steps {
+    padding: 12px 16px !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .obd-steps::-webkit-scrollbar {
+    display: none;
+  }
+
+  .obd-steps > button {
+    flex: 0 0 auto !important;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  /* iOS'ta 16px altı yazı tipi alanı otomatik yakınlaştırıyor */
+  .obd-drawer input,
+  .obd-drawer select,
+  .obd-drawer textarea {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+
+  .obd-drawer textarea {
+    min-height: 88px;
+  }
+}

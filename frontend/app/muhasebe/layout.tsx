@@ -101,6 +101,21 @@ export default function MuhasebeLayout({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileDrawerOpen, closeMobileDrawer]);
 
+  // Menüden bir bağlantıya dokunulduğunda çekmece açık kalmasın
+  useEffect(() => {
+    closeMobileDrawer();
+  }, [pathname, closeMobileDrawer]);
+
+  // Çekmece açıkken arkadaki sayfa kaydırılmasın
+  useEffect(() => {
+    if (isDesktop || !mobileDrawerOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isDesktop, mobileDrawerOpen]);
+
   useEffect(() => {
     if (isLoading) return;
 

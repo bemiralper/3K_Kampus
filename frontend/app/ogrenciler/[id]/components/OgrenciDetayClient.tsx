@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { ModulePermissions, PermissionChecks } from "@/app/roles/role.permissions";
 import { OgrenciDetay, TabType, TabConfig } from "../types";
+import MobileTableCards from "@/components/mobile/MobileTableCards";
 import OgrenciProfilKart from "./OgrenciProfilKart";
 import OgrenciBilgiDrawer from "./OgrenciBilgiDrawer";
 import { VeliTab, AkademikTab, SinavTab, FinansTab, RehberlikTab, IletisimTab, NotlarTab } from "./tabs";
@@ -178,7 +179,8 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
   };
 
   return (
-    <div className="section">
+    <div className="section mobile-cards">
+      <MobileTableCards />
       <div className="page-header">
         <div className="page-header-left">
           <h2>Öğrenci Detayı</h2>

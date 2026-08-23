@@ -768,6 +768,20 @@
   letter-spacing: 0.04em;
 }
 
+/* Telefonda 4 kolonlu taksit satırı sığmıyor: numara üstte, alanlar
+   altında tek kolon. Başlık satırı da anlamını yitirdiği için kalkıyor. */
+@media (max-width: 640px) {
+  .fd-taksit-edit-row,
+  .fd-taksit-edit-row--4col {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .fd-taksit-edit-row--head {
+    display: none;
+  }
+}
+
 .fd-taksit-edit-row--head .fd-taksit-no {
   background: transparent;
   color: inherit;

@@ -183,7 +183,7 @@ export default function MaliHesapDetailPanel({ kurumId, maliHesapId, refreshKey,
           {iban && (
             <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 col-span-2">
               <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">IBAN</div>
-              <div className="text-xs font-mono font-semibold text-gray-700">{iban}</div>
+              <div className="text-xs font-mono font-semibold text-gray-700 break-all">{iban}</div>
             </div>
           )}
           {(data.banka_display || data.banka_adi) && (

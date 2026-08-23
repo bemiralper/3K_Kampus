@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 const DESKTOP_STORAGE_KEY = "muhasebe-sidebar-expanded";
@@ -35,7 +35,9 @@ export function useMuhasebeSidebarCollapse() {
     setMobileDrawerOpen((prev) => !prev);
   };
 
-  const closeMobileDrawer = () => setMobileDrawerOpen(false);
+  // Referansı sabit: layout içindeki route değişimi efekti buna bağlı,
+  // her render'da yenilenirse çekmece açılır açılmaz kapanıyor.
+  const closeMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);
 
   return {
     isSidebarWide,

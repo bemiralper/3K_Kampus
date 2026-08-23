@@ -692,6 +692,19 @@
 .toast.success { background: linear-gradient(135deg, #059669, #10b981); }
 .toast.error   { background: linear-gradient(135deg, #dc2626, #ef4444); }
 
+/* Mobilde alt gezinme çubuğu (56px) ekranın altını kaplıyor; bildirim
+   onun üstünde durmalı, yoksa dokunmayı engelliyor. */
+@media (max-width: 991px) {
+  .toast {
+    left: 12px;
+    right: 12px;
+    bottom: calc(
+      var(--admin-bottom-nav-h, 56px) + 12px + env(safe-area-inset-bottom, 0px)
+    );
+    justify-content: center;
+  }
+}
+
 @keyframes slideUp {
   from { transform: translateY(20px); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }

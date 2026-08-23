@@ -3465,15 +3465,25 @@ a {
 .student-tabs {
   display: flex;
   gap: 4px;
+  /* 7 sekme 1025–1200px arasında tek satıra sığmıyor; sıkışıp kırpılmak
+     yerine yatay kaysın */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.student-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .student-tab {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   padding: 14px 20px;
+  white-space: nowrap;
   border-radius: 12px;
   font-size: 14px;
   font-weight: 500;

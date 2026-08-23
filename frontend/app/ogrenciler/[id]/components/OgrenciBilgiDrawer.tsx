@@ -11,6 +11,7 @@ import KisiBulunduModal from "@/components/kimlik/KisiBulunduModal";
 import { useKimlikLookup } from "@/hooks/useKimlikLookup";
 import { pickOgrenciRol } from "@/lib/kimlik-api";
 import { OgrenciDetay } from "../types";
+import "./ogrenci-bilgi-drawer.css";
 
 registerLocale("tr", tr);
 
@@ -289,14 +290,12 @@ export default function OgrenciBilgiDrawer({
       {/* Drawer */}
       <div 
         ref={drawerRef}
-        className="drawer open"
+        className="drawer open obd-drawer"
         style={{
           position: 'fixed',
           top: 0,
           right: 0,
           bottom: 0,
-          width: '600px',
-          maxWidth: '90vw',
           background: 'white',
           zIndex: 2001,
           display: 'flex',
@@ -307,7 +306,7 @@ export default function OgrenciBilgiDrawer({
       >
         {/* Header */}
         <div 
-          className="drawer-header"
+          className="drawer-header obd-header"
           style={{
             padding: '20px 24px',
             borderBottom: '1px solid #e2e8f0',
@@ -378,6 +377,7 @@ export default function OgrenciBilgiDrawer({
 
         {/* Step Navigation */}
         <div 
+          className="obd-steps"
           style={{
             display: 'flex',
             gap: '8px',
@@ -429,7 +429,7 @@ export default function OgrenciBilgiDrawer({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+          <div className="obd-body" style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
             {/* Alerts */}
             {error && (
               <div style={{
@@ -476,7 +476,7 @@ export default function OgrenciBilgiDrawer({
             {/* Step: Kişisel Bilgiler */}
             {activeStep === 'kisisel' && (
               <div className="step-content">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div className="obd-grid-2">
                   <div className="form-field">
                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
                       Ad <span style={{ color: '#ef4444' }}>*</span>
@@ -654,7 +654,7 @@ export default function OgrenciBilgiDrawer({
             {/* Step: İletişim */}
             {activeStep === 'iletisim' && (
               <div className="step-content">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div className="obd-grid-2">
                   <div className="form-field">
                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>
                       Telefon
@@ -1044,6 +1044,7 @@ export default function OgrenciBilgiDrawer({
 
           {/* Footer */}
           <div 
+            className="obd-footer"
             style={{
               padding: '20px 24px',
               borderTop: '1px solid #e2e8f0',

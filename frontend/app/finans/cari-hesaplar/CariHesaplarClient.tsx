@@ -637,7 +637,7 @@ export default function CariHesaplarClient({ embedded }: CariHesaplarClientProps
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[250] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-[13px] font-bold transition-all duration-300 ${
+        <div className={`mobile-above-nav fixed bottom-6 right-6 z-[250] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-[13px] font-bold transition-all duration-300 ${
           toast.type === "success"
             ? "bg-emerald-600 text-white shadow-emerald-600/30"
             : "bg-rose-600 text-white shadow-rose-600/30"

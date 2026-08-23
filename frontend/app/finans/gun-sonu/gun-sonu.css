@@ -88,6 +88,12 @@
 .gs-tabs button:hover { color: var(--gs-primary); background: #f8fbff; }
 .gs-tabs button.active { background: var(--gs-primary); color: #fff; }
 
+@media (max-width: 640px) {
+  /* Üç sekme telefonda tam genişliği paylaşsın */
+  .gs-tabs { display: flex; width: 100%; }
+  .gs-tabs button { flex: 1 1 0; min-width: 0; padding: 10px 8px; }
+}
+
 /* ── Durum (yükleniyor / hata / boş) ────── */
 .gs-state {
   background: #fff;

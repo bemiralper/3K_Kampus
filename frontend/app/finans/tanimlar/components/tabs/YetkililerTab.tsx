@@ -157,7 +157,7 @@ export default function YetkililerTab({ kurumId, maliHesapId, onToast }: Props) 
 
   return (
     <div className="bg-white">
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-50">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-gray-50">
         <p className="text-xs text-gray-400 m-0">
           Bu kişiler tüm mali hesaplardan sorumludur. Her hesap için ayrı eklemenize gerek yok.
         </p>

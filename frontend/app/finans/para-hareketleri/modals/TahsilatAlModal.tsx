@@ -197,7 +197,7 @@ export default function TahsilatAlModal({ onClose, onSuccess, prefillSozlesmeId,
         </FinansModalField>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="fin-form-grid-2">
         <FinansModalField label="İşlem Tutarı (₺)">
           <input type="number" min={1} value={tutar} onChange={(e) => setTutar(e.target.value)} style={finansModalInputStyle} />
         </FinansModalField>
@@ -206,7 +206,7 @@ export default function TahsilatAlModal({ onClose, onSuccess, prefillSozlesmeId,
         </FinansModalField>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="fin-form-grid-2">
         <FinansModalField label="Mali Hesap (Kasa / Banka) *" hint="Tahsilatın yattığı hesap — bakiye bu seçime göre güncellenir">
           <select
             required
@@ -236,7 +236,7 @@ export default function TahsilatAlModal({ onClose, onSuccess, prefillSozlesmeId,
         onChange={(patch) => setMasrafForm((f) => ({ ...f, ...patch }))}
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="fin-form-grid-2">
         <FinansModalField label="Referans No (opsiyonel)">
           <input type="text" value={referansNo} onChange={(e) => setReferansNo(e.target.value)} style={finansModalInputStyle} />
         </FinansModalField>

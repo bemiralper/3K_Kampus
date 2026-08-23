@@ -1,0 +1,436 @@
+/* ============================================================
+   MOBİL KART TABLOLARI  (paylaşılan)
+
+   Telefon ve tablet dikeyde (<900px) veri tabloları yatay kaydırma
+   yerine kart listesine döner. Sütun başlığı `td[data-label]` ile
+   ::before olarak yazılır; etiketleri MobileTableCards bileşeni
+   thead'den okuyup hücrelere yazar ve tabloya data-cards="1" koyar.
+
+   Kapsam: `.mobile-cards` sınıfı taşıyan bir kapsayıcının içi.
+   ============================================================ */
+@media (max-width: 899px) {
+  /* Tailwind .overflow-x-auto ve .finans-table-wrap ile aynı özgüllükte;
+     kart modunda yatay kaydırma kapatılmalı */
+  .mobile-cards-host,
+  .mobile-cards-scroll-off {
+    overflow-x: visible !important;
+  }
+
+  /* Seçicilerde `.mobile-cards-host` + tam eleman zinciri var: bu katman
+     CSS Modules (.examTable td) ve styled-jsx (.tbl td.jsx-x) kurallarını
+     yenmek zorunda, yoksa hücreler tablo düzeninde kalır. */
+  .mobile-cards-host table[data-cards='1'] {
+    table-layout: auto;
+    width: 100%;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    display: block;
+  }
+
+  .mobile-cards-host table[data-cards='1'] > thead {
+    display: none;
+  }
+
+  .mobile-cards-host table[data-cards='1'] > tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .mobile-cards-host table[data-cards='1'] > tbody > tr {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid #e6ecf3;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .mobile-cards-host table[data-cards='1'] > tbody > tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .mobile-cards-host table[data-cards='1'] > tbody > tr:hover {
+    background: #fff;
+  }
+
+  .mobile-cards-host table[data-cards='1'] > tbody > tr > td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 30px;
+    padding: 5px 0;
+    border: none;
+    text-align: left;
+    white-space: normal;
+    font-size: 13px;
+  }
+
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 42%;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #94a3b8;
+  }
+
+  /* Değer sağa yaslanır, etiketle çakışmaz */
+  .mobile-cards-host table[data-cards='1'] > tbody > tr > td > * {
+    text-align: right;
+    min-width: 0;
+  }
+
+  .mobile-cards-host table[data-cards='1'] > tbody > tr > td:empty,
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='void'] {
+    display: none;
+  }
+
+  /* Başlıksız sütun (seçim kutusu, genişletme oku…): etiket yazılmaz */
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='bare'] {
+    justify-content: flex-start;
+    padding: 0 0 4px;
+  }
+
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='bare']::before,
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='primary']::before,
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='actions']::before {
+    display: none;
+  }
+
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='bare']
+    > *,
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='primary']
+    > *,
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='actions']
+    > * {
+    text-align: left;
+  }
+
+  /* Kart başlığı */
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='primary'] {
+    display: block;
+    padding: 0 0 9px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 14.5px;
+    font-weight: 700;
+  }
+
+  /* İşlem sütunu = kart altlığı, dokunmaya uygun butonlar */
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td[data-role='actions'] {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 10px 0 0;
+    margin-top: 6px;
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .mobile-cards-host table[data-cards='1'] .row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    opacity: 1;
+  }
+
+  .mobile-cards-host table[data-cards='1'] td button,
+  .mobile-cards-host table[data-cards='1'] td a[class*='btn'] {
+    min-height: 36px;
+  }
+
+  .mobile-cards-host table[data-cards='1'] .cell-money {
+    font-size: 13.5px;
+    text-align: right;
+  }
+
+  .mobile-cards-host table[data-cards='1'] .finans-aciklama-cell,
+  .mobile-cards-host table[data-cards='1'] .finans-cari-cell {
+    text-align: right;
+    align-items: flex-end;
+  }
+
+  .mobile-cards-host
+    table[data-cards='1']
+    td[data-role='primary']
+    .finans-aciklama-cell,
+  .mobile-cards-host
+    table[data-cards='1']
+    td[data-role='primary']
+    .finans-cari-cell {
+    text-align: left;
+    align-items: flex-start;
+  }
+
+  .mobile-cards-host table[data-cards='1'] .finans-progress {
+    min-width: 120px;
+  }
+
+  /* Seçim kutusu kartın başına boş satır açmasın; başlığın sağına otur */
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr
+    > td:has(> input[type='checkbox']) {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    justify-content: flex-end;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .mobile-cards-host
+    table[data-cards='1']
+    > tbody
+    > tr:has(td > input[type='checkbox'])
+    > td[data-role='primary'] {
+    padding-right: 34px;
+  }
+
+  /* İptal edilen satırlarda tüm kart üstü çizili olmasın */
+  .mobile-cards-host table[data-cards='1'] tr.finans-row--cancelled td {
+    text-decoration: none;
+  }
+
+  .mobile-cards-host
+    table[data-cards='1']
+    tr.finans-row--cancelled
+    td[data-role='primary'] {
+    text-decoration: line-through;
+  }
+}
+
+/* ============================================================
+   Ant Design tabloları — telefon / tablet kart görünümü
+   AntD sabit sütun genişlikleri (colgroup + table-layout: fixed) ve
+   sticky başlık kullanıyor; kart modunda bunların hepsi devre dışı.
+   ============================================================ */
+
+@media (max-width: 899px) {
+  .mobile-antd-cards .ant-table {
+    background: transparent;
+  }
+
+  .mobile-antd-cards .ant-table-container,
+  .mobile-antd-cards .ant-table-content,
+  .mobile-antd-cards .ant-table-body {
+    overflow: visible !important;
+  }
+
+  /* Sticky başlık tablosu ve ölçüm satırı kart modunda gereksiz */
+  .mobile-antd-cards .ant-table-header,
+  .mobile-antd-cards .ant-table-measure-row,
+  .mobile-antd-cards .ant-table-selection-col,
+  .mobile-antd-cards table[data-cards='1'] colgroup {
+    display: none;
+  }
+
+  .mobile-antd-cards table[data-cards='1'] {
+    table-layout: auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Sabitlenmiş sütunlar kartta akışa dönmeli */
+  .mobile-antd-cards table[data-cards='1'] td.ant-table-cell-fix-left,
+  .mobile-antd-cards table[data-cards='1'] td.ant-table-cell-fix-right {
+    position: static !important;
+    right: auto !important;
+    left: auto !important;
+    background: transparent !important;
+  }
+
+  .mobile-antd-cards
+    table[data-cards='1']
+    td.ant-table-cell-fix-left-last::after,
+  .mobile-antd-cards
+    table[data-cards='1']
+    td.ant-table-cell-fix-right-first::after {
+    display: none !important;
+  }
+
+  .mobile-antd-cards table[data-cards='1'] tr.ant-table-row:hover > td,
+  .mobile-antd-cards
+    table[data-cards='1']
+    tr.ant-table-row:hover
+    > td.ant-table-cell-row-hover {
+    background: transparent !important;
+  }
+
+  /* Boş durum kartı tam genişlik kalsın */
+  .mobile-antd-cards .ant-table-placeholder td {
+    display: block;
+    text-align: center;
+  }
+
+  /* Sayfalama parmak dostu */
+  .mobile-antd-cards .ant-pagination {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+    row-gap: 8px;
+  }
+
+  .mobile-antd-cards .ant-pagination-options {
+    display: none;
+  }
+}
+
+/* AntD hücre stilleri CSS-in-JS ile daha özgül geliyor; kart modu için
+   aynı kuralları .mobile-antd-cards altında tekrar yazıyoruz. */
+@media (max-width: 899px) {
+  .mobile-antd-cards table[data-cards='1'] tbody > tr {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid #e6ecf3;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .mobile-antd-cards table[data-cards='1'] tbody > tr > td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    width: auto !important;
+    min-height: 30px;
+    padding: 5px 0 !important;
+    border: none !important;
+    white-space: normal;
+    text-align: right;
+  }
+
+  .mobile-antd-cards table[data-cards='1'] tbody > tr > td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 42%;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #94a3b8;
+  }
+
+  .mobile-antd-cards
+    table[data-cards='1']
+    tbody
+    > tr
+    > td[data-role='void']::before,
+  .mobile-antd-cards
+    table[data-cards='1']
+    tbody
+    > tr
+    > td[data-role='primary']::before,
+  .mobile-antd-cards
+    table[data-cards='1']
+    tbody
+    > tr
+    > td[data-role='actions']::before,
+  .mobile-antd-cards
+    table[data-cards='1']
+    tbody
+    > tr
+    > td[data-role='bare']::before {
+    display: none;
+  }
+
+  .mobile-antd-cards table[data-cards='1'] tbody > tr > td[data-role='void'] {
+    display: none;
+  }
+
+  .mobile-antd-cards
+    table[data-cards='1']
+    tbody
+    > tr
+    > td[data-role='primary'] {
+    display: block;
+    padding: 0 0 9px !important;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #f1f5f9 !important;
+    font-size: 14.5px;
+    font-weight: 700;
+    text-align: left;
+  }
+
+  .mobile-antd-cards
+    table[data-cards='1']
+    tbody
+    > tr
+    > td[data-role='actions'] {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 10px 0 0 !important;
+    margin-top: 6px;
+    border-top: 1px solid #f1f5f9 !important;
+  }
+
+  .mobile-antd-cards table[data-cards='1'] tbody > tr > td[data-role='bare'] {
+    justify-content: flex-start;
+  }
+}
+
