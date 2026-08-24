@@ -1418,18 +1418,20 @@ export function conversationRelationLabel(conv: {
   ogrenci_ad?: string;
   ogrenci_adlari?: string[];
   veli_ad?: string;
+  department?: string;
 }): string {
   const students = (conv.ogrenci_adlari && conv.ogrenci_adlari.length > 0)
     ? conv.ogrenci_adlari
     : (conv.ogrenci_ad ? conv.ogrenci_ad.split(',').map((s) => s.trim()).filter(Boolean) : []);
+  const parts: string[] = [];
+  if (conv.department === 'ACCOUNTING') parts.push('Muhasebe');
+  else if (conv.department === 'COACHING') parts.push('Koçluk');
   if (conv.contact_type === 'VELI' && students.length > 0) {
-    if (students.length === 1) return `${students[0]} velisi`;
-    return `${students.join(', ')} velisi`;
+    parts.push(students.length === 1 ? `${students[0]} velisi` : `${students.join(', ')} velisi`);
+  } else if (conv.contact_type === 'OGRENCI' && conv.veli_ad) {
+    parts.push(`Veli: ${conv.veli_ad}`);
   }
-  if (conv.contact_type === 'OGRENCI' && conv.veli_ad) {
-    return `Veli: ${conv.veli_ad}`;
-  }
-  return '';
+  return parts.join(' · ');
 }
 
 export async function sendPaymentReminder(

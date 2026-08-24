@@ -412,3 +412,156 @@ class ConversationOpenPersonelThreadTest(TestCase):
         self.assertEqual(resp.status_code, 201, resp.content)
         conv.refresh_from_db()
         self.assertEqual(conv.sube_id, self.sube_a.id)
+
+
+class SamePersonReusesThreadAcrossAccountsTest(TestCase):
+    """Aynı kişiye farklı WhatsApp hesabından giden mesaj yeni satır açmamalı."""
+
+    def setUp(self):
+        from apps.communication.domain.models import CommunicationChannelConfig
+
+        self.kurum = Kurum.objects.create(ad='Tek Thread', kod='TTH')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='TTH-S')
+        self.acc_muh = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Muhasebe',
+            phone_number_id='pn_muh',
+            is_active=True,
+        )
+        self.acc_koc = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            name='Koçluk',
+            phone_number_id='pn_koc',
+            is_active=True,
+        )
+        self.phone = '+905551110099'
+
+    def test_second_account_reuses_existing_person_thread(self):
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        first, created = ConversationRepository.get_or_create_for_contact(
+            self.kurum.id,
+            Channel.WHATSAPP,
+            self.phone,
+            contact_type='PERSONEL',
+            channel_config=self.acc_muh,
+            channel_config_id=self.acc_muh.id,
+            department=CommunicationDepartment.ACCOUNTING,
+        )
+        self.assertTrue(created)
+        second, created = ConversationRepository.get_or_create_for_contact(
+            self.kurum.id,
+            Channel.WHATSAPP,
+            self.phone,
+            contact_type='PERSONEL',
+            channel_config=self.acc_koc,
+            channel_config_id=self.acc_koc.id,
+            department=CommunicationDepartment.ACCOUNTING,
+        )
+        self.assertFalse(created)
+        self.assertEqual(first.id, second.id)
+        second.refresh_from_db()
+        self.assertEqual(second.channel_config_id, self.acc_koc.id)
+
+    def test_same_line_keeps_coaching_and_accounting_apart(self):
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        acc, created_a = ConversationRepository.get_or_create_for_contact(
+            self.kurum.id,
+            Channel.WHATSAPP,
+            self.phone,
+            contact_type='PERSONEL',
+            channel_config=self.acc_koc,
+            channel_config_id=self.acc_koc.id,
+            department=CommunicationDepartment.ACCOUNTING,
+        )
+        koc, created_k = ConversationRepository.get_or_create_for_contact(
+            self.kurum.id,
+            Channel.WHATSAPP,
+            self.phone,
+            contact_type='PERSONEL',
+            channel_config=self.acc_koc,
+            channel_config_id=self.acc_koc.id,
+            department=CommunicationDepartment.COACHING,
+        )
+        self.assertTrue(created_a)
+        self.assertTrue(created_k)
+        self.assertNotEqual(acc.id, koc.id)
+
+    def test_phone_format_variants_reuse_thread(self):
+        first, _ = ConversationRepository.get_or_create_for_contact(
+            self.kurum.id,
+            Channel.WHATSAPP,
+            self.phone,
+            contact_type='PERSONEL',
+        )
+        again, created = ConversationRepository.get_or_create_for_contact(
+            self.kurum.id,
+            Channel.WHATSAPP,
+            '05551110099',
+            contact_type='PERSONEL',
+        )
+        self.assertFalse(created)
+        self.assertEqual(first.id, again.id)
+
+
+class ConversationMergeTest(TestCase):
+    def test_merge_moves_messages_and_deletes_duplicates(self):
+        from apps.communication.application.conversation_merge import merge_duplicate_conversations
+        from apps.communication.domain.enums import MessageDirection, MessageStatus
+        from apps.communication.domain.models import Conversation, Message
+
+        kurum = Kurum.objects.create(ad='Merge Kurum', kod='MRG')
+        phone = '+905551110088'
+        keep = Conversation.objects.create(
+            kurum=kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone=phone,
+            contact_type='PERSONEL',
+            contact_name='Taner Alper',
+        )
+        extra = Conversation.objects.create(
+            kurum=kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='05551110088',
+            contact_type='PERSONEL',
+            contact_name='Taner Alper',
+        )
+        Message.objects.create(
+            conversation=keep,
+            direction=MessageDirection.OUTBOUND,
+            body='bir',
+            status=MessageStatus.SENT,
+        )
+        Message.objects.create(
+            conversation=extra,
+            direction=MessageDirection.OUTBOUND,
+            body='iki',
+            status=MessageStatus.SENT,
+        )
+        result = merge_duplicate_conversations(kurum.id)
+        self.assertEqual(result['removed'], 1)
+        self.assertEqual(Conversation.objects.filter(kurum=kurum).count(), 1)
+        winner = Conversation.objects.get(kurum=kurum)
+        self.assertEqual(winner.messages.count(), 2)
+
+    def test_merge_keeps_coaching_and_accounting_separate(self):
+        from apps.communication.application.conversation_merge import merge_duplicate_conversations
+        from apps.communication.domain.enums import CommunicationDepartment
+        from apps.communication.domain.models import Conversation
+
+        kurum = Kurum.objects.create(ad='Merge Dept', kod='MRD')
+        phone = '+905551110077'
+        Conversation.objects.create(
+            kurum=kurum, channel=Channel.WHATSAPP, contact_phone=phone,
+            contact_type='PERSONEL', department=CommunicationDepartment.COACHING,
+        )
+        Conversation.objects.create(
+            kurum=kurum, channel=Channel.WHATSAPP, contact_phone=phone,
+            contact_type='PERSONEL', department=CommunicationDepartment.ACCOUNTING,
+        )
+        result = merge_duplicate_conversations(kurum.id)
+        self.assertEqual(result['removed'], 0)
+        self.assertEqual(Conversation.objects.filter(kurum=kurum).count(), 2)

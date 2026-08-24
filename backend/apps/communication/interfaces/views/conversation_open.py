@@ -138,11 +138,24 @@ class ConversationOpenView(CommunicationAPIView):
             )
 
         cfg_id = channel_config.id if channel_config else None
+        from apps.communication.application.coach_scope import visible_departments_for_user
+        from apps.communication.domain.enums import CommunicationDepartment
+        depts = visible_departments_for_user(request.user)
+        open_dept = None
+        if depts is not None:
+            if (
+                CommunicationDepartment.ACCOUNTING in depts
+                and CommunicationDepartment.COACHING not in depts
+            ):
+                open_dept = CommunicationDepartment.ACCOUNTING
+            else:
+                open_dept = CommunicationDepartment.COACHING
 
         conversation = None
         if veli_id:
             conversation = ConversationRepository.find_latest_for_veli(
-                kurum_id, veli_id, channel=Channel.WHATSAPP, channel_config_id=cfg_id,
+                kurum_id, veli_id, channel=Channel.WHATSAPP,
+                channel_config_id=cfg_id, department=open_dept,
             )
         elif req_ogrenci_id:
             from apps.communication.domain.models import Conversation
@@ -153,12 +166,21 @@ class ConversationOpenView(CommunicationAPIView):
                 ogrenci_id=ogrenci_id,
                 veli_id__isnull=True,
             )
+            if open_dept:
+                ogr_qs = ogr_qs.filter(department=open_dept)
             if cfg_id:
-                ogr_qs = ogr_qs.filter(channel_config_id=cfg_id)
-            conversation = ogr_qs.order_by('-last_message_at', '-updated_at').first()
+                preferred = ogr_qs.filter(channel_config_id=cfg_id).order_by(
+                    '-last_message_at', '-updated_at',
+                ).first()
+                conversation = preferred or ogr_qs.order_by(
+                    '-last_message_at', '-updated_at',
+                ).first()
+            else:
+                conversation = ogr_qs.order_by('-last_message_at', '-updated_at').first()
         if not conversation:
             conversation = ConversationRepository.find_by_phone(
-                kurum_id, Channel.WHATSAPP, e164, channel_config_id=cfg_id,
+                kurum_id, Channel.WHATSAPP, e164,
+                channel_config_id=cfg_id, department=open_dept,
             )
             # Öğrenci ikonundan açılışta mevcut veli thread’ini çalma — ayrı öğrenci sohbeti kur.
             if (
@@ -247,6 +269,7 @@ class ConversationOpenView(CommunicationAPIView):
                 ogrenci_id=None if is_personel_thread else ogrenci_id,
                 veli_id=None if is_personel_thread else veli_id,
                 channel_config=channel_config,
+                department=open_dept,
             )
             if created and is_personel_thread:
                 conversation.contact_type = RecipientType.PERSONEL

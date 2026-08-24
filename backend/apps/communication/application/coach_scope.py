@@ -59,6 +59,40 @@ def _bypasses_claim_visibility(user) -> bool:
     return _has_full_inbox_access(user) or is_resource_admin(user)
 
 
+def visible_departments_for_user(user) -> set[str] | None:
+    """
+    Rolün görebileceği sohbet departmanları.
+    None = süper yönetici / yönetici: hepsi.
+    """
+    if _has_full_inbox_access(user):
+        return None
+    depts: set[str] = set()
+    if get_coach_profile(user):
+        depts.add(CommunicationDepartment.COACHING)
+    from apps.communication.application.account_resolver import _is_accounting_staff
+    if _is_accounting_staff(user):
+        depts.add(CommunicationDepartment.ACCOUNTING)
+    if not depts:
+        return {CommunicationDepartment.COACHING}
+    return depts
+
+
+def apply_department_visibility(qs, user):
+    depts = visible_departments_for_user(user)
+    if depts is None:
+        return qs
+    return qs.filter(department__in=depts)
+
+
+def user_can_see_department(user, department: str | None) -> bool:
+    depts = visible_departments_for_user(user)
+    if depts is None:
+        return True
+    if not department:
+        return CommunicationDepartment.COACHING in depts
+    return department in depts
+
+
 def _has_staff_messaging_access(user) -> bool:
     """Muhasebe vb. — öğrenci/finans erişimi olan iletişim kullanıcıları."""
     if not user_has_any_permission(user, 'communication.read', 'communication.write'):
@@ -125,12 +159,14 @@ def filter_conversations_for_user(
     """
     if not _ticket_routing_enabled():
         qs = _legacy_filter_conversations_for_user(qs, user)
+        qs = apply_department_visibility(qs, user)
         return filter_by_accessible_whatsapp_accounts(
             qs, user, kurum_id=kurum_id, sube_id=sube_id,
         )
 
     if _bypasses_claim_visibility(user):
         qs = _apply_inbox_filter(qs, inbox, coach_profile=None, user=user, is_admin=True)
+        qs = apply_department_visibility(qs, user)
         return filter_by_accessible_whatsapp_accounts(
             qs, user, kurum_id=kurum_id, sube_id=sube_id,
         )
@@ -176,12 +212,14 @@ def filter_conversations_for_user(
         )
         qs = qs.filter(visibility).exclude(other_claim_block)
         qs = _apply_inbox_filter(qs, inbox, coach_profile=coach_profile, user=user, is_admin=False)
+        qs = apply_department_visibility(qs, user)
         return filter_by_accessible_whatsapp_accounts(
             qs, user, kurum_id=kurum_id, sube_id=sube_id,
         )
 
     if _has_staff_messaging_access(user):
         qs = _apply_inbox_filter(qs, inbox, coach_profile=None, user=user, is_admin=True)
+        qs = apply_department_visibility(qs, user)
         return filter_by_accessible_whatsapp_accounts(
             qs, user, kurum_id=kurum_id, sube_id=sube_id,
         )
@@ -193,6 +231,7 @@ def filter_conversations_for_user(
         qs = qs.none()
     else:
         qs = qs.filter(ogrenci_id__in=allowed)
+    qs = apply_department_visibility(qs, user)
     return filter_by_accessible_whatsapp_accounts(
         qs, user, kurum_id=kurum_id, sube_id=sube_id,
     )
@@ -245,16 +284,8 @@ def filter_by_accessible_whatsapp_accounts(
     if default_ids:
         account_q |= Q(channel_config_id__isnull=True)
     from apps.communication.application.account_resolver import _is_accounting_staff
-
     if _is_accounting_staff(user):
-        # Makbuz/şablon gönderimi koç hattına düşse bile muhasebe kendi
-        # gönderimini ve ACCOUNTING departmanındaki sohbetleri görsün.
         account_q |= Q(department=CommunicationDepartment.ACCOUNTING)
-        account_q |= Q(
-            messages__sender_user_id=user.id,
-            messages__direction=MessageDirection.OUTBOUND,
-        )
-        return qs.filter(account_q).distinct()
     return qs.filter(account_q)
 
 
@@ -338,6 +369,9 @@ def _accounting_owns_conversation(user, conversation) -> bool:
 def user_can_access_conversation(user, conversation) -> bool:
     if _bypasses_claim_visibility(user):
         return True
+
+    if not user_can_see_department(user, getattr(conversation, 'department', None)):
+        return False
 
     if not _user_can_access_conversation_account(user, conversation):
         return False

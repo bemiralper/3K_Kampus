@@ -34,6 +34,8 @@ class MessageContent:
     template_context: dict = field(default_factory=dict)
     # Serbest mesaj 24 saat kuralına takılırsa kuyruğun deneyeceği Meta şablonu
     session_fallback: dict | None = None
+    # Koçluk / muhasebe ayrımı — aynı hat olsa bile ayrı sohbet
+    department: str | None = None
 
 
 @dataclass
@@ -187,10 +189,10 @@ class CommunicationService:
                 veli_id=thread_veli_id,
                 channel_config=send_cfg,
                 channel_config_id=content.channel_config_id,
+                department=self._resolve_send_department(
+                    content, source, send_cfg, sender_user_id,
+                ),
             )
-            if created and sender_user_id:
-                self._tag_accounting_conversation(conversation, sender_user_id)
-
         message_type = content.message_type
         if content.template_name:
             message_type = MessageType.TEMPLATE
@@ -365,6 +367,33 @@ class CommunicationService:
             return SendResult(success=False, errors=['Kampanya bulunamadı.'])
         result = CampaignService().retry_failed(campaign)
         return SendResult(success=True, provider_response=result)
+
+    @staticmethod
+    def _resolve_send_department(content, source, send_cfg, sender_user_id) -> str | None:
+        if getattr(content, 'department', None):
+            return content.department
+        from apps.communication.application.notification_dispatcher import (
+            department_for_event,
+        )
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        inferred = department_for_event(
+            getattr(source, 'module', None), None,
+        )
+        if inferred:
+            return inferred
+        if sender_user_id:
+            from django.contrib.auth import get_user_model
+
+            from apps.communication.application.account_resolver import _is_accounting_staff
+            from apps.communication.application.account_resolver import _is_active_coach
+
+            user = get_user_model().objects.filter(id=sender_user_id).first()
+            if user and _is_accounting_staff(user) and not _is_active_coach(user):
+                return CommunicationDepartment.ACCOUNTING
+        if send_cfg is not None and getattr(send_cfg, 'department', None):
+            return send_cfg.department
+        return None
 
     @staticmethod
     def _tag_accounting_conversation(conversation, sender_user_id: int) -> None:

@@ -164,7 +164,7 @@ class MultiWhatsAppAccountTests(TestCase):
             filter_conversations_for_user,
             user_can_access_conversation,
         )
-        from apps.communication.domain.enums import ConversationStatus
+        from apps.communication.domain.enums import CommunicationDepartment, ConversationStatus
 
         # Genel hesaptan muhasebe rolünü çıkar — yalnızca koç
         self.acc_genel.allowed_roles.set([self.role_koc])
@@ -176,6 +176,7 @@ class MultiWhatsAppAccountTests(TestCase):
             contact_phone='905551110001',
             status=ConversationStatus.OPEN,
             channel_config=self.acc_genel,
+            department=CommunicationDepartment.COACHING,
         )
         conv_muh = Conversation.objects.create(
             kurum=self.kurum,
@@ -184,6 +185,7 @@ class MultiWhatsAppAccountTests(TestCase):
             contact_phone='905551110002',
             status=ConversationStatus.OPEN,
             channel_config=self.acc_kadikoy,
+            department=CommunicationDepartment.ACCOUNTING,
         )
 
         qs = Conversation.objects.filter(kurum=self.kurum)
@@ -260,10 +262,11 @@ class MultiWhatsAppAccountTests(TestCase):
         self.assertIn(self.acc_kadikoy.id, ids)
         self.assertNotIn(self.acc_genel.id, ids)
 
-    def test_accounting_sees_own_outbound_on_other_account(self):
-        """Makbuz koç hattına düşse bile gönderen muhasebe sohbeti görür."""
+    def test_accounting_does_not_see_coaching_thread(self):
+        """Koçluk sohbeti muhasebeye görünmez; gönderen olsa bile."""
         from apps.communication.application.coach_scope import filter_conversations_for_user
         from apps.communication.domain.enums import (
+            CommunicationDepartment,
             ConversationStatus,
             MessageDirection,
             MessageStatus,
@@ -278,14 +281,15 @@ class MultiWhatsAppAccountTests(TestCase):
             contact_phone='905551110003',
             status=ConversationStatus.OPEN,
             channel_config=self.acc_genel,
+            department=CommunicationDepartment.COACHING,
         )
         Message.objects.create(
             conversation=conv,
             direction=MessageDirection.OUTBOUND,
-            body='Tahsilat makbuzu',
+            body='Ödev planı',
             status=MessageStatus.SENT,
             sender_user=self.user_m,
-            source_module='odeme',
+            source_module='odev',
         )
 
         qs = filter_conversations_for_user(
@@ -294,7 +298,7 @@ class MultiWhatsAppAccountTests(TestCase):
             kurum_id=self.kurum.id,
             sube_id=self.sube_a.id,
         )
-        self.assertIn(conv.id, set(qs.values_list('id', flat=True)))
+        self.assertNotIn(conv.id, set(qs.values_list('id', flat=True)))
 
     def test_accounting_sees_accounting_department_on_other_account(self):
         from apps.communication.application.coach_scope import filter_conversations_for_user
@@ -317,6 +321,41 @@ class MultiWhatsAppAccountTests(TestCase):
             sube_id=self.sube_a.id,
         )
         self.assertIn(conv.id, set(qs.values_list('id', flat=True)))
+
+    def test_superuser_sees_both_departments(self):
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+        from apps.communication.domain.enums import CommunicationDepartment, ConversationStatus
+
+        coach_conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            channel=Channel.WHATSAPP,
+            contact_phone='905551110006',
+            status=ConversationStatus.OPEN,
+            channel_config=self.acc_genel,
+            department=CommunicationDepartment.COACHING,
+        )
+        acc_conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            channel=Channel.WHATSAPP,
+            contact_phone='905551110006',
+            status=ConversationStatus.OPEN,
+            channel_config=self.acc_genel,
+            department=CommunicationDepartment.ACCOUNTING,
+        )
+        admin = User.objects.create_superuser(
+            username='wa_see_all', email='seeall@test.com', password='x',
+        )
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            admin,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube_a.id,
+        )
+        ids = set(qs.values_list('id', flat=True))
+        self.assertIn(coach_conv.id, ids)
+        self.assertIn(acc_conv.id, ids)
 
     def test_send_stamps_channel_config_and_accounting_department(self):
         from unittest.mock import patch

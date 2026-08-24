@@ -391,6 +391,19 @@ def _session_fallback(preview: NotificationPreview, context: dict) -> dict | Non
     }
 
 
+def department_for_event(event_module: str | None, event_key: str | None = None) -> str | None:
+    """Olayın sohbet departmanı — hat paylaşılsa bile koçluk/muhasebe ayrılır."""
+    from apps.communication.domain.enums import CommunicationDepartment
+
+    if event_key in _ACCOUNTING_EVENT_KEYS or event_module in (MODULE_ODEME, MODULE_FINANS):
+        return CommunicationDepartment.ACCOUNTING
+    if event_module in _COACHING_MODULES:
+        return CommunicationDepartment.COACHING
+    if event_module == 'ogrenci':
+        return CommunicationDepartment.ACCOUNTING
+    return None
+
+
 def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -> str | None:
     """Olayın departman hattı; yoklama/ödev koçluk, ödeme muhasebe."""
     from apps.communication.application.account_resolver import AccountResolver

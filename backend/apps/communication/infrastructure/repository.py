@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 from django.db import transaction
@@ -155,6 +156,20 @@ class ContactIdentityRepository:
         )
 
 
+def conversation_phone_tail(phone: str) -> str:
+    digits = re.sub(r'\D', '', phone or '')
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+def _conversation_phone_q(contact_phone: str) -> Q:
+    """Aynı hattı +90 / 0 / ham basamak biçimlerinde de bul."""
+    tail = conversation_phone_tail(contact_phone)
+    if not tail:
+        return Q(contact_phone=contact_phone)
+    variants = {contact_phone, f'+90{tail}', f'90{tail}', f'0{tail}', tail}
+    return Q(contact_phone__in=variants) | Q(contact_phone__endswith=tail)
+
+
 class ConversationRepository:
     @staticmethod
     def get_by_id(kurum_id: int, conversation_id, *, sube_id: int | None = None) -> Conversation | None:
@@ -185,12 +200,19 @@ class ConversationRepository:
         *,
         channel: str | None = None,
         channel_config_id=None,
+        department: str | None = None,
     ):
         qs = Conversation.objects.filter(kurum_id=kurum_id, veli_id=veli_id)
         if channel:
             qs = qs.filter(channel=channel)
+        if department:
+            qs = qs.filter(department=department)
         if channel_config_id:
-            qs = qs.filter(channel_config_id=channel_config_id)
+            preferred = qs.filter(channel_config_id=channel_config_id).order_by(
+                '-last_message_at', '-updated_at',
+            ).first()
+            if preferred:
+                return preferred
         return qs.select_related('ogrenci', 'veli').order_by('-last_message_at', '-updated_at').first()
 
     @staticmethod
@@ -312,14 +334,20 @@ class ConversationRepository:
         contact_phone: str,
         *,
         channel_config_id=None,
+        department: str | None = None,
     ):
         qs = Conversation.objects.filter(
             kurum_id=kurum_id,
             channel=channel,
-            contact_phone=contact_phone,
-        )
+        ).filter(_conversation_phone_q(contact_phone))
+        if department:
+            qs = qs.filter(department=department)
         if channel_config_id:
-            qs = qs.filter(channel_config_id=channel_config_id)
+            preferred = qs.filter(channel_config_id=channel_config_id).select_related(
+                'ogrenci', 'ogrenci__sube', 'veli', 'kurum', 'contact_identity', 'channel_config',
+            ).order_by('-last_message_at', '-updated_at').first()
+            if preferred:
+                return preferred
         return qs.select_related(
             'ogrenci', 'ogrenci__sube', 'veli', 'kurum', 'contact_identity', 'channel_config',
         ).order_by('-last_message_at', '-updated_at').first()
@@ -353,8 +381,10 @@ class ConversationRepository:
         veli_id=None,
         channel_config=None,
         channel_config_id=None,
+        department: str | None = None,
     ) -> tuple[Conversation, bool]:
         cfg_id = channel_config_id or getattr(channel_config, 'id', None)
+        thread_dept = department or getattr(channel_config, 'department', None)
         defaults = {
             'status': ConversationStatus.OPEN,
             'contact_type': contact_type,
@@ -367,8 +397,8 @@ class ConversationRepository:
             defaults['veli_id'] = veli_id
         if cfg_id:
             defaults['channel_config_id'] = cfg_id
-        if channel_config is not None and getattr(channel_config, 'department', None):
-            defaults['department'] = channel_config.department
+        if thread_dept:
+            defaults['department'] = thread_dept
         sube_id = ConversationRepository._resolve_sube_id(ogrenci_id=ogrenci_id, veli_id=veli_id)
         if not sube_id and not ogrenci_id and not veli_id:
             sube_id = ConversationRepository._fallback_sube_id(kurum_id, channel_config)
@@ -376,9 +406,17 @@ class ConversationRepository:
             defaults['sube_id'] = sube_id
 
         def _scoped(qs):
-            # Hesap bazlı izolasyon: başka numaranın / hesabın sohbetini yeniden kullanma
-            if cfg_id:
-                return qs.filter(channel_config_id=cfg_id)
+            # Aynı kişi + aynı departman = tek sohbet. Koçluk ve muhasebe
+            # aynı WhatsApp hattından gitse bile ayrı thread kalır.
+            if thread_dept:
+                qs = qs.filter(department=thread_dept)
+            if not cfg_id:
+                return qs
+            preferred = qs.filter(
+                Q(channel_config_id=cfg_id) | Q(channel_config_id__isnull=True)
+            )
+            if preferred.exists():
+                return preferred
             return qs
 
         existing = None
@@ -409,8 +447,7 @@ class ConversationRepository:
                 Conversation.objects.filter(
                     kurum_id=kurum_id,
                     channel=channel,
-                    contact_phone=contact_phone,
-                )
+                ).filter(_conversation_phone_q(contact_phone))
             )
             existing = ConversationRepository._pick_existing_conversation(
                 base_qs,
@@ -466,13 +503,8 @@ class ConversationRepository:
             if cfg_id and conversation.channel_config_id != cfg_id:
                 conversation.channel_config_id = cfg_id
                 update_fields.append('channel_config_id')
-            if (
-                channel_config is not None
-                and getattr(channel_config, 'department', None)
-                and conversation.department != channel_config.department
-                and not conversation.claimed_by_user_id
-            ):
-                conversation.department = channel_config.department
+            if thread_dept and conversation.department != thread_dept:
+                conversation.department = thread_dept
                 update_fields.append('department')
             if update_fields:
                 update_fields.append('updated_at')
