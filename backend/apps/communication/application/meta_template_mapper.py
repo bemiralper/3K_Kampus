@@ -58,6 +58,19 @@ SAMPLE_VALUES: dict[str, str] = {
     'baslik': 'Veli Toplantısı',
     'mesaj': 'Bilgilendirme metni',
     'aciklama': 'Detaylı açıklama',
+    'ders_tarihi': '15 Ocak 2026 Pazartesi',
+    'ders_saati': '15.00',
+    'ders_adi': 'Matematik',
+    'ogretmen_ad': 'Tuba Demir',
+    'ders_durumu': 'Öğretmen Gelmedi',
+    'sebep': 'Hastalık',
+    'ek_bilgi': 'Ek not',
+    'telafi_notu': (
+        'Ders telafi edilecektir. Telafi tarihi ve saati kesinleştiğinde '
+        'tarafınıza ayrıca bilgi verilecektir.'
+    ),
+    'telafi_tarihi': '18 Ocak 2026 Pazar',
+    'telafi_saati': '14.00',
 }
 
 

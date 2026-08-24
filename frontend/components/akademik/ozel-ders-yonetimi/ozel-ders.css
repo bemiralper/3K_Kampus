@@ -843,6 +843,17 @@ button.od-holiday-chip:hover {
   cursor: pointer;
 }
 
+.od-wa-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.od-wa-preview-wrap .od-wa-preview {
+  max-width: 100%;
+}
+
 .od-form-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1194,14 +1205,15 @@ button.od-holiday-chip:hover {
 }
 
 .od-attend-card {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
+  column-gap: 12px;
+  row-gap: 8px;
   background: var(--card-bg, #fff);
   border: 1px solid var(--od-border);
   border-radius: var(--od-radius);
-  padding: 14px 16px;
+  padding: 10px 12px;
   box-shadow: var(--od-shadow);
 }
 
@@ -1210,12 +1222,12 @@ button.od-holiday-chip:hover {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 64px;
-  padding: 6px 4px;
-  border-radius: 10px;
+  min-width: 52px;
+  padding: 5px 4px;
+  border-radius: 8px;
   background: var(--body-bg, #f0f4f9);
   font-weight: 750;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   color: var(--od-text);
   flex-shrink: 0;
 }
@@ -1253,32 +1265,34 @@ button.od-holiday-chip:hover {
 .od-attend-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-left: auto;
+  gap: 5px;
+  grid-column: 1 / -1;
+  margin-left: 0;
 }
 
 .od-attend-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 1.5px solid transparent;
-  border-radius: 10px;
-  padding: 8px 12px;
-  font-size: 0.78rem;
-  font-weight: 700;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.2;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
   white-space: nowrap;
 }
 
-.od-attend-btn svg { width: 15px; height: 15px; }
+.od-attend-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
 
 .od-attend-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
 
-.od-attend-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.od-attend-btn:hover:not(:disabled) { filter: brightness(0.97); }
 
 .od-attend-btn.is-current {
-  box-shadow: 0 0 0 2px currentColor inset;
+  box-shadow: 0 0 0 1px currentColor inset;
 }
 
 .od-attend-btn.tone-success { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
@@ -1673,8 +1687,8 @@ button.od-holiday-chip:hover {
     animation: od-slide-up 0.18s ease forwards;
   }
 
-  .od-attend-actions { margin-left: 0; width: 100%; }
-  .od-attend-btn { flex: 1 1 auto; justify-content: center; }
+  .od-attend-actions { width: 100%; }
+  .od-attend-btn { justify-content: center; }
 }
 
 @keyframes od-slide-up { to { transform: translateY(0); } }

@@ -1,7 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { WhatsAppPreviewBubble } from '@/components/communication';
+import '@/components/communication/communication.css';
 import type { SetOturumDurumPayload } from '@/lib/ozel-ders-api';
+import {
+  OZEL_DERS_EVENT_BY_DURUM,
+  OZEL_DERS_WHATSAPP_TEMPLATES,
+  resolveOzelDersTemplate,
+  telafiNotuForPreview,
+  type OzelDersPreviewContext,
+} from '@/lib/ozel-ders-whatsapp-templates';
 import { Drawer } from './ozelDersUi';
 import {
   defaultSendWhatsapp,
@@ -18,9 +27,17 @@ type Props = {
   durum: string;
   description?: string;
   notes?: string;
+  preview?: OzelDersPreviewContext;
   busy?: boolean;
   onConfirm: (payload: SetOturumDurumPayload) => void | Promise<void>;
 };
+
+function sebepLabel(kod: string, aciklama: string): string {
+  const opt = SEBEP_OPTIONS.find((o) => o.value === kod);
+  if (kod === 'DIGER' && aciklama.trim()) return aciklama.trim();
+  if (opt && aciklama.trim()) return `${opt.label} — ${aciklama.trim()}`;
+  return aciklama.trim() || opt?.label || '';
+}
 
 export default function YoklamaDurumDrawer({
   open,
@@ -28,6 +45,7 @@ export default function YoklamaDurumDrawer({
   durum,
   description,
   notes,
+  preview,
   busy,
   onConfirm,
 }: Props) {
@@ -53,6 +71,26 @@ export default function YoklamaDurumDrawer({
   );
   const sebepInvalid =
     sebepRequired && (!sebepKodu || (sebepKodu === 'DIGER' && !sebepAciklama.trim()));
+
+  const eventKey = OZEL_DERS_EVENT_BY_DURUM[durum] || '';
+  const template = eventKey ? OZEL_DERS_WHATSAPP_TEMPLATES[eventKey] : undefined;
+  const usesEkBilgi = eventKey === 'ozel_ders.iptal';
+
+  const previewText = useMemo(() => {
+    if (!template) return '';
+    return resolveOzelDersTemplate(template.body, {
+      ogrenci_ad: preview?.ogrenci_ad || '…',
+      ders_tarihi: preview?.ders_tarihi || '…',
+      ders_saati: preview?.ders_saati || '…',
+      ders_adi: preview?.ders_adi || '…',
+      ogretmen_ad: preview?.ogretmen_ad || '',
+      sebep: sebepLabel(sebepKodu, sebepAciklama) || '…',
+      ek_bilgi: localNotes.trim(),
+      telafi_notu: telafiNotuForPreview(eventKey, telafiDurumu),
+      telafi_tarihi: preview?.telafi_tarihi || '',
+      telafi_saati: preview?.telafi_saati || '',
+    });
+  }, [template, preview, sebepKodu, sebepAciklama, localNotes, eventKey, telafiDurumu]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -149,18 +187,29 @@ export default function YoklamaDurumDrawer({
               onChange={(e) => setSendWhatsapp(e.target.checked)}
             />
             Veliye WhatsApp bildirimi gönder
+            {template ? ` — ${template.title}` : ''}
           </label>
         )}
 
         <div className="od-form-group">
-          <label>Not</label>
+          <label>{usesEkBilgi && sendWhatsapp ? 'Ek bilgi (velilere gider)' : 'Not'}</label>
           <textarea
             rows={2}
             value={localNotes}
             onChange={(e) => setLocalNotes(e.target.value)}
-            placeholder="Opsiyonel"
+            placeholder={usesEkBilgi && sendWhatsapp ? 'İsteğe bağlı ek cümle' : 'Opsiyonel'}
           />
         </div>
+
+        {showWhatsapp && sendWhatsapp && template && (
+          <div className="od-wa-preview-wrap">
+            <span className="od-form-hint">
+              Şablon: {template.title}
+              {preview?.ogrenci_ad ? ` · ${preview.ogrenci_ad}` : ''}
+            </span>
+            <WhatsAppPreviewBubble text={previewText} className="od-wa-preview" />
+          </div>
+        )}
       </form>
     </Drawer>
   );

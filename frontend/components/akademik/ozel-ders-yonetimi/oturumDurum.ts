@@ -23,7 +23,7 @@ export const SEBEP_OPTIONS = [
   { value: 'DIGER', label: 'Diğer' },
 ] as const;
 
-/** Backend ALLOWED_TRANSITIONS ile uyumlu */
+/** Backend ALLOWED_TRANSITIONS ile uyumlu (ONLINE kayıtlar için geçiş korunur). */
 export const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   PLANLANDI: ['ISLENDI', 'ONLINE', 'OGRETMEN_GELMEDI', 'OGRENCI_GELMEDI', 'IPTAL'],
   ONLINE: ['ISLENDI', 'IPTAL', 'PLANLANDI'],
@@ -33,8 +33,19 @@ export const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   IPTAL: ['PLANLANDI', 'IPTAL'],
 };
 
-/** Bugünün yoklaması — birincil aksiyonlar */
-export const PRIMARY_YOKLAMA_ACTIONS = ['ISLENDI', 'ONLINE'] as const;
+/** UI’da sunulmayan durumlar — kurum online ders kullanmıyor. */
+export const HIDDEN_YOKLAMA_ACTIONS = ['ONLINE'] as const;
+
+const YOKLAMA_ACTION_ORDER = [
+  'ISLENDI',
+  'OGRETMEN_GELMEDI',
+  'OGRENCI_GELMEDI',
+  'IPTAL',
+  'PLANLANDI',
+] as const;
+
+/** @deprecated Online kaldırıldı; yoklamaActionButtons kullanın */
+export const PRIMARY_YOKLAMA_ACTIONS = ['ISLENDI'] as const;
 
 export const SECONDARY_YOKLAMA_ACTIONS = [
   'OGRETMEN_GELMEDI',
@@ -58,7 +69,15 @@ export function defaultSendWhatsapp(durum: string): boolean {
 export const OTURUM_DURUM_LABELS = OTURUM_DURUM_LABEL;
 
 export function allowedNextDurumlar(durum: string): string[] {
-  return ALLOWED_TRANSITIONS[durum] ?? [];
+  return (ALLOWED_TRANSITIONS[durum] ?? []).filter(
+    (next) => !(HIDDEN_YOKLAMA_ACTIONS as readonly string[]).includes(next),
+  );
+}
+
+/** Yoklama ekranında gösterilecek durum butonları (sıralı, Online yok). */
+export function yoklamaActionButtons(durum: string): string[] {
+  const next = new Set(allowedNextDurumlar(durum));
+  return YOKLAMA_ACTION_ORDER.filter((key) => next.has(key));
 }
 
 /** ISLENDI/ONLINE için WhatsApp seçeneği; gelmedi/iptal için sebep (+ telafi) gerekir */

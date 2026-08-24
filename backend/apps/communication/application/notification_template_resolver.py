@@ -230,6 +230,13 @@ def display_template_body(resolved: ResolvedTemplate) -> str:
 
 def lms_body_matches_event(event_key: str, body: str) -> bool:
     """Bağlı LMS şablon metni olayla çelişiyor mu? (plan↔rapor karışması)."""
+    if (
+        event_key in ('ozel_ders.ogretmen_gelmedi', 'ozel_ders.ogrenci_gelmedi')
+        and body
+        and '{{telafi_notu}}' not in body
+        and ('telafi edilecektir' in body.lower() or 'telafisi yapılacaktır' in body.lower())
+    ):
+        return False
     if not body or event_key not in ('odev.plan', 'odev.rapor'):
         return True
     text = body.lower()

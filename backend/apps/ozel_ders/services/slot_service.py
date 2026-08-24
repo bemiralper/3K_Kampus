@@ -174,7 +174,7 @@ def create_slot(
         oda_id=data.get('oda_id'),
     )
 
-    return BirebirHaftalikSlot.objects.create(
+    slot = BirebirHaftalikSlot.objects.create(
         program=program,
         gun=gun,
         baslangic=baslangic,
@@ -187,6 +187,9 @@ def create_slot(
         baslangic_tarihi=data.get('baslangic_tarihi'),
         bitis_tarihi=data.get('bitis_tarihi'),
     )
+    from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
+    sync_future_sessions_for_slot(slot)
+    return slot
 
 
 @transaction.atomic
@@ -243,6 +246,8 @@ def update_slot(
     if 'bitis_tarihi' in data:
         slot.bitis_tarihi = data['bitis_tarihi']
     slot.save()
+    from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
+    sync_future_sessions_for_slot(slot)
     return slot
 
 
@@ -258,6 +263,8 @@ def delete_slot(slot_id: int, *, kurum_id: int, sube_id: int) -> None:
         raise OzelDersError('Slot bulunamadı.', 'not_found', 404)
     slot.aktif = False
     slot.save(update_fields=['aktif', 'updated_at'])
+    from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
+    sync_future_sessions_for_slot(slot, rematerialize=False)
 
 
 @transaction.atomic
@@ -320,4 +327,7 @@ def swap_slots(
     b.gun, b.baslangic, b.bitis, b.sure_dk = a_gun, a_start, a_end, a_sure
     a.save()
     b.save()
+    from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
+    sync_future_sessions_for_slot(a)
+    sync_future_sessions_for_slot(b)
     return a, b

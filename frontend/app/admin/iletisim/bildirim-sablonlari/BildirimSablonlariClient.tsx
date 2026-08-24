@@ -33,6 +33,7 @@ import {
   seedAcademicScheduleTemplates,
   seedKayitSozlesmeTemplates,
   seedKutuphaneYoklamaTemplates,
+  seedOzelDersTemplates,
 } from "@/lib/communication-api";
 import { notifyCommunicationTemplateUsageChanged } from "@/lib/communication-template-usage-sync";
 
@@ -1135,7 +1136,7 @@ export default function BildirimSablonlariClient() {
 
   const runSeed = useCallback(
     async (
-      kind: "academic" | "kutuphane" | "kayit",
+      kind: "academic" | "kutuphane" | "kayit" | "ozel_ders",
       confirmText: string,
       fallbackInfo: string,
       failText: string,
@@ -1224,6 +1225,23 @@ export default function BildirimSablonlariClient() {
       seedKayitSozlesmeTemplates,
     );
 
+  const handleSeedOzelDers = () =>
+    runSeed(
+      "ozel_ders",
+      "Özel ders taslakları oluşturulsun mu?\n\n" +
+        "• ozel_ders_ogretmen_gelmedi_veli\n" +
+        "• ozel_ders_ogrenci_gelmedi_veli\n" +
+        "• ozel_ders_iptal_veli\n" +
+        "• ozel_ders_telafi_veli\n" +
+        "• ozel_ders_islendi_veli\n\n" +
+        "LMS şablonları + Meta DRAFT üretilir ve Özel Ders olaylarına bağlanır. " +
+        "Onaylı şablonlara dokunulmaz.",
+      "Özel ders taslakları hazır.",
+      "Özel ders taslakları oluşturulamadı.",
+      "ozel_ders.iptal",
+      seedOzelDersTemplates,
+    );
+
   const seedItems = [
     {
       kind: "academic",
@@ -1236,6 +1254,12 @@ export default function BildirimSablonlariClient() {
       title: "Kütüphane yoklama taslakları",
       desc: "Gelmedi / geç kalma / çıkış Meta şablonları",
       run: handleSeedKutuphaneYoklama,
+    },
+    {
+      kind: "ozel_ders",
+      title: "Özel ders taslakları",
+      desc: "Öğretmen/öğrenci gelmedi, iptal, telafi, işlendi",
+      run: handleSeedOzelDers,
     },
     {
       kind: "kayit",

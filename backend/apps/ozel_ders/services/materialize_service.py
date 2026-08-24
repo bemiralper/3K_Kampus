@@ -4,10 +4,13 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from django.db import transaction
+from django.utils import timezone
 
 from apps.ozel_ders.domain.models import (
     BirebirDersOturumu,
     BirebirHaftalikSlot,
+    BirebirHakedis,
+    HakedisDurumu,
     OturumDurumu,
     OturumTuru,
     ProgramDurumu,
@@ -27,6 +30,152 @@ def _parse_date(value) -> date:
     if isinstance(value, str):
         return date.fromisoformat(value[:10])
     raise OzelDersError('Geçersiz tarih.', 'date')
+
+
+_LOCKED_HAKEDIS = (HakedisDurumu.ONAYLANDI, HakedisDurumu.BORDOYA_ISLENDI)
+_FUTURE_SYNC_DAYS = 62
+
+
+def _oturum_can_follow_slot(oturum: BirebirDersOturumu, today: date) -> bool:
+    """Yalnızca henüz işlenmemiş gelecek/bugünkü planlı özel ders oturumları."""
+    if not oturum.is_active:
+        return False
+    if oturum.durum != OturumDurumu.PLANLANDI:
+        return False
+    if oturum.oturum_turu != OturumTuru.OZEL:
+        return False
+    if oturum.session_date < today:
+        return False
+    if BirebirHakedis.objects.filter(oturum_id=oturum.id, durum__in=_LOCKED_HAKEDIS).exists():
+        return False
+    return True
+
+
+def _apply_slot_fields(oturum: BirebirDersOturumu, slot: BirebirHaftalikSlot) -> bool:
+    """Şablon alanlarını oturuma yazar. Çakışmada False (oturum olduğu gibi kalır)."""
+    changed = (
+        oturum.start_time != slot.baslangic
+        or oturum.end_time != slot.bitis
+        or oturum.ders_id != slot.ders_id
+        or oturum.ogretmen_id != slot.ogretmen_id
+        or oturum.oda_id != slot.oda_id
+    )
+    if not changed:
+        return False
+    try:
+        check_all_for_occurrence(
+            ogretmen_id=slot.ogretmen_id,
+            ogrenci_id=oturum.ogrenci_id,
+            oda_id=slot.oda_id,
+            kurum_id=oturum.kurum_id,
+            sube_id=oturum.sube_id,
+            session_date=oturum.session_date,
+            start=slot.baslangic,
+            end=slot.bitis,
+            exclude_id=oturum.id,
+            skip_holiday=False,
+        )
+    except OzelDersError:
+        return False
+    oturum.start_time = slot.baslangic
+    oturum.end_time = slot.bitis
+    oturum.ders_id = slot.ders_id
+    oturum.ogretmen_id = slot.ogretmen_id
+    oturum.oda_id = slot.oda_id
+    oturum.save(update_fields=[
+        'start_time', 'end_time', 'ders_id', 'ogretmen_id', 'oda_id', 'updated_at',
+    ])
+    return True
+
+
+def _future_planlandi_qs(slot: BirebirHaftalikSlot, today: date):
+    return BirebirDersOturumu.objects.filter(
+        source_slot_id=slot.id,
+        is_active=True,
+        durum=OturumDurumu.PLANLANDI,
+        oturum_turu=OturumTuru.OZEL,
+        session_date__gte=today,
+    )
+
+
+def sync_future_sessions_for_slot(
+    slot: BirebirHaftalikSlot,
+    *,
+    user=None,
+    rematerialize: bool = True,
+) -> dict:
+    """
+    Şablon değişince yalnızca planlı gelecek oturumları hizalar.
+
+    Geçmiş günler, yoklaması alınmış kayıtlar, telafi/ek ders ve kilitli
+    hakedişler dokunulmaz.
+    """
+    today = timezone.localdate()
+    program = slot.program
+    updated = 0
+    deactivated = 0
+
+    qs = _future_planlandi_qs(slot, today)
+    locked_ids = set(
+        BirebirHakedis.objects.filter(
+            oturum__source_slot_id=slot.id,
+            durum__in=_LOCKED_HAKEDIS,
+        ).values_list('oturum_id', flat=True)
+    )
+    if locked_ids:
+        qs = qs.exclude(pk__in=locked_ids)
+
+    slot_start = slot.baslangic_tarihi or program.baslangic_tarihi
+    slot_end = slot.bitis_tarihi or program.bitis_tarihi
+
+    for oturum in qs:
+        if not slot.aktif:
+            oturum.is_active = False
+            oturum.save(update_fields=['is_active', 'updated_at'])
+            deactivated += 1
+            continue
+
+        wrong_day = oturum.session_date.isoweekday() != slot.gun
+        before_window = slot_start and oturum.session_date < slot_start
+        after_window = slot_end and oturum.session_date > slot_end
+        if wrong_day or before_window or after_window:
+            # Bugünkü dersi şablon günü değişse bile silme (yoklama / hakediş günü).
+            if oturum.session_date > today:
+                oturum.is_active = False
+                oturum.save(update_fields=['is_active', 'updated_at'])
+                deactivated += 1
+            continue
+
+        if _apply_slot_fields(oturum, slot):
+            updated += 1
+
+    created = 0
+    if rematerialize and slot.aktif and program.durum == ProgramDurumu.AKTIF:
+        created = _rematerialize_from_today(slot, user=user)
+
+    return {
+        'updated': updated,
+        'deactivated': deactivated,
+        'created': created,
+    }
+
+
+def _rematerialize_from_today(slot: BirebirHaftalikSlot, *, user=None) -> int:
+    program = slot.program
+    today = timezone.localdate()
+    start = max(today, slot.baslangic_tarihi or program.baslangic_tarihi or today)
+    end = program.bitis_tarihi or (today + timedelta(days=_FUTURE_SYNC_DAYS))
+    if end < start:
+        return 0
+    result = materialize_program(
+        program.id,
+        kurum_id=program.kurum_id,
+        sube_id=program.sube_id,
+        start_date=start,
+        end_date=end,
+        user=user,
+    )
+    return result.get('created') or 0
 
 
 @transaction.atomic
@@ -55,6 +204,7 @@ def materialize_program(
         end = program.bitis_tarihi
 
     created = 0
+    updated = 0
     skipped_holiday = 0
     skipped_existing = 0
     skipped_conflict = 0
@@ -82,7 +232,11 @@ def materialize_program(
                 is_active=True,
             ).first()
             if existing:
-                skipped_existing += 1
+                today = timezone.localdate()
+                if _oturum_can_follow_slot(existing, today) and _apply_slot_fields(existing, slot):
+                    updated += 1
+                else:
+                    skipped_existing += 1
                 continue
 
             try:
@@ -123,6 +277,7 @@ def materialize_program(
 
     return {
         'created': created,
+        'updated': updated,
         'skipped_holiday': skipped_holiday,
         'skipped_existing': skipped_existing,
         'skipped_conflict': skipped_conflict,

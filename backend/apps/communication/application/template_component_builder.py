@@ -7,6 +7,10 @@ from typing import Any
 
 from apps.communication.application.variable_resolver import VARIABLE_PATTERN
 
+# Meta boş parametre kabul etmez; serbest metinde bu anahtarlar boş bırakılır.
+_OPTIONAL_META_PLACEHOLDER = '—'
+_OPTIONAL_META_VARS = frozenset({'telafi_notu'})
+
 
 def extract_variable_names(body_template: str) -> list[str]:
     """Şablondaki {{degisken}} adlarını sırayla döndür."""
@@ -19,6 +23,8 @@ def build_body_parameters(body_template: str, context: dict[str, Any]) -> list[d
     for key in extract_variable_names(body_template):
         value = context.get(key)
         text = '' if value is None else str(value)
+        if not text.strip() and key in _OPTIONAL_META_VARS:
+            text = _OPTIONAL_META_PLACEHOLDER
         params.append({'type': 'text', 'text': text})
     return params
 

@@ -48,6 +48,7 @@ from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateResubmitView,
     MetaTemplateSeedAcademicScheduleView,
     MetaTemplateSeedKutuphaneYoklamaView,
+    MetaTemplateSeedOzelDersView,
     MetaTemplateSeedDuyuruView,
     MetaTemplateSeedKayitSozlesmeView,
     MetaTemplateSeedPersonalChatView,
@@ -132,6 +133,11 @@ urlpatterns = [
         'meta-templates/seed-kutuphane-yoklama/',
         MetaTemplateSeedKutuphaneYoklamaView.as_view(),
         name='meta-template-seed-kutuphane-yoklama',
+    ),
+    path(
+        'meta-templates/seed-ozel-ders/',
+        MetaTemplateSeedOzelDersView.as_view(),
+        name='meta-template-seed-ozel-ders',
     ),
     path(
         'meta-templates/seed-kayit-sozlesme/',

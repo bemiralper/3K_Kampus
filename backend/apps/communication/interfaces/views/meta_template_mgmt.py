@@ -11,6 +11,9 @@ from apps.communication.application.academic_schedule_template_seed import (
 from apps.communication.application.kutuphane_yoklama_template_seed import (
     KutuphaneYoklamaTemplateSeedService,
 )
+from apps.communication.application.ozel_ders_template_seed import (
+    OzelDersTemplateSeedService,
+)
 from apps.communication.application.kayit_sozlesme_template_seed import (
     KayitSozlesmeTemplateSeedService,
 )
@@ -529,6 +532,74 @@ class MetaTemplateSeedKutuphaneYoklamaView(APIView):
             scope_sube_id = sube_id
         try:
             result = KutuphaneYoklamaTemplateSeedService.seed(
+                kurum_id,
+                sube_id=scope_sube_id,
+                channel_config_id=account_id,
+                user=request.user,
+                skip_existing=not force,
+                bind=bool(bind),
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except MetaTemplateServiceError as exc:
+            return _err(exc)
+
+        status_code = (
+            status.HTTP_400_BAD_REQUEST if result['errors'] else status.HTTP_200_OK
+        )
+        return Response({
+            'created_app_count': len(result['created_app']),
+            'updated_app_count': len(result.get('updated_app') or []),
+            'skipped_app_count': len(result['skipped_app']),
+            'created_meta_count': len(result['created_meta']),
+            'updated_meta_count': len(result.get('updated_meta') or []),
+            'skipped_meta_count': len(result['skipped_meta']),
+            'bound_count': len(result.get('bound') or []),
+            'created_app': result['created_app'],
+            'updated_app': result.get('updated_app') or [],
+            'skipped_app': result['skipped_app'],
+            'created_meta': result['created_meta'],
+            'updated_meta': result.get('updated_meta') or [],
+            'skipped_meta': result['skipped_meta'],
+            'bound': result.get('bound') or [],
+            'errors': result['errors'],
+            'next_steps': result.get('next_steps') or [],
+            'event_keys': result.get('event_keys') or [],
+            'info': (
+                f"LMS +{len(result['created_app'])}/↻{len(result.get('updated_app') or [])}, "
+                f"Meta +{len(result['created_meta'])}/↻{len(result.get('updated_meta') or [])}, "
+                f"bağlandı {len(result.get('bound') or [])}."
+            ),
+        }, status=status_code)
+
+
+class MetaTemplateSeedOzelDersView(APIView):
+    """Özel ders yoklama/telafi Meta + LMS taslaklarını oluşturur ve bağlar."""
+
+    permission_classes = [CommunicationConfigPermission]
+
+    def post(self, request):
+        kurum_id, sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+        account_id = (
+            request.data.get('channel_config_id')
+            or request.data.get('account_id')
+        )
+        if not account_id:
+            return Response(
+                {'error': 'channel_config_id zorunludur (Meta taslağı için).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        force = bool(request.data.get('force'))
+        bind = request.data.get('bind', True)
+        scope_sube = request.data.get('sube_id', sube_id)
+        try:
+            scope_sube_id = int(scope_sube) if scope_sube not in (None, '', 'null') else None
+        except (TypeError, ValueError):
+            scope_sube_id = sube_id
+        try:
+            result = OzelDersTemplateSeedService.seed(
                 kurum_id,
                 sube_id=scope_sube_id,
                 channel_config_id=account_id,

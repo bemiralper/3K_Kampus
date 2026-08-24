@@ -7,6 +7,7 @@ Idempotency: BirebirOturumBildirimLog + Message source_ref.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from django.db import transaction
@@ -61,6 +62,24 @@ _MONTH_TR = {
     1: 'Ocak', 2: 'Şubat', 3: 'Mart', 4: 'Nisan', 5: 'Mayıs', 6: 'Haziran',
     7: 'Temmuz', 8: 'Ağustos', 9: 'Eylül', 10: 'Ekim', 11: 'Kasım', 12: 'Aralık',
 }
+
+TELAFI_NOTU_BY_EVENT = {
+    EVENT_OGRETMEN_GELMEDI: (
+        'Dersin *telafisi yapılacaktır.* Telafi tarihi ve saati kesinleştiğinde '
+        'tarafınıza ayrıca bilgi verilecektir.'
+    ),
+    EVENT_OGRENCI_GELMEDI: (
+        'Ders *telafi edilecektir.* Telafi tarihi ve saati kesinleştiğinde '
+        'tarafınıza ayrıca bilgi verilecektir.'
+    ),
+}
+
+# Eski (değişkensiz) şablonlardan telafi cümlesini düşürmek için
+_HARDCODED_TELAFI_RE = re.compile(
+    r'\n?(?:Dersin \*telafisi yapılacaktır\.\*|Ders \*telafi edilecektir\.\*)'
+    r'[^\n]*\n?',
+    re.IGNORECASE,
+)
 
 _DURUM_LABEL = {
     OturumDurumu.ISLENDI: 'İşlendi',
@@ -127,75 +146,34 @@ def _build_context(
         'ders_durumu': ders_durumu or _DURUM_LABEL.get(oturum.durum, oturum.durum),
         'sebep': _sebep_text(oturum),
         'ek_bilgi': ek_bilgi,
+        'telafi_notu': '',
         'kurum_ad': getattr(getattr(oturum, 'kurum', None), 'ad', '') or '',
         'sube': getattr(getattr(oturum, 'sube', None), 'ad', '') or '',
     }
 
 
-def _fallback_body(event_key: str, ctx: dict[str, str], *, telafi_bekleniyor: bool = False) -> str:
-    veli = ctx.get('veli_ad') or 'Velimiz'
-    ogrenci = ctx.get('ogrenci_ad') or 'Öğrenciniz'
-    tarih = ctx.get('ders_tarihi') or ''
-    saat = ctx.get('ders_saati') or ''
-    ders = ctx.get('ders_adi') or 'özel ders'
-    ogretmen = ctx.get('ogretmen_ad') or 'öğretmen'
-    sebep = ctx.get('sebep') or ''
-    ek = ctx.get('ek_bilgi') or ''
+def _telafi_notu(event_key: str, telafi_bekleniyor: bool) -> str:
+    if not telafi_bekleniyor:
+        return ''
+    return TELAFI_NOTU_BY_EVENT.get(event_key, '')
 
-    if event_key == EVENT_OGRETMEN_GELMEDI:
-        return (
-            f'Merhaba {veli},\n\n'
-            f'{ogrenci}\'in {tarih} günü saat {saat}\'teki {ders} özel dersi, '
-            f'öğretmenimizin katılım sağlayamaması nedeniyle gerçekleştirilememiştir.\n\n'
-            f'Ders telafi edilecektir.\n\n'
-            f'Telafi tarihi ve saati kesinleştiğinde ayrıca bilgilendirme yapılacaktır.\n\n'
-            f'Bilginize sunarız.'
-        )
-    if event_key == EVENT_OGRENCI_GELMEDI:
-        body = (
-            f'Merhaba {veli},\n\n'
-            f'{ogrenci}\'in {tarih} günü saat {saat}\'teki {ders} özel dersine '
-            f'katılım sağlanamamıştır.\n\n'
-        )
-        if sebep:
-            body += f'Sebep: {sebep}.\n\n'
-        if telafi_bekleniyor:
-            body += 'Bu ders telafi için planlanacaktır.\n\n'
-        body += 'Bilginize sunarız.'
-        return body
-    if event_key == EVENT_IPTAL:
-        reason = f' {sebep} nedeniyle' if sebep else ''
-        body = (
-            f'Merhaba {veli},\n\n'
-            f'{ogrenci}\'in {tarih} günü saat {saat}\'teki {ders} özel dersi'
-            f'{reason} iptal edilmiştir.\n\n'
-        )
-        if telafi_bekleniyor:
-            body += 'Bu ders telafi için planlanacaktır.\n\n'
-        body += 'Bilginize sunarız.'
-        return body
-    if event_key == EVENT_TELAFI_PLANLANDI:
-        return (
-            f'Merhaba {veli},\n\n'
-            f'{ogrenci}\'in {ek or (tarih + " günü saat " + saat)}\'te gerçekleştirilemeyen '
-            f'{ders} özel dersinin telafisi planlanmıştır.\n\n'
-            f'📅 Telafi Tarihi: {ctx.get("telafi_tarihi", "")}\n'
-            f'🕐 Saat: {ctx.get("telafi_saati", "")}\n'
-            f'📚 Ders: {ders}\n'
-            f'👨‍🏫 Öğretmen: {ogretmen}\n\n'
-            f'Bilginize sunarız.'
-        )
-    if event_key == EVENT_ISLENDI:
-        return (
-            f'Merhaba {veli},\n\n'
-            f'{ogrenci}\'in {tarih} günü saat {saat}\'teki {ders} özel dersi '
-            f'gerçekleştirilmiştir.\n\n'
-            f'Bilginize sunarız.'
-        )
+
+def _fallback_body(event_key: str, ctx: dict[str, str], *, telafi_bekleniyor: bool = False) -> str:
+    """Katalogdaki varsayılan metni doldurur (İletişim şablonlarıyla aynı kaynak)."""
     from apps.communication.application.notification_events import get_event
     event = get_event(event_key)
-    template = (event.default_bodies or {}).get('veli', '') if event else ''
-    return resolve_variables(template, ctx) if template else ''
+    template = event.default_body('VELI') if event else ''
+    if not template:
+        return ''
+    filled = dict(ctx)
+    if 'telafi_notu' not in filled:
+        filled['telafi_notu'] = _telafi_notu(event_key, telafi_bekleniyor)
+    body = resolve_variables(template, filled)
+    if not (filled.get('ek_bilgi') or '').strip():
+        body = re.sub(r'\nEk bilgi:\s*', '\n', body)
+    if not (filled.get('telafi_notu') or '').strip():
+        body = _HARDCODED_TELAFI_RE.sub('\n', body)
+    return re.sub(r'\n{3,}', '\n\n', body).strip()
 
 
 def _already_logged(oturum_id: int, event_key: str, veli_id: int) -> bool:
@@ -231,6 +209,7 @@ def _send_to_veliler(
             continue
 
         ctx = _build_context(oturum, veli=veli, ek_bilgi=ek_bilgi)
+        ctx['telafi_notu'] = _telafi_notu(event_key, telafi_bekleniyor)
         if extra_ctx:
             ctx.update(extra_ctx)
         body = _fallback_body(event_key, ctx, telafi_bekleniyor=telafi_bekleniyor)
@@ -306,6 +285,7 @@ def notify_yoklama(
             oturum,
             event_key,
             sent_by_user_id=sent_by_user_id,
+            ek_bilgi=(oturum.notes or '').strip(),
             telafi_bekleniyor=telafi_bekleniyor,
         )
 
@@ -322,13 +302,9 @@ def notify_telafi_planlandi(
     sent_by_user_id: Optional[int] = None,
 ) -> None:
     """Telafi planlandığında — mesajda mutlaka orijinal ders tarihi/saati."""
-    kaynak_label = (
-        f'{_format_date_tr(kaynak.session_date)} günü saat {_format_time_tr(kaynak.start_time)}'
-    )
     extra = {
         'telafi_tarihi': _format_date_tr(telafi.session_date),
         'telafi_saati': _format_time_tr(telafi.start_time),
-        # Template vars for generic body
         'ders_tarihi': _format_date_tr(kaynak.session_date),
         'ders_saati': _format_time_tr(kaynak.start_time),
     }
@@ -338,7 +314,7 @@ def notify_telafi_planlandi(
             kaynak,
             EVENT_TELAFI_PLANLANDI,
             sent_by_user_id=sent_by_user_id,
-            ek_bilgi=kaynak_label,
+            ek_bilgi=(telafi.notes or kaynak.notes or '').strip(),
             extra_ctx=extra,
         )
 

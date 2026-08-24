@@ -1106,6 +1106,37 @@ export async function seedPersonalChatTemplates(data: {
   });
 }
 
+/** Özel ders yoklama/telafi — 5 Meta + LMS taslak ve bildirim bağlama */
+export async function seedOzelDersTemplates(data: {
+  channel_config_id: string;
+  sube_id?: number | null;
+  force?: boolean;
+  bind?: boolean;
+}): Promise<{
+  created_app_count: number;
+  updated_app_count: number;
+  skipped_app_count: number;
+  created_meta_count: number;
+  updated_meta_count: number;
+  skipped_meta_count: number;
+  bound_count: number;
+  created_app: string[];
+  updated_app: string[];
+  created_meta: string[];
+  updated_meta: string[];
+  bound: string[];
+  errors: string[];
+  next_steps?: string[];
+  event_keys?: string[];
+  info?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/meta-templates/seed-ozel-ders/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
 /** Kütüphane yoklama — gelmedi/geç/çıkış Meta + LMS + bildirim bağlama */
 export async function seedKutuphaneYoklamaTemplates(data: {
   channel_config_id: string;

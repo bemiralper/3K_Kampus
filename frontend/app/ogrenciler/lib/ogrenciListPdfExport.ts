@@ -25,6 +25,8 @@ export interface OgrenciListPdfOptions {
   filterSummary?: string;
   documentTitle?: string;
   fileName?: string;
+  /** Bu kolonlarda metin yerine onay kutusu çizilir (`1` = işaretli). */
+  checkboxKeys?: string[];
 }
 
 const DEFAULT_PRIMARY: [number, number, number] = [2, 98, 167];
@@ -266,18 +268,85 @@ function drawHeader(
 function buildColumnStyles(
   doc: jsPDF,
   dataColCount: number,
+  checkboxIndexes?: Set<number>,
 ): Record<number, { cellWidth: number; halign: 'left' | 'center' | 'right' }> {
   const pageW = doc.internal.pageSize.getWidth();
   const tableW = pageW - 20;
   const idxW = 8;
-  const perCol = dataColCount > 0 ? (tableW - idxW) / dataColCount : tableW - idxW;
+  const checkW = 22;
+  const checkCount = checkboxIndexes?.size || 0;
+  const textCount = Math.max(0, dataColCount - checkCount);
+  const remaining = Math.max(40, tableW - idxW - checkCount * checkW);
+  const textW = textCount > 0 ? remaining / textCount : remaining;
   const styles: Record<number, { cellWidth: number; halign: 'left' | 'center' | 'right' }> = {
     0: { cellWidth: idxW, halign: 'center' },
   };
   for (let i = 1; i <= dataColCount; i++) {
-    styles[i] = { cellWidth: perCol, halign: 'left' };
+    const isCheck = checkboxIndexes?.has(i);
+    styles[i] = {
+      cellWidth: isCheck ? checkW : textW,
+      halign: isCheck ? 'center' : 'left',
+    };
   }
   return styles;
+}
+
+function checkboxIndexSet(columnKeys: string[], checkboxKeys?: string[]): Set<number> {
+  const wanted = new Set(checkboxKeys || []);
+  const indexes = new Set<number>();
+  columnKeys.forEach((key, i) => {
+    if (wanted.has(key)) indexes.add(i + 1);
+  });
+  return indexes;
+}
+
+function drawCheckbox(
+  doc: jsPDF,
+  cell: { x: number; y: number; width: number; height: number },
+  checked: boolean,
+  primary: [number, number, number],
+) {
+  const size = Math.min(4.1, cell.width - 3, cell.height - 3);
+  const x = cell.x + (cell.width - size) / 2;
+  const y = cell.y + (cell.height - size) / 2;
+  doc.setDrawColor(...DARK);
+  doc.setLineWidth(0.35);
+  doc.setFillColor(...WHITE);
+  doc.roundedRect(x, y, size, size, 0.4, 0.4, 'S');
+  if (!checked) return;
+  doc.setDrawColor(...primary);
+  doc.setLineWidth(0.55);
+  doc.line(x + size * 0.2, y + size * 0.52, x + size * 0.42, y + size * 0.76);
+  doc.line(x + size * 0.42, y + size * 0.76, x + size * 0.82, y + size * 0.22);
+}
+
+function checkboxHooks(
+  checkboxIndexes: Set<number>,
+  primary: [number, number, number],
+) {
+  if (checkboxIndexes.size === 0) return {};
+  return {
+    didParseCell: (data: { section: string; column: { index: number }; cell: { text: string[] } }) => {
+      if (data.section === 'body' && checkboxIndexes.has(data.column.index)) {
+        data.cell.text = [''];
+      }
+    },
+    didDrawCell: (data: {
+      section: string;
+      column: { index: number };
+      cell: { x: number; y: number; width: number; height: number; raw: unknown };
+      doc: jsPDF;
+    }) => {
+      if (data.section !== 'body' || !checkboxIndexes.has(data.column.index)) return;
+      drawCheckbox(data.doc, data.cell, String(data.cell.raw || '') === '1', primary);
+    },
+  };
+}
+
+function formatPdfCell(value: unknown, isCheckbox: boolean): string {
+  if (isCheckbox) return String(value || '') === '1' ? '1' : '';
+  const val = value != null && String(value) !== '' ? String(value) : '—';
+  return val.length > 120 ? `${val.slice(0, 117)}…` : val;
 }
 
 function fontSizeForColumns(colCount: number, orientation: PdfOrientation): number {
@@ -299,6 +368,8 @@ export async function exportGroupedOgrenciListPdf(options: {
   totalRecordsLabel?: string;
   /** true: her bölüm yeni sayfada başlar */
   pageBreakBetweenSections?: boolean;
+  /** Bu kolonlarda metin yerine onay kutusu çizilir (`1` = işaretli). */
+  checkboxKeys?: string[];
 }): Promise<void> {
   const {
     sections,
@@ -311,6 +382,7 @@ export async function exportGroupedOgrenciListPdf(options: {
     fileName = 'ogrenciler.pdf',
     totalRecordsLabel,
     pageBreakBetweenSections = false,
+    checkboxKeys,
   } = options;
 
   const labels =
@@ -337,8 +409,10 @@ export async function exportGroupedOgrenciListPdf(options: {
   registerFonts(doc, fonts);
 
   const tableWidth = doc.internal.pageSize.getWidth() - 20;
-  const columnStyles = buildColumnStyles(doc, labels.length);
+  const checkboxIndexes = checkboxIndexSet(columnKeys, checkboxKeys);
+  const columnStyles = buildColumnStyles(doc, labels.length, checkboxIndexes);
   const tableFontSize = fontSizeForColumns(labels.length + 1, orientation);
+  const checkHooks = checkboxHooks(checkboxIndexes, primary);
 
   // Ayrı sayfalarda her bölüm kendi başlığını çizer (ölçüt adı: 12. Sınıf / 12/Loca 4)
   let startY = pageBreakBetweenSections
@@ -373,15 +447,17 @@ export async function exportGroupedOgrenciListPdf(options: {
       halign: 'center' as const,
       valign: 'middle' as const,
       overflow: 'linebreak' as const,
-      minCellHeight: tableFontSize + 4,
+      minCellHeight: tableFontSize + (checkboxIndexes.size ? 8 : 4),
     },
     bodyStyles: {
       overflow: 'linebreak' as const,
       valign: 'middle' as const,
+      minCellHeight: checkboxIndexes.size ? 9 : undefined,
     },
     alternateRowStyles: { fillColor: ROW_ALT },
     columnStyles,
     margin: { left: 10, right: 10, top: 36, bottom: 14 },
+    ...checkHooks,
   };
 
   for (let si = 0; si < sections.length; si++) {
@@ -423,10 +499,7 @@ export async function exportGroupedOgrenciListPdf(options: {
 
     const body = section.rows.map((row, idx) => [
       String(idx + 1),
-      ...columnKeys.map((k) => {
-        const val = row[k] != null ? String(row[k]) : '—';
-        return val.length > 120 ? `${val.slice(0, 117)}…` : val;
-      }),
+      ...columnKeys.map((k) => formatPdfCell(row[k], checkboxIndexes.has(columnKeys.indexOf(k) + 1))),
     ]);
 
     autoTable(doc, {
@@ -453,18 +526,17 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
     filterSummary = '',
     documentTitle = 'Öğrenci Listesi',
     fileName = 'ogrenciler.pdf',
+    checkboxKeys,
   } = options;
 
   const labels =
     columnLabels && columnLabels.length === columnKeys.length
       ? columnLabels
       : columnKeys.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)?.label || k);
+  const checkboxIndexes = checkboxIndexSet(columnKeys, checkboxKeys);
   const body = rows.map((row, idx) => [
     String(idx + 1),
-    ...columnKeys.map((k) => {
-      const val = row[k] != null ? String(row[k]) : '—';
-      return val.length > 120 ? `${val.slice(0, 117)}…` : val;
-    }),
+    ...columnKeys.map((k) => formatPdfCell(row[k], checkboxIndexes.has(columnKeys.indexOf(k) + 1))),
   ]);
 
   const totalCols = labels.length + 1;
@@ -486,7 +558,8 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
   registerFonts(doc, fonts);
 
   const tableWidth = doc.internal.pageSize.getWidth() - 20;
-  const columnStyles = buildColumnStyles(doc, labels.length);
+  const columnStyles = buildColumnStyles(doc, labels.length, checkboxIndexes);
+  const checkHooks = checkboxHooks(checkboxIndexes, primary);
 
   const startY = drawHeader(doc, primary, logoData, {
     documentTitle,
@@ -521,15 +594,17 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
       halign: 'center',
       valign: 'middle',
       overflow: 'linebreak',
-      minCellHeight: tableFontSize + 4,
+      minCellHeight: tableFontSize + (checkboxIndexes.size ? 8 : 4),
     },
     bodyStyles: {
       overflow: 'linebreak',
       valign: 'middle',
+      minCellHeight: checkboxIndexes.size ? 9 : undefined,
     },
     alternateRowStyles: { fillColor: ROW_ALT },
     columnStyles,
     margin: { left: 10, right: 10, top: 36, bottom: 14 },
+    ...checkHooks,
   });
 
   addFooter(doc, brandLine);

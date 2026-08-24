@@ -179,11 +179,13 @@ class YoklamaTelafiTests(TestCase):
         self.assertTrue(any(
             c.args[1] == EVENT_TELAFI_PLANLANDI for c in send.call_args_list
         ))
-        # Orijinal tarih ek_bilgi / context'te
         for c in send.call_args_list:
             if c.args[1] == EVENT_TELAFI_PLANLANDI:
-                self.assertIn('ek_bilgi', c.kwargs)
-                self.assertTrue(c.kwargs['ek_bilgi'])
+                extra = c.kwargs.get('extra_ctx') or {}
+                self.assertTrue(extra.get('telafi_tarihi'))
+                self.assertTrue(extra.get('telafi_saati'))
+                self.assertTrue(extra.get('ders_tarihi'))
+                self.assertTrue(extra.get('ders_saati'))
 
     def test_10_telafi_islendi_kaynak_edildi(self):
         kaynak = self._oturum()
@@ -334,6 +336,64 @@ class YoklamaTelafiTests(TestCase):
                 oturum=o, event_key=EVENT_OGRETMEN_GELMEDI, veli_id=42,
             ).exists()
         )
+
+    def test_fallback_bodies_match_catalog_copy(self):
+        from apps.ozel_ders.services.notify_service import (
+            EVENT_IPTAL,
+            EVENT_ISLENDI,
+            EVENT_OGRENCI_GELMEDI,
+            EVENT_OGRETMEN_GELMEDI,
+            EVENT_TELAFI_PLANLANDI,
+            _fallback_body,
+        )
+        ctx = {
+            'ogrenci_ad': 'Ahmet Yılmaz',
+            'ders_tarihi': '15 Ocak 2026 Pazartesi',
+            'ders_saati': '15.00',
+            'ders_adi': 'Matematik',
+            'sebep': 'Hastalık',
+            'ek_bilgi': 'Ek not',
+            'telafi_tarihi': '18 Ocak 2026 Pazar',
+            'telafi_saati': '14.00',
+        }
+        ogretmen = _fallback_body(EVENT_OGRETMEN_GELMEDI, ctx, telafi_bekleniyor=True)
+        self.assertIn('Değerli Velimiz', ogretmen)
+        self.assertIn('Ahmet Yılmaz', ogretmen)
+        self.assertIn('öğretmenimizin katılım sağlayamaması', ogretmen)
+        self.assertIn('telafisi yapılacaktır', ogretmen)
+        ogrenci = _fallback_body(EVENT_OGRENCI_GELMEDI, ctx, telafi_bekleniyor=True)
+        self.assertIn('katılım sağlanamamıştır', ogrenci)
+        self.assertIn('telafi edilecektir', ogrenci)
+        ogrenci_yok = _fallback_body(EVENT_OGRENCI_GELMEDI, ctx, telafi_bekleniyor=False)
+        self.assertIn('katılım sağlanamamıştır', ogrenci_yok)
+        self.assertNotIn('telafi edilecektir', ogrenci_yok)
+        self.assertNotIn('telafisi yapılacaktır', ogrenci_yok)
+        iptal = _fallback_body(EVENT_IPTAL, ctx)
+        self.assertIn('İptal nedeni', iptal)
+        self.assertIn('Hastalık', iptal)
+        self.assertIn('Ek not', iptal)
+        telafi = _fallback_body(EVENT_TELAFI_PLANLANDI, ctx)
+        self.assertIn('Telafi Tarihi', telafi)
+        self.assertIn('18 Ocak 2026 Pazar', telafi)
+        self.assertIn('14.00', telafi)
+        islendi = _fallback_body(EVENT_ISLENDI, ctx)
+        self.assertIn('gerçekleştirilmiştir', islendi)
+
+    @patch('apps.ozel_ders.services.notify_service._send_to_veliler', return_value=1)
+    def test_yoklama_notes_passed_as_ek_bilgi(self, send):
+        o = self._oturum()
+        with self.captureOnCommitCallbacks(execute=True):
+            oturum_service.set_durum(
+                o.id, OturumDurumu.IPTAL,
+                kurum_id=self.kurum.id, sube_id=self.sube.id,
+                sebep_kodu=SebepKodu.KURUM,
+                telafi_durumu=TelafiDurumu.GEREKMIYOR,
+                notes='Velilerle görüşüldü',
+                send_whatsapp=True,
+            )
+        self.assertTrue(send.called)
+        kwargs = send.call_args.kwargs
+        self.assertEqual(kwargs.get('ek_bilgi'), 'Velilerle görüşüldü')
 
     def test_telafi_olusturulamaz_beklenmiyorsa(self):
         o = self._oturum()

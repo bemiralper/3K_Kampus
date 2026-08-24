@@ -35,6 +35,10 @@ class TemplateComponentBuilderTest(TestCase):
         self.assertEqual(params[0]['text'], 'Ayşe Hanım')
         self.assertEqual(params[1]['text'], 'Ali Yılmaz')
 
+    def test_empty_telafi_notu_gets_meta_placeholder(self):
+        params = build_body_parameters('Not: {{telafi_notu}}.', {'telafi_notu': ''})
+        self.assertEqual(params[0]['text'], '—')
+
     def test_build_template_components_body_only(self):
         components = build_template_components('{{veli_ad}}', {'veli_ad': 'Test'})
         self.assertEqual(components[0]['type'], 'body')

@@ -18,17 +18,19 @@ import {
   type PaketDersi,
   type SetOturumDurumPayload,
 } from '@/lib/ozel-ders-api';
+import { formatOzelDersSaati, formatOzelDersTarihi } from '@/lib/ozel-ders-whatsapp-templates';
+import { exportOzelDersYoklamaPdf } from '@/lib/ozel-ders-yoklama-pdf';
+import { useKurum } from '@/lib/contexts/KurumContext';
+import { brandingFromContext, getPdfHeaderLogo } from '@/lib/kurum-branding';
 import { fetchEtkilenenDersler } from '@/lib/takvim-api';
 import { searchKutuphaneStudents, type KutuphaneStudentOption } from '@/lib/kutuphane-student-search';
 import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
 import { useDersDisplayPref } from './useDersDisplayPref';
 import {
-  allowedNextDurumlar,
   OTURUM_DURUM_LABELS,
-  PRIMARY_YOKLAMA_ACTIONS,
-  SECONDARY_YOKLAMA_ACTIONS,
   TELAFI_DURUM_LABEL,
+  yoklamaActionButtons,
   yoklamaNeedsDrawer,
 } from './oturumDurum';
 import EtkilenenDerslerDrawer from './EtkilenenDerslerDrawer';
@@ -53,6 +55,7 @@ import {
   IconCheckCircle,
   IconClipboard,
   IconClock,
+  IconFileText,
   IconPlus,
   IconRefresh,
   IconRotateCcw,
@@ -72,11 +75,10 @@ const ACTION_META: Record<
   { label: string; icon: (s: number) => React.ReactNode; tone: string }
 > = {
   ISLENDI: { label: 'İşlendi', icon: (s) => <IconCheckCircle size={s} />, tone: 'tone-success' },
-  ONLINE: { label: 'Online', icon: (s) => <IconWifi size={s} />, tone: 'tone-blue' },
-  OGRENCI_GELMEDI: { label: 'Öğrenci Gelmedi', icon: (s) => <IconUser size={s} />, tone: 'tone-pink' },
-  OGRETMEN_GELMEDI: { label: 'Öğretmen Gelmedi', icon: (s) => <IconUsers size={s} />, tone: 'tone-orange' },
+  OGRENCI_GELMEDI: { label: 'Öğr. gelmedi', icon: (s) => <IconUser size={s} />, tone: 'tone-pink' },
+  OGRETMEN_GELMEDI: { label: 'Öğrt. gelmedi', icon: (s) => <IconUsers size={s} />, tone: 'tone-orange' },
   IPTAL: { label: 'İptal', icon: (s) => <IconXCircle size={s} />, tone: 'tone-danger' },
-  PLANLANDI: { label: 'Geri Al', icon: (s) => <IconClock size={s} />, tone: 'tone-slate' },
+  PLANLANDI: { label: 'Geri al', icon: (s) => <IconClock size={s} />, tone: 'tone-slate' },
 };
 
 const DATE_PRESETS: { key: string; label: string; start: () => string; end: () => string }[] = [
@@ -98,6 +100,7 @@ const DATE_PRESETS: { key: string; label: string; start: () => string; end: () =
 export default function BirebirOturumlarClient() {
   const searchParams = useSearchParams();
   const { meta, ready, egitimYiliId, error: metaError } = useOzelDersMeta();
+  const { activeKurum, activeSube } = useKurum();
   const { show, node: toastNode } = useOzelDersToast();
   const { useKisaAd, setUseKisaAd } = useDersDisplayPref();
 
@@ -149,6 +152,7 @@ export default function BirebirOturumlarClient() {
     durum: string;
     notes?: string;
     description?: string;
+    oturum?: BirebirOturum;
     onDone?: (updated: BirebirOturum) => void;
   } | null>(null);
 
@@ -156,7 +160,6 @@ export default function BirebirOturumlarClient() {
   const [detailBusy, setDetailBusy] = useState(false);
   const [detailTeacher, setDetailTeacher] = useState('');
   const [detailNotes, setDetailNotes] = useState('');
-  const [detailShowMore, setDetailShowMore] = useState(false);
 
   // "Bugünün Yoklaması" hızlı görünümü — tarih/durum filtrelerinden bağımsız,
   // her zaman bugünün oturumlarını gösterir (dokunmatik, büyük butonlu kart listesi).
@@ -165,7 +168,7 @@ export default function BirebirOturumlarClient() {
   const [todayHoliday, setTodayHoliday] = useState<OzelDersTatil | null>(null);
   const [todayLoading, setTodayLoading] = useState(false);
   const [todayBusyId, setTodayBusyId] = useState<number | null>(null);
-  const [todayExpandedId, setTodayExpandedId] = useState<number | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     if (!urlDate) return;
@@ -362,11 +365,36 @@ export default function BirebirOturumlarClient() {
     setEnd(preset.end());
   }
 
+  async function exportYoklamaPdf(sessions: BirebirOturum[]) {
+    if (pdfBusy) return;
+    if (!sessions.length) {
+      show('Yoklama listesi için oturum yok.', 'error');
+      return;
+    }
+    setPdfBusy(true);
+    try {
+      const branding = brandingFromContext(activeKurum, activeSube);
+      await exportOzelDersYoklamaPdf({
+        sessions,
+        useKisaAd,
+        branding: {
+          kurumAd: branding.gorunen_ad || activeKurum?.ad || 'Kurum',
+          subeAd: activeSube?.ad,
+          logoUrl: getPdfHeaderLogo(branding),
+          temaRengi: branding.tema_rengi,
+        },
+      });
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'PDF oluşturulamadı', 'error');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   function openDetail(r: BirebirOturum) {
     setDetail(r);
     setDetailTeacher(String(r.ogretmen));
     setDetailNotes(r.notes || '');
-    setDetailShowMore(false);
   }
 
   useEffect(() => {
@@ -431,7 +459,12 @@ export default function BirebirOturumlarClient() {
   function requestDurumChange(
     oturumId: number,
     durum: string,
-    opts?: { notes?: string; description?: string; onDone?: (updated: BirebirOturum) => void },
+    opts?: {
+      notes?: string;
+      description?: string;
+      oturum?: BirebirOturum;
+      onDone?: (updated: BirebirOturum) => void;
+    },
   ) {
     if (durum === 'IPTAL' && !window.confirm('Bu ders oturumunu iptal etmek istediğinize emin misiniz?')) {
       return;
@@ -442,6 +475,7 @@ export default function BirebirOturumlarClient() {
         durum,
         notes: opts?.notes,
         description: opts?.description,
+        oturum: opts?.oturum,
         onDone: opts?.onDone,
       });
       return;
@@ -464,7 +498,6 @@ export default function BirebirOturumlarClient() {
       onDone?.(updated);
       show(`Durum: ${OTURUM_DURUM_LABELS[payload.durum] || payload.durum}`);
       setYoklamaTarget(null);
-      setTodayExpandedId(null);
     } catch (e) {
       show(e instanceof Error ? e.message : 'Durum güncellenemedi', 'error');
     } finally {
@@ -475,7 +508,7 @@ export default function BirebirOturumlarClient() {
 
   async function onSetDurum(durum: string) {
     if (!detail) return;
-    requestDurumChange(detail.id, durum, { notes: detailNotes || undefined });
+    requestDurumChange(detail.id, durum, { notes: detailNotes || undefined, oturum: detail });
   }
 
   async function onChangeTeacher() {
@@ -496,6 +529,7 @@ export default function BirebirOturumlarClient() {
   function markToday(r: BirebirOturum, durum: string) {
     requestDurumChange(r.id, durum, {
       description: `${r.ogrenci_ad} · ${resolveDersLabel(r, useKisaAd)}`,
+      oturum: r,
     });
   }
 
@@ -506,59 +540,26 @@ export default function BirebirOturumlarClient() {
   }, [todayRows]);
 
   function renderTodayActions(r: BirebirOturum) {
-    const next = allowedNextDurumlar(r.durum);
-    const primary = PRIMARY_YOKLAMA_ACTIONS.filter((d) => next.includes(d));
-    const secondary = SECONDARY_YOKLAMA_ACTIONS.filter((d) => next.includes(d));
-    const other = next.filter(
-      (d) =>
-        !(PRIMARY_YOKLAMA_ACTIONS as readonly string[]).includes(d) &&
-        !(SECONDARY_YOKLAMA_ACTIONS as readonly string[]).includes(d),
-    );
-    const showMore = todayExpandedId === r.id;
-
+    const actions = yoklamaActionButtons(r.durum);
+    if (actions.length === 0) return null;
     return (
       <div className="od-attend-actions">
-        {primary.map((durum) => {
+        {actions.map((durum) => {
           const meta = ACTION_META[durum];
           if (!meta) return null;
           return (
             <button
               key={durum}
               type="button"
+              title={OTURUM_DURUM_LABELS[durum] || meta.label}
               className={`od-attend-btn ${meta.tone}${r.durum === durum ? ' is-current' : ''}`}
               disabled={todayBusyId === r.id}
               onClick={() => markToday(r, durum)}
             >
-              {meta.icon(15)} {meta.label}
+              {meta.icon(12)} {meta.label}
             </button>
           );
         })}
-        {(secondary.length > 0 || other.length > 0) && (
-          <button
-            type="button"
-            className="od-attend-btn tone-slate"
-            disabled={todayBusyId === r.id}
-            onClick={() => setTodayExpandedId(showMore ? null : r.id)}
-          >
-            {showMore ? 'Gizle' : 'Diğer'}
-          </button>
-        )}
-        {showMore &&
-          [...secondary, ...other].map((durum) => {
-            const meta = ACTION_META[durum];
-            if (!meta) return null;
-            return (
-              <button
-                key={durum}
-                type="button"
-                className={`od-attend-btn ${meta.tone}`}
-                disabled={todayBusyId === r.id}
-                onClick={() => markToday(r, durum)}
-              >
-                {meta.icon(15)} {meta.label}
-              </button>
-            );
-          })}
       </div>
     );
   }
@@ -593,13 +594,7 @@ export default function BirebirOturumlarClient() {
     );
   }
 
-  const nextDurumlar = detail ? allowedNextDurumlar(detail.durum) : [];
-  const detailSecondary = SECONDARY_YOKLAMA_ACTIONS.filter((d) => nextDurumlar.includes(d));
-  const detailOther = nextDurumlar.filter(
-    (d) =>
-      !(PRIMARY_YOKLAMA_ACTIONS as readonly string[]).includes(d) &&
-      !(SECONDARY_YOKLAMA_ACTIONS as readonly string[]).includes(d),
-  );
+  const nextDurumlar = detail ? yoklamaActionButtons(detail.durum) : [];
   const canChangeTeacher = detail ? detail.durum === 'PLANLANDI' : false;
   const telafiKaynak = telafiCandidates.find((c) => String(c.id) === form.telafi_kaynak_id) || null;
 
@@ -623,6 +618,14 @@ export default function BirebirOturumlarClient() {
             >
               <IconClipboard size={15} /> Bugünün Yoklaması
               {todayPending.length > 0 ? ` (${todayPending.length})` : ''}
+            </button>
+            <button
+              type="button"
+              className="od-btn od-btn-secondary"
+              disabled={pdfBusy || filteredRows.length === 0}
+              onClick={() => void exportYoklamaPdf(filteredRows)}
+            >
+              <IconFileText size={15} /> {pdfBusy ? 'PDF hazırlanıyor…' : 'Yoklama listesi'}
             </button>
             <button type="button" className="od-btn od-btn-primary" onClick={() => setCreateOpen(true)}>
               <IconPlus size={15} /> Tek Seferlik Ders
@@ -677,7 +680,9 @@ export default function BirebirOturumlarClient() {
           <label>Durum</label>
           <select className="od-select" value={durumFilter} onChange={(e) => setDurumFilter(e.target.value)}>
             <option value="">Tümü</option>
-            {Object.entries(OTURUM_DURUM_LABELS).map(([k, v]) => (
+            {Object.entries(OTURUM_DURUM_LABELS)
+              .filter(([k]) => k !== 'ONLINE')
+              .map(([k, v]) => (
               <option key={k} value={k}>
                 {v}
               </option>
@@ -1177,46 +1182,22 @@ export default function BirebirOturumlarClient() {
               {nextDurumlar.length === 0 ? (
                 <span className="od-cell-muted">Bu durumdan geçiş yok.</span>
               ) : (
-                <div className="od-attend-actions" style={{ marginLeft: 0, flexWrap: 'wrap' }}>
-                  {(PRIMARY_YOKLAMA_ACTIONS.filter((d) => nextDurumlar.includes(d)) as string[]).map((d) => {
+                <div className="od-attend-actions">
+                  {nextDurumlar.map((d) => {
                     const meta = ACTION_META[d];
                     return (
                       <button
                         key={d}
                         type="button"
-                        className={`od-attend-btn ${meta?.tone || 'tone-slate'}`}
+                        title={OTURUM_DURUM_LABELS[d] || meta?.label || d}
+                        className={`od-attend-btn ${meta?.tone || 'tone-slate'}${detail.durum === d ? ' is-current' : ''}`}
                         disabled={detailBusy}
                         onClick={() => onSetDurum(d)}
                       >
-                        {meta?.icon(15)} {meta?.label || OTURUM_DURUM_LABELS[d] || d}
+                        {meta?.icon(12)} {meta?.label || OTURUM_DURUM_LABELS[d] || d}
                       </button>
                     );
                   })}
-                  {nextDurumlar.filter((d) => !(PRIMARY_YOKLAMA_ACTIONS as readonly string[]).includes(d)).length > 0 && (
-                    <button
-                      type="button"
-                      className="od-attend-btn tone-slate"
-                      disabled={detailBusy}
-                      onClick={() => setDetailShowMore((v) => !v)}
-                    >
-                      {detailShowMore ? 'Gizle' : 'Diğer'}
-                    </button>
-                  )}
-                  {detailShowMore &&
-                    [...detailSecondary, ...detailOther].map((d) => {
-                        const meta = ACTION_META[d];
-                        return (
-                          <button
-                            key={d}
-                            type="button"
-                            className={`od-attend-btn ${meta?.tone || 'tone-slate'}`}
-                            disabled={detailBusy}
-                            onClick={() => onSetDurum(d)}
-                          >
-                            {meta?.icon(15)} {meta?.label || OTURUM_DURUM_LABELS[d] || d}
-                          </button>
-                        );
-                      })}
                 </div>
               )}
             </div>
@@ -1272,9 +1253,19 @@ export default function BirebirOturumlarClient() {
         title="Bugünün Yoklaması"
         description={dayjs().locale('tr').format('D MMMM YYYY, dddd')}
         footer={
-          <button type="button" className="od-btn od-btn-primary" onClick={() => setTodayOpen(false)}>
-            Kapat
-          </button>
+          <>
+            <button
+              type="button"
+              className="od-btn od-btn-secondary"
+              disabled={pdfBusy || todayRows.length === 0}
+              onClick={() => void exportYoklamaPdf(todayRows)}
+            >
+              <IconFileText size={15} /> {pdfBusy ? 'PDF hazırlanıyor…' : 'Yoklama listesi'}
+            </button>
+            <button type="button" className="od-btn od-btn-primary" onClick={() => setTodayOpen(false)}>
+              Kapat
+            </button>
+          </>
         }
       >
         {todayHoliday && !todayHoliday.ozel_ders_aktif && (
@@ -1321,6 +1312,17 @@ export default function BirebirOturumlarClient() {
         durum={yoklamaTarget?.durum || ''}
         description={yoklamaTarget?.description}
         notes={yoklamaTarget?.notes}
+        preview={
+          yoklamaTarget?.oturum
+            ? {
+                ogrenci_ad: yoklamaTarget.oturum.ogrenci_ad,
+                ders_tarihi: formatOzelDersTarihi(yoklamaTarget.oturum.session_date),
+                ders_saati: formatOzelDersSaati(yoklamaTarget.oturum.start_time),
+                ders_adi: resolveDersLabel(yoklamaTarget.oturum, useKisaAd),
+                ogretmen_ad: yoklamaTarget.oturum.ogretmen_ad,
+              }
+            : undefined
+        }
         busy={detailBusy || todayBusyId != null}
         onConfirm={(payload) =>
           yoklamaTarget

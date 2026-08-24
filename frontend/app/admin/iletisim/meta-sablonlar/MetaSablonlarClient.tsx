@@ -45,6 +45,7 @@ import {
   seedAcademicScheduleTemplates,
   seedDuyuruMetaTemplates,
   seedKayitSozlesmeTemplates,
+  seedOzelDersTemplates,
   seedPersonalChatTemplates,
   submitLocalMetaTemplate,
   syncWhatsAppAccountTemplates,
@@ -703,6 +704,43 @@ export default function MetaSablonlarClient() {
     }
   };
 
+  const handleSeedOzelDers = async () => {
+    if (!accountId) {
+      setError("WhatsApp hesabı seçin.");
+      return;
+    }
+    if (!confirm(
+      "Özel ders Meta taslakları oluşturulsun mu?\n\n"
+      + "• ozel_ders_ogretmen_gelmedi_veli\n"
+      + "• ozel_ders_ogrenci_gelmedi_veli\n"
+      + "• ozel_ders_iptal_veli\n"
+      + "• ozel_ders_telafi_veli\n"
+      + "• ozel_ders_islendi_veli\n\n"
+      + "LMS şablonları da oluşturulur ve Bildirim Şablonları’nda "
+      + "Özel Ders olaylarına bağlanır. Meta’ya gönderip onaylatın.",
+    )) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await seedOzelDersTemplates({
+        channel_config_id: accountId,
+        bind: true,
+      });
+      const errText = (res.errors || []).length ? ` Hatalar: ${res.errors.join("; ")}` : "";
+      setMessage(
+        (res.info || "Özel ders taslakları hazır.")
+        + (res.next_steps?.length ? ` → ${res.next_steps[0]}` : "")
+        + errText,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Özel ders taslakları oluşturulamadı");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSeedPersonalChat = async () => {
     if (!accountId) {
       setError("WhatsApp hesabı seçin.");
@@ -945,6 +983,12 @@ export default function MetaSablonlarClient() {
       title: "Kayıt sözleşmesi taslağı",
       desc: "ogrenci_kayit_sozlesme_personel şablonu ve bağlaması.",
       onClick: handleSeedKayitSozlesme,
+    },
+    {
+      key: "ozel_ders",
+      title: "Özel ders taslakları",
+      desc: "Öğretmen/öğrenci gelmedi, iptal, telafi, işlendi (5 Meta + LMS).",
+      onClick: handleSeedOzelDers,
     },
     {
       key: "duyuru",

@@ -27,6 +27,7 @@ import {
   type PaketDersi,
   type SetOturumDurumPayload,
 } from '@/lib/ozel-ders-api';
+import { formatOzelDersSaati, formatOzelDersTarihi } from '@/lib/ozel-ders-whatsapp-templates';
 import { akademikTabHref } from '@/lib/akademik-routes';
 import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
@@ -559,7 +560,7 @@ export default function OgrenciOzelDersClient() {
     setDeleting(true);
     try {
       await deleteSlot(detailLesson.id);
-      show('Ders pasifleştirildi. Geçmiş oturumlar değişmedi.');
+      show('Ders pasifleştirildi. Geçmiş ve işlenmiş oturumlar değişmedi.');
       setDetailLesson(null);
       await reloadLessons();
     } catch (err) {
@@ -1044,7 +1045,7 @@ export default function OgrenciOzelDersClient() {
 
           <div className="od-ops-program-toolbar">
             <p className="od-cell-muted" style={{ margin: 0 }}>
-              Haftalık şablon — sürükleyerek taşıyın. Geçmiş oturumlar etkilenmez.
+              Haftalık şablon — sürükleyerek taşıyın. Gelecek planlı oturumlar güncellenir; geçmiş ve işlenmiş kayıtlar (hakediş) değişmez.
             </p>
             <button
               type="button"
@@ -1647,6 +1648,18 @@ export default function OgrenciOzelDersClient() {
           yoklamaTarget
             ? `${formatDateTr(yoklamaTarget.oturum.session_date)} · ${resolveDersLabel(yoklamaTarget.oturum, useKisaAd)}`
             : ''
+        }
+        notes={yoklamaTarget?.oturum.notes}
+        preview={
+          yoklamaTarget
+            ? {
+                ogrenci_ad: yoklamaTarget.oturum.ogrenci_ad,
+                ders_tarihi: formatOzelDersTarihi(yoklamaTarget.oturum.session_date),
+                ders_saati: formatOzelDersSaati(yoklamaTarget.oturum.start_time),
+                ders_adi: resolveDersLabel(yoklamaTarget.oturum, useKisaAd),
+                ogretmen_ad: yoklamaTarget.oturum.ogretmen_ad,
+              }
+            : undefined
         }
         busy={busyOturumId != null}
         onConfirm={(payload) =>

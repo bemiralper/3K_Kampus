@@ -64,6 +64,17 @@ export const TEMPLATE_VARIABLES = [
   { key: "egitim_paketleri", label: "Eğitim paketleri", token: "{{egitim_paketleri}}", group: "kayit" },
   { key: "kayit_tarihi", label: "Kayıt tarihi", token: "{{kayit_tarihi}}", group: "kayit" },
   { key: "kayit_yapan", label: "Kayıt yapan", token: "{{kayit_yapan}}", group: "kayit" },
+
+  { key: "ders_tarihi", label: "Ders tarihi", token: "{{ders_tarihi}}", group: "ozel_ders" },
+  { key: "ders_saati", label: "Ders saati", token: "{{ders_saati}}", group: "ozel_ders" },
+  { key: "ders_adi", label: "Ders adı", token: "{{ders_adi}}", group: "ozel_ders" },
+  { key: "ogretmen_ad", label: "Öğretmen adı", token: "{{ogretmen_ad}}", group: "ozel_ders" },
+  { key: "ders_durumu", label: "Ders durumu", token: "{{ders_durumu}}", group: "ozel_ders" },
+  { key: "sebep", label: "İptal / yoklama nedeni", token: "{{sebep}}", group: "ozel_ders" },
+  { key: "ek_bilgi", label: "Ek bilgi", token: "{{ek_bilgi}}", group: "ozel_ders" },
+  { key: "telafi_notu", label: "Telafi notu (gerekirse)", token: "{{telafi_notu}}", group: "ozel_ders" },
+  { key: "telafi_tarihi", label: "Telafi tarihi", token: "{{telafi_tarihi}}", group: "ozel_ders" },
+  { key: "telafi_saati", label: "Telafi saati", token: "{{telafi_saati}}", group: "ozel_ders" },
 ] as const;
 
 export const TEMPLATE_VARIABLE_GROUP_LABELS: Record<string, string> = {
@@ -75,6 +86,7 @@ export const TEMPLATE_VARIABLE_GROUP_LABELS: Record<string, string> = {
   gorusme: "Görüşme",
   sinav: "Sınav",
   kayit: "Kayıt sözleşmesi",
+  ozel_ders: "Özel ders",
 };
 
 /** Strip preview-only metadata; returns API-ready plain text. */
@@ -233,6 +245,17 @@ export const SAMPLE_PREVIEW_CONTEXT: Record<string, string> = {
   egitim_paketleri: "Grup Ders, Koçluk",
   kayit_tarihi: "14.08.2026",
   kayit_yapan: "Ayşe Kayıt",
+  ders_tarihi: "15 Ocak 2026 Pazartesi",
+  ders_saati: "15.00",
+  ders_adi: "Matematik",
+  ogretmen_ad: "Tuba Demir",
+  ders_durumu: "Öğretmen Gelmedi",
+  sebep: "Hastalık",
+  ek_bilgi: "Ek not",
+  telafi_notu:
+    "Ders telafi edilecektir. Telafi tarihi ve saati kesinleştiğinde tarafınıza ayrıca bilgi verilecektir.",
+  telafi_tarihi: "18 Ocak 2026 Pazar",
+  telafi_saati: "14.00",
 };
 
 export type PreviewSampleContext = Partial<typeof SAMPLE_PREVIEW_CONTEXT>;
