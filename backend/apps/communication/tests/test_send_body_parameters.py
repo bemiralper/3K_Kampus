@@ -25,7 +25,7 @@ class SendBodyParametersTest(SimpleTestCase):
         self.assertNotIn('parameter_name', params[0])
 
     def test_named_format_includes_parameter_name(self):
-        """Body named kaldıysa Meta parameter_name ister (#100)."""
+        """Body named kaldıysa ve map yoksa Meta parameter_name ister (#100)."""
         params = build_send_body_parameters(
             {},
             {'ogrenci_ad': 'Ali', 'hafta': '4. Hafta'},
@@ -35,6 +35,18 @@ class SendBodyParametersTest(SimpleTestCase):
         self.assertEqual(params[0]['parameter_name'], 'ogrenci_ad')
         self.assertEqual(params[0]['text'], 'Ali')
         self.assertEqual(params[1]['parameter_name'], 'hafta')
+
+    def test_named_body_with_positional_map_sends_numbered_params(self):
+        """Yerel gövde named olsa bile Cloud API {{1}} ise positional gitmeli."""
+        params = build_send_body_parameters(
+            {'1': 'ogrenci_ad', '2': 'kurum_ad'},
+            {'ogrenci_ad': 'Zeynep Altunışık', 'kurum_ad': '3K Kampüs'},
+            body_named='🎉 Merhaba {{ogrenci_ad}}, {{kurum_ad}} ailesine hoş geldin!',
+        )
+        self.assertEqual(len(params), 2)
+        self.assertNotIn('parameter_name', params[0])
+        self.assertEqual(params[0]['text'], 'Zeynep Altunışık')
+        self.assertEqual(params[1]['text'], '3K Kampüs')
 
     def test_body_only_count_not_full_map(self):
         params = build_send_body_parameters(

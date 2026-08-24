@@ -9,7 +9,12 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.authentication import SessionAuthentication
-from apps.academic.interfaces.permissions import AcademicModulePermission
+from apps.academic.interfaces.permissions import (
+    AcademicModulePermission,
+    ClassPeriodAttendancePermission,
+    user_can_access_classroom_attendance,
+    user_can_write_academic,
+)
 from rest_framework.response import Response
 
 from apps.academic.interfaces.sube_context import (
@@ -38,6 +43,7 @@ from apps.academic.domain.class_period_attendance import (
     ClassAttendanceNotifySource,
 )
 from apps.academic.services.class_period_attendance_service import (
+    build_coach_period_attendance_context,
     get_or_build_period_roster,
     list_period_sessions_for_date,
     save_period_attendance,
@@ -344,10 +350,50 @@ def lesson_operations_meta_api(request):
     })
 
 
+def _forbid_classroom(request, classroom_id: int):
+    if user_can_access_classroom_attendance(request.user, classroom_id):
+        return None
+    return Response({'error': 'Bu sınıfa erişim yok.'}, status=403)
+
+
+def _forbid_coach_notify(request, source_type: str, source_id: int):
+    """Koç yalnızca kendi sınıflarının günlük yoklama bildirimini gönderir."""
+    if user_can_write_academic(request.user):
+        return None
+    if source_type != ClassAttendanceNotifySource.PERIOD:
+        return Response(
+            {'error': 'Koç portalı yalnızca günlük sınıf yoklaması bildirimi gönderebilir.'},
+            status=403,
+        )
+    try:
+        session = ClassPeriodAttendanceSession.objects.only('sinif_id').get(
+            pk=source_id, is_active=True,
+        )
+    except ClassPeriodAttendanceSession.DoesNotExist:
+        return Response({'error': 'Oturum bulunamadı.'}, status=404)
+    return _forbid_classroom(request, session.sinif_id)
+
+
+@csrf_exempt
+@api_view(['GET'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([ClassPeriodAttendancePermission])
+def class_period_attendance_coach_context_api(request):
+    """GET /api/academic/class-period-attendance/coach-context/"""
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+    return Response(build_coach_period_attendance_context(
+        user=request.user,
+        kurum_id=ctx['kurum_id'],
+        sube_id=ctx['sube_id'],
+    ))
+
+
 @csrf_exempt
 @api_view(['GET', 'POST'])
 @authentication_classes([SessionAuthentication])
-@permission_classes([AcademicModulePermission])
+@permission_classes([ClassPeriodAttendancePermission])
 def class_period_attendance_list_api(request):
     """GET/POST /api/academic/class-period-attendance/ — günlük sabah/öğleden sonra."""
     ctx, err = mandatory_academic_context_drf(request)
@@ -360,6 +406,10 @@ def class_period_attendance_list_api(request):
         )
     except (TypeError, ValueError):
         return Response({'error': 'term_id ve classroom_id zorunludur.'}, status=400)
+
+    denied = _forbid_classroom(request, classroom_id)
+    if denied:
+        return denied
 
     raw_date = request.data.get('date') or request.query_params.get('date')
     try:
@@ -402,7 +452,7 @@ def class_period_attendance_list_api(request):
 @csrf_exempt
 @api_view(['GET', 'POST'])
 @authentication_classes([SessionAuthentication])
-@permission_classes([AcademicModulePermission])
+@permission_classes([ClassPeriodAttendancePermission])
 def class_period_student_attendance_api(request, pk):
     """GET/POST /api/academic/class-period-attendance/<id>/student-attendance/"""
     ctx, err = mandatory_academic_context_drf(request)
@@ -419,6 +469,9 @@ def class_period_student_attendance_api(request, pk):
     sube_id = ctx.get('sube_id')
     if sube_id and session.sinif_id and getattr(session.sinif, 'sube_id', None) not in (None, sube_id):
         return Response({'error': 'Bu oturuma erişim yok.'}, status=403)
+    denied = _forbid_classroom(request, session.sinif_id)
+    if denied:
+        return denied
 
     if request.method == 'GET':
         return Response({
@@ -444,7 +497,7 @@ def class_period_student_attendance_api(request, pk):
 @csrf_exempt
 @api_view(['POST'])
 @authentication_classes([SessionAuthentication])
-@permission_classes([AcademicModulePermission])
+@permission_classes([ClassPeriodAttendancePermission])
 def class_attendance_notify_preview_api(request):
     """POST /api/academic/class-attendance/notify/preview/"""
     ctx, err = mandatory_academic_context_drf(request)
@@ -457,6 +510,9 @@ def class_attendance_notify_preview_api(request):
         return Response({'error': 'source_id zorunludur.'}, status=400)
     if source_type not in ClassAttendanceNotifySource.values:
         return Response({'error': 'source_type LESSON veya PERIOD olmalı.'}, status=400)
+    denied = _forbid_coach_notify(request, source_type, source_id)
+    if denied:
+        return denied
 
     recipient_types = request.data.get('recipient_types') or ['VELI']
     try:
@@ -495,7 +551,7 @@ def class_attendance_notify_preview_api(request):
 @csrf_exempt
 @api_view(['POST'])
 @authentication_classes([SessionAuthentication])
-@permission_classes([AcademicModulePermission])
+@permission_classes([ClassPeriodAttendancePermission])
 def class_attendance_notify_send_api(request):
     """POST /api/academic/class-attendance/notify/send/"""
     ctx, err = mandatory_academic_context_drf(request)
@@ -508,6 +564,9 @@ def class_attendance_notify_send_api(request):
         return Response({'error': 'source_id zorunludur.'}, status=400)
     if source_type not in ClassAttendanceNotifySource.values:
         return Response({'error': 'source_type LESSON veya PERIOD olmalı.'}, status=400)
+    denied = _forbid_coach_notify(request, source_type, source_id)
+    if denied:
+        return denied
 
     recipient_types = request.data.get('recipient_types') or ['VELI']
     force = bool(request.data.get('force_resend'))

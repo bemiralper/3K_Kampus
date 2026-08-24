@@ -3,8 +3,13 @@ WhatsApp hesap çözümleyici — rol + şube hibrit kapsam.
 """
 from __future__ import annotations
 
+import re
+
 from apps.communication.domain.enums import Channel, CommunicationDepartment, WhatsAppAccountScope
 from apps.communication.domain.models import CommunicationChannelConfig
+
+# test_koc_wa / koc — 'kocaman' gibi rastgele eşleşmesin.
+_KOC_ROLE_RE = re.compile(r'(^|_)koc($|_)')
 
 
 class AccountResolveError(Exception):
@@ -192,33 +197,44 @@ class AccountResolver:
         sube_id: int | None = None,
         user=None,
     ) -> CommunicationChannelConfig | None:
-        """Departman hattı — ödeme/finans gönderiminde muhasebe numarasını seçer."""
-        cfg = AccountResolver.resolve(
-            kurum_id=kurum_id,
-            user=user,
-            sube_id=sube_id,
-            prefer_department=department,
-            raise_if_missing=False,
-        )
-        if cfg is not None and cfg.department == department:
-            return cfg
+        """
+        İşlem türünün hattı — `department` alanına değil rol bağlamasına bakar.
 
-        qs = CommunicationChannelConfig.objects.filter(
-            kurum_id=kurum_id,
-            channel=Channel.WHATSAPP,
-            is_active=True,
-            department=department,
-        ).prefetch_related('allowed_subes', 'allowed_roles')
-        for candidate in qs.order_by('-is_default', 'name'):
-            if not _sube_allowed(candidate, sube_id):
-                continue
-            if user is not None and not _user_can_use(candidate, user, sube_id):
-                continue
-            return candidate
-        if user is None:
-            for candidate in qs.order_by('-is_default', 'name'):
-                if _sube_allowed(candidate, sube_id):
-                    return candidate
+        Muhasebe olayı → `muhasebe` rolünün bağlı olduğu numara.
+        Koçluk olayı → `koc` rolünün bağlı olduğu numara.
+        İki rol aynı hatta ise o ortak hat kullanılır (süper yönetici
+        tüm hesapları görse bile departman alanı bunu ezmez).
+        """
+        qs = list(
+            CommunicationChannelConfig.objects.filter(
+                kurum_id=kurum_id,
+                channel=Channel.WHATSAPP,
+                is_active=True,
+            )
+            .prefetch_related('allowed_subes', 'allowed_roles')
+            .order_by('-is_default', 'name')
+        )
+        in_scope = [cfg for cfg in qs if _sube_allowed(cfg, sube_id)]
+        role_bound = [
+            cfg for cfg in in_scope
+            if _cfg_has_department_role(cfg, department)
+        ]
+        if role_bound:
+            return _pick_role_bound_for_department(role_bound, department)
+
+        dept_matches = [cfg for cfg in in_scope if cfg.department == department]
+        elevated = user is not None and (
+            getattr(user, 'is_superuser', False)
+            or _has_sistem_admin(user)
+            or _has_comm_manage(user)
+        )
+        if user is not None and not elevated:
+            dept_matches = [
+                cfg for cfg in dept_matches
+                if _user_can_use(cfg, user, sube_id)
+            ]
+        if dept_matches:
+            return _stable_pick_account(dept_matches, department)
         return None
 
     @staticmethod
@@ -408,6 +424,63 @@ def _cfg_role_ids(cfg: CommunicationChannelConfig) -> list[int]:
     if 'allowed_roles' in cache:
         return [role.id for role in cfg.allowed_roles.all()]
     return list(cfg.allowed_roles.values_list('id', flat=True))
+
+
+def _cfg_role_codes(cfg: CommunicationChannelConfig) -> list[str]:
+    cache = getattr(cfg, '_prefetched_objects_cache', None) or {}
+    if 'allowed_roles' in cache:
+        return [role.code or '' for role in cfg.allowed_roles.all()]
+    return list(cfg.allowed_roles.values_list('code', flat=True))
+
+
+def _role_code_matches_department(code: str, department: str) -> bool:
+    raw = (code or '').strip().lower()
+    if not raw:
+        return False
+    if department == CommunicationDepartment.ACCOUNTING:
+        return 'muhasebe' in raw
+    if department == CommunicationDepartment.COACHING:
+        return raw == 'koc' or bool(_KOC_ROLE_RE.search(raw))
+    return False
+
+
+def _cfg_has_department_role(cfg: CommunicationChannelConfig, department: str) -> bool:
+    return any(
+        _role_code_matches_department(code, department)
+        for code in _cfg_role_codes(cfg)
+    )
+
+
+def _cfg_is_shared_coaching_accounting(cfg: CommunicationChannelConfig) -> bool:
+    return (
+        _cfg_has_department_role(cfg, CommunicationDepartment.COACHING)
+        and _cfg_has_department_role(cfg, CommunicationDepartment.ACCOUNTING)
+    )
+
+
+def _stable_pick_account(pool: list, department: str | None = None):
+    if not pool:
+        return None
+    if department:
+        dept_matches = [cfg for cfg in pool if cfg.department == department]
+        if dept_matches:
+            pool = dept_matches
+    defaults = [cfg for cfg in pool if cfg.is_default]
+    if defaults:
+        return defaults[0]
+    return pool[0]
+
+
+def _pick_role_bound_for_department(candidates: list, department: str):
+    """Ortak hat (koc+muhasebe) varsa o; yoksa yalnızca bu rolün olduğu hat."""
+    shared = [cfg for cfg in candidates if _cfg_is_shared_coaching_accounting(cfg)]
+    if shared:
+        return _stable_pick_account(shared, department)
+    dedicated = [
+        cfg for cfg in candidates
+        if not _cfg_is_shared_coaching_accounting(cfg)
+    ]
+    return _stable_pick_account(dedicated or candidates, department)
 
 
 def _pick_accessible_account(accessible, *, user, prefer_department: str | None):

@@ -826,6 +826,10 @@ class MetaTemplateService:
 
     @staticmethod
     def ensure_variable_map(template: WhatsAppMetaTemplate) -> dict[str, str]:
+        from apps.communication.application.meta_template_mapper import (
+            default_variable_map_for_template,
+        )
+
         if template.variable_map_json:
             return template.variable_map_json
         header_text = ''
@@ -833,6 +837,8 @@ class MetaTemplateService:
         if (header.get('type') or '').upper() == 'TEXT':
             header_text = header.get('text') or ''
         vmap = build_variable_map(template.body_named, header_text)
+        if not vmap:
+            vmap = default_variable_map_for_template(template.name)
         template.variable_map_json = vmap
         template.save(update_fields=['variable_map_json', 'updated_at'])
         return vmap

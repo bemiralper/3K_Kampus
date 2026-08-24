@@ -12,8 +12,16 @@ from typing import Any
 
 from apps.communication.application.communication_service import MessageSource, SendResult
 from apps.communication.application.notification_events import (
+    MODULE_AKADEMIK,
+    MODULE_DEVAMSIZLIK,
     MODULE_FINANS,
+    MODULE_GORUSME,
+    MODULE_KOC,
+    MODULE_ODEV,
     MODULE_ODEME,
+    MODULE_OZEL_DERS,
+    MODULE_SINAV,
+    MODULE_TAKVIM,
     MODULE_YOKLAMA,
     get_event,
 )
@@ -22,6 +30,17 @@ from apps.communication.application.notification_events import (
 _ACCOUNTING_EVENT_KEYS = frozenset({
     'ogrenci.hosgeldin',
     'ogrenci.kayit_sozlesme',
+})
+_COACHING_MODULES = frozenset({
+    MODULE_YOKLAMA,
+    MODULE_ODEV,
+    MODULE_KOC,
+    MODULE_GORUSME,
+    MODULE_SINAV,
+    MODULE_OZEL_DERS,
+    MODULE_AKADEMIK,
+    MODULE_DEVAMSIZLIK,
+    MODULE_TAKVIM,
 })
 from apps.communication.application.notification_template_resolver import (
     ResolvedTemplate,
@@ -384,7 +403,7 @@ def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -
 
     event_module = getattr(event, 'module', None)
     event_key = getattr(event, 'key', None)
-    if event_module == MODULE_YOKLAMA:
+    if event_module in _COACHING_MODULES:
         cfg = AccountResolver.for_department(
             kurum_id,
             CommunicationDepartment.COACHING,
@@ -393,7 +412,7 @@ def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -
         )
         if cfg is not None:
             return str(cfg.id)
-    if event_module in (MODULE_ODEME, MODULE_FINANS) or event_key in _ACCOUNTING_EVENT_KEYS:
+    elif event_module in (MODULE_ODEME, MODULE_FINANS) or event_key in _ACCOUNTING_EVENT_KEYS:
         cfg = AccountResolver.for_department(
             kurum_id,
             CommunicationDepartment.ACCOUNTING,

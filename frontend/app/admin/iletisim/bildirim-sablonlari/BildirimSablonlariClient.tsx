@@ -34,6 +34,7 @@ import {
   seedKayitSozlesmeTemplates,
   seedKutuphaneYoklamaTemplates,
   seedOzelDersTemplates,
+  seedSinifYoklamaTemplates,
 } from "@/lib/communication-api";
 import { notifyCommunicationTemplateUsageChanged } from "@/lib/communication-template-usage-sync";
 
@@ -1136,7 +1137,7 @@ export default function BildirimSablonlariClient() {
 
   const runSeed = useCallback(
     async (
-      kind: "academic" | "kutuphane" | "kayit" | "ozel_ders",
+      kind: "academic" | "kutuphane" | "sinif_yoklama" | "kayit" | "ozel_ders",
       confirmText: string,
       fallbackInfo: string,
       failText: string,
@@ -1212,6 +1213,20 @@ export default function BildirimSablonlariClient() {
       seedKutuphaneYoklamaTemplates,
     );
 
+  const handleSeedSinifYoklama = () =>
+    runSeed(
+      "sinif_yoklama",
+      "Sınıf yoklama taslakları oluşturulsun mu?\n\n" +
+        "• sinif_yoklama_gelmedi_veli / _ogrenci\n" +
+        "• sinif_yoklama_gec_veli / _ogrenci\n\n" +
+        "Onaylı şablonlara dokunulmaz. Eksik olanlar Meta DRAFT olarak eklenir " +
+        "ve Yoklama → Sınıf olaylarına bağlanır. Geç şablonunda {{saat}} geç gelme saatidir.",
+      "Sınıf yoklama taslakları hazır.",
+      "Sınıf yoklama taslakları oluşturulamadı.",
+      "sinif.yoklama.gelmedi",
+      seedSinifYoklamaTemplates,
+    );
+
   const handleSeedKayitSozlesme = () =>
     runSeed(
       "kayit",
@@ -1254,6 +1269,12 @@ export default function BildirimSablonlariClient() {
       title: "Kütüphane yoklama taslakları",
       desc: "Gelmedi / geç kalma / çıkış Meta şablonları",
       run: handleSeedKutuphaneYoklama,
+    },
+    {
+      kind: "sinif_yoklama",
+      title: "Sınıf yoklama taslakları",
+      desc: "Gelmedi / geç kalma — veli ve öğrenci Meta şablonları",
+      run: handleSeedSinifYoklama,
     },
     {
       kind: "ozel_ders",

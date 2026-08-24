@@ -1168,6 +1168,37 @@ export async function seedKutuphaneYoklamaTemplates(data: {
   });
 }
 
+/** Sınıf yoklama — gelmedi/geç Meta + LMS + bildirim bağlama */
+export async function seedSinifYoklamaTemplates(data: {
+  channel_config_id: string;
+  sube_id?: number | null;
+  force?: boolean;
+  bind?: boolean;
+}): Promise<{
+  created_app_count: number;
+  updated_app_count: number;
+  skipped_app_count: number;
+  created_meta_count: number;
+  updated_meta_count: number;
+  skipped_meta_count: number;
+  bound_count: number;
+  created_app: string[];
+  updated_app: string[];
+  created_meta: string[];
+  updated_meta: string[];
+  bound: string[];
+  errors: string[];
+  next_steps?: string[];
+  event_keys?: string[];
+  info?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/meta-templates/seed-sinif-yoklama/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
 /** Akademik sınıf ders programı — veli/öğrenci DOCUMENT Meta + LMS + bildirim bağlama */
 export async function seedAcademicScheduleTemplates(data: {
   channel_config_id: string;

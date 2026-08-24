@@ -1418,6 +1418,7 @@ export type AttendanceRosterRow = {
   status: StudentAttendanceStatus;
   status_display: string;
   note: string;
+  late_time?: string | null;
   record_id: number | null;
 };
 
@@ -1575,7 +1576,7 @@ export async function fetchLessonStudentAttendance(id: number): Promise<{
 
 export async function saveLessonStudentAttendance(
   id: number,
-  records: { student_id: number; status: string; note?: string }[],
+  records: { student_id: number; status: string; note?: string; late_time?: string | null }[],
 ): Promise<{ roster: AttendanceRosterRow[]; saved: number }> {
   const res = await apiFetch<{ roster: AttendanceRosterRow[]; saved: number }>(
     `/api/academic/lesson-sessions/${id}/student-attendance/`,
@@ -1644,9 +1645,23 @@ export async function fetchClassPeriodStudentAttendance(id: number): Promise<{
   return unwrap(res);
 }
 
+export type CoachPeriodAttendanceContext = {
+  active_year: { id: number; yil_str: string };
+  terms: { id: number; name: string; code: string; is_active: boolean; order_no: number }[];
+  active_term_id: number | null;
+  classrooms: { id: number; ad: string; kod: string; ogrenci_sayisi: number }[];
+};
+
+export async function fetchCoachPeriodAttendanceContext(): Promise<CoachPeriodAttendanceContext> {
+  const res = await apiFetch<CoachPeriodAttendanceContext>(
+    '/api/academic/class-period-attendance/coach-context/',
+  );
+  return unwrap(res);
+}
+
 export async function saveClassPeriodStudentAttendance(
   id: number,
-  records: { student_id: number; status: string; note?: string }[],
+  records: { student_id: number; status: string; note?: string; late_time?: string | null }[],
 ): Promise<{ roster: AttendanceRosterRow[]; saved: number }> {
   const res = await apiFetch<{ roster: AttendanceRosterRow[]; saved: number }>(
     `/api/academic/class-period-attendance/${id}/student-attendance/`,

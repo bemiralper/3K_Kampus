@@ -129,9 +129,16 @@ export default function CoachDashboardPage() {
       </section>
 
       <header className="coach-page-header">
-        <div className="coach-page-header-text">
-          <h2>Özet</h2>
-          <p>Atanmış öğrencileriniz ve günlük takip alanları</p>
+        <div className="coach-page-header-row">
+          <div className="coach-page-header-text">
+            <h2>Özet</h2>
+            <p>Atanmış öğrencileriniz ve günlük takip alanları</p>
+          </div>
+          <div className="coach-page-header-actions">
+            <Link href="/coach/yoklama" className="coach-btn coach-btn-primary">
+              Sınıf yoklaması
+            </Link>
+          </div>
         </div>
       </header>
 

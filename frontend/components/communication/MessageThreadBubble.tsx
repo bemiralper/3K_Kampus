@@ -70,6 +70,11 @@ export default function MessageThreadBubble({
           {msg.direction === "OUTBOUND" && msg.status && (
             <span> · {formatMessageStatus(msg.status)}</span>
           )}
+          {msg.direction === "OUTBOUND" && msg.failed_reason ? (
+            <div className="comm-thread-bubble-fail" title={msg.failed_reason}>
+              {msg.failed_reason}
+            </div>
+          ) : null}
         </div>
       </div>
 

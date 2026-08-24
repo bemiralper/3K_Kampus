@@ -295,12 +295,23 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         description='Sınıf ders / günlük yoklamasında öğrenci gelmedi bildirimi.',
         recipients=(VELI, OGRENCI),
         opt_in_category='devamsizlik',
-        variables=('ogrenci_ad', 'veli_ad', 'tarih', 'saat', 'sinif'),
+        variables=('ogrenci_ad', 'veli_ad', 'tarih', 'saat', 'sinif', 'oturum_ad', 'giris_saati'),
         meta_name_base='sinif_yoklama_gelmedi',
+        legacy_meta_names=MappingProxyType({
+            VELI: (
+                'gunluk_ders_yoklama_veli',
+                'gunluk_ders_yoklama_veli_gelmedi',
+                'sinif_yoklama_gelmedi',
+            ),
+            OGRENCI: ('sinif_yoklama_gelmedi',),
+        }),
         default_bodies=MappingProxyType({
             VELI: (
-                'Sayın velimiz, {{ogrenci_ad}} {{tarih}} tarihinde {{sinif}} sınıfı '
-                'yoklamasına gelmemiştir. Bilgilerinize sunarız.'
+                '*Değerli Velimiz,*\n'
+                'Öğrencimiz {{ogrenci_ad}}’ın {{tarih}} tarihinde gerçekleştirilen '
+                '{{sinif}} sınıfı derslerine katılım sağlamadığı ve yoklama durumunun '
+                '*“Gelmedi” *olarak sisteme kaydedildiği bilgilerinize sunarız.\n'
+                'Öğrencimizin ders devamlılığını düzenli şekilde sürdürmesini önemle rica ederiz.'
             ),
             OGRENCI: (
                 'Merhaba {{ogrenci_ad}}, {{tarih}} tarihinde {{sinif}} sınıfı '
@@ -317,12 +328,22 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         description='Sınıf ders / günlük yoklamasında geç giriş bildirimi.',
         recipients=(VELI, OGRENCI),
         opt_in_category='devamsizlik',
-        variables=('ogrenci_ad', 'veli_ad', 'tarih', 'saat', 'sinif'),
+        variables=('ogrenci_ad', 'veli_ad', 'tarih', 'saat', 'sinif', 'oturum_ad', 'giris_saati'),
         meta_name_base='sinif_yoklama_gec',
+        legacy_meta_names=MappingProxyType({
+            VELI: (
+                'gunluk_ders_yoklama_veli_gec',
+                'sinif_yoklama_gec',
+            ),
+            OGRENCI: ('sinif_yoklama_gec',),
+        }),
         default_bodies=MappingProxyType({
             VELI: (
-                'Sayın velimiz, {{ogrenci_ad}} {{tarih}} tarihinde {{sinif}} sınıfı '
-                'yoklamasına {{saat}} saatinde geç kalmıştır. Bilgilerinize sunarız.'
+                '*Değerli Velimiz,*\n\n'
+                'Öğrencimiz {{ogrenci_ad}}’ın {{tarih}} tarihinde gerçekleştirilen '
+                '{{sinif}} sınıfı derslerine *{{saat}} itibarıyla katılım sağladığı* '
+                've yoklama durumunun *“Geç”* olarak sisteme kaydedildiği bilgilerinize sunarız.\n\n'
+                'Öğrencimizin derslere zamanında katılım göstermesini önemle rica ederiz.'
             ),
             OGRENCI: (
                 'Merhaba {{ogrenci_ad}}, {{tarih}} tarihinde {{sinif}} sınıfı '

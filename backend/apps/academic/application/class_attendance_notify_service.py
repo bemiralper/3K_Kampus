@@ -58,6 +58,7 @@ class ClassNotifyItem:
     status: str
     body: str
     skip_reason: str = ''
+    late_time: Any = None
 
 
 @dataclass
@@ -92,6 +93,15 @@ def _session_label_period(session: ClassPeriodAttendanceSession) -> str:
     return session.period_label
 
 
+def _format_hm(value) -> str:
+    if not value:
+        return ''
+    if hasattr(value, 'strftime'):
+        return value.strftime('%H:%M')
+    raw = str(value).strip()
+    return raw[:5] if raw else ''
+
+
 def _build_context(
     *,
     ogrenci,
@@ -100,9 +110,15 @@ def _build_context(
     sinif_ad: str = '',
     oturum_ad: str = '',
     session_date=None,
+    late_time=None,
+    status: str = '',
 ) -> dict[str, str]:
     now = timezone.localtime()
     tarih = session_date.strftime('%d.%m.%Y') if session_date else now.strftime('%d.%m.%Y')
+    giris = _format_hm(late_time)
+    saat = giris if status == StudentAttendanceStatus.LATE else now.strftime('%H:%M')
+    if status == StudentAttendanceStatus.LATE and not saat:
+        saat = now.strftime('%H:%M')
     ctx = {
         'ogrenci_ad': f'{getattr(ogrenci, "ad", "")} {getattr(ogrenci, "soyad", "")}'.strip(),
         'veli_ad': getattr(veli, 'tam_ad', '') if veli else '',
@@ -111,14 +127,28 @@ def _build_context(
         'sinif': sinif_ad or aktif_sinif_ad(ogrenci),
         'tarih': tarih,
         'yoklama_tarihi': tarih,
-        'saat': now.strftime('%H:%M'),
+        'saat': saat,
         'oturum_ad': oturum_ad,
-        'giris_saati': '',
+        'giris_saati': giris or saat if status == StudentAttendanceStatus.LATE else '',
         'cikis_saati': '',
         'salon_ad': '',
         'ders_no': '',
     }
     return ctx
+
+
+_NUMBERED_FALLBACK = {'1': 'ogrenci_ad', '2': 'tarih', '3': 'sinif', '4': 'saat'}
+
+
+def _apply_variable_map(body: str, mapping) -> str:
+    if not body:
+        return ''
+    merged = dict(_NUMBERED_FALLBACK)
+    if isinstance(mapping, dict):
+        merged.update({str(k): str(v) for k, v in mapping.items() if v})
+    for num, name in merged.items():
+        body = body.replace('{{' + num + '}}', '{{' + name + '}}')
+    return body
 
 
 def _default_body(event_key: str, recipient_type: str, ctx: dict[str, str]) -> str:
@@ -129,6 +159,30 @@ def _default_body(event_key: str, recipient_type: str, ctx: dict[str, str]) -> s
         return ''
     template = (event.default_bodies or {}).get(recipient_type) or ''
     return resolve_variables(template, ctx)
+
+
+def _resolved_body(
+    kurum_id: int,
+    event_key: str,
+    recipient_type: str,
+    ctx: dict[str, str],
+    *,
+    sube_id: int | None = None,
+) -> str:
+    """Bağlı / keşfedilen Meta (veya LMS) gövdesi; yoksa katalog varsayılanı."""
+    from apps.communication.application.notification_template_resolver import (
+        display_template_body,
+        resolve_binding,
+    )
+
+    resolved = resolve_binding(
+        kurum_id, event_key, recipient_type, sube_id=sube_id,
+    )
+    raw = display_template_body(resolved) or resolved.body or ''
+    mapping = getattr(resolved.meta_template, 'variable_map_json', None)
+    raw = _apply_variable_map(raw, mapping)
+    filled = resolve_variables(raw, ctx)
+    return filled or _default_body(event_key, recipient_type, ctx)
 
 
 def _already_sent(
@@ -155,10 +209,10 @@ class ClassAttendanceNotificationService:
         self,
         source_type: str,
         source_id: int,
-    ) -> tuple[Any, str, Any, int | None, list[tuple[int, str, str]]]:
+    ) -> tuple[Any, str, Any, int | None, list[tuple[int, str, str, Any]]]:
         """
         Returns: source_obj, oturum_ad, session_date, sinif_id,
-        list of (student_id, status, student_name) for notify statuses.
+        list of (student_id, status, student_name, late_time) for notify statuses.
         """
         if source_type == ClassAttendanceNotifySource.LESSON:
             try:
@@ -176,6 +230,7 @@ class ClassAttendanceNotificationService:
                     r.student_id,
                     r.status,
                     f'{r.student.ad} {r.student.soyad}'.strip(),
+                    getattr(r, 'late_time', None),
                 )
                 for r in records
                 if r.student_id
@@ -204,6 +259,7 @@ class ClassAttendanceNotificationService:
                     r.student_id,
                     r.status,
                     f'{r.student.ad} {r.student.soyad}'.strip(),
+                    getattr(r, 'late_time', None),
                 )
                 for r in records
                 if r.student_id
@@ -247,7 +303,7 @@ class ClassAttendanceNotificationService:
         kurum = Kurum.objects.filter(id=kurum_id).first()
         items: list[ClassNotifyItem] = []
 
-        for student_id, status, student_name in rows:
+        for student_id, status, student_name, late_time in rows:
             event_key = STATUS_TO_EVENT[status]
             ogrenci = Ogrenci.objects.select_related('sube').filter(
                 id=student_id, kurum_id=kurum_id,
@@ -269,6 +325,7 @@ class ClassAttendanceNotificationService:
                         status=status,
                         body='',
                         skip_reason='Veli telefonu bulunamadı',
+                        late_time=late_time,
                     ))
                 else:
                     for veli, phone in veli_pairs:
@@ -279,8 +336,13 @@ class ClassAttendanceNotificationService:
                             sinif_ad=sinif_ad,
                             oturum_ad=oturum_ad,
                             session_date=session_date,
+                            late_time=late_time,
+                            status=status,
                         )
-                        body = _default_body(event_key, RecipientType.VELI, ctx)
+                        body = _resolved_body(
+                            kurum_id, event_key, RecipientType.VELI, ctx,
+                            sube_id=getattr(ogrenci, 'sube_id', None),
+                        )
                         skip = ''
                         if _already_sent(
                             source_type=source_type,
@@ -304,6 +366,7 @@ class ClassAttendanceNotificationService:
                             status=status,
                             body=body,
                             skip_reason=skip,
+                            late_time=late_time,
                         ))
 
             if RecipientType.OGRENCI in types:
@@ -314,8 +377,13 @@ class ClassAttendanceNotificationService:
                     sinif_ad=sinif_ad,
                     oturum_ad=oturum_ad,
                     session_date=session_date,
+                    late_time=late_time,
+                    status=status,
                 )
-                body = _default_body(event_key, RecipientType.OGRENCI, ctx)
+                body = _resolved_body(
+                    kurum_id, event_key, RecipientType.OGRENCI, ctx,
+                    sube_id=getattr(ogrenci, 'sube_id', None),
+                )
                 skip = ''
                 if not phone:
                     skip = 'Öğrenci telefonu bulunamadı'
@@ -339,6 +407,7 @@ class ClassAttendanceNotificationService:
                     status=status,
                     body=body,
                     skip_reason=skip,
+                    late_time=late_time,
                 ))
 
         pending = [i for i in items if not i.skip_reason]
@@ -425,6 +494,8 @@ class ClassAttendanceNotificationService:
                 sinif_ad=sinif_ad,
                 oturum_ad=oturum_ad,
                 session_date=session_date,
+                late_time=item.late_time,
+                status=item.status,
             )
             source_ref = (
                 f'{source_type}:{source_id}:{item.ogrenci_id}:'

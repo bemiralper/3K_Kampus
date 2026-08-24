@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, DatePicker, Input, Select, Space, Table, Tag, message } from 'antd';
+import { Button, DatePicker, Input, Select, Space, Table, Tag, TimePicker, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -200,6 +200,7 @@ export default function OgrenciYoklamalariClient() {
         student_id: r.student_id,
         status: r.status,
         note: r.note,
+        late_time: r.status === 'LATE' ? r.late_time || null : null,
       }));
       const result =
         mode === 'lesson'
@@ -230,6 +231,7 @@ export default function OgrenciYoklamalariClient() {
         ...r,
         status: 'PRESENT' as AttendanceRosterRow['status'],
         status_display: label,
+        late_time: null,
       })),
     );
     setDirty(true);
@@ -246,12 +248,15 @@ export default function OgrenciYoklamalariClient() {
           style={{ width: '100%' }}
           value={v}
           options={statusOptions}
-          onChange={(status) =>
+          onChange={(status) => {
+            const next = status as AttendanceRosterRow['status'];
+            const now = dayjs().format('HH:mm');
             patchRow(row.student_id, {
-              status: status as AttendanceRosterRow['status'],
+              status: next,
               status_display: statusOptions.find((o) => o.value === status)?.label || status,
-            })
-          }
+              late_time: next === 'LATE' ? row.late_time || now : null,
+            });
+          }}
         />
       ),
     },
@@ -270,6 +275,25 @@ export default function OgrenciYoklamalariClient() {
                 : 'red';
         return <Tag color={color}>{v}</Tag>;
       },
+    },
+    {
+      title: 'Geç saati',
+      dataIndex: 'late_time',
+      width: 130,
+      render: (v, row) =>
+        row.status === 'LATE' ? (
+          <TimePicker
+            format="HH:mm"
+            minuteStep={5}
+            allowClear={false}
+            value={v ? dayjs(v, 'HH:mm') : null}
+            onChange={(t) => patchRow(row.student_id, { late_time: t ? t.format('HH:mm') : null })}
+            placeholder="Saat"
+            style={{ width: '100%' }}
+          />
+        ) : (
+          <span style={{ color: 'var(--ak-muted, #94a3b8)' }}>—</span>
+        ),
     },
     {
       title: 'Not',

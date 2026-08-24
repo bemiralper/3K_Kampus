@@ -88,6 +88,30 @@ def extract_named_variables_in_order(text: str) -> list[str]:
     return ordered
 
 
+# Meta'da numaralı kalan şablonlar — sync body_named {{1}} bırakır, map boş kalır.
+NUMBERED_TEMPLATE_DEFAULT_MAPS: dict[str, dict[str, str]] = {
+    'gun_sonu_raporu_personel': {
+        '1': 'tarih', '2': 'rapor_ad', '3': 'toplam_giren', '4': 'toplam_cikan',
+    },
+    'gun_sonu_raporu': {
+        '1': 'tarih', '2': 'rapor_ad', '3': 'toplam_giren', '4': 'toplam_cikan',
+    },
+    'hogeldin_mesaji_ogrenci': {'1': 'ogrenci_ad', '2': 'kurum_ad'},
+    'hosgeldin_mesaji_ogrenci': {'1': 'ogrenci_ad', '2': 'kurum_ad'},
+    'ogrenci_kayit_sozlesme_personel': {
+        '1': 'ogrenci_ad',
+        '2': 'sinif_seviyesi',
+        '3': 'egitim_paketleri',
+        '4': 'kayit_tarihi',
+        '5': 'kayit_yapan',
+    },
+}
+
+
+def default_variable_map_for_template(name: str) -> dict[str, str]:
+    return dict(NUMBERED_TEMPLATE_DEFAULT_MAPS.get((name or '').strip(), {}) or {})
+
+
 def build_variable_map(body_named: str, *extra_texts: str) -> dict[str, str]:
     """
     {'1': 'ogrenci_ad', '2': 'kurum_ad'} — sıra: body, sonra ekstra metinler
@@ -316,9 +340,12 @@ def build_send_body_parameters(
         for m in VARIABLE_PATTERN.finditer(body_named or '')
         if m.group(1).isdigit()
     ]
+    has_positional_map = any(str(k).isdigit() for k in (variable_map or {}))
 
-    # Named-format şablon (Business Manager / sync): parameter_name zorunlu
-    if named_in_body and not numbered_in_body:
+    # Named-format yalnızca Meta gerçekten named bekliyorsa (map yok).
+    # body_named yerelde {{ogrenci_ad}} olsa bile Cloud API şablonu {{1}} ise
+    # parameter_name göndermek #100 Invalid parameter üretir; mesaj "bekliyor"da kalır.
+    if named_in_body and not numbered_in_body and not has_positional_map:
         return [
             {
                 'type': 'text',

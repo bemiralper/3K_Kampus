@@ -356,8 +356,10 @@ class MultiWhatsAppAccountTests(TestCase):
 
         self.acc_genel.department = CommunicationDepartment.COACHING
         self.acc_genel.is_default = True
+        self.acc_genel.allowed_roles.set([self.role_koc])
         self.acc_genel.save(update_fields=['department', 'is_default'])
         self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
         self.acc_kadikoy.save(update_fields=['department'])
 
         cfg = AccountResolver.for_department(
@@ -381,6 +383,7 @@ class MultiWhatsAppAccountTests(TestCase):
 
         self.acc_genel.department = CommunicationDepartment.COACHING
         self.acc_genel.is_default = True
+        self.acc_genel.allowed_roles.set([self.role_koc])
         self.acc_genel.save(update_fields=['department', 'is_default'])
         self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
         self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
@@ -431,8 +434,10 @@ class MultiWhatsAppAccountTests(TestCase):
 
         self.acc_genel.department = CommunicationDepartment.COACHING
         self.acc_genel.is_default = True
+        self.acc_genel.allowed_roles.set([self.role_koc])
         self.acc_genel.save(update_fields=['department', 'is_default'])
         self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
         self.acc_kadikoy.save(update_fields=['department'])
 
         WhatsAppMetaTemplate.objects.create(
@@ -496,6 +501,113 @@ class MultiWhatsAppAccountTests(TestCase):
         self.assertIsNotNone(preview)
         self.assertEqual(str(preview.channel_config_id), str(self.acc_genel.id))
         self.assertEqual(preview.meta_template_name, 'yoklama_gelmedi_veli')
+
+    def test_shared_role_line_wins_over_leftover_accounting_department(self):
+        """Koç+muhasebe aynı hatta ise muhasebe olayı o hattan gider (eski ACCOUNTING hesabı kalsın)."""
+        from apps.communication.application.notification_dispatcher import (
+            NotificationRecipient,
+            dispatch_event,
+        )
+        from apps.communication.domain.enums import CommunicationDepartment, MetaTemplateStatus
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+        from django.utils import timezone
+
+        self.acc_genel.department = CommunicationDepartment.COACHING
+        self.acc_genel.is_default = True
+        self.acc_genel.allowed_roles.set([self.role_koc, self.role_muhasebe])
+        self.acc_genel.save(update_fields=['department', 'is_default'])
+        self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
+        self.acc_kadikoy.save(update_fields=['department'])
+
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_genel,
+            name='hogeldin_mesaji_ogrenci',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Merhaba {{ogrenci_ad}}.',
+            approved_at=timezone.now(),
+        )
+
+        cfg = AccountResolver.for_department(
+            self.kurum.id,
+            CommunicationDepartment.ACCOUNTING,
+            sube_id=self.sube_a.id,
+        )
+        self.assertEqual(cfg.id, self.acc_genel.id)
+
+        preview = dispatch_event(
+            self.kurum.id,
+            'ogrenci.hosgeldin',
+            recipient=NotificationRecipient.ogrenci(1),
+            context={'ogrenci_ad': 'Zeynep'},
+            sube_id=self.sube_a.id,
+            dry_run=True,
+        )
+        self.assertEqual(str(preview.channel_config_id), str(self.acc_genel.id))
+
+    def test_superadmin_routes_by_event_role_not_all_accounts(self):
+        """Süper yönetici muhasebe işini muhasebe rol hattından, ödevi koç hattından gönderir."""
+        from apps.communication.application.notification_dispatcher import (
+            NotificationRecipient,
+            dispatch_event,
+        )
+        from apps.communication.domain.enums import CommunicationDepartment, MetaTemplateStatus
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+        from django.utils import timezone
+
+        admin = User.objects.create_superuser(
+            username='wa_super', email='super@test.com', password='x',
+        )
+        self.acc_genel.department = CommunicationDepartment.COACHING
+        self.acc_genel.is_default = True
+        self.acc_genel.allowed_roles.set([self.role_koc])
+        self.acc_genel.save(update_fields=['department', 'is_default'])
+        self.acc_kadikoy.department = CommunicationDepartment.ACCOUNTING
+        self.acc_kadikoy.allowed_roles.set([self.role_muhasebe])
+        self.acc_kadikoy.save(update_fields=['department'])
+
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_kadikoy,
+            name='hogeldin_mesaji_ogrenci',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Merhaba {{ogrenci_ad}}.',
+            approved_at=timezone.now(),
+        )
+        WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.acc_genel,
+            name='haftalik_odev_plani_veli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='{{ogrenci_ad}} — Ödev planı ektedir.',
+            approved_at=timezone.now(),
+        )
+
+        hosgeldin = dispatch_event(
+            self.kurum.id,
+            'ogrenci.hosgeldin',
+            recipient=NotificationRecipient.ogrenci(1),
+            context={'ogrenci_ad': 'Ali'},
+            sube_id=self.sube_a.id,
+            sent_by_user_id=admin.id,
+            dry_run=True,
+        )
+        self.assertEqual(str(hosgeldin.channel_config_id), str(self.acc_kadikoy.id))
+
+        odev = dispatch_event(
+            self.kurum.id,
+            'odev.plan',
+            recipient=NotificationRecipient.veli(1),
+            context={'ogrenci_ad': 'Ali'},
+            sube_id=self.sube_a.id,
+            sent_by_user_id=admin.id,
+            dry_run=True,
+        )
+        self.assertEqual(str(odev.channel_config_id), str(self.acc_genel.id))
 
     def test_odeme_reuses_approved_template_from_other_account_on_same_waba(self):
         """Şablon koç hesabında kayıtlı olsa da muhasebe numarasından Meta ile gider."""

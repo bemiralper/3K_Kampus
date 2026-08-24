@@ -15,6 +15,8 @@ from django.utils import timezone
 from apps.academic.domain.lesson_attendance import (
     LessonAttendanceRecord,
     StudentAttendanceStatus,
+    format_late_time,
+    late_time_or_now,
 )
 from apps.academic.domain.lesson_session import (
     LessonSession,
@@ -689,6 +691,7 @@ def get_or_build_student_roster(session: LessonSession) -> list[dict[str, Any]]:
                 else dict(StudentAttendanceStatus.choices)[StudentAttendanceStatus.PRESENT]
             ),
             'note': rec.note if rec else '',
+            'late_time': format_late_time(rec.late_time) if rec else None,
             'record_id': rec.id if rec else None,
         })
     return rows
@@ -716,12 +719,16 @@ def save_student_attendance(
             raise LessonSessionError(f'Geçersiz yoklama durumu: {status}', 'status')
         if not sid:
             continue
+        late_time = None
+        if status == StudentAttendanceStatus.LATE:
+            late_time = late_time_or_now(item.get('late_time'))
         LessonAttendanceRecord.objects.update_or_create(
             session=session,
             student_id=sid,
             defaults={
                 'status': status,
                 'note': item.get('note') or '',
+                'late_time': late_time,
                 'marked_by': user if getattr(user, 'is_authenticated', False) else None,
             },
         )

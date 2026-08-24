@@ -13,7 +13,11 @@ from apps.academic.domain.class_period_attendance import (
     ClassPeriodAttendanceSession,
     ClassPeriodCode,
 )
-from apps.academic.domain.lesson_attendance import StudentAttendanceStatus
+from apps.academic.domain.lesson_attendance import (
+    StudentAttendanceStatus,
+    format_late_time,
+    late_time_or_now,
+)
 from apps.academic.domain.program_grid_cell import CellStatus, ProgramGridCell
 from apps.academic.domain.schedule_version import ScheduleVersion
 from apps.academic.domain.placement_queries import active_student_placements
@@ -241,6 +245,7 @@ def get_or_build_period_roster(session: ClassPeriodAttendanceSession) -> list[di
                 else dict(StudentAttendanceStatus.choices)[StudentAttendanceStatus.PRESENT]
             ),
             'note': rec.note if rec else '',
+            'late_time': format_late_time(rec.late_time) if rec else None,
             'record_id': rec.id if rec else None,
         })
     return rows
@@ -267,12 +272,16 @@ def save_period_attendance(
             raise LessonSessionError(f'Geçersiz yoklama durumu: {status}', 'status')
         if not sid:
             continue
+        late_time = None
+        if status == StudentAttendanceStatus.LATE:
+            late_time = late_time_or_now(item.get('late_time'))
         ClassPeriodAttendanceRecord.objects.update_or_create(
             session=session,
             student_id=sid,
             defaults={
                 'status': status,
                 'note': item.get('note') or '',
+                'late_time': late_time,
                 'marked_by': user if getattr(user, 'is_authenticated', False) else None,
             },
         )
@@ -325,4 +334,67 @@ def list_period_sessions_for_date(
         'sessions': sessions,
         'info': info,
         'yoklama_kapali': not available,
+    }
+
+
+def build_coach_period_attendance_context(
+    *,
+    user,
+    kurum_id: int,
+    sube_id: int,
+) -> dict[str, Any]:
+    """Koç portalı için dönem + atanan öğrencilerin sınıfları."""
+    from apps.academic.services.active_academic_year import get_active_academic_year
+    from apps.coaching.services.coach_access import scoped_student_ids
+    from apps.sinif.domain.models import Sinif
+    from apps.term.domain.models import Term
+
+    year = get_active_academic_year()
+    terms = Term.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili=year,
+    ).order_by('order_no', 'start_date')
+
+    student_ids = scoped_student_ids(user)
+    classroom_qs = Sinif.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili=year,
+        aktif_mi=True,
+    )
+    if student_ids is not None:
+        if not student_ids:
+            classroom_qs = classroom_qs.none()
+        else:
+            sinif_ids = active_student_placements(
+                student_id__in=student_ids,
+            ).values_list('classroom_id', flat=True).distinct()
+            classroom_qs = classroom_qs.filter(id__in=sinif_ids)
+
+    classroom_rows = [
+        {
+            'id': s.id,
+            'ad': s.ad,
+            'kod': s.kod or '',
+            'ogrenci_sayisi': s.mevcutluk,
+        }
+        for s in classroom_qs.select_related().order_by('ad')
+    ]
+    term_rows = [{
+        'id': t.id,
+        'name': t.name,
+        'code': t.code,
+        'is_active': t.is_active,
+        'order_no': t.order_no,
+    } for t in terms]
+    active_term = next((t for t in term_rows if t['is_active']), term_rows[0] if term_rows else None)
+    return {
+        'active_year': {
+            'id': year.id,
+            'yil_str': str(year),
+        },
+        'terms': term_rows,
+        'active_term_id': active_term['id'] if active_term else None,
+        'classrooms': classroom_rows,
     }

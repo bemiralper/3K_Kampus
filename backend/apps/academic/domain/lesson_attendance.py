@@ -1,8 +1,39 @@
 """
 LessonAttendanceRecord — ders oturumu öğrenci yoklaması.
 """
+from __future__ import annotations
+
+from datetime import datetime, time
+from typing import Any
 
 from django.db import models
+from django.utils import timezone
+
+
+def parse_late_time(value: Any) -> time | None:
+    """'08:45' / '08:45:00' / time → time; boş veya geçersiz → None."""
+    if value in (None, ''):
+        return None
+    if isinstance(value, time):
+        return value
+    raw = str(value).strip()
+    for fmt in ('%H:%M', '%H:%M:%S'):
+        try:
+            return datetime.strptime(raw, fmt).time()
+        except ValueError:
+            continue
+    return None
+
+
+def format_late_time(value: Any) -> str | None:
+    parsed = parse_late_time(value) if not isinstance(value, time) else value
+    if parsed is None:
+        return None
+    return parsed.strftime('%H:%M')
+
+
+def late_time_or_now(value: Any) -> time:
+    return parse_late_time(value) or timezone.localtime().time().replace(second=0, microsecond=0)
 
 
 class StudentAttendanceStatus(models.TextChoices):
@@ -31,6 +62,11 @@ class LessonAttendanceRecord(models.Model):
         default=StudentAttendanceStatus.PRESENT,
     )
     note = models.CharField(max_length=255, blank=True, default='')
+    late_time = models.TimeField(
+        null=True,
+        blank=True,
+        help_text='Geç gelen öğrencinin derse giriş saati.',
+    )
     marked_at = models.DateTimeField(auto_now=True)
     marked_by = models.ForeignKey(
         'auth.User',

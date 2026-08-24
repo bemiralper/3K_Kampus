@@ -122,7 +122,13 @@ function parseFinansErrorPayload(data: unknown): { message: string; fieldErrors:
   if (data && typeof data === "object") {
     const obj = data as Record<string, unknown>;
 
-    if (obj.errors && typeof obj.errors === "object" && !Array.isArray(obj.errors)) {
+    if (Array.isArray(obj.errors)) {
+      for (const item of obj.errors) {
+        if (typeof item === "string" && item.trim()) {
+          fieldMessages.push(item.trim());
+        }
+      }
+    } else if (obj.errors && typeof obj.errors === "object") {
       collectFieldErrors(obj.errors as Record<string, unknown>, fieldErrors, fieldMessages);
     }
 

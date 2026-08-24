@@ -41,6 +41,8 @@ SESSION_EXPIRED_ERROR_CODES = frozenset({131047})
 PERMANENT_SEND_ERROR_CODES = frozenset({
     131047,  # 24 saat penceresi / re-engagement
     132001,  # Şablon adı bu dilde Meta'da yok
+    132012,  # Şablon bileşen formatı uyuşmuyor
+    133010,  # Phone Number ID Cloud API'de kayıtlı değil
 })
 
 
@@ -87,7 +89,10 @@ def is_permanent_send_error(result: dict | None) -> bool:
     text = str(result.get('error') or '').lower()
     return (
         '132001' in text
+        or '133010' in text
+        or 'account not registered' in text
         or 'template name does not exist' in text
+        or 'invalid parameter' in text
     )
 
 

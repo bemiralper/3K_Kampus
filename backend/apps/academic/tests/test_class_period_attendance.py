@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
+from django.utils import timezone
 
 from apps.academic.domain.class_lesson_plan import ClassLessonPlan
 from apps.academic.domain.class_period_attendance import (
@@ -521,3 +522,130 @@ class ClassPeriodAttendanceApiTest(TestCase):
         ).json()
         self.assertEqual(preview['recipients'], [])
         self.assertEqual(preview['pending_count'], 0)
+
+    def test_late_time_saved_and_used_in_notify_body(self):
+        ensure = self.client.post(
+            '/api/academic/class-period-attendance/',
+            data={
+                'term_id': self.term.id,
+                'classroom_id': self.sinif.id,
+                'date': self.monday.isoformat(),
+                'version_id': self.version.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        ).json()
+        morning_id = next(
+            s['id'] for s in ensure['sessions'] if s['period'] == ClassPeriodCode.MORNING
+        )
+        save = self.client.post(
+            f'/api/academic/class-period-attendance/{morning_id}/student-attendance/',
+            data={
+                'records': [
+                    {
+                        'student_id': self.ogrenci.id,
+                        'status': StudentAttendanceStatus.LATE,
+                        'late_time': '08:45',
+                    },
+                ],
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(save.status_code, 200, save.content)
+        rec = ClassPeriodAttendanceRecord.objects.get(
+            session_id=morning_id, student=self.ogrenci,
+        )
+        self.assertEqual(rec.status, StudentAttendanceStatus.LATE)
+        self.assertEqual(rec.late_time, time(8, 45))
+        row = next(r for r in save.json()['roster'] if r['student_id'] == self.ogrenci.id)
+        self.assertEqual(row['late_time'], '08:45')
+
+        preview = self.client.post(
+            '/api/academic/class-attendance/notify/preview/',
+            data={
+                'source_type': ClassAttendanceNotifySource.PERIOD,
+                'source_id': morning_id,
+                'recipient_types': ['VELI'],
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(preview.status_code, 200, preview.content)
+        body = preview.json()['recipients'][0]['body']
+        self.assertIn('08:45', body)
+        self.assertIn('Değerli Velimiz', body)
+        now_hm = timezone.localtime().strftime('%H:%M')
+        if now_hm != '08:45':
+            self.assertNotIn(now_hm, body)
+
+    def _make_coach(self, *, username, student=None):
+        from apps.coaching.models import CoachProfile, CoachStudentAssignment
+
+        user = User.objects.create_user(username=username, password='test')
+        personel = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Koç',
+            soyad=username,
+            tc_kimlik_no='33333333333',
+            user=user,
+            aktif_mi=True,
+        )
+        profile = CoachProfile.objects.create(
+            teacher=personel, capacity=20, is_active=True, is_coach=True,
+        )
+        if student is not None:
+            CoachStudentAssignment.objects.create(
+                coach=profile,
+                student=student,
+                start_date=date(2025, 9, 1),
+                is_primary=True,
+            )
+        return user
+
+    def test_coach_scoped_to_assigned_classroom(self):
+        other = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.year,
+            ad='9-Z',
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        coach_user = self._make_coach(username='cpa_coach', student=self.ogrenci)
+        client = Client()
+        client.force_login(coach_user)
+
+        ctx = client.get(
+            '/api/academic/class-period-attendance/coach-context/',
+            **self.headers,
+        )
+        self.assertEqual(ctx.status_code, 200, ctx.content)
+        classroom_ids = {c['id'] for c in ctx.json()['classrooms']}
+        self.assertIn(self.sinif.id, classroom_ids)
+        self.assertNotIn(other.id, classroom_ids)
+
+        own = client.post(
+            '/api/academic/class-period-attendance/',
+            data={
+                'term_id': self.term.id,
+                'classroom_id': self.sinif.id,
+                'date': self.monday.isoformat(),
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(own.status_code, 200, own.content)
+
+        denied = client.post(
+            '/api/academic/class-period-attendance/',
+            data={
+                'term_id': self.term.id,
+                'classroom_id': other.id,
+                'date': self.monday.isoformat(),
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(denied.status_code, 403)

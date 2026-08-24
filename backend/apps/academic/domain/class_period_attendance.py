@@ -95,6 +95,11 @@ class ClassPeriodAttendanceRecord(models.Model):
         default=StudentAttendanceStatus.PRESENT,
     )
     note = models.CharField(max_length=255, blank=True, default='')
+    late_time = models.TimeField(
+        null=True,
+        blank=True,
+        help_text='Geç gelen öğrencinin giriş saati (kütüphane yoklamasındaki giris_saati gibi).',
+    )
     marked_at = models.DateTimeField(auto_now=True)
     marked_by = models.ForeignKey(
         'auth.User',

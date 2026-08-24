@@ -185,6 +185,27 @@ class WhatsAppCloudClient(BaseChannelClient):
 
     def _post_message(self, kurum_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         config = self._resolve_config(kurum_id)
+        result = self._post_message_once(kurum_id, payload, config)
+        if result.get('success') or result.get('error_code') != 133010:
+            return result
+        resolved = self.resolve_cloud_phone_number_id(kurum_id, config)
+        if resolved and resolved != config.get('phone_number_id'):
+            self._phone_number_id_override = resolved
+            retry = self._post_message_once(
+                kurum_id, payload, {**config, 'phone_number_id': resolved},
+            )
+            if retry.get('success'):
+                self._persist_phone_number_id(resolved)
+                return retry
+            result = retry
+        return result
+
+    def _post_message_once(
+        self,
+        kurum_id: int,
+        payload: dict[str, Any],
+        config: dict[str, str],
+    ) -> dict[str, Any]:
         phone_number_id = config['phone_number_id']
         access_token = config['access_token']
 
