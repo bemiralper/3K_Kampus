@@ -26,11 +26,11 @@ def _assert_writable(cell: ProgramGridCell) -> None:
     version = cell.schedule_version
     if not version:
         raise ManualPlacementError(
-            'Hücre bir program versiyonuna bağlı değil. Önce sürüm iskeleti oluşturun.',
+            'Hücre bir programa bağlı değil. Önce dönem ve çalışma takvimi seçin.',
             'schedule_version',
         )
     if version.is_locked:
-        raise ManualPlacementError('Program versiyonu kilitli; hücre değiştirilemez.', 'version')
+        raise ManualPlacementError('Program kilitli; hücre değiştirilemez.', 'version')
     if version.term_id and getattr(version.term, 'schedule_locked', False):
         raise ManualPlacementError('Dönem programı kilitli; hücre değiştirilemez.', 'term')
     if cell.status == CellStatus.LOCKED:
@@ -110,7 +110,7 @@ def fill_cell(
     if plan.sinif_id != cell.sinif_id:
         raise ManualPlacementError('Plan, hücrenin sınıfına ait değil.', 'class_lesson_plan_id')
     if cell.schedule_version and plan.term_id != cell.schedule_version.term_id:
-        raise ManualPlacementError('Plan, program versiyonunun dönemine ait değil.', 'class_lesson_plan_id')
+        raise ManualPlacementError('Plan, programın dönemine ait değil.', 'class_lesson_plan_id')
 
     teacher = _resolve_teacher(plan, ogretmen_id)
     _check_teacher_conflict(cell, teacher)
@@ -265,7 +265,7 @@ def swap_cells(*, source_cell_id: int, target_cell_id: int) -> Tuple[ProgramGrid
     if source.sinif_id != target.sinif_id:
         raise ManualPlacementError('Sadece aynı sınıf içinde yer değiştirilebilir.', 'sinif')
     if source.schedule_version_id != target.schedule_version_id:
-        raise ManualPlacementError('Hücreler aynı program versiyonunda olmalı.', 'version')
+        raise ManualPlacementError('Hücreler aynı programda olmalı.', 'version')
 
     if source.class_lesson_plan_id == target.class_lesson_plan_id:
         return _reload_cell(source.id), _reload_cell(target.id)

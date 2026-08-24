@@ -11,6 +11,7 @@ import {
   type AkademikGroupDef,
 } from "@/lib/akademik-routes";
 import { AKADEMIK_TAB_PAGES } from "./akademikTabPages";
+import AkademikShell from "./ui/AkademikShell";
 import { canReadAkademik } from "@/lib/akademik-permissions";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import "./akademik-operasyon.css";
@@ -40,42 +41,44 @@ export default function AkademikGroupLayout({ group, children }: Props) {
   }
 
   return (
-    <div className="akademik-page">
-      <div className="akademik-hero">
-        <div>
-          <h1>{group.label}</h1>
-          <nav className="akademik-breadcrumb" aria-label="Breadcrumb">
-            <Link href={homeHref}>Ana Sayfa</Link>
-            <span>/</span>
-            <Link href={basePath}>{AKADEMIK_MODULE_LABEL}</Link>
-            <span>/</span>
-            <span>{group.label}</span>
-          </nav>
+    <AkademikShell mountMobileCards={!basePath.startsWith("/muhasebe")}>
+      <div className="akademik-page">
+        <div className="akademik-hero">
+          <div>
+            <h1>{group.label}</h1>
+            <nav className="akademik-breadcrumb" aria-label="Breadcrumb">
+              <Link href={homeHref}>Ana Sayfa</Link>
+              <span>/</span>
+              <Link href={basePath}>{AKADEMIK_MODULE_LABEL}</Link>
+              <span>/</span>
+              <span>{group.label}</span>
+            </nav>
+          </div>
         </div>
+
+        <nav className="akademik-tab-nav" aria-label={`${group.label} sekmeleri`}>
+          <div className="akademik-tab-nav-scroll">
+            {group.tabs.filter((tab) => !tab.hidden).map((tab) => {
+              const href = akademikTabHref(group.slug, tab.segment, basePath);
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              const isPlaceholder = !AKADEMIK_TAB_PAGES[tab.segment];
+              return (
+                <Link
+                  key={tab.segment}
+                  href={href}
+                  className={`akademik-tab${active ? " is-active" : ""}`}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {tab.label}
+                  {isPlaceholder && <span className="akademik-tab-badge">Yakında</span>}
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+
+        <div className="akademik-tab-panel akademik-tab-panel--wide">{children}</div>
       </div>
-
-      <nav className="akademik-tab-nav" aria-label={`${group.label} sekmeleri`}>
-        <div className="akademik-tab-nav-scroll">
-          {group.tabs.filter((tab) => !tab.hidden).map((tab) => {
-            const href = akademikTabHref(group.slug, tab.segment, basePath);
-            const active = pathname === href || pathname.startsWith(`${href}/`);
-            const isPlaceholder = !AKADEMIK_TAB_PAGES[tab.segment];
-            return (
-              <Link
-                key={tab.segment}
-                href={href}
-                className={`akademik-tab${active ? " is-active" : ""}`}
-                aria-current={active ? "page" : undefined}
-              >
-                {tab.label}
-                {isPlaceholder && <span className="akademik-tab-badge">Yakında</span>}
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
-
-      <div className="akademik-tab-panel akademik-tab-panel--wide">{children}</div>
-    </div>
+    </AkademikShell>
   );
 }

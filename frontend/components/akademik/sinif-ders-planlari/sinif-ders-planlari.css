@@ -1,31 +1,9 @@
-.sdp-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-bottom: 40px;
-}
+/* ==========================================================================
+   Sınıf Ders Planları.
 
-.sdp-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.sdp-toolbar-title h3 {
-  margin: 0 !important;
-  color: #0f172a;
-}
-
-.sdp-toolbar-sub {
-  display: block;
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.4;
-  max-width: 560px;
-}
+   Sayfa kabuğu, başlık ve durum bileşenleri ortak kit'ten gelir
+   (components/akademik/ui). Burada sınıf listesi + plan tablosu düzeni kalır.
+   ========================================================================== */
 
 .sdp-layout {
   display: grid;

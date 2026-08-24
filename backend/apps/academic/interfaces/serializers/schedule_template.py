@@ -187,11 +187,3 @@ class ScheduleTemplateUpdateSerializer(ScheduleTemplateCreateSerializer):
                 ScheduleTemplate.objects.filter(pk=template.pk).update(is_default=False)
 
         return template
-
-
-class ScheduleVersionUsageSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    is_active_version = serializers.BooleanField()
-    term_name = serializers.CharField(allow_null=True)
-    egitim_yili_name = serializers.CharField(allow_null=True)

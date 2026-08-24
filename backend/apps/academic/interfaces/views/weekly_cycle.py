@@ -256,14 +256,17 @@ def weekly_cycle_usage_api(request, pk):
 
     versions = ScheduleVersion.objects.filter(
         weekly_cycle=cycle,
-    ).select_related('term', 'egitim_yili').order_by('-updated_at')
+    ).select_related('term', 'egitim_yili', 'schedule_template').order_by('-updated_at')
 
+    # Takvimin kendisi zaten belli; kullanıcıya dönem ve kullanılan ders saati
+    # şablonu gösterilir (versiyon adı değil).
     data = [{
         'id': v.id,
-        'name': v.name,
-        'is_active_version': v.is_active,
         'term_name': v.term.name if v.term_id else None,
+        'template_name': v.schedule_template.name if v.schedule_template_id else None,
         'egitim_yili_name': str(v.egitim_yili) if v.egitim_yili_id else None,
+        'filled_cell_count': v.filled_cell_count,
+        'is_locked': v.is_locked,
     } for v in versions]
 
     return JsonResponse({'success': True, 'data': data, 'count': len(data)})

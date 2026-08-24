@@ -154,9 +154,13 @@ def preview_classes(
     term = Term.objects.filter(pk=term_id, sube_id=sube_id, kurum_id=kurum_id).first()
     if not term:
         raise ScheduleNotifyError('Dönem bulunamadı.', field='term_id')
-    version = ScheduleVersion.objects.filter(pk=version_id, term_id=term_id).first()
+    version = (
+        ScheduleVersion.objects.select_related('weekly_cycle')
+        .filter(pk=version_id, term_id=term_id)
+        .first()
+    )
     if not version:
-        raise ScheduleNotifyError('Program versiyonu bulunamadı.', field='version_id')
+        raise ScheduleNotifyError('Program bulunamadı.', field='version_id')
 
     siniflar = list(
         Sinif.objects.filter(
@@ -204,7 +208,7 @@ def preview_classes(
         'term_id': term_id,
         'term_name': term.name,
         'version_id': version_id,
-        'version_name': version.name,
+        'calendar_name': version.weekly_cycle.name if version.weekly_cycle_id else None,
         'classes': classes,
     }
 
@@ -219,7 +223,8 @@ def build_schedule_pdf_html(payload: dict[str, Any]) -> str:
     kurum = html.escape(payload.get('kurum_ad') or '')
     sube = html.escape(payload.get('sube_ad') or '')
     term = html.escape((payload.get('term') or {}).get('name') or '')
-    version = html.escape((payload.get('version') or {}).get('name') or '')
+    # Üst bilgide versiyon adı değil çalışma takvimi gösterilir.
+    calendar = html.escape(payload.get('calendar_name') or '')
     days = payload.get('days') or []
     day_headers = ''.join(
         f'<th>{html.escape(d.get("short_name") or d.get("name") or "")}</th>'
@@ -269,7 +274,7 @@ def build_schedule_pdf_html(payload: dict[str, Any]) -> str:
   .t {{ color: #64748b; font-size: 10px; }}
 </style></head><body>
   <h1>Ders Programı</h1>
-  <div class="meta">{kurum} · {sube} · {term} · {version}</div>
+  <div class="meta">{' · '.join(p for p in (kurum, sube, term, calendar) if p)}</div>
   {''.join(sections)}
 </body></html>"""
 

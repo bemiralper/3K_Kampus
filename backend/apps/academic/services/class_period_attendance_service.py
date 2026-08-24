@@ -26,20 +26,43 @@ from apps.term.domain.models import Term
 NOON = time(12, 0)
 
 
-def _resolve_version(term_id: int, version_id: Optional[int]) -> ScheduleVersion:
+def _resolve_version(
+    term_id: int,
+    version_id: Optional[int],
+    classroom_id: Optional[int] = None,
+) -> ScheduleVersion:
+    """
+    Sınıfın günlük yoklamasında kullanılacak programı bulur.
+
+    Program belirtilmezse önce **sınıfın kendi programı** aranır: bir kurumda
+    normal ve hafta sonu gibi birden fazla çalışma takvimi olabiliyor ve dönemin
+    aktif programına bakmak, başka takvimdeki sınıflar için "bu gün ders yok"
+    sonucu veriyordu. Sınıfa ait program yoksa dönemin aktif programına düşer.
+    """
+    qs = ScheduleVersion.objects.select_related('weekly_cycle', 'schedule_template', 'term')
     if version_id:
-        version = ScheduleVersion.objects.select_related(
-            'weekly_cycle', 'schedule_template', 'term',
-        ).get(pk=version_id)
+        version = qs.get(pk=version_id)
     else:
-        active = ScheduleVersion.get_active_for_term(term_id=term_id)
-        if not active:
-            raise LessonSessionError('Aktif program versiyonu bulunamadı.', 'version_id')
-        version = ScheduleVersion.objects.select_related(
-            'weekly_cycle', 'schedule_template', 'term',
-        ).get(pk=active.id)
+        version = None
+        if classroom_id:
+            version = (
+                qs.filter(
+                    term_id=term_id,
+                    weekly_cycle__isnull=False,
+                    grid_cells__sinif_id=classroom_id,
+                    grid_cells__is_active=True,
+                    grid_cells__status=CellStatus.FILLED,
+                )
+                .order_by('-is_active', '-id')
+                .first()
+            )
+        if not version:
+            active = ScheduleVersion.get_active_for_term(term_id=term_id)
+            if not active:
+                raise LessonSessionError('Bu dönem için program bulunamadı.', 'version_id')
+            version = qs.get(pk=active.id)
     if version.term_id != term_id:
-        raise LessonSessionError('Versiyon seçili döneme ait değil.', 'version_id')
+        raise LessonSessionError('Program seçili döneme ait değil.', 'version_id')
     return version
 
 
@@ -75,7 +98,7 @@ def periods_available_for_date(
     version_id: Optional[int] = None,
 ) -> list[dict[str, Any]]:
     """O gün sınıfta ders olan periyotları döner (oturum yoksa da planlanır)."""
-    version = _resolve_version(term_id, version_id)
+    version = _resolve_version(term_id, version_id, classroom_id)
     weekday = session_date.weekday()
     day = WeeklyDay.objects.filter(
         weekly_cycle=version.weekly_cycle,
@@ -164,7 +187,7 @@ def ensure_period_session(
     except (Term.DoesNotExist, Sinif.DoesNotExist) as exc:
         raise LessonSessionError('Dönem veya sınıf bulunamadı.') from exc
 
-    version = _resolve_version(term_id, version_id)
+    version = _resolve_version(term_id, version_id, classroom_id)
     session, _ = ClassPeriodAttendanceSession.objects.get_or_create(
         sinif=sinif,
         session_date=session_date,

@@ -42,6 +42,21 @@ def _gate_version_drf(request, version):
     return err
 
 
+def _program_label(version) -> str:
+    """
+    Kullanıcı mesajlarında programın adı: dönem + çalışma takvimi.
+
+    Arayüzde versiyon kavramı yok; program (dönem, çalışma takvimi) çifti ile
+    anılır. Versiyonun kendi `name` alanı ("Taslak" gibi) kullanıcıya gösterilmez.
+    """
+    parts = [
+        version.term.name if version.term_id else None,
+        version.weekly_cycle.name if version.weekly_cycle_id else None,
+    ]
+    label = ' · '.join(p for p in parts if p)
+    return label or version.name
+
+
 def serialize_version(version):
     """ScheduleVersion serialize"""
     return {
@@ -251,14 +266,14 @@ def version_update_api(request, pk):
     try:
         version = ScheduleVersion.objects.get(id=pk)
     except ScheduleVersion.DoesNotExist:
-        return Response({"error": "Versiyon bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Program bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
 
     gate_err = _gate_version_drf(request, version)
     if gate_err:
         return gate_err
     
     if version.is_locked:
-        return Response({"error": "Kilitli versiyon güncellenemez"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"error": "Kilitli program güncellenemez"}, status=status.HTTP_403_FORBIDDEN)
     
     name = request.data.get('name')
     description = request.data.get('description')
@@ -290,7 +305,7 @@ def version_activate_api(request, pk):
     try:
         version = ScheduleVersion.objects.get(id=pk)
     except ScheduleVersion.DoesNotExist:
-        return Response({"error": "Versiyon bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Program bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
 
     gate_err = _gate_version_drf(request, version)
     if gate_err:
@@ -328,7 +343,7 @@ def version_duplicate_api(request, pk):
     try:
         version = ScheduleVersion.objects.get(id=pk)
     except ScheduleVersion.DoesNotExist:
-        return Response({"error": "Versiyon bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Program bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
 
     gate_err = _gate_version_drf(request, version)
     if gate_err:
@@ -359,9 +374,9 @@ def version_lock_api(request, pk):
     POST /api/schedule/versions/{id}/lock/
     """
     try:
-        version = ScheduleVersion.objects.get(id=pk)
+        version = ScheduleVersion.objects.select_related('term', 'weekly_cycle').get(id=pk)
     except ScheduleVersion.DoesNotExist:
-        return Response({"error": "Versiyon bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Program bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
 
     gate_err = _gate_version_drf(request, version)
     if gate_err:
@@ -371,7 +386,7 @@ def version_lock_api(request, pk):
     
     return Response({
         "success": True,
-        "message": f"'{version.name}' versiyonu kilitlendi",
+        "message": f"{_program_label(version)} programı kilitlendi",
         "version": serialize_version(version)
     })
 
@@ -389,9 +404,9 @@ def version_unlock_api(request, pk):
     POST /api/schedule/versions/{id}/unlock/
     """
     try:
-        version = ScheduleVersion.objects.get(id=pk)
+        version = ScheduleVersion.objects.select_related('term', 'weekly_cycle').get(id=pk)
     except ScheduleVersion.DoesNotExist:
-        return Response({"error": "Versiyon bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Program bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
 
     gate_err = _gate_version_drf(request, version)
     if gate_err:
@@ -401,7 +416,7 @@ def version_unlock_api(request, pk):
     
     return Response({
         "success": True,
-        "message": f"'{version.name}' versiyonunun kilidi açıldı",
+        "message": f"{_program_label(version)} programının kilidi açıldı",
         "version": serialize_version(version)
     })
 
@@ -423,7 +438,7 @@ def version_detail_api(request, pk):
             'term', 'schedule_template', 'weekly_cycle', 'egitim_yili', 'created_by'
         ).get(id=pk)
     except ScheduleVersion.DoesNotExist:
-        return Response({"error": "Versiyon bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Program bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
 
     gate_err = _gate_version_drf(request, version)
     if gate_err:
@@ -449,17 +464,20 @@ def version_delete_api(request, pk):
     try:
         version = ScheduleVersion.objects.get(id=pk)
     except ScheduleVersion.DoesNotExist:
-        return Response({"error": "Versiyon bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Program bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
 
     gate_err = _gate_version_drf(request, version)
     if gate_err:
         return gate_err
     
     if version.is_locked:
-        return Response({"error": "Kilitli versiyon silinemez"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"error": "Kilitli program silinemez"}, status=status.HTTP_403_FORBIDDEN)
     
     if version.is_active:
-        return Response({"error": "Aktif versiyon silinemez. Önce başka bir versiyonu aktif yapın."}, status=status.HTTP_403_FORBIDDEN)
+        return Response(
+            {"error": "Kullanımda olan program silinemez."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     
     name = version.name
     version.delete()

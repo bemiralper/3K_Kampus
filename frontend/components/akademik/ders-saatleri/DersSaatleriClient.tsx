@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Button,
   Dropdown,
   Input,
@@ -35,36 +34,52 @@ import {
   fetchScheduleTemplates,
   fetchTemplateUsage,
   type ScheduleTemplate,
-  type ScheduleVersionUsage,
+  type ProgramUsage,
 } from '@/lib/academic-api';
 import {
   buildDersSaatiSablonPrintHtml,
   openDersSaatiSablonPrintWindow,
 } from '@/lib/ders-saatleri-print';
+import {
+  ContextRequired,
+  EmptyState,
+  ErrorState,
+  Field,
+  LoadingState,
+  PageHead,
+  PageShell,
+  Panel,
+  StatCard,
+  StatGrid,
+  Toolbar,
+  ToolbarActions,
+} from '@/components/akademik/ui';
 import TemplateEditorDrawer from './TemplateEditorDrawer';
 import './ders-saatleri.css';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export default function DersSaatleriClient() {
   const { activeKurum, activeSube, initialized } = useKurum();
   const [items, setItems] = useState<ScheduleTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorId, setEditorId] = useState<number | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
-  const [usageRows, setUsageRows] = useState<ScheduleVersionUsage[]>([]);
+  const [usageRows, setUsageRows] = useState<ProgramUsage[]>([]);
   const [usageTitle, setUsageTitle] = useState('');
 
   const load = useCallback(async () => {
     if (!initialized || !activeKurum || !activeSube) return;
     setLoading(true);
+    setError(null);
     try {
       const data = await fetchScheduleTemplates();
       setItems(data);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Liste yüklenemedi');
+      setError(e instanceof Error ? e.message : 'Liste yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -83,6 +98,16 @@ export default function DersSaatleriClient() {
         (item.weekly_cycle_name || '').toLowerCase().includes(q),
     );
   }, [items, search]);
+
+  const stats = useMemo(
+    () => ({
+      total: items.length,
+      active: items.filter((t) => t.is_active).length,
+      lessons: items.reduce((sum, t) => sum + (t.lesson_count || 0), 0),
+      inUse: items.filter((t) => (t.usage_count || 0) > 0).length,
+    }),
+    [items],
+  );
 
   const openCreate = () => {
     setEditorId(null);
@@ -242,57 +267,78 @@ export default function DersSaatleriClient() {
     },
   ];
 
-  if (!initialized) {
-    return <div className="ds-loading">Bağlam yükleniyor…</div>;
-  }
-
-  if (!activeKurum || !activeSube) {
-    return (
-      <Alert
-        type="warning"
-        showIcon
-        message="Kurum ve şube seçimi gerekli"
-        description="Üst bardaki kurum/şube seçiciden aktif bağlamı seçin."
-      />
-    );
-  }
+  if (!initialized) return <LoadingState label="Bağlam yükleniyor…" />;
+  if (!activeKurum || !activeSube) return <ContextRequired />;
 
   return (
-    <div className="ds-page">
-      <div className="ds-page-head">
-        <div>
-          <Title level={4} style={{ margin: 0 }}>
-            Ders Saati Şablonları
-          </Title>
-          <Text type="secondary">
-            Hafta içi, hafta sonu, yaz okulu gibi farklı zaman planlarını tanımlayın.
-          </Text>
-        </div>
-        <Space wrap>
-          <Input.Search
-            allowClear
-            placeholder="Ara…"
-            style={{ width: 220 }}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Button icon={<ReloadOutlined />} onClick={load}>
-            Yenile
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            Yeni Şablon
-          </Button>
-        </Space>
-      </div>
-
-      <Table
-        rowKey="id"
-        loading={loading}
-        columns={columns}
-        dataSource={filtered}
-        pagination={{ pageSize: 10, showSizeChanger: false }}
-        locale={{ emptyText: 'Henüz şablon yok. Yeni Şablon ile başlayın.' }}
+    <PageShell>
+      <PageHead
+        title="Ders Saati Şablonları"
+        description="Hafta içi, hafta sonu, yaz okulu gibi farklı zaman planlarını tanımlayın."
       />
+
+      <StatGrid>
+        <StatCard
+          icon={<UnorderedListOutlined />}
+          tone="blue"
+          value={stats.total}
+          label="Şablon"
+        />
+        <StatCard tone="green" value={stats.active} label="Aktif" />
+        <StatCard tone="purple" value={stats.lessons} label="Toplam ders saati" />
+        <StatCard tone="orange" value={stats.inUse} label="Programda kullanılan" />
+      </StatGrid>
+
+      <Panel flush>
+        <Toolbar>
+          <Field label="Ara" width={240}>
+            <Input.Search
+              allowClear
+              placeholder="Şablon veya gün yapısı…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </Field>
+          <ToolbarActions>
+            <Button icon={<ReloadOutlined />} onClick={load}>
+              Yenile
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              Yeni Şablon
+            </Button>
+          </ToolbarActions>
+        </Toolbar>
+
+        {error ? (
+          <ErrorState description={error} onRetry={load} />
+        ) : loading ? (
+          <LoadingState label="Şablonlar yükleniyor…" />
+        ) : !items.length ? (
+          <EmptyState
+            icon={<UnorderedListOutlined />}
+            title="Henüz ders saati şablonu yok"
+            description="Bir şablon, günün kaçta başlayıp hangi aralıklarla ders yapıldığını tanımlar. Programlar bu şablonlar üzerine kurulur."
+            action={
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                İlk şablonu oluştur
+              </Button>
+            }
+          />
+        ) : !filtered.length ? (
+          <EmptyState
+            title="Aramayla eşleşen şablon yok"
+            description={`"${search}" için sonuç bulunamadı.`}
+            action={<Button onClick={() => setSearch('')}>Aramayı temizle</Button>}
+          />
+        ) : (
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={filtered}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
+          />
+        )}
+      </Panel>
 
       <TemplateEditorDrawer
         open={editorOpen}
@@ -321,17 +367,25 @@ export default function DersSaatleriClient() {
           dataSource={usageRows}
           locale={{ emptyText: 'Bu şablonu kullanan program yok.' }}
           columns={[
-            { title: 'Program', dataIndex: 'name' },
             { title: 'Dönem', dataIndex: 'term_name', render: (v) => v || '—' },
+            { title: 'Çalışma Takvimi', dataIndex: 'calendar_name', render: (v) => v || '—' },
             { title: 'Eğitim Yılı', dataIndex: 'egitim_yili_name', render: (v) => v || '—' },
             {
+              title: 'Dolu Ders',
+              dataIndex: 'filled_cell_count',
+              width: 100,
+              render: (v: number) => v ?? 0,
+            },
+            {
               title: 'Durum',
-              dataIndex: 'is_active_version',
-              render: (v) => (v ? <Tag color="green">Aktif</Tag> : <Tag>Taslak</Tag>),
+              dataIndex: 'is_locked',
+              width: 110,
+              render: (v: boolean) =>
+                v ? <Tag color="orange">Kilitli</Tag> : <Tag color="green">Düzenlenebilir</Tag>,
             },
           ]}
         />
       </Modal>
-    </div>
+    </PageShell>
   );
 }

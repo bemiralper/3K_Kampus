@@ -125,6 +125,37 @@ class DersProgramiGridApiTest(TestCase):
             'HTTP_X_EGITIMYILI_ID': str(self.year.id),
         }
 
+    def test_template_usage_reports_calendar_not_version_name(self):
+        """Şablon kullanımı, versiyon adı değil dönem + çalışma takvimi döner."""
+        res = self.client.get(
+            f'/api/academic/schedule-templates/{self.template.id}/usage/',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = res.json()['data']
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row['term_name'], self.term.name)
+        self.assertEqual(row['calendar_name'], self.cycle.name)
+        self.assertFalse(row['is_locked'])
+        self.assertNotIn('name', row)
+        self.assertNotIn('is_active_version', row)
+
+    def test_weekly_cycle_usage_reports_template_not_version_name(self):
+        """Takvim kullanımı, versiyon adı değil dönem + ders saati şablonu döner."""
+        res = self.client.get(
+            f'/api/academic/weekly-cycles/{self.cycle.id}/usage/',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = res.json()['data']
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row['term_name'], self.term.name)
+        self.assertEqual(row['template_name'], self.template.name)
+        self.assertNotIn('name', row)
+        self.assertNotIn('is_active_version', row)
+
     def test_ensure_version_creates_cells(self):
         res = self.client.post(
             '/api/academic/program-grid/ensure-version/',
@@ -523,3 +554,308 @@ class DersProgramiGridApiTest(TestCase):
         )
         self.assertEqual(hid_cell['teacher'], '')
         self.assertEqual(hid_cell['label'], 'Matematik')
+
+    def _fill_single_cell(self):
+        self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': self.version.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        cell = ProgramGridCell.objects.get(schedule_version=self.version, sinif=self.sinif)
+        fill = self.client.post(
+            f'/api/academic/program-grid/cells/{cell.id}/fill/',
+            data={'class_lesson_plan_id': self.plan.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(fill.status_code, 200, fill.content)
+        return cell
+
+    def test_room_schedule_uses_sinif_oda(self):
+        from apps.oda.domain.models import Oda
+
+        oda = Oda.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='A-101', kapasite=30,
+        )
+        self.sinif.oda = oda
+        self.sinif.save(update_fields=['oda'])
+        self._fill_single_cell()
+
+        catalog = self.client.get(
+            f'/api/academic/schedule/room/?term_id={self.term.id}'
+            f'&version_id={self.version.id}',
+            **self.headers,
+        )
+        self.assertEqual(catalog.status_code, 200, catalog.content)
+        rooms = catalog.json().get('rooms') or []
+        match = next((r for r in rooms if r['id'] == oda.id), None)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['filled_count'], 1)
+        self.assertEqual(match['classrooms'][0]['id'], self.sinif.id)
+
+        grid = self.client.get(
+            f'/api/academic/schedule/room/?term_id={self.term.id}'
+            f'&version_id={self.version.id}&room_id={oda.id}',
+            **self.headers,
+        )
+        self.assertEqual(grid.status_code, 200, grid.content)
+        filled = [c for c in grid.json().get('cells', []) if c.get('status') == 'FILLED']
+        self.assertEqual(len(filled), 1)
+        self.assertEqual(filled[0]['room']['id'], oda.id)
+        self.assertEqual(filled[0]['classroom']['id'], self.sinif.id)
+
+    def test_branch_schedule_lists_and_filters_ders(self):
+        self._fill_single_cell()
+
+        catalog = self.client.get(
+            f'/api/academic/schedule/branch/?term_id={self.term.id}'
+            f'&version_id={self.version.id}',
+            **self.headers,
+        )
+        self.assertEqual(catalog.status_code, 200, catalog.content)
+        dersler = catalog.json().get('dersler') or []
+        match = next((d for d in dersler if d['id'] == self.ders.id), None)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['filled_count'], 1)
+        self.assertEqual(match['classroom_count'], 1)
+
+        grid = self.client.get(
+            f'/api/academic/schedule/branch/?term_id={self.term.id}'
+            f'&version_id={self.version.id}&ders_id={self.ders.id}',
+            **self.headers,
+        )
+        self.assertEqual(grid.status_code, 200, grid.content)
+        filled = [c for c in grid.json().get('cells', []) if c.get('status') == 'FILLED']
+        self.assertEqual(len(filled), 1)
+        self.assertEqual(filled[0]['lesson']['id'], self.ders.id)
+        self.assertEqual(filled[0]['classroom']['id'], self.sinif.id)
+
+    def test_teacher_schedule_includes_ozel_ders_slots(self):
+        from datetime import time as dtime
+
+        from apps.ogrenci.domain.models import Ogrenci
+        from apps.ozel_ders.domain.models import (
+            BirebirHaftalikSlot,
+            BirebirOgrenciProgrami,
+            ProgramDurumu,
+        )
+
+        ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Eylül', soyad='Ravza', aktif_mi=True,
+        )
+        program = BirebirOgrenciProgrami.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.year,
+            ogrenci=ogrenci,
+            baslangic_tarihi=date(2025, 9, 1),
+            durum=ProgramDurumu.AKTIF,
+        )
+        BirebirHaftalikSlot.objects.create(
+            program=program,
+            gun=1,
+            baslangic=dtime(8, 0),
+            bitis=dtime(8, 40),
+            sure_dk=40,
+            ders=self.ders,
+            ogretmen=self.teacher,
+            aktif=True,
+        )
+        evening = BirebirHaftalikSlot.objects.create(
+            program=program,
+            gun=1,
+            baslangic=dtime(18, 0),
+            bitis=dtime(18, 50),
+            sure_dk=50,
+            ders=self.ders,
+            ogretmen=self.teacher,
+            aktif=True,
+        )
+
+        res = self.client.get(
+            f'/api/academic/schedule/teacher/?teacher_id={self.teacher.id}'
+            f'&term_id={self.term.id}&version_id={self.version.id}',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        private = [c for c in body.get('cells', []) if c.get('kind') == 'private']
+        self.assertEqual(len(private), 2)
+        self.assertEqual(body.get('private_count'), 2)
+        names = {c['student']['name'] for c in private}
+        self.assertIn('Eylül Ravza', names)
+        slot_ids = {c['timeslot_id'] for c in private}
+        self.assertIn(self.slot.id, slot_ids)
+        self.assertIn(-evening.id, slot_ids)
+        extra = next(s for s in body['slots'] if s['id'] == -evening.id)
+        self.assertEqual(extra['start'], '18:00')
+        self.assertEqual(extra['name'], 'Özel Ders')
+
+    def test_teacher_schedule_merges_all_versions_without_version_id(self):
+        self._fill_single_cell()
+
+        template2 = ScheduleTemplate.objects.create(
+            kurum=self.kurum, sube=self.sube, name='Akşam Şablon',
+        )
+        cycle2 = WeeklyCycle.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            schedule_template=template2,
+            name='Akşam Takvimi',
+            is_active=True,
+        )
+        WeeklyDay.objects.create(
+            weekly_cycle=cycle2,
+            day_of_week=DayOfWeek.MONDAY,
+            name='Pazartesi',
+            order=1,
+            is_active=True,
+            schedule_template=template2,
+        )
+        TimeSlot.objects.create(
+            schedule_template=template2,
+            name='1. Ders',
+            start_time=time(14, 0),
+            end_time=time(14, 40),
+            order=1,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        version2 = ScheduleVersion.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            schedule_template=template2,
+            weekly_cycle=cycle2,
+            name='Akşam',
+            is_active=True,
+        )
+        ensure = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': version2.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+        cell2 = ProgramGridCell.objects.get(schedule_version=version2, sinif=self.sinif)
+        fill = self.client.post(
+            f'/api/academic/program-grid/cells/{cell2.id}/fill/',
+            data={'class_lesson_plan_id': self.plan.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(fill.status_code, 200, fill.content)
+
+        res = self.client.get(
+            f'/api/academic/schedule/teacher/?teacher_id={self.teacher.id}'
+            f'&term_id={self.term.id}',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        filled = [c for c in body.get('cells', []) if c.get('status') == 'FILLED' and c.get('kind') != 'private']
+        self.assertEqual(len(filled), 2)
+        starts = [s['start'] for s in body.get('slots', []) if s.get('start')]
+        self.assertIn('08:00', starts)
+        self.assertIn('14:00', starts)
+        self.assertEqual(starts, sorted(starts))
+        self.assertEqual(len(body.get('days') or []), 1)
+        self.assertEqual(body['days'][0]['id'], DayOfWeek.MONDAY)
+        calendars = {c.get('calendar_name') for c in filled}
+        self.assertIn('Takvim', calendars)
+        self.assertIn('Akşam Takvimi', calendars)
+        self.assertEqual(len(body.get('versions') or []), 2)
+
+    def _second_calendar(self, name='İkinci Takvim'):
+        cycle = WeeklyCycle.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            schedule_template=self.template,
+            name=name,
+            is_active=True,
+        )
+        WeeklyDay.objects.create(
+            weekly_cycle=cycle,
+            day_of_week=DayOfWeek.TUESDAY,
+            name='Salı',
+            order=2,
+            is_active=True,
+            schedule_template=self.template,
+        )
+        return cycle
+
+    def test_ensure_grid_auto_creates_program_for_calendar(self):
+        """Versiyon seçmeden: dönem + çalışma takvimi ile program kendiliğinden oluşur."""
+        cycle2 = self._second_calendar()
+        self.assertFalse(
+            ScheduleVersion.objects.filter(term=self.term, weekly_cycle=cycle2).exists()
+        )
+
+        res = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={
+                'term_id': self.term.id,
+                'weekly_cycle_id': cycle2.id,
+                'classroom_id': self.sinif.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(res.status_code, (200, 201), res.content)
+        self.assertEqual(res.json()['created_count'], 1)
+
+        version = ScheduleVersion.objects.get(term=self.term, weekly_cycle=cycle2)
+        self.assertTrue(version.is_active)
+        self.assertEqual(version.name, cycle2.name)
+
+        # İkinci çağrı yeni program açmaz
+        again = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={
+                'term_id': self.term.id,
+                'weekly_cycle_id': cycle2.id,
+                'classroom_id': self.sinif.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(again.status_code, (200, 201), again.content)
+        self.assertEqual(again.json()['created_count'], 0)
+        self.assertEqual(
+            ScheduleVersion.objects.filter(term=self.term, weekly_cycle=cycle2).count(), 1
+        )
+
+    def test_class_schedule_resolves_program_by_calendar(self):
+        """weekly_cycle_id verilince o takvimin programı gelir (versiyon seçimi gerekmez)."""
+        cycle2 = self._second_calendar()
+        version2 = ScheduleVersion.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            schedule_template=self.template,
+            weekly_cycle=cycle2,
+            name='İkinci',
+            is_active=True,
+        )
+
+        first = self.client.get(
+            f'/api/academic/schedule/class/?classroom_id={self.sinif.id}'
+            f'&term_id={self.term.id}&weekly_cycle_id={self.cycle.id}',
+            **self.headers,
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(first.json()['version']['id'], self.version.id)
+
+        second = self.client.get(
+            f'/api/academic/schedule/class/?classroom_id={self.sinif.id}'
+            f'&term_id={self.term.id}&weekly_cycle_id={cycle2.id}',
+            **self.headers,
+        )
+        self.assertEqual(second.status_code, 200, second.content)
+        self.assertEqual(second.json()['version']['id'], version2.id)
+
+    def test_planning_context_lists_classroom_calendars(self):
+        self._fill_single_cell()
+        res = self.client.get('/api/academic/class-lesson-plan/context/', **self.headers)
+        self.assertEqual(res.status_code, 200, res.content)
+        row = next(c for c in res.json()['classrooms'] if c['id'] == self.sinif.id)
+        self.assertIn(self.cycle.id, row.get('weekly_cycle_ids') or [])

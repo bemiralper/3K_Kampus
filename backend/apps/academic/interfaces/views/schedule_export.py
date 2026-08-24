@@ -55,7 +55,7 @@ def schedule_export_api(request):
     try:
         version_id = int(version_id) if version_id else None
     except (TypeError, ValueError):
-        return Response({'error': 'Geçersiz version_id.'}, status=400)
+        return Response({'error': 'Geçersiz program bilgisi.'}, status=400)
 
     all_flag = str(request.query_params.get('all') or '').lower() in ('1', 'true', 'yes')
     ids_raw = request.query_params.get('classroom_ids') or ''

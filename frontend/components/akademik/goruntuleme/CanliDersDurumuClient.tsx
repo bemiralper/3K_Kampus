@@ -1,144 +1,162 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, DatePicker, Empty, Select, Spin, Table, Tag, Typography, message } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, DatePicker, Select } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import 'dayjs/locale/tr';
-import { useKurum } from '@/lib/contexts/KurumContext';
 import {
-  fetchClassLessonPlanContext,
-  fetchAcademicScheduleVersions,
-  type ClassLessonPlanContext,
+  fetchDailyScheduleFlow,
+  fetchTeachersForAvailability,
+  type DailyFlowItem,
+  type TeacherListItem,
 } from '@/lib/academic-api';
-import { fetchDailyFlow } from '@/lib/schedule-api';
+import { useGoruntulemeContext } from './useGoruntulemeContext';
+import {
+  ContextRequired,
+  EmptyState,
+  ErrorState,
+  Field,
+  Hint,
+  LoadingState,
+  PageShell,
+  Panel,
+  StatCard,
+  StatGrid,
+  Toolbar,
+  ToolbarActions,
+} from '../ui';
+import { IconBookOpen, IconClock, IconUser, IconUsers } from '../ui/icons';
 import './goruntuleme.css';
 
 dayjs.locale('tr');
-const { Title, Text } = Typography;
 
-type FlowItem = {
-  timeslot_id: number;
-  start: string | null;
-  end: string | null;
-  status: string;
-  status_display: string;
-  lesson: { id: number; name: string } | null;
-  teacher: { id: number; name: string } | null;
-  classroom: { id: number; name: string } | null;
-};
+function statusClass(status: string) {
+  if (status === 'EXAM') return 'gv-status gv-status--exam';
+  if (status === 'HOLIDAY') return 'gv-status gv-status--holiday';
+  return 'gv-status';
+}
+
+function itemPhase(item: DailyFlowItem, date: Dayjs) {
+  if (!item.start || !item.end || !date.isSame(dayjs(), 'day')) return 'idle';
+  const start = dayjs(`${date.format('YYYY-MM-DD')} ${item.start}`);
+  const end = dayjs(`${date.format('YYYY-MM-DD')} ${item.end}`);
+  const now = dayjs();
+  if (now.isBefore(start)) return 'upcoming';
+  if (now.isAfter(end) || now.isSame(end)) return 'past';
+  return 'now';
+}
 
 export default function CanliDersDurumuClient() {
-  const { activeKurum, activeSube, initialized } = useKurum();
-  const [context, setContext] = useState<ClassLessonPlanContext | null>(null);
-  const [termId, setTermId] = useState<number | null>(null);
-  const [classroomId, setClassroomId] = useState<number | null>(null);
+  const {
+    context,
+    calendarOptions,
+    calendarId,
+    setCalendarId,
+    termId,
+    setTermId,
+    termOptions,
+    ready,
+    error: contextError,
+  } = useGoruntulemeContext();
   const [date, setDate] = useState<Dayjs>(dayjs());
-  const [items, setItems] = useState<FlowItem[]>([]);
+  const [classroomId, setClassroomId] = useState<number | undefined>();
+  const [teacherId, setTeacherId] = useState<number | undefined>();
+  const [teachers, setTeachers] = useState<TeacherListItem[]>([]);
+  const [items, setItems] = useState<DailyFlowItem[]>([]);
   const [dayName, setDayName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const boot = useCallback(async () => {
-    if (!initialized || !activeKurum || !activeSube) return;
-    try {
-      const ctx = await fetchClassLessonPlanContext();
-      setContext(ctx);
-      setTermId((prev) => prev ?? ctx.active_term_id ?? ctx.terms[0]?.id ?? null);
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
-    }
-  }, [activeKurum, activeSube, initialized]);
+  const [info, setInfo] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    boot();
-  }, [boot]);
+    if (!ready) return;
+    fetchTeachersForAvailability({ aktif_only: true })
+      .then(setTeachers)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Öğretmenler yüklenemedi'));
+  }, [ready]);
 
-  const load = useCallback(async () => {
-    if (!termId) return;
+  useEffect(() => {
+    if (!ready || !termId) return;
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    try {
-      const versions = await fetchAcademicScheduleVersions({ term_id: termId });
-      const versionId = versions.find((v) => v.is_active)?.id ?? versions[0]?.id;
-      const res = await fetchDailyFlow({
-        date: date.format('YYYY-MM-DD'),
-        classroom_id: classroomId ?? undefined,
-        version_id: versionId,
+    setInfo(null);
+    fetchDailyScheduleFlow({
+      term_id: termId,
+      date: date.format('YYYY-MM-DD'),
+      weekly_cycle_id: calendarId ?? undefined,
+      classroom_id: classroomId,
+      teacher_id: teacherId,
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setItems(data.items || []);
+        setDayName(data.day_name || null);
+        if (data.error) setError(data.error);
+        else if (data.info) setInfo(data.info);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Günlük akış yüklenemedi');
+          setItems([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
-      if (!res.success || !res.data) {
-        setError(res.error || 'Günlük akış yüklenemedi');
-        setItems([]);
-        return;
-      }
-      const data = res.data as unknown as { items: FlowItem[]; day_name: string | null; info?: string };
-      setItems(data.items || []);
-      setDayName(data.day_name || null);
-      if (data.info) setError(data.info);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Günlük akış yüklenemedi');
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [classroomId, date, termId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, termId, calendarId, date, classroomId, teacherId, reloadKey]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const columns: ColumnsType<FlowItem> = useMemo(
-    () => [
-      {
-        title: 'Saat',
-        key: 'time',
-        width: 120,
-        render: (_, row) => <span className="ops-time">{row.start}–{row.end}</span>,
-      },
-      { title: 'Ders', key: 'lesson', render: (_, row) => row.lesson?.name || '—' },
-      { title: 'Sınıf', key: 'classroom', render: (_, row) => row.classroom?.name || '—' },
-      { title: 'Öğretmen', key: 'teacher', render: (_, row) => row.teacher?.name || '—' },
-      {
-        title: 'Durum',
-        key: 'status',
-        width: 120,
-        render: (_, row) => (
-          <Tag color={row.status === 'EXAM' ? 'orange' : row.status === 'HOLIDAY' ? 'red' : 'blue'}>
-            {row.status_display}
-          </Tag>
-        ),
-      },
-    ],
-    [],
+  const nowCount = useMemo(
+    () => items.filter((item) => itemPhase(item, date) === 'now').length,
+    [items, date],
   );
+  const isToday = date.isSame(dayjs(), 'day');
+
+  if (!ready) return <ContextRequired />;
+
+  const shownError = error || contextError;
 
   return (
-    <div>
-      <Title level={4} style={{ marginBottom: 4 }}>Canlı Ders Durumu</Title>
-      <Text type="secondary">
-        Seçili güne ait dersleri kronolojik sırada listeler.{dayName ? ` (${dayName})` : ''}
-      </Text>
+    <PageShell>
+      <Hint>
+        Seçili günün dersleri saat sırasıyla.{dayName ? ` ${dayName}.` : ''}
+        {isToday ? ' Şu an işlenen ders vurgulanır.' : ''}
+      </Hint>
 
-      <div className="goruntuleme-toolbar" style={{ marginTop: 16 }}>
-        <div className="goruntuleme-filter">
-          <label>Tarih</label>
-          <DatePicker value={date} onChange={(v) => v && setDate(v)} format="DD.MM.YYYY" allowClear={false} />
-        </div>
-        <div className="goruntuleme-filter">
-          <label>Dönem</label>
+      <Toolbar>
+        <Field label="Tarih" width={170}>
+          <DatePicker
+            value={date}
+            onChange={(v) => v && setDate(v)}
+            format="DD.MM.YYYY"
+            allowClear={false}
+            style={{ width: '100%' }}
+          />
+        </Field>
+        <Field label="Dönem" width={180}>
           <Select
-            style={{ width: 220 }}
             value={termId ?? undefined}
             onChange={setTermId}
-            options={(context?.terms || []).map((t) => ({ value: t.id, label: t.name }))}
-            placeholder="Dönem seçin"
+            options={termOptions}
+            placeholder="Dönem"
           />
-        </div>
-        <div className="goruntuleme-filter">
-          <label>Sınıf (opsiyonel)</label>
+        </Field>
+        <Field label="Çalışma Takvimi" width={190}>
           <Select
-            style={{ width: 220 }}
-            value={classroomId ?? undefined}
+            value={calendarId ?? undefined}
+            onChange={setCalendarId}
+            options={calendarOptions}
+            placeholder="Takvim"
+            notFoundContent="Program yok"
+          />
+        </Field>
+        <Field label="Sınıf" width={180}>
+          <Select
+            value={classroomId}
             onChange={setClassroomId}
             allowClear
             showSearch
@@ -146,20 +164,107 @@ export default function CanliDersDurumuClient() {
             options={(context?.classrooms || []).map((c) => ({ value: c.id, label: c.ad }))}
             placeholder="Tüm sınıflar"
           />
-        </div>
-      </div>
+        </Field>
+        <Field label="Öğretmen" grow>
+          <Select
+            value={teacherId}
+            onChange={setTeacherId}
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            options={teachers.map((t) => ({
+              value: t.id,
+              label: t.tam_ad || `${t.ad} ${t.soyad}`,
+            }))}
+            placeholder="Tüm öğretmenler"
+          />
+        </Field>
+        <ToolbarActions>
+          {!isToday && (
+            <Button onClick={() => setDate(dayjs())} size="small">
+              Bugüne dön
+            </Button>
+          )}
+        </ToolbarActions>
+      </Toolbar>
 
-      {error && <Alert type="warning" showIcon message={error} style={{ marginBottom: 16 }} />}
+      {shownError && items.length > 0 && (
+        <div className="gv-banner gv-banner--warn">{shownError}</div>
+      )}
+      {info && !shownError && <div className="gv-banner">{info}</div>}
 
-      <Spin spinning={loading}>
-        <Table
-          rowKey="timeslot_id"
-          columns={columns}
-          dataSource={items}
-          pagination={false}
-          locale={{ emptyText: <Empty description="Bu tarih için ders bulunamadı." /> }}
+      <StatGrid>
+        <StatCard
+          icon={<IconBookOpen size={18} />}
+          tone="blue"
+          value={items.length}
+          label="Toplam ders"
         />
-      </Spin>
-    </div>
+        <StatCard
+          icon={<IconClock size={18} />}
+          tone={nowCount ? 'green' : 'slate'}
+          value={nowCount}
+          label={isToday ? 'Şu an işleniyor' : 'Şu an (bugün değil)'}
+        />
+        <StatCard
+          icon={<IconUsers size={18} />}
+          tone="purple"
+          value={new Set(items.map((i) => i.classroom?.id).filter(Boolean)).size}
+          label="Sınıf"
+        />
+        <StatCard
+          icon={<IconUser size={18} />}
+          tone="orange"
+          value={new Set(items.map((i) => i.teacher?.id).filter(Boolean)).size}
+          label="Öğretmen"
+        />
+      </StatGrid>
+
+      <Panel flush>
+        <div className={`gv-body${loading ? ' is-loading' : ''}`}>
+          {loading && !items.length ? (
+            <LoadingState label="Günlük akış yükleniyor…" />
+          ) : shownError && !items.length ? (
+            <ErrorState description={shownError} onRetry={() => setReloadKey((k) => k + 1)} />
+          ) : !items.length ? (
+            <EmptyState
+              title="Bu tarihte ders yok"
+              description={
+                info ||
+                'Seçili gün için programda ders bulunmuyor. Tarihi veya çalışma takvimini değiştirmeyi deneyin.'
+              }
+            />
+          ) : (
+            <ul className="gv-live-list">
+              {items.map((item, index) => {
+                const phase = itemPhase(item, date);
+                return (
+                  <li
+                    key={`${item.id ?? item.timeslot_id}-${item.classroom?.id ?? index}`}
+                    className={`gv-live-item${phase === 'now' ? ' is-now' : ''}${phase === 'past' ? ' is-past' : ''}`}
+                  >
+                    <div className="gv-live-time">
+                      {item.start}
+                      <small>{item.end}</small>
+                    </div>
+                    <div className="gv-live-main">
+                      <strong>{item.lesson?.name || '—'}</strong>
+                      <span>
+                        {[item.classroom?.name, item.teacher?.name, item.room?.name]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    </div>
+                    <span className={phase === 'now' ? 'gv-status gv-status--now' : statusClass(item.status)}>
+                      {phase === 'now' ? 'İşleniyor' : item.status_display}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </Panel>
+    </PageShell>
   );
 }

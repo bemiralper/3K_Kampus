@@ -21,6 +21,8 @@ import PremiumPaketlerClient from '@/components/akademik/ozel-ders-yonetimi/Prem
 import HakedisTakibiClient from '@/components/akademik/ozel-ders-yonetimi/HakedisTakibiClient';
 import SinifProgramiClient from '@/components/akademik/goruntuleme/SinifProgramiClient';
 import OgretmenProgramiClient from '@/components/akademik/goruntuleme/OgretmenProgramiClient';
+import DerslikProgramiClient from '@/components/akademik/goruntuleme/DerslikProgramiClient';
+import BransProgramiClient from '@/components/akademik/goruntuleme/BransProgramiClient';
 import CanliDersDurumuClient from '@/components/akademik/goruntuleme/CanliDersDurumuClient';
 import AkademikTabContent from '@/components/akademik/AkademikTabContent';
 import {
@@ -55,6 +57,8 @@ export const AKADEMIK_TAB_PAGES: Record<string, React.ComponentType> = {
   'hakedis-takibi': HakedisTakibiClient,
   'sinif-programi': SinifProgramiClient,
   'ogretmen-programi': OgretmenProgramiClient,
+  'derslik-programi': DerslikProgramiClient,
+  'brans-programi': BransProgramiClient,
   'canli-ders-durumu': CanliDersDurumuClient,
 };
 
@@ -66,10 +70,6 @@ const PLACEHOLDER_REASONS: Record<string, string> = {
     'Çakışma tespiti şu an Ders Programı ekranındaki hücre bazlı uyarılarla yapılıyor; ayrı bir merkezi ekran için backend çalışması gerekiyor.',
   'program-kurallari':
     'Kural motoru (blok/çift ders, ardışık ders limiti vb.) için backend tasarımı henüz yapılmadı.',
-  'derslik-programi':
-    'Ders programı hücrelerinde henüz oda/derslik bilgisi tutulmuyor; bu ekran için backend veri modeli genişletmesi gerekiyor.',
-  'brans-programi':
-    'Branş bazlı program görünümü için ayrı bir backend endpoint’i henüz yok.',
 };
 
 export function akademikPlaceholderReason(tabSegment: string): string | undefined {

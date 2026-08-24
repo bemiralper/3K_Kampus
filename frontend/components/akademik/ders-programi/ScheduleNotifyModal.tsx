@@ -67,7 +67,7 @@ export default function ScheduleNotifyModal({
 
   const runPreview = async () => {
     if (!termId || !versionId) {
-      message.warning('Dönem ve program versiyonu seçin.');
+      message.warning('Dönem ve çalışma takvimi seçin.');
       return;
     }
     if (!selectedIds.length) {

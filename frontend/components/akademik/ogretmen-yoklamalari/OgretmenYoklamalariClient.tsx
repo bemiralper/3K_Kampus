@@ -5,7 +5,6 @@ import SessionBrowserClient from '@/components/akademik/ders-operasyonlari/Sessi
 export default function OgretmenYoklamalariClient() {
   return (
     <SessionBrowserClient
-      title="Öğretmen Yoklamaları"
       description="Oturum bazında öğretmen geldi / gelmedi kaydı. Gerekirse yedek öğretmen atayın."
       showMaterialize
       autoMaterialize

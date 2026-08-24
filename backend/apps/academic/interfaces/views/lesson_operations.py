@@ -81,11 +81,13 @@ def lesson_session_materialize_api(request):
     try:
         session_date = _parse_date(request.data.get('date') or date.today().isoformat())
         version_id = request.data.get('version_id')
+        weekly_cycle_id = request.data.get('weekly_cycle_id')
         classroom_id = request.data.get('classroom_id')
         result = materialize_sessions_for_date(
             term_id=term_id,
             session_date=session_date,
             version_id=int(version_id) if version_id else None,
+            weekly_cycle_id=int(weekly_cycle_id) if weekly_cycle_id else None,
             classroom_id=int(classroom_id) if classroom_id else None,
             sube_id=ctx['sube_id'],
             user=request.user,

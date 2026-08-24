@@ -253,22 +253,49 @@ def grid_ensure_version_api(request):
     POST /api/academic/program-grid/ensure-version/
 
     Body: { "version_id": 1, "classroom_id": 1 }
-    Versiyon + sınıf için EMPTY grid iskeleti oluşturur (mevcut hücrelere dokunmaz).
+       veya { "term_id": 2, "weekly_cycle_id": 1, "classroom_id": 1 }
+
+    Sınıf için EMPTY grid iskeleti oluşturur (mevcut hücrelere dokunmaz).
+    version_id verilmezse dönem + çalışma takvimi programı bulunur, yoksa oluşturulur.
     """
     version_id = request.data.get('version_id')
     classroom_id = request.data.get('classroom_id')
-    if not version_id or not classroom_id:
+    term_id = request.data.get('term_id')
+    weekly_cycle_id = request.data.get('weekly_cycle_id')
+    if not classroom_id:
         return Response(
-            {'error': 'version_id ve classroom_id zorunludur.'},
+            {'error': 'classroom_id zorunludur.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not version_id and not (term_id and weekly_cycle_id):
+        return Response(
+            {'error': 'version_id veya (term_id + weekly_cycle_id) zorunludur.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    try:
-        version = ScheduleVersion.objects.select_related('schedule_template', 'term').get(
-            pk=int(version_id),
-        )
-    except ScheduleVersion.DoesNotExist:
-        return Response({'error': 'Program versiyonu bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+    if version_id:
+        try:
+            version = ScheduleVersion.objects.select_related('schedule_template', 'term').get(
+                pk=int(version_id),
+            )
+        except ScheduleVersion.DoesNotExist:
+            return Response({'error': 'Program bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+    else:
+        from apps.academic.domain.weekly_cycle import WeeklyCycle
+        from apps.term.domain.models import Term
+
+        try:
+            term = Term.objects.select_related('egitim_yili').get(pk=int(term_id))
+            weekly_cycle = WeeklyCycle.objects.get(pk=int(weekly_cycle_id), is_active=True)
+        except (Term.DoesNotExist, WeeklyCycle.DoesNotExist):
+            return Response(
+                {'error': 'Dönem veya çalışma takvimi bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            version = ScheduleVersion.resolve_default(term=term, weekly_cycle=weekly_cycle)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     _, _, gate_err = gate_schedule_template_drf(request, version.schedule_template_id)
     if gate_err:
@@ -279,7 +306,7 @@ def grid_ensure_version_api(request):
 
     if version.is_locked:
         return Response(
-            {'error': 'Program versiyonu kilitli; iskelet oluşturulamaz.'},
+            {'error': 'Program kilitli; iskelet oluşturulamaz.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
     if version.term_id and version.term.schedule_locked:

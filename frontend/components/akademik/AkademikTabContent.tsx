@@ -1,3 +1,6 @@
+import { EmptyState, PageShell } from './ui';
+import { IconWand } from './ui/icons';
+
 type Props = {
   tabLabel: string;
   groupLabel: string;
@@ -7,16 +10,17 @@ type Props = {
 
 export default function AkademikTabContent({ tabLabel, groupLabel, reason }: Props) {
   return (
-    <div className="akademik-placeholder-card">
-      <span className="akademik-placeholder-icon" aria-hidden>
-        🚧
-      </span>
-      <h2>{tabLabel}</h2>
-      <p>
-        <strong>{tabLabel}</strong> ekranı <strong>{groupLabel}</strong> bölümünde
-        yakında aktif edilecek.
-      </p>
-      {reason && <p className="akademik-placeholder-reason">{reason}</p>}
-    </div>
+    <PageShell>
+      <div className="ak-panel">
+        <EmptyState
+          icon={<IconWand size={22} />}
+          title={`${tabLabel} yakında`}
+          description={
+            reason ??
+            `Bu ekran ${groupLabel} bölümünde hazırlanıyor. Hazır olduğunda menüde görünecek.`
+          }
+        />
+      </div>
+    </PageShell>
   );
 }

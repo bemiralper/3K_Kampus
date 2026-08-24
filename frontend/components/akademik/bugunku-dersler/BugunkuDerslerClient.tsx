@@ -5,7 +5,6 @@ import SessionBrowserClient from '@/components/akademik/ders-operasyonlari/Sessi
 export default function BugunkuDerslerClient() {
   return (
     <SessionBrowserClient
-      title="Bugünkü Dersler"
       description="Seçili güne ait ders oturumları. Programdan üretip başlatın, tamamlayın veya öğretmen yoklaması alın."
       fixedKind="REGULAR"
       dailyMode

@@ -11,7 +11,6 @@ import {
   Select,
   Space,
   Table,
-  Tag,
   Tooltip,
   Typography,
   message,
@@ -51,9 +50,10 @@ import {
   type ClassLessonPlanTerm,
   type TeacherListItem,
 } from '@/lib/academic-api';
+import { Badge, ContextRequired, LoadingState, PageHead, PageShell } from '../ui';
 import './sinif-ders-planlari.css';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 function planDisplayDefault(row: ClassLessonPlan): string {
   return (row.ders_kisa_ad || row.ders_ad || '').trim();
@@ -565,17 +565,10 @@ export default function SinifDersPlanlariClient() {
     },
   ];
 
-  if (!initialized) return <div className="sdp-empty">Bağlam yükleniyor…</div>;
+  if (!initialized) return <LoadingState label="Bağlam yükleniyor…" />;
 
   if (!activeKurum || !activeSube) {
-    return (
-      <Alert
-        type="warning"
-        showIcon
-        message="Kurum ve şube seçimi gerekli"
-        description="Sınıf ders planları şube bazlıdır. Üst menüden kurum ve şube seçin."
-      />
-    );
+    return <ContextRequired />;
   }
 
   const emptyActions = (
@@ -602,32 +595,26 @@ export default function SinifDersPlanlariClient() {
   );
 
   return (
-    <div className="sdp-page">
-      <div className="sdp-toolbar">
-        <div className="sdp-toolbar-title">
-          <Title level={3}>Sınıf Ders Planları</Title>
-          <Text className="sdp-toolbar-sub">
-            Sınıfın haftalık ders listesi, saatleri ve öğretmenleri. Program tablosuna buradan
-            beslenir.
-          </Text>
-        </div>
-        <Space wrap size={8}>
-          {context?.active_year ? (
-            <Tag color="geekblue">{context.active_year.yil_str}</Tag>
-          ) : null}
-          {scheduleLocked ? <Tag color="orange">Dönem kilitli</Tag> : null}
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              loadContext();
-              loadPlans();
-              loadTeachers();
-            }}
-          >
-            Yenile
-          </Button>
-        </Space>
-      </div>
+    <PageShell>
+      <PageHead
+        description="Sınıfın haftalık ders listesi, saatleri ve öğretmenleri. Ders Programı tablosu buradan beslenir."
+        actions={
+          <>
+            {context?.active_year ? <Badge tone="info">{context.active_year.yil_str}</Badge> : null}
+            {scheduleLocked ? <Badge tone="warning">Dönem kilitli</Badge> : null}
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                loadContext();
+                loadPlans();
+                loadTeachers();
+              }}
+            >
+              Yenile
+            </Button>
+          </>
+        }
+      />
 
       {context?.context_year_mismatch ? (
         <Alert
@@ -971,6 +958,6 @@ export default function SinifDersPlanlariClient() {
           </Checkbox>
         </Space>
       </Modal>
-    </div>
+    </PageShell>
   );
 }

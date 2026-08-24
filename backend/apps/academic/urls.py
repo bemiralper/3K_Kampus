@@ -120,6 +120,7 @@ from apps.academic.interfaces.views.schedule_view import (
     teacher_schedule_api,
     student_schedule_api,
     room_schedule_api,
+    branch_schedule_api,
     daily_flow_api,
 )
 from apps.academic.interfaces.views.schedule_export import schedule_export_api
@@ -274,6 +275,7 @@ urlpatterns = [
     path('schedule/teacher/', teacher_schedule_api, name='schedule-teacher'),
     path('schedule/student/', student_schedule_api, name='schedule-student'),
     path('schedule/room/', room_schedule_api, name='schedule-room'),
+    path('schedule/branch/', branch_schedule_api, name='schedule-branch'),
     path('schedule/daily-flow/', daily_flow_api, name='schedule-daily-flow'),
     path('schedule/export/', schedule_export_api, name='schedule-export'),
     path('schedule/notify/preview/', schedule_notify_preview_api, name='schedule-notify-preview'),

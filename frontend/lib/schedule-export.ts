@@ -30,6 +30,8 @@ export type ScheduleExportGroup = {
 export type ScheduleExportPayload = {
   term: { id: number; name: string };
   version: { id: number; name: string; is_locked: boolean };
+  /** Rapor başlığında versiyon adı yerine gösterilen çalışma takvimi */
+  calendar_name?: string;
   kurum_ad: string;
   sube_ad: string;
   egitim_yili?: string;
@@ -244,7 +246,7 @@ export async function exportSchedulePdf(
       payload.sube_ad,
       payload.egitim_yili,
       payload.term.name,
-      payload.version.name,
+      payload.calendar_name,
       subtitle,
     ]
       .filter(Boolean)

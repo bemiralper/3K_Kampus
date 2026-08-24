@@ -1,28 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import {
-  Alert,
-  Button,
-  Modal,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Modal, Select, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import {
-  LockOutlined,
-  ReloadOutlined,
-  UnlockOutlined,
-} from '@ant-design/icons';
+import { LockOutlined, ReloadOutlined, UnlockOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/tr';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import {
-  activateAcademicScheduleVersion,
   fetchAcademicScheduleVersions,
   fetchClassLessonPlanContext,
   fetchScheduleRevisions,
@@ -32,10 +17,39 @@ import {
   type ClassLessonPlanContext,
   type ScheduleRevisionLog,
 } from '@/lib/academic-api';
+import {
+  Badge,
+  ContextRequired,
+  EmptyState,
+  ErrorState,
+  Field,
+  Hint,
+  LoadingState,
+  PageHead,
+  PageShell,
+  Panel,
+  StatCard,
+  StatGrid,
+  Toolbar,
+  ToolbarActions,
+} from '@/components/akademik/ui';
+import {
+  IconCalendar,
+  IconClock,
+  IconFileText,
+  IconUser,
+} from '@/components/akademik/ui/icons';
 import '@/components/akademik/ders-operasyonlari/ops-common.css';
 
 dayjs.locale('tr');
-const { Title, Text } = Typography;
+
+/** Program = (dönem, çalışma takvimi) çifti; kullanıcıya takvim adıyla gösterilir. */
+type ProgramOption = {
+  versionId: number;
+  calendarName: string;
+  isLocked: boolean;
+  filledCells: number;
+};
 
 export default function ProgramRevizyonlariClient() {
   const { activeKurum, activeSube, initialized } = useKurum();
@@ -45,15 +59,25 @@ export default function ProgramRevizyonlariClient() {
   const [versionId, setVersionId] = useState<number | null>(null);
   const [logs, setLogs] = useState<ScheduleRevisionLog[]>([]);
   const [loading, setLoading] = useState(false);
+  const [booting, setBooting] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const boot = useCallback(async () => {
-    if (!initialized || !activeKurum || !activeSube) return;
+    if (!initialized) return;
+    if (!activeKurum || !activeSube) {
+      setBooting(false);
+      return;
+    }
+    setBooting(true);
+    setError(null);
     try {
       const ctx = await fetchClassLessonPlanContext();
       setContext(ctx);
       setTermId((p) => p ?? ctx.active_term_id ?? ctx.terms[0]?.id ?? null);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
+      setError(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
+    } finally {
+      setBooting(false);
     }
   }, [activeKurum, activeSube, initialized]);
 
@@ -65,7 +89,7 @@ export default function ProgramRevizyonlariClient() {
     if (!termId) return;
     const rows = await fetchAcademicScheduleVersions({ term_id: termId });
     setVersions(rows);
-    setVersionId((prev) => prev ?? rows.find((v) => v.is_active)?.id ?? rows[0]?.id ?? null);
+    setVersionId((prev) => (prev && rows.some((v) => v.id === prev) ? prev : null));
   }, [termId]);
 
   useEffect(() => {
@@ -81,8 +105,9 @@ export default function ProgramRevizyonlariClient() {
         limit: 200,
       });
       setLogs(rows);
+      setError(null);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Revizyonlar yüklenemedi');
+      setError(e instanceof Error ? e.message : 'Revizyonlar yüklenemedi');
       setLogs([]);
     } finally {
       setLoading(false);
@@ -93,14 +118,70 @@ export default function ProgramRevizyonlariClient() {
     loadLogs();
   }, [loadLogs]);
 
-  const selected = versions.find((v) => v.id === versionId);
+  /** Takvim başına tek program: aktif olan, yoksa en dolu olan. */
+  const programs = useMemo<ProgramOption[]>(() => {
+    const byCycle = new Map<number, ProgramOption>();
+    versions
+      .filter((v) => v.weekly_cycle)
+      .forEach((v) => {
+        const cycleId = v.weekly_cycle!.id;
+        const current = byCycle.get(cycleId);
+        const candidate: ProgramOption = {
+          versionId: v.id,
+          calendarName: v.weekly_cycle!.name,
+          isLocked: v.is_locked,
+          filledCells: v.filled_cell_count,
+        };
+        if (!current || v.is_active || candidate.filledCells > current.filledCells) {
+          byCycle.set(cycleId, candidate);
+        }
+      });
+    return Array.from(byCycle.values()).sort((a, b) =>
+      a.calendarName.localeCompare(b.calendarName, 'tr'),
+    );
+  }, [versions]);
+
+  const selected = programs.find((p) => p.versionId === versionId) ?? null;
+
+  const toggleLock = async () => {
+    if (!selected) return;
+    try {
+      if (selected.isLocked) {
+        await unlockAcademicScheduleVersion(selected.versionId);
+        message.success(`${selected.calendarName} programının kilidi açıldı`);
+      } else {
+        await lockAcademicScheduleVersion(selected.versionId);
+        message.success(`${selected.calendarName} programı kilitlendi`);
+      }
+      await loadVersions();
+      await loadLogs();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : 'İşlem başarısız');
+    }
+  };
+
+  const confirmToggleLock = () => {
+    if (!selected) return;
+    if (selected.isLocked) {
+      toggleLock();
+      return;
+    }
+    Modal.confirm({
+      title: 'Program kilitlensin mi?',
+      content: `"${selected.calendarName}" takviminin ders programı düzenlemeye kapatılacak. Kilit açılana kadar planlama ekranında değişiklik yapılamaz.`,
+      okText: 'Kilitle',
+      cancelText: 'Vazgeç',
+      onOk: toggleLock,
+    });
+  };
 
   const columns: ColumnsType<ScheduleRevisionLog> = [
     {
       title: 'Zaman',
       dataIndex: 'created_at',
-      width: 160,
-      render: (v: string | null) => (v ? dayjs(v).format('DD.MM.YYYY HH:mm') : '—'),
+      width: 150,
+      render: (v: string | null) =>
+        v ? <span className="ops-time">{dayjs(v).format('DD.MM.YYYY HH:mm')}</span> : '—',
     },
     {
       title: 'İşlem',
@@ -110,127 +191,119 @@ export default function ProgramRevizyonlariClient() {
     },
     { title: 'Özet', dataIndex: 'summary' },
     {
-      title: 'Versiyon',
-      dataIndex: 'version_name',
-      width: 160,
-      render: (v: string | null) => v || '—',
-    },
-    {
       title: 'Kullanıcı',
       dataIndex: 'created_by',
-      width: 120,
+      width: 130,
       render: (v: string | null) => v || '—',
     },
   ];
 
-  if (!initialized) return <div className="ops-empty">Bağlam yükleniyor…</div>;
-  if (!activeKurum || !activeSube) {
-    return <Alert type="warning" showIcon message="Kurum ve şube seçimi gerekli" />;
-  }
+  const stats = useMemo(() => {
+    const today = dayjs().format('YYYY-MM-DD');
+    const todayCount = logs.filter((l) => (l.created_at || '').startsWith(today)).length;
+    const users = new Set(logs.map((l) => l.created_by).filter(Boolean));
+    return { todayCount, userCount: users.size };
+  }, [logs]);
+
+  if (!initialized || booting) return <LoadingState label="Bağlam yükleniyor…" />;
+  if (!activeKurum || !activeSube) return <ContextRequired />;
 
   return (
-    <div className="ops-page">
-      <div className="ops-toolbar">
-        <div>
-          <Title level={3} style={{ margin: 0 }}>Program Revizyonları</Title>
-          <Text type="secondary">
-            Versiyon yönetimi ve program değişiklik günlüğü (hücre doldurma/temizleme, oturum üretimi, aktifleştirme).
-          </Text>
-        </div>
-        <Button icon={<ReloadOutlined />} onClick={() => { boot(); loadVersions(); loadLogs(); }}>
-          Yenile
-        </Button>
-      </div>
+    <PageShell>
+      <PageHead
+        description="Program değişiklik günlüğü: hücre doldurma ve temizleme, oturum üretimi, kilitleme. Bir takvimin programını düzenlemeye kapatmak için de burayı kullanın."
+        actions={
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              boot();
+              loadVersions();
+              loadLogs();
+            }}
+          >
+            Yenile
+          </Button>
+        }
+      />
 
-      <div className="ops-card">
-        <div className="ops-filters">
-          <div className="ops-filter-item">
-            <label>Dönem</label>
-            <Select
-              style={{ minWidth: 180 }}
-              value={termId ?? undefined}
-              onChange={setTermId}
-              options={(context?.terms || []).map((t) => ({ value: t.id, label: t.name }))}
-            />
-          </div>
-          <div className="ops-filter-item">
-            <label>Versiyon filtresi</label>
-            <Select
-              allowClear
-              style={{ minWidth: 200 }}
-              value={versionId ?? undefined}
-              onChange={(v) => setVersionId(v ?? null)}
-              options={versions.map((v) => ({
-                value: v.id,
-                label: `${v.name}${v.is_active ? ' ★' : ''}${v.is_locked ? ' 🔒' : ''}`,
-              }))}
-            />
-          </div>
-          <Space wrap style={{ marginBottom: 2 }}>
-            <Button
-              disabled={!versionId || selected?.is_active}
-              onClick={() => {
-                if (!versionId || !selected) return;
-                Modal.confirm({
-                  title: 'Versiyonu aktif yap',
-                  content: `"${selected.name}" versiyonunu aktif yapmak istediğinize emin misiniz? Bu, ilgili dönemde görüntülenen ders programını değiştirir.`,
-                  okText: 'Aktif Yap',
-                  cancelText: 'Vazgeç',
-                  onOk: async () => {
-                    try {
-                      await activateAcademicScheduleVersion(versionId);
-                      message.success('Versiyon aktif');
-                      loadVersions();
-                      loadLogs();
-                    } catch (e) {
-                      message.error(e instanceof Error ? e.message : 'Aktifleştirme başarısız');
-                    }
-                  },
-                });
-              }}
-            >
-              Aktif Yap
-            </Button>
-            <Button
-              icon={selected?.is_locked ? <UnlockOutlined /> : <LockOutlined />}
-              disabled={!versionId}
-              onClick={async () => {
-                if (!versionId || !selected) return;
-                try {
-                  if (selected.is_locked) {
-                    await unlockAcademicScheduleVersion(versionId);
-                    message.success('Kilit açıldı');
-                  } else {
-                    await lockAcademicScheduleVersion(versionId);
-                    message.success('Kilitlendi');
-                  }
-                  loadVersions();
-                  loadLogs();
-                } catch (e) {
-                  message.error(e instanceof Error ? e.message : 'İşlem başarısız');
-                }
-              }}
-            >
-              {selected?.is_locked ? 'Kilidi Aç' : 'Kilitle'}
-            </Button>
-          </Space>
-        </div>
-      </div>
+      <StatGrid>
+        <StatCard icon={<IconFileText />} tone="blue" value={logs.length} label="Kayıt" />
+        <StatCard icon={<IconClock />} tone="purple" value={stats.todayCount} label="Bugün" />
+        <StatCard icon={<IconUser />} tone="slate" value={stats.userCount} label="Değişiklik yapan" />
+        <StatCard
+          icon={<IconCalendar />}
+          tone={programs.some((p) => p.isLocked) ? 'orange' : 'green'}
+          value={`${programs.filter((p) => p.isLocked).length}/${programs.length}`}
+          label="Kilitli program"
+        />
+      </StatGrid>
 
-      <div className="ops-card">
-        <div className="ops-card-head">
-          <Text strong>Değişiklik günlüğü</Text>
-          <Text type="secondary">{logs.length} kayıt</Text>
-        </div>
+      <Toolbar>
+        <Field label="Dönem" width={190}>
+          <Select
+            style={{ width: '100%' }}
+            value={termId ?? undefined}
+            onChange={setTermId}
+            options={(context?.terms || []).map((t) => ({ value: t.id, label: t.name }))}
+          />
+        </Field>
+        <Field label="Çalışma takvimi" width={220}>
+          <Select
+            allowClear
+            placeholder="Tüm takvimler"
+            style={{ width: '100%' }}
+            value={versionId ?? undefined}
+            onChange={(v) => setVersionId(v ?? null)}
+            options={programs.map((p) => ({
+              value: p.versionId,
+              label: p.isLocked ? `${p.calendarName} (kilitli)` : p.calendarName,
+            }))}
+          />
+        </Field>
+        <ToolbarActions>
+          {selected ? (
+            <Badge tone={selected.isLocked ? 'warning' : 'success'}>
+              {selected.isLocked ? 'Düzenlemeye kapalı' : 'Düzenlenebilir'}
+            </Badge>
+          ) : null}
+          <Button
+            icon={selected?.isLocked ? <UnlockOutlined /> : <LockOutlined />}
+            disabled={!selected}
+            onClick={confirmToggleLock}
+          >
+            {selected?.isLocked ? 'Kilidi Aç' : 'Kilitle'}
+          </Button>
+        </ToolbarActions>
+      </Toolbar>
+
+      {!selected ? (
+        <Hint>
+          Kilitleme işlemi için önce bir çalışma takvimi seçin. Takvim seçilmediğinde günlük, dönemin
+          tüm programlarını birlikte gösterir.
+        </Hint>
+      ) : null}
+
+      {error ? <ErrorState description={error} onRetry={loadLogs} /> : null}
+
+      <Panel title="Değişiklik günlüğü" count={logs.length} flush>
         <Table<ScheduleRevisionLog>
           rowKey="id"
           loading={loading}
           columns={columns}
           dataSource={logs}
-          pagination={{ pageSize: 40 }}
-          locale={{ emptyText: 'Henüz revizyon kaydı yok.' }}
+          pagination={{ pageSize: 40, hideOnSinglePage: true }}
+          scroll={{ x: 800 }}
+          locale={{
+            emptyText: (
+              <EmptyState
+                icon={<IconFileText />}
+                title="Revizyon kaydı yok"
+                description="Ders programında değişiklik yapıldıkça kayıtlar burada listelenir."
+              />
+            ),
+          }}
         />
-      </div>
-    </div>
+      </Panel>
+    </PageShell>
   );
 }

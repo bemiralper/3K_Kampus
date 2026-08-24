@@ -74,7 +74,7 @@ export default function ScheduleExportModal({
     }
     if (!versionId) {
       message.warning({
-        content: 'Program versiyonu seçin (Ders Programı filtreleri).',
+        content: 'Önce Ders Programı filtrelerinden dönem, çalışma takvimi ve sınıf seçin.',
         
       });
       return;
@@ -154,8 +154,8 @@ export default function ScheduleExportModal({
           <Alert
             type="warning"
             showIcon
-            message="Versiyon seçilmedi"
-            description="Önce Ders Programı filtrelerinden bir program versiyonu seçin."
+            message="Program bulunamadı"
+            description="Önce Ders Programı ekranından dönem, çalışma takvimi ve sınıf seçin."
           />
         ) : (
           <Alert

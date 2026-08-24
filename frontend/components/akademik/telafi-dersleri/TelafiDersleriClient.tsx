@@ -5,7 +5,6 @@ import SessionBrowserClient from '@/components/akademik/ders-operasyonlari/Sessi
 export default function TelafiDersleriClient() {
   return (
     <SessionBrowserClient
-      title="Telafi Dersleri"
       description="İptal / ertelenen derslerin yerine planlanan telafi oturumları."
       fixedKind="MAKEUP"
       allowCreate

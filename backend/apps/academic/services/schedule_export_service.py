@@ -145,18 +145,25 @@ def build_classroom_schedule_payload(
     except Term.DoesNotExist as exc:
         raise ScheduleExportError('Dönem bulunamadı.', 'term_id') from exc
 
-    if not version_id:
-        raise ScheduleExportError(
-            'Program versiyonu seçilmedi. Ders Programı ekranında bir versiyon seçip tekrar deneyin.',
-            'version_id',
+    if version_id:
+        try:
+            version = ScheduleVersion.objects.select_related(
+                'weekly_cycle', 'schedule_template',
+            ).get(pk=version_id, term_id=term_id)
+        except ScheduleVersion.DoesNotExist as exc:
+            raise ScheduleExportError('Program bulunamadı.', 'version_id') from exc
+    else:
+        version = (
+            ScheduleVersion.objects.select_related('weekly_cycle', 'schedule_template')
+            .filter(term_id=term_id)
+            .order_by('-is_active', '-id')
+            .first()
         )
-
-    try:
-        version = ScheduleVersion.objects.select_related(
-            'weekly_cycle', 'schedule_template',
-        ).get(pk=version_id, term_id=term_id)
-    except ScheduleVersion.DoesNotExist as exc:
-        raise ScheduleExportError('Program versiyonu bulunamadı.', 'version_id') from exc
+        if not version:
+            raise ScheduleExportError(
+                'Bu dönem için program bulunamadı. Önce Ders Programı ekranından program oluşturun.',
+                'term_id',
+            )
 
     days = list(
         WeeklyDay.objects.filter(
@@ -261,11 +268,13 @@ def build_classroom_schedule_payload(
 
     return {
         'term': {'id': term.id, 'name': term.name},
+        # Rapor başlıklarında versiyon adı değil çalışma takvimi gösterilir.
         'version': {
             'id': version.id,
             'name': version.name,
             'is_locked': version.is_locked,
         },
+        'calendar_name': version.weekly_cycle.name if version.weekly_cycle_id else '',
         'kurum_ad': term.kurum.ad if term.kurum_id else '',
         'sube_ad': term.sube.ad if term.sube_id else '',
         'egitim_yili': egitim_yili,
@@ -285,7 +294,7 @@ def _report_meta(payload: dict[str, Any]):
         egitim_yili=payload.get('egitim_yili') or '',
         extra={
             'Dönem': payload['term']['name'],
-            'Versiyon': payload['version']['name'],
+            'Çalışma Takvimi': payload.get('calendar_name') or '—',
         },
     )
 
@@ -300,7 +309,7 @@ def export_schedule_csv(payload: dict[str, Any], *, filename: str) -> HttpRespon
     writer = csv.writer(buf, delimiter=';', lineterminator='\n')
     CsvExportService.write_letterhead_rows(writer, _report_meta(payload))
     writer.writerow([f"Dönem: {payload['term']['name']}"])
-    writer.writerow([f"Versiyon: {payload['version']['name']}"])
+    writer.writerow([f"Çalışma Takvimi: {payload.get('calendar_name') or '—'}"])
     writer.writerow([])
 
     for group in payload['groups']:
@@ -349,7 +358,11 @@ def export_schedule_xlsx(
     stats = [
         ExportStat(label='Sınıf sayısı', value=len(payload['groups']), type='integer'),
         ExportStat(label='Dönem', value=payload['term']['name'], type='text'),
-        ExportStat(label='Versiyon', value=payload['version']['name'], type='text'),
+        ExportStat(
+            label='Çalışma Takvimi',
+            value=payload.get('calendar_name') or '—',
+            type='text',
+        ),
     ]
 
     thin = Border(

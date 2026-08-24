@@ -191,32 +191,102 @@ def materialize_sessions_for_date(
     term_id: int,
     session_date: date,
     version_id: Optional[int] = None,
+    weekly_cycle_id: Optional[int] = None,
     classroom_id: Optional[int] = None,
     sube_id: Optional[int] = None,
     user=None,
 ) -> dict[str, Any]:
-    """FILLED grid hücrelerinden o güne REGULAR oturum üret (idempotent)."""
-    year = _active_year()
+    """
+    FILLED grid hücrelerinden o güne REGULAR oturum üret (idempotent).
+
+    Program belirtilmezse dönemin **tüm** çalışma takvimleri işlenir: bir kurumda
+    normal ve hafta sonu takvimi gibi birden fazla program olabiliyor ve tek
+    programla üretim yapmak diğer takvimin derslerini eksik bırakıyordu.
+    `weekly_cycle_id` verilirse yalnızca o takvimin programı işlenir.
+    """
     try:
         term = Term.objects.get(pk=term_id)
     except Term.DoesNotExist:
         raise LessonSessionError('Dönem bulunamadı.', 'term_id')
 
+    versions_qs = ScheduleVersion.objects.select_related(
+        'weekly_cycle', 'schedule_template', 'term',
+    )
     if version_id:
-        version = ScheduleVersion.objects.select_related(
-            'weekly_cycle', 'schedule_template', 'term',
-        ).get(pk=version_id)
+        versions = list(versions_qs.filter(pk=version_id))
+        if not versions:
+            raise LessonSessionError('Program bulunamadı.', 'version_id')
+        if versions[0].term_id != term.id:
+            raise LessonSessionError('Program seçili döneme ait değil.', 'version_id')
     else:
-        version = ScheduleVersion.get_active_for_term(term_id=term_id)
-        if not version:
-            raise LessonSessionError('Aktif program versiyonu bulunamadı.', 'version_id')
-        version = ScheduleVersion.objects.select_related(
-            'weekly_cycle', 'schedule_template', 'term',
-        ).get(pk=version.id)
+        versions = list(
+            versions_qs.filter(
+                term_id=term.id,
+                weekly_cycle__isnull=False,
+                **({'weekly_cycle_id': weekly_cycle_id} if weekly_cycle_id else {}),
+            ).order_by('-is_active', 'weekly_cycle_id', '-id')
+        )
+        # Takvim başına tek program: aktif olan, yoksa en yenisi
+        by_cycle: dict[int, ScheduleVersion] = {}
+        for v in versions:
+            by_cycle.setdefault(v.weekly_cycle_id, v)
+        versions = list(by_cycle.values())
+        if not versions:
+            raise LessonSessionError('Bu dönem için program bulunamadı.', 'version_id')
 
-    if version.term_id != term.id:
-        raise LessonSessionError('Versiyon seçili döneme ait değil.', 'version_id')
+    results = [
+        _materialize_one_version(
+            term=term,
+            version=v,
+            session_date=session_date,
+            classroom_id=classroom_id,
+            sube_id=sube_id,
+            user=user,
+        )
+        for v in versions
+    ]
 
+    sessions: list[dict[str, Any]] = []
+    for r in results:
+        sessions.extend(r['sessions'])
+    sessions.sort(
+        key=lambda s: (s.get('start_time') or '', (s.get('sinif') or {}).get('name') or ''),
+    )
+
+    day_names = [r['day_name'] for r in results if r.get('day_name')]
+    infos = [r['info'] for r in results if r.get('info')]
+    return {
+        'date': session_date.isoformat(),
+        'day_name': day_names[0] if day_names else None,
+        # Geriye uyumluluk: tek program beklendiği yerler için ilk program
+        'version': {'id': versions[0].id, 'name': versions[0].name},
+        'versions': [
+            {
+                'id': v.id,
+                'name': v.name,
+                'calendar_name': v.weekly_cycle.name if v.weekly_cycle_id else None,
+            }
+            for v in versions
+        ],
+        'created_count': sum(r['created_count'] for r in results),
+        'existing_count': sum(r['existing_count'] for r in results),
+        'skipped_count': sum(r['skipped_count'] for r in results),
+        'info': ' '.join(infos) if infos and not sessions else None,
+        'sessions': sessions,
+    }
+
+
+def _materialize_one_version(
+    *,
+    term: Term,
+    version: ScheduleVersion,
+    session_date: date,
+    classroom_id: Optional[int],
+    sube_id: Optional[int],
+    user,
+) -> dict[str, Any]:
+    """Tek programın o güne ait hücrelerini oturuma çevirir."""
+    year = _active_year()
     weekday = session_date.weekday()
     day = WeeklyDay.objects.filter(
         weekly_cycle=version.weekly_cycle,
@@ -224,12 +294,13 @@ def materialize_sessions_for_date(
         is_active=True,
     ).first()
     if not day:
+        cycle_name = version.weekly_cycle.name if version.weekly_cycle_id else version.name
         return {
-            'date': session_date.isoformat(),
+            'day_name': None,
             'created_count': 0,
             'existing_count': 0,
             'skipped_count': 0,
-            'info': 'Bu gün çalışma takviminde aktif değil.',
+            'info': f'{cycle_name} takviminde bu gün aktif değil.',
             'sessions': [],
         }
 
@@ -313,12 +384,11 @@ def materialize_sessions_for_date(
         .order_by('start_time', 'sinif__ad')
     )
     return {
-        'date': session_date.isoformat(),
         'day_name': day.name,
-        'version': {'id': version.id, 'name': version.name},
         'created_count': created,
         'existing_count': existing,
         'skipped_count': skipped,
+        'info': None,
         'sessions': [serialize_session(s) for s in sessions],
     }
 
@@ -766,7 +836,8 @@ def list_change_logs(
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     qs = ScheduleChangeLog.objects.select_related(
-        'schedule_version', 'term', 'created_by', 'lesson_session',
+        'schedule_version', 'schedule_version__weekly_cycle',
+        'term', 'created_by', 'lesson_session',
     ).all()
     if term_id:
         qs = qs.filter(term_id=term_id)
@@ -782,7 +853,12 @@ def list_change_logs(
             'detail': log.detail,
             'term_id': log.term_id,
             'schedule_version_id': log.schedule_version_id,
-            'version_name': log.schedule_version.name if log.schedule_version_id else None,
+            # Programın adı = çalışma takvimi; versiyon adı kullanıcıya gitmez.
+            'calendar_name': (
+                log.schedule_version.weekly_cycle.name
+                if log.schedule_version_id and log.schedule_version.weekly_cycle_id
+                else None
+            ),
             'lesson_session_id': log.lesson_session_id,
             'created_at': log.created_at.isoformat() if log.created_at else None,
             'created_by': (

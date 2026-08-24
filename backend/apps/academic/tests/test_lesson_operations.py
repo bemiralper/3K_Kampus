@@ -321,6 +321,105 @@ class LessonOperationsApiTest(TestCase):
         self.assertEqual(private.json()['session_kind'], 'PRIVATE')
         self.assertEqual(private.json()['private_student']['id'], self.ogrenci.id)
 
+    def _second_calendar(self):
+        """İkinci bir çalışma takvimi + programı + dolu hücresi kurar."""
+        template2 = ScheduleTemplate.objects.create(
+            kurum=self.kurum, sube=self.sube, name='Hafta Sonu Şablonu',
+        )
+        cycle2 = WeeklyCycle.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            schedule_template=template2,
+            name='Hafta Sonu',
+            is_active=False,
+        )
+        day2 = WeeklyDay.objects.create(
+            weekly_cycle=cycle2,
+            day_of_week=DayOfWeek.MONDAY,
+            name='Pazartesi',
+            order=1,
+            is_active=True,
+        )
+        slot2 = TimeSlot.objects.create(
+            schedule_template=template2,
+            name='1. Ders',
+            start_time=time(14, 0),
+            end_time=time(14, 40),
+            order=1,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        version2 = ScheduleVersion.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            schedule_template=template2,
+            weekly_cycle=cycle2,
+            name='Hafta Sonu Programı',
+            is_active=False,
+        )
+        sinif2 = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.year,
+            ad='9-B',
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        ProgramGridCell.objects.create(
+            schedule_template=template2,
+            weekly_cycle=cycle2,
+            schedule_version=version2,
+            weekly_day=day2,
+            timeslot=slot2,
+            sinif=sinif2,
+            ders=self.ders,
+            ogretmen=self.teacher,
+            status=CellStatus.FILLED,
+            is_active=True,
+        )
+        return version2, sinif2
+
+    def test_materialize_without_version_covers_all_calendars(self):
+        """Program verilmezse dönemin tüm çalışma takvimleri üretime dahil olur."""
+        version2, sinif2 = self._second_calendar()
+
+        res = self.client.post(
+            '/api/academic/lesson-sessions/materialize/',
+            data={'term_id': self.term.id, 'date': self.monday.isoformat()},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(res.status_code, (200, 201), res.content)
+        body = res.json()
+        self.assertEqual(body['created_count'], 2)
+        self.assertEqual({v['id'] for v in body['versions']}, {self.version.id, version2.id})
+        self.assertEqual(
+            set(
+                LessonSession.objects.filter(is_active=True).values_list('sinif_id', flat=True)
+            ),
+            {self.sinif.id, sinif2.id},
+        )
+
+    def test_materialize_can_target_single_calendar(self):
+        """weekly_cycle_id verilirse yalnızca o takvimin programı işlenir."""
+        _, sinif2 = self._second_calendar()
+
+        res = self.client.post(
+            '/api/academic/lesson-sessions/materialize/',
+            data={
+                'term_id': self.term.id,
+                'date': self.monday.isoformat(),
+                'weekly_cycle_id': self.cycle.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(res.status_code, (200, 201), res.content)
+        self.assertEqual(res.json()['created_count'], 1)
+        self.assertFalse(
+            LessonSession.objects.filter(is_active=True, sinif_id=sinif2.id).exists(),
+        )
+
     def test_revisions_list(self):
         self.client.post(
             '/api/academic/lesson-sessions/materialize/',

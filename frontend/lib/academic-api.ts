@@ -74,12 +74,21 @@ export type SlotGeneratorConfig = {
   overwrite_existing?: boolean;
 };
 
-export type ScheduleVersionUsage = {
+/**
+ * Bir ders saati şablonunu / çalışma takvimini kullanan programlar.
+ * Program = (dönem, çalışma takvimi) çifti olduğundan kullanıcıya versiyon adı
+ * değil bu çift gösterilir.
+ */
+export type ProgramUsage = {
   id: number;
-  name: string;
-  is_active_version: boolean;
   term_name: string | null;
+  /** Şablon kullanımında: programın çalışma takvimi */
+  calendar_name?: string | null;
+  /** Takvim kullanımında: programın ders saati şablonu */
+  template_name?: string | null;
   egitim_yili_name: string | null;
+  filled_cell_count: number;
+  is_locked: boolean;
 };
 
 function unwrap<T>(res: Awaited<ReturnType<typeof apiFetch<T>>>): T {
@@ -135,8 +144,8 @@ export async function copyScheduleTemplate(id: number, name?: string): Promise<S
   return unwrap(res);
 }
 
-export async function fetchTemplateUsage(id: number): Promise<ScheduleVersionUsage[]> {
-  const res = await apiFetch<ScheduleVersionUsage[]>(`/api/academic/schedule-templates/${id}/usage/`);
+export async function fetchTemplateUsage(id: number): Promise<ProgramUsage[]> {
+  const res = await apiFetch<ProgramUsage[]>(`/api/academic/schedule-templates/${id}/usage/`);
   return unwrap(res);
 }
 
@@ -327,8 +336,8 @@ export async function copyWorkCalendar(id: number, name?: string): Promise<WorkC
   return unwrap(res);
 }
 
-export async function fetchWorkCalendarUsage(id: number): Promise<ScheduleVersionUsage[]> {
-  const res = await apiFetch<ScheduleVersionUsage[]>(`/api/academic/weekly-cycles/${id}/usage/`);
+export async function fetchWorkCalendarUsage(id: number): Promise<ProgramUsage[]> {
+  const res = await apiFetch<ProgramUsage[]>(`/api/academic/weekly-cycles/${id}/usage/`);
   return unwrap(res);
 }
 
@@ -382,6 +391,8 @@ export type TeacherListItem = {
   fotograf_url: string | null;
   sozlesme_turu: string | null;
   sozlesme_id: number | null;
+  /** Öğretmenin varsayılan uygunluğunda tanımlı çalışma takvimleri */
+  calendar_ids: number[];
 };
 
 export type GorevlendirmeSummary = {
@@ -636,6 +647,8 @@ export type ClassLessonPlanClassroom = {
   alan_id: number | null;
   alan_ad: string | null;
   oda_ad: string | null;
+  /** Bu sınıfın ders programı grid'inde yer aldığı çalışma takvimleri */
+  weekly_cycle_ids?: number[];
 };
 
 export type ClassLessonPlanTerm = {
@@ -1050,6 +1063,7 @@ export type ScheduleGridSlot = {
   start: string | null;
   end: string | null;
   order: number;
+  kind?: 'lesson' | 'private';
 };
 
 export type ScheduleGridCell = {
@@ -1058,6 +1072,7 @@ export type ScheduleGridCell = {
   timeslot_id: number;
   status: 'EMPTY' | 'FILLED' | 'LOCKED' | 'BLOCKED' | 'EXAM' | 'HOLIDAY';
   status_display: string;
+  kind?: 'class' | 'private';
   class_lesson_plan_id: number | null;
   lesson: {
     id: number;
@@ -1067,8 +1082,30 @@ export type ScheduleGridCell = {
   } | null;
   teacher: { id: number; name: string; short_name?: string } | null;
   classroom: { id: number; name: string; code?: string | null } | null;
+  student?: { id: number; name: string } | null;
+  room?: { id: number; name: string } | null;
   is_double_block_start: boolean;
   notes: string | null;
+  calendar_name?: string | null;
+};
+
+export type ScheduleRoomOption = {
+  id: number;
+  ad: string;
+  kapasite: number;
+  oda_turu: string;
+  oda_turu_display: string;
+  classrooms: { id: number; name: string }[];
+  filled_count: number;
+};
+
+export type ScheduleBranchOption = {
+  id: number;
+  ad: string;
+  kod: string;
+  filled_count: number;
+  classroom_count: number;
+  teacher_count: number;
 };
 
 export type ClassScheduleGrid = {
@@ -1085,6 +1122,43 @@ export type ClassScheduleGrid = {
   empty_reason?: 'no_days' | 'no_slots' | null;
   empty_message?: string | null;
   error?: string;
+  info?: string;
+  rooms?: ScheduleRoomOption[];
+  room?: ScheduleRoomOption | null;
+  dersler?: ScheduleBranchOption[];
+  ders?: ScheduleBranchOption | null;
+  private_count?: number;
+  versions?: {
+    id: number;
+    name: string;
+    is_active: boolean;
+    is_locked: boolean;
+    calendar_name?: string | null;
+  }[];
+};
+
+export type DailyFlowItem = {
+  id?: number;
+  timeslot_id: number;
+  start: string | null;
+  end: string | null;
+  status: string;
+  status_display: string;
+  lesson: { id: number; name: string } | null;
+  teacher: { id: number; name: string } | null;
+  classroom: { id: number; name: string } | null;
+  room: { id: number; name: string } | null;
+};
+
+export type DailyFlowResponse = {
+  date: string;
+  day_name: string | null;
+  day_id?: number;
+  version?: { id: number; name: string };
+  egitim_yili?: { id: number; display: string };
+  info?: string;
+  error?: string;
+  items: DailyFlowItem[];
 };
 
 export async function fetchAcademicScheduleVersions(params?: {
@@ -1102,45 +1176,12 @@ export async function fetchAcademicScheduleVersions(params?: {
   return unwrap(res).versions || [];
 }
 
-export async function createAcademicScheduleVersion(body: {
-  name: string;
-  description?: string;
-  term_id: number;
-  schedule_template_id: number;
-  weekly_cycle_id: number;
-}): Promise<AcademicScheduleVersion> {
-  const res = await apiFetch<AcademicScheduleVersion>('/api/academic/schedule/versions/create/', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-  return unwrap(res);
-}
-
-export async function updateAcademicScheduleVersion(
-  id: number,
-  body: { name?: string; description?: string | null },
-): Promise<AcademicScheduleVersion> {
-  const res = await apiFetch<AcademicScheduleVersion>(
-    `/api/academic/schedule/versions/${id}/update/`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    },
-  );
-  return unwrap(res);
-}
-
-export async function activateAcademicScheduleVersion(
-  id: number,
-): Promise<AcademicScheduleVersion> {
-  const res = await apiFetch<AcademicScheduleVersion | { version: AcademicScheduleVersion }>(
-    `/api/academic/schedule/versions/${id}/activate/`,
-    { method: 'POST' },
-  );
-  const data = unwrap(res);
-  return 'version' in data && data.version ? data.version : (data as AcademicScheduleVersion);
-}
-
+/*
+ * Program oluşturma / adlandırma / aktifleştirme uçları arayüzden kaldırıldı:
+ * program artık (dönem, çalışma takvimi) çiftinden kendiliğinden çözülüyor
+ * (bkz. `ensureClassroomScheduleGrid`). Kilitleme kullanıcıya açık kalan tek
+ * program işlemi.
+ */
 export async function lockAcademicScheduleVersion(id: number): Promise<AcademicScheduleVersion> {
   const res = await apiFetch<AcademicScheduleVersion | { version: AcademicScheduleVersion }>(
     `/api/academic/schedule/versions/${id}/lock/`,
@@ -1159,17 +1200,32 @@ export async function unlockAcademicScheduleVersion(id: number): Promise<Academi
   return 'version' in data && data.version ? data.version : (data as AcademicScheduleVersion);
 }
 
-export async function ensureVersionClassroomGrid(
-  versionId: number,
-  classroomId: number,
-): Promise<{ created_count: number; existing_count: number; total_cells: number }> {
+/**
+ * Sınıf için boş program ızgarasını hazırlar.
+ *
+ * `weekly_cycle_id` verilirse dönem + çalışma takvimi programı bulunur, yoksa
+ * oluşturulur; dönen `schedule_version_id` ile grid okunabilir. Arayüzde
+ * versiyon seçimi olmadığı için tercih edilen kullanım budur.
+ */
+export async function ensureClassroomScheduleGrid(params: {
+  classroom_id: number;
+  term_id?: number;
+  weekly_cycle_id?: number;
+  version_id?: number;
+}): Promise<{
+  schedule_version_id: number;
+  created_count: number;
+  existing_count: number;
+  total_cells: number;
+}> {
   const res = await apiFetch<{
+    schedule_version_id: number;
     created_count: number;
     existing_count: number;
     total_cells: number;
   }>('/api/academic/program-grid/ensure-version/', {
     method: 'POST',
-    body: JSON.stringify({ version_id: versionId, classroom_id: classroomId }),
+    body: JSON.stringify(params),
   });
   return unwrap(res);
 }
@@ -1177,13 +1233,80 @@ export async function ensureVersionClassroomGrid(
 export async function fetchClassScheduleGrid(params: {
   classroom_id: number;
   term_id: number;
+  /** Arayüzde versiyon seçimi yok; program dönem + çalışma takviminden çözülür. */
+  weekly_cycle_id?: number;
   version_id?: number;
 }): Promise<ClassScheduleGrid> {
   const q = new URLSearchParams();
   q.set('classroom_id', String(params.classroom_id));
   q.set('term_id', String(params.term_id));
+  if (params.weekly_cycle_id) q.set('weekly_cycle_id', String(params.weekly_cycle_id));
   if (params.version_id) q.set('version_id', String(params.version_id));
   const res = await apiFetch<ClassScheduleGrid>(`/api/academic/schedule/class/?${q}`);
+  return unwrap(res);
+}
+
+export async function fetchTeacherScheduleGrid(params: {
+  teacher_id: number;
+  term_id: number;
+  version_id?: number;
+}): Promise<ClassScheduleGrid> {
+  const q = new URLSearchParams();
+  q.set('teacher_id', String(params.teacher_id));
+  q.set('term_id', String(params.term_id));
+  if (params.version_id != null) q.set('version_id', String(params.version_id));
+  const res = await apiFetch<ClassScheduleGrid>(`/api/academic/schedule/teacher/?${q}`);
+  return unwrap(res);
+}
+
+export async function fetchRoomScheduleGrid(params: {
+  term_id: number;
+  weekly_cycle_id?: number;
+  version_id?: number;
+  room_id?: number;
+}): Promise<ClassScheduleGrid> {
+  const q = new URLSearchParams();
+  q.set('term_id', String(params.term_id));
+  if (params.weekly_cycle_id) q.set('weekly_cycle_id', String(params.weekly_cycle_id));
+  if (params.version_id) q.set('version_id', String(params.version_id));
+  if (params.room_id) q.set('room_id', String(params.room_id));
+  const res = await apiFetch<ClassScheduleGrid>(`/api/academic/schedule/room/?${q}`);
+  return unwrap(res);
+}
+
+export async function fetchBranchScheduleGrid(params: {
+  term_id: number;
+  weekly_cycle_id?: number;
+  version_id?: number;
+  ders_id?: number;
+}): Promise<ClassScheduleGrid> {
+  const q = new URLSearchParams();
+  q.set('term_id', String(params.term_id));
+  if (params.weekly_cycle_id) q.set('weekly_cycle_id', String(params.weekly_cycle_id));
+  if (params.version_id) q.set('version_id', String(params.version_id));
+  if (params.ders_id) q.set('ders_id', String(params.ders_id));
+  const res = await apiFetch<ClassScheduleGrid>(`/api/academic/schedule/branch/?${q}`);
+  return unwrap(res);
+}
+
+export async function fetchDailyScheduleFlow(params: {
+  term_id: number;
+  date: string;
+  weekly_cycle_id?: number;
+  version_id?: number;
+  classroom_id?: number;
+  teacher_id?: number;
+  room_id?: number;
+}): Promise<DailyFlowResponse> {
+  const q = new URLSearchParams();
+  q.set('term_id', String(params.term_id));
+  q.set('date', params.date);
+  if (params.weekly_cycle_id) q.set('weekly_cycle_id', String(params.weekly_cycle_id));
+  if (params.version_id) q.set('version_id', String(params.version_id));
+  if (params.classroom_id) q.set('classroom_id', String(params.classroom_id));
+  if (params.teacher_id) q.set('teacher_id', String(params.teacher_id));
+  if (params.room_id) q.set('room_id', String(params.room_id));
+  const res = await apiFetch<DailyFlowResponse>(`/api/academic/schedule/daily-flow/?${q}`);
   return unwrap(res);
 }
 
@@ -1225,29 +1348,6 @@ export async function swapScheduleCells(
   );
   return unwrap(res);
 }
-
-export type DailyFlowItem = {
-  timeslot_id: number;
-  start: string | null;
-  end: string | null;
-  status: string;
-  status_display: string;
-  lesson: { id: number; name: string } | null;
-  teacher: { id: number; name: string } | null;
-  classroom: { id: number; name: string } | null;
-  room: { id: number; name: string } | null;
-};
-
-export type DailyFlowResponse = {
-  date: string;
-  day_name: string | null;
-  day_id?: number;
-  info?: string;
-  error?: string;
-  version?: { id: number; name: string };
-  egitim_yili?: { id: number; display: string };
-  items: DailyFlowItem[];
-};
 
 export async function fetchDailyFlow(params: {
   term_id: number;
@@ -1356,7 +1456,7 @@ export type ScheduleRevisionLog = {
   detail: Record<string, unknown>;
   term_id: number | null;
   schedule_version_id: number | null;
-  version_name: string | null;
+  calendar_name: string | null;
   lesson_session_id: number | null;
   created_at: string | null;
   created_by: string | null;
@@ -1367,31 +1467,28 @@ export async function fetchLessonOpsMeta(): Promise<LessonOpsMeta> {
   return unwrap(res);
 }
 
-export async function materializeLessonSessions(body: {
-  term_id: number;
+export type MaterializeResult = {
   date: string;
-  version_id?: number;
-  classroom_id?: number;
-}): Promise<{
-  date: string;
-  day_name?: string;
+  day_name?: string | null;
   created_count: number;
   existing_count: number;
   skipped_count: number;
-  info?: string;
+  info?: string | null;
   sessions: LessonSession[];
   version?: { id: number; name: string };
-}> {
-  const res = await apiFetch<{
-    date: string;
-    day_name?: string;
-    created_count: number;
-    existing_count: number;
-    skipped_count: number;
-    info?: string;
-    sessions: LessonSession[];
-    version?: { id: number; name: string };
-  }>('/api/academic/lesson-sessions/materialize/', {
+  /** İşlenen programlar — çalışma takvimi başına bir tane */
+  versions?: { id: number; name: string; calendar_name: string | null }[];
+};
+
+export async function materializeLessonSessions(body: {
+  term_id: number;
+  date: string;
+  /** Verilmezse dönemin tüm çalışma takvimleri işlenir */
+  weekly_cycle_id?: number;
+  version_id?: number;
+  classroom_id?: number;
+}): Promise<MaterializeResult> {
+  const res = await apiFetch<MaterializeResult>('/api/academic/lesson-sessions/materialize/', {
     method: 'POST',
     body: JSON.stringify(body),
   });

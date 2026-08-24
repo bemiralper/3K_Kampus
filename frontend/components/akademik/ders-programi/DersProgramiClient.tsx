@@ -9,22 +9,10 @@ import {
   type DragEvent,
 } from 'react';
 import Link from 'next/link';
-import {
-  Alert,
-  Button,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Alert, Button, Modal, Select, Typography, message } from 'antd';
 import {
   DownloadOutlined,
-  EditOutlined,
   LockOutlined,
-  PlusOutlined,
   ReloadOutlined,
   SendOutlined,
   UnlockOutlined,
@@ -34,10 +22,8 @@ import { resolveAkademikBase } from '@/lib/akademik-routes';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   CLASS_LESSON_PLAN_CHANGED_EVENT,
-  activateAcademicScheduleVersion,
   clearScheduleCell,
-  createAcademicScheduleVersion,
-  ensureVersionClassroomGrid,
+  ensureClassroomScheduleGrid,
   fetchAcademicScheduleVersions,
   fetchClassLessonPlanContext,
   fetchClassLessonPlans,
@@ -47,7 +33,6 @@ import {
   lockAcademicScheduleVersion,
   swapScheduleCells,
   unlockAcademicScheduleVersion,
-  updateAcademicScheduleVersion,
   type AcademicScheduleVersion,
   type ClassLessonPlan,
   type ClassLessonPlanChangedDetail,
@@ -64,9 +49,18 @@ import {
 } from '@/lib/schedule-color';
 import ScheduleExportModal from '@/components/akademik/ders-programi/ScheduleExportModal';
 import ScheduleNotifyModal from '@/components/akademik/ders-programi/ScheduleNotifyModal';
+import {
+  Badge,
+  Field,
+  PageHead,
+  PageShell,
+  Segmented,
+  Toolbar,
+  ToolbarActions,
+} from '../ui';
 import './ders-programi.css';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 type DragPayload =
   | { kind: 'plan'; planId: number }
@@ -145,12 +139,12 @@ export default function DersProgramiClient() {
 
   const [context, setContext] = useState<ClassLessonPlanContext | null>(null);
   const [calendars, setCalendars] = useState<WorkCalendar[]>([]);
-  const [versions, setVersions] = useState<AcademicScheduleVersion[]>([]);
   const [plans, setPlans] = useState<ClassLessonPlan[]>([]);
 
   const [termId, setTermId] = useState<number | null>(urlTermId);
   const [calendarId, setCalendarId] = useState<number | null>(null);
-  const [versionId, setVersionId] = useState<number | null>(null);
+  /** Dönem + çalışma takviminin programı — kullanıcıya gösterilmez, otomatik çözülür. */
+  const [program, setProgram] = useState<AcademicScheduleVersion | null>(null);
   const [classroomId, setClassroomId] = useState<number | null>(urlClassroomId);
 
   const sinifDersPlanlariParams = new URLSearchParams();
@@ -170,9 +164,6 @@ export default function DersProgramiClient() {
   const [colorBy, setColorBy] = useState<ScheduleColorBy>('ders');
   const [exportOpen, setExportOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
-  const [versionNameDraft, setVersionNameDraft] = useState('');
-  const [versionNameModal, setVersionNameModal] = useState<'create' | 'rename' | null>(null);
-  const [versionNameSaving, setVersionNameSaving] = useState(false);
 
   const dragRef = useRef<DragPayload | null>(null);
   /** Sürükleme sonrası sahte click ile temizleme modalını engelle */
@@ -194,17 +185,20 @@ export default function DersProgramiClient() {
     () => calendars.find((c) => c.id === calendarId) || null,
     [calendarId, calendars],
   );
-  const selectedVersion = useMemo(
-    () => versions.find((v) => v.id === versionId) || null,
-    [versionId, versions],
-  );
+  const visibleClassrooms = useMemo(() => {
+    const all = context?.classrooms || [];
+    if (!calendarId) return all;
+    const assigned = all.filter((c) => (c.weekly_cycle_ids || []).includes(calendarId));
+    return assigned.length ? assigned : all;
+  }, [calendarId, context?.classrooms]);
   const selectedTerm = useMemo(
     () => context?.terms.find((t) => t.id === termId) || null,
     [context?.terms, termId],
   );
 
+  const versionId = grid?.version?.id ?? program?.id ?? null;
   const readOnly = Boolean(
-    selectedVersion?.is_locked || selectedTerm?.schedule_locked || grid?.version?.is_locked,
+    program?.is_locked || selectedTerm?.schedule_locked || grid?.version?.is_locked,
   );
 
   const cellMap = useMemo(() => {
@@ -236,19 +230,23 @@ export default function DersProgramiClient() {
       setContext(ctx);
       setCalendars(cals.filter(calendarIsSchedulable));
 
+      const activeCals = cals.filter(calendarIsSchedulable);
+      const defaultCalId = (activeCals.find((c) => c.is_default) || activeCals[0])?.id ?? null;
       setTermId((prev) => {
         if (prev && ctx.terms.some((t) => t.id === prev)) return prev;
         return ctx.active_term_id ?? ctx.terms[0]?.id ?? null;
       });
+      setCalendarId((prev) => {
+        if (prev && activeCals.some((c) => c.id === prev)) return prev;
+        return defaultCalId;
+      });
       setClassroomId((prev) => {
         if (prev && ctx.classrooms.some((c) => c.id === prev)) return prev;
-        return ctx.classrooms[0]?.id ?? null;
-      });
-      setCalendarId((prev) => {
-        const active = cals.filter(calendarIsSchedulable);
-        if (prev && active.some((c) => c.id === prev)) return prev;
-        const def = active.find((c) => c.is_default) || active[0];
-        return def?.id ?? null;
+        const assigned = defaultCalId
+          ? ctx.classrooms.filter((c) => (c.weekly_cycle_ids || []).includes(defaultCalId))
+          : [];
+        const pool = assigned.length ? assigned : ctx.classrooms;
+        return pool[0]?.id ?? null;
       });
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
@@ -261,11 +259,14 @@ export default function DersProgramiClient() {
     boot();
   }, [boot]);
 
-  const loadVersions = useCallback(async () => {
+  /**
+   * Dönem + çalışma takvimi programını bulur. Kullanıcı program seçmez;
+   * program yoksa ızgara hazırlanırken otomatik oluşturulur.
+   */
+  const loadProgram = useCallback(async () => {
     const templateId = primaryTemplateId(selectedCalendar);
     if (!termId || !templateId || !selectedCalendar) {
-      setVersions([]);
-      setVersionId(null);
+      setProgram(null);
       return;
     }
     try {
@@ -274,22 +275,25 @@ export default function DersProgramiClient() {
         schedule_template_id: templateId,
         weekly_cycle_id: selectedCalendar.id,
       });
-      setVersions(rows);
-      setVersionId((prev) => {
-        if (prev && rows.some((v) => v.id === prev)) return prev;
-        const active = rows.find((v) => v.is_active);
-        return active?.id ?? rows[0]?.id ?? null;
-      });
+      setProgram(rows.find((v) => v.is_active) ?? rows[0] ?? null);
     } catch (e) {
-      setVersions([]);
-      setVersionId(null);
-      message.error(e instanceof Error ? e.message : 'Versiyonlar yüklenemedi');
+      setProgram(null);
+      message.error(e instanceof Error ? e.message : 'Program bilgisi yüklenemedi');
     }
   }, [selectedCalendar, termId]);
 
   useEffect(() => {
-    loadVersions();
-  }, [loadVersions]);
+    loadProgram();
+  }, [loadProgram]);
+
+  useEffect(() => {
+    if (!visibleClassrooms.length) {
+      if (classroomId != null) setClassroomId(null);
+      return;
+    }
+    if (classroomId && visibleClassrooms.some((c) => c.id === classroomId)) return;
+    setClassroomId(visibleClassrooms[0].id);
+  }, [visibleClassrooms, classroomId]);
 
   const loadPlans = useCallback(async () => {
     if (!classroomId || !termId) {
@@ -312,7 +316,7 @@ export default function DersProgramiClient() {
   }, [loadPlans]);
 
   const loadGrid = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!classroomId || !termId || !versionId) {
+    if (!classroomId || !termId || !calendarId) {
       setGrid(null);
       setGridError(null);
       return;
@@ -323,20 +327,41 @@ export default function DersProgramiClient() {
     if (silent && typeof window !== 'undefined') {
       scrollYRef.current = window.scrollY;
     }
-    const versionLocked = Boolean(selectedVersion?.is_locked || selectedTerm?.schedule_locked);
+    const programLocked = Boolean(program?.is_locked || selectedTerm?.schedule_locked);
     try {
-      if (!silent && !versionLocked) {
+      if (!silent && !programLocked) {
         try {
-          await ensureVersionClassroomGrid(versionId, classroomId);
+          // Program yoksa burada oluşur; boş hücre iskeleti de hazırlanır.
+          const ensured = await ensureClassroomScheduleGrid({
+            classroom_id: classroomId,
+            term_id: termId,
+            weekly_cycle_id: calendarId,
+          });
+          if (ensured.schedule_version_id && ensured.schedule_version_id !== program?.id) {
+            void loadProgram();
+          }
+          // Sınıf artık bu takvimde programlı — takvim filtresi onu göstersin
+          setContext((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              classrooms: prev.classrooms.map((c) => {
+                if (c.id !== classroomId) return c;
+                const ids = c.weekly_cycle_ids || [];
+                if (ids.includes(calendarId)) return c;
+                return { ...c, weekly_cycle_ids: [...ids, calendarId] };
+              }),
+            };
+          });
         } catch {
           // İskelet oluşturma başarısız olsa da mevcut grid'i yüklemeyi dene
-          // (örn. versiyon bu arada kilitlendi, hücreler zaten mevcut vb.)
+          // (örn. program bu arada kilitlendi, hücreler zaten mevcut vb.)
         }
       }
       const data = await fetchClassScheduleGrid({
         classroom_id: classroomId,
         term_id: termId,
-        version_id: versionId,
+        weekly_cycle_id: calendarId,
       });
       setGrid(data);
       if (data.empty_message) setGridError(data.empty_message);
@@ -352,7 +377,7 @@ export default function DersProgramiClient() {
         requestAnimationFrame(() => window.scrollTo({ top: y, left: 0, behavior: 'auto' }));
       }
     }
-  }, [classroomId, termId, versionId, selectedVersion, selectedTerm]);
+  }, [classroomId, termId, calendarId, program, selectedTerm, loadProgram]);
 
   useEffect(() => {
     void loadGrid();
@@ -389,92 +414,22 @@ export default function DersProgramiClient() {
     };
   }, [classroomId, loadGrid, loadPlans, termId]);
 
-  const openCreateVersion = () => {
-    const templateId = primaryTemplateId(selectedCalendar);
-    if (!termId || !templateId || !selectedCalendar) {
-      message.warning('Dönem ve çalışma takvimi seçin');
-      return;
-    }
-    setVersionNameDraft(`Taslak ${new Date().toLocaleDateString('tr-TR')}`);
-    setVersionNameModal('create');
-  };
-
-  const openRenameVersion = () => {
-    if (!versionId || !selectedVersion) return;
-    if (selectedVersion.is_locked) {
-      message.warning('Kilitli versiyonun adı değiştirilemez. Önce kilidi açın.');
-      return;
-    }
-    setVersionNameDraft(selectedVersion.name);
-    setVersionNameModal('rename');
-  };
-
-  const submitVersionNameModal = async () => {
-    const name = versionNameDraft.trim();
-    if (!name) {
-      message.warning('Versiyon adı girin');
-      return;
-    }
-    if (versionNameModal === 'create') {
-      const templateId = primaryTemplateId(selectedCalendar);
-      if (!termId || !templateId || !selectedCalendar) return;
-      setVersionNameSaving(true);
-      try {
-        const v = await createAcademicScheduleVersion({
-          name,
-          term_id: termId,
-          schedule_template_id: templateId,
-          weekly_cycle_id: selectedCalendar.id,
-        });
-        message.success('Versiyon oluşturuldu');
-        setVersionNameModal(null);
-        await loadVersions();
-        setVersionId(v.id);
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : 'Versiyon oluşturulamadı');
-      } finally {
-        setVersionNameSaving(false);
-      }
-      return;
-    }
-    if (versionNameModal === 'rename' && versionId) {
-      setVersionNameSaving(true);
-      try {
-        await updateAcademicScheduleVersion(versionId, { name });
-        message.success('Versiyon adı güncellendi');
-        setVersionNameModal(null);
-        await loadVersions();
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : 'Ad güncellenemedi');
-      } finally {
-        setVersionNameSaving(false);
-      }
-    }
-  };
-
-  const handleActivate = async () => {
+  /**
+   * Programı düzenlemeye kapatır/açar. Dönem bazlı kilit "Program
+   * Revizyonları" ekranından yönetilir; buradaki sadece hızlı erişim.
+   */
+  const handleToggleLock = async () => {
     if (!versionId) return;
     try {
-      await activateAcademicScheduleVersion(versionId);
-      message.success('Versiyon aktif yapıldı');
-      loadVersions();
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Aktifleştirme başarısız');
-    }
-  };
-
-  const handleToggleLock = async () => {
-    if (!versionId || !selectedVersion) return;
-    try {
-      if (selectedVersion.is_locked) {
+      if (readOnly) {
         await unlockAcademicScheduleVersion(versionId);
-        message.success('Kilit açıldı');
+        message.success('Program düzenlemeye açıldı');
       } else {
         await lockAcademicScheduleVersion(versionId);
-        message.success('Versiyon kilitlendi');
+        message.success('Program düzenlemeye kapatıldı');
       }
-      loadVersions();
-      loadGrid();
+      await loadProgram();
+      void loadGrid();
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'İşlem başarısız');
     }
@@ -749,42 +704,41 @@ export default function DersProgramiClient() {
   const hasGrid = Boolean(grid?.days?.length && grid?.slots?.length);
 
   return (
-    <div className="dp-page">
-      <div className="dp-toolbar">
-        <div>
-          <Title level={3} style={{ margin: 0 }}>
-            Ders Programı
-          </Title>
-          <Text type="secondary">
-            Soldaki dersleri hücrelere sürükleyin. Öğretmen Sınıf Ders Planları’ndan gelir.
-          </Text>
-        </div>
-        <Space wrap size={8}>
-          {context?.active_year ? (
-            <Tag color="geekblue">{context.active_year.yil_str}</Tag>
-          ) : null}
-          {selectedVersion?.is_active ? <Tag color="green">Aktif</Tag> : null}
-          {readOnly ? <Tag color="orange">Salt okunur</Tag> : null}
-          <Button
-            icon={<DownloadOutlined />}
-            disabled={!termId || !versionId}
-            onClick={() => setExportOpen(true)}
-          >
-            Dışa Aktar
-          </Button>
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            disabled={!termId || !versionId}
-            onClick={() => setNotifyOpen(true)}
-          >
-            Programı Bildir
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={() => { boot(); void loadGrid(); void loadPlans(); }}>
-            Yenile
-          </Button>
-        </Space>
-      </div>
+    <PageShell>
+      <PageHead
+        description="Soldaki dersleri hücrelere sürükleyin. Öğretmen bilgisi Sınıf Ders Planları’ndan gelir."
+        actions={
+          <>
+            {context?.active_year ? <Badge tone="info">{context.active_year.yil_str}</Badge> : null}
+            {readOnly ? <Badge tone="warning">Salt okunur</Badge> : null}
+            <Button
+              icon={<DownloadOutlined />}
+              disabled={!termId || !versionId}
+              onClick={() => setExportOpen(true)}
+            >
+              Dışa Aktar
+            </Button>
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              disabled={!termId || !versionId}
+              onClick={() => setNotifyOpen(true)}
+            >
+              Programı Bildir
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                boot();
+                void loadGrid();
+                void loadPlans();
+              }}
+            >
+              Yenile
+            </Button>
+          </>
+        }
+      />
 
       {context?.context_year_mismatch ? (
         <Alert
@@ -794,123 +748,78 @@ export default function DersProgramiClient() {
         />
       ) : null}
 
-      <div className="dp-card">
-        <div className="dp-card-body">
-          <div className="dp-filters">
-            <div className="dp-filter-item">
-              <label>Dönem</label>
-              <Select
-                style={{ minWidth: 180 }}
-                value={termId ?? undefined}
-                onChange={setTermId}
-                options={(context?.terms || []).map((t) => ({
-                  value: t.id,
-                  label: `${t.name}${t.schedule_locked ? ' (kilitli)' : ''}`,
-                }))}
-              />
-            </div>
-            <div className="dp-filter-item">
-              <label>Çalışma takvimi</label>
-              <Select
-                style={{ minWidth: 200 }}
-                value={calendarId ?? undefined}
-                onChange={setCalendarId}
-                options={calendars.map((c) => {
-                  const tpl = calendarTemplateLabel(c);
-                  const noSlots = (c.total_lesson_count ?? 0) < 1;
-                  return {
-                    value: c.id,
-                    label: `${c.name}${tpl ? ` · ${tpl}` : ''}${noSlots ? ' (saat yok)' : ''}`,
-                  };
-                })}
-                placeholder="Takvim seçin"
-              />
-            </div>
-            <div className="dp-filter-item">
-              <label>Sınıf</label>
-              <Select
-                style={{ minWidth: 160 }}
-                value={classroomId ?? undefined}
-                onChange={setClassroomId}
-                options={(context?.classrooms || []).map((c) => ({
-                  value: c.id,
-                  label: c.ad,
-                }))}
-                showSearch
-                optionFilterProp="label"
-              />
-            </div>
-            <div className="dp-filter-item dp-filter-item--wide">
-              <label title="★ = bu dönem için aktif program">Versiyon</label>
-              <Space.Compact>
-                <Select
-                  style={{ minWidth: 200 }}
-                  value={versionId ?? undefined}
-                  onChange={setVersionId}
-                  options={versions.map((v) => ({
-                    value: v.id,
-                    label: `${v.name}${v.is_active ? ' ★' : ''}${v.is_locked ? ' 🔒' : ''}`,
-                  }))}
-                  placeholder="Versiyon"
-                  notFoundContent="Versiyon yok"
-                />
-                <Button
-                  icon={<EditOutlined />}
-                  onClick={openRenameVersion}
-                  disabled={!versionId || selectedVersion?.is_locked}
-                  title="Yeniden adlandır"
-                />
-                <Button icon={<PlusOutlined />} onClick={openCreateVersion} title="Yeni taslak versiyon">
-                  Yeni
-                </Button>
-              </Space.Compact>
-            </div>
-            <div className="dp-filter-item">
-              <label>İşlem</label>
-              <Space.Compact>
-                <Button
-                  disabled={!versionId || selectedVersion?.is_active}
-                  onClick={handleActivate}
-                  title="Seçili versiyonu bu dönem için aktif yap"
-                >
-                  Aktif Yap
-                </Button>
-                <Button
-                  icon={selectedVersion?.is_locked ? <UnlockOutlined /> : <LockOutlined />}
-                  disabled={!versionId}
-                  onClick={handleToggleLock}
-                >
-                  {selectedVersion?.is_locked ? 'Kilidi Aç' : 'Kilitle'}
-                </Button>
-              </Space.Compact>
-            </div>
-            <div className="dp-filter-item">
-              <label>Hücre rengi</label>
-              <div className="dp-color-toggle" role="group" aria-label="Hücre rengi">
-                {(
-                  [
-                    { value: 'ders', label: 'Ders' },
-                    { value: 'ogretmen', label: 'Öğretmen' },
-                    { value: 'none', label: 'Renksiz' },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`dp-color-toggle-btn${colorBy === opt.value ? ' is-active' : ''}`}
-                    onClick={() => {
-                      setColorBy(opt.value);
-                      setScheduleColorBy(opt.value);
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <Toolbar>
+        <Field label="Dönem" width={190}>
+          <Select
+            value={termId ?? undefined}
+            onChange={setTermId}
+            options={(context?.terms || []).map((t) => ({
+              value: t.id,
+              label: `${t.name}${t.schedule_locked ? ' (kilitli)' : ''}`,
+            }))}
+          />
+        </Field>
+        <Field label="Çalışma Takvimi" width={220}>
+          <Select
+            value={calendarId ?? undefined}
+            onChange={setCalendarId}
+            options={calendars.map((c) => {
+              const tpl = calendarTemplateLabel(c);
+              const noSlots = (c.total_lesson_count ?? 0) < 1;
+              return {
+                value: c.id,
+                label: `${c.name}${tpl ? ` · ${tpl}` : ''}${noSlots ? ' (saat yok)' : ''}`,
+              };
+            })}
+            placeholder="Takvim seçin"
+          />
+        </Field>
+        <Field
+          label={
+            calendarId && visibleClassrooms.length !== (context?.classrooms.length || 0)
+              ? `Sınıf (${visibleClassrooms.length})`
+              : 'Sınıf'
+          }
+          width={180}
+        >
+          <Select
+            value={classroomId ?? undefined}
+            onChange={setClassroomId}
+            options={visibleClassrooms.map((c) => ({ value: c.id, label: c.ad }))}
+            showSearch
+            optionFilterProp="label"
+          />
+        </Field>
+        <Field label="Hücre rengi">
+          <Segmented
+            ariaLabel="Hücre rengi"
+            value={colorBy}
+            onChange={(v) => {
+              setColorBy(v);
+              setScheduleColorBy(v);
+            }}
+            options={[
+              { value: 'ders', label: 'Ders' },
+              { value: 'ogretmen', label: 'Öğretmen' },
+              { value: 'none', label: 'Renksiz' },
+            ]}
+          />
+        </Field>
+        <ToolbarActions>
+          <Button
+            icon={readOnly ? <UnlockOutlined /> : <LockOutlined />}
+            disabled={!versionId || selectedTerm?.schedule_locked}
+            onClick={handleToggleLock}
+            title={
+              selectedTerm?.schedule_locked
+                ? 'Dönem programı kilitli — kilit dönem ayarlarından açılır'
+                : undefined
+            }
+          >
+            {readOnly ? 'Düzenlemeye aç' : 'Düzenlemeyi kapat'}
+          </Button>
+        </ToolbarActions>
+      </Toolbar>
 
       {selectedCalendar && !calendarHasLessonSlots(selectedCalendar) ? (
         <Alert
@@ -946,13 +855,6 @@ export default function DersProgramiClient() {
           showIcon
           message="Çalışma takvimi gerekli"
           description="Önce Tanımlar → Çalışma Takvimi’nde aktif günlere ders saati şablonu tanımlı bir takvim oluşturun."
-        />
-      ) : !versionId ? (
-        <Alert
-          type="info"
-          showIcon
-          message="Program versiyonu yok"
-          description="“Yeni” ile taslak versiyon oluşturun."
         />
       ) : plans.length === 0 ? (
         <Alert
@@ -1050,7 +952,7 @@ export default function DersProgramiClient() {
           <div className="dp-card-head">
             <Text strong>
               {(context?.classrooms.find((c) => c.id === classroomId)?.ad) || 'Sınıf'}
-              {selectedVersion ? ` · ${selectedVersion.name}` : ''}
+              {selectedCalendar ? ` · ${selectedCalendar.name}` : ''}
             </Text>
             <Text type="secondary">
               {grid
@@ -1071,7 +973,7 @@ export default function DersProgramiClient() {
                       ? 'Çalışma takviminde aktif gün yok. Tanımlar → Çalışma Takvimi’nden günleri aktifleştirip ders saati şablonu seçin.'
                       : !grid?.slots?.length
                         ? 'Ders saati şablonunda saat yok. Tanımlar → Ders Saatleri’nden bu şablona ders saatleri ekleyin veya üretin.'
-                        : 'Gösterilecek program yok. Dönem, takvim, sınıf ve versiyon seçin.')}
+                        : 'Gösterilecek program yok. Dönem, çalışma takvimi ve sınıf seçin.')}
               </div>
             ) : (
               <table className="dp-grid-table">
@@ -1209,7 +1111,7 @@ export default function DersProgramiClient() {
         termId={termId}
         versionId={versionId}
         currentClassroomId={classroomId}
-        classrooms={context?.classrooms || []}
+        classrooms={visibleClassrooms}
       />
 
       <ScheduleNotifyModal
@@ -1218,32 +1120,8 @@ export default function DersProgramiClient() {
         termId={termId}
         versionId={versionId}
         currentClassroomId={classroomId}
-        classrooms={context?.classrooms || []}
+        classrooms={visibleClassrooms}
       />
-
-      <Modal
-        title={versionNameModal === 'rename' ? 'Versiyonu yeniden adlandır' : 'Yeni program versiyonu'}
-        open={versionNameModal != null}
-        onCancel={() => setVersionNameModal(null)}
-        onOk={submitVersionNameModal}
-        confirmLoading={versionNameSaving}
-        okText={versionNameModal === 'rename' ? 'Kaydet' : 'Oluştur'}
-        centered
-        destroyOnClose
-      >
-        <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-          Versiyon, aynı dönem için programın bir kopyasıdır (taslak / yedek / final).
-          ★ işaretli olan aktif kullanılan programdır.
-        </Text>
-        <Input
-          autoFocus
-          value={versionNameDraft}
-          onChange={(e) => setVersionNameDraft(e.target.value)}
-          onPressEnter={() => void submitVersionNameModal()}
-          placeholder="Örn: Yaz Kursu Programı"
-          maxLength={120}
-        />
-      </Modal>
-    </div>
+    </PageShell>
   );
 }

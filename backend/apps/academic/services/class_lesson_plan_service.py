@@ -456,6 +456,29 @@ class ClassLessonPlanService:
         except ActiveAcademicYearError:
             return "Aktif yıl yok"
 
+    def _classroom_weekly_cycle_ids(self, classroom_ids: List[int]) -> Dict[int, List[int]]:
+        """Sınıfın program grid'inde göründüğü çalışma takvimleri."""
+        from collections import defaultdict
+
+        from apps.academic.domain.program_grid_cell import ProgramGridCell
+
+        by_sinif: Dict[int, set] = defaultdict(set)
+        if not classroom_ids:
+            return {}
+
+        qs = ProgramGridCell.objects.filter(
+            is_active=True,
+            sinif_id__in=classroom_ids,
+        )
+        for sinif_id, cycle_id, version_cycle_id in qs.values_list(
+            'sinif_id', 'weekly_cycle_id', 'schedule_version__weekly_cycle_id',
+        ):
+            if cycle_id:
+                by_sinif[sinif_id].add(cycle_id)
+            if version_cycle_id:
+                by_sinif[sinif_id].add(version_cycle_id)
+        return {sid: sorted(ids) for sid, ids in by_sinif.items()}
+
     def build_planning_context(self, *, kurum_id: int, sube_id: int, context_egitim_yili_id: Optional[int] = None) -> Dict[str, Any]:
         """
         UI için sınıf/dönem bağlamı.
@@ -481,9 +504,11 @@ class ClassLessonPlanService:
             .select_related('sinif_seviyesi', 'alan', 'oda')
             .order_by('ad')
         )
+        classroom_list = list(classrooms)
+        cycles_by_sinif = self._classroom_weekly_cycle_ids([s.id for s in classroom_list])
 
         classroom_rows = []
-        for s in classrooms:
+        for s in classroom_list:
             classroom_rows.append({
                 'id': s.id,
                 'ad': s.ad,
@@ -495,6 +520,7 @@ class ClassLessonPlanService:
                 'alan_id': s.alan_id,
                 'alan_ad': s.alan.ad if s.alan_id else None,
                 'oda_ad': s.oda.ad if s.oda_id else None,
+                'weekly_cycle_ids': cycles_by_sinif.get(s.id, []),
             })
 
         term_rows = [{

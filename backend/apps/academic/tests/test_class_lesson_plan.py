@@ -90,6 +90,8 @@ class ClassLessonPlanApiTest(TestCase):
         self.assertEqual(body['active_year']['id'], self.year.id)
         classroom_ids = {c['id'] for c in body['classrooms']}
         self.assertIn(self.sinif.id, classroom_ids)
+        row = next(c for c in body['classrooms'] if c['id'] == self.sinif.id)
+        self.assertEqual(row.get('weekly_cycle_ids'), [])
         term_ids = {t['id'] for t in body['terms']}
         self.assertIn(self.term.id, term_ids)
 

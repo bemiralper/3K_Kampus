@@ -319,6 +319,20 @@ def list_teachers(
     """
     from apps.personel.domain.models import PersonelGorevlendirme
 
+    # Öğretmen başına tanımlı çalışma takvimleri — liste ekranında hem filtre
+    # hem "uygunluğu girilmiş mi?" göstergesi için gerekiyor.
+    calendar_map: dict[int, list[int]] = {}
+    for personel_id, cycle_id in (
+        TeacherAvailabilityCalendar.objects.filter(
+            availability_set__sube_id=sube_id,
+            availability_set__kind=AvailabilityKind.DEFAULT,
+            availability_set__is_active=True,
+        )
+        .values_list('availability_set__personel_id', 'weekly_cycle_id')
+        .distinct()
+    ):
+        calendar_map.setdefault(personel_id, []).append(cycle_id)
+
     gorev_qs = PersonelGorevlendirme.objects.filter(
         kurum_id=kurum_id,
         gorev_sube_id=sube_id,
@@ -373,6 +387,7 @@ def list_teachers(
             'fotograf_url': p.fotograf.url if getattr(p, 'fotograf', None) and p.fotograf else None,
             'sozlesme_turu': contract['sozlesme_turu_display'] if contract else None,
             'sozlesme_id': contract['id'] if contract else None,
+            'calendar_ids': sorted(calendar_map.get(p.id, [])),
         })
     return rows
 

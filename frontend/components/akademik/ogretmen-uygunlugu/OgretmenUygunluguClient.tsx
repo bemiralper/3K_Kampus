@@ -36,6 +36,7 @@ import {
   fetchCalendarGridStructure,
   fetchTeacherAvailability,
   fetchTeachersForAvailability,
+  fetchWorkCalendars,
   saveTeacherAvailability,
   type AvailabilitySetPayload,
   type CalendarGridStructure,
@@ -52,12 +53,22 @@ import {
   groupByProgramTipi,
   programTipiMeta,
 } from '@/components/akademik/program-tipi';
+import {
+  ContextRequired,
+  EmptyState,
+  Field,
+  LoadingState,
+  PageHead,
+  PageShell,
+  Panel,
+  Toolbar,
+} from '@/components/akademik/ui';
 import { computeDetailedLocalSummary, summaryForCalendar } from './summary';
 import SlotAvailabilityGrid from './SlotAvailabilityGrid';
 import { SOZLESME_TURU_OPTIONS, STATUS_META } from './constants';
 import './ogretmen-uygunlugu.css';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
 
 type ModeKind = 'DEFAULT' | 'TEMPORARY';
@@ -97,6 +108,12 @@ export default function OgretmenUygunluguClient() {
   const [filterSozlesme, setFilterSozlesme] = useState('');
   const [filterAktif, setFilterAktif] = useState<'all' | 'active' | 'passive'>('active');
   const [filterCalendar, setFilterCalendar] = useState<number | null>(null);
+  /**
+   * Filtre seçenekleri öğretmen seçiminden bağımsız yüklenir: takvim filtresinin
+   * amacı listeyi daraltmak, dolayısıyla seçenekleri seçili öğretmenin
+   * detayından okumak (eski davranış) filtreyi kullanılamaz hâle getiriyordu.
+   */
+  const [allCalendars, setAllCalendars] = useState<{ id: number; name: string }[]>([]);
   const [calendarProgramFilter, setCalendarProgramFilter] = useState<CalendarProgramFilter>('all');
 
   const [selectedTeacherId, setSelectedTeacherId] = useState<number | null>(null);
@@ -139,6 +156,22 @@ export default function OgretmenUygunluguClient() {
     const t = setTimeout(loadTeachers, 300);
     return () => clearTimeout(t);
   }, [loadTeachers]);
+
+  useEffect(() => {
+    if (!initialized || !activeKurum || !activeSube) return;
+    let cancelled = false;
+    fetchWorkCalendars()
+      .then((rows) => {
+        if (cancelled) return;
+        setAllCalendars(rows.filter((c) => c.is_active).map((c) => ({ id: c.id, name: c.name })));
+      })
+      .catch(() => {
+        if (!cancelled) setAllCalendars([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeKurum, activeSube, initialized]);
 
   const applySetToForm = useCallback((set: AvailabilitySetPayload | null) => {
     if (!set) {
@@ -224,8 +257,21 @@ export default function OgretmenUygunluguClient() {
 
   const filteredTeachers = useMemo(() => {
     if (!filterCalendar) return teachers;
-    return teachers;
+    return teachers.filter((t) => (t.calendar_ids || []).includes(filterCalendar));
   }, [filterCalendar, teachers]);
+
+  /** Filtre etkinken kaç öğretmenin kaldığını etikette göster. */
+  const calendarFilterLabel = useMemo(() => {
+    if (!filterCalendar) return 'Çalışma takvimi';
+    return `Çalışma takvimi · ${filteredTeachers.length}/${teachers.length} öğretmen`;
+  }, [filterCalendar, filteredTeachers.length, teachers.length]);
+
+  // Takvim filtresi seçili öğretmeni listeden çıkardıysa seçimi bırak.
+  useEffect(() => {
+    if (!selectedTeacherId) return;
+    if (filteredTeachers.some((t) => t.id === selectedTeacherId)) return;
+    setSelectedTeacherId(null);
+  }, [filteredTeachers, selectedTeacherId]);
 
   const selectedCalendars = useMemo(
     () => (detail?.work_calendars || []).filter((c) => calendarIds.includes(c.id)),
@@ -640,44 +686,45 @@ export default function OgretmenUygunluguClient() {
     </div>
   );
 
-  return (
-    <div className="ou-page">
-      <div>
-        <Title level={4} style={{ margin: 0 }}>
-          Öğretmen Uygunluğu
-        </Title>
-        <Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 4 }}>
-          Grup ve birebir dersler farklı çalışma takvimlerinde tanımlanır. Öğretmen için bir veya
-          birden fazla takvim seçip her birinde slot uygunluğu işaretleyin.
-        </Paragraph>
-      </div>
+  if (!initialized) return <LoadingState />;
+  if (!activeKurum || !activeSube) return <ContextRequired />;
 
-      <div className="ou-card">
-        <div className="ou-card-body">
-          <Space wrap style={{ width: '100%', marginBottom: 12 }}>
+  return (
+    <PageShell>
+      <PageHead
+        title="Öğretmen Uygunluğu"
+        description="Grup ve birebir dersler farklı çalışma takvimlerinde tanımlanır. Öğretmen için bir veya birden fazla takvim seçip her birinde slot uygunluğu işaretleyin."
+      />
+
+      <Panel>
+        <Toolbar>
+          <Field label="Öğretmen ara" width={220}>
             <Input.Search
-              placeholder="Öğretmen ara…"
+              placeholder="Ad, soyad veya no…"
               allowClear
-              style={{ width: 220 }}
               onSearch={setTeacherSearch}
               onChange={(e) => setTeacherSearch(e.target.value)}
             />
+          </Field>
+          <Field label="Branş" width={160}>
             <Select
-              style={{ width: 160 }}
+              style={{ width: '100%' }}
               value={filterBrans}
               options={bransOptions}
               onChange={setFilterBrans}
-              placeholder="Branş"
             />
+          </Field>
+          <Field label="Personel tipi" width={170}>
             <Select
-              style={{ width: 160 }}
+              style={{ width: '100%' }}
               value={filterSozlesme}
               options={SOZLESME_TURU_OPTIONS}
               onChange={setFilterSozlesme}
-              placeholder="Personel Tipi"
             />
+          </Field>
+          <Field label="Durum" width={130}>
             <Select
-              style={{ width: 130 }}
+              style={{ width: '100%' }}
               value={filterAktif}
               options={[
                 { value: 'active', label: 'Aktif' },
@@ -686,16 +733,29 @@ export default function OgretmenUygunluguClient() {
               ]}
               onChange={setFilterAktif}
             />
+          </Field>
+          <Field label={calendarFilterLabel} width={200}>
             <Select
               allowClear
-              placeholder="Çalışma Takvimi"
-              style={{ width: 180 }}
+              placeholder="Tüm takvimler"
+              style={{ width: '100%' }}
               value={filterCalendar ?? undefined}
               onChange={(v) => setFilterCalendar(v ?? null)}
-              options={(detail?.work_calendars || []).map((c) => ({ value: c.id, label: c.name }))}
+              options={allCalendars.map((c) => ({ value: c.id, label: c.name }))}
             />
-          </Space>
+          </Field>
+        </Toolbar>
 
+        {filterCalendar && !filteredTeachers.length ? (
+          <EmptyState
+            icon={<CalendarOutlined />}
+            title="Bu takvimde uygunluğu girilmiş öğretmen yok"
+            description="Filtreyi kaldırıp bir öğretmen seçin ve bu takvimi işaretleyerek uygunluğunu tanımlayın."
+            action={
+              <Button onClick={() => setFilterCalendar(null)}>Filtreyi kaldır</Button>
+            }
+          />
+        ) : (
           <Select
             className="ou-teacher-select"
             style={{ width: '100%' }}
@@ -712,6 +772,7 @@ export default function OgretmenUygunluguClient() {
             optionRender={(opt) => {
               const t = filteredTeachers.find((x) => x.id === opt.value);
               if (!t) return opt.label;
+              const hasAvailability = (t.calendar_ids || []).length > 0;
               return (
                 <div className="ou-teacher-option">
                   <Avatar src={t.fotograf_url || undefined} icon={<UserOutlined />} />
@@ -719,6 +780,7 @@ export default function OgretmenUygunluguClient() {
                     <div>
                       <Text strong>{t.tam_ad}</Text>{' '}
                       <Tag color={t.aktif_mi ? 'green' : 'default'}>{t.aktif_mi ? 'Aktif' : 'Pasif'}</Tag>
+                      {!hasAvailability && <Tag color="orange">Uygunluk girilmedi</Tag>}
                     </div>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       {t.brans} · {t.rol_ad} · {t.sube_ad}{' '}
@@ -729,8 +791,8 @@ export default function OgretmenUygunluguClient() {
               );
             }}
           />
-        </div>
-      </div>
+        )}
+      </Panel>
 
       {!selectedTeacherId && (
         <Alert
@@ -1154,6 +1216,6 @@ export default function OgretmenUygunluguClient() {
           </div>
         </Spin>
       )}
-    </div>
+    </PageShell>
   );
 }

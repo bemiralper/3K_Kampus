@@ -46,6 +46,30 @@ def _parse_int_list(raw) -> list[int]:
         return []
 
 
+def _resolve_notify_version(data, term_id):
+    """
+    version_id verilmezse dönem (+ varsa çalışma takvimi) programını bulur.
+    Arayüzde versiyon seçimi olmadığı için gövdede version_id opsiyoneldir.
+    """
+    from apps.academic.domain.schedule_version import ScheduleVersion
+
+    raw = data.get('version_id')
+    if raw:
+        try:
+            return int(raw), None
+        except (TypeError, ValueError):
+            return None, 'Geçersiz program bilgisi.'
+
+    qs = ScheduleVersion.objects.filter(term_id=term_id)
+    cycle_id = data.get('weekly_cycle_id')
+    if cycle_id:
+        qs = qs.filter(weekly_cycle_id=cycle_id)
+    version = qs.order_by('-is_active', '-id').first()
+    if not version:
+        return None, 'Bu dönem için program bulunamadı.'
+    return version.id, None
+
+
 def _can_notify(user) -> bool:
     if not user or not getattr(user, 'is_authenticated', False):
         return False
@@ -78,9 +102,12 @@ def schedule_notify_preview_api(request):
     data = request.data if hasattr(request, 'data') else {}
     try:
         term_id = int(data.get('term_id'))
-        version_id = int(data.get('version_id'))
     except (TypeError, ValueError):
-        return Response({'error': 'term_id ve version_id zorunludur.'}, status=400)
+        return Response({'error': 'term_id zorunludur.'}, status=400)
+
+    version_id, version_err = _resolve_notify_version(data, term_id)
+    if version_err:
+        return Response({'error': version_err}, status=400)
 
     _, _, gate_err = gate_term_drf(request, term_id)
     if gate_err:
@@ -125,9 +152,12 @@ def schedule_notify_send_api(request):
     data = request.data if hasattr(request, 'data') else {}
     try:
         term_id = int(data.get('term_id'))
-        version_id = int(data.get('version_id'))
     except (TypeError, ValueError):
-        return Response({'error': 'term_id ve version_id zorunludur.'}, status=400)
+        return Response({'error': 'term_id zorunludur.'}, status=400)
+
+    version_id, version_err = _resolve_notify_version(data, term_id)
+    if version_err:
+        return Response({'error': version_err}, status=400)
 
     _, _, gate_err = gate_term_drf(request, term_id)
     if gate_err:

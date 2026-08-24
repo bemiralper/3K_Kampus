@@ -248,6 +248,46 @@ class ScheduleVersion(models.Model):
         return qs.first()
 
     @classmethod
+    def resolve_default(cls, *, term, weekly_cycle, create=True):
+        """
+        Dönem + çalışma takvimi için tek programı döndür.
+
+        Kullanıcı arayüzünde versiyon seçimi yok: her (dönem, çalışma takvimi)
+        çiftinin tek bir programı vardır. Sırayla aktif olan, yoksa mevcut olan
+        (aktifleştirilir), yoksa yeni oluşturulan program döner.
+
+        create=False ise yokken oluşturmaz, None döner.
+        """
+        existing = cls.objects.filter(
+            term=term,
+            weekly_cycle=weekly_cycle,
+        ).order_by('-is_active', '-id')
+        version = existing.first()
+        if version:
+            if not version.is_active:
+                version.activate()
+            return version
+        if not create:
+            return None
+
+        template = weekly_cycle.primary_schedule_template()
+        if not template:
+            raise ValueError(
+                f'"{weekly_cycle.name}" çalışma takviminde ders saati şablonu yok. '
+                'Tanımlar → Ders Saatleri’nden şablon tanımlayın.'
+            )
+        return cls.objects.create(
+            egitim_yili=term.egitim_yili,
+            term=term,
+            schedule_template=template,
+            weekly_cycle=weekly_cycle,
+            name=weekly_cycle.name,
+            description='Otomatik oluşturuldu',
+            is_active=True,
+            is_locked=False,
+        )
+
+    @classmethod
     def create_legacy_version(cls, egitim_yili, term, schedule_template, weekly_cycle):
         """
         Backfill için Legacy versiyon oluştur.

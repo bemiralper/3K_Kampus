@@ -1,127 +1,127 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Select, Spin, Typography, message } from 'antd';
-import { useKurum } from '@/lib/contexts/KurumContext';
-import {
-  fetchClassLessonPlanContext,
-  fetchAcademicScheduleVersions,
-  type ClassLessonPlanContext,
-  type AcademicScheduleVersion,
-} from '@/lib/academic-api';
-import { fetchClassSchedule, type ScheduleGridResponse } from '@/lib/schedule-api';
-import ScheduleReadonlyGrid from './ScheduleReadonlyGrid';
-import './goruntuleme.css';
-
-const { Title, Text } = Typography;
+import { useEffect, useMemo, useState } from 'react';
+import { Select } from 'antd';
+import { fetchClassScheduleGrid, type ClassScheduleGrid } from '@/lib/academic-api';
+import ScheduleViewer from './ScheduleViewer';
+import { useGoruntulemeContext } from './useGoruntulemeContext';
+import { ContextRequired, Field } from '../ui';
 
 export default function SinifProgramiClient() {
-  const { activeKurum, activeSube, initialized } = useKurum();
-  const [context, setContext] = useState<ClassLessonPlanContext | null>(null);
-  const [versions, setVersions] = useState<AcademicScheduleVersion[]>([]);
-  const [termId, setTermId] = useState<number | null>(null);
+  const {
+    context,
+    calendarOptions,
+    calendarId,
+    setCalendarId,
+    termId,
+    setTermId,
+    termOptions,
+    ready,
+    error: contextError,
+  } = useGoruntulemeContext();
   const [classroomId, setClassroomId] = useState<number | null>(null);
-  const [versionId, setVersionId] = useState<number | null>(null);
-  const [grid, setGrid] = useState<ScheduleGridResponse | null>(null);
+  const [grid, setGrid] = useState<ClassScheduleGrid | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const boot = useCallback(async () => {
-    if (!initialized || !activeKurum || !activeSube) return;
-    try {
-      const ctx = await fetchClassLessonPlanContext();
-      setContext(ctx);
-      setTermId((prev) => prev ?? ctx.active_term_id ?? ctx.terms[0]?.id ?? null);
-      setClassroomId((prev) => prev ?? ctx.classrooms[0]?.id ?? null);
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
+  // Seçili çalışma takvimine ait sınıflar; eşleşme yoksa tüm sınıflar
+  const classrooms = useMemo(() => {
+    const all = context?.classrooms || [];
+    if (!calendarId) return all;
+    const scoped = all.filter((c) => c.weekly_cycle_ids?.includes(calendarId));
+    return scoped.length ? scoped : all;
+  }, [context, calendarId]);
+
+  useEffect(() => {
+    if (!classrooms.length) {
+      setClassroomId(null);
+      return;
     }
-  }, [activeKurum, activeSube, initialized]);
+    setClassroomId((prev) =>
+      prev && classrooms.some((c) => c.id === prev) ? prev : classrooms[0].id,
+    );
+  }, [classrooms]);
 
   useEffect(() => {
-    boot();
-  }, [boot]);
-
-  useEffect(() => {
-    if (!termId) return;
-    fetchAcademicScheduleVersions({ term_id: termId })
-      .then((rows) => {
-        setVersions(rows);
-        setVersionId((prev) => (prev && rows.some((r) => r.id === prev) ? prev : rows.find((r) => r.is_active)?.id ?? rows[0]?.id ?? null));
-      })
-      .catch(() => setVersions([]));
-  }, [termId]);
-
-  useEffect(() => {
-    if (!classroomId || !termId) {
+    if (!ready || !classroomId || !termId) {
       setGrid(null);
       return;
     }
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchClassSchedule({ classroom_id: classroomId, term_id: termId, version_id: versionId ?? undefined })
-      .then((res) => {
-        if (!res.success || !res.data) {
-          setError(res.error || 'Program yüklenemedi');
-          setGrid(null);
-          return;
-        }
-        setGrid(res.data);
+    fetchClassScheduleGrid({
+      classroom_id: classroomId,
+      term_id: termId,
+      weekly_cycle_id: calendarId ?? undefined,
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setGrid(data);
+        if (data.error) setError(data.error);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Program yüklenemedi'))
-      .finally(() => setLoading(false));
-  }, [classroomId, termId, versionId]);
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Program yüklenemedi');
+          setGrid(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, classroomId, termId, calendarId, reloadKey]);
+
+  if (!ready) return <ContextRequired />;
 
   return (
-    <div>
-      <Title level={4} style={{ marginBottom: 4 }}>Sınıf Programı</Title>
-      <Text type="secondary">
-        Seçili sınıfın haftalık ders programını salt okunur olarak görüntüler.
-      </Text>
-
-      <div className="goruntuleme-toolbar" style={{ marginTop: 16 }}>
-        <div className="goruntuleme-filter">
-          <label>Dönem</label>
-          <Select
-            style={{ width: 220 }}
-            value={termId ?? undefined}
-            onChange={setTermId}
-            options={(context?.terms || []).map((t) => ({ value: t.id, label: t.name }))}
-            placeholder="Dönem seçin"
-          />
-        </div>
-        <div className="goruntuleme-filter">
-          <label>Sınıf</label>
-          <Select
-            style={{ width: 220 }}
-            value={classroomId ?? undefined}
-            onChange={setClassroomId}
-            showSearch
-            optionFilterProp="label"
-            options={(context?.classrooms || []).map((c) => ({ value: c.id, label: c.ad }))}
-            placeholder="Sınıf seçin"
-          />
-        </div>
-        <div className="goruntuleme-filter">
-          <label>Versiyon</label>
-          <Select
-            style={{ width: 220 }}
-            value={versionId ?? undefined}
-            onChange={setVersionId}
-            options={versions.map((v) => ({
-              value: v.id,
-              label: `${v.name}${v.is_active ? ' ★' : ''}${v.is_locked ? ' 🔒' : ''}`,
-            }))}
-            placeholder="Versiyon seçin"
-          />
-        </div>
-      </div>
-
-      {error && <Alert type="warning" showIcon message={error} style={{ marginBottom: 16 }} />}
-
-      <Spin spinning={loading}>
-        <ScheduleReadonlyGrid grid={grid} />
-      </Spin>
-    </div>
+    <ScheduleViewer
+      description="Seçili sınıfın haftalık ders programı. Telefonda gün gün, masaüstünde haftalık ızgara."
+      grid={grid}
+      loading={loading}
+      error={error || contextError}
+      onRetry={() => setReloadKey((k) => k + 1)}
+      showTeacher
+      emptyHint="Bu sınıf için henüz yerleştirilmiş ders yok."
+      requireSelection={!classroomId}
+      selectionMissingHint="Görüntülemek için bir sınıf seçin."
+      filters={
+        <>
+          <Field label="Dönem" width={190}>
+            <Select
+              value={termId ?? undefined}
+              onChange={setTermId}
+              options={termOptions}
+              placeholder="Dönem"
+            />
+          </Field>
+          <Field label="Çalışma Takvimi" width={200}>
+            <Select
+              value={calendarId ?? undefined}
+              onChange={setCalendarId}
+              options={calendarOptions}
+              placeholder="Takvim"
+              notFoundContent="Program yok"
+            />
+          </Field>
+          <Field label={`Sınıf (${classrooms.length})`} grow>
+            <Select
+              value={classroomId ?? undefined}
+              onChange={setClassroomId}
+              showSearch
+              optionFilterProp="label"
+              options={classrooms.map((c) => ({
+                value: c.id,
+                label: c.oda_ad ? `${c.ad} · ${c.oda_ad}` : c.ad,
+              }))}
+              placeholder="Sınıf seçin"
+            />
+          </Field>
+        </>
+      }
+    />
   );
 }

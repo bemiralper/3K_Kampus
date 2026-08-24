@@ -1,16 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import {
-  Alert,
-  Button,
-  DatePicker,
-  Select,
-  Space,
-  Table,
-  Typography,
-  message,
-} from 'antd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, DatePicker, Select, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -24,11 +15,28 @@ import {
   type LessonOpsMeta,
   type PaySummaryTeacher,
 } from '@/lib/academic-api';
+import {
+  ContextRequired,
+  EmptyState,
+  ErrorState,
+  Field,
+  Hint,
+  LoadingState,
+  PageHead,
+  PageShell,
+  Panel,
+  StatCard,
+  StatGrid,
+  Toolbar,
+} from '@/components/akademik/ui';
+import { IconBanknote, IconClock, IconUser } from '@/components/akademik/ui/icons';
 import '@/components/akademik/ders-operasyonlari/ops-common.css';
 
 dayjs.locale('tr');
-const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
+
+const money = (v: number | null | undefined) =>
+  v == null ? '—' : `${v.toLocaleString('tr-TR')} ₺`;
 
 export default function DersUcretleriClient() {
   const { activeKurum, activeSube, initialized } = useKurum();
@@ -43,9 +51,17 @@ export default function DersUcretleriClient() {
   const [rows, setRows] = useState<PaySummaryTeacher[]>([]);
   const [totals, setTotals] = useState({ session_count: 0, total_minutes: 0, total_hours: 0 });
   const [loading, setLoading] = useState(false);
+  const [booting, setBooting] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const boot = useCallback(async () => {
-    if (!initialized || !activeKurum || !activeSube) return;
+    if (!initialized) return;
+    if (!activeKurum || !activeSube) {
+      setBooting(false);
+      return;
+    }
+    setBooting(true);
+    setError(null);
     try {
       const [ctx, ops] = await Promise.all([
         fetchClassLessonPlanContext(),
@@ -55,7 +71,9 @@ export default function DersUcretleriClient() {
       setMeta(ops);
       setTermId((p) => p ?? ctx.active_term_id ?? ctx.terms[0]?.id ?? null);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
+      setError(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
+    } finally {
+      setBooting(false);
     }
   }, [activeKurum, activeSube, initialized]);
 
@@ -75,8 +93,9 @@ export default function DersUcretleriClient() {
       });
       setRows(data.teachers);
       setTotals(data.totals);
+      setError(null);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Ücret özeti yüklenemedi');
+      setError(e instanceof Error ? e.message : 'Ücret özeti yüklenemedi');
       setRows([]);
     } finally {
       setLoading(false);
@@ -94,21 +113,19 @@ export default function DersUcretleriClient() {
       title: 'Saat',
       dataIndex: 'total_hours',
       width: 90,
-      render: (v: number) => v.toLocaleString('tr-TR'),
+      render: (v: number) => <span className="ops-time">{v.toLocaleString('tr-TR')}</span>,
     },
     {
       title: 'Birim ücret',
       dataIndex: 'unit_rate',
       width: 120,
-      render: (v: number | null) =>
-        v == null ? '—' : `${v.toLocaleString('tr-TR')} ₺`,
+      render: money,
     },
     {
       title: 'Tahmini tutar',
       dataIndex: 'estimated_amount',
       width: 140,
-      render: (v: number | null) =>
-        v == null ? '—' : `${v.toLocaleString('tr-TR')} ₺`,
+      render: money,
     },
     {
       title: 'Tür dağılımı',
@@ -120,80 +137,94 @@ export default function DersUcretleriClient() {
     },
   ];
 
-  if (!initialized) return <div className="ops-empty">Bağlam yükleniyor…</div>;
-  if (!activeKurum || !activeSube) {
-    return <Alert type="warning" showIcon message="Kurum ve şube seçimi gerekli" />;
-  }
+  const estimatedTotal = useMemo(
+    () => rows.reduce((sum, r) => sum + (r.estimated_amount ?? 0), 0),
+    [rows],
+  );
+
+  if (!initialized || booting) return <LoadingState label="Bağlam yükleniyor…" />;
+  if (!activeKurum || !activeSube) return <ContextRequired />;
 
   return (
-    <div className="ops-page">
-      <div className="ops-toolbar">
-        <div>
-          <Title level={3} style={{ margin: 0 }}>Ders Ücretleri</Title>
-          <Text type="secondary">
-            Tamamlanan ve ücrete dahil oturumlardan öğretmen bazlı özet.
-            Birim ücret personel sözleşmesindeki ders ücreti tanımından okunur.
-          </Text>
-        </div>
-        <Button icon={<ReloadOutlined />} onClick={() => { boot(); load(); }}>
-          Yenile
-        </Button>
-      </div>
-
-      <Alert
-        type="info"
-        showIcon
-        message="Yalnızca COMPLETED + payable oturumlar sayılır"
-        description="İptal / gelmedi kayıtları ücrete dahil edilmez. Özel, telafi ve ek dersler tür dağılımında görünür."
+    <PageShell>
+      <PageHead
+        description="Tamamlanan ve ücrete dahil oturumlardan öğretmen bazlı özet. Birim ücret, personel sözleşmesindeki ders ücreti tanımından okunur."
+        actions={
+          <Button icon={<ReloadOutlined />} onClick={() => { boot(); load(); }}>
+            Yenile
+          </Button>
+        }
       />
 
-      <div className="ops-card">
-        <div className="ops-filters">
-          <div className="ops-filter-item" style={{ minWidth: 260 }}>
-            <label>Dönem aralığı</label>
-            <RangePicker
-              value={range}
-              onChange={(v) => v && v[0] && v[1] && setRange([v[0], v[1]])}
-              format="DD.MM.YYYY"
-              allowClear={false}
-            />
-          </div>
-          <div className="ops-filter-item">
-            <label>Dönem</label>
-            <Select
-              style={{ minWidth: 160 }}
-              value={termId ?? undefined}
-              onChange={setTermId}
-              options={(context?.terms || []).map((t) => ({ value: t.id, label: t.name }))}
-            />
-          </div>
-          <div className="ops-filter-item">
-            <label>Öğretmen</label>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              style={{ minWidth: 180 }}
-              value={teacherId ?? undefined}
-              onChange={(v) => setTeacherId(v ?? null)}
-              options={(meta?.teachers || []).map((t) => ({ value: t.id, label: t.name }))}
-            />
-          </div>
-        </div>
-      </div>
+      <StatGrid>
+        <StatCard icon={<IconUser />} tone="blue" value={rows.length} label="Öğretmen" />
+        <StatCard
+          icon={<IconClock />}
+          tone="purple"
+          value={totals.session_count}
+          label="Ücretli oturum"
+        />
+        <StatCard
+          icon={<IconClock />}
+          tone="slate"
+          value={totals.total_hours.toLocaleString('tr-TR')}
+          label="Toplam saat"
+        />
+        <StatCard
+          icon={<IconBanknote />}
+          tone="green"
+          value={money(estimatedTotal)}
+          label="Tahmini tutar"
+        />
+      </StatGrid>
 
-      <div className="ops-card">
-        <div className="ops-card-head">
-          <Text strong>
-            {totals.session_count} oturum · {totals.total_hours} saat
-          </Text>
-        </div>
+      <Toolbar>
+        <Field label="Tarih aralığı" width={260}>
+          <RangePicker
+            value={range}
+            onChange={(v) => v && v[0] && v[1] && setRange([v[0], v[1]])}
+            format="DD.MM.YYYY"
+            allowClear={false}
+            style={{ width: '100%' }}
+          />
+        </Field>
+        <Field label="Dönem" width={170}>
+          <Select
+            style={{ width: '100%' }}
+            value={termId ?? undefined}
+            onChange={setTermId}
+            options={(context?.terms || []).map((t) => ({ value: t.id, label: t.name }))}
+          />
+        </Field>
+        <Field label="Öğretmen" width={190}>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="Tüm öğretmenler"
+            style={{ width: '100%' }}
+            value={teacherId ?? undefined}
+            onChange={(v) => setTeacherId(v ?? null)}
+            options={(meta?.teachers || []).map((t) => ({ value: t.id, label: t.name }))}
+          />
+        </Field>
+      </Toolbar>
+
+      <Hint>
+        Yalnızca tamamlanmış ve ücrete dahil oturumlar sayılır; iptal ve gelinmedi kayıtları hesaba
+        katılmaz. Özel, telafi ve ek dersler tür dağılımı kolonunda ayrı görünür.
+      </Hint>
+
+      {error ? <ErrorState description={error} onRetry={load} /> : null}
+
+      <Panel title="Öğretmen özeti" count={rows.length} flush>
         <Table<PaySummaryTeacher>
           rowKey="teacher_id"
           loading={loading}
           columns={columns}
           dataSource={rows}
           pagination={false}
+          scroll={{ x: 900 }}
           expandable={{
             expandedRowRender: (r) => (
               <Table
@@ -211,9 +242,17 @@ export default function DersUcretleriClient() {
               />
             ),
           }}
-          locale={{ emptyText: 'Bu aralıkta tamamlanmış ücretlendirilebilir oturum yok.' }}
+          locale={{
+            emptyText: (
+              <EmptyState
+                icon={<IconBanknote />}
+                title="Ücretlendirilecek oturum yok"
+                description="Bu aralıkta tamamlanmış ve ücrete dahil oturum bulunmuyor. Oturumları tamamladıkça özet burada oluşur."
+              />
+            ),
+          }}
         />
-      </div>
-    </div>
+      </Panel>
+    </PageShell>
   );
 }

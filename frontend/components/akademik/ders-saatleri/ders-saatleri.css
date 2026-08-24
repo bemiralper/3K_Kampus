@@ -1,15 +1,6 @@
-.ds-page {
-  width: 100%;
-}
-
-.ds-page-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px 16px;
-  margin-bottom: 16px;
-}
+/* Sayfa iskeleti, başlık, filtre çubuğu ve boş/hata durumları ortak Akademik
+   Page Kit'ten gelir (akademik-ui.css). Buradaki stiller şablon düzenleyici
+   drawer'ına özgüdür. */
 
 .ds-loading {
   padding: 32px;

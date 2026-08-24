@@ -21,6 +21,8 @@ export type AkademikTabItem = {
 export type AkademikGroupDef = {
   slug: string;
   label: AkademikNavGroup;
+  /** Menü/ana sayfa/komut paletinde gizle; rotalar çalışmaya devam eder */
+  hidden?: boolean;
   tabs: AkademikTabItem[];
 };
 
@@ -87,6 +89,8 @@ export const AKADEMIK_GROUPS: AkademikGroupDef[] = [
   {
     slug: 'analiz',
     label: 'Analiz',
+    // Ekranlar henüz yazılmadı; hazır olana kadar menüde görünmez.
+    hidden: true,
     tabs: [
       { segment: 'ders-yukleri', label: 'Ders Yükleri' },
       { segment: 'derslik-kullanimi', label: 'Derslik Kullanımı' },
@@ -152,8 +156,12 @@ export function findAkademikTab(
   return { group, tab };
 }
 
+export function akademikVisibleGroups(): AkademikGroupDef[] {
+  return AKADEMIK_GROUPS.filter((group) => !group.hidden);
+}
+
 export function akademikSidebarChildren(basePath: string = AKADEMIK_BASE) {
-  return AKADEMIK_GROUPS.map((group) => ({
+  return akademikVisibleGroups().map((group) => ({
     label: group.label,
     href: akademikTabHref(group.slug, group.tabs[0].segment, basePath),
     /** Aktif menü eşlemesi — grup altındaki tüm sekmeler */
@@ -177,7 +185,7 @@ export function akademikBreadcrumbMap(): Record<string, string> {
 export function akademikCommandPaletteItems(basePath: string = AKADEMIK_BASE) {
   const items: { label: string; href: string; section: string }[] = [];
 
-  for (const group of AKADEMIK_GROUPS) {
+  for (const group of akademikVisibleGroups()) {
     items.push({
       label: group.label,
       href: akademikTabHref(group.slug, group.tabs[0].segment, basePath),

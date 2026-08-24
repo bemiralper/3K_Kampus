@@ -27,7 +27,7 @@ export type ScheduleNotifyPreviewResponse = {
   term_id: number;
   term_name: string;
   version_id: number;
-  version_name: string;
+  calendar_name: string | null;
   classes: ScheduleNotifyClassPreview[];
 };
 

@@ -1,9 +1,5 @@
-.ou-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding-bottom: 32px;
-}
+/* Sayfa iskeleti, başlık ve filtre çubuğu ortak Akademik Page Kit'ten gelir
+   (akademik-ui.css); burada yalnızca uygunluk ekranına özgü stiller var. */
 
 .ou-layout {
   display: grid;

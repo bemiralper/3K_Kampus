@@ -249,14 +249,17 @@ def schedule_template_usage_api(request, template_id):
 
         versions = ScheduleVersion.objects.filter(
             schedule_template=template,
-        ).select_related('term', 'egitim_yili').order_by('-updated_at')
+        ).select_related('term', 'egitim_yili', 'weekly_cycle').order_by('-updated_at')
 
+        # Program = (dönem, çalışma takvimi) çifti; kullanıcıya versiyon adı değil
+        # bu çift gösterilir.
         data = [{
             'id': v.id,
-            'name': v.name,
-            'is_active_version': v.is_active,
             'term_name': v.term.name if v.term_id else None,
+            'calendar_name': v.weekly_cycle.name if v.weekly_cycle_id else None,
             'egitim_yili_name': str(v.egitim_yili) if v.egitim_yili_id else None,
+            'filled_cell_count': v.filled_cell_count,
+            'is_locked': v.is_locked,
         } for v in versions]
 
         return JsonResponse({'success': True, 'data': data, 'count': len(data)})

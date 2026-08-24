@@ -393,7 +393,7 @@ def ensure_version_classroom_grid(
     sinif = Sinif.objects.get(pk=classroom_id, aktif_mi=True)
 
     if version.schedule_template.sube_id != sinif.sube_id:
-        raise ValueError('Sınıf ve program versiyonu aynı şubede olmalıdır.')
+        raise ValueError('Sınıf ve program aynı şubede olmalıdır.')
     if version.term.sube_id != sinif.sube_id:
         raise ValueError('Sınıf ve dönem aynı şubede olmalıdır.')
     if version.term.egitim_yili_id != sinif.egitim_yili_id:

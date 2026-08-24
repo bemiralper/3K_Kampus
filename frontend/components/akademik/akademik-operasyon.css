@@ -11,7 +11,7 @@
   margin: 0 0 0.5rem;
   font-size: 1.75rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--text-color, #1e3352);
 }
 
 .akademik-hero-desc {
@@ -31,7 +31,7 @@
 }
 
 .akademik-breadcrumb a {
-  color: var(--link-color, #2563eb);
+  color: var(--primary, #0262a7);
   text-decoration: none;
 }
 
@@ -72,9 +72,9 @@
 }
 
 .akademik-tab.is-active {
-  background: var(--primary-soft, #eff6ff);
-  border-color: var(--link-color, #2563eb);
-  color: var(--link-color, #2563eb);
+  background: var(--primary-soft, #eef6fc);
+  border-color: var(--primary, #0262a7);
+  color: var(--primary, #0262a7);
 }
 
 .akademik-tab-panel {
@@ -101,7 +101,7 @@
 .akademik-kpi-value {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--text-color, #1e3352);
 }
 
 .akademik-kpi-label {
@@ -129,15 +129,15 @@
 }
 
 .akademik-home-card:hover {
-  border-color: var(--link-color, #2563eb);
-  box-shadow: 0 2px 8px rgb(37 99 235 / 0.08);
+  border-color: var(--primary, #0262a7);
+  box-shadow: 0 2px 8px rgb(2 98 167 / 0.1);
 }
 
 .akademik-home-card h2 {
   margin: 0 0 0.35rem;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--text-primary, #111827);
+  color: var(--text-color, #1e3352);
 }
 
 .akademik-home-card p {
@@ -193,4 +193,55 @@
   border-radius: 999px;
   padding: 1px 7px;
   vertical-align: middle;
+}
+
+@media (max-width: 900px) {
+  .akademik-page {
+    padding: 1rem 0.9rem 2rem;
+  }
+
+  .akademik-hero h1 {
+    font-size: 1.35rem;
+  }
+
+  .akademik-breadcrumb {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+
+  .akademik-breadcrumb::-webkit-scrollbar {
+    display: none;
+  }
+
+  .akademik-tab-nav-scroll {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin: 0 -0.9rem;
+    padding: 0 0.9rem 0.65rem;
+  }
+
+  .akademik-tab-nav-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .akademik-tab {
+    min-height: 40px;
+    padding: 0.5rem 0.9rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .akademik-page {
+    padding: 0.85rem 0.75rem 1.75rem;
+  }
+
+  .akademik-tab-nav-scroll {
+    margin: 0 -0.75rem;
+    padding: 0 0.75rem 0.6rem;
+  }
 }

@@ -1,0 +1,568 @@
+/* ==========================================================================
+   Akademik Page Kit
+   Akademik Operasyon modülünün ortak arayüz katmanı.
+
+   Kullanım kuralı: alt sekmeler kendi renk/kart/tablo stilini tanımlamaz;
+   buradaki `ak-*` sınıflarını kullanır. Yalnızca alana özgü görseller
+   (drag-drop ızgarası, haftalık takvim hücreleri) sayfa CSS'inde kalır.
+   ========================================================================== */
+
+.ak-scope {
+  /* Global marka token'larına köprü — fallback'ler globals.css :root ile aynı */
+  --ak-primary: var(--primary, #0262a7);
+  --ak-primary-hover: var(--primary-hover, #01518c);
+  --ak-primary-soft: #eef6fc;
+  --ak-primary-ring: rgb(2 98 167 / 0.14);
+
+  --ak-surface: var(--card-bg, #fff);
+  --ak-surface-alt: #f7f9fc;
+  --ak-border: var(--border-color, #dfe6ef);
+  --ak-border-strong: #c8d4e2;
+  --ak-text: var(--text-color, #1e3352);
+  --ak-text-muted: var(--text-muted, #7088a4);
+
+  --ak-success: #0f9d76;
+  --ak-success-soft: #e7f8f2;
+  --ak-warning: #b45309;
+  --ak-warning-soft: #fef3c7;
+  --ak-danger: #dc2626;
+  --ak-danger-soft: #fee2e2;
+  --ak-info: #0369a1;
+  --ak-info-soft: #e0f2fe;
+  --ak-purple: #7c3aed;
+  --ak-purple-soft: #f3e8ff;
+
+  --ak-radius: 12px;
+  --ak-radius-sm: 8px;
+  --ak-shadow: 0 1px 2px rgb(16 39 68 / 0.04);
+  --ak-shadow-lift: 0 6px 20px rgb(16 39 68 / 0.09);
+  --ak-gap: 1rem;
+
+  color: var(--ak-text);
+}
+
+/* --------------------------------------------------------------------------
+   Dikey ritim — sekme içeriğinin ana sarmalayıcısı
+   -------------------------------------------------------------------------- */
+.ak-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-gap);
+}
+
+.ak-stack-tight {
+  gap: 0.6rem;
+}
+
+.ak-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.ak-row-end {
+  margin-left: auto;
+}
+
+.ak-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--ak-text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Sayfa başlığı
+   Grup layout'u zaten büyük h1 + sekmeleri gösteriyor; buradaki başlık
+   ikincil seviyedir (çift başlık hiyerarşisini bozmamak için).
+   -------------------------------------------------------------------------- */
+.ak-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ak-head-main {
+  min-width: 0;
+}
+
+.ak-head-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ak-text);
+}
+
+.ak-head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ak-radius-sm);
+  background: var(--ak-primary-soft);
+  color: var(--ak-primary);
+  flex: none;
+}
+
+.ak-head-desc {
+  margin: 0.3rem 0 0;
+  max-width: 62ch;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--ak-text-muted);
+}
+
+.ak-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* --------------------------------------------------------------------------
+   Panel (kart)
+   -------------------------------------------------------------------------- */
+.ak-panel {
+  background: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius);
+  box-shadow: var(--ak-shadow);
+  overflow: hidden;
+}
+
+.ak-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.85rem 1.05rem;
+  border-bottom: 1px solid var(--ak-border);
+  background: var(--ak-surface-alt);
+}
+
+.ak-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--ak-text);
+}
+
+.ak-panel-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ak-text-muted);
+  background: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.ak-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.ak-panel-body {
+  padding: 1.05rem;
+}
+
+/* Tablo/ızgara gibi kendi kenar boşluğu olan içerikler için */
+.ak-panel-flush > .ak-panel-body {
+  padding: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Filtre çubuğu
+   -------------------------------------------------------------------------- */
+.ak-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.7rem;
+  padding: 0.85rem 1.05rem;
+  background: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius);
+  box-shadow: var(--ak-shadow);
+}
+
+/* Panel içine gömülü filtre çubuğu kendi çerçevesini bırakır */
+.ak-panel .ak-toolbar {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.ak-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.ak-field > label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ak-text-muted);
+  white-space: nowrap;
+}
+
+.ak-field-grow {
+  flex: 1 1 200px;
+}
+
+.ak-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+}
+
+/* --------------------------------------------------------------------------
+   KPI / istatistik kartları
+   -------------------------------------------------------------------------- */
+.ak-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 0.7rem;
+}
+
+.ak-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius);
+  box-shadow: var(--ak-shadow);
+}
+
+.ak-stat.is-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.ak-stat.is-clickable:hover {
+  border-color: var(--ak-primary);
+  box-shadow: var(--ak-shadow-lift);
+  transform: translateY(-1px);
+}
+
+.ak-stat.is-active {
+  border-color: var(--ak-primary);
+  box-shadow: 0 0 0 3px var(--ak-primary-ring);
+}
+
+.ak-stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  flex: none;
+}
+
+.ak-stat-icon.blue { background: var(--ak-primary-soft); color: var(--ak-primary); }
+.ak-stat-icon.green { background: var(--ak-success-soft); color: var(--ak-success); }
+.ak-stat-icon.orange { background: var(--ak-warning-soft); color: var(--ak-warning); }
+.ak-stat-icon.red { background: var(--ak-danger-soft); color: var(--ak-danger); }
+.ak-stat-icon.purple { background: var(--ak-purple-soft); color: var(--ak-purple); }
+.ak-stat-icon.slate { background: #eef2f7; color: #475569; }
+
+.ak-stat-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ak-stat-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--ak-text);
+}
+
+.ak-stat-label {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--ak-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --------------------------------------------------------------------------
+   Boş durum / yükleniyor / hata — modül genelinde tek görünüm
+   -------------------------------------------------------------------------- */
+.ak-empty,
+.ak-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 2.75rem 1.5rem;
+  text-align: center;
+}
+
+.ak-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--ak-surface-alt);
+  color: var(--ak-text-muted);
+}
+
+.ak-empty h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--ak-text);
+}
+
+.ak-empty p,
+.ak-loading p {
+  margin: 0;
+  max-width: 44ch;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--ak-text-muted);
+}
+
+.ak-spinner {
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid var(--ak-border);
+  border-top-color: var(--ak-primary);
+  border-radius: 50%;
+  animation: ak-spin 0.7s linear infinite;
+}
+
+@keyframes ak-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ak-skeleton {
+  background: linear-gradient(90deg, #eef2f7 25%, #f6f8fb 50%, #eef2f7 75%);
+  background-size: 200% 100%;
+  animation: ak-shimmer 1.3s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+.ak-skeleton-text {
+  height: 11px;
+  margin: 4px 0;
+}
+
+.ak-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1.05rem;
+  border-bottom: 1px solid var(--ak-border);
+}
+
+@keyframes ak-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ak-spinner,
+  .ak-skeleton {
+    animation: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Rozet
+   -------------------------------------------------------------------------- */
+.ak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.65;
+  white-space: nowrap;
+}
+
+.ak-badge.primary { background: var(--ak-primary-soft); color: var(--ak-primary); }
+.ak-badge.success { background: var(--ak-success-soft); color: var(--ak-success); }
+.ak-badge.warning { background: var(--ak-warning-soft); color: var(--ak-warning); }
+.ak-badge.danger { background: var(--ak-danger-soft); color: var(--ak-danger); }
+.ak-badge.info { background: var(--ak-info-soft); color: var(--ak-info); }
+.ak-badge.purple { background: var(--ak-purple-soft); color: var(--ak-purple); }
+.ak-badge.secondary { background: #eef2f7; color: #475569; }
+
+/* --------------------------------------------------------------------------
+   Segmentli görünüm değiştirici
+   -------------------------------------------------------------------------- */
+.ak-segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--ak-surface-alt);
+  border: 1px solid var(--ak-border);
+  border-radius: 10px;
+}
+
+.ak-segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.32rem 0.7rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ak-text-muted);
+  font-size: 0.82rem;
+  font-weight: 550;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ak-segmented button:hover {
+  color: var(--ak-text);
+}
+
+.ak-segmented button.active {
+  background: var(--ak-surface);
+  color: var(--ak-primary);
+  box-shadow: var(--ak-shadow);
+}
+
+/* --------------------------------------------------------------------------
+   Tablo — Ant Design Table'ı marka çizgisine oturtur
+   -------------------------------------------------------------------------- */
+.ak-table .ant-table {
+  font-size: 0.86rem;
+}
+
+.ak-table .ant-table-thead > tr > th {
+  background: var(--ak-surface-alt);
+  color: var(--ak-text-muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.ak-table .ant-table-thead > tr > th::before {
+  display: none;
+}
+
+.ak-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.ak-table .ant-table-tbody > tr:hover > td {
+  background: var(--ak-primary-soft);
+}
+
+/* --------------------------------------------------------------------------
+   Duyarlı davranış
+   -------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .ak-scope {
+    --ak-gap: 0.75rem;
+  }
+
+  .ak-toolbar {
+    align-items: stretch;
+    padding: 0.75rem 0.85rem;
+  }
+
+  /* Mobilde filtreler tam genişlik — yarım kalan alanlar olmasın */
+  .ak-field {
+    flex: 1 1 100%;
+  }
+
+  .ak-toolbar-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .ak-panel-body {
+    padding: 0.85rem;
+  }
+
+  .ak-stats {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .ak-stat-value {
+    font-size: 1.15rem;
+  }
+
+  .ak-segmented {
+    width: 100%;
+  }
+
+  .ak-segmented button {
+    flex: 1;
+    justify-content: center;
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ak-head {
+    flex-direction: column;
+  }
+
+  .ak-head-actions {
+    width: 100%;
+  }
+
+  .ak-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ak-empty,
+  .ak-loading {
+    padding: 2rem 1rem;
+  }
+}
+
+@media print {
+  .ak-toolbar,
+  .ak-head-actions,
+  .ak-panel-actions,
+  .ak-segmented {
+    display: none !important;
+  }
+
+  .ak-panel {
+    border-color: #999;
+    box-shadow: none;
+  }
+}

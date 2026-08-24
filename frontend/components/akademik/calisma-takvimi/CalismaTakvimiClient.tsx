@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Button,
   Dropdown,
   Input,
@@ -41,15 +40,30 @@ import {
   fetchScheduleTemplates,
   saveWorkCalendarPlan,
   updateWorkCalendar,
-  type ScheduleVersionUsage,
+  type ProgramUsage,
   type WorkCalendar,
 } from '@/lib/academic-api';
 import { takvimIconNode } from './constants';
 import { programTipiMeta } from '@/components/akademik/program-tipi';
+import {
+  ContextRequired,
+  EmptyState,
+  ErrorState,
+  Field,
+  Hint,
+  LoadingState,
+  PageHead,
+  PageShell,
+  Panel,
+  StatCard,
+  StatGrid,
+  Toolbar,
+  ToolbarActions,
+} from '@/components/akademik/ui';
 import TakvimEditorDrawer from './TakvimEditorDrawer';
 import './calisma-takvimi.css';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 type ViewMode = 'cards' | 'list';
 
@@ -57,24 +71,26 @@ export default function CalismaTakvimiClient() {
   const { activeKurum, activeSube, initialized } = useKurum();
   const [items, setItems] = useState<WorkCalendar[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorId, setEditorId] = useState<number | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
-  const [usageRows, setUsageRows] = useState<ScheduleVersionUsage[]>([]);
+  const [usageRows, setUsageRows] = useState<ProgramUsage[]>([]);
   const [usageTitle, setUsageTitle] = useState('');
   const importRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     if (!initialized || !activeKurum || !activeSube) return;
     setLoading(true);
+    setError(null);
     try {
       const data = await fetchWorkCalendars();
       setItems(data);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Liste yüklenemedi');
+      setError(e instanceof Error ? e.message : 'Liste yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -98,6 +114,16 @@ export default function CalismaTakvimiClient() {
   const selected = useMemo(
     () => (selectedId ? items.find((i) => i.id === selectedId) : undefined),
     [items, selectedId],
+  );
+
+  const stats = useMemo(
+    () => ({
+      total: items.length,
+      active: items.filter((c) => c.is_active).length,
+      days: items.reduce((sum, c) => sum + (c.active_day_count || 0), 0),
+      inUse: items.filter((c) => (c.usage_count || 0) > 0).length,
+    }),
+    [items],
   );
 
   const openCreate = () => {
@@ -401,99 +427,115 @@ export default function CalismaTakvimiClient() {
     },
   ];
 
-  if (!initialized) {
-    return <div className="ct-loading">Bağlam yükleniyor…</div>;
-  }
-
-  if (!activeKurum || !activeSube) {
-    return (
-      <Alert
-        type="warning"
-        showIcon
-        message="Kurum ve şube seçimi gerekli"
-        description="Üst bardaki kurum/şube seçiciden aktif bağlamı seçin."
-      />
-    );
-  }
+  if (!initialized) return <LoadingState label="Bağlam yükleniyor…" />;
+  if (!activeKurum || !activeSube) return <ContextRequired />;
 
   return (
-    <div className="ct-page">
-      <div className="ct-page-head">
-        <div>
-          <Title level={4} style={{ margin: 0 }}>
-            Çalışma Takvimi
-          </Title>
-          <Text type="secondary">Haftalık eğitim düzenlerini yönetin.</Text>
-        </div>
-        <div className="ct-toolbar">
-          <Input.Search
-            allowClear
-            placeholder="Ara…"
-            style={{ width: 200 }}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Button icon={<ReloadOutlined />} onClick={load}>
-            Yenile
-          </Button>
-          <Button icon={<CopyOutlined />} disabled={!selected} onClick={() => handleCopy()}>
-            Kopyala
-          </Button>
-          <Button icon={<StopOutlined />} disabled={!selected?.is_active} onClick={() => handleDeactivate()}>
-            Pasife Al
-          </Button>
-          <Button danger icon={<DeleteOutlined />} disabled={!selected} onClick={() => handleDelete()}>
-            Sil
-          </Button>
-          <Button
-            icon={<ImportOutlined />}
-            onClick={() => importRef.current?.click()}
-          >
-            İçe Aktar
-          </Button>
-          <input
-            ref={importRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleImport(f);
-              e.target.value = '';
-            }}
-          />
-          <Button icon={<ExportOutlined />} disabled={!selected} onClick={() => handleExport()}>
-            Dışa Aktar
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            Yeni Takvim
-          </Button>
-        </div>
-      </div>
+    <PageShell>
+      <PageHead
+        title="Çalışma Takvimi"
+        description="Haftalık eğitim düzenlerini yönetin: hangi günler ders var ve her gün hangi ders saati şablonunu kullanıyor."
+        actions={
+          <>
+            <Button icon={<ImportOutlined />} onClick={() => importRef.current?.click()}>
+              İçe Aktar
+            </Button>
+            <input
+              ref={importRef}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImport(f);
+                e.target.value = '';
+              }}
+            />
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              Yeni Takvim
+            </Button>
+          </>
+        }
+      />
 
-      <div className="ct-view-toggle">
-        <Segmented
-          value={viewMode}
-          onChange={(v) => setViewMode(v as ViewMode)}
-          options={[
-            { label: 'Kart', value: 'cards', icon: <AppstoreOutlined /> },
-            { label: 'Liste', value: 'list', icon: <UnorderedListOutlined /> },
-          ]}
-        />
-      </div>
+      <StatGrid>
+        <StatCard icon={<CalendarOutlined />} tone="blue" value={stats.total} label="Takvim" />
+        <StatCard tone="green" value={stats.active} label="Aktif" />
+        <StatCard tone="purple" value={stats.days} label="Toplam aktif gün" />
+        <StatCard tone="orange" value={stats.inUse} label="Programda kullanılan" />
+      </StatGrid>
 
-      {loading ? (
-        <div className="ct-loading">Yükleniyor…</div>
-      ) : filtered.length === 0 ? (
-        <div className="ct-empty">
-          <CalendarOutlined style={{ fontSize: 40, color: '#94a3b8' }} />
-          <h3>Henüz çalışma takvimi yok</h3>
-          <Paragraph>Haftalık eğitim düzeninizi tanımlamak için yeni takvim oluşturun.</Paragraph>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            Yeni Takvim
-          </Button>
-        </div>
-      ) : viewMode === 'cards' ? (
+      <Panel flush>
+        <Toolbar>
+          <Field label="Ara" width={220}>
+            <Input.Search
+              allowClear
+              placeholder="Takvim adı veya açıklama…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </Field>
+          <Field label="Görünüm" width={170}>
+            <Segmented
+              value={viewMode}
+              onChange={(v) => setViewMode(v as ViewMode)}
+              options={[
+                { label: 'Kart', value: 'cards', icon: <AppstoreOutlined /> },
+                { label: 'Liste', value: 'list', icon: <UnorderedListOutlined /> },
+              ]}
+            />
+          </Field>
+          <ToolbarActions>
+            <Button icon={<ReloadOutlined />} onClick={load}>
+              Yenile
+            </Button>
+            {/* Seçime bağlı işlemler yalnızca bir takvim seçiliyken görünür;
+                aksi hâlde sürekli devre dışı düğme yığını oluşuyordu. */}
+            {selected && (
+              <>
+                <Button icon={<CopyOutlined />} onClick={() => handleCopy()}>
+                  Kopyala
+                </Button>
+                <Button icon={<ExportOutlined />} onClick={() => handleExport()}>
+                  Dışa Aktar
+                </Button>
+                {selected.is_active && (
+                  <Button icon={<StopOutlined />} onClick={() => handleDeactivate()}>
+                    Pasife Al
+                  </Button>
+                )}
+                <Button danger icon={<DeleteOutlined />} onClick={() => handleDelete()}>
+                  Sil
+                </Button>
+              </>
+            )}
+          </ToolbarActions>
+        </Toolbar>
+
+        {selected && <Hint>Seçili takvim: {selected.name} — işlemler yukarıdaki düğmelerde.</Hint>}
+
+        {error ? (
+          <ErrorState description={error} onRetry={load} />
+        ) : loading ? (
+          <LoadingState label="Takvimler yükleniyor…" />
+        ) : !items.length ? (
+          <EmptyState
+            icon={<CalendarOutlined />}
+            title="Henüz çalışma takvimi yok"
+            description="Bir çalışma takvimi, haftanın hangi günlerinde ders yapıldığını ve her günün hangi ders saati şablonunu kullandığını tanımlar."
+            action={
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                İlk takvimi oluştur
+              </Button>
+            }
+          />
+        ) : !filtered.length ? (
+          <EmptyState
+            title="Aramayla eşleşen takvim yok"
+            description={`"${search}" için sonuç bulunamadı.`}
+            action={<Button onClick={() => setSearch('')}>Aramayı temizle</Button>}
+          />
+        ) : viewMode === 'cards' ? (
         <div className="ct-card-grid">
           {filtered.map((row) => (
             <article
@@ -548,25 +590,25 @@ export default function CalismaTakvimiClient() {
               </div>
             </article>
           ))}
-        </div>
-      ) : (
-        <Table
-          rowKey="id"
-          loading={loading}
-          columns={columns}
-          dataSource={filtered}
-          pagination={{ pageSize: 10, showSizeChanger: false }}
-          rowSelection={{
-            type: 'radio',
-            selectedRowKeys: selectedId ? [selectedId] : [],
-            onChange: (keys) => setSelectedId((keys[0] as number) ?? null),
-          }}
-          onRow={(row) => ({
-            onClick: () => setSelectedId(row.id),
-            onDoubleClick: () => openEdit(row.id),
-          })}
-        />
-      )}
+          </div>
+        ) : (
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={filtered}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
+            rowSelection={{
+              type: 'radio',
+              selectedRowKeys: selectedId ? [selectedId] : [],
+              onChange: (keys) => setSelectedId((keys[0] as number) ?? null),
+            }}
+            onRow={(row) => ({
+              onClick: () => setSelectedId(row.id),
+              onDoubleClick: () => openEdit(row.id),
+            })}
+          />
+        )}
+      </Panel>
 
       <TakvimEditorDrawer
         open={editorOpen}
@@ -595,17 +637,25 @@ export default function CalismaTakvimiClient() {
           dataSource={usageRows}
           locale={{ emptyText: 'Bu takvimi kullanan program yok.' }}
           columns={[
-            { title: 'Program', dataIndex: 'name' },
             { title: 'Dönem', dataIndex: 'term_name', render: (v) => v || '—' },
+            { title: 'Ders Saati Şablonu', dataIndex: 'template_name', render: (v) => v || '—' },
             { title: 'Eğitim Yılı', dataIndex: 'egitim_yili_name', render: (v) => v || '—' },
             {
+              title: 'Dolu Ders',
+              dataIndex: 'filled_cell_count',
+              width: 100,
+              render: (v: number) => v ?? 0,
+            },
+            {
               title: 'Durum',
-              dataIndex: 'is_active_version',
-              render: (v) => (v ? <Tag color="green">Aktif</Tag> : <Tag>Taslak</Tag>),
+              dataIndex: 'is_locked',
+              width: 110,
+              render: (v: boolean) =>
+                v ? <Tag color="orange">Kilitli</Tag> : <Tag color="green">Düzenlenebilir</Tag>,
             },
           ]}
         />
       </Modal>
-    </div>
+    </PageShell>
   );
 }

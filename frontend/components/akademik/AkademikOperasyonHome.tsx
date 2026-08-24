@@ -6,10 +6,10 @@ import { usePathname } from "next/navigation";
 import { Result } from "antd";
 import dayjs from "dayjs";
 import {
-  AKADEMIK_GROUPS,
   AKADEMIK_MODULE_LABEL,
   akademikPortalHomeHref,
   akademikTabHref,
+  akademikVisibleGroups,
   resolveAkademikBase,
 } from "@/lib/akademik-routes";
 import { canReadAkademik } from "@/lib/akademik-permissions";
@@ -120,7 +120,7 @@ export default function AkademikOperasyonHome() {
       )}
 
       <div className="akademik-home-grid">
-        {AKADEMIK_GROUPS.map((group) => (
+        {akademikVisibleGroups().map((group) => (
           <Link
             key={group.slug}
             href={akademikTabHref(group.slug, group.tabs[0].segment, basePath)}

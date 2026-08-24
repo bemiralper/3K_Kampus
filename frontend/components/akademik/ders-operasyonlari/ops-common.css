@@ -1,70 +1,16 @@
-.ops-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-bottom: 32px;
-}
+/* ==========================================================================
+   Ders Operasyonları — alana özgü stiller
 
-.ops-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ops-card {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  overflow: hidden;
-}
-
-.ops-card-head {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f1f5f9;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.ops-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: flex-end;
-  padding: 12px 16px;
-}
-
-.ops-filter-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 150px;
-}
-
-.ops-filter-item label {
-  font-size: 11px;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+   Sayfa iskeleti, araç çubuğu, kart ve boş durumlar Akademik Page Kit'ten
+   (`components/akademik/ui`) gelir. Burada yalnızca oturum tablosuna özgü
+   saat/aksiyon görselleri kalır.
+   ========================================================================== */
 
 .ops-time {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: #334155;
+  color: var(--ak-text, #1e3352);
   white-space: nowrap;
-}
-
-.ops-empty {
-  padding: 40px 16px;
-  text-align: center;
-  color: #64748b;
 }
 
 .ops-actions {
@@ -83,6 +29,25 @@
 .ops-action-divider {
   width: 1px;
   height: 20px;
-  background: #e2e8f0;
+  background: var(--ak-border, #dfe6ef);
   margin: 0 2px;
+}
+
+/* Mobil kartlarda aksiyonlar tam genişlik kullanır, ayırıcı gereksizleşir */
+@media (max-width: 768px) {
+  .ops-actions {
+    width: 100%;
+  }
+
+  .ops-action-group {
+    flex: 1 1 100%;
+  }
+
+  .ops-action-group .ant-btn {
+    flex: 1 1 auto;
+  }
+
+  .ops-action-divider {
+    display: none;
+  }
 }

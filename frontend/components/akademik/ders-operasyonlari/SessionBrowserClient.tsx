@@ -2,14 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Button,
   DatePicker,
   Drawer,
   Form,
   Input,
   Modal,
-  Segmented,
   Select,
   Space,
   Table,
@@ -24,6 +22,7 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  ThunderboltOutlined,
   UserSwitchOutlined,
 } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -32,7 +31,6 @@ import { useKurum } from '@/lib/contexts/KurumContext';
 import { searchKutuphaneStudents, type KutuphaneStudentOption } from '@/lib/kutuphane-student-search';
 import {
   createLessonSession,
-  fetchAcademicScheduleVersions,
   fetchClassLessonPlanContext,
   fetchClassLessonPlanDersOptions,
   fetchLessonOpsMeta,
@@ -42,7 +40,6 @@ import {
   lessonSessionAction,
   materializeLessonSessions,
   setLessonTeacherAttendance,
-  type AcademicScheduleVersion,
   type ClassLessonPlanContext,
   type ClassLessonPlanDersOption,
   type LessonOpsMeta,
@@ -50,11 +47,27 @@ import {
   type SessionKind,
   type TimeSlot,
 } from '@/lib/academic-api';
+import {
+  ContextRequired,
+  EmptyState,
+  ErrorState,
+  Field,
+  LoadingState,
+  PageHead,
+  PageShell,
+  Panel,
+  Segmented,
+  StatCard,
+  StatGrid,
+  Toolbar,
+  ToolbarActions,
+} from '../ui';
+import { IconCalendar, IconCheckCircle, IconClock, IconXCircle } from '../ui/icons';
 import './ops-common.css';
 
 dayjs.locale('tr');
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const STATUS_COLOR: Record<string, string> = {
@@ -67,7 +80,6 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 type Props = {
-  title: string;
   description: string;
   /** Sabit oturum türü — yoksa tümü */
   fixedKind?: SessionKind;
@@ -83,7 +95,6 @@ type Props = {
 };
 
 export default function SessionBrowserClient({
-  title,
   description,
   fixedKind,
   dailyMode = false,
@@ -94,12 +105,10 @@ export default function SessionBrowserClient({
 }: Props) {
   const { activeKurum, activeSube, initialized } = useKurum();
   const [context, setContext] = useState<ClassLessonPlanContext | null>(null);
-  const [versions, setVersions] = useState<AcademicScheduleVersion[]>([]);
   const [meta, setMeta] = useState<LessonOpsMeta | null>(null);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [dersOptions, setDersOptions] = useState<ClassLessonPlanDersOption[]>([]);
   const [termId, setTermId] = useState<number | null>(null);
-  const [versionId, setVersionId] = useState<number | null>(null);
   const [classroomId, setClassroomId] = useState<number | null>(null);
   const [teacherId, setTeacherId] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -111,6 +120,9 @@ export default function SessionBrowserClient({
   const [sessions, setSessions] = useState<LessonSession[]>([]);
   const [makeupCandidates, setMakeupCandidates] = useState<LessonSession[]>([]);
   const [loading, setLoading] = useState(false);
+  const [booting, setBooting] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [materializing, setMaterializing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [studentOptions, setStudentOptions] = useState<KutuphaneStudentOption[]>([]);
@@ -122,7 +134,13 @@ export default function SessionBrowserClient({
   const [attendanceQuickFilter, setAttendanceQuickFilter] = useState<'PENDING' | 'ALL'>('PENDING');
 
   const boot = useCallback(async () => {
-    if (!initialized || !activeKurum || !activeSube) return;
+    if (!initialized) return;
+    if (!activeKurum || !activeSube) {
+      setBooting(false);
+      return;
+    }
+    setBooting(true);
+    setError(null);
     try {
       const [ctx, opsMeta] = await Promise.all([
         fetchClassLessonPlanContext(),
@@ -140,26 +158,15 @@ export default function SessionBrowserClient({
         setSlots((detail.time_slots || []).filter((s) => s.slot_type === 'LESSON' && s.is_active));
       }
     } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
+      setError(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
+    } finally {
+      setBooting(false);
     }
   }, [activeKurum, activeSube, initialized]);
 
   useEffect(() => {
     boot();
   }, [boot]);
-
-  useEffect(() => {
-    if (!termId) return;
-    fetchAcademicScheduleVersions({ term_id: termId })
-      .then((rows) => {
-        setVersions(rows);
-        setVersionId((prev) => {
-          if (prev && rows.some((v) => v.id === prev)) return prev;
-          return rows.find((v) => v.is_active)?.id ?? rows[0]?.id ?? null;
-        });
-      })
-      .catch(() => setVersions([]));
-  }, [termId]);
 
   const loadClassroomDers = useCallback(async (sinifId: number | null) => {
     if (!sinifId) {
@@ -186,38 +193,37 @@ export default function SessionBrowserClient({
         date: dailyMode ? date.format('YYYY-MM-DD') : undefined,
         date_from: !dailyMode ? range[0].format('YYYY-MM-DD') : undefined,
         date_to: !dailyMode ? range[1].format('YYYY-MM-DD') : undefined,
-        version_id: versionId ?? undefined,
         classroom_id: classroomId ?? undefined,
         teacher_id: teacherId ?? undefined,
         session_kind: fixedKind,
         status: status ?? undefined,
       });
       setSessions(rows);
+      setError(null);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : 'Oturumlar yüklenemedi');
+      setError(e instanceof Error ? e.message : 'Oturumlar yüklenemedi');
       setSessions([]);
     } finally {
       setLoading(false);
     }
-  }, [classroomId, dailyMode, date, fixedKind, range, status, teacherId, termId, versionId]);
+  }, [classroomId, dailyMode, date, fixedKind, range, status, teacherId, termId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const materializeKey = termId
-    ? `${termId}|${date.format('YYYY-MM-DD')}|${versionId ?? ''}|${classroomId ?? ''}`
+    ? `${termId}|${date.format('YYYY-MM-DD')}|${classroomId ?? ''}`
     : '';
 
   useEffect(() => {
     if (!autoMaterialize || !dailyMode || !showMaterialize || !materializeKey) return;
     if (lastMaterializedKey === materializeKey) return;
     setLastMaterializedKey(materializeKey);
-    const [tid, d, vid, cid] = materializeKey.split('|');
+    const [tid, d, cid] = materializeKey.split('|');
     materializeLessonSessions({
       term_id: Number(tid),
       date: d,
-      version_id: vid ? Number(vid) : undefined,
       classroom_id: cid ? Number(cid) : undefined,
     })
       .then(() => load())
@@ -258,19 +264,27 @@ export default function SessionBrowserClient({
 
   const runMaterialize = async () => {
     if (!termId) return;
+    setMaterializing(true);
     try {
       const result = await materializeLessonSessions({
         term_id: termId,
         date: date.format('YYYY-MM-DD'),
-        version_id: versionId ?? undefined,
         classroom_id: classroomId ?? undefined,
       });
+      const calendars = (result.versions || [])
+        .map((v) => v.calendar_name)
+        .filter(Boolean)
+        .join(', ');
       message.success(
-        result.info || `${result.created_count} yeni, ${result.existing_count} mevcut oturum`,
+        result.info ||
+          `${result.created_count} yeni, ${result.existing_count} mevcut oturum` +
+            (calendars ? ` · ${calendars}` : ''),
       );
       await load();
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Üretim başarısız');
+    } finally {
+      setMaterializing(false);
     }
   };
 
@@ -350,7 +364,6 @@ export default function SessionBrowserClient({
       setSaving(true);
       await createLessonSession({
         term_id: termId,
-        schedule_version_id: versionId,
         session_date: (values.session_date as Dayjs).format('YYYY-MM-DD'),
         timeslot_id: values.timeslot_id,
         ders_id: values.ders_id,
@@ -501,176 +514,231 @@ export default function SessionBrowserClient({
     return sessions.filter((s) => s.teacher_attendance === 'PENDING' && s.status !== 'CANCELLED');
   }, [attendanceFocus, attendanceQuickFilter, sessions]);
 
-  const pendingCount = useMemo(
-    () => sessions.filter((s) => s.teacher_attendance === 'PENDING' && s.status !== 'CANCELLED').length,
-    [sessions],
-  );
+  const stats = useMemo(() => {
+    let completed = 0;
+    let cancelled = 0;
+    let pendingAttendance = 0;
+    sessions.forEach((s) => {
+      if (s.status === 'COMPLETED') completed += 1;
+      if (s.status === 'CANCELLED' || s.status === 'NO_SHOW') cancelled += 1;
+      if (s.teacher_attendance === 'PENDING' && s.status !== 'CANCELLED') pendingAttendance += 1;
+    });
+    return { total: sessions.length, completed, cancelled, pendingAttendance };
+  }, [sessions]);
 
-  if (!initialized) return <div className="ops-empty">Bağlam yükleniyor…</div>;
-  if (!activeKurum || !activeSube) {
-    return <Alert type="warning" showIcon message="Kurum ve şube seçimi gerekli" />;
-  }
+  const toggleStatus = (next: string) => setStatus((prev) => (prev === next ? null : next));
+
+  if (!initialized || booting) return <LoadingState label="Bağlam yükleniyor…" />;
+  if (!activeKurum || !activeSube) return <ContextRequired />;
+
+  const emptyText =
+    attendanceFocus && attendanceQuickFilter === 'PENDING' ? (
+      <EmptyState
+        icon={<IconCheckCircle />}
+        title="Bekleyen yoklama yok"
+        description="Bu aralıktaki tüm oturumlar için öğretmen yoklaması alınmış."
+      />
+    ) : showMaterialize ? (
+      <EmptyState
+        icon={<IconCalendar />}
+        title="Bu güne ait oturum yok"
+        description="Ders programındaki dersleri günün oturumlarına çevirmek için “Programdan Üret”i kullanın."
+        action={
+          <Button type="primary" loading={materializing} onClick={runMaterialize}>
+            Programdan Üret
+          </Button>
+        }
+      />
+    ) : (
+      <EmptyState
+        icon={<IconCalendar />}
+        title="Kayıt bulunamadı"
+        description={
+          allowCreate
+            ? 'Seçili filtrelerde oturum yok. “Yeni Oturum” ile elle ekleyebilirsiniz.'
+            : 'Seçili filtrelerde oturum yok. Tarih aralığını genişletmeyi deneyin.'
+        }
+      />
+    );
 
   return (
-    <div className="ops-page">
-      <div className="ops-toolbar">
-        <div>
-          <Title level={3} style={{ margin: 0 }}>
-            {title}
-          </Title>
-          <Text type="secondary">{description}</Text>
-        </div>
-        <Space wrap>
-          {showMaterialize ? (
-            <Button type="primary" onClick={runMaterialize}>
-              Programdan Üret
-            </Button>
-          ) : null}
-          {allowCreate ? (
+    <PageShell>
+      <PageHead
+        description={description}
+        actions={
+          <Space wrap>
+            {showMaterialize ? (
+              <Button
+                type="primary"
+                icon={<ThunderboltOutlined />}
+                loading={materializing}
+                onClick={runMaterialize}
+              >
+                Programdan Üret
+              </Button>
+            ) : null}
+            {allowCreate ? (
+              <Button
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  form.setFieldsValue({
+                    session_date: dailyMode ? date : dayjs(),
+                    session_kind: fixedKind || 'EXTRA',
+                    sinif_id: classroomId ?? undefined,
+                  });
+                  loadClassroomDers(classroomId);
+                  setCreateOpen(true);
+                }}
+              >
+                Yeni Oturum
+              </Button>
+            ) : null}
             <Button
-              icon={<PlusOutlined />}
+              icon={<ReloadOutlined />}
               onClick={() => {
-                form.setFieldsValue({
-                  session_date: dailyMode ? date : dayjs(),
-                  session_kind: fixedKind || 'EXTRA',
-                  sinif_id: classroomId ?? undefined,
-                });
-                loadClassroomDers(classroomId);
-                setCreateOpen(true);
+                boot();
+                load();
               }}
             >
-              Yeni Oturum
+              Yenile
             </Button>
-          ) : null}
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              boot();
-              load();
-            }}
-          >
-            Yenile
-          </Button>
-        </Space>
-      </div>
+          </Space>
+        }
+      />
 
-      <div className="ops-card">
-        <div className="ops-filters">
-          {dailyMode ? (
-            <div className="ops-filter-item">
-              <label>Tarih</label>
-              <DatePicker
-                value={date}
-                onChange={(d) => d && setDate(d)}
-                format="DD.MM.YYYY"
-                allowClear={false}
-              />
-            </div>
-          ) : (
-            <div className="ops-filter-item" style={{ minWidth: 260 }}>
-              <label>Tarih aralığı</label>
-              <RangePicker
-                value={range}
-                onChange={(v) => v && v[0] && v[1] && setRange([v[0], v[1]])}
-                format="DD.MM.YYYY"
-                allowClear={false}
-              />
-            </div>
-          )}
-          <div className="ops-filter-item">
-            <label>Dönem</label>
-            <Select
-              style={{ minWidth: 170 }}
-              value={termId ?? undefined}
-              onChange={setTermId}
-              options={(context?.terms || []).map((t) => ({ value: t.id, label: t.name }))}
-            />
-          </div>
-          <div className="ops-filter-item">
-            <label>Versiyon</label>
-            <Select
-              allowClear
-              style={{ minWidth: 170 }}
-              value={versionId ?? undefined}
-              onChange={(v) => setVersionId(v ?? null)}
-              options={versions.map((v) => ({
-                value: v.id,
-                label: `${v.name}${v.is_active ? ' ★' : ''}`,
-              }))}
-            />
-          </div>
-          <div className="ops-filter-item">
-            <label>Sınıf</label>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              style={{ minWidth: 150 }}
-              value={classroomId ?? undefined}
-              onChange={(v) => setClassroomId(v ?? null)}
-              options={(context?.classrooms || []).map((c) => ({ value: c.id, label: c.ad }))}
-            />
-          </div>
-          <div className="ops-filter-item">
-            <label>Öğretmen</label>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              style={{ minWidth: 160 }}
-              value={teacherId ?? undefined}
-              onChange={(v) => setTeacherId(v ?? null)}
-              options={(meta?.teachers || []).map((t) => ({ value: t.id, label: t.name }))}
-            />
-          </div>
-          <div className="ops-filter-item">
-            <label>Durum</label>
-            <Select
-              allowClear
-              style={{ minWidth: 140 }}
-              value={status ?? undefined}
-              onChange={(v) => setStatus(v ?? null)}
-              options={meta?.session_statuses || []}
-            />
-          </div>
-        </div>
-      </div>
+      <StatGrid>
+        <StatCard
+          icon={<IconCalendar />}
+          tone="blue"
+          value={stats.total}
+          label="Oturum"
+          active={status === null}
+          onClick={() => setStatus(null)}
+        />
+        <StatCard
+          icon={<IconCheckCircle />}
+          tone="green"
+          value={stats.completed}
+          label="Tamamlandı"
+          active={status === 'COMPLETED'}
+          onClick={() => toggleStatus('COMPLETED')}
+        />
+        <StatCard
+          icon={<IconClock />}
+          tone="orange"
+          value={stats.pendingAttendance}
+          label="Yoklama bekliyor"
+          active={attendanceFocus && attendanceQuickFilter === 'PENDING'}
+          onClick={attendanceFocus ? () => setAttendanceQuickFilter('PENDING') : undefined}
+        />
+        <StatCard
+          icon={<IconXCircle />}
+          tone="red"
+          value={stats.cancelled}
+          label="İptal / gelinmedi"
+          active={status === 'CANCELLED'}
+          onClick={() => toggleStatus('CANCELLED')}
+        />
+      </StatGrid>
 
-      <div className="ops-card">
-        <div className="ops-card-head">
-          <Text strong>{visibleSessions.length} oturum</Text>
-          {fixedKind ? <Tag>{fixedKind}</Tag> : null}
-          {attendanceFocus ? (
+      <Toolbar>
+        {dailyMode ? (
+          <Field label="Tarih">
+            <DatePicker
+              value={date}
+              onChange={(d) => d && setDate(d)}
+              format="DD.MM.YYYY"
+              allowClear={false}
+              style={{ width: '100%' }}
+            />
+          </Field>
+        ) : (
+          <Field label="Tarih aralığı" width={260}>
+            <RangePicker
+              value={range}
+              onChange={(v) => v && v[0] && v[1] && setRange([v[0], v[1]])}
+              format="DD.MM.YYYY"
+              allowClear={false}
+              style={{ width: '100%' }}
+            />
+          </Field>
+        )}
+        <Field label="Dönem" width={180}>
+          <Select
+            style={{ width: '100%' }}
+            value={termId ?? undefined}
+            onChange={setTermId}
+            options={(context?.terms || []).map((t) => ({ value: t.id, label: t.name }))}
+          />
+        </Field>
+        <Field label="Sınıf" width={170}>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="Tüm sınıflar"
+            style={{ width: '100%' }}
+            value={classroomId ?? undefined}
+            onChange={(v) => setClassroomId(v ?? null)}
+            options={(context?.classrooms || []).map((c) => ({ value: c.id, label: c.ad }))}
+          />
+        </Field>
+        <Field label="Öğretmen" width={180}>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="Tüm öğretmenler"
+            style={{ width: '100%' }}
+            value={teacherId ?? undefined}
+            onChange={(v) => setTeacherId(v ?? null)}
+            options={(meta?.teachers || []).map((t) => ({ value: t.id, label: t.name }))}
+          />
+        </Field>
+        <Field label="Durum" width={160}>
+          <Select
+            allowClear
+            placeholder="Tüm durumlar"
+            style={{ width: '100%' }}
+            value={status ?? undefined}
+            onChange={(v) => setStatus(v ?? null)}
+            options={meta?.session_statuses || []}
+          />
+        </Field>
+        {attendanceFocus ? (
+          <ToolbarActions>
             <Segmented
-              size="small"
+              ariaLabel="Yoklama filtresi"
               value={attendanceQuickFilter}
-              onChange={(v) => setAttendanceQuickFilter(v as 'PENDING' | 'ALL')}
+              onChange={setAttendanceQuickFilter}
               options={[
-                { label: `Bekleyenler (${pendingCount})`, value: 'PENDING' },
-                { label: 'Tümü', value: 'ALL' },
+                { value: 'PENDING', label: `Bekleyenler (${stats.pendingAttendance})` },
+                { value: 'ALL', label: 'Tümü' },
               ]}
-              style={{ marginLeft: 'auto' }}
             />
-          ) : null}
-        </div>
+          </ToolbarActions>
+        ) : null}
+      </Toolbar>
+
+      {error ? <ErrorState description={error} onRetry={load} /> : null}
+
+      <Panel
+        title="Oturumlar"
+        count={visibleSessions.length}
+        actions={fixedKind ? <Tag>{meta?.session_kinds?.find((k) => k.value === fixedKind)?.label || fixedKind}</Tag> : null}
+        flush
+      >
         <Table<LessonSession>
           rowKey="id"
           loading={loading}
           columns={columns}
           dataSource={visibleSessions}
-          pagination={{ pageSize: 30, showSizeChanger: true }}
+          pagination={{ pageSize: 30, showSizeChanger: true, hideOnSinglePage: true }}
           size="middle"
-          locale={{
-            emptyText:
-              attendanceFocus && attendanceQuickFilter === 'PENDING'
-                ? 'Bekleyen öğretmen yoklaması yok — tüm oturumlar için yoklama alınmış.'
-                : showMaterialize
-                  ? 'Kayıt yok. “Programdan Üret” ile günlük oturumları oluşturun.'
-                  : 'Kayıt yok. “Yeni Oturum” ile ekleyin.',
-          }}
+          locale={{ emptyText }}
           scroll={{ x: 1100 }}
         />
-      </div>
+      </Panel>
 
       <Drawer
         title="Yeni oturum"
@@ -815,6 +883,6 @@ export default function SessionBrowserClient({
             .map((t) => ({ value: t.id, label: t.name }))}
         />
       </Modal>
-    </div>
+    </PageShell>
   );
 }

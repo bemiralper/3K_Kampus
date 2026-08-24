@@ -329,6 +329,84 @@ class ClassPeriodAttendanceApiTest(TestCase):
             2,
         )
 
+    def test_ensure_without_version_uses_classroom_own_calendar(self):
+        """
+        Sınıf, dönemin aktif programı dışındaki bir takvimdeyse bile günlük
+        yoklama açılmalı: program verilmediğinde sınıfın kendi programı bulunur.
+        """
+        template2 = ScheduleTemplate.objects.create(
+            kurum=self.kurum, sube=self.sube, name='Hafta Sonu Şablonu',
+        )
+        cycle2 = WeeklyCycle.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            schedule_template=template2,
+            name='Hafta Sonu',
+            is_active=False,
+        )
+        day2 = WeeklyDay.objects.create(
+            weekly_cycle=cycle2,
+            day_of_week=DayOfWeek.MONDAY,
+            name='Pazartesi',
+            order=1,
+            is_active=True,
+        )
+        slot2 = TimeSlot.objects.create(
+            schedule_template=template2,
+            name='1. Ders',
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            order=1,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        version2 = ScheduleVersion.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            schedule_template=template2,
+            weekly_cycle=cycle2,
+            name='Hafta Sonu Programı',
+            is_active=False,
+        )
+        sinif2 = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.year,
+            ad='9-C',
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        ProgramGridCell.objects.create(
+            schedule_template=template2,
+            weekly_cycle=cycle2,
+            schedule_version=version2,
+            weekly_day=day2,
+            timeslot=slot2,
+            sinif=sinif2,
+            ders=self.ders,
+            ogretmen=self.teacher,
+            status=CellStatus.FILLED,
+            is_active=True,
+        )
+
+        res = self.client.post(
+            '/api/academic/class-period-attendance/',
+            data={
+                'term_id': self.term.id,
+                'classroom_id': sinif2.id,
+                'date': self.monday.isoformat(),
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual(
+            {p['period'] for p in body['periods']},
+            {ClassPeriodCode.MORNING},
+        )
+        self.assertEqual(len(body['sessions']), 1)
+
     def test_save_period_roster_and_notify_preview_default_veli(self):
         ensure = self.client.post(
             '/api/academic/class-period-attendance/',

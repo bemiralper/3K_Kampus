@@ -94,6 +94,7 @@ from .schedule_view import (
     teacher_schedule_api,
     student_schedule_api,
     room_schedule_api,
+    branch_schedule_api,
     daily_flow_api,
 )
 from .schedule_version import (
@@ -187,6 +188,7 @@ __all__ = [
     'teacher_schedule_api',
     'student_schedule_api',
     'room_schedule_api',
+    'branch_schedule_api',
     'daily_flow_api',
     # Schedule Version Management
     'schedule_version_list_api',

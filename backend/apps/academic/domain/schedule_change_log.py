@@ -9,10 +9,12 @@ class ScheduleChangeAction(models.TextChoices):
     CELL_FILL = 'CELL_FILL', 'Hücre Doldurma'
     CELL_CLEAR = 'CELL_CLEAR', 'Hücre Temizleme'
     CELL_MOVE = 'CELL_MOVE', 'Hücre Taşıma'
-    VERSION_CREATE = 'VERSION_CREATE', 'Versiyon Oluşturma'
-    VERSION_ACTIVATE = 'VERSION_ACTIVATE', 'Versiyon Aktifleştirme'
-    VERSION_LOCK = 'VERSION_LOCK', 'Versiyon Kilitleme'
-    VERSION_UNLOCK = 'VERSION_UNLOCK', 'Versiyon Kilit Açma'
+    # Kod değerleri geçmiş kayıtlarla uyumlu kalsın diye VERSION_* olarak
+    # duruyor; kullanıcıya gösterilen etiketlerde versiyon kavramı yok.
+    VERSION_CREATE = 'VERSION_CREATE', 'Program Oluşturma'
+    VERSION_ACTIVATE = 'VERSION_ACTIVATE', 'Program Etkinleştirme'
+    VERSION_LOCK = 'VERSION_LOCK', 'Program Kilitleme'
+    VERSION_UNLOCK = 'VERSION_UNLOCK', 'Program Kilit Açma'
     SESSION_CREATE = 'SESSION_CREATE', 'Oturum Oluşturma'
     SESSION_CANCEL = 'SESSION_CANCEL', 'Oturum İptal'
     SESSION_COMPLETE = 'SESSION_COMPLETE', 'Oturum Tamamlama'
