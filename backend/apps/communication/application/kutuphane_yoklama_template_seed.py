@@ -179,6 +179,19 @@ def repair_kutuphane_yoklama_bindings(kurum_id: int) -> dict[str, Any]:
                     status=MetaTemplateStatus.APPROVED,
                     name__in=event.meta_name_candidates(binding.recipient_type),
                 ).first()
+                if approved is None:
+                    sibling = (
+                        NotificationTemplateBinding.objects.filter(
+                            kurum_id=kurum_id,
+                            event_key=binding.event_key,
+                            recipient_type=binding.recipient_type,
+                            meta_template__status=MetaTemplateStatus.APPROVED,
+                        )
+                        .exclude(pk=binding.pk)
+                        .select_related('meta_template')
+                        .first()
+                    )
+                    approved = sibling.meta_template if sibling else None
                 if approved:
                     binding.meta_template = approved
                     changed = True

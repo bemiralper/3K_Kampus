@@ -10,6 +10,10 @@ from apps.communication.application.kutuphane_yoklama_template_seed import (
     repair_kutuphane_yoklama_bindings,
 )
 from apps.communication.application.notification_events import get_event
+from apps.communication.application.notification_template_resolver import (
+    SOURCE_BINDING_KURUM,
+    resolve_binding,
+)
 from apps.communication.domain.enums import Channel, MetaTemplateStatus, RecipientType
 from apps.communication.domain.models import (
     CommunicationChannelConfig,
@@ -51,6 +55,18 @@ class KutuphaneYoklamaSeedTest(TestCase):
         event = get_event('yoklama.gelmedi')
         self.assertEqual(event.group, 'kutuphane')
         self.assertEqual(get_event('sinif.yoklama.gelmedi').group, 'sinif')
+        self.assertIn(
+            'kutuphane_yoklama_veli_gelmedi',
+            event.meta_name_candidates(RecipientType.VELI),
+        )
+        self.assertIn(
+            'kutuphane_yoklama_veli_gec_v2',
+            get_event('yoklama.gec').meta_name_candidates(RecipientType.VELI),
+        )
+        self.assertIn(
+            'kutuphane_yoklama_veli_cks',
+            get_event('yoklama.cikis').meta_name_candidates(RecipientType.VELI),
+        )
 
     def test_seed_creates_meta_drafts_and_skips_existing(self):
         result = KutuphaneYoklamaTemplateSeedService.seed(
@@ -165,3 +181,124 @@ class KutuphaneYoklamaSeedTest(TestCase):
                 meta_template=wrong,
             ).exists()
         )
+
+    def test_specific_draft_binding_does_not_hide_approved_kutuphane_meta(self):
+        draft = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='yoklama_gelmedi_veli',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Taslak gelmedi.',
+        )
+        approved = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='kutuphane_yoklama_veli_gelmedi',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='🚨 {{veli_ad}}, {{ogrenci_ad}} kütüphaneye gelmedi.',
+            approved_at=timezone.now(),
+        )
+        NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel_config=self.account,
+            event_key='yoklama.gelmedi',
+            recipient_type=RecipientType.VELI,
+            channel=Channel.WHATSAPP,
+            meta_template=draft,
+        )
+        NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            event_key='yoklama.gelmedi',
+            recipient_type=RecipientType.VELI,
+            channel=Channel.WHATSAPP,
+            meta_template=approved,
+        )
+        resolved = resolve_binding(
+            self.kurum.id,
+            'yoklama.gelmedi',
+            RecipientType.VELI,
+            sube_id=self.sube.id,
+            channel_config_id=str(self.account.id),
+        )
+        self.assertEqual(resolved.meta_template.id, approved.id)
+        self.assertTrue(resolved.use_meta(needs_document=False, session_open=False))
+        self.assertEqual(resolved.source, SOURCE_BINDING_KURUM)
+
+    def test_discovers_approved_kutuphane_name_when_only_draft_is_bound(self):
+        draft = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='yoklama_gelmedi_veli',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Taslak gelmedi.',
+        )
+        approved = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='kutuphane_yoklama_veli_gelmedi',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='🚨 {{veli_ad}}, {{ogrenci_ad}} kütüphaneye gelmedi.',
+            approved_at=timezone.now(),
+        )
+        NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel_config=self.account,
+            event_key='yoklama.gelmedi',
+            recipient_type=RecipientType.VELI,
+            channel=Channel.WHATSAPP,
+            meta_template=draft,
+        )
+        resolved = resolve_binding(
+            self.kurum.id,
+            'yoklama.gelmedi',
+            RecipientType.VELI,
+            sube_id=self.sube.id,
+            channel_config_id=str(self.account.id),
+        )
+        self.assertEqual(resolved.meta_template.id, approved.id)
+        self.assertTrue(resolved.use_meta(needs_document=False, session_open=False))
+
+    def test_repair_replaces_draft_with_sibling_approved_kutuphane_meta(self):
+        draft = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='yoklama_gelmedi_veli',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Taslak gelmedi.',
+        )
+        approved = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='kutuphane_yoklama_veli_gelmedi',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='🚨 {{veli_ad}}, {{ogrenci_ad}} kütüphaneye gelmedi.',
+            approved_at=timezone.now(),
+        )
+        NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            event_key='yoklama.gelmedi',
+            recipient_type=RecipientType.VELI,
+            channel=Channel.WHATSAPP,
+            meta_template=approved,
+        )
+        specific = NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel_config=self.account,
+            event_key='yoklama.gelmedi',
+            recipient_type=RecipientType.VELI,
+            channel=Channel.WHATSAPP,
+            meta_template=draft,
+        )
+        result = repair_kutuphane_yoklama_bindings(self.kurum.id)
+        self.assertGreaterEqual(result['updated'], 1)
+        specific.refresh_from_db()
+        self.assertEqual(specific.meta_template_id, approved.id)

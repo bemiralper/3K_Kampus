@@ -113,7 +113,7 @@ function renderCell(
   if (col.empty || col.kapali) {
     return '<td class="cell cell-muted">—</td>';
   }
-  if (yk?.izinli_mi) {
+  if (yk?.durum === 'EXCUSED') {
     return '<td class="cell"><span class="mark mark-excused">İ</span></td>';
   }
   const isClosed = col.durum === 'CLOSED';

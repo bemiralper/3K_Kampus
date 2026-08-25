@@ -638,14 +638,18 @@ class AttendanceService:
             return set()
 
     def _apply_live_izin_to_records(self, session, records, *, persist: bool = False):
-        """Güncel izin tanımlarını yoklama kayıtlarına yansıtır."""
+        """Güncel izin tanımlarını yoklama kayıtlarına yansıtır.
+
+        Yeni izinli öğrenciyi EXCUSED yapar. Daha önce izinli işaretlenmiş
+        kaydın elle değiştirilmiş durumunu ezmez.
+        """
         izinli_ogrenciler = self._izinli_ogrenciler_for_session(session)
         updated = []
         for record in records:
             is_izinli = record.ogrenci_id in izinli_ogrenciler
             changed = False
             if is_izinli:
-                if not record.izinli_mi or record.durum != AttendanceStatus.EXCUSED:
+                if not record.izinli_mi:
                     record.izinli_mi = True
                     record.durum = AttendanceStatus.EXCUSED
                     changed = True
@@ -899,10 +903,9 @@ class AttendanceService:
             elif cs == '' or cs is None:
                 record_data['cikis_saati'] = None
 
-            # İzinli öğrenciyi otomatik EXCUSED yap; izin kaldırıldıysa sıfırla
+            # İzin kaydı varsa rozeti koru; gelen durum elle seçilmişse ezme
             ogrenci_id = record_data['ogrenci_id']
             if ogrenci_id in izinli_ogrenciler:
-                record_data['durum'] = AttendanceStatus.EXCUSED
                 record_data['izinli_mi'] = True
             else:
                 record_data['izinli_mi'] = False
@@ -1045,13 +1048,16 @@ class AttendanceService:
                 is_izinli = atama.ogrenci_id in izinli_ogrenciler
 
                 key = str(session.id)
-                durum = record.durum if record else None
-                if is_izinli:
-                    durum = AttendanceStatus.EXCUSED
+                if record:
+                    durum = record.durum
+                    izinli_mi = record.izinli_mi or is_izinli
+                else:
+                    durum = AttendanceStatus.EXCUSED if is_izinli else None
+                    izinli_mi = is_izinli
 
                 ogrenci_data['yoklamalar'][key] = {
                     'durum': durum,
-                    'izinli_mi': is_izinli,
+                    'izinli_mi': izinli_mi,
                     'giris_saati': str(record.giris_saati) if record and record.giris_saati else None,
                 }
 

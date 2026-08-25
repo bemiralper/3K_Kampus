@@ -144,11 +144,28 @@ def _find_binding(kurum_id, event_key, recipient_type, channel, *, sube_id, chan
         )
     candidates.append(({'sube_id': None, 'channel_config_id': None}, SOURCE_BINDING_KURUM))
 
+    fallback = None
     for filters, source in candidates:
-        binding = qs.filter(**filters).first()
-        if binding:
-            return binding, source
+        matches = list(qs.filter(**filters))
+        if not matches:
+            continue
+        ready = [row for row in matches if _binding_is_ready(row)]
+        if ready:
+            return ready[0], source
+        if fallback is None:
+            fallback = (matches[0], source)
+    if fallback:
+        return fallback
     return None, ''
+
+
+def _binding_is_ready(binding) -> bool:
+    """Onaylı Meta veya bilinçli kapalı/serbest-only eşleme; taslak Meta'yı ezer."""
+    mode = getattr(binding, 'send_mode', None)
+    if mode in (NotificationSendMode.DISABLED, NotificationSendMode.FREEFORM_ONLY):
+        return True
+    meta = getattr(binding, 'meta_template', None)
+    return bool(meta and meta.status == MetaTemplateStatus.APPROVED)
 
 
 def _legacy_templates(kurum_id: int, event_key: str, recipient_type: str):

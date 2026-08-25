@@ -93,7 +93,7 @@ function StatusChips({
   labels: Record<string, StatusLabelInfo>;
   onSelect: (s: AttendanceStatus) => void;
 }) {
-  if (izinli) {
+  if (izinli && !editable && durum === "EXCUSED") {
     const info = labels.EXCUSED;
     return (
       <span
@@ -245,7 +245,7 @@ export default function YoklamaSessionDrawer({
 
   const renderRecordRow = (r: AttendanceRecord, idx: number) => {
     const sInfo = attendanceStatusLabels[r.durum] || attendanceStatusLabels.ABSENT;
-    const canEdit = editable && !r.izinli_mi;
+    const canEdit = editable;
 
     return (
       <tr key={r.id || idx} className={r.izinli_mi ? "yok-row-izinli" : undefined}>
@@ -312,7 +312,7 @@ export default function YoklamaSessionDrawer({
   };
 
   const renderRecordCard = (r: AttendanceRecord, idx: number) => {
-    const canEdit = editable && !r.izinli_mi;
+    const canEdit = editable;
 
     return (
       <div key={r.id || idx} className={`yok-att-card${r.izinli_mi ? " izinli" : ""}`}>

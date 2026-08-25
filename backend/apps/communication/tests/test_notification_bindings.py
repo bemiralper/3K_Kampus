@@ -159,6 +159,46 @@ class ResolverScopeTest(TestCase):
         self.assertEqual(resolved.source, SOURCE_BINDING_KURUM)
         self.assertEqual(resolved.meta_template.id, kurum_tpl.id)
 
+    def test_draft_specific_binding_falls_through_to_approved_kurum(self):
+        draft = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='odev_plani_taslak',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Taslak plan.',
+            header_json={'type': 'DOCUMENT'},
+        )
+        kurum_tpl = self._meta('odev_plani_veli')
+        self._binding(meta=kurum_tpl)
+        self._binding(meta=draft, sube=self.sube, channel_config=self.account)
+
+        resolved = resolve_binding(
+            self.kurum.id, 'odev.plan', RecipientType.VELI,
+            sube_id=self.sube.id, channel_config_id=str(self.account.id),
+        )
+        self.assertEqual(resolved.source, SOURCE_BINDING_KURUM)
+        self.assertEqual(resolved.meta_template.id, kurum_tpl.id)
+
+    def test_disabled_specific_binding_is_not_overridden_by_approved_kurum(self):
+        kurum_tpl = self._meta('odev_plani_veli')
+        self._binding(meta=kurum_tpl)
+        NotificationTemplateBinding.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel_config=self.account,
+            event_key='odev.plan',
+            recipient_type=RecipientType.VELI,
+            channel=Channel.WHATSAPP,
+            send_mode=NotificationSendMode.DISABLED,
+        )
+        resolved = resolve_binding(
+            self.kurum.id, 'odev.plan', RecipientType.VELI,
+            sube_id=self.sube.id, channel_config_id=str(self.account.id),
+        )
+        self.assertTrue(resolved.is_disabled)
+        self.assertEqual(resolved.source, SOURCE_BINDING_SUBE_ACCOUNT)
+
     def test_disabled_mode_blocks_send(self):
         NotificationTemplateBinding.objects.create(
             kurum=self.kurum,

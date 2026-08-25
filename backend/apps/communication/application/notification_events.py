@@ -222,7 +222,10 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         ),
         meta_name_base='yoklama_gelmedi',
         legacy_meta_names=MappingProxyType({
-            VELI: ('yoklama_devamsizlik_veli',),
+            VELI: (
+                'yoklama_devamsizlik_veli',
+                'kutuphane_yoklama_veli_gelmedi',
+            ),
         }),
         default_bodies=MappingProxyType({
             VELI: (
@@ -251,6 +254,12 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
             'salon_ad', 'ders_no', *KUTUPHANE_ETUT_VARIABLES,
         ),
         meta_name_base='yoklama_gec',
+        legacy_meta_names=MappingProxyType({
+            VELI: (
+                'kutuphane_yoklama_veli_gec_v2',
+                'kutuphane_yoklama_veli_gec',
+            ),
+        }),
         default_bodies=MappingProxyType({
             VELI: (
                 'Sayın {{veli_ad}}, {{ogrenci_ad}} bugün {{oturum_ad}} oturumuna '
@@ -278,6 +287,12 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
             'salon_ad', 'ders_no', *KUTUPHANE_ETUT_VARIABLES,
         ),
         meta_name_base='yoklama_cikis',
+        legacy_meta_names=MappingProxyType({
+            VELI: (
+                'kutuphane_yoklama_veli_cks',
+                'kutuphane_yoklama_veli_cikis',
+            ),
+        }),
         default_bodies=MappingProxyType({
             VELI: (
                 'Sayın {{veli_ad}}, {{ogrenci_ad}} öğrencisi {{oturum_ad}} oturumunda '

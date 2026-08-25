@@ -1470,7 +1470,7 @@ function YoklamaTab({
 
     const statusLabel = (yk: { izinli_mi?: boolean; durum?: string | null } | undefined, durumKapali: boolean) => {
       if (!yk) return '';
-      if (yk.izinli_mi) return 'İzinli';
+      if (yk.durum === 'EXCUSED') return 'İzinli';
       if (durumKapali && yk.durum) return ATTENDANCE_STATUS_LABELS[yk.durum]?.label || yk.durum;
       return '';
     };
@@ -1963,7 +1963,7 @@ function YoklamaTab({
                                       const isClosed = col.durum === 'CLOSED';
                                       return (
                                         <td key={col.id} className="yok-col-period">
-                                          {yk?.izinli_mi ? (
+                                          {yk?.durum === 'EXCUSED' ? (
                                             <span className="yok-sheet-mark" style={{ backgroundColor: '#e0e7ff', border: '1.2px solid #6366f1', color: '#6366f1' }}>İ</span>
                                           ) : isClosed && yk && yk.durum && yk.durum !== 'PRESENT' ? (
                                             <span className="yok-sheet-mark" style={{
@@ -2056,7 +2056,7 @@ function YoklamaTab({
                               const isClosed = col.durum === 'CLOSED';
                               return (
                                 <td key={col.id}>
-                                  {yk?.izinli_mi ? (
+                                  {yk?.durum === 'EXCUSED' ? (
                                     <span className="yok-sheet-mark" style={{ backgroundColor: '#e0e7ff', border: '1.2px solid #6366f1', color: '#6366f1' }}>İ</span>
                                   ) : isClosed && yk && yk.durum && yk.durum !== 'PRESENT' ? (
                                     <span className="yok-sheet-mark" style={{

@@ -128,6 +128,19 @@ class AttendanceNotificationServiceTest(TestCase):
             self.service._record_qualifies(record, AttendanceNotificationEventType.EXIT)
         )
 
+        record.izinli_mi = True
+        record.durum = AttendanceStatus.ABSENT
+        record.giris_saati = None
+        record.cikis_saati = None
+        self.assertTrue(
+            self.service._record_qualifies(record, AttendanceNotificationEventType.ABSENT),
+            'İzin kaydı olsa da elle gelmedi seçilince bildirim gitmeli',
+        )
+        record.durum = AttendanceStatus.EXCUSED
+        self.assertFalse(
+            self.service._record_qualifies(record, AttendanceNotificationEventType.ABSENT),
+        )
+
     def test_detect_pending_after_late_change(self):
         old = MagicMock()
         old.durum = AttendanceStatus.ABSENT
