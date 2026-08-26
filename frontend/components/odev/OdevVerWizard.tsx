@@ -233,6 +233,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const [showSendAfterSave, setShowSendAfterSave] = useState(false);
   const [sendStudentName, setSendStudentName] = useState('');
   const [sendBusy, setSendBusy] = useState(false);
+  const pendingNotifyQueueRef = useRef<{ id: number; name: string }[]>([]);
   /** WhatsApp sonrası: çalışma programı teklifi (ödev tarihleriyle) */
   const [studyProgramOffer, setStudyProgramOffer] = useState<{
     assignmentId: number;
@@ -1020,6 +1021,13 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   );
 
   const finishAfterWhatsApp = useCallback(() => {
+    const next = pendingNotifyQueueRef.current.shift();
+    if (next) {
+      setSavedAssignmentId(next.id);
+      setSendStudentName(next.name);
+      setShowSendAfterSave(true);
+      return;
+    }
     setShowSendAfterSave(false);
     setSavedAssignmentId(null);
     setSendStudentName('');
@@ -1152,6 +1160,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       let failCount = 0;
       let lastCreatedId: number | null = null;
       let lastStudentName = '';
+      let lastError = '';
+      const createdSends: { id: number; name: string }[] = [];
       const quotaItems = cart.filter((c) => c.quotaKind);
       for (const student of targetStudents) {
         const body = {
@@ -1173,6 +1183,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
             if (createdId) {
               lastCreatedId = createdId;
               lastStudentName = `${student.ad} ${student.soyad}`.trim();
+              createdSends.push({ id: createdId, name: lastStudentName });
             }
             await Promise.all(quotaItems.map((item) => {
               const daily = item.dailyQuestionCount
@@ -1186,9 +1197,11 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
             }));
           } else {
             failCount++;
+            lastError = (result as { error?: string }).error || lastError;
           }
-        } catch {
+        } catch (err) {
           failCount++;
+          lastError = err instanceof Error ? err.message : lastError;
         }
       }
 
@@ -1229,9 +1242,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           clearOdevVerDraft(student.id);
         }
 
-        if (openWhatsApp && lastCreatedId) {
-          setSavedAssignmentId(lastCreatedId);
-          setSendStudentName(lastStudentName || studentNames);
+        if (openWhatsApp && createdSends.length) {
+          pendingNotifyQueueRef.current = createdSends.slice(1);
+          setSavedAssignmentId(createdSends[0].id);
+          setSendStudentName(createdSends[0].name || studentNames);
           setShowSendAfterSave(true);
           setShowPrint(false);
           // Formu şimdi sıfırlama — WhatsApp + çalışma programı teklifi bitsin
@@ -1247,7 +1261,11 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           resetAll();
         }
       } else {
-        flash(`⚠️ ${successCount} başarılı, ${failCount} başarısız — bazı ödevler gönderilemedi`);
+        flash(
+          lastError
+            ? `⚠️ ${successCount} başarılı, ${failCount} başarısız — ${lastError}`
+            : `⚠️ ${successCount} başarılı, ${failCount} başarısız — bazı ödevler kaydedilemedi`,
+        );
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Bilinmeyen hata';

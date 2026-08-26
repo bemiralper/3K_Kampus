@@ -79,6 +79,20 @@ class NotificationEventCatalogTest(TestCase):
         self.assertEqual(names[0], 'odev_plani_veli')
         self.assertIn('haftalik_odev_plani_veli', names)
 
+    def test_odeme_events_discover_live_meta_names(self):
+        self.assertIn(
+            'odeme_plan_veli',
+            get_event('odeme.plan').meta_name_candidates(RecipientType.VELI),
+        )
+        self.assertIn(
+            'tahsilat_makbuzu_veli',
+            get_event('odeme.makbuz').meta_name_candidates(RecipientType.VELI),
+        )
+        self.assertIn(
+            'szleme_belgesi_veli',
+            get_event('odeme.sozlesme').meta_name_candidates(RecipientType.VELI),
+        )
+
 
 class ResolverScopeTest(TestCase):
     def setUp(self):

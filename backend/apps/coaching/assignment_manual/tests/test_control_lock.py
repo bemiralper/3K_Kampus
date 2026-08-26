@@ -104,6 +104,26 @@ class AssignmentControlLockTest(TestCase):
         self.assertTrue(payload['is_control_locked'])
         self.assertFalse(payload['can_override_control_lock'])
 
+    def test_postpone_accepts_iso_z_datetime(self):
+        self.assignment.due_date = timezone.now() + timedelta(days=1)
+        self.assignment.postpone_count = 0
+        self.assignment.max_postpone = 3
+        self.assignment.save(update_fields=['due_date', 'postpone_count', 'max_postpone', 'updated_at'])
+        self.task.completion_status = 'PENDING'
+        self.task.evaluated_at = None
+        self.task.save()
+
+        new_due = (timezone.now() + timedelta(days=5)).strftime('%Y-%m-%dT23:59:00Z')
+        response = self.client.post(
+            f'{ASSIGNMENTS_URL}{self.assignment.id}/postpone/',
+            {'new_due_date': new_due, 'reason': 'Sınav haftası'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.postpone_count, 1)
+        self.assertGreater(self.assignment.due_date, timezone.now())
+
     def test_coach_cannot_reactivate(self):
         new_due = (timezone.now() + timedelta(days=7)).isoformat()
         response = self.client.post(

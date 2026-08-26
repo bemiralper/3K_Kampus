@@ -2,6 +2,7 @@
 Manuel Ödev Atama - API Views
 """
 import json
+from datetime import datetime
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -14,6 +15,18 @@ from django.http import HttpResponse
 from django.db.models import Q, Count, Prefetch, F
 from django.db import transaction
 from django.utils import timezone
+
+
+def _parse_assignment_due_datetime(raw):
+    """ISO tarihini timezone-aware datetime'a çevir. Hata metni veya (dt, None)."""
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+    except (ValueError, AttributeError, TypeError):
+        return None, 'Geçersiz tarih formatı'
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed, None
+
 
 from .models import (
     ManualAssignment,
@@ -1199,19 +1212,16 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'error': 'Yeni teslim tarihi gerekli'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Geçmiş tarih kontrolü
-        from datetime import datetime
-        try:
-            parsed_date = datetime.fromisoformat(new_due_date.replace('Z', '+00:00'))
-            if parsed_date.date() <= timezone.now().date():
-                return Response({
-                    'success': False,
-                    'error': 'Yeni teslim tarihi bugünden sonra olmalıdır'
-                }, status=status.HTTP_400_BAD_REQUEST)
-        except (ValueError, AttributeError):
+        parsed_date, parse_error = _parse_assignment_due_datetime(new_due_date)
+        if parse_error:
             return Response({
                 'success': False,
-                'error': 'Geçersiz tarih formatı'
+                'error': parse_error,
+            }, status=status.HTTP_400_BAD_REQUEST)
+        if timezone.localtime(parsed_date).date() <= timezone.localdate():
+            return Response({
+                'success': False,
+                'error': 'Yeni teslim tarihi bugünden sonra olmalıdır'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         if assignment.postpone_count >= assignment.max_postpone:
@@ -1224,7 +1234,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         if not assignment.original_due_date:
             assignment.original_due_date = assignment.due_date
         
-        assignment.due_date = new_due_date
+        assignment.due_date = parsed_date
         assignment.postpone_count += 1
         assignment.postpone_reason = reason
         
@@ -1233,10 +1243,13 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             assignment.status = ManualAssignment.Status.ASSIGNED
         
         assignment.save()
+        self._sync_to_calendar(assignment, request.user.id)
         
         return Response({
             'success': True,
-            'data': ManualAssignmentDetailSerializer(assignment).data,
+            'data': ManualAssignmentDetailSerializer(
+                assignment, context={'request': request},
+            ).data,
             'message': f'Ödev ertelendi ({assignment.postpone_count}/{assignment.max_postpone})'
         })
 
@@ -1264,19 +1277,14 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'error': 'Yeni kontrol günü gerekli',
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        from datetime import datetime
-
-        try:
-            parsed_date = datetime.fromisoformat(str(new_due_date).replace('Z', '+00:00'))
-        except (ValueError, AttributeError, TypeError):
+        parsed_date, parse_error = _parse_assignment_due_datetime(new_due_date)
+        if parse_error:
             return Response({
                 'success': False,
-                'error': 'Geçersiz tarih formatı',
+                'error': parse_error,
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        parsed_local = (
-            timezone.localtime(parsed_date) if timezone.is_aware(parsed_date) else parsed_date
-        )
+        parsed_local = timezone.localtime(parsed_date)
         if parsed_local.date() < timezone.localdate():
             return Response({
                 'success': False,

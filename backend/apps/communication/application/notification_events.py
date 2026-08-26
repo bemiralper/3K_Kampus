@@ -427,6 +427,10 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         has_document=True,
         variables=('ogrenci_ad', 'veli_ad', 'sozlesme_no', 'pdf_baslik'),
         meta_name_base='odeme_plani',
+        legacy_meta_names=MappingProxyType({
+            VELI: ('odeme_plan_veli',),
+            OGRENCI: ('odeme_plan_ogrenci', 'odeme_plan_veli'),
+        }),
         default_bodies=MappingProxyType({
             VELI: (
                 'Sayın {{veli_ad}}, {{ogrenci_ad}} için ödeme planı ektedir. '
@@ -448,6 +452,10 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         has_document=True,
         variables=('ogrenci_ad', 'veli_ad', 'sozlesme_no', 'pdf_baslik'),
         meta_name_base='odeme_makbuzu',
+        legacy_meta_names=MappingProxyType({
+            VELI: ('tahsilat_makbuzu_veli',),
+            OGRENCI: ('tahsilat_makbuzu_ogrenci', 'tahsilat_makbuzu_veli'),
+        }),
         default_bodies=MappingProxyType({
             VELI: (
                 'Sayın {{veli_ad}}, {{ogrenci_ad}} için tahsilat makbuzu ektedir. '
@@ -469,6 +477,17 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         has_document=True,
         variables=('ogrenci_ad', 'veli_ad', 'sozlesme_no', 'pdf_baslik'),
         meta_name_base='odeme_sozlesmesi',
+        legacy_meta_names=MappingProxyType({
+            VELI: (
+                'szleme_belgesi_veli',
+                'sozlesme_belgesi_veli',
+            ),
+            OGRENCI: (
+                'szleme_belgesi_ogrenci',
+                'szleme_belgesi_veli',
+                'sozlesme_belgesi_ogrenci',
+            ),
+        }),
         default_bodies=MappingProxyType({
             VELI: (
                 'Sayın {{veli_ad}}, {{ogrenci_ad}} için sözleşme belgesi ektedir. '
