@@ -14,6 +14,7 @@ export interface Student {
   sinif_ad?: string;
   profil_foto?: string;
   numara?: string;
+  okul_no?: string;
 }
 
 export interface StudentResource {

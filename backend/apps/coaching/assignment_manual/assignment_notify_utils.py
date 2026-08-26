@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from html.parser import HTMLParser
 
 from django.utils import timezone
 
@@ -23,6 +24,75 @@ _TR_ASCII = str.maketrans({
     'ç': 'c', 'Ç': 'C', 'ğ': 'g', 'Ğ': 'G', 'ı': 'i', 'İ': 'I',
     'ö': 'o', 'Ö': 'O', 'ş': 's', 'Ş': 'S', 'ü': 'u', 'Ü': 'U',
 })
+
+
+def strip_note_html(text: str) -> str:
+    """Ödev notundaki HTML etiketlerini düz metne çevirir (biçim yok)."""
+    if not text or '<' not in text:
+        return (text or '').strip()
+    from html import unescape
+    plain = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    plain = re.sub(r'</(?:p|div)>', '\n', plain, flags=re.IGNORECASE)
+    plain = re.sub(r'<[^>]+>', '', plain)
+    plain = unescape(plain)
+    plain = re.sub(r'[ \t]+', ' ', plain)
+    plain = re.sub(r'\n{3,}', '\n\n', plain)
+    return plain.strip()
+
+
+class _WhatsAppNoteParser(HTMLParser):
+    """Kalın → *...*, italik → _..._ (WhatsApp biçimi). Renk WA metninde yok."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.out: list[str] = []
+        self.bold = 0
+        self.italic = 0
+
+    def handle_starttag(self, tag, attrs):
+        t = tag.lower()
+        if t in ('b', 'strong'):
+            if self.bold == 0:
+                self.out.append('*')
+            self.bold += 1
+        elif t in ('i', 'em'):
+            if self.italic == 0:
+                self.out.append('_')
+            self.italic += 1
+        elif t == 'br':
+            self.out.append('\n')
+        elif t in ('p', 'div') and self.out and self.out[-1] != '\n':
+            self.out.append('\n')
+
+    def handle_endtag(self, tag):
+        t = tag.lower()
+        if t in ('b', 'strong') and self.bold:
+            self.bold -= 1
+            if self.bold == 0:
+                self.out.append('*')
+        elif t in ('i', 'em') and self.italic:
+            self.italic -= 1
+            if self.italic == 0:
+                self.out.append('_')
+        elif t in ('p', 'div') and self.out and self.out[-1] != '\n':
+            self.out.append('\n')
+
+    def handle_data(self, data):
+        self.out.append(data)
+
+
+def html_to_whatsapp(text: str) -> str:
+    """Ödev notu HTML → WhatsApp biçimli metin (*kalın*, _italik_)."""
+    if not text:
+        return ''
+    if '<' not in text:
+        return text.strip()
+    parser = _WhatsAppNoteParser()
+    parser.feed(text)
+    parser.close()
+    result = ''.join(parser.out)
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    return result.strip()
 
 
 def slugify_filename_part(text: str) -> str:
@@ -83,6 +153,7 @@ def build_assignment_context(
     ctx['hafta'] = f'{hafta_no}. Hafta' if hafta_no else ''
     ctx['odev_baslik'] = assignment.title or ''
     ctx['pdf_baslik'] = pdf_title_label(notify_type) if notify_type else ''
+    ctx['odev_not'] = html_to_whatsapp(assignment.description or '')
 
     if assignment.due_date:
         local = timezone.localtime(assignment.due_date)
@@ -140,6 +211,9 @@ def build_pdf_attachment_message(
         kurum=kurum,
     )
     message = resolve_variables(body_template, ctx).strip()
+    note = ctx.get('odev_not') or ''
+    if note and '{{odev_not}}' not in (body_template or '') and note not in message:
+        message = f'{message}\n\n{note}'.strip()
     if template:
         from apps.communication.application.template_service import TemplateService
         TemplateService().increment_usage(template)

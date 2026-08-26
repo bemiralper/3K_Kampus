@@ -25,6 +25,7 @@ from .assignment_notify_utils import (
     build_assignment_context,
     build_assignment_pdf_filename,
     build_pdf_attachment_message,
+    html_to_whatsapp,
     pdf_title_label,
 )
 from .assignment_template_roles import get_meta_template_for_notify
@@ -113,7 +114,9 @@ class AssignmentNotificationService:
             f'Teslim: {self._format_due(assignment)}',
         ]
         if assignment.description:
-            lines.append(f'Not: {assignment.description}')
+            note_wa = html_to_whatsapp(assignment.description)
+            if note_wa:
+                lines.append(f'Not: {note_wa}')
         lines.append('')
         lines.append('İçerik:')
         for lesson in assignment.lessons.all().order_by('order', 'id'):
@@ -131,6 +134,10 @@ class AssignmentNotificationService:
                 elif task.page_count:
                     detail += f' ({task.page_count} sayfa)'
                 lines.append(f'  - {detail}')
+                if task.description:
+                    task_note = html_to_whatsapp(task.description)
+                    if task_note:
+                        lines.append(f'    {task_note}')
         lines.extend(['', '3K Kampüs'])
         return '\n'.join(lines)
 

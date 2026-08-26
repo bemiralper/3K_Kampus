@@ -24,6 +24,7 @@ export default function StudentStep({ students, selectedStudent, selectedStudent
     return students.filter(s =>
       `${s.ad} ${s.soyad}`.toLowerCase().includes(q) ||
       (s.numara && s.numara.toLowerCase().includes(q)) ||
+      (s.okul_no && s.okul_no.toLowerCase().includes(q)) ||
       (s.sinif_ad && s.sinif_ad.toLowerCase().includes(q))
     );
   }, [students, search]);

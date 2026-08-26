@@ -50,6 +50,7 @@ class CampaignListSerializer(serializers.ModelSerializer):
             'sent_count', 'delivered_count', 'read_count', 'failed_count',
             'replied_count', 'delivery_rate', 'read_rate',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
+            'recipient_filter_json',
         ]
 
     def get_created_by_name(self, obj) -> str:

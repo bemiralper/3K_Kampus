@@ -723,7 +723,9 @@ class OutboundQueueRepository:
             OutboundQueueItem.objects.filter(
                 next_attempt_at__lte=now,
                 locked_at__isnull=True,
-                message__status__in=[MessageStatus.PENDING, MessageStatus.FAILED],
+            ).filter(
+                Q(message__status=MessageStatus.PENDING)
+                | Q(message__status=MessageStatus.FAILED, attempt_count__lt=F('max_attempts')),
             )
             .select_for_update(skip_locked=True)
             .order_by('priority', 'next_attempt_at')
@@ -743,7 +745,9 @@ class OutboundQueueRepository:
         return OutboundQueueItem.objects.filter(
             next_attempt_at__lte=now,
             locked_at__isnull=True,
-            message__status__in=[MessageStatus.PENDING, MessageStatus.FAILED],
+        ).filter(
+            Q(message__status=MessageStatus.PENDING)
+            | Q(message__status=MessageStatus.FAILED, attempt_count__lt=F('max_attempts')),
         ).count()
 
     @staticmethod

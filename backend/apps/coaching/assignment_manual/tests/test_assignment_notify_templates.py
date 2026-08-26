@@ -6,6 +6,8 @@ from apps.coaching.assignment_manual.assignment_notify_utils import (
     build_assignment_pdf_filename,
     build_pdf_attachment_message,
     extract_hafta_no,
+    html_to_whatsapp,
+    strip_note_html,
 )
 from apps.coaching.assignment_manual.assignment_template_seed import (
     TEMPLATE_NAME_PLAN_VELI,
@@ -111,3 +113,25 @@ class AssignmentNotifyTemplateTests(TestCase):
         )
         self.assertIn('planı ektedir', message.lower())
         self.assertNotIn('kontrol rapor', message.lower())
+
+
+class StripNoteHtmlTests(TestCase):
+    def test_strips_bold_and_color(self):
+        self.assertEqual(
+            strip_note_html('1. <b>Kalın</b> <span style="color:#dc2626">kırmızı</span>'),
+            '1. Kalın kırmızı',
+        )
+
+    def test_plain_text_unchanged(self):
+        self.assertEqual(strip_note_html('Sadece metin'), 'Sadece metin')
+
+
+class HtmlToWhatsappTests(TestCase):
+    def test_bold_italic_keep_markers(self):
+        self.assertEqual(
+            html_to_whatsapp('1. <b>Kalın</b> <i>italik</i> <span style="color:#dc2626">kırmızı</span>'),
+            '1. *Kalın* _italik_ kırmızı',
+        )
+
+    def test_plain_text_unchanged(self):
+        self.assertEqual(html_to_whatsapp('Sadece metin'), 'Sadece metin')

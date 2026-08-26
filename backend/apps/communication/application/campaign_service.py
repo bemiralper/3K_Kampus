@@ -131,6 +131,19 @@ class AudienceResolver:
 
         raw_entries: list[tuple[str, str, int | None, int | None, str]] = []
 
+        if audience_type == 'query':
+            from apps.communication.application.audience_query import AudienceQueryService
+
+            result = AudienceQueryService.resolve(
+                kurum_id,
+                filter_json,
+                user=user,
+                context_sube_id=filter_json.get('sube_id'),
+                context_egitim_yili_id=egitim_yili_id,
+                include_unsuitable=include_invalid,
+            )
+            return AudienceQueryService.to_audience_preview(result)
+
         if audience_type == 'advanced' or cls._has_advanced_filters(filter_json):
             raw_entries.extend(
                 cls._collect_advanced(kurum_id, filter_json, allowed_student_ids)
@@ -837,7 +850,7 @@ class CampaignService:
         if sube_id:
             audience_type = audience_filter.get('audience_type')
             if audience_type in (
-                'all_veliler', 'all_ogrenciler', 'all_personeller', 'advanced', 'filtered',
+                'all_veliler', 'all_ogrenciler', 'all_personeller', 'advanced', 'filtered', 'query',
             ):
                 audience_filter = {**audience_filter, 'sube_id': sube_id}
             elif not audience_filter.get('sube_id'):
@@ -1200,7 +1213,9 @@ class CampaignService:
             raise PermissionDenied('Toplu gönderim için yetkiniz yok.')
 
         audience_type = audience_filter.get('audience_type', '')
-        if audience_type not in ('coach_students', 'coach_parents', 'custom_ids', 'filtered'):
+        if audience_type not in (
+            'coach_students', 'coach_parents', 'custom_ids', 'filtered', 'query',
+        ):
             raise PermissionDenied('Koç yalnızca kendi öğrenci/veli kitlesine gönderebilir.')
 
         ogrenci_ids = audience_filter.get('ogrenci_ids') or []

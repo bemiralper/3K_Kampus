@@ -244,6 +244,12 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
         label: "Şablonlar",
         matchPrefix: "/muhasebe/iletisim/sablonlar",
       },
+      {
+        id: "iletisim-toplu",
+        href: "/muhasebe/iletisim/toplu-gonder",
+        label: "Toplu Gönderim",
+        matchPrefix: "/muhasebe/iletisim/toplu-gonder",
+      },
     ],
   },
   {

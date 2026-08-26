@@ -429,6 +429,19 @@ export async function setConversationTags(
   });
 }
 
+export interface CommunicationDashboardCount {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface CommunicationDashboardAlert {
+  key: string;
+  tone: "danger" | "warn" | "info" | string;
+  label: string;
+  href?: string;
+}
+
 export interface CommunicationDashboardData {
   active_conversations: number;
   waiting_conversations: number;
@@ -448,9 +461,46 @@ export interface CommunicationDashboardData {
   }>;
   daily_inbound: number;
   daily_outbound: number;
+  yesterday_inbound?: number;
+  yesterday_outbound?: number;
+  today_failed?: number;
   busy_hours: Array<{ hour: number; count: number }>;
+  daily_trend?: Array<{
+    date: string;
+    label: string;
+    inbound: number;
+    outbound: number;
+    failed: number;
+  }>;
+  by_status?: CommunicationDashboardCount[];
+  by_department?: CommunicationDashboardCount[];
+  by_contact_type?: CommunicationDashboardCount[];
+  by_source?: CommunicationDashboardCount[];
+  today_delivery?: CommunicationDashboardCount[];
+  queue?: { pending: number; sending: number; failed: number };
+  campaigns?: { active: number; today: number };
+  accounts?: Array<{
+    id: string;
+    name: string;
+    display_phone: string;
+    is_active: boolean;
+    department: string;
+    department_label: string;
+    today_outbound: number;
+  }>;
+  recent_failures?: Array<{
+    id: string;
+    at: string;
+    source_module: string;
+    source_label: string;
+    contact_name: string;
+    reason: string;
+  }>;
+  sla_aging?: CommunicationDashboardCount[];
+  alerts?: CommunicationDashboardAlert[];
   unanswered_messages: number;
   generated_at: string;
+  refresh_seconds?: number;
 }
 
 export async function fetchCommunicationDashboard(): Promise<CommunicationDashboardData> {
@@ -897,6 +947,7 @@ export async function fetchLocalMetaTemplates(params?: {
   search?: string;
   approved_only?: boolean;
   usage?: MetaTemplateUsage;
+  usage_exact?: boolean;
   template_group?: string;
   include_shared_waba?: boolean;
   dedupe?: boolean;
@@ -914,6 +965,7 @@ export async function fetchLocalMetaTemplates(params?: {
   if (params?.search) qs.set('search', params.search);
   if (params?.approved_only) qs.set('approved_only', '1');
   if (params?.usage) qs.set('usage', params.usage);
+  if (params?.usage_exact) qs.set('usage_exact', '1');
   if (params?.template_group) qs.set('template_group', params.template_group);
   if (params?.include_shared_waba === false) qs.set('include_shared_waba', '0');
   if (params?.dedupe === false) qs.set('dedupe', '0');
@@ -1289,43 +1341,89 @@ export async function uploadMetaTemplateExampleMedia(
 export interface OutboundQueueItem {
   id: string;
   message_id: string | null;
+  conversation_id?: string | null;
   status: string | null;
   attempt_count: number;
+  max_attempts?: number;
   next_attempt_at: string | null;
   last_error: string;
+  error_key?: string;
   campaign_id: string | null;
   campaign_title: string;
   channel_config_id: string | null;
   channel_config_name: string;
   contact_phone: string;
+  contact_name?: string;
+  source_module?: string;
+  source_label?: string;
   body_preview: string;
   created_at: string | null;
   updated_at: string | null;
+  can_retry?: boolean;
+  can_cancel?: boolean;
+}
+
+export type OutboundQueueScope = "live" | "archive" | "all";
+
+export interface OutboundQueueResponse {
+  items: OutboundQueueItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  scope?: OutboundQueueScope;
+  live_days?: number;
+  status_counts: {
+    pending: number;
+    sending: number;
+    failed: number;
+    failed_live?: number;
+    failed_archive?: number;
+    retrying?: number;
+  };
+  error_groups?: Array<{ key: string; label: string; count: number }>;
+  oldest_wait_minutes?: number | null;
+  generated_at?: string;
+  refresh_seconds?: number;
 }
 
 export async function fetchOutboundQueue(params?: {
   status?: string;
   campaign_id?: string;
   channel_config_id?: string;
+  scope?: OutboundQueueScope;
+  q?: string;
+  error?: string;
   page?: number;
   page_size?: number;
-}): Promise<{
-  items: OutboundQueueItem[];
-  total: number;
-  page: number;
-  page_size: number;
-  status_counts: { pending: number; sending: number; failed: number };
-}> {
+}): Promise<OutboundQueueResponse> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const search = new URLSearchParams();
   if (kurumId) search.set('kurum_id', kurumId);
   if (params?.status) search.set('status', params.status);
   if (params?.campaign_id) search.set('campaign_id', params.campaign_id);
   if (params?.channel_config_id) search.set('channel_config_id', params.channel_config_id);
+  if (params?.scope) search.set('scope', params.scope);
+  if (params?.q) search.set('q', params.q);
+  if (params?.error) search.set('error', params.error);
   if (params?.page) search.set('page', String(params.page));
   if (params?.page_size) search.set('page_size', String(params.page_size));
   const qs = search.toString();
   return request(`/queue/${qs ? `?${qs}` : ''}`);
+}
+
+export async function archiveOldQueueFailures(days = 14): Promise<{ deleted: number; days: number }> {
+  return request('/queue/archive/', {
+    method: 'POST',
+    body: JSON.stringify({ days }),
+  });
+}
+
+export async function retryQueueItem(id: string): Promise<{ success: boolean; error?: string }> {
+  return request(`/queue/${id}/retry/`, { method: 'POST', body: JSON.stringify({}) });
+}
+
+export async function cancelQueueItem(id: string): Promise<{ success: boolean; error?: string }> {
+  return request(`/queue/${id}/cancel/`, { method: 'POST', body: JSON.stringify({}) });
 }
 
 export async function fetchWhatsAppConfig(): Promise<WhatsAppConfig> {
@@ -1504,6 +1602,173 @@ export interface AudienceFilter {
   /** Personel kitlesi: görevlendirme rolleri (boş = tüm personel) */
   rol_ids?: number[];
   q?: string;
+
+  /** Yeni kitle oluşturucu */
+  person_types?: AudiencePersonType[];
+  tree?: AudienceFilterTree;
+  label?: string;
+}
+
+export type AudiencePersonType = 'ogrenci' | 'veli' | 'personel';
+
+export interface AudienceFilterNode {
+  field: string;
+  op?: string;
+  value?: unknown;
+}
+
+export interface AudienceFilterGroup {
+  join?: 'and' | 'or';
+  filters: AudienceFilterNode[];
+}
+
+export interface AudienceFilterTree {
+  join?: 'and' | 'or';
+  groups: AudienceFilterGroup[];
+}
+
+export interface AudienceCatalogOption {
+  value: string | number;
+  label: string;
+}
+
+export interface AudienceCatalogField {
+  key: string;
+  label: string;
+  category: string;
+  category_label: string;
+  person_types: AudiencePersonType[];
+  input: 'multi' | 'select';
+  options: AudienceCatalogOption[];
+}
+
+export interface AudienceQuickStart {
+  key: string;
+  label: string;
+  person_types: AudiencePersonType[];
+  add_field?: string;
+  hint?: string;
+}
+
+export interface AudienceCatalog {
+  person_types: Array<{ key: AudiencePersonType; label: string }>;
+  fields: AudienceCatalogField[];
+  quick_starts: AudienceQuickStart[];
+  coach_scoped: boolean;
+}
+
+export interface AudienceQueryPreview {
+  total_recipients: number;
+  matched_count: number;
+  ogrenci_count: number;
+  veli_count: number;
+  personel_count: number;
+  deliverable_count: number;
+  unsuitable_count: number;
+  invalid_phones?: number;
+  estimated_messages?: number;
+  label?: string;
+}
+
+export interface AudienceRecipientRow {
+  key: string;
+  person_type: AudiencePersonType;
+  ogrenci_id?: number | null;
+  veli_id?: number | null;
+  personel_id?: number | null;
+  display_name: string;
+  class_or_role?: string;
+  sube_name?: string;
+  coach_name?: string;
+  phone?: string;
+  e164?: string;
+  deliverable: boolean;
+  skip_reason?: string;
+}
+
+export interface AudienceRecipientsPage extends AudienceQueryPreview {
+  recipients: AudienceRecipientRow[];
+  page: number;
+  page_size: number;
+  recipients_total: number;
+}
+
+export interface SavedAudienceItem {
+  id: string;
+  name: string;
+  description?: string;
+  query: AudienceFilter;
+  counts?: AudienceQueryPreview;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export async function fetchAudienceCatalog(personTypes?: AudiencePersonType[]): Promise<AudienceCatalog> {
+  const search = new URLSearchParams();
+  (personTypes || []).forEach((t) => search.append('person_type', t));
+  const qs = search.toString();
+  return request(`/campaigns/audience/catalog/${qs ? `?${qs}` : ''}`);
+}
+
+export async function previewAudienceQuery(query: AudienceFilter): Promise<AudienceQueryPreview> {
+  return request('/campaigns/audience/preview/', {
+    method: 'POST',
+    body: JSON.stringify({ query }),
+  });
+}
+
+export async function fetchAudienceRecipients(
+  query: AudienceFilter,
+  options?: { page?: number; pageSize?: number },
+): Promise<AudienceRecipientsPage> {
+  return request('/campaigns/audience/recipients/', {
+    method: 'POST',
+    body: JSON.stringify({
+      query,
+      page: options?.page ?? 1,
+      page_size: options?.pageSize ?? 25,
+    }),
+  });
+}
+
+export async function searchAudiencePeople(
+  q: string,
+  options?: { kinds?: AudiencePersonType[]; includePersonel?: boolean },
+): Promise<{ results: BulkRecipientHit[]; query: string }> {
+  const search = new URLSearchParams();
+  search.set('q', q);
+  (options?.kinds || []).forEach((k) => search.append('kind', k));
+  if (options?.includePersonel === false) search.set('include_personel', '0');
+  return request(`/campaigns/audience/search/?${search.toString()}`);
+}
+
+export async function fetchSavedAudiences(): Promise<{ items: SavedAudienceItem[]; total: number }> {
+  return request('/campaigns/saved-audiences/');
+}
+
+export async function createSavedAudience(data: {
+  name: string;
+  query: AudienceFilter;
+  description?: string;
+}): Promise<SavedAudienceItem> {
+  return request('/campaigns/saved-audiences/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateSavedAudience(
+  id: string,
+  data: { name?: string; query?: AudienceFilter; description?: string },
+): Promise<SavedAudienceItem> {
+  return request(`/campaigns/saved-audiences/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteSavedAudience(id: string): Promise<void> {
+  await request(`/campaigns/saved-audiences/${id}/`, { method: 'DELETE' });
 }
 
 export interface CampaignPreviewRecipient {
@@ -1761,6 +2026,7 @@ export const AUDIENCE_TYPE_LABELS: Record<string, string> = {
   custom_ids: 'Arama ile seç (öğrenci / veli / personel)',
   filtered: 'Filtre',
   advanced: 'Gelişmiş filtre',
+  query: 'Özel kitle',
 };
 
 export const CONTACT_KIND_LABELS: Record<ContactKind, string> = {

@@ -279,6 +279,25 @@
   min-width: 32px;
 }
 
+.odev-note-html {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.odev-note-html b,
+.odev-note-html strong {
+  font-weight: 700;
+}
+
+.odev-note-html i,
+.odev-note-html em {
+  font-style: italic;
+}
+
+.odev-note-html u {
+  text-decoration: underline;
+}
+
 .ok-note-box {
   margin-top: 10px;
   padding: 10px 12px;

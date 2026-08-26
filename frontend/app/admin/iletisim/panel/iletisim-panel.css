@@ -1,0 +1,358 @@
+.ipanel {
+  --ip-ink: #0f172a;
+  --ip-muted: #64748b;
+  --ip-line: #e2e8f0;
+  --ip-soft: #f8fafc;
+  --ip-card: #fff;
+  --ip-blue: #0262a7;
+  --ip-teal: #0f766e;
+  --ip-amber: #b45309;
+  --ip-rose: #be123c;
+  --ip-violet: #6d28d9;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ipanel-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ip-muted);
+  font-weight: 600;
+}
+
+.ipanel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+  animation: ipanel-pulse 1.8s ease-out infinite;
+}
+
+.ipanel-dot.is-busy {
+  background: #f59e0b;
+  animation-duration: 0.8s;
+}
+
+@keyframes ipanel-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.ipanel-alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ipanel-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.ipanel-alert.danger { background: #fff1f2; color: #9f1239; border-color: #fecdd3; }
+.ipanel-alert.warn { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.ipanel-alert.info { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+
+.ipanel-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ipanel-kpi {
+  position: relative;
+  overflow: hidden;
+  background: var(--ip-card);
+  border: 1px solid var(--ip-line);
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+  text-decoration: none;
+  color: inherit;
+  min-height: 108px;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ipanel-kpi:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.ipanel-kpi::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  background: var(--kpi-accent, var(--ip-blue));
+}
+
+.ipanel-kpi-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ip-muted);
+}
+
+.ipanel-kpi-value {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ip-ink);
+  line-height: 1;
+}
+
+.ipanel-kpi-meta {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--ip-muted);
+}
+
+.ipanel-kpi-meta.up { color: #047857; }
+.ipanel-kpi-meta.down { color: #be123c; }
+.ipanel-kpi-meta.hot { color: #be123c; }
+
+.ipanel-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 14px;
+}
+
+.ipanel-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ipanel-card {
+  background: var(--ip-card);
+  border: 1px solid var(--ip-line);
+  border-radius: 16px;
+  padding: 16px 18px 14px;
+  min-height: 280px;
+}
+
+.ipanel-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ipanel-card-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ip-ink);
+}
+
+.ipanel-card-head p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--ip-muted);
+}
+
+.ipanel-link {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ip-blue);
+  text-decoration: none;
+}
+
+.ipanel-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: var(--ip-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.ipanel-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: #334155;
+}
+
+.ipanel-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  margin-right: 6px;
+}
+
+.ipanel-rank {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ipanel-rank-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.ipanel-rank-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ipanel-rank-val {
+  font-size: 12px;
+  font-weight: 800;
+  color: #334155;
+}
+
+.ipanel-bar {
+  grid-column: 1 / -1;
+  height: 7px;
+  border-radius: 99px;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+
+.ipanel-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0262a7, #0ea5e9);
+}
+
+.ipanel-fail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ipanel-fail-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff7f7;
+  border: 1px solid #fecdd3;
+}
+
+.ipanel-fail-item strong {
+  display: block;
+  font-size: 13px;
+  color: #881337;
+}
+
+.ipanel-fail-item span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: #9f1239;
+}
+
+.ipanel-fail-item em {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  font-style: normal;
+}
+
+.ipanel-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ipanel-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ip-soft);
+  border: 1px solid #eef2f7;
+}
+
+.ipanel-account b { display: block; font-size: 13px; color: var(--ip-ink); }
+.ipanel-account small { color: var(--ip-muted); font-size: 11px; }
+.ipanel-pill {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 99px;
+}
+.ipanel-pill.on { background: #d1fae5; color: #047857; }
+.ipanel-pill.off { background: #fee2e2; color: #be123c; }
+
+.ipanel-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ipanel-shortcut {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 14px 13px;
+  border-radius: 14px;
+  border: 1px solid var(--ip-line);
+  background: linear-gradient(180deg, #fff, #f8fafc);
+  text-decoration: none;
+  color: inherit;
+  min-height: 86px;
+}
+
+.ipanel-shortcut:hover { border-color: #bfdbfe; }
+.ipanel-shortcut strong { font-size: 13px; color: var(--ip-ink); }
+.ipanel-shortcut span { font-size: 12px; color: var(--ip-muted); line-height: 1.35; }
+
+.ipanel-skel {
+  height: 110px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, #f1f5f9, #fff, #f1f5f9);
+  background-size: 200% 100%;
+  animation: ipanel-shimmer 1.2s linear infinite;
+}
+
+@keyframes ipanel-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (max-width: 1200px) {
+  .ipanel-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ipanel-grid,
+  .ipanel-grid-3 { grid-template-columns: 1fr; }
+  .ipanel-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .ipanel-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ipanel-card { min-height: 0; }
+}

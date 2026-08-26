@@ -8,6 +8,9 @@ import type {
 import { isRoutineQuotaResource } from '../types';
 import type { LastQuotaDefault } from '@/lib/resources-api';
 import { completionBadgeLabel, isIncompleteHistory } from '@/components/odev/odevCompletionHelpers';
+import { isEmptyNoteHtml } from '@/lib/note-html';
+import NoteRichEditor from '@/components/odev/NoteRichEditor';
+import NoteHtml from '@/components/odev/NoteHtml';
 import QuotaAssignCards from './QuotaAssignCards';
 import '../odev-ver.css';
 
@@ -764,28 +767,25 @@ export default function AssignmentStep({
                                     fontSize: 11, color: 'var(--primary)', fontWeight: 500,
                                   }}
                                 >
-                                  {noteExpanded[content.id] ? '✏️ Notu gizle' : '✏️ Not ekle'}
+                                  {noteExpanded[content.id]
+                                    ? '✏️ Notu gizle'
+                                    : (!isEmptyNoteHtml(contentNotes[content.id] || '') ? '✏️ Notu düzenle' : '✏️ Not ekle')}
                                 </button>
+                                {!noteExpanded[content.id] && !isEmptyNoteHtml(contentNotes[content.id] || '') && (
+                                  <div style={{ fontSize: 11, color: 'var(--primary)', marginTop: 4 }}>
+                                    📌 <NoteHtml html={contentNotes[content.id]} />
+                                  </div>
+                                )}
                                 {noteExpanded[content.id] && (
-                                  <textarea
-                                    placeholder="Bu içerik için öğrenciye not..."
-                                    value={contentNotes[content.id] || ''}
-                                    onChange={e => onNoteChange(content.id, e.target.value)}
-                                    onClick={e => e.stopPropagation()}
-                                    style={{
-                                      display: 'block',
-                                      width: '100%',
-                                      marginTop: 6,
-                                      padding: '8px 10px',
-                                      border: '1px solid var(--border-color)',
-                                      borderRadius: 6,
-                                      fontSize: 12,
-                                      resize: 'vertical',
-                                      minHeight: 48,
-                                      fontFamily: 'inherit',
-                                      color: 'var(--text-color)',
-                                    }}
-                                  />
+                                  <div style={{ marginTop: 6 }}>
+                                    <NoteRichEditor
+                                      value={contentNotes[content.id] || ''}
+                                      onChange={(html) => onNoteChange(content.id, html)}
+                                      placeholder="Bu içerik için öğrenciye not…"
+                                      compact
+                                      minHeight={48}
+                                    />
+                                  </div>
                                 )}
                               </div>
                             )}
@@ -947,7 +947,7 @@ export default function AssignmentStep({
                               Temizle
                             </button>
                           </div>
-                          {topicOpen && topic.items.map(({ content: item }) => {
+                          {topicOpen && topic.items.map(({ content: item, note }) => {
                             const hist = taskHistory[item.contentId];
                             const incomplete = isIncompleteHistory(hist);
                             const mark = quotaMark(item);
@@ -956,7 +956,7 @@ export default function AssignmentStep({
                               key={item.id}
                               style={{
                                 display: 'flex',
-                                alignItems: 'center',
+                                alignItems: 'flex-start',
                                 gap: 8,
                                 padding: '6px 4px',
                                 borderBottom: '1px solid rgba(0,0,0,0.04)',
@@ -980,6 +980,14 @@ export default function AssignmentStep({
                                   {item.questionCount ? `${item.questionCount} soru` : ''}
                                   {item.pageCount ? `${item.questionCount ? ' · ' : ''}${item.pageCount} sayfa` : ''}
                                 </div>
+                                {!isEmptyNoteHtml(note) && (
+                                  <div style={{
+                                    fontSize: 10, color: 'var(--primary)',
+                                    marginTop: 2, overflow: 'hidden',
+                                  }}>
+                                    📌 <NoteHtml html={note} />
+                                  </div>
+                                )}
                                 {incomplete && (
                                   <div style={{ fontSize: 9, fontWeight: 700, color: '#2563eb', marginTop: 2 }}>
                                     🔄 {completionBadgeLabel(hist)}

@@ -5,6 +5,7 @@ import type { ContentTaskHistory, PlanContentItemView, PlanLessonGroup } from ".
 import { bookQuotaKind, countPlanBooks, displayTestLabel, quotaBookIcon, quotaKindLabel, splitColumnMajor, unitIsQuotaOnly } from "./odevPlanTypes";
 import { MetaCol, assignmentTypeLabel } from "./odevPdfMeta";
 import { isAutoCompletionNote } from "./odevCompletionHelpers";
+import NoteHtml from "./NoteHtml";
 
 export interface OdevPlanDocumentProps {
   studentName: string;
@@ -74,7 +75,7 @@ function TestRow({
             fontSize: 9, color: "#0061a6", fontStyle: "italic", marginTop: 1, lineHeight: 1.2,
             wordBreak: "break-word",
           }}>
-            📌 {note}
+            📌 <NoteHtml html={note} />
           </div>
         )}
         {item.quotaKind && (
@@ -312,7 +313,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
           borderRadius: 6, fontSize: 11, color: "#92400e", lineHeight: 1.5,
         }}>
           <strong>📌 Koç Notu:</strong>
-          <div style={{ whiteSpace: "pre-line", marginTop: 4 }}>{notes}</div>
+          <div style={{ marginTop: 4 }}><NoteHtml html={notes} /></div>
         </div>
       )}
 

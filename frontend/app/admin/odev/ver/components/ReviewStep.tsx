@@ -4,6 +4,9 @@ import React, { useMemo, useState } from 'react';
 import type { Student, SelectedContent, CartLessonGroup, ContentTaskHistory } from '../types';
 import { isAutoCompletionNote } from '@/components/odev/odevCompletionHelpers';
 import { parseNotesList, serializeNotesList } from '../notesList';
+import { isEmptyNoteHtml } from '@/lib/note-html';
+import NoteRichEditor from '@/components/odev/NoteRichEditor';
+import NoteHtml from '@/components/odev/NoteHtml';
 import '../odev-ver.css';
 
 interface ReviewStepProps {
@@ -24,6 +27,7 @@ interface ReviewStepProps {
   onPriorityChange: (v: string) => void;
   onRemove: (id: number) => void;
   onRemoveMany?: (ids: number[]) => void;
+  onNoteChange: (id: number, note: string) => void;
   onSave: (status: 'PUBLISHED' | 'DRAFT') => void;
   onPrint: () => void;
   getPhotoUrl: (path?: string | null) => string | undefined;
@@ -32,14 +36,35 @@ interface ReviewStepProps {
 function GeneralNotesEditor({ notes, onChange }: { notes: string; onChange: (v: string) => void }) {
   const items = parseNotesList(notes);
   const [draft, setDraft] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState('');
 
   const commit = (next: string[]) => onChange(serializeNotesList(next));
 
   const addNote = () => {
-    const text = draft.trim();
-    if (!text) return;
-    commit([...items, text]);
+    if (isEmptyNoteHtml(draft)) return;
+    commit([...items, draft]);
     setDraft('');
+  };
+
+  const startEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditDraft(items[index]);
+  };
+
+  const saveEdit = () => {
+    if (editingIndex === null) return;
+    const next = [...items];
+    if (isEmptyNoteHtml(editDraft)) next.splice(editingIndex, 1);
+    else next[editingIndex] = editDraft;
+    commit(next);
+    setEditingIndex(null);
+    setEditDraft('');
+  };
+
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setEditDraft('');
   };
 
   return (
@@ -55,7 +80,8 @@ function GeneralNotesEditor({ notes, onChange }: { notes: string; onChange: (v: 
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 8,
                 padding: '8px 10px', borderRadius: 8,
-                border: '1px solid var(--border-color)', background: 'var(--card-bg)',
+                border: editingIndex === index ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                background: 'var(--card-bg)',
               }}
             >
               <span style={{
@@ -65,72 +91,114 @@ function GeneralNotesEditor({ notes, onChange }: { notes: string; onChange: (v: 
               }}>
                 {index + 1}
               </span>
-              <div style={{ flex: 1, fontSize: 13, color: 'var(--text-color)', lineHeight: 1.45 }}>{text}</div>
+              {editingIndex === index ? (
+                <div style={{ flex: 1 }}>
+                  <NoteRichEditor
+                    value={editDraft}
+                    onChange={setEditDraft}
+                    autoFocus
+                    compact
+                    minHeight={52}
+                    placeholder="Notu düzenleyin…"
+                    onEscape={cancelEdit}
+                  />
+                </div>
+              ) : (
+                <div style={{ flex: 1, fontSize: 13, color: 'var(--text-color)', lineHeight: 1.45 }}>
+                  <NoteHtml html={text} />
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 4 }}>
-                <button
-                  type="button"
-                  disabled={index === 0}
-                  onClick={() => {
-                    const next = [...items];
-                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                    commit(next);
-                  }}
-                  style={{ border: 'none', background: 'transparent', cursor: index === 0 ? 'default' : 'pointer', opacity: index === 0 ? 0.3 : 0.7 }}
-                  title="Yukarı"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  disabled={index === items.length - 1}
-                  onClick={() => {
-                    const next = [...items];
-                    [next[index + 1], next[index]] = [next[index], next[index + 1]];
-                    commit(next);
-                  }}
-                  style={{ border: 'none', background: 'transparent', cursor: index === items.length - 1 ? 'default' : 'pointer', opacity: index === items.length - 1 ? 0.3 : 0.7 }}
-                  title="Aşağı"
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  onClick={() => commit(items.filter((_, i) => i !== index))}
-                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--danger)' }}
-                  title="Sil"
-                >
-                  ✕
-                </button>
+                {editingIndex === index ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={saveEdit}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--primary)', fontWeight: 700 }}
+                      title="Kaydet"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                      title="Vazgeç"
+                    >
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => startEdit(index)}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', opacity: 0.7 }}
+                      title="Düzenle"
+                    >
+                      ✎
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => {
+                        const next = [...items];
+                        [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                        commit(next);
+                      }}
+                      style={{ border: 'none', background: 'transparent', cursor: index === 0 ? 'default' : 'pointer', opacity: index === 0 ? 0.3 : 0.7 }}
+                      title="Yukarı"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === items.length - 1}
+                      onClick={() => {
+                        const next = [...items];
+                        [next[index + 1], next[index]] = [next[index], next[index + 1]];
+                        commit(next);
+                      }}
+                      style={{ border: 'none', background: 'transparent', cursor: index === items.length - 1 ? 'default' : 'pointer', opacity: index === items.length - 1 ? 0.3 : 0.7 }}
+                      title="Aşağı"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => commit(items.filter((_, i) => i !== index))}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--danger)' }}
+                      title="Sil"
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              addNote();
-            }
-          }}
-          placeholder="Yeni not ekle..."
-          style={{
-            flex: 1, padding: '10px 14px', border: '1px solid var(--border-color)',
-            borderRadius: 8, fontSize: 13, fontFamily: 'inherit', color: 'var(--text-color)',
-            background: 'var(--card-bg)',
-          }}
-        />
+      <div className="odev-note-add-row">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <NoteRichEditor
+            value={draft}
+            onChange={setDraft}
+            placeholder="Yeni not ekle…"
+            compact
+            minHeight={56}
+          />
+        </div>
         <button
           type="button"
           onClick={addNote}
-          disabled={!draft.trim()}
+          disabled={isEmptyNoteHtml(draft)}
           style={{
-            padding: '0 14px', borderRadius: 8, border: 'none',
-            background: draft.trim() ? 'var(--primary)' : 'var(--border-color)',
-            color: '#fff', fontSize: 13, fontWeight: 700, cursor: draft.trim() ? 'pointer' : 'default',
+            height: 36, padding: '0 14px', borderRadius: 8, border: 'none',
+            background: isEmptyNoteHtml(draft) ? 'var(--border-color)' : 'var(--primary)',
+            color: '#fff', fontSize: 13, fontWeight: 700,
+            cursor: isEmptyNoteHtml(draft) ? 'default' : 'pointer',
+            flexShrink: 0,
           }}
         >
           Ekle
@@ -150,8 +218,9 @@ const PRIORITY_OPTIONS = [
 export default function ReviewStep({
   student, selectedStudents = [], cart, contentNotes, title, notes, dueDate, priority, coachName,
   saving, taskHistory = {}, onTitleChange, onNotesChange, onDueDateChange, onPriorityChange, onRemove,
-  onRemoveMany, onSave, onPrint, getPhotoUrl,
+  onRemoveMany, onNoteChange, onSave, onPrint, getPhotoUrl,
 }: ReviewStepProps) {
+  const [editingContentNoteId, setEditingContentNoteId] = useState<number | null>(null);
   /* ─── Cart grouped by lesson ─── */
   const cartGroups: CartLessonGroup[] = useMemo(() => {
     const map = new Map<number, CartLessonGroup>();
@@ -537,10 +606,12 @@ export default function ReviewStep({
                               const hist = taskHistory[item.contentId];
                               const isCompletion = hist && (hist.completion_status === 'PARTIAL' || hist.completion_status === 'NOT_DONE');
                               const mark = quotaMark(item);
+                              const showAutoNote = isCompletion && isAutoCompletionNote(note);
+                              const isEditingNote = editingContentNoteId === item.id;
                               return (
                               <div key={item.id} style={{
                                 display: 'flex',
-                                alignItems: 'center',
+                                alignItems: 'flex-start',
                                 gap: 10,
                                 padding: '6px 8px',
                                 borderRadius: 6,
@@ -556,10 +627,44 @@ export default function ReviewStep({
                                   }}>
                                     {item.contentName}
                                   </div>
-                                  {note && !(isCompletion && isAutoCompletionNote(note)) && (
-                                    <div style={{ fontSize: 11, color: 'var(--primary)', fontStyle: 'italic', marginTop: 2 }}>
-                                      📌 {note}
+                                  {isEditingNote ? (
+                                    <div style={{ marginTop: 6 }}>
+                                      <NoteRichEditor
+                                        value={note}
+                                        onChange={(html) => onNoteChange(item.id, html)}
+                                        autoFocus
+                                        compact
+                                        minHeight={48}
+                                        placeholder="Bu içerik için öğrenciye not…"
+                                        onEscape={() => setEditingContentNoteId(null)}
+                                      />
                                     </div>
+                                  ) : note && !showAutoNote ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingContentNoteId(item.id)}
+                                      style={{
+                                        display: 'block', width: '100%', textAlign: 'left',
+                                        border: 'none', background: 'transparent', cursor: 'pointer',
+                                        fontSize: 11, color: 'var(--primary)',
+                                        marginTop: 2, padding: 0,
+                                      }}
+                                      title="Notu düzenle"
+                                    >
+                                      📌 <NoteHtml html={note} />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingContentNoteId(item.id)}
+                                      style={{
+                                        border: 'none', background: 'transparent', cursor: 'pointer',
+                                        fontSize: 11, color: 'var(--primary)', fontWeight: 500,
+                                        marginTop: 2, padding: 0,
+                                      }}
+                                    >
+                                      ✎ Not {isEmptyNoteHtml(note) ? 'ekle' : 'düzenle'}
+                                    </button>
                                   )}
                                 </div>
                                 <div style={{ fontSize: 10, color: mark?.color || 'var(--text-muted)', whiteSpace: 'nowrap' }}>

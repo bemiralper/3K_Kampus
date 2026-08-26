@@ -1713,6 +1713,13 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='notify-preview')
     def notify_preview(self, request, pk=None):
         """Ödev planı / rapor gönderim önizlemesi."""
+        assignment = self.get_object()
+        if not user_can_access_student(request.user, assignment.student_id):
+            return Response({
+                'success': False,
+                'error': 'Bu öğrenciye erişim yetkiniz yok.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
         notify_type = (request.query_params.get('type') or 'plan').strip().lower()
         if notify_type not in ('plan', 'report'):
             return Response({'success': False, 'error': 'type plan veya report olmalı.'}, status=400)
@@ -1760,6 +1767,13 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='report-pdf')
     def report_pdf(self, request, pk=None):
         """Sunucu tarafı: gerçek React print route → PDF."""
+        assignment = self.get_object()
+        if not user_can_access_student(request.user, assignment.student_id):
+            return Response({
+                'success': False,
+                'error': 'Bu öğrenciye erişim yetkiniz yok.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
         kurum_id = self._get_kurum_id()
         if not kurum_id:
             return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
@@ -1787,6 +1801,13 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='plan-pdf')
     def plan_pdf(self, request, pk=None):
         """Sunucu tarafı: ödev planı React print route → PDF (sonradan yeniden indirilebilir)."""
+        assignment = self.get_object()
+        if not user_can_access_student(request.user, assignment.student_id):
+            return Response({
+                'success': False,
+                'error': 'Bu öğrenciye erişim yetkiniz yok.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
         kurum_id = self._get_kurum_id()
         if not kurum_id:
             return Response({'success': False, 'error': 'Kurum seçilmedi.'}, status=400)
@@ -1838,6 +1859,13 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     )
     def notify_send(self, request, pk=None):
         """Seçili veli / öğrenciye ödev planı veya rapor PDF gönder."""
+        assignment = self.get_object()
+        if not user_can_access_student(request.user, assignment.student_id):
+            return Response({
+                'success': False,
+                'error': 'Bu öğrenciye erişim yetkiniz yok.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
         data = request.data
         notify_type = (data.get('notify_type') or data.get('type') or 'plan').strip().lower()
         if notify_type not in ('plan', 'report'):
@@ -1964,7 +1992,7 @@ class AssignmentLessonViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         queryset = super().get_queryset().select_related(
-            'assignment', 'lesson', 'resource_book'
+            'assignment', 'assignment__student', 'lesson', 'resource_book'
         ).prefetch_related(ASSIGNMENT_TASKS_PREFETCH)
 
         queryset = filter_by_assignment_scope(
@@ -1972,12 +2000,29 @@ class AssignmentLessonViewSet(viewsets.ModelViewSet):
             self.request.user,
             assignment_prefix='assignment',
         )
+        kurum_id = get_secili_kurum_id(self.request)
+        if kurum_id:
+            queryset = queryset.filter(assignment__student__kurum_id=kurum_id)
 
         assignment_id = self.request.query_params.get('assignment_id')
         if assignment_id:
             queryset = queryset.filter(assignment_id=assignment_id)
 
         return queryset.order_by('order')
+
+    def get_object(self):
+        obj = super().get_object()
+        student = obj.assignment.student
+        gate = assert_coaching_student_sube_access(
+            self.request, student.kurum_id, student.sube_id,
+        )
+        if gate:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(detail=gate.data.get('error', 'Forbidden'))
+        if not user_can_access_student(self.request.user, student.id):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(detail='Bu öğrenciye erişim yetkiniz yok.')
+        return obj
 
 
 class AssignmentTaskViewSet(viewsets.ModelViewSet):
@@ -1988,19 +2033,42 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        queryset = super().get_queryset().select_related('lesson_block')
+        queryset = super().get_queryset().select_related(
+            'lesson_block',
+            'lesson_block__assignment',
+            'lesson_block__assignment__student',
+        )
 
         queryset = filter_by_assignment_scope(
             queryset,
             self.request.user,
             assignment_prefix='lesson_block__assignment',
         )
+        kurum_id = get_secili_kurum_id(self.request)
+        if kurum_id:
+            queryset = queryset.filter(
+                lesson_block__assignment__student__kurum_id=kurum_id,
+            )
 
         lesson_id = self.request.query_params.get('lesson_id')
         if lesson_id:
             queryset = queryset.filter(lesson_block_id=lesson_id)
         
         return queryset.order_by('order')
+
+    def get_object(self):
+        obj = super().get_object()
+        student = obj.lesson_block.assignment.student
+        gate = assert_coaching_student_sube_access(
+            self.request, student.kurum_id, student.sube_id,
+        )
+        if gate:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(detail=gate.data.get('error', 'Forbidden'))
+        if not user_can_access_student(self.request.user, student.id):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(detail='Bu öğrenciye erişim yetkiniz yok.')
+        return obj
     
     @action(detail=True, methods=['post'])
     def mark_completed(self, request, pk=None):

@@ -32,6 +32,7 @@ export function getRiskColor(risk: string): StatusColor {
       return { bg: "#dcfce7", text: "#16a34a", icon: "✅" };
     case "AT_RISK":
       return { bg: "#fee2e2", text: "#dc2626", icon: "🔴" };
+    case "DELAYED":
     case "BEHIND":
       return { bg: "#fef3c7", text: "#d97706", icon: "🟡" };
     case "PENDING_START":

@@ -164,3 +164,39 @@ class AssignmentCreateEvaluateTest(TestCase):
 
         assignment = ManualAssignment.objects.get(pk=assignment_id)
         self.assertEqual(assignment.completion_percent, 100)
+
+    def test_update_task_status_blocked_for_other_kurum(self):
+        """Başka kurumun görev ID'si ile kontrol yapılamaz."""
+        from apps.coaching.assignment_manual.models import AssignmentLesson, AssignmentTask
+
+        other_kurum = Kurum.objects.create(ad='Diğer Kurum', kod='ASG2')
+        other_sube = Sube.objects.create(kurum=other_kurum, ad='Diğer', kod='DGR')
+        other_student = Ogrenci.objects.create(
+            kurum=other_kurum, sube=other_sube, ad='Ayşe', soyad='Demir', aktif_mi=True,
+        )
+        other_assignment = ManualAssignment.objects.create(
+            coach=self.coach,
+            student=other_student,
+            title='Yabancı Kurum Ödevi',
+            status=ManualAssignment.Status.ASSIGNED,
+            due_date=timezone.now() + timezone.timedelta(days=3),
+        )
+        other_lesson = AssignmentLesson.objects.create(
+            assignment=other_assignment, topic_name='Yabancı', order=0,
+        )
+        other_task = AssignmentTask.objects.create(
+            lesson_block=other_lesson,
+            task_type=AssignmentTask.TaskType.SOLVE_TEST,
+            title='Yabancı Görev',
+            question_count=10,
+        )
+
+        response = self._update_task_status(other_task.id, completion_status='DONE')
+        self.assertIn(response.status_code, (403, 404))
+        other_task.refresh_from_db()
+        self.assertEqual(other_task.completion_status, AssignmentTask.CompletionStatus.PENDING)
+
+        preview = self.client.get(
+            f'{ASSIGNMENTS_URL}{other_assignment.id}/notify-preview/?type=plan',
+        )
+        self.assertIn(preview.status_code, (403, 404))

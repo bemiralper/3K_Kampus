@@ -22,6 +22,7 @@ from apps.communication.domain.models import (  # noqa: F401
     MessageTemplateCategory,
     OutboundCampaign,
     OutboundQueueItem,
+    SavedAudience,
     CommunicationLog,
     RawWebhookEvent,
 )

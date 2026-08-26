@@ -44,5 +44,6 @@ export function completionBadgeLabel(hist: ContentTaskHistoryItem): string {
 /** Otomatik üretilen eksik/tekrar notu — PDF’de ayrı satırda tekrarlanmasın */
 export function isAutoCompletionNote(note?: string | null): boolean {
   if (!note?.trim()) return false;
-  return /eksik\s*tamamlama|önceki\s+ödevden\s+kalan|yapılmayan\s+içerik\s*[—\-–]\s*tekrar/i.test(note);
+  const plain = note.replace(/<[^>]+>/g, ' ');
+  return /eksik\s*tamamlama|önceki\s+ödevden\s+kalan|yapılmayan\s+içerik\s*[—\-–]\s*tekrar/i.test(plain);
 }

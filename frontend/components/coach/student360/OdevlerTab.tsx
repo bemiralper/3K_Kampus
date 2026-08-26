@@ -76,6 +76,7 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
+  const [assigningId, setAssigningId] = useState<number | null>(null);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -128,6 +129,8 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
 
   const handleAssignDraft = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
+    if (assigningId) return;
+    setAssigningId(id);
     try {
       const result = await assignAssignment(id);
       if (result.success) {
@@ -139,6 +142,7 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
     } catch {
       flash('❌ Atama başarısız');
     }
+    setAssigningId(null);
   };
 
   if (loading) {
@@ -367,9 +371,10 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
                       <button
                         type="button"
                         className="odev360-btn-assign"
+                        disabled={assigningId === a.id}
                         onClick={(e) => handleAssignDraft(e, a.id)}
                       >
-                        Öğrenciye ata
+                        {assigningId === a.id ? 'Atanıyor…' : 'Öğrenciye ata'}
                       </button>
                     ) : (
                       <span className="odev360-link">Kontrol et →</span>

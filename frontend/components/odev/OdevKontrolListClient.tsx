@@ -164,6 +164,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
   const [sortBy, setSortBy] = useState<"created" | "due_date" | "progress" | "student">("created");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [toast, setToast] = useState<string | null>(null);
+  const [assigningId, setAssigningId] = useState<number | null>(null);
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
   useEffect(() => {
@@ -231,11 +232,14 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
 
   const handleAssignDraft = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
+    if (assigningId) return;
+    setAssigningId(id);
     try {
       const result = await assignAssignment(id);
       if (result.success) { flash("Ödev atandı"); refreshAll(); }
       else flash(result.error || "Atama başarısız");
     } catch { flash("Atama başarısız"); }
+    setAssigningId(null);
   };
 
   const goDetail = (id: number) => router.push(paths.detail(id));
@@ -393,9 +397,10 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
               type="button"
               className="ok-btn-primary"
               style={{ padding: "4px 12px", fontSize: 12 }}
+              disabled={assigningId === a.id}
               onClick={(e) => handleAssignDraft(e, a.id)}
             >
-              Ata
+              {assigningId === a.id ? "Atanıyor…" : "Ata"}
             </button>
           )}
         </div>
@@ -630,9 +635,10 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                           type="button"
                           className="ok-btn-primary"
                           style={{ padding: "6px 12px", fontSize: 12 }}
+                          disabled={assigningId === a.id}
                           onClick={(e) => handleAssignDraft(e, a.id)}
                         >
-                          Ata
+                          {assigningId === a.id ? "Atanıyor…" : "Ata"}
                         </button>
                       ) : (
                         <span className="ok-table-sub">Kontrol →</span>

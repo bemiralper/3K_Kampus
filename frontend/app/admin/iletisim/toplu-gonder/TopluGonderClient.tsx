@@ -1,77 +1,57 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import {
-  CommunicationPageShell,
-  createComposerState,
-  StepWizard,
-  BulkSendStudio,
-  AdvancedFilterPanel,
-  RecipientPickerPanel,
-  CampaignHistoryPanel,
-} from "@/components/communication";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { CommunicationPageShell } from "@/components/communication";
 import "@/components/communication/communication.css";
-import { AudienceFilter, CampaignPreviewStats, previewCampaign } from "@/lib/communication-api";
-import { getContextHeaders } from "@/lib/api";
-import RoleService from "@/app/roles/role.service";
-import type { Role } from "@/app/roles/role.types";
+import "../panel/iletisim-panel.css";
+import "./toplu-gonder.css";
+import {
+  AudienceCatalog,
+  AudienceFilter,
+  AudiencePersonType,
+  AudienceQueryPreview,
+  BulkRecipientHit,
+  CAMPAIGN_STATUS_LABELS,
+  CampaignAttachmentItem,
+  CampaignItem,
+  SavedAudienceItem,
+  WhatsAppAccount,
+  WhatsAppMetaTemplateItem,
+  cancelCampaign,
+  createCampaign,
+  createSavedAudience,
+  deleteSavedAudience,
+  fetchAccessibleWhatsAppAccounts,
+  fetchAudienceCatalog,
+  fetchCampaigns,
+  fetchSavedAudiences,
+  previewAudienceQuery,
+} from "@/lib/communication-api";
+import CampaignDuyuruPicker from "./CampaignDuyuruPicker";
+import FilterBuilder from "./FilterBuilder";
+import PersonPicker from "./PersonPicker";
+import RecipientsModal from "./RecipientsModal";
+import {
+  applyQuickStart,
+  emptyAudienceQuery,
+  hasIncluded,
+  includePerson,
+  listedIncludes,
+  personTypeLabel,
+  querySummary,
+  removeIncluded,
+  togglePersonType,
+} from "./audience-utils";
 
-const STORAGE_KEYS = { activeEgitimYili: "3k_active_egitim_yili" };
-
-function readEgitimYiliId(): number | undefined {
-  if (typeof window === "undefined") return undefined;
-  const raw = localStorage.getItem(STORAGE_KEYS.activeEgitimYili);
-  if (!raw) return undefined;
-  try {
-    const parsed = JSON.parse(raw);
-    const id = typeof parsed === "object" && parsed?.id != null ? parsed.id : parsed;
-    return Number(id) || undefined;
-  } catch {
-    return Number(raw) || undefined;
-  }
-}
-
-export type BulkAudienceType =
-  | "all_veliler"
-  | "all_ogrenciler"
-  | "all_personeller"
-  | "sinif"
-  | "coach_students"
-  | "coach_parents"
-  | "advanced"
-  | "custom_ids";
-
-export interface AudienceOption {
-  value: BulkAudienceType;
-  icon: string;
-  title: string;
-  description: string;
-}
-
-/** Portal / öğrenci rolleri personel kitlesinde gösterilmez. */
-const PERSONEL_ROLE_EXCLUDE_CODES = new Set(["ogrenci", "okuyucu", "super_admin"]);
-
-export const ADMIN_AUDIENCE_OPTIONS: AudienceOption[] = [
-  { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci, veli veya personel arayıp seçerek gönder" },
-  { value: "all_veliler", icon: "👨‍👩‍👧", title: "Tüm veliler", description: "Duyuru opt-in vermiş tüm velilere gönder" },
-  { value: "all_ogrenciler", icon: "🎓", title: "Tüm öğrenciler", description: "Aktif öğrencilere gönder" },
-  { value: "all_personeller", icon: "🧑‍💼", title: "Personeller", description: "Role göre personel seç; istersen tek tek ekle/çıkar" },
-  { value: "sinif", icon: "🏫", title: "Sınıf", description: "Belirli bir sınıfın velilerine gönder" },
-  { value: "coach_students", icon: "🎯", title: "Koç öğrencileri", description: "Koçluk kapsamındaki öğrencilere gönder" },
-  { value: "coach_parents", icon: "👪", title: "Koç velileri", description: "Koçluk kapsamındaki öğrenci velilerine gönder" },
-  { value: "advanced", icon: "🧭", title: "Gelişmiş filtre", description: "Sınıf, kalem, koç, mali durum gibi kriterlere göre özel kitle oluştur" },
+const STEPS = [
+  { title: "Kitle", hint: "Kime" },
+  { title: "Mesaj", hint: "Ne yazılacak" },
+  { title: "Kontrol & Gönder", hint: "Son kontrol" },
 ];
-
-export const COACH_AUDIENCE_OPTIONS: AudienceOption[] = [
-  { value: "custom_ids", icon: "🔎", title: "Arama ile seç", description: "Öğrenci veya veli arayıp seçerek gönder" },
-  { value: "coach_students", icon: "🎯", title: "Öğrencilerim", description: "Koçluk kapsamındaki öğrencilere gönder" },
-  { value: "coach_parents", icon: "👪", title: "Velilerim", description: "Koçluk kapsamındaki öğrenci velilerine gönder" },
-];
-
-type PageTab = "compose" | "history";
 
 export interface TopluGonderClientProps {
-  mode?: "admin" | "coach";
+  mode?: "admin" | "coach" | "muhasebe";
   breadcrumbs?: Array<{ label: string; href?: string }>;
   campaignDetailPath?: (id: string) => string;
 }
@@ -82,387 +62,522 @@ export default function TopluGonderClient({
   campaignDetailPath,
 }: TopluGonderClientProps) {
   const isCoach = mode === "coach";
-  const audienceOptions = isCoach ? COACH_AUDIENCE_OPTIONS : ADMIN_AUDIENCE_OPTIONS;
-  const defaultAudience = isCoach ? "coach_students" : "all_veliler";
-
-  const [pageTab, setPageTab] = useState<PageTab>("compose");
+  const detailPath = campaignDetailPath || ((id: string) => `/admin/iletisim/kampanyalar/${id}`);
+  const [tab, setTab] = useState<"compose" | "history" | "saved">("compose");
   const [step, setStep] = useState(0);
-  const [audienceType, setAudienceType] = useState<BulkAudienceType>(defaultAudience as BulkAudienceType);
-  const [sinifId, setSinifId] = useState("");
-  const [composerState, setComposerState] = useState(createComposerState());
+  const [query, setQuery] = useState<AudienceFilter>(() => emptyAudienceQuery(isCoach ? ["ogrenci"] : []));
+  const [catalog, setCatalog] = useState<AudienceCatalog | null>(null);
+  const [preview, setPreview] = useState<AudienceQueryPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [showRecipients, setShowRecipients] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saveBusy, setSaveBusy] = useState(false);
+
+  const [title, setTitle] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [templateLanguage, setTemplateLanguage] = useState("tr");
-  const [title, setTitle] = useState("");
-  const [miniPreview, setMiniPreview] = useState<CampaignPreviewStats | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppMetaTemplateItem | null>(null);
+  const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState<CampaignAttachmentItem[]>([]);
+  const [pickedLabels, setPickedLabels] = useState<Record<string, BulkRecipientHit>>({});
+  const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
+  const [accountId, setAccountId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [sentCampaign, setSentCampaign] = useState<CampaignItem | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [siniflar, setSiniflar] = useState<Array<{ id: number; ad: string }>>([]);
-  const [advancedFilter, setAdvancedFilter] = useState<AudienceFilter>({});
-  const [pickedOgrenciIds, setPickedOgrenciIds] = useState<number[]>([]);
-  const [pickedVeliIds, setPickedVeliIds] = useState<number[]>([]);
-  const [pickedPersonelIds, setPickedPersonelIds] = useState<number[]>([]);
-  /** Personel kitlesinde manuel eklenenler (rol filtresine ek). */
-  const [includedPersonelIds, setIncludedPersonelIds] = useState<number[]>([]);
-  const [selectedRolIds, setSelectedRolIds] = useState<number[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [historyKey, setHistoryKey] = useState(0);
 
-  const buildFilter = useCallback((): AudienceFilter => {
-    const egitimYiliId = readEgitimYiliId();
-    const filter: AudienceFilter = { audience_type: audienceType };
-    if (egitimYiliId) filter.egitim_yili_id = egitimYiliId;
-    if (audienceType === "sinif" && sinifId) filter.sinif_id = Number(sinifId);
-    if (audienceType === "advanced") {
-      Object.assign(filter, advancedFilter);
-    }
-    if (audienceType === "custom_ids") {
-      filter.ogrenci_ids = pickedOgrenciIds;
-      filter.veli_ids = pickedVeliIds;
-      if (!isCoach) filter.personel_ids = pickedPersonelIds;
-    }
-    if (audienceType === "all_personeller" && !isCoach) {
-      if (selectedRolIds.length) filter.rol_ids = selectedRolIds;
-      if (includedPersonelIds.length) filter.included_personel_ids = includedPersonelIds;
-    }
-    return filter;
-  }, [
-    audienceType,
-    sinifId,
-    advancedFilter,
-    pickedOgrenciIds,
-    pickedVeliIds,
-    pickedPersonelIds,
-    includedPersonelIds,
-    selectedRolIds,
-    isCoach,
-  ]);
+  const [history, setHistory] = useState<CampaignItem[]>([]);
+  const [saved, setSaved] = useState<SavedAudienceItem[]>([]);
+
+  const personTypes = (query.person_types || []) as AudiencePersonType[];
 
   useEffect(() => {
-    if (isCoach) return;
-    // Kurum/şube bağlamı header ile gider; ikisi de yoksa uç zaten 400 döner.
-    const contextHeaders = getContextHeaders();
-    if (!contextHeaders["X-Kurum-ID"] || !contextHeaders["X-Sube-ID"]) return;
-    const egitimYiliId = readEgitimYiliId();
-    const params = new URLSearchParams();
-    if (egitimYiliId) params.set("egitim_yili_id", String(egitimYiliId));
-    const qs = params.toString();
-    fetch(`/api/siniflar/api/${qs ? `?${qs}` : ""}`, {
-      credentials: "include",
-      headers: contextHeaders,
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const list = data?.siniflar || [];
-        setSiniflar(
-          list.map((s: { id: number; ad: string }) => ({ id: s.id, ad: s.ad })),
-        );
-      })
-      .catch(() => null);
-  }, [isCoach]);
+    fetchAudienceCatalog(personTypes.length ? personTypes : undefined)
+      .then(setCatalog)
+      .catch(() => setCatalog(null));
+  }, [personTypes.join("|")]);
 
   useEffect(() => {
-    if (isCoach) return;
-    RoleService.listRoles({ is_active: true })
+    fetchAccessibleWhatsAppAccounts()
       .then((res) => {
-        const list = (res.success ? res.roles : []) || [];
-        setRoles(
-          list.filter((r) => !PERSONEL_ROLE_EXCLUDE_CODES.has((r.code || "").toLowerCase())),
-        );
+        setAccounts(res.accounts || []);
+        setAccountId(res.default_account_id || res.accounts?.[0]?.id || "");
       })
-      .catch(() => setRoles([]));
-  }, [isCoach]);
+      .catch(() => setAccounts([]));
+  }, []);
 
-  const toggleRol = (id: number) => {
-    setSelectedRolIds((prev) => (
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    ));
-  };
-
-  const refreshMiniPreview = useCallback(async () => {
+  const loadPreview = useCallback(async () => {
+    if (!personTypes.length && !hasIncluded(query)) {
+      setPreview(null);
+      return;
+    }
     setPreviewLoading(true);
     try {
-      const stats = await previewCampaign(buildFilter());
-      setMiniPreview(stats);
+      setPreview(await previewAudienceQuery(query));
     } catch {
-      setMiniPreview(null);
+      setPreview(null);
     } finally {
       setPreviewLoading(false);
     }
-  }, [buildFilter]);
+  }, [query, personTypes.length]);
 
   useEffect(() => {
-    if (pageTab === "compose" && step === 0) refreshMiniPreview();
-  }, [
-    pageTab,
-    step,
-    audienceType,
-    sinifId,
-    advancedFilter,
-    pickedOgrenciIds,
-    pickedVeliIds,
-    pickedPersonelIds,
-    includedPersonelIds,
-    selectedRolIds,
-    refreshMiniPreview,
-  ]);
+    const id = window.setTimeout(() => void loadPreview(), 280);
+    return () => window.clearTimeout(id);
+  }, [loadPreview]);
 
-  const handleNext = () => {
-    if (step === 0 && audienceType === "sinif" && !sinifId) {
-      setError("Lütfen bir sınıf seçin.");
-      return;
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await fetchCampaigns();
+      setHistory(res.campaigns || []);
+    } catch {
+      setHistory([]);
     }
-    if (
-      step === 0 &&
-      audienceType === "custom_ids" &&
-      pickedOgrenciIds.length === 0 &&
-      pickedVeliIds.length === 0 &&
-      pickedPersonelIds.length === 0
-    ) {
-      setError(isCoach ? "En az bir öğrenci veya veli seçin." : "En az bir öğrenci, veli veya personel seçin.");
-      return;
+  }, []);
+
+  const loadSaved = useCallback(async () => {
+    try {
+      const res = await fetchSavedAudiences();
+      setSaved(res.items || []);
+    } catch {
+      setSaved([]);
     }
-    setError(null);
-    setStep(1);
+  }, []);
+
+  useEffect(() => {
+    if (tab === "history") void loadHistory();
+    if (tab === "saved") void loadSaved();
+  }, [tab, loadHistory, loadSaved]);
+
+  const setPersonTypes = (types: AudiencePersonType[]) => {
+    setQuery((prev) => ({ ...prev, person_types: types }));
   };
 
-  const defaultBreadcrumbs = isCoach
-    ? [{ label: "Koç Paneli", href: "/coach/dashboard" }, { label: "Toplu Gönder" }]
-    : [
-        { label: "İletişim", href: "/admin/iletisim/toplu-gonder" },
-        { label: "Toplu Gönderim" },
-      ];
+  const defaultCrumbs = isCoach
+    ? [{ label: "Koç Paneli", href: "/coach/dashboard" }, { label: "Toplu Gönderim" }]
+    : mode === "muhasebe"
+      ? [{ label: "WhatsApp", href: "/muhasebe/iletisim/mesajlar" }, { label: "Toplu Gönderim" }]
+      : [{ label: "İletişim", href: "/admin/iletisim/panel" }, { label: "Toplu Gönderim" }];
 
-  const detailPath =
-    campaignDetailPath ||
-    ((id: string) => `/admin/iletisim/kampanyalar/${id}`);
+  const includedPeople = listedIncludes(query);
+  const pickedKeys = useMemo(
+    () => new Set(includedPeople.map((item) => `${item.kind}:${item.id}`)),
+    [includedPeople],
+  );
+  const canContinueAudience = (preview?.deliverable_count || 0) > 0;
+  const body = selectedTemplate?.body_named || "";
+  const previewBody = fillPreview(body, message);
+  const canSend = !!templateName && (preview?.deliverable_count || 0) > 0 && message.trim().length > 0;
+
+  const startSend = async () => {
+    if (!canSend) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const campaign = await createCampaign({
+        title: title.trim() || querySummary(query),
+        body: body || undefined,
+        template_name: templateName,
+        template_language: templateLanguage,
+        audience_filter: query,
+        attachment_ids: attachments.map((a) => a.id),
+        send_options: { template_context: { mesaj: message } },
+        channel_config_id: accountId || undefined,
+      });
+      setSentCampaign(campaign);
+      setTab("history");
+      void loadHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gönderim başlatılamadı");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const saveAudience = async () => {
+    if (!saveName.trim()) return;
+    setSaveBusy(true);
+    try {
+      await createSavedAudience({ name: saveName.trim(), query, description: querySummary(query) });
+      setSaveName("");
+      setTab("saved");
+      void loadSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kitle kaydedilemedi");
+    } finally {
+      setSaveBusy(false);
+    }
+  };
 
   return (
     <CommunicationPageShell
       title="Toplu Gönderim"
-      subtitle={isCoach ? "Öğrenci ve velilerinize WhatsApp mesajı gönderin" : "WhatsApp toplu mesaj oluşturun ve geçmişi takip edin"}
+      subtitle="Genel WhatsApp mesajı için kitle oluşturun ve gönderin"
       icon="📢"
-      breadcrumbs={breadcrumbs || defaultBreadcrumbs}
+      breadcrumbs={breadcrumbs || defaultCrumbs}
+      maxWidth="full"
       className={isCoach ? "comm-page--coach" : undefined}
     >
-      <div className="comm-tabbar" style={{ marginBottom: "1rem" }}>
-        <div className="comm-tabs" role="tablist" aria-label="Toplu gönderim sekmeleri">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={pageTab === "compose"}
-            className={`comm-tab${pageTab === "compose" ? " active" : ""}`}
-            onClick={() => setPageTab("compose")}
-          >
-            Yeni gönderim
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={pageTab === "history"}
-            className={`comm-tab${pageTab === "history" ? " active" : ""}`}
-            onClick={() => {
-              setPageTab("history");
-              setHistoryKey((k) => k + 1);
-            }}
-          >
-            Son gönderimler
-          </button>
+      <div className="tg">
+        <div className="tg-tabs" role="tablist">
+          {[
+            ["compose", "Yeni Gönderim"],
+            ["history", "Son Gönderimler"],
+            ["saved", "Kayıtlı Kitleler"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              className={`tg-tab${tab === key ? " is-on" : ""}`}
+              onClick={() => setTab(key as typeof tab)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-      </div>
 
-      {pageTab === "history" && (
-        <CampaignHistoryPanel
-          key={historyKey}
-          limit={20}
-          detailPath={detailPath}
-          emptyHref="/admin/iletisim/toplu-gonder"
-          emptyActionLabel="Yeni gönderim oluştur"
-        />
-      )}
+        {error && <div className="comm-alert comm-alert-danger">{error}</div>}
 
-      {pageTab === "compose" && (
-        <>
-          {step === 0 && <StepWizard steps={["Kitle", "Stüdyo"]} currentStep={step} />}
-
-          {error && step === 0 && <div className="comm-alert comm-alert-danger">{error}</div>}
-
-          {step === 0 && (
-            <div className="comm-step-panel comm-card">
-              <h2 className="comm-step-panel-title">Hedef kitleyi seçin</h2>
-              <div className="comm-audience-grid">
-                {audienceOptions.map((opt) => (
-                  <label
-                    key={opt.value}
-                    className={`comm-audience-card${audienceType === opt.value ? " selected" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name="audience"
-                      checked={audienceType === opt.value}
-                      onChange={() => setAudienceType(opt.value)}
-                    />
-                    <span className="comm-audience-icon" aria-hidden="true">{opt.icon}</span>
-                    <span className="comm-audience-text">
-                      <strong>{opt.title}</strong>
-                      <span>{opt.description}</span>
+        {tab === "compose" && (
+          <>
+            <div className="tg-stepper">
+              {STEPS.map((item, i) => (
+                <div key={item.title} className="tg-step-wrap" style={{ display: "contents" }}>
+                  <div className={`tg-step${step === i ? " is-on" : ""}${step > i ? " is-done" : ""}`}>
+                    <span className="tg-step-num">{i + 1}</span>
+                    <span className="tg-step-copy">
+                      <strong>{item.title}</strong>
+                      <span>{item.hint}</span>
                     </span>
-                  </label>
-                ))}
-              </div>
+                  </div>
+                  {i < STEPS.length - 1 && <div className={`tg-step-line${step > i ? " is-done" : ""}`} />}
+                </div>
+              ))}
+            </div>
 
-              {audienceType === "sinif" && !isCoach && (
-                <div className="comm-form-field" style={{ marginTop: "1rem" }}>
-                  <label htmlFor="sinif-select">Sınıf</label>
-                  <select
-                    id="sinif-select"
-                    className="form-control"
-                    value={sinifId}
-                    onChange={(e) => setSinifId(e.target.value)}
-                  >
-                    <option value="">Sınıf seçin</option>
-                    {siniflar.map((s) => (
-                      <option key={s.id} value={s.id}>{s.ad}</option>
+            {step === 0 && (
+              <div className="tg-grid">
+                <section className="tg-card">
+                  <h2>Kime mesaj göndermek istiyorsunuz?</h2>
+                  <p className="lead">Filtreleri kullanarak göndermek istediğiniz kişi grubunu oluşturun.</p>
+
+                  <div className="tg-quick">
+                    {(catalog?.quick_starts || []).map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className="tg-chip"
+                        title={item.hint}
+                        onClick={() => setQuery(applyQuickStart(item.person_types, item.add_field))}
+                      >
+                        {item.label}
+                      </button>
                     ))}
-                  </select>
-                </div>
-              )}
+                  </div>
 
-              {audienceType === "advanced" && !isCoach && (
-                <div style={{ marginTop: "1rem" }}>
-                  <AdvancedFilterPanel
-                    value={advancedFilter}
-                    onChange={(patch) => setAdvancedFilter((prev) => ({ ...prev, ...patch }))}
-                  />
-                </div>
-              )}
+                  <div className="tg-types">
+                    {(catalog?.person_types || [
+                      { key: "ogrenci" as const, label: "Öğrenci" },
+                      { key: "veli" as const, label: "Veli" },
+                      ...(!isCoach ? [{ key: "personel" as const, label: "Personel" }] : []),
+                    ]).map((item) => {
+                      const on = personTypes.includes(item.key);
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className={`tg-type${on ? " is-on" : ""}`}
+                          onClick={() => setPersonTypes(togglePersonType(personTypes, item.key))}
+                        >
+                          <span className={`tg-check${on ? " is-on" : ""}`} aria-hidden="true" />
+                          <strong>{item.label}</strong>
+                          <span>{on ? "Seçili" : "Seçilmedi"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-              {audienceType === "custom_ids" && (
-                <div style={{ marginTop: "1rem" }}>
-                  <RecipientPickerPanel
-                    ogrenciIds={pickedOgrenciIds}
-                    veliIds={pickedVeliIds}
-                    personelIds={pickedPersonelIds}
+                  <PersonPicker
                     allowPersonel={!isCoach}
-                    onChange={({ ogrenci_ids, veli_ids, personel_ids }) => {
-                      setPickedOgrenciIds(ogrenci_ids);
-                      setPickedVeliIds(veli_ids);
-                      setPickedPersonelIds(personel_ids);
+                    excludeKeys={pickedKeys}
+                    onPick={(hit) => {
+                      setQuery((prev) => includePerson(prev, hit.kind, hit.id));
+                      setPickedLabels((prev) => ({ ...prev, [`${hit.kind}:${hit.id}`]: hit }));
                     }}
                   />
-                </div>
-              )}
 
-              {audienceType === "all_personeller" && !isCoach && (
-                <div style={{ marginTop: "1rem" }} className="comm-personel-audience">
-                  <div className="comm-form-field">
-                    <label>Rol (opsiyonel)</label>
-                    <p className="comm-studio-muted" style={{ margin: "0 0 0.5rem", fontSize: "0.8125rem" }}>
-                      Boş bırakırsanız telefonu olan tüm aktif personel seçilir. Bir veya daha fazla rol işaretleyebilirsiniz.
-                    </p>
-                    <div className="comm-role-chip-grid" role="group" aria-label="Personel rolleri">
-                      {roles.length === 0 ? (
-                        <span className="comm-studio-muted">Roller yükleniyor…</span>
-                      ) : (
-                        roles.map((role) => {
-                          const active = selectedRolIds.includes(role.id);
-                          return (
+                  {includedPeople.length > 0 && (
+                    <div className="tg-multi" style={{ margin: "10px 0 16px" }}>
+                      {includedPeople.map((item) => {
+                        const key = `${item.kind}:${item.id}`;
+                        const hit = pickedLabels[key];
+                        return (
+                          <span key={key} className="tg-pill">
+                            {hit?.label || `${personTypeLabel(item.kind)} #${item.id}`}
+                            <small>{personTypeLabel(item.kind)}</small>
                             <button
-                              key={role.id}
                               type="button"
-                              className={`comm-role-chip${active ? " is-active" : ""}`}
-                              aria-pressed={active}
-                              onClick={() => toggleRol(role.id)}
+                              className="tg-pill-x"
+                              aria-label="Kaldır"
+                              onClick={() => setQuery((prev) => removeIncluded(prev, item.kind, item.id))}
                             >
-                              {role.name}
+                              ×
                             </button>
-                          );
-                        })
-                      )}
+                          </span>
+                        );
+                      })}
                     </div>
-                    {selectedRolIds.length > 0 && (
-                      <button
-                        type="button"
-                        className="comm-link-btn"
-                        style={{ marginTop: "0.5rem" }}
-                        onClick={() => setSelectedRolIds([])}
-                      >
-                        Rol seçimini temizle
-                      </button>
-                    )}
-                  </div>
-
-                  <div style={{ marginTop: "1.25rem" }}>
-                    <RecipientPickerPanel
-                      ogrenciIds={[]}
-                      veliIds={[]}
-                      personelIds={includedPersonelIds}
-                      allowOgrenci={false}
-                      allowVeli={false}
-                      allowPersonel
-                      hint="Rol filtresine ek olarak personel arayıp ekleyin. Stüdyoda listeden de çıkarabilirsiniz."
-                      onChange={({ personel_ids }) => setIncludedPersonelIds(personel_ids)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="comm-audience-preview-banner">
-                <div className="comm-audience-preview-count">
-                  <strong>
-                    {previewLoading ? "…" : (miniPreview?.total_recipients ?? 0).toLocaleString("tr-TR")}
-                  </strong>
-                  <span>alıcıya gönderilecek</span>
-                </div>
-                <div className="comm-audience-preview-breakdown">
-                  <span>{previewLoading ? "…" : miniPreview?.veli_count ?? 0} veli</span>
-                  <span>{previewLoading ? "…" : miniPreview?.ogrenci_count ?? 0} öğrenci</span>
-                  {!isCoach && (
-                    <span>{previewLoading ? "…" : miniPreview?.personel_count ?? 0} personel</span>
                   )}
-                </div>
-              </div>
-            </div>
-          )}
 
-          {step === 1 && (
-            <>
-              <div className="comm-studio-back-row">
-                <button
-                  type="button"
-                  className="comm-studio-back-btn"
-                  onClick={() => {
-                    setError(null);
-                    setStep(0);
-                  }}
-                >
-                  ← Kitleye dön
-                </button>
+                  {personTypes.length > 0 && (
+                    <FilterBuilder
+                      query={query}
+                      catalog={catalog}
+                      personTypes={personTypes}
+                      onChange={setQuery}
+                    />
+                  )}
+                </section>
+
+                <aside className="tg-summary">
+                  <div className="tg-kpi">
+                    <div className="num">{previewLoading ? "…" : (preview?.matched_count ?? 0).toLocaleString("tr-TR")}</div>
+                    <div className="lbl">kişilik kitle</div>
+                    <div className="tg-kpi-row">
+                      <span>Öğrenci <b>{preview?.ogrenci_count ?? 0}</b></span>
+                      <span>Veli <b>{preview?.veli_count ?? 0}</b></span>
+                      {!isCoach && <span>Personel <b>{preview?.personel_count ?? 0}</b></span>}
+                    </div>
+                    <div className="tg-kpi-row">
+                      <span className="tg-ok">Gönderilebilir <b>{preview?.deliverable_count ?? 0}</b></span>
+                      <span className="tg-warn">Uygun değil <b>{preview?.unsuitable_count ?? 0}</b></span>
+                    </div>
+                  </div>
+                  <button type="button" className="tg-btn" onClick={() => setShowRecipients(true)}>
+                    Alıcıları gör / kişi seç
+                  </button>
+                  <div className="tg-card" style={{ padding: 14 }}>
+                    <strong style={{ fontSize: 13 }}>Kitleyi kaydet</strong>
+                    <input
+                      className="tg-search"
+                      style={{ margin: "8px 0" }}
+                      placeholder="Örn. 11-A velileri"
+                      value={saveName}
+                      onChange={(e) => setSaveName(e.target.value)}
+                    />
+                    <button type="button" className="tg-btn" disabled={!saveName.trim() || saveBusy} onClick={() => void saveAudience()}>
+                      {saveBusy ? "Kaydediliyor…" : "Kitleyi kaydet"}
+                    </button>
+                  </div>
+                </aside>
               </div>
-              <BulkSendStudio
-                audienceFilter={buildFilter()}
-                audienceType={audienceType}
+            )}
+
+            {step === 1 && (
+              <CampaignDuyuruPicker
                 title={title}
                 onTitleChange={setTitle}
-                composerState={composerState}
-                onComposerChange={setComposerState}
+                accounts={accounts}
+                accountId={accountId}
+                onAccountChange={setAccountId}
+                personTypes={personTypes}
                 templateName={templateName}
-                onTemplateNameChange={setTemplateName}
-                templateLanguage={templateLanguage}
-                onTemplateLanguageChange={setTemplateLanguage}
-                campaignDetailPath={detailPath}
+                selectedTemplate={selectedTemplate}
+                onTemplateChange={(name, lang, tpl) => {
+                  setTemplateName(name);
+                  if (lang) setTemplateLanguage(lang);
+                  setSelectedTemplate(tpl);
+                }}
+                message={message}
+                onMessageChange={setMessage}
+                attachments={attachments}
+                onAttachmentsChange={setAttachments}
               />
-            </>
-          )}
+            )}
 
-          {step === 0 && (
-            <div className="comm-step-actions">
-              <button type="button" className="comm-btn-primary" onClick={handleNext}>
-                Stüdyoya Geç
+            {step === 2 && (
+              <section className="tg-card">
+                <h2>Kontrol & gönder</h2>
+                <p className="lead">Gönderimi başlatmadan önce kitle ve mesajı kontrol edin.</p>
+                <div className="tg-kpi-row" style={{ justifyContent: "flex-start", gap: 24 }}>
+                  <div>
+                    <div className="lbl">Kitle</div>
+                    <strong>{querySummary(query)}</strong>
+                  </div>
+                  <div>
+                    <div className="lbl">Alıcı</div>
+                    <strong>{preview?.matched_count ?? 0} kişi</strong>
+                  </div>
+                  <div>
+                    <div className="lbl">Gönderilebilir</div>
+                    <strong className="tg-ok">{preview?.deliverable_count ?? 0} kişi</strong>
+                  </div>
+                </div>
+                <p style={{ marginTop: 16, whiteSpace: "pre-wrap" }}>{previewBody || "Mesaj seçilmedi"}</p>
+                <p className="lead">Ek: {attachments.length ? attachments.map((a) => a.original_name).join(", ") : "Yok"}</p>
+              </section>
+            )}
+
+            {sentCampaign && (
+              <div className="tg-card">
+                <strong>Gönderim kuyruğa alındı</strong>
+                <div className="tg-kpi-row">
+                  <span>Toplam <b>{sentCampaign.total_recipients}</b></span>
+                  <span>Başarılı <b>{sentCampaign.sent_count}</b></span>
+                  <span>Başarısız <b>{sentCampaign.failed_count}</b></span>
+                  <span>Bekleyen <b>{Math.max(0, (sentCampaign.total_recipients || 0) - (sentCampaign.sent_count || 0) - (sentCampaign.failed_count || 0))}</b></span>
+                </div>
+                <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>
+              </div>
+            )}
+
+            <div className="tg-footer">
+              <button
+                type="button"
+                className="tg-btn"
+                disabled={step === 0}
+                onClick={() => setStep((s) => Math.max(0, s - 1))}
+              >
+                Geri
               </button>
+              {step < 2 ? (
+                <button
+                  type="button"
+                  className="tg-btn-primary"
+                  disabled={step === 0 ? !canContinueAudience : !templateName || !message.trim()}
+                  onClick={() => setStep((s) => s + 1)}
+                >
+                  {step === 0 ? "Mesaj oluştur" : "Kontrole geç"}
+                </button>
+              ) : (
+                <div className="tg-actions-row">
+                  <button type="button" className="tg-btn" onClick={() => setStep(1)}>Mesajı düzenle</button>
+                  <button type="button" className="tg-btn-primary" disabled={!canSend || submitting} onClick={() => void startSend()}>
+                    {submitting ? "Gönderiliyor…" : "Gönderimi başlat"}
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </>
+          </>
+        )}
+
+        {tab === "history" && (
+          <HistoryTab items={history} detailPath={detailPath} onCancel={async (id) => {
+            await cancelCampaign(id);
+            void loadHistory();
+          }} />
+        )}
+
+        {tab === "saved" && (
+          <SavedTab
+            items={saved}
+            onUse={(item) => {
+              setQuery({ ...item.query, audience_type: "query" });
+              setTab("compose");
+              setStep(0);
+            }}
+            onDelete={async (id) => {
+              await deleteSavedAudience(id);
+              void loadSaved();
+            }}
+          />
+        )}
+      </div>
+
+      {showRecipients && (
+        <RecipientsModal
+          query={query}
+          allowPersonel={!isCoach}
+          onClose={() => setShowRecipients(false)}
+          onChangeQuery={setQuery}
+        />
       )}
     </CommunicationPageShell>
   );
+}
+
+function HistoryTab({
+  items,
+  detailPath,
+  onCancel,
+}: {
+  items: CampaignItem[];
+  detailPath: (id: string) => string;
+  onCancel: (id: string) => Promise<void>;
+}) {
+  if (!items.length) return <div className="tg-empty">Henüz gönderim yok.</div>;
+  return (
+    <div className="tg-history">
+      <div className="tg-row head">
+        <span>Tarih</span><span>Kitle</span><span>Mesaj</span><span>Alıcı</span>
+        <span>Başarılı</span><span>Başarısız</span><span>Durum</span><span>Gönderen</span>
+      </div>
+      {items.map((item) => (
+        <div key={item.id} className="tg-row">
+          <span>{formatDate(item.created_at)}</span>
+          <span>{querySummary(item.recipient_filter_json || {})}</span>
+          <span>{item.title || "Genel mesaj"}</span>
+          <span>{item.total_recipients}</span>
+          <span>{item.sent_count}</span>
+          <span>{item.failed_count}</span>
+          <span>
+            <span className="tg-badge">{CAMPAIGN_STATUS_LABELS[item.status] || item.status}</span>
+            {["QUEUED", "PROCESSING", "DRAFT"].includes(item.status) && (
+              <button type="button" className="tg-btn-ghost" onClick={() => void onCancel(item.id)}>İptal</button>
+            )}
+          </span>
+          <span>
+            {item.created_by_name || "—"}
+            <div><Link href={detailPath(item.id)}>Detay</Link></div>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SavedTab({
+  items,
+  onUse,
+  onDelete,
+}: {
+  items: SavedAudienceItem[];
+  onUse: (item: SavedAudienceItem) => void;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  if (!items.length) return <div className="tg-empty">Kayıtlı kitle yok. Kitle adımında “Kitleyi kaydet” ile ekleyin.</div>;
+  return (
+    <div className="tg-saved">
+      {items.map((item) => (
+        <div key={item.id} className="tg-card">
+          <div className="tg-group-head">
+            <div>
+              <strong>{item.name}</strong>
+              <p className="lead" style={{ marginBottom: 0 }}>{item.description}</p>
+              {item.counts && (
+                <p className="lead">Şu an {item.counts.deliverable_count} gönderilebilir kişi</p>
+              )}
+            </div>
+            <div className="tg-actions-row">
+              <button type="button" className="tg-btn-primary" onClick={() => onUse(item)}>Kullan</button>
+              <button type="button" className="tg-btn" onClick={() => void onDelete(item.id)}>Sil</button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function fillPreview(body: string, message: string): string {
+  return body.replace(/\{\{\s*mesaj\s*\}\}/g, message.trim() || "{{mesaj}}");
+}
+
+function formatDate(iso?: string): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("tr-TR");
+  } catch {
+    return iso;
+  }
 }

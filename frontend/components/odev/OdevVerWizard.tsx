@@ -37,12 +37,14 @@ import {
   type ManualAssignment,
   type LastQuotaDefaults,
 } from '@/lib/resources-api';
+import { fetchCoachStudents } from '@/lib/coach-api';
 import AssignmentNotifySendModal from '@/components/odev/AssignmentNotifySendModal';
 import {
   buildCompletionNote,
   isIncompleteHistory,
   stripCompletionTitleSuffix,
 } from '@/components/odev/odevCompletionHelpers';
+import { isEmptyNoteHtml, sanitizeNoteHtml } from '@/lib/note-html';
 import {
   clearOdevVerDraft,
   loadOdevVerDraft,
@@ -228,6 +230,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const [dueDate, setDueDate] = useState(getDefaultDueDate());
   const [priority, setPriority] = useState('MEDIUM');
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [showPrint, setShowPrint] = useState(false);
   const [savedAssignmentId, setSavedAssignmentId] = useState<number | null>(null);
   const [showSendAfterSave, setShowSendAfterSave] = useState(false);
@@ -390,16 +393,36 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   useEffect(() => {
     (async () => {
       try {
-        const result = await fetchOgrenciList();
-        if (result.success && result.data) {
-          setStudents(result.data as Student[]);
+        if (isCoach) {
+          const result = await fetchCoachStudents();
+          if (result.success && result.data) {
+            setStudents(result.data.map((s) => ({
+              id: s.id,
+              ad: s.ad,
+              soyad: s.soyad,
+              sinif_ad: s.sinif || undefined,
+              profil_foto: s.profil_foto || undefined,
+              numara: s.okul_no || undefined,
+            })));
+          } else {
+            flash('❌ Öğrenci listesi yüklenemedi');
+          }
+        } else {
+          const result = await fetchOgrenciList();
+          if (result.success && result.data) {
+            setStudents(result.data as Student[]);
+          } else {
+            flash('❌ Öğrenci listesi yüklenemedi');
+          }
         }
-      } catch { /* silent */ }
+      } catch {
+        flash('❌ Öğrenci listesi yüklenemedi');
+      }
       finally {
         setStudentsLoaded(true);
       }
     })();
-  }, []);
+  }, [isCoach]);
 
   /* ─── Paketten ödev verme: API'den paket verilerini oku ─── */
   useEffect(() => {
@@ -414,7 +437,6 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           flash('❌ Paket verileri okunamadı');
           return;
         }
-        await incrementPackageUsage(id);
         const cartItems = mapPackageItemsToCart(result.data.items);
         setPendingPackageCart(cartItems);
         setPendingPackageTitle(result.data.name);
@@ -457,7 +479,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       } catch { /* fall through */ }
 
       setAutoSelected(true);
-      pickStudent({ id: sid, ad: 'Öğrenci', soyad: `#${sid}` });
+      flash('❌ Öğrenci listede bulunamadı veya erişim yok');
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preselectedStudentId, students, studentsLoaded, autoSelected]);
@@ -903,7 +925,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const isDirty = useMemo(() => {
     const hasEdits =
       cart.length > 0 ||
-      notes.trim().length > 0 ||
+      notes.replace(/<[^>]+>/g, ' ').trim().length > 0 ||
       title !== generateWeeklyTitle();
 
     // Kontrolden / kilitli öğrenci: yalnızca gerçek düzenleme dirty sayılır
@@ -1094,6 +1116,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   ) => {
     const targetStudents = multiSelect ? selectedStudents : (selectedStudent ? [selectedStudent] : []);
     if (targetStudents.length === 0 || cart.length === 0) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     const openWhatsApp = options?.openWhatsApp ?? status === 'PUBLISHED';
     const keepPrintOpen = options?.keepPrintOpen ?? false;
     setSaving(true);
@@ -1123,7 +1147,9 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
             return {
               task_type: c.quotaKind ? 'SOLVE_TEST' : c.contentType === 'TEST_SET' ? 'SOLVE_TEST' : c.contentType === 'PAGE_RANGE' ? 'SOLVE_PDF' : c.contentType === 'VIDEO' ? 'WATCH_VIDEO' : 'REVIEW_TOPIC',
               title: c.contentName,
-              description: (contentNotes[c.id] || '').trim() || autoNote,
+              description: !isEmptyNoteHtml(contentNotes[c.id] || '')
+                ? sanitizeNoteHtml(contentNotes[c.id])
+                : autoNote,
               ...(c.quotaKind
                 ? { quota_kind: c.quotaKind, question_count: c.questionCount || null }
                 : {
@@ -1167,7 +1193,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         const body = {
           student: student.id,
           title: finalTitle,
-          description: notes,
+          description: isEmptyNoteHtml(notes) ? '' : sanitizeNoteHtml(notes),
           priority: priority,
           due_date: dueDateToApi(dueDate || getDefaultDueDate()),
           status: backendStatus,
@@ -1203,6 +1229,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           failCount++;
           lastError = err instanceof Error ? err.message : lastError;
         }
+      }
+
+      if (failCount === 0 && successCount > 0 && packageTemplateId) {
+        await incrementPackageUsage(packageTemplateId).catch(() => undefined);
       }
 
       if (failCount === 0) {
@@ -1256,7 +1286,6 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         } else if (lastCreatedId && kontrolDone && returnHref) {
           const sep = returnHref.includes('?') ? '&' : '?';
           forceNavigate(`${returnHref}${sep}notify=report`, { hard: true });
-          return;
         } else if (!keepPrintOpen) {
           resetAll();
         }
@@ -1270,9 +1299,11 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Bilinmeyen hata';
       flash('❌ Ödev kaydedilemedi: ' + msg);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+      setSendBusy(false);
     }
-    setSaving(false);
-    setSendBusy(false);
   };
 
   const resetAll = (opts?: { preserveSendState?: boolean }) => {
@@ -1698,6 +1729,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               onPriorityChange={setPriority}
               onRemove={removeContent}
               onRemoveMany={removeContents}
+              onNoteChange={(id: number, v: string) => setContentNotes(p => ({ ...p, [id]: v }))}
               onSave={handleSave}
               onPrint={() => setShowPrint(true)}
               getPhotoUrl={getPhotoUrl}

@@ -10,6 +10,7 @@ import { useOdevKontrolPaths, buildNewAssignmentFromKontrolHref } from "@/compon
 import { MetaCol, assignmentTypeLabel } from "@/components/odev/odevPdfMeta";
 import { displayTestLabel, quotaBookIcon, quotaKindLabel, splitColumnMajor } from "@/components/odev/odevPlanTypes";
 import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
+import NoteHtml from "@/components/odev/NoteHtml";
 
 /** Backend completion_utils ile aynı mantık */
 function effectiveTaskCompletionPercent(task: {
@@ -919,7 +920,7 @@ export default function OdevKontrolReportClient({
             borderRadius: 8, fontSize: 11, color: "#92400e", lineHeight: 1.5,
           }}>
             <strong>📌 Koç Notu:</strong>
-            <div style={{ whiteSpace: "pre-line", marginTop: 4 }}>{report.description}</div>
+            <div style={{ marginTop: 4 }}><NoteHtml html={report.description} /></div>
           </div>
         )}
 

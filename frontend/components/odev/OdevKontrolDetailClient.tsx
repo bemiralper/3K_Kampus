@@ -22,6 +22,7 @@ import { useOdevKontrolPaths, buildNewAssignmentFromKontrolHref } from "@/compon
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { getRiskColor, isOverdue } from "@/components/odev/statusTokens";
 import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
+import NoteHtml from "@/components/odev/NoteHtml";
 // ─── Types ───
 interface AssignmentTask {
   id: number;
@@ -183,6 +184,7 @@ export default function OdevKontrolDetailClient({
   const [showPostponeModal, setShowPostponeModal] = useState(false);
   const [postponeDate, setPostponeDate] = useState("");
   const [postponeReason, setPostponeReason] = useState("");
+  const [postponing, setPostponing] = useState(false);
 
   // Yönetici: kilitli ödevi yeniden aktif et
   const [showReactivateModal, setShowReactivateModal] = useState(false);
@@ -210,12 +212,14 @@ export default function OdevKontrolDetailClient({
   // Silme modalı
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletionReason, setDeletionReason] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const [showSendModal, setShowSendModal] = useState<"plan" | "report" | null>(null);
   const [pdfDownloadBusy, setPdfDownloadBusy] = useState<"plan" | "report" | null>(null);
   /** Kontrol yeni tamamlandığında: ödev ver / WhatsApp / kapat seçenekleri */
   const [showCompletionChooser, setShowCompletionChooser] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [markingNotDone, setMarkingNotDone] = useState(false);
 
   // Kontrol tamamlandı ama tekrar düzenleme modu
   const [isReEditing, setIsReEditing] = useState(false);
@@ -490,10 +494,11 @@ export default function OdevKontrolDetailClient({
   };
 
   const handlePostpone = async () => {
-    if (!postponeDate || !assignment) return;
+    if (!postponeDate || !assignment || postponing) return;
+    setPostponing(true);
     try {
       const result = await postponeAssignment(assignment.id, {
-        new_due_date: postponeDate + "T23:59:00Z",
+        new_due_date: postponeDate + "T23:59:00",
         reason: postponeReason,
       });
       if (result.success) {
@@ -506,6 +511,7 @@ export default function OdevKontrolDetailClient({
         flash("❌ " + (result.error || "Erteleme başarısız"));
       }
     } catch { flash("❌ Bağlantı hatası"); }
+    setPostponing(false);
   };
 
   const defaultReactivateDate = () => {
@@ -552,16 +558,21 @@ export default function OdevKontrolDetailClient({
     try {
       const result = await updateAssignmentRiskStatus(assignment.id, riskStatus);
       if (result.success) { flash("✅ Risk durumu güncellendi"); await fetchAssignment(); }
+      else flash("❌ " + (result.error || "Risk durumu güncellenemedi"));
     } catch { flash("❌ Hata"); }
   };
 
+  const [assigningDraft, setAssigningDraft] = useState(false);
+
   const handleAssignDraft = async () => {
-    if (!assignment) return;
+    if (!assignment || assigningDraft) return;
+    setAssigningDraft(true);
     try {
       const result = await assignAssignment(assignment.id);
       if (result.success) { flash("✅ Ödev atandı"); await fetchAssignment(); }
       else flash("❌ " + (result.error || "Atama başarısız"));
     } catch { flash("❌ Hata"); }
+    setAssigningDraft(false);
   };
 
   const handleSaveLateNote = async () => {
@@ -579,8 +590,9 @@ export default function OdevKontrolDetailClient({
   };
 
   const handleMarkAllNotDone = async () => {
-    if (!assignment) return;
+    if (!assignment || markingNotDone) return;
     const wasCompleted = assignment.status === "COMPLETED";
+    setMarkingNotDone(true);
     try {
       const result = await markAllNotDone(assignment.id, {
         reason: notDoneReason,
@@ -599,6 +611,7 @@ export default function OdevKontrolDetailClient({
         flash("❌ " + (result.error || "İşlem başarısız"));
       }
     } catch { flash("❌ Bağlantı hatası"); }
+    setMarkingNotDone(false);
   };
 
   const handleResetTask = async (taskId: number) => {
@@ -638,12 +651,13 @@ export default function OdevKontrolDetailClient({
   };
 
   const handleDelete = async () => {
-    if (!assignment) return;
+    if (!assignment || deleting) return;
     const reason = deletionReason.trim();
     if (reason.length < 10) {
       flash("Silme sebebi en az 10 karakter olmalıdır");
       return;
     }
+    setDeleting(true);
     try {
       const result = await deleteAssignment(assignment.id, { deletion_reason: reason });
       if (result.success) {
@@ -651,9 +665,11 @@ export default function OdevKontrolDetailClient({
         router.push(paths.list);
       } else {
         flash("❌ " + (result.error || "Silme işlemi başarısız oldu"));
+        setDeleting(false);
       }
     } catch {
       flash("❌ Bağlantı hatası — silme yapılamadı");
+      setDeleting(false);
     }
   };
 
@@ -681,6 +697,8 @@ export default function OdevKontrolDetailClient({
     ? false
     : isNonSubmission || isControlLocked || (isCompleted && !isReEditing);
   const evaluatedTaskCount = liveSummary ? liveSummary.total - liveSummary.pending : 0;
+  /** Getirilmedi sonrası görevler kilitli kalır; sıfırlama kontrol kilidi yoksa açık kalmalı. */
+  const canResetEvaluation = evaluatedTaskCount > 0 && !isControlLocked;
   const assignHomeworkHref =
     isCompleted && paths.newAssignment
       ? buildNewAssignmentFromKontrolHref(paths.newAssignment, {
@@ -729,7 +747,7 @@ export default function OdevKontrolDetailClient({
             )}
           </div>
           <div className="ok-detail-actions">
-            {evaluatedTaskCount > 0 && !isLocked && (
+            {canResetEvaluation && (
               <button
                 type="button"
                 className="ok-btn-secondary"
@@ -851,13 +869,13 @@ export default function OdevKontrolDetailClient({
 
           {/* Actions Bar */}
           <div style={{ background: "white", borderRadius: 14, padding: "14px 22px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.05)", border: "1px solid #f1f5f9", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            {assignment.status === "DRAFT" && !isLocked && <button onClick={handleAssignDraft} style={{ padding: "9px 18px", background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "white", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 8px rgba(59,130,246,0.3)" }}>📤 Öğrenciye Ata</button>}
+            {assignment.status === "DRAFT" && !isLocked && <button onClick={handleAssignDraft} disabled={assigningDraft} style={{ padding: "9px 18px", background: assigningDraft ? "#d1d5db" : "linear-gradient(135deg, #3b82f6, #2563eb)", color: "white", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: assigningDraft ? "default" : "pointer", boxShadow: assigningDraft ? "none" : "0 2px 8px rgba(59,130,246,0.3)" }}>{assigningDraft ? "Atanıyor…" : "📤 Öğrenciye Ata"}</button>}
             {assignment.status !== "COMPLETED" && assignment.status !== "DRAFT" && !isLocked && (
               <>
                 <button onClick={() => setShowNotDoneModal(true)} style={{ padding: "9px 18px", background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "white", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 8px rgba(239,68,68,0.3)" }}>🚫 Ödev Getirilmedi</button>
                 <div style={{ width: 1, height: 28, background: "#e2e8f0" }} />
                 <span style={{ fontSize: 12, color: "#94a3b8", marginRight: 2, fontWeight: 500 }}>Risk:</span>
-                {[{ key: "ON_TRACK", label: "✅ Yolunda" }, { key: "BEHIND", label: "🟡 Geride" }, { key: "AT_RISK", label: "🔴 Riskli" }].map(r => (
+                {[{ key: "ON_TRACK", label: "✅ Yolunda" }, { key: "DELAYED", label: "🟡 Geride" }, { key: "AT_RISK", label: "🔴 Riskli" }].map(r => (
                   <button key={r.key} onClick={() => handleUpdateRisk(r.key)} style={{ padding: "7px 14px", fontSize: 12, border: assignment.risk_status === r.key ? `2px solid ${getRiskColor(r.key).text}` : "1px solid #e2e8f0", borderRadius: 10, background: assignment.risk_status === r.key ? getRiskColor(r.key).bg : "#fafafa", cursor: "pointer", fontWeight: assignment.risk_status === r.key ? 700 : 500, transition: "all 0.2s", boxShadow: assignment.risk_status === r.key ? `0 2px 8px ${getRiskColor(r.key).text}20` : "none" }}>{r.label}</button>
                 ))}
               </>
@@ -1235,7 +1253,7 @@ export default function OdevKontrolDetailClient({
                                     {metaBits.map((m) => <span key={m}>{m}</span>)}
                                     {task.description && (
                                       <span className="ok-task-compact-desc">
-                                        {task.description}
+                                        <NoteHtml html={task.description} />
                                       </span>
                                     )}
                                   </div>
@@ -1432,7 +1450,7 @@ export default function OdevKontrolDetailClient({
                             </div>
                           ));
                         })()}
-                        {lesson.notes && <div style={{ padding: "12px 22px", background: "linear-gradient(135deg, #fffbeb, #fef3c7)", fontSize: 12, color: "#92400e", borderTop: "1px solid #fde68a", fontWeight: 500 }}>💡 {lesson.notes}</div>}
+                        {lesson.notes && <div style={{ padding: "12px 22px", background: "linear-gradient(135deg, #fffbeb, #fef3c7)", fontSize: 12, color: "#92400e", borderTop: "1px solid #fde68a", fontWeight: 500 }}>💡 <NoteHtml html={lesson.notes} /></div>}
                       </div>
                     )}
                   </div>
@@ -1449,7 +1467,7 @@ export default function OdevKontrolDetailClient({
           {/* Notlar */}
           {(assignment.coach_notes || assignment.student_notes || assignment.description) && (
             <div style={{ background: "white", borderRadius: 16, padding: 24, marginTop: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.04)", border: "1px solid #f1f5f9" }}>
-              {assignment.description && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📋 Açıklama</div><p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.7, background: "#f8fafc", padding: "10px 14px", borderRadius: 10, border: "1px solid #f1f5f9", whiteSpace: "pre-line" }}>{assignment.description}</p></div>}
+              {assignment.description && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📋 Açıklama</div><p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.7, background: "#f8fafc", padding: "10px 14px", borderRadius: 10, border: "1px solid #f1f5f9" }}><NoteHtml html={assignment.description} /></p></div>}
               {assignment.coach_notes && <div style={{ marginBottom: 16 }}><div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>🎓 Koç Notları</div><p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.7, background: "#f5f3ff", padding: "10px 14px", borderRadius: 10, border: "1px solid #ede9fe" }}>{assignment.coach_notes}</p></div>}
               {assignment.student_notes && <div><div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📝 Öğrenci Notları</div><p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.7, background: "#f0fdf4", padding: "10px 14px", borderRadius: 10, border: "1px solid #dcfce7" }}>{assignment.student_notes}</p></div>}
             </div>
@@ -1485,7 +1503,7 @@ export default function OdevKontrolDetailClient({
                   ))}
                 </div>
                 <div style={{ marginTop: 10, fontSize: 12, color: "#94a3b8", textAlign: "center" }}>Toplam: {liveSummary.total} görev</div>
-                {evaluatedTaskCount > 0 && (
+                {canResetEvaluation && (
                   <button
                     type="button"
                     className="ok-btn-reset-all"
@@ -1650,7 +1668,7 @@ export default function OdevKontrolDetailClient({
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button onClick={() => setShowPostponeModal(false)} style={{ padding: "11px 22px", background: "white", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, cursor: "pointer", fontWeight: 500 }}>İptal</button>
-              <button onClick={handlePostpone} disabled={!postponeDate} style={{ padding: "11px 26px", background: postponeDate ? "linear-gradient(135deg, #f59e0b, #d97706)" : "#d1d5db", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: postponeDate ? "pointer" : "default", boxShadow: postponeDate ? "0 3px 12px rgba(245,158,11,0.3)" : "none" }}>📅 Ertele</button>
+              <button onClick={handlePostpone} disabled={!postponeDate || postponing} style={{ padding: "11px 26px", background: postponeDate && !postponing ? "linear-gradient(135deg, #f59e0b, #d97706)" : "#d1d5db", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: postponeDate && !postponing ? "pointer" : "default", boxShadow: postponeDate && !postponing ? "0 3px 12px rgba(245,158,11,0.3)" : "none" }}>{postponing ? "Erteleniyor…" : "📅 Ertele"}</button>
             </div>
           </div>
         </>
@@ -1742,7 +1760,7 @@ export default function OdevKontrolDetailClient({
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button onClick={() => { setShowNotDoneModal(false); setNotDoneReason("NOT_BROUGHT"); setNotDoneNote(""); }} style={{ padding: "11px 22px", background: "white", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, cursor: "pointer", fontWeight: 500 }}>İptal</button>
-              <button onClick={handleMarkAllNotDone} style={{ padding: "11px 26px", background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 3px 12px rgba(239,68,68,0.3)" }}>🚫 Tümünü Yapmadı İşaretle</button>
+              <button onClick={handleMarkAllNotDone} disabled={markingNotDone} style={{ padding: "11px 26px", background: markingNotDone ? "#d1d5db" : "linear-gradient(135deg, #ef4444, #dc2626)", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: markingNotDone ? "default" : "pointer", boxShadow: markingNotDone ? "none" : "0 3px 12px rgba(239,68,68,0.3)" }}>{markingNotDone ? "İşaretleniyor…" : "🚫 Tümünü Yapmadı İşaretle"}</button>
             </div>
           </div>
         </>
@@ -1845,9 +1863,9 @@ export default function OdevKontrolDetailClient({
                 type="button"
                 className="ok-btn-danger"
                 onClick={handleDelete}
-                disabled={deletionReason.trim().length < 10}
+                disabled={deletionReason.trim().length < 10 || deleting}
               >
-                Sil
+                {deleting ? "Siliniyor…" : "Sil"}
               </button>
             </div>
           </div>

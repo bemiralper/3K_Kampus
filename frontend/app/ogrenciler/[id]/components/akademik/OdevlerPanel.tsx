@@ -50,6 +50,7 @@ export default function OdevlerPanel({ ogrenciId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
+  const [assigningId, setAssigningId] = useState<number | null>(null);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -98,6 +99,8 @@ export default function OdevlerPanel({ ogrenciId }: Props) {
   const handleAssignDraft = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     e.preventDefault();
+    if (assigningId) return;
+    setAssigningId(id);
     try {
       const result = await assignAssignment(id);
       if (result.success) {
@@ -109,6 +112,7 @@ export default function OdevlerPanel({ ogrenciId }: Props) {
     } catch {
       flash('❌ Atama başarısız');
     }
+    setAssigningId(null);
   };
 
   if (loading) {
@@ -251,13 +255,15 @@ export default function OdevlerPanel({ ogrenciId }: Props) {
                     {isDraft && (
                       <button
                         type="button"
+                        disabled={assigningId === a.id}
                         onClick={(e) => handleAssignDraft(e, a.id)}
                         style={{
                           padding: '6px 12px', background: '#eff6ff', color: '#2563eb',
-                          border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                          cursor: assigningId === a.id ? 'default' : 'pointer',
                         }}
                       >
-                        Öğrenciye ata
+                        {assigningId === a.id ? 'Atanıyor…' : 'Öğrenciye ata'}
                       </button>
                     )}
                   </div>

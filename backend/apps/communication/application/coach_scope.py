@@ -21,7 +21,9 @@ from apps.communication.domain.enums import (
 )
 from shared.permissions import user_has_any_permission
 
-COACH_AUDIENCE_TYPES = frozenset({'coach_students', 'coach_parents', 'custom_ids', 'filtered'})
+COACH_AUDIENCE_TYPES = frozenset({
+    'coach_students', 'coach_parents', 'custom_ids', 'filtered', 'query',
+})
 
 # Ticket routing claim filtrelerinin üstünde kalan roller (koç profili olsa bile).
 FULL_INBOX_ROLE_CODES = frozenset({'super_admin', 'kurum_yoneticisi'})

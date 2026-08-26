@@ -3,6 +3,14 @@
 """
 from django.urls import path
 
+from apps.communication.interfaces.views.audience_query import (
+    AudienceCatalogView,
+    AudiencePreviewView,
+    AudienceRecipientsView,
+    AudienceSearchView,
+    SavedAudienceDetailView,
+    SavedAudienceListCreateView,
+)
 from apps.communication.interfaces.views.campaigns import (
     CampaignCancelView,
     CampaignConfirmView,
@@ -19,7 +27,12 @@ from apps.communication.interfaces.views.accounts import (
     WhatsAppAccountTestView,
 )
 from apps.communication.interfaces.views.config import WhatsAppConfigTestView, WhatsAppConfigView
-from apps.communication.interfaces.views.queue import OutboundQueueListView
+from apps.communication.interfaces.views.queue import (
+    OutboundQueueArchiveView,
+    OutboundQueueCancelView,
+    OutboundQueueListView,
+    OutboundQueueRetryView,
+)
 from apps.communication.interfaces.views.conversation_open import ConversationOpenView
 from apps.communication.interfaces.views.meta_templates import WhatsAppMetaTemplatesView
 from apps.communication.interfaces.views.birthday_media import (
@@ -226,6 +239,9 @@ urlpatterns = [
         name='whatsapp-account-sync-templates',
     ),
     path('queue/', OutboundQueueListView.as_view(), name='outbound-queue'),
+    path('queue/archive/', OutboundQueueArchiveView.as_view(), name='outbound-queue-archive'),
+    path('queue/<uuid:item_id>/retry/', OutboundQueueRetryView.as_view(), name='outbound-queue-retry'),
+    path('queue/<uuid:item_id>/cancel/', OutboundQueueCancelView.as_view(), name='outbound-queue-cancel'),
     path('conversations/open/', ConversationOpenView.as_view(), name='conversation-open'),
     path('conversations/', ConversationListView.as_view(), name='conversation-list'),
     path('conversations/<uuid:conversation_id>/', ConversationDetailView.as_view(), name='conversation-detail'),
@@ -292,6 +308,16 @@ urlpatterns = [
     path('events/stream/', CommunicationEventsStreamView.as_view(), name='events-stream'),
     path('ai/suggest-reply/', AiSuggestReplyView.as_view(), name='ai-suggest-reply'),
     path('payment-reminders/send/', PaymentReminderSendView.as_view(), name='payment-reminder-send'),
+    path('campaigns/audience/catalog/', AudienceCatalogView.as_view(), name='audience-catalog'),
+    path('campaigns/audience/preview/', AudiencePreviewView.as_view(), name='audience-preview'),
+    path('campaigns/audience/recipients/', AudienceRecipientsView.as_view(), name='audience-recipients'),
+    path('campaigns/audience/search/', AudienceSearchView.as_view(), name='audience-search'),
+    path('campaigns/saved-audiences/', SavedAudienceListCreateView.as_view(), name='saved-audience-list'),
+    path(
+        'campaigns/saved-audiences/<uuid:audience_id>/',
+        SavedAudienceDetailView.as_view(),
+        name='saved-audience-detail',
+    ),
     path('campaigns/preview/', CampaignPreviewView.as_view(), name='campaign-preview'),
     path('campaigns/', CampaignListCreateView.as_view(), name='campaign-list-create'),
     path('campaigns/<uuid:campaign_id>/', CampaignDetailView.as_view(), name='campaign-detail'),

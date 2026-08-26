@@ -191,6 +191,7 @@ class MetaTemplateService:
         search: str | None = None,
         approved_only: bool = False,
         usage: str | None = None,
+        usage_exact: bool = False,
         template_group: str | None = None,
         include_shared_waba: bool = True,
         dedupe: bool = True,
@@ -202,8 +203,11 @@ class MetaTemplateService:
             .filter(kurum_id=kurum_id)
         )
         if usage:
-            # ALL kapsamı her ekranda görünür
-            qs = qs.filter(usage_scope__in=[usage, MetaTemplateUsage.ALL])
+            if usage_exact:
+                qs = qs.filter(usage_scope=usage)
+            else:
+                # ALL kapsamı her ekranda görünür
+                qs = qs.filter(usage_scope__in=[usage, MetaTemplateUsage.ALL])
         if channel_config_id:
             if include_shared_waba:
                 shared = MetaTemplateService.shared_account_ids(kurum_id, channel_config_id)

@@ -231,3 +231,15 @@ class HomeworkPoolUnplannedFilterTest(TestCase):
         self.assertEqual(response.status_code, 200)
         mat_items = [i for i in response.data if i['lesson_id'] == lesson_mat.id]
         self.assertEqual(len(mat_items), 0)
+
+    def test_homework_pool_requires_student_access(self):
+        outsider = User.objects.create_user(
+            username='pool_outsider',
+            email='pool_outsider@test.com',
+            password='testpass123',
+        )
+        outsider_client = APIClient()
+        outsider_client.force_authenticate(user=outsider)
+        outsider_client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        response = outsider_client.get(self._pool_url(student_id=self.student.id))
+        self.assertEqual(response.status_code, 403)

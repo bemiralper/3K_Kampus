@@ -72,6 +72,7 @@ class MetaTemplateListCreateView(APIView):
             search=request.query_params.get('search') or None,
             approved_only=request.query_params.get('approved_only') in ('1', 'true', 'True'),
             usage=request.query_params.get('usage') or None,
+            usage_exact=request.query_params.get('usage_exact') in ('1', 'true', 'True'),
             template_group=request.query_params.get('template_group') or None,
             include_shared_waba=include_shared,
             dedupe=dedupe,

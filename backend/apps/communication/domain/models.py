@@ -1426,3 +1426,52 @@ class NotificationAutoSchedule(models.Model):
 
     def __str__(self):
         return f'{self.event_key} {self.send_time} enabled={self.is_enabled}'
+
+
+class SavedAudience(models.Model):
+    """Kullanıcının kaydettiği dinamik kitle kuralları (liste değil, filtre ağacı)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='saved_audiences',
+        verbose_name='Kurum',
+    )
+    sube = models.ForeignKey(
+        'sube.Sube',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='saved_audiences',
+        verbose_name='Şube',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='saved_audiences',
+        verbose_name='Oluşturan',
+    )
+    name = models.CharField(max_length=160, verbose_name='Kitle adı')
+    description = models.CharField(max_length=300, blank=True, default='', verbose_name='Açıklama')
+    query_json = models.JSONField(default=dict, blank=True, verbose_name='Kitle kuralları')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_saved_audience'
+        verbose_name = 'Kayıtlı Kitle'
+        verbose_name_plural = 'Kayıtlı Kitleler'
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum', 'created_by', 'name'],
+                name='comm_saved_aud_user_name_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['kurum', 'created_by'], name='comm_saved_aud_user_idx'),
+        ]
+
+    def __str__(self):
+        return self.name

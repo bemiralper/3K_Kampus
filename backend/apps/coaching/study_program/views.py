@@ -479,6 +479,11 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         student_id = request.query_params.get('student_id')
         if not student_id:
             return Response({'error': 'student_id gerekli.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not user_can_access_student(request.user, student_id):
+            return Response(
+                {'error': 'Bu öğrenciye erişim yetkiniz yok.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         # Filtreler
         lesson_id = request.query_params.get('lesson_id')

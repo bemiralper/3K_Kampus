@@ -1,0 +1,139 @@
+.qpage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.qpage-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.qpage-tab {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.qpage-tab.is-on {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
+.qpage-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.qpage-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.qpage-filters input,
+.qpage-filters select {
+  height: 38px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0 10px;
+  font-size: 13px;
+  background: #fff;
+  min-width: 140px;
+}
+
+.qpage-filters input {
+  min-width: 220px;
+}
+
+.qpage-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.qpage-group {
+  border: 1px solid #fecdd3;
+  background: #fff1f2;
+  color: #9f1239;
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.qpage-group.is-on {
+  background: #9f1239;
+  border-color: #9f1239;
+  color: #fff;
+}
+
+.qpage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.qpage-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.qpage-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.qpage-table tr:hover td { background: #f8fafc; }
+
+.qpage-who strong { display: block; color: #0f172a; }
+.qpage-who span { color: #64748b; font-size: 12px; }
+
+.qpage-err {
+  color: #be123c;
+  font-size: 12px;
+  max-width: 280px;
+  line-height: 1.35;
+}
+
+.qpage-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.qpage-actions button {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.qpage-actions .retry { color: #0f766e; border-color: #99f6e4; background: #ecfdf5; }
+.qpage-actions .cancel { color: #9f1239; }
+
+@media (max-width: 900px) {
+  .qpage-table { display: block; overflow-x: auto; }
+  .qpage-filters input { min-width: 160px; }
+}

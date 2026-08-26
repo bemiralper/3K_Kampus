@@ -1879,31 +1879,67 @@ export interface OgrenciBrief {
   profil_foto?: string | null;
   sinif_ad?: string;
   ogrenci_no?: string;
+  okul_no?: string;
   numara?: string;
 }
 
+function normalizeOgrenciBrief(row: OgrenciBrief): OgrenciBrief {
+  const numara = row.numara || row.okul_no || row.ogrenci_no || undefined;
+  return { ...row, numara };
+}
+
+function extractOgrenciListPayload(
+  response: ApiResponse<OgrenciBrief[] | Record<string, unknown>> & {
+    ogrenciler?: OgrenciBrief[];
+    total_pages?: number;
+    total_count?: number;
+  },
+): { list: OgrenciBrief[]; totalPages: number } {
+  let list: OgrenciBrief[] = [];
+  if (Array.isArray(response.ogrenciler)) {
+    list = response.ogrenciler;
+  } else if (Array.isArray(response.data)) {
+    list = response.data;
+  } else if (response.data && typeof response.data === 'object') {
+    const obj = response.data as Record<string, unknown>;
+    const nested = obj.ogrenciler ?? obj.results;
+    if (Array.isArray(nested)) list = nested as OgrenciBrief[];
+  }
+  const fromBody =
+    response.data && typeof response.data === 'object' && !Array.isArray(response.data)
+      ? (response.data as Record<string, unknown>)
+      : {};
+  const totalPages = Number(
+    response.total_pages ?? fromBody.total_pages ?? 1,
+  ) || 1;
+  return { list: list.map(normalizeOgrenciBrief), totalPages };
+}
+
 /**
- * Öğrenci listesini getir (ödev verme ekranı)
+ * Öğrenci listesini getir (ödev verme ekranı).
+ * `/ogrenciler/api/list/` varsayılan 25 kayıt döner — tüm aktif öğrenciler için sayfaları dolaşır.
  */
 export async function fetchOgrenciList(): Promise<ApiResponse<OgrenciBrief[]>> {
-  const response = await apiGet<OgrenciBrief[] | Record<string, unknown>>('/ogrenciler/api/list/');
-  if (!response.success) return { ...response, data: [] };
+  const pageSize = 100;
+  const collected: OgrenciBrief[] = [];
+  let page = 1;
+  let totalPages = 1;
 
-  const extra = response as ApiResponse<OgrenciBrief[]> & { ogrenciler?: OgrenciBrief[] };
-  if (Array.isArray(extra.ogrenciler)) {
-    return { success: true, data: extra.ogrenciler };
-  }
-  if (Array.isArray(response.data)) {
-    return { success: true, data: response.data };
-  }
-  if (response.data && typeof response.data === 'object') {
-    const obj = response.data as Record<string, unknown>;
-    const list = obj.ogrenciler ?? obj.results;
-    if (Array.isArray(list)) {
-      return { success: true, data: list as OgrenciBrief[] };
+  do {
+    const response = await apiGet<OgrenciBrief[] | Record<string, unknown>>(
+      `/ogrenciler/api/list/?durum=aktif&page=${page}&page_size=${pageSize}`,
+    );
+    if (!response.success) {
+      if (collected.length) return { success: true, data: collected };
+      return { ...response, data: [] };
     }
-  }
-  return { success: true, data: [] };
+    const parsed = extractOgrenciListPayload(response);
+    collected.push(...parsed.list);
+    totalPages = parsed.totalPages;
+    page += 1;
+  } while (page <= totalPages);
+
+  return { success: true, data: collected };
 }
 
 /**

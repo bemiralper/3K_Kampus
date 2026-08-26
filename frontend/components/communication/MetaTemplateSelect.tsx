@@ -83,6 +83,7 @@ export default function MetaTemplateSelect({
         account_id: accountId,
         approved_only: true,
         usage,
+        usage_exact: usage === "CAMPAIGN",
       });
       setTemplates(data.templates || []);
     } catch (err) {
