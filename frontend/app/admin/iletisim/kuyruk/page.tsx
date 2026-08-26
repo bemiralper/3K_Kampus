@@ -1,5 +1,7 @@
 import KuyrukClient from "./KuyrukClient";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Mesaj Kuyruğu — 3K Kampüs",
 };

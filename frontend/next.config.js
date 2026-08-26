@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // 4GB canlıda ağır iletişim sayfaları 60s worker’ı düşürüyordu
+  staticPageGenerationTimeout: 180,
   // Django API URL'leri trailing slash kullanır. Next.js varsayılan olarak
   // trailing slash'lı URL'lere 308 redirect uygulayıp slash'ı kaldırır.
   // Bu, POST/PATCH gibi body'li isteklerde sorun çıkarır.
