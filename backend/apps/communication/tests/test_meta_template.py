@@ -59,6 +59,15 @@ class MetaTemplateMapperTest(TestCase):
         self.assertIn('{{2}}', body['text'])
         self.assertIn('example', body)
 
+    def test_build_meta_components_uses_example_overrides(self):
+        components, _vmap = build_meta_components(
+            body_named='Sayın {{veli_ad}},\n\n{{sube}} duyurusu:\n\n{{mesaj}}\n\nBilginize sunarız.',
+            example_values={'mesaj': 'Yarın saat 10.00’da deneme sınavı yapılacaktır.'},
+        )
+        body = next(c for c in components if c['type'] == 'BODY')
+        examples = body['example']['body_text'][0]
+        self.assertIn('Yarın saat 10.00’da deneme sınavı yapılacaktır.', examples)
+
     def test_send_params_follow_map(self):
         vmap = {'1': 'veli_ad', '2': 'ogrenci_ad'}
         params = build_send_body_parameters(vmap, {'veli_ad': 'Ayşe', 'ogrenci_ad': 'Ali'})
@@ -128,6 +137,21 @@ class MetaTemplateServiceTest(TestCase):
         self.assertEqual(kwargs['name'], 'odeme_hatirlat')
         body = next(c for c in kwargs['components'] if c['type'] == 'BODY')
         self.assertIn('{{1}}', body['text'])
+
+    @patch.object(WhatsAppCloudClient, 'create_message_template')
+    def test_submit_sends_custom_mesaj_example(self, mock_create):
+        mock_create.return_value = {'success': True, 'id': '456', 'status': 'PENDING'}
+        sample = 'Yarın saat 10.00’da deneme sınavı A salonunda yapılacaktır.'
+        tpl = MetaTemplateService.create_draft(
+            self.kurum.id,
+            channel_config_id=self.account.id,
+            name='duyuru_metin',
+            body_named='Sayın {{veli_ad}},\n\n{{sube}} duyurusu:\n\n{{mesaj}}\n\nBilginize sunarız.',
+            example_values_json={'mesaj': sample},
+        )
+        MetaTemplateService.submit(tpl)
+        body = next(c for c in mock_create.call_args.kwargs['components'] if c['type'] == 'BODY')
+        self.assertIn(sample, body['example']['body_text'][0])
 
     @patch.object(WhatsAppCloudClient, 'create_message_template')
     def test_submit_media_header_requires_handle(self, mock_create):

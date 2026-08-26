@@ -64,6 +64,11 @@ class CampaignDuyuruSeedTest(TestCase):
         for d in drafts:
             self.assertIn('{{sube}}', d.body_named)
             self.assertNotIn('{{kurum_ad}}', d.body_named)
+            self.assertTrue((d.example_values or {}).get('mesaj'))
+        self.assertNotEqual(
+            next(d for d in drafts if d.family == 'duyuru').example_values['mesaj'],
+            next(d for d in drafts if d.family == 'hatirlatma').example_values['mesaj'],
+        )
 
     def test_seed_creates_three_campaign_drafts(self):
         result = CampaignDuyuruTemplateSeedService.seed(
@@ -80,6 +85,11 @@ class CampaignDuyuruSeedTest(TestCase):
         self.assertEqual(metin.status, MetaTemplateStatus.DRAFT)
         self.assertEqual((metin.header_json or {}).get('type'), 'TEXT')
         self.assertIn('{{mesaj}}', metin.body_named)
+        self.assertIn('deneme sınavı sonuçları', (metin.example_values_json or {}).get('mesaj', ''))
+        hat_metin = qs.get(name='hatirlatma_metin')
+        self.assertIn('15 dakika', (hat_metin.example_values_json or {}).get('mesaj', ''))
+        bilgi_metin = qs.get(name='bilgilendirme_metin')
+        self.assertIn('grup dersi', (bilgi_metin.example_values_json or {}).get('mesaj', ''))
         self.assertIn('{{sube}}', metin.body_named)
         self.assertNotIn('{{kurum_ad}}', metin.body_named)
         hat = qs.get(name='hatirlatma_gorsel_ogrenci')

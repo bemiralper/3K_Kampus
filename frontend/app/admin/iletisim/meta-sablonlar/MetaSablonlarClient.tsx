@@ -19,6 +19,7 @@ import {
   createComposerState,
   parseWhatsAppText,
   resolvePreviewVariables,
+  TEMPLATE_VARIABLES,
   type ComposerState,
 } from "@/components/communication/composer-utils";
 import { useLivePreviewContext } from "@/components/communication/useLivePreviewContext";
@@ -194,6 +195,7 @@ const emptyForm = () => ({
   also_create_app_template: true,
   app_template_name: "",
   template_group: "",
+  example_values: {} as Record<string, string>,
 });
 
 const VIEW_STORAGE_KEY = "comm.metaTemplates.view";
@@ -430,6 +432,7 @@ export default function MetaSablonlarClient() {
       also_create_app_template: false,
       app_template_name: "",
       template_group: t.template_group || "",
+      example_values: { ...(t.example_values_json || {}) },
     });
     setPane("edit");
     setSheetOpen(true);
@@ -448,6 +451,7 @@ export default function MetaSablonlarClient() {
     header_json: form.header?.type && form.header.type !== "NONE" ? form.header : {},
     buttons_json: form.buttons,
     template_group: form.template_group || "",
+    example_values_json: form.example_values,
     also_create_app_template: !editing && !!form.also_create_app_template,
     app_template_name:
       !editing && form.also_create_app_template
@@ -876,9 +880,10 @@ export default function MetaSablonlarClient() {
 
   const previewSegments = useMemo(() => parseWhatsAppText(previewText), [previewText]);
   const usedVariables = useMemo(() => {
-    const found = (form.body_named || "").match(/\{\{(\w+)\}\}/g) || [];
+    const found = [...(form.body_named || "").matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
     return Array.from(new Set(found));
   }, [form.body_named]);
+  const exampleVars = usedVariables.filter((v) => v === "mesaj" || v === "aciklama" || v === "baslik");
   const contentIssues = useMemo(
     () => templateContentIssues(form.body_named, form.header, form.footer_text),
     [form.body_named, form.header, form.footer_text],
@@ -1651,6 +1656,34 @@ export default function MetaSablonlarClient() {
                         </div>
                       )}
                       {!locked && <TemplateVariablePanel onInsert={insertVariable} />}
+                      {exampleVars.length > 0 && (
+                        <div className="sbx-field" style={{ marginTop: 16 }}>
+                          <span className="sbx-label">Meta onay örneği</span>
+                          <p className="sbx-hint">
+                            Yalnızca Meta incelemesine gider. Toplu gönderimde buradaki metin kullanılmaz.
+                          </p>
+                          {exampleVars.map((key) => (
+                            <label key={key} className="sbx-field" style={{ marginTop: 8 }}>
+                              <span className="sbx-label">
+                                {TEMPLATE_VARIABLES.find((item) => item.key === key)?.label || key}
+                                {" "}
+                                <code>{`{{${key}}}`}</code>
+                              </span>
+                              <textarea
+                                className="sbx-input"
+                                rows={3}
+                                disabled={locked}
+                                value={form.example_values[key] || ""}
+                                onChange={(e) => setForm((f) => ({
+                                  ...f,
+                                  example_values: { ...f.example_values, [key]: e.target.value },
+                                }))}
+                                placeholder="Meta onayına gidecek örnek cümle"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </section>
 

@@ -32,7 +32,7 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
             'usage_scope', 'usage_scope_label',
             'template_group', 'template_group_label',
             'body_named', 'header_json', 'footer_text', 'buttons_json',
-            'components_json', 'variable_map_json', 'variables',
+            'components_json', 'variable_map_json', 'example_values_json', 'variables',
             'app_template_id', 'app_template_name',
             'system_usages', 'is_system_active',
             'rejected_reason', 'rejected_detail',
@@ -134,6 +134,7 @@ class WhatsAppMetaTemplateWriteSerializer(serializers.Serializer):
     header_json = serializers.JSONField(required=False, default=dict)
     footer_text = serializers.CharField(required=False, allow_blank=True, default='', max_length=60)
     buttons_json = serializers.JSONField(required=False, default=list)
+    example_values_json = serializers.JSONField(required=False, default=dict)
     # Oluştururken aynı metinli uygulama şablonu da üret
     also_create_app_template = serializers.BooleanField(required=False, default=False)
     app_template_name = serializers.CharField(

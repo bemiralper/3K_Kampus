@@ -118,6 +118,7 @@ class MetaTemplateListCreateView(APIView):
                 buttons_json=data.get('buttons_json') or [],
                 usage_scope=data.get('usage_scope'),
                 template_group=data.get('template_group') or '',
+                example_values_json=data.get('example_values_json') or {},
                 user=request.user,
             )
         except MetaTemplateServiceError as exc:
@@ -217,6 +218,7 @@ class MetaTemplateDetailView(APIView):
             for key in (
                 'name', 'language', 'meta_category', 'body_named',
                 'header_json', 'footer_text', 'buttons_json',
+                'example_values_json',
             )
             if key in request.data
         }

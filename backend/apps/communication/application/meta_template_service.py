@@ -14,6 +14,7 @@ from django.utils import timezone
 from apps.communication.application.meta_template_mapper import (
     build_meta_components,
     build_variable_map,
+    clean_example_values,
     infer_named_body_from_meta_components,
     map_meta_status,
     numbered_to_named,
@@ -257,6 +258,7 @@ class MetaTemplateService:
         buttons_json: list | None = None,
         usage_scope: str = MetaTemplateUsage.ALL,
         template_group: str = '',
+        example_values_json: dict | None = None,
         user=None,
     ) -> WhatsAppMetaTemplate:
         account = ChannelConfigRepository.get_by_id(kurum_id, channel_config_id)
@@ -268,11 +270,13 @@ class MetaTemplateService:
         if meta_category not in MetaTemplateCategory.values:
             raise MetaTemplateServiceError('Geçersiz Meta kategori.')
 
+        examples = clean_example_values(example_values_json)
         components, vmap = build_meta_components(
             body_named=body_named or '',
             header_json=header_json or {},
             footer_text=footer_text or '',
             buttons_json=buttons_json or [],
+            example_values=examples,
         )
 
         shared = cls.shared_account_ids(kurum_id, account.id)
@@ -309,6 +313,7 @@ class MetaTemplateService:
             buttons_json=buttons_json or [],
             components_json=components,
             variable_map_json=vmap,
+            example_values_json=examples,
             created_by=user,
         )
 
@@ -343,6 +348,7 @@ class MetaTemplateService:
         meta_category: str | None = None,
         language: str | None = None,
         name: str | None = None,
+        example_values_json: dict | None = None,
     ) -> WhatsAppMetaTemplate:
         if template.status == MetaTemplateStatus.APPROVED:
             raise MetaTemplateServiceError(
@@ -372,12 +378,15 @@ class MetaTemplateService:
             template.footer_text = footer_text[:60]
         if buttons_json is not None:
             template.buttons_json = buttons_json
+        if example_values_json is not None:
+            template.example_values_json = clean_example_values(example_values_json)
 
         components, vmap = build_meta_components(
             body_named=template.body_named,
             header_json=template.header_json or {},
             footer_text=template.footer_text or '',
             buttons_json=template.buttons_json or [],
+            example_values=template.example_values_json or {},
         )
         template.components_json = components
         template.variable_map_json = vmap
@@ -409,6 +418,7 @@ class MetaTemplateService:
             header_json=template.header_json or {},
             footer_text=template.footer_text or '',
             buttons_json=template.buttons_json or [],
+            example_values=template.example_values_json or {},
         )
         template.components_json = components
         template.variable_map_json = vmap
@@ -484,6 +494,7 @@ class MetaTemplateService:
             header_json=dict(template.header_json or {}),
             footer_text=template.footer_text,
             buttons_json=list(template.buttons_json or []),
+            example_values_json=dict(template.example_values_json or {}),
             user=user,
         )
 
@@ -822,6 +833,7 @@ class MetaTemplateService:
             header_json=template.header_json or {},
             footer_text=template.footer_text or '',
             buttons_json=template.buttons_json or [],
+            example_values=template.example_values_json or {},
         )
         template.components_json = components
         template.variable_map_json = vmap

@@ -647,6 +647,12 @@ class WhatsAppMetaTemplate(models.Model):
         blank=True,
         verbose_name='Değişken eşlemesi (1→ogrenci_ad)',
     )
+    example_values_json = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name='Meta onay örnekleri',
+        help_text='Yalnızca Meta onayına gider ({{mesaj}} vb.). Asıl gönderimde kullanılmaz.',
+    )
     rejected_reason = models.CharField(max_length=255, blank=True, default='', verbose_name='Ret nedeni')
     rejected_detail = models.TextField(blank=True, default='', verbose_name='Meta açıklaması')
     last_submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='Son gönderim')

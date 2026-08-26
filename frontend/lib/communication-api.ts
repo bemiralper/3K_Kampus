@@ -917,6 +917,8 @@ export interface WhatsAppMetaTemplateItem {
   buttons_json?: MetaTemplateButton[];
   components_json?: unknown[];
   variable_map_json?: Record<string, string>;
+  /** Yalnızca Meta onayına giden örnek değerler ({{mesaj}} vb.) */
+  example_values_json?: Record<string, string>;
   rejected_reason?: string;
   rejected_detail?: string;
   last_submitted_at?: string | null;
@@ -1020,6 +1022,7 @@ export async function createLocalMetaTemplate(data: {
   app_template_category?: string;
   app_template_audience_scope?: string;
   template_group?: string;
+  example_values_json?: Record<string, string>;
 }): Promise<WhatsAppMetaTemplateItem & {
   pairing?: { app_template?: MessageTemplateItem; info?: string };
   info?: string;
@@ -1042,6 +1045,7 @@ export async function updateLocalMetaTemplate(
     footer_text: string;
     buttons_json: MetaTemplateButton[];
     template_group: string;
+    example_values_json: Record<string, string>;
   }>,
 ): Promise<WhatsAppMetaTemplateItem> {
   return request(`/meta-templates/${id}/`, {

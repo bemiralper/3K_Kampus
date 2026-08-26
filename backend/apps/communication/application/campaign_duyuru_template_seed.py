@@ -45,6 +45,22 @@ _AUDIENCES: tuple[tuple[str, str], ...] = (
 )
 
 
+META_MESAJ_EXAMPLES = {
+    'duyuru': (
+        'Haftalık deneme sınavı sonuçları öğrenci paneline yüklenmiştir. '
+        'Değerlendirme toplantısı çarşamba saat 18.00’de yapılacaktır.'
+    ),
+    'hatirlatma': (
+        'Yarın saat 10.00’da yapılacak deneme sınavı için öğrencilerin '
+        '15 dakika önce salonda hazır bulunması gerekmektedir.'
+    ),
+    'bilgilendirme': (
+        'Bu haftaki grup dersi programı güncellenmiştir. '
+        'Yeni ders saati ve salon bilgisi öğrenci panelinde yer almaktadır.'
+    ),
+}
+
+
 @dataclass(frozen=True)
 class CampaignDuyuruDraft:
     meta_name: str
@@ -53,6 +69,7 @@ class CampaignDuyuruDraft:
     label: str
     audience: str  # 'veli' | 'ogrenci' | 'personel'
     family: str  # 'duyuru' | 'hatirlatma' | 'bilgilendirme'
+    example_values: dict[str, str]
 
 
 def _body(*, audience: str, topic: str, with_attachment: bool) -> str:
@@ -103,6 +120,7 @@ def list_campaign_duyuru_drafts() -> list[CampaignDuyuruDraft]:
                         ),
                         audience=audience,
                         family=prefix,
+                        example_values={'mesaj': META_MESAJ_EXAMPLES[prefix]},
                     ),
                 )
 
@@ -135,6 +153,7 @@ class CampaignDuyuruTemplateSeedService:
                 'usage_scope': MetaTemplateUsage.CAMPAIGN,
                 'meta_category': MetaTemplateCategory.UTILITY,
                 'body_named': draft.body_named,
+                'example_values': draft.example_values,
             })
         return rows
 
@@ -167,9 +186,10 @@ class CampaignDuyuruTemplateSeedService:
                 prefer_approved=False,
             )
             if existing:
-                if (
-                    existing.status == MetaTemplateStatus.DRAFT
-                    and existing.body_named != draft.body_named
+                if existing.status == MetaTemplateStatus.DRAFT and (
+                    existing.body_named != draft.body_named
+                    or (existing.example_values_json or {}).get('mesaj')
+                    != draft.example_values.get('mesaj')
                 ):
                     if dry_run:
                         updated.append(draft.meta_name)
@@ -180,6 +200,7 @@ class CampaignDuyuruTemplateSeedService:
                             body_named=draft.body_named,
                             header_json=dict(draft.header_json),
                             footer_text='',
+                            example_values_json=dict(draft.example_values),
                         )
                         updated.append(draft.meta_name)
                     except MetaTemplateServiceError as exc:
@@ -203,6 +224,7 @@ class CampaignDuyuruTemplateSeedService:
                     footer_text='',
                     usage_scope=MetaTemplateUsage.CAMPAIGN,
                     template_group='duyuru',
+                    example_values_json=dict(draft.example_values),
                     user=user,
                 )
                 created.append(draft.meta_name)

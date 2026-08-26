@@ -159,7 +159,31 @@ def numbered_to_named(text: str, variable_map: dict[str, str]) -> str:
     return VARIABLE_PATTERN.sub(replacer, text or '')
 
 
-def example_values_for_map(variable_map: dict[str, str]) -> list[str]:
+def clean_example_values(raw) -> dict[str, str]:
+    """Şablonda saklanan onay örneklerini sadeleştirir; gönderim bağlamına karışmaz."""
+    if not isinstance(raw, dict):
+        return {}
+    cleaned: dict[str, str] = {}
+    for key, value in raw.items():
+        name = str(key or '').strip()
+        text = sanitize_template_param_text(value)
+        if name and text and text != '-':
+            cleaned[name] = text
+    return cleaned
+
+
+def sample_value(name: str, overrides: dict[str, str] | None = None, *, fallback: str = '') -> str:
+    if overrides:
+        override = (overrides.get(name) or '').strip()
+        if override:
+            return sanitize_template_param_text(override)
+    return SAMPLE_VALUES.get(name, fallback or f'Örnek {name or ""}'.strip())
+
+
+def example_values_for_map(
+    variable_map: dict[str, str],
+    overrides: dict[str, str] | None = None,
+) -> list[str]:
     """Meta template create için body/header example dizisi (sıralı)."""
     if not variable_map:
         return []
@@ -167,11 +191,15 @@ def example_values_for_map(variable_map: dict[str, str]) -> list[str]:
     values: list[str] = []
     for i in range(1, max_idx + 1):
         name = variable_map.get(str(i), '')
-        values.append(SAMPLE_VALUES.get(name, f'Örnek{i}'))
+        values.append(sample_value(name, overrides, fallback=f'Örnek{i}'))
     return values
 
 
-def _header_component(header: dict[str, Any], variable_map: dict[str, str]) -> dict[str, Any] | None:
+def _header_component(
+    header: dict[str, Any],
+    variable_map: dict[str, str],
+    example_values: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
     if not header:
         return None
     htype = (header.get('type') or '').upper()
@@ -188,13 +216,15 @@ def _header_component(header: dict[str, Any], variable_map: dict[str, str]) -> d
         }
         examples = example_values_for_map(
             {k: v for k, v in variable_map.items() if v in extract_named_variables_in_order(text_named)},
+            example_values,
         )
         # Header örnekleri yalnızca header'daki değişkenler için
         header_keys = extract_named_variables_in_order(text_named)
         if header_keys:
             reverse = {v: k for k, v in variable_map.items()}
             header_examples = [
-                SAMPLE_VALUES.get(k, f'Örnek{reverse.get(k, "1")}') for k in header_keys
+                sample_value(k, example_values, fallback=f'Örnek{reverse.get(k, "1")}')
+                for k in header_keys
             ]
             comp['example'] = {'header_text': header_examples}
         return comp
@@ -261,6 +291,7 @@ def build_meta_components(
     footer_text: str = '',
     buttons_json: list[dict[str, Any]] | None = None,
     variable_map: dict[str, str] | None = None,
+    example_values: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """
     Meta create payload components + variable_map.
@@ -275,9 +306,10 @@ def build_meta_components(
         if (b.get('type') or '').upper() == 'URL'
     ]
     vmap = variable_map or build_variable_map(body_named, header_text, *url_texts)
+    examples = clean_example_values(example_values)
 
     components: list[dict[str, Any]] = []
-    header_comp = _header_component(header, vmap)
+    header_comp = _header_component(header, vmap, examples)
     if header_comp:
         components.append(header_comp)
 
@@ -286,13 +318,14 @@ def build_meta_components(
         'type': 'BODY',
         'text': body_numbered,
     }
-    body_examples = example_values_for_map(vmap)
+    body_examples = example_values_for_map(vmap, examples)
     # Body örnekleri: body içinde geçenler
     body_keys = extract_named_variables_in_order(body_named)
     if body_keys:
         reverse = {v: k for k, v in vmap.items()}
         body_only = [
-            SAMPLE_VALUES.get(k, f'Örnek{reverse.get(k, "1")}') for k in body_keys
+            sample_value(k, examples, fallback=f'Örnek{reverse.get(k, "1")}')
+            for k in body_keys
         ]
         body_comp['example'] = {'body_text': [body_only]}
     elif body_examples:
