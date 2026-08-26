@@ -47,6 +47,8 @@ export const metadata: Metadata = {
 
 async function resolveFacebookAppId(): Promise<string> {
   if (FACEBOOK_APP_ID_ENV) return FACEBOOK_APP_ID_ENV;
+  // Her sayfa bu layout’u prerender eder; build’de Django çağrısı worker’ı 60s kilitler.
+  if (process.env.NEXT_PHASE === "phase-production-build") return "";
   try {
     const data = await getLandingPageData();
     return data?.facebook_app_id?.trim() || "";

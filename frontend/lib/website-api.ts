@@ -207,6 +207,7 @@ export async function invalidateLandingCache(kod = '3K') {
 }
 
 export async function fetchLandingData(kod = '3K'): Promise<LandingData | null> {
+  if (process.env.NEXT_PHASE === 'phase-production-build') return null;
   const now = Date.now();
   const cached = landingCache.get(kod);
   if (cached?.promise) return cached.promise;
@@ -215,7 +216,7 @@ export async function fetchLandingData(kod = '3K'): Promise<LandingData | null> 
   const promise = (async () => {
     const res = await fetchJson<ApiResponse<LandingData>>(
       resolveUrl(`${BASE}/public/${encodeURIComponent(kod)}/`),
-      { cache: 'no-store' },
+      { cache: 'no-store', signal: AbortSignal.timeout(4000) },
     );
     const data = res.data?.data ?? null;
     landingCache.set(kod, { data, ts: Date.now() });
