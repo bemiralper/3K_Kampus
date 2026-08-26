@@ -568,11 +568,16 @@ export default function MetaSablonlarClient() {
     try {
       const res = await syncWhatsAppAccountTemplates(accountId);
       const n = res.upserted ?? res.templates?.length ?? 0;
+      const reverted = res.reverted ?? 0;
       const accounts = res.accounts_synced || 1;
-      setMessage(
+      const base =
         accounts > 1
           ? `${n} şablon senkronize edildi (${accounts} hesap, aynı WABA).`
-          : `${n} şablon senkronize edildi.`,
+          : `${n} şablon senkronize edildi.`;
+      setMessage(
+        reverted
+          ? `${base} Meta’da olmayan ${reverted} şablon taslağa alındı.`
+          : base,
       );
       await load();
     } catch (err) {
@@ -962,7 +967,7 @@ export default function MetaSablonlarClient() {
     {
       key: "sync",
       title: "⟳ Meta’dan güncelle",
-      desc: "Meta’daki şablonları ve onay durumlarını içeri çeker.",
+      desc: "Meta’daki şablonları çeker; silinenleri taslağa alır.",
       onClick: handleSync,
     },
     {

@@ -719,28 +719,35 @@ class WhatsAppCloudClient(BaseChannelClient):
 
         url = f'{GRAPH_API_BASE}/{waba_id}/message_templates'
         headers = {'Authorization': f'Bearer {access_token}'}
-        params = {
-            'limit': min(limit, 250),
+        params: dict[str, Any] | None = {
+            'limit': min(max(limit, 1), 250),
             'fields': (
                 'id,name,status,language,category,rejected_reason,'
                 'components,quality_score,previous_category'
             ),
         }
 
+        templates: list[dict[str, Any]] = []
         try:
             with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
-                response = client.get(url, headers=headers, params=params)
-                data = response.json()
-                if response.is_success:
-                    templates = data.get('data', [])
-                    return {'success': True, 'templates': templates}
-                return {
-                    'success': False,
-                    'error': self._format_api_error(data, response.text),
-                    'templates': [],
-                }
+                next_url = url
+                for _page in range(20):
+                    response = client.get(next_url, headers=headers, params=params)
+                    data = response.json()
+                    if not response.is_success:
+                        return {
+                            'success': False,
+                            'error': self._format_api_error(data, response.text),
+                            'templates': templates,
+                        }
+                    templates.extend(data.get('data') or [])
+                    next_url = ((data.get('paging') or {}).get('next') or '').strip()
+                    if not next_url:
+                        break
+                    params = None
+                return {'success': True, 'templates': templates}
         except httpx.HTTPError as exc:
-            return {'success': False, 'error': str(exc), 'templates': []}
+            return {'success': False, 'error': str(exc), 'templates': templates}
 
     def create_message_template(
         self,

@@ -842,6 +842,7 @@ export async function syncWhatsAppAccountTemplates(id: string): Promise<{
   success: boolean;
   templates?: MetaWhatsAppTemplate[];
   upserted?: number;
+  reverted?: number;
   accounts_synced?: number;
   shared_waba_account_ids?: string[];
   error?: string;

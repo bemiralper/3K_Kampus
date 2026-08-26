@@ -315,6 +315,83 @@ class MetaTemplateServiceTest(TestCase):
         tpl = WhatsAppMetaTemplate.objects.get(name='hello_world', language='tr')
         self.assertEqual(tpl.status, MetaTemplateStatus.APPROVED)
 
+    @patch.object(WhatsAppCloudClient, 'list_message_templates')
+    def test_sync_reverts_missing_pending_to_draft(self, mock_list):
+        mock_list.return_value = {
+            'success': True,
+            'templates': [{
+                'id': 'keep',
+                'name': 'kalan_sablon',
+                'language': 'tr',
+                'status': 'APPROVED',
+                'category': 'UTILITY',
+                'components': [{'type': 'BODY', 'text': 'Merhaba'}],
+            }],
+        }
+        gone = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='silinen_inceleme',
+            language='tr',
+            status=MetaTemplateStatus.PENDING,
+            meta_template_id='old-123',
+            body_named='Sayın {{veli_ad}},\n\n{{mesaj}}',
+        )
+        local_draft = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='yalniz_taslak',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Yerel taslak {{mesaj}}',
+        )
+        result = MetaTemplateService.sync_account(self.account)
+        self.assertTrue(result['success'])
+        self.assertEqual(result['reverted'], 1)
+        gone.refresh_from_db()
+        local_draft.refresh_from_db()
+        self.assertEqual(gone.status, MetaTemplateStatus.DRAFT)
+        self.assertEqual(gone.meta_template_id, '')
+        self.assertEqual(local_draft.status, MetaTemplateStatus.DRAFT)
+
+    @patch.object(WhatsAppCloudClient, 'list_message_templates')
+    def test_sync_skips_mass_revert_when_meta_list_empty(self, mock_list):
+        mock_list.return_value = {'success': True, 'templates': []}
+        approved = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='onayli_kalan',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            meta_template_id='keep-1',
+            body_named='Onaylı metin',
+        )
+        result = MetaTemplateService.sync_account(self.account)
+        self.assertTrue(result['success'])
+        self.assertEqual(result['reverted'], 0)
+        approved.refresh_from_db()
+        self.assertEqual(approved.status, MetaTemplateStatus.APPROVED)
+
+    @patch.object(WhatsAppCloudClient, 'get_message_template')
+    def test_refresh_status_reverts_when_missing_on_meta(self, mock_get):
+        mock_get.return_value = {
+            'success': False,
+            'error': 'Şablon Meta üzerinde bulunamadı.',
+            'template': None,
+        }
+        tpl = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='silinen_refresh',
+            language='tr',
+            status=MetaTemplateStatus.PENDING,
+            meta_template_id='old-456',
+            body_named='{{mesaj}}',
+        )
+        refreshed = MetaTemplateService.refresh_status(tpl)
+        self.assertEqual(refreshed.status, MetaTemplateStatus.DRAFT)
+        self.assertEqual(refreshed.meta_template_id, '')
+
     def test_webhook_status_update(self):
         tpl = WhatsAppMetaTemplate.objects.create(
             kurum=self.kurum,

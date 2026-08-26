@@ -117,8 +117,11 @@ export default function WhatsAppHesaplariClient() {
     try {
       const result = await syncWhatsAppAccountTemplates(account.id);
       if (result.success) {
+        const n = result.upserted ?? result.templates?.length ?? 0;
+        const reverted = result.reverted ?? 0;
         setMessage(
-          `${account.name || account.display_phone}: ${result.upserted ?? result.templates?.length ?? 0} şablon senkronize edildi.`,
+          `${account.name || account.display_phone}: ${n} şablon senkronize edildi.`
+          + (reverted ? ` Meta’da olmayan ${reverted} şablon taslağa alındı.` : ""),
         );
         await load();
       } else {

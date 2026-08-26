@@ -468,6 +468,12 @@ class MetaTemplateService:
             language=template.language,
         )
         if not result.get('success') or not result.get('template'):
+            if cls._mark_missing_as_draft(template):
+                template.save(update_fields=[
+                    'status', 'meta_template_id', 'approved_at',
+                    'rejected_reason', 'rejected_detail', 'updated_at',
+                ])
+                return template
             raise MetaTemplateServiceError(
                 result.get('error') or 'Meta durumu alınamadı.',
                 status_code=404,
@@ -508,6 +514,50 @@ class MetaTemplateService:
                 hsm_id=template.meta_template_id or '',
             )
         template.delete()
+
+    _MISSING_ON_META_STATUSES = (
+        MetaTemplateStatus.PENDING,
+        MetaTemplateStatus.SUBMITTED,
+        MetaTemplateStatus.APPROVED,
+        MetaTemplateStatus.REJECTED,
+        MetaTemplateStatus.PAUSED,
+        MetaTemplateStatus.DISABLED,
+    )
+
+    @classmethod
+    def _mark_missing_as_draft(cls, template: WhatsAppMetaTemplate) -> bool:
+        """Meta listesinde olmayan gönderilmiş şablonu tekrar düzenlenebilir taslağa alır."""
+        if template.status not in cls._MISSING_ON_META_STATUSES:
+            return False
+        template.status = MetaTemplateStatus.DRAFT
+        template.meta_template_id = ''
+        template.approved_at = None
+        template.rejected_reason = ''
+        template.rejected_detail = 'Meta üzerinde bulunamadı; yerel taslağa alındı.'
+        return True
+
+    @classmethod
+    def _revert_missing_meta_templates(
+        cls,
+        account_ids: list,
+        seen_keys: set[tuple[str, str]],
+    ) -> int:
+        reverted = 0
+        qs = WhatsAppMetaTemplate.objects.filter(
+            channel_config_id__in=account_ids,
+            status__in=cls._MISSING_ON_META_STATUSES,
+        )
+        for tpl in qs:
+            key = (tpl.name, tpl.language or 'tr')
+            if key in seen_keys:
+                continue
+            if cls._mark_missing_as_draft(tpl):
+                tpl.save(update_fields=[
+                    'status', 'meta_template_id', 'approved_at',
+                    'rejected_reason', 'rejected_detail', 'updated_at',
+                ])
+                reverted += 1
+        return reverted
 
     @classmethod
     def _apply_meta_payload(
@@ -626,6 +676,11 @@ class MetaTemplateService:
                 donor_by_key[key] = existing
 
         payloads = result.get('templates') or []
+        seen_keys = {
+            (payload.get('name') or '', payload.get('language') or 'tr')
+            for payload in payloads
+            if payload.get('name')
+        }
         upserted = 0
         now = timezone.now()
 
@@ -734,9 +789,19 @@ class MetaTemplateService:
                         'body_named', 'variable_map_json', 'updated_at',
                     ])
 
+        # Meta boş liste + yerel onaylı şablon = olası API/glitch; toplu taslağa alma.
+        has_local_approved = WhatsAppMetaTemplate.objects.filter(
+            channel_config_id__in=sibling_ids,
+            status=MetaTemplateStatus.APPROVED,
+        ).exists()
+        reverted = 0
+        if payloads or not has_local_approved:
+            reverted = cls._revert_missing_meta_templates(sibling_ids, seen_keys)
+
         return {
             'success': True,
             'upserted': upserted,
+            'reverted': reverted,
             'accounts_synced': len(siblings),
             'shared_waba_account_ids': [str(s.id) for s in siblings],
             'templates': list(
