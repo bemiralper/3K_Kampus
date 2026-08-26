@@ -207,7 +207,7 @@ export const SAMPLE_PREVIEW_CONTEXT: Record<string, string> = {
   tarih: "03.08.2026",
   saat: "14:30",
   baslik: "Veli Toplantısı",
-  mesaj: "Bilgilendirme metni",
+  mesaj: "Haftalık deneme sınavı sonuçları öğrenci paneline yüklenmiştir. Değerlendirme toplantısı çarşamba saat 18.00’de yapılacaktır.",
   aciklama: "Detaylı açıklama",
   oturum_ad: "Sabah",
   yoklama_tarihi: "03.08.2026",
