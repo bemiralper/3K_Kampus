@@ -61,6 +61,39 @@ def _bypasses_claim_visibility(user) -> bool:
     return _has_full_inbox_access(user) or is_resource_admin(user)
 
 
+def _own_outbound_conversation_q(user) -> Q:
+    """
+    Kullanıcının kendi gönderdiği mesajı içeren sohbetler.
+
+    Modül/şablon gönderimleri (muhasebe, finans, özel ders, ödev …) departman veya
+    WhatsApp hattı kapsamı dışındaki bir sohbete düşebiliyor. Gönderen kişi bunları
+    listede de görmeli; aksi halde mesaj gidiyor ama sohbet ekranında görünmüyor.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return Q(pk__in=[])
+    from apps.communication.domain.models import Message
+
+    return Q(
+        id__in=Message.objects.filter(
+            sender_user_id=user.id,
+            direction=MessageDirection.OUTBOUND,
+        ).values('conversation_id'),
+    )
+
+
+def _user_sent_in_conversation(user, conversation) -> bool:
+    """Bu sohbette kullanıcının kendi giden mesajı var mı?"""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    from apps.communication.domain.models import Message
+
+    return Message.objects.filter(
+        conversation=conversation,
+        sender_user_id=user.id,
+        direction=MessageDirection.OUTBOUND,
+    ).exists()
+
+
 def visible_departments_for_user(user) -> set[str] | None:
     """
     Rolün görebileceği sohbet departmanları.
@@ -83,7 +116,7 @@ def apply_department_visibility(qs, user):
     depts = visible_departments_for_user(user)
     if depts is None:
         return qs
-    return qs.filter(department__in=depts)
+    return qs.filter(Q(department__in=depts) | _own_outbound_conversation_q(user))
 
 
 def user_can_see_department(user, department: str | None) -> bool:
@@ -178,9 +211,11 @@ def filter_conversations_for_user(
         from apps.communication.domain.enums import CommunicationDepartment
         allowed = set(get_active_assignment_student_ids(coach_profile))
         scoped_students_q = Q(ogrenci_id__in=allowed) if allowed else Q(pk__in=[])
+        own_q = _own_outbound_conversation_q(user)
         visibility = (
             Q(assigned_coach=coach_profile)
             | Q(claimed_by_user=user)
+            | own_q
             | scoped_students_q
             | (
                 Q(claimed_by_user__isnull=True)
@@ -205,12 +240,14 @@ def filter_conversations_for_user(
                 )
             )
         )
-        # Başkasının claim ettiği ama kendi öğrencisi / ataması olan sohbetler görünür kalır.
+        # Başkasının claim ettiği ama kendi öğrencisi / ataması / gönderimi olan
+        # sohbetler görünür kalır.
         other_claim_block = (
             Q(claimed_by_user__isnull=False)
             & ~Q(claimed_by_user=user)
             & ~Q(assigned_coach=coach_profile)
             & ~scoped_students_q
+            & ~own_q
         )
         qs = qs.filter(visibility).exclude(other_claim_block)
         qs = _apply_inbox_filter(qs, inbox, coach_profile=coach_profile, user=user, is_admin=False)
@@ -288,6 +325,8 @@ def filter_by_accessible_whatsapp_accounts(
     from apps.communication.application.account_resolver import _is_accounting_staff
     if _is_accounting_staff(user):
         account_q |= Q(department=CommunicationDepartment.ACCOUNTING)
+    # Kendi gönderdiği mesajın olduğu sohbet başka hatta kalsa da listede durmalı
+    account_q |= _own_outbound_conversation_q(user)
     return qs.filter(account_q)
 
 
@@ -342,7 +381,10 @@ def _user_can_access_conversation_account(user, conversation) -> bool:
     sube_id = getattr(conversation, 'sube_id', None)
     from apps.communication.application.account_resolver import _is_accounting_staff
 
-    if _is_accounting_staff(user) and _accounting_owns_conversation(user, conversation):
+    if (
+        _is_accounting_staff(user)
+        and getattr(conversation, 'department', None) == CommunicationDepartment.ACCOUNTING
+    ):
         return True
     if cfg is None:
         # Legacy sohbet: yalnızca varsayılan hesaba erişimi olan görebilir
@@ -356,20 +398,13 @@ def _user_can_access_conversation_account(user, conversation) -> bool:
     return AccountResolver.user_can_access_account(user, cfg, sube_id)
 
 
-def _accounting_owns_conversation(user, conversation) -> bool:
-    if getattr(conversation, 'department', None) == CommunicationDepartment.ACCOUNTING:
-        return True
-    from apps.communication.domain.models import Message
-
-    return Message.objects.filter(
-        conversation=conversation,
-        sender_user_id=user.id,
-        direction=MessageDirection.OUTBOUND,
-    ).exists()
-
-
 def user_can_access_conversation(user, conversation) -> bool:
     if _bypasses_claim_visibility(user):
+        return True
+
+    # Kendi gönderdiği mesajın bulunduğu sohbet her zaman açılabilir; liste
+    # filtresi de aynı kuralı uygular (_own_outbound_conversation_q).
+    if _user_sent_in_conversation(user, conversation):
         return True
 
     if not user_can_see_department(user, getattr(conversation, 'department', None)):

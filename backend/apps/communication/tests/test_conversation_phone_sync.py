@@ -265,6 +265,99 @@ class ConversationOpenVeliThreadTest(TestCase):
         self.assertEqual(data['id'], str(self.student_conv.id))
 
 
+class ConversationOpenCrossDepartmentTest(TestCase):
+    """Muhasebe kullanıcısı, modül gönderimi koçluk thread'ine düştüyse onu açabilmeli."""
+
+    def setUp(self):
+        from apps.communication.domain.enums import (
+            CommunicationDepartment,
+            MessageDirection,
+            MessageStatus,
+        )
+        from apps.communication.domain.models import Message
+        from apps.roller.models import Permission, Role, RolePermission, UserRole
+        from rest_framework.test import APIClient
+
+        self.kurum = Kurum.objects.create(ad='Cross Kurum', kod='CRS')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='CRS-S')
+        role, _ = Role.objects.get_or_create(
+            code='test_muhasebe_cross',
+            defaults={'name': 'Muhasebe', 'level': 10, 'is_active': True},
+        )
+        for code in ('communication.read', 'communication.write', 'finans.read'):
+            perm, _ = Permission.objects.get_or_create(
+                code=code,
+                defaults={'name': code, 'module': 'communication', 'permission_type': 'read'},
+            )
+            RolePermission.objects.get_or_create(role=role, permission=perm)
+
+        self.user = User.objects.create_user(username='cross_muh', password='x')
+        self.other = User.objects.create_user(username='cross_koc', password='x')
+        UserRole.objects.update_or_create(user=self.user, defaults={'role': role})
+        UserRole.objects.update_or_create(user=self.other, defaults={'role': role})
+
+        self.ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Cem',
+            soyad='Ogrenci',
+            telefon='0530 111 00 11',
+            aktif_mi=True,
+        )
+        self.veli = OgrenciVeli.objects.create(
+            ogrenci=self.ogrenci,
+            ad='Zeynep',
+            soyad='Veli',
+            telefon='0532 111 00 22',
+            veli_turu='anne',
+            varsayilan=True,
+        )
+        self.coaching_conv, _ = ConversationRepository.get_or_create_for_contact(
+            self.kurum.id,
+            Channel.WHATSAPP,
+            '+905321110022',
+            ogrenci_id=self.ogrenci.id,
+            veli_id=self.veli.id,
+            department=CommunicationDepartment.COACHING,
+        )
+        self._message = Message.objects.create(
+            conversation=self.coaching_conv,
+            direction=MessageDirection.OUTBOUND,
+            body='Telafi dersi cumartesi 10.00',
+            status=MessageStatus.SENT,
+            sender_user=self.user,
+            source_module='ozel_ders',
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
+
+    def _open(self):
+        return self.client.post(
+            '/api/communication/conversations/open/',
+            {
+                'phone': '0532 111 00 22',
+                'kurum_id': self.kurum.id,
+                'veli_id': self.veli.id,
+            },
+            format='json',
+        )
+
+    def test_sender_opens_thread_from_other_department(self):
+        response = self._open()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['id'], str(self.coaching_conv.id))
+
+    def test_non_sender_does_not_inherit_other_department_thread(self):
+        self._message.sender_user = self.other
+        self._message.save(update_fields=['sender_user'])
+
+        response = self._open()
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(response.json()['id'], str(self.coaching_conv.id))
+
+
 class DuplicateConversationLookupTest(TestCase):
     """Aynı telefona bağlı birden fazla konuşma varken gönderim çökmemeli."""
 

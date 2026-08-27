@@ -262,9 +262,7 @@ class MultiWhatsAppAccountTests(TestCase):
         self.assertIn(self.acc_kadikoy.id, ids)
         self.assertNotIn(self.acc_genel.id, ids)
 
-    def test_accounting_does_not_see_coaching_thread(self):
-        """Koçluk sohbeti muhasebeye görünmez; gönderen olsa bile."""
-        from apps.communication.application.coach_scope import filter_conversations_for_user
+    def _coaching_thread_with_message_from(self, user, phone='905551110003'):
         from apps.communication.domain.enums import (
             CommunicationDepartment,
             ConversationStatus,
@@ -278,7 +276,7 @@ class MultiWhatsAppAccountTests(TestCase):
             kurum=self.kurum,
             sube=self.sube_a,
             channel=Channel.WHATSAPP,
-            contact_phone='905551110003',
+            contact_phone=phone,
             status=ConversationStatus.OPEN,
             channel_config=self.acc_genel,
             department=CommunicationDepartment.COACHING,
@@ -286,11 +284,41 @@ class MultiWhatsAppAccountTests(TestCase):
         Message.objects.create(
             conversation=conv,
             direction=MessageDirection.OUTBOUND,
-            body='Ödev planı',
+            body='Telafi dersi planlandı',
             status=MessageStatus.SENT,
-            sender_user=self.user_m,
-            source_module='odev',
+            sender_user=user,
+            source_module='ozel_ders',
         )
+        return conv
+
+    def test_sender_sees_own_thread_outside_department_and_account(self):
+        """Muhasebe kullanıcısı, kendi gönderdiği koçluk hattı sohbetini görür."""
+        from apps.communication.application.coach_scope import (
+            filter_conversations_for_user,
+            user_can_access_conversation,
+        )
+
+        conv = self._coaching_thread_with_message_from(self.user_m)
+
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            self.user_m,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube_a.id,
+        )
+        self.assertIn(conv.id, set(qs.values_list('id', flat=True)))
+        self.assertTrue(user_can_access_conversation(self.user_m, conv))
+
+    def test_accounting_does_not_see_coaching_thread_of_others(self):
+        """Kendi gönderimi olmayan koçluk sohbeti muhasebeye kapalı kalır."""
+        from apps.communication.application.coach_scope import (
+            filter_conversations_for_user,
+            user_can_access_conversation,
+        )
+
+        other = User.objects.create_user(username='wa_muh2', password='x')
+        UserRole.objects.create(user=other, role=self.role_muhasebe)
+        conv = self._coaching_thread_with_message_from(other)
 
         qs = filter_conversations_for_user(
             Conversation.objects.filter(kurum=self.kurum),
@@ -299,6 +327,7 @@ class MultiWhatsAppAccountTests(TestCase):
             sube_id=self.sube_a.id,
         )
         self.assertNotIn(conv.id, set(qs.values_list('id', flat=True)))
+        self.assertFalse(user_can_access_conversation(self.user_m, conv))
 
     def test_accounting_sees_accounting_department_on_other_account(self):
         from apps.communication.application.coach_scope import filter_conversations_for_user

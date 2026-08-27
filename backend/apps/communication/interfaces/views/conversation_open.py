@@ -151,49 +151,62 @@ class ConversationOpenView(CommunicationAPIView):
             else:
                 open_dept = CommunicationDepartment.COACHING
 
-        conversation = None
-        if veli_id:
-            conversation = ConversationRepository.find_latest_for_veli(
-                kurum_id, veli_id, channel=Channel.WHATSAPP,
-                channel_config_id=cfg_id, department=open_dept,
-            )
-        elif req_ogrenci_id:
-            from apps.communication.domain.models import Conversation
-
-            ogr_qs = Conversation.objects.filter(
-                kurum_id=kurum_id,
-                channel=Channel.WHATSAPP,
-                ogrenci_id=ogrenci_id,
-                veli_id__isnull=True,
-            )
-            if open_dept:
-                ogr_qs = ogr_qs.filter(department=open_dept)
-            if cfg_id:
-                preferred = ogr_qs.filter(channel_config_id=cfg_id).order_by(
-                    '-last_message_at', '-updated_at',
-                ).first()
-                conversation = preferred or ogr_qs.order_by(
-                    '-last_message_at', '-updated_at',
-                ).first()
-            else:
-                conversation = ogr_qs.order_by('-last_message_at', '-updated_at').first()
-        if not conversation:
-            conversation = ConversationRepository.find_by_phone(
-                kurum_id, Channel.WHATSAPP, e164,
-                channel_config_id=cfg_id, department=open_dept,
-            )
-            # Öğrenci ikonundan açılışta mevcut veli thread’ini çalma — ayrı öğrenci sohbeti kur.
-            if (
-                conversation
-                and not is_personel_thread
-                and not is_veli_thread
-                and req_ogrenci_id
-                and (
-                    conversation.contact_type == RecipientType.VELI
-                    or conversation.veli_id is not None
+        def _find_thread(dept):
+            found = None
+            if veli_id:
+                found = ConversationRepository.find_latest_for_veli(
+                    kurum_id, veli_id, channel=Channel.WHATSAPP,
+                    channel_config_id=cfg_id, department=dept,
                 )
-            ):
-                conversation = None
+            elif req_ogrenci_id:
+                from apps.communication.domain.models import Conversation
+
+                ogr_qs = Conversation.objects.filter(
+                    kurum_id=kurum_id,
+                    channel=Channel.WHATSAPP,
+                    ogrenci_id=ogrenci_id,
+                    veli_id__isnull=True,
+                )
+                if dept:
+                    ogr_qs = ogr_qs.filter(department=dept)
+                if cfg_id:
+                    preferred = ogr_qs.filter(channel_config_id=cfg_id).order_by(
+                        '-last_message_at', '-updated_at',
+                    ).first()
+                    found = preferred or ogr_qs.order_by(
+                        '-last_message_at', '-updated_at',
+                    ).first()
+                else:
+                    found = ogr_qs.order_by('-last_message_at', '-updated_at').first()
+            if not found:
+                found = ConversationRepository.find_by_phone(
+                    kurum_id, Channel.WHATSAPP, e164,
+                    channel_config_id=cfg_id, department=dept,
+                )
+                # Öğrenci ikonundan açılışta mevcut veli thread’ini çalma — ayrı öğrenci sohbeti kur.
+                if (
+                    found
+                    and not is_personel_thread
+                    and not is_veli_thread
+                    and req_ogrenci_id
+                    and (
+                        found.contact_type == RecipientType.VELI
+                        or found.veli_id is not None
+                    )
+                ):
+                    found = None
+            return found
+
+        conversation = _find_thread(open_dept)
+        if conversation is None and open_dept:
+            # Modül gönderimleri (özel ders telafi, finans, ödev …) karşı departmanın
+            # thread'ine düşmüş olabilir. Boş sohbet açmak yerine yetkinin izin
+            # verdiği mevcut thread'i getir.
+            from apps.communication.application.coach_scope import user_can_access_conversation
+
+            fallback = _find_thread(None)
+            if fallback is not None and user_can_access_conversation(request.user, fallback):
+                conversation = fallback
 
         if conversation:
             if not is_personel_thread:
