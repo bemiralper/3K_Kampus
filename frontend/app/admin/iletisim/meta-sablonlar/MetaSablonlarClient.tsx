@@ -17,6 +17,7 @@ import { useTextareaInsert } from "@/components/communication/useTextareaInsert"
 import { useSheetChrome } from "@/components/communication/useSheetChrome";
 import {
   createComposerState,
+  insertAtCursor,
   parseWhatsAppText,
   resolvePreviewVariables,
   TEMPLATE_VARIABLES,
@@ -115,6 +116,10 @@ const HEADER_FORMAT_CHARS = /[*_~`]/;
 const HEADER_EMOJI =
   /[\u{1F300}-\u{1FAFF}\u{2700}-\u{27BF}\u{2600}-\u{26FF}\u{1F1E0}-\u{1F1FF}]/u;
 
+/** Değişkenler çıkınca geriye okunur sabit metin kalıyor mu? */
+const hasStaticText = (text: string): boolean =>
+  !!(text || "").replace(new RegExp(VAR_TOKEN, "g"), "").trim();
+
 const templateContentIssues = (
   body: string,
   header: MetaTemplateHeader,
@@ -122,17 +127,29 @@ const templateContentIssues = (
 ): string[] => {
   const issues: string[] = [];
   const text = (body || "").trim();
+  // Meta "değişkenle başlama/bitme" kuralını şablonun bütününe uygular:
+  // başlıkta sabit metin/medya varsa gövde değişkenle başlayabilir, alt bilgi
+  // varsa değişkenle bitebilir.
+  const headerType = (header?.type || "").toUpperCase();
+  const hasLeadingText = headerType === "TEXT"
+    ? hasStaticText(header?.text || "")
+    : ["IMAGE", "VIDEO", "DOCUMENT"].includes(headerType);
+  const hasTrailingText = !!(footer || "").trim();
   if (text) {
     const tokens = Array.from(text.matchAll(new RegExp(VAR_TOKEN, "g")));
     const last = tokens[tokens.length - 1];
-    if (text.search(VAR_TOKEN) === 0) {
+    if (text.search(VAR_TOKEN) === 0 && !hasLeadingText) {
       issues.push(
-        'Mesaj bir değişkenle başlayamaz. Başına sabit metin ekleyin — örn. "Sayın {{veli_ad}}, …".',
+        'Mesaj bir değişkenle başlayamaz. Başına sabit metin ekleyin veya "Metin" türünde bir başlık girin.',
       );
     }
-    if (last && (last.index ?? 0) + last[0].length === text.length) {
+    if (
+      last
+      && (last.index ?? 0) + last[0].length === text.length
+      && !hasTrailingText
+    ) {
       issues.push(
-        'Mesaj bir değişkenle bitemez. Sonuna sabit metin ekleyin — örn. "… bilgilerinize sunulur.".',
+        "Mesaj bir değişkenle bitemez. Sonuna sabit metin ekleyin veya alt bilgi girin.",
       );
     }
     if (/\}\}\s*\{\{/.test(text)) {
@@ -177,8 +194,9 @@ const templateContentIssues = (
       issues.push("Başlık metni değişkenle başlayamaz veya bitemez; sabit metinle çevreleyin.");
     }
   }
-  if (footer && VAR_TOKEN.test(footer)) {
-    issues.push("Alt bilgide değişken kullanılamaz.");
+  // Meta FOOTER parametre kabul etmez; değişkenler gönderim öncesi sabitlenir.
+  if (footer && VAR_TOKEN.test(footer) && !hasStaticText(footer)) {
+    issues.push("Alt bilgi yalnızca değişkenden oluşamaz; yanına sabit metin ekleyin.");
   }
   return issues;
 };
@@ -199,6 +217,10 @@ const emptyForm = () => ({
 });
 
 const VIEW_STORAGE_KEY = "comm.metaTemplates.view";
+
+const FOOTER_MAX = 60;
+/** Alt bilgi sabitlendiği için yalnızca kurum/şube gibi değişmeyen alanlar anlamlı. */
+const FOOTER_VARIABLE_KEYS = ["kurum_ad", "sube"];
 
 export default function MetaSablonlarClient() {
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
@@ -229,6 +251,7 @@ export default function MetaSablonlarClient() {
     bind: boolean;
   } | null>(null);
   const { setNode: setBodyNode, insert: insertIntoBody } = useTextareaInsert();
+  const footerRef = useRef<HTMLInputElement | null>(null);
   const toolsRef = useRef<HTMLDivElement | null>(null);
 
   const closeSheet = useCallback(() => {
@@ -844,6 +867,21 @@ export default function MetaSablonlarClient() {
     setForm((f) => ({ ...f, body_named: next }));
   };
 
+  const insertFooterVariable = (token: string) => {
+    const el = footerRef.current;
+    const current = form.footer_text || "";
+    const start = el?.selectionStart ?? current.length;
+    const end = el?.selectionEnd ?? current.length;
+    const { text, cursor } = insertAtCursor(current, start, end, token);
+    const next = text.slice(0, FOOTER_MAX);
+    const caret = Math.min(cursor, next.length);
+    setForm((f) => ({ ...f, footer_text: next }));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(caret, caret);
+    });
+  };
+
   const addButton = (type: MetaTemplateButton["type"]) => {
     setForm((f) => ({
       ...f,
@@ -889,6 +927,10 @@ export default function MetaSablonlarClient() {
     return Array.from(new Set(found));
   }, [form.body_named]);
   const exampleVars = usedVariables.filter((v) => v === "mesaj" || v === "aciklama" || v === "baslik");
+  const footerVars = useMemo(() => {
+    const found = [...(form.footer_text || "").matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
+    return Array.from(new Set(found));
+  }, [form.footer_text]);
   const contentIssues = useMemo(
     () => templateContentIssues(form.body_named, form.header, form.footer_text),
     [form.body_named, form.header, form.footer_text],
@@ -1776,14 +1818,48 @@ export default function MetaSablonlarClient() {
                         </label>
                         <input
                           id="meta-footer"
+                          ref={footerRef}
                           className="sbx-input"
-                          maxLength={60}
+                          maxLength={FOOTER_MAX}
                           value={form.footer_text}
                           disabled={locked}
-                          placeholder="Örn. 3K Kampüs — Bilgilendirme mesajı"
+                          placeholder="Örn. 3K Kampüs — {{sube}}"
                           onChange={(e) => setForm((f) => ({ ...f, footer_text: e.target.value }))}
                         />
-                        <p className="sbx-hint">{form.footer_text.length}/60 karakter</p>
+                        <p className="sbx-hint">
+                          {form.footer_text.length}/{FOOTER_MAX} karakter
+                        </p>
+                        {!locked && (
+                          <>
+                            <p className="sbx-hint">
+                              Değişken de kullanabilirsiniz. Meta alt bilgide parametre kabul
+                              etmediği için değeri onaya giderken sabitlenir; gönderimde
+                              kişiye göre değişmez.
+                            </p>
+                            <TemplateVariablePanel
+                              onInsert={insertFooterVariable}
+                              allowedKeys={FOOTER_VARIABLE_KEYS}
+                            />
+                            {footerVars.map((key) => (
+                              <label key={key} className="sbx-field" style={{ marginTop: 8 }}>
+                                <span className="sbx-label">
+                                  <code>{`{{${key}}}`}</code> yerine yazılacak sabit metin
+                                </span>
+                                <input
+                                  className="sbx-input"
+                                  value={form.example_values[key] || ""}
+                                  onChange={(e) => setForm((f) => ({
+                                    ...f,
+                                    example_values: { ...f.example_values, [key]: e.target.value },
+                                  }))}
+                                  placeholder={
+                                    TEMPLATE_VARIABLES.find((item) => item.key === key)?.label || key
+                                  }
+                                />
+                              </label>
+                            ))}
+                          </>
+                        )}
                       </div>
                     </div>
                   </section>
@@ -1951,7 +2027,9 @@ export default function MetaSablonlarClient() {
                             : "Mesajınız burada görünecek…"}
                         </p>
                         {form.footer_text && (
-                          <p className="sbx-bubble-footer">{form.footer_text}</p>
+                          <p className="sbx-bubble-footer">
+                            {resolvePreviewVariables(form.footer_text, livePreviewContext)}
+                          </p>
                         )}
                         <div className="sbx-bubble-meta">
                           <span>{now}</span>

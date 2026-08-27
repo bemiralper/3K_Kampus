@@ -37,6 +37,53 @@ class MetaTemplateHeaderValidationTest(SimpleTestCase):
         self.assertTrue(any('Başlık' in i for i in issues))
 
 
+class MetaTemplateBodyEdgeVariableTest(SimpleTestCase):
+    """Başlık/alt bilgi varsa gövde tek başına değişken olabilir."""
+
+    def test_lone_variable_body_blocked_without_header_and_footer(self):
+        issues = validate_template_content(body_named='{{mesaj}}')
+        self.assertTrue(any('başlayamaz' in i for i in issues))
+        self.assertTrue(any('bitemez' in i for i in issues))
+
+    def test_lone_variable_body_allowed_with_text_header_and_footer(self):
+        issues = validate_template_content(
+            body_named='{{mesaj}}',
+            header_json={'type': 'TEXT', 'text': 'DUYURU'},
+            footer_text='3K Kampüs / 3K keşif',
+        )
+        self.assertEqual(issues, [])
+
+    def test_media_header_counts_as_leading_text(self):
+        issues = validate_template_content(
+            body_named='{{mesaj}} bilgilerinize sunulur.',
+            header_json={'type': 'DOCUMENT', 'example_handle': 'x'},
+        )
+        self.assertEqual(issues, [])
+
+    def test_header_made_only_of_variable_does_not_count(self):
+        issues = validate_template_content(
+            body_named='{{mesaj}} bilgilerinize sunulur.',
+            header_json={'type': 'TEXT', 'text': '{{baslik}}'},
+        )
+        self.assertTrue(any('başlayamaz' in i for i in issues))
+
+
+class MetaTemplateFooterVariableTest(SimpleTestCase):
+    def test_footer_variable_allowed_with_static_text(self):
+        issues = validate_template_content(
+            body_named='Sayın velimiz, bilgilendirme metnidir.',
+            footer_text='3K Kampüs — {{sube}}',
+        )
+        self.assertEqual(issues, [])
+
+    def test_footer_made_only_of_variable_rejected(self):
+        issues = validate_template_content(
+            body_named='Sayın velimiz, bilgilendirme metnidir.',
+            footer_text='{{sube}}',
+        )
+        self.assertTrue(any('Alt bilgi' in i for i in issues))
+
+
 class MetaApiErrorHintTest(SimpleTestCase):
     def test_header_formatting_detail_gets_turkish_hint(self):
         formatted = WhatsAppCloudClient._format_api_error(

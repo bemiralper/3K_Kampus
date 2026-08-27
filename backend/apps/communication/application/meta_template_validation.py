@@ -39,7 +39,33 @@ def _ends_with_variable(text: str) -> bool:
     return bool(matches) and matches[-1].end() == len(text)
 
 
-def validate_body(body_named: str) -> list[str]:
+def has_static_text(text: str) -> bool:
+    """Değişkenler çıkarıldığında geriye okunur sabit metin kalıyor mu?"""
+    return bool(VAR_TOKEN_RE.sub('', text or '').strip())
+
+
+def header_provides_leading_text(header_json: dict[str, Any] | None) -> bool:
+    """Gövdeden önce sabit içerik var mı? (TEXT başlık metni veya medya başlığı)"""
+    header = header_json or {}
+    htype = (header.get('type') or '').upper()
+    if htype == 'TEXT':
+        return has_static_text(header.get('text') or '')
+    return htype in ('IMAGE', 'VIDEO', 'DOCUMENT')
+
+
+def validate_body(
+    body_named: str,
+    *,
+    has_leading_text: bool = False,
+    has_trailing_text: bool = False,
+) -> list[str]:
+    """
+    Gövde kuralları.
+
+    Meta "değişkenle başlama/bitme" kuralını şablonun bütününe uygular; başlıkta
+    sabit metin (veya medya) varsa gövde değişkenle başlayabilir, alt bilgi varsa
+    değişkenle bitebilir.
+    """
     errors: list[str] = []
     body = (body_named or '').strip()
     if not body:
@@ -50,15 +76,15 @@ def validate_body(body_named: str) -> list[str]:
             f'Mesaj gövdesi en fazla {BODY_MAX_LENGTH} karakter olabilir '
             f'(şu an {len(body)}).',
         )
-    if _starts_with_variable(body):
+    if _starts_with_variable(body) and not has_leading_text:
         errors.append(
             'Mesaj bir değişkenle başlayamaz (Meta kuralı). Başına sabit bir metin '
-            'ekleyin — örn. "Sayın {{veli_ad}}, …".',
+            'ekleyin veya "Metin" türünde bir başlık girin.',
         )
-    if _ends_with_variable(body):
+    if _ends_with_variable(body) and not has_trailing_text:
         errors.append(
             'Mesaj bir değişkenle bitemez (Meta kuralı). Sonuna sabit bir metin '
-            'ekleyin — örn. "… {{tarih}} tarihinde paylaşıldı.".',
+            'ekleyin veya alt bilgi girin.',
         )
     if ADJACENT_VARS_RE.search(body):
         errors.append(
@@ -114,8 +140,12 @@ def validate_footer(footer_text: str) -> list[str]:
     errors: list[str] = []
     if len(footer) > FOOTER_MAX_LENGTH:
         errors.append(f'Alt bilgi en fazla {FOOTER_MAX_LENGTH} karakter olabilir.')
-    if VAR_TOKEN_RE.search(footer):
-        errors.append('Alt bilgide değişken kullanılamaz.')
+    # Meta FOOTER parametre kabul etmez; değişkenler gönderim öncesi sabitlenir
+    # (bkz. meta_template_mapper.freeze_variables). Bu yüzden burada engellenmez.
+    if VAR_TOKEN_RE.search(footer) and not has_static_text(footer):
+        errors.append(
+            'Alt bilgi yalnızca değişkenden oluşamaz; yanına sabit bir metin ekleyin.',
+        )
     return errors
 
 
@@ -147,7 +177,11 @@ def validate_template_content(
 ) -> list[str]:
     """Meta'ya göndermeden önce tespit edilebilen tüm kural ihlalleri."""
     return [
-        *validate_body(body_named),
+        *validate_body(
+            body_named,
+            has_leading_text=header_provides_leading_text(header_json),
+            has_trailing_text=bool((footer_text or '').strip()),
+        ),
         *validate_header(header_json),
         *validate_footer(footer_text),
         *validate_buttons(buttons_json),

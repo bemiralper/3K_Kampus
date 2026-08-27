@@ -195,6 +195,23 @@ def example_values_for_map(
     return values
 
 
+def freeze_variables(text: str, overrides: dict[str, str] | None = None) -> str:
+    """
+    Named değişkenleri sabit metne çevirir.
+
+    Meta FOOTER bileşeni parametre kabul etmediği için alt bilgideki değişkenler
+    payload'a girmeden önce buradaki değerlerle sabitlenir.
+    """
+
+    def replacer(match: re.Match) -> str:
+        key = match.group(1)
+        if key.isdigit():
+            return match.group(0)
+        return sample_value(key, overrides, fallback=key)
+
+    return VARIABLE_PATTERN.sub(replacer, text or '')
+
+
 def _header_component(
     header: dict[str, Any],
     variable_map: dict[str, str],
@@ -335,7 +352,7 @@ def build_meta_components(
     if footer_text:
         components.append({
             'type': 'FOOTER',
-            'text': footer_text[:60],
+            'text': freeze_variables(footer_text, examples)[:60],
         })
 
     buttons_comp = _buttons_component(buttons, vmap)

@@ -68,6 +68,17 @@ class MetaTemplateMapperTest(TestCase):
         examples = body['example']['body_text'][0]
         self.assertIn('Yarın saat 10.00’da deneme sınavı yapılacaktır.', examples)
 
+    def test_footer_variables_frozen_to_static_text(self):
+        """Meta FOOTER parametre kabul etmez; değişken sabit metne çevrilmeli."""
+        components, _vmap = build_meta_components(
+            body_named='Sayın {{veli_ad}}, bilgilendirme metnidir.',
+            footer_text='3K Kampüs — {{sube}}',
+        )
+        footer = next(c for c in components if c['type'] == 'FOOTER')
+        self.assertNotIn('{{', footer['text'])
+        self.assertIn('Merkez', footer['text'])
+        self.assertNotIn('example', footer)
+
     def test_send_params_follow_map(self):
         vmap = {'1': 'veli_ad', '2': 'ogrenci_ad'}
         params = build_send_body_parameters(vmap, {'veli_ad': 'Ayşe', 'ogrenci_ad': 'Ali'})
@@ -189,13 +200,29 @@ class MetaTemplateServiceTest(TestCase):
             channel_config_id=self.account.id,
             name='odev_plani_veli',
             body_named='{{ogrenci_ad}} — {{hafta}} ödev planı ektedir. {{teslim_tarihi}}',
-            header_json={'type': 'DOCUMENT', 'example_handle': '4::YXBwbGljYXRpb24=:ARZ'},
         )
         with self.assertRaises(MetaTemplateServiceError) as ctx:
             MetaTemplateService.submit(tpl)
         self.assertIn('değişkenle başlayamaz', str(ctx.exception))
         self.assertIn('değişkenle bitemez', str(ctx.exception))
         mock_create.assert_not_called()
+
+    @patch.object(WhatsAppCloudClient, 'create_message_template')
+    def test_submit_allows_lone_variable_body_with_header_and_footer(self, mock_create):
+        """Başlık + alt bilgi varsa gövde tek başına değişken olabilir."""
+        mock_create.return_value = {'success': True, 'id': '901', 'status': 'PENDING'}
+        tpl = MetaTemplateService.create_draft(
+            self.kurum.id,
+            channel_config_id=self.account.id,
+            name='genel_toplu_duyuru',
+            body_named='{{mesaj}}',
+            header_json={'type': 'TEXT', 'text': 'DUYURU'},
+            footer_text='3K Kampüs / 3K keşif',
+        )
+        MetaTemplateService.submit(tpl)
+        mock_create.assert_called_once()
+        body = next(c for c in mock_create.call_args.kwargs['components'] if c['type'] == 'BODY')
+        self.assertEqual(body['text'], '{{1}}')
 
     @patch.object(WhatsAppCloudClient, 'create_message_template')
     def test_submit_rejects_adjacent_variables(self, mock_create):
