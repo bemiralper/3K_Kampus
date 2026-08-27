@@ -340,17 +340,64 @@ if [[ "$SKIP_RESTART" != true ]]; then
     log "restart frontend: $LMS_FRONTEND_SERVICE"
     sudo systemctl restart "$LMS_FRONTEND_SERVICE"
     restarted=true
+    frontend_restarted=true
   fi
   if [[ -n "${LMS_PM2_APP:-}" ]]; then
     log "pm2 reload: $LMS_PM2_APP"
     pm2 reload "$LMS_PM2_APP"
     restarted=true
+    frontend_restarted=true
   fi
   if [[ "$restarted" != true ]]; then
     log "Servis restart atlandı — LMS_BACKEND_SERVICE, LMS_FRONTEND_SERVICE veya LMS_PM2_APP tanımlayın"
   fi
+  # Yeni build üretildi ama frontend süreci yenilenmediyse eski arayüz sunulmaya
+  # devam eder ve bu sessizce fark edilmez. Bu durumu hata olarak bildir.
+  if [[ -n "${build_id:-}" && "${frontend_restarted:-false}" != true ]]; then
+    echo "[deploy] HATA: frontend build üretildi (BUILD_ID=${build_id}) ama frontend süreci" >&2
+    echo "         yeniden başlatılmadı — canlı hâlâ ESKİ arayüzü sunuyor." >&2
+    echo "         LMS_FRONTEND_SERVICE (veya LMS_PM2_APP) tanımlayıp tekrar deneyin." >&2
+    exit 1
+  fi
 else
   log "Servis restart atlandı (--no-restart)"
+fi
+
+verify_frontend_serves_new_build() {
+  local build_file="$FRONTEND_DIR/.next/BUILD_ID"
+  [[ -f "$build_file" ]] || return 0
+  local port="${LMS_FRONTEND_PORT:-3000}"
+
+  local waited=0
+  until curl -fsS -o /dev/null --max-time 5 "http://127.0.0.1:${port}/"; do
+    (( waited += 3 ))
+    if (( waited > 90 )); then
+      echo "[deploy] HATA: frontend ${port} portunda 90 sn içinde yanıt vermedi." >&2
+      exit 1
+    fi
+    sleep 3
+  done
+
+  # Süreç build'den önce başladıysa bellekteki eski manifest'i sunuyor demektir.
+  if [[ -n "${LMS_FRONTEND_SERVICE:-}" ]]; then
+    local started build_time
+    started="$(systemctl show "$LMS_FRONTEND_SERVICE" -p ActiveEnterTimestamp --value 2>/dev/null || true)"
+    if [[ -n "$started" ]]; then
+      started="$(date -d "$started" +%s 2>/dev/null || echo 0)"
+      build_time="$(stat -c %Y "$build_file" 2>/dev/null || echo 0)"
+      if (( started > 0 && build_time > 0 && started < build_time )); then
+        echo "[deploy] HATA: $LMS_FRONTEND_SERVICE build'den ÖNCE başlatılmış —" >&2
+        echo "         canlı eski arayüzü sunuyor. Çözüm:" >&2
+        echo "         sudo systemctl restart $LMS_FRONTEND_SERVICE" >&2
+        exit 1
+      fi
+    fi
+  fi
+  log "frontend doğrulandı: yeni build sunuluyor (BUILD_ID=$(cat "$build_file"))"
+}
+
+if [[ "$SKIP_FRONTEND" != true && "$SKIP_RESTART" != true ]]; then
+  verify_frontend_serves_new_build
 fi
 
 log "Deploy tamamlandı."
