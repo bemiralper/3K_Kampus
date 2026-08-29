@@ -317,6 +317,7 @@ class MessageSerializer(serializers.ModelSerializer):
     attachments = MessageAttachmentSerializer(many=True, read_only=True)
     reactions = MessageReactionSerializer(many=True, read_only=True)
     reply_to = MessageReplyPreviewSerializer(read_only=True)
+    failed_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -326,6 +327,11 @@ class MessageSerializer(serializers.ModelSerializer):
             'source_ref_id', 'failed_reason', 'sent_at', 'delivered_at',
             'read_at', 'created_at', 'attachments', 'reactions', 'reply_to',
         ]
+
+    def get_failed_reason(self, obj) -> str:
+        from apps.communication.application.delivery_error import explain_delivery_failure
+
+        return explain_delivery_failure(getattr(obj, 'failed_reason', '') or '')
 
 
 class MessageCreateSerializer(serializers.Serializer):

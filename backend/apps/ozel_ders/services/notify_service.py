@@ -338,7 +338,9 @@ def serialize_bildirimler(oturum: BirebirDersOturumu) -> list[dict]:
         event = get_event(log.event_key)
         msg = log.message
         status = getattr(msg, 'status', None) or 'PENDING'
-        failed = getattr(msg, 'failed_reason', '') or ''
+        from apps.communication.application.delivery_error import explain_delivery_failure
+
+        failed = explain_delivery_failure(getattr(msg, 'failed_reason', '') or '')
         out.append({
             'id': log.id,
             'event_key': log.event_key,

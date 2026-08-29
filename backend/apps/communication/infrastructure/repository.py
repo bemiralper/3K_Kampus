@@ -689,7 +689,10 @@ class MessageStatusEventRepository:
         elif status == MessageStatus.FAILED:
             errors = (raw_payload or {}).get('errors', [])
             if errors:
-                message.failed_reason = errors[0].get('title', '') or str(errors[0])
+                from apps.communication.application.delivery_error import (
+                    explain_from_webhook_errors,
+                )
+                message.failed_reason = explain_from_webhook_errors(errors)
                 update_fields.append('failed_reason')
         message.save(update_fields=update_fields)
         return event, True

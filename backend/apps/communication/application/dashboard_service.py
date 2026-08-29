@@ -8,6 +8,7 @@ from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
 from django.db.models.functions import ExtractHour, TruncDate
 from django.utils import timezone
 
+from apps.communication.application.delivery_error import explain_delivery_failure
 from apps.communication.domain.enums import (
     CampaignStatus,
     CommunicationDepartment,
@@ -350,7 +351,9 @@ def build_communication_dashboard(kurum_id: int, sube_id: int | None = None) -> 
             'source_module': msg.source_module or '',
             'source_label': SOURCE_LABELS.get(msg.source_module, msg.source_module or 'Manuel'),
             'contact_name': (conv.contact_name if conv else '') or (conv.contact_phone if conv else ''),
-            'reason': (msg.failed_reason or 'Gönderilemedi')[:160],
+            'reason': (
+                explain_delivery_failure(msg.failed_reason) or 'Gönderilemedi'
+            )[:160],
         })
 
     aging = {'0_15': 0, '15_30': 0, '30_60': 0, '60_plus': 0}
