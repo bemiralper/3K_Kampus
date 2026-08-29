@@ -471,8 +471,8 @@ function SlotCard({
     slot.resolved.meta_template_body ||
     ""
   ).trim();
-  const sendBody = (
-    preview?.body ||
+  const rawNamedBody = (
+    selectedMetaBody ||
     slot.resolved.display_body ||
     slot.resolved.body ||
     slot.default_body ||
@@ -480,8 +480,8 @@ function SlotCard({
   ).trim();
 
   const previewBody = showExample
-    ? selectedMetaBody || slot.meta_example_body || sendBody
-    : selectedMetaBody || sendBody;
+    ? selectedMetaBody || slot.meta_example_body || rawNamedBody
+    : rawNamedBody;
 
   const metaPending =
     Boolean(boundMeta) && boundMeta!.status !== "APPROVED" && Boolean(selectedMetaBody);
@@ -1072,6 +1072,7 @@ export default function BildirimSablonlariClient() {
           recipient_type: slot.recipient_type,
           sube_id: scopeSubeId,
           channel_config_id: scopeChannelConfigId,
+          context: previewContext,
         });
         setPreviews((prev) => ({ ...prev, [key]: result }));
       } catch (err) {
@@ -1080,7 +1081,7 @@ export default function BildirimSablonlariClient() {
         setPreviewLoading((prev) => ({ ...prev, [key]: false }));
       }
     },
-    [scopeSubeId, scopeChannelConfigId],
+    [scopeSubeId, scopeChannelConfigId, previewContext],
   );
 
   // Seçili olayın slotları için otomatik önizleme

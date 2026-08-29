@@ -427,6 +427,26 @@ class BindingServiceTest(TestCase):
         self.assertIn('03.08.2026', payload['body'])
         self.assertTrue(payload['would_send'])
 
+    def test_ozel_ders_preview_uses_readable_samples(self):
+        payload = preview_binding(
+            self.kurum.id,
+            event_key='ozel_ders.ogretmen_gelmedi',
+            recipient_type=RecipientType.VELI,
+        )
+        self.assertIn('Mehmet Yılmaz', payload['body'])
+        self.assertIn('Matematik', payload['body'])
+        self.assertIn('15 Ocak 2026', payload['body'])
+        self.assertNotIn('{ders_tarihi}', payload['body'])
+        self.assertNotIn('{{ders_tarihi}}', payload['body'])
+
+        telafi = preview_binding(
+            self.kurum.id,
+            event_key='ozel_ders.telafi_planlandi',
+            recipient_type=RecipientType.VELI,
+        )
+        self.assertIn('18 Ocak 2026', telafi['body'])
+        self.assertIn('14.00', telafi['body'])
+
     def test_dry_run_dispatch_returns_preview(self):
         preview = dispatch_event(
             self.kurum.id,

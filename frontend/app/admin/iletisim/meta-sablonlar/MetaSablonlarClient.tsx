@@ -1702,7 +1702,12 @@ export default function MetaSablonlarClient() {
                           </div>
                         </div>
                       )}
-                      {!locked && <TemplateVariablePanel onInsert={insertVariable} />}
+                      {!locked && (
+                        <TemplateVariablePanel
+                          onInsert={insertVariable}
+                          category={form.template_group || undefined}
+                        />
+                      )}
                       {exampleVars.length > 0 && (
                         <div className="sbx-field" style={{ marginTop: 16 }}>
                           <span className="sbx-label">Meta onay örneği</span>
