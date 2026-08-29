@@ -65,3 +65,18 @@ class DatUploadPreviewTest(TestCase):
         self.assertEqual(res.data['total_lines'], 2)
         self.assertFalse(res.data['preview_truncated'])
         self.assertEqual(res.data['preview_lines'], ['12345ABCDEF', '67890GHIJKL'])
+
+    def test_upload_without_sube_context_is_rejected(self):
+        """Canlıda şube yalnızca header ile gelir; session boşsa yükleme 400 olmalı."""
+        raw = b'12345ABCDEF\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(MEDIA_ROOT=tmp):
+                f = SimpleUploadedFile('ornek.dat', raw, content_type='text/plain')
+                res = self.client.post(
+                    UPLOAD_URL.format(self.exam.id),
+                    {'dat_file': f},
+                    format='multipart',
+                    HTTP_X_KURUM_ID=str(self.kurum.id),
+                )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn('şube', (res.data.get('error') or '').lower())

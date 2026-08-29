@@ -437,6 +437,7 @@ export const uploadApi = {
     const res = await fetch(`${BASE}/${examId}/results/upload/`, {
       method: 'POST',
       credentials: 'include',
+      headers: getContextHeaders(),
       body: formData,
       // Content-Type header'ını SET ETMEYİN — browser FormData boundary'yi otomatik ayarlar
     });

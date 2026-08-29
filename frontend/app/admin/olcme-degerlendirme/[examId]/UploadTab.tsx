@@ -394,8 +394,8 @@ export default function UploadTab({ exam }: Props) {
 
     const spanRect = textSpan.getBoundingClientRect();
     const len = textSpan.textContent?.length || 1;
-    const chW = spanRect.width / len;
-    if (chW <= 0) return null;
+    const measured = spanRect.width / len;
+    const chW = measured > 0.5 ? measured : (chWidthRef.current || 7.5);
     chWidthRef.current = chW;
 
     const relX = e.clientX - spanRect.left;
@@ -467,9 +467,6 @@ export default function UploadTab({ exam }: Props) {
 
   const onGridMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    // Ruler satırına tıklanmışsa seçimi başlatma
-    const target = e.target as HTMLElement;
-    if (target.closest(`.${s.datRulerLine}`)) return;
     e.preventDefault(); // prevent native text selection during drag
     const pos = charPosFromEvent(e);
     if (pos === null) return;
@@ -533,10 +530,12 @@ export default function UploadTab({ exam }: Props) {
     setCtxMenu({ x, y });
   };
 
-  const assignField = (field: string) => {
-    if (selStart === null || selEnd === null) return;
-    const lo = Math.min(selStart, selEnd);
-    const hi = lo + Math.max(Math.max(selStart, selEnd) - lo, 1); // end exclusive, min 1 char
+  const assignField = (field: string, start?: number, endInclusive?: number) => {
+    const rawStart = start ?? selStart;
+    const rawEnd = endInclusive ?? selEnd;
+    if (rawStart === null || rawEnd === null) return;
+    const lo = Math.min(rawStart, rawEnd);
+    const hi = lo + Math.max(Math.max(rawStart, rawEnd) - lo, 1); // end exclusive, min 1 char
 
     const opt = allFieldOptions.find(o => o.field === field);
     const label = opt?.label || field;
@@ -1196,11 +1195,10 @@ export default function UploadTab({ exam }: Props) {
             <div className={s.uploadHowTo}>
               <Icon name="info" size={17} style={{ marginTop: 1 }} />
               <div>
-                <strong>Nasıl yapılır:</strong> Aşağıdaki önizlemede bir sütun aralığını
-                <strong> sol tuşla sürükleyerek seçin</strong>, sonra üstteki
-                <strong> “Bu aralık hangi alan?”</strong> listesinden alanı seçin
-                (sağ tık menüsü de çalışır). Aynı eşleştirmeyi tekrar
-                kullanacaksanız şablon olarak kaydedin.
+                <strong>Nasıl yapılır:</strong> Sütun aralığını sürükleyerek veya
+                üstteki <strong>Başlangıç / Bitiş</strong> kutularına yazarak seçin,
+                sonra <strong>“Bu aralık hangi alan?”</strong> listesinden alanı atayın.
+                Aynı eşleştirmeyi tekrar kullanacaksanız şablon olarak kaydedin.
               </div>
             </div>
 
@@ -1303,38 +1301,68 @@ export default function UploadTab({ exam }: Props) {
 
                 {/* ── Seçim Sayacı ────────────────────────────────────────── */}
                 {selCount > 0 && (
-                  <>
-                    <span className={s.selectionCounter}>
-                      <Icon name="layers" size={12} />
-                      {selCount} karakter seçili
-                      <span className={s.selectionCounterRange}>[{selLo}–{selHi! + 1})</span>
-                    </span>
-                    <select
-                      className={s.fieldAssignSelect}
-                      value=""
-                      onChange={(e) => {
-                        if (e.target.value) assignField(e.target.value);
-                      }}
-                      aria-label="Seçilen aralığı alana ata"
-                    >
-                      <option value="" disabled>Bu aralık hangi alan?</option>
-                      <optgroup label="Genel">
-                        {BASE_FIELDS.map(opt => (
-                          <option key={opt.field} value={opt.field}>{opt.label}</option>
-                        ))}
-                      </optgroup>
-                      {sectionFieldOptions.length > 0 && (
-                        <optgroup label="Ders Cevapları">
-                          {sectionFieldOptions.map(opt => (
-                            <option key={opt.field} value={opt.field}>
-                              {opt.parentLabel ? `${opt.parentLabel} · ${opt.label}` : opt.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </select>
-                  </>
+                  <span className={s.selectionCounter}>
+                    <Icon name="layers" size={12} />
+                    {selCount} karakter seçili
+                    <span className={s.selectionCounterRange}>[{selLo}–{selHi! + 1})</span>
+                  </span>
                 )}
+                <label className={s.datToolbarChk} style={{ marginLeft: 8 }}>
+                  Başlangıç
+                  <input
+                    type="number"
+                    min={0}
+                    className={s.fieldAssignSelect}
+                    style={{ width: 72, marginLeft: 4 }}
+                    value={selLo ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value === '' ? null : Number(e.target.value);
+                      setSelStart(v);
+                      if (selEnd === null && v !== null) setSelEnd(v);
+                    }}
+                  />
+                </label>
+                <label className={s.datToolbarChk}>
+                  Bitiş
+                  <input
+                    type="number"
+                    min={0}
+                    className={s.fieldAssignSelect}
+                    style={{ width: 72, marginLeft: 4 }}
+                    value={selHi !== null ? selHi + 1 : ''}
+                    onChange={(e) => {
+                      const v = e.target.value === '' ? null : Number(e.target.value) - 1;
+                      setSelEnd(v);
+                      if (selStart === null && v !== null) setSelStart(Math.max(v, 0));
+                    }}
+                  />
+                </label>
+                <select
+                  className={s.fieldAssignSelect}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) assignField(e.target.value);
+                  }}
+                  aria-label="Seçilen aralığı alana ata"
+                >
+                  <option value="" disabled>
+                    {selCount > 0 ? 'Bu aralık hangi alan?' : 'Önce sütun aralığı seçin'}
+                  </option>
+                  <optgroup label="Genel">
+                    {BASE_FIELDS.map(opt => (
+                      <option key={opt.field} value={opt.field}>{opt.label}</option>
+                    ))}
+                  </optgroup>
+                  {sectionFieldOptions.length > 0 && (
+                    <optgroup label="Ders Cevapları">
+                      {sectionFieldOptions.map(opt => (
+                        <option key={opt.field} value={opt.field}>
+                          {opt.parentLabel ? `${opt.parentLabel} · ${opt.label}` : opt.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
               </div>
               <div className={s.datToolbarRight}>
                 <button
@@ -1412,6 +1440,9 @@ export default function UploadTab({ exam }: Props) {
                 onMouseDown={onGridMouseDown}
                 onMouseMove={onGridMouseMove}
                 onMouseUp={onGridMouseUp}
+                onPointerDown={onGridMouseDown}
+                onPointerMove={onGridMouseMove}
+                onPointerUp={onGridMouseUp}
                 onContextMenu={onGridContextMenu}
               >
                 <div className={s.datGrid}>
