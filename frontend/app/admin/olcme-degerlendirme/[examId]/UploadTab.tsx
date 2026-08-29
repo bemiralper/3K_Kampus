@@ -105,37 +105,77 @@ function OverlayLayer({ gridRef, mappings, selLo, selHi, getColorIndex, linesCou
   /** DOM'dan text span ölçümlerini al */
   const remeasure = useCallback(() => {
     const grid = gridRef.current;
-    if (!grid) return;
-    const textSpan = grid.querySelector('[data-text-line]') as HTMLElement | null;
-    if (!textSpan) return;
-    const datGridEl = grid.querySelector(`.${s.datGrid}`) as HTMLElement || grid;
+    if (!grid) return false;
+    const datGridEl = (grid.querySelector(`.${s.datGrid}`) as HTMLElement) || grid;
+    const spans = grid.querySelectorAll('[data-text-line]');
+    let textSpan: HTMLElement | null = null;
+    for (const el of spans) {
+      const node = el as HTMLElement;
+      if ((node.textContent?.length || 0) > 0 && node.getBoundingClientRect().width > 0) {
+        textSpan = node;
+        break;
+      }
+    }
+    if (!textSpan) return false;
     const gridRect = datGridEl.getBoundingClientRect();
     const spanRect = textSpan.getBoundingClientRect();
     const len = textSpan.textContent?.length || 1;
     const chW = spanRect.width / len;
-    if (chW <= 0) return;
-    // offsetPx = metin span'ının sol kenarının, datGrid'in sol kenarına göre piksel uzaklığı
+    if (chW <= 0.5) return false;
     const offsetPx = spanRect.left - gridRect.left;
-    // Ruler satırının yüksekliğini ölç (overlay'lar ruler'ın altından başlamalı)
     const rulerLine = datGridEl.querySelector(`.${s.datRulerLine}`) as HTMLElement | null;
-    const rulerH = rulerLine ? rulerLine.getBoundingClientRect().height : 0;
-    setMetrics({ offsetPx, chPx: chW, rulerH });
+    const rulerH = rulerLine ? rulerLine.getBoundingClientRect().height : 22;
+    setMetrics((prev) => {
+      if (
+        prev
+        && Math.abs(prev.offsetPx - offsetPx) < 0.5
+        && Math.abs(prev.chPx - chW) < 0.05
+        && Math.abs(prev.rulerH - rulerH) < 0.5
+      ) {
+        return prev;
+      }
+      return { offsetPx, chPx: chW, rulerH };
+    });
+    return true;
   }, [gridRef]);
 
-  // İlk render ve her satır/mapping değişiminde ölçüm yap
+  // İlk seçimde de ölç: font/layout hazır olmayınca overlay hiç çizilmiyordu.
   useLayoutEffect(() => {
-    remeasure();
+    if (remeasure()) return;
+    let attempts = 0;
+    let raf = 0;
+    const tick = () => {
+      if (remeasure() || attempts++ > 24) return;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [remeasure, linesCount, mappings.length]);
 
-  // Pencere boyutu değişince yeniden ölç
-  useEffect(() => {
-    const handler = () => remeasure();
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, [remeasure]);
+  useLayoutEffect(() => {
+    if (!metrics) remeasure();
+  }, [remeasure, metrics, selLo, selHi]);
 
-  if (!metrics) return null;
-  const { offsetPx, chPx, rulerH } = metrics;
+  useEffect(() => {
+    const grid = gridRef.current;
+    const handler = () => { remeasure(); };
+    window.addEventListener('resize', handler);
+    const fontsReady = document.fonts?.ready?.then(handler);
+    let ro: ResizeObserver | null = null;
+    if (grid && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(handler);
+      ro.observe(grid);
+    }
+    return () => {
+      window.removeEventListener('resize', handler);
+      ro?.disconnect();
+      fontsReady?.catch(() => undefined);
+    };
+  }, [remeasure, gridRef]);
+
+  const offsetPx = metrics?.offsetPx ?? 54;
+  const chPx = metrics?.chPx ?? 7.5;
+  const rulerH = metrics?.rulerH ?? 22;
 
   return (
     <>
