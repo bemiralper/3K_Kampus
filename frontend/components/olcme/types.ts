@@ -78,6 +78,7 @@ export interface LookupItem {
   seviye_id?: number;
   seviye_ad?: string;
   deneme_sayisi?: number;
+  seviye_ids?: number[];
 }
 
 export interface ExamListItem {
@@ -127,10 +128,87 @@ export interface ExamDetail extends ExamListItem {
   sinif_ids: number[];
   deneme_hizmeti: number | null;
   deneme_paketi: number | null;
+  participant_count?: number;
+  sinif_seviyesi_ids?: number[];
+  deneme_paketi_ids?: number[];
+  rooms?: ExamRoomItem[];
   sections: ExamSection[];
   exam_sessions: ExamSessionItem[];
   updated_at: string;
 }
+
+export interface ExamRoomItem {
+  id?: number;
+  name: string;
+  capacity: number;
+  order?: number;
+}
+
+export interface ExamParticipantRow {
+  id: number;
+  student_id: number;
+  ad: string;
+  soyad: string;
+  full_name: string;
+  tc_kimlik_no: string;
+  telefon?: string;
+  email?: string;
+  veli_ad_soyad?: string;
+  veli_telefon?: string;
+  okul_no: string;
+  sinif: string;
+  sinif_seviyesi_id: number | null;
+  sinif_seviyesi: string;
+  deneme_paketi_id: number | null;
+  source: 'auto' | 'manual';
+  room_id: number | null;
+  room_name: string;
+  seat_no: number | null;
+  desk_no: string;
+  seat_locked?: boolean;
+  seat_stale?: boolean;
+  notified_at?: string | null;
+  notified_seat_no?: number | null;
+  attendance: '' | 'present' | 'absent';
+  exam_session_id?: number | null;
+  exam_session_name?: string;
+  schedule_preference?: SchedulePreference | '';
+}
+
+export interface ParticipantSearchHit {
+  id: number;
+  full_name: string;
+  ad: string;
+  soyad: string;
+  in_other_session?: boolean;
+  other_session_count?: number;
+  other_session?: {
+    participant_id: number;
+    exam_session_id: number | null;
+    exam_session_name: string;
+    schedule_preference: string;
+    schedule_preference_display: string;
+    room_name: string;
+    seat_no: number | null;
+  } | null;
+}
+
+export interface PreviewStudent {
+  student_id: number;
+  ad: string;
+  soyad: string;
+  full_name: string;
+  tc_kimlik_no?: string;
+  okul_no?: string;
+  sinif?: string;
+  sinif_seviyesi_id?: number | null;
+  sinif_seviyesi?: string;
+  deneme_paketi_id?: number | null;
+  source?: string;
+  schedule_group?: 'HAFTA_ICI' | 'HAFTA_SONU';
+}
+
+export type SeatingMode = 'sequential' | 'shuffle' | 'cross';
 
 // ── Form Tipleri ─────────────────────────────────────────────────────────────
 
@@ -143,6 +221,8 @@ export interface ExamCreateForm {
   answer_key_publish_date: string;
   duration_minutes: string;
   sinif_ids: number[];
+  sinif_seviyesi_ids: number[];
+  deneme_paketi_ids: number[];
   deneme_hizmeti: number | null;
   deneme_paketi: number | null;
   wrong_answer_count: string;
@@ -162,6 +242,8 @@ export const EXAM_CREATE_FORM_DEFAULT: ExamCreateForm = {
   answer_key_publish_date:     '',
   duration_minutes:            '',
   sinif_ids:            [],
+  sinif_seviyesi_ids:   [],
+  deneme_paketi_ids:    [],
   deneme_hizmeti:       null,
   deneme_paketi:        null,
   wrong_answer_count:   '4',
@@ -353,6 +435,9 @@ export interface DATParseResultRow {
   matched_student_name: string | null;
   match_score: number;
   match_method: string;
+  match_status?: 'matched' | 'manual' | 'pending' | 'conflict' | 'not_found';
+  suggestion_count?: number;
+  top_suggestion?: MatchSuggestion | null;
   total_correct: number;
   total_wrong: number;
   total_empty: number;
@@ -420,6 +505,33 @@ export interface StudentSearchResult {
   soyad: string;
   tc_kimlik_no: string;
   full_name: string;
+  okul_no?: string;
+  sinif?: string;
+  score?: number;
+  reason?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  selectable?: boolean;
+}
+
+export interface MatchSuggestion {
+  id: number;
+  ad: string;
+  soyad: string;
+  full_name: string;
+  tc_kimlik_no: string;
+  okul_no: string;
+  sinif: string;
+  score: number;
+  match_score: number;
+  match_method: string;
+  reason: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface MatchSuggestionsResponse {
+  answer_id: number;
+  dat: { name: string; ogrenci_no: string };
+  suggestions: MatchSuggestion[];
 }
 
 // ── Analiz Tipleri ───────────────────────────────────────────────────────────

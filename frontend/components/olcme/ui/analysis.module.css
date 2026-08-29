@@ -1,0 +1,383 @@
+/* Analiz panelleri için ortak yapı taşları */
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.panelHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  background: #fcfdfe;
+  flex-wrap: wrap;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panelSubtitle {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary, #64748b);
+}
+
+.panelActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.panelBody {
+  padding: 20px 22px;
+}
+
+.panelBodyFlush {
+  padding: 0;
+}
+
+/* ── İstatistik kartları ──────────────────────────────────────────────── */
+
+.statGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.stat {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.statAccent {
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+
+.statValue {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary, #0f172a);
+  letter-spacing: -0.5px;
+}
+
+.statLabel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary, #64748b);
+  font-weight: 500;
+}
+
+.statHint {
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+/* ── Yayılım göstergesi (min · medyan · ortalama · max) ───────────────── */
+
+.spread {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 16px 18px 12px;
+}
+
+.spreadHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.spreadTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spreadSd {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.spreadTrack {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: #eef2f7;
+  /* alt boşluk etiket satır sayısına göre bileşende ayarlanır */
+  margin: 0 4px;
+}
+
+.spreadFlat {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.spreadFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #bfdbfe, #3b82f6);
+}
+
+.spreadMark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2.5px solid #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
+}
+
+.spreadMarkLabel {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.spreadMarkLabel b {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-primary, #0f172a);
+}
+
+/* ── Histogram ────────────────────────────────────────────────────────── */
+
+.histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 110px;
+  padding-top: 18px;
+}
+
+.histBar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+
+.histFill {
+  width: 100%;
+  max-width: 46px;
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(180deg, #60a5fa, #2563eb);
+  position: relative;
+  min-height: 2px;
+  transition: opacity 0.15s ease;
+}
+
+.histBar:hover .histFill {
+  opacity: 0.82;
+}
+
+.histCount {
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 3px;
+}
+
+.histLabel {
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-top: 6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.histEmpty {
+  color: #cbd5e1;
+}
+
+/* ── Karşılaştırma çubuğu (yatay) ─────────────────────────────────────── */
+
+.compareRow {
+  display: grid;
+  grid-template-columns: minmax(90px, 160px) 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.compareName {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compareTrack {
+  height: 20px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  overflow: hidden;
+  position: relative;
+}
+
+.compareFill {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #3b82f6, #2563eb);
+  transition: width 0.25s ease;
+}
+
+/* kurum ortalaması referans çizgisi */
+.compareAvgLine {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: #f59e0b;
+}
+
+.compareValue {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+  min-width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: #64748b;
+  margin-top: 12px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legendSwatch {
+  width: 12px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+/* ── Boş durum ────────────────────────────────────────────────────────── */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 52px 24px;
+  color: var(--text-secondary, #64748b);
+}
+
+.emptyIcon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: #f1f5f9;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
+}
+
+.emptyDesc {
+  margin: 0;
+  font-size: 13px;
+  max-width: 44ch;
+  line-height: 1.6;
+}
+
+/* ── Rozetler ─────────────────────────────────────────────────────────── */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tagGreen  { background: #dcfce7; color: #15803d; }
+.tagAmber  { background: #fef3c7; color: #b45309; }
+.tagRed    { background: #fee2e2; color: #b91c1c; }
+.tagBlue   { background: #dbeafe; color: #1d4ed8; }
+.tagSlate  { background: #f1f5f9; color: #475569; }
+
+/* ── Trend şeridi ─────────────────────────────────────────────────────── */
+
+.trend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+}
+
+.trendUp   { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.trendDown { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.trendFlat { background: #f8fafc; border-color: #e2e8f0; color: #475569; }

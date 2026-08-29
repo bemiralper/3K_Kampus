@@ -774,7 +774,7 @@ export default function KazanimlarPage() {
               <label>Ders Kodu *</label>
               <input
                 className={styles.formInput}
-                placeholder="Ör: MAT_TYT, FIZ_AYT"
+                placeholder="Ör: MATEMATIK, FIZIK"
                 value={newSubjectForm.code}
                 onChange={e => setNewSubjectForm(p => ({ ...p, code: e.target.value }))}
               />

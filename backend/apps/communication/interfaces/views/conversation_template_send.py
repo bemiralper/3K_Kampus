@@ -16,6 +16,8 @@ from apps.communication.application.communication_service import (
 )
 from apps.communication.application.meta_template_service import MetaTemplateService
 from apps.communication.application.personal_chat_template_seed import (
+    personal_chat_families_for_department,
+    personal_chat_family_from_name,
     preferred_personal_chat_template_name,
 )
 from apps.communication.application.session_window import window_for_conversation
@@ -61,11 +63,30 @@ def _list_personal_chat_templates(kurum_id: int, channel_config_id=None):
     return qs.order_by('-updated_at')
 
 
-def _order_personal_templates(rows: list[dict], *, preferred_name: str | None, audience: str | None):
+def _order_personal_templates(
+    rows: list[dict],
+    *,
+    preferred_name: str | None,
+    audience: str | None,
+    department: str | None = None,
+):
     """
-    Alıcıya göre filtrele + birim şablonunu (sohbet_kocluk_*) öne al.
+    Alıcı + birim filtresi; birim şablonunu (sohbet_kocluk_*) öne al.
+
+    Aynı WhatsApp numarasında / WABA'da olsa bile başka rolün sohbet_*
+    ailesi (muhasebe ↔ koçluk) listelenmez.
     Veli → yalnızca *_veli; öğrenci → yalnızca *_ogrenci (varsa).
     """
+    if department:
+        families = personal_chat_families_for_department(department)
+        scoped = []
+        for row in rows:
+            family = personal_chat_family_from_name(row.get('name') or '')
+            if family is not None and family not in families:
+                continue
+            scoped.append(row)
+        rows = scoped
+
     suffix = f'_{audience}' if audience in ('veli', 'ogrenci') else ''
     if suffix:
         audience_rows = [r for r in rows if (r.get('name') or '').endswith(suffix)]
@@ -134,7 +155,11 @@ class ConversationTemplateSendView(CommunicationAPIView):
             else 'ogrenci' if contact_type == 'OGRENCI'
             else None
         )
-        department = (getattr(channel, 'department', None) or '') if channel else ''
+        department = (
+            getattr(conversation, 'department', None)
+            or (getattr(channel, 'department', None) if channel else '')
+            or ''
+        )
         preferred_name = preferred_personal_chat_template_name(department, audience)
 
         data = WhatsAppMetaTemplateSerializer(templates, many=True).data
@@ -142,6 +167,7 @@ class ConversationTemplateSendView(CommunicationAPIView):
             list(data),
             preferred_name=preferred_name,
             audience=audience,
+            department=department,
         )
         for row in data:
             row['preview'] = resolve_variables(row.get('body_named') or '', context)

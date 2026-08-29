@@ -94,6 +94,31 @@ class PersonalChatSeedTest(TestCase):
             'sohbet_kocluk_ogrenci', 'sohbet_genel_ogrenci',
         ])
 
+    def test_order_hides_other_department_family(self):
+        rows = [
+            {'name': 'sohbet_muhasebe_veli', 'id': '1'},
+            {'name': 'sohbet_kocluk_veli', 'id': '2'},
+            {'name': 'sohbet_genel_veli', 'id': '3'},
+        ]
+        coach = _order_personal_templates(
+            rows,
+            preferred_name='sohbet_kocluk_veli',
+            audience='veli',
+            department=CommunicationDepartment.COACHING,
+        )
+        self.assertEqual([r['name'] for r in coach], [
+            'sohbet_kocluk_veli', 'sohbet_genel_veli',
+        ])
+        acc = _order_personal_templates(
+            rows,
+            preferred_name='sohbet_muhasebe_veli',
+            audience='veli',
+            department=CommunicationDepartment.ACCOUNTING,
+        )
+        self.assertEqual([r['name'] for r in acc], [
+            'sohbet_muhasebe_veli', 'sohbet_genel_veli',
+        ])
+
     def test_drafts_by_department(self):
         acc = list_personal_chat_template_drafts(
             department=CommunicationDepartment.ACCOUNTING,

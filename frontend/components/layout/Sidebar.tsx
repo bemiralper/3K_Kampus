@@ -264,10 +264,11 @@ const navItems: MenuItem[] = [
     children: [
       { label: "Sınav Listesi", href: "/admin/olcme-degerlendirme", group: "Sınavlar" },
       { label: "Yeni Sınav Oluştur", href: "/admin/olcme-degerlendirme/yeni", group: "Sınavlar" },
-      { label: "Sonuç Analizi", href: "/admin/olcme-degerlendirme/analiz", group: "Analiz" },
-      { label: "Karşılaştırma", href: "/admin/olcme-degerlendirme/karsilastirma", group: "Analiz" },
+      // Analiz ve karşılaştırma sınav bazlıdır; sınav detayındaki Analiz
+      // sekmesinden açılır. Ayrı /analiz ve /karsilastirma sayfaları yok.
       { label: "Konu & Kazanımlar", href: "/admin/olcme-degerlendirme/kazanimlar", group: "Tanımlar" },
       { label: "Puan Katsayıları", href: "/admin/olcme-degerlendirme/ayarlar", group: "Tanımlar" },
+      { label: "Hafta içi / Hafta sonu", href: "/admin/olcme-degerlendirme/oturum-gruplari", group: "Tanımlar" },
     ],
   },
   {

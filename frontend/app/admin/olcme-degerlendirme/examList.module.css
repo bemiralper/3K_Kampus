@@ -1,0 +1,924 @@
+/* Sınav Listesi — sayfa başlığı, filtre çubuğu ve tablo */
+
+/* Devam eden işlemler için dönen ikon */
+@keyframes examListSpin {
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: examListSpin 0.9s linear infinite;
+}
+
+/* ── Sayfa başlığı ────────────────────────────────────────────────────── */
+
+.header {
+  background: linear-gradient(135deg, #0061a6 0%, #0085e0 55%, #00a3ff 100%);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px -12px rgba(0, 97, 166, 0.45);
+  color: #fff;
+  overflow: hidden;
+}
+
+.headerTop {
+  padding: 18px 26px 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.72);
+  margin-bottom: 10px;
+}
+
+.crumbCurrent {
+  color: #fff;
+  font-weight: 600;
+}
+
+.titleBlock {
+  display: flex;
+  gap: 14px;
+  min-width: 0;
+}
+
+.titleIcon {
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+}
+
+.subtitle {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Ana eylem — beyaz zemin, sayfadaki tek baskın buton */
+.actionPrimary {
+  background: #fff;
+  border-color: #fff;
+  color: #0061a6;
+}
+
+.actionPrimary:hover:not(:disabled) {
+  background: #eaf4ff;
+  border-color: #eaf4ff;
+}
+
+/* ── Başlıktaki metrik şeridi ─────────────────────────────────────────── */
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.16);
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.metric {
+  background: rgba(0, 61, 105, 0.28);
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+  border: none;
+  font: inherit;
+  color: inherit;
+}
+
+/* Tıklanabilir metrik (durum filtresini uygular) */
+button.metric {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+button.metric:hover {
+  background: rgba(0, 61, 105, 0.5);
+}
+
+.metricActive {
+  background: rgba(0, 61, 105, 0.62);
+  box-shadow: inset 0 -3px 0 #fff;
+}
+
+.metricValue {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.metricLabel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metricWarn {
+  color: #fecaca;
+}
+
+/* ── Filtre çubuğu ────────────────────────────────────────────────────── */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: #fff;
+  border: 1px solid var(--border, #dfe6ef);
+  border-radius: 14px;
+}
+
+.searchBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 260px;
+  max-width: 340px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-secondary, #7088a4);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 9px 34px 9px 36px;
+  border: 1px solid var(--border, #dfe6ef);
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.searchInput:focus {
+  border-color: #0262a7;
+  box-shadow: 0 0 0 3px rgba(2, 98, 167, 0.12);
+}
+
+.searchClear {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  padding: 3px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary, #7088a4);
+  cursor: pointer;
+}
+
+.searchClear:hover {
+  background: #eef2f7;
+}
+
+.select {
+  padding: 9px 12px;
+  border: 1px solid var(--border, #dfe6ef);
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text-primary, #1e3352);
+  cursor: pointer;
+  outline: none;
+}
+
+.select:focus {
+  border-color: #0262a7;
+}
+
+/* Durum filtresi — 4 değer için açılır liste yerine tek tıklık çipler */
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 1px solid var(--border, #dfe6ef);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-secondary, #7088a4);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chip:hover {
+  border-color: #9dc3e2;
+  color: #0262a7;
+}
+
+.chipActive {
+  background: #0262a7;
+  border-color: #0262a7;
+  color: #fff;
+}
+
+.chipCount {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eef4fa;
+  color: #0262a7;
+}
+
+.chipActive .chipCount {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+
+.toolbarSpacer {
+  flex: 1;
+}
+
+.toolbarNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary, #7088a4);
+}
+
+.linkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 1px solid var(--border, #dfe6ef);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text-primary, #1e3352);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.linkBtn:hover {
+  background: #f5f8fb;
+}
+
+/* ── Tablo ────────────────────────────────────────────────────────────── */
+
+.tableCard {
+  margin-top: 16px;
+  background: #fff;
+  border: 1px solid var(--border, #dfe6ef);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.table th {
+  background: var(--bg-alt, #f0f4f9);
+  padding: 11px 16px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary, #1e3352);
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border, #dfe6ef);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable:hover {
+  background: #e4ebf3;
+}
+
+.thInner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid #eef2f7;
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background: #f8fbfe;
+}
+
+/* ── Sınav adı hücresi ────────────────────────────────────────────────── */
+
+.nameCell {
+  min-width: 240px;
+}
+
+.nameLink {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary, #1e3352);
+  text-decoration: none;
+}
+
+.nameLink:hover {
+  color: #0262a7;
+  text-decoration: underline;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.tagIcon {
+  display: inline-flex;
+  color: #64748b;
+}
+
+.linkChips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+
+.linkChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linkChipTyt {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+}
+
+.linkChipAyt {
+  background: #faf5ff;
+  border: 1px solid #e9d5ff;
+  color: #7c3aed;
+}
+
+.subMeta {
+  font-size: 11.5px;
+  color: var(--text-secondary, #7088a4);
+  margin-top: 3px;
+}
+
+/* ── Aşama sütunu ─────────────────────────────────────────────────────── */
+
+.stage {
+  min-width: 150px;
+}
+
+.stageLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.stageTrack {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.stageSeg {
+  height: 4px;
+  flex: 1;
+  border-radius: 2px;
+  background: #e2e8f0;
+}
+
+.stageSegOn {
+  background: currentColor;
+}
+
+/* Durum renkleri — hem etiket hem dolu segmentler bu rengi alır */
+.stageDraft { color: #64748b; }
+.stageKey { color: #0284c7; }
+.stageUploaded { color: #d97706; }
+.stageDone { color: #16a34a; }
+
+/* ── Sonuç sütunu ─────────────────────────────────────────────────────── */
+
+.resultCell {
+  min-width: 150px;
+}
+
+.resultTop {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12.5px;
+}
+
+.resultCount {
+  font-weight: 700;
+  color: var(--text-primary, #1e3352);
+}
+
+.matchTrack {
+  height: 4px;
+  border-radius: 2px;
+  background: #fee2e2;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.matchFill {
+  height: 100%;
+  border-radius: 2px;
+  background: #16a34a;
+}
+
+.matchMeta {
+  font-size: 11px;
+  margin-top: 4px;
+  color: var(--text-secondary, #7088a4);
+}
+
+.matchWarn {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--text-secondary, #7088a4);
+}
+
+/* ── Satır işlemleri ──────────────────────────────────────────────────── */
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.rowBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #dfe6ef);
+  background: #fff;
+  color: var(--text-primary, #1e3352);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.rowBtn:hover {
+  background: #f1f6fb;
+  border-color: #9dc3e2;
+}
+
+.rowBtnPrimary {
+  background: #0262a7;
+  border-color: #0262a7;
+  color: #fff;
+}
+
+.rowBtnPrimary:hover {
+  background: #014a7f;
+  border-color: #014a7f;
+}
+
+.rowBtnDanger {
+  padding: 6px 9px;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.rowBtnDanger:hover {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+/* ── Durum blokları ───────────────────────────────────────────────────── */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.noticeOk {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+}
+
+.noticeWarn {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.noticeError {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.noticeClose {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.65;
+  display: flex;
+  padding: 0;
+}
+
+.noticeClose:hover {
+  opacity: 1;
+}
+
+.rematchStats {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.rematchDetails {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.rematchDetails summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.rematchRow {
+  display: flex;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.empty {
+  margin-top: 16px;
+  padding: 56px 24px;
+  background: #fff;
+  border: 1px solid var(--border, #dfe6ef);
+  border-radius: 14px;
+  text-align: center;
+}
+
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: #eef4fa;
+  color: #0262a7;
+  margin-bottom: 14px;
+}
+
+.emptyTitle {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary, #1e3352);
+}
+
+.emptyText {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--text-secondary, #7088a4);
+}
+
+.skeletonRow {
+  display: flex;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+/* ── Silme onay penceresi ─────────────────────────────────────────────── */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: #fff;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 470px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.modalHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+}
+
+.modalHeadIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: #dc2626;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #991b1b;
+}
+
+.modalSubtitle {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: #b91c1c;
+}
+
+.modalBody {
+  padding: 18px 24px;
+}
+
+.modalExam {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-alt, #f0f4f9);
+  margin-bottom: 14px;
+}
+
+.modalExamName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary, #1e3352);
+}
+
+.modalExamMeta {
+  font-size: 12px;
+  color: var(--text-secondary, #7088a4);
+  margin-top: 2px;
+}
+
+.modalList {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: #374151;
+  line-height: 1.85;
+}
+
+.modalLabel {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.modalInput {
+  width: 100%;
+  padding: 10px 13px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-family: inherit;
+  border: 2px solid #e5e7eb;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.modalInputReady {
+  border-color: #22c55e;
+}
+
+.modalFoot {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.modalCancel,
+.modalConfirm {
+  padding: 10px 20px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.modalCancel {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.modalConfirm {
+  background: #dc2626;
+  border: 1px solid #dc2626;
+  color: #fff;
+}
+
+.modalConfirm:disabled {
+  background: #fca5a5;
+  border-color: #fca5a5;
+  cursor: not-allowed;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .headerTop {
+    flex-direction: column;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .action {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .header {
+    border-radius: 16px;
+  }
+
+  .headerTop {
+    padding: 14px 16px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+
+  .titleIcon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .searchBox {
+    max-width: none;
+  }
+
+  .metric {
+    padding: 10px 14px;
+  }
+
+  .metricValue {
+    font-size: 16px;
+  }
+}

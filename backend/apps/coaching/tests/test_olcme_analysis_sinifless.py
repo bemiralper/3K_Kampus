@@ -8,8 +8,10 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.coaching.olcme_degerlendirme.models import (
-    Exam, ExamSection, ExamSession, StudentAnswer, StudentSectionScore,
+    AnswerKey, AnswerKeyItem, Exam, ExamSection, ExamSession,
+    Outcome, StudentAnswer, StudentSectionScore, Subject, Topic,
 )
+from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_topic_blocks
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
@@ -107,3 +109,76 @@ class OlcmeAnalysisSiniflessKayitTest(TestCase):
         self.assertEqual(res.status_code, 200)
         names = {c['sinif_name'] for c in res.json()['classes']}
         self.assertIn('Sınıfsız', names)
+
+
+class TopicBlocksKazanımLabelTest(TestCase):
+    """Karne satırı ünite değil, yayınevi gibi kazanım metnini kullanır."""
+
+    def test_row_uses_outcome_text(self):
+        exam = Exam.objects.create(name='DK TYT 2', exam_type='YKS_TYT')
+        section = ExamSection.objects.create(
+            exam=exam, name='Türkçe', order=0, question_start=1, question_end=2,
+        )
+        subject = Subject.objects.create(code='TURKCE', name='Türkçe')
+        topic = Topic.objects.create(
+            subject=subject, code='21.1', name='SHG21 · SÖZCÜKTE VE SÖZ ÖBEKLERİNDE ANLAM',
+        )
+        o1 = Outcome.objects.create(topic=topic, code='21.1.1', text='Sözcükte Anlam')
+        o2 = Outcome.objects.create(topic=topic, code='21.1.2', text='Metne Sözcük Yerleştirme')
+        ak = AnswerKey.objects.create(exam=exam, booklet='', is_primary=True)
+        AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=1,
+            correct_answer='A', outcome=o1,
+        )
+        AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=2,
+            correct_answer='B', outcome=o2,
+        )
+        comparison = {
+            '1': {'result': 'wrong'},
+            '2': {'result': 'correct'},
+        }
+        blocks = _build_topic_blocks(exam, comparison, '')
+        self.assertEqual(len(blocks), 1)
+        rows = {r['name']: r for r in blocks[0]['tables'][0]['rows']}
+        self.assertIn('Sözcükte Anlam', rows)
+        self.assertIn('Metne Sözcük Yerleştirme', rows)
+        self.assertNotIn(topic.name, rows)
+        self.assertEqual(rows['Sözcükte Anlam']['soru'], 1)
+        self.assertEqual(rows['Sözcükte Anlam']['yanlis'], 1)
+        self.assertEqual(rows['Sözcükte Anlam']['basari'], 0)
+        self.assertEqual(rows['Metne Sözcük Yerleştirme']['dogru'], 1)
+        self.assertEqual(rows['Metne Sözcük Yerleştirme']['basari'], 100)
+
+    def test_booklet_b_uses_primary_outcomes(self):
+        exam = Exam.objects.create(name='DK TYT B', exam_type='YKS_TYT')
+        section = ExamSection.objects.create(
+            exam=exam, name='Türkçe', order=0, question_start=1, question_end=2,
+        )
+        subject = Subject.objects.create(code='TURKCE_B', name='Türkçe')
+        topic = Topic.objects.create(subject=subject, code='21.1b', name='Ünite')
+        o1 = Outcome.objects.create(topic=topic, code='21.1.1b', text='Sözcükte Anlam')
+        ak_a = AnswerKey.objects.create(exam=exam, booklet='A', is_primary=True)
+        AnswerKeyItem.objects.create(
+            answer_key=ak_a, section=section, question_number=1,
+            correct_answer='A', outcome=o1, b_question_number=2,
+        )
+        ak_b = AnswerKey.objects.create(exam=exam, booklet='B', is_primary=False)
+        AnswerKeyItem.objects.create(
+            answer_key=ak_b, section=section, question_number=1,
+            correct_answer='C',
+        )
+        AnswerKeyItem.objects.create(
+            answer_key=ak_b, section=section, question_number=2,
+            correct_answer='A',
+        )
+        comparison = {
+            '1': {'result': 'empty'},
+            '2': {'result': 'correct'},
+        }
+        blocks = _build_topic_blocks(exam, comparison, 'B')
+        self.assertEqual(len(blocks), 1)
+        row = blocks[0]['tables'][0]['rows'][0]
+        self.assertEqual(row['name'], 'Sözcükte Anlam')
+        self.assertEqual(row['dogru'], 1)
+        self.assertEqual(row['basari'], 100)

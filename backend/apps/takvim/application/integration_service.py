@@ -240,8 +240,24 @@ class CalendarIntegrationService:
         sure = exam.duration_minutes or 180
         bitis = baslangic + timedelta(minutes=sure)
 
-        # Sınıf ID'leri
+        # Sınıf ID'leri — katılımcı listesi varsa onların sınıflarını da ekle
         sinif_ids = list(exam.siniflar.values_list('id', flat=True))
+        try:
+            from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+            from apps.ogrenci.domain.models import OgrenciKayit
+            pids = list(
+                ExamParticipant.objects.filter(exam=exam).values_list('student_id', flat=True)
+            )
+            if pids:
+                extra = OgrenciKayit.objects.filter(
+                    ogrenci_id__in=pids, aktif_mi=True, sinif_id__isnull=False,
+                )
+                if exam.egitim_yili_id:
+                    extra = extra.filter(egitim_yili_id=exam.egitim_yili_id)
+                extra_ids = list(extra.values_list('sinif_id', flat=True).distinct())
+                sinif_ids = list(dict.fromkeys([*sinif_ids, *extra_ids]))
+        except Exception:
+            pass
 
         aciklama_parts = [exam.get_exam_type_display()]
         if exam.description:

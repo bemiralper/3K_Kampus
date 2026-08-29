@@ -210,6 +210,27 @@ class ManualAssignment(models.Model):
         verbose_name='Maksimum Erteleme',
         help_text='Kaç kez ertelenebilir'
     )
+
+    # Yönetici, kontrol tarihi geçmiş ödevi koça açar; koç yeni kontrol tarihi belirler.
+    control_opened_for_coach = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name='Koça açıldı',
+        help_text='Kontrol tarihi geçmiş ödev yönetici tarafından koça açıldıysa True.',
+    )
+    control_opened_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Koça açılma tarihi',
+    )
+    control_opened_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='manual_assignments_opened_for_coach',
+        verbose_name='Koça açan kullanıcı',
+    )
     
     # Geç Teslim Bilgileri
     late_submission_note = models.TextField(

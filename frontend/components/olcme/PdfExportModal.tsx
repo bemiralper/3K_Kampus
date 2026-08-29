@@ -22,6 +22,8 @@ interface BaseProps {
   examName: string;
   examType: string;
   uniqueSiniflar: string[];
+  /** PDF antetinde görünecek kurum/şube adı */
+  kurumAd?: string;
   onClose: () => void;
 }
 
@@ -55,7 +57,7 @@ type PdfExportModalProps = RankingsProps | StudentsProps;
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function PdfExportModal(props: PdfExportModalProps) {
-  const { mode, examName, examType, uniqueSiniflar, onClose } = props;
+  const { mode, examName, examType, uniqueSiniflar, kurumAd, onClose } = props;
   const isAyt = examType === 'YKS_AYT';
 
   /* ── Portal root ── */
@@ -137,6 +139,7 @@ export default function PdfExportModal(props: PdfExportModalProps) {
           avgNet: props.avgNet,
           puanTurleriAvgs: props.puanTurleriAvgs,
           sinifAvgs: props.sinifAvgs,
+          kurumAd,
         });
       } else {
         let filtered = [...props.students];

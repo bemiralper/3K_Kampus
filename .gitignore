@@ -57,6 +57,7 @@ Meb Kazanım*/
 meb_ayt_kazanimlar/
 meb_tyt_kazanimlar/
 *.xlsx
+!backend/apps/coaching/olcme_degerlendirme/data/Okulizyon-Kazanimlar-20230812.xlsx
 *.csv
 *.dat
 cookies.txt

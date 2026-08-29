@@ -67,7 +67,9 @@ class TemplateCategoryServiceTest(TestCase):
         self.kurum = Kurum.objects.create(ad='Cat Kurum', kod='CAT')
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='CAT-M')
         self.admin = User.objects.create_user(username='cat_admin', password='x')
-        _assign_role(self.admin, 'cat_admin', ['communication.bulk', 'communication.read'])
+        _assign_role(self.admin, 'cat_admin', [
+            'communication.manage', 'communication.bulk', 'communication.read',
+        ])
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin)
         self.service = TemplateCategoryService()

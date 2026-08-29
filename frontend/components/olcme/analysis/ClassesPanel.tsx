@@ -1,67 +1,88 @@
 'use client';
 
+import { Panel, CompareBars, EmptyState, Tag } from '../ui/analysis';
 import type { ClassAnalysis } from '../types';
 import s from '../../../app/admin/olcme-degerlendirme/olcme.module.css';
 
 export default function ClassesPanel({ classes }: { classes: ClassAnalysis[] }) {
-  if (!classes.length) return <div className={s.analysisEmpty}>Sınıf verisi yok.</div>;
+  if (!classes.length) {
+    return (
+      <Panel title="Sınıf / Şube Analizi" icon="users">
+        <EmptyState
+          title="Sınıf verisi yok"
+          description="Yüklenen sonuçlarda öğrenciler bir sınıfla eşleşmemiş olabilir. “Sonuç Yükle” sekmesinden eşleşmeyen kayıtları kontrol edin."
+        />
+      </Panel>
+    );
+  }
 
-  // Alan/Ders isimleri (section_avgs key'lerinden)
   const allSections = Array.from(new Set(classes.flatMap(c => Object.keys(c.section_avgs))));
+  const ranked = [...classes].sort((a, b) => b.ortalama_net - a.ortalama_net);
+
+  // Genel ortalama, öğrenci sayısıyla ağırlıklandırılır; küçük şubeler
+  // ortalamayı orantısız etkilemesin.
+  const totalStudents = classes.reduce((acc, c) => acc + c.student_count, 0);
+  const overallAvg = totalStudents > 0
+    ? Math.round((classes.reduce((acc, c) => acc + c.ortalama_net * c.student_count, 0) / totalStudents) * 100) / 100
+    : 0;
 
   return (
-    <div className={s.analysisPanel}>
-      <h3 className={s.analysisPanelTitle}>Sınıf / Şube Analizi</h3>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Panel
+        title="Sınıf Karşılaştırması"
+        icon="chart"
+        subtitle="Ortalama net'e göre sıralı. Turuncu çizgi kurum ortalamasıdır."
+      >
+        <CompareBars
+          rows={ranked.map(c => ({
+            key: c.sinif_id,
+            name: `${c.sinif_name} (${c.student_count})`,
+            value: c.ortalama_net,
+            tone: c.ortalama_net >= overallAvg ? undefined : 'linear-gradient(90deg,#fca5a5,#ef4444)',
+          }))}
+          reference={overallAvg}
+          referenceLabel="Kurum ortalaması"
+        />
+      </Panel>
 
-      {/* Sınıf kartları */}
-      <div className={s.analysisGrid3}>
-        {classes.map(c => (
-          <div key={c.sinif_id} className={s.analysisClassCard}>
-            <div className={s.classCardHeader}>
-              <h4>{c.sinif_name}</h4>
-              <span className={s.classStudentCount}>{c.student_count} öğrenci</span>
-            </div>
-            <div className={s.classCardStats}>
-              <div><strong>{c.ortalama_net}</strong> <span>Ort. Net</span></div>
-              <div><strong>{c.max_net}</strong> <span>Maks</span></div>
-              <div><strong>{c.min_net}</strong> <span>Min</span></div>
-              <div>
-                <strong style={{ color: c.basari_yuzdesi >= 50 ? '#16a34a' : '#ef4444' }}>%{c.basari_yuzdesi}</strong>
-                <span>Başarı</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Alan/Ders bazlı karşılaştırma tablosu */}
-      {allSections.length > 0 && (
-        <>
-          <h4 style={{ margin: '20px 0 8px', fontSize: 14, fontWeight: 600 }}>Alan/Ders Bazlı Sınıf Karşılaştırması</h4>
-          <div className={s.analysisTableWrap}>
-            <table className={s.analysisTable}>
-              <thead>
-                <tr>
-                  <th>Sınıf</th>
-                  {allSections.map(sn => <th key={sn} style={{ textAlign: 'center' }}>{sn}</th>)}
-                  <th style={{ textAlign: 'center' }}>Toplam Ort.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {classes.map(c => (
-                  <tr key={c.sinif_id}>
-                    <td style={{ fontWeight: 600 }}>{c.sinif_name}</td>
-                    {allSections.map(sn => (
-                      <td key={sn} style={{ textAlign: 'center' }}>{c.section_avgs[sn] ?? '—'}</td>
-                    ))}
-                    <td style={{ textAlign: 'center', fontWeight: 700 }}>{c.ortalama_net}</td>
-                  </tr>
+      <Panel title="Sınıf Detayları" icon="users" flush>
+        <div className={s.analysisTableWrap}>
+          <table className={s.analysisTable}>
+            <thead>
+              <tr>
+                <th>Sınıf</th>
+                <th style={{ textAlign: 'center' }}>Öğrenci</th>
+                <th style={{ textAlign: 'center' }}>Ort. Net</th>
+                <th style={{ textAlign: 'center' }}>Medyan</th>
+                <th style={{ textAlign: 'center' }}>En Düşük</th>
+                <th style={{ textAlign: 'center' }}>En Yüksek</th>
+                <th style={{ textAlign: 'center' }}>Başarı</th>
+                {allSections.map(sn => (
+                  <th key={sn} style={{ textAlign: 'center' }}>{sn}</th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+              </tr>
+            </thead>
+            <tbody>
+              {ranked.map(c => (
+                <tr key={c.sinif_id}>
+                  <td style={{ fontWeight: 600 }}>{c.sinif_name}</td>
+                  <td style={{ textAlign: 'center' }}>{c.student_count}</td>
+                  <td style={{ textAlign: 'center', fontWeight: 700 }}>{c.ortalama_net}</td>
+                  <td style={{ textAlign: 'center' }}>{c.medyan_net}</td>
+                  <td style={{ textAlign: 'center', color: '#ef4444' }}>{c.min_net}</td>
+                  <td style={{ textAlign: 'center', color: '#16a34a' }}>{c.max_net}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <Tag tone={c.basari_yuzdesi >= 50 ? 'green' : 'red'}>%{c.basari_yuzdesi}</Tag>
+                  </td>
+                  {allSections.map(sn => (
+                    <td key={sn} style={{ textAlign: 'center' }}>{c.section_avgs[sn] ?? '—'}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
     </div>
   );
 }

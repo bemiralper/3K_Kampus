@@ -116,7 +116,7 @@ def apply_department_visibility(qs, user):
     depts = visible_departments_for_user(user)
     if depts is None:
         return qs
-    return qs.filter(Q(department__in=depts) | _own_outbound_conversation_q(user))
+    return qs.filter(department__in=depts)
 
 
 def user_can_see_department(user, department: str | None) -> bool:
@@ -211,11 +211,9 @@ def filter_conversations_for_user(
         from apps.communication.domain.enums import CommunicationDepartment
         allowed = set(get_active_assignment_student_ids(coach_profile))
         scoped_students_q = Q(ogrenci_id__in=allowed) if allowed else Q(pk__in=[])
-        own_q = _own_outbound_conversation_q(user)
         visibility = (
             Q(assigned_coach=coach_profile)
             | Q(claimed_by_user=user)
-            | own_q
             | scoped_students_q
             | (
                 Q(claimed_by_user__isnull=True)
@@ -240,14 +238,12 @@ def filter_conversations_for_user(
                 )
             )
         )
-        # Başkasının claim ettiği ama kendi öğrencisi / ataması / gönderimi olan
-        # sohbetler görünür kalır.
+        # Başkasının claim ettiği ama kendi öğrencisi / ataması olan sohbetler görünür kalır.
         other_claim_block = (
             Q(claimed_by_user__isnull=False)
             & ~Q(claimed_by_user=user)
             & ~Q(assigned_coach=coach_profile)
             & ~scoped_students_q
-            & ~own_q
         )
         qs = qs.filter(visibility).exclude(other_claim_block)
         qs = _apply_inbox_filter(qs, inbox, coach_profile=coach_profile, user=user, is_admin=False)
@@ -402,13 +398,13 @@ def user_can_access_conversation(user, conversation) -> bool:
     if _bypasses_claim_visibility(user):
         return True
 
-    # Kendi gönderdiği mesajın bulunduğu sohbet her zaman açılabilir; liste
-    # filtresi de aynı kuralı uygular (_own_outbound_conversation_q).
-    if _user_sent_in_conversation(user, conversation):
-        return True
-
     if not user_can_see_department(user, getattr(conversation, 'department', None)):
         return False
+
+    # Aynı departmanda, kendi gönderdiği mesajın olduğu sohbet (hat kapsamı
+    # dışında kalsa bile) açılabilir. Karşı rolün thread'ini açmaz.
+    if _user_sent_in_conversation(user, conversation):
+        return True
 
     if not _user_can_access_conversation_account(user, conversation):
         return False

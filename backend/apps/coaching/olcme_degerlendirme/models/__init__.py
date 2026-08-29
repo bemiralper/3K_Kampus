@@ -16,6 +16,10 @@ from .result import StudentAnswer, StudentSectionScore
 from .curriculum import Subject, Topic, Outcome, SubOutcome
 from .mapping_template import MappingTemplate
 from .scoring_settings import OlcmePuanAyar, OlcmeKatsayiSeti
+from .roster import (
+    ExamAudience, ExamRoom, ExamParticipant,
+    OlcmeSeviyeOturumAyar, OlcmeOgrenciOturumTercihi, ScheduleGroup,
+)
 
 __all__ = [
     'Exam', 'ExamSection', 'ExamSessionModel',
@@ -25,4 +29,6 @@ __all__ = [
     'Subject', 'Topic', 'Outcome', 'SubOutcome',
     'MappingTemplate',
     'OlcmePuanAyar', 'OlcmeKatsayiSeti',
+    'ExamAudience', 'ExamRoom', 'ExamParticipant',
+    'OlcmeSeviyeOturumAyar', 'OlcmeOgrenciOturumTercihi', 'ScheduleGroup',
 ]

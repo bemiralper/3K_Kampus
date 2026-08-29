@@ -6,6 +6,7 @@ import { formatPhoneDisplay } from "@/app/ogrenciler/[id]/utils";
 import {
   conversationInboxPath,
   fetchAccessibleWhatsAppAccounts,
+  inboxPortalDepartment,
   openConversationByPhone,
 } from "@/lib/communication-api";
 import { useCommunicationChat } from "@/components/communication/CommunicationChatProvider";
@@ -68,6 +69,7 @@ export default function PhoneContactLinks({
         veli_id: veliId,
         channel_config_id:
           accessible?.default_account_id || accessible?.accounts?.[0]?.id || undefined,
+        department: inboxPortalDepartment(adminInbox ? "admin" : "coach"),
       });
       router.push(conversationInboxPath(conv.id, adminInbox));
     } catch {

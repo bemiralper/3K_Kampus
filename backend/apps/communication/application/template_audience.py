@@ -11,13 +11,16 @@ from shared.permissions import user_has_any_permission
 
 
 def visible_audience_scopes_for_user(user) -> list[str]:
-    """Kullanıcının görebileceği şablon kitleleri."""
+    """Kullanıcının görebileceği şablon kitleleri.
+
+    `communication.bulk` tek başına tüm kitleleri açmaz — koç toplu gönderim
+    yetkisi muhasebe şablonlarını (ve tersi) göstermemelidir. Tüm kitleler
+    yalnızca iletişim yöneticisi / sistem admin içindir.
+    """
     if not user or not user.is_authenticated:
         return []
 
-    if is_resource_admin(user) or user_has_any_permission(
-        user, 'communication.manage', 'communication.bulk'
-    ):
+    if is_resource_admin(user) or user_has_any_permission(user, 'communication.manage'):
         return [
             TemplateAudienceScope.GENEL,
             TemplateAudienceScope.ADMIN,

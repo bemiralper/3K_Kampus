@@ -18,7 +18,10 @@ const ALAN_TO_PT: Record<string, string> = {
 
 export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYearChange, sections, examId, sessionId, examName, examType, sectionAvgs, avgNet, puanTurleriAvgs, sinifAvgs, years, defaultYear }: {
   rankings: RankingItem[];
-  meta: { top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number };
+  meta: {
+    top_10_count: number; bottom_10_count: number; avg_score: number;
+    referans_yil: number; kurum_ad?: string; sube_ad?: string;
+  };
   rankingYear: number;
   onRankingYearChange: (y: number) => void;
   years?: number[];
@@ -256,6 +259,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
           sections={sections}
           rankings={rankings}
           uniqueSiniflar={uniqueSiniflar}
+          kurumAd={meta.sube_ad || meta.kurum_ad}
           referansYil={rankingYear}
           sectionAvgs={sectionAvgs}
           avgScore={meta.avg_score}

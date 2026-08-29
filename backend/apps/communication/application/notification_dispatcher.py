@@ -404,10 +404,59 @@ def department_for_event(event_module: str | None, event_key: str | None = None)
     return None
 
 
-def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -> str | None:
-    """Olayın departman hattı; yoklama/ödev koçluk, ödeme muhasebe."""
-    from apps.communication.application.account_resolver import AccountResolver
+def department_for_sender(user) -> str | None:
+    """Gönderen personelin birimi — muhasebe işlemi muhasebe sohbetine düşer.
+
+    Yönetici / communication.manage tüm birimleri görür; onlar için birim
+    olaydan gelir (ödev→koçluk, ödeme→muhasebe).
+    """
+    if not user:
+        return None
+    from apps.communication.application.account_resolver import (
+        _is_accounting_staff,
+        _is_active_coach,
+    )
+    from apps.communication.application.coach_scope import _has_full_inbox_access
     from apps.communication.domain.enums import CommunicationDepartment
+
+    if _has_full_inbox_access(user):
+        return None
+    if _is_accounting_staff(user):
+        return CommunicationDepartment.ACCOUNTING
+    if _is_active_coach(user):
+        return CommunicationDepartment.COACHING
+    return None
+
+
+def department_for_dispatch(
+    event_module: str | None,
+    event_key: str | None = None,
+    *,
+    sender=None,
+    sent_by_user_id: int | None = None,
+) -> str | None:
+    """Sohbet + hat: gönderen birimin thread'i.
+
+    Ödeme/finans gibi sabit muhasebe olayları her zaman muhasebede kalır.
+    Diğer tüm gönderimler (özel ders, yoklama, manuel sohbet …) hangi
+    departman başlattıysa o inbox'ta görünür.
+    """
+    inferred = department_for_event(event_module, event_key)
+    if event_key in _ACCOUNTING_EVENT_KEYS or event_module in (MODULE_ODEME, MODULE_FINANS):
+        return inferred
+    user = sender
+    if user is None and sent_by_user_id:
+        from django.contrib.auth import get_user_model
+        user = get_user_model().objects.filter(id=sent_by_user_id).first()
+    sender_dept = department_for_sender(user)
+    if sender_dept:
+        return sender_dept
+    return inferred
+
+
+def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -> str | None:
+    """Olayın departman hattı; telafi gönderen birimin hattından gider."""
+    from apps.communication.application.account_resolver import AccountResolver
 
     sender = None
     if sent_by_user_id:
@@ -416,19 +465,13 @@ def _preferred_channel_config_id(event, kurum_id, *, sube_id, sent_by_user_id) -
 
     event_module = getattr(event, 'module', None)
     event_key = getattr(event, 'key', None)
-    if event_module in _COACHING_MODULES:
+    dept = department_for_dispatch(
+        event_module, event_key, sender=sender,
+    )
+    if dept:
         cfg = AccountResolver.for_department(
             kurum_id,
-            CommunicationDepartment.COACHING,
-            sube_id=sube_id,
-            user=sender,
-        )
-        if cfg is not None:
-            return str(cfg.id)
-    elif event_module in (MODULE_ODEME, MODULE_FINANS) or event_key in _ACCOUNTING_EVENT_KEYS:
-        cfg = AccountResolver.for_department(
-            kurum_id,
-            CommunicationDepartment.ACCOUNTING,
+            dept,
             sube_id=sube_id,
             user=sender,
         )

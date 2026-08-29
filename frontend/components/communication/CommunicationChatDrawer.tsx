@@ -15,6 +15,7 @@ import {
   type InboxPortal,
   ConversationListItem,
   fetchAccessibleWhatsAppAccounts,
+  inboxPortalDepartment,
   openConversationByPhone,
   WhatsAppAccount,
 } from "@/lib/communication-api";
@@ -99,6 +100,7 @@ export default function CommunicationChatDrawer({
           veli_id: target.veliId,
           personel_id: target.personelId,
           channel_config_id: accountId,
+          department: inboxPortalDepartment(portal),
         });
         if (!cancelled) setConversation(conv);
       } catch (err) {

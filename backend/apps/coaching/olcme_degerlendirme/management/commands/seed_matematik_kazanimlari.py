@@ -1,9 +1,8 @@
 """
-Management command: TYT Matematik kazanımlarını sisteme yükler
-ve TYT sınavlarındaki Matematik bölümüne bağlar.
+ESKİ: Elle yazılmış TYT Matematik ağacı.
 
-Kullanım:
-  python manage.py seed_matematik_kazanimlari
+Resmi katalog için:
+  python manage.py import_okulizyon_kazanimlari
 """
 from django.core.management.base import BaseCommand
 from django.db import transaction

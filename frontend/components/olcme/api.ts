@@ -9,6 +9,12 @@ import type {
   ExamDetail,
   ExamListItem,
   ExamCreateForm,
+  ExamParticipantRow,
+  ParticipantSearchHit,
+  ExamRoomItem,
+  ExamSessionItem,
+  PreviewStudent,
+  SeatingMode,
   LookupItem,
   SessionCreateForm,
   AnswerKey,
@@ -22,6 +28,7 @@ import type {
   StudentAnswerItem,
   MappingTemplate,
   StudentSearchResult,
+  MatchSuggestionsResponse,
   AnalysisSummary,
   AnalysisSectionItem,
   StudentAnalysis,
@@ -103,7 +110,7 @@ export const examApi = {
 
   detail: (id: number) => request<ExamDetail>(`${BASE}/${id}/`),
 
-  create: (data: ExamCreateForm) =>
+  create: (data: ExamCreateForm & Record<string, unknown>) =>
     request<ExamDetail>(`${BASE}/`, {
       method: 'POST',
       body: JSON.stringify(cleanPayload(data as unknown as Record<string, unknown>)),
@@ -199,8 +206,164 @@ export const examApi = {
 
   denemeHizmetleri: () => request<LookupItem[]>(`${BASE}/deneme-hizmetleri/`),
 
-  denemePaketleri: () =>
-    request<(LookupItem & { deneme_sayisi: number })[]>(`${BASE}/deneme-paketleri/`),
+  denemePaketleri: (seviyeId?: number) => {
+    const qs = seviyeId ? `?seviye_id=${seviyeId}` : '';
+    return request<(LookupItem & { deneme_sayisi: number; seviye_ids?: number[] })[]>(
+      `${BASE}/deneme-paketleri/${qs}`,
+    );
+  },
+
+  previewParticipants: (data: {
+    sinif_ids?: number[];
+    sinif_seviyesi_ids?: number[];
+    deneme_paketi_ids?: number[];
+  }) =>
+    request<{ count: number; students: PreviewStudent[] }>(`${BASE}/preview-participants/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  participants: (examId: number) =>
+    request<{
+      count: number;
+      participants: ExamParticipantRow[];
+      rooms: ExamRoomItem[];
+      sessions?: ExamSessionItem[];
+    }>(
+      `${BASE}/${examId}/participants/`,
+    ),
+
+  saveParticipants: (examId: number, data: Record<string, unknown>) =>
+    request<{ count: number; participants: ExamParticipantRow[]; rooms: ExamRoomItem[] }>(
+      `${BASE}/${examId}/participants/`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  addParticipant: (
+    examId: number,
+    studentId: number,
+    examSessionId?: number | null,
+    seat?: { room_id: number; seat_no: number },
+  ) =>
+    request<ExamParticipantRow>(`${BASE}/${examId}/participants/add/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        student_id: studentId,
+        exam_session_id: examSessionId ?? null,
+        ...(seat ? { room_id: seat.room_id, seat_no: seat.seat_no } : {}),
+      }),
+    }),
+
+  patchParticipant: (examId: number, participantId: number, data: Record<string, unknown>) =>
+    request<ExamParticipantRow>(`${BASE}/${examId}/participants/${participantId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  removeParticipant: (examId: number, participantId: number) =>
+    request<void>(`${BASE}/${examId}/participants/${participantId}/`, { method: 'DELETE' }),
+
+  searchParticipants: (examId: number, q: string, examSessionId?: number | null) =>
+    request<ParticipantSearchHit[]>(
+      `${BASE}/${examId}/participants/search/?q=${encodeURIComponent(q)}${
+        examSessionId ? `&exam_session_id=${examSessionId}` : ''
+      }`,
+    ),
+
+  rooms: (examId: number) =>
+    request<{
+      rooms: ExamRoomItem[];
+      participant_count: number;
+      total_capacity: number;
+      warning: string | null;
+    }>(`${BASE}/${examId}/rooms/`),
+
+  saveRooms: (examId: number, rooms: ExamRoomItem[]) =>
+    request<{
+      rooms: ExamRoomItem[];
+      participant_count: number;
+      total_capacity: number;
+      warning: string | null;
+    }>(`${BASE}/${examId}/rooms/`, {
+      method: 'PUT',
+      body: JSON.stringify({ rooms }),
+    }),
+
+  seating: (examId: number, mode: SeatingMode, onlyUnassigned = false, examSessionId?: number | null) =>
+    request<{ ok: boolean; placed: number; unplaced: number; locked?: number; mode: string; error?: string }>(
+      `${BASE}/${examId}/seating/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          mode,
+          only_unassigned: onlyUnassigned,
+          exam_session_id: examSessionId ?? null,
+        }),
+      },
+    ),
+
+  audience: (examId: number) =>
+    request<{
+      id: number;
+      sinif_seviyesi_id: number | null;
+      sinif_seviyesi: string;
+      deneme_paketi_id: number | null;
+      deneme_paketi: string;
+    }[]>(`${BASE}/${examId}/audience/`),
+
+  saveAudience: (examId: number, audience: { sinif_seviyesi_id?: number | null; deneme_paketi_id?: number | null }[]) =>
+    request<unknown>(`${BASE}/${examId}/audience/`, {
+      method: 'PUT',
+      body: JSON.stringify({ audience }),
+    }),
+
+  rosterExportUrl: (examId: number, kind: 'yoklama' | 'salon' | 'oturma') =>
+    `${BASE}/${examId}/roster-export/?kind=${kind}`,
+
+  downloadRoster: async (examId: number, kind: 'yoklama' | 'salon' | 'oturma') => {
+    const res = await fetch(`${BASE}/${examId}/roster-export/?kind=${kind}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) throw new Error('Liste indirilemedi.');
+    const blob = await res.blob();
+    const { downloadBlob } = await import('@/lib/download-file');
+    downloadBlob(blob, `${kind}.xlsx`);
+  },
+
+  hatirlatmaPreview: (examId: number, participantIds: number[], eventKey = 'sinav.hatirlatma') =>
+    request<{
+      event_key: string;
+      event_label: string;
+      students: {
+        participant_id: number;
+        student_id: number;
+        full_name: string;
+        salon_ad: string;
+        sira: string;
+        recipients: {
+          recipient_type: string;
+          veli_id: number | null;
+          display_name: string;
+          telefon: string;
+          skip_reason: string;
+        }[];
+      }[];
+    }>(`${BASE}/${examId}/hatirlatma/preview/`, {
+      method: 'POST',
+      body: JSON.stringify({ participant_ids: participantIds, event_key: eventKey }),
+    }),
+
+  hatirlatmaSend: (examId: number, data: {
+    participant_ids: number[];
+    veli_ids: number[];
+    include_student?: boolean;
+    event_key?: string;
+  }) =>
+    request<{ sent: number; skipped: number; errors: string[] }>(
+      `${BASE}/${examId}/hatirlatma/send/`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
 
   // ── Yardımcı ──────────────────────────────────────────────────────────────
 
@@ -322,8 +485,17 @@ export const uploadApi = {
     ),
 
   /** Öğrenci arama (eşleştirme dialog'u için) */
-  searchStudents: (examId: number, query: string) =>
-    request<StudentSearchResult[]>(`${BASE}/${examId}/results/students/search/?q=${encodeURIComponent(query)}`),
+  searchStudents: (examId: number, query: string, answerId?: number) => {
+    const qs = new URLSearchParams({ q: query });
+    if (answerId) qs.set('answer_id', String(answerId));
+    return request<StudentSearchResult[]>(`${BASE}/${examId}/results/students/search/?${qs}`);
+  },
+
+  /** DAT kaydı için skorlanmış aday önerileri */
+  suggestStudents: (examId: number, answerId: number) =>
+    request<MatchSuggestionsResponse>(
+      `${BASE}/${examId}/results/students/${answerId}/suggestions/`,
+    ),
 
   /** Eşleşmemiş sonuçları güncel öğrenci havuzuyla yeniden eşleştir */
   rematchUnmatched: (examId: number) =>
@@ -434,7 +606,7 @@ export const analysisApi = {
     if (sessionId) params.set('session_id', String(sessionId));
     if (rankingYear) params.set('ranking_year', String(rankingYear));
     const qs = params.toString() ? `?${params}` : '';
-    return request<{ rankings: RankingItem[]; sections: import('./types').RankingSectionInfo[]; total_students: number; top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number; section_avgs?: Record<string, { avg_correct: number; avg_wrong: number; avg_net: number }>; avg_net?: number; puan_turleri_avgs?: Record<string, number>; sinif_avgs?: Record<string, any> }>(`${BASE}/${examId}/analysis/rankings/${qs}`);
+    return request<{ rankings: RankingItem[]; sections: import('./types').RankingSectionInfo[]; total_students: number; top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number; section_avgs?: Record<string, { avg_correct: number; avg_wrong: number; avg_net: number }>; avg_net?: number; puan_turleri_avgs?: Record<string, number>; sinif_avgs?: Record<string, any>; kurum_ad?: string; sube_ad?: string }>(`${BASE}/${examId}/analysis/rankings/${qs}`);
   },
 
   /** Madde (soru) analizi */
@@ -817,4 +989,54 @@ export const puanAyarlariApi = {
     request<PuanYilSeti>(`${PUAN_AYAR_BASE}/katsayilar/${year}/reset/`, {
       method: 'POST',
     }),
+};
+
+const OTURUM_AYAR_BASE = '/api/coaching/olcme-degerlendirme/oturum-ayarlari';
+
+export type OturumSeviyeAyar = {
+  sinif_seviyesi_id: number;
+  sinif_seviyesi: string;
+  kod: string;
+  aktif_mi?: boolean;
+  preference: 'HAFTA_ICI' | 'HAFTA_SONU';
+  fallback: 'HAFTA_ICI' | 'HAFTA_SONU';
+};
+
+export type OturumOgrenciAyar = {
+  ogrenci_id: number;
+  full_name: string;
+  tc_kimlik_no: string;
+  sinif: string;
+  sinif_seviyesi_id: number | null;
+  sinif_seviyesi: string;
+  preference: 'HAFTA_ICI' | 'HAFTA_SONU';
+  is_override: boolean;
+};
+
+export const oturumAyarlariApi = {
+  seviyeler: () => request<{ items: OturumSeviyeAyar[] }>(`${OTURUM_AYAR_BASE}/seviyeler/`),
+
+  saveSeviyeler: (items: { sinif_seviyesi_id: number; preference: string }[]) =>
+    request<{ items: OturumSeviyeAyar[] }>(`${OTURUM_AYAR_BASE}/seviyeler/`, {
+      method: 'PUT',
+      body: JSON.stringify({ items }),
+    }),
+
+  ogrenciler: (params?: { paket_id?: number | ''; seviye_id?: number | ''; group?: string; q?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.paket_id) qs.set('paket_id', String(params.paket_id));
+    if (params?.seviye_id) qs.set('seviye_id', String(params.seviye_id));
+    if (params?.group) qs.set('group', params.group);
+    if (params?.q) qs.set('q', params.q);
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return request<{ items: OturumOgrenciAyar[]; paketler: { id: number; ad: string }[] }>(
+      `${OTURUM_AYAR_BASE}/ogrenciler/${suffix}`,
+    );
+  },
+
+  patchOgrenci: (ogrenciId: number, preference: 'HAFTA_ICI' | 'HAFTA_SONU' | 'default') =>
+    request<{ items: OturumOgrenciAyar[]; paketler: { id: number; ad: string }[] }>(
+      `${OTURUM_AYAR_BASE}/ogrenciler/`,
+      { method: 'PATCH', body: JSON.stringify({ ogrenci_id: ogrenciId, preference }) },
+    ),
 };

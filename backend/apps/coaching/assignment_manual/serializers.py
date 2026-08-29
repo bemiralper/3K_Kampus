@@ -147,6 +147,8 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
     is_due_today = serializers.SerializerMethodField()
     is_control_locked = serializers.SerializerMethodField()
     can_override_control_lock = serializers.SerializerMethodField()
+    can_open_for_coach = serializers.SerializerMethodField()
+    can_set_control_date = serializers.SerializerMethodField()
     
     class Meta:
         model = ManualAssignment
@@ -158,7 +160,8 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
             'lesson_count', 'task_count', 'pending_task_count', 'evaluated_task_count',
             'postpone_count', 'non_submission_reason', 'non_submission_reason_display',
             'is_overdue', 'is_due_today', 'is_control_locked',
-            'can_override_control_lock', 'created_at'
+            'can_override_control_lock', 'control_opened_for_coach',
+            'can_open_for_coach', 'can_set_control_date', 'created_at'
         ]
     
     def get_coach_name(self, obj):
@@ -236,6 +239,16 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         return can_override_assignment_control_lock(getattr(request, 'user', None))
 
+    def get_can_open_for_coach(self, obj):
+        from .lock_utils import can_open_assignment_for_coach
+        request = self.context.get('request')
+        return can_open_assignment_for_coach(obj, getattr(request, 'user', None))
+
+    def get_can_set_control_date(self, obj):
+        from .lock_utils import can_set_new_control_date
+        request = self.context.get('request')
+        return can_set_new_control_date(obj, getattr(request, 'user', None))
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['title'] = strip_completion_title_suffix(data.get('title'))
@@ -282,6 +295,9 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
     late_days = serializers.IntegerField(read_only=True)
     is_control_locked = serializers.SerializerMethodField()
     can_override_control_lock = serializers.SerializerMethodField()
+    can_open_for_coach = serializers.SerializerMethodField()
+    can_set_control_date = serializers.SerializerMethodField()
+    control_opened_by_name = serializers.SerializerMethodField()
     has_been_notified = serializers.SerializerMethodField()
     deletion_audit = serializers.SerializerMethodField()
 
@@ -300,6 +316,8 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
             'non_submission_reason', 'non_submission_note',
             'template_id', 'coach_notes', 'student_notes', 'lessons',
             'report_summary', 'is_control_locked', 'can_override_control_lock',
+            'control_opened_for_coach', 'control_opened_at', 'control_opened_by_name',
+            'can_open_for_coach', 'can_set_control_date',
             'has_been_notified', 'deletion_audit',
             'is_active', 'created_at', 'updated_at'
         ]
@@ -346,6 +364,22 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
         from .lock_utils import can_override_assignment_control_lock
         request = self.context.get('request')
         return can_override_assignment_control_lock(getattr(request, 'user', None))
+
+    def get_can_open_for_coach(self, obj):
+        from .lock_utils import can_open_assignment_for_coach
+        request = self.context.get('request')
+        return can_open_assignment_for_coach(obj, getattr(request, 'user', None))
+
+    def get_can_set_control_date(self, obj):
+        from .lock_utils import can_set_new_control_date
+        request = self.context.get('request')
+        return can_set_new_control_date(obj, getattr(request, 'user', None))
+
+    def get_control_opened_by_name(self, obj):
+        opener = getattr(obj, 'control_opened_by', None)
+        if not opener:
+            return None
+        return opener.get_full_name() or opener.username
 
     def get_has_been_notified(self, obj):
         """Bu ödev için veli/öğrenciye en az bir WhatsApp bildirimi (plan/rapor) gitmiş mi?

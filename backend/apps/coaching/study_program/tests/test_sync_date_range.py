@@ -69,7 +69,9 @@ class SyncProgramDateRangeTest(TestCase):
     def test_patch_api_updates_range(self):
         client = APIClient()
         client.force_authenticate(user=self.coach)
+        # Koçluk uçları zorunlu kurum + şube bağlamı ister (bkz. sube_context).
         client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
         new_end = '2026-03-12'
         res = client.patch(
             f'/api/coaching/study-program/programs/{self.program.id}/',

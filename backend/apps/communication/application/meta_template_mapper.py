@@ -55,6 +55,13 @@ SAMPLE_VALUES: dict[str, str] = {
     'koc_ad': 'Elif Demir',
     'konu': 'Sınav hazırlığı',
     'sinav_ad': 'TYT Deneme 12',
+    'sinav_adi': 'TYT Deneme 12',
+    'sinav_tarihi': '12.04.2026',
+    'baslama_saati': '10:00',
+    'bitis_saati': '12:45',
+    'sinav_salonu': 'A Salonu',
+    'sira_no': '14',
+    'sira': '14',
     'baslik': 'Veli Toplantısı',
     'mesaj': (
         'Haftalık deneme sınavı sonuçları öğrenci paneline yüklenmiştir. '

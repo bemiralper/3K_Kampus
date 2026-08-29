@@ -165,10 +165,11 @@ class Exam(models.Model):
 
     @property
     def sinif_display(self):
-        """Sınıf adlarını virgülle birleştirir."""
-        names = list(self.siniflar.values_list('ad', flat=True)[:5])
-        if self.siniflar.count() > 5:
-            names.append(f'+{self.siniflar.count() - 5}')
+        """Sınıf adlarını virgülle birleştirir (prefetch cache'ini kullanır)."""
+        siniflar = list(self.siniflar.all())
+        names = [s.ad for s in siniflar[:5]]
+        if len(siniflar) > 5:
+            names.append(f'+{len(siniflar) - 5}')
         return ', '.join(names) if names else ''
 
 

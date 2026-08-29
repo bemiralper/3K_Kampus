@@ -534,6 +534,123 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         }),
     ),
     NotificationEvent(
+        key='sinav.hatirlatma',
+        module=MODULE_SINAV,
+        label='Sınav bilgilendirmesi (salon / sıra)',
+        description=(
+            'Ölçme → Katılımcılar ekranından öğrenci ve veliye salon, sıra, '
+            'tarih ve saat bilgisiyle sınav mesajı gönderilir.'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        variables=(
+            'ogrenci_ad', 'veli_ad',
+            'sinav_adi', 'sinav_tarihi', 'baslama_saati', 'bitis_saati',
+            'sinav_salonu', 'sira_no',
+            'sinav_ad', 'tarih', 'salon_ad', 'sira',
+        ),
+        meta_name_base='sinav_hatirlatma',
+        default_bodies=MappingProxyType({
+            VELI: (
+                '*Sınav Bilgilendirmesi*\n'
+                '\n'
+                'Değerli Velimiz,\n'
+                '\n'
+                '{{ogrenci_ad}} öğrencimizin sınav bilgileri aşağıdaki gibidir:\n'
+                '\n'
+                '📝 *Sınav:* {{sinav_adi}}\n'
+                '📅 *Tarih:* {{sinav_tarihi}}\n'
+                '🕐 *Başlama:* {{baslama_saati}}\n'
+                '🕐 *Bitiş:* {{bitis_saati}}\n'
+                '🏫 *Salon:* {{sinav_salonu}}\n'
+                '💺 *Sıra No:* {{sira_no}}\n'
+                '\n'
+                '⚠️ *Önemli:* Sınav başladıktan sonra salona öğrenci alınmayacaktır. '
+                'Öğrencimizin sınav saatinden önce belirtilen salonda ve sıra numarasında '
+                'hazır bulunmasını rica ederiz.\n'
+                '\n'
+                '*Başarılar dileriz!* 🌟\n'
+                '\n'
+                '{{kurum_ad}}'
+            ),
+            OGRENCI: (
+                '*Sınav Bilgilendirmesi*\n'
+                '\n'
+                'Sevgili Öğrencimiz,\n'
+                '\n'
+                'Sınav bilgilerin aşağıdaki gibidir:\n'
+                '\n'
+                '📝 *Sınav:* {{sinav_adi}}\n'
+                '📅 *Tarih:* {{sinav_tarihi}}\n'
+                '🕐 *Başlama:* {{baslama_saati}}\n'
+                '🕐 *Bitiş:* {{bitis_saati}}\n'
+                '🏫 *Salon:* {{sinav_salonu}}\n'
+                '💺 *Sıra No:* {{sira_no}}\n'
+                '\n'
+                '⚠️ *Önemli:* Sınav başladıktan sonra salona öğrenci alınmayacaktır. '
+                'Bu nedenle sınav saatinden önce belirtilen salonda ve sıra numaranda '
+                'hazır bulunman gerekmektedir.\n'
+                '\n'
+                '*Başarılar dileriz!* 🌟\n'
+                '\n'
+                '{{kurum_ad}}'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='sinav.yoklama',
+        module=MODULE_SINAV,
+        label='Sınav yoklama — katılmadı',
+        description=(
+            'Ölçme → Katılımcılar yoklamasında gelmedi işaretlenen öğrenci '
+            've velisine katılmama bildirimi gönderilir.'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='devamsizlik',
+        variables=(
+            'ogrenci_ad', 'veli_ad',
+            'sinav_adi', 'sinav_tarihi', 'baslama_saati', 'bitis_saati',
+            'sinav_salonu', 'sira_no',
+            'sinav_ad', 'tarih', 'salon_ad', 'sira',
+        ),
+        meta_name_base='sinav_yoklama',
+        default_bodies=MappingProxyType({
+            VELI: (
+                '*Sınav Yoklama Bilgilendirmesi*\n'
+                '\n'
+                'Değerli Velimiz,\n'
+                '\n'
+                '{{ogrenci_ad}} öğrencimizin *{{sinav_adi}}* sınavına katılım '
+                'sağlamadığı tespit edilmiştir.\n'
+                '\n'
+                '📅 *Sınav Tarihi:* {{sinav_tarihi}}\n'
+                '🕐 *Sınav Saati:* {{baslama_saati}} – {{bitis_saati}}\n'
+                '\n'
+                'Sınav yoklamasında öğrencimiz *katılmadı* olarak kaydedilmiştir.\n'
+                '\n'
+                'Bilginize sunarız.\n'
+                '\n'
+                '{{kurum_ad}}'
+            ),
+            OGRENCI: (
+                '*Sınav Yoklama Bilgilendirmesi*\n'
+                '\n'
+                'Sevgili Öğrencimiz,\n'
+                '\n'
+                '*{{sinav_adi}}* sınavına katılım sağlamadığın tespit edilmiştir.\n'
+                '\n'
+                '📅 *Sınav Tarihi:* {{sinav_tarihi}}\n'
+                '🕐 *Sınav Saati:* {{baslama_saati}} – {{bitis_saati}}\n'
+                '\n'
+                'Sınav yoklamasında *katılmadı* olarak kaydedildin.\n'
+                '\n'
+                'Bilgin olsun.\n'
+                '\n'
+                '{{kurum_ad}}'
+            ),
+        }),
+    ),
+    NotificationEvent(
         key='sinav.karne',
         module=MODULE_SINAV,
         label='Sınav karnesi (PDF)',

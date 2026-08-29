@@ -79,6 +79,19 @@ class NotificationEventCatalogTest(TestCase):
         self.assertEqual(names[0], 'odev_plani_veli')
         self.assertIn('haftalik_odev_plani_veli', names)
 
+    def test_sinav_notify_events_expose_schedule_variables(self):
+        for key in ('sinav.hatirlatma', 'sinav.yoklama'):
+            event = get_event(key)
+            self.assertIsNotNone(event)
+            self.assertIn(RecipientType.VELI, event.recipients)
+            self.assertIn(RecipientType.OGRENCI, event.recipients)
+            names = event.all_variables()
+            for name in (
+                'sinav_adi', 'sinav_tarihi', 'baslama_saati', 'bitis_saati',
+                'sinav_salonu', 'sira_no', 'ogrenci_ad', 'kurum_ad',
+            ):
+                self.assertIn(name, names, f'{key} eksik: {name}')
+
     def test_odeme_events_discover_live_meta_names(self):
         self.assertIn(
             'odeme_plan_veli',

@@ -81,6 +81,28 @@ class AttendanceIzinOverrideTest(TestCase):
         self.record.refresh_from_db()
         self.assertEqual(self.record.durum, AttendanceStatus.ABSENT)
 
+    def test_manual_excused_without_schedule_stays_excused(self):
+        """Yoklama kağıdında elle İzinli — planlı izin olmasa da gelmedi olmaz."""
+        OgrenciIzin.objects.filter(ogrenci_id=self.ogrenci.id).delete()
+        self.record.durum = AttendanceStatus.ABSENT
+        self.record.izinli_mi = False
+        self.record.save(update_fields=['durum', 'izinli_mi'])
+
+        result = self.service.record_attendance(
+            self.session.id,
+            [{'ogrenci_id': self.ogrenci.id, 'durum': AttendanceStatus.EXCUSED}],
+            user_id=1,
+        )
+        self.assertEqual(result['saved'], 1)
+        self.record.refresh_from_db()
+        self.assertEqual(self.record.durum, AttendanceStatus.EXCUSED)
+        self.assertTrue(self.record.izinli_mi)
+
+        detail = self.service.get_session_detail(self.session.id)
+        saved = next(r for r in detail['records'] if r.ogrenci_id == self.ogrenci.id)
+        self.assertEqual(saved.durum, AttendanceStatus.EXCUSED)
+        self.assertTrue(saved.izinli_mi)
+
     def test_new_izin_still_auto_excuses_unmarked_student(self):
         self.record.izinli_mi = False
         self.record.durum = AttendanceStatus.PRESENT

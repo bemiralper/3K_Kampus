@@ -282,29 +282,84 @@ def _build_answer_grids(exam, comparison: dict) -> list:
     return grids
 
 
+def _outcome_label(item) -> str:
+    if item.outcome_id:
+        label = (item.outcome.text or '').strip()
+        if not label and getattr(item.outcome, 'topic_id', None):
+            label = (item.outcome.topic.name or '').strip()
+        if label:
+            return label
+    return (item.imported_outcome_text or '').strip()
+
+
+def _b_global_question_number(item, parent_offset: dict, sub_to_parent: dict):
+    """A item'ındaki bölüm-içi B no → öğrencinin B kitapçığındaki global soru no."""
+    if item.b_question_number is None:
+        return None
+    sec_id = item.section_id
+    parent_id = sub_to_parent.get(sec_id)
+    offset = parent_offset.get(parent_id if parent_id else sec_id)
+    if offset is None:
+        return None
+    return offset + item.b_question_number - 1
+
+
+def _topic_items_for_booklet(exam, booklet: str):
+    """
+    Kazanım satırları A kitapçığında durur; B anahtarı optik yüklemede
+    outcome almaz. B öğrencisi için A item + b_question_number kullanılır.
+    """
+    ak = _pick_answer_key(exam, booklet)
+    related = ('section', 'section__parent_section', 'outcome__topic')
+    items = []
+    if ak:
+        items = list(
+            ak.items.select_related(*related).order_by('section__order', 'question_number')
+        )
+    if any(_outcome_label(item) for item in items):
+        return items, (ak.booklet if ak else booklet)
+
+    primary = (
+        exam.answer_keys.filter(is_primary=True).first()
+        or exam.answer_keys.exclude(pk=getattr(ak, 'pk', None)).first()
+    )
+    if primary and primary != ak:
+        items = list(
+            primary.items.select_related(*related).order_by('section__order', 'question_number')
+        )
+        return items, primary.booklet
+    return items, (ak.booklet if ak else booklet)
+
+
 def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
     from collections import OrderedDict
 
-    ak = _pick_answer_key(exam, booklet)
-    if not ak:
+    items, source_booklet = _topic_items_for_booklet(exam, booklet)
+    if not items:
         return []
-    items = (
-        ak.items
-        .select_related('section', 'section__parent_section', 'outcome__topic')
-        .order_by('section__order', 'question_number')
-    )
+
+    parent_offset = {
+        sec.id: sec.question_start
+        for sec in exam.sections.filter(is_sub_section=False)
+    }
+    sub_to_parent = {
+        sec.id: sec.parent_section_id
+        for sec in exam.sections.filter(is_sub_section=True)
+        if sec.parent_section_id
+    }
+    use_b_map = (booklet or '').upper() == 'B' and (source_booklet or '').upper() != 'B'
+
     blocks_map: OrderedDict = OrderedDict()
     for item in items:
-        label = ''
-        if item.outcome_id:
-            if getattr(item.outcome, 'topic_id', None):
-                label = item.outcome.topic.name
-            if not label:
-                label = item.outcome.text or ''
-        if not label:
-            label = (item.imported_outcome_text or '').strip()
+        # Yayınevi karnesi gibi: satır = kazanım metni (konu), ünite değil.
+        label = _outcome_label(item)
         if not label:
             continue
+        q_no = item.question_number
+        if use_b_map:
+            mapped = _b_global_question_number(item, parent_offset, sub_to_parent)
+            if mapped is not None:
+                q_no = mapped
         sec = item.section
         parent_name = sec.parent_section.name if sec.parent_section_id else sec.name
         table_name = sec.name
@@ -312,7 +367,7 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         table = block.setdefault(table_name, OrderedDict())
         row = table.setdefault(label, {'soru': 0, 'dogru': 0, 'yanlis': 0, 'bos': 0})
         row['soru'] += 1
-        result = (comparison.get(str(item.question_number)) or {}).get('result')
+        result = (comparison.get(str(q_no)) or {}).get('result')
         if result == 'correct':
             row['dogru'] += 1
         elif result == 'wrong':
@@ -1380,6 +1435,9 @@ def exam_analysis_rankings(request, exam_pk):
         'puan_turleri_avgs': puan_turleri_avgs,
         'sinif_avgs': sinif_avgs,
         'referans_yil': ranking_year,
+        # PDF anteti kurum/şube adını yazabilsin diye
+        'kurum_ad': getattr(exam.kurum, 'ad', '') if exam.kurum_id else '',
+        'sube_ad': getattr(exam.sube, 'ad', '') if exam.sube_id else '',
     })
 
 

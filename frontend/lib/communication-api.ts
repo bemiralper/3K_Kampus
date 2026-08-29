@@ -1471,6 +1471,12 @@ export async function fetchMetaWhatsAppTemplates(): Promise<{
   return request(`/config/whatsapp/templates/${qs}`);
 }
 
+export function inboxPortalDepartment(portal: InboxPortal): string | undefined {
+  if (portal === 'muhasebe') return 'ACCOUNTING';
+  if (portal === 'coach') return 'COACHING';
+  return undefined;
+}
+
 export async function openConversationByPhone(
   phone: string,
   options?: {
@@ -1478,6 +1484,7 @@ export async function openConversationByPhone(
     veli_id?: number;
     personel_id?: number;
     channel_config_id?: string;
+    department?: string;
   },
 ): Promise<ConversationListItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);

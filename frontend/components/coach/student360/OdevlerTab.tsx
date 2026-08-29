@@ -51,6 +51,8 @@ interface StudentAssignmentItem {
   is_due_today?: boolean;
   is_control_locked?: boolean;
   can_override_control_lock?: boolean;
+  control_opened_for_coach?: boolean;
+  can_set_control_date?: boolean;
   coach_name?: string | null;
   created_at?: string;
 }
@@ -275,6 +277,9 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
                     </span>
                     {a.is_control_locked && (
                       <span className="odev360-badge odev360-badge-muted">🔒 Kilitli</span>
+                    )}
+                    {a.control_opened_for_coach && (
+                      <span className="odev360-badge" style={{ background: '#ccfbf1', color: '#0f766e' }}>Koça açık</span>
                     )}
                   </div>
                 </div>

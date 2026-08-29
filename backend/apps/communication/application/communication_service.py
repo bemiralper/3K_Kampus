@@ -373,24 +373,24 @@ class CommunicationService:
         if getattr(content, 'department', None):
             return content.department
         from apps.communication.application.notification_dispatcher import (
-            department_for_event,
+            department_for_dispatch,
+            department_for_sender,
         )
-        from apps.communication.domain.enums import CommunicationDepartment
 
-        inferred = department_for_event(
-            getattr(source, 'module', None), None,
+        inferred = department_for_dispatch(
+            getattr(source, 'module', None),
+            None,
+            sent_by_user_id=sender_user_id,
         )
         if inferred:
             return inferred
         if sender_user_id:
             from django.contrib.auth import get_user_model
 
-            from apps.communication.application.account_resolver import _is_accounting_staff
-            from apps.communication.application.account_resolver import _is_active_coach
-
             user = get_user_model().objects.filter(id=sender_user_id).first()
-            if user and _is_accounting_staff(user) and not _is_active_coach(user):
-                return CommunicationDepartment.ACCOUNTING
+            sender_dept = department_for_sender(user)
+            if sender_dept:
+                return sender_dept
         if send_cfg is not None and getattr(send_cfg, 'department', None):
             return send_cfg.department
         return None

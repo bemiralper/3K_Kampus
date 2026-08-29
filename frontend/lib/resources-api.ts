@@ -317,6 +317,9 @@ export interface ManualAssignment {
   progress_percent: number;
   is_control_locked?: boolean;
   can_override_control_lock?: boolean;
+  control_opened_for_coach?: boolean;
+  can_open_for_coach?: boolean;
+  can_set_control_date?: boolean;
   has_been_notified?: boolean;
   created_at: string;
   updated_at: string;
@@ -1481,6 +1484,8 @@ export async function fetchAssignments(params?: {
   risk_status?: string;
   /** Kontrol günü bugün olan ödevler (due_date = bugün) */
   due_today?: boolean;
+  /** Yönetici tarafından koça açılmış, yeni kontrol tarihi bekleyen ödevler */
+  opened_for_coach?: boolean;
   /** Takvim: kontrol günü aralığı (YYYY-MM-DD) */
   due_from?: string;
   due_to?: string;
@@ -1496,6 +1501,7 @@ export async function fetchAssignments(params?: {
   if (params?.status) searchParams.append('status', params.status);
   if (params?.risk_status) searchParams.append('risk_status', params.risk_status);
   if (params?.due_today) searchParams.append('due_today', '1');
+  if (params?.opened_for_coach) searchParams.append('opened_for_coach', '1');
   if (params?.due_from) searchParams.append('due_from', params.due_from);
   if (params?.due_to) searchParams.append('due_to', params.due_to);
   if (params?.q) searchParams.append('q', params.q);
@@ -1519,6 +1525,8 @@ export interface AssignmentListStats {
   at_risk: number;
   /** Kontrol günü bugün olan aktif ödev sayısı */
   due_today?: number;
+  /** Yönetici tarafından koça açılmış ödev sayısı */
+  opened_for_coach?: number;
 }
 
 /**
@@ -1716,6 +1724,31 @@ export async function reactivateAssignment(
 ): Promise<ApiResponse<ManualAssignment>> {
   return apiPost<ManualAssignment>(
     `/api/coaching/manual-assignments/assignments/${assignmentId}/reactivate/`,
+    data
+  );
+}
+
+/**
+ * Kontrol tarihi geçmiş ödevi yönetici koça açar (yeni tarih koç tarafından seçilir).
+ */
+export async function openAssignmentForCoach(
+  assignmentId: number,
+): Promise<ApiResponse<ManualAssignment>> {
+  return apiPost<ManualAssignment>(
+    `/api/coaching/manual-assignments/assignments/${assignmentId}/open_for_coach/`,
+    {}
+  );
+}
+
+/**
+ * Koça açılmış / gecikmiş ödev için yeni kontrol tarihi (erteleme hakkı tüketilmez).
+ */
+export async function setAssignmentControlDate(
+  assignmentId: number,
+  data: { new_due_date: string; reason?: string }
+): Promise<ApiResponse<ManualAssignment>> {
+  return apiPost<ManualAssignment>(
+    `/api/coaching/manual-assignments/assignments/${assignmentId}/set_control_date/`,
     data
   );
 }

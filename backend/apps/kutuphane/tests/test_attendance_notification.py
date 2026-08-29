@@ -132,9 +132,9 @@ class AttendanceNotificationServiceTest(TestCase):
         record.durum = AttendanceStatus.ABSENT
         record.giris_saati = None
         record.cikis_saati = None
-        self.assertTrue(
+        self.assertFalse(
             self.service._record_qualifies(record, AttendanceNotificationEventType.ABSENT),
-            'İzin kaydı olsa da elle gelmedi seçilince bildirim gitmeli',
+            'İzinli öğrenciye (elle gelmedi seçilse bile) yoklama mesajı gitmez',
         )
         record.durum = AttendanceStatus.EXCUSED
         self.assertFalse(

@@ -653,10 +653,10 @@ class AttendanceService:
                     record.izinli_mi = True
                     record.durum = AttendanceStatus.EXCUSED
                     changed = True
-            elif record.izinli_mi:
+            elif record.izinli_mi and record.durum != AttendanceStatus.EXCUSED:
+                # Planlı izin kalkmış ve durum zaten elle değiştirilmiş — rozeti düş.
+                # Elle İzinli (EXCUSED) bırakılmışsa gelmedi'ye çevirme.
                 record.izinli_mi = False
-                if record.durum == AttendanceStatus.EXCUSED:
-                    record.durum = AttendanceStatus.ABSENT
                 changed = True
             if changed and persist:
                 record.save(update_fields=['izinli_mi', 'durum'])
@@ -903,14 +903,15 @@ class AttendanceService:
             elif cs == '' or cs is None:
                 record_data['cikis_saati'] = None
 
-            # İzin kaydı varsa rozeti koru; gelen durum elle seçilmişse ezme
+            # Planlı izin rozeti + elle İzinli (EXCUSED) seçimi. EXCUSED'u
+            # gelmedi'ye çevirme — kullanıcı yoklama kağıdında izinli işaretler.
             ogrenci_id = record_data['ogrenci_id']
             if ogrenci_id in izinli_ogrenciler:
                 record_data['izinli_mi'] = True
+            elif record_data.get('durum') == AttendanceStatus.EXCUSED:
+                record_data['izinli_mi'] = True
             else:
                 record_data['izinli_mi'] = False
-                if record_data.get('durum') == AttendanceStatus.EXCUSED:
-                    record_data['durum'] = AttendanceStatus.ABSENT
 
             existing = AttendanceRecord.objects.filter(
                 attendance_session_id=session_id,

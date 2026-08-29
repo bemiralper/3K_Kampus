@@ -105,7 +105,7 @@ class AttendanceNotificationService:
         )
 
     def _record_qualifies(self, record: AttendanceRecord, event_type: str) -> bool:
-        if record.durum == AttendanceStatus.EXCUSED:
+        if record.izinli_mi or record.durum == AttendanceStatus.EXCUSED:
             return False
         if event_type == AttendanceNotificationEventType.ABSENT:
             return record.durum == AttendanceStatus.ABSENT
@@ -445,7 +445,7 @@ class AttendanceNotificationService:
 
         for record in new_records:
             old = old_records.get(record.ogrenci_id)
-            if record.durum == AttendanceStatus.EXCUSED:
+            if record.izinli_mi or record.durum == AttendanceStatus.EXCUSED:
                 continue
 
             if self._record_qualifies(record, AttendanceNotificationEventType.ABSENT):

@@ -11,6 +11,8 @@ import {
   updateTaskEvaluationNote,
   postponeAssignment,
   reactivateAssignment,
+  openAssignmentForCoach,
+  setAssignmentControlDate,
   updateAssignmentRiskStatus,
   assignAssignment,
   updateLateNote,
@@ -122,6 +124,11 @@ interface AssignmentDetail {
   non_submission_note: string;
   is_control_locked?: boolean;
   can_override_control_lock?: boolean;
+  control_opened_for_coach?: boolean;
+  control_opened_at?: string | null;
+  control_opened_by_name?: string | null;
+  can_open_for_coach?: boolean;
+  can_set_control_date?: boolean;
   has_been_notified?: boolean;
   deletion_audit?: {
     deleted_at: string;
@@ -191,6 +198,13 @@ export default function OdevKontrolDetailClient({
   const [reactivateDate, setReactivateDate] = useState("");
   const [reactivateReason, setReactivateReason] = useState("");
   const [reactivating, setReactivating] = useState(false);
+  const [openingForCoach, setOpeningForCoach] = useState(false);
+
+  // Koç / yönetici: koça açılmış ödev için yeni kontrol tarihi
+  const [showControlDateModal, setShowControlDateModal] = useState(false);
+  const [controlDate, setControlDate] = useState("");
+  const [controlDateReason, setControlDateReason] = useState("");
+  const [savingControlDate, setSavingControlDate] = useState(false);
 
   // Eksik % seçimi aktif görev
   const [partialTaskId, setPartialTaskId] = useState<number | null>(null);
@@ -523,10 +537,69 @@ export default function OdevKontrolDetailClient({
     return `${y}-${m}-${day}`;
   };
 
+  const localDateInputValue = (offsetDays = 0) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
   const openReactivateModal = () => {
     setReactivateDate(defaultReactivateDate());
     setReactivateReason("");
     setShowReactivateModal(true);
+  };
+
+  const openControlDateModal = () => {
+    setControlDate(localDateInputValue(0));
+    setControlDateReason("");
+    setShowControlDateModal(true);
+  };
+
+  const handleOpenForCoach = async () => {
+    if (!assignment || openingForCoach) return;
+    if (!confirm("Bu ödev koça açılacak. Koç yeni kontrol tarihi belirleyebilecek. Devam edilsin mi?")) {
+      return;
+    }
+    setOpeningForCoach(true);
+    try {
+      const result = await openAssignmentForCoach(assignment.id);
+      if (result.success) {
+        flash("✅ " + (result.message || "Ödev koça açıldı"));
+        await fetchAssignment();
+      } else {
+        flash("❌ " + (result.error || "Koça açma başarısız"));
+      }
+    } catch {
+      flash("❌ Bağlantı hatası");
+    }
+    setOpeningForCoach(false);
+  };
+
+  const handleSetControlDate = async () => {
+    if (!controlDate || !assignment || savingControlDate) return;
+    setSavingControlDate(true);
+    try {
+      const result = await setAssignmentControlDate(assignment.id, {
+        new_due_date: controlDate + "T23:59:00",
+        reason: controlDateReason,
+      });
+      if (result.success) {
+        flash("✅ " + (result.message || "Kontrol tarihi güncellendi"));
+        setIsReEditing(true);
+        await fetchAssignment();
+        setShowControlDateModal(false);
+        setControlDate("");
+        setControlDateReason("");
+      } else {
+        flash("❌ " + (result.error || "Kontrol tarihi kaydedilemedi"));
+      }
+    } catch {
+      flash("❌ Bağlantı hatası");
+    }
+    setSavingControlDate(false);
   };
 
   const handleReactivate = async () => {
@@ -690,6 +763,9 @@ export default function OdevKontrolDetailClient({
   const isNonSubmission = !!assignment.non_submission_reason;
   const isPastControlLock = !!assignment.is_control_locked;
   const canOverrideLock = !!assignment.can_override_control_lock;
+  const isOpenedForCoach = !!assignment.control_opened_for_coach;
+  const canOpenForCoach = !!assignment.can_open_for_coach;
+  const canSetControlDate = !!assignment.can_set_control_date;
   const isControlLocked = isPastControlLock && !canOverrideLock;
   const canReactivate = isPastControlLock && (canOverrideLock || !isCoach);
   const isCompleted = assignment.status === "COMPLETED";
@@ -764,7 +840,26 @@ export default function OdevKontrolDetailClient({
             >
               Ertele ({assignment.postpone_count}/{assignment.max_postpone})
             </button>
-            {canReactivate && (
+            {canOpenForCoach && (
+              <button
+                type="button"
+                className="ok-btn-secondary"
+                onClick={handleOpenForCoach}
+                disabled={openingForCoach}
+              >
+                {openingForCoach ? "Açılıyor…" : "Koça aç"}
+              </button>
+            )}
+            {canSetControlDate && (isCoach || isOpenedForCoach) && (
+              <button
+                type="button"
+                className="ok-btn-secondary"
+                onClick={openControlDateModal}
+              >
+                Kontrol tarihi ayarla
+              </button>
+            )}
+            {canReactivate && !isOpenedForCoach && (
               <button
                 type="button"
                 className="ok-btn-secondary"
@@ -932,19 +1027,44 @@ export default function OdevKontrolDetailClient({
             </div>
           )}
 
-          {/* Kontrol günü kilidi */}
-          {isPastControlLock && (
-            <div className={`ok-control-lock-banner${canReactivate ? " is-unlockable" : ""}`}>
-              <span style={{ fontSize: 18 }}>🔒</span>
+          {/* Kontrol günü kilidi / koça açıldı */}
+          {(isPastControlLock || isOpenedForCoach) && (
+            <div className={`ok-control-lock-banner${isOpenedForCoach ? " is-opened" : canReactivate || canOpenForCoach ? " is-unlockable" : ""}`}>
+              <span style={{ fontSize: 18 }}>{isOpenedForCoach ? "🔓" : "🔒"}</span>
               <div style={{ flex: 1 }}>
-                <strong>Kontrol günü sona erdi</strong>
+                <strong>
+                  {isOpenedForCoach ? "Ödev koça açıldı" : "Kontrol günü sona erdi"}
+                </strong>
                 <div style={{ fontSize: 12, marginTop: 2, opacity: 0.9 }}>
-                  {canReactivate
-                    ? "Ödev kilitli görünüyor. Yönetici olarak düzenleyebilir veya yeni kontrol günü vererek yeniden aktif edebilirsiniz."
-                    : "Bu ödev değerlendirilmiş ve teslim günü geçmiş; artık düzenlenemez veya silinemez."}
+                  {isOpenedForCoach
+                    ? `${assignment.control_opened_by_name ? `${assignment.control_opened_by_name} bu ödevi açtı.` : "Yönetici bu ödevi koça açtı."} Yeni kontrol tarihi belirleyin; ardından ödev tekrar düzenlenebilir.`
+                    : canReactivate || canOpenForCoach
+                      ? "Ödev kilitli. Koça açarak tarih seçimini koça bırakabilir veya yeni kontrol günü vererek kendiniz aktif edebilirsiniz."
+                      : "Bu ödev değerlendirilmiş ve teslim günü geçmiş; artık düzenlenemez veya silinemez. Yönetici koça açarsa yeni kontrol tarihi belirleyebilirsiniz."}
                 </div>
               </div>
-              {canReactivate && (
+              {isOpenedForCoach && canSetControlDate && (
+                <button
+                  type="button"
+                  className="ok-btn-secondary"
+                  onClick={openControlDateModal}
+                  style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                >
+                  Kontrol tarihi ayarla
+                </button>
+              )}
+              {!isOpenedForCoach && canOpenForCoach && (
+                <button
+                  type="button"
+                  className="ok-btn-secondary"
+                  onClick={handleOpenForCoach}
+                  disabled={openingForCoach}
+                  style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                >
+                  {openingForCoach ? "Açılıyor…" : "Koça aç"}
+                </button>
+              )}
+              {!isOpenedForCoach && canReactivate && (
                 <button
                   type="button"
                   className="ok-btn-secondary"
@@ -1669,6 +1789,58 @@ export default function OdevKontrolDetailClient({
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button onClick={() => setShowPostponeModal(false)} style={{ padding: "11px 22px", background: "white", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, cursor: "pointer", fontWeight: 500 }}>İptal</button>
               <button onClick={handlePostpone} disabled={!postponeDate || postponing} style={{ padding: "11px 26px", background: postponeDate && !postponing ? "linear-gradient(135deg, #f59e0b, #d97706)" : "#d1d5db", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: postponeDate && !postponing ? "pointer" : "default", boxShadow: postponeDate && !postponing ? "0 3px 12px rgba(245,158,11,0.3)" : "none" }}>{postponing ? "Erteleniyor…" : "📅 Ertele"}</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showControlDateModal && (
+        <>
+          <div onClick={() => !savingControlDate && setShowControlDateModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 1000 }} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 20, padding: 24, zIndex: 1001, width: "min(460px, calc(100vw - 32px))", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}>
+            <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 800, color: "#1e293b" }}>Yeni kontrol tarihi</h2>
+            <p style={{ margin: "0 0 20px", fontSize: 13, color: "#64748b" }}>
+              Gecikmiş ödev için yeni kontrol günü belirlenir. Erteleme hakkı kullanılmaz.
+              Mevcut teslim: <strong>{formatDate(assignment.due_date)}</strong>
+            </p>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#334155" }}>Yeni kontrol günü *</label>
+              <input
+                type="date"
+                value={controlDate}
+                min={localDateInputValue(0)}
+                onChange={(e) => setControlDate(e.target.value)}
+                style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, outline: "none" }}
+              />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#334155" }}>Sebep (isteğe bağlı)</label>
+              <textarea
+                value={controlDateReason}
+                onChange={(e) => setControlDateReason(e.target.value)}
+                placeholder="Neden yeni kontrol tarihi veriliyor..."
+                style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, outline: "none", minHeight: 80, resize: "vertical" }}
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button type="button" onClick={() => setShowControlDateModal(false)} disabled={savingControlDate} style={{ padding: "11px 22px", background: "white", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, cursor: "pointer", fontWeight: 500 }}>İptal</button>
+              <button
+                type="button"
+                onClick={handleSetControlDate}
+                disabled={!controlDate || savingControlDate}
+                style={{
+                  padding: "11px 26px",
+                  background: controlDate && !savingControlDate ? "linear-gradient(135deg, #0d9488, #0f766e)" : "#d1d5db",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 10,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: controlDate && !savingControlDate ? "pointer" : "default",
+                }}
+              >
+                {savingControlDate ? "Kaydediliyor..." : "Kontrol tarihini kaydet"}
+              </button>
             </div>
           </div>
         </>

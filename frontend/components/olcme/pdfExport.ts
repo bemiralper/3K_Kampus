@@ -68,13 +68,22 @@ function sortHeaderLabel(field: SortField): string {
   return SORT_HEADER_LABELS[field] || field;
 }
 
-/* Renkler */
+/* ── Kurumsal palet (karne PDF'i ile ortak) ── */
 const PRIMARY = [2, 98, 167] as const;
+const PRIMARY_DARK = [1, 74, 127] as const;
+const PRIMARY_SOFT = [234, 242, 250] as const;
 const DARK = [15, 23, 42] as const;
-const GRAY = [100, 116, 139] as const;
-const LIGHT_BG = [241, 245, 249] as const;
+const INK_SOFT = [71, 85, 105] as const;
+const GRAY = [148, 163, 184] as const;
+const LINE = [220, 229, 239] as const;
+const LIGHT_BG = [247, 250, 252] as const;
 const WHITE = [255, 255, 255] as const;
-const AVG_ROW_BG = [220, 238, 255] as const;
+const AVG_ROW_BG = [225, 239, 252] as const;
+/** İlk üç sırayı vurgulayan sıcak ton */
+const TOP_ROW_BG = [255, 250, 235] as const;
+
+/** Sayfa kenar boşluğu — antet, tablo ve altbilgi aynı hizada dursun */
+const MARGIN = 6;
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  FONT YÜKLEME (Roboto TTF → Türkçe karakter desteği)                       */
@@ -187,66 +196,83 @@ export function isSectionForAlan(sectionName: string, alanKodu: string | null): 
 /*  PDF HEADER & FOOTER                                                        */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
-function addPdfHeader(
-  doc: jsPDF, logo: LogoAsset | null,
-  examName: string, subtitle: string, filterInfo: string,
-  katilim?: { kurs: number },
-): number {
-  const pw = doc.internal.pageSize.getWidth();
-  const m = 10;
-  const headerH = 22;
-
-  doc.setFillColor(...PRIMARY);
-  doc.rect(0, 0, pw, headerH, 'F');
-
-  let tx = m;
-  if (logo) {
-    try {
-      const fitted = fitLogoBox(logo.width, logo.height, 28, 16);
-      const logoY = (headerH - fitted.height) / 2;
-      doc.addImage(logo.dataUri, 'PNG', m, logoY, fitted.width, fitted.height);
-      tx = m + fitted.width + 4;
-    } catch { /* */ }
-  }
-
-  doc.setFont('Roboto', 'bold');  doc.setFontSize(12); doc.setTextColor(...WHITE);
-  doc.text(examName, tx, 10);
-  doc.setFont('Roboto', 'normal'); doc.setFontSize(8);
-  doc.text(subtitle, tx, 16);
-
-  const now = new Date();
-  doc.setFontSize(8);
-  doc.text(now.toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' }), pw - m, 10, { align: 'right' });
-  doc.setFontSize(7);
-  doc.text('3K Kampüs', pw - m, 16, { align: 'right' });
-
-  let y = 26;
-  if (katilim) {
-    doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(...PRIMARY);
-    doc.text(`KATILIM — Kurs: ${katilim.kurs}`, pw - m, y, { align: 'right' });
-  }
-  if (filterInfo) {
-    doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(...GRAY);
-    doc.text(filterInfo, m, y);
-    y += 5;
-  } else if (katilim) { y += 5; }
-
-  doc.setTextColor(...DARK);
-  return y;
+interface MastheadOptions {
+  /** Antette görünen kurum/şube adı */
+  kurum: string;
+  /** Bant sağındaki belge türü, ör. "TYT SIRALAMA LİSTESİ" */
+  eyebrow: string;
+  /** Bandın altındaki başlık — sınav adı */
+  title: string;
+  /** Başlığın altındaki filtre/ölçüt satırı */
+  meta: string[];
 }
 
-function addPdfFooter(doc: jsPDF) {
+/**
+ * Marka bandı + belge başlığı.
+ *
+ * Bant yalnızca kurum kimliğini taşır; sınav adı ve ölçütler bandın altında
+ * koyu metinle verilir, böylece sayfa bir antetli evrak gibi okunur.
+ */
+function drawMasthead(doc: jsPDF, logo: LogoAsset | null, o: MastheadOptions): number {
+  const pw = doc.internal.pageSize.getWidth();
+  const bandH = 17;
+
+  doc.setFillColor(...PRIMARY);
+  doc.rect(0, 0, pw, bandH, 'F');
+
+  let tx = MARGIN;
+  if (logo) {
+    try {
+      const fitted = fitLogoBox(logo.width, logo.height, 26, 12);
+      doc.addImage(logo.dataUri, 'PNG', MARGIN, (bandH - fitted.height) / 2, fitted.width, fitted.height);
+      tx = MARGIN + fitted.width + 5;
+    } catch { /* logo olmadan da devam et */ }
+  }
+
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(11); doc.setTextColor(...WHITE);
+  doc.text(o.kurum, tx, bandH / 2 + 1.4);
+
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(7);
+  doc.text(o.eyebrow.toUpperCase(), pw - MARGIN, 7, { align: 'right' });
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(7);
+  doc.text(
+    new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' }),
+    pw - MARGIN, 12, { align: 'right' },
+  );
+
+  let y = bandH + 7;
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(11.5); doc.setTextColor(...DARK);
+  doc.text(o.title, MARGIN, y);
+
+  if (o.meta.length) {
+    y += 4.6;
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(...INK_SOFT);
+    doc.text(o.meta.join('     ·     '), MARGIN, y);
+  }
+
+  y += 3;
+  doc.setDrawColor(...LINE); doc.setLineWidth(0.3);
+  doc.line(MARGIN, y, pw - MARGIN, y);
+
+  doc.setTextColor(...DARK);
+  return y + 4;
+}
+
+function addPdfFooter(doc: jsPDF, kurum: string) {
   const pc = doc.getNumberOfPages();
+  const now = new Date();
+  const stamp = `${now.toLocaleDateString('tr-TR')} ${now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`;
+
   for (let i = 1; i <= pc; i++) {
     doc.setPage(i);
     const h = doc.internal.pageSize.getHeight();
     const w = doc.internal.pageSize.getWidth();
-    doc.setDrawColor(200, 200, 200); doc.line(10, h - 10, w - 10, h - 10);
-    doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(...GRAY);
-    doc.text('3K Kampüs', 10, h - 6);
-    doc.text(`Sayfa ${i} / ${pc}`, w / 2, h - 6, { align: 'center' });
-    const now = new Date();
-    doc.text(`${now.toLocaleDateString('tr-TR')} ${now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`, w - 10, h - 6, { align: 'right' });
+    doc.setDrawColor(...LINE); doc.setLineWidth(0.3);
+    doc.line(MARGIN, h - 9, w - MARGIN, h - 9);
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GRAY);
+    doc.text(kurum, MARGIN, h - 5);
+    doc.text(stamp, w / 2, h - 5, { align: 'center' });
+    doc.text(`Sayfa ${i} / ${pc}`, w - MARGIN, h - 5, { align: 'right' });
     doc.setTextColor(...DARK);
   }
 }
@@ -328,6 +354,8 @@ export interface RankingsPdfOptions {
   avgNet?: number;
   puanTurleriAvgs?: Record<string, number>;
   sinifAvgs?: Record<string, SinifAvgInfo>;
+  /** Antette kullanılacak kurum/şube adı; yoksa marka adına düşer */
+  kurumAd?: string;
 }
 
 export async function exportRankingsPdf(opts: RankingsPdfOptions) {
@@ -336,6 +364,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
     sortBy, alanFilter, sinifFilter, columns, referansYil,
     sectionAvgs, avgScore, avgNet, puanTurleriAvgs, sinifAvgs,
   } = opts;
+  const kurum = (opts.kurumAd || '').trim() || '3K Kampüs';
 
   const hasPT = rankings.some(r => r.puan_turleri);
   const isAyt = examType === 'YKS_AYT';
@@ -429,7 +458,8 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   // Suffix: [Toplam] [DYN|Net] ... [ptPuan ptKurs ptGenel]... [KurumPct] [TahSira] [TRPct]
   const suffixAfterPT: string[] = [];
   if (columns.showKurumYuzdelik) suffixAfterPT.push('K%');
-  if (columns.showTahminiSiralama) suffixAfterPT.push(`Tah.Sıra (${referansYil})`);
+  // Referans yıl antetteki ölçüt satırında yazıyor; başlık dar sütunda bölünmesin
+  if (columns.showTahminiSiralama) suffixAfterPT.push('Tah. Sıra');
   if (columns.showYuzdelikDilim) suffixAfterPT.push('TR%');
 
   // ═══ GROUP yapısı (DYB modunda) ═══
@@ -560,7 +590,8 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   if (showAvgRow) {
     const row = new Array(TOTAL).fill('');
     const nameCol = columns.showStudentId ? 2 : 1;
-    row[nameCol] = 'Kurs Ortalaması';
+    // Kısa etiket: AYT'de isim sütunu dar kalıyor, uzun metin kelime ortasından bölünüyor
+    row[nameCol] = 'Kurs Ort.';
 
     let ci = PFX;
     body_secs.forEach(sec => {
@@ -656,18 +687,22 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   });
 
   // ═══ PDF oluştur ═══
-  const parts: string[] = [];
+  const parts: string[] = [`${filtered.length} öğrenci`];
   if (alanFilter) parts.push(`Alan: ${ALAN_LABELS[alanFilter] || alanFilter}`);
   if (sinifFilter) parts.push(`Sınıf: ${sinifFilter}`);
+  parts.push(`Sıralama ölçütü: ${sortHeaderLabel(effectiveSort)}`);
   parts.push(`Tahmini sıralama yılı: ${referansYil}`);
-  parts.push(`Sıralama: ${sortHeaderLabel(effectiveSort)}`);
-  parts.push(`${filtered.length} öğrenci`);
 
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   registerFonts(doc, fonts);
 
   const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType;
-  const startY = addPdfHeader(doc, logo, examName, `${tl} Sıralama (${sortHeaderLabel(effectiveSort)} sıralı)`, parts.join('  ·  '), { kurs: filtered.length });
+  const startY = drawMasthead(doc, logo, {
+    kurum,
+    eyebrow: `${tl} Sıralama Listesi`,
+    title: examName,
+    meta: parts,
+  });
 
   // Lookup setleri
   const grpSet = new Set(grpStarts);
@@ -685,13 +720,19 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
     startY,
     head: headRows,
     body: bodyData,
-    styles: { font: 'Roboto', fontSize: 5.5, cellPadding: 1, overflow: 'linebreak' as const, textColor: [...DARK] },
-    headStyles: { fillColor: [...PRIMARY], textColor: [...WHITE], fontSize: 5.5, fontStyle: 'bold', halign: 'center' as const, cellPadding: 1 },
+    styles: {
+      font: 'Roboto', fontSize: 5.8, cellPadding: { top: 1.3, bottom: 1.3, left: 1, right: 1 },
+      overflow: 'linebreak' as const, textColor: [...DARK], lineWidth: 0,
+    },
+    headStyles: {
+      fillColor: [...PRIMARY], textColor: [...WHITE], fontSize: 5.8,
+      fontStyle: 'bold', halign: 'center' as const, cellPadding: 1.4, lineWidth: 0,
+    },
     alternateRowStyles: { fillColor: [...LIGHT_BG] },
-    columnStyles: { 0: { cellWidth: 7, halign: 'center' as const } },
-    margin: { left: 3, right: 3, bottom: 15 },
-    tableLineWidth: 0.1,
-    tableLineColor: [200, 200, 200],
+    columnStyles: { 0: { cellWidth: 7, halign: 'center' as const, textColor: [...INK_SOFT] } },
+    margin: { left: MARGIN, right: MARGIN, bottom: 14 },
+    tableLineWidth: 0.2,
+    tableLineColor: [...LINE],
 
     didParseCell(data: any) {
       const ci = data.column.index;
@@ -701,16 +742,27 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
       if (data.section === 'body' && ri < avgRowCnt) {
         data.cell.styles.fillColor = [...AVG_ROW_BG];
         data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.fontSize = 5;
-        data.cell.styles.textColor = [...PRIMARY];
+        data.cell.styles.textColor = [...PRIMARY_DARK];
       }
-      // İlk 3 öğrenci bold
+      // İlk 3 öğrenci — sıcak zemin + kalın yazı
       if (data.section === 'body' && ri >= avgRowCnt && ri < avgRowCnt + 3) {
+        data.cell.styles.fillColor = [...TOP_ROW_BG];
         data.cell.styles.fontStyle = 'bold';
       }
       // İsim sütunu bold
       const nameC = columns.showStudentId ? 2 : 1;
-      if (data.section === 'body' && ci === nameC) data.cell.styles.fontStyle = 'bold';
+      if (data.section === 'body' && ci === nameC) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.halign = 'left';
+      }
+      // Grup başlığı satırı (alan adları) daha koyu zeminde
+      if (columns.showDYB && data.section === 'head' && ri === 0) {
+        data.cell.styles.fillColor = [...PRIMARY_DARK];
+      }
+      // T.Net ve Puan sütunları vurgulanır
+      if (data.section === 'body' && (ci === TNET_COL || (showTytPuan && ci === PUAN_COL))) {
+        data.cell.styles.fontStyle = 'bold';
+      }
 
       // ═══ DYB 3-satır header logic ═══
       if (columns.showDYB && data.section === 'head') {
@@ -785,31 +837,42 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
         }
       }
 
-      // ═══ Dikey çizgiler ═══
-      if (grpSet.has(ci)) {
-        data.cell.styles.lineWidth = { left: 0.4 };
-        data.cell.styles.lineColor = { left: [120, 120, 120] };
-      } else if (secSet.has(ci) && ci >= PFX && ci < secEnd) {
+      // ═══ Dikey ayraçlar ═══
+      // Yatay çizgi yok; okuma yönünü zebra taşıyor. Dikey ayraçlar yalnızca
+      // alan/ders ve puan türü bloklarını birbirinden ayırmak için.
+      if (secSet.has(ci) && ci >= PFX && ci < secEnd) {
         data.cell.styles.lineWidth = { left: 0.15 };
-        data.cell.styles.lineColor = { left: [200, 200, 200] };
+        data.cell.styles.lineColor = { left: [...LINE] };
+      }
+      if (grpSet.has(ci) || ptStartSet.has(ci)) {
+        data.cell.styles.lineWidth = { left: 0.3 };
+        data.cell.styles.lineColor = { left: [...GRAY] };
       }
       if (ci === TNET_COL) {
-        data.cell.styles.lineWidth = { left: 0.5 };
-        data.cell.styles.lineColor = { left: [60, 60, 60] };
-      }
-      if (ptStartSet.has(ci)) {
-        data.cell.styles.lineWidth = { left: 0.3 };
-        data.cell.styles.lineColor = { left: [120, 120, 120] };
+        data.cell.styles.lineWidth = { left: 0.4 };
+        data.cell.styles.lineColor = { left: [...PRIMARY] };
       }
     },
   });
 
   // ═══ GRAFİK SAYFASI ═══
   if (columns.showCharts && body_secs.length > 0 && sectionAvgs) {
-    drawChartPage(doc, fonts, body_secs, sectionAvgs, sinifAvgs, avgScore, puanTurleriAvgs, isAyt, examName, tl, referansYil);
+    const best = filtered.reduce<RankingItem | null>(
+      (acc, r) => (acc && acc.puan >= r.puan ? acc : r), null,
+    );
+    drawChartPage(doc, logo, body_secs, sectionAvgs, sinifAvgs, puanTurleriAvgs, isAyt, {
+      kurum, examName, typeLabel: tl, referansYil,
+      stats: {
+        studentCount: filtered.length,
+        avgNet, avgScore,
+        topNet: filtered.reduce((mx, r) => Math.max(mx, r.toplam_net), 0),
+        topScore: best?.puan ?? 0,
+        topName: best?.student_name ?? '—',
+      },
+    });
   }
 
-  addPdfFooter(doc);
+  addPdfFooter(doc, kurum);
   const filename = `${examName}_Siralama_${alanFilter || 'Tumu'}_${new Date().toISOString().slice(0, 10)}.pdf`.replace(/\s+/g, '_');
   await downloadJsPdf(doc, filename);
 }
@@ -823,38 +886,83 @@ type ChartItem = { label: string; value: number };
 type ChartKind = 'net' | 'puan' | 'sinif';
 type ChartCard = { title: string; items: ChartItem[]; kind: ChartKind };
 
+/** Grafik sayfasının üstündeki özet metrikler */
+interface ChartStats {
+  studentCount: number;
+  avgNet?: number;
+  avgScore?: number;
+  topNet: number;
+  topScore: number;
+  topName: string;
+}
+
+/** Kart yüksekliği içeriğe göre; sayfayı doldurmak için gereksiz boşluk bırakılmaz */
+const CARD_HEAD_H = 13;
+const CARD_PAD_B = 5;
+const CARD_ROW_H = 11;
+
+function chartCardHeight(card: ChartCard, w: number): number {
+  const twoCol = card.items.length > 8 && w > 150;
+  const perCol = Math.ceil(card.items.length / (twoCol ? 2 : 1));
+  return CARD_HEAD_H + perCol * CARD_ROW_H + CARD_PAD_B;
+}
+
+function drawKpiStrip(doc: jsPDF, x: number, y: number, w: number, stats: ChartStats): number {
+  const items: { label: string; value: string }[] = [
+    { label: 'Öğrenci', value: String(stats.studentCount) },
+    { label: 'Ortalama net', value: stats.avgNet != null ? stats.avgNet.toFixed(2) : '—' },
+    { label: 'Ortalama puan', value: stats.avgScore != null ? stats.avgScore.toFixed(2) : '—' },
+    { label: 'En yüksek net', value: stats.topNet.toFixed(2) },
+    { label: 'En yüksek puan', value: stats.topScore.toFixed(2) },
+    { label: 'Zirve', value: stats.topName },
+  ];
+
+  const h = 15;
+  const gap = 4;
+  const cw = (w - gap * (items.length - 1)) / items.length;
+
+  items.forEach((it, i) => {
+    const cx = x + i * (cw + gap);
+    doc.setFillColor(...PRIMARY_SOFT);
+    doc.roundedRect(cx, y, cw, h, 2, 2, 'F');
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(...INK_SOFT);
+    doc.text(it.label.toUpperCase(), cx + 3.5, y + 5.4);
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(...PRIMARY_DARK);
+    const value = doc.getTextWidth(it.value) > cw - 7
+      ? doc.splitTextToSize(it.value, cw - 7)[0]
+      : it.value;
+    doc.text(value, cx + 3.5, y + 11.6);
+  });
+
+  doc.setTextColor(...DARK);
+  return y + h + 5;
+}
+
 function drawChartPage(
-  doc: jsPDF, _fonts: { regular: string; bold: string },
+  doc: jsPDF, logo: LogoAsset | null,
   secs: RankingSectionInfo[],
   secAvgs: Record<string, SectionAvgInfo>,
   sinifAvgs: Record<string, SinifAvgInfo> | undefined,
-  _avgScore: number | undefined,
   ptAvgs: Record<string, number> | undefined,
   isAyt: boolean,
-  examName: string, typeLabel: string,
-  referansYil: number,
+  meta: { kurum: string; examName: string; typeLabel: string; referansYil: number; stats: ChartStats },
 ) {
   doc.addPage('a4', 'landscape');
   const pw = doc.internal.pageSize.getWidth();
   const ph = doc.internal.pageSize.getHeight();
-  const m = 12;
-  const headerH = 20;
+  const m = MARGIN;
   const footerH = 12;
 
-  doc.setFillColor(...PRIMARY);
-  doc.rect(0, 0, pw, headerH, 'F');
-  doc.setFillColor(14, 165, 233);
-  doc.rect(0, headerH, pw, 1.2, 'F');
-  doc.setFont('Roboto', 'bold'); doc.setFontSize(12); doc.setTextColor(...WHITE);
-  const title = `${examName} — İstatistik Grafikleri`;
-  doc.text(title.length > 72 ? title.slice(0, 70) + '…' : title, m, 9);
-  doc.setFont('Roboto', 'normal'); doc.setFontSize(8);
-  doc.setTextColor(186, 230, 253);
-  doc.text(`${typeLabel}  ·  Tahmini sıralama yılı: ${referansYil}`, m, 16);
+  const headBottom = drawMasthead(doc, logo, {
+    kurum: meta.kurum,
+    eyebrow: `${meta.typeLabel} İstatistikleri`,
+    title: `${meta.examName} — Genel Görünüm`,
+    meta: [`Tahmini sıralama yılı: ${meta.referansYil}`],
+  });
 
-  const contentTop = headerH + 8;
-  const contentH = ph - footerH - 4 - contentTop;
   const contentW = pw - 2 * m;
+  const contentTop = drawKpiStrip(doc, m, headBottom, contentW, meta.stats);
+  const contentH = ph - footerH - 4 - contentTop;
   const gap = 5;
 
   const cards: ChartCard[] = [{
@@ -886,23 +994,29 @@ function drawChartPage(
   }
 
   type Rect = { x: number; y: number; w: number; h: number };
+  const hw = (contentW - gap) / 2;
+  /** Kartlar içeriği kadar yer kaplar; sayfa taşarsa satır yüksekliği kısılır */
+  const fit = (h: number) => Math.min(h, contentH);
   let rects: Rect[] = [];
+
   if (cards.length === 1) {
-    rects = [{ x: m, y: contentTop, w: contentW, h: contentH }];
+    rects = [{ x: m, y: contentTop, w: contentW, h: fit(chartCardHeight(cards[0], contentW)) }];
   } else if (cards.length === 2) {
-    const hw = (contentW - gap) / 2;
     rects = [
-      { x: m, y: contentTop, w: hw, h: contentH },
-      { x: m + hw + gap, y: contentTop, w: hw, h: contentH },
+      { x: m, y: contentTop, w: hw, h: fit(chartCardHeight(cards[0], hw)) },
+      { x: m + hw + gap, y: contentTop, w: hw, h: fit(chartCardHeight(cards[1], hw)) },
     ];
   } else {
-    const topH = contentH * 0.48;
-    const botH = contentH - topH - gap;
-    const hw = (contentW - gap) / 2;
+    // Üstte test netleri (tam genişlik), altta puan türü + şube karşılaştırması
+    const topH = chartCardHeight(cards[0], contentW);
+    const botH = Math.max(chartCardHeight(cards[1], hw), chartCardHeight(cards[2], hw));
+    const scale = topH + gap + botH > contentH ? (contentH - gap) / (topH + botH) : 1;
+    const t = topH * scale;
+    const b = botH * scale;
     rects = [
-      { x: m, y: contentTop, w: contentW, h: topH },
-      { x: m, y: contentTop + topH + gap, w: hw, h: botH },
-      { x: m + hw + gap, y: contentTop + topH + gap, w: hw, h: botH },
+      { x: m, y: contentTop, w: contentW, h: t },
+      { x: m, y: contentTop + t + gap, w: hw, h: b },
+      { x: m + hw + gap, y: contentTop + t + gap, w: hw, h: b },
     ];
   }
 
@@ -911,22 +1025,20 @@ function drawChartPage(
 
 function drawStatCard(doc: jsPDF, rect: { x: number; y: number; w: number; h: number }, card: ChartCard) {
   const { x, y, w, h } = rect;
-  doc.setFillColor(241, 245, 249);
-  doc.roundedRect(x + 0.5, y + 0.5, w, h, 2.4, 2.4, 'F');
   doc.setFillColor(...WHITE);
-  doc.setDrawColor(226, 232, 240);
+  doc.setDrawColor(...LINE);
   doc.setLineWidth(0.25);
-  doc.roundedRect(x, y, w, h, 2.4, 2.4, 'FD');
+  doc.roundedRect(x, y, w, h, 2, 2, 'FD');
   doc.setFillColor(...PRIMARY);
-  doc.rect(x, y, 2.2, h, 'F');
+  doc.rect(x, y + 1, 1.8, h - 2, 'F');
 
   doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(...DARK);
-  doc.text(card.title, x + 8, y + 7);
-  doc.setDrawColor(226, 232, 240);
+  doc.text(card.title, x + 7, y + 7);
+  doc.setDrawColor(...LINE);
   doc.setLineWidth(0.2);
-  doc.line(x + 8, y + 10, x + w - 5, y + 10);
+  doc.line(x + 7, y + 10, x + w - 5, y + 10);
 
-  drawHBars(doc, x + 8, y + 13, w - 14, h - 18, card.items, card.kind);
+  drawHBars(doc, x + 7, y + 13, w - 13, h - 18, card.items, card.kind);
 }
 
 function drawHBars(
@@ -956,12 +1068,12 @@ function drawHBars(
     const by = y + row * rowH;
     if (by + trackH > y + h) return;
 
-    doc.setFont('Roboto', 'normal'); doc.setFontSize(fontSize); doc.setTextColor(...DARK);
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(fontSize); doc.setTextColor(...INK_SOFT);
     const lbl = it.label.length > 16 ? it.label.substring(0, 15) + '.' : it.label;
     doc.text(lbl, bx, by + rowH * 0.62);
 
     const trackY = by + (rowH - trackH) / 2;
-    doc.setFillColor(241, 245, 249);
+    doc.setFillColor(...PRIMARY_SOFT);
     doc.roundedRect(bx + labelW, trackY, barW, trackH, 1.1, 1.1, 'F');
     const fill = it.value > 0 ? Math.max((it.value / maxV) * barW, 1.4) : 0;
     if (fill > 0) {
@@ -991,6 +1103,8 @@ export interface StudentsPdfOptions {
   alanFilter: string | null;
   sinifFilter: string | null;
   columns: PdfColumnConfig;
+  /** Antette kullanılacak kurum/şube adı; yoksa marka adına düşer */
+  kurumAd?: string;
 }
 
 export async function exportStudentsPdf(opts: StudentsPdfOptions) {
@@ -1045,11 +1159,11 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
     return row;
   });
 
-  const parts: string[] = [];
+  const kurum = (opts.kurumAd || '').trim() || '3K Kampüs';
+  const parts: string[] = [`${filtered.length} öğrenci`];
   if (alanFilter) parts.push(`Alan: ${ALAN_LABELS[alanFilter] || alanFilter}`);
   if (sinifFilter) parts.push(`Sınıf: ${sinifFilter}`);
-  parts.push(`Sıralama: ${SORT_OPTIONS.find(o => o.value === sortBy)?.label || sortBy}`);
-  parts.push(`${filtered.length} öğrenci`);
+  parts.push(`Sıralama ölçütü: ${SORT_OPTIONS.find(o => o.value === sortBy)?.label || sortBy}`);
 
   const doc = new jsPDF({
     orientation: (isAyt && hasPT && columns.showPuanTurleri) ? 'landscape' : 'portrait',
@@ -1058,20 +1172,34 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
   registerFonts(doc, fonts);
 
   const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType;
-  const startY = addPdfHeader(doc, logo, examName, `${tl} Öğrenci Listesi`, parts.join('  ·  '));
+  const startY = drawMasthead(doc, logo, {
+    kurum,
+    eyebrow: `${tl} Öğrenci Listesi`,
+    title: examName,
+    meta: parts,
+  });
 
   autoTable(doc, {
     startY,
     head: [heads],
     body,
-    styles: { font: 'Roboto', fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' as const, textColor: [...DARK] },
-    headStyles: { fillColor: [...PRIMARY], textColor: [...WHITE], fontSize: 7, fontStyle: 'bold', halign: 'center' as const },
+    styles: {
+      font: 'Roboto', fontSize: 7, cellPadding: 1.6,
+      overflow: 'linebreak' as const, textColor: [...DARK], lineWidth: 0,
+    },
+    headStyles: {
+      fillColor: [...PRIMARY], textColor: [...WHITE], fontSize: 7,
+      fontStyle: 'bold', halign: 'center' as const, lineWidth: 0,
+    },
     alternateRowStyles: { fillColor: [...LIGHT_BG] },
-    columnStyles: { 0: { cellWidth: 8, halign: 'center' as const }, 1: { fontStyle: 'bold' } },
-    margin: { left: 5, right: 5, bottom: 15 },
+    columnStyles: { 0: { cellWidth: 8, halign: 'center' as const, textColor: [...INK_SOFT] }, 1: { fontStyle: 'bold' } },
+    margin: { left: MARGIN, right: MARGIN, bottom: 14 },
+    tableLineWidth: 0.2,
+    tableLineColor: [...LINE],
   });
 
-  addPdfFooter(doc);
+  addPdfFooter(doc, kurum);
   const filename = `${examName}_Ogrenciler_${alanFilter || 'Tumu'}_${new Date().toISOString().slice(0, 10)}.pdf`.replace(/\s+/g, '_');
   await downloadJsPdf(doc, filename);
 }
+

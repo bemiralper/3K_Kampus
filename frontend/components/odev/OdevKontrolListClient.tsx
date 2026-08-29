@@ -7,6 +7,7 @@ import {
   fetchAssignments,
   fetchAssignmentsStats,
   assignAssignment,
+  openAssignmentForCoach,
   type AssignmentListStats,
 } from "@/lib/resources-api";
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
@@ -44,6 +45,11 @@ interface Assignment {
   non_submission_reason_display?: string | null;
   is_overdue?: boolean;
   is_due_today?: boolean;
+  is_control_locked?: boolean;
+  can_override_control_lock?: boolean;
+  control_opened_for_coach?: boolean;
+  can_open_for_coach?: boolean;
+  can_set_control_date?: boolean;
   created_at: string;
 }
 
@@ -144,10 +150,13 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
     ? (initialStatus as FilterStatus)
     : "all";
   // Koç varsayılanı: kontrol günü bugün. URL'de status varsa (dashboard kısayolu) onu koru.
+  const initialOpenedForCoach =
+    searchParams.get("opened_for_coach") === "1"
+    || searchParams.get("opened_for_coach") === "true";
   const initialDueToday =
     searchParams.get("due_today") === "1"
     || searchParams.get("due_today") === "true"
-    || (isCoach && !hasStatusInUrl && searchParams.get("due_today") !== "0");
+    || (isCoach && !hasStatusInUrl && !initialOpenedForCoach && searchParams.get("due_today") !== "0");
 
   const PAGE_SIZE = isCoach ? 20 : 50;
 
@@ -159,12 +168,14 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
   const [filterStatus, setFilterStatus] = useState<FilterStatus>(initialFilter);
   const [filterRisk, setFilterRisk] = useState<FilterRisk>("all");
   const [filterDueToday, setFilterDueToday] = useState(initialDueToday);
+  const [filterOpenedForCoach, setFilterOpenedForCoach] = useState(initialOpenedForCoach);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState<"created" | "due_date" | "progress" | "student">("created");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [toast, setToast] = useState<string | null>(null);
   const [assigningId, setAssigningId] = useState<number | null>(null);
+  const [openingId, setOpeningId] = useState<number | null>(null);
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
   useEffect(() => {
@@ -191,6 +202,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         status: filterStatus !== "all" ? filterStatus : undefined,
         risk_status: filterRisk !== "all" ? filterRisk : undefined,
         due_today: filterDueToday || undefined,
+        opened_for_coach: filterOpenedForCoach || undefined,
         q: debouncedSearch || undefined,
         page: targetPage,
         page_size: PAGE_SIZE,
@@ -210,7 +222,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
       flash("Ödevler yüklenemedi");
     }
     if (seq === requestSeq.current) setLoading(false);
-  }, [filterStatus, filterRisk, filterDueToday, debouncedSearch, PAGE_SIZE]);
+  }, [filterStatus, filterRisk, filterDueToday, filterOpenedForCoach, debouncedSearch, PAGE_SIZE]);
 
   useEffect(() => {
     loadAssignments(1);
@@ -242,6 +254,21 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
     setAssigningId(null);
   };
 
+  const handleOpenForCoach = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (openingId) return;
+    if (!confirm("Bu ödev koça açılacak. Koç yeni kontrol tarihi belirleyebilecek. Devam edilsin mi?")) {
+      return;
+    }
+    setOpeningId(id);
+    try {
+      const result = await openAssignmentForCoach(id);
+      if (result.success) { flash(result.message || "Ödev koça açıldı"); refreshAll(); }
+      else flash(result.error || "Koça açma başarısız");
+    } catch { flash("Koça açma başarısız"); }
+    setOpeningId(null);
+  };
+
   const goDetail = (id: number) => router.push(paths.detail(id));
 
   const sortedAssignments = useMemo(() => {
@@ -267,16 +294,26 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
   }, [assignments, sortBy, sortOrder]);
 
   const dueTodayStat = stats?.due_today ?? assignments.filter((a) => assignmentIsDueToday(a)).length;
+  const openedForCoachStat = stats?.opened_for_coach ?? assignments.filter((a) => a.control_opened_for_coach).length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE) || 1);
 
   const selectStatusFilter = (next: FilterStatus) => {
     setFilterStatus(next);
     setFilterRisk("all");
     setFilterDueToday(false);
+    setFilterOpenedForCoach(false);
   };
 
   const selectDueTodayFilter = () => {
     setFilterDueToday(true);
+    setFilterOpenedForCoach(false);
+    setFilterStatus("all");
+    setFilterRisk("all");
+  };
+
+  const selectOpenedForCoachFilter = () => {
+    setFilterOpenedForCoach(true);
+    setFilterDueToday(false);
     setFilterStatus("all");
     setFilterRisk("all");
   };
@@ -389,6 +426,9 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
           {(a.postpone_count ?? 0) > 0 && (
             <span className="ok-badge is-warning">{a.postpone_count}x ertelendi</span>
           )}
+          {a.control_opened_for_coach && (
+            <span className="ok-badge" style={{ background: "#ccfbf1", color: "#0f766e" }}>Koça açık</span>
+          )}
           {nonSubmissionLabel && (
             <span className="ok-badge is-danger">{nonSubmissionLabel}</span>
           )}
@@ -401,6 +441,17 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
               onClick={(e) => handleAssignDraft(e, a.id)}
             >
               {assigningId === a.id ? "Atanıyor…" : "Ata"}
+            </button>
+          )}
+          {!isCoach && a.can_open_for_coach && (
+            <button
+              type="button"
+              className="ok-btn-secondary"
+              style={{ padding: "4px 12px", fontSize: 12 }}
+              disabled={openingId === a.id}
+              onClick={(e) => handleOpenForCoach(e, a.id)}
+            >
+              {openingId === a.id ? "Açılıyor…" : "Koça aç"}
             </button>
           )}
         </div>
@@ -417,7 +468,9 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
           <h1>Ödev Kontrol</h1>
           <p>
             {isCoach
-              ? (filterDueToday
+              ? (filterOpenedForCoach
+                ? "Yönetici tarafından yeni kontrol tarihi için açılan ödevler"
+                : filterDueToday
                 ? "Bugün kontrol günü olan ödevler"
                 : "Öğrencilerinizin ödevlerini kontrol edin")
               : "Atanan ödevleri filtreleyin, kontrol edin ve takip edin"}
@@ -437,6 +490,26 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         )}
       </header>
 
+      {isCoach && openedForCoachStat > 0 && !filterOpenedForCoach && (
+        <div className="ok-control-lock-banner is-opened" style={{ marginBottom: 14 }}>
+          <span style={{ fontSize: 18 }}>🔓</span>
+          <div style={{ flex: 1 }}>
+            <strong>Yönetici {openedForCoachStat} ödevi koça açtı</strong>
+            <div style={{ fontSize: 12, marginTop: 2, opacity: 0.9 }}>
+              Bu ödevler için yeni kontrol tarihi belirleyebilirsiniz.
+            </div>
+          </div>
+          <button
+            type="button"
+            className="ok-btn-secondary"
+            onClick={selectOpenedForCoachFilter}
+            style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            Açılanları göster
+          </button>
+        </div>
+      )}
+
       {stats && (
         <div className="ok-filter-chips">
           <button
@@ -446,6 +519,15 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
           >
             Kontrol günü<strong>{dueTodayStat}</strong>
           </button>
+          {(openedForCoachStat > 0 || filterOpenedForCoach) && (
+            <button
+              type="button"
+              className={`ok-filter-chip is-info${filterOpenedForCoach ? " is-active" : ""}`}
+              onClick={selectOpenedForCoachFilter}
+            >
+              Koça açık<strong>{openedForCoachStat}</strong>
+            </button>
+          )}
           {STATUS_CHIP_LABELS.map((chip) => {
             const value =
               chip.filter === "all" ? stats.total
@@ -458,7 +540,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
               <button
                 key={chip.filter}
                 type="button"
-                className={`ok-filter-chip${!filterDueToday && filterStatus === chip.filter ? " is-active" : ""}`}
+                className={`ok-filter-chip${!filterDueToday && !filterOpenedForCoach && filterStatus === chip.filter ? " is-active" : ""}`}
                 onClick={() => selectStatusFilter(chip.filter)}
               >
                 {chip.label}<strong>{value}</strong>
@@ -478,14 +560,16 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         />
         <select
           className="ok-select"
-          value={filterDueToday ? "due_today" : filterStatus}
+          value={filterOpenedForCoach ? "opened_for_coach" : filterDueToday ? "due_today" : filterStatus}
           onChange={(e) => {
             const v = e.target.value;
             if (v === "due_today") selectDueTodayFilter();
+            else if (v === "opened_for_coach") selectOpenedForCoachFilter();
             else selectStatusFilter(v as FilterStatus);
           }}
         >
           <option value="due_today">Kontrol günü (bugün)</option>
+          <option value="opened_for_coach">Koça açık</option>
           <option value="all">Tüm durumlar</option>
           <option value="DRAFT">Taslak</option>
           <option value="ASSIGNED">Atanmış</option>
@@ -523,7 +607,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
           <option value="progress-desc">İlerleme ↓</option>
           <option value="student-asc">Öğrenci A-Z</option>
         </select>
-        {(filterStatus !== "all" || filterRisk !== "all" || filterDueToday || searchQuery) && (
+        {(filterStatus !== "all" || filterRisk !== "all" || filterDueToday || filterOpenedForCoach || searchQuery) && (
           <button
             type="button"
             className="ok-btn-clear"
@@ -531,6 +615,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
               setFilterStatus("all");
               setFilterRisk("all");
               setFilterDueToday(false);
+              setFilterOpenedForCoach(false);
               setSearchQuery("");
               setDebouncedSearch("");
             }}
@@ -545,10 +630,12 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
       ) : sortedAssignments.length === 0 ? (
         <div className="ok-empty">
           <h3>
-            {filterDueToday ? "Bugün kontrol günü olan ödev yok" : "Ödev bulunamadı"}
+            {filterOpenedForCoach ? "Koça açılmış ödev yok" : filterDueToday ? "Bugün kontrol günü olan ödev yok" : "Ödev bulunamadı"}
           </h3>
           <p>
-            {filterDueToday
+            {filterOpenedForCoach
+              ? "Yönetici henüz gecikmiş ödev açmamış."
+              : filterDueToday
               ? "Başka durumları görmek için “Toplam” veya “Temizle”ye basabilirsiniz."
               : searchQuery || filterStatus !== "all" || filterRisk !== "all"
                 ? "Filtrelere uygun kayıt yok."
@@ -617,6 +704,11 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                           <span className="ok-badge is-danger">{nonSubmissionLabel}</span>
                         </div>
                       )}
+                      {a.control_opened_for_coach && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="ok-badge" style={{ background: "#ccfbf1", color: "#0f766e" }}>Koça açık</span>
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div className="ok-table-progress">
@@ -639,6 +731,16 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                           onClick={(e) => handleAssignDraft(e, a.id)}
                         >
                           {assigningId === a.id ? "Atanıyor…" : "Ata"}
+                        </button>
+                      ) : !isCoach && a.can_open_for_coach ? (
+                        <button
+                          type="button"
+                          className="ok-btn-secondary"
+                          style={{ padding: "6px 12px", fontSize: 12 }}
+                          disabled={openingId === a.id}
+                          onClick={(e) => handleOpenForCoach(e, a.id)}
+                        >
+                          {openingId === a.id ? "Açılıyor…" : "Koça aç"}
                         </button>
                       ) : (
                         <span className="ok-table-sub">Kontrol →</span>

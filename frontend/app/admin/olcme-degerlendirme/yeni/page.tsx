@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { examApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import {
   EXAM_TYPES,
@@ -11,17 +11,55 @@ import {
 } from '../../../../components/olcme/types';
 import type {
   ExamCreateForm,
+  ExamRoomItem,
   LookupItem,
-  SessionCreateForm,
+  PreviewStudent,
   SchedulePreference,
+  SeatingMode,
+  SessionCreateForm,
 } from '../../../../components/olcme/types';
+import { groupSeated, previewSeating } from '../../../../components/olcme/roster/seating';
+import r from '../../../../components/olcme/roster/roster.module.css';
 import s from '../olcme.module.css';
+
+const WIZARD = [
+  { n: 1, label: 'Sınav bilgisi' },
+  { n: 2, label: 'Kimler girecek' },
+  { n: 3, label: 'Liste' },
+  { n: 4, label: 'Salonlar' },
+  { n: 5, label: 'Oturma' },
+  { n: 6, label: 'Özet' },
+] as const;
 
 /* ── Oturum boş form ──────────────────────────────────────────────────────── */
 const EMPTY_SESSION: SessionCreateForm = {
   name: '', order: 0, session_date: '', start_time: '', end_time: '',
   duration_minutes: '', schedule_preference: 'FARKETMEZ', description: '', section_ids: [],
 };
+
+type TemplateSec = {
+  name: string; question_start: number; question_end: number;
+  question_count: number; order: number;
+};
+type TemplateMap = Record<string, {
+  label: string;
+  duration: number;
+  sections: TemplateSec[];
+  sub_sections?: Record<string, TemplateSec[]>;
+}>;
+
+/** "10:00" + 135dk → "12:15" */
+function addMinutes(time: string, minutes: number): string {
+  if (!/^\d{2}:\d{2}$/.test(time) || !minutes) return '';
+  const [h, m] = time.split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  const hh = String(Math.floor(total / 60) % 24).padStart(2, '0');
+  const mm = String(total % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+const fmtSessionDate = (d: string) =>
+  d ? new Date(`${d}T00:00:00`).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' }) : '';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -32,47 +70,47 @@ export default function YeniSinavPage() {
   const [sessions, setSessions]     = useState<SessionCreateForm[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched]       = useState(false);
 
   /* Lookup verileri */
   const [siniflar, setSiniflar]                 = useState<LookupItem[]>([]);
-  const [sinifSeviyeleri, setSinifSeviyeleri]    = useState<LookupItem[]>([]);
-  const [denemeHizmetleri, setDenemeHizmetleri]  = useState<LookupItem[]>([]);
-  const [denemePaketleri, setDenemePaketleri]    = useState<LookupItem[]>([]);
-  const [seviyeFilter, setSeviyeFilter]          = useState<number | ''>('');
-  const [kurumDefaultYear, setKurumDefaultYear]  = useState(2025);
-  const [managedYears, setManagedYears]          = useState<number[]>([2024, 2025, 2026]);
+  const [sinifSeviyeleri, setSinifSeviyeleri]   = useState<LookupItem[]>([]);
+  const [denemePaketleri, setDenemePaketleri]   = useState<LookupItem[]>([]);
+  const [seviyeFilter, setSeviyeFilter]         = useState<number | ''>('');
+  const [kurumDefaultYear, setKurumDefaultYear] = useState(2025);
+  const [managedYears, setManagedYears]         = useState<number[]>([2024, 2025, 2026]);
+  const [existingNames, setExistingNames]       = useState<string[]>([]);
 
-  /* Şablon */
-  type TemplateSec = { name: string; question_start: number; question_end: number; question_count: number; order: number };
-  const [templates, setTemplates] = useState<
-    Record<string, {
-      label: string;
-      duration: number;
-      sections: TemplateSec[];
-      sub_sections?: Record<string, TemplateSec[]>;
-    }>
-  >({});
+  const [templates, setTemplates] = useState<TemplateMap>({});
+  const [step, setStep] = useState(1);
+  const [preview, setPreview] = useState<PreviewStudent[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [removedAutoIds, setRemovedAutoIds] = useState<number[]>([]);
+  const [manuals, setManuals] = useState<PreviewStudent[]>([]);
+  const [rooms, setRooms] = useState<ExamRoomItem[]>([{ name: 'Salon 1', capacity: 30, order: 0 }]);
+  const [seatingMode, setSeatingMode] = useState<SeatingMode>('shuffle');
+  const [seatingTick, setSeatingTick] = useState(0);
 
   /* ── Veri yükleme ────────────────────────────────────────────────────────── */
   useEffect(() => {
     examApi.templates().then(setTemplates).catch(() => {});
     examApi.siniflar().then(setSiniflar).catch(() => {});
     examApi.sinifSeviyeleri().then(setSinifSeviyeleri).catch(() => {});
-    examApi.denemeHizmetleri().then(setDenemeHizmetleri).catch(() => {});
     examApi.denemePaketleri().then(setDenemePaketleri).catch(() => {});
+    examApi.list().then(list => setExistingNames(list.map(e => e.name))).catch(() => {});
     puanAyarlariApi.get().then(d => {
       setKurumDefaultYear(d.default_puan_yili);
       setManagedYears(d.managed_years);
     }).catch(() => {});
   }, []);
 
-  /* Sınav türü → süre otomatik */
+  const currentTemplate = form.exam_type ? templates[form.exam_type] : null;
+
+  /* Sınav türü seçilince süre şablondan gelir (TYT = 165 dk) */
   useEffect(() => {
     if (form.exam_type && templates[form.exam_type]) {
-      const t = templates[form.exam_type];
-      if (!form.duration_minutes) {
-        setForm(p => ({ ...p, duration_minutes: String(t.duration) }));
-      }
+      setForm(p => ({ ...p, duration_minutes: String(templates[form.exam_type as string].duration) }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.exam_type, templates]);
@@ -91,58 +129,247 @@ export default function YeniSinavPage() {
         : [...p.sinif_ids, id],
     }));
 
+  const toggleSeviye = (id: number) =>
+    setForm(p => ({
+      ...p,
+      sinif_seviyesi_ids: p.sinif_seviyesi_ids.includes(id)
+        ? p.sinif_seviyesi_ids.filter(x => x !== id)
+        : [...p.sinif_seviyesi_ids, id],
+    }));
+
+  const togglePaket = (id: number) =>
+    setForm(p => ({
+      ...p,
+      deneme_paketi_ids: p.deneme_paketi_ids.includes(id)
+        ? p.deneme_paketi_ids.filter(x => x !== id)
+        : [...p.deneme_paketi_ids, id],
+    }));
+
   const addSession = () =>
     setSessions(p => [...p, {
       ...EMPTY_SESSION,
       name: `${p.length + 1}. Oturum`,
       order: p.length,
+      // Aynı gün içinde ard arda oturumlar sık olduğu için tarih önceki oturumdan kopyalanır
+      session_date: p.length > 0 ? p[p.length - 1].session_date : '',
       duration_minutes: form.duration_minutes || (currentTemplate ? String(currentTemplate.duration) : ''),
     }]);
 
   const updateSession = (i: number, field: keyof SessionCreateForm, value: unknown) =>
-    setSessions(p => p.map((ss, j) => j === i ? { ...ss, [field]: value } : ss));
+    setSessions(p => p.map((ss, j) => {
+      if (j !== i) return ss;
+      const next = { ...ss, [field]: value } as SessionCreateForm;
+      // Başlangıç saati veya süre değişince bitiş saatini otomatik hesapla
+      if (field === 'start_time' || field === 'duration_minutes') {
+        const computed = addMinutes(next.start_time, Number(next.duration_minutes));
+        if (computed) next.end_time = computed;
+      }
+      return next;
+    }));
 
-  const removeSession = (i: number) => setSessions(p => p.filter((_, j) => j !== i));
+  const removeSession = (i: number) =>
+    setSessions(p => p
+      .filter((_, j) => j !== i)
+      .map((ss, j) => ({ ...ss, order: j })));
 
-  /* Filtrelenmiş sınıflar */
   const filteredSiniflar = seviyeFilter
     ? siniflar.filter(si => si.seviye_id === seviyeFilter)
     : siniflar;
 
+  /* ── Doğrulama ───────────────────────────────────────────────────────────── */
+  const validate = useCallback((): Record<string, string> => {
+    const errs: Record<string, string> = {};
+
+    if (!form.name.trim()) errs.name = 'Sınav adı zorunludur.';
+    if (!form.exam_type)   errs.exam_type = 'Sınav türü seçiniz.';
+
+    if (form.duration_minutes && Number(form.duration_minutes) <= 0) {
+      errs.duration_minutes = 'Süre 0’dan büyük olmalıdır.';
+    }
+
+    if (form.result_publish_date && form.answer_key_publish_date
+      && form.answer_key_publish_date < form.result_publish_date) {
+      errs.answer_key_publish_date =
+        'Cevap anahtarı yayın tarihi, sınav yayın tarihinden önce olamaz.';
+    }
+
+    const names = new Set<string>();
+    sessions.forEach((ss, i) => {
+      const label = ss.name.trim();
+      if (!label) {
+        errs[`session_${i}`] = 'Oturum adı zorunludur.';
+      } else if (names.has(label.toLowerCase())) {
+        errs[`session_${i}`] = 'Aynı sınavda iki oturum aynı adı taşıyamaz.';
+      } else {
+        names.add(label.toLowerCase());
+      }
+      if (ss.start_time && ss.end_time && ss.end_time <= ss.start_time) {
+        errs[`session_${i}`] = 'Bitiş saati başlangıç saatinden sonra olmalıdır.';
+      }
+      if (ss.duration_minutes && Number(ss.duration_minutes) <= 0) {
+        errs[`session_${i}`] = 'Oturum süresi 0’dan büyük olmalıdır.';
+      }
+    });
+
+    return errs;
+  }, [form, sessions]);
+
+  useEffect(() => {
+    if (touched) setFieldErrors(validate());
+  }, [touched, validate]);
+
+  const duplicateName = useMemo(
+    () => form.name.trim().length > 0
+      && existingNames.some(n => n.toLowerCase() === form.name.trim().toLowerCase()),
+    [form.name, existingNames],
+  );
+
+  /* Oturumlardan türetilen sınav tarihi — backend de aynı kuralı uygular */
+  const derivedExamDate = useMemo(() => {
+    const dates = sessions.map(ss => ss.session_date).filter(Boolean).sort();
+    return dates[0] ?? '';
+  }, [sessions]);
+
+  const loadPreview = useCallback(async () => {
+    if (!form.sinif_ids.length && !form.sinif_seviyesi_ids.length && !form.deneme_paketi_ids.length) {
+      setPreview([]);
+      return;
+    }
+    setPreviewLoading(true);
+    try {
+      const data = await examApi.previewParticipants({
+        sinif_ids: form.sinif_ids,
+        sinif_seviyesi_ids: form.sinif_seviyesi_ids,
+        deneme_paketi_ids: form.deneme_paketi_ids,
+      });
+      setPreview(data.students);
+    } catch {
+      setPreview([]);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [form.sinif_ids, form.sinif_seviyesi_ids, form.deneme_paketi_ids]);
+
+  useEffect(() => {
+    if (step >= 3) loadPreview();
+  }, [step, loadPreview]);
+
+  const roster = useMemo(() => {
+    const removed = new Set(removedAutoIds);
+    const auto = preview.filter(p => !removed.has(p.student_id));
+    const taken = new Set(auto.map(p => p.student_id));
+    return [...auto, ...manuals.filter(m => !taken.has(m.student_id))];
+  }, [preview, removedAutoIds, manuals]);
+
+  const totalCap = rooms.reduce((a, r) => a + (Number(r.capacity) || 0), 0);
+  const capError = rooms.some(r => r.name.trim()) && roster.length > totalCap
+    ? `${roster.length} öğrenci için toplam salon kapasitesi ${totalCap}.`
+    : '';
+
+  const seated = useMemo(
+    () => previewSeating(roster, rooms, seatingMode),
+    // seatingTick yeniden karıştırmayı tetikler
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [roster, rooms, seatingMode, seatingTick],
+  );
+  const seatedByRoom = useMemo(() => groupSeated(seated), [seated]);
+
+  const goNext = () => {
+    if (step === 1) {
+      setTouched(true);
+      const errs = validate();
+      setFieldErrors(errs);
+      if (Object.keys(errs).length > 0) {
+        setError('Lütfen işaretli alanları düzeltin.');
+        return;
+      }
+      setError('');
+    }
+    if (step === 4 && capError) {
+      setError(capError);
+      return;
+    }
+    if (step === 5 && capError) {
+      setError(capError);
+      return;
+    }
+    setError('');
+    setStep(n => Math.min(6, n + 1));
+  };
+
   /* ── Submit ──────────────────────────────────────────────────────────────── */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) return setError('Sınav adı zorunludur.');
-    if (!form.exam_type)   return setError('Sınav türü seçiniz.');
+    setTouched(true);
+
+    const errs = validate();
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      setError('Lütfen işaretli alanları düzeltin.');
+      setStep(1);
+      return;
+    }
+    if (capError) {
+      setError(capError);
+      setStep(4);
+      return;
+    }
 
     setSubmitting(true);
     setError('');
+
+    let examId: number | null = null;
     try {
-      const exam = await examApi.create(form);
-      for (const sess of sessions) {
-        if (sess.name.trim()) await examApi.addSession(exam.id, sess);
-      }
-      router.push(`/admin/olcme-degerlendirme/${exam.id}`);
+      const exam = await examApi.create({
+        ...form,
+        deneme_paketi: form.deneme_paketi_ids[0] ?? form.deneme_paketi,
+        rooms: rooms.filter(r => r.name.trim()),
+        manual_student_ids: manuals.map(m => m.student_id),
+        removed_auto_ids: removedAutoIds,
+        seating_mode: rooms.some(r => r.name.trim()) ? seatingMode : undefined,
+        seat_assignments: seated.map(x => ({
+          student_id: x.student_id,
+          room_name: x.room_name,
+          room_index: x.room_index,
+          seat_no: x.seat_no,
+        })),
+        sessions,
+      });
+      examId = exam.id;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Bir hata oluştu');
-    } finally {
+      setError(err instanceof Error ? err.message : 'Sınav oluşturulamadı.');
       setSubmitting(false);
+      return;
     }
+
+    router.push(`/admin/olcme-degerlendirme/${examId}`);
   };
 
-  const currentTemplate = form.exam_type ? templates[form.exam_type] : null;
+  const templateTotal = currentTemplate
+    ? currentTemplate.sections.reduce((a, sec) => a + sec.question_end - sec.question_start + 1, 0)
+    : 0;
+
+  const err = (key: string) => (touched ? fieldErrors[key] : undefined);
+
+  const inputStyle = (key: string) =>
+    err(key) ? { borderColor: 'var(--danger, #dc2626)' } : undefined;
+
+  const FieldError = ({ name }: { name: string }) =>
+    err(name)
+      ? <span style={{ fontSize: 11.5, color: 'var(--danger, #dc2626)', marginTop: 4, display: 'block' }}>{err(name)}</span>
+      : null;
 
   /* ═══════════ RENDER ═══════════ */
 
   return (
     <div className="section">
 
-      {/* ── Hero Header ──────────────────────────────────────────────────── */}
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <div className="hero-header">
         <div className="hero-content">
           <div className="hero-breadcrumb">
             <span style={{ cursor: 'pointer' }} onClick={() => router.push('/admin/olcme-degerlendirme')}>
-              Ölçme & Değerlendirme
+              Ölçme &amp; Değerlendirme
             </span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
             <span>Yeni Sınav</span>
@@ -153,7 +380,9 @@ export default function YeniSinavPage() {
             </svg>
             Yeni Sınav Oluştur
           </h1>
-          <p className="hero-subtitle">Sınav bilgilerini doldurun, bölümler şablondan otomatik oluşturulur.</p>
+          <p className="hero-subtitle">
+            Sınav türünü seçin; bölümler, alt dersler ve süre şablondan otomatik gelir.
+          </p>
         </div>
         <button className="btn-hero" onClick={() => router.push('/admin/olcme-degerlendirme')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -162,12 +391,32 @@ export default function YeniSinavPage() {
       </div>
 
       {error && (
-        <div style={{ padding: '14px 20px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, color: '#991b1b', marginBottom: 20, fontSize: 13 }}>
+        <div style={{
+          padding: '14px 20px', background: '#fef2f2', border: '1px solid #fecaca',
+          borderRadius: 10, color: '#991b1b', marginBottom: 20, fontSize: 13,
+        }}>
           <strong>Hata:</strong> {error}
         </div>
       )}
 
-      <form onSubmit={handleSubmit}>
+      <div className={s.wizardNav}>
+        {WIZARD.map(w => (
+          <button
+            key={w.n}
+            type="button"
+            className={step === w.n ? s.wizardStepOn : step > w.n ? s.wizardStepDone : s.wizardStep}
+            onClick={() => {
+              if (w.n < step || w.n === step) setStep(w.n);
+            }}
+          >
+            <span className={s.wizardNum}>{w.n}</span>
+            {w.label}
+          </button>
+        ))}
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate>
+        {step === 1 && (
         <div className={s.twoCol}>
 
           {/* ═══ SOL KOLON ═══════════════════════════════════════════════════ */}
@@ -185,17 +434,43 @@ export default function YeniSinavPage() {
                 <div className={s.formGrid}>
                   <div className={s.formGroupFull}>
                     <label>Sınav Adı *</label>
-                    <input placeholder="Örn: TYT Deneme 1" value={form.name}
-                      onChange={e => setField('name', e.target.value)} required />
+                    <input
+                      placeholder="Örn: TYT Deneme 1"
+                      value={form.name}
+                      style={inputStyle('name')}
+                      onChange={e => setField('name', e.target.value)}
+                      onBlur={() => setTouched(true)}
+                    />
+                    <FieldError name="name" />
+                    {duplicateName && !err('name') && (
+                      <span style={{ fontSize: 11.5, color: '#b45309', marginTop: 4, display: 'block' }}>
+                        Bu adla bir sınav zaten var. Karışmaması için ad ekleyebilirsiniz.
+                      </span>
+                    )}
                   </div>
+
                   <div className={s.formGroup}>
                     <label>Sınav Türü *</label>
-                    <select value={form.exam_type}
-                      onChange={e => setField('exam_type', e.target.value as ExamCreateForm['exam_type'])} required>
+                    <select
+                      value={form.exam_type}
+                      style={inputStyle('exam_type')}
+                      onChange={e => setField('exam_type', e.target.value as ExamCreateForm['exam_type'])}
+                      onBlur={() => setTouched(true)}
+                    >
                       <option value="">Seçiniz…</option>
                       {EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
+                    <FieldError name="exam_type" />
                   </div>
+
+                  <div className={s.formGroup}>
+                    <label>Toplam Süre (dk)</label>
+                    <input type="number" min={1} placeholder="165" value={form.duration_minutes}
+                      style={inputStyle('duration_minutes')}
+                      onChange={e => setField('duration_minutes', e.target.value)} />
+                    <FieldError name="duration_minutes" />
+                  </div>
+
                   <div className={s.formGroup}>
                     <label>Kitapçık Türü</label>
                     <select value={form.booklet_type}
@@ -203,11 +478,7 @@ export default function YeniSinavPage() {
                       {BOOKLET_TYPES.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
                     </select>
                   </div>
-                  <div className={s.formGroup}>
-                    <label>Toplam Süre (dk)</label>
-                    <input type="number" placeholder="135" value={form.duration_minutes}
-                      onChange={e => setField('duration_minutes', e.target.value)} />
-                  </div>
+
                   <div className={s.formGroup}>
                     <label>Yanlış Cevap Düzeltme</label>
                     <select value={form.wrong_answer_count}
@@ -218,18 +489,7 @@ export default function YeniSinavPage() {
                       <option value="5">5 yanlış → 1 doğruyu götürür</option>
                     </select>
                   </div>
-                  <div className={s.formGroup}>
-                    <label>Puan yılı</label>
-                    <select
-                      value={form.puan_yili ?? ''}
-                      onChange={e => setField('puan_yili', e.target.value ? Number(e.target.value) : null)}
-                    >
-                      <option value="">Kurum varsayılanı ({kurumDefaultYear})</option>
-                      {managedYears.map(y => (
-                        <option key={y} value={y}>{y} YKS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
-                      ))}
-                    </select>
-                  </div>
+
                   <div className={s.formGroupFull}>
                     <label>Açıklama</label>
                     <textarea style={{ minHeight: 56, resize: 'vertical' }}
@@ -240,39 +500,12 @@ export default function YeniSinavPage() {
               </div>
             </div>
 
-            {/* ─── Yayın Tarihleri ─────────────────────────────────────── */}
-            <div className="card-modern">
-              <div className="card-modern-header">
-                <h3>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                  Yayın Tarihleri
-                </h3>
-              </div>
-              <div className={s.cardBody}>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.5 }}>
-                  Sınav ve cevap anahtarı bu tarihlerde öğrencilere otomatik paylaşılacaktır.
-                </p>
-                <div className={s.formGrid}>
-                  <div className={s.formGroup}>
-                    <label>Sınav Yayın Tarihi</label>
-                    <input type="datetime-local" value={form.result_publish_date}
-                      onChange={e => setField('result_publish_date', e.target.value)} />
-                  </div>
-                  <div className={s.formGroup}>
-                    <label>Cevap Anahtarı Yayın Tarihi</label>
-                    <input type="datetime-local" value={form.answer_key_publish_date}
-                      onChange={e => setField('answer_key_publish_date', e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* ─── Oturumlar ───────────────────────────────────────────── */}
             <div className="card-modern">
               <div className="card-modern-header">
                 <h3>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  Oturumlar & Zamanlama
+                  Oturumlar &amp; Zamanlama
                 </h3>
                 <div className="card-modern-header-actions">
                   <button type="button" onClick={addSession} className="btn-modern btn-primary"
@@ -282,12 +515,21 @@ export default function YeniSinavPage() {
                 </div>
               </div>
               <div className={s.cardBody}>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.5 }}>
+                  Sınav tarihi oturumlardan alınır: en erken oturum günü sınavın tarihi olur ve
+                  takvime bu tarihle işlenir.
+                  {derivedExamDate && (
+                    <strong style={{ color: 'var(--primary)' }}>
+                      {' '}Şu anki sınav tarihi: {fmtSessionDate(derivedExamDate)}
+                    </strong>
+                  )}
+                </p>
 
                 {sessions.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-secondary)' }}>
-                    <div style={{ fontSize: 32, marginBottom: 8 }}>🕐</div>
-                    <p style={{ fontSize: 13, margin: 0, fontStyle: 'italic' }}>
-                      Henüz oturum eklenmedi. Sınav tarihleri ve saatleri oturum bazında belirlenir.
+                    <p style={{ fontSize: 13, margin: 0 }}>
+                      Henüz oturum eklenmedi. Oturum eklemezseniz sınav tarihsiz kaydedilir
+                      ve takvimde görünmez.
                     </p>
                     <button type="button" onClick={addSession} className="btn-modern btn-secondary"
                       style={{ marginTop: 12, padding: '8px 16px', fontSize: 12 }}>
@@ -302,18 +544,28 @@ export default function YeniSinavPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span className={s.sessionOrder}>{idx + 1}</span>
                         <span className={s.sessionName}>{sess.name || `${idx + 1}. Oturum`}</span>
+                        {sess.session_date && (
+                          <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                            {fmtSessionDate(sess.session_date)}
+                            {sess.start_time && ` · ${sess.start_time}`}
+                          </span>
+                        )}
                       </div>
                       <button type="button" onClick={() => removeSession(idx)}
-                        style={{ background: 'none', border: '1px solid #fecaca', borderRadius: 6, color: 'var(--danger)', cursor: 'pointer', fontSize: 12, padding: '4px 10px' }}>
-                        ✕ Kaldır
+                        style={{
+                          background: 'none', border: '1px solid #fecaca', borderRadius: 6,
+                          color: 'var(--danger)', cursor: 'pointer', fontSize: 12, padding: '4px 10px',
+                        }}>
+                        Kaldır
                       </button>
                     </div>
 
-                    {/* Satır 1: Ad, Tarih, Süre */}
                     <div className={s.sessionFormGrid}>
                       <div className={s.formGroup}>
-                        <label>Oturum Adı</label>
-                        <input value={sess.name} onChange={e => updateSession(idx, 'name', e.target.value)}
+                        <label>Oturum Adı *</label>
+                        <input value={sess.name}
+                          onChange={e => updateSession(idx, 'name', e.target.value)}
+                          onBlur={() => setTouched(true)}
                           placeholder="1. Oturum" />
                       </div>
                       <div className={s.formGroup}>
@@ -323,12 +575,12 @@ export default function YeniSinavPage() {
                       </div>
                       <div className={s.formGroup}>
                         <label>Süre (dk)</label>
-                        <input type="number" value={sess.duration_minutes}
-                          onChange={e => updateSession(idx, 'duration_minutes', e.target.value)} placeholder="75" />
+                        <input type="number" min={1} value={sess.duration_minutes}
+                          onChange={e => updateSession(idx, 'duration_minutes', e.target.value)}
+                          placeholder="75" />
                       </div>
                     </div>
 
-                    {/* Satır 2: Başlangıç, Bitiş, Tercih */}
                     <div className={s.sessionFormGrid} style={{ marginTop: 10 }}>
                       <div className={s.formGroup}>
                         <label>Başlangıç</label>
@@ -336,7 +588,7 @@ export default function YeniSinavPage() {
                           onChange={e => updateSession(idx, 'start_time', e.target.value)} />
                       </div>
                       <div className={s.formGroup}>
-                        <label>Bitiş</label>
+                        <label>Bitiş <span style={{ fontWeight: 400, textTransform: 'none' }}>(otomatik)</span></label>
                         <input type="time" value={sess.end_time}
                           onChange={e => updateSession(idx, 'end_time', e.target.value)} />
                       </div>
@@ -353,109 +605,72 @@ export default function YeniSinavPage() {
                         </div>
                       </div>
                     </div>
+
+                    <FieldError name={`session_${idx}`} />
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* ─── Sınıf / Grup Seçimi ─────────────────────────────────── */}
+            {/* ─── Yayın & Puanlama ────────────────────────────────────── */}
             <div className="card-modern">
               <div className="card-modern-header">
                 <h3>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                  Sınıf / Grup Seçimi
-                </h3>
-                {form.sinif_ids.length > 0 && (
-                  <div className="card-modern-header-actions">
-                    <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 600 }}>
-                      {form.sinif_ids.length} seçili
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div className={s.cardBody}>
-                {/* Seviye Filtresi */}
-                {sinifSeviyeleri.length > 0 && (
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.3px' }}>
-                      Sınıf Düzeyi Filtresi
-                    </label>
-                    <div className={s.chipGroup}>
-                      <button type="button"
-                        className={seviyeFilter === '' ? s.chipActive : s.chip}
-                        onClick={() => setSeviyeFilter('')}>
-                        Tümü
-                      </button>
-                      {sinifSeviyeleri.map(sv => (
-                        <button type="button" key={sv.id}
-                          className={seviyeFilter === sv.id ? s.chipActive : s.chip}
-                          onClick={() => setSeviyeFilter(sv.id)}>
-                          {sv.ad}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {filteredSiniflar.length === 0 ? (
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>
-                    Aktif dönemde tanımlı sınıf bulunamadı.
-                  </p>
-                ) : (
-                  <>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.3px' }}>
-                      Sınıflar <span style={{ fontWeight: 400, textTransform: 'none' }}>(birden fazla seçilebilir)</span>
-                    </label>
-                    <div className={s.chipGroup}>
-                      {filteredSiniflar.map(si => (
-                        <button key={si.id} type="button"
-                          className={form.sinif_ids.includes(si.id) ? s.chipActive : s.chip}
-                          onClick={() => toggleSinif(si.id)}>
-                          {si.ad}
-                          {si.seviye_ad && <span style={{ fontSize: 10, opacity: .7, marginLeft: 4 }}>({si.seviye_ad})</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* ─── Deneme Hizmeti / Paketi ─────────────────────────────── */}
-            <div className="card-modern">
-              <div className="card-modern-header">
-                <h3>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                  Deneme Hizmeti & Paketi
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  Yayın Tarihleri &amp; Puanlama
                 </h3>
               </div>
               <div className={s.cardBody}>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.5 }}>
+                  Sonuç yayın tarihi kaydedildiğinde velilere sonuç bildirimi tetiklenir.
+                  Bu tarihler öğrenci ekranındaki görünürlüğü <strong>kısıtlamaz</strong>;
+                  sonuçlar yüklendiği anda öğrenciye açıktır.
+                </p>
                 <div className={s.formGrid}>
                   <div className={s.formGroup}>
-                    <label>Deneme Hizmeti</label>
-                    <select value={form.deneme_hizmeti ?? ''}
-                      onChange={e => setField('deneme_hizmeti', e.target.value ? Number(e.target.value) : null)}>
-                      <option value="">Seçilmedi</option>
-                      {denemeHizmetleri.map(h => <option key={h.id} value={h.id}>{h.ad}</option>)}
-                    </select>
+                    <label>Sonuç Yayın Tarihi</label>
+                    <input type="datetime-local" value={form.result_publish_date}
+                      onChange={e => setField('result_publish_date', e.target.value)} />
                   </div>
                   <div className={s.formGroup}>
-                    <label>Deneme Paketi</label>
-                    <select value={form.deneme_paketi ?? ''}
-                      onChange={e => setField('deneme_paketi', e.target.value ? Number(e.target.value) : null)}>
-                      <option value="">Seçilmedi</option>
-                      {denemePaketleri.map(p => (
-                        <option key={p.id} value={p.id}>{p.ad} ({p.deneme_sayisi} sınav)</option>
+                    <label>Cevap Anahtarı Yayın Tarihi</label>
+                    <input type="datetime-local" value={form.answer_key_publish_date}
+                      style={inputStyle('answer_key_publish_date')}
+                      onChange={e => setField('answer_key_publish_date', e.target.value)} />
+                    <FieldError name="answer_key_publish_date" />
+                  </div>
+                  <div className={s.formGroup}>
+                    <label>Puan Yılı</label>
+                    <select
+                      value={form.puan_yili ?? ''}
+                      onChange={e => setField('puan_yili', e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">Kurum varsayılanı ({kurumDefaultYear})</option>
+                      {managedYears.map(y => (
+                        <option key={y} value={y}>{y} YKS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
                       ))}
                     </select>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginTop: 14 }}>
+                  <label className={s.checkRow}>
+                    <input type="checkbox" checked={form.per_section_penalty}
+                      onChange={e => setField('per_section_penalty', e.target.checked)} />
+                    Bölüm bazlı ceza uygula
+                  </label>
+                  <label className={s.checkRow}>
+                    <input type="checkbox" checked={form.booklet_auto_detect}
+                      onChange={e => setField('booklet_auto_detect', e.target.checked)} />
+                    Kitapçık otomatik tespit
+                  </label>
                 </div>
               </div>
             </div>
 
           </div>
 
-          {/* ═══ SAĞ KOLON (Sidebar) ═════════════════════════════════════════ */}
+          {/* ═══ SAĞ KOLON ═══════════════════════════════════════════════════ */}
           <div className={s.sidebar}>
 
             {/* Şablon Önizleme */}
@@ -463,20 +678,27 @@ export default function YeniSinavPage() {
               <div className="card-modern-header">
                 <h3>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  Şablon Önizleme
+                  Bölüm Şablonu
                 </h3>
               </div>
               <div className={s.cardBody}>
                 <label className={s.checkRow} style={{ marginBottom: 14 }}>
                   <input type="checkbox" checked={form.apply_template}
                     onChange={e => setField('apply_template', e.target.checked)} />
-                  Şablonu otomatik uygula
+                  Bölümleri otomatik oluştur
                 </label>
+
+                {!form.apply_template && (
+                  <p style={{ fontSize: 12, color: '#b45309', margin: '0 0 12px', lineHeight: 1.5 }}>
+                    Kapalıyken sınav bölümsüz oluşur; cevap anahtarı girmeden önce
+                    bölümleri elle eklemeniz gerekir.
+                  </p>
+                )}
 
                 {currentTemplate && currentTemplate.sections.length > 0 ? (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 10, padding: '0 2px', textTransform: 'uppercase', letterSpacing: '.3px', fontWeight: 600 }}>
-                      <span>Toplam: {currentTemplate.sections.reduce((a, sec) => a + sec.question_end - sec.question_start + 1, 0)} soru</span>
+                      <span>Toplam: {templateTotal} soru</span>
                       <span>Süre: {currentTemplate.duration} dk</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -510,36 +732,17 @@ export default function YeniSinavPage() {
                         );
                       })}
                     </div>
+                    <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', margin: '12px 0 0', lineHeight: 1.5 }}>
+                      Alt dersler kazanım eşleştirmesi için müfredat derslerine otomatik bağlanır.
+                    </p>
                   </>
                 ) : (
-                  <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', margin: 0 }}>
                     {form.exam_type
-                      ? 'Bu sınav türü için özel şablon yok.'
+                      ? 'Bu sınav türünde hazır bölüm yok; bölümleri sınav detayında elle ekleyeceksiniz.'
                       : 'Sınav türü seçildiğinde bölümler burada görünecek.'}
                   </p>
                 )}
-              </div>
-            </div>
-
-            {/* Puanlama */}
-            <div className="card-modern">
-              <div className="card-modern-header">
-                <h3>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
-                  Puanlama
-                </h3>
-              </div>
-              <div className={s.cardBody}>
-                <label className={s.checkRow}>
-                  <input type="checkbox" checked={form.per_section_penalty}
-                    onChange={e => setField('per_section_penalty', e.target.checked)} />
-                  Bölüm bazlı ceza uygula
-                </label>
-                <label className={s.checkRow} style={{ marginTop: 10 }}>
-                  <input type="checkbox" checked={form.booklet_auto_detect}
-                    onChange={e => setField('booklet_auto_detect', e.target.checked)} />
-                  Kitapçık otomatik tespit
-                </label>
               </div>
             </div>
 
@@ -554,48 +757,323 @@ export default function YeniSinavPage() {
                   </span>
                 </div>
                 <div className={s.summaryRow}>
+                  <span>Bölüm / Soru</span>
+                  <span className={s.summaryVal}>
+                    {form.apply_template && currentTemplate
+                      ? `${currentTemplate.sections.length} / ${templateTotal}`
+                      : '—'}
+                  </span>
+                </div>
+                <div className={s.summaryRow}>
                   <span>Süre</span>
                   <span className={s.summaryVal}>{form.duration_minutes || '—'} dk</span>
                 </div>
                 <div className={s.summaryRow}>
-                  <span>Sınıflar</span>
-                  <span className={s.summaryVal}>{form.sinif_ids.length || '—'}</span>
+                  <span>Sınav Tarihi</span>
+                  <span className={s.summaryVal}>
+                    {derivedExamDate ? fmtSessionDate(derivedExamDate) : 'Tarihsiz'}
+                  </span>
                 </div>
                 <div className={s.summaryRow}>
-                  <span>Oturumlar</span>
-                  <span className={s.summaryVal}>{sessions.length || 'Tek oturum'}</span>
+                  <span>Oturum</span>
+                  <span className={s.summaryVal}>{sessions.length || '—'}</span>
+                </div>
+                <div className={s.summaryRow}>
+                  <span>Sınıf</span>
+                  <span className={s.summaryVal}>{form.sinif_ids.length || '—'}</span>
                 </div>
                 <div className={s.summaryRow}>
                   <span>Yanlış Düzeltme</span>
                   <span className={s.summaryVal}>
-                    {form.wrong_answer_count === '0' ? 'Ceza Yok' : `${form.wrong_answer_count} yanlış → 1 doğru`}
+                    {form.wrong_answer_count === '0' ? 'Ceza Yok' : `${form.wrong_answer_count} → 1`}
                   </span>
                 </div>
                 <div className={s.summaryRow}>
-                  <span>Puan yılı</span>
+                  <span>Puan Yılı</span>
                   <span className={s.summaryVal}>
-                    {form.puan_yili ? `${form.puan_yili} YKS` : `Kurum varsayılanı (${kurumDefaultYear})`}
+                    {form.puan_yili ? `${form.puan_yili} YKS` : `Varsayılan (${kurumDefaultYear})`}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Gönder */}
-            <button type="submit" disabled={submitting} className="btn-modern btn-primary"
+            <button type="button" onClick={goNext} className="btn-modern btn-primary"
               style={{
                 width: '100%', justifyContent: 'center', padding: '14px 20px',
-                fontSize: 15, opacity: submitting ? .6 : 1,
-                cursor: submitting ? 'not-allowed' : 'pointer',
+                fontSize: 15,
               }}>
-              {submitting ? 'Oluşturuluyor…' : (
-                <>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                  Sınavı Oluştur
-                </>
-              )}
+              Katılımcılara geç
             </button>
+
+            <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
+              Sonraki adımlarda seviye, paket, salon ve oturma düzenini belirlersiniz.
+            </p>
           </div>
         </div>
+        )}
+
+        {step === 2 && (
+          <div className={r.page}>
+            <div className={r.hero}>
+              <div className={r.heroCopy}>
+                <h2>Kimler girecek?</h2>
+                <p>
+                  Sınıf, seviye ve deneme paketini dilediğiniz gibi birleştirin.
+                  Aynı öğrenci bir kez gelir. Seviye + paket birlikte seçilirse kesişim alınır;
+                  konu tarama için yalnız sınıf yeter.
+                </p>
+              </div>
+              <div className={r.stats} style={{ minWidth: 280 }}>
+                <div className={r.stat}><span className={r.statValue}>{form.sinif_ids.length}</span><span className={r.statLabel}>Sınıf</span></div>
+                <div className={r.stat}><span className={r.statValue}>{form.sinif_seviyesi_ids.length}</span><span className={r.statLabel}>Seviye</span></div>
+                <div className={r.stat}><span className={r.statValue}>{form.deneme_paketi_ids.length}</span><span className={r.statLabel}>Paket</span></div>
+              </div>
+            </div>
+            <div className={r.grid3}>
+              <section className={r.card}>
+                <div className={r.cardHead}>
+                  <div>
+                    <h3>Seviye</h3>
+                    <p>Sınıfsız kayıtlar da bu seviyeye yazılır.</p>
+                  </div>
+                </div>
+                <div className={r.cardBody}>
+                  <div className={r.choiceGrid}>
+                    {sinifSeviyeleri.map(sv => (
+                      <button key={sv.id} type="button"
+                        className={form.sinif_seviyesi_ids.includes(sv.id) ? r.choiceOn : r.choice}
+                        onClick={() => toggleSeviye(sv.id)}>
+                        {sv.ad}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </section>
+              <section className={r.card}>
+                <div className={r.cardHead}>
+                  <div>
+                    <h3>Sınıflar</h3>
+                    <p>Somut şube sınıfları.</p>
+                  </div>
+                </div>
+                <div className={r.cardBody}>
+                  <div className={r.filterRow}>
+                    <button type="button" className={seviyeFilter === '' ? r.filterOn : r.filter} onClick={() => setSeviyeFilter('')}>Tümü</button>
+                    {sinifSeviyeleri.map(sv => (
+                      <button key={sv.id} type="button"
+                        className={seviyeFilter === sv.id ? r.filterOn : r.filter}
+                        onClick={() => setSeviyeFilter(sv.id)}>
+                        {sv.ad}
+                      </button>
+                    ))}
+                  </div>
+                  <div className={r.choiceGrid}>
+                    {filteredSiniflar.map(si => (
+                      <button key={si.id} type="button"
+                        className={form.sinif_ids.includes(si.id) ? r.choiceOn : r.choice}
+                        onClick={() => toggleSinif(si.id)}>
+                        {si.ad}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </section>
+              <section className={r.card}>
+                <div className={r.cardHead}>
+                  <div>
+                    <h3>Deneme paketi</h3>
+                    <p>Paketi olan öğrenciler (Deneme Kulübü dahil).</p>
+                  </div>
+                </div>
+                <div className={r.cardBody}>
+                  <div className={r.choiceGrid}>
+                    {denemePaketleri.map(p => (
+                      <button key={p.id} type="button"
+                        className={form.deneme_paketi_ids.includes(p.id) ? r.choiceOn : r.choice}
+                        onClick={() => togglePaket(p.id)}>
+                        {p.ad}
+                      </button>
+                    ))}
+                    {denemePaketleri.length === 0 && (
+                      <p className={r.meta}>Bu şubede tanımlı deneme paketi yok.</p>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className={r.page}>
+            <div className={r.hero}>
+              <div className={r.heroCopy}>
+                <h2>Katılımcı listesi</h2>
+                <p>
+                  Kitle kurallarına uyan öğrenciler. Çıkardığınız kayıtlar oluşturulmaz;
+                  eksik kalanı sınav kaydından sonra Katılımcılar sekmesinden eklersiniz.
+                </p>
+              </div>
+              <div className={r.stat}>
+                <span className={r.statValue}>{roster.length}</span>
+                <span className={r.statLabel}>öğrenci</span>
+              </div>
+            </div>
+            <section className={r.card}>
+              <div className={r.cardBody}>
+                {previewLoading ? <p className={r.meta}>Liste hazırlanıyor…</p> : roster.length === 0 ? (
+                  <div className={r.empty}>
+                    <b>Henüz öğrenci yok</b>
+                    Bir önceki adımda sınıf, seviye veya paket seçin.
+                  </div>
+                ) : (
+                  <div className={r.list}>
+                    {roster.map((st, idx) => (
+                      <div key={st.student_id} className={r.row}>
+                        <span className={r.seat}>{idx + 1}</span>
+                        <div>
+                          <div className={r.name}>{st.full_name}</div>
+                          <div className={r.meta}>{st.okul_no ? `#${st.okul_no} · ` : ''}{st.sinif || st.sinif_seviyesi || 'Sınıfsız'}</div>
+                        </div>
+                        <span className={r.meta}>{st.source === 'manual' ? 'Manuel' : 'Otomatik'}</span>
+                        <button type="button" className={r.ghost} onClick={() => {
+                          if (manuals.some(m => m.student_id === st.student_id)) {
+                            setManuals(p => p.filter(m => m.student_id !== st.student_id));
+                          } else {
+                            setRemovedAutoIds(p => [...new Set([...p, st.student_id])]);
+                          }
+                        }}>Çıkar</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className={r.page}>
+            <div className={r.hero}>
+              <div className={r.heroCopy}>
+                <h2>Salonlar</h2>
+                <p>{roster.length} öğrenci yerleştirilecek. Toplam kapasite {totalCap} olmalı.</p>
+              </div>
+              <div className={r.stat}>
+                <span className={r.statValue}>{totalCap}</span>
+                <span className={r.statLabel}>kişilik</span>
+              </div>
+            </div>
+            {capError && <div className={s.capWarn}>{capError}</div>}
+            <section className={r.card}>
+              <div className={r.cardBody}>
+                {rooms.map((room, i) => (
+                  <div key={i} className={r.roomEdit}>
+                    <div className={s.formGroup}>
+                      <label>Salon adı</label>
+                      <input value={room.name}
+                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, name: e.target.value } : item))} />
+                    </div>
+                    <div className={s.formGroup}>
+                      <label>Kapasite</label>
+                      <input type="number" min={1} value={room.capacity}
+                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, capacity: Number(e.target.value) || 1 } : item))} />
+                    </div>
+                    <button type="button" className={r.ghost} onClick={() => setRooms(p => p.filter((_, j) => j !== i))}>×</button>
+                  </div>
+                ))}
+                <button type="button" className="btn-modern btn-secondary"
+                  onClick={() => setRooms(p => [...p, { name: `Salon ${p.length + 1}`, capacity: 30, order: p.length }])}>
+                  + Salon ekle
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {step === 5 && (
+          <div className={r.page}>
+            <div className={r.hero}>
+              <div className={r.heroCopy}>
+                <h2>Oturma düzeni</h2>
+                <p>Kuralı seçin, listeyi görün. Beğenmezseniz yeniden karıştırın — kayıtta bu düzen kullanılır.</p>
+              </div>
+              <button type="button" className="btn-modern btn-primary" onClick={() => setSeatingTick(n => n + 1)}>
+                Yeniden karıştır
+              </button>
+            </div>
+            {capError && <div className={s.capWarn}>{capError}</div>}
+            <div className={r.modeGrid}>
+              {([
+                ['shuffle', 'Karışık', 'Salonlara rastgele dağıtılır.'],
+                ['cross', 'Çapraz', 'Seviye / paket karışık oturur.'],
+                ['sequential', 'Sıralı', 'Ada göre A’dan Z’ye.'],
+              ] as const).map(([mode, title, desc]) => (
+                <button key={mode} type="button"
+                  className={seatingMode === mode ? r.modeOn : r.mode}
+                  onClick={() => setSeatingMode(mode)}>
+                  <b>{title}</b>
+                  <small>{desc}</small>
+                </button>
+              ))}
+            </div>
+            {seatedByRoom.length === 0 ? (
+              <div className={r.empty}><b>Yerleşecek öğrenci yok</b>Önce liste ve salon ekleyin.</div>
+            ) : seatedByRoom.map(([roomName, items]) => (
+              <section key={roomName} className={r.roomBlock}>
+                <div className={r.roomHead}>
+                  <strong>{roomName}</strong>
+                  <span>{items.length} öğrenci</span>
+                </div>
+                <div className={r.list}>
+                  {items.map(st => (
+                    <div key={st.student_id} className={r.row}>
+                      <span className={r.seat}>{st.seat_no}</span>
+                      <div>
+                        <div className={r.name}>{st.full_name}</div>
+                        <div className={r.meta}>{st.sinif || st.sinif_seviyesi || '—'}</div>
+                      </div>
+                      <span className={r.meta}>{roomName}</span>
+                      <span />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+
+        {step === 6 && (
+          <div className={s.summaryCard}>
+            <h3 className={s.summaryTitle}>Kayıt özeti</h3>
+            <div className={s.summaryRow}><span>Sınav</span><span className={s.summaryVal}>{form.name || '—'}</span></div>
+            <div className={s.summaryRow}><span>Tür</span><span className={s.summaryVal}>{form.exam_type ? EXAM_TYPES.find(t => t.value === form.exam_type)?.label : '—'}</span></div>
+            <div className={s.summaryRow}><span>Katılımcı</span><span className={s.summaryVal}>{roster.length}</span></div>
+            <div className={s.summaryRow}><span>Sınıf</span><span className={s.summaryVal}>{form.sinif_ids.length || '—'}</span></div>
+            <div className={s.summaryRow}><span>Seviye</span><span className={s.summaryVal}>{form.sinif_seviyesi_ids.length || '—'}</span></div>
+            <div className={s.summaryRow}><span>Paket</span><span className={s.summaryVal}>{form.deneme_paketi_ids.length || '—'}</span></div>
+            <div className={s.summaryRow}><span>Salon</span><span className={s.summaryVal}>{rooms.filter(r => r.name.trim()).length} · {totalCap} kişilik</span></div>
+            <div className={s.summaryRow}><span>Oturma</span><span className={s.summaryVal}>{seatingMode === 'cross' ? 'Çapraz' : seatingMode === 'sequential' ? 'Sıralı' : 'Karışık'}</span></div>
+            {capError && <div className={s.capWarn} style={{ marginTop: 12 }}>{capError}</div>}
+            <button type="submit" disabled={submitting || !!capError} className="btn-modern btn-primary"
+              style={{ width: '100%', justifyContent: 'center', marginTop: 16, padding: '14px 20px', fontSize: 15, opacity: submitting ? .6 : 1 }}>
+              {submitting ? 'Oluşturuluyor…' : 'Sınavı oluştur'}
+            </button>
+          </div>
+        )}
+
+        {step > 1 && (
+          <div className={s.wizardActions}>
+            <button type="button" className="btn-modern btn-secondary" onClick={() => setStep(n => n - 1)}>
+              Geri
+            </button>
+            {step < 6 && (
+              <button type="button" className="btn-modern btn-primary" onClick={goNext}>
+                İleri
+              </button>
+            )}
+          </div>
+        )}
       </form>
     </div>
   );

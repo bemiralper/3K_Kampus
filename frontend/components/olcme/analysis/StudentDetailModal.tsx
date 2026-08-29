@@ -28,6 +28,12 @@ function verimColor(v: number) {
   return '#dc2626';
 }
 
+function basariClass(p: number) {
+  if (p >= 80) return s.karneOk;
+  if (p > 0) return s.karneMuted;
+  return s.karneBelow;
+}
+
 function diffLabel(n: number) {
   if (Math.abs(n) < 0.05) return { text: '—', cls: s.karneMuted };
   if (n > 0) return { text: `+${n.toFixed(1)}`, cls: s.karnePos };
@@ -256,6 +262,8 @@ export default function StudentDetailModal({
         .${s.studentDetailModal} { box-shadow: none !important; max-height: none !important; overflow: visible !important; max-width: 100% !important; width: 100% !important; background: #fff !important; }
         .${s.karnePage} { page-break-after: always; }
         .${s.karnePage}:last-child { page-break-after: auto; }
+        .${s.karneTopicPage} { page-break-after: auto; }
+        .${s.karneTopicTable} { break-inside: avoid; page-break-inside: avoid; }
       </style></head><body>${node.outerHTML}</body></html>`);
     printWin.document.close();
     setTimeout(() => { printWin.print(); }, 400);
@@ -557,7 +565,8 @@ export default function StudentDetailModal({
             </div>
 
             {!!detail.topic_blocks?.length && (
-              <div className={s.karnePage}>
+              <div className={`${s.karnePage} ${s.karneTopicPage}`}>
+                <div className={s.karneSectionTitle}>Konu / Kazanım Analizi</div>
                 <div className={s.karneTopicCols}>
                   {[topicLeft, topicRight].map((col, ci) => (
                     <div key={ci}>
@@ -584,7 +593,7 @@ export default function StudentDetailModal({
                                       <td>{row.dogru}</td>
                                       <td>{row.yanlis}</td>
                                       <td>{row.bos}</td>
-                                      <td>{row.basari}</td>
+                                      <td className={basariClass(row.basari)}>{row.basari}</td>
                                     </tr>
                                   ))}
                                 </tbody>

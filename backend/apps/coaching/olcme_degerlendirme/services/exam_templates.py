@@ -9,6 +9,8 @@ Her sınav türü için:
 """
 from __future__ import annotations
 
+from .okulizyon_import import SECTION_SUBJECT_MAP as _SECTION_SUBJECT_MAP
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  ŞABLON VERİSİ
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,7 +118,7 @@ _SUB_SECTIONS: dict[str, dict[str, list[tuple]]] = {
 }
 
 _DEFAULT_DURATIONS: dict[str, int] = {
-    'YKS_TYT':     135,
+    'YKS_TYT':     165,
     'YKS_AYT':     180,
     'LGS':         115,
     'DENEME':      135,
@@ -178,57 +180,7 @@ def get_default_duration(exam_type: str) -> int:
 # Subject tablosunda yoksa otomatik oluşturulur.
 #
 # Kazanım yönetimi için Subject bağlantısı zorunludur.
-# Bu harita sayesinde kullanıcının her sınavda elle ders bağlamasına gerek kalmaz.
-
-_SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
-    'YKS_TYT': {
-        # alt bölüm adı → (code, görünen ad, exam_type_filter)
-        'Türkçe':         ('TURKCE_TYT',     'Türkçe',          'YKS_TYT'),
-        'Tarih':          ('TARIH_TYT',      'Tarih',           'YKS_TYT'),
-        'Coğrafya':       ('COGRAFYA_TYT',   'Coğrafya',        'YKS_TYT'),
-        'Felsefe':        ('FELSEFE_TYT',    'Felsefe',         'YKS_TYT'),
-        'Din Kültürü':    ('DINKUL_TYT',     'Din Kültürü',     'YKS_TYT'),
-        'Matematik':      ('MAT_TYT',        'Matematik',       'YKS_TYT'),
-        'Geometri':       ('GEO_TYT',        'Geometri',        'YKS_TYT'),
-        'Fizik':          ('FIZ_TYT',        'Fizik',           'YKS_TYT'),
-        'Kimya':          ('KIM_TYT',        'Kimya',           'YKS_TYT'),
-        'Biyoloji':       ('BIO_TYT',        'Biyoloji',        'YKS_TYT'),
-    },
-    'YKS_AYT': {
-        'Türk Dili ve Edebiyatı':          ('TDE_AYT',      'Türk Dili ve Edebiyatı', 'YKS_AYT'),
-        'Tarih-1':                          ('TARIH1_AYT',   'Tarih-1',                'YKS_AYT'),
-        'Coğrafya-1':                       ('COG1_AYT',     'Coğrafya-1',             'YKS_AYT'),
-        'Tarih-2':                          ('TARIH2_AYT',   'Tarih-2',                'YKS_AYT'),
-        'Coğrafya-2':                       ('COG2_AYT',     'Coğrafya-2',             'YKS_AYT'),
-        'Felsefe Grubu':                    ('FELSEFE_AYT',  'Felsefe Grubu',          'YKS_AYT'),
-        'Din Kültürü ve Ahlak Bilgisi':     ('DKAB_AYT',     'Din Kültürü ve Ahlak Bilgisi', 'YKS_AYT'),
-        'Matematik':                        ('MAT_AYT',      'Matematik',              'YKS_AYT'),
-        'Geometri':                         ('GEO_AYT',      'Geometri',               'YKS_AYT'),
-        'Fizik':                            ('FIZ_AYT',      'Fizik',                  'YKS_AYT'),
-        'Kimya':                            ('KIM_AYT',      'Kimya',                  'YKS_AYT'),
-        'Biyoloji':                         ('BIO_AYT',      'Biyoloji',               'YKS_AYT'),
-    },
-    'LGS': {
-        'Türkçe':          ('TURKCE_LGS',    'Türkçe',          'LGS'),
-        'İnkılap Tarihi':  ('INKILAP_LGS',   'İnkılap Tarihi',  'LGS'),
-        'Din Kültürü':     ('DINKUL_LGS',    'Din Kültürü',     'LGS'),
-        'Yabancı Dil':     ('YABDIL_LGS',    'Yabancı Dil',     'LGS'),
-        'Matematik':       ('MAT_LGS',       'Matematik',       'LGS'),
-        'Fen Bilimleri':   ('FEN_LGS',       'Fen Bilimleri',   'LGS'),
-    },
-    'DENEME': {
-        'Türkçe':         ('TURKCE_TYT',     'Türkçe',          'YKS_TYT'),
-        'Tarih':          ('TARIH_TYT',      'Tarih',           'YKS_TYT'),
-        'Coğrafya':       ('COGRAFYA_TYT',   'Coğrafya',        'YKS_TYT'),
-        'Felsefe':        ('FELSEFE_TYT',    'Felsefe',         'YKS_TYT'),
-        'Din Kültürü':    ('DINKUL_TYT',     'Din Kültürü',     'YKS_TYT'),
-        'Matematik':      ('MAT_TYT',        'Matematik',       'YKS_TYT'),
-        'Geometri':       ('GEO_TYT',        'Geometri',        'YKS_TYT'),
-        'Fizik':          ('FIZ_TYT',        'Fizik',           'YKS_TYT'),
-        'Kimya':          ('KIM_TYT',        'Kimya',           'YKS_TYT'),
-        'Biyoloji':       ('BIO_TYT',        'Biyoloji',        'YKS_TYT'),
-    },
-}
+# Harita: okulizyon_import.SECTION_SUBJECT_MAP
 
 
 def _auto_link_subjects(exam, sections: list) -> None:

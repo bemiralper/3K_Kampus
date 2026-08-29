@@ -124,6 +124,17 @@
   color: #fff;
 }
 
+.ok-filter-chip.is-info {
+  border-color: #5eead4;
+  color: #0f766e;
+}
+
+.ok-filter-chip.is-info.is-active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
 .ok-toolbar {
   background: #fff;
   padding: 14px 18px;
@@ -1381,6 +1392,13 @@
   border-color: #fcd34d;
   background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
   color: #92400e;
+  align-items: center;
+}
+
+.ok-control-lock-banner.is-opened {
+  border-color: #5eead4;
+  background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);
+  color: #115e59;
   align-items: center;
 }
 

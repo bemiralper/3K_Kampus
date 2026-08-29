@@ -10,9 +10,7 @@ DATUploadViewSet:
 """
 import json
 import logging
-import unicodedata
 from collections import Counter
-from difflib import SequenceMatcher
 
 from django.db import transaction
 from rest_framework import status as http_status
@@ -32,115 +30,25 @@ from ..serializers.result import (
 )
 from ..views import CsrfExemptSessionAuthentication
 from ..interfaces.sube_context import get_exam_or_response
+from ..services.student_matching import (
+    DatIdentity,
+    attach_match_hints,
+    exam_student_pool,
+    identity_from_raw,
+    pick_auto_match,
+    rank_candidates,
+    refresh_session_counts,
+    search_pool,
+    taken_student_ids,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _normalize_name(name: str) -> str:
-    """Türkçe karakter ve büyük/küçük harf normalleştirme."""
-    if not name:
-        return ''
-    # Küçük harfe çevir
-    s = name.strip().lower()
-    # Türkçe karakterleri ASCII'ye dönüştür
-    tr_map = str.maketrans('çğıöşü', 'cgiosu')
-    s = s.translate(tr_map)
-    # Birden fazla boşluğu teke indir
-    return ' '.join(s.split())
-
-
-def _name_similarity(name_a: str, name_b: str) -> float:
-    """İki isim arasındaki benzerlik skoru (0.0 — 1.0).
-    Ad+Soyad sırasını da göz önüne alır (ters çevrili).
-    """
-    na = _normalize_name(name_a)
-    nb = _normalize_name(name_b)
-    if not na or not nb:
-        return 0.0
-    # Normal karşılaştırma
-    sim = SequenceMatcher(None, na, nb).ratio()
-    # Ters çevrilmiş karşılaştırma (ad soyad ↔ soyad ad)
-    parts_b = nb.split()
-    if len(parts_b) >= 2:
-        nb_reversed = ' '.join(parts_b[-1:] + parts_b[:-1])
-        sim_rev = SequenceMatcher(None, na, nb_reversed).ratio()
-        sim = max(sim, sim_rev)
-    return sim
-
-
-def _match_student(
-    tc: str, sid: str, name_raw: str,
-    ogrenci_by_tc: dict, ogrenci_by_id: dict,
-    ogrenci_list: list, used_student_ids: set,
-) -> tuple:
-    """
-    Öğrenci eşleştirme — öncelik sırası:
-      1. TC Kimlik (kesin eşleşme, skor=1.0)
-      2. Ad Soyad (tam eşleşme, skor=1.0)
-      3. Öğrenci No / PK (kesin eşleşme, skor=1.0)
-      4. Ad Soyad benzerliği (fuzzy, skor >= 0.82)
-
-    Returns: (matched_student, match_score, match_method)
-    """
-    matched_student = None
-    match_score = 0.0
-    match_method = ''
-
-    # ─ Adım 1: TC kimlik ile kesin eşleştirme
-    if tc:
-        matched_student = ogrenci_by_tc.get(tc.strip())
-        if matched_student:
-            match_score = 1.0
-            match_method = 'tc'
-
-    # ─ Adım 2: Ad Soyad tam eşleşme (normalize edilmiş)
-    if not matched_student and name_raw:
-        name_norm = _normalize_name(name_raw)
-        if name_norm:
-            for ogr in ogrenci_list:
-                if ogr.pk in used_student_ids:
-                    continue
-                ogr_norm = _normalize_name(f'{ogr.ad} {ogr.soyad}')
-                if name_norm == ogr_norm:
-                    matched_student = ogr
-                    match_score = 1.0
-                    match_method = 'name_exact'
-                    break
-
-    # ─ Adım 3: Öğrenci numarası (PK) ile eşleştirme
-    if not matched_student and sid:
-        matched_student = ogrenci_by_id.get(sid.strip())
-        if matched_student:
-            match_score = 1.0
-            match_method = 'id'
-
-    # ─ Adım 4: İsim benzerliği (fuzzy) — eşik %82
-    if not matched_student and name_raw:
-        best_ogr = None
-        best_sim = 0.0
-        for ogr in ogrenci_list:
-            if ogr.pk in used_student_ids:
-                continue
-            full_name = f'{ogr.ad} {ogr.soyad}'
-            sim = _name_similarity(name_raw, full_name)
-            if sim > best_sim:
-                best_sim = sim
-                best_ogr = ogr
-        if best_ogr and best_sim >= 0.82:
-            matched_student = best_ogr
-            match_score = round(best_sim, 2)
-            match_method = 'name'
-
-    # ─ Duplicate kontrolü
-    if matched_student and matched_student.pk in used_student_ids:
-        matched_student = None
-        match_score = 0.0
-        match_method = ''
-
-    if matched_student:
-        used_student_ids.add(matched_student.pk)
-
-    return matched_student, match_score, match_method
+def _ogrenci_map(pool):
+    from apps.ogrenci.domain.models import Ogrenci
+    ids = [rec.pk for rec in pool]
+    return {o.pk: o for o in Ogrenci.objects.filter(pk__in=ids)}
 
 
 def _build_ordered_section_nets(section_scores_data: dict, sections: list, sub_sections: list) -> dict:
@@ -612,29 +520,16 @@ def parse_dat(request, exam_pk, session_pk):
     wrong_penalty = exam.wrong_answer_count
 
     # ── Öğrenci eşleştirme hazırlığı ────────────────────────────────────────
-    # Kuruma + şubeye ait öğrencileri TC ve ID bazlı sözlüklere doldur
-    from apps.ogrenci.domain.models import Ogrenci
-
-    all_students = Ogrenci.objects.filter(
-        aktif_mi=True,
-        kurum_id=exam.kurum_id,
-        sube_id=exam.sube_id,
+    match_pool = exam_student_pool(exam)
+    ogrenci_by_pk = _ogrenci_map(match_pool)
+    used_student_ids = taken_student_ids(exam) - set(
+        StudentAnswer.objects.filter(session=session, student__isnull=False)
+        .values_list('student_id', flat=True)
     )
-
-    ogrenci_by_tc: dict[str, Ogrenci] = {}
-    ogrenci_by_id: dict[str, Ogrenci] = {}
-    ogrenci_list: list[Ogrenci] = []   # isim benzerliği araması için
-    for ogr in all_students.only('id', 'ad', 'soyad', 'tc_kimlik_no'):
-        if ogr.tc_kimlik_no:
-            ogrenci_by_tc[ogr.tc_kimlik_no.strip()] = ogr
-        # pk string olarak da sakla (DAT'tan gelen sid ile eşleşmesi için)
-        ogrenci_by_id[str(ogr.pk)] = ogr
-        ogrenci_list.append(ogr)
 
     # ── PARSE & SCORE ────────────────────────────────────────────────────────
     results = []
     row_num = 0
-    used_student_ids: set[int] = set()   # aynı öğrenciyi iki kez eşleştirme
 
     try:
         with transaction.atomic():
@@ -721,11 +616,13 @@ def parse_dat(request, exam_pk, session_pk):
                 raw_id = sid or tc or str(row_num)
 
                 # ── Öğrenci eşleştirme ───────────────────────────────────
-                matched_student, match_score, match_method = _match_student(
-                    tc, sid, name_raw,
-                    ogrenci_by_tc, ogrenci_by_id,
-                    ogrenci_list, used_student_ids,
-                )
+                dat_id = DatIdentity(name=name_raw, ogrenci_no=sid, tc=tc)
+                auto = pick_auto_match(dat_id, match_pool, used_student_ids)
+                matched_student = ogrenci_by_pk.get(auto.student.pk) if auto else None
+                match_score = auto.score if auto else 0.0
+                match_method = auto.method if auto else ''
+                if auto:
+                    used_student_ids.add(auto.student.pk)
 
                 # ── Kitapçık otomatik tespiti ────────────────────────────
                 # Kitapçık bilgisi yoksa ve B desteği varsa → her iki
@@ -836,6 +733,7 @@ def parse_dat(request, exam_pk, session_pk):
         exam.save(update_fields=['status'])
 
     final_matched = sum(1 for r in results if r['matched_student_id'])
+    attach_match_hints(results, exam)
 
     return Response({
         'success': True,
@@ -1092,6 +990,7 @@ def session_results(request, exam_pk, session_pk):
         })
 
     mc = sum(1 for r in results if r['matched_student_id'])
+    attach_match_hints(results, exam)
 
     return Response({
         'success': True,
@@ -1132,11 +1031,11 @@ def update_student_match(request, exam_pk, answer_pk):
     new_student_id = request.data.get('student_id')
 
     if new_student_id is None:
-        # Eşleştirmeyi kaldır
         sa.student = None
         sa.match_score = 0.0
         sa.match_method = ''
         sa.save(update_fields=['student', 'match_score', 'match_method'])
+        refresh_session_counts(sa.session)
         return Response({
             'id': sa.id,
             'matched_student_id': None,
@@ -1151,17 +1050,22 @@ def update_student_match(request, exam_pk, answer_pk):
     except Ogrenci.DoesNotExist:
         return Response({'error': 'Öğrenci bulunamadı.'}, status=404)
 
-    # Aynı session'da bu öğrenci zaten başka bir satıra eşleştirilmiş mi?
+    exam = sa.session.exam
+    allowed_ids = {rec.pk for rec in exam_student_pool(exam)}
+    if student.pk not in allowed_ids:
+        return Response({'error': 'Bu öğrenci bu sınavın öğrenci havuzunda değil.'}, status=400)
+
     existing = (
         StudentAnswer.objects
-        .filter(session=sa.session, student=student)
+        .filter(session__exam=exam, student=student)
         .exclude(pk=sa.pk)
+        .select_related('session')
         .first()
     )
     if existing:
-        existing_name = f'{existing.raw_student_name}' if existing.raw_student_name else f'#{existing.pk}'
+        existing_name = existing.raw_student_name or f'#{existing.pk}'
         return Response(
-            {'error': f'Bu öğrenci aynı oturumda "{existing_name}" satırına zaten eşleştirilmiş. Önce o eşleştirmeyi kaldırın.'},
+            {'error': f'Bu öğrenci aynı sınavda "{existing_name}" kaydına zaten eşleştirilmiş. Önce o eşleştirmeyi kaldırın.'},
             status=400,
         )
 
@@ -1169,6 +1073,7 @@ def update_student_match(request, exam_pk, answer_pk):
     sa.match_score = 1.0
     sa.match_method = 'manual'
     sa.save(update_fields=['student', 'match_score', 'match_method'])
+    refresh_session_counts(sa.session)
 
     return Response({
         'id': sa.id,
@@ -1188,9 +1093,9 @@ def update_student_match(request, exam_pk, answer_pk):
 @permission_classes([IsAuthenticated])
 def search_students(request, exam_pk):
     """
-    Öğrenci arama (eşleştirme dialog'u için).
+    Sınav havuzunda öğrenci ara. Eşleştirilmiş öğrenciler dönmez.
 
-    GET /exams/{exam_pk}/results/students/search/?q=ali
+    GET /exams/{exam_pk}/results/students/search/?q=ali&answer_id=12
     """
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -1200,33 +1105,75 @@ def search_students(request, exam_pk):
     if len(q) < 2:
         return Response([])
 
-    from apps.ogrenci.domain.models import Ogrenci
-    from django.db.models import Q, Value, CharField
-    from django.db.models.functions import Concat
+    except_answer = request.query_params.get('answer_id')
+    try:
+        except_id = int(except_answer) if except_answer else None
+    except (TypeError, ValueError):
+        except_id = None
 
-    qs = Ogrenci.objects.filter(
-        aktif_mi=True,
-        kurum_id=exam.kurum_id,
-        sube_id=exam.sube_id,
-    ).annotate(
-        full_name=Concat('ad', Value(' '), 'soyad', output_field=CharField())
-    ).filter(
-        Q(full_name__icontains=q) |
-        Q(tc_kimlik_no__icontains=q) |
-        Q(pk__icontains=q)
-    )[:20]
+    pool = exam_student_pool(exam)
+    taken = taken_student_ids(exam, except_answer_id=except_id)
+    found = [rec for rec in search_pool(pool, q) if rec.pk not in taken][:20]
 
-    data = [
-        {
-            'id': ogr.pk,
-            'ad': ogr.ad,
-            'soyad': ogr.soyad,
-            'tc_kimlik_no': ogr.tc_kimlik_no or '',
-            'full_name': f'{ogr.ad} {ogr.soyad}',
+    dat = None
+    if except_id:
+        try:
+            sa = StudentAnswer.objects.get(pk=except_id, session__exam=exam)
+            dat = identity_from_raw(sa.raw_student_name or '', sa.raw_student_id or '')
+        except StudentAnswer.DoesNotExist:
+            dat = None
+
+    data = []
+    for rec in found:
+        hits = rank_candidates(dat, [rec], min_score=0, limit=1) if dat else []
+        hit = hits[0] if hits else None
+        row = {
+            'id': rec.pk,
+            'ad': rec.ad,
+            'soyad': rec.soyad,
+            'tc_kimlik_no': rec.tc,
+            'full_name': rec.full_name,
+            'okul_no': rec.okul_no,
+            'sinif': rec.sinif,
+            'selectable': True,
         }
-        for ogr in qs
-    ]
+        if hit:
+            row.update({
+                'score': hit.as_dict()['score'],
+                'reason': hit.reason,
+                'confidence': hit.confidence,
+            })
+        data.append(row)
     return Response(data)
+
+
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def suggest_students(request, exam_pk, answer_pk):
+    """DAT kaydı için skorlanmış aday listesi. Çakışan öğrenciler yoktur."""
+    exam, err = get_exam_or_response(request, exam_pk)
+    if err:
+        return err
+
+    try:
+        sa = StudentAnswer.objects.get(pk=answer_pk, session__exam=exam)
+    except StudentAnswer.DoesNotExist:
+        return Response({'error': 'Öğrenci cevabı bulunamadı.'}, status=404)
+
+    dat = identity_from_raw(sa.raw_student_name or '', sa.raw_student_id or '')
+    pool = exam_student_pool(exam)
+    taken = taken_student_ids(exam, except_answer_id=sa.pk)
+    hits = rank_candidates(dat, pool, exclude_ids=taken, limit=12)
+
+    return Response({
+        'answer_id': sa.id,
+        'dat': {
+            'name': sa.raw_student_name or '',
+            'ogrenci_no': sa.raw_student_id or '',
+        },
+        'suggestions': [h.as_dict() for h in hits],
+    })
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1276,43 +1223,19 @@ def rematch_unmatched(request, exam_pk):
     for sa in all_answers.filter(student__isnull=False):
         used_student_ids.add(sa.student_id)
 
-    # Güncel öğrenci havuzunu oluştur
-    from apps.ogrenci.domain.models import Ogrenci
+    match_pool = exam_student_pool(exam)
+    ogrenci_by_pk = _ogrenci_map(match_pool)
 
-    all_students = Ogrenci.objects.filter(
-        aktif_mi=True,
-        kurum_id=exam.kurum_id,
-        sube_id=exam.sube_id,
-    )
-
-    ogrenci_by_tc: dict[str, Ogrenci] = {}
-    ogrenci_by_id: dict[str, Ogrenci] = {}
-    ogrenci_list: list[Ogrenci] = []
-    for ogr in all_students.only('id', 'ad', 'soyad', 'tc_kimlik_no'):
-        if ogr.tc_kimlik_no:
-            ogrenci_by_tc[ogr.tc_kimlik_no.strip()] = ogr
-        ogrenci_by_id[str(ogr.pk)] = ogr
-        ogrenci_list.append(ogr)
-
-    # Eşleşmemiş kayıtları tek tek yeniden eşleştir
     newly_matched = []
     with transaction.atomic():
         for sa in unmatched_answers:
-            # raw_student_id'den tc ve sid ayıkla
-            # DAT parse sırasında raw_student_id olarak sid veya tc veya row_num saklanmış olabilir
-            sid = sa.raw_student_id or ''
-            name_raw = sa.raw_student_name or ''
-
-            # TC kimlik bilgisi raw_student_id'de olabilir (11 haneli sayı)
-            tc = ''
-            if sid and len(sid) == 11 and sid.isdigit():
-                tc = sid
-
-            matched_student, match_score, match_method = _match_student(
-                tc, sid, name_raw,
-                ogrenci_by_tc, ogrenci_by_id,
-                ogrenci_list, used_student_ids,
-            )
+            dat_id = identity_from_raw(sa.raw_student_name or '', sa.raw_student_id or '')
+            auto = pick_auto_match(dat_id, match_pool, used_student_ids)
+            matched_student = ogrenci_by_pk.get(auto.student.pk) if auto else None
+            match_score = auto.score if auto else 0.0
+            match_method = auto.method if auto else ''
+            if auto:
+                used_student_ids.add(auto.student.pk)
 
             if matched_student:
                 sa.student = matched_student
@@ -1394,26 +1317,6 @@ def rematch_all_exams(request):
             'exam_results': [],
         })
 
-    # Her sınav için kurum farklı olabilir, kurum bazlı öğrenci havuzunu cache'le
-    kurum_pools: dict[int, tuple] = {}  # kurum_id → (by_tc, by_id, ogrenci_list)
-
-    def _get_pool(kurum_id, sube_id):
-        from apps.ogrenci.domain.models import Ogrenci
-
-        if (kurum_id, sube_id) in kurum_pools:
-            return kurum_pools[(kurum_id, sube_id)]
-        qs = Ogrenci.objects.filter(aktif_mi=True, kurum_id=kurum_id, sube_id=sube_id)
-        by_tc: dict[str, Ogrenci] = {}
-        by_id: dict[str, Ogrenci] = {}
-        olist: list[Ogrenci] = []
-        for ogr in qs.only('id', 'ad', 'soyad', 'tc_kimlik_no'):
-            if ogr.tc_kimlik_no:
-                by_tc[ogr.tc_kimlik_no.strip()] = ogr
-            by_id[str(ogr.pk)] = ogr
-            olist.append(ogr)
-        kurum_pools[(kurum_id, sube_id)] = (by_tc, by_id, olist)
-        return by_tc, by_id, olist
-
     total_unmatched = 0
     total_newly_matched = 0
     exam_results = []
@@ -1429,27 +1332,22 @@ def rematch_all_exams(request):
             if not unmatched:
                 continue
 
-            # Bu sınavda zaten eşleşmiş ID'ler
             used_ids: set[int] = set()
             for sa in all_answers.filter(student__isnull=False):
                 used_ids.add(sa.student_id)
 
-            kurum_id = exam.kurum_id if hasattr(exam, 'kurum_id') else None
-            sube_id = exam.sube_id if hasattr(exam, 'sube_id') else None
-            by_tc, by_id, olist = _get_pool(kurum_id, sube_id)
+            match_pool = exam_student_pool(exam)
+            ogrenci_by_pk = _ogrenci_map(match_pool)
 
             exam_matched = 0
             for sa in unmatched:
-                sid = sa.raw_student_id or ''
-                name_raw = sa.raw_student_name or ''
-                tc = ''
-                if sid and len(sid) == 11 and sid.isdigit():
-                    tc = sid
-
-                matched_student, match_score, match_method = _match_student(
-                    tc, sid, name_raw,
-                    by_tc, by_id, olist, used_ids,
-                )
+                dat_id = identity_from_raw(sa.raw_student_name or '', sa.raw_student_id or '')
+                auto = pick_auto_match(dat_id, match_pool, used_ids)
+                matched_student = ogrenci_by_pk.get(auto.student.pk) if auto else None
+                match_score = auto.score if auto else 0.0
+                match_method = auto.method if auto else ''
+                if auto:
+                    used_ids.add(auto.student.pk)
                 if matched_student:
                     sa.student = matched_student
                     sa.match_score = match_score

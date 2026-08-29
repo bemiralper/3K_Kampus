@@ -10,7 +10,10 @@ import type {
   DATSessionItem,
   MappingTemplate,
   StudentSearchResult,
+  MatchSuggestion,
 } from '../../../../components/olcme/types';
+import Icon from '../../../../components/olcme/ui/Icon';
+import type { IconName } from '../../../../components/olcme/ui/Icon';
 import s from '../olcme.module.css';
 
 /* ── Renkler ──────────────────────────────────────────────────────────────── */
@@ -22,6 +25,66 @@ const COLOR_PALETTE = [
 ];
 
 type Step = 'upload' | 'mapping' | 'results';
+
+/** Sihirbaz adımları — kullanıcının nerede olduğunu ve ne kaldığını gösterir. */
+const STEPS: { key: Step; label: string; icon: IconName }[] = [
+  { key: 'upload',  label: 'Dosya Yükle',     icon: 'upload'    },
+  { key: 'mapping', label: 'Alan Eşleştir',   icon: 'layers'    },
+  { key: 'results', label: 'Sonuçları Onayla', icon: 'checkCircle' },
+];
+
+/**
+ * Eşleşmenin hangi yolla kurulduğunu okunur biçimde anlatır.
+ * Önceki sürümde bu bilgi emoji kısaltmalarla veriliyordu ve ne anlama
+ * geldiği ekrandan anlaşılmıyordu.
+ */
+const matchMethodLabel = (method: string, score: number): string => {
+  switch (method) {
+    case 'tc':         return 'TC kimlik tam eşleşmesi';
+    case 'id':         return 'Öğrenci numarası tam eşleşmesi';
+    case 'name_exact': return 'Tam ad + soyad eşleşmesi';
+    case 'name':       return `İsim benzerliği %${Math.round(score * 100)}`;
+    case 'manual':     return 'Manuel eşleştirildi';
+    default:           return '';
+  }
+};
+
+type MatchStatus = NonNullable<DATParseResultRow['match_status']>;
+
+const STATUS_META: Record<MatchStatus, { label: string; cls: string }> = {
+  matched:   { label: 'Eşleşti',            cls: s.matchStatusMatched },
+  manual:    { label: 'Manuel eşleştirildi', cls: s.matchStatusManual },
+  pending:   { label: 'Eşleşme bekliyor',    cls: s.matchStatusPending },
+  conflict:  { label: 'Çakışma',             cls: s.matchStatusConflict },
+  not_found: { label: 'Eşleşme bulunamadı',  cls: s.matchStatusNone },
+};
+
+const CONFIDENCE_META = {
+  high:   { label: 'Yüksek', cls: s.matchConfHigh },
+  medium: { label: 'Orta',   cls: s.matchConfMid },
+  low:    { label: 'Düşük',  cls: s.matchConfLow },
+} as const;
+
+function rowMatchStatus(row: DATParseResultRow): MatchStatus {
+  if (row.match_status) return row.match_status;
+  if (row.matched_student_id) return row.match_method === 'manual' ? 'manual' : 'matched';
+  if (row.top_suggestion) return 'pending';
+  return 'not_found';
+}
+
+function scoreToConfidence(score01: number): keyof typeof CONFIDENCE_META {
+  const pct = Math.round(score01 * 100);
+  if (pct >= 95) return 'high';
+  if (pct >= 80) return 'medium';
+  return 'low';
+}
+
+function displayScorePct(score?: number | null, fallback01?: number): number | null {
+  if (typeof score === 'number' && score > 1) return Math.round(score);
+  if (typeof score === 'number' && score > 0) return Math.round(score * 100);
+  if (typeof fallback01 === 'number' && fallback01 > 0) return Math.round(fallback01 * 100);
+  return null;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  OverlayLayer – Piksel bazlı overlay bileşeni                            */
@@ -130,6 +193,43 @@ const BASE_FIELDS: FieldOption[] = [
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * Sıralanabilir sütun başlığı.
+ *
+ * Bileşen bilerek dosya seviyesinde tanımlı: render fonksiyonunun içinde
+ * tanımlansaydı her render'da yeni bir bileşen tipi oluşur ve React tüm tablo
+ * başlığını söküp yeniden kurardı.
+ */
+function SortTh({ label, columnKey, activeKey, direction, align, onSort }: {
+  label: string;
+  columnKey: string;
+  activeKey: string;
+  direction: 'asc' | 'desc';
+  align?: 'center';
+  onSort: (key: string) => void;
+}) {
+  const active = activeKey === columnKey;
+  return (
+    <th
+      className={s.sortableTh}
+      onClick={() => onSort(columnKey)}
+      style={{ textAlign: align, whiteSpace: 'nowrap' }}
+      title={`${label} sütununa göre sırala`}
+      aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        {label}
+        <Icon
+          name={active && direction === 'asc' ? 'chevronUp' : 'chevronDown'}
+          size={11}
+          strokeWidth={3}
+          style={{ opacity: active ? 1 : 0.25 }}
+        />
+      </span>
+    </th>
+  );
+}
+
 interface Props { exam: ExamDetail }
 
 export default function UploadTab({ exam }: Props) {
@@ -149,7 +249,7 @@ export default function UploadTab({ exam }: Props) {
   const [mappings, setMappings]         = useState<FieldMapping[]>([]);
   const [selStart, setSelStart]         = useState<number | null>(null);
   const [selEnd, setSelEnd]             = useState<number | null>(null);
-  const [isDragging, setIsDragging]     = useState(false);
+  const [, setIsDragging]               = useState(false);
 
   // Context menu
   const [ctxMenu, setCtxMenu]           = useState<{ x: number; y: number } | null>(null);
@@ -157,10 +257,12 @@ export default function UploadTab({ exam }: Props) {
   // Results
   const [results, setResults]           = useState<DATParseResultRow[]>([]);
   const [totalRows, setTotalRows]       = useState(0);
+  const [onlyUnmatched, setOnlyUnmatched] = useState(false);
+  const [resultsSessionId, setResultsSessionId] = useState<number | null>(null);
 
   // Previous sessions
   const [sessions, setSessions]         = useState<DATSessionItem[]>([]);
-  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [, setLoadingSessions]          = useState(false);
   const [loadingSessionResults, setLoadingSessionResults] = useState(false);
 
   // Manuel eşleştirme dialog
@@ -168,6 +270,11 @@ export default function UploadTab({ exam }: Props) {
   const [searchQuery, setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState<StudentSearchResult[]>([]);
   const [searching, setSearching]       = useState(false);
+  const [suggestions, setSuggestions]   = useState<MatchSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [showManualSearch, setShowManualSearch] = useState(false);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
+  const [matchingBusy, setMatchingBusy] = useState(false);
 
   // Yeniden eşleştirme
   const [rematching, setRematching]     = useState(false);
@@ -201,7 +308,7 @@ export default function UploadTab({ exam }: Props) {
 
     for (const main of mainSections) {
       // Alt bölümleri bu ana bölümün altında bul
-      const children = subSections.filter(s => s.parent_section === main.id);
+      const children = subSections.filter(sec => sec.parent_section === main.id);
 
       if (children.length > 0) {
         // Alt bölümler varsa — sadece alt bölümleri göster (ana bölüm grup başlığı olacak)
@@ -238,6 +345,12 @@ export default function UploadTab({ exam }: Props) {
   const hasAnswerMapping = useMemo(() => {
     return mappings.some(m => m.field === 'cevaplar' || m.field.startsWith('ders_'));
   }, [mappings]);
+
+  /** Kimlik alanı eşleştirilmiş mi — eşleşme kalitesini doğrudan etkiler. */
+  const hasIdentityMapping = useMemo(
+    () => mappings.some(m => ['ogrenci_no', 'tc_kimlik', 'ad_soyad'].includes(m.field)),
+    [mappings],
+  );
 
   /* ── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -559,8 +672,14 @@ export default function UploadTab({ exam }: Props) {
         first_line_is_header: firstLineHeader,
         student_id_field: studentIdField,
       });
+      if (!resp.results || resp.results.length === 0) {
+        setError('Dosya okundu ancak hiçbir sonuç satırı çıkarılamadı. Alan eşleştirmesini gözden geçirin.');
+        fetchSessions();
+        return;
+      }
       setResults(resp.results);
       setTotalRows(resp.total_rows);
+      setResultsSessionId(resp.session?.id ?? uploadResp.session_id);
       setCtxMenu(null);
       setSelStart(null);
       setSelEnd(null);
@@ -582,6 +701,7 @@ export default function UploadTab({ exam }: Props) {
       // Eğer o session'ın sonuçları gösteriliyorsa temizle
       setResults([]);
       setTotalRows(0);
+      setResultsSessionId(null);
     } catch { /* */ }
   };
 
@@ -593,8 +713,15 @@ export default function UploadTab({ exam }: Props) {
     setMatchDialogRow(null);
     try {
       const resp = await uploadApi.sessionResults(exam.id, sessionId);
+      // Sonuç ekranı boş listeyle hiçbir şey göstermez; kullanıcıyı boş
+      // ekranda bırakmak yerine yükleme adımında tutup nedenini söylüyoruz.
+      if (!resp.results || resp.results.length === 0) {
+        setError('Bu yüklemede gösterilecek sonuç kaydı bulunamadı.');
+        return;
+      }
       setResults(resp.results);
       setTotalRows(resp.total_rows);
+      setResultsSessionId(sessionId);
       setStep('results');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Sonuçlar yüklenemedi.');
@@ -611,8 +738,11 @@ export default function UploadTab({ exam }: Props) {
     try {
       const resp = await uploadApi.rematchUnmatched(exam.id);
       setRematchResult({ newly_matched: resp.newly_matched, still_unmatched: resp.still_unmatched });
-      if (resp.newly_matched > 0) {
-        // Eşleşen kayıtları results state'inde güncelle
+      if (resultsSessionId) {
+        const fresh = await uploadApi.sessionResults(exam.id, resultsSessionId);
+        setResults(fresh.results);
+        setTotalRows(fresh.total_rows);
+      } else if (resp.newly_matched > 0) {
         setResults(prev => prev.map(r => {
           const matched = resp.matched.find(m => m.answer_id === r.id);
           if (!matched) return r;
@@ -622,52 +752,100 @@ export default function UploadTab({ exam }: Props) {
             matched_student_name: matched.matched_student_name,
             match_score: matched.match_score,
             match_method: matched.match_method,
+            match_status: 'matched',
+            top_suggestion: null,
           };
         }));
       }
-      // 5 saniye sonra bildirim mesajını kaldır
       setTimeout(() => setRematchResult(null), 8000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Yeniden eşleştirme başarısız.';
       setError(msg);
     }
     setRematching(false);
+  }, [exam.id, resultsSessionId]);
+
+  const closeMatchDialog = () => {
+    setMatchDialogRow(null);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSuggestions([]);
+    setShowManualSearch(false);
+    setSelectedCandidateId(null);
+    setSuggestionsLoading(false);
+  };
+
+  const openMatchDialog = useCallback(async (row: DATParseResultRow) => {
+    setMatchDialogRow(row);
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowManualSearch(false);
+    setSelectedCandidateId(null);
+    setError('');
+    setSuggestionsLoading(true);
+    try {
+      const data = await uploadApi.suggestStudents(exam.id, row.id);
+      setSuggestions(data.suggestions || []);
+    } catch {
+      setSuggestions([]);
+    }
+    setSuggestionsLoading(false);
   }, [exam.id]);
 
   /* ── Manuel Eşleştirme ─────────────────────────────────────────────────── */
-  const handleSearchStudents = useCallback(async (q: string) => {
+  const handleSearchStudents = useCallback(async (q: string, answerId?: number) => {
     setSearchQuery(q);
     if (q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
     try {
-      const data = await uploadApi.searchStudents(exam.id, q);
-      setSearchResults(data);
+      const data = await uploadApi.searchStudents(exam.id, q, answerId);
+      setSearchResults(data.filter(stu => stu.selectable !== false));
     } catch { setSearchResults([]); }
     setSearching(false);
   }, [exam.id]);
 
+  const refreshResultsAfterMatch = useCallback(async () => {
+    if (!resultsSessionId) return false;
+    const fresh = await uploadApi.sessionResults(exam.id, resultsSessionId);
+    setResults(fresh.results);
+    setTotalRows(fresh.total_rows);
+    return true;
+  }, [exam.id, resultsSessionId]);
+
   const handleMatchStudent = async (answerId: number, studentId: number | null) => {
+    setMatchingBusy(true);
     try {
       const resp = await uploadApi.updateStudentMatch(exam.id, answerId, studentId);
-      setResults(prev => prev.map(r => {
-        if (r.id !== answerId) return r;
-        return {
-          ...r,
-          matched_student_id: resp.matched_student_id,
-          matched_student_name: resp.matched_student_name,
-          match_score: resp.match_score ?? (resp.matched_student_id ? 1.0 : 0),
-          match_method: resp.match_method ?? (resp.matched_student_id ? 'manual' : ''),
-        };
-      }));
-      setMatchDialogRow(null);
-      setSearchQuery('');
-      setSearchResults([]);
+      const refreshed = await refreshResultsAfterMatch();
+      if (!refreshed) {
+        setResults(prev => prev.map(r => {
+          if (r.id !== answerId) {
+            if (studentId && r.top_suggestion?.id === studentId) {
+              return { ...r, top_suggestion: null, match_status: r.matched_student_id ? r.match_status : 'not_found' };
+            }
+            return r;
+          }
+          return {
+            ...r,
+            matched_student_id: resp.matched_student_id,
+            matched_student_name: resp.matched_student_name,
+            match_score: resp.match_score ?? (resp.matched_student_id ? 1.0 : 0),
+            match_method: resp.match_method ?? (resp.matched_student_id ? 'manual' : ''),
+            match_status: resp.matched_student_id
+              ? (resp.match_method === 'manual' ? 'manual' : 'matched')
+              : 'pending',
+            top_suggestion: null,
+          };
+        }));
+      }
+      closeMatchDialog();
       setError('');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Eşleştirme başarısız.';
       setError(msg);
-      // Dialog'u açık bırak ki kullanıcı sorunu görsün — 3 sn sonra sil
       setTimeout(() => setError(''), 5000);
+    } finally {
+      setMatchingBusy(false);
     }
   };
 
@@ -682,8 +860,10 @@ export default function UploadTab({ exam }: Props) {
     setSelStart(null);
     setSelEnd(null);
     setCtxMenu(null);
-    setMatchDialogRow(null);
+    closeMatchDialog();
     setRematchResult(null);
+    setOnlyUnmatched(false);
+    setResultsSessionId(null);
   };
 
   /* ── Selection coordinates ───────────────────────────────────────────────── */
@@ -744,16 +924,17 @@ export default function UploadTab({ exam }: Props) {
   const [sortKey, setSortKey]   = useState<string>('row');
   const [sortDir, setSortDir]   = useState<'asc' | 'desc'>('asc');
 
+  // setSortDir'i setSortKey updater'ının içinden çağırmak React'in updater'ı
+  // iki kez çalıştırdığı durumlarda toggle'ı kendi üzerine katlıyordu; bu yüzden
+  // iki state ayrı ayrı güncelleniyor.
   const handleSort = useCallback((key: string) => {
-    setSortKey(prev => {
-      if (prev === key) {
-        setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-        return key;
-      }
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
       setSortDir(key === 'student_name' ? 'asc' : 'desc');
-      return key;
-    });
-  }, []);
+    }
+  }, [sortKey]);
 
   const sortedResults = useMemo(() => {
     if (!results.length) return results;
@@ -780,16 +961,19 @@ export default function UploadTab({ exam }: Props) {
     return arr;
   }, [results, sortKey, sortDir]);
 
-  /** Sort ikonu */
-  const sortIcon = (key: string) => {
-    if (sortKey !== key) return <span style={{ opacity: 0.25, fontSize: 10 }}>⇅</span>;
-    return sortDir === 'asc'
-      ? <span style={{ fontSize: 10 }}>▲</span>
-      : <span style={{ fontSize: 10 }}>▼</span>;
-  };
+  /** Tüm sıralanabilir başlıkların paylaştığı sıralama durumu. */
+  const thProps = { activeKey: sortKey, direction: sortDir, onSort: handleSort };
+
+  /** Ekranda gösterilen satırlar — "sadece eşleşmeyenler" filtresi istemci tarafında. */
+  const visibleResults = useMemo(
+    () => (onlyUnmatched ? sortedResults.filter(r => !r.matched_student_id) : sortedResults),
+    [sortedResults, onlyUnmatched],
+  );
 
   /* ── Eşleşme istatistikleri ─────────────────────────────────────────────── */
   const matchedCount = results.filter(r => r.matched_student_id).length;
+  const unmatchedCount = totalRows - matchedCount;
+  const matchPct = totalRows > 0 ? Math.round((matchedCount / totalRows) * 100) : 0;
 
   /* ── Kitapçık Değiştirme ────────────────────────────────────────────────── */
   const handleBookletChange = useCallback(async (answerId: number, newBooklet: string) => {
@@ -828,12 +1012,36 @@ export default function UploadTab({ exam }: Props) {
   /*  RENDER                                                                */
   /* ═══════════════════════════════════════════════════════════════════════ */
 
+  const currentStepIdx = STEPS.findIndex(st => st.key === step);
+
   return (
     <div>
+      {/* ── Sihirbaz adımları ────────────────────────────────────────────── */}
+      <ol className={s.uploadStepper}>
+        {STEPS.map((st, i) => {
+          const done = i < currentStepIdx;
+          const current = i === currentStepIdx;
+          return (
+            <li
+              key={st.key}
+              className={`${s.uploadStep} ${done ? s.uploadStepDone : ''} ${current ? s.uploadStepCurrent : ''}`}
+            >
+              <span className={s.uploadStepDot}>
+                <Icon name={done ? 'check' : st.icon} size={13} strokeWidth={done ? 3 : 2} />
+              </span>
+              <span className={s.uploadStepLabel}>{st.label}</span>
+            </li>
+          );
+        })}
+      </ol>
+
       {error && (
-        <div style={{ padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, color: '#991b1b', marginBottom: 16, fontSize: 13 }}>
-          <strong>Hata:</strong> {error}
-          <button onClick={() => setError('')} style={{ float: 'right', background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer', fontWeight: 600 }}>✕</button>
+        <div className={s.uploadErrorBar}>
+          <Icon name="error" size={17} />
+          <span style={{ flex: 1 }}>{error}</span>
+          <button onClick={() => setError('')} aria-label="Kapat" className={s.uploadErrorClose}>
+            <Icon name="close" size={15} />
+          </button>
         </div>
       )}
 
@@ -842,8 +1050,8 @@ export default function UploadTab({ exam }: Props) {
         <div className="card-modern">
           <div className="card-modern-header">
             <h3 className="card-modern-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-              DAT Dosyası Yükle
+              <Icon name="upload" size={19} />
+              Optik Sonuç Dosyası Yükle
             </h3>
           </div>
           <div className={s.cardBody}>
@@ -862,64 +1070,82 @@ export default function UploadTab({ exam }: Props) {
               onDragLeave={() => setDragOver(false)}
               onDrop={onDrop}
             >
-              {uploading ? (
-                <>
-                  <div className={s.uploadDropZoneIcon}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>
-                  </div>
-                  <div className={s.uploadDropZoneTitle}>Yükleniyor…</div>
-                </>
-              ) : (
-                <>
-                  <div className={s.uploadDropZoneIcon}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                  </div>
-                  <div className={s.uploadDropZoneTitle}>Dosyayı sürükleyin veya tıklayın</div>
-                  <div className={s.uploadDropZoneHint}>.dat, .txt veya .csv dosyaları desteklenir</div>
-                </>
-              )}
+              <div className={s.uploadDropZoneIcon}>
+                <Icon
+                  name={uploading ? 'refresh' : 'upload'}
+                  size={24}
+                  className={uploading ? s.olcmeSpinning : undefined}
+                />
+              </div>
+              <div className={s.uploadDropZoneTitle}>
+                {uploading ? 'Dosya yükleniyor…' : 'Dosyayı sürükleyin veya tıklayarak seçin'}
+              </div>
+              <div className={s.uploadDropZoneHint}>
+                {uploading ? 'Lütfen bekleyin' : 'Optik okuyucu çıktısı — .dat, .txt veya .csv'}
+              </div>
             </div>
 
             {/* Önceki Yüklemeler */}
             {sessions.length > 0 && (
               <div className={s.prevSessionsWrap}>
-                <h4 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
+                <h4 className={s.prevSessionsTitle}>
+                  <Icon name="clock" size={15} />
                   Önceki Yüklemeler
+                  <span className={s.prevSessionsHint}>
+                    Tamamlanmış bir yüklemeye tıklayarak sonuçlarını yeniden açabilirsiniz.
+                  </span>
                 </h4>
                 {loadingSessionResults && (
-                  <div style={{ textAlign: 'center', padding: 12, color: 'var(--text-secondary)', fontSize: 13 }}>
+                  <div className={s.prevSessionsLoading}>
+                    <Icon name="refresh" size={14} className={s.olcmeSpinning} />
                     Sonuçlar yükleniyor…
                   </div>
                 )}
-                {sessions.map(ses => (
-                  <div
-                    key={ses.id}
-                    className={s.prevSessionItem}
-                    style={{ cursor: ses.status === 'COMPLETED' ? 'pointer' : 'default' }}
-                    onClick={() => ses.status === 'COMPLETED' && handleLoadSessionResults(ses.id)}
-                    title={ses.status === 'COMPLETED' ? 'Sonuçları görüntüle' : ''}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div className={s.prevSessionName}>{ses.original_filename}</div>
-                      <div className={s.prevSessionMeta}>
-                        {ses.total_rows} satır
-                        {ses.matched_count > 0 && <> • <span style={{ color: '#16a34a' }}>{ses.matched_count} eşleşen</span></>}
-                        {ses.unmatched_count > 0 && <> • <span style={{ color: '#ef4444' }}>{ses.unmatched_count} eşleşmeyen</span></>}
-                        {' • '}{new Date(ses.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
+                {sessions.map(ses => {
+                  const openable = ses.status === 'COMPLETED';
+                  return (
+                    <div key={ses.id} className={s.prevSessionItem}>
+                      {/* Satırın kendisi gerçek bir buton: klavyeyle odaklanılabilir
+                          ve tamamlanmamış yüklemelerde devre dışı kalır. */}
+                      <button
+                        type="button"
+                        className={s.prevSessionMain}
+                        disabled={!openable}
+                        onClick={() => handleLoadSessionResults(ses.id)}
+                        title={openable ? 'Sonuçları görüntüle' : 'Bu yükleme tamamlanmadığı için açılamaz'}
+                      >
+                        <span className={s.prevSessionIcon}>
+                          <Icon name="document" size={16} />
+                        </span>
+                        <span className={s.prevSessionText}>
+                          <span className={s.prevSessionName}>{ses.original_filename}</span>
+                          <span className={s.prevSessionMeta}>
+                            {ses.total_rows} satır
+                            {ses.matched_count > 0 && <> · <span style={{ color: '#16a34a' }}>{ses.matched_count} eşleşen</span></>}
+                            {ses.unmatched_count > 0 && <> · <span style={{ color: '#ef4444' }}>{ses.unmatched_count} eşleşmeyen</span></>}
+                            {' · '}
+                            {new Date(ses.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </span>
+                        <span className={`${s.prevSessionBadge} ${
+                          ses.status === 'COMPLETED' ? s.prevSessionBadgeCompleted
+                            : ses.status === 'ERROR' ? s.prevSessionBadgeError
+                            : s.prevSessionBadgePending
+                        }`}>
+                          {ses.status_display || ses.status}
+                        </span>
+                      </button>
+                      <button
+                        className={s.prevSessionDelete}
+                        onClick={() => handleDeleteSession(ses.id)}
+                        title="Bu yüklemeyi sil"
+                        aria-label={`${ses.original_filename} yüklemesini sil`}
+                      >
+                        <Icon name="trash" size={14} />
+                      </button>
                     </div>
-                    <span className={`${s.prevSessionBadge} ${
-                      ses.status === 'COMPLETED' ? s.prevSessionBadgeCompleted
-                        : ses.status === 'ERROR' ? s.prevSessionBadgeError
-                        : s.prevSessionBadgePending
-                    }`}>
-                      {ses.status_display || ses.status}
-                    </span>
-                    <button className={s.prevSessionDelete} onClick={(e) => { e.stopPropagation(); handleDeleteSession(ses.id); }} title="Sil">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -931,11 +1157,12 @@ export default function UploadTab({ exam }: Props) {
         <div className="card-modern">
           <div className="card-modern-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 className="card-modern-title" style={{ margin: 0 }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/></svg>
+              <Icon name="layers" size={19} />
               Alan Eşleştirme
             </h3>
             <button className="btn-modern btn-secondary" onClick={resetAll} style={{ fontSize: 13 }}>
-              ← Geri
+              <Icon name="back" size={14} />
+              Yüklemelere Dön
             </button>
           </div>
 
@@ -943,7 +1170,7 @@ export default function UploadTab({ exam }: Props) {
             {/* File info */}
             <div className={s.uploadFileInfo}>
               <div className={s.uploadFileIcon}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <Icon name="document" size={18} />
               </div>
               <div>
                 <div className={s.uploadFileName}>{uploadResp.filename}</div>
@@ -953,14 +1180,21 @@ export default function UploadTab({ exam }: Props) {
             </div>
 
             {/* Instructions */}
-            <div style={{ padding: '12px 16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, marginBottom: 16, fontSize: 13, color: '#1e40af' }}>
-              <strong>Nasıl kullanılır:</strong> Aşağıdaki veri önizlemesinde <strong>sol tık ile sütun aralığını seçin</strong>, ardından <strong>sağ tıklayarak</strong> hangi alan olduğunu belirleyin (Öğrenci No, Ad Soyad, veya ders cevapları)
+            <div className={s.uploadHowTo}>
+              <Icon name="info" size={17} style={{ marginTop: 1 }} />
+              <div>
+                <strong>Nasıl yapılır:</strong> Aşağıdaki önizlemede bir sütun aralığını
+                <strong> sol tuşla sürükleyerek seçin</strong>, sonra
+                <strong> sağ tıklayıp</strong> bu aralığın hangi alan olduğunu belirtin
+                (Öğrenci No, Ad Soyad veya ders cevapları). Aynı eşleştirmeyi tekrar
+                kullanacaksanız şablon olarak kaydedin.
+              </div>
             </div>
 
             {/* ── Şablon Yönetimi ─────────────────────────────────────────── */}
             <div className={s.templateSection}>
               <div className={s.templateHeader}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                <Icon name="save" size={15} />
                 <span>Kayıtlı Şablonlar ({exam.exam_type_display})</span>
               </div>
 
@@ -979,15 +1213,16 @@ export default function UploadTab({ exam }: Props) {
                         onClick={() => handleLoadTemplate(tpl)}
                         title={`${tpl.mappings.length} alan eşleştirmesi • ${new Date(tpl.updated_at).toLocaleDateString('tr-TR')}`}
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <Icon name="document" size={12} />
                         {tpl.name}
                       </button>
                       <button
                         className={s.templateChipDel}
                         onClick={() => handleDeleteTemplate(tpl.id)}
                         title="Şablonu sil"
+                        aria-label="Şablonu sil"
                       >
-                        ✕
+                        <Icon name="close" size={11} />
                       </button>
                     </div>
                   ))
@@ -1000,7 +1235,7 @@ export default function UploadTab({ exam }: Props) {
                     onClick={() => setShowSaveDialog(true)}
                     title="Mevcut eşleştirmeyi şablon olarak kaydet"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    <Icon name="save" size={13} />
                     Şablon Kaydet
                   </button>
                 )}
@@ -1022,14 +1257,16 @@ export default function UploadTab({ exam }: Props) {
                     className={s.templateSaveConfirm}
                     onClick={handleSaveTemplate}
                     disabled={!templateName.trim() || savingTemplate}
+                    aria-label="Şablonu kaydet"
                   >
-                    {savingTemplate ? '…' : '✓'}
+                    <Icon name={savingTemplate ? 'refresh' : 'check'} size={13} className={savingTemplate ? s.olcmeSpinning : undefined} />
                   </button>
                   <button
                     className={s.templateSaveCancel}
                     onClick={() => { setShowSaveDialog(false); setTemplateName(''); }}
+                    aria-label="İptal"
                   >
-                    ✕
+                    <Icon name="close" size={13} />
                   </button>
                 </div>
               )}
@@ -1054,7 +1291,7 @@ export default function UploadTab({ exam }: Props) {
                 {/* ── Seçim Sayacı ────────────────────────────────────────── */}
                 {selCount > 0 && (
                   <span className={s.selectionCounter}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                    <Icon name="layers" size={12} />
                     {selCount} karakter seçili
                     <span className={s.selectionCounterRange}>[{selLo}–{selHi! + 1})</span>
                   </span>
@@ -1066,11 +1303,28 @@ export default function UploadTab({ exam }: Props) {
                   disabled={parsing || !hasAnswerMapping}
                   onClick={handleParse}
                   style={{ fontSize: 13, padding: '7px 20px' }}
+                  title={!hasAnswerMapping ? 'Önce en az bir ders cevap alanı eşleştirin.' : 'Dosyayı oku ve netleri hesapla'}
                 >
-                  {parsing ? 'Okunuyor…' : '📖 Oku ve Skorla'}
+                  <Icon name={parsing ? 'refresh' : 'exam'} size={15} className={parsing ? s.olcmeSpinning : undefined} />
+                  {parsing ? 'Okunuyor…' : 'Oku ve Skorla'}
                 </button>
               </div>
             </div>
+
+            {/* Eksik eşleştirme uyarıları — kullanıcı butona basmadan önce görsün */}
+            {!hasAnswerMapping && (
+              <div className={`${s.uploadNotice} ${s.uploadNoticeWarn}`}>
+                <Icon name="alert" size={16} />
+                Devam etmek için en az bir <strong>ders cevap alanı</strong> eşleştirmelisiniz.
+              </div>
+            )}
+            {hasAnswerMapping && !hasIdentityMapping && (
+              <div className={`${s.uploadNotice} ${s.uploadNoticeWarn}`}>
+                <Icon name="alert" size={16} />
+                Kimlik alanı (Öğrenci No, TC veya Ad Soyad) eşleştirilmedi. Sonuçlar okunur
+                ancak <strong>hiçbir öğrenciyle eşleşmez</strong>.
+              </div>
+            )}
 
             {/* Mapped fields badges */}
             {mappings.length > 0 && (
@@ -1082,7 +1336,13 @@ export default function UploadTab({ exam }: Props) {
                       style={{ borderColor: COLOR_PALETTE[ci], color: COLOR_PALETTE[ci], background: `${COLOR_PALETTE[ci]}11` }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: COLOR_PALETTE[ci], display: 'inline-block' }} />
                       {m.label}: [{m.start}–{m.end})
-                      <button className={s.mappedFieldBadgeRemove} onClick={() => removeMapping(m.field)}>✕</button>
+                      <button
+                        className={s.mappedFieldBadgeRemove}
+                        onClick={() => removeMapping(m.field)}
+                        aria-label={`${m.label} eşleştirmesini kaldır`}
+                      >
+                        <Icon name="close" size={11} />
+                      </button>
                     </span>
                   );
                 })}
@@ -1140,59 +1400,87 @@ export default function UploadTab({ exam }: Props) {
         <div className="card-modern">
           <div className="card-modern-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 className="card-modern-title" style={{ margin: 0 }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-              Sonuçlar
+              <Icon name="checkCircle" size={19} />
+              Okuma Sonuçları
             </h3>
             <div style={{ display: 'flex', gap: 8 }}>
               {uploadResp && (
                 <button className="btn-modern btn-secondary" onClick={() => setStep('mapping')} style={{ fontSize: 13 }}>
-                  ← Eşleştirmeye Dön
+                  <Icon name="back" size={14} />
+                  Eşleştirmeye Dön
                 </button>
               )}
               <button className="btn-modern btn-secondary" onClick={resetAll} style={{ fontSize: 13 }}>
-                ← Yüklemelere Dön
+                <Icon name="upload" size={14} />
+                Yeni Dosya Yükle
               </button>
             </div>
           </div>
 
           <div className={s.cardBody}>
-            {/* Stats */}
+            {/* Eşleşme durumu — bu ekrandaki en kritik bilgi, en üstte ve eyleme
+                bağlı olarak gösterilir. Eskiden iki ayrı sayı kartıydı ve
+                "Yeniden Eşleştir" butonu bir kartın içine sıkıştırılmıştı. */}
+            <div className={`${s.matchBanner} ${unmatchedCount > 0 ? s.matchBannerWarn : s.matchBannerOk}`}>
+              <span className={s.matchBannerIcon}>
+                <Icon name={unmatchedCount > 0 ? 'alert' : 'checkCircle'} size={20} />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className={s.matchBannerTitle}>
+                  {unmatchedCount > 0
+                    ? `${unmatchedCount} kayıt öğrenciyle eşleşmedi`
+                    : 'Tüm kayıtlar öğrencilerle eşleşti'}
+                </div>
+                <div className={s.matchBannerBar}>
+                  <div className={s.matchBannerFill} style={{ width: `${matchPct}%` }} />
+                </div>
+                <div className={s.matchBannerMeta}>
+                  {matchedCount} / {totalRows} eşleşti (%{matchPct})
+                  {unmatchedCount > 0 && ' — eşleşmeyen kayıtlar analiz ve karnelerde yer almaz.'}
+                </div>
+              </div>
+              {unmatchedCount > 0 && (
+                <button
+                  className={s.olcmeBtnPrimary}
+                  onClick={handleRematch}
+                  disabled={rematching}
+                  title="Sonradan kayıt olan öğrenciler için eşleştirmeyi tekrar dener"
+                >
+                  <Icon name="refresh" size={14} className={rematching ? s.olcmeSpinning : undefined} />
+                  {rematching ? 'Eşleştiriliyor…' : 'Yeniden Eşleştir'}
+                </button>
+              )}
+            </div>
+
+            {/* Yeniden eşleştirme sonuç bildirimi */}
+            {rematchResult && (
+              <div className={`${s.uploadNotice} ${rematchResult.newly_matched > 0 ? s.uploadNoticeOk : s.uploadNoticeWarn}`}>
+                <Icon name={rematchResult.newly_matched > 0 ? 'checkCircle' : 'alert'} size={16} />
+                {rematchResult.newly_matched > 0 ? (
+                  <span>
+                    <strong>{rematchResult.newly_matched}</strong> öğrenci yeni eşleştirildi.
+                    {rematchResult.still_unmatched > 0 && <> Hâlâ <strong>{rematchResult.still_unmatched}</strong> eşleşmeyen kayıt var.</>}
+                  </span>
+                ) : (
+                  <span>
+                    Yeni eşleşme bulunamadı. {rematchResult.still_unmatched} kayıt hâlâ eşleşmemiş durumda.
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Net istatistikleri */}
             <div className={s.uploadStatsRow}>
               <div className={s.uploadStatCard}>
                 <div className={s.uploadStatValue}>{totalRows}</div>
-                <div className={s.uploadStatLabel}>Toplam Öğrenci</div>
+                <div className={s.uploadStatLabel}>Okunan Kayıt</div>
               </div>
               <div className={s.uploadStatCard}>
-                <div className={s.uploadStatValue} style={{ color: '#16a34a' }}>{matchedCount}</div>
-                <div className={s.uploadStatLabel}>Eşleşen</div>
-              </div>
-              <div className={s.uploadStatCard}>
-                <div className={s.uploadStatValue} style={{ color: '#ef4444' }}>{totalRows - matchedCount}</div>
-                <div className={s.uploadStatLabel}>Eşleşmeyen</div>
-              </div>
-              {(totalRows - matchedCount) > 0 && (
-                <div className={s.uploadStatCard} style={{ justifyContent: 'center' }}>
-                  <button
-                    className="btn-modern btn-primary"
-                    style={{ fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}
-                    onClick={handleRematch}
-                    disabled={rematching}
-                    title="Sonradan kayıt olan öğrencileri eşleştirmek için tıklayın"
-                  >
-                    {rematching ? (
-                      <><span className="spinner-xs" style={{ marginRight: 6 }} />Eşleştiriliyor…</>
-                    ) : (
-                      <>🔄 Yeniden Eşleştir</>
-                    )}
-                  </button>
-                </div>
-              )}
-              <div className={s.uploadStatCard}>
-                <div className={s.uploadStatValue} style={{ color: '#16a34a' }}>{avgNet.toFixed(1)}</div>
+                <div className={s.uploadStatValue} style={{ color: '#0262a7' }}>{avgNet.toFixed(1)}</div>
                 <div className={s.uploadStatLabel}>Ortalama Net</div>
               </div>
               <div className={s.uploadStatCard}>
-                <div className={s.uploadStatValue} style={{ color: '#0262a7' }}>{maxNet.toFixed(1)}</div>
+                <div className={s.uploadStatValue} style={{ color: '#16a34a' }}>{maxNet.toFixed(1)}</div>
                 <div className={s.uploadStatLabel}>En Yüksek Net</div>
               </div>
               <div className={s.uploadStatCard}>
@@ -1201,93 +1489,141 @@ export default function UploadTab({ exam }: Props) {
               </div>
             </div>
 
-            {/* Yeniden eşleştirme sonuç bildirimi */}
-            {rematchResult && (
-              <div style={{
-                padding: '10px 16px',
-                marginBottom: 12,
-                borderRadius: 8,
-                fontSize: 13,
-                background: rematchResult.newly_matched > 0 ? '#f0fdf4' : '#fffbeb',
-                border: `1px solid ${rematchResult.newly_matched > 0 ? '#bbf7d0' : '#fed7aa'}`,
-                color: rematchResult.newly_matched > 0 ? '#166534' : '#92400e',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}>
-                {rematchResult.newly_matched > 0 ? (
-                  <>✅ <strong>{rematchResult.newly_matched}</strong> öğrenci yeni eşleştirildi.{rematchResult.still_unmatched > 0 && <> Hâlâ <strong>{rematchResult.still_unmatched}</strong> eşleşmeyen kayıt var.</>}</>
-                ) : (
-                  <>⚠️ Yeni eşleşme bulunamadı. {rematchResult.still_unmatched} kayıt hâlâ eşleşmemiş durumda.</>
-                )}
-              </div>
-            )}
+            {/* Tablo araç çubuğu */}
+            <div className={s.resultsToolbar}>
+              <span className={s.resultsToolbarCount}>
+                {visibleResults.length} kayıt gösteriliyor
+              </span>
+              {unmatchedCount > 0 && (
+                <label className={s.resultsToolbarChk}>
+                  <input
+                    type="checkbox"
+                    checked={onlyUnmatched}
+                    onChange={e => setOnlyUnmatched(e.target.checked)}
+                  />
+                  Sadece eşleşmeyenleri göster ({unmatchedCount})
+                </label>
+              )}
+            </div>
 
             {/* Results Table */}
             <div className={s.resultsTableWrap} style={{ maxHeight: 520, overflow: 'auto' }}>
               <table className={s.resultsTable}>
                 <thead>
                   <tr>
-                    <th className={s.sortableTh} onClick={() => handleSort('row')}># {sortIcon('row')}</th>
-                    <th className={s.sortableTh} onClick={() => handleSort('student_id')}>
-                      {studentIdField === 'tc_kimlik' ? 'TC Kimlik' : 'Öğrenci No'} {sortIcon('student_id')}
-                    </th>
-                    <th className={s.sortableTh} onClick={() => handleSort('student_name')}>Ad Soyad {sortIcon('student_name')}</th>
-                    <th style={{ textAlign: 'center' }}>Eşleşme</th>
+                    <SortTh label="#" columnKey="row" {...thProps} />
+                    <SortTh label="DAT Kaydı" columnKey="student_name" {...thProps} />
+                    <th>Eşleşen / Önerilen</th>
+                    <th style={{ textAlign: 'center' }}>Güven</th>
+                    <th style={{ textAlign: 'center' }}>Durum</th>
+                    <th style={{ textAlign: 'center' }}>İşlem</th>
                     <th style={{ textAlign: 'center' }}>Kitapçık</th>
-                    <th className={s.sortableTh} style={{ textAlign: 'center' }} onClick={() => handleSort('total_correct')}>Doğru {sortIcon('total_correct')}</th>
-                    <th className={s.sortableTh} style={{ textAlign: 'center' }} onClick={() => handleSort('total_wrong')}>Yanlış {sortIcon('total_wrong')}</th>
-                    <th className={s.sortableTh} style={{ textAlign: 'center' }} onClick={() => handleSort('total_empty')}>Boş {sortIcon('total_empty')}</th>
-                    <th className={s.sortableTh} style={{ textAlign: 'center' }} onClick={() => handleSort('total_net')}>Toplam Net {sortIcon('total_net')}</th>
+                    <SortTh label="Doğru" columnKey="total_correct" align="center" {...thProps} />
+                    <SortTh label="Yanlış" columnKey="total_wrong" align="center" {...thProps} />
+                    <SortTh label="Boş" columnKey="total_empty" align="center" {...thProps} />
+                    <SortTh label="Toplam Net" columnKey="total_net" align="center" {...thProps} />
                     {sectionNames.map(sn => (
-                      <th key={sn} className={s.sortableTh} style={{ textAlign: 'center' }} onClick={() => handleSort('sec:' + sn)}>{sn} {sortIcon('sec:' + sn)}</th>
+                      <SortTh key={sn} label={sn} columnKey={`sec:${sn}`} align="center" {...thProps} />
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedResults.map((r) => (
+                  {visibleResults.map((r) => {
+                    const status = rowMatchStatus(r);
+                    const statusMeta = STATUS_META[status];
+                    const suggestion = r.top_suggestion;
+                    const confKey = r.matched_student_id
+                      ? scoreToConfidence(r.match_score)
+                      : suggestion?.confidence ?? (suggestion ? scoreToConfidence(suggestion.match_score) : null);
+                    const confMeta = confKey ? CONFIDENCE_META[confKey] : null;
+                    const pct = r.matched_student_id
+                      ? displayScorePct(undefined, r.match_score)
+                      : displayScorePct(suggestion?.score, suggestion?.match_score);
+                    return (
                     <tr key={r.id}>
                       <td style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{r.row}</td>
-                      <td style={{ fontWeight: 600 }}>{r.student_id}</td>
-                      <td>{r.student_name || '—'}</td>
-                      <td style={{ textAlign: 'center' }}>
+                      <td>
+                        <div className={s.matchDatName}>{r.student_name || '—'}</div>
+                        <div className={s.matchDatMeta}>
+                          {r.student_id ? <>No: {r.student_id}</> : null}
+                          {r.tc_kimlik ? <> · TC: {r.tc_kimlik}</> : null}
+                        </div>
+                      </td>
+                      <td>
                         {r.matched_student_id ? (
-                          <span
-                            className={s.matchBadgeOk}
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => { setMatchDialogRow(r); setSearchQuery(''); setSearchResults([]); setError(''); }}
-                            title={`${r.matched_student_name} — tıklayarak değiştir`}
-                          >
-                            ✓ {r.matched_student_name}
-                            <span style={{ fontSize: 9, marginLeft: 4, opacity: 0.65, fontWeight: 400 }}>
-                              {r.match_method === 'tc' ? '🆔TC' :
-                               r.match_method === 'name_exact' ? '📝TAM' :
-                               r.match_method === 'id' ? '🔢NO' :
-                               r.match_method === 'name' ? `📝%${Math.round(r.match_score * 100)}` :
-                               r.match_method === 'manual' ? '✋' : ''}
-                            </span>
-                          </span>
+                          <div>
+                            <div className={s.matchLinkedName}>
+                              <Icon name="check" size={12} strokeWidth={3} />
+                              {r.matched_student_name}
+                            </div>
+                            <div className={s.matchDatMeta}>
+                              {matchMethodLabel(r.match_method, r.match_score)}
+                            </div>
+                          </div>
+                        ) : suggestion ? (
+                          <div>
+                            <div className={s.matchSuggestName}>{suggestion.full_name}</div>
+                            <div className={s.matchDatMeta}>
+                              {suggestion.okul_no ? <>No: {suggestion.okul_no}</> : null}
+                              {suggestion.sinif ? <> · {suggestion.sinif}</> : null}
+                              {suggestion.reason ? <> · {suggestion.reason}</> : null}
+                            </div>
+                          </div>
                         ) : (
-                          <span
-                            className={s.matchBadgeFail}
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => { setMatchDialogRow(r); setSearchQuery(''); setSearchResults([]); setError(''); }}
-                            title="Tıklayarak eşleştir"
-                          >✗ Eşleşmedi</span>
+                          <span className={s.matchDatMeta}>Öneri yok</span>
                         )}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <select
-                          className={`${s.bookletSelect} ${r.booklet_auto_detected ? s.bookletSelectAuto : ''}`}
-                          value={r.booklet || ''}
-                          onChange={e => handleBookletChange(r.id, e.target.value)}
-                          title={r.booklet_auto_detected ? 'Otomatik tespit edildi — değiştirmek için seçin' : 'Kitapçık türünü değiştir'}
-                        >
-                          <option value="">—</option>
-                          <option value="A">A</option>
-                          <option value="B">B</option>
-                        </select>
-                        {r.booklet_auto_detected && <span className={s.bookletAutoIcon} title="Otomatik tespit">⟳</span>}
+                        {confMeta && pct != null ? (
+                          <span className={`${s.matchConfChip} ${confMeta.cls}`}>
+                            %{pct} · {confMeta.label}
+                          </span>
+                        ) : (
+                          <span className={s.matchDatMeta}>—</span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className={`${s.matchStatusChip} ${statusMeta.cls}`}>{statusMeta.label}</span>
+                      </td>
+                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {r.matched_student_id ? (
+                          <div className={s.matchRowActions}>
+                            <button type="button" className={s.matchActionBtn} onClick={() => openMatchDialog(r)}>
+                              Değiştir
+                            </button>
+                            <button
+                              type="button"
+                              className={`${s.matchActionBtn} ${s.matchActionDanger}`}
+                              onClick={() => handleMatchStudent(r.id, null)}
+                            >
+                              Kaldır
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button" className={s.matchActionPrimary} onClick={() => openMatchDialog(r)}>
+                            Eşleştir
+                          </button>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <select
+                            className={`${s.bookletSelect} ${r.booklet_auto_detected ? s.bookletSelectAuto : ''}`}
+                            value={r.booklet || ''}
+                            onChange={e => handleBookletChange(r.id, e.target.value)}
+                            title={r.booklet_auto_detected ? 'Otomatik tespit edildi — değiştirmek için seçin' : 'Kitapçık türünü değiştir'}
+                            aria-label="Kitapçık türü"
+                          >
+                            <option value="">—</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                          </select>
+                          {r.booklet_auto_detected && (
+                            <span className={s.bookletAutoIcon} title="Kitapçık otomatik tespit edildi">
+                              <Icon name="refresh" size={10} />
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td style={{ textAlign: 'center', color: '#16a34a' }}>{r.total_correct}</td>
                       <td style={{ textAlign: 'center', color: '#ef4444' }}>{r.total_wrong}</td>
@@ -1303,9 +1639,16 @@ export default function UploadTab({ exam }: Props) {
                         </td>
                       ))}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
+              {visibleResults.length === 0 && (
+                <div className={s.resultsTableEmpty}>
+                  <Icon name="checkCircle" size={22} />
+                  Eşleşmeyen kayıt kalmadı.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1313,62 +1656,165 @@ export default function UploadTab({ exam }: Props) {
 
       {/* ═══════ EŞLEŞTİRME DİALOG ═══════ */}
       {matchDialogRow && (
-        <div className={s.matchDialogOverlay} onClick={() => setMatchDialogRow(null)}>
+        <div className={s.matchDialogOverlay} onClick={closeMatchDialog}>
           <div className={s.matchDialog} onClick={e => e.stopPropagation()}>
             <div className={s.matchDialogHeader}>
-              <h4 style={{ margin: 0, fontSize: 15 }}>Öğrenci Eşleştir</h4>
-              <button onClick={() => setMatchDialogRow(null)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--text-secondary)' }}>✕</button>
+              <h4 style={{ margin: 0, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="users" size={16} />
+                {matchDialogRow.matched_student_id ? 'Eşleşmeyi Değiştir' : 'Öğrenci Eşleştir'}
+              </h4>
+              <button
+                onClick={closeMatchDialog}
+                aria-label="Kapat"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex' }}
+              >
+                <Icon name="close" size={16} />
+              </button>
             </div>
-            <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 13 }}>
-              <strong>Satır {matchDialogRow.row}:</strong> {matchDialogRow.student_name || matchDialogRow.student_id}
+            <div className={s.matchDialogDat}>
+              <div>
+                <div className={s.matchDialogDatLabel}>DAT kaydı</div>
+                <div className={s.matchDialogDatName}>{matchDialogRow.student_name || '—'}</div>
+                <div className={s.matchDatMeta}>
+                  Satır {matchDialogRow.row}
+                  {matchDialogRow.student_id ? ` · No: ${matchDialogRow.student_id}` : ''}
+                  {matchDialogRow.tc_kimlik ? ` · TC: ${matchDialogRow.tc_kimlik}` : ''}
+                </div>
+              </div>
               {matchDialogRow.matched_student_id && (
-                <span style={{ marginLeft: 8, color: '#16a34a' }}>→ {matchDialogRow.matched_student_name}</span>
-              )}
-            </div>
-            <div style={{ padding: '12px 16px' }}>
-              <input
-                type="text"
-                placeholder="Öğrenci adı, TC veya numara ile arayın…"
-                value={searchQuery}
-                onChange={e => handleSearchStudents(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, outline: 'none' }}
-                autoFocus
-              />
-              {error && (
-                <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, color: '#dc2626', fontSize: 12 }}>
-                  ⚠️ {error}
+                <div className={s.matchDialogCurrent}>
+                  <Icon name="checkCircle" size={14} />
+                  {matchDialogRow.matched_student_name}
                 </div>
               )}
             </div>
-            <div style={{ maxHeight: 280, overflowY: 'auto', padding: '0 16px 12px' }}>
-              {searching && <div style={{ textAlign: 'center', padding: 8, color: 'var(--text-secondary)', fontSize: 13 }}>Aranıyor…</div>}
-              {!searching && searchQuery.length >= 2 && searchResults.length === 0 && (
-                <div style={{ textAlign: 'center', padding: 12, color: 'var(--text-secondary)', fontSize: 13 }}>Sonuç bulunamadı</div>
-              )}
-              {searchResults.map(stu => (
-                <div
-                  key={stu.id}
-                  className={s.matchSearchItem}
-                  onClick={() => handleMatchStudent(matchDialogRow.id, stu.id)}
-                >
-                  <div style={{ fontWeight: 500 }}>{stu.full_name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                    No: {stu.id} {stu.tc_kimlik_no && `• TC: ${stu.tc_kimlik_no}`}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {matchDialogRow.matched_student_id && (
-              <div style={{ padding: '8px 16px 12px', borderTop: '1px solid #e2e8f0' }}>
-                <button
-                  className="btn-modern btn-secondary"
-                  style={{ fontSize: 12, color: '#ef4444', width: '100%' }}
-                  onClick={() => handleMatchStudent(matchDialogRow.id, null)}
-                >
-                  Eşleştirmeyi Kaldır
-                </button>
+            {error && (
+              <div className={s.matchDialogError}>
+                <Icon name="alert" size={14} />
+                {error}
               </div>
             )}
+            <div className={s.matchDialogBody}>
+              {!showManualSearch ? (
+                <>
+                  <div className={s.matchDialogSectionTitle}>Önerilen öğrenciler</div>
+                  {suggestionsLoading && (
+                    <div className={s.matchDialogEmpty}>Adaylar hesaplanıyor…</div>
+                  )}
+                  {!suggestionsLoading && suggestions.length === 0 && (
+                    <div className={s.matchDialogEmpty}>
+                      Otomatik aday bulunamadı. Farklı öğrenci arayarak manuel eşleştirebilirsiniz.
+                    </div>
+                  )}
+                  {suggestions.map((stu, idx) => {
+                    const conf = CONFIDENCE_META[stu.confidence] || CONFIDENCE_META.low;
+                    const selected = selectedCandidateId === stu.id;
+                    return (
+                      <button
+                        key={stu.id}
+                        type="button"
+                        className={`${s.matchSuggestCard} ${selected ? s.matchSuggestCardOn : ''}`}
+                        onClick={() => setSelectedCandidateId(stu.id)}
+                      >
+                        <div className={s.matchSuggestRank}>{idx + 1}</div>
+                        <div className={s.matchSuggestMain}>
+                          <div className={s.matchSuggestTitle}>{stu.full_name}</div>
+                          <div className={s.matchDatMeta}>
+                            {stu.okul_no ? <>No: {stu.okul_no}</> : null}
+                            {stu.sinif ? <> · {stu.sinif}</> : null}
+                            {stu.reason ? <> · {stu.reason}</> : null}
+                          </div>
+                        </div>
+                        <div className={s.matchSuggestScore}>
+                          <span className={`${s.matchConfChip} ${conf.cls}`}>%{stu.score}</span>
+                          <span className={s.matchDatMeta}>{conf.label}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
+              ) : (
+                <>
+                  <div className={s.matchDialogSectionTitle}>Farklı öğrenci ara</div>
+                  <input
+                    type="text"
+                    placeholder="Ad, soyad, öğrenci no veya TC…"
+                    value={searchQuery}
+                    onChange={e => handleSearchStudents(e.target.value, matchDialogRow.id)}
+                    className={s.matchSearchInput}
+                    autoFocus
+                  />
+                  {searching && <div className={s.matchDialogEmpty}>Aranıyor…</div>}
+                  {!searching && searchQuery.length > 0 && searchQuery.length < 2 && (
+                    <div className={s.matchDialogEmpty}>Aramak için en az 2 karakter girin.</div>
+                  )}
+                  {!searching && searchQuery.length >= 2 && searchResults.length === 0 && (
+                    <div className={s.matchDialogEmpty}>Sonuç bulunamadı veya adaylar başka kayıtla eşleşmiş.</div>
+                  )}
+                  {searchResults.map(stu => {
+                    const selected = selectedCandidateId === stu.id;
+                    const pct = displayScorePct(stu.score);
+                    return (
+                      <button
+                        key={stu.id}
+                        type="button"
+                        className={`${s.matchSuggestCard} ${selected ? s.matchSuggestCardOn : ''}`}
+                        onClick={() => setSelectedCandidateId(stu.id)}
+                      >
+                        <div className={s.matchSuggestMain}>
+                          <div className={s.matchSuggestTitle}>{stu.full_name}</div>
+                          <div className={s.matchDatMeta}>
+                            {stu.okul_no ? <>No: {stu.okul_no}</> : <>No: {stu.id}</>}
+                            {stu.sinif ? <> · {stu.sinif}</> : null}
+                            {stu.tc_kimlik_no ? <> · TC: {stu.tc_kimlik_no}</> : null}
+                            {stu.reason ? <> · {stu.reason}</> : null}
+                          </div>
+                        </div>
+                        {pct != null && (
+                          <span className={s.matchConfChip}>%{pct}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+            <div className={s.matchDialogFooter}>
+              <button
+                type="button"
+                className="btn-modern btn-secondary"
+                style={{ fontSize: 13 }}
+                onClick={() => {
+                  setShowManualSearch(v => !v);
+                  setSelectedCandidateId(null);
+                  setSearchQuery('');
+                  setSearchResults([]);
+                }}
+              >
+                <Icon name="search" size={13} />
+                {showManualSearch ? 'Önerilere Dön' : 'Farklı Öğrenci Ara'}
+              </button>
+              <div className={s.matchDialogFooterRight}>
+                {matchDialogRow.matched_student_id && (
+                  <button
+                    type="button"
+                    className={`${s.matchActionBtn} ${s.matchActionDanger}`}
+                    disabled={matchingBusy}
+                    onClick={() => handleMatchStudent(matchDialogRow.id, null)}
+                  >
+                    Eşleşmeyi Kaldır
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={s.matchActionPrimary}
+                  disabled={!selectedCandidateId || matchingBusy}
+                  onClick={() => selectedCandidateId && handleMatchStudent(matchDialogRow.id, selectedCandidateId)}
+                >
+                  {matchingBusy ? 'Kaydediliyor…' : 'Öğrenciyi Eşleştir'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1395,7 +1841,12 @@ export default function UploadTab({ exam }: Props) {
               >
                 <span className={s.ctxMenuDot} style={{ background: already ? '#c0c8d0' : COLOR_PALETTE[ci] }} />
                 {opt.label}
-                {already && <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)' }}>✓ [{already.start}–{already.end})</span>}
+                {already && (
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <Icon name="check" size={10} strokeWidth={3} />
+                    [{already.start}–{already.end})
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1428,11 +1879,16 @@ export default function UploadTab({ exam }: Props) {
                         disabled={!!already}
                       >
                         <span className={s.ctxMenuDot} style={{ background: already ? '#c0c8d0' : COLOR_PALETTE[ci] }} />
-                        <span style={{ flex: 1, paddingLeft: opt.isSubSection ? 8 : 0 }}>
-                          {opt.isSubSection ? `↳ ${opt.label}` : opt.label}
+                        <span style={{ flex: 1, paddingLeft: opt.isSubSection ? 12 : 0 }}>
+                          {opt.label}
                           {qCount && <span style={{ fontSize: 11, color: 'var(--text-secondary)', marginLeft: 4 }}>({qCount} soru)</span>}
                         </span>
-                        {already && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>✓ [{already.start}–{already.end})</span>}
+                        {already && (
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                            <Icon name="check" size={10} strokeWidth={3} />
+                            [{already.start}–{already.end})
+                          </span>
+                        )}
                       </button>
                     </span>
                   );

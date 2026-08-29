@@ -254,3 +254,58 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         ).json()
         self.assertTrue(detail['profil_foto'])
         self.assertIn('ogrenci/profil', detail['profil_foto'])
+
+
+class KarnePdfTopicBlocksLayoutTest(TestCase):
+    """Uzun kazanım tablosu eski 2 sütun layout'ta LayoutError veriyordu."""
+
+    def test_long_topic_blocks_render_and_include_names(self):
+        from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
+
+        rows = [
+            {'name': f'Kazanım {i}', 'soru': 1, 'dogru': 1, 'yanlis': 0, 'bos': 0, 'basari': 100}
+            for i in range(1, 25)
+        ]
+        payload = {
+            'student_name': 'Deneme Öğrenci',
+            'exam_name': 'YAYIN DENİZİ DK TYT 2',
+            'exam_type': 'YKS_TYT',
+            'total_questions': 120,
+            'total_correct': 80,
+            'total_wrong': 20,
+            'total_empty': 20,
+            'toplam_net': 75,
+            'section_details': [],
+            'strong_areas': [],
+            'weak_areas': [],
+            'answer_grids': [],
+            'topic_blocks': [
+                {'heading': 'Türkçe', 'tables': [{'title': 'Türkçe', 'rows': rows}]},
+                {'heading': 'Sosyal Bilimler', 'tables': [
+                    {'title': 'Tarih', 'rows': rows[:8]},
+                    {'title': 'Coğrafya', 'rows': rows[:6]},
+                    {'title': 'Felsefe', 'rows': rows[:6]},
+                    {'title': 'Din Kültürü', 'rows': rows[:5]},
+                ]},
+                {'heading': 'Temel Matematik', 'tables': [
+                    {'title': 'Matematik', 'rows': rows[:18]},
+                    {'title': 'Geometri', 'rows': rows[:10]},
+                ]},
+                {'heading': 'Fen Bilimleri', 'tables': [
+                    {'title': 'Fizik', 'rows': rows[:7]},
+                    {'title': 'Kimya', 'rows': rows[:7]},
+                    {'title': 'Biyoloji', 'rows': rows[:6]},
+                ]},
+            ],
+        }
+        long_rows = [
+            {'name': f'Sayfa kırılımı kazanım {i}', 'soru': 2, 'dogru': 1, 'yanlis': 1, 'bos': 0, 'basari': 50}
+            for i in range(1, 61)
+        ]
+        payload['topic_blocks'].append({
+            'heading': 'Uzun Ders',
+            'tables': [{'title': 'Uzun Ders', 'rows': long_rows}],
+        })
+        pdf = render_karne_pdf(payload)
+        self.assertTrue(pdf.startswith(b'%PDF'))
+        self.assertGreater(len(pdf), 2000)

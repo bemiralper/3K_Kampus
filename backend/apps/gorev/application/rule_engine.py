@@ -400,16 +400,24 @@ class GorevRuleEngine:
         coach_user_ids = set()
         from apps.ogrenci.domain.models import OgrenciKayit
 
-        sinif_ids = list(exam.siniflar.values_list('id', flat=True))
-        if sinif_ids:
-            ogrenci_ids = OgrenciKayit.objects.filter(
-                sinif_id__in=sinif_ids,
-                aktif_mi=True,
-            ).values_list('ogrenci_id', flat=True)
-            for oid in ogrenci_ids:
-                uid = get_primary_coach_user_id(oid)
-                if uid:
-                    coach_user_ids.add(uid)
+        from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+        participant_ids = list(
+            ExamParticipant.objects.filter(exam=exam).values_list('student_id', flat=True)
+        )
+        if participant_ids:
+            ogrenci_ids = participant_ids
+        else:
+            sinif_ids = list(exam.siniflar.values_list('id', flat=True))
+            ogrenci_ids = []
+            if sinif_ids:
+                ogrenci_ids = OgrenciKayit.objects.filter(
+                    sinif_id__in=sinif_ids,
+                    aktif_mi=True,
+                ).values_list('ogrenci_id', flat=True)
+        for oid in ogrenci_ids:
+            uid = get_primary_coach_user_id(oid)
+            if uid:
+                coach_user_ids.add(uid)
 
         if not coach_user_ids:
             return self._create(

@@ -5,12 +5,18 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views.exam_views import ExamViewSet
+from .views.roster_views import (
+    preview_participants, exam_audience, exam_participants,
+    exam_participant_add, exam_participant_detail, exam_participant_search,
+    exam_rooms, exam_seating, exam_roster_export,
+    exam_hatirlatma_preview, exam_hatirlatma_send,
+)
 from .views.answer_key_views import AnswerKeyViewSet
 from .views.result_views import (
     upload_dat, parse_dat,
     list_results, list_sessions, delete_session,
     update_student_booklet, update_student_match,
-    session_results, search_students, rematch_unmatched,
+    session_results, search_students, suggest_students, rematch_unmatched,
     rematch_all_exams,
 )
 from .views.analysis_views import (
@@ -38,6 +44,9 @@ from .views.mapping_template_views import (
 from .views.student_exam_views import student_exam_results
 from .views.scoring_settings_views import (
     puan_ayarlari, puan_ayarlari_katsayilar, puan_ayarlari_reset,
+)
+from .views.oturum_ayar_views import (
+    oturum_ayarlari_seviyeler, oturum_ayarlari_ogrenciler,
 )
 from .views.curriculum_views import (
     subject_list, subject_detail,
@@ -76,6 +85,7 @@ urlpatterns = [
     # Mapping templates & toplu işlemler — router'dan ÖNCE tanımlanmalı!
     # DefaultRouter exams/<pk>/ ile her string'i yakalayacağı için
     # exams/mapping-templates/ ve exams/rematch-all/ önce tanımlanmazsa router tarafından yutulur.
+    path('exams/preview-participants/', preview_participants, name='exam-preview-participants'),
     path('exams/rematch-all/', rematch_all_exams, name='result-rematch-all'),
     path('exams/mapping-templates/', list_mapping_templates, name='mapping-template-list'),
     path('exams/mapping-templates/create/', create_mapping_template, name='mapping-template-create'),
@@ -85,7 +95,19 @@ urlpatterns = [
     path('puan-ayarlari/', puan_ayarlari, name='olcme-puan-ayarlari'),
     path('puan-ayarlari/katsayilar/<int:year>/', puan_ayarlari_katsayilar, name='olcme-puan-katsayilar'),
     path('puan-ayarlari/katsayilar/<int:year>/reset/', puan_ayarlari_reset, name='olcme-puan-katsayilar-reset'),
+    path('oturum-ayarlari/seviyeler/', oturum_ayarlari_seviyeler, name='olcme-oturum-seviyeler'),
+    path('oturum-ayarlari/ogrenciler/', oturum_ayarlari_ogrenciler, name='olcme-oturum-ogrenciler'),
 
+    path('exams/<int:exam_pk>/audience/', exam_audience, name='exam-audience'),
+    path('exams/<int:exam_pk>/participants/', exam_participants, name='exam-participants'),
+    path('exams/<int:exam_pk>/participants/search/', exam_participant_search, name='exam-participant-search'),
+    path('exams/<int:exam_pk>/participants/add/', exam_participant_add, name='exam-participant-add'),
+    path('exams/<int:exam_pk>/participants/<int:participant_pk>/', exam_participant_detail, name='exam-participant-detail'),
+    path('exams/<int:exam_pk>/rooms/', exam_rooms, name='exam-rooms'),
+    path('exams/<int:exam_pk>/seating/', exam_seating, name='exam-seating'),
+    path('exams/<int:exam_pk>/roster-export/', exam_roster_export, name='exam-roster-export'),
+    path('exams/<int:exam_pk>/hatirlatma/preview/', exam_hatirlatma_preview, name='exam-hatirlatma-preview'),
+    path('exams/<int:exam_pk>/hatirlatma/send/', exam_hatirlatma_send, name='exam-hatirlatma-send'),
     path('', include(router.urls)),
     # Answer keys (nested under exam)
     path('exams/<int:exam_pk>/answer-keys/', answer_key_list, name='answer-key-list'),
@@ -102,6 +124,7 @@ urlpatterns = [
     path('exams/<int:exam_pk>/results/<int:session_pk>/parse/', parse_dat, name='result-parse'),
     path('exams/<int:exam_pk>/results/sessions/<int:session_pk>/results/', session_results, name='session-results'),
     path('exams/<int:exam_pk>/results/students/search/', search_students, name='student-search'),
+    path('exams/<int:exam_pk>/results/students/<int:answer_pk>/suggestions/', suggest_students, name='student-suggestions'),
     path('exams/<int:exam_pk>/results/students/<int:answer_pk>/booklet/', update_student_booklet, name='student-booklet-update'),
     path('exams/<int:exam_pk>/results/students/<int:answer_pk>/match/', update_student_match, name='student-match-update'),
     path('exams/<int:exam_pk>/results/rematch/', rematch_unmatched, name='result-rematch'),

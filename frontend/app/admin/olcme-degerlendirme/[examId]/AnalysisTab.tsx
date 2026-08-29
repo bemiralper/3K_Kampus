@@ -26,6 +26,7 @@ import RankingsPanel from '../../../../components/olcme/analysis/RankingsPanel';
 import QuestionsPanel from '../../../../components/olcme/analysis/QuestionsPanel';
 import StrategyPanel from '../../../../components/olcme/analysis/StrategyPanel';
 import ComparisonPanel from '../../../../components/olcme/analysis/ComparisonPanel';
+import Icon from '../../../../components/olcme/ui/Icon';
 
 import s from '../olcme.module.css';
 
@@ -42,14 +43,14 @@ interface Props {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 const PANELS = [
-  { key: 'ozet',       label: 'Genel Özet',      icon: '📊' },
-  { key: 'dersler',    label: 'Ders Analizi',     icon: '📚' },
-  { key: 'ogrenciler', label: 'Öğrenci Detay',    icon: '👤' },
-  { key: 'siniflar',   label: 'Sınıf/Şube',      icon: '🏫' },
-  { key: 'siralama',   label: 'Sıralama',         icon: '🏆' },
-  { key: 'sorular',    label: 'Madde Analizi',    icon: '🔬' },
-  { key: 'strateji',   label: 'Strateji',         icon: '💡' },
-  { key: 'karsilastirma', label: 'Karşılaştırma', icon: '📈' },
+  { key: 'ozet',          label: 'Genel Özet',    icon: 'chart'     },
+  { key: 'dersler',       label: 'Ders Analizi',  icon: 'layers'    },
+  { key: 'ogrenciler',    label: 'Öğrenci Detay', icon: 'users'     },
+  { key: 'siniflar',      label: 'Sınıf/Şube',    icon: 'building'  },
+  { key: 'siralama',      label: 'Sıralama',      icon: 'outcome'   },
+  { key: 'sorular',       label: 'Madde Analizi', icon: 'search'    },
+  { key: 'strateji',      label: 'Strateji',      icon: 'info'      },
+  { key: 'karsilastirma', label: 'Karşılaştırma', icon: 'chart'     },
 ] as const;
 type PanelKey = typeof PANELS[number]['key'];
 
@@ -67,7 +68,10 @@ export default function AnalysisTab({ exam }: Props) {
   const [students, setStudents] = useState<StudentAnalysis[]>([]);
   const [classes, setClasses] = useState<ClassAnalysis[]>([]);
   const [rankings, setRankings] = useState<RankingItem[]>([]);
-  const [rankingMeta, setRankingMeta] = useState<{ top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number }>({ top_10_count: 0, bottom_10_count: 0, avg_score: 0, referans_yil: 2025 });
+  const [rankingMeta, setRankingMeta] = useState<{
+    top_10_count: number; bottom_10_count: number; avg_score: number;
+    referans_yil: number; kurum_ad?: string; sube_ad?: string;
+  }>({ top_10_count: 0, bottom_10_count: 0, avg_score: 0, referans_yil: 2025 });
   const [rankingSections, setRankingSections] = useState<RankingSectionInfo[]>([]);
   const [rankingSectionAvgs, setRankingSectionAvgs] = useState<Record<string, { avg_correct: number; avg_wrong: number; avg_net: number }>>({});
   const [rankingAvgNet, setRankingAvgNet] = useState<number>(0);
@@ -170,7 +174,14 @@ export default function AnalysisTab({ exam }: Props) {
     try {
       const data = await analysisApi.rankings(exam.id, sessionFilter, rankingYear);
       setRankings(data.rankings);
-      setRankingMeta({ top_10_count: data.top_10_count, bottom_10_count: data.bottom_10_count, avg_score: data.avg_score, referans_yil: data.referans_yil });
+      setRankingMeta({
+        top_10_count: data.top_10_count,
+        bottom_10_count: data.bottom_10_count,
+        avg_score: data.avg_score,
+        referans_yil: data.referans_yil,
+        kurum_ad: data.kurum_ad,
+        sube_ad: data.sube_ad,
+      });
       setRankingSections(data.sections || []);
       setRankingSectionAvgs(data.section_avgs || {});
       setRankingAvgNet(data.avg_net || 0);
@@ -224,7 +235,8 @@ export default function AnalysisTab({ exam }: Props) {
 
   /* ── PANEL DEĞİŞİMİNDE VERİ YÜKLE ────────────────────────────────────── */
 
-  useEffect(() => {
+  /** Aktif panelin yükleyicisi — hem sekme değişiminde hem "yeniden dene"de. */
+  const reloadActive = useCallback(() => {
     switch (activePanel) {
       case 'ozet': loadSummary(); break;
       case 'dersler': loadSections(); break;
@@ -236,6 +248,8 @@ export default function AnalysisTab({ exam }: Props) {
       case 'karsilastirma': loadComparisons(); break;
     }
   }, [activePanel, loadSummary, loadSections, loadStudents, loadClasses, loadRankings, loadQuestions, loadStrategies, loadComparisons]);
+
+  useEffect(() => { reloadActive(); }, [reloadActive]);
 
   /* ── Filtered students ────────────────────────────────────────────────── */
   const filteredStudents = useMemo(() => {
@@ -261,17 +275,23 @@ export default function AnalysisTab({ exam }: Props) {
             key={p.key}
             className={`${s.analysisPanelBtn} ${activePanel === p.key ? s.analysisPanelBtnActive : ''}`}
             onClick={() => setActivePanel(p.key)}
+            aria-pressed={activePanel === p.key}
           >
-            <span>{p.icon}</span> {p.label}
+            <Icon name={p.icon} size={15} />
+            {p.label}
           </button>
         ))}
       </div>
 
-      {/* Oturum filtresi */}
+      {/* Oturum filtresi — yalnızca birden çok oturum varsa anlamlı */}
       {summary && summary.sessions && summary.sessions.length > 1 && (
         <div className={s.analysisSessionFilter}>
-          <label>Oturum:</label>
+          <label htmlFor="analiz-oturum">
+            <Icon name="filter" size={13} />
+            Oturum
+          </label>
           <select
+            id="analiz-oturum"
             value={sessionFilter || ''}
             onChange={e => setSessionFilter(e.target.value ? Number(e.target.value) : undefined)}
           >
@@ -283,8 +303,27 @@ export default function AnalysisTab({ exam }: Props) {
         </div>
       )}
 
-      {error && <div className={s.analysisError}>⚠️ {error}</div>}
-      {loading && <div className={s.analysisLoading}>Yükleniyor…</div>}
+      {error && (
+        <div className={s.analysisError}>
+          <Icon name="error" size={17} />
+          <span style={{ flex: 1 }}>{error}</span>
+          <button
+            type="button"
+            onClick={() => reloadActive()}
+            className={s.analysisRetryBtn}
+          >
+            <Icon name="refresh" size={13} />
+            Yeniden dene
+          </button>
+        </div>
+      )}
+
+      {loading && (
+        <div className={s.analysisLoading}>
+          <Icon name="refresh" size={16} className={s.olcmeSpinning} />
+          Analiz hesaplanıyor…
+        </div>
+      )}
 
       {/* ── Paneller ─────────────────────────────────────────────────────── */}
       {!loading && activePanel === 'ozet' && summary && <SummaryPanel data={summary} examType={exam.exam_type} />}
