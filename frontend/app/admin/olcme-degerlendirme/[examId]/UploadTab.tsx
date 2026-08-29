@@ -560,12 +560,25 @@ export default function UploadTab({ exam }: Props) {
     setMappings(prev => prev.filter(m => m.field !== field));
   };
 
-  // Click dışına tıklayınca context menu kapat
+  // Click dışına tıklayınca context menu kapat.
+  // Windows'ta contextmenu'den hemen sonra click gelir; o tık menüyü
+  // açıldığı anda kapatmasın diye kısa bir süre yok sayılır.
   useEffect(() => {
     if (!ctxMenu) return;
-    const handler = () => setCtxMenu(null);
+    let armed = false;
+    const arm = window.setTimeout(() => { armed = true; }, 280);
+    const handler = (e: MouseEvent) => {
+      if (!armed) return;
+      if (ctxMenuRef.current?.contains(e.target as Node)) return;
+      setCtxMenu(null);
+    };
     document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
+    document.addEventListener('contextmenu', handler);
+    return () => {
+      window.clearTimeout(arm);
+      document.removeEventListener('click', handler);
+      document.removeEventListener('contextmenu', handler);
+    };
   }, [ctxMenu]);
 
   // Context menu viewport düzeltme (render sonrası gerçek boyutla)
@@ -1184,9 +1197,9 @@ export default function UploadTab({ exam }: Props) {
               <Icon name="info" size={17} style={{ marginTop: 1 }} />
               <div>
                 <strong>Nasıl yapılır:</strong> Aşağıdaki önizlemede bir sütun aralığını
-                <strong> sol tuşla sürükleyerek seçin</strong>, sonra
-                <strong> sağ tıklayıp</strong> bu aralığın hangi alan olduğunu belirtin
-                (Öğrenci No, Ad Soyad veya ders cevapları). Aynı eşleştirmeyi tekrar
+                <strong> sol tuşla sürükleyerek seçin</strong>, sonra üstteki
+                <strong> “Bu aralık hangi alan?”</strong> listesinden alanı seçin
+                (sağ tık menüsü de çalışır). Aynı eşleştirmeyi tekrar
                 kullanacaksanız şablon olarak kaydedin.
               </div>
             </div>
@@ -1290,11 +1303,37 @@ export default function UploadTab({ exam }: Props) {
 
                 {/* ── Seçim Sayacı ────────────────────────────────────────── */}
                 {selCount > 0 && (
-                  <span className={s.selectionCounter}>
-                    <Icon name="layers" size={12} />
-                    {selCount} karakter seçili
-                    <span className={s.selectionCounterRange}>[{selLo}–{selHi! + 1})</span>
-                  </span>
+                  <>
+                    <span className={s.selectionCounter}>
+                      <Icon name="layers" size={12} />
+                      {selCount} karakter seçili
+                      <span className={s.selectionCounterRange}>[{selLo}–{selHi! + 1})</span>
+                    </span>
+                    <select
+                      className={s.fieldAssignSelect}
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) assignField(e.target.value);
+                      }}
+                      aria-label="Seçilen aralığı alana ata"
+                    >
+                      <option value="" disabled>Bu aralık hangi alan?</option>
+                      <optgroup label="Genel">
+                        {BASE_FIELDS.map(opt => (
+                          <option key={opt.field} value={opt.field}>{opt.label}</option>
+                        ))}
+                      </optgroup>
+                      {sectionFieldOptions.length > 0 && (
+                        <optgroup label="Ders Cevapları">
+                          {sectionFieldOptions.map(opt => (
+                            <option key={opt.field} value={opt.field}>
+                              {opt.parentLabel ? `${opt.parentLabel} · ${opt.label}` : opt.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </>
                 )}
               </div>
               <div className={s.datToolbarRight}>
@@ -1310,6 +1349,21 @@ export default function UploadTab({ exam }: Props) {
                 </button>
               </div>
             </div>
+
+            {uploadResp.preview_truncated && (
+              <div className={`${s.uploadNotice} ${s.uploadNoticeWarn}`}>
+                <Icon name="info" size={16} />
+                Önizlemede ilk {lines.length} satır gösteriliyor ({uploadResp.total_lines} satırın).
+                Alan seçimi bu satırlardan yapılır; skorlama tüm dosyayı kullanır.
+              </div>
+            )}
+            {sectionFieldOptions.length === 0 && (
+              <div className={`${s.uploadNotice} ${s.uploadNoticeWarn}`}>
+                <Icon name="alert" size={16} />
+                Bu sınavda henüz <strong>ders bölümü</strong> yok. Ders cevap alanlarını
+                seçmek için önce sınavı düzenleyip bölüm ekleyin.
+              </div>
+            )}
 
             {/* Eksik eşleştirme uyarıları — kullanıcı butona basmadan önce görsün */}
             {!hasAnswerMapping && (

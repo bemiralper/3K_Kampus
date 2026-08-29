@@ -1299,6 +1299,16 @@
   color: #3b82f6;
   font-size: 11px;
 }
+.fieldAssignSelect {
+  margin-left: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #dfe6ef);
+  font-size: 12px;
+  background: #fff;
+  color: var(--text-primary, #1e3352);
+  max-width: 240px;
+}
 
 /* ── Context Menu Group Label ────────────────────────────────────────────── */
 .ctxMenuGroupLabel {

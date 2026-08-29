@@ -8,6 +8,7 @@ const nextConfig = {
   // Bu, POST/PATCH gibi body'li isteklerde sorun çıkarır.
   skipTrailingSlashRedirect: true,
   experimental: {
+    serverActions: { bodySizeLimit: '50mb' },
     optimizePackageImports: [
       "recharts",
       "react-datepicker",

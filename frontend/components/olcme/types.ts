@@ -410,6 +410,7 @@ export interface DATUploadResponse {
   filename: string;
   total_lines: number;
   preview_lines: string[];
+  preview_truncated?: boolean;
 }
 
 export interface DATParsePayload {

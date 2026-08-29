@@ -109,14 +109,19 @@ def upload_dat(request, exam_pk):
     if not dat_file:
         return Response({'error': 'dat_file alanı zorunludur.'}, status=400)
 
-    # Oturum oluştur
-    session = ExamSession.objects.create(
-        exam=exam,
-        dat_file=dat_file,
-        original_filename=dat_file.name,
-        status=ExamSession.Status.PENDING,
-        uploaded_by=request.user if request.user.is_authenticated else None,
-    )
+    try:
+        session = ExamSession.objects.create(
+            exam=exam,
+            dat_file=dat_file,
+            original_filename=dat_file.name,
+            status=ExamSession.Status.PENDING,
+            uploaded_by=request.user if request.user.is_authenticated else None,
+        )
+    except OSError as e:
+        return Response(
+            {'error': f'Dosya kaydedilemedi (media klasörü yazılabilir mi?): {e}'},
+            status=500,
+        )
 
     # Dosya içeriğini oku ve satırları döndür (önizleme)
     try:
@@ -132,18 +137,20 @@ def upload_dat(request, exam_pk):
         else:
             text = raw.decode('latin-1', errors='replace')
 
-        lines = text.strip().splitlines()
+        lines = [ln.replace('\x00', '') for ln in text.splitlines()]
     except Exception as e:
         session.status = ExamSession.Status.ERROR
         session.error_message = str(e)
         session.save()
         return Response({'error': f'Dosya okunamadı: {str(e)}'}, status=400)
 
+    preview_limit = 80
     return Response({
         'session_id': session.id,
         'filename': session.original_filename,
         'total_lines': len(lines),
-        'preview_lines': lines,   # tüm satırlar
+        'preview_lines': lines[:preview_limit],
+        'preview_truncated': len(lines) > preview_limit,
     }, status=201)
 
 
@@ -502,7 +509,7 @@ def parse_dat(request, exam_pk, session_pk):
                 continue
         else:
             text = raw.decode('latin-1', errors='replace')
-        lines = text.strip().splitlines()
+        lines = [ln.replace('\x00', '') for ln in text.splitlines()]
     except Exception as e:
         return Response({'error': f'Dosya okunamadı: {str(e)}'}, status=400)
 
