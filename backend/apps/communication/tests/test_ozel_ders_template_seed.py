@@ -23,6 +23,7 @@ User = get_user_model()
 EXPECTED_META = {
     'ozel_ders.ogretmen_gelmedi': 'ozel_ders_ogretmen_gelmedi_veli',
     'ozel_ders.ogrenci_gelmedi': 'ozel_ders_ogrenci_gelmedi_veli',
+    'ozel_ders.ogrenci_gelmedi_telafi': 'ozel_ders_ogrenci_gelmedi_telafi_veli',
     'ozel_ders.iptal': 'ozel_ders_iptal_veli',
     'ozel_ders.telafi_planlandi': 'ozel_ders_telafi_veli',
     'ozel_ders.islendi': 'ozel_ders_islendi_veli',
@@ -46,9 +47,9 @@ class OzelDersTemplateSeedTest(TestCase):
             is_active=True,
         )
 
-    def test_drafts_cover_five_unique_events(self):
+    def test_drafts_cover_unique_events(self):
         drafts = list_ozel_ders_template_drafts()
-        self.assertEqual(len(drafts), 5)
+        self.assertEqual(len(drafts), 6)
         keys = {d.event_key for d in drafts}
         self.assertEqual(keys, set(EXPECTED_META))
         names = {d.meta_name for d in drafts}
@@ -64,12 +65,17 @@ class OzelDersTemplateSeedTest(TestCase):
         self.assertIn('{{ek_bilgi}}', iptal.body_named)
         ogretmen = next(d for d in drafts if d.event_key == 'ozel_ders.ogretmen_gelmedi')
         self.assertIn('öğretmenimizin katılım', ogretmen.body_named)
-        self.assertIn('{{telafi_notu}}', ogretmen.body_named)
-        self.assertNotIn('telafisi yapılacaktır', ogretmen.body_named)
+        self.assertNotIn('{{telafi_notu}}', ogretmen.body_named)
+        self.assertIn('telafisi yapılacaktır', ogretmen.body_named)
         self.assertEqual(ogretmen.header_json.get('text'), 'Özel Ders Bilgilendirmesi')
         ogrenci = next(d for d in drafts if d.event_key == 'ozel_ders.ogrenci_gelmedi')
-        self.assertIn('{{telafi_notu}}', ogrenci.body_named)
+        self.assertNotIn('{{telafi_notu}}', ogrenci.body_named)
         self.assertNotIn('telafi edilecektir', ogrenci.body_named)
+        ogrenci_telafi = next(
+            d for d in drafts if d.event_key == 'ozel_ders.ogrenci_gelmedi_telafi'
+        )
+        self.assertNotIn('{{telafi_notu}}', ogrenci_telafi.body_named)
+        self.assertIn('telafi edilecektir', ogrenci_telafi.body_named)
 
     def test_event_catalog_unique_meta_names_and_legacy(self):
         for key, expected in EXPECTED_META.items():
@@ -86,9 +92,9 @@ class OzelDersTemplateSeedTest(TestCase):
             bind=True,
         )
         self.assertEqual(result['errors'], [])
-        self.assertEqual(len(result['created_meta']), 5)
-        self.assertEqual(len(result['created_app']), 5)
-        self.assertEqual(len(result['bound']), 5)
+        self.assertEqual(len(result['created_meta']), 6)
+        self.assertEqual(len(result['created_app']), 6)
+        self.assertEqual(len(result['bound']), 6)
         for name in EXPECTED_META.values():
             meta = WhatsAppMetaTemplate.objects.get(channel_config=self.account, name=name)
             self.assertEqual(meta.status, MetaTemplateStatus.DRAFT)
@@ -127,7 +133,7 @@ class OzelDersTemplateSeedTest(TestCase):
             bind=True,
         )
         self.assertEqual(result['errors'], [])
-        self.assertEqual(len(result['created_meta']), 5)
+        self.assertEqual(len(result['created_meta']), 6)
         binding = NotificationTemplateBinding.objects.get(
             kurum=self.kurum,
             event_key='ozel_ders.iptal',

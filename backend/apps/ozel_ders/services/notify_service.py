@@ -35,6 +35,7 @@ OPT_IN_CATEGORY = 'devamsizlik'
 
 EVENT_OGRETMEN_GELMEDI = 'ozel_ders.ogretmen_gelmedi'
 EVENT_OGRENCI_GELMEDI = 'ozel_ders.ogrenci_gelmedi'
+EVENT_OGRENCI_GELMEDI_TELAFI = 'ozel_ders.ogrenci_gelmedi_telafi'
 EVENT_IPTAL = 'ozel_ders.iptal'
 EVENT_TELAFI_PLANLANDI = 'ozel_ders.telafi_planlandi'
 EVENT_ISLENDI = 'ozel_ders.islendi'
@@ -43,6 +44,7 @@ EVENT_ISLENDI = 'ozel_ders.islendi'
 _EVENT_REF = {
     EVENT_OGRETMEN_GELMEDI: 'og',
     EVENT_OGRENCI_GELMEDI: 'ogr',
+    EVENT_OGRENCI_GELMEDI_TELAFI: 'ogt',
     EVENT_IPTAL: 'ip',
     EVENT_TELAFI_PLANLANDI: 'tp',
     EVENT_ISLENDI: 'is',
@@ -62,24 +64,6 @@ _MONTH_TR = {
     1: 'Ocak', 2: 'Şubat', 3: 'Mart', 4: 'Nisan', 5: 'Mayıs', 6: 'Haziran',
     7: 'Temmuz', 8: 'Ağustos', 9: 'Eylül', 10: 'Ekim', 11: 'Kasım', 12: 'Aralık',
 }
-
-TELAFI_NOTU_BY_EVENT = {
-    EVENT_OGRETMEN_GELMEDI: (
-        'Dersin *telafisi yapılacaktır.* Telafi tarihi ve saati kesinleştiğinde '
-        'tarafınıza ayrıca bilgi verilecektir.'
-    ),
-    EVENT_OGRENCI_GELMEDI: (
-        'Ders *telafi edilecektir.* Telafi tarihi ve saati kesinleştiğinde '
-        'tarafınıza ayrıca bilgi verilecektir.'
-    ),
-}
-
-# Eski (değişkensiz) şablonlardan telafi cümlesini düşürmek için
-_HARDCODED_TELAFI_RE = re.compile(
-    r'\n?(?:Dersin \*telafisi yapılacaktır\.\*|Ders \*telafi edilecektir\.\*)'
-    r'[^\n]*\n?',
-    re.IGNORECASE,
-)
 
 _DURUM_LABEL = {
     OturumDurumu.ISLENDI: 'İşlendi',
@@ -146,33 +130,21 @@ def _build_context(
         'ders_durumu': ders_durumu or _DURUM_LABEL.get(oturum.durum, oturum.durum),
         'sebep': _sebep_text(oturum),
         'ek_bilgi': ek_bilgi,
-        'telafi_notu': '',
         'kurum_ad': getattr(getattr(oturum, 'kurum', None), 'ad', '') or '',
         'sube': getattr(getattr(oturum, 'sube', None), 'ad', '') or '',
     }
 
 
-def _telafi_notu(event_key: str, telafi_bekleniyor: bool) -> str:
-    if not telafi_bekleniyor:
-        return ''
-    return TELAFI_NOTU_BY_EVENT.get(event_key, '')
-
-
-def _fallback_body(event_key: str, ctx: dict[str, str], *, telafi_bekleniyor: bool = False) -> str:
+def _fallback_body(event_key: str, ctx: dict[str, str]) -> str:
     """Katalogdaki varsayılan metni doldurur (İletişim şablonlarıyla aynı kaynak)."""
     from apps.communication.application.notification_events import get_event
     event = get_event(event_key)
     template = event.default_body('VELI') if event else ''
     if not template:
         return ''
-    filled = dict(ctx)
-    if 'telafi_notu' not in filled:
-        filled['telafi_notu'] = _telafi_notu(event_key, telafi_bekleniyor)
-    body = resolve_variables(template, filled)
-    if not (filled.get('ek_bilgi') or '').strip():
+    body = resolve_variables(template, ctx)
+    if not (ctx.get('ek_bilgi') or '').strip():
         body = re.sub(r'\nEk bilgi:\s*', '\n', body)
-    if not (filled.get('telafi_notu') or '').strip():
-        body = _HARDCODED_TELAFI_RE.sub('\n', body)
     return re.sub(r'\n{3,}', '\n\n', body).strip()
 
 
@@ -191,7 +163,6 @@ def _send_to_veliler(
     sent_by_user_id: Optional[int] = None,
     ek_bilgi: str = '',
     extra_ctx: Optional[dict] = None,
-    telafi_bekleniyor: bool = False,
 ) -> int:
     from apps.ogrenci.application.veli_contact import list_outbound_veliler
 
@@ -209,10 +180,9 @@ def _send_to_veliler(
             continue
 
         ctx = _build_context(oturum, veli=veli, ek_bilgi=ek_bilgi)
-        ctx['telafi_notu'] = _telafi_notu(event_key, telafi_bekleniyor)
         if extra_ctx:
             ctx.update(extra_ctx)
-        body = _fallback_body(event_key, ctx, telafi_bekleniyor=telafi_bekleniyor)
+        body = _fallback_body(event_key, ctx)
         source_ref = _source_ref(oturum.id, event_key, veli.id)
 
         try:
@@ -272,7 +242,9 @@ def notify_yoklama(
     if oturum.durum == OturumDurumu.OGRETMEN_GELMEDI:
         event_key = EVENT_OGRETMEN_GELMEDI
     elif oturum.durum == OturumDurumu.OGRENCI_GELMEDI:
-        event_key = EVENT_OGRENCI_GELMEDI
+        event_key = (
+            EVENT_OGRENCI_GELMEDI_TELAFI if telafi_bekleniyor else EVENT_OGRENCI_GELMEDI
+        )
     elif oturum.durum == OturumDurumu.IPTAL:
         event_key = EVENT_IPTAL
     elif oturum.durum in (OturumDurumu.ISLENDI, OturumDurumu.ONLINE):
@@ -286,7 +258,6 @@ def notify_yoklama(
             event_key,
             sent_by_user_id=sent_by_user_id,
             ek_bilgi=(oturum.notes or '').strip(),
-            telafi_bekleniyor=telafi_bekleniyor,
         )
 
     try:

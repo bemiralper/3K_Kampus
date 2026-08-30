@@ -916,12 +916,12 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='ozel_ders.ogretmen_gelmedi',
         module=MODULE_OZEL_DERS,
         label='Özel ders — öğretmen gelmedi',
-        description='Özel ders yoklamasında öğretmen gelmedi; veliye telafi bilgisi (tarih belirsiz).',
+        description='Özel ders yoklamasında öğretmen gelmedi; telafi cümlesi şablonda sabittir.',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
         variables=(
             'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
-            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi', 'telafi_notu',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
         ),
         meta_name_base='ozel_ders_ogretmen_gelmedi',
         legacy_meta_names=MappingProxyType({
@@ -935,7 +935,8 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 '{{ders_saati}}’te {{ders_adi}} özel dersi*, öğretmenimizin katılım '
                 'sağlayamaması nedeniyle yapılamamıştır.\n'
                 '\n'
-                '{{telafi_notu}}\n'
+                'Dersin *telafisi yapılacaktır.* Telafi tarihi ve saati kesinleştiğinde '
+                'tarafınıza ayrıca bilgi verilecektir.\n'
                 '\n'
                 'Anlayışınız için teşekkür ederiz.'
             ),
@@ -945,14 +946,40 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='ozel_ders.ogrenci_gelmedi',
         module=MODULE_OZEL_DERS,
         label='Özel ders — öğrenci gelmedi',
-        description='Özel ders yoklamasında öğrenci gelmedi bildirimi.',
+        description='Öğrenci gelmedi, telafi gerekmiyor. Telafi bekleniyorsa ayrı olay kullanılır.',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
         variables=(
             'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
-            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi', 'telafi_notu',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
         ),
         meta_name_base='ozel_ders_ogrenci_gelmedi',
+        legacy_meta_names=MappingProxyType({
+            VELI: ('ozel_ders_bilgi_veli', 'ozel_ders_ogrenci_gelmedi_v2_veli'),
+        }),
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Değerli Velimiz,\n'
+                '\n'
+                '{{ogrenci_ad}} öğrencimizin *{{ders_tarihi}} tarihinde saat '
+                '{{ders_saati}}’te {{ders_adi}} özel dersine katılım sağlanamamıştır.*\n'
+                '\n'
+                'Bilginize sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.ogrenci_gelmedi_telafi',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders — öğrenci gelmedi (telafi)',
+        description='Öğrenci gelmedi ve telafi bekleniyor. Telafi cümlesi şablonda sabittir.',
+        recipients=(VELI,),
+        opt_in_category='devamsizlik',
+        variables=(
+            'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
+        ),
+        meta_name_base='ozel_ders_ogrenci_gelmedi_telafi',
         legacy_meta_names=MappingProxyType({
             VELI: ('ozel_ders_bilgi_veli',),
         }),
@@ -963,7 +990,8 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 '{{ogrenci_ad}} öğrencimizin *{{ders_tarihi}} tarihinde saat '
                 '{{ders_saati}}’te {{ders_adi}} özel dersine katılım sağlanamamıştır.*\n'
                 '\n'
-                '{{telafi_notu}}\n'
+                'Ders *telafi edilecektir.* Telafi tarihi ve saati kesinleştiğinde '
+                'tarafınıza ayrıca bilgi verilecektir.\n'
                 '\n'
                 'Bilginize sunarız.'
             ),

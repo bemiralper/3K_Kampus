@@ -1226,7 +1226,7 @@ export async function seedSinavTemplates(data: {
   });
 }
 
-/** Özel ders yoklama/telafi — 5 Meta + LMS taslak ve bildirim bağlama */
+/** Özel ders yoklama/telafi — 6 Meta + LMS taslak ve bildirim bağlama */
 export async function seedOzelDersTemplates(data: {
   channel_config_id: string;
   sube_id?: number | null;

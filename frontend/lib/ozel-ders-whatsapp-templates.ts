@@ -8,6 +8,16 @@ export const OZEL_DERS_EVENT_BY_DURUM: Record<string, string> = {
   ONLINE: "ozel_ders.islendi",
 };
 
+export function ozelDersEventKey(
+  durum: string,
+  telafiDurumu?: string,
+): string {
+  if (durum === "OGRENCI_GELMEDI" && telafiDurumu === "BEKLENIYOR") {
+    return "ozel_ders.ogrenci_gelmedi_telafi";
+  }
+  return OZEL_DERS_EVENT_BY_DURUM[durum] || "";
+}
+
 export const OZEL_DERS_WHATSAPP_TEMPLATES: Record<
   string,
   { title: string; body: string; eventKey: string }
@@ -18,7 +28,7 @@ export const OZEL_DERS_WHATSAPP_TEMPLATES: Record<
     body:
       "Değerli Velimiz,\n\n" +
       "{{ogrenci_ad}} öğrencimizin *{{ders_tarihi}} tarihinde saat {{ders_saati}}’te {{ders_adi}} özel dersi*, öğretmenimizin katılım sağlayamaması nedeniyle yapılamamıştır.\n\n" +
-      "{{telafi_notu}}\n\n" +
+      "Dersin *telafisi yapılacaktır.* Telafi tarihi ve saati kesinleştiğinde tarafınıza ayrıca bilgi verilecektir.\n\n" +
       "Anlayışınız için teşekkür ederiz.",
   },
   "ozel_ders.ogrenci_gelmedi": {
@@ -27,7 +37,15 @@ export const OZEL_DERS_WHATSAPP_TEMPLATES: Record<
     body:
       "Değerli Velimiz,\n\n" +
       "{{ogrenci_ad}} öğrencimizin *{{ders_tarihi}} tarihinde saat {{ders_saati}}’te {{ders_adi}} özel dersine katılım sağlanamamıştır.*\n\n" +
-      "{{telafi_notu}}\n\n" +
+      "Bilginize sunarız.",
+  },
+  "ozel_ders.ogrenci_gelmedi_telafi": {
+    title: "Özel Ders Bilgilendirmesi",
+    eventKey: "ozel_ders.ogrenci_gelmedi_telafi",
+    body:
+      "Değerli Velimiz,\n\n" +
+      "{{ogrenci_ad}} öğrencimizin *{{ders_tarihi}} tarihinde saat {{ders_saati}}’te {{ders_adi}} özel dersine katılım sağlanamamıştır.*\n\n" +
+      "Ders *telafi edilecektir.* Telafi tarihi ve saati kesinleştiğinde tarafınıza ayrıca bilgi verilecektir.\n\n" +
       "Bilginize sunarız.",
   },
   "ozel_ders.iptal": {
@@ -82,13 +100,6 @@ export function formatOzelDersSaati(raw: string | null | undefined): string {
   return `${match[1].padStart(2, "0")}.${match[2]}`;
 }
 
-export const TELAFI_NOTU_BY_EVENT: Record<string, string> = {
-  "ozel_ders.ogretmen_gelmedi":
-    "Dersin *telafisi yapılacaktır.* Telafi tarihi ve saati kesinleştiğinde tarafınıza ayrıca bilgi verilecektir.",
-  "ozel_ders.ogrenci_gelmedi":
-    "Ders *telafi edilecektir.* Telafi tarihi ve saati kesinleştiğinde tarafınıza ayrıca bilgi verilecektir.",
-};
-
 export type OzelDersPreviewContext = {
   ogrenci_ad?: string;
   ders_tarihi?: string;
@@ -97,20 +108,9 @@ export type OzelDersPreviewContext = {
   ogretmen_ad?: string;
   sebep?: string;
   ek_bilgi?: string;
-  telafi_notu?: string;
   telafi_tarihi?: string;
   telafi_saati?: string;
 };
-
-export function telafiNotuForPreview(eventKey: string, telafiDurumu?: string): string {
-  if (eventKey === "ozel_ders.ogretmen_gelmedi") {
-    return TELAFI_NOTU_BY_EVENT[eventKey] || "";
-  }
-  if (telafiDurumu === "BEKLENIYOR") {
-    return TELAFI_NOTU_BY_EVENT[eventKey] || "";
-  }
-  return "";
-}
 
 export function resolveOzelDersTemplate(
   body: string,

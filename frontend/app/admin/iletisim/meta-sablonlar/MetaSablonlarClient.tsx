@@ -760,6 +760,7 @@ export default function MetaSablonlarClient() {
       "Özel ders Meta taslakları oluşturulsun mu?\n\n"
       + "• ozel_ders_ogretmen_gelmedi_veli\n"
       + "• ozel_ders_ogrenci_gelmedi_veli\n"
+      + "• ozel_ders_ogrenci_gelmedi_telafi_veli\n"
       + "• ozel_ders_iptal_veli\n"
       + "• ozel_ders_telafi_veli\n"
       + "• ozel_ders_islendi_veli\n\n"
@@ -1138,7 +1139,7 @@ export default function MetaSablonlarClient() {
     {
       key: "ozel_ders",
       title: "Özel ders taslakları",
-      desc: "Öğretmen/öğrenci gelmedi, iptal, telafi, işlendi (5 Meta + LMS).",
+      desc: "Öğretmen/öğrenci gelmedi, telafi, iptal, işlendi (6 Meta + LMS).",
       onClick: handleSeedOzelDers,
     },
     {

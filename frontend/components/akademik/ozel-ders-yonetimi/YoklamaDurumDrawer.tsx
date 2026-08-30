@@ -5,11 +5,9 @@ import { WhatsAppPreviewBubble } from '@/components/communication';
 import '@/components/communication/communication.css';
 import type { SetOturumDurumPayload } from '@/lib/ozel-ders-api';
 import {
-  OZEL_DERS_EVENT_BY_DURUM,
   OZEL_DERS_WHATSAPP_TEMPLATES,
+  ozelDersEventKey,
   resolveOzelDersTemplate,
-  telafiNotuForPreview,
-  type OzelDersPreviewContext,
 } from '@/lib/ozel-ders-whatsapp-templates';
 import { Drawer } from './ozelDersUi';
 import {
@@ -72,7 +70,7 @@ export default function YoklamaDurumDrawer({
   const sebepInvalid =
     sebepRequired && (!sebepKodu || (sebepKodu === 'DIGER' && !sebepAciklama.trim()));
 
-  const eventKey = OZEL_DERS_EVENT_BY_DURUM[durum] || '';
+  const eventKey = ozelDersEventKey(durum, telafiDurumu);
   const template = eventKey ? OZEL_DERS_WHATSAPP_TEMPLATES[eventKey] : undefined;
   const usesEkBilgi = eventKey === 'ozel_ders.iptal';
 
@@ -86,11 +84,10 @@ export default function YoklamaDurumDrawer({
       ogretmen_ad: preview?.ogretmen_ad || '',
       sebep: sebepLabel(sebepKodu, sebepAciklama) || '…',
       ek_bilgi: localNotes.trim(),
-      telafi_notu: telafiNotuForPreview(eventKey, telafiDurumu),
       telafi_tarihi: preview?.telafi_tarihi || '',
       telafi_saati: preview?.telafi_saati || '',
     });
-  }, [template, preview, sebepKodu, sebepAciklama, localNotes, eventKey, telafiDurumu]);
+  }, [template, preview, sebepKodu, sebepAciklama, localNotes]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

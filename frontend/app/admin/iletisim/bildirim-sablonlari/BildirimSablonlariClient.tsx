@@ -1265,6 +1265,7 @@ export default function BildirimSablonlariClient() {
       "Özel ders taslakları oluşturulsun mu?\n\n" +
         "• ozel_ders_ogretmen_gelmedi_veli\n" +
         "• ozel_ders_ogrenci_gelmedi_veli\n" +
+        "• ozel_ders_ogrenci_gelmedi_telafi_veli\n" +
         "• ozel_ders_iptal_veli\n" +
         "• ozel_ders_telafi_veli\n" +
         "• ozel_ders_islendi_veli\n\n" +
@@ -1304,7 +1305,7 @@ export default function BildirimSablonlariClient() {
     {
       kind: "ozel_ders",
       title: "Özel ders taslakları",
-      desc: "Öğretmen/öğrenci gelmedi, iptal, telafi, işlendi",
+      desc: "Öğretmen/öğrenci gelmedi, telafi, iptal, işlendi",
       run: handleSeedOzelDers,
     },
     {
