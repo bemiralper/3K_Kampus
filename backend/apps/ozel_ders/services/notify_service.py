@@ -126,6 +126,7 @@ def _build_context(
         'ders_tarihi': _format_date_tr(oturum.session_date),
         'ders_saati': _format_time_tr(oturum.start_time),
         'ders_adi': getattr(oturum.ders, 'ad', None) or str(oturum.ders_id),
+        'ders_ad': getattr(oturum.ders, 'ad', None) or str(oturum.ders_id),
         'ogretmen_ad': _person_ad(oturum.ogretmen),
         'ders_durumu': ders_durumu or _DURUM_LABEL.get(oturum.durum, oturum.durum),
         'sebep': _sebep_text(oturum),

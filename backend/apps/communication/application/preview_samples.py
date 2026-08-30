@@ -16,6 +16,7 @@ PREVIEW_SAMPLE_VALUES: dict[str, str] = {
     'ders_tarihi': '15 Ocak 2026 Pazartesi',
     'ders_saati': '15.00',
     'ders_adi': 'Matematik',
+    'ders_ad': 'Matematik',
     'ogretmen_ad': 'Tuba Demir',
     'ders_durumu': 'Öğretmen Gelmedi',
     'sebep': 'Hastalık',

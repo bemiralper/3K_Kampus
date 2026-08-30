@@ -497,6 +497,7 @@ def _base_context(payload: dict[str, Any], *, veli=None) -> dict[str, str]:
         'sube': payload.get('sube_ad') or '',
         'donem': payload.get('donem_label') or '',
         'ders_ad': payload.get('ders_ad') or '',
+        'ders_adi': payload.get('ders_ad') or '',
         'planlanan_ders': str(ozet.get('planlanan_ders', 0)),
         'islenen_ders': str(ozet.get('islenen_ders', 0)),
         'veli_ad': _person_ad(veli) or 'Velimiz',

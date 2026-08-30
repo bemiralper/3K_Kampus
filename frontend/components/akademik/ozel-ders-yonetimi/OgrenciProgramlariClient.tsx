@@ -37,6 +37,7 @@ import {
   IconAlertTriangle,
   IconAward,
   IconBookOpen,
+  IconCheckCircle,
   IconCalendar,
   IconChevronRight,
   IconClock,

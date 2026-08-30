@@ -1153,7 +1153,7 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         recipients=(VELI, OGRENCI),
         opt_in_category='duyuru',
         has_document=True,
-        variables=('ogrenci_ad', 'veli_ad', 'pdf_baslik', 'paketler', 'donem', 'ders_ad'),
+        variables=('ogrenci_ad', 'veli_ad', 'pdf_baslik', 'paketler', 'donem', 'ders_ad', 'ders_adi'),
         meta_name_base='ozel_ders_ders_gecmisi',
         default_bodies=MappingProxyType({
             VELI: (
