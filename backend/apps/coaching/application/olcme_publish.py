@@ -291,8 +291,7 @@ def _load_answer_key_pdf(exam: Exam) -> tuple[bytes, str]:
         finally:
             exam.answer_key_pdf.close()
         if data and data.startswith(b'%PDF'):
-            name = (exam.answer_key_pdf.name or '').rsplit('/', 1)[-1] or cevap_anahtari_filename(exam)
-            return data, name
+            return data, cevap_anahtari_filename(exam)
     return render_cevap_anahtari_pdf(exam), cevap_anahtari_filename(exam)
 
 

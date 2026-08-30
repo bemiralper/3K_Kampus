@@ -189,6 +189,11 @@ class BirebirHaftalikSlot(models.Model):
         blank=True,
         help_text='Boşsa program bitişi kullanılır',
     )
+    hedef_dakika = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='Ders bazlı saat kotası (dakika). Aynı dersin slotları kotayı paylaşır.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,4 +1,4 @@
-import { apiFetch } from '@/lib/api';
+import { apiFetch, getContextHeaders, resolveApiUrl } from '@/lib/api';
 
 const BASE = '/api/ozel-ders';
 
@@ -53,6 +53,7 @@ export type BirebirSlot = {
   aktif: boolean;
   baslangic_tarihi?: string | null;
   bitis_tarihi?: string | null;
+  hedef_dakika?: number | null;
 };
 
 export type OturumLinkOzet = {
@@ -305,6 +306,14 @@ export async function deleteSlot(slotId: number) {
   if (!res.success) throw new Error(res.error || 'Silinemedi');
 }
 
+export async function endSlotEarly(slotId: number, bitis_tarihi?: string) {
+  const res = await apiFetch<BirebirSlot>(`${BASE}/slots/${slotId}/erken-bitir/`, {
+    method: 'POST',
+    body: JSON.stringify(bitis_tarihi ? { bitis_tarihi } : {}),
+  });
+  return unwrap(res);
+}
+
 export async function materializeProgram(
   programId: number,
   start_date: string,
@@ -385,6 +394,9 @@ export type DersOzetKirilimi = {
   telafi_ders: number;
   ek_ders: number;
   iptal_ders: number;
+  hedef_dakika?: number | null;
+  kullanilan_dakika?: number | null;
+  kalan_dakika?: number | null;
 };
 
 export type OgrenciPaketOzeti = { id: number; ad: string };
@@ -408,6 +420,8 @@ export type OgrenciDonemOzeti = {
   };
   /** Bir öğrencinin birden fazla dersi/paketi olabilir — ders bazında kırılım. */
   dersler: DersOzetKirilimi[];
+  tatiller?: DonemTatilGun[];
+  tatil_carpmalari?: TatilCarpma[];
   /** Öğrencinin bu dönemdeki tüm aktif paket/programları (tek bir ad değil). */
   paketler: OgrenciPaketOzeti[];
   paket: { program_sayisi: number };
@@ -418,6 +432,322 @@ export type OgrenciDonemOzeti = {
     ders_adet: number;
   };
 };
+
+async function downloadPdfFrom(path: string, fallbackName: string) {
+  const res = await fetch(resolveApiUrl(path), {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) {
+    let message = 'PDF indirilemedi';
+    try {
+      const data = await res.json();
+      if (data?.error) message = String(data.error);
+    } catch {
+      /* binary */
+    }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') || '';
+  const match = /filename="?([^"]+)"?/.exec(cd);
+  const filename = match?.[1] || fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadHaftalikProgramPdf(ogrenciId: number) {
+  await downloadPdfFrom(
+    `${BASE}/ogrenci/${ogrenciId}/haftalik-program/pdf/`,
+    `ozel-ders-program-${ogrenciId}.pdf`,
+  );
+}
+
+export async function downloadDersOzetiPdf(
+  ogrenciId: number,
+  startDate?: string,
+  endDate?: string,
+) {
+  await downloadPdfFrom(
+    withQuery(`${BASE}/ogrenci/${ogrenciId}/ders-ozeti/pdf/`, {
+      start_date: startDate,
+      end_date: endDate,
+    }),
+    `ders-ozeti-${ogrenciId}.pdf`,
+  );
+}
+
+export async function downloadDersGecmisPdf(
+  ogrenciId: number,
+  dersId: number,
+  startDate?: string,
+  endDate?: string,
+) {
+  await downloadPdfFrom(
+    withQuery(`${BASE}/ogrenci/${ogrenciId}/ders/${dersId}/gecmis/pdf/`, {
+      start_date: startDate,
+      end_date: endDate,
+    }),
+    `ders-gecmis-${ogrenciId}-${dersId}.pdf`,
+  );
+}
+
+export type HaftalikProgramRecipient = {
+  recipient_type: 'veli' | 'ogrenci' | string;
+  ogrenci_id: number;
+  veli_id: number | null;
+  display_name: string;
+  telefon: string;
+  body: string;
+  skip_reason: string;
+};
+
+export type HaftalikProgramTemplateInfo = {
+  recipient_type: string;
+  meta_name: string;
+  meta_status: string;
+  meta_usable: boolean;
+  app_template: string;
+  has_catalog_body: boolean;
+};
+
+export type HaftalikProgramPreview = {
+  ogrenci_id: number;
+  ogrenci_ad: string;
+  pdf_baslik: string;
+  slot_count: number;
+  paketler: string[];
+  recipients: HaftalikProgramRecipient[];
+  templates: {
+    veli: HaftalikProgramTemplateInfo;
+    ogrenci: HaftalikProgramTemplateInfo;
+  };
+  send_mode: 'meta_template' | 'document' | string;
+  has_template: boolean;
+  event_key: string;
+  event_label: string;
+};
+
+export type HaftalikProgramSendResult = {
+  veli_sent: number;
+  ogrenci_sent: number;
+  skipped: number;
+  errors: string[];
+  filename: string;
+};
+
+export async function previewHaftalikProgramWhatsApp(ogrenciId: number) {
+  const res = await apiFetch<HaftalikProgramPreview>(
+    `${BASE}/ogrenci/${ogrenciId}/haftalik-program/onizleme/`,
+  );
+  return unwrap(res);
+}
+
+export async function sendHaftalikProgramWhatsApp(
+  ogrenciId: number,
+  opts?: {
+    send_veli?: boolean;
+    send_ogrenci?: boolean;
+    veli_ids?: number[];
+    include_student?: boolean;
+  },
+) {
+  const res = await apiFetch<HaftalikProgramSendResult>(
+    `${BASE}/ogrenci/${ogrenciId}/haftalik-program/gonder/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        send_veli: opts?.send_veli !== false,
+        send_ogrenci: opts?.send_ogrenci !== false,
+        veli_ids: opts?.veli_ids,
+        include_student: opts?.include_student,
+      }),
+    },
+  );
+  return unwrap(res);
+}
+
+export async function previewDersOzetWhatsApp(
+  ogrenciId: number,
+  startDate?: string,
+  endDate?: string,
+) {
+  const res = await apiFetch<HaftalikProgramPreview>(
+    withQuery(`${BASE}/ogrenci/${ogrenciId}/ders-ozeti/onizleme/`, {
+      start_date: startDate,
+      end_date: endDate,
+    }),
+  );
+  return unwrap(res);
+}
+
+export async function sendDersOzetWhatsApp(
+  ogrenciId: number,
+  opts?: {
+    send_veli?: boolean;
+    send_ogrenci?: boolean;
+    veli_ids?: number[];
+    include_student?: boolean;
+    start_date?: string;
+    end_date?: string;
+  },
+) {
+  const res = await apiFetch<HaftalikProgramSendResult>(
+    `${BASE}/ogrenci/${ogrenciId}/ders-ozeti/gonder/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        send_veli: opts?.send_veli !== false,
+        send_ogrenci: opts?.send_ogrenci !== false,
+        veli_ids: opts?.veli_ids,
+        include_student: opts?.include_student,
+        start_date: opts?.start_date,
+        end_date: opts?.end_date,
+      }),
+    },
+  );
+  return unwrap(res);
+}
+
+export type DonemTatilGun = {
+  date: string;
+  title: string;
+  bitis?: string;
+  holiday_key: string;
+  source: string;
+  ozel_ders_aktif?: boolean;
+};
+
+export type TatilCarpma = {
+  slot_id: number;
+  ders_id: number;
+  ders_ad: string;
+  tarih: string;
+  tarih_label: string;
+  saat: string;
+  ogretmen_ad: string;
+  tatil_baslik: string;
+  holiday_key: string;
+  tatil_source: string;
+  tatil_mode: 'tatil' | 'devam' | string;
+  oturum_id: number | null;
+  can_toggle_tatil: boolean;
+};
+
+export type DersGecmisKayit = {
+  id: number | string;
+  tarih: string;
+  tarih_label: string;
+  saat: string;
+  durum: string;
+  durum_kod: string;
+  tur: string;
+  tur_kod: string;
+  ogretmen_ad: string;
+  oda_ad: string;
+  telafi_durumu: string;
+  sebep: string;
+  notlar: string;
+  aciklama: string;
+  tatil_gun?: boolean;
+  tatil_baslik?: string;
+  holiday_key?: string;
+  tatil_mode?: 'tatil' | 'devam' | string;
+  can_toggle_tatil?: boolean;
+  virtual?: boolean;
+  slot_id?: number | null;
+};
+
+export type DersGecmisPayload = {
+  ogrenci_id: number;
+  ogrenci_ad: string;
+  ders_id: number;
+  ders_ad: string;
+  donem: { baslangic: string; bitis: string };
+  donem_label: string;
+  ders_ozet: DersOzetKirilimi;
+  kayitlar: DersGecmisKayit[];
+};
+
+export async function previewDersGecmisWhatsApp(
+  ogrenciId: number,
+  dersId: number,
+  startDate?: string,
+  endDate?: string,
+) {
+  const res = await apiFetch<HaftalikProgramPreview>(
+    withQuery(`${BASE}/ogrenci/${ogrenciId}/ders/${dersId}/gecmis/onizleme/`, {
+      start_date: startDate,
+      end_date: endDate,
+    }),
+  );
+  return unwrap(res);
+}
+
+export async function sendDersGecmisWhatsApp(
+  ogrenciId: number,
+  dersId: number,
+  opts?: {
+    send_veli?: boolean;
+    send_ogrenci?: boolean;
+    veli_ids?: number[];
+    include_student?: boolean;
+    start_date?: string;
+    end_date?: string;
+  },
+) {
+  const res = await apiFetch<HaftalikProgramSendResult>(
+    `${BASE}/ogrenci/${ogrenciId}/ders/${dersId}/gecmis/gonder/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        send_veli: opts?.send_veli !== false,
+        send_ogrenci: opts?.send_ogrenci !== false,
+        veli_ids: opts?.veli_ids,
+        include_student: opts?.include_student,
+        start_date: opts?.start_date,
+        end_date: opts?.end_date,
+      }),
+    },
+  );
+  return unwrap(res);
+}
+
+export async function setDersTatilKarar(
+  ogrenciId: number,
+  dersId: number,
+  opts: { date: string; mode: 'tatil' | 'devam' },
+) {
+  const res = await apiFetch<{
+    date: string;
+    ders_id: number;
+    mode: string;
+    message: string;
+  }>(`${BASE}/ogrenci/${ogrenciId}/ders/${dersId}/gecmis/tatil/`, {
+    method: 'POST',
+    body: JSON.stringify(opts),
+  });
+  return unwrap(res);
+}
+
+export async function fetchDersGecmis(
+  ogrenciId: number,
+  dersId: number,
+  startDate?: string,
+  endDate?: string,
+) {
+  const res = await apiFetch<DersGecmisPayload>(
+    withQuery(`${BASE}/ogrenci/${ogrenciId}/ders/${dersId}/gecmis/`, {
+      start_date: startDate,
+      end_date: endDate,
+    }),
+  );
+  return unwrap(res);
+}
 
 export async function fetchOgrenciDonemOzeti(
   ogrenciId: number,

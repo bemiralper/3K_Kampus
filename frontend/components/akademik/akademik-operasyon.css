@@ -1,6 +1,10 @@
 .akademik-page {
   padding: 1.5rem 1.75rem 2.5rem;
   max-width: 1400px;
+  min-width: 0;
+  width: 100%;
+  container-type: inline-size;
+  container-name: akademik;
 }
 
 .akademik-hero {
@@ -79,6 +83,7 @@
 
 .akademik-tab-panel {
   min-height: 280px;
+  min-width: 0;
 }
 
 .akademik-kpi-strip {
@@ -243,5 +248,22 @@
   .akademik-tab-nav-scroll {
     margin: 0 -0.75rem;
     padding: 0 0.75rem 0.6rem;
+  }
+}
+
+@container akademik (max-width: 900px) {
+  .akademik-hero h1 {
+    font-size: 1.35rem;
+  }
+
+  .akademik-tab-nav-scroll {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .akademik-tab-nav-scroll::-webkit-scrollbar {
+    display: none;
   }
 }

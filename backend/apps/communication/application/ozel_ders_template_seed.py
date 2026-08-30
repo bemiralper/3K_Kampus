@@ -49,6 +49,9 @@ OZEL_DERS_EVENT_KEYS: tuple[str, ...] = (
     'ozel_ders.iptal',
     'ozel_ders.telafi_planlandi',
     'ozel_ders.islendi',
+    'ozel_ders.haftalik_program',
+    'ozel_ders.ders_ozeti',
+    'ozel_ders.ders_gecmisi',
 )
 
 _TELAFI_VAR_EVENTS = frozenset({
@@ -73,6 +76,24 @@ _APP_NAME_BY_SLOT: dict[tuple[str, str], str] = {
     ('ozel_ders.telafi_planlandi', RecipientType.VELI): 'Özel Ders Telafi Bilgilendirmesi',
     ('ozel_ders.islendi', RecipientType.VELI): (
         'Özel Ders Bilgilendirmesi — Ders Gerçekleşti'
+    ),
+    ('ozel_ders.haftalik_program', RecipientType.VELI): (
+        'Özel ders haftalık program — Veli'
+    ),
+    ('ozel_ders.haftalik_program', RecipientType.OGRENCI): (
+        'Özel ders haftalık program — Öğrenci'
+    ),
+    ('ozel_ders.ders_ozeti', RecipientType.VELI): (
+        'Özel ders özeti — Veli'
+    ),
+    ('ozel_ders.ders_ozeti', RecipientType.OGRENCI): (
+        'Özel ders özeti — Öğrenci'
+    ),
+    ('ozel_ders.ders_gecmisi', RecipientType.VELI): (
+        'Özel ders geçmişi — Veli'
+    ),
+    ('ozel_ders.ders_gecmisi', RecipientType.OGRENCI): (
+        'Özel ders geçmişi — Öğrenci'
     ),
 }
 
@@ -111,10 +132,13 @@ def list_ozel_ders_template_drafts() -> list[OzelDersTemplateDraft]:
             continue
         for recipient in event.recipients:
             body = build_meta_example_body(event, recipient)
-            header = {
-                'type': 'TEXT',
-                'text': _HEADER_BY_EVENT[event.key],
-            }
+            if event.has_document:
+                header = {'type': 'DOCUMENT'}
+            else:
+                header = {
+                    'type': 'TEXT',
+                    'text': _HEADER_BY_EVENT[event.key],
+                }
             issues = validate_template_content(
                 body_named=body, header_json=header, footer_text='',
             )
@@ -129,7 +153,11 @@ def list_ozel_ders_template_drafts() -> list[OzelDersTemplateDraft]:
                     app_name=_APP_NAME_BY_SLOT[(event.key, recipient)],
                     meta_name=event.suggested_meta_name(recipient),
                     body_named=body,
-                    category=TemplateCategory.OZEL,
+                    category=(
+                        TemplateCategory.DUYURU
+                        if event.has_document
+                        else TemplateCategory.OZEL
+                    ),
                     audience_scope=TemplateAudienceScope.ADMIN,
                     header_json=header,
                     footer_text='',

@@ -49,12 +49,23 @@ class OzelDersTemplateSeedTest(TestCase):
 
     def test_drafts_cover_unique_events(self):
         drafts = list_ozel_ders_template_drafts()
-        self.assertEqual(len(drafts), 6)
+        self.assertEqual(len(drafts), 12)
         keys = {d.event_key for d in drafts}
-        self.assertEqual(keys, set(EXPECTED_META))
-        names = {d.meta_name for d in drafts}
-        self.assertEqual(names, set(EXPECTED_META.values()))
-        self.assertNotIn('ozel_ders_bilgi_veli', names)
+        self.assertEqual(
+            keys,
+            set(EXPECTED_META) | {
+                'ozel_ders.haftalik_program',
+                'ozel_ders.ders_ozeti',
+                'ozel_ders.ders_gecmisi',
+            },
+        )
+        text_names = {d.meta_name for d in drafts if d.event_key in EXPECTED_META}
+        self.assertEqual(text_names, set(EXPECTED_META.values()))
+        self.assertNotIn('ozel_ders_bilgi_veli', {d.meta_name for d in drafts})
+        pdf_drafts = [d for d in drafts if d.event_key == 'ozel_ders.haftalik_program']
+        self.assertEqual(len(pdf_drafts), 2)
+        self.assertEqual({d.recipient_type for d in pdf_drafts}, {'VELI', 'OGRENCI'})
+        self.assertTrue(all(d.header_json.get('type') == 'DOCUMENT' for d in pdf_drafts))
         telafi = next(d for d in drafts if d.event_key == 'ozel_ders.telafi_planlandi')
         self.assertIn('telafi_tarihi', telafi.variables)
         self.assertIn('telafi_saati', telafi.variables)
@@ -92,14 +103,18 @@ class OzelDersTemplateSeedTest(TestCase):
             bind=True,
         )
         self.assertEqual(result['errors'], [])
-        self.assertEqual(len(result['created_meta']), 6)
-        self.assertEqual(len(result['created_app']), 6)
-        self.assertEqual(len(result['bound']), 6)
+        self.assertEqual(len(result['created_meta']), 12)
+        self.assertEqual(len(result['created_app']), 12)
+        self.assertEqual(len(result['bound']), 12)
         for name in EXPECTED_META.values():
             meta = WhatsAppMetaTemplate.objects.get(channel_config=self.account, name=name)
             self.assertEqual(meta.status, MetaTemplateStatus.DRAFT)
             self.assertEqual(meta.template_group, 'ozel_ders')
             self.assertEqual((meta.header_json or {}).get('type'), 'TEXT')
+        pdf_meta = WhatsAppMetaTemplate.objects.get(
+            channel_config=self.account, name='ozel_ders_haftalik_program_veli',
+        )
+        self.assertEqual((pdf_meta.header_json or {}).get('type'), 'DOCUMENT')
         self.assertTrue(
             MessageTemplate.objects.filter(
                 kurum=self.kurum,
@@ -133,7 +148,7 @@ class OzelDersTemplateSeedTest(TestCase):
             bind=True,
         )
         self.assertEqual(result['errors'], [])
-        self.assertEqual(len(result['created_meta']), 6)
+        self.assertEqual(len(result['created_meta']), 12)
         binding = NotificationTemplateBinding.objects.get(
             kurum=self.kurum,
             event_key='ozel_ders.iptal',

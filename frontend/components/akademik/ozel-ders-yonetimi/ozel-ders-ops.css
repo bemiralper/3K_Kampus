@@ -4,6 +4,7 @@
   --ops-radius: 12px;
   max-width: 1280px;
   gap: 14px;
+  min-width: 0;
 }
 
 .od-ops-top {
@@ -60,8 +61,10 @@
 
 .od-ops-header-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
 }
 
 .od-ops-donem-bar {
@@ -103,6 +106,13 @@
   border: 1px solid #fde68a;
   padding: 6px 10px;
   border-radius: 8px;
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.od-ops-tatil-hint:hover {
+  background: #fef3c7;
 }
 
 .od-ops-summary {
@@ -187,6 +197,7 @@
 /* Explicit tabs — Segmented yerine (tıklama garantili) */
 .od-ops-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
   background: #e8eef5;
@@ -320,6 +331,130 @@
 }
 .od-ops-table tbody tr:hover td {
   background: #f8fafc;
+}
+
+.od-ops-ders-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.od-ops-ders-row {
+  cursor: pointer;
+}
+
+.od-ders-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.od-ders-timeline-item {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--od-border, #e2e8f0);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.od-ders-timeline-item.is-tatil {
+  background: #fff7f4;
+  border-color: #f3d0c7;
+}
+
+.od-tatil-hits {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--od-border, #e2e8f0);
+}
+
+.od-tatil-hits-title {
+  margin: 0 0 4px;
+  font-size: 0.88rem;
+}
+
+.od-tatil-hits-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.od-tatil-hits-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--od-border, #e2e8f0);
+  border-radius: 10px;
+  background: #fff7f4;
+}
+
+.od-tatil-hits-item strong {
+  display: block;
+  font-size: 0.84rem;
+}
+
+.od-tatil-hits-item span,
+.od-tatil-hits-item p {
+  margin: 2px 0 0;
+  font-size: 0.76rem;
+  color: var(--od-muted, #64748b);
+}
+
+.od-tatil-hits-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.od-ders-timeline-when {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.78rem;
+}
+
+.od-ders-timeline-when strong {
+  font-size: 0.82rem;
+}
+
+.od-ders-timeline-when span,
+.od-ders-timeline-meta {
+  color: var(--od-muted, #64748b);
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.od-ders-timeline-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.od-ders-timeline-note {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--od-text, #0f172a);
+}
+
+@media (max-width: 560px) {
+  .od-ders-timeline-item {
+    grid-template-columns: 1fr;
+  }
 }
 
 .od-row-actions {

@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 from apps.ozel_ders.services import resmi_tatil_karar_service, tatil_etkilenen_service
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.takvim.application.resmi_tatil_service import ResmiTatilSyncService
+from apps.takvim.data.resmi_tatiller_tr import available_years as resmi_tatil_years
 from apps.takvim.helpers import _get_kurum_id, _get_sube_id, _get_user_id
 from apps.takvim.interfaces.sube_context import resolve_mandatory_takvim_sube
 
@@ -45,12 +46,20 @@ def api_resmi_tatil_list_sync(request):
 
     try:
         if request.method == 'GET':
-            year = _int_or_none(request.GET.get('year')) or date_cls.today().year
-            data = resmi_tatil_karar_service.list_resmi_tatiller_for_year(
-                kurum_id=kurum_id,
-                sube_id=sube_id,
-                year=year,
-            )
+            year_raw = (request.GET.get('year') or '').strip().lower()
+            if year_raw in ('all', 'tumu', '*'):
+                data = resmi_tatil_karar_service.list_resmi_tatiller_for_years(
+                    kurum_id=kurum_id,
+                    sube_id=sube_id,
+                    years=resmi_tatil_years(),
+                )
+            else:
+                year = _int_or_none(year_raw) or date_cls.today().year
+                data = resmi_tatil_karar_service.list_resmi_tatiller_for_year(
+                    kurum_id=kurum_id,
+                    sube_id=sube_id,
+                    year=year,
+                )
             return JsonResponse({'success': True, 'data': data})
 
         body = {}

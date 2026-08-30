@@ -45,7 +45,11 @@ _LAYOUT = {
 
 
 def cevap_anahtari_filename(exam) -> str:
-    return f'{_safe_filename(getattr(exam, "name", None) or "sinav")}_cevap_anahtari.pdf'
+    name = _safe_filename(getattr(exam, 'name', None) or 'sinav')
+    date_label = exam_date_label(exam)
+    if date_label:
+        return f'{name}_{_safe_filename(date_label)}.pdf'
+    return f'{name}.pdf'
 
 
 def parse_copies(value) -> int:

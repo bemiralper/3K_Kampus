@@ -1,4 +1,6 @@
 """Sınav yayın zamanlaması ve cevap anahtarı PDF."""
+from urllib.parse import quote
+
 from django.http import HttpResponse
 from django.utils.dateparse import parse_datetime
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -171,16 +173,18 @@ def exam_answer_key_pdf(request, exam_pk):
                 exam.answer_key_pdf.open('rb')
                 data = exam.answer_key_pdf.read()
                 exam.answer_key_pdf.close()
-                name = exam.answer_key_pdf.name.rsplit('/', 1)[-1]
             else:
                 data = render_cevap_anahtari_pdf(
                     exam, copies_per_page=copies, booklets=booklets,
                 )
-                name = cevap_anahtari_filename(exam)
+            name = cevap_anahtari_filename(exam)
         except ValueError as exc:
             return Response({'error': str(exc)}, status=400)
+        ascii_name = name.encode('ascii', 'ignore').decode('ascii') or 'cevap-anahtari.pdf'
         response = HttpResponse(data, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="{name}"'
+        response['Content-Disposition'] = (
+            f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(name)}'
+        )
         return response
 
     if request.method == 'DELETE':

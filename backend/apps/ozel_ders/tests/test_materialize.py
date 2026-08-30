@@ -12,7 +12,10 @@ from apps.ozel_ders.domain.models import (
     BirebirOgrenciProgrami,
     ProgramDurumu,
 )
-from apps.ozel_ders.services.materialize_service import materialize_active_programs
+from apps.ozel_ders.services.materialize_service import (
+    materialize_active_programs,
+    materialize_program,
+)
 from apps.personel.domain.models import Personel
 from apps.sube.domain.models import Sube
 
@@ -72,3 +75,72 @@ class MaterializeActiveProgramsTests(TestCase):
         )
         self.assertEqual(second['created'], 0)
         self.assertEqual(BirebirDersOturumu.objects.filter(is_active=True).count(), 1)
+
+    def test_slot_date_window_three_weeks(self):
+        slot = self.program.slots.get()
+        slot.baslangic_tarihi = date(2026, 8, 10)
+        slot.bitis_tarihi = date(2026, 8, 31)
+        slot.save(update_fields=['baslangic_tarihi', 'bitis_tarihi'])
+
+        result = materialize_program(
+            self.program.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-08-10',
+            end_date='2026-12-31',
+        )
+        self.assertEqual(result['created'], 3)
+        dates = list(
+            BirebirDersOturumu.objects.filter(is_active=True)
+            .order_by('session_date')
+            .values_list('session_date', flat=True)
+        )
+        self.assertEqual(dates, [date(2026, 8, 11), date(2026, 8, 18), date(2026, 8, 25)])
+
+    def test_hour_quota_stops_at_five_hours(self):
+        slot = self.program.slots.get()
+        slot.hedef_dakika = 300
+        slot.save(update_fields=['hedef_dakika'])
+
+        result = materialize_program(
+            self.program.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-08-10',
+            end_date='2026-10-31',
+        )
+        self.assertEqual(result['created'], 6)
+        self.assertGreaterEqual(result['skipped_quota'], 1)
+        self.assertEqual(BirebirDersOturumu.objects.filter(is_active=True).count(), 6)
+
+    def test_cancelled_session_does_not_consume_quota(self):
+        from apps.ozel_ders.domain.models import OturumDurumu
+
+        slot = self.program.slots.get()
+        slot.hedef_dakika = 100
+        slot.save(update_fields=['hedef_dakika'])
+
+        first = materialize_program(
+            self.program.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-08-10',
+            end_date='2026-08-16',
+        )
+        self.assertEqual(first['created'], 1)
+        oturum = BirebirDersOturumu.objects.get()
+        oturum.durum = OturumDurumu.IPTAL
+        oturum.save(update_fields=['durum'])
+
+        second = materialize_program(
+            self.program.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-08-10',
+            end_date='2026-08-31',
+        )
+        self.assertEqual(second['created'], 2)
+        self.assertEqual(
+            BirebirDersOturumu.objects.filter(is_active=True, durum=OturumDurumu.PLANLANDI).count(),
+            2,
+        )

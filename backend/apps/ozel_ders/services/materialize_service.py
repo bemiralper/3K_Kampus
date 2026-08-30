@@ -22,6 +22,11 @@ from apps.ozel_ders.services.conflict_service import (
 )
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.ozel_ders.services.program_service import get_program
+from apps.ozel_ders.services.quota_service import (
+    resolve_ders_hedef_dakika,
+    trim_excess_planlandi,
+    used_quota_minutes,
+)
 
 
 def _parse_date(value) -> date:
@@ -149,6 +154,17 @@ def sync_future_sessions_for_slot(
         if _apply_slot_fields(oturum, slot):
             updated += 1
 
+    trimmed = trim_excess_planlandi(
+        ogrenci_id=program.ogrenci_id,
+        ders_id=slot.ders_id,
+        hedef_dakika=resolve_ders_hedef_dakika(
+            ogrenci_id=program.ogrenci_id, ders_id=slot.ders_id,
+        ),
+        kurum_id=program.kurum_id,
+        today=today,
+    )
+    deactivated += trimmed
+
     created = 0
     if rematerialize and slot.aktif and program.durum == ProgramDurumu.AKTIF:
         created = _rematerialize_from_today(slot, user=user)
@@ -164,7 +180,7 @@ def _rematerialize_from_today(slot: BirebirHaftalikSlot, *, user=None) -> int:
     program = slot.program
     today = timezone.localdate()
     start = max(today, slot.baslangic_tarihi or program.baslangic_tarihi or today)
-    end = program.bitis_tarihi or (today + timedelta(days=_FUTURE_SYNC_DAYS))
+    end = slot.bitis_tarihi or program.bitis_tarihi or (today + timedelta(days=_FUTURE_SYNC_DAYS))
     if end < start:
         return 0
     result = materialize_program(
@@ -208,10 +224,12 @@ def materialize_program(
     skipped_holiday = 0
     skipped_existing = 0
     skipped_conflict = 0
+    skipped_quota = 0
     holiday_dates: set[str] = set()
     warnings: list[dict] = []
 
-    slots = program.slots.filter(aktif=True).select_related('ders', 'ogretmen', 'oda')
+    slots = list(program.slots.filter(aktif=True).select_related('ders', 'ogretmen', 'oda'))
+    candidates: list[tuple[date, BirebirHaftalikSlot]] = []
     for slot in slots:
         slot_start = slot.baslangic_tarihi or program.baslangic_tarihi
         slot_end = slot.bitis_tarihi or program.bitis_tarihi or end
@@ -219,61 +237,95 @@ def materialize_program(
         range_end = min(end, slot_end)
         if range_end < range_start:
             continue
-
         for day in iter_dates_for_weekday(range_start, range_end, slot.gun):
-            if is_holiday(kurum_id, sube_id, day):
-                skipped_holiday += 1
-                holiday_dates.add(day.isoformat())
-                continue
+            candidates.append((day, slot))
+    candidates.sort(key=lambda item: (item[0], item[1].id))
 
-            existing = BirebirDersOturumu.objects.filter(
-                source_slot=slot,
-                session_date=day,
-                is_active=True,
-            ).first()
-            if existing:
-                today = timezone.localdate()
-                if _oturum_can_follow_slot(existing, today) and _apply_slot_fields(existing, slot):
-                    updated += 1
-                else:
-                    skipped_existing += 1
-                continue
+    used_by_ders: dict[int, int] = {}
+    hedef_by_ders: dict[int, Optional[int]] = {}
 
-            try:
-                w = check_all_for_occurrence(
-                    ogretmen_id=slot.ogretmen_id,
-                    ogrenci_id=program.ogrenci_id,
-                    oda_id=slot.oda_id,
-                    kurum_id=kurum_id,
-                    sube_id=sube_id,
-                    session_date=day,
-                    start=slot.baslangic,
-                    end=slot.bitis,
-                    skip_holiday=False,
-                )
-                warnings.extend(w)
-            except OzelDersError:
-                skipped_conflict += 1
-                continue
+    def _hedef_for(slot: BirebirHaftalikSlot) -> Optional[int]:
+        if slot.ders_id not in hedef_by_ders:
+            hedef_by_ders[slot.ders_id] = resolve_ders_hedef_dakika(
+                ogrenci_id=program.ogrenci_id, ders_id=slot.ders_id,
+            )
+        return hedef_by_ders[slot.ders_id]
 
-            BirebirDersOturumu.objects.create(
-                program=program,
-                source_slot=slot,
-                kurum_id=kurum_id,
-                sube_id=sube_id,
-                egitim_yili_id=program.egitim_yili_id,
-                session_date=day,
-                start_time=slot.baslangic,
-                end_time=slot.bitis,
+    def _used_for(slot: BirebirHaftalikSlot) -> int:
+        if slot.ders_id not in used_by_ders:
+            used_by_ders[slot.ders_id] = used_quota_minutes(
                 ogrenci_id=program.ogrenci_id,
                 ders_id=slot.ders_id,
-                ogretmen_id=slot.ogretmen_id,
-                oda_id=slot.oda_id,
-                oturum_turu=OturumTuru.OZEL,
-                durum=OturumDurumu.PLANLANDI,
-                created_by=user if user and getattr(user, 'is_authenticated', False) else None,
+                kurum_id=kurum_id,
             )
-            created += 1
+        return used_by_ders[slot.ders_id]
+
+    for day, slot in candidates:
+        if is_holiday(kurum_id, sube_id, day):
+            skipped_holiday += 1
+            holiday_dates.add(day.isoformat())
+            continue
+
+        existing = (
+            BirebirDersOturumu.objects
+            .filter(source_slot=slot, session_date=day)
+            .order_by('-is_active', '-id')
+            .first()
+        )
+        if existing:
+            if not existing.is_active:
+                skipped_existing += 1
+                continue
+            today = timezone.localdate()
+            if _oturum_can_follow_slot(existing, today) and _apply_slot_fields(existing, slot):
+                updated += 1
+            else:
+                skipped_existing += 1
+            continue
+
+        hedef = _hedef_for(slot)
+        sure = slot.resolved_sure_dk()
+        if hedef and _used_for(slot) + sure > hedef:
+            skipped_quota += 1
+            continue
+
+        try:
+            w = check_all_for_occurrence(
+                ogretmen_id=slot.ogretmen_id,
+                ogrenci_id=program.ogrenci_id,
+                oda_id=slot.oda_id,
+                kurum_id=kurum_id,
+                sube_id=sube_id,
+                session_date=day,
+                start=slot.baslangic,
+                end=slot.bitis,
+                skip_holiday=False,
+            )
+            warnings.extend(w)
+        except OzelDersError:
+            skipped_conflict += 1
+            continue
+
+        BirebirDersOturumu.objects.create(
+            program=program,
+            source_slot=slot,
+            kurum_id=kurum_id,
+            sube_id=sube_id,
+            egitim_yili_id=program.egitim_yili_id,
+            session_date=day,
+            start_time=slot.baslangic,
+            end_time=slot.bitis,
+            ogrenci_id=program.ogrenci_id,
+            ders_id=slot.ders_id,
+            ogretmen_id=slot.ogretmen_id,
+            oda_id=slot.oda_id,
+            oturum_turu=OturumTuru.OZEL,
+            durum=OturumDurumu.PLANLANDI,
+            created_by=user if user and getattr(user, 'is_authenticated', False) else None,
+        )
+        created += 1
+        if hedef:
+            used_by_ders[slot.ders_id] = _used_for(slot) + sure
 
     return {
         'created': created,
@@ -281,6 +333,7 @@ def materialize_program(
         'skipped_holiday': skipped_holiday,
         'skipped_existing': skipped_existing,
         'skipped_conflict': skipped_conflict,
+        'skipped_quota': skipped_quota,
         'holiday_dates': sorted(holiday_dates),
         'warnings': warnings,
     }

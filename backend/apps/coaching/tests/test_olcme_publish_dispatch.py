@@ -1,6 +1,7 @@
 """Sınav karne / cevap anahtarı zamanlı gönderim senaryoları."""
 from datetime import timedelta
 from unittest.mock import patch
+from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -241,6 +242,7 @@ class OlcmePublishDispatchTest(TestCase):
         )
         self.assertEqual(res.status_code, 200, res.content[:200])
         self.assertTrue(res.content.startswith(b'%PDF'))
+        self.assertIn(quote('Yayın_Sınav.pdf'), res['Content-Disposition'])
         upload = SimpleUploadedFile('anahtar.pdf', b'%PDF-1.4 uploaded', content_type='application/pdf')
         post = self.client.post(
             f'{EXAMS_URL}{self.exam.id}/answer-key-pdf/',

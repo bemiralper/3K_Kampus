@@ -110,6 +110,7 @@ export default function YoklamaDurumDrawer({
     <Drawer
       open={open}
       onClose={onClose}
+      layer={1}
       title={`Yoklama: ${OTURUM_DURUM_LABEL[durum] || durum}`}
       description={description}
       footer={

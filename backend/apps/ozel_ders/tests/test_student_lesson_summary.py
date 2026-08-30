@@ -252,3 +252,115 @@ class StudentLessonSummaryTests(TestCase):
         by_ad = {d['ders_ad']: d for d in data['dersler']}
         self.assertIn('Kimya', by_ad)
         self.assertEqual(by_ad['Kimya']['planlanan_ders'], 0)
+
+    def test_hour_quota_caps_planned_and_reports_minutes(self):
+        self.program.slots.update(hedef_dakika=180)  # 3 saat = 3 × 60 dk
+        data = self._summary()
+        mat = next(d for d in data['dersler'] if d['ders_ad'] == 'Matematik')
+        self.assertEqual(mat['planlanan_ders'], 3)
+        self.assertEqual(mat['hedef_dakika'], 180)
+        self.assertEqual(mat['kullanilan_dakika'], 0)
+        self.assertEqual(mat['kalan_dakika'], 180)
+
+        self._make_oturum(date(2026, 9, 1), durum=OturumDurumu.ISLENDI, sure=60)
+        data = self._summary()
+        mat = next(d for d in data['dersler'] if d['ders_ad'] == 'Matematik')
+        self.assertEqual(mat['kullanilan_dakika'], 60)
+        self.assertEqual(mat['kalan_dakika'], 120)
+
+    def test_ders_ozet_and_timeline_pdf(self):
+        from apps.ozel_ders.services.ders_rapor_pdf import (
+            collect_ders_ozet,
+            collect_ders_timeline,
+            render_ders_ozet_pdf,
+            render_ders_timeline_pdf,
+        )
+        ot = self._make_oturum(date(2026, 9, 1), durum=OturumDurumu.ISLENDI, sure=60)
+        ot.notes = 'Konu: türev'
+        ot.save(update_fields=['notes'])
+        payload = collect_ders_ozet(
+            ogrenci_id=self.ogrenci.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-09-01',
+            end_date='2026-09-28',
+        )
+        pdf_bytes, filename = render_ders_ozet_pdf(payload)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+        self.assertIn('Elif', filename)
+        timeline = collect_ders_timeline(
+            ogrenci_id=self.ogrenci.id,
+            ders_id=self.ders.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-09-01',
+            end_date='2026-09-28',
+        )
+        self.assertEqual(timeline['ders_ad'], 'Matematik')
+        self.assertGreaterEqual(len(timeline['kayitlar']), 1)
+        tpdf, tname = render_ders_timeline_pdf(timeline)
+        self.assertTrue(tpdf.startswith(b'%PDF'))
+        self.assertIn('Matematik', tname)
+
+    @patch('apps.ozel_ders.services.ders_tatil_service.list_holidays')
+    @patch('apps.ozel_ders.services.ders_tatil_service.is_holiday')
+    def test_timeline_includes_holiday_and_toggle(self, mock_holiday, mock_list):
+        holiday = date(2026, 9, 3)  # Thursday — şablonda ders var
+        mock_holiday.side_effect = lambda kurum_id, sube_id, day: day == holiday
+        mock_list.return_value = [{
+            'date': holiday.isoformat(),
+            'title': 'Zafer Bayramı',
+            'holiday_key': 'TR-2026-09-03',
+            'source': 'resmi',
+            'ozel_ders_aktif': False,
+        }]
+        from apps.ozel_ders.services.ders_rapor_pdf import collect_ders_timeline
+        from apps.ozel_ders.services.ders_tatil_service import set_ogrenci_ders_tatil
+
+        timeline = collect_ders_timeline(
+            ogrenci_id=self.ogrenci.id,
+            ders_id=self.ders.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-09-01',
+            end_date='2026-09-28',
+        )
+        tatil_rows = [r for r in timeline['kayitlar'] if r.get('durum_kod') == 'TATIL']
+        self.assertEqual(len(tatil_rows), 1)
+        self.assertEqual(tatil_rows[0]['tatil_baslik'], 'Zafer Bayramı')
+        self.assertTrue(tatil_rows[0]['can_toggle_tatil'])
+
+        set_ogrenci_ders_tatil(
+            ogrenci_id=self.ogrenci.id,
+            ders_id=self.ders.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            day=holiday,
+            mode='devam',
+        )
+        self.assertTrue(
+            BirebirDersOturumu.objects.filter(
+                ogrenci=self.ogrenci, ders=self.ders,
+                session_date=holiday, is_active=True,
+            ).exists()
+        )
+        set_ogrenci_ders_tatil(
+            ogrenci_id=self.ogrenci.id,
+            ders_id=self.ders.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            day=holiday,
+            mode='tatil',
+        )
+        self.assertFalse(
+            BirebirDersOturumu.objects.filter(
+                ogrenci=self.ogrenci, ders=self.ders,
+                session_date=holiday, is_active=True,
+            ).exists()
+        )
+
+    def test_period_lists_next_year_catalog_holidays(self):
+        data = self._summary(start=date(2026, 9, 1), end=date(2027, 5, 30))
+        dates = {t['date'] for t in data.get('tatiller') or []}
+        self.assertIn('2027-05-01', dates)
+        self.assertIn('2027-05-19', dates)

@@ -2,13 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import dayjs from 'dayjs';
 import NotlarTab from '@/app/ogrenciler/[id]/components/tabs/NotlarTab';
 import {
+  downloadDersGecmisPdf,
+  fetchDersGecmis,
+  previewDersGecmisWhatsApp,
+  sendDersGecmisWhatsApp,
+  setDersTatilKarar,
   createSlot,
   createTelafi,
   deleteSlot,
+  endSlotEarly,
   fetchOgrenciDonemOzeti,
   fetchOturumlar,
   fetchProgramlar,
@@ -23,6 +29,8 @@ import {
   type BirebirOturum,
   type BirebirProgram,
   type BirebirSlot,
+  type DersGecmisPayload,
+  type DersOzetKirilimi,
   type OgrenciDonemOzeti,
   type PaketDersi,
   type SetOturumDurumPayload,
@@ -32,17 +40,24 @@ import { akademikTabHref } from '@/lib/akademik-routes';
 import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
 import { useDersDisplayPref } from './useDersDisplayPref';
+import SlotSureFields from './SlotSureFields';
+import { EMPTY_SLOT_SURE, formatSaatFromDakika, slotSureFromLesson, slotSurePayload } from './slotSure';
 import {
   Badge,
   Collapsible,
   Drawer,
   EmptyState,
+  PageHeader,
+  SkeletonCards,
   SkeletonRows,
   avatarGradient,
   initials,
   telafiDurumTone,
   type BadgeTone,
 } from './ozelDersUi';
+import HaftalikProgramShareButtons from './HaftalikProgramShareButtons';
+import DersOzetShareButtons from './DersOzetShareButtons';
+import HaftalikProgramNotifyDrawer from './HaftalikProgramNotifyDrawer';
 import {
   IconAlertTriangle,
   IconBookOpen,
@@ -50,7 +65,9 @@ import {
   IconCheckCircle,
   IconChevronRight,
   IconClock,
+  IconFileText,
   IconPlus,
+  IconSend,
   IconRefresh,
   IconRotateCcw,
   IconSearch,
@@ -178,6 +195,7 @@ const STAT_ICON: Record<string, React.ReactNode> = {
 
 export default function OgrenciOzelDersClient() {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const ogrenciId = Number(searchParams.get('ogrenci_id') || 0) || null;
   const urlTab = searchParams.get('tab') as OpsTab | null;
@@ -219,6 +237,7 @@ export default function OgrenciOzelDersClient() {
     sure_dk: '50',
     ders_id: '',
     ogretmen_id: '',
+    ...EMPTY_SLOT_SURE,
   });
   const [detailLesson, setDetailLesson] = useState<BirebirSlot | null>(null);
   const [editForm, setEditForm] = useState({
@@ -228,9 +247,11 @@ export default function OgrenciOzelDersClient() {
     sure_dk: '50',
     ders_id: '',
     ogretmen_id: '',
+    ...EMPTY_SLOT_SURE,
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [endingEarly, setEndingEarly] = useState(false);
 
   const [dersQ, setDersQ] = useState('');
   const [filterDersId, setFilterDersId] = useState('');
@@ -249,14 +270,88 @@ export default function OgrenciOzelDersClient() {
     ogretmen_id: '',
   });
   const [savingTelafi, setSavingTelafi] = useState(false);
+  const [pickerRows, setPickerRows] = useState<BirebirProgram[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerQ, setPickerQ] = useState('');
 
   const [yoklamaTarget, setYoklamaTarget] = useState<{
     oturum: BirebirOturum;
     durum: string;
   } | null>(null);
+  const [dersDetay, setDersDetay] = useState<DersOzetKirilimi | null>(null);
+  const [dersGecmis, setDersGecmis] = useState<DersGecmisPayload | null>(null);
+  const [dersGecmisLoading, setDersGecmisLoading] = useState(false);
+  const [dersGecmisBusy, setDersGecmisBusy] = useState(false);
+  const [dersGecmisNotifyOpen, setDersGecmisNotifyOpen] = useState(false);
+  const [tatilBusyKey, setTatilBusyKey] = useState<string | null>(null);
+  const [tatilDrawerOpen, setTatilDrawerOpen] = useState(false);
 
   const listHref = akademikTabHref('ozel-ders-yonetimi', 'ogrenci-programlari');
   const oturumHref = akademikTabHref('ozel-ders-yonetimi', 'birebir-ders-oturumlari');
+
+  function openStudent(id: number) {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set('ogrenci_id', String(id));
+    router.push(`${pathname}?${next.toString()}`);
+  }
+
+  function clearStudent() {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('ogrenci_id');
+    const q = next.toString();
+    router.push(q ? `${pathname}?${q}` : pathname);
+  }
+
+  useEffect(() => {
+    if (!ready || ogrenciId) return;
+    let cancelled = false;
+    setPickerLoading(true);
+    fetchProgramlar({
+      egitim_yili_id: egitimYiliId || undefined,
+      durum: 'AKTIF',
+    })
+      .then((rows) => {
+        if (!cancelled) setPickerRows(rows);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Liste yüklenemedi');
+      })
+      .finally(() => {
+        if (!cancelled) setPickerLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, ogrenciId, egitimYiliId]);
+
+  const pickerGroups = useMemo(() => {
+    const by = new Map<number, BirebirProgram[]>();
+    for (const p of pickerRows) {
+      const list = by.get(p.ogrenci) || [];
+      list.push(p);
+      by.set(p.ogrenci, list);
+    }
+    const q = pickerQ.trim().toLocaleLowerCase('tr');
+    const groups = [...by.entries()].map(([id, list]) => {
+      const primary = [...list].sort((a, b) => (b.slot_count || 0) - (a.slot_count || 0))[0];
+      const paketAds = Array.from(
+        new Set(list.map((p) => p.premium_paket_ad || p.ozel_ders_paket_ad).filter(Boolean) as string[]),
+      );
+      return {
+        ogrenci: id,
+        ogrenci_ad: primary.ogrenci_ad,
+        paketAds,
+        slotCount: list.reduce((n, p) => n + (p.slot_count || 0), 0),
+      };
+    });
+    if (!q) return groups.sort((a, b) => (a.ogrenci_ad || '').localeCompare(b.ogrenci_ad || '', 'tr'));
+    return groups
+      .filter((g) => {
+        const hay = `${g.ogrenci_ad} ${g.paketAds.join(' ')}`.toLocaleLowerCase('tr');
+        return hay.includes(q);
+      })
+      .sort((a, b) => (a.ogrenci_ad || '').localeCompare(b.ogrenci_ad || '', 'tr'));
+  }, [pickerRows, pickerQ]);
 
   const periods = useMemo(
     () => buildPeriods(config.startTime, config.sureDk, config.araDk, config.dersAdet),
@@ -312,6 +407,7 @@ export default function OgrenciOzelDersClient() {
         ogrenci_id: ogrenciId,
         start_date: bas,
         end_date: bit || dayjs(bas).add(1, 'year').format('YYYY-MM-DD'),
+        skip_materialize: 1,
       }).catch((e) => {
         console.error(e);
         return [] as BirebirOturum[];
@@ -350,6 +446,7 @@ export default function OgrenciOzelDersClient() {
           ogrenci_id: ogrenciId,
           start_date: bas,
           end_date: bit || dayjs(bas).add(1, 'year').format('YYYY-MM-DD'),
+          skip_materialize: 1,
         });
         setOturumlar(
           oturumList.sort((a, b) =>
@@ -487,6 +584,7 @@ export default function OgrenciOzelDersClient() {
       sure_dk: String(config.sureDk),
       ders_id: paketDersleri[0] ? String(paketDersleri[0].id) : '',
       ogretmen_id: '',
+      ...EMPTY_SLOT_SURE,
     });
     setCreateOpen(true);
   }
@@ -505,6 +603,7 @@ export default function OgrenciOzelDersClient() {
         sure_dk: Number(form.sure_dk || config.sureDk),
         ders_id: dersId,
         ogretmen_id: Number(form.ogretmen_id),
+        ...slotSurePayload(form),
       });
       setCreateOpen(false);
       show('Haftalık ders eklendi.');
@@ -526,6 +625,7 @@ export default function OgrenciOzelDersClient() {
       sure_dk: String(sure),
       ders_id: String(lesson.ders),
       ogretmen_id: String(lesson.ogretmen),
+      ...slotSureFromLesson(lesson),
     });
   }
 
@@ -541,6 +641,7 @@ export default function OgrenciOzelDersClient() {
         sure_dk: Number(editForm.sure_dk || config.sureDk),
         ders_id: Number(editForm.ders_id),
         ogretmen_id: Number(editForm.ogretmen_id),
+        ...slotSurePayload(editForm),
       });
       show('Ders güncellendi.');
       setDetailLesson(null);
@@ -549,6 +650,28 @@ export default function OgrenciOzelDersClient() {
       show(err instanceof Error ? err.message : 'Güncelleme başarısız.', 'error');
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  async function onEndEarly() {
+    if (!detailLesson) return;
+    if (
+      !window.confirm(
+        'Bu dersi bugün itibarıyla kapatmak istediğinize emin misiniz? İşlenen oturumlar kalır, ilerideki planlı dersler kapanır.',
+      )
+    ) {
+      return;
+    }
+    setEndingEarly(true);
+    try {
+      await endSlotEarly(detailLesson.id);
+      show('Ders erken bitirildi. Kalan planlı oturumlar kapatıldı.');
+      setDetailLesson(null);
+      await reloadLessons();
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Erken bitirme başarısız.', 'error');
+    } finally {
+      setEndingEarly(false);
     }
   }
 
@@ -581,6 +704,53 @@ export default function OgrenciOzelDersClient() {
       const f = filter ?? dersFilter;
       if (f && f !== 'all' && next === 'dersler') qs.set('filter', f);
       window.history.replaceState(null, '', `${window.location.pathname}?${qs.toString()}`);
+    }
+  }
+
+  async function openDersDetay(ders: DersOzetKirilimi) {
+    if (!ogrenciId) return;
+    setDersDetay(ders);
+    setDersGecmis(null);
+    setDersGecmisLoading(true);
+    try {
+      const data = await fetchDersGecmis(ogrenciId, ders.ders_id, donem.baslangic, donem.bitis);
+      setDersGecmis(data);
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Ders geçmişi yüklenemedi', 'error');
+    } finally {
+      setDersGecmisLoading(false);
+    }
+  }
+
+  async function downloadDersDetayPdf() {
+    if (!ogrenciId || !dersDetay) return;
+    setDersGecmisBusy(true);
+    try {
+      await downloadDersGecmisPdf(ogrenciId, dersDetay.ders_id, donem.baslangic, donem.bitis);
+      show('Ders geçmişi PDF indirildi.');
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'PDF indirilemedi', 'error');
+    } finally {
+      setDersGecmisBusy(false);
+    }
+  }
+
+  async function applyDersTatil(dersId: number, tarih: string, mode: 'tatil' | 'devam') {
+    if (!ogrenciId) return;
+    const key = `${dersId}:${tarih}`;
+    setTatilBusyKey(key);
+    try {
+      const res = await setDersTatilKarar(ogrenciId, dersId, { date: tarih, mode });
+      show(res.message || (mode === 'devam' ? 'Ders devam edecek' : 'Ders tatil yapıldı'));
+      await refreshSummary(donem.baslangic, donem.bitis);
+      if (dersDetay && dersDetay.ders_id === dersId) {
+        const data = await fetchDersGecmis(ogrenciId, dersId, donem.baslangic, donem.bitis);
+        setDersGecmis(data);
+      }
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Tatil kararı kaydedilemedi', 'error');
+    } finally {
+      setTatilBusyKey(null);
     }
   }
 
@@ -698,16 +868,68 @@ export default function OgrenciOzelDersClient() {
     return (
       <div className="od-scope od-ops">
         {toastNode}
-        <EmptyState
-          icon={<IconUsers size={28} />}
-          title="Öğrenci seçin"
-          description="Öğrenci Programları listesinden bir öğrenci kartına tıklayarak bu ekranı açın."
+        <PageHeader
+          icon={<IconUsers size={19} />}
+          title="Öğrenci Özel Ders"
+          description="Haftalık programı görmek, yoklama almak veya PDF göndermek için bir öğrenci seçin."
         />
-        <div style={{ textAlign: 'center', marginTop: 16 }}>
-          <Link className="od-btn od-btn-primary" href={listHref}>
-            Öğrenci Programlarına Dön
-          </Link>
+        {metaError && <div className="od-banner-error">{metaError}</div>}
+        {error && <div className="od-banner-error">{error}</div>}
+        <div className="od-toolbar">
+          <div className="od-search">
+            <IconSearch size={16} />
+            <input
+              placeholder="Öğrenci veya paket ara…"
+              value={pickerQ}
+              onChange={(e) => setPickerQ(e.target.value)}
+            />
+          </div>
+          <div className="od-toolbar-spacer" />
+          <span className="od-cell-muted">{pickerGroups.length} öğrenci</span>
         </div>
+        {pickerLoading ? (
+          <SkeletonCards count={6} />
+        ) : pickerGroups.length === 0 ? (
+          <EmptyState
+            icon={<IconUsers size={28} />}
+            title={pickerQ ? 'Eşleşen öğrenci yok' : 'Aktif özel ders öğrencisi yok'}
+            description={
+              pickerQ
+                ? 'Farklı bir arama terimi deneyin.'
+                : 'Öğrenci Programları üzerinden senkronize ederek program oluşturabilirsiniz.'
+            }
+            action={
+              <Link className="od-btn od-btn-secondary" href={listHref}>
+                Öğrenci Programları
+              </Link>
+            }
+          />
+        ) : (
+          <div className="od-grid-cards">
+            {pickerGroups.map((g) => (
+              <button
+                key={g.ogrenci}
+                type="button"
+                className="od-entity-card"
+                onClick={() => openStudent(g.ogrenci)}
+              >
+                <div className="od-entity-card-top">
+                  <div className="od-avatar" style={{ background: avatarGradient(g.ogrenci) }}>
+                    {initials(g.ogrenci_ad)}
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="od-entity-card-name">{g.ogrenci_ad || `Öğrenci #${g.ogrenci}`}</div>
+                    <div className="od-entity-card-sub">
+                      {g.slotCount} haftalık ders
+                      {g.paketAds.length ? ` · ${g.paketAds.join(', ')}` : ''}
+                    </div>
+                  </div>
+                  <IconChevronRight size={15} className="od-entity-card-chevron" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -746,6 +968,18 @@ export default function OgrenciOzelDersClient() {
             </div>
           </div>
           <div className="od-ops-header-actions">
+            <button
+              type="button"
+              className="od-btn od-btn-secondary od-btn-sm"
+              onClick={clearStudent}
+            >
+              Öğrenci değiştir
+            </button>
+            <HaftalikProgramShareButtons
+              ogrenciId={ogrenciId}
+              ogrenciAd={ogrenciAd}
+              onToast={(msg, tone) => show(msg, tone === 'error' ? 'error' : 'success')}
+            />
             <button
               type="button"
               className={`od-btn od-btn-secondary od-btn-sm${useKisaAd ? ' is-active-pref' : ''}`}
@@ -794,11 +1028,20 @@ export default function OgrenciOzelDersClient() {
               {savingDonem ? 'Kaydediliyor…' : 'Dönemi Uygula'}
             </button>
           </div>
-          {ozet && ozet.tatil_gun_sayisi > 0 && (
-            <span className="od-ops-tatil-hint">
+          {((summary?.tatiller || []).length > 0
+            || (summary?.tatil_carpmalari || []).length > 0
+            || (ozet && ozet.tatil_gun_sayisi > 0)) && (
+            <button
+              type="button"
+              className="od-ops-tatil-hint"
+              onClick={() => setTatilDrawerOpen(true)}
+            >
               <IconAlertTriangle size={13} />
-              {ozet.tatil_gun_sayisi} tatil günü · −{ozet.tatilden_dusulen_ders} ders
-            </span>
+              {(summary?.tatiller || []).length || ozet?.tatil_gun_sayisi || 0} tatil günü
+              {ozet && ozet.tatilden_dusulen_ders > 0
+                ? ` · −${ozet.tatilden_dusulen_ders} ders`
+                : ''}
+            </button>
           )}
         </div>
 
@@ -873,6 +1116,18 @@ export default function OgrenciOzelDersClient() {
             summary={`${summary.dersler.length} ders`}
             defaultOpen
           >
+            <div className="od-ops-ders-toolbar">
+              <p className="od-cell-muted" style={{ margin: 0 }}>
+                Derse tıklayınca o dersin tarih tarih kaydı açılır.
+              </p>
+              <DersOzetShareButtons
+                ogrenciId={ogrenciId as number}
+                ogrenciAd={ogrenciAd}
+                startDate={donem.baslangic}
+                endDate={donem.bitis}
+                onToast={(msg, tone) => show(msg, tone === 'error' ? 'error' : 'success')}
+              />
+            </div>
             <div className="od-ops-ders-table-wrap">
               <table className="od-ops-table od-ops-ders-table">
                 <thead>
@@ -881,6 +1136,7 @@ export default function OgrenciOzelDersClient() {
                     <th>Planlanan</th>
                     <th>İşlenen</th>
                     <th>Kalan</th>
+                    <th>Saat kotası</th>
                     <th>Telafi</th>
                     <th>Ek Ders</th>
                     <th>İptal</th>
@@ -888,7 +1144,11 @@ export default function OgrenciOzelDersClient() {
                 </thead>
                 <tbody>
                   {summary.dersler.map((d) => (
-                    <tr key={d.ders_id}>
+                    <tr
+                      key={d.ders_id}
+                      className="od-ops-ders-row"
+                      onClick={() => void openDersDetay(d)}
+                    >
                       <td>
                         <strong>
                           {resolveDersLabel({ ders_ad: d.ders_ad, ders_kisa_ad: d.ders_kisa_ad }, useKisaAd)}
@@ -897,6 +1157,11 @@ export default function OgrenciOzelDersClient() {
                       <td>{d.planlanan_ders} ders</td>
                       <td>{d.islenen_ders} ders</td>
                       <td>{d.kalan_ders} ders</td>
+                      <td>
+                        {d.hedef_dakika
+                          ? `${formatSaatFromDakika(d.kullanilan_dakika || 0) || '0'} / ${formatSaatFromDakika(d.hedef_dakika)} saat`
+                          : '—'}
+                      </td>
                       <td>{d.telafi_ders} ders</td>
                       <td>{d.ek_ders} ders</td>
                       <td>{d.iptal_ders} ders</td>
@@ -1094,9 +1359,9 @@ export default function OgrenciOzelDersClient() {
               className="od-btn od-btn-secondary od-btn-sm"
               disabled={materializing}
               onClick={() => void generateSessions()}
-              title="Seçili dönem için şablondan oturum üret"
+              title="Seçili dönem için şablondan ders kayıtlarını oluştur"
             >
-              <IconWand size={14} /> {materializing ? 'Üretiliyor…' : 'Dönem İçin Oturum Üret'}
+              <IconWand size={14} /> {materializing ? 'Oluşturuluyor…' : 'Dönem derslerini oluştur'}
             </button>
           </div>
 
@@ -1195,7 +1460,7 @@ export default function OgrenciOzelDersClient() {
               <EmptyState
                 icon={<IconCalendar size={24} />}
                 title="Henüz gerçekleşen veya planlanan ders bulunmuyor."
-                description="Program şablonu hazırsa 'Dönem İçin Oturum Üret' ile bu dönemin derslerini oluşturun."
+                description="Program şablonu hazırsa 'Dönem derslerini oluştur' ile bu dönemin ders kayıtlarını yazın."
                 action={
                   <button
                     type="button"
@@ -1203,7 +1468,7 @@ export default function OgrenciOzelDersClient() {
                     disabled={materializing}
                     onClick={() => void generateSessions()}
                   >
-                    <IconWand size={14} /> {materializing ? 'Üretiliyor…' : 'Dönem İçin Oturum Üret'}
+                    <IconWand size={14} /> {materializing ? 'Oluşturuluyor…' : 'Dönem derslerini oluştur'}
                   </button>
                 }
               />
@@ -1329,6 +1594,9 @@ export default function OgrenciOzelDersClient() {
             <h3>
               <IconCalendar size={15} /> Program Dönemi
             </h3>
+            <p className="od-form-hint" style={{ marginTop: 0 }}>
+              Dış çerçeve. Tek tek ders süreleri (3 hafta, 5 saat) şablon dersinden girilir.
+            </p>
             <div className="od-form-row">
               <div className="od-form-group">
                 <label>Başlangıç</label>
@@ -1489,6 +1757,14 @@ export default function OgrenciOzelDersClient() {
               ))}
             </select>
           </div>
+          <SlotSureFields
+            value={form}
+            onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+            programStart={donem.baslangic || primary?.baslangic_tarihi}
+            programEnd={donem.bitis || primary?.bitis_tarihi}
+            gunLabel={GUN_LABELS[Number(form.gun)] || ''}
+            saatLabel={`${form.baslangic}–${form.bitis}`}
+          />
         </form>
       </Drawer>
 
@@ -1580,6 +1856,16 @@ export default function OgrenciOzelDersClient() {
                 ))}
               </select>
             </div>
+            <SlotSureFields
+              value={editForm}
+              onChange={(next) => setEditForm((f) => ({ ...f, ...next }))}
+              programStart={donem.baslangic || primary?.baslangic_tarihi}
+              programEnd={donem.bitis || primary?.bitis_tarihi}
+              gunLabel={GUN_LABELS[Number(editForm.gun)] || ''}
+              saatLabel={`${editForm.baslangic}–${editForm.bitis}`}
+              onEndEarly={() => void onEndEarly()}
+              endingEarly={endingEarly}
+            />
           </form>
         )}
       </Drawer>
@@ -1639,6 +1925,225 @@ export default function OgrenciOzelDersClient() {
           </form>
         )}
       </Drawer>
+
+      <Drawer
+        open={Boolean(dersDetay)}
+        onClose={() => {
+          setDersDetay(null);
+          setDersGecmis(null);
+        }}
+        wide
+        title={
+          dersDetay
+            ? resolveDersLabel({ ders_ad: dersDetay.ders_ad, ders_kisa_ad: dersDetay.ders_kisa_ad }, useKisaAd)
+            : 'Ders geçmişi'
+        }
+        description={
+          dersGecmis
+            ? `${dersGecmis.donem_label} · ${dersGecmis.kayitlar.length} kayıt`
+            : 'Tarih tarih işlenen, iptal ve telafi kayıtları'
+        }
+        footer={
+          <>
+            <button
+              type="button"
+              className="od-btn od-btn-secondary"
+              onClick={() => {
+                setDersDetay(null);
+                setDersGecmis(null);
+              }}
+            >
+              Kapat
+            </button>
+            <button
+              type="button"
+              className="od-btn od-btn-secondary"
+              disabled={!dersDetay || dersGecmisBusy}
+              onClick={() => void downloadDersDetayPdf()}
+            >
+              <IconFileText size={14} />
+              {dersGecmisBusy ? 'İndiriliyor…' : 'PDF indir'}
+            </button>
+            <button
+              type="button"
+              className="od-btn od-btn-primary"
+              disabled={!dersDetay || !dersGecmis || dersGecmis.kayitlar.length === 0}
+              onClick={() => setDersGecmisNotifyOpen(true)}
+            >
+              <IconSend size={14} />
+              WhatsApp
+            </button>
+          </>
+        }
+      >
+        {dersGecmisLoading ? (
+          <p className="od-cell-muted">Kayıtlar yükleniyor…</p>
+        ) : !dersGecmis || dersGecmis.kayitlar.length === 0 ? (
+          <p className="od-cell-muted">
+            Bu dönemde bu ders için kayıt yok. Gerekirse dönem derslerini oluşturun.
+          </p>
+        ) : (
+          <ul className="od-ders-timeline">
+            {dersGecmis.kayitlar.map((row) => {
+              const busy = tatilBusyKey === `${dersDetay?.ders_id}:${row.tarih}`;
+              return (
+              <li key={row.id} className={`od-ders-timeline-item tone-${row.durum_kod.toLowerCase()}${row.tatil_gun ? ' is-tatil' : ''}`}>
+                <div className="od-ders-timeline-when">
+                  <strong>{row.tarih_label}</strong>
+                  <span>{row.saat}</span>
+                </div>
+                <div className="od-ders-timeline-body">
+                  <div className="od-ders-timeline-tags">
+                    <Badge tone={
+                      row.durum_kod === 'ISLENDI' || row.durum_kod === 'ONLINE'
+                        ? 'success'
+                        : row.durum_kod === 'IPTAL' || row.durum_kod === 'TATIL'
+                          ? 'danger'
+                          : row.durum_kod === 'OGRENCI_GELMEDI' || row.durum_kod === 'OGRETMEN_GELMEDI'
+                            ? 'warning'
+                            : 'secondary'
+                    }>
+                      {row.durum}
+                    </Badge>
+                    <Badge tone={row.tur_kod === 'TELAFI' ? 'warning' : row.tur_kod === 'EK' ? 'purple' : 'secondary'}>
+                      {row.tur}
+                    </Badge>
+                    {row.tatil_gun ? (
+                      <Badge tone={row.tatil_mode === 'devam' ? 'warning' : 'danger'}>
+                        {row.tatil_baslik || 'Tatil'}
+                        {row.tatil_mode === 'devam' ? ' · devam' : ''}
+                      </Badge>
+                    ) : null}
+                    {row.telafi_durumu ? <Badge tone="warning">{row.telafi_durumu}</Badge> : null}
+                  </div>
+                  <p className="od-ders-timeline-meta">
+                    {row.ogretmen_ad || 'Öğretmen yok'}
+                    {row.oda_ad ? ` · ${row.oda_ad}` : ''}
+                  </p>
+                  {row.aciklama && row.aciklama !== row.tatil_baslik ? (
+                    <p className="od-ders-timeline-note">{row.aciklama}</p>
+                  ) : null}
+                  {row.can_toggle_tatil && dersDetay ? (
+                    <div className="od-tatil-hits-actions" style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className={`od-btn od-btn-sm ${row.tatil_mode === 'tatil' ? 'od-btn-primary' : 'od-btn-secondary'}`}
+                        disabled={busy}
+                        onClick={() => void applyDersTatil(dersDetay.ders_id, row.tarih, 'tatil')}
+                      >
+                        Tatil
+                      </button>
+                      <button
+                        type="button"
+                        className={`od-btn od-btn-sm ${row.tatil_mode === 'devam' ? 'od-btn-primary' : 'od-btn-secondary'}`}
+                        disabled={busy}
+                        onClick={() => void applyDersTatil(dersDetay.ders_id, row.tarih, 'devam')}
+                      >
+                        Devam
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </li>
+              );
+            })}
+          </ul>
+        )}
+      </Drawer>
+
+      <Drawer
+        open={tatilDrawerOpen}
+        onClose={() => setTatilDrawerOpen(false)}
+        wide
+        title="Tatil günleri"
+        description={
+          donem.baslangic
+            ? `${formatDateTr(donem.baslangic)} – ${donem.bitis ? formatDateTr(donem.bitis) : 'süresiz'}`
+            : 'Öğrencinin ders dönemi'
+        }
+      >
+        {(summary?.tatiller || []).length === 0 ? (
+          <p className="od-cell-muted">Bu dönemde resmi tatil yok.</p>
+        ) : (
+          <ul className="od-tatil-hits-list">
+            {(summary?.tatiller || []).map((g) => (
+              <li key={`${g.holiday_key}:${g.date}`} className="od-tatil-hits-item">
+                <div>
+                  <strong>{formatDateTr(g.date)}</strong>
+                  <p>{g.title}</p>
+                </div>
+                <Badge tone={g.ozel_ders_aktif ? 'warning' : 'danger'}>
+                  {g.ozel_ders_aktif ? 'Devam' : 'Tatil'}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+        {(summary?.tatil_carpmalari || []).length > 0 && (
+          <div className="od-tatil-hits" style={{ marginTop: 18 }}>
+            <h4 className="od-tatil-hits-title">Tatile denk dersler</h4>
+            <p className="od-cell-muted" style={{ margin: '0 0 10px' }}>
+              Bu öğrencinin şablonuna düşenler. Tatil bırakabilir veya o gün dersi işletebilirsiniz.
+            </p>
+            <ul className="od-tatil-hits-list">
+              {(summary?.tatil_carpmalari || []).map((hit) => {
+                const busy = tatilBusyKey === `${hit.ders_id}:${hit.tarih}`;
+                return (
+                  <li key={`${hit.slot_id}-${hit.tarih}`} className="od-tatil-hits-item">
+                    <div>
+                      <strong>{hit.tarih_label}</strong>
+                      <span>{hit.saat}</span>
+                      <p>
+                        {resolveDersLabel({ ders_ad: hit.ders_ad }, useKisaAd)}
+                        {hit.ogretmen_ad ? ` · ${hit.ogretmen_ad}` : ''}
+                      </p>
+                      <p className="od-cell-muted">{hit.tatil_baslik}</p>
+                    </div>
+                    <div className="od-tatil-hits-actions">
+                      <button
+                        type="button"
+                        className={`od-btn od-btn-sm ${hit.tatil_mode === 'tatil' ? 'od-btn-primary' : 'od-btn-secondary'}`}
+                        disabled={!hit.can_toggle_tatil || busy}
+                        onClick={() => void applyDersTatil(hit.ders_id, hit.tarih, 'tatil')}
+                      >
+                        Tatil
+                      </button>
+                      <button
+                        type="button"
+                        className={`od-btn od-btn-sm ${hit.tatil_mode === 'devam' ? 'od-btn-primary' : 'od-btn-secondary'}`}
+                        disabled={!hit.can_toggle_tatil || busy}
+                        onClick={() => void applyDersTatil(hit.ders_id, hit.tarih, 'devam')}
+                      >
+                        Devam
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </Drawer>
+
+      {ogrenciId && dersDetay ? (
+        <HaftalikProgramNotifyDrawer
+          open={dersGecmisNotifyOpen}
+          ogrenciId={ogrenciId}
+          ogrenciAd={ogrenciAd}
+          title="WhatsApp — Ders geçmişi"
+          emptyMessage="Bu dönemde gönderilecek ders kaydı yok."
+          loadPreview={() => previewDersGecmisWhatsApp(
+            ogrenciId, dersDetay.ders_id, donem.baslangic, donem.bitis,
+          )}
+          send={(opts) => sendDersGecmisWhatsApp(ogrenciId, dersDetay.ders_id, {
+            ...opts,
+            start_date: donem.baslangic,
+            end_date: donem.bitis,
+          })}
+          onClose={() => setDersGecmisNotifyOpen(false)}
+          onToast={(msg, tone) => show(msg, tone === 'error' ? 'error' : 'success')}
+        />
+      ) : null}
 
       <YoklamaDurumDrawer
         open={Boolean(yoklamaTarget)}

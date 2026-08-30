@@ -192,6 +192,7 @@ export function akademikCommandPaletteItems(basePath: string = AKADEMIK_BASE) {
       section: AKADEMIK_MODULE_LABEL,
     });
     for (const tab of group.tabs) {
+      if (tab.hidden) continue;
       items.push({
         label: `${group.label} · ${tab.label}`,
         href: akademikTabHref(group.slug, tab.segment, basePath),

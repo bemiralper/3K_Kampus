@@ -466,7 +466,11 @@ export const examApi = {
       throw new Error(err?.error || 'PDF indirilemedi.');
     }
     const blob = await res.blob();
-    await downloadPdfBlob(blob, 'cevap-anahtari.pdf');
+    const name = filenameFromDisposition(
+      res.headers.get('content-disposition'),
+      'cevap-anahtari.pdf',
+    );
+    await downloadPdfBlob(blob, name);
   },
 
   uploadAnswerKeyPdf: async (examId: number, file: File) => {

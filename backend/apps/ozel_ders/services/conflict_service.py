@@ -152,6 +152,15 @@ def _ozel_ders_aktif_on(kurum_id: int, sube_id: Optional[int], day: date) -> boo
         return False
 
 
+def _catalog_covers(day: date) -> bool:
+    try:
+        from apps.takvim.data.resmi_tatiller_tr import holidays_for_year
+
+        return any(h.start <= day <= h.end for h in holidays_for_year(day.year))
+    except Exception:
+        return False
+
+
 def is_holiday(kurum_id: int, sube_id: Optional[int], day: date) -> bool:
     """
     Özel ders için tatil mi?
@@ -170,7 +179,11 @@ def is_holiday(kurum_id: int, sube_id: Optional[int], day: date) -> bool:
             .only('kaynak_modul', 'kaynak_id', 'baslik')
         )
         if not events:
-            return False
+            if not _catalog_covers(day):
+                return False
+            if _ozel_ders_aktif_on(kurum_id, sube_id, day):
+                return False
+            return True
 
         has_manual = any(
             (e.kaynak_modul or '') != KaynakModul.RESMI_TATIL for e in events
@@ -207,7 +220,8 @@ def list_holidays(
         )
         resmi_modul = KaynakModul.RESMI_TATIL
     except Exception:
-        return []
+        events = []
+        resmi_modul = 'resmi_tatil'
 
     by_day: dict[date, dict] = {}
     for ev in events:
@@ -234,6 +248,24 @@ def list_holidays(
                 'ozel_ders_aktif': False,
             }
             cur += timedelta(days=1)
+
+    try:
+        from apps.takvim.data.resmi_tatiller_tr import holidays_in_range
+
+        for h in holidays_in_range(start_date, end_date):
+            for d in h.iter_days():
+                if d < start_date or d > end_date or d in by_day:
+                    continue
+                by_day[d] = {
+                    'date': d.isoformat(),
+                    'title': h.title,
+                    'bitis': h.end.isoformat(),
+                    'holiday_key': h.key,
+                    'source': 'katalog',
+                    'ozel_ders_aktif': False,
+                }
+    except Exception:
+        pass
 
     # Override kararları
     try:

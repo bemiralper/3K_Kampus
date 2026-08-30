@@ -1090,6 +1090,84 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
             ),
         }),
     ),
+    NotificationEvent(
+        key='ozel_ders.haftalik_program',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders haftalık program (PDF)',
+        description=(
+            'Öğrenci özel ders haftalık şablonu PDF olarak veliye ve öğrenciye '
+            'WhatsApp ile gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'pdf_baslik', 'paketler'),
+        meta_name_base='ozel_ders_haftalik_program',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}},\n\n'
+                '{{ogrenci_ad}} öğrencimizin özel ders haftalık programı ektedir.\n\n'
+                'Bilgilerinize sunarız.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                'Özel ders haftalık programın ektedir.\n\n'
+                'Bilgine sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.ders_ozeti',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders özeti (PDF)',
+        description=(
+            'Öğrencinin derslere göre özel ders özeti PDF olarak veliye ve öğrenciye '
+            'WhatsApp ile gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'pdf_baslik', 'paketler', 'donem'),
+        meta_name_base='ozel_ders_ders_ozeti',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}},\n\n'
+                '{{ogrenci_ad}} öğrencimizin özel ders özeti ektedir.\n\n'
+                'Bilgilerinize sunarız.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                'Özel ders özetin ektedir.\n\n'
+                'Bilgine sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.ders_gecmisi',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders geçmişi (PDF)',
+        description=(
+            'Seçilen dersin tarih tarih kaydı PDF olarak veliye ve öğrenciye '
+            'WhatsApp ile gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'pdf_baslik', 'paketler', 'donem', 'ders_ad'),
+        meta_name_base='ozel_ders_ders_gecmisi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}},\n\n'
+                '{{ogrenci_ad}} öğrencimizin {{ders_ad}} ders geçmişi ektedir.\n\n'
+                'Bilgilerinize sunarız.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                '{{ders_ad}} ders geçmişin ektedir.\n\n'
+                'Bilgine sunarız.'
+            ),
+        }),
+    ),
 )
 
 

@@ -8,12 +8,9 @@ import {
   fetchHakedis,
   fetchOturumlar,
   fetchProgramlar,
-  fetchTatiller,
-  materializeProgram,
   resolveDersLabel,
   syncProgramlar,
   type BirebirProgram,
-  type OzelDersTatil,
   type PaketDersi,
 } from '@/lib/ozel-ders-api';
 import { searchKutuphaneStudents, type KutuphaneStudentOption } from '@/lib/kutuphane-student-search';
@@ -41,7 +38,6 @@ import {
   IconAward,
   IconBookOpen,
   IconCalendar,
-  IconCheckCircle,
   IconChevronRight,
   IconClock,
   IconPlus,
@@ -177,25 +173,7 @@ export default function OgrenciProgramlariClient() {
   const [saving, setSaving] = useState(false);
   const [sortBy, setSortBy] = useState<'ad' | 'eksik'>('ad');
   const [onlyNeedsSablon, setOnlyNeedsSablon] = useState(false);
-
-  const [materializeFor, setMaterializeFor] = useState<StudentProgramGroup | null>(null);
-  const [matRange, setMatRange] = useState({
-    start_date: dayjs().format('YYYY-MM-DD'),
-    end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
-  });
-  const [matHolidays, setMatHolidays] = useState<OzelDersTatil[]>([]);
-  const [matResult, setMatResult] = useState<{
-    created: number;
-    skipped_existing: number;
-    skipped_holiday: number;
-    skipped_conflict: number;
-    holiday_dates: string[];
-  } | null>(null);
-  const [materializing, setMaterializing] = useState(false);
   const didAutoSync = useRef(false);
-
-  const telafiHref = akademikTabHref('ozel-ders-yonetimi', 'birebir-telafi-dersleri');
-  const oturumlarHref = akademikTabHref('ozel-ders-yonetimi', 'birebir-ders-oturumlari');
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -228,12 +206,13 @@ export default function OgrenciProgramlariClient() {
       const [activePrograms, todayOturumlar, weekOturumlar, telafiPending, hakedisMonth] =
         await Promise.all([
           fetchProgramlar({ egitim_yili_id: egitimYiliId || undefined, durum: 'AKTIF' }),
-          fetchOturumlar({ start_date: today, end_date: today }),
-          fetchOturumlar({ start_date: weekStart, end_date: weekEnd }),
+          fetchOturumlar({ start_date: today, end_date: today, skip_materialize: 1 }),
+          fetchOturumlar({ start_date: weekStart, end_date: weekEnd, skip_materialize: 1 }),
           fetchOturumlar({
             telafi_durumu: 'BEKLENIYOR',
             start_date: dayjs().subtract(60, 'day').format('YYYY-MM-DD'),
             end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
+            skip_materialize: 1,
           }),
           fetchHakedis({ yil: dayjs().year(), ay: dayjs().month() + 1 }),
         ]);
@@ -336,11 +315,6 @@ export default function OgrenciProgramlariClient() {
     [rows],
   );
 
-  function sablonHrefFor(group: StudentProgramGroup) {
-    const base = akademikTabHref('ozel-ders-yonetimi', 'haftalik-program-sablonlari');
-    return `${base}?program_id=${group.primary.id}&ogrenci_id=${group.ogrenci}`;
-  }
-
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!form.ogrenci_id) return;
@@ -369,69 +343,6 @@ export default function OgrenciProgramlariClient() {
       show(err instanceof Error ? err.message : 'Kayıt başarısız', 'error');
     } finally {
       setSaving(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!materializeFor || !ready) {
-      setMatHolidays([]);
-      return;
-    }
-    let cancelled = false;
-    fetchTatiller(matRange.start_date, matRange.end_date)
-      .then((list) => {
-        if (!cancelled) setMatHolidays(list);
-      })
-      .catch(() => {
-        if (!cancelled) setMatHolidays([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [materializeFor, ready, matRange.start_date, matRange.end_date]);
-
-  function closeMaterialize() {
-    setMaterializeFor(null);
-    setMatResult(null);
-    setMatHolidays([]);
-  }
-
-  async function onMaterialize(e: React.FormEvent) {
-    e.preventDefault();
-    if (!materializeFor) return;
-    setMaterializing(true);
-    setMatResult(null);
-    try {
-      let created = 0;
-      let skipped_existing = 0;
-      let skipped_holiday = 0;
-      let skipped_conflict = 0;
-      const holidaySet = new Set<string>();
-      for (const prog of materializeFor.programs) {
-        const result = await materializeProgram(prog.id, matRange.start_date, matRange.end_date);
-        created += Number(result.created || 0);
-        skipped_existing += Number(result.skipped_existing || 0);
-        skipped_holiday += Number(result.skipped_holiday || 0);
-        skipped_conflict += Number(result.skipped_conflict || 0);
-        for (const d of result.holiday_dates || []) holidaySet.add(d);
-      }
-      const holiday_dates = Array.from(holidaySet).sort();
-      setMatResult({
-        created,
-        skipped_existing,
-        skipped_holiday,
-        skipped_conflict,
-        holiday_dates,
-      });
-      show(
-        `Oturum üretildi: ${created} yeni · ${skipped_existing} mevcut · ${skipped_holiday} tatil · ${skipped_conflict} çakışma`,
-      );
-      await load();
-      await loadStats();
-    } catch (err) {
-      show(err instanceof Error ? err.message : 'Materialize başarısız', 'error');
-    } finally {
-      setMaterializing(false);
     }
   }
 
@@ -635,48 +546,13 @@ export default function OgrenciProgramlariClient() {
               <div className="od-entity-card-footer">
                 <span className="od-cell-muted">
                   {g.slotCount === 0
-                    ? 'Öğretmen/saat atanmadı — şablona gidin'
+                    ? 'Öğretmen/saat atanmadı — kartı açın'
                     : g.needsSablon
                       ? `Eksik atama: ${Math.max(g.expectedHaftalik - g.slotCount, 0)} ders`
                       : g.notlar
                         ? g.notlar.slice(0, 42)
                         : 'Şablon tamam'}
                 </span>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {g.needsSablon && (
-                    <a
-                      className="od-btn od-btn-secondary od-btn-sm"
-                      href={sablonHrefFor(g)}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <IconCalendar size={13} /> Şablona Git
-                    </a>
-                  )}
-                  {g.slotCount > 0 && (
-                    <button
-                      type="button"
-                      className="od-btn od-btn-primary od-btn-sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMatResult(null);
-                        const start =
-                          g.baslangic_tarihi && g.baslangic_tarihi > dayjs().format('YYYY-MM-DD')
-                            ? g.baslangic_tarihi
-                            : dayjs().format('YYYY-MM-DD');
-                        const end =
-                          g.bitis_tarihi ||
-                          dayjs(start).add(30, 'day').format('YYYY-MM-DD');
-                        setMatRange({
-                          start_date: start,
-                          end_date: g.bitis_tarihi && end > g.bitis_tarihi ? g.bitis_tarihi : end,
-                        });
-                        setMaterializeFor(g);
-                      }}
-                    >
-                      <IconCalendar size={13} /> Oturum Üret
-                    </button>
-                  )}
-                </div>
               </div>
             </div>
           ))}
@@ -773,129 +649,6 @@ export default function OgrenciProgramlariClient() {
           </div>
         </form>
       </Drawer>
-
-      {/* Oturum Üret Drawer */}
-      <Drawer
-        open={Boolean(materializeFor)}
-        onClose={closeMaterialize}
-        title="Oturum Üret"
-        description={
-          materializeFor
-            ? `${materializeFor.ogrenci_ad} — ${materializeFor.programs.length} program şablonundan oturum üretilecek.`
-            : ''
-        }
-        footer={
-          matResult ? (
-            <button type="button" className="od-btn od-btn-primary" onClick={closeMaterialize}>
-              Kapat
-            </button>
-          ) : (
-            <>
-              <button type="button" className="od-btn od-btn-secondary" onClick={closeMaterialize}>
-                Vazgeç
-              </button>
-              <button
-                type="submit"
-                form="od-materialize-form"
-                className="od-btn od-btn-primary"
-                disabled={materializing}
-              >
-                {materializing ? 'Üretiliyor…' : 'Oturum Üret'}
-              </button>
-            </>
-          )
-        }
-      >
-        {matResult ? (
-          <div className="od-form">
-            <div className="od-banner-success">
-              <IconCheckCircle size={15} />
-              {matResult.created} yeni · {matResult.skipped_existing} mevcut ·{' '}
-              {matResult.skipped_holiday} tatil · {matResult.skipped_conflict} çakışma
-            </div>
-            {matResult.holiday_dates.length > 0 && (
-              <>
-                <p className="od-form-hint" style={{ marginTop: 12 }}>
-                  Atlanan tatil günleri — telafi veya tek seferlik ders ile ayarlayabilirsiniz:
-                </p>
-                <div className="od-holiday-result-list">
-                  {matResult.holiday_dates.map((d) => {
-                    const title =
-                      matHolidays.find((h) => h.date === d)?.title ||
-                      'Tatil';
-                    return (
-                      <div key={d} className="od-holiday-result-row">
-                        <span>
-                          <strong>{dayjs(d).format('DD.MM.YYYY')}</strong>
-                          <span className="od-cell-muted"> · {title}</span>
-                        </span>
-                        <span style={{ display: 'inline-flex', gap: 10 }}>
-                          <a href={telafiHref}>Telafi planla</a>
-                          <a href={oturumlarHref}>Tek seferlik</a>
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        ) : (
-          <form id="od-materialize-form" className="od-form" onSubmit={onMaterialize}>
-            <div className="od-form-row">
-              <div className="od-form-group">
-                <label>Başlangıç</label>
-                <input
-                  type="date"
-                  required
-                  min={materializeFor?.baslangic_tarihi || undefined}
-                  max={materializeFor?.bitis_tarihi || undefined}
-                  value={matRange.start_date}
-                  onChange={(e) => setMatRange((f) => ({ ...f, start_date: e.target.value }))}
-                />
-              </div>
-              <div className="od-form-group">
-                <label>Bitiş</label>
-                <input
-                  type="date"
-                  required
-                  min={matRange.start_date || materializeFor?.baslangic_tarihi || undefined}
-                  max={materializeFor?.bitis_tarihi || undefined}
-                  value={matRange.end_date}
-                  onChange={(e) => setMatRange((f) => ({ ...f, end_date: e.target.value }))}
-                />
-              </div>
-            </div>
-            <span className="od-form-hint">
-              Oturumlar yalnızca program tarih aralığında üretilir
-              {materializeFor
-                ? ` (${materializeFor.baslangic_tarihi} – ${materializeFor.bitis_tarihi || 'süresiz'})`
-                : ''}
-              .
-            </span>
-            {matHolidays.length > 0 ? (
-              <div className="od-banner-warning">
-                <IconAlertTriangle size={15} />
-                Bu aralıkta <strong>{matHolidays.length}</strong> tatil günü var; oturum
-                üretilmeyecek:
-                <div className="od-holiday-chips" style={{ width: '100%', marginTop: 6 }}>
-                  {matHolidays.map((h) => (
-                    <span key={h.date} className="od-holiday-chip">
-                      <strong>{dayjs(h.date).format('DD.MM')}</strong>
-                      <span>{h.title}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <span className="od-form-hint">
-                Tatil günleri otomatik atlanır, çakışan dersler oluşturulmaz.
-              </span>
-            )}
-          </form>
-        )}
-      </Drawer>
-
     </div>
   );
 }

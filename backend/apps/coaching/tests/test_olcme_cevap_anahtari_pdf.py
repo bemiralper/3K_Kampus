@@ -54,7 +54,10 @@ class CevapAnahtariPdfTest(TestCase):
         data = render_cevap_anahtari_pdf(self.exam)
         self.assertTrue(data.startswith(b'%PDF'))
         self.assertGreater(len(data), 400)
-        self.assertTrue(cevap_anahtari_filename(self.exam).endswith('.pdf'))
+        self.assertEqual(
+            cevap_anahtari_filename(self.exam),
+            'TYT_Deneme_14_Ağustos_2026.pdf',
+        )
 
     def test_render_a_and_b_booklets(self):
         key_a = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
@@ -178,6 +181,14 @@ class CevapAnahtariPdfTest(TestCase):
 
     def test_exam_date_label(self):
         self.assertEqual(exam_date_label(self.exam), '14 Ağustos 2026')
+
+    def test_filename_uses_exam_name_and_date(self):
+        self.assertEqual(
+            cevap_anahtari_filename(self.exam),
+            'TYT_Deneme_14_Ağustos_2026.pdf',
+        )
+        self.exam.exam_date = None
+        self.assertEqual(cevap_anahtari_filename(self.exam), 'TYT_Deneme.pdf')
 
     def test_parse_copies(self):
         self.assertEqual(parse_copies('6'), 6)

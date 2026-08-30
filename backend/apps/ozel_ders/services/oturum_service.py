@@ -4,6 +4,7 @@ from datetime import date, datetime, time
 from typing import Any, Optional
 
 from django.db import transaction
+from django.db.models import Prefetch
 
 from apps.ozel_ders.domain.models import (
     BirebirDersOturumu,
@@ -221,9 +222,16 @@ def list_oturumlar(
         sube_id=sube_id,
         is_active=True,
     ).select_related(
-        'ogrenci', 'ders', 'ogretmen', 'oda', 'replaces_oturum',
+        'ogrenci', 'ders', 'ogretmen', 'oda', 'hakedis', 'replaces_oturum',
         'replaces_oturum__ders', 'replaces_oturum__ogretmen',
-    ).prefetch_related('telafi_oturumlari')
+    ).prefetch_related(
+        Prefetch(
+            'telafi_oturumlari',
+            queryset=BirebirDersOturumu.objects.filter(is_active=True).select_related(
+                'ders', 'ogretmen',
+            ),
+        ),
+    )
     if start_date:
         qs = qs.filter(session_date__gte=_parse_date(start_date))
     if end_date:
