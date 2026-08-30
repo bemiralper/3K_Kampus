@@ -8,6 +8,7 @@ import {
   OZEL_DERS_WHATSAPP_TEMPLATES,
   ozelDersEventKey,
   resolveOzelDersTemplate,
+  type OzelDersPreviewContext,
 } from '@/lib/ozel-ders-whatsapp-templates';
 import { Drawer } from './ozelDersUi';
 import {
