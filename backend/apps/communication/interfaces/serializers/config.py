@@ -331,7 +331,10 @@ class MessageSerializer(serializers.ModelSerializer):
     def get_failed_reason(self, obj) -> str:
         from apps.communication.application.delivery_error import explain_delivery_failure
 
-        return explain_delivery_failure(getattr(obj, 'failed_reason', '') or '')
+        raw = (getattr(obj, 'failed_reason', '') or '').strip()
+        if not raw:
+            return ''
+        return explain_delivery_failure(raw)
 
 
 class MessageCreateSerializer(serializers.Serializer):

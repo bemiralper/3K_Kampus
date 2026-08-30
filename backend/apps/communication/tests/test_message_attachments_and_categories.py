@@ -61,6 +61,20 @@ class MessageAttachmentSerializerTest(TestCase):
         self.assertEqual(data['attachments'][0]['original_name'], 'photo.jpg')
         self.assertTrue(data['attachments'][0]['file_url'])
 
+    def test_successful_message_has_empty_failed_reason(self):
+        self.message.status = 'READ'
+        self.message.failed_reason = ''
+        data = MessageSerializer(self.message).data
+        self.assertEqual(data['status'], 'READ')
+        self.assertEqual(data['failed_reason'], '')
+
+    def test_failed_reason_is_translated(self):
+        self.message.status = 'FAILED'
+        self.message.failed_reason = 'Message undeliverable'
+        data = MessageSerializer(self.message).data
+        self.assertIn('iletilemedi', data['failed_reason'].lower())
+        self.assertNotIn('undeliverable', data['failed_reason'].lower())
+
 
 class TemplateCategoryServiceTest(TestCase):
     def setUp(self):
