@@ -8,6 +8,10 @@ const ROWS: Array<{ label: string; hint: string; sample: string }> = [
   { label: "İtalik", hint: FORMAT_SHORTCUT_HINTS.italic, sample: "_metin_" },
   { label: "Üstü çizili", hint: FORMAT_SHORTCUT_HINTS.strike, sample: "~metin~" },
   { label: "Monospace", hint: FORMAT_SHORTCUT_HINTS.mono, sample: "```metin```" },
+  { label: "Satır içi kod", hint: FORMAT_SHORTCUT_HINTS.code, sample: "`metin`" },
+  { label: "Alıntı", hint: FORMAT_SHORTCUT_HINTS.quote, sample: "> metin" },
+  { label: "Madde", hint: FORMAT_SHORTCUT_HINTS.bullet, sample: "- metin" },
+  { label: "Numara", hint: FORMAT_SHORTCUT_HINTS.number, sample: "1. metin" },
 ];
 
 export default function FormatShortcutHelp() {
@@ -37,7 +41,7 @@ export default function FormatShortcutHelp() {
       </button>
       {open && (
         <div className="comm-shortcut-popover" role="dialog" aria-label="Biçim kısayolları">
-          <div className="comm-shortcut-popover-title">Metni seçip uygulayın</div>
+          <div className="comm-shortcut-popover-title">WhatsApp biçimleri — metni seçip uygulayın</div>
           <ul>
             {ROWS.map((row) => (
               <li key={row.label}>

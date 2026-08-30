@@ -186,6 +186,12 @@ class TemplateService:
                 value = (value or '').strip()[:64]
             setattr(template, key, value)
         template.save()
+        if {'body', 'header_json', 'footer_text', 'template_group'} & set(fields):
+            from apps.communication.application.template_pairing_service import (
+                TemplatePairingService,
+            )
+            TemplatePairingService.sync_meta_from_app(template)
+            template.refresh_from_db()
         return template
 
     def delete(self, template: MessageTemplate, *, user) -> dict:

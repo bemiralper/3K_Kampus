@@ -16,7 +16,7 @@ export default function FormattedWhatsAppText({ text }: { text: string }) {
         if (seg.type === "strike") {
           return <s key={i}>{seg.content}</s>;
         }
-        if (seg.type === "mono") {
+        if (seg.type === "mono" || seg.type === "code") {
           return (
             <code key={i} className="comm-bubble-mono">
               {seg.content}

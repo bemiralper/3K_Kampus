@@ -46,6 +46,9 @@ import type {
   PuanAyarlari,
   PuanYilSeti,
   KatsayiKind,
+  ExamPublishStatus,
+  ExamPublishPreview,
+  ExamPublishDispatch,
 } from './types';
 
 const BASE = '/api/coaching/olcme-degerlendirme/exams';
@@ -106,6 +109,20 @@ export const examApi = {
   list: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : '';
     return request<ExamListItem[]>(`${BASE}/${qs}`);
+  },
+
+  downloadListPdf: async (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    const res = await fetch(`${BASE}/list-pdf/${qs}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string })?.error || 'Liste PDF indirilemedi.');
+    }
+    const blob = await res.blob();
+    await downloadPdfBlob(blob, 'sinav-listesi.pdf');
   },
 
   detail: (id: number) => request<ExamDetail>(`${BASE}/${id}/`),
@@ -331,10 +348,24 @@ export const examApi = {
     downloadBlob(blob, `${kind}.xlsx`);
   },
 
+  bulkAttendance: (
+    examId: number,
+    data: { attendance: 'present' | 'absent'; participant_ids?: number[]; session_id?: number | null },
+  ) =>
+    request<{ ok: boolean; updated: number; attendance: string }>(
+      `${BASE}/${examId}/participants/bulk-attendance/`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
   hatirlatmaPreview: (examId: number, participantIds: number[], eventKey = 'sinav.hatirlatma') =>
     request<{
       event_key: string;
       event_label: string;
+      preview_body: string;
+      preview_body_veli?: string;
+      preview_body_ogrenci?: string;
+      supports_ogrenci?: boolean;
+      binding_hint: string;
       students: {
         participant_id: number;
         student_id: number;
@@ -364,6 +395,100 @@ export const examApi = {
       `${BASE}/${examId}/hatirlatma/send/`,
       { method: 'POST', body: JSON.stringify(data) },
     ),
+
+  publishDispatch: (examId: number) =>
+    request<ExamPublishStatus>(`${BASE}/${examId}/publish-dispatch/`),
+
+  publishPreview: (examId: number, kind: 'karne' | 'answer_key') =>
+    request<ExamPublishPreview>(`${BASE}/${examId}/publish-dispatch/preview/?kind=${kind}`),
+
+  publishSendNow: (
+    examId: number,
+    kind: 'karne' | 'answer_key',
+    payload?: {
+      include_veli?: boolean;
+      include_student?: boolean;
+      student_ids?: number[];
+      veli_ids?: number[];
+      answer_ids?: number[];
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      already?: boolean;
+      sent?: number;
+      skipped?: number;
+      errors?: string[];
+      error?: string;
+      status?: string;
+      campaign_id?: string | null;
+      dispatch: ExamPublishStatus;
+    }>(`${BASE}/${examId}/publish-dispatch/send-now/`, {
+      method: 'POST',
+      body: JSON.stringify({ kind, ...payload }),
+    }),
+
+  publishReschedule: (
+    examId: number,
+    kind: 'karne' | 'answer_key',
+    scheduledAt: string | null,
+    isEnabled = false,
+  ) =>
+    request<ExamPublishStatus>(`${BASE}/${examId}/publish-dispatch/reschedule/`, {
+      method: 'POST',
+      body: JSON.stringify({ kind, scheduled_at: scheduledAt, is_enabled: isEnabled }),
+    }),
+
+  answerKeyPdfMeta: (examId: number) =>
+    request<{ has_uploaded: boolean; can_generate: boolean; filename: string }>(
+      `${BASE}/${examId}/answer-key-pdf/`,
+    ),
+
+  downloadAnswerKeyPdf: async (
+    examId: number,
+    opts?: 'uploaded' | 'generated' | {
+      source?: 'uploaded' | 'generated';
+      copies?: number;
+      booklet?: string;
+    },
+  ) => {
+    const options = typeof opts === 'string' ? { source: opts } : (opts || {});
+    const qs = new URLSearchParams({ download: '1' });
+    if (options.source === 'generated') qs.set('source', 'generated');
+    if (options.copies && options.copies !== 1) qs.set('copies', String(options.copies));
+    if (options.booklet) qs.set('booklet', options.booklet);
+    const res = await fetch(`${BASE}/${examId}/answer-key-pdf/?${qs}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'PDF indirilemedi.');
+    }
+    const blob = await res.blob();
+    await downloadPdfBlob(blob, 'cevap-anahtari.pdf');
+  },
+
+  uploadAnswerKeyPdf: async (examId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${BASE}/${examId}/answer-key-pdf/`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: getContextHeaders(),
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'PDF yüklenemedi.');
+    }
+    return res.json() as Promise<{ ok: boolean; has_uploaded: boolean; filename: string }>;
+  },
+
+  deleteAnswerKeyPdf: (examId: number) =>
+    request<{ ok: boolean; has_uploaded: boolean }>(`${BASE}/${examId}/answer-key-pdf/`, {
+      method: 'DELETE',
+    }),
 
   // ── Yardımcı ──────────────────────────────────────────────────────────────
 
@@ -768,6 +893,7 @@ export interface KarneBulkPreviewResponse {
     students: KarneBulkStudentRow[];
     sendable: number;
     total: number;
+    scheduled_warning?: ExamPublishDispatch | null;
   };
 }
 
@@ -778,6 +904,8 @@ export interface KarneBulkSendResponse {
     sent: number;
     skipped: number;
     errors: string[];
+    campaign_id?: string | null;
+    schedule_cancelled?: boolean;
     student_results?: Array<{
       answer_id: number;
       student_name: string;
@@ -943,6 +1071,48 @@ export const curriculumApi = {
       `${CURRICULUM_BASE}/bulk-import/`,
       { method: 'POST', body: JSON.stringify(data) },
     ),
+
+  downloadCatalog: async (codes?: string[]) => {
+    const qs = codes?.length ? `?codes=${encodeURIComponent(codes.join(','))}` : '';
+    const res = await fetch(`${CURRICULUM_BASE}/catalog/export/${qs}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Katalog indirilemedi.');
+    }
+    const blob = await res.blob();
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const { downloadBlob } = await import('@/lib/download-file');
+    downloadBlob(blob, `kazanim-katalogu-${stamp}.json`);
+  },
+
+  importCatalog: async (file: File, mode: 'replace' | 'merge', dryRun = false) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('mode', mode);
+    if (dryRun) form.append('dry_run', '1');
+    const res = await fetch(`${CURRICULUM_BASE}/catalog/import/`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: getContextHeaders(),
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Katalog yüklenemedi.');
+    }
+    return res.json() as Promise<{
+      ok: boolean;
+      message: string;
+      dry_run: boolean;
+      mode: string;
+      counts: { subjects: number; topics: number; outcomes: number; sub_outcomes: number };
+      imported?: { subjects: number; topics: number; outcomes: number; sub_outcomes: number };
+      subjects?: { code: string; name: string; topics: number }[];
+    }>;
+  },
 
   /** Metin formatında toplu içe aktarım (kopyala-yapıştır) */
   bulkTextImport: (data: { subject_id: number; text: string }) =>

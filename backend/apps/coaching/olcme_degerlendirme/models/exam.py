@@ -94,6 +94,12 @@ class Exam(models.Model):
     answer_key_publish_date = models.DateTimeField(
         'Cevap Anahtarı Yayın Tarihi', null=True, blank=True,
     )
+    answer_key_pdf = models.FileField(
+        'Cevap Anahtarı PDF',
+        upload_to='olcme/cevap-anahtari/',
+        null=True,
+        blank=True,
+    )
 
     # ── PUANLAMA ──────────────────────────────────────────────────────────────
     wrong_answer_count = models.PositiveSmallIntegerField(

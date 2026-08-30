@@ -51,6 +51,7 @@ from apps.communication.interfaces.views.notification_schedules import (
     NotificationScheduleView,
 )
 from apps.communication.interfaces.views.meta_template_mgmt import (
+    MetaTemplateBulkDeleteView,
     MetaTemplateCloneView,
     MetaTemplateDetailView,
     MetaTemplateExampleMediaUploadView,
@@ -66,6 +67,7 @@ from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateSeedDuyuruView,
     MetaTemplateSeedKayitSozlesmeView,
     MetaTemplateSeedPersonalChatView,
+    MetaTemplateSeedSinavView,
     MetaTemplateSubmitView,
 )
 from apps.communication.interfaces.views.conversations import (
@@ -159,6 +161,11 @@ urlpatterns = [
         name='meta-template-seed-ozel-ders',
     ),
     path(
+        'meta-templates/seed-sinav/',
+        MetaTemplateSeedSinavView.as_view(),
+        name='meta-template-seed-sinav',
+    ),
+    path(
         'meta-templates/seed-kayit-sozlesme/',
         MetaTemplateSeedKayitSozlesmeView.as_view(),
         name='meta-template-seed-kayit-sozlesme',
@@ -167,6 +174,11 @@ urlpatterns = [
         'meta-templates/seed-personal-chat/',
         MetaTemplateSeedPersonalChatView.as_view(),
         name='meta-template-seed-personal-chat',
+    ),
+    path(
+        'meta-templates/bulk-delete/',
+        MetaTemplateBulkDeleteView.as_view(),
+        name='meta-template-bulk-delete',
     ),
     path('meta-templates/<uuid:template_id>/', MetaTemplateDetailView.as_view(), name='meta-template-detail'),
     path(

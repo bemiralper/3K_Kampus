@@ -109,6 +109,60 @@ export interface ExamListItem {
   created_at: string;
 }
 
+export interface ExamPublishDispatch {
+  id: number;
+  kind: 'karne' | 'answer_key';
+  kind_label: string;
+  status: 'pending' | 'sent' | 'overdue_unread' | 'cancelled';
+  status_label: string;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  sent_count: number;
+  skipped_count: number;
+  last_error: string;
+  ready: boolean;
+  is_enabled: boolean;
+  campaign_id: string | null;
+}
+
+export interface ExamPublishStatus {
+  exam_id: number;
+  graded: boolean;
+  answer_key_ready: boolean;
+  has_uploaded_pdf: boolean;
+  karne_students: number;
+  answer_key_students: number;
+  karne: ExamPublishDispatch | null;
+  answer_key: ExamPublishDispatch | null;
+}
+
+export interface ExamPublishRecipient {
+  recipient_type: 'veli' | 'ogrenci' | string;
+  ogrenci_id: number;
+  veli_id: number | null;
+  display_name: string;
+  telefon: string;
+  body: string;
+  skip_reason: string;
+}
+
+export interface ExamPublishPreviewStudent {
+  student_id: number | null;
+  participant_id: number | null;
+  answer_id: number | null;
+  full_name: string;
+  recipients: ExamPublishRecipient[];
+}
+
+export interface ExamPublishPreview {
+  kind: 'karne' | 'answer_key';
+  exam_id: number;
+  exam_name: string;
+  students: ExamPublishPreviewStudent[];
+  preview_body: string;
+  ready: boolean;
+}
+
 export interface ExamDetail extends ExamListItem {
   description: string;
   result_publish_date: string | null;

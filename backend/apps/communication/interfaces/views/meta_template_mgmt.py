@@ -20,6 +20,9 @@ from apps.communication.application.ozel_ders_template_seed import (
 from apps.communication.application.kayit_sozlesme_template_seed import (
     KayitSozlesmeTemplateSeedService,
 )
+from apps.communication.application.sinav_template_seed import (
+    SinavTemplateSeedService,
+)
 from apps.communication.application.campaign_duyuru_template_seed import (
     CampaignDuyuruTemplateSeedService,
 )
@@ -118,6 +121,8 @@ class MetaTemplateListCreateView(APIView):
                 buttons_json=data.get('buttons_json') or [],
                 usage_scope=data.get('usage_scope'),
                 template_group=data.get('template_group') or '',
+                campaign_audience=data.get('campaign_audience') or '',
+                campaign_family=data.get('campaign_family') or '',
                 example_values_json=data.get('example_values_json') or {},
                 user=request.user,
             )
@@ -213,6 +218,20 @@ class MetaTemplateDetailView(APIView):
             tpl.refresh_from_db()
         if 'template_group' in request.data:
             tpl = MetaTemplateService.set_template_group(tpl, data.get('template_group') or '')
+        if 'campaign_audience' in request.data or 'campaign_family' in request.data:
+            tpl = MetaTemplateService.set_campaign_tags(
+                tpl,
+                campaign_audience=(
+                    data.get('campaign_audience')
+                    if 'campaign_audience' in request.data
+                    else None
+                ),
+                campaign_family=(
+                    data.get('campaign_family')
+                    if 'campaign_family' in request.data
+                    else None
+                ),
+            )
         editable = {
             key: data.get(key)
             for key in (
@@ -242,10 +261,10 @@ class MetaTemplateDetailView(APIView):
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         delete_on_meta = request.query_params.get('delete_on_meta') in ('1', 'true', 'True')
         try:
-            MetaTemplateService.delete_local(tpl, delete_on_meta=delete_on_meta)
+            result = MetaTemplateService.delete_local(tpl, delete_on_meta=delete_on_meta)
         except MetaTemplateServiceError as exc:
             return _err(exc)
-        return Response({'success': True})
+        return Response({'success': True, **result})
 
 
 class MetaTemplateSubmitView(APIView):
@@ -327,6 +346,31 @@ class MetaTemplateCloneView(APIView):
             WhatsAppMetaTemplateSerializer(clone).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class MetaTemplateBulkDeleteView(APIView):
+    permission_classes = [CommunicationConfigPermission]
+
+    def post(self, request):
+        kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+        raw_ids = request.data.get('ids') or request.data.get('template_ids') or []
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return Response(
+                {'error': 'Silinecek şablon id listesi gerekli.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        delete_on_meta = bool(
+            request.data.get('delete_on_meta')
+            in (True, 1, '1', 'true', 'True')
+        )
+        result = MetaTemplateService.bulk_delete(
+            kurum_id,
+            raw_ids,
+            delete_on_meta=delete_on_meta,
+        )
+        return Response(result)
 
 
 class MetaTemplateCreateAppView(APIView):
@@ -742,6 +786,74 @@ class MetaTemplateSeedAcademicScheduleView(APIView):
             scope_sube_id = sube_id
         try:
             result = AcademicScheduleTemplateSeedService.seed(
+                kurum_id,
+                sube_id=scope_sube_id,
+                channel_config_id=account_id,
+                user=request.user,
+                skip_existing=not force,
+                bind=bool(bind),
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except MetaTemplateServiceError as exc:
+            return _err(exc)
+
+        status_code = (
+            status.HTTP_400_BAD_REQUEST if result['errors'] else status.HTTP_200_OK
+        )
+        return Response({
+            'created_app_count': len(result['created_app']),
+            'updated_app_count': len(result.get('updated_app') or []),
+            'skipped_app_count': len(result['skipped_app']),
+            'created_meta_count': len(result['created_meta']),
+            'updated_meta_count': len(result.get('updated_meta') or []),
+            'skipped_meta_count': len(result['skipped_meta']),
+            'bound_count': len(result.get('bound') or []),
+            'created_app': result['created_app'],
+            'updated_app': result.get('updated_app') or [],
+            'skipped_app': result['skipped_app'],
+            'created_meta': result['created_meta'],
+            'updated_meta': result.get('updated_meta') or [],
+            'skipped_meta': result['skipped_meta'],
+            'bound': result.get('bound') or [],
+            'errors': result['errors'],
+            'next_steps': result.get('next_steps') or [],
+            'event_keys': result.get('event_keys') or [],
+            'info': (
+                f"LMS +{len(result['created_app'])}/↻{len(result.get('updated_app') or [])}, "
+                f"Meta +{len(result['created_meta'])}/↻{len(result.get('updated_meta') or [])}, "
+                f"bağlandı {len(result.get('bound') or [])}."
+            ),
+        }, status=status_code)
+
+
+class MetaTemplateSeedSinavView(APIView):
+    """Ölçme / sınav (veli + öğrenci) Meta + LMS taslaklarını oluşturur ve bağlar."""
+
+    permission_classes = [CommunicationConfigPermission]
+
+    def post(self, request):
+        kurum_id, sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+        account_id = (
+            request.data.get('channel_config_id')
+            or request.data.get('account_id')
+        )
+        if not account_id:
+            return Response(
+                {'error': 'channel_config_id zorunludur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        force = bool(request.data.get('force'))
+        bind = request.data.get('bind', True)
+        scope_sube = request.data.get('sube_id', sube_id)
+        try:
+            scope_sube_id = int(scope_sube) if scope_sube not in (None, '', 'null') else None
+        except (TypeError, ValueError):
+            scope_sube_id = sube_id
+        try:
+            result = SinavTemplateSeedService.seed(
                 kurum_id,
                 sube_id=scope_sube_id,
                 channel_config_id=account_id,

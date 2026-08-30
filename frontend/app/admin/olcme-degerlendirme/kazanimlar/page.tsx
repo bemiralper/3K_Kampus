@@ -53,6 +53,12 @@ export default function KazanimlarPage() {
 
   // İşlem mesajı
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [catalogBusy, setCatalogBusy] = useState('');
+  const [catalogFile, setCatalogFile] = useState<File | null>(null);
+  const [catalogMode, setCatalogMode] = useState<'replace' | 'merge'>('replace');
+  const [catalogPreview, setCatalogPreview] = useState<{
+    subjects: number; topics: number; outcomes: number; sub_outcomes: number;
+  } | null>(null);
 
   // Drag & Drop state
   const [dragTopicId, setDragTopicId] = useState<number | null>(null);
@@ -87,6 +93,63 @@ export default function KazanimlarPage() {
   }, []);
 
   useEffect(() => { fetchSubjects(); }, [fetchSubjects]);
+
+  const handleDownloadCatalog = async () => {
+    setCatalogBusy('download');
+    try {
+      await curriculumApi.downloadCatalog();
+      showToast('Kazanım kataloğu indirildi');
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'İndirilemedi', 'error');
+    } finally { setCatalogBusy(''); }
+  };
+
+  const pickCatalogFile = async (file?: File) => {
+    if (!file) return;
+    setCatalogFile(file);
+    setCatalogPreview(null);
+    if (file.name.toLowerCase().endsWith('.json')) {
+      try {
+        const text = await file.text();
+        const payload = JSON.parse(text) as {
+          format?: string;
+          counts?: { subjects: number; topics: number; outcomes: number; sub_outcomes: number };
+          subjects?: unknown[];
+        };
+        if (payload.format !== 'olcme-curriculum-catalog') {
+          showToast('Bu dosya kazanım kataloğu değil. Önce İndir ile alın.', 'error');
+          setCatalogFile(null);
+          return;
+        }
+        if (payload.counts) setCatalogPreview(payload.counts);
+        else setCatalogPreview({
+          subjects: payload.subjects?.length || 0, topics: 0, outcomes: 0, sub_outcomes: 0,
+        });
+      } catch {
+        showToast('JSON okunamadı.', 'error');
+        setCatalogFile(null);
+      }
+    }
+  };
+
+  const handleUploadCatalog = async () => {
+    if (!catalogFile) return;
+    const wipe = catalogMode === 'replace' && subjects.length > 0;
+    if (wipe && !confirm(
+      'Seçilen dosyadaki derslerin konu ağacı canlıdaki ile değiştirilecek. Devam?',
+    )) return;
+    setCatalogBusy('upload');
+    try {
+      const res = await curriculumApi.importCatalog(catalogFile, catalogMode);
+      showToast(res.message);
+      setCatalogFile(null);
+      setCatalogPreview(null);
+      setSelectedSubject(null);
+      fetchSubjects();
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Yüklenemedi', 'error');
+    } finally { setCatalogBusy(''); }
+  };
 
   /* ── Toast ── */
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -388,7 +451,7 @@ export default function KazanimlarPage() {
             Kazanım Yönetimi
           </h1>
           <p className={styles.subtitle}>
-            Ders, Konu, Kazanım ve Alt Kazanım tanımlarını yönetin
+            Ders, konu ve kazanımları yönetin. Kataloğu indirip başka ortama yükleyebilirsiniz.
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -401,11 +464,77 @@ export default function KazanimlarPage() {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          <button
+            className={styles.btnOutline}
+            onClick={handleDownloadCatalog}
+            disabled={catalogBusy !== '' || subjects.length === 0}
+          >
+            {catalogBusy === 'download' ? 'İndiriliyor…' : 'Kataloğu indir'}
+          </button>
+          <label className={styles.btnSecondary} style={{ cursor: 'pointer' }}>
+            Katalog yükle
+            <input
+              type="file"
+              accept=".json,application/json,.xlsx"
+              hidden
+              onChange={e => {
+                pickCatalogFile(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+          </label>
           <button className={styles.btnPrimary} onClick={() => setShowNewSubject(true)}>
             ➕ Yeni Ders
           </button>
         </div>
       </div>
+
+      {catalogFile && (
+        <div className={styles.catalogBar}>
+          <div>
+            <strong>{catalogFile.name}</strong>
+            {catalogPreview && (
+              <p>
+                {catalogPreview.subjects} ders · {catalogPreview.topics} konu ·{' '}
+                {catalogPreview.outcomes} kazanım · {catalogPreview.sub_outcomes} alt
+              </p>
+            )}
+            {!catalogPreview && catalogFile.name.toLowerCase().endsWith('.xlsx') && (
+              <p>Okulizyon Excel — yüklenince ders ağaçları yazılır.</p>
+            )}
+            <div className={styles.catalogModes}>
+              <label>
+                <input
+                  type="radio"
+                  checked={catalogMode === 'replace'}
+                  onChange={() => setCatalogMode('replace')}
+                />
+                Üzerine yaz (aynı kodlu dersin konuları yenilenir)
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  checked={catalogMode === 'merge'}
+                  onChange={() => setCatalogMode('merge')}
+                />
+                Birleştir (eksik konu/kazanım eklenir)
+              </label>
+            </div>
+          </div>
+          <div className={styles.catalogBarActions}>
+            <button className={styles.btnOutline} onClick={() => { setCatalogFile(null); setCatalogPreview(null); }}>
+              Vazgeç
+            </button>
+            <button
+              className={styles.btnPrimary}
+              disabled={catalogBusy === 'upload'}
+              onClick={handleUploadCatalog}
+            >
+              {catalogBusy === 'upload' ? 'Yükleniyor…' : 'Yükle'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className={styles.layout}>
         {/* SOL PANEL — Ders Listesi */}
@@ -418,7 +547,10 @@ export default function KazanimlarPage() {
           ) : error ? (
             <div className={styles.error}>{error}</div>
           ) : subjects.length === 0 ? (
-            <div className={styles.empty}>Henüz ders tanımlanmamış</div>
+            <div className={styles.empty}>
+              Henüz ders yok. Yukarıdan <strong>Katalog yükle</strong> ile JSON alın
+              veya yeni ders ekleyin.
+            </div>
           ) : (
             <div className={styles.subjectList}>
               {subjects.map(s => (

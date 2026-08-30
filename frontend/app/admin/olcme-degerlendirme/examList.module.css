@@ -354,6 +354,15 @@ button.metric:hover {
   font-size: 13px;
 }
 
+.numHead,
+.numCell {
+  width: 36px;
+  text-align: right;
+  color: var(--text-secondary, #7088a4);
+  font-variant-numeric: tabular-nums;
+  padding-right: 8px !important;
+}
+
 .table th {
   background: var(--bg-alt, #f0f4f9);
   padding: 11px 16px;

@@ -39,6 +39,12 @@ function renderSegment(
           {seg.content}
         </code>
       );
+    case "code":
+      return (
+        <code key={key} className="wa-code">
+          {seg.content}
+        </code>
+      );
     case "variable":
       return (
         <span key={key} className="wa-var">

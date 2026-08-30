@@ -908,6 +908,13 @@ export interface WhatsAppMetaTemplateItem {
   meta_template_id?: string;
   usage_scope?: MetaTemplateUsage | string;
   usage_scope_label?: string;
+  campaign_audience?: string;
+  campaign_audience_label?: string;
+  campaign_family?: string;
+  campaign_family_label?: string;
+  campaign_media?: string;
+  campaign_media_label?: string;
+  campaign_eligible?: boolean;
   /** Gövdedeki değişken adları, gönderim ekranında doldurulur */
   variables?: string[];
   /** Sohbet bağlamıyla çözülmüş önizleme (yalnızca sohbet şablon listesinde) */
@@ -1014,6 +1021,8 @@ export async function createLocalMetaTemplate(data: {
   language?: string;
   meta_category?: string;
   usage_scope?: MetaTemplateUsage;
+  campaign_audience?: string;
+  campaign_family?: string;
   body_named?: string;
   header_json?: MetaTemplateHeader;
   footer_text?: string;
@@ -1041,6 +1050,8 @@ export async function updateLocalMetaTemplate(
     language: string;
     meta_category: string;
     usage_scope: MetaTemplateUsage;
+    campaign_audience?: string;
+    campaign_family?: string;
     body_named: string;
     header_json: MetaTemplateHeader;
     footer_text: string;
@@ -1058,9 +1069,30 @@ export async function updateLocalMetaTemplate(
 export async function deleteLocalMetaTemplate(
   id: string,
   deleteOnMeta = false,
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; paired_app_deleted?: number }> {
   const qs = deleteOnMeta ? '?delete_on_meta=1' : '';
   return request(`/meta-templates/${id}/${qs}`, { method: 'DELETE' });
+}
+
+export async function bulkDeleteLocalMetaTemplates(
+  ids: string[],
+  deleteOnMeta = false,
+): Promise<{
+  deleted: Array<{ id: string; name: string; paired_app_deleted?: number }>;
+  blocked: Array<{
+    id: string;
+    name: string;
+    reason: string;
+    usages?: Array<{ label?: string; event_key?: string }>;
+  }>;
+  missing: string[];
+  deleted_count: number;
+  blocked_count: number;
+}> {
+  return request("/meta-templates/bulk-delete/", {
+    method: "POST",
+    body: JSON.stringify({ ids, delete_on_meta: deleteOnMeta }),
+  });
 }
 
 export async function submitLocalMetaTemplate(id: string): Promise<WhatsAppMetaTemplateItem> {
@@ -1158,6 +1190,37 @@ export async function seedPersonalChatTemplates(data: {
 }> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request('/meta-templates/seed-personal-chat/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+/** Ölçme / sınav — veli + öğrenci LMS + Meta taslak ve bildirim bağlama */
+export async function seedSinavTemplates(data: {
+  channel_config_id: string;
+  sube_id?: number | null;
+  force?: boolean;
+  bind?: boolean;
+}): Promise<{
+  created_app_count: number;
+  updated_app_count: number;
+  skipped_app_count: number;
+  created_meta_count: number;
+  updated_meta_count: number;
+  skipped_meta_count: number;
+  bound_count: number;
+  created_app: string[];
+  updated_app: string[];
+  created_meta: string[];
+  updated_meta: string[];
+  bound: string[];
+  errors: string[];
+  next_steps?: string[];
+  event_keys?: string[];
+  info?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/meta-templates/seed-sinav/', {
     method: 'POST',
     body: JSON.stringify({ ...data, kurum_id: kurumId }),
   });
@@ -1894,6 +1957,16 @@ export interface CampaignAnalytics {
   reply_rate: number;
 }
 
+export interface CampaignDelivery {
+  id: string;
+  contact_name: string;
+  phone: string;
+  contact_type: string;
+  status: string;
+  failed_reason: string;
+  sent_at: string | null;
+}
+
 export interface CampaignItem {
   id: string;
   title: string;
@@ -1920,6 +1993,7 @@ export interface CampaignItem {
   analytics?: CampaignAnalytics;
   scheduled_at?: string | null;
   estimated_cost_usd?: string;
+  deliveries?: CampaignDelivery[];
 }
 
 export async function previewCampaign(

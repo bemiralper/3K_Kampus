@@ -676,6 +676,29 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         }),
     ),
     NotificationEvent(
+        key='sinav.cevap_anahtari',
+        module=MODULE_SINAV,
+        label='Sınav cevap anahtarı (PDF)',
+        description=(
+            'Yayın saatinde sınava giren öğrenci ve veliye cevap anahtarı PDF olarak '
+            'gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'sinav_ad', 'pdf_baslik'),
+        meta_name_base='sinav_cevap_anahtari',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın velimiz, {{ogrenci_ad}} öğrencimizin "{{sinav_ad}}" '
+                'sınav cevap anahtarı ektedir.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, "{{sinav_ad}}" sınav cevap anahtarın ektedir.'
+            ),
+        }),
+    ),
+    NotificationEvent(
         key='takvim.etkinlik',
         module=MODULE_TAKVIM,
         label='Takvim etkinliği bildirimi',

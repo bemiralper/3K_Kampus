@@ -34,6 +34,7 @@ import {
   seedKayitSozlesmeTemplates,
   seedKutuphaneYoklamaTemplates,
   seedOzelDersTemplates,
+  seedSinavTemplates,
   seedSinifYoklamaTemplates,
 } from "@/lib/communication-api";
 import { notifyCommunicationTemplateUsageChanged } from "@/lib/communication-template-usage-sync";
@@ -1138,7 +1139,7 @@ export default function BildirimSablonlariClient() {
 
   const runSeed = useCallback(
     async (
-      kind: "academic" | "kutuphane" | "sinif_yoklama" | "kayit" | "ozel_ders",
+      kind: "academic" | "kutuphane" | "sinif_yoklama" | "kayit" | "ozel_ders" | "sinav",
       confirmText: string,
       fallbackInfo: string,
       failText: string,
@@ -1241,6 +1242,23 @@ export default function BildirimSablonlariClient() {
       seedKayitSozlesmeTemplates,
     );
 
+  const handleSeedSinav = () =>
+    runSeed(
+      "sinav",
+      "Ölçme / sınav taslakları oluşturulsun mu?\n\n" +
+        "• Sınav sonucu (veli)\n" +
+        "• Sınav bilgilendirmesi (veli / öğrenci)\n" +
+        "• Sınav yoklama (veli / öğrenci)\n" +
+        "• Sınav karnesi PDF (veli / öğrenci)\n" +
+        "• Sınav cevap anahtarı PDF (veli / öğrenci)\n\n" +
+        "LMS şablonları + Meta DRAFT üretilir ve Sınav olaylarına bağlanır. " +
+        "Karne ve cevap anahtarı için örnek PDF yükleyip Meta onayına göndermeniz gerekir.",
+      "Ölçme / sınav taslakları hazır.",
+      "Ölçme / sınav taslakları oluşturulamadı.",
+      "sinav.hatirlatma",
+      seedSinavTemplates,
+    );
+
   const handleSeedOzelDers = () =>
     runSeed(
       "ozel_ders",
@@ -1276,6 +1294,12 @@ export default function BildirimSablonlariClient() {
       title: "Sınıf yoklama taslakları",
       desc: "Gelmedi / geç kalma — veli ve öğrenci Meta şablonları",
       run: handleSeedSinifYoklama,
+    },
+    {
+      kind: "sinav",
+      title: "Ölçme / sınav taslakları",
+      desc: "Sonuç, salon/sıra, yoklama, karne ve cevap anahtarı",
+      run: handleSeedSinav,
     },
     {
       kind: "ozel_ders",

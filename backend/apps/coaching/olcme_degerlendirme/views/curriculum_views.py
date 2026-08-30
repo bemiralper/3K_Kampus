@@ -10,6 +10,7 @@ CRUD İşlemleri:
 Toplu İşlemler:
   - bulk_import  → JSON formatında toplu ekleme
   - bulk_text_import → Kopyala-yapıştır metin formatında toplu ekleme
+  - catalog_export / catalog_import → Tüm katalog indir / yükle
 
 Eşleştirme:
   - match_outcomes → Girilen metinleri konu/kazanım/alt kazanım ile eşleştir
@@ -17,11 +18,13 @@ Eşleştirme:
 Bağlama:
   - link_subject_to_section → Dersi sınav bölümüne bağla
 """
+import json
 import logging
 import re
 import unicodedata
 
 from django.db import transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -583,6 +586,164 @@ def bulk_text_import(request):
         'stats': stats,
         'subject': SubjectDetailSerializer(subject).data,
     })
+
+
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def catalog_export(request):
+    """Tüm (veya seçili) kazanım kataloğunu ID'siz JSON olarak indirir."""
+    from apps.coaching.olcme_degerlendirme.services.curriculum_catalog import (
+        catalog_filename,
+        export_catalog,
+    )
+
+    raw = request.query_params.get('codes') or request.query_params.get('subject_codes') or ''
+    codes = [c.strip() for c in raw.split(',') if c.strip()] or None
+    payload = export_catalog(subject_codes=codes)
+    data = json.dumps(payload, ensure_ascii=False, indent=2)
+    response = HttpResponse(data, content_type='application/json; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{catalog_filename()}"'
+    return response
+
+
+@api_view(['POST'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def catalog_import(request):
+    """Kazanım kataloğu JSON (veya Okulizyon Excel) yükler."""
+    from apps.coaching.olcme_degerlendirme.services.curriculum_catalog import (
+        MODE_REPLACE,
+        import_catalog,
+    )
+
+    mode = (request.data.get('mode') or MODE_REPLACE).strip()
+    dry_run = str(request.data.get('dry_run') or request.query_params.get('dry_run') or '') in (
+        '1', 'true', 'True',
+    )
+    upload = request.FILES.get('file') or request.FILES.get('catalog')
+    try:
+        if upload and _is_xlsx_name(upload.name):
+            result = _import_okulizyon_upload(upload, mode=mode, dry_run=dry_run)
+        else:
+            payload = _read_catalog_payload(request, upload)
+            result = import_catalog(payload, mode=mode, dry_run=dry_run)
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as exc:
+        logger.exception('Curriculum catalog import error')
+        return Response({'error': f'Yükleme hatası: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+
+    imported = result.get('imported') or {}
+    counts = result.get('counts') or {}
+    if result.get('dry_run'):
+        message = (
+            f"Önizleme: {counts.get('subjects', 0)} ders, "
+            f"{counts.get('topics', 0)} konu, {counts.get('outcomes', 0)} kazanım, "
+            f"{counts.get('sub_outcomes', 0)} alt kazanım"
+        )
+    else:
+        message = (
+            f"Yüklendi: {imported.get('subjects', counts.get('subjects', 0))} ders, "
+            f"{imported.get('topics', 0)} konu, {imported.get('outcomes', 0)} kazanım, "
+            f"{imported.get('sub_outcomes', 0)} alt kazanım"
+        )
+    return Response({**result, 'ok': True, 'message': message})
+
+
+def _is_xlsx_name(name: str) -> bool:
+    return (name or '').lower().endswith(('.xlsx', '.xls'))
+
+
+def _read_catalog_payload(request, upload) -> dict:
+    if upload:
+        if _is_xlsx_name(upload.name):
+            return {}
+        raw = upload.read()
+        try:
+            text = raw.decode('utf-8-sig')
+        except UnicodeDecodeError as exc:
+            raise ValueError('JSON dosyası UTF-8 olmalı.') from exc
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError('JSON okunamadı.') from exc
+        if not isinstance(payload, dict):
+            raise ValueError('Katalog bir JSON nesnesi olmalı.')
+        return payload
+    if isinstance(request.data, dict) and request.data.get('format'):
+        return request.data
+    raw = request.data.get('catalog') or request.data.get('payload')
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError('JSON okunamadı.') from exc
+    raise ValueError('Katalog dosyası seçin.')
+
+
+def _import_okulizyon_upload(upload, *, mode: str, dry_run: bool) -> dict:
+    from apps.coaching.olcme_degerlendirme.services.curriculum_catalog import MODE_REPLACE
+    from apps.coaching.olcme_degerlendirme.services.okulizyon_import import (
+        parse_excel_rows,
+        persist_catalog,
+    )
+
+    path = getattr(upload, 'temporary_file_path', None)
+    if callable(path):
+        try:
+            rows = parse_excel_rows(path())
+        except Exception:
+            rows = parse_excel_rows(_xlsx_as_temp(upload))
+    else:
+        rows = parse_excel_rows(_xlsx_as_temp(upload))
+    counts = {
+        'subjects': len({r.get('ders') for r in rows}),
+        'topics': 0,
+        'outcomes': 0,
+        'sub_outcomes': 0,
+        'rows': len(rows),
+    }
+    if dry_run:
+        return {
+            'dry_run': True,
+            'mode': mode,
+            'source': 'xlsx',
+            'counts': counts,
+        }
+    stats = persist_catalog(rows, replace=(mode == MODE_REPLACE))
+    return {
+        'dry_run': False,
+        'mode': mode,
+        'source': 'xlsx',
+        'counts': {
+            'subjects': stats['subjects'],
+            'topics': stats['topics'],
+            'outcomes': stats['outcomes'],
+            'sub_outcomes': stats['sub_outcomes'],
+        },
+        'imported': {
+            'subjects': stats['subjects'],
+            'topics': stats['topics'],
+            'outcomes': stats['outcomes'],
+            'sub_outcomes': stats['sub_outcomes'],
+            'replaced_subjects': stats['subjects'] if mode == MODE_REPLACE else 0,
+            'merged_topics': 0,
+        },
+    }
+
+
+def _xlsx_as_temp(upload):
+    import tempfile
+    from pathlib import Path
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+    upload.seek(0)
+    tmp.write(upload.read())
+    tmp.close()
+    return Path(tmp.name)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

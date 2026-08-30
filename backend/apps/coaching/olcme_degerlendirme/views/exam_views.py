@@ -2,7 +2,7 @@
 Ölçme & Değerlendirme — Exam Views
 """
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
@@ -125,7 +125,8 @@ class ExamViewSet(viewsets.ModelViewSet):
     def _apply_ordering(self, qs):
         raw = (self.request.query_params.get('ordering') or '').strip()
         if not raw:
-            return qs
+            # En yeni oluşturulan üstte; tarihi olmayan satırlar kaybolmasın.
+            return qs.order_by('-created_at', '-id')
         from django.db.models import F
 
         descending = raw.startswith('-')
@@ -166,7 +167,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         ürettiği için her değer ayrı subquery ile alınır. Modelde aynı adlı
         property'ler olduğundan annotation adları ann_* öneklidir.
         """
-        from django.db.models import Count, IntegerField, OuterRef, Subquery, Sum
+        from django.db.models import Count, DateField, IntegerField, OuterRef, Subquery, Sum
         from django.db.models.functions import Coalesce
 
         from ..models import StudentAnswer
@@ -189,6 +190,12 @@ class ExamViewSet(viewsets.ModelViewSet):
             .filter(session__exam=OuterRef('pk'))
             .order_by().values('session__exam')
         )
+        first_session_date = (
+            ExamSessionModel.objects
+            .filter(exam=OuterRef('pk'), session_date__isnull=False)
+            .order_by('session_date')
+            .values('session_date')[:1]
+        )
 
         return qs.annotate(
             ann_section_count=scalar(main_sections.annotate(v=Count('id')).values('v')[:1]),
@@ -201,6 +208,7 @@ class ExamViewSet(viewsets.ModelViewSet):
                 answers.filter(student__isnull=False)
                 .annotate(v=Count('id')).values('v')[:1],
             ),
+            ann_list_date=Subquery(first_session_date, output_field=DateField()),
         )
 
     def get_serializer_class(self):
@@ -226,6 +234,11 @@ class ExamViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
+        try:
+            from apps.coaching.application.olcme_publish import sync_dispatches_from_exam
+            sync_dispatches_from_exam(exam)
+        except Exception:
+            pass
         return Response(
             ExamDetailSerializer(exam).data,
             status=status.HTTP_201_CREATED,
@@ -233,39 +246,30 @@ class ExamViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old_instance = self.get_object()
-        old_publish = old_instance.result_publish_date
         old_status = old_instance.status
         exam = serializer.save()
         self._sync_to_calendar(exam, self.request.user.id)
-        self._notify_exam_results_if_published(exam, old_publish, old_status)
+        try:
+            from apps.coaching.application.olcme_publish import sync_dispatches_from_exam
+            sync_dispatches_from_exam(exam)
+        except Exception:
+            pass
+        self._notify_exam_results_if_published(exam, old_status)
 
     @staticmethod
-    def _notify_exam_results_if_published(exam, old_publish, old_status):
-        newly_published = bool(
-            exam.result_publish_date
-            and exam.result_publish_date != old_publish
-        ) or (
+    def _notify_exam_results_if_published(exam, old_status):
+        """Koç görev kancası — WhatsApp artık yayın saatinde karne PDF ile gider."""
+        newly_ready = (
             exam.status in ('COMPLETED', 'RESULTS_UPLOADED')
             and exam.status != old_status
         )
-        if not newly_published or not exam.kurum_id:
+        if not newly_ready or not exam.kurum_id:
             return
         try:
             from apps.gorev.application.rule_engine import hook_exam_results_published
             hook_exam_results_published(exam)
         except Exception:
             pass
-        try:
-            from apps.communication.application.integration_hooks import notify_exam_result
-            notify_exam_result(
-                exam.kurum_id,
-                exam.id,
-            )
-        except Exception as e:
-            import logging
-            logging.getLogger('communication.integration').error(
-                f'Sınav sonuç WhatsApp bildirim hatası: {e}'
-            )
 
     def perform_destroy(self, instance):
         kurum_id = instance.kurum_id
@@ -457,8 +461,10 @@ class ExamViewSet(viewsets.ModelViewSet):
                 {'error': f'Geçersiz durum. Geçerli: {valid}'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        old_status = exam.status
         exam.status = new_status
         exam.save(update_fields=['status'])
+        self._notify_exam_results_if_published(exam, old_status)
         return Response(ExamDetailSerializer(exam).data)
 
     # ── OTURUM YÖNETİMİ ─────────────────────────────────────────────────────
@@ -820,3 +826,37 @@ class ExamViewSet(viewsets.ModelViewSet):
             ExamDetailSerializer(exam).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def exam_list_pdf(request):
+    """Filtrelenmiş sınav listesini PDF olarak indirir."""
+    from django.http import HttpResponse
+
+    from apps.coaching.application.olcme_exam_list_pdf import render_exam_list_pdf
+
+    ctx, err = mandatory_olcme_context(request)
+    if err:
+        return err
+    view = ExamViewSet()
+    view.request = request
+    view.args = ()
+    view.kwargs = {}
+    view.action = 'list'
+    view.format_kwarg = None
+    view._olcme_ctx = ctx
+    qs = view.get_queryset()
+    rows = ExamListSerializer(qs, many=True).data
+    filters = {
+        'search': request.query_params.get('search') or '',
+        'exam_type': request.query_params.get('exam_type') or '',
+        'status': request.query_params.get('status') or '',
+    }
+    response = HttpResponse(
+        render_exam_list_pdf(rows, filters=filters),
+        content_type='application/pdf',
+    )
+    response['Content-Disposition'] = 'attachment; filename="sinav-listesi.pdf"'
+    return response

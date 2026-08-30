@@ -106,6 +106,40 @@ export function createComposerState(text = ""): ComposerState {
   return { text, previewFontSize: "normal" };
 }
 
+export type WhatsAppLineStyle = "quote" | "bullet" | "number";
+
+export type WhatsAppFormatAction =
+  | { kind: "wrap"; marker: string }
+  | { kind: "prefix"; style: WhatsAppLineStyle };
+
+/** WhatsApp biçim kısayolu — kalın / italik / çizili / mono / kod / alıntı / liste. */
+export function formatShortcutAction(e: {
+  code?: string;
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey?: boolean;
+}): WhatsAppFormatAction | null {
+  if (e.altKey) return null;
+  if (!(e.metaKey || e.ctrlKey)) return null;
+  const code = e.code || "";
+  const key = e.key.toLowerCase();
+  if ((code === "KeyB" || key === "b") && !e.shiftKey) return { kind: "wrap", marker: "*" };
+  if ((code === "KeyI" || key === "i") && !e.shiftKey) return { kind: "wrap", marker: "_" };
+  if ((code === "KeyX" || key === "x") && e.shiftKey) return { kind: "wrap", marker: "~" };
+  if ((code === "KeyM" || key === "m") && e.shiftKey) return { kind: "wrap", marker: "```" };
+  if ((code === "KeyE" || key === "e") && !e.shiftKey) return { kind: "wrap", marker: "`" };
+  if ((code === "KeyQ" || key === "q") && e.shiftKey) return { kind: "prefix", style: "quote" };
+  if ((code === "Digit8" || code === "Numpad8" || key === "8") && e.shiftKey) {
+    return { kind: "prefix", style: "bullet" };
+  }
+  if ((code === "Digit7" || code === "Numpad7" || key === "7") && e.shiftKey) {
+    return { kind: "prefix", style: "number" };
+  }
+  return null;
+}
+
 /** WhatsApp biçim kısayolu: Ctrl/⌘+B kalın, I italik, Shift+X üstü çizili, Shift+M mono. */
 export function formatShortcutMarker(e: {
   code?: string;
@@ -115,15 +149,8 @@ export function formatShortcutMarker(e: {
   shiftKey: boolean;
   altKey?: boolean;
 }): string | null {
-  if (e.altKey) return null;
-  if (!(e.metaKey || e.ctrlKey)) return null;
-  const code = e.code || "";
-  const key = e.key.toLowerCase();
-  if ((code === "KeyB" || key === "b") && !e.shiftKey) return "*";
-  if ((code === "KeyI" || key === "i") && !e.shiftKey) return "_";
-  if ((code === "KeyX" || key === "x") && e.shiftKey) return "~";
-  if ((code === "KeyM" || key === "m") && e.shiftKey) return "```";
-  return null;
+  const action = formatShortcutAction(e);
+  return action?.kind === "wrap" ? action.marker : null;
 }
 
 export const FORMAT_SHORTCUT_HINTS = {
@@ -131,6 +158,10 @@ export const FORMAT_SHORTCUT_HINTS = {
   italic: "Ctrl/⌘+I",
   strike: "Ctrl/⌘+Shift+X",
   mono: "Ctrl/⌘+Shift+M",
+  code: "Ctrl/⌘+E",
+  quote: "Ctrl/⌘+Shift+Q",
+  bullet: "Ctrl/⌘+Shift+8",
+  number: "Ctrl/⌘+Shift+7",
 } as const;
 
 export function wrapSelection(
@@ -148,6 +179,52 @@ export function wrapSelection(
   return { text: newText, cursor };
 }
 
+function stripLinePrefix(line: string): string {
+  return line
+    .replace(/^>\s?/, "")
+    .replace(/^[-*]\s+/, "")
+    .replace(/^\d+\.\s+/, "");
+}
+
+export function prefixSelectedLines(
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+  style: WhatsAppLineStyle,
+): { text: string; cursor: number } {
+  const lineStart = text.lastIndexOf("\n", Math.max(0, selectionStart - 1)) + 1;
+  const nl = text.indexOf("\n", selectionEnd);
+  const lineEnd = nl === -1 ? text.length : nl;
+  const block = text.slice(lineStart, lineEnd);
+  const lines = block.split("\n");
+  const allQuoted = lines.every((line) => /^>\s?/.test(line));
+  const allBullets = lines.every((line) => /^[-*]\s+/.test(line));
+  const allNumbered = lines.every((line) => /^\d+\.\s+/.test(line));
+  const mapped = lines.map((line, index) => {
+    const stripped = stripLinePrefix(line);
+    if (style === "quote") return allQuoted ? stripped : `> ${stripped}`;
+    if (style === "bullet") return allBullets ? stripped : `- ${stripped}`;
+    return allNumbered ? stripped : `${index + 1}. ${stripped}`;
+  });
+  const next = mapped.join("\n");
+  return {
+    text: text.slice(0, lineStart) + next + text.slice(lineEnd),
+    cursor: lineStart + next.length,
+  };
+}
+
+export function applyWhatsAppFormat(
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+  action: WhatsAppFormatAction,
+): { text: string; cursor: number } {
+  if (action.kind === "prefix") {
+    return prefixSelectedLines(text, selectionStart, selectionEnd, action.style);
+  }
+  return wrapSelection(text, selectionStart, selectionEnd, action.marker);
+}
+
 export function insertAtCursor(
   text: string,
   selectionStart: number,
@@ -161,7 +238,7 @@ export function insertAtCursor(
 }
 
 export interface WhatsAppSegment {
-  type: "text" | "bold" | "italic" | "strike" | "mono" | "variable";
+  type: "text" | "bold" | "italic" | "strike" | "mono" | "code" | "variable";
   content: string;
 }
 
@@ -170,7 +247,7 @@ export function parseWhatsAppText(input: string): WhatsAppSegment[] {
 
   const segments: WhatsAppSegment[] = [];
   const regex =
-    /(\{\{[^}]+\}\})|(\*[^*\n]+\*)|(_[^_\n]+_)|(~[^~\n]+~)|(```[^`\n]+```)/g;
+    /(\{\{[^}]+\}\})|(\*[^*\n]+\*)|(_[^_\n]+_)|(~[^~\n]+~)|(```[^`\n]+```)|(`[^`\n]+`)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -181,14 +258,16 @@ export function parseWhatsAppText(input: string): WhatsAppSegment[] {
     const raw = match[0];
     if (raw.startsWith("{{")) {
       segments.push({ type: "variable", content: raw });
+    } else if (raw.startsWith("```")) {
+      segments.push({ type: "mono", content: raw.slice(3, -3) });
+    } else if (raw.startsWith("`")) {
+      segments.push({ type: "code", content: raw.slice(1, -1) });
     } else if (raw.startsWith("*")) {
       segments.push({ type: "bold", content: raw.slice(1, -1) });
     } else if (raw.startsWith("_")) {
       segments.push({ type: "italic", content: raw.slice(1, -1) });
     } else if (raw.startsWith("~")) {
       segments.push({ type: "strike", content: raw.slice(1, -1) });
-    } else if (raw.startsWith("```")) {
-      segments.push({ type: "mono", content: raw.slice(3, -3) });
     }
     lastIndex = match.index + raw.length;
   }
@@ -198,6 +277,34 @@ export function parseWhatsAppText(input: string): WhatsAppSegment[] {
   }
 
   return segments.length ? segments : [{ type: "text", content: input }];
+}
+
+export type WhatsAppPreviewLine = {
+  block: "none" | "quote" | "bullet" | "number";
+  marker: string;
+  segments: WhatsAppSegment[];
+};
+
+export function parseWhatsAppPreviewLines(input: string): WhatsAppPreviewLine[] {
+  return (input || "").split("\n").map((line) => {
+    const quote = line.match(/^>\s?(.*)$/);
+    if (quote) {
+      return { block: "quote" as const, marker: "", segments: parseWhatsAppText(quote[1]) };
+    }
+    const numbered = line.match(/^(\d+\.)\s+(.*)$/);
+    if (numbered) {
+      return {
+        block: "number" as const,
+        marker: numbered[1],
+        segments: parseWhatsAppText(numbered[2]),
+      };
+    }
+    const bullet = line.match(/^[-*]\s+(.*)$/);
+    if (bullet) {
+      return { block: "bullet" as const, marker: "•", segments: parseWhatsAppText(bullet[1]) };
+    }
+    return { block: "none" as const, marker: "", segments: parseWhatsAppText(line) };
+  });
 }
 
 /**

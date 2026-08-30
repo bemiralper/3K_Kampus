@@ -115,11 +115,29 @@ NUMBERED_TEMPLATE_DEFAULT_MAPS: dict[str, dict[str, str]] = {
         '4': 'kayit_tarihi',
         '5': 'kayit_yapan',
     },
+    'toplu_duyuru': {'1': 'mesaj'},
+    'ogrenci_toplu_duyuru': {'1': 'mesaj'},
+    'ogretmen_toplu_duyuru': {'1': 'mesaj'},
+    'duyuru_toplu': {'1': 'mesaj'},
 }
 
 
-def default_variable_map_for_template(name: str) -> dict[str, str]:
-    return dict(NUMBERED_TEMPLATE_DEFAULT_MAPS.get((name or '').strip(), {}) or {})
+def infer_single_numbered_as_mesaj(body_named: str) -> dict[str, str]:
+    """Gövde yalnızca {{1}} gibi tek numaralı alan ise kampanya mesajıdır."""
+    keys = [match.group(1) for match in VARIABLE_PATTERN.finditer(body_named or '')]
+    numbered = [key for key in keys if key.isdigit()]
+    named = [key for key in keys if not key.isdigit()]
+    unique = list(dict.fromkeys(numbered))
+    if unique and not named and len(unique) == 1:
+        return {unique[0]: 'mesaj'}
+    return {}
+
+
+def default_variable_map_for_template(name: str, body_named: str = '') -> dict[str, str]:
+    mapped = dict(NUMBERED_TEMPLATE_DEFAULT_MAPS.get((name or '').strip(), {}) or {})
+    if mapped:
+        return mapped
+    return infer_single_numbered_as_mesaj(body_named)
 
 
 def build_variable_map(body_named: str, *extra_texts: str) -> dict[str, str]:

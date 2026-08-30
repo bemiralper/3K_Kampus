@@ -4,12 +4,17 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .views.exam_views import ExamViewSet
+from .views.exam_views import ExamViewSet, exam_list_pdf
 from .views.roster_views import (
     preview_participants, exam_audience, exam_participants,
     exam_participant_add, exam_participant_detail, exam_participant_search,
+    exam_participants_bulk_attendance,
     exam_rooms, exam_seating, exam_roster_export,
     exam_hatirlatma_preview, exam_hatirlatma_send,
+)
+from .views.publish_views import (
+    exam_publish_status, exam_publish_preview, exam_publish_send_now,
+    exam_publish_reschedule, exam_answer_key_pdf,
 )
 from .views.answer_key_views import AnswerKeyViewSet
 from .views.result_views import (
@@ -54,6 +59,7 @@ from .views.curriculum_views import (
     outcome_list, outcome_detail,
     sub_outcome_create, sub_outcome_detail,
     bulk_import, bulk_text_import,
+    catalog_export, catalog_import,
     link_subject_to_section, unlink_subject_from_section,
     reorder_topics,
     match_outcomes,
@@ -85,6 +91,7 @@ urlpatterns = [
     # Mapping templates & toplu işlemler — router'dan ÖNCE tanımlanmalı!
     # DefaultRouter exams/<pk>/ ile her string'i yakalayacağı için
     # exams/mapping-templates/ ve exams/rematch-all/ önce tanımlanmazsa router tarafından yutulur.
+    path('exams/list-pdf/', exam_list_pdf, name='exam-list-pdf'),
     path('exams/preview-participants/', preview_participants, name='exam-preview-participants'),
     path('exams/rematch-all/', rematch_all_exams, name='result-rematch-all'),
     path('exams/mapping-templates/', list_mapping_templates, name='mapping-template-list'),
@@ -102,7 +109,13 @@ urlpatterns = [
     path('exams/<int:exam_pk>/participants/', exam_participants, name='exam-participants'),
     path('exams/<int:exam_pk>/participants/search/', exam_participant_search, name='exam-participant-search'),
     path('exams/<int:exam_pk>/participants/add/', exam_participant_add, name='exam-participant-add'),
+    path('exams/<int:exam_pk>/participants/bulk-attendance/', exam_participants_bulk_attendance, name='exam-participants-bulk-attendance'),
     path('exams/<int:exam_pk>/participants/<int:participant_pk>/', exam_participant_detail, name='exam-participant-detail'),
+    path('exams/<int:exam_pk>/publish-dispatch/', exam_publish_status, name='exam-publish-status'),
+    path('exams/<int:exam_pk>/publish-dispatch/preview/', exam_publish_preview, name='exam-publish-preview'),
+    path('exams/<int:exam_pk>/publish-dispatch/send-now/', exam_publish_send_now, name='exam-publish-send-now'),
+    path('exams/<int:exam_pk>/publish-dispatch/reschedule/', exam_publish_reschedule, name='exam-publish-reschedule'),
+    path('exams/<int:exam_pk>/answer-key-pdf/', exam_answer_key_pdf, name='exam-answer-key-pdf'),
     path('exams/<int:exam_pk>/rooms/', exam_rooms, name='exam-rooms'),
     path('exams/<int:exam_pk>/seating/', exam_seating, name='exam-seating'),
     path('exams/<int:exam_pk>/roster-export/', exam_roster_export, name='exam-roster-export'),
@@ -171,6 +184,8 @@ urlpatterns = [
     # Toplu İçe Aktarım
     path('curriculum/bulk-import/', bulk_import, name='curriculum-bulk-import'),
     path('curriculum/bulk-text-import/', bulk_text_import, name='curriculum-bulk-text-import'),
+    path('curriculum/catalog/export/', catalog_export, name='curriculum-catalog-export'),
+    path('curriculum/catalog/import/', catalog_import, name='curriculum-catalog-import'),
 
     # Ders ↔ Sınav Bölümü Bağlama
     path('curriculum/link-section/', link_subject_to_section, name='curriculum-link-section'),

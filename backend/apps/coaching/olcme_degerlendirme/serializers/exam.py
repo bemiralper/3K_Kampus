@@ -162,6 +162,14 @@ class ExamListSerializer(serializers.ModelSerializer):
         total, matched = self._answer_totals(obj)
         return total - matched
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not data.get('exam_date'):
+            extra = getattr(instance, 'ann_list_date', None)
+            if extra:
+                data['exam_date'] = extra.isoformat() if hasattr(extra, 'isoformat') else str(extra)
+        return data
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  DETAIL

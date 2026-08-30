@@ -49,6 +49,7 @@ class OlcmeKarnePdfNotifyTest(TestCase):
             order=0,
             session_date=date(2026, 3, 14),
             start_time=time(10, 0),
+            end_time=time(12, 45),
         )
         self.exam_oturum.sections.add(self.section)
         self.session = ExamSession.objects.create(
@@ -97,6 +98,13 @@ class OlcmeKarnePdfNotifyTest(TestCase):
 
     def test_sinav_karne_event_has_document_and_both_recipients(self):
         event = get_event('sinav.karne')
+        self.assertIsNotNone(event)
+        self.assertTrue(event.has_document)
+        self.assertIn('VELI', event.recipients)
+        self.assertIn('OGRENCI', event.recipients)
+
+    def test_sinav_cevap_anahtari_event_has_document(self):
+        event = get_event('sinav.cevap_anahtari')
         self.assertIsNotNone(event)
         self.assertTrue(event.has_document)
         self.assertIn('VELI', event.recipients)
@@ -207,7 +215,17 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         self.assertIsNone(data['profil_foto'])
         self.assertEqual(data['session_date'], '2026-03-14')
         self.assertEqual(data['session_start_time'], '10:00')
+        self.assertEqual(data['session_end_time'], '12:45')
         self.assertEqual(data['session_name'], '1. Oturum')
+        from apps.coaching.application.olcme_karne_pdf import _format_session_when
+        self.assertEqual(
+            _format_session_when({
+                'session_date': data['session_date'],
+                'session_start_time': data['session_start_time'],
+                'session_end_time': data['session_end_time'],
+            }),
+            '14 Mart 2026  ·  10.00 - 12.45',
+        )
         self.assertEqual(data['kurum_ici_sira'], 1)
 
     def test_karne_uses_matching_session_datetime(self):

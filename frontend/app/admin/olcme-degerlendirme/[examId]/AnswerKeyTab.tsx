@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { answerKeyApi } from '../../../../components/olcme/api';
+import { answerKeyApi, examApi } from '../../../../components/olcme/api';
 import type {
   ExamDetail,
   AnswerKey,
@@ -100,6 +100,10 @@ export default function AnswerKeyTab({ exam }: Props) {
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
   const [msg, setMsg]               = useState('');
+  const [pdfMeta, setPdfMeta]       = useState<{ has_uploaded: boolean; can_generate: boolean; filename: string } | null>(null);
+  const [pdfBusy, setPdfBusy]       = useState('');
+  const [pdfCopies, setPdfCopies]   = useState<1 | 2 | 4 | 6 | 8>(1);
+  const [pdfBooklet, setPdfBooklet] = useState('');
 
   const [rows, setRows]               = useState<GridRow[]>([]);
   const [step, setStep]               = useState<Step>('answers');
@@ -207,6 +211,13 @@ export default function AnswerKeyTab({ exam }: Props) {
   }, [exam.id, buildEmptyGrid]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const loadPdfMeta = useCallback(async () => {
+    try { setPdfMeta(await examApi.answerKeyPdfMeta(exam.id)); }
+    catch { setPdfMeta(null); }
+  }, [exam.id]);
+
+  useEffect(() => { loadPdfMeta(); }, [loadPdfMeta]);
 
   /* Kazanım ağacını yükle */
   useEffect(() => {
@@ -390,6 +401,7 @@ export default function AnswerKeyTab({ exam }: Props) {
 
       setMsg(`✅ ${result.message}`);
       setHasExistingData(true);
+      await loadPdfMeta();
       fetchData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Bilinmeyen hata';
@@ -415,6 +427,7 @@ export default function AnswerKeyTab({ exam }: Props) {
       setOutcomeText('');
       setMsg('Cevap anahtarı silindi.');
       setAnswerKeys([]);
+      await loadPdfMeta();
     } catch { setMsg('Silme hatası.'); }
   };
 
@@ -422,6 +435,21 @@ export default function AnswerKeyTab({ exam }: Props) {
   /*  RENDER                                                                 */
   /* ═════════════════════════════════════════════════════════════════════════ */
 
+  const bookletOptions = useMemo(() => {
+    const letters = [...new Set(
+      answerKeys.map(k => (k.booklet || '').trim().toUpperCase()).filter(Boolean),
+    )];
+    return letters.sort();
+  }, [answerKeys]);
+
+  const downloadPdf = (source?: 'uploaded' | 'generated') =>
+    examApi.downloadAnswerKeyPdf(exam.id, {
+      source,
+      copies: pdfCopies,
+      booklet: pdfBooklet || undefined,
+    }).catch(err => setMsg(err.message));
+
+  const canDownloadPdf = Boolean(hasExistingData || pdfMeta?.can_generate || pdfMeta?.has_uploaded);
   const filledCount  = rows.filter(r => r.correct_answer && r.correct_answer !== ('' as AnswerChoice)).length;
   const outcomeCount = rows.filter(r => r.outcome_id).length;
   const bCount       = rows.filter(r => r.b_question_number).length;
@@ -443,6 +471,58 @@ export default function AnswerKeyTab({ exam }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+      <div className="card-modern">
+        <div className="card-modern-header">
+          <h3>Cevap anahtarı PDF</h3>
+        </div>
+        <div className={`card-modern-body ${s.cardBody}`}>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#64748b' }}>
+            Kayıtlı cevaplardan PDF üretilir. Sayfada birden fazla tablo seçerek
+            çıktıyı kesip dağıtabilirsiniz. Yayın saatinde WhatsApp’a tek tablo gider.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569' }}>
+              Sayfada tablo
+              <select
+                value={pdfCopies}
+                onChange={e => setPdfCopies(Number(e.target.value) as 1 | 2 | 4 | 6 | 8)}
+                style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }}
+              >
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={4}>4</option>
+                <option value={6}>6</option>
+                <option value={8}>8</option>
+              </select>
+            </label>
+            {bookletOptions.length > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569' }}>
+                Kitapçık
+                <select
+                  value={pdfBooklet}
+                  onChange={e => setPdfBooklet(e.target.value)}
+                  style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }}
+                >
+                  <option value="">Tümü</option>
+                  {bookletOptions.map(letter => (
+                    <option key={letter} value={letter}>{letter}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <button
+              type="button"
+              className="btn-modern btn-primary"
+              disabled={pdfBusy !== '' || !canDownloadPdf}
+              title={canDownloadPdf ? 'Cevap anahtarı PDF indir' : 'Önce cevapları kaydedin'}
+              onClick={() => downloadPdf('generated')}
+            >
+              PDF indir
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* ────────────────────────────────────────────────────────────────── */}
       {/*  Başlık + Adım göstergesi                                        */}
       {/* ────────────────────────────────────────────────────────────────── */}
@@ -453,6 +533,16 @@ export default function AnswerKeyTab({ exam }: Props) {
             Cevap Anahtarı
           </h3>
           <div className="card-modern-header-actions">
+            <button
+              type="button"
+              className="btn-modern btn-primary"
+              disabled={pdfBusy !== '' || !canDownloadPdf}
+              title={canDownloadPdf ? 'Cevap anahtarı PDF indir' : 'Önce cevapları kaydedin'}
+              style={{ padding: '6px 14px', fontSize: 12 }}
+              onClick={() => downloadPdf('generated')}
+            >
+              PDF indir
+            </button>
             {hasExistingData && (
               <button className="btn-modern" onClick={handleReset}
                 style={{ padding: '6px 14px', fontSize: 12, color: 'var(--danger)', border: '1px solid #fecaca' }}>

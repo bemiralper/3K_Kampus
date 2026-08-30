@@ -416,6 +416,9 @@ sudo crontab -e -u lms
 # Giden mesaj kuyruğu (WhatsApp/SMS)
 * * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py process_communication_queue >> /var/log/lms/comm_queue.log 2>&1
 
+# Ölçme — karne / cevap anahtarı yayın saati
+* * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py process_olcme_publish >> /var/log/lms/olcme_publish.log 2>&1
+
 # Zamanlanmış kampanyalar
 */5 * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py process_scheduled_campaigns >> /var/log/lms/campaigns.log 2>&1
 

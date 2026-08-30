@@ -6,7 +6,8 @@ import {
   insertAtCursor,
   TEMPLATE_VARIABLES,
   FORMAT_SHORTCUT_HINTS,
-  wrapSelection,
+  applyWhatsAppFormat,
+  type WhatsAppFormatAction,
 } from "./composer-utils";
 import EmojiPickerPortal from "./EmojiPickerPortal";
 import FormatShortcutHelp from "./FormatShortcutHelp";
@@ -51,9 +52,9 @@ export default function RichMessageToolbar({
     return { start: el.selectionStart, end: el.selectionEnd };
   }, [composerState.text.length, textareaRef]);
 
-  const applyWrap = (marker: string) => {
+  const applyAction = (action: WhatsAppFormatAction) => {
     const { start, end } = getSelection();
-    const result = wrapSelection(composerState.text, start, end, marker);
+    const result = applyWhatsAppFormat(composerState.text, start, end, action);
     onChange({ ...composerState, text: result.text });
     setTimeout(() => {
       const el = textareaRef.current;
@@ -62,6 +63,10 @@ export default function RichMessageToolbar({
         el.setSelectionRange(result.cursor, result.cursor);
       }
     }, 0);
+  };
+
+  const applyWrap = (marker: string) => {
+    applyAction({ kind: "wrap", marker });
   };
 
   const insertToken = (token: string) => {
@@ -83,6 +88,10 @@ export default function RichMessageToolbar({
     { id: "italic", icon: "I", label: `İtalik (_metin_) · ${FORMAT_SHORTCUT_HINTS.italic}`, group: "format", action: () => applyWrap("_") },
     { id: "strike", icon: "S", label: `Üstü çizili (~metin~) · ${FORMAT_SHORTCUT_HINTS.strike}`, group: "format", action: () => applyWrap("~") },
     { id: "mono", icon: "M", label: `Monospace (\`\`\`metin\`\`\`) · ${FORMAT_SHORTCUT_HINTS.mono}`, group: "format", action: () => applyWrap("```") },
+    { id: "code", icon: "</>", label: `Satır içi kod (\`metin\`) · ${FORMAT_SHORTCUT_HINTS.code}`, group: "format", action: () => applyWrap("`") },
+    { id: "quote", icon: "❝", label: `Alıntı · ${FORMAT_SHORTCUT_HINTS.quote}`, group: "format", action: () => applyAction({ kind: "prefix", style: "quote" }) },
+    { id: "bullet", icon: "•", label: `Madde listesi · ${FORMAT_SHORTCUT_HINTS.bullet}`, group: "format", action: () => applyAction({ kind: "prefix", style: "bullet" }) },
+    { id: "number", icon: "1.", label: `Numaralı liste · ${FORMAT_SHORTCUT_HINTS.number}`, group: "format", action: () => applyAction({ kind: "prefix", style: "number" }) },
   ];
 
   const mediaTools: ToolDef[] = [
@@ -127,7 +136,7 @@ export default function RichMessageToolbar({
                 key={tool.id}
                 ref={tool.id === "emoji" ? emojiTriggerRef : undefined}
                 type="button"
-                className={`comm-rich-tool${tool.id === "bold" ? " bold" : ""}${tool.id === "italic" ? " italic" : ""}${tool.id === "strike" ? " strike" : ""}${tool.id === "mono" ? " mono" : ""}${tool.id === "ai" && !aiEnabled ? " disabled" : ""}${tool.id === "emoji" && showEmoji ? " active" : ""}`}
+                className={`comm-rich-tool${tool.id === "bold" ? " bold" : ""}${tool.id === "italic" ? " italic" : ""}${tool.id === "strike" ? " strike" : ""}${tool.id === "mono" || tool.id === "code" ? " mono" : ""}${tool.id === "ai" && !aiEnabled ? " disabled" : ""}${tool.id === "emoji" && showEmoji ? " active" : ""}`}
                 title={tool.label}
                 aria-label={tool.label}
                 aria-expanded={tool.id === "emoji" ? showEmoji : undefined}

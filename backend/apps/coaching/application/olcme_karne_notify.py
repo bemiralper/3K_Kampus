@@ -212,6 +212,7 @@ def send_karne_notify(
     skipped = 0
     errors: list[str] = []
     sent_details: list[dict] = []
+    message_ids: list[str] = []
 
     for item in preview.recipients:
         if item.recipient_type == 'veli':
@@ -244,6 +245,9 @@ def send_karne_notify(
             )
             if result and result.success:
                 sent += 1
+                mid = getattr(result, 'message_id', None)
+                if mid:
+                    message_ids.append(str(mid))
                 sent_details.append({
                     'recipient_type': 'veli',
                     'display_name': item.display_name,
@@ -279,6 +283,9 @@ def send_karne_notify(
             )
             if result and result.success:
                 sent += 1
+                mid = getattr(result, 'message_id', None)
+                if mid:
+                    message_ids.append(str(mid))
                 sent_details.append({
                     'recipient_type': 'ogrenci',
                     'display_name': item.display_name,
@@ -306,6 +313,7 @@ def send_karne_notify(
         'skipped': skipped,
         'errors': errors,
         'sent_details': sent_details,
+        'message_ids': message_ids,
     }
 
 
@@ -338,6 +346,7 @@ def send_karne_notify_bulk(
     include_student: bool = True,
     sent_by_user_id: int | None = None,
     sube_id: int | None = None,
+    veli_ids: list[int] | None = None,
 ) -> dict:
     """items: [{answer_id, karne, pdf_bytes, filename, sube_id?}]"""
     sent = 0
@@ -345,19 +354,22 @@ def send_karne_notify_bulk(
     errors: list[str] = []
     sent_details: list[dict] = []
     student_results: list[dict] = []
+    message_ids: list[str] = []
+    selected_veli = {int(x) for x in veli_ids} if veli_ids is not None else None
 
     for item in items:
         karne = item['karne']
         preview = preview_karne_notify(kurum_id, karne)
-        veli_ids = [
+        item_veli_ids = [
             r.veli_id for r in preview.recipients
             if r.recipient_type == 'veli' and r.veli_id and not r.skip_reason
+            and (selected_veli is None or r.veli_id in selected_veli)
         ] if include_veli else []
         send_student = include_student and any(
             r.recipient_type == 'ogrenci' and not r.skip_reason
             for r in preview.recipients
         )
-        if not veli_ids and not send_student:
+        if not item_veli_ids and not send_student:
             skipped += 1
             reason = summarize_preview(preview)['skip_reason'] or 'Alıcı yok'
             errors.append(f"{karne.get('student_name') or 'Öğrenci'}: {reason}")
@@ -376,7 +388,7 @@ def send_karne_notify_bulk(
                 karne=karne,
                 pdf_bytes=item['pdf_bytes'],
                 filename=item['filename'],
-                veli_ids=veli_ids,
+                veli_ids=item_veli_ids,
                 include_student=send_student,
                 sent_by_user_id=sent_by_user_id,
                 sube_id=item.get('sube_id') or sube_id,
@@ -395,6 +407,7 @@ def send_karne_notify_bulk(
         skipped += result['skipped']
         errors.extend(result['errors'])
         sent_details.extend(result.get('sent_details') or [])
+        message_ids.extend(result.get('message_ids') or [])
         student_results.append({
             'answer_id': item['answer_id'],
             'student_name': karne.get('student_name') or '',
@@ -408,4 +421,5 @@ def send_karne_notify_bulk(
         'errors': errors,
         'sent_details': sent_details,
         'student_results': student_results,
+        'message_ids': message_ids,
     }

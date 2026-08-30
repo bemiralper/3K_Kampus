@@ -182,7 +182,7 @@ class ExamParticipant(models.Model):
     seat_no = models.PositiveIntegerField('Sıra', null=True, blank=True)
     desk_no = models.CharField('Masa / Koltuk', max_length=20, blank=True)
     attendance = models.CharField(
-        max_length=10, choices=Attendance.choices, default=Attendance.UNKNOWN, blank=True,
+        max_length=10, choices=Attendance.choices, default=Attendance.PRESENT, blank=True,
     )
     notified_at = models.DateTimeField('Sınav bilgisi gönderildi', null=True, blank=True)
     notified_room_id = models.PositiveIntegerField(null=True, blank=True)

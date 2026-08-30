@@ -1077,19 +1077,28 @@ class CampaignService:
 
             from apps.communication.application.variable_resolver import aktif_sinif_ad
 
-            body = resolve_variables(
-                body_template,
-                build_recipient_context(
-                    display_name=recipient.display_name,
-                    recipient_type=recipient.recipient_type,
-                    ogrenci=ogrenci,
-                    veli=veli,
-                    personel=personel,
-                    kurum=kurum,
-                    sinif_ad=aktif_sinif_ad(ogrenci),
-                    sube_ad=sube_ad,
-                ),
+            extra_ctx = {}
+            send_opts = campaign.send_options_json or {}
+            if isinstance(send_opts.get('template_context'), dict):
+                extra_ctx.update(send_opts['template_context'])
+            if isinstance(filter_json.get('template_context'), dict):
+                extra_ctx.update(filter_json['template_context'])
+            recipient_ctx = build_recipient_context(
+                display_name=recipient.display_name,
+                recipient_type=recipient.recipient_type,
+                ogrenci=ogrenci,
+                veli=veli,
+                personel=personel,
+                kurum=kurum,
+                sinif_ad=aktif_sinif_ad(ogrenci),
+                sube_ad=sube_ad,
             )
+            for key, value in extra_ctx.items():
+                if value is None or str(value).strip() == '':
+                    continue
+                recipient_ctx[str(key)] = str(value)
+
+            body = resolve_variables(body_template, recipient_ctx)
             resolved = ContactResolver.resolve_contact(campaign.kurum_id, recipient.e164)
             conversation, _ = ConversationRepository.get_or_create_for_contact(
                 kurum_id=campaign.kurum_id,

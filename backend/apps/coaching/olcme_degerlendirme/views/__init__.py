@@ -59,6 +59,8 @@ from .curriculum_views import (
     sub_outcome_detail,
     bulk_import,
     bulk_text_import,
+    catalog_export,
+    catalog_import,
     link_subject_to_section,
     unlink_subject_from_section,
 )
@@ -102,6 +104,8 @@ __all__ = [
     'sub_outcome_detail',
     'bulk_import',
     'bulk_text_import',
+    'catalog_export',
+    'catalog_import',
     'link_subject_to_section',
     'unlink_subject_from_section',
 ]

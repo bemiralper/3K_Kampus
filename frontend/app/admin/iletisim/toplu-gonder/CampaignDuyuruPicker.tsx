@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AttachmentDropZone from "@/components/communication/AttachmentDropZone";
+import WhatsAppFormatBar, { applyFormatKeydown } from "@/components/communication/WhatsAppFormatBar";
 import WhatsAppPhonePreview from "@/components/communication/WhatsAppPhonePreview";
 import { headerTypeOf } from "@/components/communication/MetaTemplateSelect";
 import {
@@ -12,30 +13,18 @@ import {
   WhatsAppAccount,
   WhatsAppMetaTemplateItem,
 } from "@/lib/communication-api";
-
-const FAMILIES = [
-  { key: "duyuru", label: "Duyuru" },
-  { key: "hatirlatma", label: "Hatırlatma" },
-  { key: "bilgilendirme", label: "Bilgilendirme" },
-] as const;
-
-const MEDIA = [
-  { key: "metin", label: "Metin", headers: ["TEXT", "NONE"] },
-  { key: "gorsel", label: "Görsel", headers: ["IMAGE"] },
-  { key: "pdf", label: "Belge / PDF", headers: ["DOCUMENT"] },
-] as const;
-
-const AUDIENCES = [
-  { key: "veli", label: "Veli", suffix: "" },
-  { key: "ogrenci", label: "Öğrenci", suffix: "_ogrenci" },
-  { key: "personel", label: "Personel", suffix: "_personel" },
-] as const;
-
-const NAME_RE = /^(duyuru|hatirlatma|bilgilendirme)_(metin|gorsel|pdf)(_ogrenci|_personel)?$/;
-
-type FamilyKey = (typeof FAMILIES)[number]["key"];
-type MediaKey = (typeof MEDIA)[number]["key"];
-type AudienceKey = (typeof AUDIENCES)[number]["key"];
+import {
+  CAMPAIGN_AUDIENCE_LABELS,
+  CAMPAIGN_MEDIA_OPTIONS,
+  CampaignAudience,
+  CampaignMedia,
+  ClassifiedCampaignTemplate,
+  campaignVariableFields,
+  fillTemplateVariables,
+  filterCampaignTemplates,
+  listCampaignTemplates,
+  neededCampaignAudience,
+} from "./campaign-template-catalog";
 
 interface CampaignDuyuruPickerProps {
   title: string;
@@ -47,8 +36,8 @@ interface CampaignDuyuruPickerProps {
   templateName: string;
   selectedTemplate: WhatsAppMetaTemplateItem | null;
   onTemplateChange: (name: string, language: string, tpl: WhatsAppMetaTemplateItem | null) => void;
-  message: string;
-  onMessageChange: (value: string) => void;
+  variableValues: Record<string, string>;
+  onVariableValuesChange: (values: Record<string, string>) => void;
   attachments: CampaignAttachmentItem[];
   onAttachmentsChange: (items: CampaignAttachmentItem[]) => void;
 }
@@ -63,24 +52,14 @@ export default function CampaignDuyuruPicker({
   templateName,
   selectedTemplate,
   onTemplateChange,
-  message,
-  onMessageChange,
+  variableValues,
+  onVariableValuesChange,
   attachments,
   onAttachmentsChange,
 }: CampaignDuyuruPickerProps) {
-  const [templates, setTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
+  const [rows, setRows] = useState<WhatsAppMetaTemplateItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [family, setFamily] = useState<FamilyKey>("duyuru");
-  const [audience, setAudience] = useState<AudienceKey>(defaultAudience(personTypes));
-  const [media, setMedia] = useState<MediaKey>(mediaFromAttachments(attachments));
-
-  useEffect(() => {
-    setAudience(defaultAudience(personTypes));
-  }, [personTypes.join("|")]);
-
-  useEffect(() => {
-    setMedia(mediaFromAttachments(attachments));
-  }, [attachments.map((a) => a.mime_type).join("|")]);
+  const [media, setMedia] = useState<CampaignMedia | "">("");
 
   useEffect(() => {
     let cancelled = false;
@@ -88,59 +67,95 @@ export default function CampaignDuyuruPicker({
     fetchLocalMetaTemplates({
       account_id: accountId || undefined,
       usage: "CAMPAIGN",
-      usage_exact: true,
       approved_only: false,
     })
       .then((res) => {
-        if (cancelled) return;
-        const rows = (res.templates || []).filter((tpl) => {
-          if (!NAME_RE.test(tpl.name)) return false;
-          const status = String(tpl.status || "").toUpperCase();
-          return status === "APPROVED" || status === "DRAFT" || status === "PENDING";
-        });
-        setTemplates(rows);
+        if (!cancelled) setRows(res.templates || []);
       })
       .catch(() => {
-        if (!cancelled) setTemplates([]);
+        if (!cancelled) setRows([]);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [accountId]);
 
-  const wantedName = `${family}_${media}${AUDIENCES.find((a) => a.key === audience)?.suffix || ""}`;
-  const match = useMemo(
-    () => pickTemplate(templates, wantedName),
-    [templates, wantedName],
+  const catalog = useMemo(() => listCampaignTemplates(rows), [rows]);
+  const neededAudience = neededCampaignAudience(personTypes);
+  const mixedAudience = personTypes.length > 1;
+
+  const mediaKeys = useMemo(() => {
+    const present = new Set(catalog.map((item) => item.media));
+    return CAMPAIGN_MEDIA_OPTIONS.filter((item) => present.has(item.key));
+  }, [catalog]);
+
+  useEffect(() => {
+    if (media && !mediaKeys.some((item) => item.key === media)) setMedia("");
+  }, [mediaKeys.map((item) => item.key).join("|")]);
+
+  const visible = useMemo(
+    () => filterCampaignTemplates(catalog, { audiences: personTypes, media }),
+    [catalog, personTypes.join("|"), media],
   );
 
   useEffect(() => {
-    if (!match) return;
-    if (match.name === templateName && selectedTemplate?.id === match.id) return;
-    onTemplateChange(match.name, match.language || "tr", match);
-  }, [match?.id, match?.name]);
+    const current = visible.find((item) => item.tpl.name === templateName);
+    if (current) {
+      if (current.tpl.id !== selectedTemplate?.id) {
+        onTemplateChange(current.tpl.name, current.tpl.language || "tr", current.tpl);
+      }
+      return;
+    }
+    const firstApproved = visible.find((item) => isApprovedTemplate(item.tpl));
+    const fallback = firstApproved || visible[0];
+    if (fallback) {
+      onTemplateChange(fallback.tpl.name, fallback.tpl.language || "tr", fallback.tpl);
+    } else if (templateName) {
+      onTemplateChange("", "tr", null);
+    }
+  }, [visible.map((item) => item.tpl.id).join("|")]);
 
-  const previewText = fillPreview(match?.body_named || selectedTemplate?.body_named || "", message);
-  const headerMismatch = attachmentMismatch(attachments, match || selectedTemplate);
-  const audienceOptions = AUDIENCES.filter((item) => {
-    if (!personTypes.length) return true;
-    return personTypes.includes(item.key);
-  });
-  const visibleAudiences = audienceOptions.length ? audienceOptions : [...AUDIENCES];
+  const activeClassified = visible.find((item) => item.tpl.name === templateName)
+    || catalog.find((item) => item.tpl.name === templateName);
+  const active = activeClassified?.tpl || selectedTemplate;
+  const variableMap = active?.variable_map_json || null;
+  const variableFields = useMemo(
+    () => campaignVariableFields(active?.body_named || "", variableMap),
+    [active?.body_named, JSON.stringify(variableMap)],
+  );
+  const manualFields = variableFields.filter((field) => !field.auto);
+  const autoFields = variableFields.filter((field) => field.auto);
+  const previewText = composePreview(active, variableValues);
+  const headerMismatch = attachmentMismatch(attachments, active);
 
   return (
     <div className="tg-msg-grid">
       <section className="tg-card">
         <h2>Mesaj şablonu</h2>
         <p className="lead">
-          Duyuru, hatırlatma veya bilgilendirme şablonunu seçin. Aynı gönderimde
-          birden fazla kişi türü varsa hitabı aşağıdan belirleyin.
+          {mixedAudience
+            ? "Karma kitlede yalnızca Genel şablonlar listelenir. Veli / öğrenci / personel şablonları kendi kitlelerinde kalır."
+            : "Bu kitleye özel şablonlar ve Genel şablonlar listelenir. Değişkenleri aşağıdan doldurun."}
         </p>
+
+        {mixedAudience && (
+          <p className="tg-info">
+            Kitlede birden fazla kişi türü var.{" "}
+            <strong>Genel</strong> şablonlar kullanılıyor.
+          </p>
+        )}
 
         <label className="tg-field">
           <span>Başlık</span>
-          <input className="tg-search" value={title} onChange={(e) => onTitleChange(e.target.value)} placeholder="İsteğe bağlı gönderim başlığı" />
+          <input
+            className="tg-search"
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            placeholder="İsteğe bağlı gönderim başlığı"
+          />
         </label>
         <label className="tg-field">
           <span>WhatsApp hesabı</span>
@@ -152,134 +167,199 @@ export default function CampaignDuyuruPicker({
           </select>
         </label>
 
-        <div className="tg-field">
-          <span>Şablon türü</span>
-          <div className="tg-seg" role="tablist" aria-label="Şablon türü">
-            {FAMILIES.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`tg-seg-btn${family === item.key ? " is-on" : ""}`}
-                onClick={() => setFamily(item.key)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="tg-field">
-          <span>Hitap</span>
-          <div className="tg-seg" role="tablist" aria-label="Hitap">
-            {visibleAudiences.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`tg-seg-btn${audience === item.key ? " is-on" : ""}`}
-                onClick={() => setAudience(item.key)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="tg-field">
-          <span>İçerik</span>
-          <div className="tg-seg" role="tablist" aria-label="İçerik">
-            {MEDIA.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`tg-seg-btn${media === item.key ? " is-on" : ""}`}
-                onClick={() => setMedia(item.key)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {neededAudience && neededAudience !== "genel" && (
+          <p className="tg-audience-hint">
+            Gösterilen: <strong>{CAMPAIGN_AUDIENCE_LABELS[neededAudience as CampaignAudience]}</strong>
+            {" "}ve <strong>Genel</strong>
+          </p>
+        )}
 
-        {loading ? (
-          <p className="tg-empty">Şablonlar yükleniyor…</p>
-        ) : match ? (
-          <div className={`tg-tpl-card is-on${String(match.status).toUpperCase() !== "APPROVED" ? " is-draft" : ""}`}>
-            <strong>{labelFor(match.name)}</strong>
-            <span>{match.name} · {statusLabel(match.status)}</span>
-          </div>
-        ) : (
-          <div className="tg-empty">
-            {wantedName} şablonu bu hesapta yok. Meta’da duyuru taslaklarını onaylatın.
+        {mediaKeys.length > 1 && (
+          <div className="tg-field">
+            <span>İçerik</span>
+            <div className="tg-seg" role="tablist" aria-label="İçerik">
+              <button
+                type="button"
+                className={`tg-seg-btn${media === "" ? " is-on" : ""}`}
+                onClick={() => setMedia("")}
+              >
+                Tümü
+              </button>
+              {mediaKeys.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`tg-seg-btn${media === item.key ? " is-on" : ""}`}
+                  onClick={() => setMedia(item.key)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        <label className="tg-field">
-          <span>Mesaj</span>
-          <textarea
-            className="tg-textarea"
-            rows={5}
-            value={message}
-            onChange={(e) => onMessageChange(e.target.value)}
-            placeholder="Şablondaki {{mesaj}} alanına gidecek metin"
-          />
-        </label>
+        <div className="tg-field">
+          <span>Şablon</span>
+          {loading ? (
+            <p className="tg-empty">Şablonlar yükleniyor…</p>
+          ) : visible.length === 0 ? (
+            <p className="tg-empty">{emptyCatalogHint(neededAudience)}</p>
+          ) : (
+            <div className="tg-tpl-list">
+              {visible.map((item) => (
+                <TemplateCard
+                  key={item.tpl.id}
+                  item={item}
+                  selected={templateName === item.tpl.name}
+                  onSelect={() => onTemplateChange(item.tpl.name, item.tpl.language || "tr", item.tpl)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
-        <AttachmentDropZone attachments={attachments} onChange={onAttachmentsChange} />
-        {headerMismatch && <p className="tg-warn" style={{ marginTop: 8 }}>{headerMismatch}</p>}
+        {active && (
+          <div className="tg-field">
+            <span>Değişkenler</span>
+            {autoFields.length > 0 && (
+              <div className="tg-auto-vars">
+                {autoFields.map((field) => (
+                  <span key={field.key} className="tg-auto-chip">
+                    {field.label} — alıcıya göre dolar
+                  </span>
+                ))}
+              </div>
+            )}
+            {manualFields.length === 0 && autoFields.length === 0 && (
+              <p className="tg-empty">Bu şablonda doldurulacak değişken yok.</p>
+            )}
+            {manualFields.map((field) => {
+              const value = variableValues[field.key] || variableValues[field.canonical] || "";
+              return (
+                <label key={field.key} className="tg-var-field">
+                  <span>{field.label}</span>
+                  {field.long ? (
+                    <FormattedVarTextarea
+                      value={value}
+                      onChange={(next) => onVariableValuesChange(writeVariableValue(variableValues, field, next))}
+                      placeholder={`${field.label} metnini yazın`}
+                    />
+                  ) : (
+                    <input
+                      className="tg-search"
+                      value={value}
+                      onChange={(e) => onVariableValuesChange(writeVariableValue(variableValues, field, e.target.value))}
+                      placeholder={field.label}
+                    />
+                  )}
+                  <small>{field.canonical !== field.key ? `{{${field.key}}} → {{${field.canonical}}}` : `{{${field.key}}}`}</small>
+                </label>
+              );
+            })}
+            {autoFields.map((field) => (
+              <label key={`override-${field.key}`} className="tg-var-field is-optional">
+                <span>{field.label} (isteğe bağlı)</span>
+                <input
+                  className="tg-search"
+                  value={variableValues[field.key] || variableValues[field.canonical] || ""}
+                  onChange={(e) => onVariableValuesChange(writeVariableValue(variableValues, field, e.target.value))}
+                  placeholder="Boş bırakılırsa alıcıya göre dolar"
+                />
+                <small>{`{{${field.key}}}`}</small>
+              </label>
+            ))}
+          </div>
+        )}
+
+        {needsAttachment(active) && (
+          <>
+            <AttachmentDropZone attachments={attachments} onChange={onAttachmentsChange} />
+            {headerMismatch && <p className="tg-warn" style={{ marginTop: 8 }}>{headerMismatch}</p>}
+          </>
+        )}
       </section>
       <aside>
         <WhatsAppPhonePreview
-          text={previewText || "Şablon ve mesaj burada önizlenir."}
+          text={previewText || "Şablon ve değişkenler burada önizlenir."}
           attachments={attachments}
-          previewContext={{ mesaj: message || "Duyuru metni" }}
+          previewContext={variableValues}
         />
       </aside>
     </div>
   );
 }
 
-function defaultAudience(types: AudiencePersonType[]): AudienceKey {
-  if (types.includes("veli") && types.length === 1) return "veli";
-  if (types.includes("ogrenci") && types.length === 1) return "ogrenci";
-  if (types.includes("personel") && types.length === 1) return "personel";
-  if (types.includes("veli")) return "veli";
-  if (types.includes("ogrenci")) return "ogrenci";
-  if (types.includes("personel")) return "personel";
-  return "veli";
-}
-
-function mediaFromAttachments(atts: CampaignAttachmentItem[]): MediaKey {
-  if (!atts.length) return "metin";
-  const mime = (atts[0].mime_type || "").toLowerCase();
-  return mime.startsWith("image/") ? "gorsel" : "pdf";
-}
-
-function pickTemplate(templates: WhatsAppMetaTemplateItem[], name: string): WhatsAppMetaTemplateItem | null {
-  const matches = templates.filter((tpl) => tpl.name === name);
+function FormattedVarTextarea({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
   return (
-    matches.find((tpl) => String(tpl.status).toUpperCase() === "APPROVED")
-    || matches[0]
-    || null
+    <div className="tg-wa-compose">
+      <WhatsAppFormatBar value={value} onChange={onChange} textareaRef={ref} />
+      <textarea
+        ref={ref}
+        className="tg-textarea"
+        rows={5}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => applyFormatKeydown(e, value, onChange)}
+        placeholder={placeholder}
+      />
+    </div>
   );
 }
 
-function fillPreview(body: string, message: string): string {
-  return body.replace(/\{\{\s*mesaj\s*\}\}/g, message.trim() || "{{mesaj}}");
+function TemplateCard({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: ClassifiedCampaignTemplate;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const approved = isApprovedTemplate(item.tpl);
+  return (
+    <button
+      type="button"
+      className={`tg-tpl-card${selected ? " is-on" : ""}${approved ? "" : " is-draft"}`}
+      onClick={onSelect}
+    >
+      <strong>{titleFor(item)}</strong>
+      <span>
+        {item.tpl.name} · {item.mediaLabel} · {statusLabel(item.tpl.status)}
+      </span>
+      {item.tpl.body_named ? (
+        <em className="tg-tpl-snippet">{snippet(item.tpl.body_named)}</em>
+      ) : null}
+      {!approved ? <span className="tg-tpl-block">Onaylanmadan gönderilemez.</span> : null}
+    </button>
+  );
 }
 
-function labelFor(name: string): string {
-  const m = name.match(NAME_RE);
-  if (!m) return name;
-  const family = FAMILIES.find((f) => f.key === m[1])?.label || m[1];
-  const media = MEDIA.find((item) => item.key === m[2])?.label || m[2];
-  const audience = m[3] === "_ogrenci" ? "Öğrenci" : m[3] === "_personel" ? "Personel" : "Veli";
-  return `${family} — ${audience} — ${media}`;
+function titleFor(item: ClassifiedCampaignTemplate): string {
+  return `${item.audienceLabel} — ${item.mediaLabel}`;
 }
 
-function statusLabel(status?: string): string {
-  const raw = String(status || "").toUpperCase();
-  if (raw === "APPROVED") return "Onaylı";
-  if (raw === "PENDING") return "Onay bekliyor";
-  if (raw === "DRAFT") return "Taslak";
-  return raw;
+function emptyCatalogHint(needed: string): string {
+  if (needed === "genel") {
+    return "Karma kitle için Genel şablon yok. Meta Şablonlar’da kullanım alanı “Toplu duyuru”, kitle “Genel” olan bir şablon ekleyin.";
+  }
+  if (needed === "veli") return "Bu kitle için Veli veya Genel toplu duyuru şablonu yok.";
+  if (needed === "ogrenci") return "Bu kitle için Öğrenci veya Genel toplu duyuru şablonu yok.";
+  if (needed === "personel") return "Bu kitle için Personel veya Genel toplu duyuru şablonu yok.";
+  return "Toplu duyuru şablonu bulunamadı. Meta Şablonlar’da kullanım alanını “Toplu duyuru” yapın.";
+}
+
+function needsAttachment(tpl: WhatsAppMetaTemplateItem | null): boolean {
+  return ["IMAGE", "DOCUMENT", "VIDEO"].includes(headerTypeOf(tpl));
 }
 
 function attachmentMismatch(
@@ -288,17 +368,69 @@ function attachmentMismatch(
 ): string | null {
   if (!tpl) return null;
   const htype = headerTypeOf(tpl);
+  if (!["IMAGE", "DOCUMENT", "VIDEO"].includes(htype)) return null;
   if (!atts.length) {
-    return ["IMAGE", "DOCUMENT", "VIDEO"].includes(htype)
-      ? "Bu şablon ek bekliyor. Görsel veya PDF ekleyin, ya da Metin seçin."
-      : null;
+    return htype === "IMAGE"
+      ? "Bu şablon görsel bekliyor."
+      : htype === "VIDEO"
+        ? "Bu şablon video bekliyor."
+        : "Bu şablon PDF / belge bekliyor.";
   }
   const mime = (atts[0].mime_type || "").toLowerCase();
-  if (mime.startsWith("image/") && htype !== "IMAGE") {
-    return "Görsel ek için Görsel şablonunu seçin.";
-  }
-  if (!mime.startsWith("image/") && htype !== "DOCUMENT") {
-    return "PDF/belge ek için Belge şablonunu seçin.";
-  }
+  if (htype === "IMAGE" && !mime.startsWith("image/")) return "Görsel şablon için resim ekleyin.";
+  if (htype === "VIDEO" && !mime.startsWith("video/")) return "Video şablon için video ekleyin.";
+  if (htype === "DOCUMENT" && mime.startsWith("image/")) return "Belge şablonu için PDF ekleyin.";
   return null;
+}
+
+function writeVariableValue(
+  values: Record<string, string>,
+  field: { key: string; canonical: string },
+  next: string,
+): Record<string, string> {
+  const updated = { ...values, [field.key]: next };
+  if (field.canonical !== field.key) updated[field.canonical] = next;
+  return updated;
+}
+
+export function composePreview(
+  tpl: WhatsAppMetaTemplateItem | null,
+  values: Record<string, string>,
+): string {
+  if (!tpl) return "";
+  const header = tpl.header_json?.type === "TEXT" ? (tpl.header_json.text || "").trim() : "";
+  const body = fillTemplateVariables(tpl.body_named || "", values, tpl.variable_map_json);
+  const footer = (tpl.footer_text || "").trim();
+  return [header, body, footer].filter(Boolean).join("\n\n");
+}
+
+export function isApprovedTemplate(tpl: WhatsAppMetaTemplateItem | null): boolean {
+  return String(tpl?.status || "").toUpperCase() === "APPROVED";
+}
+
+export function campaignMessageReady(
+  tpl: WhatsAppMetaTemplateItem | null,
+  values: Record<string, string>,
+  attachments: CampaignAttachmentItem[],
+): boolean {
+  if (!tpl || !isApprovedTemplate(tpl)) return false;
+  const fields = campaignVariableFields(tpl.body_named || "", tpl.variable_map_json);
+  const missing = fields.filter((field) => (
+    !field.auto && !(values[field.key] || values[field.canonical] || "").trim()
+  ));
+  if (missing.length) return false;
+  if (needsAttachment(tpl) && attachments.length === 0) return false;
+  return attachmentMismatch(attachments, tpl) == null;
+}
+
+function statusLabel(status?: string): string {
+  const raw = String(status || "").toUpperCase();
+  if (raw === "APPROVED") return "Onaylı";
+  if (raw === "PENDING") return "İnceleniyor";
+  if (raw === "DRAFT") return "Taslak";
+  return raw || "Yok";
+}
+
+function snippet(body: string): string {
+  return body.replace(/\s+/g, " ").trim().slice(0, 96);
 }

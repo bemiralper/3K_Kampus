@@ -5,6 +5,7 @@ import { examApi } from '../api';
 import type { ExamDetail, ExamParticipantRow, ExamRoomItem, ExamSessionItem, ParticipantSearchHit, SeatingMode } from '../types';
 import Icon from '../ui/Icon';
 import RosterExportModal from './RosterExportModal';
+import SinavRosterNotifyModal from './SinavRosterNotifyModal';
 import r from './roster.module.css';
 
 type SeatLine =
@@ -90,8 +91,6 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   const [waOpen, setWaOpen] = useState(false);
   const [waEvent, setWaEvent] = useState<'sinav.hatirlatma' | 'sinav.yoklama'>('sinav.hatirlatma');
   const [waPreview, setWaPreview] = useState<Awaited<ReturnType<typeof examApi.hatirlatmaPreview>> | null>(null);
-  const [waVeli, setWaVeli] = useState<number[]>([]);
-  const [waStudent, setWaStudent] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -188,6 +187,30 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     }
   };
 
+  const bulkAtt = async (attendance: 'present' | 'absent') => {
+    const targetIds = selected.length ? selected : visible.map(x => x.id);
+    if (!targetIds.length) {
+      setError('Toplu yoklama için katılımcı yok.');
+      return;
+    }
+    if (attendance === 'absent') {
+      const n = targetIds.length;
+      if (!confirm(`${n} öğrenci gelmedi işaretlensin mi?`)) return;
+    }
+    setBusy('bulk');
+    setError('');
+    try {
+      await examApi.bulkAttendance(exam.id, {
+        attendance,
+        participant_ids: targetIds,
+        session_id: sessionId,
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Toplu yoklama kaydedilemedi.');
+    } finally { setBusy(''); }
+  };
+
   const patchAtt = async (id: number, attendance: string) => {
     try {
       const row = await examApi.patchParticipant(exam.id, id, { attendance });
@@ -280,33 +303,9 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     try {
       const preview = await examApi.hatirlatmaPreview(exam.id, targetIds, eventKey);
       setWaPreview(preview);
-      setWaVeli(
-        preview.students.flatMap(st =>
-          st.recipients.filter(rec => rec.recipient_type === 'veli' && rec.veli_id && !rec.skip_reason)
-            .map(rec => rec.veli_id as number),
-        ),
-      );
-      setWaStudent(true);
       setWaOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Önizleme alınamadı.');
-    } finally { setBusy(''); }
-  };
-
-  const sendWa = async () => {
-    if (!waPreview) return;
-    setBusy('send');
-    try {
-      const res = await examApi.hatirlatmaSend(exam.id, {
-        participant_ids: waPreview.students.map(st => st.participant_id),
-        veli_ids: waVeli,
-        include_student: waStudent,
-        event_key: waEvent,
-      });
-      setWaOpen(false);
-      setError(res.sent ? `${res.sent} mesaj kuyruğa alındı.` : (res.errors[0] || 'Gönderilemedi.'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gönderilemedi.');
     } finally { setBusy(''); }
   };
 
@@ -333,7 +332,11 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
       <div className={r.hero}>
         <div className={r.heroCopy}>
           <h2>Katılımcılar</h2>
-          <p>Yoklama alın, oturmayı karıştırın, listeleri indirin veya öğrenci / veliye sınav mesajı gönderin.</p>
+          <p>
+            Yoklama alın, oturmayı karıştırın veya listeleri indirin.
+            Sınav bilgisi mesajı İletişim → Bildirim şablonları → Sınav →
+            Sınav bilgilendirmesi bağından gider.
+          </p>
         </div>
         <div className={r.toolbar}>
           <button type="button" className="btn-modern btn-secondary" onClick={() => setExportOpen(true)}>
@@ -354,6 +357,22 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
             disabled={busy === 'wa' || absent === 0}
           >
             Yoklama bildir{absent > 0 ? ` (${absent})` : ''}
+          </button>
+          <button
+            type="button"
+            className="btn-modern btn-secondary"
+            onClick={() => bulkAtt('present')}
+            disabled={busy === 'bulk' || visible.length === 0}
+          >
+            {selected.length ? 'Seçilenler geldi' : 'Tümü geldi'}
+          </button>
+          <button
+            type="button"
+            className="btn-modern btn-secondary"
+            onClick={() => bulkAtt('absent')}
+            disabled={busy === 'bulk' || visible.length === 0}
+          >
+            {selected.length ? 'Seçilenler gelmedi' : 'Tümü gelmedi'}
           </button>
         </div>
       </div>
@@ -660,55 +679,19 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
       )}
 
       {waOpen && waPreview && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 40,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
-        }}>
-          <div className={r.card} style={{ width: 'min(560px, 100%)', maxHeight: '80vh', overflow: 'auto' }}>
-            <div className={r.cardHead}>
-              <div>
-                <h3>{waPreview.event_label || (waEvent === 'sinav.yoklama' ? 'Sınav yoklama bildirimi' : 'Sınav bilgilendirmesi')}</h3>
-                <p>
-                  {waEvent === 'sinav.yoklama'
-                    ? 'Gelmedi işaretlenen öğrenci ve velisine katılmama mesajı gider.'
-                    : 'Salon, sıra, tarih ve saat öğrenci ile veliye yazılır.'}
-                </p>
-              </div>
-              <button type="button" className={r.ghost} onClick={() => setWaOpen(false)}>Kapat</button>
-            </div>
-            <div className={r.cardBody}>
-              {waPreview.students.map(st => (
-                <div key={st.participant_id} style={{ marginBottom: 12 }}>
-                  <strong>{st.full_name}</strong>
-                  <span className={r.meta} style={{ marginLeft: 8 }}>{st.salon_ad} · sıra {st.sira}</span>
-                  {st.recipients.filter(rec => rec.recipient_type === 'veli').map(rec => (
-                    <label key={`${st.participant_id}-${rec.veli_id}`} style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 13 }}>
-                      <input
-                        type="checkbox"
-                        disabled={!rec.veli_id || !!rec.skip_reason}
-                        checked={!!rec.veli_id && waVeli.includes(rec.veli_id)}
-                        onChange={() => {
-                          if (!rec.veli_id) return;
-                          setWaVeli(p => p.includes(rec.veli_id!) ? p.filter(x => x !== rec.veli_id) : [...p, rec.veli_id!]);
-                        }}
-                      />
-                      {rec.display_name || 'Veli'} {rec.telefon && `(${rec.telefon})`}
-                      {rec.skip_reason && <em style={{ color: '#b45309' }}> — {rec.skip_reason}</em>}
-                    </label>
-                  ))}
-                </div>
-              ))}
-              <label style={{ display: 'flex', gap: 8, fontSize: 13 }}>
-                <input type="checkbox" checked={waStudent} onChange={e => setWaStudent(e.target.checked)} />
-                Öğrenciye de gönder
-              </label>
-              <div className={r.toolbar} style={{ marginTop: 14, justifyContent: 'flex-end' }}>
-                <button type="button" className="btn-modern btn-secondary" onClick={() => setWaOpen(false)}>Vazgeç</button>
-                <button type="button" className="btn-modern btn-primary" disabled={busy === 'send'} onClick={sendWa}>Gönder</button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <SinavRosterNotifyModal
+          examId={exam.id}
+          examName={exam.name}
+          eventKey={waEvent}
+          preview={waPreview}
+          onClose={() => setWaOpen(false)}
+          onSent={(sent, errors) => {
+            setError(sent
+              ? `${sent} mesaj kuyruğa alındı.${errors.length ? ` ${errors[0]}` : ''}`
+              : (errors[0] || 'Gönderilemedi.'));
+            load();
+          }}
+        />
       )}
     </div>
   );

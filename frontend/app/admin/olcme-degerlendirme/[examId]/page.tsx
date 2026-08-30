@@ -22,6 +22,7 @@ import OutcomesTab from './OutcomesTab';
 import UploadTab from './UploadTab';
 import AnalysisTab from './AnalysisTab';
 import ParticipantsTab from '../../../../components/olcme/roster/ParticipantsTab';
+import ExamPublishBanner from '../../../../components/olcme/ExamPublishBanner';
 import ExamHeader from '../../../../components/olcme/ui/ExamHeader';
 import Icon from '../../../../components/olcme/ui/Icon';
 import s from '../olcme.module.css';
@@ -492,8 +493,16 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   value={exam.puan_yili ? `${exam.puan_yili} YKS` : `Kurum varsayılanı (${kurumDefaultYear})`}
                 />
                 <InfoItem label="Sınav Tarihleri" value={sessionDateSummary(sessions)} />
-                <InfoItem label="Sınav Yayın Tarihi" value={fmtDateTime(exam.result_publish_date)} />
+                <InfoItem label="Sonuç Yayın Tarihi" value={fmtDateTime(exam.result_publish_date)} />
                 <InfoItem label="Cevap Anahtarı Yayın Tarihi" value={fmtDateTime(exam.answer_key_publish_date)} />
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <ExamPublishBanner
+                    examId={exam.id}
+                    examName={exam.name}
+                    refreshKey={`${exam.result_publish_date || ''}|${exam.answer_key_publish_date || ''}|${exam.status}`}
+                    onExamDatesChanged={onRefresh}
+                  />
+                </div>
               </div>
             ) : (
               <div className={s.formGrid}>
@@ -530,12 +539,12 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   </select>
                 </div>
                 <div className={s.formGroup}>
-                  <label>Sonuç Yayın Tarihi</label>
+                  <label>Sonuç Yayın Tarihi <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
                   <input type="datetime-local" value={ef.result_publish_date}
                     onChange={e => setEf({ result_publish_date: e.target.value })} />
                 </div>
                 <div className={s.formGroup}>
-                  <label>Cevap Anahtarı Yayın</label>
+                  <label>Cevap Anahtarı Yayın Tarihi <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
                   <input type="datetime-local" value={ef.answer_key_publish_date}
                     onChange={e => setEf({ answer_key_publish_date: e.target.value })} />
                 </div>

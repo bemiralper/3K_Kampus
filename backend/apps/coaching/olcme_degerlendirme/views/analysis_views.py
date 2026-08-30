@@ -165,6 +165,7 @@ def _student_session_fields(exam, answer):
     chosen = _pick_exam_session_for_answer(sessions, answer)
     session_date = chosen.session_date if chosen else None
     start_time = chosen.start_time if chosen else None
+    end_time = chosen.end_time if chosen else None
     session_name = (chosen.name or '') if chosen else ''
     if not session_date:
         session_date = exam.exam_date
@@ -172,6 +173,7 @@ def _student_session_fields(exam, answer):
         'session_name': session_name,
         'session_date': session_date.isoformat() if session_date else None,
         'session_start_time': start_time.strftime('%H:%M') if start_time else None,
+        'session_end_time': end_time.strftime('%H:%M') if end_time else None,
     }
 
 

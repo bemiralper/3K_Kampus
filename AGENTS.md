@@ -102,6 +102,7 @@ Background workers are management commands by default; optional Celery + Redis w
 | Command | Purpose | Suggested cron |
 |---------|---------|----------------|
 | `python manage.py process_communication_queue` | Sends queued WhatsApp/SMS outbound messages | Every 1 min |
+| `python manage.py process_olcme_publish` | Sınav sonuç/cevap anahtarı yayın saatinde karne ve cevap PDF kuyruğa alır (`--dry-run`, `--exam-id`, `--date`) | Every 1 min |
 | `python manage.py check_conversation_sla` | Marks unanswered coach threads as NEEDS_SUPPORT (default 30 min) | Every 1 min |
 | `python manage.py send_payment_reminders` | Enqueues overdue/upcoming taksit reminders (`--days-ahead=3`, `--dry-run`) | Daily 09:00 |
 | `python manage.py send_gun_sonu_reports` | Saat gelen gün sonu raporlarını (özet / detay / ikisi) yetkililere gönderir (`--dry-run`, `--date`) | Every 5 min |

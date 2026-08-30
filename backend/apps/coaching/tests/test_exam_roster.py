@@ -392,6 +392,8 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
 
     def test_hatirlatma_preview_accepts_yoklama_event(self):
         p = self._seed_hatirlatma_participant()
+        p.attendance = ExamParticipant.Attendance.ABSENT
+        p.save(update_fields=['attendance'])
         res = self.client.post(
             f'{EXAMS_URL}{self.exam.id}/hatirlatma/preview/',
             {'participant_ids': [p.id], 'event_key': 'sinav.yoklama'},
@@ -403,6 +405,82 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         self.assertTrue(body['students'])
         self.assertEqual(body['students'][0]['sinav_salonu'], 'A Salonu')
         self.assertEqual(body['students'][0]['sira_no'], '14')
+        self.assertIn('preview_body', body)
+        self.assertIn('preview_body_veli', body)
+        self.assertIn('preview_body_ogrenci', body)
+        self.assertTrue(body['supports_ogrenci'])
+        self.assertIn('Değerli Velimiz', body['preview_body_veli'])
+        self.assertIn('Sevgili Öğrencimiz', body['preview_body_ogrenci'])
+        self.assertIn('Bildirim şablonları', body['binding_hint'])
+
+    def test_hatirlatma_preview_returns_veli_and_ogrenci_bodies(self):
+        p = self._seed_hatirlatma_participant()
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/hatirlatma/preview/',
+            {'participant_ids': [p.id], 'event_key': 'sinav.hatirlatma'},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        body = res.json()
+        self.assertIn('Sınav Bilgilendirmesi', body['preview_body_veli'])
+        self.assertIn('Sınav Bilgilendirmesi', body['preview_body_ogrenci'])
+        self.assertIn('Ayşe Sınıflı', body['preview_body_veli'])
+        self.assertIn('A Salonu', body['preview_body_ogrenci'])
+        self.assertNotEqual(body['preview_body_veli'], body['preview_body_ogrenci'])
+
+    def test_yoklama_preview_skips_present_students(self):
+        p = self._seed_hatirlatma_participant()
+        self.assertEqual(p.attendance, ExamParticipant.Attendance.PRESENT)
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/hatirlatma/preview/',
+            {'participant_ids': [p.id], 'event_key': 'sinav.yoklama'},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()['students'], [])
+
+    def test_new_participant_defaults_present(self):
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/participants/add/',
+            {'student_id': self.in_class.id},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 201, res.content[:300])
+        self.assertEqual(res.json()['attendance'], 'present')
+
+    def test_bulk_attendance_marks_visible(self):
+        a = ExamParticipant.objects.create(exam=self.exam, student=self.in_class)
+        b = ExamParticipant.objects.create(exam=self.exam, student=self.classless_12)
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/participants/bulk-attendance/',
+            {'attendance': 'absent', 'participant_ids': [a.id, b.id]},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        self.assertEqual(res.json()['updated'], 2)
+        a.refresh_from_db()
+        b.refresh_from_db()
+        self.assertEqual(a.attendance, 'absent')
+        self.assertEqual(b.attendance, 'absent')
+
+    def test_bulk_attendance_does_not_clear_seat_lock(self):
+        from django.utils import timezone
+        room = ExamRoom.objects.create(exam=self.exam, name='A', capacity=10, order=0)
+        p = ExamParticipant.objects.create(
+            exam=self.exam, student=self.in_class, room=room, seat_no=4,
+            notified_at=timezone.now(), notified_room_id=room.id, notified_seat_no=4,
+        )
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/participants/bulk-attendance/',
+            {'attendance': 'absent', 'participant_ids': [p.id]},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        p.refresh_from_db()
+        self.assertEqual(p.attendance, 'absent')
+        self.assertEqual(p.seat_no, 4)
+        self.assertEqual(p.room_id, room.id)
+        self.assertIsNotNone(p.notified_at)
 
     def test_remove_leaves_seat_gap(self):
         room = ExamRoom.objects.create(exam=self.exam, name='A', capacity=10, order=0)

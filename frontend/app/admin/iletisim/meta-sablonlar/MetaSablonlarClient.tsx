@@ -36,6 +36,7 @@ import {
   cloneLocalMetaTemplate,
   createAppTemplateFromMeta,
   createLocalMetaTemplate,
+  bulkDeleteLocalMetaTemplates,
   deleteLocalMetaTemplate,
   fetchLocalMetaTemplates,
   fetchNotificationEvents,
@@ -213,6 +214,7 @@ const emptyForm = () => ({
   also_create_app_template: true,
   app_template_name: "",
   template_group: "",
+  campaign_audience: "",
   example_values: {} as Record<string, string>,
 });
 
@@ -226,6 +228,7 @@ export default function MetaSablonlarClient() {
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
   const [accountId, setAccountId] = useState("");
   const [templates, setTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sharedWabaCount, setSharedWabaCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -312,7 +315,9 @@ export default function MetaSablonlarClient() {
         search: debouncedSearch || undefined,
         template_group: groupFilter || undefined,
       });
-      setTemplates(res.templates || []);
+      const next = res.templates || [];
+      setTemplates(next);
+      setSelectedIds((prev) => prev.filter((id) => next.some((t) => t.id === id)));
       setSharedWabaCount(res.shared_waba_account_count || 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Şablonlar yüklenemedi");
@@ -455,6 +460,7 @@ export default function MetaSablonlarClient() {
       also_create_app_template: false,
       app_template_name: "",
       template_group: t.template_group || "",
+      campaign_audience: t.campaign_audience || "",
       example_values: { ...(t.example_values_json || {}) },
     });
     setPane("edit");
@@ -474,6 +480,9 @@ export default function MetaSablonlarClient() {
     header_json: form.header?.type && form.header.type !== "NONE" ? form.header : {},
     buttons_json: form.buttons,
     template_group: form.template_group || "",
+    campaign_audience: form.usage_scope === "CAMPAIGN"
+      ? (form.campaign_audience || "genel")
+      : (form.campaign_audience || ""),
     example_values_json: form.example_values,
     also_create_app_template: !editing && !!form.also_create_app_template,
     app_template_name:
@@ -500,7 +509,13 @@ export default function MetaSablonlarClient() {
         const updated = await updateLocalMetaTemplate(
           editing.id,
           isLocked
-            ? { usage_scope: form.usage_scope, template_group: form.template_group || "" }
+            ? {
+                usage_scope: form.usage_scope,
+                template_group: form.template_group || "",
+                campaign_audience: form.usage_scope === "CAMPAIGN"
+                  ? (form.campaign_audience || "genel")
+                  : (form.campaign_audience || ""),
+              }
             : payload(),
         );
         setMessage(
@@ -848,15 +863,84 @@ export default function MetaSablonlarClient() {
 
   const handleDelete = async () => {
     if (!editing) return;
-    if (!confirm(`"${editing.name}" silinsin mi?`)) return;
+    if (editing.is_system_active) {
+      const used = (editing.system_usages || []).map((u) => u.label).filter(Boolean).join(", ");
+      setError(
+        used
+          ? `Bu şablon bildirimlerde kullanılıyor: ${used}. Önce Bildirim Şablonları’ndan bağlantıyı kaldırın.`
+          : "Bu şablon bildirimlerde kullanılıyor. Önce bağlantıyı kaldırın.",
+      );
+      return;
+    }
+    const pairNote = editing.app_template_id
+      ? `\nBağlı uygulama şablonu (“${editing.app_template_name || "şablon"}”) de silinecek.`
+      : "";
+    if (!confirm(`"${editing.name}" silinsin mi?${pairNote}`)) return;
     setSaving(true);
+    setError(null);
     try {
       await deleteLocalMetaTemplate(editing.id, editing.status !== "DRAFT");
       setSheetOpen(false);
       setEditing(null);
+      setMessage("Şablon silindi.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Silme başarısız");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const selected = templates.filter((t) => selectedIds.includes(t.id));
+    if (!selected.length) return;
+    const blocked = selected.filter((t) => t.is_system_active);
+    const ready = selected.filter((t) => !t.is_system_active);
+    const blockedLines = blocked.map((t) => {
+      const used = (t.system_usages || []).map((u) => u.label).filter(Boolean).join(", ");
+      return `• ${t.name}${used ? ` — ${used}` : ""}`;
+    });
+    if (!ready.length) {
+      setError(
+        `Seçilen şablonlar bildirimlerde kullanılıyor, silinemez: ${
+          blocked.map((t) => t.name).join(", ")
+        }.`,
+      );
+      return;
+    }
+    const pairCount = ready.filter((t) => t.app_template_id).length;
+    const confirmLines = [
+      `${ready.length} şablon silinecek.`,
+      pairCount ? `${pairCount} bağlı uygulama şablonu da silinecek.` : "",
+      blocked.length
+        ? `\nBildirimde kullanılan ${blocked.length} şablon atlandı:\n${blockedLines.join("\n")}`
+        : "",
+    ].filter(Boolean);
+    if (!confirm(confirmLines.join("\n"))) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await bulkDeleteLocalMetaTemplates(
+        ready.map((t) => t.id),
+        ready.some((t) => t.status !== "DRAFT"),
+      );
+      const skipped = [
+        ...blocked.map((t) => t.name),
+        ...res.blocked.map((t) => t.name),
+      ];
+      const parts = [`${res.deleted_count} şablon silindi.`];
+      if (skipped.length) {
+        parts.push(`Bildirimde kullanılanlar silinmedi: ${skipped.join(", ")}.`);
+      }
+      setMessage(parts.join(" "));
+      if (res.blocked.length && !res.deleted_count) {
+        setError(res.blocked.map((t) => t.reason).join(" "));
+      }
+      setSelectedIds([]);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Toplu silme başarısız");
     } finally {
       setSaving(false);
     }
@@ -955,6 +1039,21 @@ export default function MetaSablonlarClient() {
         : t.status === statusFilter
     ));
   }, [templates, statusFilter]);
+
+  const visibleIds = useMemo(() => visibleTemplates.map((t) => t.id), [visibleTemplates]);
+  const selectedVisibleCount = selectedIds.filter((id) => visibleIds.includes(id)).length;
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      if (allVisibleSelected) return prev.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleIds]));
+    });
+  };
 
   const groupLabelOf = (key: string) =>
     templateGroups.find((g) => g.key === key)?.label || key;
@@ -1326,13 +1425,41 @@ export default function MetaSablonlarClient() {
             <span>
               {visibleTemplates.length} şablon
               {visibleTemplates.length !== counts.total ? ` / ${counts.total}` : ""}
+              {selectedIds.length ? ` · ${selectedIds.length} seçili` : ""}
             </span>
+            <div className="sbx-resultbar-actions">
+              <label className="sbx-check is-inline">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleSelectAllVisible}
+                />
+                <span>Tümünü seç</span>
+              </label>
+              <button
+                type="button"
+                className="sbx-btn is-sm is-danger"
+                disabled={saving || !selectedIds.length}
+                onClick={() => void handleBulkDelete()}
+              >
+                Seçilenleri sil
+              </button>
+            </div>
           </div>
           <div className={`sbx-grid${view === "rows" ? " is-rows" : ""}`}>
             {visibleTemplates.map((t) => {
               const tone = STATUS_TONE[t.status] || "is-draft";
+              const picked = selectedIds.includes(t.id);
               return (
-                <article key={t.id} className={`sbx-card ${tone}`}>
+                <article key={t.id} className={`sbx-card ${tone}${picked ? " is-picked" : ""}`}>
+                  <label className="sbx-card-pick" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={picked}
+                      title={t.is_system_active ? "Bildirimde kullanılıyor — silinemez" : "Seç"}
+                      onChange={() => toggleSelected(t.id)}
+                    />
+                  </label>
                   <button
                     type="button"
                     className="sbx-card-open"
@@ -1354,6 +1481,9 @@ export default function MetaSablonlarClient() {
                               {t.usage_scope_label
                                 || META_TEMPLATE_USAGE_LABELS[t.usage_scope as MetaTemplateUsage]}
                             </span>
+                          )}
+                          {t.usage_scope === "CAMPAIGN" && t.campaign_audience_label && (
+                            <span>· {t.campaign_audience_label}</span>
                           )}
                         </span>
                       </div>
@@ -1592,10 +1722,16 @@ export default function MetaSablonlarClient() {
                             id="meta-usage"
                             className="sbx-select"
                             value={form.usage_scope}
-                            onChange={(e) => setForm((f) => ({
-                              ...f,
-                              usage_scope: e.target.value as MetaTemplateUsage,
-                            }))}
+                            onChange={(e) => setForm((f) => {
+                              const usage_scope = e.target.value as MetaTemplateUsage;
+                              return {
+                                ...f,
+                                usage_scope,
+                                campaign_audience: usage_scope === "CAMPAIGN"
+                                  ? (f.campaign_audience || "genel")
+                                  : f.campaign_audience,
+                              };
+                            })}
                           >
                             {(Object.keys(META_TEMPLATE_USAGE_LABELS) as MetaTemplateUsage[]).map(
                               (scope) => (
@@ -1610,6 +1746,27 @@ export default function MetaSablonlarClient() {
                           </p>
                         </div>
                       </div>
+
+                      {form.usage_scope === "CAMPAIGN" && (
+                        <div className="sbx-field">
+                          <label className="sbx-label" htmlFor="meta-camp-aud">Toplu gönderim kitlesi</label>
+                          <select
+                            id="meta-camp-aud"
+                            className="sbx-select"
+                            value={form.campaign_audience || "genel"}
+                            onChange={(e) => setForm((f) => ({ ...f, campaign_audience: e.target.value }))}
+                          >
+                            <option value="veli">Veli</option>
+                            <option value="ogrenci">Öğrenci</option>
+                            <option value="personel">Personel</option>
+                            <option value="genel">Genel (tüm kitleler)</option>
+                          </select>
+                          <p className="sbx-hint">
+                            Veli / öğrenci / personel yalnızca o kitlede görünür.
+                            Genel; veli, öğrenci, personel ve karma seçimlerin hepsinde kullanılır.
+                          </p>
+                        </div>
+                      )}
 
                       {!editing && (
                         <>
@@ -1978,16 +2135,27 @@ export default function MetaSablonlarClient() {
                           <button
                             type="button"
                             className="sbx-btn is-sm is-danger"
-                            disabled={saving}
+                            disabled={saving || !!editing.is_system_active}
+                            title={
+                              editing.is_system_active
+                                ? "Bildirimde kullanılıyor, silinemez"
+                                : "Şablonu sil"
+                            }
                             onClick={handleDelete}
                           >
                             Sil
                           </button>
                         </div>
                         <p className="sbx-hint">
-                          {editing.app_template_id
-                            ? `Uygulama şablonu bağlı: ${editing.app_template_name || "—"}.`
-                            : "Uygulama şablonu henüz bağlı değil; 24 saatlik pencere açıkken serbest mesaj gönderebilmek için aktarın."}
+                          {editing.is_system_active
+                            ? `Bildirimde kullanılıyor${
+                              editing.system_usages?.length
+                                ? `: ${editing.system_usages.map((u) => u.label).join(", ")}`
+                                : ""
+                            }. Önce Bildirim Şablonları’ndan bağlantıyı kaldırın.`
+                            : editing.app_template_id
+                              ? `Uygulama şablonu bağlı: ${editing.app_template_name || "—"}. Silinince o da silinir; düzenleme otomatik yansır.`
+                              : "Uygulama şablonu henüz bağlı değil; 24 saatlik pencere açıkken serbest mesaj gönderebilmek için aktarın."}
                         </p>
                       </div>
                     </section>
@@ -2021,7 +2189,7 @@ export default function MetaSablonlarClient() {
                                   <em key={i}>{seg.content}</em>
                                 ) : seg.type === "strike" ? (
                                   <s key={i}>{seg.content}</s>
-                                ) : seg.type === "mono" ? (
+                                ) : seg.type === "mono" || seg.type === "code" ? (
                                   <code key={i}>{seg.content}</code>
                                 ) : seg.type === "variable" ? (
                                   <span key={i} className="wa-var">{seg.content}</span>

@@ -751,11 +751,35 @@
   text-decoration: line-through;
 }
 
-.comm-wa-bubble-text .wa-mono {
+.comm-wa-bubble-text .wa-mono,
+.comm-wa-bubble-text .wa-code {
   font-family: ui-monospace, monospace;
   background: rgba(0, 0, 0, 0.06);
   padding: 0 2px;
   border-radius: 2px;
+}
+
+.comm-wa-bubble-text .wa-line {
+  display: block;
+}
+
+.comm-wa-bubble-text .wa-line-quote {
+  margin: 2px 0;
+  padding: 2px 0 2px 8px;
+  border-left: 3px solid rgba(15, 23, 42, 0.28);
+  color: #334155;
+}
+
+.comm-wa-bubble-text .wa-line-bullet,
+.comm-wa-bubble-text .wa-line-number {
+  display: flex;
+  gap: 6px;
+}
+
+.comm-wa-bubble-text .wa-line-mark {
+  flex: none;
+  min-width: 1.1em;
+  font-weight: 700;
 }
 
 .comm-wa-bubble-text .wa-var {
@@ -8133,6 +8157,46 @@
   color: var(--sbx-muted);
 }
 
+.sbx-resultbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sbx-check.is-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--sbx-ink, #0f172a);
+}
+
+.sbx-card-pick {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+}
+
+.sbx-card-pick input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--sbx-blue, #0061a6);
+}
+
+.sbx-card.is-picked {
+  border-color: var(--sbx-blue, #0061a6);
+  box-shadow: 0 0 0 2px rgba(0, 97, 166, 0.14);
+}
+
+.sbx-card .sbx-card-open {
+  padding-left: 36px;
+}
+
 /* ─── Kart ızgarası ─── */
 
 .sbx-grid {
@@ -8315,7 +8379,7 @@
     flex-direction: row;
     align-items: center;
     gap: 14px;
-    padding: 10px 12px 10px 15px;
+    padding: 10px 12px 10px 38px;
   }
   .sbx-grid.is-rows .sbx-card-top {
     flex: 0 0 280px;

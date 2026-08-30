@@ -196,7 +196,8 @@ export default function OlcmeListPage() {
   const [search, setSearch]             = useState('');
   const [typeFilter, setTypeFilter]     = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [sort, setSort]                 = useState<SortState | null>(null);
+  const [sort, setSort]                 = useState<SortState | null>({ key: 'created_at', dir: 'desc' });
+  const [pdfBusy, setPdfBusy]           = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<ExamListItem | null>(null);
   const [deleting, setDeleting]         = useState(false);
@@ -210,28 +211,32 @@ export default function OlcmeListPage() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  /* ── Fetch ── */
-  const fetchExams = useCallback(() => {
+  const listParams = useCallback((): Record<string, string> => {
     const params: Record<string, string> = {};
     if (search)       params.search    = search;
     if (typeFilter)   params.exam_type = typeFilter;
     if (statusFilter) params.status    = statusFilter;
     if (sort)         params.ordering  = `${sort.dir === 'desc' ? '-' : ''}${sort.key}`;
+    return params;
+  }, [search, typeFilter, statusFilter, sort]);
 
+  /* ── Fetch ── */
+  const fetchExams = useCallback(() => {
     setLoading(true);
-    examApi.list(params)
+    examApi.list(listParams())
       .then(data => { setExams(data); setError(''); })
       .catch(e => setError(e instanceof Error ? e.message : 'Sınavlar yüklenemedi.'))
       .finally(() => setLoading(false));
-  }, [search, typeFilter, statusFilter, sort]);
+  }, [listParams]);
 
   useEffect(() => { fetchExams(); }, [fetchExams]);
 
   const handleSort = (key: SortKey) => {
     setSort(prev => {
-      if (prev?.key !== key) return { key, dir: 'asc' };
-      if (prev.dir === 'asc') return { key, dir: 'desc' };
-      return null; // üçüncü tıklama sıralamayı kaldırır
+      const defaultDir = key === 'exam_date' || key === 'created_at' ? 'desc' : 'asc';
+      if (prev?.key !== key) return { key, dir: defaultDir };
+      if (prev.dir === defaultDir) return { key, dir: defaultDir === 'desc' ? 'asc' : 'desc' };
+      return { key: 'created_at', dir: 'desc' };
     });
   };
 
@@ -271,6 +276,18 @@ export default function OlcmeListPage() {
   const hasFilter = Boolean(search || typeFilter || statusFilter);
   const clearFilters = () => {
     setSearchInput(''); setSearch(''); setTypeFilter(''); setStatusFilter('');
+  };
+
+  const handleListPdf = async () => {
+    setPdfBusy(true);
+    setError('');
+    try {
+      await examApi.downloadListPdf(listParams());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Liste PDF indirilemedi.');
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   /* İstatistikler ekrandaki (filtrelenmiş) listeyi özetler */
@@ -488,6 +505,17 @@ export default function OlcmeListPage() {
             Filtreleri Temizle
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={handleListPdf}
+          disabled={pdfBusy || exams.length === 0}
+          className={s.linkBtn}
+          title="Ekrandaki filtrelenmiş listeyi PDF indir"
+        >
+          <Icon name="download" size={13} />
+          {pdfBusy ? 'PDF hazırlanıyor…' : 'Liste PDF'}
+        </button>
       </div>
 
       {/* ── Hata ─────────────────────────────────────────────────────────── */}
@@ -553,10 +581,11 @@ export default function OlcmeListPage() {
             <table className={s.table}>
               <thead>
                 <tr>
+                  <th className={s.numHead}>#</th>
                   <SortHeader label="Sınav" columnKey="name" sort={sort} onSort={handleSort} />
                   <SortHeader label="Tür" columnKey="exam_type" sort={sort} onSort={handleSort} />
                   <SortHeader label="Aşama" columnKey="status" sort={sort} onSort={handleSort} />
-                  <SortHeader label="Tarih" columnKey="exam_date" sort={sort} onSort={handleSort} />
+                  <SortHeader label="Sınav tarihi" columnKey="exam_date" sort={sort} onSort={handleSort} />
                   <SortHeader label="İçerik" columnKey="total_questions" sort={sort} onSort={handleSort} />
                   <SortHeader label="Sonuçlar" columnKey="answer_count" sort={sort} onSort={handleSort} />
                   <th>Sınıflar</th>
@@ -564,12 +593,13 @@ export default function OlcmeListPage() {
                 </tr>
               </thead>
               <tbody>
-                {exams.map(exam => {
+                {exams.map((exam, index) => {
                   const matchPct = exam.answer_count > 0
                     ? Math.round((exam.matched_count / exam.answer_count) * 100)
                     : 0;
                   return (
                     <tr key={exam.id}>
+                      <td className={s.numCell}>{index + 1}</td>
                       {/* Sınav adı + bağlantı rozetleri */}
                       <td className={s.nameCell}>
                         <div className={s.nameRow}>

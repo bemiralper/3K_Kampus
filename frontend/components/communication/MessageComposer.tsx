@@ -17,7 +17,8 @@ import {
   TEMPLATE_VARIABLES,
   WHATSAPP_MAX_LENGTH,
   FORMAT_SHORTCUT_HINTS,
-  formatShortcutMarker,
+  applyWhatsAppFormat,
+  formatShortcutAction,
   wrapSelection,
 } from "./composer-utils";
 import WhatsAppPreviewBubble from "./WhatsAppPreviewBubble";
@@ -111,6 +112,18 @@ export default function MessageComposer({
     });
   };
 
+  const applyAction = (action: ReturnType<typeof formatShortcutAction>) => {
+    if (!action) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    const result = applyWhatsAppFormat(state.text, el.selectionStart, el.selectionEnd, action);
+    update({ text: result.text });
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(result.cursor, result.cursor);
+    });
+  };
+
   const insertToken = (token: string) => {
     const el = textareaRef.current;
     if (!el) {
@@ -147,10 +160,10 @@ export default function MessageComposer({
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!disabled && !loading) {
-      const marker = formatShortcutMarker(e);
-      if (marker) {
+      const action = formatShortcutAction(e);
+      if (action) {
         e.preventDefault();
-        applyFormat(marker);
+        applyAction(action);
         return;
       }
     }
@@ -218,6 +231,46 @@ export default function MessageComposer({
             onClick={() => applyFormat("```")}
           >
             M<span className="comm-toolbar-btn-label">Mono</span>
+          </button>
+          <button
+            type="button"
+            className="comm-toolbar-btn mono"
+            aria-label="Satır içi kod"
+            title={`Satır içi kod (\`metin\`) · ${FORMAT_SHORTCUT_HINTS.code}`}
+            disabled={disabled || loading}
+            onClick={() => applyFormat("`")}
+          >
+            {"</>"}
+          </button>
+          <button
+            type="button"
+            className="comm-toolbar-btn"
+            aria-label="Alıntı"
+            title={`Alıntı (> metin) · ${FORMAT_SHORTCUT_HINTS.quote}`}
+            disabled={disabled || loading}
+            onClick={() => applyAction({ kind: "prefix", style: "quote" })}
+          >
+            ❝
+          </button>
+          <button
+            type="button"
+            className="comm-toolbar-btn"
+            aria-label="Madde listesi"
+            title={`Madde listesi · ${FORMAT_SHORTCUT_HINTS.bullet}`}
+            disabled={disabled || loading}
+            onClick={() => applyAction({ kind: "prefix", style: "bullet" })}
+          >
+            •
+          </button>
+          <button
+            type="button"
+            className="comm-toolbar-btn"
+            aria-label="Numaralı liste"
+            title={`Numaralı liste · ${FORMAT_SHORTCUT_HINTS.number}`}
+            disabled={disabled || loading}
+            onClick={() => applyAction({ kind: "prefix", style: "number" })}
+          >
+            1.
           </button>
           <FormatShortcutHelp />
         </div>
@@ -354,7 +407,8 @@ export default function MessageComposer({
           {!compact && (
             <span className="comm-preview-note" style={{ marginLeft: 8 }}>
               {FORMAT_SHORTCUT_HINTS.bold} kalın · {FORMAT_SHORTCUT_HINTS.italic} italik ·{" "}
-              {FORMAT_SHORTCUT_HINTS.strike} üstü çizili · {FORMAT_SHORTCUT_HINTS.mono} mono
+              {FORMAT_SHORTCUT_HINTS.strike} çizili · {FORMAT_SHORTCUT_HINTS.mono} mono ·{" "}
+              {FORMAT_SHORTCUT_HINTS.code} kod · alıntı / liste
               {" · "}Renkler yalnızca önizlemede
             </span>
           )}

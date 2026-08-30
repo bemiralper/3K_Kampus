@@ -628,6 +628,22 @@ class WhatsAppMetaTemplate(models.Model):
         verbose_name='Kullanım Alanı',
         db_index=True,
     )
+    campaign_audience = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        verbose_name='Toplu gönderim kitlesi',
+        db_index=True,
+        help_text='veli / ogrenci / personel / genel. Boşsa ada göre tahmin edilir.',
+    )
+    campaign_family = models.CharField(
+        max_length=32,
+        blank=True,
+        default='',
+        verbose_name='Toplu gönderim kategorisi',
+        db_index=True,
+        help_text='duyuru / hatirlatma / bilgilendirme / genel veya özel slug.',
+    )
     template_group = models.CharField(
         max_length=64,
         blank=True,

@@ -622,18 +622,19 @@ export default function YeniSinavPage() {
               </div>
               <div className={s.cardBody}>
                 <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.5 }}>
-                  Sonuç yayın tarihi kaydedildiğinde velilere sonuç bildirimi tetiklenir.
+                  Yayın saatleri zorunlu değildir. Otomatik WhatsApp gönderimi için
+                  sınav detayında <strong>Zamanlı</strong> anahtarını ayrıca açın.
                   Bu tarihler öğrenci ekranındaki görünürlüğü <strong>kısıtlamaz</strong>;
                   sonuçlar yüklendiği anda öğrenciye açıktır.
                 </p>
                 <div className={s.formGrid}>
                   <div className={s.formGroup}>
-                    <label>Sonuç Yayın Tarihi</label>
+                    <label>Sonuç Yayın Tarihi <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
                     <input type="datetime-local" value={form.result_publish_date}
                       onChange={e => setField('result_publish_date', e.target.value)} />
                   </div>
                   <div className={s.formGroup}>
-                    <label>Cevap Anahtarı Yayın Tarihi</label>
+                    <label>Cevap Anahtarı Yayın Tarihi <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
                     <input type="datetime-local" value={form.answer_key_publish_date}
                       style={inputStyle('answer_key_publish_date')}
                       onChange={e => setField('answer_key_publish_date', e.target.value)} />

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  parseWhatsAppPreviewLines,
   parseWhatsAppText,
   PreviewFontSize,
   PreviewSampleContext,
@@ -39,6 +40,8 @@ function renderSegment(
       return <span key={key} className="wa-strike">{seg.content}</span>;
     case "mono":
       return <code key={key} className="wa-mono">{seg.content}</code>;
+    case "code":
+      return <code key={key} className="wa-code">{seg.content}</code>;
     case "variable":
       return <span key={key} className="wa-var">{seg.content}</span>;
     default:
@@ -67,7 +70,7 @@ export default function WhatsAppPhonePreview({
   const displayText = resolveVariables
     ? resolvePreviewVariables(text, liveContext)
     : text;
-  const segments = parseWhatsAppText(displayText);
+  const lines = parseWhatsAppPreviewLines(displayText);
   const time = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
   return (
@@ -89,7 +92,14 @@ export default function WhatsAppPhonePreview({
         >
           <p className={`comm-wa-bubble-text size-${fontSize}`}>
             {displayText.trim() ? (
-              segments.map((seg, i) => renderSegment(seg, i))
+              lines.map((line, i) => (
+                <span key={i} className={`wa-line wa-line-${line.block}`}>
+                  {line.block === "bullet" || line.block === "number" ? (
+                    <span className="wa-line-mark">{line.marker}</span>
+                  ) : null}
+                  {line.segments.map((seg, j) => renderSegment(seg, j))}
+                </span>
+              ))
             ) : (
               <span className="comm-wa-placeholder">Mesajınız burada görünecek…</span>
             )}

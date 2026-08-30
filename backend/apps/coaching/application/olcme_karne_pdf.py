@@ -146,9 +146,31 @@ def _pct(n):
         return '—'
 
 
+def _clock(value) -> str:
+    """10:00 / 10.00 → 10.00"""
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    raw = raw.replace('.', ':')
+    parts = raw.split(':')
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1][:2]) if len(parts) > 1 else 0
+    except (TypeError, ValueError):
+        return str(value).strip()
+    return f'{hour:02d}.{minute:02d}'
+
+
+def _session_hours(data) -> str:
+    start = _clock(data.get('session_start_time'))
+    end = _clock(data.get('session_end_time'))
+    if start and end:
+        return f'{start} - {end}'
+    return start or end
+
+
 def _format_session_when(data) -> str:
     date_s = data.get('session_date')
-    time_s = data.get('session_start_time')
     parts = []
     if date_s:
         try:
@@ -161,8 +183,9 @@ def _format_session_when(data) -> str:
             parts.append(f'{d.day} {months[d.month - 1]} {d.year}')
         except (TypeError, ValueError):
             parts.append(str(date_s))
-    if time_s:
-        parts.append(str(time_s)[:5])
+    hours = _session_hours(data)
+    if hours:
+        parts.append(hours)
     return '  ·  '.join(parts)
 
 
@@ -430,7 +453,7 @@ def _hero_header(ctx: _Ctx, data: dict):
         def __init__(self):
             super().__init__()
             self.width = ctx.page_w
-            self.height = 120
+            self.height = 112
 
         def wrap(self, availWidth, availHeight):
             self.width = availWidth
@@ -503,86 +526,108 @@ def _hero_header(ctx: _Ctx, data: dict):
                 c.setFillColor(colors.HexColor('#C5D8EB'))
                 c.drawString(pad, 12, cap)
 
-            # Sağ panel — öğrenci
-            rx = left_w + 16
-            av = 48
+            # Sağ panel — kimlik kartı: fotoğraf ve metin aynı üst/alt hizada
+            rx = left_w + 14
+            av = 96
             av_y = (h - av) / 2
             path = data.get('profil_foto_path')
             photo = _photo_reader(path, av, av) if path and os.path.isfile(path) else None
 
             c.saveState()
             av_clip = c.beginPath()
-            av_clip.circle(rx + av / 2, av_y + av / 2, av / 2)
+            av_clip.roundRect(rx, av_y, av, av, 8)
             c.clipPath(av_clip, stroke=0)
             if photo:
                 c.drawImage(photo, rx, av_y, width=av, height=av, mask='auto')
             else:
                 c.setFillColor(colors.HexColor(BRAND_SOFT))
-                c.circle(rx + av / 2, av_y + av / 2, av / 2, fill=1, stroke=0)
+                c.rect(rx, av_y, av, av, fill=1, stroke=0)
                 initials = _student_initials(data.get('student_name') or '')
                 c.setFillColor(colors.HexColor(BRAND))
-                c.setFont(ctx.font_bold, 15)
-                c.drawCentredString(rx + av / 2, av_y + 17, initials)
+                c.setFont(ctx.font_bold, 22)
+                c.drawCentredString(rx + av / 2, av_y + av / 2 - 7, initials)
             c.restoreState()
             c.setStrokeColor(colors.HexColor(LINE))
-            c.setLineWidth(1)
-            c.circle(rx + av / 2, av_y + av / 2, av / 2, fill=0, stroke=1)
+            c.setLineWidth(0.8)
+            c.roundRect(rx, av_y, av, av, 8, fill=0, stroke=1)
 
             tx = rx + av + 12
-            right_col = 70
-            text_w = w - tx - 14 - right_col
+            nx = w - 14
+            text_w = nx - tx
+            type_label = (data.get('exam_type_label') or '').strip()
+            rank = _top3_rank(data)
+            try:
+                total = int(data.get('toplam_ogrenci') or 0)
+            except (TypeError, ValueError):
+                total = 0
+            rank_label = ''
+            if rank:
+                rank_label = f'Kurum {rank} / {total}' if total else f'Kurum {rank}.'
+
+            def _chip(x, y, text, fill, ink):
+                tw = c.stringWidth(text, ctx.font_bold, 6.5) + 10
+                c.setFillColor(colors.HexColor(fill))
+                c.roundRect(x, y, tw, 12, 3, fill=1, stroke=0)
+                c.setFillColor(colors.HexColor(ink))
+                c.setFont(ctx.font_bold, 6.5)
+                c.drawString(x + 5, y + 3, text)
+                return tw
+
+            chips = []
+            if type_label:
+                chips.append((type_label, BRAND_SOFT, BRAND_DARK))
+            if rank_label:
+                tones = {1: GOLD, 2: '#64748B', 3: '#B45309'}
+                chips.append((rank_label, tones.get(rank, GOLD), '#FFFFFF'))
+            chip_gap = 5
+            chips_w = sum(
+                c.stringWidth(t, ctx.font_bold, 6.5) + 10 + chip_gap for t, *_ in chips
+            )
 
             name = data.get('student_name') or '—'
-            name, name_size = _fit_canvas_text(c, name, ctx.font_bold, 16, text_w)
+            name, name_size = _fit_canvas_text(
+                c, name, ctx.font_bold, 16, max(40, text_w - chips_w - 6),
+            )
+            name_y = av_y + av - name_size - 3
             c.setFillColor(colors.HexColor(INK))
             c.setFont(ctx.font_bold, name_size)
-            c.drawString(tx, h - 36, name)
+            c.drawString(tx, name_y, name)
+
+            chip_y = name_y - 1
+            chip_x = nx
+            for text, fill, ink in reversed(chips):
+                tw = _chip(chip_x - (c.stringWidth(text, ctx.font_bold, 6.5) + 10), chip_y, text, fill, ink)
+                chip_x -= tw + chip_gap
+
+            hair_y = av_y + av - 24
+            c.setStrokeColor(colors.HexColor(LINE))
+            c.setLineWidth(0.5)
+            c.line(tx, hair_y, nx, hair_y)
 
             sinif = (data.get('sinif') or data.get('sinif_ad') or '').strip()
             session = (data.get('session_name') or '').strip()
-            meta = '  ·  '.join(b for b in (sinif, session) if b)
-            y = h - 52
-            if meta:
-                c.setFont(ctx.font, 8)
-                c.setFillColor(colors.HexColor(INK_SOFT))
-                c.drawString(tx, y, meta)
-                y -= 16
-
-            type_label = (data.get('exam_type_label') or '').strip()
-            if type_label:
-                chip_w = c.stringWidth(type_label, ctx.font_bold, 7) + 10
-                c.setFillColor(colors.HexColor(BRAND_SOFT))
-                c.roundRect(tx, y - 2, chip_w, 13, 3, fill=1, stroke=0)
-                c.setFillColor(colors.HexColor(BRAND_DARK))
-                c.setFont(ctx.font_bold, 7)
-                c.drawString(tx + 5, y + 1.4, type_label)
-
+            hours = _session_hours(data)
             no = str(data.get('raw_student_id') or '—')
-            no_label = 'ÖĞRENCİ NO'
-            nx = w - 14
-            c.setFont(ctx.font_bold, 6.5)
-            label_w = c.stringWidth(no_label, ctx.font_bold, 6.5)
-            label_left = nx - label_w
-            c.setFillColor(colors.HexColor(MUTED))
-            c.drawString(label_left, h - 34, no_label)
-            c.setFillColor(colors.HexColor(INK))
-            c.setFont(ctx.font_bold, 13)
-            c.drawCentredString(label_left + label_w / 2, h - 50, no)
-
-            rank = _top3_rank(data)
-            if rank:
-                tones = {1: GOLD, 2: '#64748B', 3: '#B45309'}
-                try:
-                    total = int(data.get('toplam_ogrenci') or 0)
-                except (TypeError, ValueError):
-                    total = 0
-                badge = f'Kurum sırası {rank} / {total}' if total else f'Kurum sırası {rank}'
-                rw = c.stringWidth(badge, ctx.font_bold, 7) + 12
-                c.setFillColor(colors.HexColor(tones[rank]))
-                c.roundRect(nx - rw, 16, rw, 14, 3, fill=1, stroke=0)
-                c.setFillColor(colors.white)
-                c.setFont(ctx.font_bold, 7)
-                c.drawCentredString(nx - rw / 2, 19.5, badge)
+            meta = [
+                ('Öğrenci no', no),
+                ('Sınıf', sinif),
+                ('Oturum', session),
+                ('Saat', hours),
+            ]
+            meta = [(lab, val) for lab, val in meta if val]
+            label_w = 56
+            inner_top = hair_y - 6
+            inner_bot = av_y + 4
+            row_h = (inner_top - inner_bot) / max(len(meta), 1)
+            for i, (lab, val) in enumerate(meta):
+                y = inner_top - (i + 1) * row_h + row_h * 0.28
+                c.setFillColor(colors.HexColor(MUTED))
+                c.setFont(ctx.font, 7)
+                c.drawString(tx, y, lab.upper())
+                fitted, fs = _fit_canvas_text(c, val, ctx.font_bold, 9, text_w - label_w)
+                c.setFillColor(colors.HexColor(INK))
+                c.setFont(ctx.font_bold, fs)
+                c.drawString(tx + label_w, y, fitted)
 
     return HeroHeader()
 

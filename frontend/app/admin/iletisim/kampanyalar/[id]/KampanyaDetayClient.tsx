@@ -12,6 +12,7 @@ import {
   CampaignItem,
   cancelCampaign,
   fetchCampaign,
+  formatMessageStatus,
   retryFailedCampaign,
 } from "@/lib/communication-api";
 
@@ -215,6 +216,43 @@ export default function KampanyaDetayClient() {
           Toplam alıcı: <strong>{total.toLocaleString("tr-TR")}</strong>
         </p>
       </div>
+
+      {!!campaign.deliveries?.length && (
+        <div className="comm-card" style={{ marginBottom: "1rem" }}>
+          <h2 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>Alıcılar</h2>
+          <div style={{ overflowX: "auto" }}>
+            <table className="comm-table" style={{ width: "100%", fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", padding: "6px 8px" }}>Kişi</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px" }}>Telefon</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px" }}>Durum</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px" }}>Not</th>
+                </tr>
+              </thead>
+              <tbody>
+                {campaign.deliveries.map(row => (
+                  <tr key={row.id}>
+                    <td style={{ padding: "6px 8px" }}>
+                      {row.contact_name}
+                      {row.contact_type ? (
+                        <span style={{ color: "#667781", marginLeft: 6, fontSize: 11 }}>
+                          {row.contact_type === "VELI" ? "Veli" : row.contact_type === "OGRENCI" ? "Öğrenci" : row.contact_type}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td style={{ padding: "6px 8px" }}>{row.phone || "—"}</td>
+                    <td style={{ padding: "6px 8px" }}>{formatMessageStatus(row.status)}</td>
+                    <td style={{ padding: "6px 8px", color: row.failed_reason ? "#b91c1c" : "#667781" }}>
+                      {row.failed_reason || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {campaign.body_template && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: "1.25rem", alignItems: "start" }}>

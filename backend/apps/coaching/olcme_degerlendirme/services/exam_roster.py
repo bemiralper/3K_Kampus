@@ -257,6 +257,7 @@ def replace_auto_participants(exam, candidates: list[CandidateRec], *, keep_manu
             source=ExamParticipant.Source.AUTO,
             sinif_seviyesi_id=rec.sinif_seviyesi_id,
             deneme_paketi_id=rec.deneme_paketi_id,
+            attendance=ExamParticipant.Attendance.PRESENT,
         ))
     if created:
         ExamParticipant.objects.bulk_create(created)
@@ -748,6 +749,7 @@ def add_manual_participant(exam, student_id: int, exam_session=None) -> tuple[Ex
             defaults={
                 'source': ExamParticipant.Source.MANUAL,
                 'sinif_seviyesi_id': sev_id,
+                'attendance': ExamParticipant.Attendance.PRESENT,
             },
         )
         if created:

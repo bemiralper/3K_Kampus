@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { analysisApi, type KarneBulkStudentRow } from '../api';
 import { ALAN_LABELS } from '../pdfExport';
-import type { StudentAnalysis } from '../types';
+import type { ExamPublishDispatch, StudentAnalysis } from '../types';
 
 interface Props {
   examId: number;
@@ -28,6 +29,8 @@ export default function KarneBulkNotifyModal({
   const [successMsg, setSuccessMsg] = useState('');
   const [rows, setRows] = useState<KarneBulkStudentRow[]>([]);
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
+  const [scheduled, setScheduled] = useState<ExamPublishDispatch | null>(null);
+  const [campaignId, setCampaignId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     let list = [...students];
@@ -58,6 +61,7 @@ export default function KarneBulkNotifyModal({
             if (r.skip_reason) next.add(r.answer_id);
           }
           setExcluded(next);
+          setScheduled(res.data.scheduled_warning || null);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Hata');
@@ -99,7 +103,11 @@ export default function KarneBulkNotifyModal({
       if (sent === 0) {
         throw new Error(res.data?.errors?.[0] || 'Hiçbir alıcıya gönderilemedi.');
       }
-      setSuccessMsg(`${sent} mesaj kuyruğa alındı (${sendable.length} öğrenci).`);
+      setCampaignId(res.data?.campaign_id || null);
+      const cancelledNote = res.data?.schedule_cancelled
+        ? ' Zamanlanmış karne gönderimi iptal edildi.'
+        : '';
+      setSuccessMsg(`${sent} mesaj kuyruğa alındı (${sendable.length} öğrenci).${cancelledNote}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gönderim hatası');
     } finally {
@@ -170,14 +178,36 @@ export default function KarneBulkNotifyModal({
           </label>
         </div>
 
+        {scheduled && !successMsg && !loading && (
+          <div style={{
+            margin: '12px 20px 0', padding: '10px 12px', borderRadius: 8,
+            background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: 12, lineHeight: 1.45,
+          }}>
+            Bu sınav için zamanlanmış karne gönderimi açık
+            {scheduled.scheduled_at
+              ? ` (${new Date(scheduled.scheduled_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })})`
+              : ''}.
+            Şimdi gönderirseniz zamanlanmış gönderim iptal edilir.
+          </div>
+        )}
+
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Alıcılar yükleniyor…</div>
         ) : successMsg ? (
           <div style={{ padding: 24 }}>
             <div style={{ color: '#059669', fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{successMsg}</div>
-            <button type="button" onClick={onClose} style={{
-              padding: '8px 14px', borderRadius: 8, border: 'none', background: '#059669', color: '#fff', cursor: 'pointer',
-            }}>Kapat</button>
+            {campaignId && (
+              <Link href={`/admin/iletisim/kampanyalar/${campaignId}`} style={{
+                display: 'inline-block', marginBottom: 12, fontSize: 13, color: '#0262a7', fontWeight: 600,
+              }}>
+                Gönderim geçmişinde gör
+              </Link>
+            )}
+            <div>
+              <button type="button" onClick={onClose} style={{
+                padding: '8px 14px', borderRadius: 8, border: 'none', background: '#059669', color: '#fff', cursor: 'pointer',
+              }}>Kapat</button>
+            </div>
           </div>
         ) : error ? (
           <div style={{ padding: 24 }}>

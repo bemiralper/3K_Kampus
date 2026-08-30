@@ -19,6 +19,28 @@ from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube, resolve_kurum_id as _resolve_kurum_id
 from apps.communication.infrastructure.repository import OutboundCampaignRepository
 from apps.communication.permissions import CommunicationBulkPermission
+from apps.communication.domain.models import Message
+
+
+def _campaign_deliveries(campaign, *, limit=500):
+    rows = []
+    qs = (
+        Message.objects.filter(campaign=campaign)
+        .select_related('conversation')
+        .order_by('created_at')[:limit]
+    )
+    for msg in qs:
+        conv = msg.conversation
+        rows.append({
+            'id': str(msg.id),
+            'contact_name': (conv.contact_name or '').strip() or conv.contact_phone,
+            'phone': conv.contact_phone or '',
+            'contact_type': conv.contact_type or '',
+            'status': msg.status,
+            'failed_reason': msg.failed_reason or '',
+            'sent_at': msg.sent_at.isoformat() if msg.sent_at else None,
+        })
+    return rows
 
 
 class CampaignBulkView(CommunicationAPIView):
@@ -147,7 +169,9 @@ class CampaignDetailView(CampaignBulkView):
         if gate:
             return gate
 
-        return Response(CampaignDetailSerializer(campaign).data)
+        data = CampaignDetailSerializer(campaign).data
+        data['deliveries'] = _campaign_deliveries(campaign)
+        return Response(data)
 
 
 class CampaignConfirmView(CampaignBulkView):

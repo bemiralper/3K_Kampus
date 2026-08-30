@@ -20,6 +20,7 @@ from .roster import (
     ExamAudience, ExamRoom, ExamParticipant,
     OlcmeSeviyeOturumAyar, OlcmeOgrenciOturumTercihi, ScheduleGroup,
 )
+from .publish import ExamScheduledDispatch
 
 __all__ = [
     'Exam', 'ExamSection', 'ExamSessionModel',
@@ -31,4 +32,5 @@ __all__ = [
     'OlcmePuanAyar', 'OlcmeKatsayiSeti',
     'ExamAudience', 'ExamRoom', 'ExamParticipant',
     'OlcmeSeviyeOturumAyar', 'OlcmeOgrenciOturumTercihi', 'ScheduleGroup',
+    'ExamScheduledDispatch',
 ]

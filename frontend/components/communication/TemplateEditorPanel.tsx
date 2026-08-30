@@ -627,7 +627,7 @@ export default function TemplateEditorPanel({
                           <em key={i}>{seg.content}</em>
                         ) : seg.type === "strike" ? (
                           <s key={i}>{seg.content}</s>
-                        ) : seg.type === "mono" ? (
+                        ) : seg.type === "mono" || seg.type === "code" ? (
                           <code key={i}>{seg.content}</code>
                         ) : seg.type === "variable" ? (
                           <span key={i} className="wa-var">{seg.content}</span>

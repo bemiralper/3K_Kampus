@@ -127,6 +127,9 @@ location /api/communication/events/stream/ {
 # Her dakika — giden mesaj kuyruğu
 * * * * * cd /var/www/lms/backend && DJANGO_ENV=production /var/www/lms/venv/bin/python manage.py process_communication_queue >> /var/log/lms/comm_queue.log 2>&1
 
+# Her dakika — sınav karne / cevap anahtarı yayın saati
+* * * * * cd /var/www/lms/backend && DJANGO_ENV=production /var/www/lms/venv/bin/python manage.py process_olcme_publish >> /var/log/lms/olcme_publish.log 2>&1
+
 # Her 5 dakika — zamanlanmış toplu gönderim kampanyaları
 */5 * * * * cd /var/www/lms/backend && DJANGO_ENV=production /var/www/lms/venv/bin/python manage.py process_scheduled_campaigns >> /var/log/lms/scheduled_campaigns.log 2>&1
 

@@ -8,6 +8,7 @@ from apps.communication.application.meta_template_mapper import (
     build_meta_components,
     build_send_body_parameters,
     build_variable_map,
+    default_variable_map_for_template,
     map_meta_status,
     named_to_numbered,
 )
@@ -47,6 +48,13 @@ class MetaTemplateMapperTest(TestCase):
         self.assertIn('{{2}}', numbered)
         self.assertIn('{{3}}', numbered)
         self.assertNotIn('ogrenci_ad', numbered)
+
+    def test_campaign_numbered_body_maps_to_mesaj(self):
+        self.assertEqual(default_variable_map_for_template('toplu_duyuru'), {'1': 'mesaj'})
+        self.assertEqual(
+            default_variable_map_for_template('kampus_ozel', '*DUYURU:*\n{{1}}\n*3K Kampüs*'),
+            {'1': 'mesaj'},
+        )
 
     def test_build_meta_components_body_example(self):
         components, vmap = build_meta_components(

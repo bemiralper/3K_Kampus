@@ -304,6 +304,30 @@ def exam_participant_add(request, exam_pk):
     return Response(row, status=201)
 
 
+@api_view(['POST'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def exam_participants_bulk_attendance(request, exam_pk):
+    exam, err = get_exam_or_response(request, exam_pk)
+    if err:
+        return err
+    attendance = request.data.get('attendance')
+    if attendance not in ('present', 'absent'):
+        return Response({'error': 'attendance present veya absent olmalı.'}, status=400)
+    ids = _int_list(request.data.get('participant_ids'))
+    session_id = request.data.get('session_id') or request.data.get('exam_session_id')
+    qs = ExamParticipant.objects.filter(exam=exam)
+    if ids:
+        qs = qs.filter(pk__in=ids)
+    elif session_id not in (None, ''):
+        try:
+            qs = qs.filter(exam_session_id=int(session_id))
+        except (TypeError, ValueError):
+            return Response({'error': 'Geçersiz oturum.'}, status=400)
+    updated = qs.update(attendance=attendance)
+    return Response({'ok': True, 'updated': updated, 'attendance': attendance})
+
+
 @api_view(['PATCH', 'DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
 @permission_classes([IsAuthenticated])
@@ -624,6 +648,23 @@ def _hatirlatma_ctx(exam, p, *, veli_ad='', schedule=None):
     return ctx
 
 
+def _filled_preview_body(event, recipient_type, ctx, *, kurum_id, sube_id=None):
+    from apps.communication.application.notification_template_resolver import (
+        display_template_body,
+        resolve_binding,
+    )
+
+    body = ''
+    if event.supports(recipient_type):
+        resolved = resolve_binding(
+            kurum_id, event.key, recipient_type, sube_id=sube_id,
+        )
+        body = display_template_body(resolved) or event.default_body(recipient_type) or ''
+    for key, value in ctx.items():
+        body = body.replace('{{' + key + '}}', str(value))
+    return body
+
+
 def _mask_phone(phone: str) -> str:
     p = (phone or '').strip()
     if len(p) < 4:
@@ -631,7 +672,9 @@ def _mask_phone(phone: str) -> str:
     return f'{p[:3]}***{p[-2:]}'
 
 
-def _hatirlatma_rows(exam, participant_ids: list[int], *, opt_in_category='duyuru'):
+def _hatirlatma_rows(
+    exam, participant_ids: list[int], *, opt_in_category='duyuru', event_key='',
+):
     from apps.communication.application.contact_resolver import ContactResolver
     from apps.ogrenci.application.veli_contact import list_outbound_veliler
 
@@ -640,6 +683,8 @@ def _hatirlatma_rows(exam, participant_ids: list[int], *, opt_in_category='duyur
     )
     if participant_ids:
         qs = qs.filter(pk__in=participant_ids)
+    if event_key == 'sinav.yoklama':
+        qs = qs.filter(attendance=ExamParticipant.Attendance.ABSENT)
     rows = []
     for p in qs:
         st = p.student
@@ -708,10 +753,37 @@ def exam_hatirlatma_preview(request, exam_pk):
     if err_resp:
         return err_resp
     ids = _int_list(request.data.get('participant_ids'))
+    students = _hatirlatma_rows(
+        exam, ids, opt_in_category=event.opt_in_category, event_key=event.key,
+    )
+    sample = students[0] if students else None
+    ctx = {}
+    if sample:
+        p = ExamParticipant.objects.select_related('student', 'room', 'exam_session').filter(
+            pk=sample['participant_id'],
+        ).first()
+        if p:
+            veli = next((r for r in sample['recipients'] if r['recipient_type'] == 'veli'), None)
+            ctx = _hatirlatma_ctx(exam, p, veli_ad=(veli or {}).get('display_name') or '')
+    body_veli = _filled_preview_body(
+        event, 'VELI', ctx, kurum_id=exam.kurum_id, sube_id=exam.sube_id,
+    )
+    body_ogrenci = _filled_preview_body(
+        event, 'OGRENCI', ctx, kurum_id=exam.kurum_id, sube_id=exam.sube_id,
+    )
+    if event.key == 'sinav.yoklama':
+        hint = 'İletişim → Bildirim şablonları → Sınav → Sınav yoklama — katılmadı'
+    else:
+        hint = 'İletişim → Bildirim şablonları → Sınav → Sınav bilgilendirmesi (salon / sıra)'
     return Response({
         'event_key': event.key,
         'event_label': event.label,
-        'students': _hatirlatma_rows(exam, ids, opt_in_category=event.opt_in_category),
+        'preview_body': body_veli,
+        'preview_body_veli': body_veli,
+        'preview_body_ogrenci': body_ogrenci,
+        'supports_ogrenci': event.supports('OGRENCI'),
+        'binding_hint': hint,
+        'students': students,
     })
 
 
@@ -739,7 +811,9 @@ def exam_hatirlatma_send(request, exam_pk):
     sent = 0
     skipped = 0
     errors = []
-    for row in _hatirlatma_rows(exam, ids, opt_in_category=event.opt_in_category):
+    for row in _hatirlatma_rows(
+        exam, ids, opt_in_category=event.opt_in_category, event_key=event.key,
+    ):
         p = ExamParticipant.objects.select_related('student', 'room', 'exam_session').get(pk=row['participant_id'])
         row_sent = False
         for item in row['recipients']:
