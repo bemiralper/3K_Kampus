@@ -18,6 +18,7 @@ from apps.finans.domain.gelir_kaydi import GelirKaydi  # noqa: F401
 from apps.finans.domain.gider_kaydi import GiderKaydi  # noqa: F401
 from apps.finans.domain.gider_taksit import GiderTaksit  # noqa: F401
 from apps.finans.domain.gider_odeme import GiderOdeme  # noqa: F401
+from apps.finans.domain.gider_ekli_belge import GiderEkliBelge  # noqa: F401
 from apps.finans.domain.cari_dosya import CariDosya  # noqa: F401
 from apps.finans.domain.gelir_tahsilat import GelirTahsilat  # noqa: F401
 from apps.finans.domain.hesap_transferi import HesapTransferi  # noqa: F401

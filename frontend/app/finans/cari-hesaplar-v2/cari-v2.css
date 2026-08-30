@@ -6,6 +6,10 @@
   gap: 18px;
 }
 
+.cv2-page > .fn-ph {
+  margin-bottom: 0;
+}
+
 /* Dashboard kartları */
 .cv2-cards {
   display: grid;

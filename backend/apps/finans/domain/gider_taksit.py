@@ -67,6 +67,21 @@ class GiderTaksit(models.Model):
         blank=True,
         verbose_name='Ödeme Yöntemi',
     )
+    mali_hesap = models.ForeignKey(
+        'finans.MaliHesap',
+        on_delete=models.SET_NULL,
+        related_name='gider_taksitleri',
+        null=True,
+        blank=True,
+        verbose_name='Mali Hesap',
+        help_text='Son gerçekleşen ödemenin çıktığı hesap',
+    )
+    odeme_tarihi = models.DateField(
+        'Ödeme Tarihi',
+        null=True,
+        blank=True,
+        help_text='Son gerçekleşen ödeme tarihi',
+    )
 
     durum = models.CharField(
         'Durum',

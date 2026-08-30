@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from apps.finans.application.gider_v2.gider_command_service import GiderCommandService
 from apps.finans.application.gider_v2.gider_query_service import GiderQueryService
+from apps.finans.application.gider_v2.gider_odeme_takibi_service import GiderOdemeTakibiQueryService
 from apps.finans.application.gider_v2.gider_dashboard_service import GiderDashboardService
 from apps.finans.application.finans_v2.audit import get_client_ip
 from apps.finans.domain.gider_kaydi import GiderKaydi
@@ -36,8 +37,8 @@ def _gate(request, pk):
     gider = (
         GiderKaydi.objects.select_related(
             'cari_hesap', 'gider_kategorisi', 'maliyet_merkezi', 'proje',
-            'odeme_yontemi', 'olusturan', 'mali_hesap',
-        ).prefetch_related('etiketler').filter(pk=pk).first()
+            'odeme_yontemi', 'olusturan', 'mali_hesap', 'kurum', 'sube',
+        ).prefetch_related('etiketler', 'taksitler').filter(pk=pk).first()
     )
     if not gider:
         return None, Response({'detail': 'Gider kaydı bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
@@ -57,6 +58,16 @@ _FILTER_KEYS = [
 
 def _collect_filters(qp):
     return {k: qp.get(k) for k in _FILTER_KEYS if qp.get(k) not in (None, '')}
+
+
+_TAKIP_FILTER_KEYS = [
+    'arama', 'durum', 'cari_hesap_id', 'gider_kategorisi_id',
+    'baslangic', 'bitis', 'include_odenen', 'donem', 'odeme_tipi', 'filtre_sube_id',
+]
+
+
+def _collect_takip_filters(qp):
+    return {k: qp.get(k) for k in _TAKIP_FILTER_KEYS if qp.get(k) not in (None, '')}
 
 
 class GiderV2ListCreateView(APIView):
@@ -174,3 +185,26 @@ class GiderV2DashboardView(APIView):
         if err:
             return err
         return Response(GiderDashboardService().summary(kurum_id, sube_id))
+
+
+class GiderV2OdemeTakibiView(APIView):
+    def get(self, request):
+        kurum_id, err = _require_kurum(request)
+        if err:
+            return err
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
+        if err:
+            return err
+        from shared.sube_access import get_allowed_subeler_for_user
+        allowed_ids = list(
+            get_allowed_subeler_for_user(request.user, kurum_id=int(kurum_id))
+            .values_list('id', flat=True)
+        ) if getattr(request.user, 'is_authenticated', False) else [sube_id]
+        data = GiderOdemeTakibiQueryService().list_paginated(
+            kurum_id, sube_id,
+            filters=_collect_takip_filters(request.query_params),
+            allowed_sube_ids=allowed_ids,
+            page=request.query_params.get('page', 1),
+            page_size=request.query_params.get('page_size', 25),
+        )
+        return Response(data)

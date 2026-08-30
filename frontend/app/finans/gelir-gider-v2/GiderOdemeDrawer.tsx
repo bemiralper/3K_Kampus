@@ -7,7 +7,8 @@ import {
 } from "antd";
 import dayjs from "dayjs";
 import { ggService } from "./gg-v2-api";
-import { GGDropdown, GGListItem, GGOdeme, GGTaksit, TL } from "./gg-v2-types";
+import { GGDropdown, GGListItem, GGOdeme, GGTaksit, TL, odemeDurumRenk } from "./gg-v2-types";
+import { openOdemeBelgesi } from "./gider-belge";
 import { FinansHttpError } from "../services/finans-http";
 import { isCekSenetTip } from "@/lib/finans/paymentMethodUtils";
 import Link from "next/link";
@@ -17,11 +18,12 @@ interface Props {
   open: boolean;
   row: GGListItem | null;
   dropdown: GGDropdown | null;
+  initialTaksitId?: number | null;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved }: Props) {
+export default function GiderOdemeDrawer({ open, row, dropdown, initialTaksitId, onClose, onSaved }: Props) {
   const { message } = AntApp.useApp();
   const { homeHref } = useFinansPath();
   const [form] = Form.useForm();
@@ -35,7 +37,7 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
   const kalan = Number(row?.kalan_tutar ?? 0);
   const net = Number(row?.net_tutar ?? 0);
   const odenen = Number(row?.odenen_toplam ?? 0);
-  const taksitli = (row?.taksit_sayisi ?? 1) > 1;
+  const taksitli = (row?.taksit_sayisi ?? 1) > 1 || (row?.has_odeme_plani ?? false);
   const maliHesapId = Form.useWatch("mali_hesap_id", form) as number | undefined;
   const planYontem = (dropdown?.odeme_yontemleri ?? []).find(
     (o) => o.id === row?.odeme_yontemi?.id,
@@ -64,7 +66,7 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
     try {
       const [od, tk] = await Promise.all([
         ggService.giderOdemeler(row.id),
-        (row.taksit_sayisi ?? 1) > 1 ? ggService.giderTaksitler(row.id) : Promise.resolve([]),
+        ggService.giderTaksitler(row.id),
       ]);
       setOdemeler(od);
       setTaksitler(tk);
@@ -82,6 +84,12 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
     form.setFieldsValue({ tutar: kalan, odeme_tarihi: dayjs(), bakiyeden_mahsup: false });
     loadData();
   }, [open, row, form, kalan, loadData]);
+
+  useEffect(() => {
+    if (!open || !initialTaksitId || taksitler.length === 0) return;
+    const t = taksitler.find((x) => x.id === initialTaksitId);
+    if (t && Number(t.kalan_tutar) > 0) taksitOde(t);
+  }, [open, initialTaksitId, taksitler]);
 
   const taksitOde = (t: GGTaksit) => {
     setSelectedTaksit(t);
@@ -177,7 +185,7 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
         />
       )}
 
-      {taksitli && (
+      {(taksitli || taksitler.length > 0) && (
         <>
           <Divider orientation="left" style={{ fontSize: 13 }}>Taksit Planı ({row?.taksit_sayisi} taksit)</Divider>
           <Table<GGTaksit>
@@ -196,10 +204,7 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
               { title: "Kalan", dataIndex: "kalan_tutar", align: "right", render: (t) => TL(Number(t)) },
               {
                 title: "Durum", dataIndex: "durum_display",
-                render: (_, t) => {
-                  const bitti = Number(t.kalan_tutar) <= 0;
-                  return <Tag color={bitti ? "green" : (t.durum === "geciken" ? "red" : "orange")}>{t.durum_display}</Tag>;
-                },
+                render: (_, t) => <Tag color={odemeDurumRenk(t.durum)}>{t.durum_display}</Tag>,
               },
               {
                 title: "", key: "ode", width: 64,
@@ -344,6 +349,7 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
         pagination={false}
         locale={{ emptyText: "Henüz ödeme yapılmamış." }}
         columns={[
+          { title: "Belge", dataIndex: "odeme_belge_no", render: (v) => v || "—", width: 130 },
           { title: "Tarih", dataIndex: "odeme_tarihi", render: (d) => (d ? dayjs(d).format("DD.MM.YYYY") : "—") },
           { title: "Tutar", dataIndex: "tutar", align: "right", render: (t) => TL(Number(t)) },
           { title: "Yöntem", key: "yontem", render: (_, r) => r.mali_hesap_adi || r.odeme_yontemi_adi || (r.bakiyeden_mahsup ? "Bakiyeden Mahsup" : "—") },
@@ -352,12 +358,21 @@ export default function GiderOdemeDrawer({ open, row, dropdown, onClose, onSaved
             render: (_, r) => <Tag color={r.durum === "iptal" ? "red" : "green"}>{r.durum_display}</Tag>,
           },
           {
-            title: "", key: "islem", width: 70,
-            render: (_, r) => r.durum !== "iptal" ? (
-              <Popconfirm title="Ödeme iptal edilsin mi?" okText="İptal Et" cancelText="Vazgeç" onConfirm={() => iptal(r)}>
-                <Button size="small" type="text" danger>İptal</Button>
-              </Popconfirm>
-            ) : null,
+            title: "", key: "islem", width: 150,
+            render: (_, r) => (
+              <Space size={0}>
+                {r.durum === "tamamlandi" && row && (
+                  <Button size="small" type="link" onClick={() => openOdemeBelgesi(row.id, r.id).catch((e) => message.error(e instanceof Error ? e.message : "Belge açılamadı."))}>
+                    Belge
+                  </Button>
+                )}
+                {r.durum !== "iptal" ? (
+                  <Popconfirm title="Ödeme iptal edilsin mi?" okText="İptal Et" cancelText="Vazgeç" onConfirm={() => iptal(r)}>
+                    <Button size="small" type="text" danger>İptal</Button>
+                  </Popconfirm>
+                ) : null}
+              </Space>
+            ),
           },
         ]}
       />

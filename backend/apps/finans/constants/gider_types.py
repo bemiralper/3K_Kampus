@@ -31,18 +31,22 @@ class GiderDurum:
 class GiderTaksitDurum:
     """Gider taksit durum akışı."""
     BEKLEMEDE = 'beklemede'
+    ILERI_TARIHLI = 'ileri_tarihli'
     KISMI_ODENDI = 'kismi_odendi'
     ODENDI = 'odendi'
     GECIKTI = 'gecikti'
     IPTAL = 'iptal'
 
     CHOICES = [
-        (BEKLEMEDE, 'Beklemede'),
+        (BEKLEMEDE, 'Bekliyor'),
+        (ILERI_TARIHLI, 'İleri Tarihli'),
         (KISMI_ODENDI, 'Kısmi Ödendi'),
         (ODENDI, 'Ödendi'),
-        (GECIKTI, 'Gecikti'),
+        (GECIKTI, 'Gecikmiş'),
         (IPTAL, 'İptal'),
     ]
+
+    ACIK = {BEKLEMEDE, ILERI_TARIHLI, KISMI_ODENDI, GECIKTI}
 
 
 class OdemeDurum:
@@ -84,3 +88,55 @@ class TekrarSikligi:
         (ALTI_AYLIK, '6 Aylık'),
         (YILLIK, 'Yıllık'),
     ]
+
+
+class GiderOdemeDurumu:
+    """Gider kaydı ödeme durumu (hesaplanan; kasa hareketinden bağımsız)."""
+    BEKLIYOR = 'bekliyor'
+    ILERI_TARIHLI = 'ileri_tarihli'
+    KISMI_ODENDI = 'kismi_odendi'
+    ODENDI = 'odendi'
+    GECIKTI = 'gecikti'
+    IPTAL = 'iptal'
+
+    CHOICES = [
+        (BEKLIYOR, 'Bekliyor'),
+        (ILERI_TARIHLI, 'İleri Tarihli'),
+        (KISMI_ODENDI, 'Kısmi Ödendi'),
+        (ODENDI, 'Ödendi'),
+        (GECIKTI, 'Gecikmiş'),
+        (IPTAL, 'İptal'),
+    ]
+
+    LABEL = dict(CHOICES)
+
+
+class GiderOdemeTakibiDurum:
+    """
+    Ödeme Takibi görünümü için satır durumu.
+    Saklanan GiderTaksitDurum'u değiştirmez; vade tarihine göre hesaplanır.
+    """
+    BEKLIYOR = 'bekliyor'
+    ILERI_TARIHLI = 'ileri_tarihli'
+    YAKLASIYOR = 'yaklasiyor'
+    BUGUN = 'bugun'
+    GECIKTI = 'gecikti'
+    KISMI_ODENDI = 'kismi_odendi'
+    ODENDI = 'odendi'
+    IPTAL = 'iptal'
+
+    YAKLASAN_GUN = 7
+
+    CHOICES = [
+        (GECIKTI, 'Gecikmiş'),
+        (BUGUN, 'Bugün'),
+        (YAKLASIYOR, 'Yaklaşıyor'),
+        (BEKLIYOR, 'Bekliyor'),
+        (ILERI_TARIHLI, 'İleri Tarihli'),
+        (KISMI_ODENDI, 'Kısmi Ödendi'),
+        (ODENDI, 'Ödendi'),
+        (IPTAL, 'İptal'),
+    ]
+
+    LABEL = dict(CHOICES)
+    ACIK = {BEKLIYOR, ILERI_TARIHLI, YAKLASIYOR, BUGUN, GECIKTI, KISMI_ODENDI}

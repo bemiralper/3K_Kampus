@@ -1,0 +1,140 @@
+.fn-ph {
+  margin: 0 0 20px;
+}
+
+.fn-ph--tabs {
+  margin-bottom: 4px;
+}
+
+.fn-ph__hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, var(--fn-ph-accent, #0262a7) 0%, var(--fn-ph-accent-end, #0380d4) 100%);
+  border-radius: 16px;
+  padding: 24px 28px;
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--fn-ph-accent, #0262a7) 22%, transparent);
+  color: #fff;
+}
+
+.fn-ph__content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.fn-ph__icon {
+  width: 52px;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.fn-ph__text {
+  min-width: 0;
+}
+
+.fn-ph__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.fn-ph__sub {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.fn-ph__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.fn-ph .tabs-modern {
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+
+.fn-ph .tabs-modern > .tab-modern {
+  font: inherit;
+  appearance: none;
+}
+
+.fn-ph-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.fn-ph-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+.fn-ph-btn--primary {
+  border-color: transparent;
+  background: #fff;
+  color: var(--fn-ph-accent, #0262a7);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+
+.fn-ph-btn--primary:hover {
+  background: #fff;
+  color: var(--fn-ph-accent, #0262a7);
+  filter: brightness(1.02);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  .fn-ph__hero {
+    padding: 18px 16px;
+    border-radius: 14px;
+  }
+
+  .fn-ph__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+
+  .fn-ph__title {
+    font-size: 20px;
+  }
+
+  .fn-ph__actions {
+    width: 100%;
+  }
+
+  .fn-ph-btn {
+    flex: 1;
+  }
+}

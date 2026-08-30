@@ -25,28 +25,9 @@ class GiderService:
 
     @staticmethod
     def _generate_fatura_no(kurum_id):
-        """
-        Otomatik fatura numarası üret.
-        Format: GDR-YYYYMM-NNN  (ör. GDR-202603-001)
-        """
-        from apps.finans.domain.gider_kaydi import GiderKaydi
-        now = timezone.now()
-        prefix = f"GDR-{now.strftime('%Y%m')}-"
-        son_kayit = (
-            GiderKaydi.objects
-            .filter(kurum_id=kurum_id, fatura_no__startswith=prefix)
-            .order_by('-fatura_no')
-            .values_list('fatura_no', flat=True)
-            .first()
-        )
-        if son_kayit:
-            try:
-                son_sira = int(son_kayit.split('-')[-1])
-            except (ValueError, IndexError):
-                son_sira = 0
-        else:
-            son_sira = 0
-        return f"{prefix}{son_sira + 1:03d}"
+        """Eski çağrılar için: Gider İşlem Belge No üretir (GDR-YYYY-000001)."""
+        from apps.finans.application.gider_belge_service import generate_gider_islem_belge_no
+        return generate_gider_islem_belge_no(kurum_id)
 
     @transaction.atomic
     def create(self, data: dict):
@@ -59,9 +40,8 @@ class GiderService:
         if errors:
             return None, errors
 
-        # Fatura no boşsa otomatik üret
-        if not data.get('fatura_no'):
-            data['fatura_no'] = self._generate_fatura_no(data.get('kurum_id'))
+        from apps.finans.application.gider_belge_service import generate_gider_islem_belge_no
+        data['islem_belge_no'] = generate_gider_islem_belge_no(data.get('kurum_id'))
 
         # KDV hesapla (moda göre: haric | dahil | muaf)
         girilen = data.get('brut_tutar', Decimal('0'))
@@ -395,7 +375,7 @@ class GiderService:
             qs = qs.filter(Q(sube_id=sube_id) | Q(sube_id__isnull=True))
         for gider in qs.iterator():
             stale = gider.taksitler.filter(
-                durum__in=[GiderTaksitDurum.BEKLEMEDE, GiderTaksitDurum.KISMI_ODENDI],
+                durum__in=list(GiderTaksitDurum.ACIK),
             ).exists()
             if stale:
                 self.taksitleri_odeme_ile_hizala(gider)

@@ -19,6 +19,7 @@ import {
   turMeta,
 } from "../types/cari-v2-types";
 import CariV2FormDrawer from "./CariV2FormDrawer";
+import FinansPageHeader, { IconCari } from "@/components/finans/FinansPageHeader";
 import "./cari-v2.css";
 
 const TL = (n: number) =>
@@ -227,16 +228,27 @@ export default function CariV2ListClient() {
 
   return (
     <div className="cv2-page">
-      {/* Başlık */}
-      <div className="hero-header">
-        <div className="hero-content">
-          <div>
-            <h1>Cari Hesaplar</h1>
-            <p>Müşteri, tedarikçi, gelir/gider hesapları ve cari takibi</p>
-          </div>
-          <button className="btn-hero" onClick={openCreate}>+ Yeni Cari</button>
-        </div>
-      </div>
+      <FinansPageHeader
+        title="Cari Hesaplar"
+        subtitle="Müşteri, tedarikçi ve cari bakiye takibi"
+        accent="#0262a7"
+        accentEnd="#0380d4"
+        icon={<IconCari />}
+        actions={
+          <button type="button" className="fn-ph-btn fn-ph-btn--primary" onClick={openCreate}>
+            Yeni Cari
+          </button>
+        }
+        tabs={[
+          { key: "", label: "Tümü", count: dashboard?.toplam_cari },
+          ...CARI_V2_TURLERI.map((t) => ({
+            key: t.value,
+            label: `${t.ikon} ${t.label}`,
+          })),
+        ]}
+        activeTab={filters.hesap_turu || ""}
+        onTabChange={(key) => setTurFilter(key as CariV2Turu | "")}
+      />
 
       {/* Dashboard kartları */}
       {dashboard && (
@@ -251,18 +263,6 @@ export default function CariV2ListClient() {
           <Card label="Bekleyen Tahsilat" value={TL(dashboard.bekleyen_tahsilat)} tl />
         </div>
       )}
-
-      {/* Hızlı filtre çipleri */}
-      <div className="cv2-chips">
-        <button className={`cv2-chip ${!filters.hesap_turu ? "cv2-chip--active" : ""}`} onClick={() => setTurFilter("")}>Tümü</button>
-        {CARI_V2_TURLERI.map((t) => (
-          <button key={t.value}
-            className={`cv2-chip ${filters.hesap_turu === t.value ? "cv2-chip--active" : ""}`}
-            onClick={() => setTurFilter(t.value)}>
-            {t.ikon} {t.label}
-          </button>
-        ))}
-      </div>
 
       {/* Araç çubuğu */}
       <div className="cv2-toolbar">

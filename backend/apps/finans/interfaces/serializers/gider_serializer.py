@@ -5,6 +5,7 @@ from rest_framework import serializers
 from apps.finans.domain.gider_kaydi import GiderKaydi
 from apps.finans.domain.gider_taksit import GiderTaksit
 from apps.finans.constants.gider_types import KdvOrani, TekrarSikligi, GiderTaksitDurum
+from apps.finans.application.gider_odeme_durumu import resolve_taksit_durum
 
 
 # ─── Taksit Serializers ─────────────────────────
@@ -19,6 +20,7 @@ class GiderTaksitListSerializer(serializers.ModelSerializer):
     aciklama = serializers.CharField(source='gider_kaydi.aciklama', read_only=True, default='')
     odeme_yontemi_adi = serializers.SerializerMethodField()
     odeme_yontemi_tip = serializers.SerializerMethodField()
+    mali_hesap_adi = serializers.CharField(source='mali_hesap.ad', read_only=True, default='')
 
     class Meta:
         model = GiderTaksit
@@ -27,6 +29,7 @@ class GiderTaksitListSerializer(serializers.ModelSerializer):
             'kalan_tutar', 'aciklama', 'durum', 'durum_display',
             'cari_hesap_adi', 'fatura_no', 'aciklama',
             'odeme_yontemi_id', 'odeme_yontemi_adi', 'odeme_yontemi_tip',
+            'mali_hesap_id', 'mali_hesap_adi', 'odeme_tarihi',
         ]
 
     def get_odeme_yontemi_adi(self, obj):
@@ -40,6 +43,13 @@ class GiderTaksitListSerializer(serializers.ModelSerializer):
             return obj.odeme_yontemi.tip
         gider_yontem = getattr(obj.gider_kaydi, 'odeme_yontemi', None)
         return gider_yontem.tip if gider_yontem else ''
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        live = resolve_taksit_durum(instance)
+        data['durum'] = live
+        data['durum_display'] = dict(GiderTaksitDurum.CHOICES).get(live, live)
+        return data
 
 
 # ─── Gider Kaydı Serializers ────────────────────

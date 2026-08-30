@@ -25,6 +25,7 @@ class GiderOdemeListSerializer(serializers.ModelSerializer):
             'odeme_yontemi_id', 'odeme_yontemi_adi',
             'mali_hesap_id', 'mali_hesap_adi',
             'tutar', 'odeme_tarihi', 'aciklama',
+            'odeme_belge_no',
             'durum', 'durum_display',
             'bakiyeden_mahsup',
             'islem_yapan_adi',

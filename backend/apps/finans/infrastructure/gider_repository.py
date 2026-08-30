@@ -9,6 +9,7 @@ from django.db.models import Sum, Q, F
 from apps.finans.domain.gider_kaydi import GiderKaydi
 from apps.finans.domain.gider_taksit import GiderTaksit
 from apps.finans.constants.gider_types import GiderTaksitDurum
+from apps.finans.application.gider_odeme_durumu import resolve_taksit_durum, resolve_taksit_durum_values
 
 
 class GiderKaydiRepository:
@@ -117,7 +118,7 @@ class GiderKaydiRepository:
             ).count(),
             'geciken_taksit_sayi': GiderTaksit.objects.filter(
                 vade_tarihi__lt=timezone.now().date(),
-                durum__in=[GiderTaksitDurum.BEKLEMEDE, GiderTaksitDurum.KISMI_ODENDI],
+                durum__in=list(GiderTaksitDurum.ACIK),
                 **taksit_filter,
             ).count(),
             'yaklasan_cek_vade_sayi': GiderTaksitRepository.yaklasan_vadeler(
@@ -174,7 +175,7 @@ class GiderTaksitRepository:
                     odenen_tutar=Decimal('0.00'),
                     odeme_yontemi_id=item.get('odeme_yontemi_id') or None,
                     aciklama=(item.get('aciklama') or '')[:255],
-                    durum=GiderTaksitDurum.BEKLEMEDE,
+                    durum=resolve_taksit_durum_values(vade, Decimal(str(item['tutar'])), Decimal('0.00')),
                 ))
             return GiderTaksit.objects.bulk_create(taksitler)
 
@@ -199,7 +200,7 @@ class GiderTaksitRepository:
                 vade_tarihi=vade,
                 tutar=tutar,
                 odenen_tutar=Decimal('0.00'),
-                durum=GiderTaksitDurum.BEKLEMEDE,
+                durum=resolve_taksit_durum_values(vade, tutar, Decimal('0.00')),
             ))
 
         return GiderTaksit.objects.bulk_create(taksitler)
@@ -217,14 +218,25 @@ class GiderTaksitRepository:
 
         taksit.odenen_tutar = toplam
 
-        if taksit.odenen_tutar >= taksit.tutar:
-            taksit.durum = GiderTaksitDurum.ODENDI
-        elif taksit.odenen_tutar > Decimal('0'):
-            taksit.durum = GiderTaksitDurum.KISMI_ODENDI
-        else:
-            taksit.durum = GiderTaksitDurum.BEKLEMEDE
+        taksit.durum = resolve_taksit_durum(taksit)
 
-        taksit.save(update_fields=['odenen_tutar', 'durum', 'updated_at'])
+        son = (
+            GiderOdeme.objects.filter(gider_taksit=taksit, durum=OdemeDurum.TAMAMLANDI)
+            .order_by('-odeme_tarihi', '-id')
+            .first()
+        )
+        if son:
+            taksit.odeme_tarihi = son.odeme_tarihi
+            taksit.mali_hesap_id = son.mali_hesap_id
+            if son.odeme_yontemi_id:
+                taksit.odeme_yontemi_id = son.odeme_yontemi_id
+        else:
+            taksit.odeme_tarihi = None
+
+        taksit.save(update_fields=[
+            'odenen_tutar', 'durum', 'odeme_tarihi', 'mali_hesap_id',
+            'odeme_yontemi_id', 'updated_at',
+        ])
         return taksit
 
     @staticmethod
@@ -235,7 +247,7 @@ class GiderTaksitRepository:
         qs = GiderTaksit.objects.filter(
             gider_kaydi__kurum_id=kurum_id,
             gider_kaydi__durum__in=[GiderDurum.ONAYLANDI, GiderDurum.KISMI_ODENDI],
-            durum__in=[GiderTaksitDurum.BEKLEMEDE, GiderTaksitDurum.KISMI_ODENDI],
+            durum__in=list(GiderTaksitDurum.ACIK),
         ).annotate(
             hesap_kalan=F('tutar') - F('odenen_tutar'),
         ).filter(

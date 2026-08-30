@@ -580,8 +580,12 @@ export default function GelirGiderFormDrawer({
           </Col>
         </Row>
 
-        <Form.Item name="fatura_no" label="Belge / Fatura No">
-          <Input placeholder="Belge no" />
+        <Form.Item
+          name="fatura_no"
+          label={cfg.modul === "gider" ? "Tedarikçi Fatura / Fiş No" : "Belge / Fatura No"}
+          extra={cfg.modul === "gider" ? "Opsiyonel. Sistem belge no (GDR-YYYY-000001) otomatik üretilir; fatura yerine geçmez." : undefined}
+        >
+          <Input placeholder={cfg.modul === "gider" ? "Tedarikçi belge no (opsiyonel)" : "Belge no"} />
         </Form.Item>
 
         {cfg.modul === "gider" && (

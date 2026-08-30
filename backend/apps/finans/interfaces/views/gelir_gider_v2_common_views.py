@@ -9,7 +9,7 @@ from apps.finans.application.finans_v2.rapor_service import FinansV2RaporService
 from apps.finans.application.finans_v2.audit import FinansAuditService
 from apps.finans.application.cari_v2.permissions import cari_effective_permissions
 from apps.finans.constants.cari_types import CariHesapTuru, GelirDurum
-from apps.finans.constants.gider_types import GiderDurum, KdvOrani
+from apps.finans.constants.gider_types import GiderDurum, GiderOdemeDurumu, KdvOrani
 from apps.finans.domain.cari_hesap import CariHesap
 from apps.finans.domain.gelir_kategorisi import GelirKategorisi
 from apps.finans.domain.gider_kategorisi import GiderKategorisi
@@ -221,7 +221,7 @@ class GelirGiderV2ListExportView(APIView):
             toplam_odenen += odenen
             toplam_kalan += kalan
             rows.append({
-                'fatura_no': it.get('fatura_no') or 'Belgesiz',
+                'fatura_no': it.get('belge_no') or it.get('islem_belge_no') or it.get('fatura_no') or 'Belgesiz',
                 'fatura_tarihi': _tr_date(it.get('fatura_tarihi')),
                 'cari': (it.get('cari_hesap') or {}).get('unvan') or '—',
                 'kategori': (it.get(kategori_key) or {}).get('ad') or '—',
@@ -231,7 +231,7 @@ class GelirGiderV2ListExportView(APIView):
                 'kdv_tutar': float(it.get('kdv_tutar') or 0),
                 'odenen': odenen,
                 'kalan': kalan,
-                'durum': it.get('durum_label') or it.get('durum') or '',
+                'durum': it.get('odeme_durumu_label') or it.get('durum_label') or it.get('durum') or '',
             })
 
         title = 'Gider Listesi' if is_gider else 'Gelir Listesi'
@@ -423,6 +423,9 @@ class GelirGiderV2DropdownView(APIView):
                 MaliyetMerkezi.objects.filter(kurum_id=kurum_id, aktif_mi=True).filter(sube_filter).order_by('ad')
             )
             payload['durumlar'] = [{'value': v, 'label': lbl} for v, lbl in GiderDurum.CHOICES]
+            payload['odeme_durumlari'] = [
+                {'value': v, 'label': lbl} for v, lbl in GiderOdemeDurumu.CHOICES
+            ]
         else:
             payload['kategoriler'] = [
                 {'id': k.id, 'ad': k.ad, 'parent_id': k.parent_id}

@@ -31,8 +31,6 @@ import type { ColumnsType } from "antd/es/table";
 import type { MenuProps } from "antd";
 import type { DefaultOptionType } from "antd/es/select";
 import {
-  PlusOutlined,
-  ReloadOutlined,
   FilterOutlined,
   SettingOutlined,
   SearchOutlined,
@@ -44,6 +42,9 @@ import {
   TableOutlined,
   AppstoreOutlined,
   BarsOutlined,
+  EyeOutlined,
+  FileTextOutlined,
+  PrinterOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import Link from "next/link";
@@ -62,15 +63,30 @@ import {
   GGListItem,
   GGModul,
   TL,
+  odemeDurumRenk,
 } from "./gg-v2-types";
 import { ModulConfig, getConfig, ikinciTanimOf, kategoriOf } from "./gg-config";
 import GelirGiderFormDrawer from "./GelirGiderFormDrawer";
 import GiderOdemeDrawer from "./GiderOdemeDrawer";
+import GiderDetayDrawer from "./GiderDetayDrawer";
+import GiderOdemeTakibiPanel from "./GiderOdemeTakibiPanel";
 import GelirTahsilatDrawer from "./GelirTahsilatDrawer";
 import { FinansHttpError } from "../services/finans-http";
 import { DollarOutlined } from "@ant-design/icons";
+import {
+  openGiderIslemBelgesi,
+  openOdemeBelgesi,
+  openOdemePlaniBelgesi,
+} from "./gider-belge";
+import FinansPageHeader, {
+  IconGelir,
+  IconGider,
+  IconTabCalendar,
+  IconTabList,
+} from "@/components/finans/FinansPageHeader";
 
 type ViewMode = "table" | "compact" | "card";
+type PageTab = "giderler" | "odeme_takibi";
 
 interface ColDef {
   key: string;
@@ -101,11 +117,13 @@ const DEFAULT_VISIBLE = [
 ];
 
 const durumRenk = (durum: string): string => {
-  if (durum.includes("tahsil_edildi") || durum.includes("odendi")) return "green";
+  if (durum.includes("ileri")) return "blue";
+  if (durum.includes("gecik")) return "red";
+  if (durum.includes("tahsil_edildi") || (durum.includes("odendi") && !durum.includes("kismi"))) return "green";
   if (durum.includes("kismi")) return "gold";
   if (durum.includes("iptal")) return "red";
   if (durum.includes("onay")) return "blue";
-  return "default";
+  return "orange";
 };
 
 export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
@@ -148,6 +166,11 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<GGListItem | null>(null);
   const [odemeRow, setOdemeRow] = useState<GGListItem | null>(null);
+  const [detayRow, setDetayRow] = useState<GGListItem | null>(null);
+  const [odemeTaksitId, setOdemeTaksitId] = useState<number | null>(null);
+  const [detayTaksitId, setDetayTaksitId] = useState<number | null>(null);
+  const [pageTab, setPageTab] = useState<PageTab>("giderler");
+  const [takipTick, setTakipTick] = useState(0);
   const [savedViews, setSavedViews] = useState<{ ad: string; filters: GGFilters; sort: string }[]>([]);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; row: GGListItem } | null>(null);
 
@@ -228,7 +251,7 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
     return () => window.removeEventListener("click", close);
   }, []);
 
-  const reload = () => { fetchList(); fetchAux(); };
+  const reload = () => { fetchList(); fetchAux(); setTakipTick((n) => n + 1); };
 
   const onDelete = async (row: GGListItem) => {
     try {
@@ -289,7 +312,65 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
 
   const openCreate = () => { setEditing(null); setDrawerOpen(true); };
   const openEdit = (row: GGListItem) => { setEditing(row); setDrawerOpen(true); };
-  const openOdeme = (row: GGListItem) => setOdemeRow(row);
+  const openOdeme = (row: GGListItem, taksitId?: number | null) => {
+    setOdemeTaksitId(taksitId ?? null);
+    setOdemeRow(row);
+  };
+  const openDetay = (row: GGListItem, taksitId?: number | null) => {
+    setDetayTaksitId(taksitId ?? null);
+    setDetayRow(row);
+  };
+
+  const runBelge = async (label: string, fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : `${label} oluşturulamadı.`);
+    }
+  };
+
+  const openOdemeBelgesiForRow = async (row: GGListItem, mode: "view" | "pdf" | "print" = "view") => {
+    try {
+      const odemeler = (await ggService.giderOdemeler(row.id)).filter((o) => o.durum === "tamamlandi");
+      if (!odemeler.length) {
+        message.warning("Ödeme belgesi yalnızca gerçekleşmiş ödemeler için oluşturulur.");
+        return;
+      }
+      const pick = odemeler[0];
+      if (odemeler.length > 1) {
+        modal.confirm({
+          title: "Ödeme belgesi",
+          content: `${odemeler.length} gerçekleşmiş ödeme var. En son ödeme (${pick.odeme_belge_no || DATE(pick.odeme_tarihi)}) açılsın mı?`,
+          okText: "Aç",
+          cancelText: "Vazgeç",
+          onOk: () => runBelge("Ödeme belgesi", () => openOdemeBelgesi(row.id, pick.id, mode)),
+        });
+        return;
+      }
+      await openOdemeBelgesi(row.id, pick.id, mode);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Ödeme belgesi açılamadı.");
+    }
+  };
+
+  const goruntuleMenu = (row: GGListItem): MenuProps["items"] => {
+    const paid = !!(row.has_odeme || Number(row.odenen_toplam) > 0);
+    return [
+      { key: "detay", icon: <EyeOutlined />, label: "Gider Detayı", onClick: () => openDetay(row) },
+      { key: "gider-belge", icon: <FileTextOutlined />, label: "Gider Belgesi", onClick: () => runBelge("Gider belgesi", () => openGiderIslemBelgesi(row.id)) },
+      { key: "plan", icon: <FileTextOutlined />, label: "Ödeme Planı", onClick: () => runBelge("Ödeme planı", () => openOdemePlaniBelgesi(row.id)) },
+      {
+        key: "odeme-belge",
+        icon: <FileTextOutlined />,
+        label: "Ödeme Belgesi",
+        disabled: !paid,
+        onClick: () => { if (paid) openOdemeBelgesiForRow(row); },
+      },
+      { type: "divider" },
+      { key: "pdf", icon: <DownloadOutlined />, label: "PDF Oluştur", onClick: () => runBelge("PDF", () => openGiderIslemBelgesi(row.id, "pdf")) },
+      { key: "print", icon: <PrinterOutlined />, label: "Yazdır", onClick: () => runBelge("Yazdır", () => openGiderIslemBelgesi(row.id, "print")) },
+    ];
+  };
 
   const [exporting, setExporting] = useState(false);
   const doExport = async (fmt: "pdf" | "xlsx" | "csv") => {
@@ -348,7 +429,9 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
         render: (_, r) => (
           <div>
             <div style={{ fontWeight: 600 }}>{r.cari_hesap?.unvan || "—"}</div>
-            <div style={{ fontSize: 12, color: "#94a3b8" }}>{r.fatura_no || "Belgesiz"}</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
+              {r.islem_belge_no || r.belge_no || r.fatura_no || "Belgesiz"}
+            </div>
           </div>
         ),
       },
@@ -371,7 +454,11 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
       },
       {
         title: "Durum", key: "durum",
-        render: (_, r) => <Tag color={durumRenk(r.durum)}>{r.durum_label}</Tag>,
+        render: (_, r) => {
+          const kod = modul === "gider" ? (r.odeme_durumu || r.durum) : r.durum;
+          const label = modul === "gider" ? (r.odeme_durumu_label || r.durum_label) : r.durum_label;
+          return <Tag color={modul === "gider" ? odemeDurumRenk(kod) : durumRenk(r.durum)}>{label}</Tag>;
+        },
       },
       {
         title: "Etiketler", key: "etiketler",
@@ -379,9 +466,14 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
       },
       { title: "Kullanıcı", key: "olusturan", render: (_, r) => r.olusturan || "—" },
       {
-        title: "", key: "islemler", fixed: screens.md ? "right" : undefined, width: 120,
+        title: "", key: "islemler", fixed: screens.md ? "right" : undefined, width: 160,
         render: (_, r) => (
           <Space size={2} onClick={(e) => e.stopPropagation()}>
+            {modul === "gider" && (
+              <Dropdown menu={{ items: goruntuleMenu(r) }} trigger={["click"]}>
+                <Button size="small" type="text" icon={<EyeOutlined />}>Görüntüle</Button>
+              </Dropdown>
+            )}
             {modul === "gider" && r.odenebilir_mi && (
               <Tooltip title="Öde">
                 <Button size="small" type="text" style={{ color: "#16a34a" }} icon={<DollarOutlined />} onClick={() => openOdeme(r)} />
@@ -463,25 +555,27 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
 
   return (
     <div style={{ padding: "4px 4px 40px" }}>
-      {/* Başlık */}
-      <div
-        style={{
-          background: `linear-gradient(120deg, ${cfg.renk}0d, #ffffff)`,
-          border: "1px solid #eef2f7", borderRadius: 16, padding: "18px 22px", marginBottom: 16,
-          display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12,
-        }}
-      >
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>{cfg.baslik}</h1>
-          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: 13 }}>{cfg.altBaslik}</p>
-        </div>
-        <Space wrap>
-          <Button icon={<ReloadOutlined />} onClick={reload}>Yenile</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            Yeni {modul === "gider" ? "Gider" : "Gelir"}
-          </Button>
-        </Space>
-      </div>
+      <FinansPageHeader
+        title={cfg.baslik}
+        subtitle={cfg.altBaslik}
+        accent={cfg.renk}
+        accentEnd={modul === "gider" ? "#f43f5e" : "#10b981"}
+        icon={modul === "gider" ? <IconGider /> : <IconGelir />}
+        actions={
+          <>
+            <button type="button" className="fn-ph-btn" onClick={reload}>Yenile</button>
+            <button type="button" className="fn-ph-btn fn-ph-btn--primary" onClick={openCreate}>
+              Yeni {modul === "gider" ? "Gider" : "Gelir"}
+            </button>
+          </>
+        }
+        tabs={modul === "gider" ? [
+          { key: "giderler", label: "Giderler", icon: <IconTabList /> },
+          { key: "odeme_takibi", label: "Ödeme Takibi", icon: <IconTabCalendar /> },
+        ] : undefined}
+        activeTab={pageTab}
+        onTabChange={(key) => setPageTab(key as PageTab)}
+      />
 
       {!subeId && (
         <Alert
@@ -493,6 +587,17 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
         />
       )}
 
+      {modul === "gider" && pageTab === "odeme_takibi" ? (
+        <GiderOdemeTakibiPanel
+          kurumId={kurumId}
+          subeId={subeId}
+          reloadTick={takipTick}
+          kategoriler={dropdown?.kategoriler ?? []}
+          onOpenDetay={openDetay}
+          onOpenOde={openOdeme}
+        />
+      ) : (
+      <>
       {/* Dashboard kartları */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         {cfg.kartlar.map((k) => (
@@ -624,10 +729,19 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
               <Col key={r.id} xs={24} sm={12} lg={8} xl={6}>
                 <Card
                   size="small" hoverable
-                  onClick={() => openEdit(r)}
+                  onClick={() => (modul === "gider" ? openDetay(r) : openEdit(r))}
                   title={<span style={{ fontSize: 14 }}>{r.cari_hesap?.unvan || "—"}</span>}
-                  extra={<Tag color={durumRenk(r.durum)}>{r.durum_label}</Tag>}
+                  extra={<Tag color={modul === "gider" ? odemeDurumRenk(r.odeme_durumu || r.durum) : durumRenk(r.durum)}>{modul === "gider" ? (r.odeme_durumu_label || r.durum_label) : r.durum_label}</Tag>}
                   actions={[
+                    ...(modul === "gider"
+                      ? [
+                          <Dropdown key="view" menu={{ items: goruntuleMenu(r) }} trigger={["click"]}>
+                            <Button type="text" size="small" icon={<EyeOutlined />} onClick={(e) => e.stopPropagation()}>
+                              Görüntüle
+                            </Button>
+                          </Dropdown>,
+                        ]
+                      : []),
                     ...((modul === "gider" ? r.odenebilir_mi : r.tahsil_edilebilir_mi)
                       ? [
                           <Button
@@ -733,6 +847,8 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
           }}
         />
       )}
+      </>
+      )}
 
       {/* Sağ tık menüsü */}
       {ctxMenu && (
@@ -741,7 +857,10 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
           onClick={(e) => e.stopPropagation()}
         >
           <Card size="small" styles={{ body: { padding: 4 } }} style={{ boxShadow: "0 6px 24px rgba(0,0,0,0.15)" }}>
-            <Space direction="vertical" size={0} style={{ width: 160 }}>
+            <Space direction="vertical" size={0} style={{ width: 180 }}>
+              {modul === "gider" && (
+                <Button type="text" block style={{ textAlign: "left" }} icon={<EyeOutlined />} onClick={() => { openDetay(ctxMenu.row); setCtxMenu(null); }}>Görüntüle</Button>
+              )}
               {modul === "gider" && ctxMenu.row.odenebilir_mi && (
                 <Button type="text" block style={{ textAlign: "left", color: "#16a34a" }} icon={<DollarOutlined />} onClick={() => { openOdeme(ctxMenu.row); setCtxMenu(null); }}>Öde</Button>
               )}
@@ -787,8 +906,19 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
           open={!!odemeRow}
           row={odemeRow}
           dropdown={dropdown}
-          onClose={() => setOdemeRow(null)}
+          initialTaksitId={odemeTaksitId}
+          onClose={() => { setOdemeRow(null); setOdemeTaksitId(null); }}
           onSaved={reload}
+        />
+      )}
+      {modul === "gider" && (
+        <GiderDetayDrawer
+          open={!!detayRow}
+          row={detayRow}
+          highlightTaksitId={detayTaksitId}
+          onClose={() => { setDetayRow(null); setDetayTaksitId(null); }}
+          onOde={openOdeme}
+          onReload={reload}
         />
       )}
       {modul === "gelir" && (
@@ -957,8 +1087,10 @@ function FilterDrawer({
             onChange={(v) => upd(cfg.durumFilterKey, v)}
             options={[
               { value: "bekleyen", label: "Bekleyen" },
-              { value: "kismi", label: "Kısmi" },
-              { value: "tamamlanan", label: "Tamamlanan" },
+              { value: "ileri_tarihli", label: "İleri Tarihli" },
+              { value: "kismi", label: "Kısmi Ödendi" },
+              { value: "gecikti", label: "Gecikmiş" },
+              { value: "tamamlanan", label: "Ödendi" },
             ]}
           />
         </Field>
