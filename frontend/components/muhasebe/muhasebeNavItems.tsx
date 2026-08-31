@@ -25,6 +25,8 @@ export type MuhasebeNavChildDef = {
   label: string;
   matchPrefix?: string;
   group?: string;
+  /** Next.js client router yerine tam sayfa yükle (parallelRoutes atmasını önler). */
+  hardNav?: boolean;
 };
 
 export type MuhasebeNavItemDef = {
@@ -61,6 +63,7 @@ export const MUHASEBE_FINANS_CHILDREN: MuhasebeNavChildDef[] = [
     href: `${MUHASEBE_FINANS_BASE}/tahsilat-raporlar`,
     label: "Raporlar",
     matchPrefix: `${MUHASEBE_FINANS_BASE}/tahsilat-raporlar`,
+    hardNav: true,
   },
   {
     id: "gelir-v2",
