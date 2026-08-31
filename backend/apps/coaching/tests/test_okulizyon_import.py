@@ -80,8 +80,9 @@ class PersistCatalogTest(TestCase):
         fen = Subject.objects.get(code='FEN')
         match_meb = _match_single_text('8.1.1.1', fen)
         self.assertIsNotNone(match_meb)
-        self.assertEqual(match_meb['outcome_code'], '8.1.1')
+        self.assertEqual(match_meb['outcome_code'], '8.1.1.1')
         self.assertEqual(match_meb['match_type'], 'sub_outcome')
+        self.assertIsNotNone(match_meb['sub_outcome_id'])
 
     def test_relinks_legacy_subject(self):
         old = Subject.objects.create(

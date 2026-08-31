@@ -285,6 +285,10 @@ def _build_answer_grids(exam, comparison: dict) -> list:
 
 
 def _outcome_label(item) -> str:
+    if getattr(item, 'sub_outcome_id', None):
+        label = (getattr(item.sub_outcome, 'text', '') or '').strip()
+        if label:
+            return label
     if item.outcome_id:
         label = (item.outcome.text or '').strip()
         if not label and getattr(item.outcome, 'topic_id', None):
@@ -312,7 +316,7 @@ def _topic_items_for_booklet(exam, booklet: str):
     outcome almaz. B öğrencisi için A item + b_question_number kullanılır.
     """
     ak = _pick_answer_key(exam, booklet)
-    related = ('section', 'section__parent_section', 'outcome__topic')
+    related = ('section', 'section__parent_section', 'outcome__topic', 'sub_outcome')
     items = []
     if ak:
         items = list(
@@ -1476,7 +1480,9 @@ def exam_analysis_questions(request, exam_pk):
     if not answer_key:
         return Response({'error': 'Cevap anahtarı bulunamadı.'}, status=400)
 
-    ak_items = AnswerKeyItem.objects.filter(answer_key=answer_key).select_related('section', 'outcome')
+    ak_items = AnswerKeyItem.objects.filter(answer_key=answer_key).select_related(
+        'section', 'outcome', 'sub_outcome',
+    )
     if section_id:
         ak_items = ak_items.filter(section_id=section_id)
     ak_items = ak_items.order_by('question_number')
@@ -1493,8 +1499,8 @@ def exam_analysis_questions(request, exam_pk):
             'section_id': item.section_id,
             'section_name': item.section.name,
             'outcome_id': item.outcome_id,
-            'outcome_code': item.outcome.code if item.outcome else '',
-            'outcome_text': item.outcome.text if item.outcome else '',
+            'outcome_code': item.display_outcome_code(),
+            'outcome_text': item.display_outcome_text(),
             'choices': {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0, 'EMPTY': 0},
             'correct_count': 0,
             'wrong_count': 0,

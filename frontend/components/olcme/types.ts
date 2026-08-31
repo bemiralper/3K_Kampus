@@ -342,6 +342,7 @@ export interface AnswerKeyItem {
   section: number;
   section_name: string;
   outcome: number | null;
+  sub_outcome: number | null;
   outcome_code: string;
   outcome_text: string;
   imported_outcome_text: string;
@@ -364,6 +365,7 @@ export interface BulkAnswerKeyRow {
   correct_answer: AnswerChoice;
   is_cancelled?: boolean;
   outcome_id?: number | null;
+  sub_outcome_id?: number | null;
   imported_outcome_text?: string;
   b_question_number?: number | null;
 }
@@ -389,6 +391,8 @@ export interface OutcomeItem {
   is_active?: boolean;
   sub_outcomes?: SubOutcomeItem[];
   sub_outcome_count?: number;
+  /** Seçim bir alt kazanımsa: üst kazanım id'si `id`, bu alan alt kayıt id'si. */
+  sub_outcome_id?: number | null;
 }
 
 export interface TopicItem {
@@ -425,6 +429,7 @@ export interface SubjectItem {
 export interface MatchResult {
   input_text: string;
   outcome_id: number | null;
+  sub_outcome_id?: number | null;
   outcome_code: string | null;
   outcome_text: string | null;
   topic_name: string | null;

@@ -15,19 +15,26 @@ from ..models import AnswerKey, AnswerKeyItem, ExamSection, Outcome
 
 class AnswerKeyItemSerializer(serializers.ModelSerializer):
     section_name = serializers.CharField(source='section.name', read_only=True)
-    outcome_code = serializers.CharField(source='outcome.code', read_only=True, default='')
-    outcome_text = serializers.CharField(source='outcome.text', read_only=True, default='')
+    outcome_code = serializers.SerializerMethodField()
+    outcome_text = serializers.SerializerMethodField()
 
     class Meta:
         model = AnswerKeyItem
         fields = [
             'id', 'question_number', 'correct_answer',
             'is_cancelled', 'section', 'section_name',
-            'outcome', 'outcome_code', 'outcome_text',
+            'outcome', 'sub_outcome',
+            'outcome_code', 'outcome_text',
             'imported_outcome_text',
             'b_question_number',
         ]
         read_only_fields = ['id']
+
+    def get_outcome_code(self, obj):
+        return obj.display_outcome_code()
+
+    def get_outcome_text(self, obj):
+        return obj.display_outcome_text()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -62,6 +69,7 @@ class BulkAnswerKeyItemRow(serializers.Serializer):
     )
     is_cancelled    = serializers.BooleanField(default=False)
     outcome_id      = serializers.IntegerField(required=False, allow_null=True, default=None)
+    sub_outcome_id  = serializers.IntegerField(required=False, allow_null=True, default=None)
     imported_outcome_text = serializers.CharField(
         required=False, allow_blank=True, default='',
         help_text='Cevap anahtarı import edilirken yapıştırılan orijinal kazanım kodu veya metni',

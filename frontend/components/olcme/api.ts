@@ -544,7 +544,7 @@ export const answerKeyApi = {
     ),
 
   /** Tekil soru güncelle */
-  updateItem: (examId: number, akId: number, data: { item_id: number; correct_answer?: string; outcome_id?: number | null; is_cancelled?: boolean; imported_outcome_text?: string }) =>
+  updateItem: (examId: number, akId: number, data: { item_id: number; correct_answer?: string; outcome_id?: number | null; sub_outcome_id?: number | null; is_cancelled?: boolean; imported_outcome_text?: string }) =>
     request<AnswerKeyItem>(
       `${BASE}/${examId}/answer-keys/${akId}/update-item/`,
       { method: 'PATCH', body: JSON.stringify(data) },

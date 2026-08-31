@@ -29,6 +29,7 @@ interface OutcomeRow {
   imported_outcome_text: string;
   // Mevcut eşleşmiş kazanım
   outcome_id: number | null;
+  sub_outcome_id: number | null;
   outcome_code: string;
   outcome_text: string;
   // Konu bilgisi (outcome → topic)
@@ -243,6 +244,7 @@ export default function OutcomesTab({ exam }: Props) {
             section_name: item.section_name,
             imported_outcome_text: item.imported_outcome_text || '',
             outcome_id: item.outcome,
+            sub_outcome_id: item.sub_outcome ?? null,
             outcome_code: item.outcome_code || '',
             outcome_text: item.outcome_text || '',
             topic_name: topicName,
@@ -298,6 +300,7 @@ export default function OutcomesTab({ exam }: Props) {
       next[rowIdx] = {
         ...next[rowIdx],
         outcome_id: outcome?.id ?? null,
+        sub_outcome_id: outcome?.sub_outcome_id ?? null,
         outcome_code: outcome?.code ?? '',
         outcome_text: outcome?.text ?? '',
         topic_name: topicName,
@@ -313,6 +316,7 @@ export default function OutcomesTab({ exam }: Props) {
         await answerKeyApi.updateItem(exam.id, primary.id, {
           item_id: row.item_id,
           outcome_id: outcome?.id ?? null,
+          sub_outcome_id: outcome?.sub_outcome_id ?? null,
         });
       } catch (err) {
         console.error('updateItem error:', err);
@@ -385,6 +389,7 @@ export default function OutcomesTab({ exam }: Props) {
           newRows[idx] = {
             ...newRows[idx],
             outcome_id: result.outcome_id,
+            sub_outcome_id: result.sub_outcome_id ?? null,
             outcome_code: result.outcome_code ?? '',
             outcome_text: result.outcome_text ?? '',
             topic_name: result.topic_name ?? '',
@@ -398,6 +403,7 @@ export default function OutcomesTab({ exam }: Props) {
               await answerKeyApi.updateItem(exam.id, primary.id, {
                 item_id: row.item_id,
                 outcome_id: result.outcome_id,
+                sub_outcome_id: result.sub_outcome_id ?? null,
                 imported_outcome_text: result.input_text,
               });
             } catch { /* devam */ }
@@ -453,6 +459,7 @@ export default function OutcomesTab({ exam }: Props) {
         newRows[i] = {
           ...newRows[i],
           outcome_id: null,
+          sub_outcome_id: null,
           outcome_code: '',
           outcome_text: '',
           topic_name: '',
@@ -463,6 +470,7 @@ export default function OutcomesTab({ exam }: Props) {
             await answerKeyApi.updateItem(exam.id, primary.id, {
               item_id: newRows[i].item_id,
               outcome_id: null,
+              sub_outcome_id: null,
             });
           } catch { /* devam */ }
         }
@@ -825,6 +833,7 @@ export default function OutcomesTab({ exam }: Props) {
           onSelect={o => handleSetOutcome(pickerRowIdx, o)}
           onClose={() => setPickerOpen(false)}
           currentOutcomeId={rows[pickerRowIdx]?.outcome_id ?? null}
+          currentSubOutcomeId={rows[pickerRowIdx]?.sub_outcome_id ?? null}
           questionNumber={rows[pickerRowIdx]?.question_number ?? 0}
         />
       )}
@@ -928,7 +937,7 @@ export default function OutcomesTab({ exam }: Props) {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function OutcomePickerModal({
-  section, search, onSearch, onSelect, onClose, currentOutcomeId, questionNumber,
+  section, search, onSearch, onSelect, onClose, currentOutcomeId, currentSubOutcomeId, questionNumber,
 }: {
   section: SubSectionInfo | null;
   search: string;
@@ -936,6 +945,7 @@ function OutcomePickerModal({
   onSelect: (o: OutcomeItem) => void;
   onClose: () => void;
   currentOutcomeId: number | null;
+  currentSubOutcomeId: number | null;
   questionNumber: number;
 }) {
   const lower = search.toLowerCase();
@@ -949,7 +959,11 @@ function OutcomePickerModal({
         !lower ||
         o.code.toLowerCase().includes(lower) ||
         o.text.toLowerCase().includes(lower) ||
-        topic.name.toLowerCase().includes(lower)
+        topic.name.toLowerCase().includes(lower) ||
+        (o.sub_outcomes ?? []).some(sub =>
+          sub.code.toLowerCase().includes(lower) ||
+          sub.text.toLowerCase().includes(lower),
+        )
       ),
     }))
     .filter(t => t.outcomes.length > 0);
@@ -1004,20 +1018,46 @@ function OutcomePickerModal({
               {filteredTopics.map(topic => (
                 <div key={topic.id} className={s.outcomeGroup}>
                   <div className={s.outcomeGroupTitle}>📖 {topic.name}</div>
-                  {topic.outcomes.map(o => (
-                    <button
-                      key={o.id}
-                      className={`${s.outcomeOption} ${o.id === currentOutcomeId ? s.otOptionActive : ''}`}
-                      onClick={() => onSelect(o)}
-                      style={{ marginLeft: 8 }}
-                    >
-                      <strong>{o.code}</strong>
-                      {o.text}
-                      {o.id === currentOutcomeId && (
-                        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--primary)' }}>● Mevcut</span>
-                      )}
-                    </button>
-                  ))}
+                  {topic.outcomes.map(o => {
+                    const parentActive = o.id === currentOutcomeId && !currentSubOutcomeId;
+                    return (
+                      <div key={o.id}>
+                        <button
+                          className={`${s.outcomeOption} ${parentActive ? s.otOptionActive : ''}`}
+                          onClick={() => onSelect({ ...o, sub_outcome_id: null })}
+                          style={{ marginLeft: 8 }}
+                        >
+                          <strong>{o.code}</strong>
+                          {o.text}
+                          {parentActive && (
+                            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--primary)' }}>● Mevcut</span>
+                          )}
+                        </button>
+                        {(o.sub_outcomes ?? []).map(sub => {
+                          const subActive = sub.id === currentSubOutcomeId;
+                          return (
+                            <button
+                              key={sub.id}
+                              className={`${s.outcomeOption} ${subActive ? s.otOptionActive : ''}`}
+                              onClick={() => onSelect({
+                                id: o.id,
+                                code: sub.code,
+                                text: sub.text,
+                                sub_outcome_id: sub.id,
+                              })}
+                              style={{ marginLeft: 24 }}
+                            >
+                              <strong>{sub.code}</strong>
+                              {sub.text}
+                              {subActive && (
+                                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--primary)' }}>● Mevcut</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </>

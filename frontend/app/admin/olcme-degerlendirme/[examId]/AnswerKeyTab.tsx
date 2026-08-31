@@ -23,6 +23,7 @@ interface GridRow {
   section_id: number;
   section_name: string;
   outcome_id: number | null;
+  sub_outcome_id: number | null;
   outcome_code: string;
   outcome_text: string;
   imported_outcome_text: string;
@@ -38,44 +39,59 @@ function normalizeAnswer(val: string): AnswerChoice {
   return '' as AnswerChoice;
 }
 
-/** Tüm kazanımları düz listeye çevir (Subject → Topic → Outcome) */
+/** Tüm kazanımları düz listeye çevir (Subject → Topic → Outcome + Alt Kazanım) */
 function flattenOutcomes(subjects: SubjectItem[]): OutcomeItem[] {
   const flat: OutcomeItem[] = [];
   for (const subj of subjects) {
-    // Yeni yapı: Subject → Topic → Outcome
     const topics = subj.topics ?? [];
     for (const topic of topics) {
-      for (const o of topic.outcomes) {
-        flat.push(o);
+      for (const o of topic.outcomes ?? []) {
+        flat.push({ ...o, sub_outcome_id: null });
+        for (const sub of o.sub_outcomes ?? []) {
+          flat.push({
+            id: o.id,
+            code: sub.code,
+            text: sub.text,
+            sub_outcome_id: sub.id,
+          });
+        }
       }
     }
   }
   return flat;
 }
 
+function isDottedCode(value: string): boolean {
+  return /^\d+(?:\.\d+)+$/.test(value.trim());
+}
+
 /**
  * Kazanım metnine/koduna göre en iyi eşleşmeyi bul.
- * Öncelik: tam code → tam text → code içerme → text içerme
+ * Noktalı kod (10.3.1.3) yalnızca tam eşleşir; üst kod (10.3.1) prefix sayılmaz.
  */
 function findOutcomeByText(input: string, allOutcomes: OutcomeItem[]): OutcomeItem | null {
   if (!input.trim()) return null;
   const q = input.trim().toLowerCase();
 
-  // 1) Tam eşleşme — code
   const byCodeExact = allOutcomes.find(o => o.code.toLowerCase() === q);
   if (byCodeExact) return byCodeExact;
 
-  // 2) Tam eşleşme — text
+  const compact = q.replace(/\./g, '');
+  const byCompact = allOutcomes.find(
+    o => o.code.toLowerCase().replace(/\./g, '') === compact,
+  );
+  if (byCompact) return byCompact;
+
+  if (isDottedCode(q)) return null;
+
   const byTextExact = allOutcomes.find(o => o.text.toLowerCase() === q);
   if (byTextExact) return byTextExact;
 
-  // 3) Code başlangıç veya içerme
   const byCodeIncludes = allOutcomes.find(
     o => o.code.toLowerCase().includes(q) || q.includes(o.code.toLowerCase()),
   );
   if (byCodeIncludes) return byCodeIncludes;
 
-  // 4) Text içerme — giriş metni kazanımda var mı VEYA kazanım metni girişte var mı
   const byTextIncludes = allOutcomes.find(
     o => o.text.toLowerCase().includes(q) || q.includes(o.text.toLowerCase()),
   );
@@ -160,6 +176,7 @@ export default function AnswerKeyTab({ exam }: Props) {
           section_id: sec.id,
           section_name: sec.name,
           outcome_id: null,
+          sub_outcome_id: null,
           outcome_code: '',
           outcome_text: '',
           imported_outcome_text: '',
@@ -192,6 +209,7 @@ export default function AnswerKeyTab({ exam }: Props) {
             section_id: item.section,
             section_name: item.section_name,
             outcome_id: item.outcome,
+            sub_outcome_id: item.sub_outcome ?? null,
             outcome_code: item.outcome_code || '',
             outcome_text: item.outcome_text || '',
             imported_outcome_text: item.imported_outcome_text || '',
@@ -321,6 +339,7 @@ export default function AnswerKeyTab({ exam }: Props) {
         newRows[i] = {
           ...newRows[i],
           outcome_id: found.id,
+          sub_outcome_id: found.sub_outcome_id ?? null,
           outcome_code: found.code,
           outcome_text: found.text,
         };
@@ -369,6 +388,7 @@ export default function AnswerKeyTab({ exam }: Props) {
       next[idx] = {
         ...next[idx],
         outcome_id: outcome?.id ?? null,
+        sub_outcome_id: outcome?.sub_outcome_id ?? null,
         outcome_code: outcome?.code ?? '',
         outcome_text: outcome?.text ?? '',
       };
@@ -390,6 +410,7 @@ export default function AnswerKeyTab({ exam }: Props) {
         correct_answer: r.correct_answer,
         is_cancelled: r.is_cancelled,
         outcome_id: r.outcome_id,
+        sub_outcome_id: r.sub_outcome_id,
         imported_outcome_text: r.imported_outcome_text,
         b_question_number: r.b_question_number,
       }));
@@ -972,7 +993,11 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
                   !lower ||
                   o.code.toLowerCase().includes(lower) ||
                   o.text.toLowerCase().includes(lower) ||
-                  topic.name.toLowerCase().includes(lower)
+                  topic.name.toLowerCase().includes(lower) ||
+                  (o.sub_outcomes ?? []).some(sub =>
+                    sub.code.toLowerCase().includes(lower) ||
+                    sub.text.toLowerCase().includes(lower),
+                  )
                 ),
               }))
               .filter(t => t.outcomes.length > 0);
@@ -988,15 +1013,32 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
                       {topic.name}
                     </div>
                     {topic.outcomes.map(o => (
-                      <button
-                        key={o.id}
-                        className={s.outcomeOption}
-                        onClick={() => onSelect(o)}
-                        style={{ marginLeft: 8 }}
-                      >
-                        <strong>{o.code}</strong>
-                        {o.text}
-                      </button>
+                      <div key={o.id}>
+                        <button
+                          className={s.outcomeOption}
+                          onClick={() => onSelect({ ...o, sub_outcome_id: null })}
+                          style={{ marginLeft: 8 }}
+                        >
+                          <strong>{o.code}</strong>
+                          {o.text}
+                        </button>
+                        {(o.sub_outcomes ?? []).map(sub => (
+                          <button
+                            key={sub.id}
+                            className={s.outcomeOption}
+                            onClick={() => onSelect({
+                              id: o.id,
+                              code: sub.code,
+                              text: sub.text,
+                              sub_outcome_id: sub.id,
+                            })}
+                            style={{ marginLeft: 24 }}
+                          >
+                            <strong>{sub.code}</strong>
+                            {sub.text}
+                          </button>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 ))}

@@ -79,6 +79,13 @@ class AnswerKeyItem(models.Model):
         related_name='answer_key_items',
         verbose_name='Kazanım',
     )
+    sub_outcome = models.ForeignKey(
+        'olcme_degerlendirme.SubOutcome',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='answer_key_items',
+        verbose_name='Alt Kazanım',
+    )
 
     # Sınav yüklenirken girilen orijinal kazanım kodu/metni
     imported_outcome_text = models.CharField(
@@ -100,6 +107,26 @@ class AnswerKeyItem(models.Model):
         verbose_name_plural = 'Cevap Anahtarı Satırları'
         ordering = ['answer_key', 'question_number']
         unique_together = [('answer_key', 'question_number')]
+
+    def display_outcome_code(self) -> str:
+        """Görünen kod: alt kazanım varsa onun kodu, yoksa üst kazanım."""
+        if self.sub_outcome_id:
+            code = getattr(self.sub_outcome, 'code', '') or ''
+            if code:
+                return code
+        if self.outcome_id:
+            return getattr(self.outcome, 'code', '') or ''
+        return ''
+
+    def display_outcome_text(self) -> str:
+        """Görünen metin: alt kazanım varsa onun metni, yoksa üst kazanım."""
+        if self.sub_outcome_id:
+            text = getattr(self.sub_outcome, 'text', '') or ''
+            if text:
+                return text
+        if self.outcome_id:
+            return getattr(self.outcome, 'text', '') or ''
+        return ''
 
     def __str__(self):
         return f'Soru {self.question_number}: {self.correct_answer}'
