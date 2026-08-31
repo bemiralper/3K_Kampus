@@ -408,7 +408,7 @@ function fontSizeForColumns(colCount: number, orientation: PdfOrientation): numb
   return 10;
 }
 
-function useHorizontalBreak(colCount: number, orientation: PdfOrientation): boolean {
+function needsHorizontalPageBreak(colCount: number, orientation: PdfOrientation): boolean {
   return colCount > (orientation === 'landscape' ? 10 : 7);
 }
 
@@ -420,7 +420,7 @@ function tableLayoutOptions(
 ) {
   const totalCols = keys.length + 1;
   const tableFontSize = fontSizeForColumns(totalCols, orientation);
-  const wide = useHorizontalBreak(totalCols, orientation);
+  const wide = needsHorizontalPageBreak(totalCols, orientation);
   const nameIndex = keys.findIndex((key) => key === 'tam_ad' || key === 'ogrenci');
   return {
     showHead: 'everyPage' as const,
