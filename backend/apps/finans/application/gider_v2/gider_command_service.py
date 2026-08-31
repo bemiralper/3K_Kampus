@@ -86,8 +86,22 @@ class GiderCommandService:
         return gider, None
 
     @transaction.atomic
-    def iptal_et(self, gider_id, *, islem_yapan=None, ip_adresi=None):
-        gider, errors = self.base.iptal_et(gider_id)
+    def onay_kaldir(self, gider_id, *, islem_yapan=None, ip_adresi=None):
+        gider, errors = self.base.onay_kaldir(gider_id)
+        if errors:
+            return None, errors
+        FinansAuditService.log(
+            kurum_id=gider.kurum_id, sube_id=gider.sube_id,
+            modul=FinansModul.GIDER, eylem=FinansEylem.GUNCELLE,
+            kayit_tip='GiderKaydi', kayit_id=gider.pk,
+            aciklama=f'Gider onayı kaldırıldı: {gider.fatura_no}',
+            tutar=gider.net_tutar, kullanici=islem_yapan, ip_adresi=ip_adresi,
+        )
+        return gider, None
+
+    @transaction.atomic
+    def iptal_et(self, gider_id, *, islem_yapan=None, ip_adresi=None, force=False):
+        gider, errors = self.base.iptal_et(gider_id, force=force)
         if errors:
             return None, errors
         FinansAuditService.log(
@@ -99,8 +113,8 @@ class GiderCommandService:
         )
         return gider, None
 
-    def soft_delete(self, gider_id, *, islem_yapan=None, ip_adresi=None):
-        gider, errors = self.base.soft_delete(gider_id)
+    def soft_delete(self, gider_id, *, islem_yapan=None, ip_adresi=None, force=False):
+        gider, errors = self.base.soft_delete(gider_id, force=force)
         if errors:
             return None, errors
         FinansAuditService.log(

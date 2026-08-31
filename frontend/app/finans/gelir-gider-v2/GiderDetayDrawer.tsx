@@ -263,16 +263,39 @@ export default function GiderDetayDrawer({ open, row, highlightTaksitId, onClose
               { title: "Tutar", dataIndex: "tutar", align: "right", render: (v) => TL(v) },
               { title: "Yöntem", render: (_, o) => o.odeme_yontemi_adi || (o.bakiyeden_mahsup ? "Mahsup" : "—") },
               {
-                title: "", key: "gor", width: 130,
-                render: (_, o) => o.durum === "tamamlandi" ? (
-                  <Button
-                    size="small" type="link"
-                    loading={busy === `od-${o.id}`}
-                    onClick={() => run(`od-${o.id}`, () => openOdemeBelgesi(d.id, o.id))}
-                  >
-                    Ödeme Belgesi
-                  </Button>
-                ) : null,
+                title: "", key: "gor", width: 180,
+                render: (_, o) => (
+                  <Space size={0}>
+                    {o.durum === "tamamlandi" ? (
+                      <Button
+                        size="small" type="link"
+                        loading={busy === `od-${o.id}`}
+                        onClick={() => run(`od-${o.id}`, () => openOdemeBelgesi(d.id, o.id))}
+                      >
+                        Belge
+                      </Button>
+                    ) : null}
+                    {o.durum !== "iptal" ? (
+                      <Popconfirm
+                        title="Ödeme iptal edilsin mi? Kasa/cari hareket geri alınır."
+                        okText="İptal Et"
+                        cancelText="Vazgeç"
+                        onConfirm={async () => {
+                          try {
+                            await ggService.giderOdemeIptal(o.id);
+                            message.success("Ödeme iptal edildi.");
+                            await load();
+                            onReload();
+                          } catch (e) {
+                            message.error(e instanceof FinansHttpError ? e.message : "İptal edilemedi.");
+                          }
+                        }}
+                      >
+                        <Button size="small" type="text" danger>İptal</Button>
+                      </Popconfirm>
+                    ) : null}
+                  </Space>
+                ),
               },
             ]}
           />

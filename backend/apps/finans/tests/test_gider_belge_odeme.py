@@ -23,7 +23,7 @@ from apps.finans.application.gider_service import GiderService
 from apps.finans.application.gider_v2.gider_query_service import GiderQueryService
 from apps.finans.constants.account_types import MaliHesapTipi
 from apps.finans.constants.cari_types import CariHesapTuru
-from apps.finans.constants.gider_types import GiderOdemeDurumu, GiderTaksitDurum, OdemeDurum
+from apps.finans.constants.gider_types import GiderDurum, GiderOdemeDurumu, GiderTaksitDurum, OdemeDurum
 from apps.finans.constants.hareket_types import HareketKaynagi, HareketYonu
 from apps.finans.constants.payment_types import OdemeYontemiTipi
 from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
@@ -241,6 +241,19 @@ class GiderBelgeOdemeTest(TestCase):
         self.assertIsNone(err)
         self.assertEqual(compute_odeme_durumu(gider), GiderOdemeDurumu.IPTAL)
         self.assertEqual(self._cikis_sayisi(), 0)
+
+    def test_superuser_odeme_sonrasi_gideri_iptal_ve_silebilir(self):
+        gider = self._create(brut='10000')
+        odeme = self._ode(gider, '10000')
+        gider.refresh_from_db()
+        self.assertEqual(gider.durum, GiderDurum.ODENDI)
+        _, err = self.svc.iptal_et(gider.id)
+        self.assertIsNotNone(err)
+        gider, err = self.svc.iptal_et(gider.id, force=True)
+        self.assertIsNone(err, err)
+        self.assertEqual(gider.durum, GiderDurum.IPTAL)
+        odeme.refresh_from_db()
+        self.assertEqual(odeme.durum, OdemeDurum.IPTAL)
 
     def test_yil_degisince_numara_sifirlanir(self):
         n1 = generate_gider_islem_belge_no(self.kurum.id)

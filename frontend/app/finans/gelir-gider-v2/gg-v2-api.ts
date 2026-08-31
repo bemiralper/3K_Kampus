@@ -90,6 +90,10 @@ export const ggService = {
     return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/onayla/`, { method: "POST" });
   },
 
+  onayKaldir(modul: GGModul, id: number): Promise<GGListItem> {
+    return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/onay-kaldir/`, { method: "POST" });
+  },
+
   iptal(modul: GGModul, id: number): Promise<GGListItem> {
     return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/iptal/`, { method: "POST" });
   },

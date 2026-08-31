@@ -142,6 +142,7 @@ class GiderV2DetailView(APIView):
         _, errors = GiderCommandService().soft_delete(
             pk, islem_yapan=request.user if request.user.is_authenticated else None,
             ip_adresi=get_client_ip(request),
+            force=bool(getattr(request.user, 'is_superuser', False)),
         )
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
@@ -168,6 +169,23 @@ class GiderV2IptalView(APIView):
         if err:
             return err
         gider, errors = GiderCommandService().iptal_et(
+            pk, islem_yapan=request.user if request.user.is_authenticated else None,
+            ip_adresi=get_client_ip(request),
+            force=bool(getattr(request.user, 'is_superuser', False)),
+        )
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(GiderQueryService.serialize(gider))
+
+
+class GiderV2OnayKaldirView(APIView):
+    def post(self, request, pk):
+        if not getattr(request.user, 'is_superuser', False):
+            return Response({'error': 'Onay kaldırma yalnızca süper yönetici içindir.'}, status=status.HTTP_403_FORBIDDEN)
+        gider, err = _gate(request, pk)
+        if err:
+            return err
+        gider, errors = GiderCommandService().onay_kaldir(
             pk, islem_yapan=request.user if request.user.is_authenticated else None,
             ip_adresi=get_client_ip(request),
         )

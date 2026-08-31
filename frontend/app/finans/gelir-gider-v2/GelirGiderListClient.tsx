@@ -38,6 +38,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
+  UndoOutlined,
   StopOutlined,
   TableOutlined,
   AppstoreOutlined,
@@ -49,6 +50,7 @@ import {
 import dayjs from "dayjs";
 import Link from "next/link";
 import { useKurum } from "@/lib/contexts/KurumContext";
+import { useAuth } from "@/lib/contexts/AuthContext";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import { ggService } from "./gg-v2-api";
@@ -126,6 +128,23 @@ const durumRenk = (durum: string): string => {
   return "orange";
 };
 
+function odenenOf(row: GGListItem) {
+  return Number(row.odenen_toplam || row.tahsil_edilen || 0);
+}
+
+function canIptal(row: GGListItem, isSuper: boolean) {
+  if (row.durum === "iptal") return false;
+  return Boolean(row.iptal_edilebilir_mi) || isSuper;
+}
+
+function canOnayKaldir(row: GGListItem, isSuper: boolean) {
+  return isSuper && row.durum === "onaylandi" && odenenOf(row) === 0;
+}
+
+function canSil(row: GGListItem, isSuper: boolean) {
+  return isSuper || Boolean(row.durum?.includes("taslak"));
+}
+
 export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
   const cfg = useMemo(() => getConfig(modul), [modul]);
   const COL_KEY = `gg_${modul}_columns`;
@@ -133,6 +152,8 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
   const SAVED_KEY = `gg_${modul}_savedviews`;
 
   const { message, modal } = AntApp.useApp();
+  const { user } = useAuth();
+  const isSuper = Boolean(user?.is_superuser);
   const { activeKurum, activeSube } = useKurum();
   const { homeHref } = useFinansPath();
   const screens = Grid.useBreakpoint();
@@ -273,10 +294,31 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
     }
   };
 
+  const onOnayKaldir = (row: GGListItem) => {
+    modal.confirm({
+      title: "Onayı kaldır",
+      content: `"${row.fatura_no || row.cari_hesap?.unvan}" kaydı taslağa alınsın mı? Cari hareket geri alınır.`,
+      okText: "Onayı Kaldır",
+      cancelText: "Vazgeç",
+      onOk: async () => {
+        try {
+          await ggService.onayKaldir(modul, row.id);
+          message.success("Onay kaldırıldı.");
+          reload();
+        } catch (e) {
+          message.error(e instanceof FinansHttpError ? e.message : "Onay kaldırılamadı.");
+        }
+      },
+    });
+  };
+
   const onIptal = (row: GGListItem) => {
+    const paid = odenenOf(row) > 0;
     modal.confirm({
       title: "Kaydı iptal et",
-      content: `"${row.fatura_no || row.cari_hesap?.unvan}" kaydı iptal edilsin mi? Bağlı cari/kasa/banka hareketleri geri alınır.`,
+      content: paid
+        ? `"${row.fatura_no || row.cari_hesap?.unvan}" kaydı iptal edilsin mi? Bağlı ödemeler/tahsilatlar ve cari/kasa hareketleri geri alınır.`
+        : `"${row.fatura_no || row.cari_hesap?.unvan}" kaydı iptal edilsin mi? Bağlı cari/kasa/banka hareketleri geri alınır.`,
       okText: "İptal Et",
       okType: "danger",
       cancelText: "Vazgeç",
@@ -492,21 +534,33 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
                 <Button size="small" type="text" icon={<CheckCircleOutlined />} onClick={() => onOnayla(r)} />
               </Tooltip>
             )}
-            {r.iptal_edilebilir_mi && (
+            {canOnayKaldir(r, isSuper) && (
+              <Tooltip title="Onayı kaldır">
+                <Button size="small" type="text" icon={<UndoOutlined />} onClick={() => onOnayKaldir(r)} />
+              </Tooltip>
+            )}
+            {canIptal(r, isSuper) && (
               <Tooltip title="İptal">
                 <Button size="small" type="text" danger icon={<StopOutlined />} onClick={() => onIptal(r)} />
               </Tooltip>
             )}
-            <Popconfirm title="Kayıt silinsin mi?" okText="Sil" cancelText="Vazgeç" onConfirm={() => onDelete(r)}>
-              <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
+            {canSil(r, isSuper) && (
+              <Popconfirm
+                title={r.durum.includes("taslak") ? "Kayıt silinsin mi?" : "Onaylı kayıt iptal edilip silinsin mi? Bağlı ödemeler geri alınır."}
+                okText="Sil"
+                cancelText="Vazgeç"
+                onConfirm={() => onDelete(r)}
+              >
+                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+              </Popconfirm>
+            )}
           </Space>
         ),
       },
     ];
     return all.filter((c) => c.key === "belge" || c.key === "islemler" || visibleCols.includes(c.key as string));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, visibleCols, screens.md]);
+  }, [cfg, visibleCols, screens.md, isSuper]);
 
   const colMenu: MenuProps["items"] = columnDefs(cfg)
     .filter((c) => c.key !== "islemler" && c.key !== "belge")
@@ -868,10 +922,15 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
                 <Button type="text" block style={{ textAlign: "left", color: "#16a34a" }} icon={<DollarOutlined />} onClick={() => { openOdeme(ctxMenu.row); setCtxMenu(null); }}>Tahsil et</Button>
               )}
               <Button type="text" block style={{ textAlign: "left" }} icon={<EditOutlined />} onClick={() => { openEdit(ctxMenu.row); setCtxMenu(null); }}>Düzenle</Button>
-              {ctxMenu.row.iptal_edilebilir_mi && (
+              {canOnayKaldir(ctxMenu.row, isSuper) && (
+                <Button type="text" block style={{ textAlign: "left" }} icon={<UndoOutlined />} onClick={() => { onOnayKaldir(ctxMenu.row); setCtxMenu(null); }}>Onayı Kaldır</Button>
+              )}
+              {canIptal(ctxMenu.row, isSuper) && (
                 <Button type="text" block danger style={{ textAlign: "left" }} icon={<StopOutlined />} onClick={() => { onIptal(ctxMenu.row); setCtxMenu(null); }}>İptal Et</Button>
               )}
-              <Button type="text" block danger style={{ textAlign: "left" }} icon={<DeleteOutlined />} onClick={() => { onDelete(ctxMenu.row); setCtxMenu(null); }}>Sil</Button>
+              {canSil(ctxMenu.row, isSuper) && (
+                <Button type="text" block danger style={{ textAlign: "left" }} icon={<DeleteOutlined />} onClick={() => { onDelete(ctxMenu.row); setCtxMenu(null); }}>Sil</Button>
+              )}
             </Space>
           </Card>
         </div>
