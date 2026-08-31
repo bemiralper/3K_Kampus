@@ -39,7 +39,11 @@ class ContactResolver:
     # sms_bildirimleri kodları — duyuru/genel mesajlar için
     GENERAL_OPT_IN_CODES = {'duyuru', 'genel', 'general', 'announcement'}
     # Tercih kaydedilmemiş veliler için varsayılan operasyonel bildirimler
-    DEFAULT_OPT_IN_CATEGORIES = GENERAL_OPT_IN_CODES | {'devamsizlik'}
+    DEFAULT_OPT_IN_CATEGORIES = GENERAL_OPT_IN_CODES | {'devamsizlik', 'odeme'}
+    # Eski veli kaydı varsayılanı (ödeme kutusu yoktu). Ödeme sözleşmesel
+    # hatırlatmadır; bu tam listeyi "ödeme opt-out" saymayız.
+    LEGACY_DEFAULT_OPT_IN = frozenset({'duyuru', 'devamsizlik'})
+    TRANSACTIONAL_CATEGORIES = frozenset({'odeme'})
 
     @classmethod
     def normalize(cls, phone: str) -> str:
@@ -308,6 +312,8 @@ class ContactResolver:
         if cat in normalized:
             return True
         if cat in ('duyuru', 'general', 'genel') and normalized & cls.GENERAL_OPT_IN_CODES:
+            return True
+        if cat in cls.TRANSACTIONAL_CATEGORIES and normalized == cls.LEGACY_DEFAULT_OPT_IN:
             return True
         return False
 

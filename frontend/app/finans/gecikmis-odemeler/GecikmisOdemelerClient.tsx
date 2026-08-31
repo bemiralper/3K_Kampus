@@ -63,7 +63,19 @@ type ColDef = {
 };
 
 const ALL_COLUMNS: ColDef[] = [
-  { key: "ogrenci", label: "Öğrenci", sortField: "ogrenci_adi", render: (i) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{i.ogrenci_adi}</span> },
+  {
+    key: "ogrenci",
+    label: "Öğrenci",
+    sortField: "ogrenci_adi",
+    render: (i) => (
+      <span style={{ fontWeight: 600, color: "#0f172a" }}>
+        {i.ogrenci_adi}
+        {(i.taksit_sayisi ?? 1) > 1 && (
+          <Tag color="default" style={{ marginLeft: 8, fontWeight: 600 }}>{i.taksit_sayisi} taksit</Tag>
+        )}
+      </span>
+    ),
+  },
   { key: "veli", label: "Veli", render: (i) => i.veli_adi || "—" },
   { key: "telefon", label: "Telefon", render: (i) => i.veli_telefon || "—" },
   { key: "sube", label: "Şube", render: (i) => i.sube_ad || "—" },
@@ -105,6 +117,10 @@ function loadVisibleColumns(): GecikenColumnKey[] {
     }
   } catch { /* ignore */ }
   return DEFAULT_VISIBLE;
+}
+
+function rowSelectKey(item: OverduePaymentItem): number {
+  return item.ogrenci_id ?? item.taksit_id;
 }
 
 function exportKeysFromVisible(visible: GecikenColumnKey[]): string[] {
@@ -268,7 +284,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
             <Button size="small" type="text" icon={<DollarOutlined />} onClick={() => setTahsilatHedef({ sozlesmeId: item.sozlesme_id, taksitId: item.taksit_id })} />
           </Tooltip>
           <Tooltip title="WhatsApp">
-            <Button size="small" type="text" icon={<WhatsAppOutlined />} style={{ color: "#25D366" }} onClick={() => { setSelectedKeys([item.taksit_id]); setShowBulkModal(true); }} />
+            <Button size="small" type="text" icon={<WhatsAppOutlined />} style={{ color: "#25D366" }} onClick={() => { setSelectedKeys([rowSelectKey(item)]); setShowBulkModal(true); }} />
           </Tooltip>
           <Tooltip title="Ara">
             <Button size="small" type="text" icon={<PhoneOutlined />} onClick={() => handleCall(item.veli_telefon)} />
@@ -299,7 +315,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
     if (pag.pageSize) setPageSize(pag.pageSize);
   };
 
-  const selectedItems = items.filter((i) => selectedKeys.includes(i.taksit_id));
+  const selectedItems = items.filter((i) => selectedKeys.includes(rowSelectKey(i)));
   const exportColumnKeys = exportKeysFromVisible(visibleCols);
 
   if (!activeKurum) {
@@ -421,7 +437,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
           <span style={{ fontSize: 16, fontWeight: 800, color: "#b91c1c" }}>
             {fmtTL(listeToplam)}
             <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>
-              ({count.toLocaleString("tr-TR")} kayıt)
+              ({count.toLocaleString("tr-TR")} öğrenci)
             </span>
           </span>
         </div>
@@ -437,7 +453,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
           </div>
         ) : (
           <Table
-            rowKey="taksit_id"
+            rowKey={(item) => rowSelectKey(item)}
             size="small"
             columns={columns}
             dataSource={items}
@@ -453,8 +469,8 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
               pageSizeOptions: [25, 50, 100, 200],
               showTotal: (t) =>
                 listeToplam != null
-                  ? `Toplam ${t.toLocaleString("tr-TR")} kayıt · Geciken ${fmtTL(listeToplam)}`
-                  : `Toplam ${t.toLocaleString("tr-TR")} kayıt`,
+                  ? `Toplam ${t.toLocaleString("tr-TR")} öğrenci · Geciken ${fmtTL(listeToplam)}`
+                  : `Toplam ${t.toLocaleString("tr-TR")} öğrenci`,
             }}
             scroll={{ x: "max-content" }}
           />
@@ -470,7 +486,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
           homeHref={homeHref}
           onClose={() => { setDetailItem(null); setDetailData(null); }}
           onTahsilat={() => setTahsilatHedef({ sozlesmeId: detailItem.sozlesme_id, taksitId: detailItem.taksit_id })}
-          onWhatsapp={() => { setSelectedKeys([detailItem.taksit_id]); setShowBulkModal(true); }}
+          onWhatsapp={() => { setSelectedKeys([rowSelectKey(detailItem)]); setShowBulkModal(true); }}
           onCall={() => handleCall(detailItem.veli_telefon)}
           onNotEkle={() => { const n = window.prompt("Not girin:"); if (n?.trim()) message.success("Not kaydedildi (yerel)"); }}
         />
@@ -478,7 +494,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
 
       {showBulkModal && (
         <TopluGecikmeMesajModal
-          selectedItems={selectedItems.length ? selectedItems : items.filter((i) => selectedKeys.includes(i.taksit_id))}
+          selectedItems={selectedItems.length ? selectedItems : items.filter((i) => selectedKeys.includes(rowSelectKey(i)))}
           kurumAd={activeKurum.ad}
           onClose={() => setShowBulkModal(false)}
           onSent={(sent) => message.success(`${sent} kişiye mesaj gönderildi`)}

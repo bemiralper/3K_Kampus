@@ -325,6 +325,7 @@ def build_egitim_kalemleri_options(ctx):
 
 
 EXPORT_COLUMNS = {
+    'sira': 'Sıra',
     'tam_ad': 'Ad Soyad',
     'ad': 'Ad',
     'soyad': 'Soyad',
@@ -352,6 +353,7 @@ EXPORT_COLUMNS = {
 }
 
 EXPORT_COLUMN_TYPES = {
+    'sira': 'integer',
     'tc_kimlik_no': 'tc',
     'veli_tc_kimlik_no': 'tc',
     'telefon': 'phone',
@@ -948,16 +950,23 @@ def serialize_kayit_row(
     return row
 
 
-def _normalize_export_keys(column_keys):
-    keys = [k for k in column_keys if k in EXPORT_COLUMNS]
+def _normalize_export_keys(column_keys, *, include_sira=True):
+    keys = [k for k in column_keys if k in EXPORT_COLUMNS and k != 'sira']
     if not keys:
         keys = ['tam_ad', 'sinif_seviyesi', 'koc_adi']
+    if include_sira:
+        return ['sira'] + keys
     return keys
 
 
 def _prepare_export_rows(rows, column_keys):
     keys = _normalize_export_keys(column_keys)
-    return [format_export_row(row, keys) for row in rows]
+    prepared = []
+    for index, row in enumerate(rows, start=1):
+        formatted = format_export_row(row, keys)
+        formatted['sira'] = index
+        prepared.append(formatted)
+    return prepared
 
 
 def build_export_columns(column_keys):

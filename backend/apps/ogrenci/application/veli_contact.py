@@ -87,7 +87,7 @@ def ensure_legacy_veli_record(ogrenci):
         ad=ad,
         soyad=soyad,
         telefon=phone,
-        sms_bildirimleri=['duyuru', 'devamsizlik'],
+        sms_bildirimleri=['duyuru', 'devamsizlik', 'odeme'],
         varsayilan=True,
     )
 

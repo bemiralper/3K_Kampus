@@ -6,6 +6,9 @@ export type DurumRenk = "yellow" | "orange" | "red" | "blue";
 
 export interface OverduePaymentItem {
   taksit_id: number;
+  /** Aynı öğrencinin listedeki tüm geciken taksitleri (öğrenci satırı). */
+  taksit_ids?: number[];
+  taksit_sayisi?: number;
   sozlesme_id: number;
   sozlesme_no: string;
   ogrenci_id: number | null;
