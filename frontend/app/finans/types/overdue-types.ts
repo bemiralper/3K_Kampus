@@ -58,6 +58,8 @@ export interface OverduePaymentsResponse {
   page: number;
   page_size: number;
   total_pages: number;
+  /** Aktif filtrelere göre listedeki geciken toplam (tüm sayfalar). */
+  liste_toplam_geciken_tutar?: number;
 }
 
 export interface OverduePaymentsParams {
@@ -185,6 +187,7 @@ export type GecikenColumnKey =
   | "taksit_tutari"
   | "sozlesme_tutari"
   | "son_odeme"
+  | "toplam_gecikmis"
   | "toplam_kalan"
   | "kalan"
   | "son_tahsilat"
@@ -203,6 +206,7 @@ export const GECIKEN_COLUMN_EXPORT_KEYS: Record<GecikenColumnKey, string[]> = {
   taksit_tutari: ["taksit_tutari"],
   sozlesme_tutari: ["sozlesme_tutari"],
   son_odeme: ["son_tahsilat_tutari"],
+  toplam_gecikmis: ["toplam_gecikmis_tutar"],
   toplam_kalan: ["toplam_kalan_borc"],
   kalan: ["kalan_tutar"],
   son_tahsilat: ["son_tahsilat_tarihi"],

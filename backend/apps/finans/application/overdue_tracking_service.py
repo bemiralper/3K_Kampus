@@ -64,6 +64,7 @@ OVERDUE_EXPORT_COLUMNS = [
     {'key': 'toplam_odenen', 'label': 'Toplam Ödenen'},
     {'key': 'toplam_kalan_borc', 'label': 'Toplam Kalan Borç'},
     {'key': 'son_tahsilat_tutari', 'label': 'Son Ödeme Tutarı'},
+    {'key': 'toplam_gecikmis_tutar', 'label': 'Geciken Toplam Tutar'},
     {'key': 'kalan_tutar', 'label': 'Kalan Borç'},
     {'key': 'son_tahsilat_tarihi', 'label': 'Son Tahsilat'},
     {'key': 'durum_label', 'label': 'Durum'},
@@ -300,6 +301,7 @@ class OverdueTrackingService:
 
         rows = self._serialize_rows(taksitler, params.kurum_id, params.durum)
         total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
+        liste_toplam = qs.aggregate(toplam=Sum('kalan_tutar'))
 
         return {
             'ozet': self.compute_ozet(params),
@@ -307,6 +309,7 @@ class OverdueTrackingService:
             'page': page,
             'page_size': page_size,
             'total_pages': total_pages,
+            'liste_toplam_geciken_tutar': int(liste_toplam['toplam'] or 0),
             'results': rows,
         }
 
@@ -401,7 +404,7 @@ class OverdueTrackingService:
                 son_tahsilat_tutar_map[tah.sozlesme_id] = int(tah.tutar or 0)
 
         coach_map = self._coach_map(ogrenci_ids)
-        veli_totals = self._veli_totals(taksitler)
+        sozlesme_overdue_totals = self._sozlesme_overdue_totals(sozlesme_ids, kurum_id)
 
         rows = []
         for t in taksitler:
@@ -457,7 +460,9 @@ class OverdueTrackingService:
                 'gecikme_gun': gecikme,
                 'son_tahsilat_tarihi': son_tah.isoformat() if son_tah else None,
                 'son_tahsilat_tutari': son_tahsilat_tutar_map.get(t.sozlesme_id),
-                'toplam_gecikmis_tutar': veli_totals.get(veli_id, int(t.kalan_tutar or 0)),
+                'toplam_gecikmis_tutar': sozlesme_overdue_totals.get(
+                    t.sozlesme_id, int(t.kalan_tutar or 0),
+                ),
                 'durum_label': _durum_label(gecikme, liste_durumu=liste_durumu),
                 'durum_renk': _durum_renk(gecikme, liste_durumu=liste_durumu),
                 'liste_durumu': liste_durumu,
@@ -487,12 +492,17 @@ class OverdueTrackingService:
         return result
 
     @staticmethod
-    def _veli_totals(taksitler: list[Taksit]) -> dict[int | None, int]:
-        totals: dict[int | None, int] = {}
-        for t in taksitler:
-            vid = t.sozlesme.veli_id
-            totals[vid] = totals.get(vid, 0) + int(t.kalan_tutar or 0)
-        return totals
+    def _sozlesme_overdue_totals(sozlesme_ids: set[int], kurum_id: int) -> dict[int, int]:
+        """Sözleşmenin tüm geciken taksit kalanları (sayfa dışı kayıtlar dahil)."""
+        if not sozlesme_ids:
+            return {}
+        rows = (
+            get_overdue_taksit_queryset(kurum_id=kurum_id)
+            .filter(sozlesme_id__in=sozlesme_ids)
+            .values('sozlesme_id')
+            .annotate(toplam=Sum('kalan_tutar'))
+        )
+        return {row['sozlesme_id']: int(row['toplam'] or 0) for row in rows}
 
     @staticmethod
     def _communication_history(taksit_id: int, kurum_id: int, veli_id: int | None) -> dict:

@@ -25,22 +25,18 @@ function TahsilatRaporlarInner() {
   const { href: odemeHref } = useOdemePath();
 
   const rawTab = searchParams.get("tab");
-  const reportItems = isMuhasebeMode
-    ? FINANS_REPORT_ITEMS.filter((t) => t.tab !== "mali-analiz")
-    : FINANS_REPORT_ITEMS;
-  const tab = resolveFinansReportTab(rawTab);
-  const activeTab =
-    isMuhasebeMode && tab === "mali-analiz" ? ("gun-sonu" as FinansReportTab) : tab;
+  const activeTab = resolveFinansReportTab(rawTab);
 
   useEffect(() => {
-    if (rawTab === "raporlar" || rawTab === "virman") {
-      router.replace(tahsilatTabHref(isMuhasebeMode ? "gun-sonu" : "mali-analiz"));
+    // Eski sekmeler: virman ayrı sayfaya taşındı; ?tab=raporlar → mali-analiz.
+    if (rawTab === "virman") {
+      router.replace(tahsilatTabHref("gun-sonu"));
       return;
     }
-    if (isMuhasebeMode && rawTab === "mali-analiz") {
-      router.replace(tahsilatTabHref("virman"));
+    if (rawTab === "raporlar") {
+      router.replace(tahsilatTabHref("mali-analiz"));
     }
-  }, [rawTab, router, tahsilatTabHref, isMuhasebeMode]);
+  }, [rawTab, router, tahsilatTabHref]);
 
   const setTab = useCallback(
     (next: FinansReportTab) => {
@@ -82,7 +78,7 @@ function TahsilatRaporlarInner() {
       </div>
 
       <div className="tabs-modern mb-5">
-        {reportItems.map((t) => (
+        {FINANS_REPORT_ITEMS.map((t) => (
           <a
             key={t.tab}
             href="#"
@@ -107,7 +103,7 @@ function TahsilatRaporlarInner() {
             <GelirGiderRaporClient embedded />
           </GGProvider>
         )}
-        {!isMuhasebeMode && activeTab === "mali-analiz" && <RaporlamaClient embedded />}
+        {activeTab === "mali-analiz" && <RaporlamaClient embedded />}
       </div>
     </div>
   );

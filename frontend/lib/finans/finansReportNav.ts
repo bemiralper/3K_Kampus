@@ -15,7 +15,7 @@ const VALID_TABS = new Set<string>(FINANS_REPORT_ITEMS.map((i) => i.tab));
 
 export function resolveFinansReportTab(raw: string | null): FinansReportTab {
   if (raw === "raporlar") return "mali-analiz";
-  // Geriye dönük uyumluluk: Virman art\u0131k ayr\u0131 sayfa; eski ?tab=virman \u2192 G\u00fcn Sonu.
+  // Virman artık ayrı sayfa; eski ?tab=virman → Gün Sonu.
   if (raw === "virman") return "gun-sonu";
   if (raw && VALID_TABS.has(raw)) return raw as FinansReportTab;
   return "gun-sonu";
