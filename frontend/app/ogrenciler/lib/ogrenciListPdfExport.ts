@@ -47,13 +47,19 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function isOpenTypeFont(buf: ArrayBuffer): boolean {
+  if (buf.byteLength < 12) return false;
+  const tag = String.fromCharCode(...new Uint8Array(buf, 0, 4));
+  return tag === '\x00\x01\x00\x00' || tag === 'OTTO' || tag === 'true' || tag === 'typ1';
+}
+
 async function fetchFontBuffer(url: string): Promise<ArrayBuffer> {
   const resp = await fetch(url);
   if (!resp.ok) {
     throw new Error(`PDF yazı tipi yüklenemedi (${url}): ${resp.status}`);
   }
   const buf = await resp.arrayBuffer();
-  if (buf.byteLength < 1000) {
+  if (!isOpenTypeFont(buf)) {
     throw new Error(`PDF yazı tipi geçersiz veya eksik: ${url}`);
   }
   return buf;
@@ -184,6 +190,10 @@ function registerFonts(doc: jsPDF, fonts: { regular: string; bold: string }) {
   doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
   doc.addFileToVFS('Roboto-Bold.ttf', fonts.bold);
   doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
+  const registered = doc.getFontList()?.Roboto || [];
+  if (!registered.includes('normal') || !registered.includes('bold')) {
+    throw new Error('PDF yazı tipi kaydedilemedi');
+  }
   doc.setFont('Roboto', 'normal');
 }
 
@@ -309,65 +319,28 @@ function drawHeader(
   return bandH + 7;
 }
 
-const INDEX_COL_W = 14;
+const INDEX_COL_W = 12;
+const CHECK_COL_W = 20;
 
 function dataColumnKeys(columnKeys: string[]): string[] {
   return columnKeys.filter((key) => key !== 'sira');
 }
 
-function preferredColWidth(key: string): number | null {
-  switch (key) {
-    case 'tam_ad':
-    case 'ogrenci':
-    case 'veli_ad_soyad':
-      return 42;
-    case 'kalem_ozet':
-    case 'geldigi_okul':
-    case 'email':
-      return 36;
-    case 'tc_kimlik_no':
-    case 'veli_tc_kimlik_no':
-      return 28;
-    case 'telefon':
-    case 'veli_telefon':
-      return 24;
-    case 'kayit_tarihi':
-    case 'dogum_tarihi':
-      return 22;
-    case 'okul_no':
-    case 'saat':
-      return 16;
-    default:
-      return null;
-  }
-}
-
 function buildColumnStyles(
-  doc: jsPDF,
   keys: string[],
   checkboxIndexes?: Set<number>,
-): Record<number, { cellWidth: number; halign: 'left' | 'center' | 'right' }> {
-  const pageW = doc.internal.pageSize.getWidth();
-  const tableW = pageW - 20;
-  const checkW = 16;
-  const weights = keys.map((key, i) => {
-    if (checkboxIndexes?.has(i + 1)) return checkW;
-    return preferredColWidth(key) ?? 22;
-  });
-  const rawSum = INDEX_COL_W + weights.reduce((n, w) => n + w, 0);
-  const scale = rawSum > 0 ? tableW / rawSum : 1;
-  const styles: Record<number, { cellWidth: number; halign: 'left' | 'center' | 'right' }> = {
-    0: { cellWidth: Math.max(11, INDEX_COL_W * scale), halign: 'center' },
+): Record<number, { minCellWidth?: number; halign: 'left' | 'center' | 'right' }> {
+  const styles: Record<number, { minCellWidth?: number; halign: 'left' | 'center' | 'right' }> = {
+    0: { minCellWidth: INDEX_COL_W, halign: 'center' },
   };
-  let used = styles[0].cellWidth;
-  for (let i = 1; i <= keys.length; i++) {
-    const isCheck = checkboxIndexes?.has(i);
-    const width = i === keys.length
-      ? Math.max(10, tableW - used)
-      : Math.max(10, weights[i - 1] * scale);
-    used += width;
-    styles[i] = { cellWidth: width, halign: isCheck ? 'center' : 'left' };
-  }
+  keys.forEach((_, i) => {
+    const index = i + 1;
+    if (checkboxIndexes?.has(index)) {
+      styles[index] = { minCellWidth: CHECK_COL_W, halign: 'center' };
+    } else {
+      styles[index] = { halign: 'left' };
+    }
+  });
   return styles;
 }
 
@@ -430,14 +403,66 @@ function formatPdfCell(value: unknown, isCheckbox: boolean): string {
 }
 
 function fontSizeForColumns(colCount: number, orientation: PdfOrientation): number {
-  if (colCount > 12) return orientation === 'landscape' ? 6 : 5.5;
-  if (colCount > 9) return orientation === 'landscape' ? 6.5 : 6;
-  if (colCount > 6) return orientation === 'landscape' ? 7 : 6.5;
-  return orientation === 'landscape' ? 8 : 7.5;
+  if (colCount > 10) return orientation === 'landscape' ? 8 : 7.5;
+  if (colCount > 6) return 9;
+  return 10;
 }
 
-function overflowForColumns(colCount: number): 'linebreak' | 'ellipsize' {
-  return colCount > 8 ? 'ellipsize' : 'linebreak';
+function useHorizontalBreak(colCount: number, orientation: PdfOrientation): boolean {
+  return colCount > (orientation === 'landscape' ? 10 : 7);
+}
+
+function tableLayoutOptions(
+  keys: string[],
+  orientation: PdfOrientation,
+  primary: [number, number, number],
+  checkboxIndexes: Set<number>,
+) {
+  const totalCols = keys.length + 1;
+  const tableFontSize = fontSizeForColumns(totalCols, orientation);
+  const wide = useHorizontalBreak(totalCols, orientation);
+  const nameIndex = keys.findIndex((key) => key === 'tam_ad' || key === 'ogrenci');
+  return {
+    showHead: 'everyPage' as const,
+    rowPageBreak: 'auto' as const,
+    horizontalPageBreak: wide,
+    horizontalPageBreakRepeat: wide ? (nameIndex >= 0 ? [0, nameIndex + 1] : [0]) : undefined,
+    styles: {
+      font: 'Roboto',
+      fontStyle: 'normal' as const,
+      fontSize: tableFontSize,
+      cellPadding: 2,
+      overflow: 'linebreak' as const,
+      valign: 'middle' as const,
+      textColor: DARK,
+      lineColor: [226, 232, 240] as [number, number, number],
+      lineWidth: 0.2,
+    },
+    headStyles: {
+      font: 'Roboto',
+      fontStyle: 'bold' as const,
+      fillColor: primary,
+      textColor: WHITE,
+      fontSize: tableFontSize,
+      halign: 'center' as const,
+      valign: 'middle' as const,
+      overflow: 'linebreak' as const,
+      minCellHeight: tableFontSize + (checkboxIndexes.size ? 8 : 5),
+    },
+    bodyStyles: {
+      font: 'Roboto',
+      fontStyle: 'normal' as const,
+      overflow: 'linebreak' as const,
+      valign: 'middle' as const,
+      // NOT: `minCellHeight: undefined` autotable içinde Math.max(h, undefined) = NaN
+      // üretip satır yüksekliklerini bozuyor; değer yoksa anahtarı hiç ekleme.
+      ...(checkboxIndexes.size ? { minCellHeight: 9 } : {}),
+    },
+    alternateRowStyles: { fillColor: ROW_ALT },
+    columnStyles: buildColumnStyles(keys, checkboxIndexes),
+    margin: { left: 10, right: 10, top: 36, bottom: 14 },
+    ...checkboxHooks(checkboxIndexes, primary),
+  };
 }
 
 export async function exportGroupedOgrenciListPdf(options: {
@@ -497,12 +522,8 @@ export async function exportGroupedOgrenciListPdf(options: {
   });
   registerFonts(doc, fonts);
 
-  const tableWidth = doc.internal.pageSize.getWidth() - 20;
   const checkboxIndexes = checkboxIndexSet(keys, checkboxKeys);
-  const columnStyles = buildColumnStyles(doc, keys, checkboxIndexes);
-  const tableFontSize = fontSizeForColumns(keys.length + 1, orientation);
-  const tableOverflow = overflowForColumns(keys.length + 1);
-  const checkHooks = checkboxHooks(checkboxIndexes, primary);
+  const tableOptions = tableLayoutOptions(keys, orientation, primary, checkboxIndexes);
 
   // Ayrı sayfalarda her bölüm kendi başlığını çizer (ölçüt adı: 12. Sınıf / 12/Loca 4)
   let startY = pageBreakBetweenSections
@@ -514,41 +535,6 @@ export async function exportGroupedOgrenciListPdf(options: {
         filterSummary,
         meta: metaCount,
       });
-
-  const tableOptions = {
-    tableWidth,
-    showHead: 'everyPage' as const,
-    rowPageBreak: 'auto' as const,
-    styles: {
-      font: 'Roboto',
-      fontSize: tableFontSize,
-      cellPadding: { top: 2, right: 1.5, bottom: 2, left: 1.5 },
-      overflow: tableOverflow,
-      valign: 'middle' as const,
-      textColor: DARK,
-      lineColor: [226, 232, 240] as [number, number, number],
-      lineWidth: 0.2,
-    },
-    headStyles: {
-      fillColor: primary,
-      textColor: WHITE,
-      fontStyle: 'bold' as const,
-      fontSize: tableFontSize,
-      halign: 'center' as const,
-      valign: 'middle' as const,
-      overflow: tableOverflow,
-      minCellHeight: tableFontSize + (checkboxIndexes.size ? 8 : 4),
-    },
-    bodyStyles: {
-      overflow: tableOverflow,
-      valign: 'middle' as const,
-      minCellHeight: checkboxIndexes.size ? 9 : undefined,
-    },
-    alternateRowStyles: { fillColor: ROW_ALT },
-    columnStyles,
-    margin: { left: 10, right: 10, top: 36, bottom: 14 },
-    ...checkHooks,
-  };
 
   for (let si = 0; si < sections.length; si++) {
     const section = sections[si];
@@ -634,10 +620,6 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
     ...keys.map((k) => formatPdfCell(row[k], checkboxIndexes.has(keys.indexOf(k) + 1))),
   ]);
 
-  const totalCols = keys.length + 1;
-  const tableFontSize = fontSizeForColumns(totalCols, orientation);
-  const tableOverflow = overflowForColumns(totalCols);
-
   const [fonts, logoData] = await Promise.all([
     loadFonts(),
     loadLogoAsset(branding.logoUrl || DEFAULT_PDF_LOGO),
@@ -653,10 +635,6 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
   });
   registerFonts(doc, fonts);
 
-  const tableWidth = doc.internal.pageSize.getWidth() - 20;
-  const columnStyles = buildColumnStyles(doc, keys, checkboxIndexes);
-  const checkHooks = checkboxHooks(checkboxIndexes, primary);
-
   const startY = drawHeader(doc, primary, logoData, {
     documentTitle,
     kurumAd: branding.kurumAd || 'Kurum',
@@ -667,40 +645,9 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
 
   autoTable(doc, {
     startY,
-    tableWidth,
     head: [['Sıra', ...labels]],
     body,
-    showHead: 'everyPage',
-    rowPageBreak: 'auto',
-    styles: {
-      font: 'Roboto',
-      fontSize: tableFontSize,
-      cellPadding: { top: 2, right: 1.5, bottom: 2, left: 1.5 },
-      overflow: tableOverflow,
-      valign: 'middle',
-      textColor: DARK,
-      lineColor: [226, 232, 240],
-      lineWidth: 0.2,
-    },
-    headStyles: {
-      fillColor: primary,
-      textColor: WHITE,
-      fontStyle: 'bold',
-      fontSize: tableFontSize,
-      halign: 'center',
-      valign: 'middle',
-      overflow: tableOverflow,
-      minCellHeight: tableFontSize + (checkboxIndexes.size ? 8 : 4),
-    },
-    bodyStyles: {
-      overflow: tableOverflow,
-      valign: 'middle',
-      minCellHeight: checkboxIndexes.size ? 9 : undefined,
-    },
-    alternateRowStyles: { fillColor: ROW_ALT },
-    columnStyles,
-    margin: { left: 10, right: 10, top: 36, bottom: 14 },
-    ...checkHooks,
+    ...tableLayoutOptions(keys, orientation, primary, checkboxIndexes),
   });
 
   addFooter(doc, brandLine);
