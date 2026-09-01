@@ -495,8 +495,15 @@ export default function OdevKontrolReportClient({
         printToken: printMode ? printToken : undefined,
       });
       if (result.success && result.data) {
+        const report = result.data as unknown as ReportData;
         setFullReport({
-          data: result.data as unknown as ReportData,
+          data: {
+            ...report,
+            lessons: (report.lessons || []).map((lesson) => ({
+              ...lesson,
+              tasks: lesson.tasks || [],
+            })),
+          },
           overall_stats: (result.overall_stats || {}) as unknown as OverallStats,
           topic_cumulative: (result.topic_cumulative || []) as unknown as TopicCumulative[],
           book_cumulative: (result.book_cumulative || []) as unknown as BookCumulative[],
@@ -525,15 +532,16 @@ export default function OdevKontrolReportClient({
       items: { lesson: any; totalQ: number; completedQ: number; totalP: number; completedP: number; totalTasks: number; doneTasks: number; avgPct: number; topicCum: any }[];
       totalQ: number; completedQ: number; totalP: number; completedP: number; totalTasks: number; doneTasks: number; avgPct: number;
     }>();
-    fullReport.data.lessons.forEach(lesson => {
+    (fullReport.data.lessons || []).forEach(lesson => {
       const subjectName = lesson.lesson_name || "Ders";
-      const totalQ = lesson.tasks.reduce((s: number, t: any) => s + (t.question_count || 0), 0);
-      const completedQ = lesson.tasks.reduce((s: number, t: any) => s + (t.completed_question_count || 0), 0);
-      const totalP = lesson.tasks.reduce((s: number, t: any) => s + (t.page_count || 0), 0);
-      const completedP = lesson.tasks.reduce((s: number, t: any) => s + (t.completed_page_count || 0), 0);
-      const totalTasks = lesson.tasks.length;
-      const doneTasks = lesson.tasks.filter((t: any) => t.completion_status === "DONE").length;
-      const avgPct = weightedTaskAvg(lesson.tasks);
+      const tasks = lesson.tasks || [];
+      const totalQ = tasks.reduce((s: number, t: any) => s + (t.question_count || 0), 0);
+      const completedQ = tasks.reduce((s: number, t: any) => s + (t.completed_question_count || 0), 0);
+      const totalP = tasks.reduce((s: number, t: any) => s + (t.page_count || 0), 0);
+      const completedP = tasks.reduce((s: number, t: any) => s + (t.completed_page_count || 0), 0);
+      const totalTasks = tasks.length;
+      const doneTasks = tasks.filter((t: any) => t.completion_status === "DONE").length;
+      const avgPct = weightedTaskAvg(tasks);
       const topicCum = fullReport.topic_cumulative.find((tc: any) => tc.lesson_id === lesson.id);
       const item = { lesson, totalQ, completedQ, totalP, completedP, totalTasks, doneTasks, avgPct, topicCum };
       if (!map.has(subjectName)) {
@@ -548,7 +556,7 @@ export default function OdevKontrolReportClient({
         g.totalTasks += totalTasks;
         g.doneTasks += doneTasks;
         // avgPct'yi tüm görevlerin ortalaması olarak tekrar hesapla
-        const allTasks = g.items.flatMap(i => i.lesson.tasks);
+        const allTasks = g.items.flatMap(i => i.lesson.tasks || []);
         g.avgPct = weightedTaskAvg(allTasks);
       }
     });
@@ -621,8 +629,16 @@ export default function OdevKontrolReportClient({
   );
 
   const report = fullReport.data;
-  const summary = report.report_summary;
+  const summary = report?.report_summary;
   const overall = fullReport.overall_stats;
+  if (!report || !summary) {
+    return (
+      <div style={{ padding: printMode ? 24 : 60, textAlign: "center", fontFamily: "'Poppins', sans-serif" }}>
+        <h2>Rapor bulunamadı</h2>
+        {!printMode && <Link href={paths.list} style={{ color: "#0262a7" }}>← Geri Dön</Link>}
+      </div>
+    );
+  }
   const grade = getGrade(summary.overall_completion_percent);
 
   const hasQuestions = summary.total_questions > 0;
@@ -1110,7 +1126,7 @@ export default function OdevKontrolReportClient({
                       books.push(book);
                     }
 
-                    (ls.lesson.tasks as AssignmentTask[]).forEach((task) => {
+                    ((ls.lesson.tasks || []) as AssignmentTask[]).forEach((task) => {
                       book!.totalTasks += 1;
                       const unitName = (task.content_unit_name || "").trim() || "Ünite";
                       const unitId = task.content_unit_id ?? 0;

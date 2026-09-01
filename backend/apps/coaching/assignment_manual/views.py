@@ -593,9 +593,15 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         )
         if print_token:
             instance = self._get_assignment_for_print_token(kwargs['pk'], expected_type='plan')
-            serializer = self.get_serializer(instance)
+            serializer = ManualAssignmentDetailSerializer(
+                instance, context=self.get_serializer_context(),
+            )
             return Response({'success': True, 'data': serializer.data})
-        return super().retrieve(request, *args, **kwargs)
+        instance = self.get_object()
+        serializer = ManualAssignmentDetailSerializer(
+            instance, context=self.get_serializer_context(),
+        )
+        return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def stats(self, request):

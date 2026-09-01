@@ -201,6 +201,23 @@ class AssignmentCreateEvaluateTest(TestCase):
         )
         self.assertIn(preview.status_code, (403, 404))
 
+    def test_retrieve_ok_when_k3_mode_blank(self):
+        """Boş 3K modu detay GET'ini 500 yapmamalı — kontrol sayfası beyaz ekran olmasın."""
+        payload = self._create_assignment_payload()
+        created = self.client.post(ASSIGNMENTS_URL, payload, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        assignment_id = created.data['data']['id']
+
+        response = self.client.get(f'{ASSIGNMENTS_URL}{assignment_id}/')
+        self.assertEqual(response.status_code, 200, response.data)
+        body = response.data
+        assignment = body['data'] if isinstance(body, dict) and 'lessons' not in body else body
+        self.assertTrue(assignment.get('lessons'))
+        lesson = assignment['lessons'][0]
+        self.assertEqual(lesson.get('k3_mode') or '', '')
+        self.assertEqual(lesson.get('k3_mode_display') or '', '')
+        self.assertIsInstance(lesson.get('tasks'), list)
+
     def test_create_persists_k3_mode_on_lesson(self):
         payload = self._create_assignment_payload()
         payload['lessons'][0]['k3_mode'] = 'OGREN'

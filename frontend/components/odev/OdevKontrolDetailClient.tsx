@@ -76,6 +76,16 @@ interface AssignmentLesson {
   tasks: AssignmentTask[];
 }
 
+function normalizeAssignmentDetail(data: AssignmentDetail): AssignmentDetail {
+  return {
+    ...data,
+    lessons: (data.lessons || []).map((lesson) => ({
+      ...lesson,
+      tasks: lesson.tasks || [],
+    })),
+  };
+}
+
 interface ReportSummary {
   total_tasks: number;
   done_tasks: number;
@@ -269,7 +279,7 @@ export default function OdevKontrolDetailClient({
     try {
       const result = await fetchAssignmentDetail(Number(assignmentId));
       if (result.success !== false && result.data) {
-        const data = result.data as unknown as AssignmentDetail;
+        const data = normalizeAssignmentDetail(result.data as unknown as AssignmentDetail);
         setAssignment(data);
         // Sadece ilk yüklemede expanded durumunu kur (sessionStorage tercih edilir)
         if (!initialLoadDone.current) {
@@ -345,7 +355,7 @@ export default function OdevKontrolDetailClient({
   // ─── Canlı Özet Hesaplama (client-side) ───
   const liveSummary = useMemo(() => {
     if (!assignment) return null;
-    const tasks = assignment.lessons.flatMap(l => l.tasks);
+    const tasks = (assignment.lessons || []).flatMap((l) => l.tasks || []);
     const total = tasks.length;
     const done = tasks.filter(t => t.completion_status === "DONE").length;
     const notDone = tasks.filter(t => t.completion_status === "NOT_DONE").length;
@@ -789,8 +799,8 @@ export default function OdevKontrolDetailClient({
       ? buildNewAssignmentFromKontrolHref(paths.newAssignment, {
           studentId: assignment.student,
           returnPath: paths.detail(assignment.id),
-          lessonId: assignment.lessons.find((l) => l.lesson)?.lesson ?? null,
-          bookId: assignment.lessons.find((l) => l.resource_book)?.resource_book ?? null,
+          lessonId: (assignment.lessons || []).find((l) => l.lesson)?.lesson ?? null,
+          bookId: (assignment.lessons || []).find((l) => l.resource_book)?.resource_book ?? null,
           kontrolAssignmentId: assignment.id,
           kontrolDone: true,
         })
@@ -1188,19 +1198,19 @@ export default function OdevKontrolDetailClient({
 
           {/* Ders & Görev Listesi */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {assignment.lessons.length === 0 ? (
+            {(assignment.lessons || []).length === 0 ? (
               <div style={{ background: "white", borderRadius: 16, padding: 48, textAlign: "center", color: "#94a3b8", border: "2px dashed #e2e8f0" }}>Henüz ders/test eklenmemiş.</div>
             ) : (
               (() => {
                 // Aynı derse ait lesson'ları grupla
                 const grouped = new Map<string, AssignmentLesson[]>();
-                assignment.lessons.forEach(lesson => {
+                (assignment.lessons || []).forEach(lesson => {
                   const key = lesson.lesson_name || "Ders";
                   if (!grouped.has(key)) grouped.set(key, []);
                   grouped.get(key)!.push(lesson);
                 });
                 return Array.from(grouped.entries()).map(([subjectName, lessons]) => {
-                  const allTasks = lessons.flatMap(l => l.tasks);
+                  const allTasks = lessons.flatMap(l => l.tasks || []);
                   const groupDone = allTasks.filter(t => t.completion_status === "DONE").length;
                   const groupTotal = allTasks.length;
                   const groupPct = groupTotal > 0 ? Math.round(groupDone / groupTotal * 100) : 0;
@@ -1254,8 +1264,9 @@ export default function OdevKontrolDetailClient({
                       {/* Alt Kaynaklar (Kitaplar) */}
                       {lessons.map(lesson => {
                 const isExpanded = expandedLessons.has(lesson.id);
-                const done = lesson.tasks.filter(t => t.completion_status === "DONE").length;
-                const total = lesson.tasks.length;
+                const lessonTasks = lesson.tasks || [];
+                const done = lessonTasks.filter(t => t.completion_status === "DONE").length;
+                const total = lessonTasks.length;
                 const pct = total > 0 ? Math.round(done / total * 100) : 0;
                 return (
                   <div key={lesson.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
@@ -1267,7 +1278,7 @@ export default function OdevKontrolDetailClient({
                         {lesson.topic_name && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>📌 {lesson.topic_name}</div>}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        {!isLocked && lesson.tasks.length > 0 && (
+                        {!isLocked && lessonTasks.length > 0 && (
                           <div
                             style={{ display: "flex", gap: 6 }}
                             onClick={(e) => e.stopPropagation()}
@@ -1275,7 +1286,7 @@ export default function OdevKontrolDetailClient({
                             <button
                               type="button"
                               disabled={bulkSaving}
-                              onClick={() => handleBulkUpdateTasks(lesson.tasks, "DONE")}
+                              onClick={() => handleBulkUpdateTasks(lessonTasks, "DONE")}
                               style={{
                                 padding: "5px 10px", borderRadius: 7, fontSize: 11, fontWeight: 700,
                                 border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
@@ -1287,7 +1298,7 @@ export default function OdevKontrolDetailClient({
                             <button
                               type="button"
                               disabled={bulkSaving}
-                              onClick={() => handleBulkUpdateTasks(lesson.tasks, "NOT_DONE")}
+                              onClick={() => handleBulkUpdateTasks(lessonTasks, "NOT_DONE")}
                               style={{
                                 padding: "5px 10px", borderRadius: 7, fontSize: 11, fontWeight: 700,
                                 border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
@@ -1314,7 +1325,7 @@ export default function OdevKontrolDetailClient({
                         {(() => {
                           // Task'ları content_topic_name'e göre alt-grupla
                           const topicGroupMap = new Map<string, AssignmentTask[]>();
-                          lesson.tasks.forEach(task => {
+                          lessonTasks.forEach(task => {
                             const tKey = task.content_topic_name || lesson.topic_name || "__default__";
                             if (!topicGroupMap.has(tKey)) topicGroupMap.set(tKey, []);
                             topicGroupMap.get(tKey)!.push(task);

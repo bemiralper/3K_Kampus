@@ -107,7 +107,7 @@ class AssignmentLessonSerializer(serializers.ModelSerializer):
     """Ders Bloğu Serializer"""
     tasks = AssignmentTaskSerializer(many=True, read_only=True)
     content_mode_display = serializers.CharField(source='get_content_mode_display', read_only=True)
-    k3_mode_display = serializers.CharField(source='get_k3_mode_display', read_only=True, allow_blank=True)
+    k3_mode_display = serializers.SerializerMethodField()
     lesson_name = serializers.SerializerMethodField()
     resource_book_name = serializers.CharField(source='resource_book.ad', read_only=True, allow_null=True)
     
@@ -122,6 +122,10 @@ class AssignmentLessonSerializer(serializers.ModelSerializer):
             'notes', 'tasks', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_k3_mode_display(self, obj):
+        # Boş/NULL değer get_*_display() ile None dönebilir; CharField bunu 500 yapar.
+        return obj.get_k3_mode_display() or ''
 
     def get_lesson_name(self, obj):
         _lesson_id, name = _effective_lesson_from_block(obj)
