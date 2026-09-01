@@ -34,20 +34,21 @@ export default function K3ModePicker({
       });
     };
     place();
-    const close = (e: MouseEvent) => {
+    const closeOnScroll = () => setOpen(false);
+    const closeOnClick = (e: Event) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
     window.addEventListener('resize', place);
-    window.addEventListener('scroll', close, true);
-    document.addEventListener('mousedown', close);
+    window.addEventListener('scroll', closeOnScroll, true);
+    document.addEventListener('mousedown', closeOnClick);
     document.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', close, true);
-      document.removeEventListener('mousedown', close);
+      window.removeEventListener('scroll', closeOnScroll, true);
+      document.removeEventListener('mousedown', closeOnClick);
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
