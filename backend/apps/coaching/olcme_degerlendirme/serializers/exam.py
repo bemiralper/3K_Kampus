@@ -242,14 +242,14 @@ class ExamDetailSerializer(serializers.ModelSerializer):
         return obj.participants.count()
 
     def get_sinif_seviyesi_ids(self, obj):
-        return [
+        return list(dict.fromkeys(
             a.sinif_seviyesi_id for a in obj.audiences.all() if a.sinif_seviyesi_id
-        ]
+        ))
 
     def get_deneme_paketi_ids(self, obj):
-        return [
+        return list(dict.fromkeys(
             a.deneme_paketi_id for a in obj.audiences.all() if a.deneme_paketi_id
-        ]
+        ))
 
     def get_rooms(self, obj):
         return [
@@ -353,6 +353,12 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
     sinif_ids = serializers.ListField(
         child=serializers.IntegerField(), write_only=True, required=False,
     )
+    sinif_seviyesi_ids = serializers.ListField(
+        child=serializers.IntegerField(), write_only=True, required=False,
+    )
+    deneme_paketi_ids = serializers.ListField(
+        child=serializers.IntegerField(), write_only=True, required=False,
+    )
 
     class Meta:
         model = Exam
@@ -365,6 +371,7 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
             'booklet_type', 'booklet_auto_detect',
             'linked_tyt_exam', 'is_active', 'is_template',
             'sinif_ids',
+            'sinif_seviyesi_ids', 'deneme_paketi_ids',
             'deneme_hizmeti', 'deneme_paketi',
         ]
         extra_kwargs = {
@@ -389,6 +396,8 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         sinif_ids = validated_data.pop('sinif_ids', None)
+        validated_data.pop('sinif_seviyesi_ids', None)
+        validated_data.pop('deneme_paketi_ids', None)
         instance = super().update(instance, validated_data)
         if sinif_ids is not None:
             instance.siniflar.set(sinif_ids)

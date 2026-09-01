@@ -63,18 +63,30 @@ def apply_roster_payload(exam, data: dict) -> dict:
         from .exam_views import _sync_exam_date_from_sessions
         _sync_exam_date_from_sessions(exam)
 
-    sinif_ids = _int_list(data.get('sinif_ids'))
-    if sinif_ids:
+    if 'sinif_ids' in data:
+        sinif_ids = _int_list(data.get('sinif_ids'))
         exam.siniflar.set(sinif_ids)
     else:
         sinif_ids = list(exam.siniflar.values_list('id', flat=True))
 
-    audience = data.get('audience') or []
-    seviye_ids = _int_list(data.get('sinif_seviyesi_ids'))
-    paket_ids = _int_list(data.get('deneme_paketi_ids'))
-    if audience:
-        replace_audiences(exam, audience)
-    elif seviye_ids or paket_ids:
+    audience = data.get('audience')
+    seviye_given = 'sinif_seviyesi_ids' in data
+    paket_given = 'deneme_paketi_ids' in data
+    seviye_ids = _int_list(data.get('sinif_seviyesi_ids')) if seviye_given else [
+        a.sinif_seviyesi_id for a in exam.audiences.all() if a.sinif_seviyesi_id
+    ]
+    paket_ids = _int_list(data.get('deneme_paketi_ids')) if paket_given else [
+        a.deneme_paketi_id for a in exam.audiences.all() if a.deneme_paketi_id
+    ]
+    if 'audience' in data:
+        replace_audiences(exam, audience or [])
+        seviye_ids = [
+            a.sinif_seviyesi_id for a in exam.audiences.all() if a.sinif_seviyesi_id
+        ]
+        paket_ids = [
+            a.deneme_paketi_id for a in exam.audiences.all() if a.deneme_paketi_id
+        ]
+    elif seviye_given or paket_given:
         rows = []
         if seviye_ids and paket_ids:
             for sev in seviye_ids:
@@ -84,14 +96,6 @@ def apply_roster_payload(exam, data: dict) -> dict:
             rows.extend({'sinif_seviyesi_id': sev} for sev in seviye_ids)
             rows.extend({'deneme_paketi_id': pak} for pak in paket_ids)
         replace_audiences(exam, rows)
-    if not seviye_ids:
-        seviye_ids = [
-            a.sinif_seviyesi_id for a in exam.audiences.all() if a.sinif_seviyesi_id
-        ]
-    if not paket_ids:
-        paket_ids = [
-            a.deneme_paketi_id for a in exam.audiences.all() if a.deneme_paketi_id
-        ]
 
     rooms_payload = data.get('rooms')
     if rooms_payload is not None:

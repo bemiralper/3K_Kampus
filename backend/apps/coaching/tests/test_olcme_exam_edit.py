@@ -9,7 +9,9 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.coaching.olcme_degerlendirme.models import Exam, ExamSection
+from apps.coaching.olcme_degerlendirme.models import Exam, ExamAudience, ExamSection
+from apps.egitim_paketleri.models import Deneme
+from apps.egitim_tanimlari.models import SinifSeviyesi
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.sinif.domain.models import Sinif
@@ -82,6 +84,42 @@ class OlcmeExamEditAPITest(TestCase):
         res = self.client.get(f'{EXAMS_URL}{self.exam.id}/', **self.headers)
         self.assertEqual(res.status_code, 200)
         self.assertIn('12-A', res.json()['sinif_display'])
+
+    def test_audience_ids_can_be_updated_after_creation(self):
+        """Genel bilgiler düzenlemesi seviye + paket çoklu seçimini kaydetmeli."""
+        sev = SinifSeviyesi.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='12. Sınıf', kod='12',
+        )
+        paket = Deneme.objects.create(
+            ad='Deneme Kulübü', kod='DK',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+        )
+        res = self._patch({
+            'sinif_ids': [self.sinif_a.id],
+            'sinif_seviyesi_ids': [sev.id],
+            'deneme_paketi_ids': [paket.id],
+        })
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        rows = list(ExamAudience.objects.filter(exam=self.exam).values_list(
+            'sinif_seviyesi_id', 'deneme_paketi_id',
+        ))
+        self.assertEqual(rows, [(sev.id, paket.id)])
+        detail = self.client.get(f'{EXAMS_URL}{self.exam.id}/', **self.headers)
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()['sinif_seviyesi_ids'], [sev.id])
+        self.assertEqual(detail.json()['deneme_paketi_ids'], [paket.id])
+
+    def test_audience_ids_can_be_cleared(self):
+        sev = SinifSeviyesi.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='11. Sınıf', kod='11',
+        )
+        ExamAudience.objects.create(exam=self.exam, sinif_seviyesi=sev)
+        res = self._patch({'sinif_seviyesi_ids': [], 'deneme_paketi_ids': []})
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.assertFalse(ExamAudience.objects.filter(exam=self.exam).exists())
+        detail = self.client.get(f'{EXAMS_URL}{self.exam.id}/', **self.headers)
+        self.assertEqual(detail.json()['sinif_seviyesi_ids'], [])
+        self.assertEqual(detail.json()['deneme_paketi_ids'], [])
 
     # ── Deneme alanları ─────────────────────────────────────────────────────
 

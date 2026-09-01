@@ -22,6 +22,8 @@ import OutcomesTab from './OutcomesTab';
 import UploadTab from './UploadTab';
 import AnalysisTab from './AnalysisTab';
 import ParticipantsTab from '../../../../components/olcme/roster/ParticipantsTab';
+import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
+import r from '../../../../components/olcme/roster/roster.module.css';
 import ExamPublishBanner from '../../../../components/olcme/ExamPublishBanner';
 import ExamHeader from '../../../../components/olcme/ui/ExamHeader';
 import Icon from '../../../../components/olcme/ui/Icon';
@@ -252,6 +254,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
 
   // ── Sınıf / deneme seçenekleri (düzenleme modunda gerekir) ──
   const [siniflar, setSiniflar] = useState<LookupItem[]>([]);
+  const [sinifSeviyeleri, setSinifSeviyeleri] = useState<LookupItem[]>([]);
   const [hizmetler, setHizmetler] = useState<LookupItem[]>([]);
   const [paketler, setPaketler] = useState<LookupItem[]>([]);
 
@@ -276,10 +279,12 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
   useEffect(() => {
     Promise.all([
       examApi.siniflar().catch(() => [] as LookupItem[]),
+      examApi.sinifSeviyeleri().catch(() => [] as LookupItem[]),
       examApi.denemeHizmetleri().catch(() => [] as LookupItem[]),
       examApi.denemePaketleri().catch(() => [] as LookupItem[]),
-    ]).then(([sf, hz, pk]) => {
+    ]).then(([sf, sv, hz, pk]) => {
       setSiniflar(sf);
+      setSinifSeviyeleri(sv);
       setHizmetler(hz);
       setPaketler(pk);
     });
@@ -298,8 +303,9 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
     answer_key_publish_date: exam.answer_key_publish_date?.slice(0, 16) || '',
     puan_yili: exam.puan_yili ?? ('' as number | ''),
     sinif_ids: exam.sinif_ids ?? [],
+    sinif_seviyesi_ids: exam.sinif_seviyesi_ids ?? [],
+    deneme_paketi_ids: exam.deneme_paketi_ids ?? [],
     deneme_hizmeti: exam.deneme_hizmeti,
-    deneme_paketi: exam.deneme_paketi,
   });
   const [editForm, setEditForm] = useState(buildEditForm);
 
@@ -313,10 +319,23 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
 
   const sessions = exam.exam_sessions ?? [];
 
+  const toggleAudience = (
+    key: 'sinif_ids' | 'sinif_seviyesi_ids' | 'deneme_paketi_ids',
+    id: number,
+  ) => {
+    setEditForm(p => ({
+      ...p,
+      [key]: p[key].includes(id) ? p[key].filter(x => x !== id) : [...p[key], id],
+    }));
+  };
+
   /* Lookup gelmeden sinif_display'e düşülür ki satır boş görünmesin. */
-  const sinifNames = siniflar.length > 0
-    ? siniflar.filter(sf => (exam.sinif_ids ?? []).includes(sf.id)).map(sf => sf.ad).join(', ')
-    : exam.sinif_display;
+  const sinifNames = lookupNames(siniflar, exam.sinif_ids ?? []) || exam.sinif_display;
+  const seviyeNames = lookupNames(sinifSeviyeleri, exam.sinif_seviyesi_ids ?? []);
+  const paketNames = lookupNames(
+    paketler,
+    uniqueIds([...(exam.deneme_paketi_ids ?? []), exam.deneme_paketi].filter((x): x is number => x != null)),
+  );
 
   /* Alt bölüm eksik mi? */
   const hasSubSections = (exam.sections || []).some(sec => sec.is_sub_section);
@@ -360,6 +379,10 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
     setSaving(true);
     setTabError('');
     try {
+      const audienceChanged =
+        !sameIdSet(editForm.sinif_ids, exam.sinif_ids ?? []) ||
+        !sameIdSet(editForm.sinif_seviyesi_ids, exam.sinif_seviyesi_ids ?? []) ||
+        !sameIdSet(editForm.deneme_paketi_ids, exam.deneme_paketi_ids ?? []);
       await examApi.update(exam.id, {
         name: editForm.name.trim(),
         description: editForm.description,
@@ -373,7 +396,11 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
         puan_yili: editForm.puan_yili === '' ? null : Number(editForm.puan_yili),
         sinif_ids: editForm.sinif_ids,
         deneme_hizmeti: editForm.deneme_hizmeti,
-        deneme_paketi: editForm.deneme_paketi,
+        deneme_paketi: editForm.deneme_paketi_ids[0] ?? null,
+        ...(audienceChanged ? {
+          sinif_seviyesi_ids: editForm.sinif_seviyesi_ids,
+          deneme_paketi_ids: editForm.deneme_paketi_ids,
+        } : {}),
       } as Partial<ExamDetail>);
       setEditing(false);
       onRefresh();
@@ -554,38 +581,6 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                     onChange={e => setEf({ description: e.target.value })} />
                 </div>
                 <div className={s.formGroupFull}>
-                  <label>Sınıflar</label>
-                  <SinifPicker
-                    options={siniflar}
-                    selected={ef.sinif_ids}
-                    onChange={ids => setEf({ sinif_ids: ids })}
-                  />
-                </div>
-                <div className={s.formGroup}>
-                  <label>Deneme Hizmeti</label>
-                  <select
-                    value={ef.deneme_hizmeti ?? ''}
-                    onChange={e => setEf({ deneme_hizmeti: e.target.value ? Number(e.target.value) : null })}
-                  >
-                    <option value="">Seçilmedi</option>
-                    {hizmetler.map(h => <option key={h.id} value={h.id}>{h.ad}</option>)}
-                  </select>
-                </div>
-                <div className={s.formGroup}>
-                  <label>Deneme Paketi</label>
-                  <select
-                    value={ef.deneme_paketi ?? ''}
-                    onChange={e => setEf({ deneme_paketi: e.target.value ? Number(e.target.value) : null })}
-                  >
-                    <option value="">Seçilmedi</option>
-                    {paketler.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.ad}{p.deneme_sayisi ? ` (${p.deneme_sayisi} deneme)` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className={s.formGroupFull}>
                   <div style={{
                     background: '#f8fafc', border: '1px solid var(--border)',
                     borderRadius: 10, padding: '12px 16px',
@@ -633,8 +628,6 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
               <InfoItem label="Kurum" value={exam.kurum_adi || '—'} />
               <InfoItem label="Şube" value={exam.sube_adi || '—'} />
               <InfoItem label="Eğitim Yılı" value={exam.egitim_yili_str || '—'} />
-              {/* sinif_display liste ekranı için "+N" ile kısaltır; detayda tam liste gerekir. */}
-              <InfoItem label="Sınıflar" value={sinifNames || '—'} />
               <InfoItem
                 label="Katılımcı"
                 value={exam.participant_count != null ? String(exam.participant_count) : '—'}
@@ -644,33 +637,66 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
         </div>
       </div>
 
-      {/* ── Deneme Bilgileri ─────────────────────────────────────────── */}
-      {(exam.deneme_hizmeti || exam.deneme_paketi) && (
-        <div className="card-modern">
-          <div className="card-modern-header">
-            <h3>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
-              Deneme Bilgileri
-            </h3>
-          </div>
-          <div className={`card-modern-body ${s.cardBody}`}>
+      {/* ── Kimler girecek (oluşturma sihirbazıyla aynı seçim) ────────── */}
+      <div className="card-modern">
+        <div className="card-modern-header">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            Kimler girecek
+          </h3>
+        </div>
+        <div className={`card-modern-body ${s.cardBody}`}>
+          {!editing ? (
             <div className={s.infoGrid}>
+              <InfoItem label="Seviye" value={seviyeNames || '—'} />
+              <InfoItem label="Sınıflar" value={sinifNames || '—'} />
+              <InfoItem label="Deneme paketi" value={paketNames || '—'} />
               {exam.deneme_hizmeti && (
                 <InfoItem
-                  label="Hizmet"
+                  label="Deneme hizmeti"
                   value={hizmetler.find(h => h.id === exam.deneme_hizmeti)?.ad ?? `#${exam.deneme_hizmeti}`}
                 />
               )}
-              {exam.deneme_paketi && (
-                <InfoItem
-                  label="Paket"
-                  value={paketler.find(p => p.id === exam.deneme_paketi)?.ad ?? `#${exam.deneme_paketi}`}
-                />
-              )}
             </div>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className={r.heroCopy}>
+                <p style={{ margin: 0 }}>
+                  Sınıf, seviye ve deneme paketini dilediğiniz gibi birleştirin.
+                  Aynı öğrenci bir kez gelir. Seviye + paket birlikte seçilirse kesişim alınır;
+                  konu tarama için yalnız sınıf yeter. Kaydetmek otomatik katılımcı listesini bu kurallara göre günceller.
+                </p>
+              </div>
+              <div className={r.stats} style={{ minWidth: 0 }}>
+                <div className={r.stat}><span className={r.statValue}>{ef.sinif_ids.length}</span><span className={r.statLabel}>Sınıf</span></div>
+                <div className={r.stat}><span className={r.statValue}>{ef.sinif_seviyesi_ids.length}</span><span className={r.statLabel}>Seviye</span></div>
+                <div className={r.stat}><span className={r.statValue}>{ef.deneme_paketi_ids.length}</span><span className={r.statLabel}>Paket</span></div>
+              </div>
+              <AudiencePicker
+                sinifSeviyeleri={sinifSeviyeleri}
+                siniflar={siniflar}
+                denemePaketleri={paketler}
+                sinifSeviyesiIds={ef.sinif_seviyesi_ids}
+                sinifIds={ef.sinif_ids}
+                denemePaketiIds={ef.deneme_paketi_ids}
+                onToggleSeviye={id => toggleAudience('sinif_seviyesi_ids', id)}
+                onToggleSinif={id => toggleAudience('sinif_ids', id)}
+                onTogglePaket={id => toggleAudience('deneme_paketi_ids', id)}
+              />
+              <div className={s.formGroup} style={{ maxWidth: 360 }}>
+                <label>Deneme hizmeti <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
+                <select
+                  value={ef.deneme_hizmeti ?? ''}
+                  onChange={e => setEf({ deneme_hizmeti: e.target.value ? Number(e.target.value) : null })}
+                >
+                  <option value="">Seçilmedi</option>
+                  {hizmetler.map(h => <option key={h.id} value={h.id}>{h.ad}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* ── Oturumlar (Sınav Tarihleri & Saatleri) ────────────────────── */}
       <div className="card-modern">
@@ -997,45 +1023,21 @@ function InfoItem({ label: lbl, value }: { label: string; value: string | number
   );
 }
 
-/** Çoklu sınıf seçimi — sınav oluşturma sayfasındaki etiket düzeniyle aynı. */
-function SinifPicker({ options, selected, onChange }: {
-  options: LookupItem[];
-  selected: number[];
-  onChange: (ids: number[]) => void;
-}) {
-  if (options.length === 0) {
-    return (
-      <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
-        Bu kurum için tanımlı sınıf bulunamadı.
-      </p>
-    );
-  }
-  const toggle = (id: number) =>
-    onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]);
+function uniqueIds(ids: number[]) {
+  return [...new Set(ids)];
+}
 
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-      {options.map(opt => {
-        const on = selected.includes(opt.id);
-        return (
-          <button
-            key={opt.id}
-            type="button"
-            onClick={() => toggle(opt.id)}
-            style={{
-              padding: '5px 12px', fontSize: 12, borderRadius: 999, cursor: 'pointer',
-              border: `1px solid ${on ? 'var(--primary)' : 'var(--border)'}`,
-              background: on ? 'var(--primary)' : '#fff',
-              color: on ? '#fff' : 'var(--text-secondary)',
-              fontWeight: on ? 600 : 400,
-            }}
-          >
-            {opt.ad}
-          </button>
-        );
-      })}
-    </div>
-  );
+function sameIdSet(a: number[], b: number[]) {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort((x, y) => x - y);
+  const sb = [...b].sort((x, y) => x - y);
+  return sa.every((v, i) => v === sb[i]);
+}
+
+function lookupNames(options: LookupItem[], ids: number[]) {
+  if (!ids.length) return '';
+  const byId = new Map(options.map(o => [o.id, o.ad]));
+  return ids.map(id => byId.get(id) ?? `#${id}`).join(', ');
 }
 
 

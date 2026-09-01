@@ -19,6 +19,7 @@ import type {
   SessionCreateForm,
 } from '../../../../components/olcme/types';
 import { groupSeated, previewSeating } from '../../../../components/olcme/roster/seating';
+import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
 import r from '../../../../components/olcme/roster/roster.module.css';
 import s from '../olcme.module.css';
 
@@ -77,7 +78,6 @@ export default function YeniSinavPage() {
   const [siniflar, setSiniflar]                 = useState<LookupItem[]>([]);
   const [sinifSeviyeleri, setSinifSeviyeleri]   = useState<LookupItem[]>([]);
   const [denemePaketleri, setDenemePaketleri]   = useState<LookupItem[]>([]);
-  const [seviyeFilter, setSeviyeFilter]         = useState<number | ''>('');
   const [kurumDefaultYear, setKurumDefaultYear] = useState(2025);
   const [managedYears, setManagedYears]         = useState<number[]>([2024, 2025, 2026]);
   const [existingNames, setExistingNames]       = useState<string[]>([]);
@@ -171,10 +171,6 @@ export default function YeniSinavPage() {
     setSessions(p => p
       .filter((_, j) => j !== i)
       .map((ss, j) => ({ ...ss, order: j })));
-
-  const filteredSiniflar = seviyeFilter
-    ? siniflar.filter(si => si.seviye_id === seviyeFilter)
-    : siniflar;
 
   /* ── Doğrulama ───────────────────────────────────────────────────────────── */
   const validate = useCallback((): Record<string, string> => {
@@ -830,78 +826,17 @@ export default function YeniSinavPage() {
                 <div className={r.stat}><span className={r.statValue}>{form.deneme_paketi_ids.length}</span><span className={r.statLabel}>Paket</span></div>
               </div>
             </div>
-            <div className={r.grid3}>
-              <section className={r.card}>
-                <div className={r.cardHead}>
-                  <div>
-                    <h3>Seviye</h3>
-                    <p>Sınıfsız kayıtlar da bu seviyeye yazılır.</p>
-                  </div>
-                </div>
-                <div className={r.cardBody}>
-                  <div className={r.choiceGrid}>
-                    {sinifSeviyeleri.map(sv => (
-                      <button key={sv.id} type="button"
-                        className={form.sinif_seviyesi_ids.includes(sv.id) ? r.choiceOn : r.choice}
-                        onClick={() => toggleSeviye(sv.id)}>
-                        {sv.ad}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </section>
-              <section className={r.card}>
-                <div className={r.cardHead}>
-                  <div>
-                    <h3>Sınıflar</h3>
-                    <p>Somut şube sınıfları.</p>
-                  </div>
-                </div>
-                <div className={r.cardBody}>
-                  <div className={r.filterRow}>
-                    <button type="button" className={seviyeFilter === '' ? r.filterOn : r.filter} onClick={() => setSeviyeFilter('')}>Tümü</button>
-                    {sinifSeviyeleri.map(sv => (
-                      <button key={sv.id} type="button"
-                        className={seviyeFilter === sv.id ? r.filterOn : r.filter}
-                        onClick={() => setSeviyeFilter(sv.id)}>
-                        {sv.ad}
-                      </button>
-                    ))}
-                  </div>
-                  <div className={r.choiceGrid}>
-                    {filteredSiniflar.map(si => (
-                      <button key={si.id} type="button"
-                        className={form.sinif_ids.includes(si.id) ? r.choiceOn : r.choice}
-                        onClick={() => toggleSinif(si.id)}>
-                        {si.ad}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </section>
-              <section className={r.card}>
-                <div className={r.cardHead}>
-                  <div>
-                    <h3>Deneme paketi</h3>
-                    <p>Paketi olan öğrenciler (Deneme Kulübü dahil).</p>
-                  </div>
-                </div>
-                <div className={r.cardBody}>
-                  <div className={r.choiceGrid}>
-                    {denemePaketleri.map(p => (
-                      <button key={p.id} type="button"
-                        className={form.deneme_paketi_ids.includes(p.id) ? r.choiceOn : r.choice}
-                        onClick={() => togglePaket(p.id)}>
-                        {p.ad}
-                      </button>
-                    ))}
-                    {denemePaketleri.length === 0 && (
-                      <p className={r.meta}>Bu şubede tanımlı deneme paketi yok.</p>
-                    )}
-                  </div>
-                </div>
-              </section>
-            </div>
+            <AudiencePicker
+              sinifSeviyeleri={sinifSeviyeleri}
+              siniflar={siniflar}
+              denemePaketleri={denemePaketleri}
+              sinifSeviyesiIds={form.sinif_seviyesi_ids}
+              sinifIds={form.sinif_ids}
+              denemePaketiIds={form.deneme_paketi_ids}
+              onToggleSeviye={toggleSeviye}
+              onToggleSinif={toggleSinif}
+              onTogglePaket={togglePaket}
+            />
           </div>
         )}
 
