@@ -174,6 +174,7 @@ export interface Assignment {
   student_soyad: string;
   student_full_name: string;
   student_sinif: string | null;
+  student_profil_foto?: string | null;
   start_date: string;
   end_date: string | null;
   is_primary: boolean;
@@ -214,6 +215,7 @@ export interface AvailableStudent {
   full_name: string;
   sinif?: string | null;
   seviye?: string | null;
+  profil_foto?: string | null;
 }
 
 function normalizeStudentList(data: unknown): AvailableStudent[] {

@@ -444,17 +444,20 @@ class CoachViewSet(viewsets.ModelViewSet):
                 kayitlar__aktif_mi=True,
             ).distinct()
 
-        queryset = queryset.order_by('ad', 'soyad').values('id', 'ad', 'soyad')[:100]
+        queryset = queryset.order_by('ad', 'soyad').only('id', 'ad', 'soyad', 'profil_foto')[:100]
 
-        students = [
-            {
-                'id': s['id'],
-                'ad': s['ad'],
-                'soyad': s['soyad'],
-                'full_name': f"{s['ad']} {s['soyad']}",
-            }
-            for s in queryset
-        ]
+        students = []
+        for s in queryset:
+            foto = None
+            if s.profil_foto:
+                foto = request.build_absolute_uri(s.profil_foto.url)
+            students.append({
+                'id': s.id,
+                'ad': s.ad,
+                'soyad': s.soyad,
+                'full_name': f"{s.ad} {s.soyad}",
+                'profil_foto': foto,
+            })
 
         return Response({
             'success': True,
