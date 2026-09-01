@@ -70,6 +70,21 @@ function statusBadgeClass(status: string): string {
   return map[status] || "draft";
 }
 
+function deliveryStatusClass(status: string): string {
+  if (status === "READ" || status === "DELIVERED") return "completed";
+  if (status === "SENT") return "confirmed";
+  if (status === "FAILED" || status === "CANCELLED") return "cancelled";
+  if (status === "SENDING" || status === "PENDING") return "processing";
+  return "draft";
+}
+
+function contactTypeLabel(type: string): string {
+  if (type === "VELI") return "Veli";
+  if (type === "OGRENCI") return "Öğrenci";
+  if (type === "PERSONEL") return "Personel";
+  return "";
+}
+
 export default function KampanyaDetayClient() {
   const params = useParams();
   const campaignId = params.id as string;
@@ -220,7 +235,31 @@ export default function KampanyaDetayClient() {
 
       {!!campaign.deliveries?.length && (
         <div className="comm-card" style={{ marginBottom: "1rem" }}>
-          <h2 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>Alıcılar</h2>
+          <div className="comm-delivery-toolbar">
+            <h2>Alıcılar</h2>
+            <div className="comm-delivery-actions">
+              {canRetry && (
+                <button
+                  type="button"
+                  className="comm-btn-primary comm-delivery-retry"
+                  disabled={actionLoading === "retry"}
+                  onClick={handleRetry}
+                >
+                  {actionLoading === "retry" ? "Yeniden deneniyor…" : "Başarısızları yeniden dene"}
+                </button>
+              )}
+              {canCancel && (
+                <button
+                  type="button"
+                  className="comm-btn-secondary comm-btn-danger"
+                  disabled={actionLoading === "cancel"}
+                  onClick={handleCancel}
+                >
+                  {actionLoading === "cancel" ? "İptal ediliyor…" : "Gönderimi iptal et"}
+                </button>
+              )}
+            </div>
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table className="comm-table" style={{ width: "100%", fontSize: 13 }}>
               <thead>
@@ -233,20 +272,24 @@ export default function KampanyaDetayClient() {
               </thead>
               <tbody>
                 {campaign.deliveries.map(row => {
-                  const fullNote = row.failed_reason || "";
+                  const isFailed = row.status === "FAILED";
+                  const fullNote = isFailed ? (row.failed_reason || "") : "";
                   const shortNote = (row.failed_reason_short || "").trim() || fullNote;
+                  const kind = contactTypeLabel(row.contact_type);
                   return (
                   <tr key={row.id}>
                     <td style={{ padding: "6px 8px" }}>
-                      {row.contact_name || "—"}
-                      {row.contact_type ? (
-                        <span style={{ color: "#667781", marginLeft: 6, fontSize: 11 }}>
-                          {row.contact_type === "VELI" ? "Veli" : row.contact_type === "OGRENCI" ? "Öğrenci" : row.contact_type}
-                        </span>
-                      ) : null}
+                      <div className="comm-delivery-who">
+                        <strong>{row.contact_name || "—"}</strong>
+                        {kind ? <span className="comm-delivery-kind">{kind}</span> : null}
+                      </div>
                     </td>
                     <td style={{ padding: "6px 8px" }}>{row.phone || "—"}</td>
-                    <td style={{ padding: "6px 8px" }}>{formatMessageStatus(row.status)}</td>
+                    <td style={{ padding: "6px 8px" }}>
+                      <span className={`comm-status-badge ${deliveryStatusClass(row.status)}`}>
+                        {formatMessageStatus(row.status)}
+                      </span>
+                    </td>
                     <td style={{ padding: "6px 8px", color: fullNote ? "#b91c1c" : "#667781" }}>
                       {fullNote ? (
                         <span className="comm-delivery-note" title={fullNote}>
@@ -284,28 +327,30 @@ export default function KampanyaDetayClient() {
         </div>
       )}
 
-      <div className="comm-btn-row" style={{ marginTop: "1.5rem" }}>
-        {canRetry && (
-          <button
-            type="button"
-            className="comm-btn-secondary"
-            disabled={actionLoading === "retry"}
-            onClick={handleRetry}
-          >
-            {actionLoading === "retry" ? "Yeniden deneniyor…" : "Başarısızları Yeniden Dene"}
-          </button>
-        )}
-        {canCancel && (
-          <button
-            type="button"
-            className="comm-btn-secondary comm-btn-danger"
-            disabled={actionLoading === "cancel"}
-            onClick={handleCancel}
-          >
-            {actionLoading === "cancel" ? "İptal ediliyor…" : "Gönderimi İptal Et"}
-          </button>
-        )}
-      </div>
+      {!campaign.deliveries?.length && (canRetry || canCancel) && (
+        <div className="comm-delivery-actions" style={{ marginTop: "1rem" }}>
+          {canRetry && (
+            <button
+              type="button"
+              className="comm-btn-primary comm-delivery-retry"
+              disabled={actionLoading === "retry"}
+              onClick={handleRetry}
+            >
+              {actionLoading === "retry" ? "Yeniden deneniyor…" : "Başarısızları yeniden dene"}
+            </button>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              className="comm-btn-secondary comm-btn-danger"
+              disabled={actionLoading === "cancel"}
+              onClick={handleCancel}
+            >
+              {actionLoading === "cancel" ? "İptal ediliyor…" : "Gönderimi iptal et"}
+            </button>
+          )}
+        </div>
+      )}
     </CommunicationPageShell>
   );
 }

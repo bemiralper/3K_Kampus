@@ -34,3 +34,7 @@ class DeliveryErrorExplainTest(SimpleTestCase):
         self.assertEqual(short, 'İletilemedi')
         self.assertGreater(len(full), len(short))
         self.assertIn('iletilemedi', full.lower())
+
+    def test_summarize_empty_stays_empty(self):
+        self.assertEqual(summarize_delivery_failure(''), ('', ''))
+        self.assertEqual(summarize_delivery_failure(None), ('', ''))

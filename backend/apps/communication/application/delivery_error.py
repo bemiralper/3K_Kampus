@@ -125,7 +125,11 @@ def summarize_delivery_failure(
     code: int | None = None,
     details: str = '',
 ) -> tuple[str, str]:
-    """(kısa etiket, tam açıklama) — tabloda kısa, hover’da uzun."""
+    """(kısa etiket, tam açıklama) — tabloda kısa, hover’da uzun. Boş neden = boş."""
+    text = (reason or '').strip()
+    extra = (details or '').strip()
+    if not text and not extra and code is None:
+        return '', ''
     full = explain_delivery_failure(reason, code=code, details=details)
     short = _short_from_reason(reason, code=code) or _short_from_reason(full)
     return short or full, full

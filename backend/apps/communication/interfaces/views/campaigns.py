@@ -19,6 +19,7 @@ from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube, resolve_kurum_id as _resolve_kurum_id
 from apps.communication.infrastructure.repository import OutboundCampaignRepository
 from apps.communication.permissions import CommunicationBulkPermission
+from apps.communication.domain.enums import MessageStatus
 from apps.communication.domain.models import Message
 
 
@@ -55,7 +56,11 @@ def _campaign_deliveries(campaign, *, limit=500):
             )
             if looks_like_phone(name, conv.contact_phone):
                 name = ''
-        short_reason, full_reason = summarize_delivery_failure(msg.failed_reason or '')
+        raw_reason = (msg.failed_reason or '').strip()
+        if msg.status == MessageStatus.FAILED:
+            short_reason, full_reason = summarize_delivery_failure(raw_reason)
+        else:
+            short_reason, full_reason = '', ''
         rows.append({
             'id': str(msg.id),
             'contact_name': name,

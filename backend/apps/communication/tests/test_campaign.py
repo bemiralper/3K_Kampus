@@ -314,13 +314,17 @@ class CampaignAudienceTest(TestCase):
         self.assertTrue(names)
         self.assertTrue(all(name and not name.startswith('+') for name in names))
         self.assertTrue(any('Ali' in name or 'Anne' in name for name in names))
+        self.assertTrue(all(not row['failed_reason'] for row in rows))
         failed = next(iter(rows))
         failed_msg = Message.objects.get(id=failed['id'])
+        failed_msg.status = MessageStatus.FAILED
         failed_msg.failed_reason = 'Message undeliverable'
-        failed_msg.save(update_fields=['failed_reason'])
+        failed_msg.save(update_fields=['status', 'failed_reason'])
         again = {row['id']: row for row in _campaign_deliveries(campaign)}
         self.assertEqual(again[str(failed_msg.id)]['failed_reason_short'], 'İletilemedi')
         self.assertGreater(len(again[str(failed_msg.id)]['failed_reason']), 20)
+        ok_id = next(row['id'] for row in again.values() if row['id'] != str(failed_msg.id))
+        self.assertEqual(again[ok_id]['failed_reason'], '')
 
     def test_cancel_marks_pending_cancelled(self):
         service = CampaignService()
