@@ -3991,6 +3991,16 @@
   font-size: 0.8125rem;
 }
 
+.comm-delivery-note {
+  display: inline-block;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  cursor: help;
+}
+
 @media (max-width: 1024px) {
   .comm-studio-top,
   .comm-studio-body,

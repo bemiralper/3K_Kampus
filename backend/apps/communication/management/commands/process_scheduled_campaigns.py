@@ -1,10 +1,11 @@
 """
-Zamanlanmış kampanyaları onayla ve kuyruğa al.
+Zamanı gelmiş ve kuyruğu henüz üretilmemiş kampanyaları işler.
 
 Cron önerisi: her 1 dakika
   python manage.py process_scheduled_campaigns
 """
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.communication.application.campaign_service import CampaignService
@@ -13,7 +14,10 @@ from apps.communication.domain.models import OutboundCampaign
 
 
 class Command(BaseCommand):
-    help = 'scheduled_at geçmiş DRAFT/CONFIRMED kampanyaları onaylar ve kuyruğa alır'
+    help = (
+        'Zamanı gelmiş taslak/onaylı kampanyaları ve kuyruğu henüz '
+        'üretilmemiş anlık CONFIRMED kampanyaları işler'
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -26,11 +30,11 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         now = timezone.now()
 
+        due_scheduled = Q(scheduled_at__isnull=False, scheduled_at__lte=now)
+        stuck_immediate = Q(scheduled_at__isnull=True, status=CampaignStatus.CONFIRMED)
         qs = OutboundCampaign.objects.filter(
-            scheduled_at__isnull=False,
-            scheduled_at__lte=now,
             status__in=[CampaignStatus.DRAFT, CampaignStatus.CONFIRMED],
-        ).order_by('scheduled_at')
+        ).filter(due_scheduled | stuck_immediate).order_by('scheduled_at', 'created_at')
 
         count = qs.count()
         if count == 0:

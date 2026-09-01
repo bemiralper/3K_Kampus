@@ -92,9 +92,10 @@ export default function KampanyaDetayClient() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 15000);
+    const inflight = campaign?.status === "CONFIRMED" || campaign?.status === "PROCESSING";
+    const interval = setInterval(load, inflight ? 4000 : 15000);
     return () => clearInterval(interval);
-  }, [load]);
+  }, [load, campaign?.status]);
 
   const handleRetry = async () => {
     setActionLoading("retry");
@@ -227,14 +228,17 @@ export default function KampanyaDetayClient() {
                   <th style={{ textAlign: "left", padding: "6px 8px" }}>Kişi</th>
                   <th style={{ textAlign: "left", padding: "6px 8px" }}>Telefon</th>
                   <th style={{ textAlign: "left", padding: "6px 8px" }}>Durum</th>
-                  <th style={{ textAlign: "left", padding: "6px 8px" }}>Not</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px" }}>Açıklama</th>
                 </tr>
               </thead>
               <tbody>
-                {campaign.deliveries.map(row => (
+                {campaign.deliveries.map(row => {
+                  const fullNote = row.failed_reason || "";
+                  const shortNote = (row.failed_reason_short || "").trim() || fullNote;
+                  return (
                   <tr key={row.id}>
                     <td style={{ padding: "6px 8px" }}>
-                      {row.contact_name}
+                      {row.contact_name || "—"}
                       {row.contact_type ? (
                         <span style={{ color: "#667781", marginLeft: 6, fontSize: 11 }}>
                           {row.contact_type === "VELI" ? "Veli" : row.contact_type === "OGRENCI" ? "Öğrenci" : row.contact_type}
@@ -243,11 +247,16 @@ export default function KampanyaDetayClient() {
                     </td>
                     <td style={{ padding: "6px 8px" }}>{row.phone || "—"}</td>
                     <td style={{ padding: "6px 8px" }}>{formatMessageStatus(row.status)}</td>
-                    <td style={{ padding: "6px 8px", color: row.failed_reason ? "#b91c1c" : "#667781" }}>
-                      {row.failed_reason || "—"}
+                    <td style={{ padding: "6px 8px", color: fullNote ? "#b91c1c" : "#667781" }}>
+                      {fullNote ? (
+                        <span className="comm-delivery-note" title={fullNote}>
+                          {shortNote}
+                        </span>
+                      ) : "—"}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

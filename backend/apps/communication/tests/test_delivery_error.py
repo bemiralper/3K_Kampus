@@ -3,6 +3,7 @@ from django.test import SimpleTestCase
 from apps.communication.application.delivery_error import (
     explain_delivery_failure,
     explain_from_webhook_errors,
+    summarize_delivery_failure,
 )
 
 
@@ -27,3 +28,9 @@ class DeliveryErrorExplainTest(SimpleTestCase):
     def test_already_turkish_kept(self):
         text = explain_delivery_failure('Numara WhatsApp’te kayıtlı değil.')
         self.assertIn('WhatsApp', text)
+
+    def test_summarize_is_short_with_full_on_side(self):
+        short, full = summarize_delivery_failure('Message undeliverable')
+        self.assertEqual(short, 'İletilemedi')
+        self.assertGreater(len(full), len(short))
+        self.assertIn('iletilemedi', full.lower())

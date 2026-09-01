@@ -23,21 +23,47 @@ from apps.communication.domain.models import Message
 
 
 def _campaign_deliveries(campaign, *, limit=500):
+    from apps.communication.application.conversation_display import (
+        looks_like_phone,
+        resolve_conversation_display_name,
+    )
+    from apps.communication.application.delivery_error import summarize_delivery_failure
+
     rows = []
     qs = (
         Message.objects.filter(campaign=campaign)
-        .select_related('conversation')
+        .select_related(
+            'conversation',
+            'conversation__veli',
+            'conversation__ogrenci',
+            'conversation__contact_identity',
+            'conversation__contact_identity__veli',
+            'conversation__contact_identity__ogrenci',
+            'conversation__contact_identity__personel',
+        )
         .order_by('created_at')[:limit]
     )
+    lookup_cache: dict = {}
     for msg in qs:
         conv = msg.conversation
+        name = ''
+        if conv:
+            name = resolve_conversation_display_name(
+                conv,
+                allow_live_lookup=True,
+                lookup_cache=lookup_cache,
+            )
+            if looks_like_phone(name, conv.contact_phone):
+                name = ''
+        short_reason, full_reason = summarize_delivery_failure(msg.failed_reason or '')
         rows.append({
             'id': str(msg.id),
-            'contact_name': (conv.contact_name or '').strip() or conv.contact_phone,
-            'phone': conv.contact_phone or '',
-            'contact_type': conv.contact_type or '',
+            'contact_name': name,
+            'phone': (conv.contact_phone if conv else '') or '',
+            'contact_type': (conv.contact_type if conv else '') or '',
             'status': msg.status,
-            'failed_reason': msg.failed_reason or '',
+            'failed_reason': full_reason,
+            'failed_reason_short': short_reason if full_reason else '',
             'sent_at': msg.sent_at.isoformat() if msg.sent_at else None,
         })
     return rows
@@ -148,6 +174,7 @@ class CampaignListCreateView(CampaignBulkView):
             campaign = service.confirm(
                 campaign,
                 sender_user_id=request.user.id if request.user.is_authenticated else None,
+                enqueue_async=True,
             )
         except ValidationError as exc:
             return Response({'error': str(exc.message if hasattr(exc, 'message') else exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -193,6 +220,7 @@ class CampaignConfirmView(CampaignBulkView):
             campaign = service.confirm(
                 campaign,
                 sender_user_id=request.user.id if request.user.is_authenticated else None,
+                enqueue_async=True,
             )
         except ValidationError as exc:
             return Response({'error': str(exc.message if hasattr(exc, 'message') else exc)}, status=status.HTTP_400_BAD_REQUEST)

@@ -29,6 +29,22 @@ _CODE_MAP: dict[int, str] = {
     368: 'WhatsApp hesabı geçici olarak engellenmiş. Meta İşletme yöneticisini kontrol edin.',
 }
 
+_SHORT_MAP: dict[int, str] = {
+    131026: 'İletilemedi',
+    131047: 'Pencere kapalı',
+    131051: 'Desteklenmiyor',
+    131021: 'Geçici kısıtlama',
+    131031: 'Hesap kilitli',
+    131045: 'Çok sık gönderim',
+    131053: 'Medya yüklenemedi',
+    132000: 'Şablon değişkeni',
+    132001: 'Şablon yok',
+    132015: 'Şablon duraklatıldı',
+    132016: 'Şablon kapalı',
+    130429: 'Kota doldu',
+    368: 'Hesap engelli',
+}
+
 _TITLE_MAP: dict[str, str] = {
     'message undeliverable': _CODE_MAP[131026],
     'undeliverable': _CODE_MAP[131026],
@@ -75,6 +91,44 @@ def explain_delivery_failure(
             return mapped
 
     return text
+
+
+def _short_from_reason(reason: str | None, *, code: int | None = None) -> str:
+    if code is not None:
+        mapped = _SHORT_MAP.get(int(code))
+        if mapped:
+            return mapped
+    text = (reason or '').strip()
+    if not text:
+        return ''
+    code_match = re.search(r'\b(13\d{4}|368)\b', text)
+    if code_match:
+        mapped = _SHORT_MAP.get(int(code_match.group(1)))
+        if mapped:
+            return mapped
+    key = text.lower()
+    for needle, translated in _TITLE_MAP.items():
+        if needle in key:
+            for mapped_code, short in _SHORT_MAP.items():
+                if _CODE_MAP.get(mapped_code) == translated:
+                    return short
+            break
+    first = re.split(r'[.!?]', text, maxsplit=1)[0].strip()
+    if len(first) > 36:
+        return first[:34].rstrip() + '…'
+    return first or text
+
+
+def summarize_delivery_failure(
+    reason: str | None,
+    *,
+    code: int | None = None,
+    details: str = '',
+) -> tuple[str, str]:
+    """(kısa etiket, tam açıklama) — tabloda kısa, hover’da uzun."""
+    full = explain_delivery_failure(reason, code=code, details=details)
+    short = _short_from_reason(reason, code=code) or _short_from_reason(full)
+    return short or full, full
 
 
 def explain_from_webhook_errors(errors: list[Any] | None) -> str:

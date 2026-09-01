@@ -57,6 +57,8 @@ function communicationApiUrl(path: string): string {
 }
 
 const REQUEST_TIMEOUT_MS = 45_000;
+/** Taslak oluşturma kitle çözümlemesi için; onay artık arka planda kuyruklar. */
+const CAMPAIGN_MUTATION_TIMEOUT_MS = 90_000;
 
 /**
  * 24 saatlik serbest mesaj penceresi kapalı — Meta onaylı şablon gerekir.
@@ -113,20 +115,24 @@ function errorFromBody(body: Record<string, unknown>, status: number): Error {
   return new Error(message);
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit & { timeoutMs?: number } = {},
+): Promise<T> {
+  const { timeoutMs = REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...getContextHeaders(),
-    ...(options.headers as Record<string, string> || {}),
+    ...(fetchOptions.headers as Record<string, string> || {}),
   };
-  if (csrf && options.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method)) {
+  if (csrf && fetchOptions.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(fetchOptions.method)) {
     headers['X-CSRFToken'] = csrf;
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const parentSignal = options.signal;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const parentSignal = fetchOptions.signal;
   const onParentAbort = () => controller.abort();
   if (parentSignal) {
     if (parentSignal.aborted) controller.abort();
@@ -137,7 +143,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(communicationApiUrl(path), {
       credentials: 'include',
       cache: 'no-store',
-      ...options,
+      ...fetchOptions,
       headers,
       signal: controller.signal,
     });
@@ -1964,6 +1970,7 @@ export interface CampaignDelivery {
   contact_type: string;
   status: string;
   failed_reason: string;
+  failed_reason_short?: string;
   sent_at: string | null;
 }
 
@@ -2042,6 +2049,7 @@ export async function createCampaign(data: {
   return request<CampaignItem>('/campaigns/', {
     method: 'POST',
     body: JSON.stringify({ ...data, kurum_id: kurumId }),
+    timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
   });
 }
 
@@ -2050,6 +2058,7 @@ export async function confirmCampaign(campaignId: string): Promise<CampaignItem>
   return request<CampaignItem>(`/campaigns/${campaignId}/confirm/`, {
     method: 'POST',
     body: JSON.stringify({ kurum_id: kurumId }),
+    timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
   });
 }
 
@@ -2093,7 +2102,7 @@ export async function resolveRecipients(
 
 export const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Taslak',
-  CONFIRMED: 'Onaylandı',
+  CONFIRMED: 'Kuyruğa alınıyor',
   QUEUED: 'Kuyrukta',
   PROCESSING: 'İşleniyor',
   COMPLETED: 'Tamamlandı',
