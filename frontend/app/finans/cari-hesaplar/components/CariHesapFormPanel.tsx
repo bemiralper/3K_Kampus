@@ -7,6 +7,7 @@ import { gelirKategoriService } from "../../services/gelir-api";
 import { CariHesap, HESAP_TURLERI } from "../../types/cari-hesap-types";
 import type { GiderKategorisiTreeItem } from "../../types/gider-kategori-types";
 import type { GelirKategorisiTreeItem } from "../../types/gelir-kategori-types";
+import { trIncludes } from "@/lib/text-format";
 
 /* ═══════════════════════════════════════════
    Style atoms
@@ -139,13 +140,13 @@ function CariKategoriPicker({ kurumId, subeId, selectedIds, onChange, fetchTree 
     });
   };
 
-  const q = search.toLowerCase();
+  const q = search.trim();
   const filtered = tree
     .map((ana) => ({
       ...ana,
-      alt_kategoriler: ana.alt_kategoriler.filter((alt) => !q || alt.ad.toLowerCase().includes(q)),
+      alt_kategoriler: ana.alt_kategoriler.filter((alt) => !q || trIncludes(alt.ad, q)),
     }))
-    .filter((ana) => !q || ana.ad.toLowerCase().includes(q) || ana.alt_kategoriler.length > 0);
+    .filter((ana) => !q || trIncludes(ana.ad, q) || ana.alt_kategoriler.length > 0);
 
   const allItems: { id: number; label: string }[] = [];
   tree.forEach((ana) => {
@@ -273,7 +274,7 @@ function CariKategoriPicker({ kurumId, subeId, selectedIds, onChange, fetchTree 
                   {expanded.has(ana.id) && ana.alt_kategoriler.length > 0 && (
                     <div className="ml-6 space-y-0.5">
                       {ana.alt_kategoriler
-                        .filter((alt) => !q || alt.ad.toLowerCase().includes(q))
+                        .filter((alt) => !q || trIncludes(alt.ad, q))
                         .map((alt) => (
                           <div
                             key={alt.id}

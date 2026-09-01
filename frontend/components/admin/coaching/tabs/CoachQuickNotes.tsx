@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import { trIncludes } from '@/lib/text-format';
 
 interface Props {
   coachId: number;
@@ -65,7 +66,7 @@ export default function CoachQuickNotes({ coachId }: Props) {
 
   const filtered = notes
     .filter(n => filter === 'all' || n.category === filter)
-    .filter(n => !searchText || n.text.toLowerCase().includes(searchText.toLowerCase()))
+    .filter(n => !searchText || trIncludes(n.text, searchText))
     .sort((a, b) => (a.pinned === b.pinned ? 0 : a.pinned ? -1 : 1));
 
   return (

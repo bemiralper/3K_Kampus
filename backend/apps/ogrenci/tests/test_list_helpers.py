@@ -11,11 +11,49 @@ from apps.odeme_takip.domain.enums import KalemTuru, PaketTuru, SozlesmeDurum
 from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi
 from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciEkHizmet, OgrenciKayit
 from apps.ogrenci.interfaces.list_helpers import (
+    apply_smart_search,
     build_ogrenci_kalemler_map,
     resolve_kalem_filter_turu,
     resolve_sinif_seviyesi_ad,
 )
 from apps.sube.domain.models import Sube
+
+
+class TurkishSmartSearchTest(TestCase):
+    """i/İ ve diğer Türkçe harfler (ç ğ ö ş ü ı) büyük-küçük + aksansız yazım."""
+
+    CASES = (
+        ('Emir', 'İpek', ('ipek', 'İpek', 'İPEK')),
+        ('Çağdaş', 'Şahin', ('cagdas', 'çağdaş', 'ÇAĞDAŞ', 'sahin', 'şahin')),
+        ('Güneş', 'Öğüt', ('gunes', 'güneş', 'GÜNEŞ', 'ogut', 'öğüt')),
+        ('Ümit', 'Işık', ('umit', 'ümit', 'isik', 'ışık', 'IŞIK')),
+        ('Ömer', 'Çiçek', ('omer', 'ömer', 'cicek', 'çiçek', 'ÇİÇEK')),
+    )
+
+    def setUp(self):
+        self.kurum = Kurum.objects.create(ad='Arama Kurum', kod='ARM')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='ARM-M')
+        self.by_soyad = {}
+        for ad, soyad, _queries in self.CASES:
+            self.by_soyad[soyad] = Ogrenci.objects.create(
+                kurum=self.kurum, sube=self.sube, ad=ad, soyad=soyad, aktif_mi=True,
+            )
+
+    def _search(self, query):
+        return list(apply_smart_search(Ogrenci.objects.filter(kurum=self.kurum), query))
+
+    def test_ascii_i_finds_dotted_capital_i(self):
+        self.assertEqual(self._search('ipek'), [self.by_soyad['İpek']])
+
+    def test_dotted_query_finds_same_row(self):
+        self.assertEqual(self._search('İpek'), [self.by_soyad['İpek']])
+
+    def test_all_turkish_letters_ascii_and_cased_queries(self):
+        for ad, soyad, queries in self.CASES:
+            expected = self.by_soyad[soyad]
+            for query in queries:
+                with self.subTest(ad=ad, soyad=soyad, query=query):
+                    self.assertEqual(self._search(query), [expected])
 
 
 class ResolveSinifSeviyesiAdTest(SimpleTestCase):

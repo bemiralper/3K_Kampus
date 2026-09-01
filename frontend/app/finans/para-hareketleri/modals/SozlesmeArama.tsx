@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { odemeTakipBridge, type SozlesmeAramaSonuc } from "../../services/odeme-takip-bridge";
 import { finansModalInputStyle } from "@/components/finans/FinansModal";
+import { trIncludes } from "@/lib/text-format";
 
 const fmtTL = (v: number) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v || 0);
@@ -31,12 +32,12 @@ export default function SozlesmeArama({ value, onChange, onlyWithDebt = false }:
   const results = useMemo(() => {
     let list = all;
     if (onlyWithDebt) list = list.filter((s) => s.durum === "aktif" || s.durum === "dondurulmus");
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     if (!q) return list.slice(0, 30);
     return list
       .filter((s) => {
-        const ogrenciAdi = s.ogrenci ? `${s.ogrenci.ad} ${s.ogrenci.soyad}`.toLowerCase() : "";
-        return s.sozlesme_no.toLowerCase().includes(q) || ogrenciAdi.includes(q);
+        const ogrenciAdi = s.ogrenci ? `${s.ogrenci.ad} ${s.ogrenci.soyad}` : "";
+        return trIncludes(s.sozlesme_no, q) || trIncludes(ogrenciAdi, q);
       })
       .slice(0, 30);
   }, [all, query, onlyWithDebt]);

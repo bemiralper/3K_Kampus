@@ -291,6 +291,9 @@ export interface AssignmentLesson {
   resource_book_name: string;
   topic_name: string;
   content_mode: string;
+  k3_mode?: string;
+  k3_mode_display?: string;
+  k3_target_minutes?: number | null;
   notes: string;
   tasks: AssignmentTask[];
 }
@@ -341,6 +344,8 @@ export interface AssignmentPackageItem {
   question_count: number | null;
   page_start: number | null;
   page_end: number | null;
+  k3_mode?: string;
+  k3_target_minutes?: number | null;
   order?: number;
 }
 
@@ -381,6 +386,8 @@ export interface AssignmentCreatePayload {
     resource_book: number;
     topic_name: string;
     content_mode: string;
+    k3_mode?: string;
+    k3_target_minutes?: number | null;
     notes?: string;
     order?: number;
     tasks: {
@@ -1585,7 +1592,11 @@ export async function createAssignment(data: AssignmentCreatePayload): Promise<A
  * Ödev güncelle
  */
 export async function updateAssignment(id: number, data: Partial<AssignmentCreatePayload>): Promise<ApiResponse<ManualAssignment>> {
-  return apiPut<ManualAssignment>(`/api/coaching/manual-assignments/assignments/${id}/`, data);
+  const result = await apiPut<ManualAssignment>(`/api/coaching/manual-assignments/assignments/${id}/`, data);
+  if (result.success) {
+    notifyResourcesChanged({ type: "assignment-create" });
+  }
+  return result;
 }
 
 /**

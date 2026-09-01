@@ -19,6 +19,7 @@ import {
 } from '@/lib/takvim-api';
 import { fetchGorevTakvim } from '@/lib/gorev-api';
 import { shortEventLabel } from '@/lib/calendar-event-label';
+import { trIncludes } from '@/lib/text-format';
 
 import MiniCalendar from './components/MiniCalendar';
 import CalendarFilterPanel from './components/CalendarFilterPanel';
@@ -117,13 +118,13 @@ export default function GenelTakvimClient() {
           .filter(Boolean),
       );
 
-      const searchQ = (filters.search || '').trim().toLowerCase();
+      const searchQ = (filters.search || '').trim();
       const durum = filters.durum;
 
       const merged: FCEvent[] = [...takvimData];
       for (const g of gorevData) {
         if (syncedAtamaIds.has(String(g.id))) continue;
-        if (searchQ && !(g.title || '').toLowerCase().includes(searchQ)) continue;
+        if (searchQ && !trIncludes(g.title, searchQ)) continue;
         if (durum) {
           const gd = String(g.extendedProps?.durum || '').toUpperCase();
           const ok =

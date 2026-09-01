@@ -44,7 +44,7 @@ import {
   reorderTopics,
   reorderContents,
 } from "@/lib/resources-api";
-import { toTitleCaseTr } from "@/lib/text-format";
+import { toTitleCaseTr, trIncludes } from "@/lib/text-format";
 import type {
   ResourceBook, ResourceUnit, ResourceTopic, ResourceContent,
   Ders, SinifSeviyesi, BookType,
@@ -1395,8 +1395,8 @@ export function useResources(opts: UseResourcesOptions = {}) {
 
   // ═══════ FILTERED BOOKS ═══════
   const filteredBooks = books.filter(b =>
-    b.ad.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    b.kod.toLowerCase().includes(searchTerm.toLowerCase())
+    trIncludes(b.ad, searchTerm) ||
+    trIncludes(b.kod, searchTerm)
   );
 
   return {

@@ -85,3 +85,22 @@ export function buildNewAssignmentFromKontrolHref(
   }
   return `${basePath}?${params.toString()}`;
 }
+
+/** Taslak ödevi Ödev Ver sihirbazında içerik ekleyip çıkararak düzenle. */
+export function buildEditDraftHref(
+  basePath: string,
+  opts: {
+    assignmentId: number;
+    studentId: number;
+    returnPath: string;
+  },
+): string {
+  const params = new URLSearchParams();
+  params.set("edit", String(opts.assignmentId));
+  params.set("student", String(opts.studentId));
+  params.set("locked", "1");
+  params.set("return_to", opts.returnPath);
+  params.set("return", opts.returnPath);
+  params.set("from", "draft");
+  return `${basePath}?${params.toString()}`;
+}

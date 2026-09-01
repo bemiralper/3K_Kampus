@@ -14,6 +14,7 @@ import {
 } from './services';
 import { OdaDrawer, SinifDrawer, OdaTable, SinifTable } from './components';
 import { useKurum } from '@/lib/contexts/KurumContext';
+import { trIncludes } from '@/lib/text-format';
 
 export default function SubeTanimlariPage() {
   const { activeSube } = useKurum();
@@ -177,16 +178,16 @@ export default function SubeTanimlariPage() {
   };
 
   // Filtered data
-  const filteredOdalar = odalar.filter(oda => 
-    oda.ad.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    oda.sube.ad.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredOdalar = odalar.filter(oda =>
+    trIncludes(oda.ad, searchTerm) ||
+    trIncludes(oda.sube.ad, searchTerm)
   );
 
-  const filteredSiniflar = siniflar.filter(sinif => 
-    sinif.ad.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (sinif.kod && sinif.kod.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (sinif.sube?.ad && sinif.sube.ad.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (sinif.sinif_seviyesi?.ad && sinif.sinif_seviyesi.ad.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredSiniflar = siniflar.filter(sinif =>
+    trIncludes(sinif.ad, searchTerm) ||
+    trIncludes(sinif.kod, searchTerm) ||
+    trIncludes(sinif.sube?.ad, searchTerm) ||
+    trIncludes(sinif.sinif_seviyesi?.ad, searchTerm)
   );
 
   // Hydration tamamlanana kadar bekle

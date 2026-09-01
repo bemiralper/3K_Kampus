@@ -15,6 +15,7 @@ import {
 } from "@/lib/resources-api";
 import { BookCover } from "@/components/resources/BookCover";
 import { useToast, ToastBanner } from "./Toast";
+import { trIncludes } from "@/lib/text-format";
 import "./kaynak-havuzu.css";
 
 type FilterType = "all" | "with_resources" | "without_resources" | "with_overdue" | "with_incomplete";
@@ -77,8 +78,8 @@ export default function StudentResourcePoolPage() {
   const filteredStudents = students.filter(s => {
     // Search filter
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      if (!`${s.ad} ${s.soyad} ${s.ogrenci_no}`.toLowerCase().includes(query)) {
+      const query = searchQuery.trim();
+      if (!trIncludes(`${s.ad} ${s.soyad} ${s.ogrenci_no}`, query)) {
         return false;
       }
     }

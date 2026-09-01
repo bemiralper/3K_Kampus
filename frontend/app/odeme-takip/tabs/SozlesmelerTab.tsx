@@ -23,6 +23,7 @@ import {
 } from "../helpers";
 import Pagination, { paginateList } from "../components/Pagination";
 import { extractApiError } from "@/lib/api";
+import { trIncludes } from "@/lib/text-format";
 import {
   SozlesmeNot,
   SozlesmeNotTip,
@@ -184,11 +185,11 @@ export default function SozlesmelerTab({
 
   // Filtreleme
   const filteredSozlesmeler = sozlesmeler.filter((s) => {
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim();
     const matchSearch = !term || (
-      s.sozlesme_no.toLowerCase().includes(term) ||
-      (s.ogrenci && `${s.ogrenci.ad} ${s.ogrenci.soyad}`.toLowerCase().includes(term)) ||
-      s.paket_adi.toLowerCase().includes(term)
+      trIncludes(s.sozlesme_no, term) ||
+      (s.ogrenci && trIncludes(`${s.ogrenci.ad} ${s.ogrenci.soyad}`, term)) ||
+      trIncludes(s.paket_adi, term)
     );
     const matchDurum = !durumFilter || s.durum === durumFilter;
     const matchOdemesiz = !odemesizOnly || Number(s.toplam_odenen || 0) === 0;

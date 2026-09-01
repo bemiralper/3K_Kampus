@@ -11,6 +11,7 @@ import type {
   OutcomeItem,
 } from '../../../../components/olcme/types';
 import s from '../olcme.module.css';
+import { trIncludes } from '@/lib/text-format';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Yardımcı Tipler & Fonksiyonlar                                           */
@@ -963,7 +964,7 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
   onSelect: (o: OutcomeItem) => void;
   onClose: () => void;
 }) {
-  const lower = search.toLowerCase();
+  const lower = search.trim();
 
   return (
     <div className={s.outcomeModal} onClick={onClose}>
@@ -991,12 +992,12 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
                 ...topic,
                 outcomes: (topic.outcomes ?? []).filter(o =>
                   !lower ||
-                  o.code.toLowerCase().includes(lower) ||
-                  o.text.toLowerCase().includes(lower) ||
-                  topic.name.toLowerCase().includes(lower) ||
+                  trIncludes(o.code, lower) ||
+                  trIncludes(o.text, lower) ||
+                  trIncludes(topic.name, lower) ||
                   (o.sub_outcomes ?? []).some(sub =>
-                    sub.code.toLowerCase().includes(lower) ||
-                    sub.text.toLowerCase().includes(lower),
+                    trIncludes(sub.code, lower) ||
+                    trIncludes(sub.text, lower),
                   )
                 ),
               }))

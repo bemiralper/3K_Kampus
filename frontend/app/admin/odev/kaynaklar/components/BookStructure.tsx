@@ -8,6 +8,7 @@ import { fetchAnalyticsBookStudents } from "@/lib/resources-api";
 import { DragSortList, DragHandle } from "./DragSortList";
 import { StructureSkeleton } from "./Skeletons";
 import { GroupContentsModal, MoveTopicModal, PrefixNamesModal } from "./Modals";
+import { trIncludes } from "@/lib/text-format";
 
 type BookStudentUser = {
   assignment_id: number;
@@ -586,7 +587,7 @@ export function BookStructure(props: BookStructureProps) {
   }, [bookStructure, loadingStructure]);
 
   const matchesSearch = (text: string) =>
-    !structureSearch || text.toLowerCase().includes(structureSearch.toLowerCase());
+    !structureSearch || trIncludes(text, structureSearch);
 
   // Filter structure based on search
   const filteredUnits = bookStructure?.units

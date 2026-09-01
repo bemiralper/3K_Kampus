@@ -445,6 +445,29 @@ class AssignmentLesson(models.Model):
         blank=True,
         verbose_name='Test Numarası'
     )
+
+    class K3Mode(models.TextChoices):
+        OGREN = 'OGREN', 'ÖĞREN'
+        PEKISTIR = 'PEKISTIR', 'PEKİŞTİR'
+        TEKRARLA = 'TEKRARLA', 'TEKRARLA'
+        HIZLAN = 'HIZLAN', 'HIZLAN'
+        TAMAMLA = 'TAMAMLA', 'TAMAMLA'
+
+    k3_mode = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        choices=K3Mode.choices,
+        verbose_name='3K Modu',
+        help_text='Konu bloğundaki tüm testlerin çalışma amacı. Test türü değildir.',
+    )
+
+    k3_target_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name='Hedef Süre (dk)',
+        help_text='HIZLAN modu için isteğe bağlı hedef süre. Zorlama yok.',
+    )
     
     # Notlar
     notes = models.TextField(
@@ -740,6 +763,18 @@ class AssignmentPackageItem(models.Model):
     question_count = models.PositiveIntegerField(null=True, blank=True, verbose_name='Soru Sayısı')
     page_start = models.PositiveIntegerField(null=True, blank=True, verbose_name='Başlangıç Sayfası')
     page_end = models.PositiveIntegerField(null=True, blank=True, verbose_name='Bitiş Sayfası')
+    k3_mode = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        choices=AssignmentLesson.K3Mode.choices,
+        verbose_name='3K Modu',
+    )
+    k3_target_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name='Hedef Süre (dk)',
+    )
     order = models.PositiveIntegerField(default=0, verbose_name='Sıra')
 
     class Meta:

@@ -15,6 +15,7 @@ import type {
   StrategyItem,
   ComparisonItem,
 } from '../../../../components/olcme/types';
+import { trIncludes } from '@/lib/text-format';
 
 /* ── Panel Bileşenleri ─────────────────────────────────────────────────── */
 import SummaryPanel from '../../../../components/olcme/analysis/SummaryPanel';
@@ -254,11 +255,11 @@ export default function AnalysisTab({ exam }: Props) {
   /* ── Filtered students ────────────────────────────────────────────────── */
   const filteredStudents = useMemo(() => {
     if (!studentSearch.trim()) return students;
-    const q = studentSearch.toLowerCase();
+    const q = studentSearch.trim();
     return students.filter(st =>
-      st.student_name.toLowerCase().includes(q) ||
-      st.raw_student_id.toLowerCase().includes(q) ||
-      st.sinif.toLowerCase().includes(q)
+      trIncludes(st.student_name, q) ||
+      trIncludes(st.raw_student_id, q) ||
+      trIncludes(st.sinif, q)
     );
   }, [students, studentSearch]);
 

@@ -11,6 +11,7 @@ import {
 } from "@/lib/sinif-roster-export";
 import { groupExportColumns } from "@/app/ogrenciler/lib/ogrenci-list-utils";
 import { useKurum } from "@/lib/contexts/KurumContext";
+import { trIncludes } from "@/lib/text-format";
 
 type ExportFormat = "csv" | "xlsx" | "pdf";
 
@@ -86,12 +87,12 @@ export default function SinifRosterExportModal({
   }, [siniflar, seviyeId]);
 
   const siniflarBySeviye = useMemo(() => {
-    const q = sinifSearch.trim().toLowerCase();
+    const q = sinifSearch.trim();
     const filtered = q
       ? siniflar.filter(
           (s) =>
-            s.ad.toLowerCase().includes(q) ||
-            s.sinif_seviyesi?.ad?.toLowerCase().includes(q),
+            trIncludes(s.ad, q) ||
+            trIncludes(s.sinif_seviyesi?.ad, q),
         )
       : siniflar;
 

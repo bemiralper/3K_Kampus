@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SinavTakvim } from '@/lib/website-api';
 import { websiteAdminApi, cleanWebsiteFormPayload, resolveMediaUrl } from '@/lib/website-api';
 import { WEBSITE_IMAGE_GUIDELINES } from '@/lib/website-image-guidelines';
+import { calendarDateInAppTz } from '@/lib/format-date';
 import { sinavTurColor } from '@/lib/landing-theme';
 import WamModal from './WamModal';
 import { WamInput, WamSelect, WamTextarea } from './WamField';
@@ -64,10 +65,10 @@ function examToForm(exam: SinavTakvim): FormState {
 }
 
 export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: SinavCalendarAdminProps) {
-  const today = new Date();
+  const today = calendarDateInAppTz();
   const [tab, setTab] = useState<SinavTab>('yks');
-  const [month, setMonth] = useState(today.getMonth());
-  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.monthIndex);
+  const [year, setYear] = useState(today.year);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -82,9 +83,9 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   const modalOpen = editId !== null;
 
   useEffect(() => {
-    const now = new Date();
-    setMonth(now.getMonth());
-    setYear(now.getFullYear());
+    const now = calendarDateInAppTz();
+    setMonth(now.monthIndex);
+    setYear(now.year);
   }, [tab]);
 
   const filtered = useMemo(() => filterByTab(sinavlar, tab), [sinavlar, tab]);

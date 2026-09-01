@@ -11,6 +11,7 @@ import { akademikSidebarChildren } from "@/lib/akademik-routes";
 import { ADMIN_KUTUPHANE_BASE, kutuphaneSidebarChildren } from "@/lib/kutuphane-routes";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { PermissionChecks } from "@/app/roles/role.permissions";
+import { trIncludes } from "@/lib/text-format";
 
 // İkon tanımları
 const icons = {
@@ -621,11 +622,11 @@ export default function Sidebar({
   const filteredNavItems = useMemo(() => {
     const ordered = getOrdered(visibleNavItems);
     if (!searchQuery.trim()) return ordered;
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.trim();
     return ordered.filter((item) => {
-      if (item.label.toLowerCase().includes(q) || item.emoji.includes(q)) return true;
+      if (trIncludes(item.label, q) || trIncludes(item.emoji, q)) return true;
       if (item.children) {
-        return item.children.some((child) => child.label.toLowerCase().includes(q));
+        return item.children.some((child) => trIncludes(child.label, q));
       }
       return false;
     });

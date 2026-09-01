@@ -281,7 +281,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'list':
             return ManualAssignmentListSerializer
-        elif self.action == 'create':
+        if self.action in ('create', 'update', 'partial_update'):
             return ManualAssignmentCreateSerializer
         return ManualAssignmentDetailSerializer
     
@@ -2481,6 +2481,8 @@ class AssignmentPackageViewSet(viewsets.ModelViewSet):
                     question_count=item.question_count,
                     page_start=item.page_start,
                     page_end=item.page_end,
+                    k3_mode=item.k3_mode,
+                    k3_target_minutes=item.k3_target_minutes,
                     order=item.order,
                 )
         return Response({

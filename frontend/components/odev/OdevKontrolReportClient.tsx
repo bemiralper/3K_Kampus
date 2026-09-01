@@ -9,8 +9,12 @@ import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/o
 import { useOdevKontrolPaths, buildNewAssignmentFromKontrolHref } from "@/components/odev/OdevKontrolPaths";
 import { MetaCol, assignmentTypeLabel } from "@/components/odev/odevPdfMeta";
 import { displayTestLabel, quotaBookIcon, quotaKindLabel, splitColumnMajor } from "@/components/odev/odevPlanTypes";
+import { K3TopicFocusRow } from "@/components/odev/K3ModePicker";
+import OdevPerformanceDashboard from "@/components/odev/OdevPerformanceDashboard";
 import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
 import NoteHtml from "@/components/odev/NoteHtml";
+import { computeK3Distribution } from "@/lib/k3-mode";
+import { calendarDateInAppTz, formatNowTRLong } from "@/lib/format-date";
 
 /** Backend completion_utils ile aynı mantık */
 function effectiveTaskCompletionPercent(task: {
@@ -69,6 +73,8 @@ interface AssignmentLesson {
   resource_book?: number | null;
   resource_book_name: string | null;
   content_mode: string;
+  k3_mode?: string;
+  k3_target_minutes?: number | null;
   topic_name: string;
   page_start: number | null;
   page_end: number | null;
@@ -624,8 +630,8 @@ export default function OdevKontrolReportClient({
 
   const headerLogoUrl = "/img/beyaz-logo.png";
   const footerLogoUrl = "/img/3k-logo.png";
-  const currentYear = new Date().getFullYear();
-  const todayStr = new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+  const currentYear = calendarDateInAppTz().year;
+  const todayStr = formatNowTRLong();
 
   return (
     <div className={printMode ? undefined : "ok-report-overlay"} style={printMode ? { background: "#fff" } : undefined}>
@@ -784,7 +790,7 @@ export default function OdevKontrolReportClient({
         {/* Özet sütun kutuları — plan PDF ile aynı dil */}
         <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
           <MetaCol
-            label="Görev"
+            label="Test"
             value={`${summary.done_tasks}/${summary.total_tasks}`}
             minWidth={56}
             valueColor="#4338ca"
@@ -915,55 +921,34 @@ export default function OdevKontrolReportClient({
 
         {report.description && (
           <div style={{
-            padding: "8px 12px", marginBottom: 12,
-            background: "#fffbeb", border: "1px solid #fde68a",
-            borderRadius: 8, fontSize: 11, color: "#92400e", lineHeight: 1.5,
+            padding: "8px 12px",
+            marginBottom: 12,
+            background: "#fff",
+            border: "1px solid #e2e8f0",
+            borderLeft: "3px solid #0061a6",
+            borderRadius: 8,
+            fontSize: 11,
+            color: "#334155",
+            lineHeight: 1.5,
           }}>
-            <strong>📌 Koç Notu:</strong>
-            <div style={{ marginTop: 4 }}><NoteHtml html={report.description} /></div>
+            <div style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: 0.55,
+              textTransform: "uppercase",
+              color: "#64748b",
+              marginBottom: 4,
+            }}>
+              Koç notu
+            </div>
+            <NoteHtml html={report.description} />
           </div>
         )}
-
-        {/* ====== BOLUM 2: DEGERLENDIRME + GÖREV DURUMLARI ====== */}
-        <div className="ok-report-eval-panel">
-          {/* Sol: Değerlendirme + İlerleme barı */}
-          <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 14, borderRight: "1px solid #e2e8f0" }}>
-            <div style={{ fontSize: 40 }}>{grade.emoji}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span style={{ fontSize: 20, fontWeight: 800, color: grade.color }}>{grade.label}</span>
-                <span style={{ fontSize: 15, color: "#64748b" }}>·</span>
-                <span style={{ fontSize: 26, fontWeight: 800, color: grade.color }}>%{summary.overall_completion_percent}</span>
-              </div>
-              <div style={{ height: 10, background: "#e2e8f0", borderRadius: 5, marginTop: 8, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${summary.overall_completion_percent}%`, background: `linear-gradient(90deg, ${grade.color}, ${grade.color}cc)`, borderRadius: 5, transition: "width 0.8s" }} />
-              </div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 5 }}>
-                {summary.done_tasks} yaptı · {summary.partial_tasks} eksik · {summary.not_done_tasks} yapmadı
-                {summary.pending_tasks > 0 ? ` · ${summary.pending_tasks} bekliyor` : ""}
-              </div>
-            </div>
-          </div>
-          {/* Sağ: Görev dağılımı - kompakt kutular */}
-          <div style={{ display: "flex", alignItems: "stretch", gap: 0, padding: "0" }}>
-            {[
-              { value: summary.done_tasks, label: "Yaptı", color: "#16a34a", bg: "#f0fdf4" },
-              { value: summary.partial_tasks, label: "Eksik", color: "#d97706", bg: "#fffbeb" },
-              { value: summary.not_done_tasks, label: "Yapmadı", color: "#dc2626", bg: "#fef2f2" },
-              { value: summary.pending_tasks, label: "Bekliyor", color: "#94a3b8", bg: "#f8fafc" },
-            ].map((s, i) => (
-              <div key={s.label} style={{ textAlign: "center", padding: "16px 16px", borderLeft: i > 0 ? "1px solid #f1f5f9" : "none", background: s.value > 0 ? s.bg : "transparent", minWidth: 72 }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: s.value > 0 ? s.color : "#d1d5db" }}>{s.value}</div>
-                <div style={{ fontSize: 11, color: s.value > 0 ? s.color : "#94a3b8", fontWeight: 600, marginTop: 3, whiteSpace: "nowrap" }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
 
         {/* ====== BOLUM 3: OZET KARTLARI ====== */}
         <div className="ok-report-stat-grid" style={{ gridTemplateColumns: `repeat(${2 + (hasQuestions ? 1 : 0) + (hasPages ? 1 : 0)}, 1fr)` }}>
           <div className="ok-report-stat-card">
-            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6, fontWeight: 600, letterSpacing: 0.5 }}>GÖREV</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6, fontWeight: 600, letterSpacing: 0.5 }}>TEST</div>
             <div style={{ fontSize: 28, fontWeight: 800, color: "#1e293b" }}>{summary.done_tasks}<span style={{ fontSize: 14, color: "#94a3b8" }}>/{summary.total_tasks}</span></div>
             <div style={{ height: 5, background: "#e2e8f0", borderRadius: 3, marginTop: 8, overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${summary.task_completion_percent}%`, background: "#0262a7", borderRadius: 3, transition: "width 1s" }} />
@@ -973,7 +958,7 @@ export default function OdevKontrolReportClient({
             </div>
             {summary.partial_tasks > 0 && (
               <div style={{ fontSize: 10, color: "#b45309", marginTop: 2 }}>
-                {summary.partial_tasks} eksik görev
+                {summary.partial_tasks} eksik test
               </div>
             )}
           </div>
@@ -1012,12 +997,6 @@ export default function OdevKontrolReportClient({
 
         {/* ====== BOLUM 4: DERS BAZLI ANALIZ + KUMULATIF ====== */}
         <div className="ok-report-card" style={{ marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-          <div style={{ padding: "14px 20px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "linear-gradient(90deg, #f8fafc, #fff)" }}>
-            <div>
-              <h2 className="ok-report-section-title">📚 Ders Bazlı Analiz</h2>
-              <div className="ok-report-section-sub">{groupedLessonStats.length} ders · görev ve konu detayları</div>
-            </div>
-          </div>
           <div style={{ padding: 0 }}>
             {groupedLessonStats.map((group, gIdx) => (
               <div key={group.subjectName} className="ok-report-subject" style={{ borderBottom: gIdx < groupedLessonStats.length - 1 ? "2px solid #e2e8f0" : "none" }}>
@@ -1039,7 +1018,7 @@ export default function OdevKontrolReportClient({
                       {gIdx + 1}. {group.subjectName}
                     </div>
                     <div style={{ fontSize: 10, opacity: 0.85, marginTop: 2 }}>
-                      {group.items.length} kaynak · {group.totalTasks} görev
+                      {group.items.length} kaynak · {group.totalTasks} test
                       {group.totalQ > 0 ? ` · ${group.completedQ}/${group.totalQ} soru` : ""}
                     </div>
                   </div>
@@ -1057,7 +1036,7 @@ export default function OdevKontrolReportClient({
                 <div style={{ padding: "0 20px 8px", display: "flex", gap: 12 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748b", marginBottom: 2 }}>
-                      <span>Görev değerlendirme</span>
+                      <span>Test değerlendirme</span>
                       <span>%{group.avgPct}</span>
                     </div>
                     <div style={{ height: 6, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
@@ -1093,6 +1072,8 @@ export default function OdevKontrolReportClient({
                   type TopicSec = {
                     topicId: number;
                     topicName: string;
+                    k3Mode?: string;
+                    k3TargetMinutes?: number | null;
                     tasks: AssignmentTask[];
                     topicCum: TopicCumulative | null;
                   };
@@ -1154,12 +1135,18 @@ export default function OdevKontrolReportClient({
                         topic = {
                           topicId: topicId || unit.topics.length + 1,
                           topicName,
+                          k3Mode: ls.lesson.k3_mode || undefined,
+                          k3TargetMinutes: ls.lesson.k3_target_minutes ?? null,
                           tasks: [],
                           topicCum: (ls.topicCum as TopicCumulative) || null,
                         };
                         unit.topics.push(topic);
                       } else if (!topic.topicCum && ls.topicCum) {
                         topic.topicCum = ls.topicCum as TopicCumulative;
+                      }
+                      if (!topic.k3Mode && ls.lesson.k3_mode) {
+                        topic.k3Mode = ls.lesson.k3_mode;
+                        topic.k3TargetMinutes = ls.lesson.k3_target_minutes ?? null;
                       }
                       topic.tasks.push(task);
                     });
@@ -1206,7 +1193,7 @@ export default function OdevKontrolReportClient({
                       }}>
                         <span>{quotaBookIcon(book.units.flatMap((u) => u.topics.flatMap((t) => t.tasks.map((task) => task.quota_kind)))[0])} {book.bookName}
                           <span style={{ fontSize: 9, fontWeight: 400, color: "#6b7280", marginLeft: 6 }}>
-                            ({book.totalTasks} görev)
+                            ({book.totalTasks} test)
                           </span>
                         </span>
                         <span style={{ fontSize: 12, fontWeight: 700, color: pctColor(book.avgPct), flexShrink: 0 }}>
@@ -1241,33 +1228,23 @@ export default function OdevKontrolReportClient({
                             return (
                               <div key={`${unit.unitId}-${topic.topicId}`} className="ok-report-topic">
                                 <div style={{
-                                  padding: "7px 14px 4px",
+                                  padding: "6px 14px 6px",
                                   background: "#f8fafc",
                                   borderBottom: "1px solid #e4e9f2",
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "flex-start",
-                                  gap: 8,
                                 }}>
-                                  <div style={{
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    color: "#0f172a",
-                                    wordBreak: "break-word",
-                                    overflowWrap: "anywhere",
-                                    whiteSpace: "normal",
-                                    lineHeight: 1.35,
-                                  }}>
-                                    {topic.topicName}
-                                    <span style={{ fontSize: 9, fontWeight: 400, color: "#94a3b8", marginLeft: 6 }}>
-                                      ({topic.tasks.length} görev{topicQ > 0 ? ` · ${topicQ} soru` : ""})
-                                    </span>
-                                  </div>
-                                  <span style={{
-                                    fontSize: 11, fontWeight: 700, color: pctColor(topicAvg), flexShrink: 0,
-                                  }}>
-                                    %{topicAvg}
-                                  </span>
+                                  <K3TopicFocusRow
+                                    mode={topic.k3Mode}
+                                    targetMinutes={topic.k3TargetMinutes}
+                                    topicName={topic.topicName}
+                                    questionLabel={`${topic.tasks.length} test${topicQ > 0 ? ` · ${topicQ} soru` : ""}`}
+                                    trailing={(
+                                      <div style={{
+                                        fontSize: 11, fontWeight: 700, color: pctColor(topicAvg),
+                                      }}>
+                                        %{topicAvg}
+                                      </div>
+                                    )}
+                                  />
                                 </div>
 
                                 <div style={{
@@ -1323,104 +1300,21 @@ export default function OdevKontrolReportClient({
           </div>
         </div>
 
-        {/* ====== ÖDEV PERFORMANS ÖZETİ ====== */}
-        {overall && overall.total_assignments > 0 && (() => {
-          const odevPct = overall.assignment_success_percent || 0;
-          const gorevPct = overall.total_tasks_all > 0
-            ? Math.round((overall.done_tasks_all / overall.total_tasks_all) * 100)
-            : 0;
-          const soruPct = overall.question_completion_percent_all || 0;
-          const performans = overall.overall_completion_percent || 0;
-          const statusCards = [
-            { value: overall.full_assignments || 0, label: "Tam", color: "#16a34a", bg: "#f0fdf4", icon: "✅" },
-            { value: overall.partial_assignments || 0, label: "Eksik", color: "#d97706", bg: "#fffbeb", icon: "⚠️" },
-            { value: overall.not_brought_assignments || 0, label: "Getirmedi", color: "#dc2626", bg: "#fef2f2", icon: "🚫" },
-            { value: overall.not_done_assignments || 0, label: "Yapmadı", color: "#b91c1c", bg: "#fef2f2", icon: "❌" },
-          ];
-          const rateRows = [
-            { label: "Ödev Tamamlama", hint: "Tam ödev / tüm ödevler", pct: odevPct, color: "#16a34a" },
-            { label: "Görev Tamamlama", hint: "Yaptı / tüm görevler", pct: gorevPct, color: "#0262a7" },
-            { label: "Soru Tamamlama", hint: "Çözülen / toplam soru", pct: soruPct, color: "#ea580c", showBar: true },
-          ];
-          return (
-          <div className="ok-report-perf">
-            <div className="ok-report-perf-header">
-              <div>
-                <h2 className="ok-report-perf-title">Ödev Performans Özeti</h2>
-                <p className="ok-report-perf-sub">
-                  {overall.total_assignments} ödev · koçluk sürecindeki birikimli özet
-                </p>
-              </div>
-              <div className="ok-report-perf-score" title="Tüm görevlerin ağırlıklı ortalaması (eksik ve yapmadı dahil)">
-                <div className="ok-report-perf-score-label">Performans Puanı</div>
-                <div className="ok-report-perf-score-value">
-                  <span className="ok-report-perf-score-num">{performans}</span>
-                  <span className="ok-report-perf-score-den">/ 100</span>
-                </div>
-                <div className="ok-report-perf-score-hint">Görev ağırlıklı ortalama</div>
-              </div>
-            </div>
-
-            <div className="ok-report-perf-status">
-              {statusCards.map((c) => (
-                <div
-                  key={c.label}
-                  className="ok-report-perf-status-card"
-                  style={{ background: c.bg, borderColor: `${c.color}40`, opacity: c.value > 0 ? 1 : 0.5 }}
-                >
-                  <span className="ok-report-perf-status-icon">{c.icon}</span>
-                  <span className="ok-report-perf-status-value" style={{ color: c.color }}>{c.value}</span>
-                  <span className="ok-report-perf-status-label" style={{ color: c.color }}>{c.label}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="ok-report-perf-rates">
-              {rateRows.map((r) => (
-                <div key={r.label} className="ok-report-perf-rate-row">
-                  <div className="ok-report-perf-rate-text">
-                    <span className="ok-report-perf-rate-label">{r.label}</span>
-                    <span className="ok-report-perf-rate-hint">{r.hint}</span>
-                  </div>
-                  <div className="ok-report-perf-rate-right">
-                    <span className="ok-report-perf-rate-pct" style={{ color: r.color }}>%{r.pct}</span>
-                    {r.showBar && (
-                      <div className="ok-report-perf-mini-bar">
-                        <div className="ok-report-perf-mini-fill" style={{ width: `${r.pct}%`, background: r.color }} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="ok-report-perf-details">
-              <div className="ok-report-perf-detail">
-                <span className="ok-report-perf-detail-label">Toplam görev</span>
-                <div className="ok-report-perf-chips">
-                  <span className="ok-report-perf-chip is-done" title="Yaptı">🟢 {overall.done_tasks_all}</span>
-                  <span className="ok-report-perf-chip is-partial" title="Eksik">🟡 {overall.partial_tasks_all}</span>
-                  <span className="ok-report-perf-chip is-notdone" title="Yapmadı">🔴 {overall.not_done_tasks_all}</span>
-                </div>
-              </div>
-              {overall.total_questions_all > 0 && (
-                <div className="ok-report-perf-detail">
-                  <span className="ok-report-perf-detail-label">Toplam soru</span>
-                  <div className="ok-report-perf-qwrap">
-                    <span className="ok-report-perf-qnums">
-                      {overall.completed_questions_all}/{overall.total_questions_all}
-                      <span className="ok-report-perf-qpct"> (%{soruPct})</span>
-                    </span>
-                    <div className="ok-report-perf-qbar">
-                      <div className="ok-report-perf-qfill" style={{ width: `${soruPct}%` }} />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          );
-        })()}
+        {/* ====== ÖDEV PERFORMANSI ====== */}
+        {overall && overall.total_assignments > 0 && (
+          <OdevPerformanceDashboard
+            overall={overall}
+            k3Shares={computeK3Distribution(
+              (report.lessons || []).map((ls) => {
+                const questions = (ls.tasks || []).reduce((s, t) => s + (t.question_count || 0), 0);
+                return {
+                  mode: ls.k3_mode,
+                  questions: questions > 0 ? questions : (ls.k3_mode ? 1 : 0),
+                };
+              }),
+            )}
+          />
+        )}
 
         {/* ═══ BOTTOM NOTICE + FOOTER ═══ */}
         <div className="ok-report-footer-block page-break-avoid">

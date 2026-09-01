@@ -10,6 +10,7 @@ import type {
   GelirKategorisiTreeResponse,
 } from "../types/gelir-kategori-types";
 import "../gider-yonetimi/gider.css";
+import { trIncludes } from "@/lib/text-format";
 
 /* ═══════════════════════════════════════════════════════════════
    Gelir Yönetimi — Kategori Ağacı
@@ -171,8 +172,8 @@ export default function GelirYonetimiClient({ embedded }: GelirYonetimiClientPro
 
   const filteredTree = tree.filter((ana) => {
     if (!search) return true;
-    const q = search.toLowerCase();
-    return ana.ad.toLowerCase().includes(q) || ana.alt_kategoriler.some((alt) => alt.ad.toLowerCase().includes(q));
+    const q = search.trim();
+    return trIncludes(ana.ad, q) || ana.alt_kategoriler.some((alt) => trIncludes(alt.ad, q));
   });
 
   // ─── Drawer open helpers ────────────────────────
@@ -547,7 +548,7 @@ export default function GelirYonetimiClient({ embedded }: GelirYonetimiClientPro
                           </div>
                         ) : (
                           ana.alt_kategoriler
-                            .filter((alt) => !search || alt.ad.toLowerCase().includes(search.toLowerCase()))
+                            .filter((alt) => !search || trIncludes(alt.ad, search))
                             .map((alt) => (
                               <div key={alt.id} className={`kat-alt-item ${!alt.aktif_mi ? "pasif" : ""}`}>
                                 <span className="kat-alt-dot" style={{ background: ana.renk || "#94a3b8" }} />

@@ -21,6 +21,7 @@ import { fetchGorevTakvim } from '@/lib/gorev-api';
 import { fetchCoachStudents } from '@/lib/coach-api';
 import { fetchAssignments } from '@/lib/resources-api';
 import { shortEventLabel } from '@/lib/calendar-event-label';
+import { trIncludes } from '@/lib/text-format';
 
 import MiniCalendar from '@/app/admin/takvim/genel/components/MiniCalendar';
 import CalendarFilterPanel from '@/app/admin/takvim/genel/components/CalendarFilterPanel';
@@ -214,7 +215,7 @@ export default function CoachTakvimClient() {
           .map(e => String(e.extendedProps?.kaynak_id || e.extendedProps?.atama_id || ''))
           .filter(Boolean),
       );
-      const searchQ = (filters.search || '').trim().toLowerCase();
+      const searchQ = (filters.search || '').trim();
       const studentId = filters.ogrenci_id;
       const odevTypeId = eventTypes.find(t => t.kategori === 'ODEV')?.id;
 
@@ -225,7 +226,7 @@ export default function CoachTakvimClient() {
       for (const g of gorevData) {
         if (syncedAtamaIds.has(String(g.id))) continue;
         if (studentId) continue; // görevlerde öğrenci yok — öğrenci filtresinde gizle
-        if (searchQ && !(g.title || '').toLowerCase().includes(searchQ)) continue;
+        if (searchQ && !trIncludes(g.title, searchQ)) continue;
         if (!gorevMatchesDurum(g.extendedProps?.durum as string | undefined, filters.durum)) continue;
 
         merged.push({
@@ -253,8 +254,8 @@ export default function CoachTakvimClient() {
         const title = `${studentName} · Ödev kontrol`;
         if (
           searchQ
-          && !title.toLowerCase().includes(searchQ)
-          && !studentName.toLowerCase().includes(searchQ)
+          && !trIncludes(title, searchQ)
+          && !trIncludes(studentName, searchQ)
         ) {
           continue;
         }

@@ -3,6 +3,101 @@
 import { forwardRef } from "react";
 import type { ContentTaskHistory, PlanContentItemView, PlanLessonGroup } from "./odevPlanTypes";
 import { bookQuotaKind, countPlanBooks, displayTestLabel, quotaBookIcon, quotaKindLabel, splitColumnMajor, unitIsQuotaOnly } from "./odevPlanTypes";
+import { computeK3Distribution, getK3Meta, resolveWeekFocus, type K3ShareRow } from "@/lib/k3-mode";
+import { K3TopicFocusRow } from "@/components/odev/K3ModePicker";
+
+function WeeklyK3Card({ shares, focus }: { shares: K3ShareRow[]; focus: K3ShareRow | null }) {
+  const focusMeta = focus ? getK3Meta(focus.mode) : null;
+  return (
+    <div style={{
+      margin: "2px 0 14px",
+      padding: "10px 12px",
+      borderRadius: 10,
+      border: "1px solid #e2e8f0",
+      background: "#fff",
+    }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+        marginBottom: 8,
+      }}>
+        <span style={{
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: 0.7,
+          textTransform: "uppercase",
+          color: "#64748b",
+        }}>
+          Haftalık 3K
+        </span>
+        {focusMeta && (
+          <span style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: 10,
+            fontWeight: 700,
+            color: focusMeta.color,
+          }}>
+            Odak · {focusMeta.label}
+          </span>
+        )}
+      </div>
+      <div style={{
+        display: "flex",
+        height: 6,
+        borderRadius: 999,
+        overflow: "hidden",
+        background: "#f1f5f9",
+        marginBottom: 8,
+      }}>
+        {shares.map((row) => {
+          const meta = getK3Meta(row.mode);
+          return (
+            <div
+              key={row.mode}
+              title={`${row.label} %${row.percent}`}
+              style={{
+                width: `${Math.max(row.percent, 0)}%`,
+                background: meta?.color || "#94a3b8",
+                minWidth: row.percent > 0 ? 3 : 0,
+              }}
+            />
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 12px" }}>
+        {shares.map((row) => {
+          const meta = getK3Meta(row.mode);
+          return (
+            <span key={row.mode} style={{
+              fontSize: 9,
+              fontWeight: 600,
+              color: meta?.color || "#475569",
+              letterSpacing: 0.1,
+            }}>
+              {row.label} {row.percent}%
+            </span>
+          );
+        })}
+      </div>
+      {focusMeta && (
+        <div style={{
+          marginTop: 8,
+          paddingTop: 7,
+          borderTop: "1px solid #f1f5f9",
+          fontSize: 10,
+          color: "#475569",
+          lineHeight: 1.4,
+        }}>
+          {focusMeta.focusText}
+        </div>
+      )}
+    </div>
+  );
+}
 import { MetaCol, assignmentTypeLabel } from "./odevPdfMeta";
 import { isAutoCompletionNote } from "./odevCompletionHelpers";
 import NoteHtml from "./NoteHtml";
@@ -133,6 +228,20 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
   const docRef = documentRef || `ÖCP-${Date.now().toString(36).toUpperCase().slice(-6)}`;
 
   const bookCount = countPlanBooks(cartGroups);
+  const k3Shares = computeK3Distribution(
+    cartGroups.flatMap((lesson) =>
+      lesson.books.flatMap((book) =>
+        book.units.flatMap((unit) =>
+          unit.topics.map((topic) => ({
+            mode: topic.k3Mode,
+            questions: topic.items.reduce((s, i) => s + (i.content.questionCount || 0), 0),
+          })),
+        ),
+      ),
+    ),
+  );
+  const weekFocus = resolveWeekFocus(k3Shares);
+
   const completionCount = cartGroups.reduce(
     (sum, lesson) => sum + lesson.books.reduce(
       (bSum, book) => bSum + book.units.reduce(
@@ -191,7 +300,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
                 background: "rgba(255,255,255,0.16)", fontSize: 8, fontWeight: 600,
                 letterSpacing: 1.2, textTransform: "uppercase",
               }}>
-                Ödev Takip Formu
+                Ödev planı
               </div>
             </div>
           </div>
@@ -200,7 +309,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
               fontSize: 15, fontWeight: 700, margin: 0, lineHeight: 1.25,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>
-              {title || "Ödev Takip Formu"}
+              {title || "Ödev planı"}
             </h1>
             <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>
               {docRef} · {assignedDateStr}
@@ -267,7 +376,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
           background="#eff6ff"
         />
         <MetaCol
-          label="Görev"
+          label="Test"
           value={String(itemCount)}
           minWidth={48}
           valueColor="#059669"
@@ -308,12 +417,27 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
 
       {notes && (
         <div style={{
-          padding: "8px 12px", marginBottom: 10,
-          background: "#fffbeb", border: "1px solid #fde68a",
-          borderRadius: 6, fontSize: 11, color: "#92400e", lineHeight: 1.5,
+          padding: "8px 12px",
+          marginBottom: 12,
+          background: "#fff",
+          border: "1px solid #e2e8f0",
+          borderLeft: "3px solid #0061a6",
+          borderRadius: 8,
+          fontSize: 11,
+          color: "#334155",
+          lineHeight: 1.5,
         }}>
-          <strong>📌 Koç Notu:</strong>
-          <div style={{ marginTop: 4 }}><NoteHtml html={notes} /></div>
+          <div style={{
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: 0.55,
+            textTransform: "uppercase",
+            color: "#64748b",
+            marginBottom: 4,
+          }}>
+            Koç notu
+          </div>
+          <NoteHtml html={notes} />
         </div>
       )}
 
@@ -337,7 +461,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
                 {li + 1}. {lesson.lessonName}
               </span>
               <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.85, flexShrink: 0 }}>
-                {lessonTaskCount} görev
+                {lessonTaskCount} test
                 {lesson.totalQuestions > 0 ? ` · ${lesson.totalQuestions} soru` : ""}
                 {lesson.totalPages > 0 ? ` · ${lesson.totalPages} sayfa` : ""}
               </span>
@@ -363,7 +487,7 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
                     }}>
                       <span>{quotaBookIcon(bookQuotaKind(book))} {book.bookName}</span>
                       <span style={{ fontSize: 9, fontWeight: 400, color: "#6b7280", flexShrink: 0 }}>
-                        ({bookTaskCount} görev
+                        ({bookTaskCount} test
                         {book.totalQuestions > 0 ? ` · ${book.totalQuestions} soru` : ""})
                       </span>
                     </div>
@@ -386,23 +510,16 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
                           return (
                             <div key={`${unit.unitId}-${topic.topicId}`}>
                               <div style={{
-                                padding: "7px 14px 4px",
+                                padding: "6px 14px 6px",
                                 background: "#f8fafc",
-                                fontSize: 11,
-                                fontWeight: 700,
-                                color: "#0f172a",
                                 borderBottom: "1px solid #e4e9f2",
-                                wordBreak: "break-word",
-                                overflowWrap: "anywhere",
-                                whiteSpace: "normal",
-                                lineHeight: 1.35,
                               }}>
-                                {topic.topicName}
-                                {topicQ > 0 && (
-                                  <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b", marginLeft: 6 }}>
-                                    {topicQ} soru
-                                  </span>
-                                )}
+                                <K3TopicFocusRow
+                                  mode={topic.k3Mode}
+                                  targetMinutes={topic.k3TargetMinutes}
+                                  topicName={topic.topicName}
+                                  questionLabel={topicQ > 0 ? `${topicQ} soru` : null}
+                                />
                               </div>
                               <div style={{
                                 display: "grid",
@@ -449,6 +566,10 @@ const OdevPlanDocument = forwardRef<HTMLDivElement, OdevPlanDocumentProps>(funct
           </div>
         );
       })}
+
+      {k3Shares.length > 0 && (
+        <WeeklyK3Card shares={k3Shares} focus={weekFocus} />
+      )}
 
       <div style={{
         padding: "12px 18px", marginBottom: 20,

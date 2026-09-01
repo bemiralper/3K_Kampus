@@ -6,6 +6,7 @@ import {
   CampaignPreviewRecipient,
   CampaignPreviewStats,
 } from "@/lib/communication-api";
+import { trIncludes } from "@/lib/text-format";
 
 export interface ExcludedEntry {
   key: string;
@@ -70,9 +71,9 @@ export default function RecipientsSummaryPanel({
   const recipients = useMemo(() => preview?.recipients ?? [], [preview]);
   const filtered = useMemo(() => {
     if (!search.trim()) return recipients;
-    const q = search.toLowerCase();
+    const q = search.trim();
     return recipients.filter(
-      (r) => r.display_name?.toLowerCase().includes(q) || r.e164.includes(q),
+      (r) => trIncludes(r.display_name, q) || r.e164.includes(q),
     );
   }, [recipients, search]);
 

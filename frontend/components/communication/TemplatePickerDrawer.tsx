@@ -15,6 +15,7 @@ import {
   TEMPLATE_AUDIENCE_LABELS,
   TemplateCategoryItem,
 } from "@/lib/communication-api";
+import { trIncludes } from "@/lib/text-format";
 
 interface TemplatePickerDrawerProps {
   open: boolean;
@@ -59,13 +60,13 @@ export default function TemplatePickerDrawer({
   const labels = useMemo(() => categoryLabelMap(categories), [categories]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (!q) return templates;
     return templates.filter(
       (t) =>
-        t.name.toLowerCase().includes(q) ||
-        t.body.toLowerCase().includes(q) ||
-        (labels[t.category] || "").toLowerCase().includes(q),
+        trIncludes(t.name, q) ||
+        trIncludes(t.body, q) ||
+        trIncludes(labels[t.category], q),
     );
   }, [templates, search, labels]);
 

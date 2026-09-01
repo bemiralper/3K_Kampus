@@ -5,6 +5,7 @@ import { getContextHeaders, resolveApiUrl } from "@/lib/api";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import OdalarSiniflarSection from "./OdalarSiniflarSection";
 import { TermTabPage } from "./terms";
+import { trIncludes } from "@/lib/text-format";
 
 type CtxFetchOptions = {
   subeId?: number;
@@ -284,9 +285,9 @@ export default function EgitimTanimlariClient({ initialData }: EgitimTanimlariCl
   const filterData = (items: TanimItem[] | undefined) => {
     if (!items) return [];
     if (!searchTerm) return items;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim();
     return items.filter(
-      item => item.ad.toLowerCase().includes(term) || item.kod.toLowerCase().includes(term)
+      item => trIncludes(item.ad, term) || trIncludes(item.kod, term)
     );
   };
 

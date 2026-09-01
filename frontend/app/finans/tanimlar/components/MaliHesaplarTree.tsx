@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { financialAccountService } from "../../services/finans-api";
 import type { MaliHesapAgacSube } from "../../types/financial-account-types";
+import { trIncludes } from "@/lib/text-format";
 
 interface Props {
   kurumId: number;
@@ -54,12 +55,12 @@ export default function MaliHesaplarTree({ kurumId, subeId, selectedId, onSelect
   useEffect(() => { load(); }, [load, refreshKey]);
 
   const filteredSubeler = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (!q) return subeler;
     return subeler
       .map((s) => ({
         ...s,
-        hesaplar: s.hesaplar.filter((h) => h.ad.toLowerCase().includes(q)),
+        hesaplar: s.hesaplar.filter((h) => trIncludes(h.ad, q)),
       }))
       .filter((s) => s.hesaplar.length > 0);
   }, [subeler, search]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { trIncludes } from "@/lib/text-format";
 import type { GelirKategorisiTreeItem } from "../types/gelir-kategori-types";
 import type { GiderKategorisiTreeItem } from "../types/gider-kategori-types";
 
@@ -36,17 +37,17 @@ export default function CariV2KategoriPicker({
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
-  const q = search.trim().toLowerCase();
+  const q = search.trim();
   const filtered = useMemo(
     () =>
       tree
         .map((ana) => ({
           ...ana,
           alt_kategoriler: (ana.alt_kategoriler ?? []).filter(
-            (alt) => !q || alt.ad.toLowerCase().includes(q),
+            (alt) => !q || trIncludes(alt.ad, q),
           ),
         }))
-        .filter((ana) => !q || ana.ad.toLowerCase().includes(q) || ana.alt_kategoriler.length > 0),
+        .filter((ana) => !q || trIncludes(ana.ad, q) || ana.alt_kategoriler.length > 0),
     [tree, q],
   );
 

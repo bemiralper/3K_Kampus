@@ -17,6 +17,7 @@ import {
   type AssignmentPackageItem,
 } from "@/lib/resources-api";
 import "./odev-paketleri.css";
+import { trIncludes } from "@/lib/text-format";
 
 // UI types for content selection from book structure
 interface PackageItemUI {
@@ -32,6 +33,8 @@ interface PackageItemUI {
   questionCount: number | null;
   pageStart: number | null;
   pageEnd: number | null;
+  k3Mode?: string;
+  k3TargetMinutes?: number | null;
 }
 
 interface Book {
@@ -81,6 +84,8 @@ function itemToApi(item: PackageItemUI, order: number): Omit<AssignmentPackageIt
     question_count: item.questionCount,
     page_start: item.pageStart,
     page_end: item.pageEnd,
+    k3_mode: item.k3Mode || '',
+    k3_target_minutes: item.k3TargetMinutes ?? null,
     order,
   };
 }
@@ -99,6 +104,8 @@ function itemsToApi(items: AssignmentPackageItem[]): Omit<AssignmentPackageItem,
     question_count: item.question_count,
     page_start: item.page_start,
     page_end: item.page_end,
+    k3_mode: item.k3_mode || '',
+    k3_target_minutes: item.k3_target_minutes ?? null,
     order: item.order ?? idx,
   }));
 }
@@ -445,8 +452,8 @@ export function OdevPaketleriPageContent({ verBasePath = "/admin/odev/ver" }: Od
   };
 
   const filteredPackages = packages.filter(p => {
-    const q = searchQuery.toLowerCase();
-    return !q || p.name.toLowerCase().includes(q) || p.ders_ad.toLowerCase().includes(q) || p.description.toLowerCase().includes(q);
+    const q = searchQuery.trim();
+    return !q || trIncludes(p.name, q) || trIncludes(p.ders_ad, q) || trIncludes(p.description, q);
   });
 
   const itemCount = (pkg: AssignmentPackage) => pkg.items?.length ?? pkg.item_count ?? 0;

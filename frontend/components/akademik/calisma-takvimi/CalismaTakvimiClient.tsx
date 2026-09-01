@@ -15,6 +15,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { MenuProps } from 'antd';
+import { trIncludes } from '@/lib/text-format';
 import {
   AppstoreOutlined,
   CalendarOutlined,
@@ -101,13 +102,13 @@ export default function CalismaTakvimiClient() {
   }, [load]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (!q) return items;
     return items.filter(
       (item) =>
-        item.name.toLowerCase().includes(q) ||
-        (item.description || '').toLowerCase().includes(q) ||
-        item.used_templates.some((t) => t.name.toLowerCase().includes(q)),
+        trIncludes(item.name, q) ||
+        trIncludes(item.description, q) ||
+        item.used_templates.some((t) => trIncludes(t.name, q)),
     );
   }, [items, search]);
 

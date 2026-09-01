@@ -13,6 +13,7 @@ import { gelirKaydiService, gelirTahsilatService, GelirTahsilatItem, gelirKatego
 import { cariHesapService } from "../services/cari-hesap-api";
 import { paymentMethodService, financialAccountService } from "../services/finans-api";
 import { useOdemeYontemleriForMaliHesap } from "../hooks/useOdemeYontemleriForMaliHesap";
+import { trIncludes } from "@/lib/text-format";
 import {
   GelirKaydiListItem, GelirKaydiDetail,
   GelirKaydiCreatePayload, GelirOzet,
@@ -410,12 +411,12 @@ export default function GelirlerClient({ embedded, onCariHesapClick, onDataChang
   /* ─── Filtreleme ──────────────────────────────── */
   const filteredGelirler = gelirler.filter((g) => {
     if (aramaFiltre) {
-      const q = aramaFiltre.toLowerCase();
+      const q = aramaFiltre.trim();
       const match =
-        g.cari_hesap_adi?.toLowerCase().includes(q) ||
-        g.aciklama?.toLowerCase().includes(q) ||
-        g.fatura_no?.toLowerCase().includes(q) ||
-        g.kategori_adi?.toLowerCase().includes(q);
+        trIncludes(g.cari_hesap_adi, q) ||
+        trIncludes(g.aciklama, q) ||
+        trIncludes(g.fatura_no, q) ||
+        trIncludes(g.kategori_adi, q);
       if (!match) return false;
     }
     return true;

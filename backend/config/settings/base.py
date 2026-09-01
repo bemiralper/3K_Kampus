@@ -305,3 +305,6 @@ TENANT_SESSION_KEYS = {
     'sube': 'active_sube_id',
     'egitim_yili': 'active_egitim_yili_id',
 }
+
+# Türkçe i/İ/ı/I — icontains / iexact aramaları (ör. İpek ↔ ipek)
+import shared.turkish_search  # noqa: F401, E402

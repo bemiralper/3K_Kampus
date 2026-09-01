@@ -13,6 +13,7 @@ import {
   type SubeFormState,
 } from "@/lib/sube-form";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { trIncludes } from "@/lib/text-format";
 
 type TabType = "kurumlar" | "subeler" | "egitim_yillari" | "kayit_tanimlari";
 
@@ -504,22 +505,22 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
 
   const filterKurumlar = () => {
     if (!searchTerm) return data.kurumlar || [];
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim();
     return (data.kurumlar || []).filter(
-      item => item.ad.toLowerCase().includes(term) || item.kod.toLowerCase().includes(term)
+      item => trIncludes(item.ad, term) || trIncludes(item.kod, term)
     );
   };
 
   const filterSubeler = () => {
     if (!searchTerm) return subelerForActiveKurum;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim();
     return subelerForActiveKurum.filter(
       item =>
-        item.ad.toLowerCase().includes(term) ||
-        (item.kod || "").toLowerCase().includes(term) ||
-        (item.resmi_ad || "").toLowerCase().includes(term) ||
-        (item.eposta || "").toLowerCase().includes(term) ||
-        (item.kurum?.ad || "").toLowerCase().includes(term)
+        trIncludes(item.ad, term) ||
+        trIncludes(item.kod, term) ||
+        trIncludes(item.resmi_ad, term) ||
+        trIncludes(item.eposta, term) ||
+        trIncludes(item.kurum?.ad, term)
     );
   };
 
@@ -533,9 +534,9 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
 
   const filterKayitTurleri = () => {
     if (!searchTerm) return kayitTurleri;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim();
     return kayitTurleri.filter(
-      item => item.label.toLowerCase().includes(term) || item.code.toLowerCase().includes(term)
+      item => trIncludes(item.label, term) || trIncludes(item.code, term)
     );
   };
 

@@ -9,6 +9,7 @@ import {
 } from "../services";
 import { runSinifRosterExport } from "@/lib/sinif-roster-export";
 import { useKurum } from "@/lib/contexts/KurumContext";
+import { trIncludes } from "@/lib/text-format";
 
 interface SinifOgrenciAtamaModalProps {
   sinif: Sinif | null;
@@ -55,14 +56,14 @@ export default function SinifOgrenciAtamaModal({
   }, [sinif, loadStudents]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (!q) return ogrenciler;
     return ogrenciler.filter(
       (o) =>
-        o.tam_ad.toLowerCase().includes(q) ||
-        o.okul_no.toLowerCase().includes(q) ||
-        o.alan?.ad?.toLowerCase().includes(q) ||
-        o.sinif_yerlesim?.ad?.toLowerCase().includes(q),
+        trIncludes(o.tam_ad, q) ||
+        trIncludes(o.okul_no, q) ||
+        trIncludes(o.alan?.ad, q) ||
+        trIncludes(o.sinif_yerlesim?.ad, q),
     );
   }, [ogrenciler, search]);
 

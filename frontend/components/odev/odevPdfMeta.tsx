@@ -71,6 +71,6 @@ export function assignmentTypeLabel(t: string): string {
     case "CUSTOM":
       return "Özel";
     default:
-      return "Görev";
+      return "Test";
   }
 }

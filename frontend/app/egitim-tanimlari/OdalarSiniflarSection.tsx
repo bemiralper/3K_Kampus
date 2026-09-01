@@ -13,6 +13,7 @@ import {
   downloadSinifExportXlsx,
 } from './services';
 import { OdaDrawer, SinifDrawer, OdaTable, SinifTable, SinifOgrenciAtamaModal, SinifRosterExportModal } from './components';
+import { trIncludes } from '@/lib/text-format';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import { downloadBlob } from '@/lib/download-file';
 
@@ -187,12 +188,12 @@ export default function OdalarSiniflarSection({ activeTab }: OdalarSiniflarSecti
   };
 
   // Filtered data
-  const filteredOdalar = odalar.filter(o => 
-    o.ad.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredOdalar = odalar.filter(o =>
+    trIncludes(o.ad, searchTerm)
   );
-  
-  const filteredSiniflar = siniflar.filter(s => 
-    s.ad.toLowerCase().includes(searchTerm.toLowerCase())
+
+  const filteredSiniflar = siniflar.filter(s =>
+    trIncludes(s.ad, searchTerm)
   );
 
   const odaIcon = (

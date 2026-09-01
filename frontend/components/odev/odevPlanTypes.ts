@@ -1,5 +1,6 @@
 import type { ContentTaskHistory } from "@/app/admin/odev/ver/types";
 import type { ManualAssignment } from "@/lib/resources-api";
+import { parseK3Mode, type K3Mode } from "@/lib/k3-mode";
 
 export interface PlanContentItemView {
   id: number;
@@ -20,6 +21,8 @@ export interface PlanContentItemView {
 export interface PlanTopicGroup {
   topicId: number;
   topicName: string;
+  k3Mode?: K3Mode;
+  k3TargetMinutes?: number | null;
   items: { content: PlanContentItemView; note: string }[];
 }
 
@@ -121,6 +124,8 @@ function pushTaskToBook(
     unitName: string;
     topicId: number;
     topicName: string;
+    k3Mode?: K3Mode | null;
+    k3TargetMinutes?: number | null;
     item: PlanContentItemView;
     note: string;
   },
@@ -148,9 +153,14 @@ function pushTaskToBook(
     topic = {
       topicId: opts.topicId || unit.topics.length + 1,
       topicName: opts.topicName,
+      k3Mode: opts.k3Mode || undefined,
+      k3TargetMinutes: opts.k3TargetMinutes ?? null,
       items: [],
     };
     unit.topics.push(topic);
+  } else if (!topic.k3Mode && opts.k3Mode) {
+    topic.k3Mode = opts.k3Mode;
+    topic.k3TargetMinutes = opts.k3TargetMinutes ?? null;
   }
 
   topic.items.push({ content: opts.item, note: opts.note });
@@ -198,6 +208,8 @@ export function buildPlanGroupsFromAssignment(assignment: ManualAssignment): Pla
         unitName,
         topicId,
         topicName,
+        k3Mode: parseK3Mode(lb.k3_mode),
+        k3TargetMinutes: lb.k3_target_minutes ?? null,
         note: task.description || "",
         item: {
           id: task.id,
@@ -241,6 +253,8 @@ export function buildPlanGroupsFromSelected(
     pageCount: number | null;
     contentSira?: number | null;
     quotaKind?: 'PARAGRAF' | 'PROBLEM';
+    k3Mode?: K3Mode;
+    k3TargetMinutes?: number | null;
   }>,
   contentNotes: Record<number, string> = {},
 ): PlanLessonGroup[] {
@@ -272,6 +286,8 @@ export function buildPlanGroupsFromSelected(
       unitName: item.unitName,
       topicId: item.topicId,
       topicName: item.topicName,
+      k3Mode: parseK3Mode(item.k3Mode),
+      k3TargetMinutes: item.k3TargetMinutes ?? null,
       note: contentNotes[item.id] || "",
       item: {
         id: item.id,

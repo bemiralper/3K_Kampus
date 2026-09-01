@@ -7,6 +7,7 @@ import { usePersonelPath } from "@/components/personel/PersonelPathProvider";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 import AppDatePicker from "@/components/ui/AppDatePicker";
+import { trIncludes } from "@/lib/text-format";
 
 // Types
 interface Gorevlendirme {
@@ -317,12 +318,12 @@ export default function GorevlendirmelerClient() {
   // Filter data by search term
   const filteredGorevlendirmeler = gorevlendirmeler.filter((item) => {
     if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim();
     return (
-      item.personel_ad?.toLowerCase().includes(term) ||
-      item.brans_ad?.toLowerCase().includes(term) ||
-      item.rol_ad?.toLowerCase().includes(term) ||
-      item.gorev_sube_ad?.toLowerCase().includes(term)
+      trIncludes(item.personel_ad, term) ||
+      trIncludes(item.brans_ad, term) ||
+      trIncludes(item.rol_ad, term) ||
+      trIncludes(item.gorev_sube_ad, term)
     );
   });
 

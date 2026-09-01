@@ -10,6 +10,7 @@ import {
 } from "@/lib/resources-api";
 import { BookCover } from "@/components/resources/BookCover";
 import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
+import { trIncludes } from "@/lib/text-format";
 
 type ListType = "PURCHASE" | "INSTITUTION";
 
@@ -145,14 +146,13 @@ export default function PurchaseListModal({
   }, [activeDersId, loadBooksForDers]);
 
   const filteredDersler = dersler.filter(d =>
-    !dersSearch.trim() || d.ad.toLowerCase().includes(dersSearch.toLowerCase())
+    !dersSearch.trim() || trIncludes(d.ad, dersSearch)
   );
 
   const activeBooks = activeDersId != null ? booksByDers[activeDersId] || [] : [];
   const filteredBooks = activeBooks.filter(b => {
     if (!bookSearch.trim()) return true;
-    const q = bookSearch.toLowerCase();
-    return `${b.ad} ${b.yayinevi} ${b.book_type}`.toLowerCase().includes(q);
+    return trIncludes(`${b.ad} ${b.yayinevi} ${b.book_type}`, bookSearch);
   });
 
   const booksToPick = useMemo(

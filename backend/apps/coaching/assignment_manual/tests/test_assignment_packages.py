@@ -49,6 +49,7 @@ class AssignmentPackageAPITest(TestCase):
                     'question_count': 20,
                     'page_start': 45,
                     'page_end': 52,
+                    'k3_mode': 'OGREN',
                     'order': 0,
                 },
                 {
@@ -64,6 +65,8 @@ class AssignmentPackageAPITest(TestCase):
                     'question_count': 15,
                     'page_start': 60,
                     'page_end': 66,
+                    'k3_mode': 'HIZLAN',
+                    'k3_target_minutes': 20,
                     'order': 1,
                 },
             ],
@@ -89,9 +92,12 @@ class AssignmentPackageAPITest(TestCase):
         item1 = package.items.get(content_id=10)
         self.assertEqual(item1.topic_id, 301)
         self.assertEqual(item1.unit_id, 30)
+        self.assertEqual(item1.k3_mode, 'OGREN')
         item2 = package.items.get(content_id=11)
         self.assertEqual(item2.topic_id, 401)
         self.assertEqual(item2.unit_id, 40)
+        self.assertEqual(item2.k3_mode, 'HIZLAN')
+        self.assertEqual(item2.k3_target_minutes, 20)
         for item in data['items']:
             self.assertIn('topic_id', item)
             self.assertIn('unit_id', item)
@@ -159,6 +165,7 @@ class AssignmentPackageAPITest(TestCase):
             question_count=10,
             page_start=1,
             page_end=5,
+            k3_mode='TEKRARLA',
             order=0,
         )
 
@@ -176,6 +183,7 @@ class AssignmentPackageAPITest(TestCase):
         self.assertEqual(copy_data['usage_count'], 0)
         self.assertEqual(len(copy_data['items']), 1)
         self.assertEqual(copy_data['items'][0]['content_name'], 'Paragraf Testi')
+        self.assertEqual(copy_data['items'][0]['k3_mode'], 'TEKRARLA')
         self.assertEqual(copy_data['created_by'], self.creator.id)
 
     def test_create_package_scopes_to_selected_kurum(self):

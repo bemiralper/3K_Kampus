@@ -27,6 +27,7 @@ import {
   downloadSeatListExport,
 } from '@/lib/kutuphane-api';
 import YoklamaSessionDrawer from '@/components/kutuphane/yoklama/YoklamaSessionDrawer';
+import { trIncludes } from '@/lib/text-format';
 import AttendanceNotifyPreviewModal from '@/components/kutuphane/yoklama/AttendanceNotifyPreviewModal';
 import AttendanceNotifySettingsDrawer from '@/components/kutuphane/yoklama/AttendanceNotifySettingsDrawer';
 import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
@@ -2291,11 +2292,11 @@ function LoglarTab({ logs }: { logs: AuditLog[] }) {
       result = result.filter(l => l.action === filterAction);
     }
     if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
+      const term = searchTerm.trim();
       result = result.filter(l =>
-        (l.entity_type || '').toLowerCase().includes(term) ||
-        (l.description || '').toLowerCase().includes(term) ||
-        (l.performed_by || '').toLowerCase().includes(term)
+        trIncludes(l.entity_type, term) ||
+        trIncludes(l.description, term) ||
+        trIncludes(l.performed_by, term)
       );
     }
     return result;

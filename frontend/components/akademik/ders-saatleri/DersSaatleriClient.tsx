@@ -14,6 +14,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { MenuProps } from 'antd';
+import { trIncludes } from '@/lib/text-format';
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -90,12 +91,12 @@ export default function DersSaatleriClient() {
   }, [load]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (!q) return items;
     return items.filter(
       (item) =>
-        item.name.toLowerCase().includes(q) ||
-        (item.weekly_cycle_name || '').toLowerCase().includes(q),
+        trIncludes(item.name, q) ||
+        trIncludes(item.weekly_cycle_name, q),
     );
   }, [items, search]);
 

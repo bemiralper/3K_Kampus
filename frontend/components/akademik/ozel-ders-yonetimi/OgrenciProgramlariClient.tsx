@@ -14,6 +14,7 @@ import {
   type PaketDersi,
 } from '@/lib/ozel-ders-api';
 import { searchKutuphaneStudents, type KutuphaneStudentOption } from '@/lib/kutuphane-student-search';
+import { trIncludes } from '@/lib/text-format';
 import { akademikTabHref } from '@/lib/akademik-routes';
 import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
@@ -282,7 +283,7 @@ export default function OgrenciProgramlariClient() {
   }, [studentQ]);
 
   const studentGroups = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     let groups = groupProgramsByStudent(rows);
     if (q) {
       groups = groups.filter((g) => {
@@ -294,9 +295,8 @@ export default function OgrenciProgramlariClient() {
           ...g.paketDersleri.map((d) => d.ad),
         ]
           .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(q);
+          .join(' ');
+        return trIncludes(haystack, q);
       });
     }
     if (onlyNeedsSablon) {

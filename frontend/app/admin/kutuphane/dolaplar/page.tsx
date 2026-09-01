@@ -13,6 +13,7 @@ import { useKurum } from '@/lib/contexts/KurumContext';
 import { buildLockerStudentListPrintHtml, openKutuphanePrintWindow } from '@/lib/kutuphane-list-print';
 import KutuphaneConfirmModal from '@/components/kutuphane/KutuphaneConfirmModal';
 import KutuphaneToast from '@/components/kutuphane/KutuphaneToast';
+import { trIncludes } from '@/lib/text-format';
 
 interface OgrenciItem {
   id: number;
@@ -356,8 +357,7 @@ export default function DolaplarPage() {
   const filteredLockers = lockers.filter(l => {
     if (filterStatus !== 'all' && l.durum !== filterStatus) return false;
     if (searchText) {
-      const q = searchText.toLowerCase();
-      if (!l.dolap_no.toLowerCase().includes(q) && !(l.atanan_ogrenci || '').toLowerCase().includes(q)) return false;
+      if (!trIncludes(l.dolap_no, searchText) && !trIncludes(l.atanan_ogrenci, searchText)) return false;
     }
     return true;
   });
@@ -372,15 +372,14 @@ export default function DolaplarPage() {
     if (logFilter === 'atama' && log.entity_type !== 'LockerAssignment') return false;
     if (logFilter === 'dolap' && log.entity_type !== 'Locker') return false;
     if (logSearch.trim()) {
-      const q = logSearch.toLowerCase();
       const hay = [
         log.description,
         log.dolap_no,
         log.ogrenci_adi,
         log.performed_by_name,
         log.action,
-      ].filter(Boolean).join(' ').toLowerCase();
-      if (!hay.includes(q)) return false;
+      ].filter(Boolean).join(' ');
+      if (!trIncludes(hay, logSearch)) return false;
     }
     return true;
   });

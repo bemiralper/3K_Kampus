@@ -10,7 +10,7 @@ import {
   openAssignmentForCoach,
   type AssignmentListStats,
 } from "@/lib/resources-api";
-import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
+import { useOdevKontrolPaths, buildEditDraftHref } from "@/components/odev/OdevKontrolPaths";
 import {
   isOverdue,
   isDueToday,
@@ -417,7 +417,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         </div>
         <div className="ok-list-row-meta">
           {renderControlDay(a, overdue, dueToday)}
-          <span>{a.task_count} görev · %{a.completion_percent}</span>
+          <span>{a.task_count} test · %{a.completion_percent}</span>
         </div>
         <div className="ok-progress">
           <div className="ok-progress-fill" style={{ width: `${a.completion_percent}%` }} />
@@ -433,15 +433,31 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
             <span className="ok-badge is-danger">{nonSubmissionLabel}</span>
           )}
           {isDraft && (
-            <button
-              type="button"
-              className="ok-btn-primary"
-              style={{ padding: "4px 12px", fontSize: 12 }}
-              disabled={assigningId === a.id}
-              onClick={(e) => handleAssignDraft(e, a.id)}
-            >
-              {assigningId === a.id ? "Atanıyor…" : "Ata"}
-            </button>
+            <>
+              {paths.newAssignment && (
+                <Link
+                  href={buildEditDraftHref(paths.newAssignment, {
+                    assignmentId: a.id,
+                    studentId: a.student,
+                    returnPath: paths.detail(a.id),
+                  })}
+                  className="ok-btn-secondary"
+                  style={{ padding: "4px 12px", fontSize: 12, textDecoration: "none" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Düzenle
+                </Link>
+              )}
+              <button
+                type="button"
+                className="ok-btn-primary"
+                style={{ padding: "4px 12px", fontSize: 12 }}
+                disabled={assigningId === a.id}
+                onClick={(e) => handleAssignDraft(e, a.id)}
+              >
+                {assigningId === a.id ? "Atanıyor…" : "Ata"}
+              </button>
+            </>
           )}
           {!isCoach && a.can_open_for_coach && (
             <button
@@ -689,7 +705,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                     </td>
                     <td>
                       <div className="ok-table-title">{assignmentTitle(a)}</div>
-                      <div className="ok-table-sub">{a.task_count} görev</div>
+                      <div className="ok-table-sub">{a.task_count} test</div>
                     </td>
                     <td>
                       {renderControlDay(a, overdue, dueToday)}
@@ -723,15 +739,31 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       {isDraft ? (
-                        <button
-                          type="button"
-                          className="ok-btn-primary"
-                          style={{ padding: "6px 12px", fontSize: 12 }}
-                          disabled={assigningId === a.id}
-                          onClick={(e) => handleAssignDraft(e, a.id)}
-                        >
-                          {assigningId === a.id ? "Atanıyor…" : "Ata"}
-                        </button>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {paths.newAssignment && (
+                            <Link
+                              href={buildEditDraftHref(paths.newAssignment, {
+                                assignmentId: a.id,
+                                studentId: a.student,
+                                returnPath: paths.detail(a.id),
+                              })}
+                              className="ok-btn-secondary"
+                              style={{ padding: "6px 12px", fontSize: 12, textDecoration: "none" }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Düzenle
+                            </Link>
+                          )}
+                          <button
+                            type="button"
+                            className="ok-btn-primary"
+                            style={{ padding: "6px 12px", fontSize: 12 }}
+                            disabled={assigningId === a.id}
+                            onClick={(e) => handleAssignDraft(e, a.id)}
+                          >
+                            {assigningId === a.id ? "Atanıyor…" : "Ata"}
+                          </button>
+                        </div>
                       ) : !isCoach && a.can_open_for_coach ? (
                         <button
                           type="button"

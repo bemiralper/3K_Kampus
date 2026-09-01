@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getContextHeaders, resolveApiUrl } from "@/lib/api";
+import { trIncludes } from "@/lib/text-format";
 
 function paketFetch(path: string, init?: RequestInit) {
   const url = resolveApiUrl(path.startsWith("/") ? path : `/${path}`);
@@ -605,11 +606,11 @@ export default function EgitimPaketleriClient() {
   // Filter data by search term
   const filterData = <T extends { ad: string; kod: string }>(items: T[]) => {
     if (!searchTerm) return items;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim();
     return items.filter(
       (item) =>
-        item.ad.toLowerCase().includes(term) ||
-        item.kod.toLowerCase().includes(term)
+        trIncludes(item.ad, term) ||
+        trIncludes(item.kod, term)
     );
   };
 

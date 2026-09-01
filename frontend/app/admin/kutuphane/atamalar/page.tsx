@@ -15,6 +15,7 @@ import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
 import KutuphaneConfirmModal from '@/components/kutuphane/KutuphaneConfirmModal';
 import KutuphaneToast from '@/components/kutuphane/KutuphaneToast';
 import KutuphaneStudentPhotoCell from '@/components/kutuphane/KutuphaneStudentPhotoCell';
+import { trIncludes } from '@/lib/text-format';
 
 interface OgrenciItem {
   id: number;
@@ -182,7 +183,7 @@ function ResourceCard({ type, items, selectedId, onSelect, emptyText }: {
   const filtered = items.filter(i => {
     if (!q) return true;
     const no = type === 'seat' ? (i.masa_no || '') : (i.dolap_no || '');
-    return no.toLowerCase().includes(q.toLowerCase());
+    return trIncludes(no, q);
   });
   const avail = items.filter((i: any) => i.durum === 'AVAILABLE').length;
 

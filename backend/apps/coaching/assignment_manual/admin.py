@@ -20,7 +20,7 @@ class AssignmentTaskInline(admin.TabularInline):
 class AssignmentLessonInline(admin.TabularInline):
     model = AssignmentLesson
     extra = 1
-    fields = ['lesson', 'resource_book', 'content_mode', 'topic_name', 'order']
+    fields = ['lesson', 'resource_book', 'content_mode', 'k3_mode', 'k3_target_minutes', 'topic_name', 'order']
 
 
 @admin.register(ManualAssignment)
@@ -69,8 +69,8 @@ class ManualAssignmentAdmin(admin.ModelAdmin):
 
 @admin.register(AssignmentLesson)
 class AssignmentLessonAdmin(admin.ModelAdmin):
-    list_display = ['assignment', 'lesson', 'content_mode', 'order', 'created_at']
-    list_filter = ['content_mode', 'lesson']
+    list_display = ['assignment', 'lesson', 'content_mode', 'k3_mode', 'order', 'created_at']
+    list_filter = ['content_mode', 'k3_mode', 'lesson']
     search_fields = ['assignment__title', 'lesson__ad']
     
     inlines = [AssignmentTaskInline]
@@ -88,7 +88,7 @@ class AssignmentPackageItemInline(admin.TabularInline):
     extra = 0
     fields = [
         'book_name', 'content_name', 'content_type',
-        'topic_name', 'unit_name', 'question_count', 'order',
+        'topic_name', 'unit_name', 'k3_mode', 'k3_target_minutes', 'question_count', 'order',
     ]
 
 

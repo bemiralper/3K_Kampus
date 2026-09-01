@@ -331,7 +331,7 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
                     <div className="odev360-task-chips">
                       {taskCount > 0 && (
                         <>
-                          <span className="odev360-chip">{taskCount} görev</span>
+                          <span className="odev360-chip">{taskCount} test</span>
                           {evaluated > 0 && (
                             <span className="odev360-chip is-green">{evaluated} değerlendirildi</span>
                           )}

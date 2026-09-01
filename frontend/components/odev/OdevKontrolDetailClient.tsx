@@ -20,7 +20,7 @@ import {
   deleteAssignment,
   downloadAssignmentServerPdf,
 } from "@/lib/resources-api";
-import { useOdevKontrolPaths, buildNewAssignmentFromKontrolHref } from "@/components/odev/OdevKontrolPaths";
+import { useOdevKontrolPaths, buildNewAssignmentFromKontrolHref, buildEditDraftHref } from "@/components/odev/OdevKontrolPaths";
 import AssignmentNotifySendModal, { formatNotifySentToast } from "@/components/odev/AssignmentNotifySendModal";
 import { getRiskColor, isOverdue } from "@/components/odev/statusTokens";
 import { stripCompletionTitleSuffix } from "@/components/odev/odevCompletionHelpers";
@@ -775,6 +775,15 @@ export default function OdevKontrolDetailClient({
   const evaluatedTaskCount = liveSummary ? liveSummary.total - liveSummary.pending : 0;
   /** Getirilmedi sonrası görevler kilitli kalır; sıfırlama kontrol kilidi yoksa açık kalmalı. */
   const canResetEvaluation = evaluatedTaskCount > 0 && !isControlLocked;
+  const editDraftHref =
+    assignment.status === "DRAFT" && paths.newAssignment
+      ? buildEditDraftHref(paths.newAssignment, {
+          assignmentId: assignment.id,
+          studentId: assignment.student,
+          returnPath: paths.detail(assignment.id),
+        })
+      : null;
+
   const assignHomeworkHref =
     isCompleted && paths.newAssignment
       ? buildNewAssignmentFromKontrolHref(paths.newAssignment, {
@@ -964,6 +973,24 @@ export default function OdevKontrolDetailClient({
 
           {/* Actions Bar */}
           <div style={{ background: "white", borderRadius: 14, padding: "14px 22px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.05)", border: "1px solid #f1f5f9", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {assignment.status === "DRAFT" && !isLocked && editDraftHref && (
+              <Link
+                href={editDraftHref}
+                style={{
+                  padding: "9px 18px",
+                  background: "linear-gradient(135deg, #0ea5e9, #0284c7)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textDecoration: "none",
+                  boxShadow: "0 2px 8px rgba(14,165,233,0.3)",
+                }}
+              >
+                İçeriği Düzenle
+              </Link>
+            )}
             {assignment.status === "DRAFT" && !isLocked && <button onClick={handleAssignDraft} disabled={assigningDraft} style={{ padding: "9px 18px", background: assigningDraft ? "#d1d5db" : "linear-gradient(135deg, #3b82f6, #2563eb)", color: "white", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: assigningDraft ? "default" : "pointer", boxShadow: assigningDraft ? "none" : "0 2px 8px rgba(59,130,246,0.3)" }}>{assigningDraft ? "Atanıyor…" : "📤 Öğrenciye Ata"}</button>}
             {assignment.status !== "COMPLETED" && assignment.status !== "DRAFT" && !isLocked && (
               <>
@@ -1091,7 +1118,7 @@ export default function OdevKontrolDetailClient({
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: "#15803d" }}>Kontrol Tamamlandı</div>
                   <div style={{ fontSize: 12, color: "#16a34a", marginTop: 2 }}>
-                    Tüm görevler değerlendirildi{assignment.completed_date ? ` · ${formatDatetime(assignment.completed_date)}` : ""}
+                    Tüm testler değerlendirildi{assignment.completed_date ? ` · ${formatDatetime(assignment.completed_date)}` : ""}
                   </div>
                 </div>
               </div>
@@ -1162,7 +1189,7 @@ export default function OdevKontrolDetailClient({
           {/* Ders & Görev Listesi */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {assignment.lessons.length === 0 ? (
-              <div style={{ background: "white", borderRadius: 16, padding: 48, textAlign: "center", color: "#94a3b8", border: "2px dashed #e2e8f0" }}>Henüz ders/görev eklenmemiş.</div>
+              <div style={{ background: "white", borderRadius: 16, padding: 48, textAlign: "center", color: "#94a3b8", border: "2px dashed #e2e8f0" }}>Henüz ders/test eklenmemiş.</div>
             ) : (
               (() => {
                 // Aynı derse ait lesson'ları grupla
@@ -1186,7 +1213,7 @@ export default function OdevKontrolDetailClient({
                       <div style={{ padding: "16px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: groupControlled ? "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)" : "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)", borderBottom: "1px solid #e2e8f0" }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", display: "flex", alignItems: "center", gap: 6 }}>📖 {subjectName}{groupControlled && <span style={{ fontSize: 15 }}>✅</span>}</div>
-                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{lessons.length} kaynak · {groupTotal} görev</div>
+                          <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{lessons.length} kaynak · {groupTotal} test</div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
                           {groupControlled && (() => {
@@ -1302,7 +1329,7 @@ export default function OdevKontrolDetailClient({
                                 <div style={{ padding: "8px 22px 6px 42px", background: "linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)", borderTop: tIdx > 0 ? "1px solid #c7d2fe" : "none", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                                   <span style={{ fontSize: 13 }}>📂</span>
                                   <span style={{ fontSize: 12, fontWeight: 700, color: "#4338ca" }}>{topicKey}</span>
-                                  <span style={{ fontSize: 10, color: "#818cf8", fontWeight: 500 }}>({tasks.length} görev)</span>
+                                  <span style={{ fontSize: 10, color: "#818cf8", fontWeight: 500 }}>({tasks.length} test)</span>
                                   {!isLocked && (
                                     <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
                                       <button
@@ -1622,7 +1649,7 @@ export default function OdevKontrolDetailClient({
                     </div>
                   ))}
                 </div>
-                <div style={{ marginTop: 10, fontSize: 12, color: "#94a3b8", textAlign: "center" }}>Toplam: {liveSummary.total} görev</div>
+                <div style={{ marginTop: 10, fontSize: 12, color: "#94a3b8", textAlign: "center" }}>Toplam: {liveSummary.total} test</div>
                 {canResetEvaluation && (
                   <button
                     type="button"

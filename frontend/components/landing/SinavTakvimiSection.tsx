@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { SinavTakvim } from '@/lib/website-api';
 import { LANDING_COLORS, sinavTurColor } from '@/lib/landing-theme';
+import { calendarDateInAppTz } from '@/lib/format-date';
 import MonthCalendarGrid from './MonthCalendarGrid';
 import SinavDetailModal from './SinavDetailModal';
 
@@ -37,8 +38,8 @@ function buildByDate(list: SinavTakvim[]) {
 }
 
 function currentMonthYear() {
-  const now = new Date();
-  return { month: now.getMonth(), year: now.getFullYear() };
+  const { year, monthIndex } = calendarDateInAppTz();
+  return { month: monthIndex, year };
 }
 
 export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionProps) {
@@ -85,7 +86,8 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
   const goToday = () => setCalendar(currentMonthYear());
 
   const monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
-  const isCurrentMonth = month === new Date().getMonth() && year === new Date().getFullYear();
+  const todayCal = calendarDateInAppTz();
+  const isCurrentMonth = month === todayCal.monthIndex && year === todayCal.year;
 
   const legendItems = tab === 'lgs'
     ? [{ tur: 'LGS' as const, label: 'LGS' }]

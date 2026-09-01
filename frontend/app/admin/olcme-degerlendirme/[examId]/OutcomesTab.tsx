@@ -12,6 +12,7 @@ import type {
   MatchResult,
 } from '../../../../components/olcme/types';
 import s from '../olcme.module.css';
+import { trIncludes } from '@/lib/text-format';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Yardımcı Tipler & Fonksiyonlar                                           */
@@ -948,7 +949,7 @@ function OutcomePickerModal({
   currentSubOutcomeId: number | null;
   questionNumber: number;
 }) {
-  const lower = search.toLowerCase();
+  const q = search.trim();
 
   const topics = section?.topics ?? [];
 
@@ -956,13 +957,13 @@ function OutcomePickerModal({
     .map(topic => ({
       ...topic,
       outcomes: (topic.outcomes ?? []).filter(o =>
-        !lower ||
-        o.code.toLowerCase().includes(lower) ||
-        o.text.toLowerCase().includes(lower) ||
-        topic.name.toLowerCase().includes(lower) ||
+        !q ||
+        trIncludes(o.code, q) ||
+        trIncludes(o.text, q) ||
+        trIncludes(topic.name, q) ||
         (o.sub_outcomes ?? []).some(sub =>
-          sub.code.toLowerCase().includes(lower) ||
-          sub.text.toLowerCase().includes(lower),
+          trIncludes(sub.code, q) ||
+          trIncludes(sub.text, q),
         )
       ),
     }))

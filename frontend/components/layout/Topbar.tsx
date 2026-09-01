@@ -13,6 +13,7 @@ import {
   akademikCommandPaletteItems,
 } from "@/lib/akademik-routes";
 import "@/components/profile/profile-portal.css";
+import { trIncludes } from "@/lib/text-format";
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -228,8 +229,8 @@ function CommandPalette({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
   const filteredPages = query.trim()
     ? allMenuItems.filter(
         (item) =>
-          item.label.toLowerCase().includes(query.toLowerCase()) ||
-          item.section.toLowerCase().includes(query.toLowerCase())
+          trIncludes(item.label, query) ||
+          trIncludes(item.section, query)
       )
     : [];
 

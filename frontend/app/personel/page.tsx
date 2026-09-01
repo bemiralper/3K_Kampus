@@ -17,6 +17,7 @@ import AppDatePicker from "@/components/ui/AppDatePicker";
 import { downloadPersonelExportCsv, downloadPersonelExportXlsx } from "@/lib/personel-api";
 import { downloadBlob } from "@/lib/download-file";
 import { titleCase } from "@/app/ogrenciler/yeni-kayit/utils";
+import { trIncludes } from "@/lib/text-format";
 
 // Tip tanımları
 type PersonelData = {
@@ -221,15 +222,15 @@ export default function PersonelListesiPage() {
     if (!searchQuery) {
       setFilteredPersoneller(personeller);
     } else {
-      const query = searchQuery.toLowerCase();
+      const query = searchQuery.trim();
       setFilteredPersoneller(
         personeller.filter(
           (p) =>
-            p.ad.toLowerCase().includes(query) ||
-            p.soyad.toLowerCase().includes(query) ||
-            p.tam_ad.toLowerCase().includes(query) ||
+            trIncludes(p.ad, query) ||
+            trIncludes(p.soyad, query) ||
+            trIncludes(p.tam_ad, query) ||
             (p.tc_kimlik_no && p.tc_kimlik_no.includes(query)) ||
-            (p.email && p.email.toLowerCase().includes(query)) ||
+            trIncludes(p.email, query) ||
             (p.cep_telefon && p.cep_telefon.includes(query))
         )
       );

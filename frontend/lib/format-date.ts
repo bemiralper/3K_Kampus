@@ -1,5 +1,7 @@
 /** SSR + tarayıcıda aynı çıktı — hydration uyumlu TR tarih formatları */
 
+export const APP_TIMEZONE = 'Europe/Istanbul';
+
 const MONTH_NAMES = [
   'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
@@ -8,6 +10,37 @@ const MONTH_NAMES = [
 const WEEKDAY_NAMES = [
   'Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi',
 ];
+
+/** Sunucu UTC olsa bile Türkiye takvim günü — ay başı hidrasyon kaymasını önler. */
+export function calendarDateInAppTz(now = new Date()): {
+  year: number;
+  monthIndex: number;
+  day: number;
+} {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIMEZONE,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(now);
+  const num = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === type)?.value);
+  return {
+    year: num('year'),
+    monthIndex: num('month') - 1,
+    day: num('day'),
+  };
+}
+
+/** Örn. 1 Eylül 2026 — sunucu ve tarayıcıda aynı */
+export function formatNowTRLong(now = new Date()): string {
+  return now.toLocaleDateString('tr-TR', {
+    timeZone: APP_TIMEZONE,
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
 
 /** YYYY-MM-DD → yerel öğlen (timezone kayması yok) */
 export function parseISODate(value: string): Date {

@@ -5,24 +5,14 @@ import { oturumAyarlariApi } from '../../../../components/olcme/api';
 import type { OturumOgrenciAyar, OturumSeviyeAyar } from '../../../../components/olcme/api';
 import Icon from '../../../../components/olcme/ui/Icon';
 import s from './oturumGruplari.module.css';
+import { trFold } from '@/lib/text-format';
 
 type Pref = 'HAFTA_ICI' | 'HAFTA_SONU';
 
-function fold(value: string) {
-  return value
-    .toLocaleLowerCase('tr-TR')
-    .replace(/ı/g, 'i')
-    .replace(/ğ/g, 'g')
-    .replace(/ü/g, 'u')
-    .replace(/ş/g, 's')
-    .replace(/ö/g, 'o')
-    .replace(/ç/g, 'c');
-}
-
 function matchesStudent(row: OturumOgrenciAyar, query: string) {
-  const tokens = fold(query).split(/\s+/).filter(Boolean);
+  const tokens = trFold(query).split(/\s+/).filter(Boolean);
   if (!tokens.length) return true;
-  const hay = fold([row.full_name, row.tc_kimlik_no, row.sinif, row.sinif_seviyesi].filter(Boolean).join(' '));
+  const hay = trFold([row.full_name, row.tc_kimlik_no, row.sinif, row.sinif_seviyesi].filter(Boolean).join(' '));
   return tokens.every(tok => hay.includes(tok));
 }
 

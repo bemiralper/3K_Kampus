@@ -6,6 +6,7 @@ import { useVectorPrint } from '@/lib/useVectorPrint';
 import AssignmentNotifySendModal from '@/components/odev/AssignmentNotifySendModal';
 import OdevPlanDocument from '@/components/odev/OdevPlanDocument';
 import { buildPlanGroupsFromSelected } from '@/components/odev/odevPlanTypes';
+import { formatDateTRLong, formatNowTRLong } from '@/lib/format-date';
 
 interface PrintPreviewProps {
   studentName: string;
@@ -39,10 +40,8 @@ export default function PrintPreview({
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
-  const todayStr = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
-  const dueStr = dueDate
-    ? new Date(dueDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
-    : '';
+  const todayStr = formatNowTRLong();
+  const dueStr = dueDate ? formatDateTRLong(dueDate) : '';
 
   /* ─── Gruplama: Ders → Kitap → Ünite → Konu → Test ─── */
   const cartGroups = useMemo(

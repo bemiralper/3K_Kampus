@@ -1,3 +1,4 @@
+import { trIncludesAny } from "@/lib/text-format";
 import type { CariHareket } from "../../types/cari-hesap-types";
 import type { GelirKaydiListItem } from "../../types/gelir-types";
 import type { GiderKaydiListItem } from "../../types/gider-types";
@@ -17,9 +18,7 @@ function inDateRange(
 }
 
 function matchesArama(q: string, ...fields: (string | null | undefined)[]): boolean {
-  if (!q) return true;
-  const lower = q.toLowerCase();
-  return fields.some((f) => (f || "").toLowerCase().includes(lower));
+  return trIncludesAny(q, ...fields);
 }
 
 export function resolveFilterLabel(
