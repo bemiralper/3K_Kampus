@@ -157,6 +157,16 @@ export default function TopluGonderClient({
     if (tab === "saved") void loadSaved();
   }, [tab, loadHistory, loadSaved]);
 
+  // Kuyruk arka planda işlenir; devam eden gönderim varken sayaçları tazele.
+  const historyInflight = history.some((item) =>
+    ["CONFIRMED", "QUEUED", "PROCESSING"].includes(item.status),
+  );
+  useEffect(() => {
+    if (tab !== "history" || !historyInflight) return;
+    const id = window.setInterval(() => void loadHistory(), 5000);
+    return () => window.clearInterval(id);
+  }, [tab, historyInflight, loadHistory]);
+
   const setPersonTypes = (types: AudiencePersonType[]) => {
     setQuery((prev) => ({ ...prev, person_types: types }));
   };
@@ -252,6 +262,23 @@ export default function TopluGonderClient({
         </div>
 
         {error && <div className="comm-alert comm-alert-danger">{error}</div>}
+
+        {sentCampaign && (
+          <div className="tg-card">
+            <strong>Gönderim kuyruğa alındı</strong>
+            <p className="lead" style={{ marginBottom: 8 }}>
+              Alıcılar arka planda kuyruğa alınıp gönderilir. İlerlemeyi gönderim
+              detayından izleyebilirsiniz.
+            </p>
+            <div className="tg-kpi-row">
+              <span>Toplam <b>{sentCampaign.total_recipients}</b></span>
+              <span>Başarılı <b>{sentCampaign.sent_count}</b></span>
+              <span>Başarısız <b>{sentCampaign.failed_count}</b></span>
+              <span>Bekleyen <b>{Math.max(0, (sentCampaign.total_recipients || 0) - (sentCampaign.sent_count || 0) - (sentCampaign.failed_count || 0))}</b></span>
+            </div>
+            <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>
+          </div>
+        )}
 
         {tab === "compose" && (
           <>
@@ -439,19 +466,6 @@ export default function TopluGonderClient({
                   />
                 </div>
               </section>
-            )}
-
-            {sentCampaign && (
-              <div className="tg-card">
-                <strong>Gönderim kuyruğa alındı</strong>
-                <div className="tg-kpi-row">
-                  <span>Toplam <b>{sentCampaign.total_recipients}</b></span>
-                  <span>Başarılı <b>{sentCampaign.sent_count}</b></span>
-                  <span>Başarısız <b>{sentCampaign.failed_count}</b></span>
-                  <span>Bekleyen <b>{Math.max(0, (sentCampaign.total_recipients || 0) - (sentCampaign.sent_count || 0) - (sentCampaign.failed_count || 0))}</b></span>
-                </div>
-                <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>
-              </div>
             )}
 
             <div className="tg-footer">

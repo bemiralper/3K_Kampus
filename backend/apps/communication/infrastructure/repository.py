@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
@@ -718,18 +719,40 @@ class OutboundQueueRepository:
         )
 
     @staticmethod
+    def _eligible_filter(now=None) -> Q:
+        """
+        İşlenebilir kuyruk kaydı koşulu.
+
+        Kilit (`locked_at`) yalnızca işleyen süreç yaşadığı sürece geçerlidir.
+        Deploy/restart ya da worker timeout gönderimi yarıda keserse kilit
+        temizlenmez; bu kayıtlar `COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS`
+        sonrasında yeniden alınabilir olmalı, aksi halde kalıcı olarak
+        "Bekliyor"/"Gönderiliyor" durumunda kalırlar.
+        """
+        now = now or timezone.now()
+        stale_before = now - timedelta(
+            seconds=int(
+                getattr(settings, 'COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS', 600) or 600,
+            ),
+        )
+        unlocked = Q(locked_at__isnull=True)
+        stale_locked = Q(locked_at__lt=stale_before)
+        retryable = Q(message__status=MessageStatus.FAILED, attempt_count__lt=F('max_attempts'))
+        return (
+            Q(next_attempt_at__lte=now)
+            & (
+                ((unlocked | stale_locked) & (Q(message__status=MessageStatus.PENDING) | retryable))
+                # Gönderim sırasında düşen süreçten kalan kayıtlar
+                | (stale_locked & Q(message__status=MessageStatus.SENDING))
+            )
+        )
+
+    @staticmethod
     @transaction.atomic
     def get_pending_batch(limit: int = 20):
         """FOR UPDATE SKIP LOCKED ile kilitlenebilir batch."""
-        now = timezone.now()
         ids = list(
-            OutboundQueueItem.objects.filter(
-                next_attempt_at__lte=now,
-                locked_at__isnull=True,
-            ).filter(
-                Q(message__status=MessageStatus.PENDING)
-                | Q(message__status=MessageStatus.FAILED, attempt_count__lt=F('max_attempts')),
-            )
+            OutboundQueueItem.objects.filter(OutboundQueueRepository._eligible_filter())
             .select_for_update(skip_locked=True)
             .order_by('priority', 'next_attempt_at')
             .values_list('id', flat=True)[:limit]
@@ -744,20 +767,20 @@ class OutboundQueueRepository:
 
     @staticmethod
     def count_pending() -> int:
-        now = timezone.now()
         return OutboundQueueItem.objects.filter(
-            next_attempt_at__lte=now,
-            locked_at__isnull=True,
-        ).filter(
-            Q(message__status=MessageStatus.PENDING)
-            | Q(message__status=MessageStatus.FAILED, attempt_count__lt=F('max_attempts')),
+            OutboundQueueRepository._eligible_filter(),
         ).count()
 
     @staticmethod
     @transaction.atomic
     def lock_item(item: OutboundQueueItem) -> OutboundQueueItem:
+        fields = ['locked_at', 'updated_at']
+        if item.locked_at is not None:
+            # Bayat kilitten geri alındı: sonsuz döngüye girmesin diye deneme say.
+            item.attempt_count = min(item.attempt_count + 1, item.max_attempts)
+            fields.append('attempt_count')
         item.locked_at = timezone.now()
-        item.save(update_fields=['locked_at', 'updated_at'])
+        item.save(update_fields=fields)
         return item
 
     @staticmethod

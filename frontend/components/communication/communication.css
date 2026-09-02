@@ -686,6 +686,13 @@
   }
 }
 
+/* Kampanya detayı — mesaj metni + önizleme */
+@media (max-width: 900px) {
+  .comm-campaign-message {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 /* WhatsApp preview bubble */
 .comm-wa-preview {
   position: sticky;

@@ -1270,7 +1270,10 @@ class CampaignService:
 
         from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
 
-        transaction.on_commit(dispatch_process_outbound_queue)
+        # Tek batch (20) yerine kuyruğu boşalt: kampanyanın kalanı cron'a kalmasın.
+        transaction.on_commit(
+            lambda: dispatch_process_outbound_queue(drain=True, background=True),
+        )
         return locked
 
     @transaction.atomic
@@ -1295,7 +1298,7 @@ class CampaignService:
             campaign.save(update_fields=['status', 'updated_at'])
             from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
 
-            dispatch_process_outbound_queue()
+            dispatch_process_outbound_queue(drain=True, background=True)
         return {'retried_count': retried}
 
     def _validate_audience_scope(self, kurum_id: int, audience_filter: dict, user) -> None:

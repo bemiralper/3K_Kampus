@@ -52,6 +52,9 @@ WHATSAPP_APP_SECRET=          # HMAC imza doğrulama
 # Kuyruk
 COMMUNICATION_QUEUE_BATCH_SIZE=20
 COMMUNICATION_QUEUE_THROTTLE_MS=200
+COMMUNICATION_QUEUE_DRAIN_SECONDS=50            # tek cron çalışmasında boşaltma bütçesi (0 → tek batch)
+COMMUNICATION_QUEUE_BACKGROUND_DRAIN_SECONDS=900 # toplu gönderim sonrası arka plan boşaltma
+COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS=600     # bu süreden eski kilitler yeniden alınır
 COMMUNICATION_WHATSAPP_COST_USD=0.0009
 
 # Opsiyonel — Celery (boş bırakılırsa cron kullanılır)
@@ -123,8 +126,12 @@ location /api/communication/events/stream/ {
 
 `backend/` dizininden:
 
+> **Kuyruk cron'u zorunludur.** Kurulmazsa toplu gönderimlerin ilk partisi
+> gider, kalanı kalıcı olarak "Bekliyor" durumunda kalır. Kurulu olup olmadığını
+> `crontab -l -u lms | grep process_communication_queue` ile doğrulayın.
+
 ```cron
-# Her dakika — giden mesaj kuyruğu
+# Her dakika — giden mesaj kuyruğu (tek çalışmada kuyruğu ~50 sn boyunca boşaltır)
 * * * * * cd /var/www/lms/backend && DJANGO_ENV=production /var/www/lms/venv/bin/python manage.py process_communication_queue >> /var/log/lms/comm_queue.log 2>&1
 
 # Her dakika — sınav karne / cevap anahtarı yayın saati
@@ -339,7 +346,10 @@ Onay sonrası sistem bu isimleri otomatik tanır. Farklı bir ad kullanacaksanı
 |---------|---------------|--------|
 | Webhook verify başarısız | Token uyuşmazlığı | `WHATSAPP_VERIFY_TOKEN` Meta console ile aynı mı kontrol edin |
 | POST webhook 403 | HMAC imza hatası | `WHATSAPP_APP_SECRET` doğru mu; nginx body'yi değiştiriyor mu |
-| Mesaj kuyrukta kalıyor | Cron/worker çalışmıyor | `process_communication_queue` cron veya Celery worker |
+| Mesaj kuyrukta kalıyor | Cron/worker çalışmıyor | `process_communication_queue --dry-run` ile bekleyen sayısını görün; cron kurulu değilse bölüm 5.1. Gönderim detay sayfasındaki "Kuyruğu şimdi işle" elle tetikler |
+| Toplu gönderimin ilk 20'si gitti, kalanı beklemede | Eski davranış: her çalışma tek batch | Güncel sürümde cron tek çalışmada kuyruğu `COMMUNICATION_QUEUE_DRAIN_SECONDS` boyunca boşaltır |
+| Deploy/restart sonrası mesajlar "Gönderiliyor"da kaldı | Kilit (`locked_at`) temizlenmeden süreç düştü | `COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS` (varsayılan 10 dk) sonrasında otomatik geri alınır |
+| Kampanya "Onaylandı"da kaldı, alıcı üretilmedi | Materialize thread'i restart'ta düştü | `process_scheduled_campaigns` cron'u ya da detay sayfasında "Kuyruğu şimdi işle" |
 | Meta rate limit | Çok hızlı batch | `COMMUNICATION_QUEUE_THROTTLE_MS=500` artırın; batch size düşürün |
 | Koç inbox güncellenmiyor | SSE kopuk | `/api/communication/events/stream/` nginx buffering kapalı mı; fallback 20s polling devreye girer |
 | Ödeme hatırlatma 400 "zaten gönderildi" | Idempotency | Aynı taksit için tekrar gönderim engellenir (by design) |

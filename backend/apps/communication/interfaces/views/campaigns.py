@@ -30,6 +30,8 @@ def _campaign_deliveries(campaign, *, limit=500):
     )
     from apps.communication.application.delivery_error import summarize_delivery_failure
 
+    from apps.communication.domain.models import OutboundQueueItem
+
     rows = []
     qs = (
         Message.objects.filter(campaign=campaign)
@@ -44,6 +46,12 @@ def _campaign_deliveries(campaign, *, limit=500):
         )
         .order_by('created_at')[:limit]
     )
+    queue_by_message = {
+        item.message_id: item
+        for item in OutboundQueueItem.objects.filter(campaign=campaign).only(
+            'message_id', 'next_attempt_at', 'attempt_count', 'max_attempts', 'last_error',
+        )
+    }
     lookup_cache: dict = {}
     for msg in qs:
         conv = msg.conversation
@@ -61,6 +69,7 @@ def _campaign_deliveries(campaign, *, limit=500):
             short_reason, full_reason = summarize_delivery_failure(raw_reason)
         else:
             short_reason, full_reason = '', ''
+        item = queue_by_message.get(msg.id)
         rows.append({
             'id': str(msg.id),
             'contact_name': name,
@@ -70,8 +79,28 @@ def _campaign_deliveries(campaign, *, limit=500):
             'failed_reason': full_reason,
             'failed_reason_short': short_reason if full_reason else '',
             'sent_at': msg.sent_at.isoformat() if msg.sent_at else None,
+            'next_attempt_at': (
+                item.next_attempt_at.isoformat()
+                if item is not None and item.next_attempt_at
+                else None
+            ),
+            'attempt_count': item.attempt_count if item is not None else 0,
+            'queue_note': _queue_note(msg, item, raw_reason),
         })
     return rows
+
+
+def _queue_note(msg, item, raw_reason: str) -> str:
+    """Bekleyen alıcı için 'neden gitmedi' açıklaması."""
+    if msg.status not in (MessageStatus.PENDING, MessageStatus.SENDING):
+        return ''
+    if item is None:
+        return 'Kuyruk kaydı yok — gönderimi yeniden başlatın.'
+    if item.attempt_count:
+        detail = (raw_reason or item.last_error or '').strip()
+        base = f'{item.attempt_count}/{item.max_attempts} deneme yapıldı, tekrar denenecek.'
+        return f'{base} {detail}'.strip() if detail else base
+    return 'Kuyrukta, sırası bekleniyor.'
 
 
 class CampaignBulkView(CommunicationAPIView):
@@ -202,7 +231,10 @@ class CampaignDetailView(CampaignBulkView):
             return gate
 
         data = CampaignDetailSerializer(campaign).data
-        data['deliveries'] = _campaign_deliveries(campaign)
+        limit = 500
+        data['deliveries'] = _campaign_deliveries(campaign, limit=limit)
+        data['deliveries_total'] = Message.objects.filter(campaign=campaign).count()
+        data['deliveries_limit'] = limit
         return Response(data)
 
 
@@ -256,6 +288,53 @@ class CampaignRetryFailedView(CampaignBulkView):
         data = CampaignDetailSerializer(campaign).data
         data['retried_count'] = result['retried_count']
         return Response(data)
+
+
+class CampaignProcessQueueView(CampaignBulkView):
+    """
+    Kampanyanın bekleyen mesajlarını hemen işlemeye başlar.
+
+    Normalde `process_communication_queue` cron'u yapar; cron durmuşsa veya
+    kullanıcı beklemek istemiyorsa bu uç kuyruğu elle tetikler.
+    """
+
+    def post(self, request, campaign_id):
+        kurum_id, sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+
+        campaign = OutboundCampaignRepository.get_by_id(kurum_id, campaign_id, sube_id=sube_id)
+        if not campaign:
+            return Response({'error': 'Kampanya bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+        gate = assert_record_sube_access(request, kurum_id, campaign.sube_id)
+        if gate:
+            return gate
+
+        from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
+        from apps.communication.domain.enums import CampaignStatus
+        from apps.communication.domain.models import Message
+
+        # Onaylandı ama alıcıları hiç üretilmemiş kampanya (materialize thread'i düşmüş)
+        if (
+            campaign.status in (CampaignStatus.DRAFT, CampaignStatus.CONFIRMED)
+            and not Message.objects.filter(campaign=campaign).exists()
+        ):
+            try:
+                campaign = CampaignService().confirm(
+                    campaign,
+                    sender_user_id=request.user.id if request.user.is_authenticated else None,
+                )
+            except ValidationError as exc:
+                return Response(
+                    {'error': str(exc.message if hasattr(exc, 'message') else exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            dispatch_process_outbound_queue(drain=True, background=True)
+
+        campaign.refresh_from_db()
+        return Response(CampaignDetailSerializer(campaign).data)
 
 
 class CampaignCancelView(CampaignBulkView):

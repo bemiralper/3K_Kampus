@@ -1972,6 +1972,20 @@ export interface CampaignDelivery {
   failed_reason: string;
   failed_reason_short?: string;
   sent_at: string | null;
+  /** Kuyruktaki bir sonraki deneme (bekleyen alıcılar için) */
+  next_attempt_at?: string | null;
+  attempt_count?: number;
+  /** "Kuyrukta, sırası bekleniyor" gibi bekleme açıklaması */
+  queue_note?: string;
+}
+
+export interface CampaignQueueStatus {
+  pending: number;
+  sending: number;
+  waiting: number;
+  queue_items: number;
+  next_attempt_at: string | null;
+  last_error: string;
 }
 
 export interface CampaignItem {
@@ -2001,6 +2015,16 @@ export interface CampaignItem {
   scheduled_at?: string | null;
   estimated_cost_usd?: string;
   deliveries?: CampaignDelivery[];
+  deliveries_total?: number;
+  deliveries_limit?: number;
+  /** Gönderimde kullanılan Meta şablonu */
+  template_name?: string;
+  template_language?: string;
+  /** Şablon değişkenlerine girilen değerler ({{mesaj}} vb.) */
+  template_context?: Record<string, string>;
+  /** Alıcıya giden gerçek metin — {{...}} çözülmüş hâli */
+  resolved_body?: string;
+  queue_status?: CampaignQueueStatus;
 }
 
 export async function previewCampaign(
@@ -2079,6 +2103,16 @@ export async function retryFailedCampaign(campaignId: string): Promise<CampaignI
   return request<CampaignItem>(`/campaigns/${campaignId}/retry-failed/`, {
     method: 'POST',
     body: JSON.stringify({ kurum_id: kurumId }),
+  });
+}
+
+/** Kampanyanın bekleyen mesajlarını hemen işlemeye başlar (cron beklemeden). */
+export async function processCampaignQueue(campaignId: string): Promise<CampaignItem> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request<CampaignItem>(`/campaigns/${campaignId}/process-queue/`, {
+    method: 'POST',
+    body: JSON.stringify({ kurum_id: kurumId }),
+    timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
   });
 }
 

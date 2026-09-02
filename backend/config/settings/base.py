@@ -74,6 +74,21 @@ COMMUNICATION_QUEUE_BATCH_SIZE = int(
     os.environ.get('COMMUNICATION_QUEUE_BATCH_SIZE', str(COMM_QUEUE_BATCH_SIZE))
 )
 COMMUNICATION_QUEUE_THROTTLE_MS = int(os.environ.get('COMMUNICATION_QUEUE_THROTTLE_MS', '200'))
+# Kilitli kalmış kuyruk kaydı bu süre sonunda yeniden işlenebilir sayılır.
+# (deploy/restart sırasında yarıda kalan gönderimler kalıcı "Bekliyor"da takılmasın)
+COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS = int(
+    os.environ.get('COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS', '600')
+)
+# Tek cron çalışmasında kuyruğun boşaltılmaya çalışılacağı süre (saniye).
+# 0 → tek batch (eski davranış). Dakikalık cron için 50 sn güvenli.
+COMMUNICATION_QUEUE_DRAIN_SECONDS = int(
+    os.environ.get('COMMUNICATION_QUEUE_DRAIN_SECONDS', '50')
+)
+# Toplu gönderim sonrası arka plan boşaltma bütçesi — cron ile çakışmadığı için
+# kampanya tek seferde bitebilsin diye daha uzun.
+COMMUNICATION_QUEUE_BACKGROUND_DRAIN_SECONDS = int(
+    os.environ.get('COMMUNICATION_QUEUE_BACKGROUND_DRAIN_SECONDS', '900')
+)
 
 # Celery + Redis (opsiyonel — boş bırakılırsa cron/management command kullanılır)
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', '')

@@ -14,11 +14,25 @@ def is_celery_enabled() -> bool:
     return bool(getattr(settings, 'CELERY_BROKER_URL', ''))
 
 
-def dispatch_process_outbound_queue(limit: int | None = None) -> bool:
+def dispatch_process_outbound_queue(
+    limit: int | None = None,
+    *,
+    drain: bool = False,
+    background: bool = False,
+    max_seconds: float | None = None,
+) -> bool:
     """
-    Kuyruk işlemeyi Celery'ye devret. Broker yoksa veya task gönderilemezse senkron batch.
+    Kuyruk işlemeyi Celery'ye devret. Broker yoksa veya task gönderilemezse yerelde işlenir.
+
+    `drain=True`: tek batch yerine süre bütçesi dolana kadar kuyruğu boşaltır
+    (toplu gönderim sonrası kalan yüzlerce mesaj cron'u beklemesin diye).
+    `background=True`: Celery yoksa işlemi HTTP isteğinin dışına, arka plan
+    thread'ine alır.
     """
-    from apps.communication.application.outbound_processor import process_pending_batch
+    from apps.communication.application.outbound_processor import (
+        drain_pending_queue,
+        process_pending_batch,
+    )
 
     if is_celery_enabled():
         try:
@@ -27,10 +41,40 @@ def dispatch_process_outbound_queue(limit: int | None = None) -> bool:
             process_outbound_queue_task.delay(limit=limit)
             return True
         except Exception:
-            logger.exception('Celery kuyruk dispatch başarısız — senkron işleniyor')
+            logger.exception('Celery kuyruk dispatch başarısız — yerel işleniyor')
 
-    process_pending_batch(limit=limit)
+    def run() -> None:
+        if drain:
+            budget = max_seconds
+            if budget is None and background:
+                # Arka planda cron ile çakışma riski yok; kampanya bitene kadar sürsün.
+                budget = getattr(settings, 'COMMUNICATION_QUEUE_BACKGROUND_DRAIN_SECONDS', 900)
+            drain_pending_queue(max_seconds=budget, batch_size=limit)
+        else:
+            process_pending_batch(limit=limit)
+
+    if background:
+        _run_in_thread(run, name='comm-queue-drain')
+    else:
+        run()
     return True
+
+
+def _run_in_thread(func, *, name: str) -> None:
+    import threading
+
+    from django.db import close_old_connections
+
+    def wrapper() -> None:
+        close_old_connections()
+        try:
+            func()
+        except Exception:
+            logger.exception('Arka plan iş başarısız: %s', name)
+        finally:
+            close_old_connections()
+
+    threading.Thread(target=wrapper, name=name, daemon=True).start()
 
 
 def dispatch_materialize_campaign(
@@ -51,32 +95,19 @@ def dispatch_materialize_campaign(
         except Exception:
             logger.exception('Celery kampanya materialize başarısız — thread kullanılacak')
 
-    import threading
-
-    thread = threading.Thread(
-        target=_run_materialize_campaign,
-        args=(str(campaign_id), sender_user_id),
+    _run_in_thread(
+        lambda: _run_materialize_campaign(str(campaign_id), sender_user_id),
         name=f'campaign-materialize-{campaign_id}',
-        daemon=True,
     )
-    thread.start()
     return True
 
 
 def _run_materialize_campaign(campaign_id: str, sender_user_id: int | None) -> None:
-    from django.db import close_old_connections
+    from apps.communication.application.campaign_service import CampaignService
+    from apps.communication.domain.models import OutboundCampaign
 
-    close_old_connections()
-    try:
-        from apps.communication.application.campaign_service import CampaignService
-        from apps.communication.domain.models import OutboundCampaign
-
-        campaign = OutboundCampaign.objects.filter(id=campaign_id).first()
-        if not campaign:
-            logger.warning('Kampanya materialize: kayıt yok id=%s', campaign_id)
-            return
-        CampaignService().materialize_queue(campaign, sender_user_id=sender_user_id)
-    except Exception:
-        logger.exception('Kampanya kuyruk üretimi başarısız campaign=%s', campaign_id)
-    finally:
-        close_old_connections()
+    campaign = OutboundCampaign.objects.filter(id=campaign_id).first()
+    if not campaign:
+        logger.warning('Kampanya materialize: kayıt yok id=%s', campaign_id)
+        return
+    CampaignService().materialize_queue(campaign, sender_user_id=sender_user_id)
