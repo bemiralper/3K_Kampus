@@ -2,6 +2,7 @@
 Ölçme & Değerlendirme — Exam Views
 """
 from rest_framework import viewsets, status
+from rest_framework.exceptions import ValidationError as DrfValidationError
 from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -22,6 +23,7 @@ from ..services.exam_templates import (
     create_sections_from_template,
     ensure_sub_sections,
     _auto_link_subjects,
+    _resolve_payload_subject,
 )
 from shared.context import get_secili_kurum_id, get_secili_egitim_yili_id
 from ..interfaces.sube_context import (
@@ -65,6 +67,23 @@ def _validate_question_range(start, end):
     if end < start:
         return None, None, 'Bitiş sorusu, başlangıç sorusundan küçük olamaz.'
     return start, end, None
+
+
+def _fresh_exam_payload(exam):
+    """Prefetch önbelleğini atıp güncel detayı döner (eklenen bölüm görünsün)."""
+    fresh = (
+        Exam.objects.select_related(
+            'kurum', 'sube', 'egitim_yili',
+            'deneme_hizmeti', 'deneme_paketi',
+            'linked_tyt_exam',
+        )
+        .prefetch_related(
+            'siniflar', 'sections__sub_sections', 'exam_sessions',
+            'audiences', 'rooms',
+        )
+        .get(pk=exam.pk)
+    )
+    return ExamDetailSerializer(fresh).data
 
 
 class ExamViewSet(viewsets.ModelViewSet):
@@ -330,34 +349,85 @@ class ExamViewSet(viewsets.ModelViewSet):
         if not name:
             return Response({'error': 'Bölüm adı zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        start, end, err = _validate_question_range(
-            request.data.get('question_start', 1),
-            request.data.get('question_end', 1),
-        )
-        if err:
-            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+        parent_id = request.data.get('parent_section') or request.data.get('parent_section_id')
+        parent = None
+        if parent_id not in (None, ''):
+            try:
+                parent = ExamSection.objects.get(
+                    exam=exam, pk=parent_id, is_sub_section=False,
+                )
+            except (ExamSection.DoesNotExist, TypeError, ValueError):
+                return Response({'error': 'Üst ders bulunamadı.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if ExamSection.objects.filter(exam=exam, name=name, parent_section__isnull=True).exists():
+        start_raw = request.data.get('question_start')
+        end_raw = request.data.get('question_end')
+        count_raw = request.data.get('question_count')
+        if start_raw in (None, '') or end_raw in (None, ''):
+            try:
+                count = int(count_raw) if count_raw not in (None, '') else 1
+            except (TypeError, ValueError):
+                return Response({'error': 'Soru sayısı sayısal olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+            if count < 1:
+                return Response({'error': 'Soru sayısı 1 veya daha büyük olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+            if parent:
+                last = parent.sub_sections.order_by('question_end', 'id').last()
+                start = (last.question_end + 1) if last else parent.question_start
+            else:
+                last_main = exam.sections.filter(is_sub_section=False).order_by('question_end', 'id').last()
+                start = (last_main.question_end + 1) if last_main else 1
+            end = start + count - 1
+        else:
+            start, end, err = _validate_question_range(start_raw, end_raw)
+            if err:
+                return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        clash = ExamSection.objects.filter(exam=exam, name=name)
+        if parent:
+            clash = clash.filter(parent_section=parent)
+        else:
+            clash = clash.filter(parent_section__isnull=True)
+        if clash.exists():
             return Response(
                 {'error': f'"{name}" adlı bölüm bu sınavda zaten var.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        ExamSection.objects.create(
+        if request.data.get('order') not in (None, ''):
+            try:
+                order = int(request.data.get('order'))
+            except (TypeError, ValueError):
+                return Response({'error': 'Sıra sayısal olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+        elif parent:
+            order = parent.sub_sections.count()
+        else:
+            order = exam.sections.filter(is_sub_section=False).count()
+
+        try:
+            subject = _resolve_payload_subject(exam, request.data)
+        except DrfValidationError as exc:
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+        section = ExamSection.objects.create(
             exam=exam,
             name=name,
-            order=request.data.get('order', exam.section_count),
+            order=order,
             question_start=start,
             question_end=end,
+            is_sub_section=bool(parent),
+            parent_section=parent,
+            subject=subject,
         )
-        return Response(ExamDetailSerializer(exam).data)
+        if parent and end > parent.question_end:
+            parent.question_end = end
+            parent.save()
+        _auto_link_subjects(exam, [section])
+        return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='remove_section')
     def remove_section(self, request, pk=None):
         exam = self.get_object()
         section_id = request.data.get('section_id')
         ExamSection.objects.filter(exam=exam, id=section_id).delete()
-        return Response(ExamDetailSerializer(exam).data)
+        return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='update_section')
     def update_section(self, request, pk=None):
@@ -399,9 +469,15 @@ class ExamViewSet(viewsets.ModelViewSet):
             except (TypeError, ValueError):
                 return Response({'error': 'Sıra sayısal olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
         if 'subject' in request.data:
-            section.subject_id = request.data['subject'] or None
+            if request.data['subject'] in (None, ''):
+                section.subject = None
+            else:
+                try:
+                    section.subject = _resolve_payload_subject(exam, request.data)
+                except DrfValidationError as exc:
+                    return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
         section.save()
-        return Response(ExamDetailSerializer(exam).data)
+        return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='reorder_sections')
     def reorder_sections(self, request, pk=None):
@@ -409,7 +485,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         section_ids = request.data.get('section_ids', [])
         for idx, sid in enumerate(section_ids):
             ExamSection.objects.filter(exam=exam, id=sid).update(order=idx)
-        return Response(ExamDetailSerializer(exam).data)
+        return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='apply_template')
     def apply_template(self, request, pk=None):
@@ -418,7 +494,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         create_sections_from_template(exam)
         return Response({
             'message': 'Şablon uygulandı.',
-            'data': ExamDetailSerializer(exam).data,
+            'data': _fresh_exam_payload(exam),
         })
 
     @action(detail=True, methods=['post'], url_path='ensure_sub_sections')
@@ -428,7 +504,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         created = ensure_sub_sections(exam)
         return Response({
             'message': f'{len(created)} alt bölüm eklendi.',
-            'data': ExamDetailSerializer(exam).data,
+            'data': _fresh_exam_payload(exam),
         })
 
     @action(detail=True, methods=['post'], url_path='link_subjects')

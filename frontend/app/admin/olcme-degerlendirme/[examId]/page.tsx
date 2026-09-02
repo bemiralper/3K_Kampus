@@ -23,6 +23,7 @@ import UploadTab from './UploadTab';
 import AnalysisTab from './AnalysisTab';
 import ParticipantsTab from '../../../../components/olcme/roster/ParticipantsTab';
 import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
+import ExamSectionsEditor from '../../../../components/olcme/ExamSectionsEditor';
 import r from '../../../../components/olcme/roster/roster.module.css';
 import ExamPublishBanner from '../../../../components/olcme/ExamPublishBanner';
 import ExamHeader from '../../../../components/olcme/ui/ExamHeader';
@@ -794,22 +795,18 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
       </div>
 
       {/* ── Bölümler ──────────────────────────────────────────────────── */}
-      {exam.sections && exam.sections.length > 0 && (
-        <>
-          <SectionsTable exam={exam} editing={editing} onExamUpdate={onExamUpdate} />
-          {showEnsureSubBtn && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -12 }}>
-              <button
-                className="btn-modern btn-primary"
-                onClick={handleEnsureSubSections}
-                disabled={subSaving}
-                style={{ padding: '7px 16px', fontSize: 12 }}
-              >
-                {subSaving ? '⏳ Ekleniyor…' : '➕ Alt Dersleri Ekle'}
-              </button>
-            </div>
-          )}
-        </>
+      <ExamSectionsEditor exam={exam} onExamUpdate={onExamUpdate} />
+      {showEnsureSubBtn && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -12 }}>
+          <button
+            className="btn-modern btn-primary"
+            onClick={handleEnsureSubSections}
+            disabled={subSaving}
+            style={{ padding: '7px 16px', fontSize: 12 }}
+          >
+            {subSaving ? '⏳ Ekleniyor…' : '➕ Alt Dersleri Ekle'}
+          </button>
+        </div>
       )}
 
       {/* ── Açıklama (sadece görüntüleme modunda) ──────────────── */}
@@ -1040,170 +1037,6 @@ function lookupNames(options: LookupItem[], ids: number[]) {
   return ids.map(id => byId.get(id) ?? `#${id}`).join(', ');
 }
 
-
-/* ── SectionsTable: Alt bölüm girintili, düzenlenebilir soru aralığı ─────── */
-function SectionsTable({ exam, editing, onExamUpdate }: {
-  exam: ExamDetail;
-  editing: boolean;
-  onExamUpdate: (e: ExamDetail) => void;
-}) {
-  const [editingSection, setEditingSection] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ question_start: 0, question_end: 0 });
-  const [saving, setSaving] = useState(false);
-  const [sectionError, setSectionError] = useState('');
-
-  // Bölümleri düz liste olarak sıralı al: ana bölüm → altları → ana bölüm → altları
-  const flatSections: (ExamSection & { _depth: number })[] = [];
-  const mainSections = (exam.sections || []).filter(sec => !sec.is_sub_section);
-  mainSections.sort((a, b) => a.order - b.order);
-  mainSections.forEach(main => {
-    flatSections.push({ ...main, _depth: 0 });
-    const subs = (exam.sections || []).filter(sec => sec.is_sub_section && sec.parent_section === main.id);
-    subs.sort((a, b) => a.order - b.order);
-    subs.forEach(sub => flatSections.push({ ...sub, _depth: 1 }));
-  });
-
-  const startEdit = (sec: ExamSection) => {
-    setEditingSection(sec.id);
-    setSectionError('');
-    setEditForm({ question_start: sec.question_start, question_end: sec.question_end });
-  };
-
-  const cancelEdit = () => {
-    setEditingSection(null);
-    setSectionError('');
-  };
-
-  const saveEdit = async (sectionId: number) => {
-    if (editForm.question_end < editForm.question_start) {
-      setSectionError('Bitiş sorusu, başlangıç sorusundan küçük olamaz.');
-      return;
-    }
-    setSaving(true);
-    setSectionError('');
-    try {
-      const updated = await examApi.updateSection(exam.id, sectionId, {
-        question_start: editForm.question_start,
-        question_end: editForm.question_end,
-      });
-      onExamUpdate(updated);
-      setEditingSection(null);
-    } catch (err) {
-      setSectionError(errText(err, 'Bölüm güncellenemedi.'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Sıra numarası sadece ana bölümler için
-  let mainIdx = 0;
-
-  return (
-    <div className="card-modern" style={{ padding: 0, overflow: 'hidden' }}>
-      <div className="card-modern-header" style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)' }}>
-        <h3>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-          Bölümler ({exam.sections.length})
-        </h3>
-      </div>
-      {sectionError && (
-        <div style={{ padding: '10px 22px', background: '#fef2f2', color: '#991b1b', fontSize: 12.5 }}>
-          {sectionError}
-        </div>
-      )}
-      <table className={s.sectionsTable} style={{ border: 'none', borderRadius: 0 }}>
-        <thead>
-          <tr>
-            <th style={{ width: 50 }}>Sıra</th>
-            <th>Bölüm</th>
-            <th style={{ width: 160 }}>Soru Aralığı</th>
-            <th style={{ width: 90 }}>Soru Sayısı</th>
-            {editing && <th style={{ width: 80 }}></th>}
-          </tr>
-        </thead>
-        <tbody>
-          {flatSections.map((sec) => {
-            const isEditing = editingSection === sec.id;
-            const isSub = sec._depth > 0;
-            const qCount = isEditing
-              ? Math.max(0, editForm.question_end - editForm.question_start + 1)
-              : sec.question_end - sec.question_start + 1;
-            if (!isSub) mainIdx++;
-
-            return (
-              <tr key={sec.id} style={isSub ? { background: '#f8fafc' } : undefined}>
-                <td style={{ fontWeight: 700, color: isSub ? '#94a3b8' : 'var(--primary)' }}>
-                  {isSub ? '' : mainIdx}
-                </td>
-                <td style={{ fontWeight: isSub ? 400 : 600, paddingLeft: isSub ? 32 : undefined, color: isSub ? '#64748b' : undefined }}>
-                  {isSub && <span style={{ color: '#94a3b8', marginRight: 6 }}>└</span>}
-                  {sec.name}
-                  {isSub && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>(alt ders)</span>}
-                </td>
-                <td>
-                  {isEditing ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <input
-                        type="number"
-                        value={editForm.question_start}
-                        onChange={e => setEditForm(f => ({ ...f, question_start: Number(e.target.value) }))}
-                        style={{ width: 55, padding: '3px 6px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 4, textAlign: 'center' }}
-                        min={1}
-                      />
-                      <span style={{ color: '#94a3b8' }}>–</span>
-                      <input
-                        type="number"
-                        value={editForm.question_end}
-                        onChange={e => setEditForm(f => ({ ...f, question_end: Number(e.target.value) }))}
-                        style={{ width: 55, padding: '3px 6px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 4, textAlign: 'center' }}
-                        min={1}
-                      />
-                    </div>
-                  ) : (
-                    <>{sec.question_start} – {sec.question_end}</>
-                  )}
-                </td>
-                <td style={{ fontWeight: 600 }}>{qCount}</td>
-                {editing && (
-                  <td>
-                    {isEditing ? (
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          className="btn-modern"
-                          onClick={() => saveEdit(sec.id)}
-                          disabled={saving}
-                          style={{ padding: '2px 8px', fontSize: 11, color: '#16a34a', border: '1px solid #bbf7d0' }}
-                        >
-                          ✓
-                        </button>
-                        <button
-                          className="btn-modern"
-                          onClick={cancelEdit}
-                          style={{ padding: '2px 8px', fontSize: 11, color: '#ef4444', border: '1px solid #fecaca' }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        className="btn-modern"
-                        onClick={() => startEdit(sec)}
-                        style={{ padding: '2px 8px', fontSize: 11, color: '#64748b' }}
-                        title="Soru aralığını düzenle"
-                      >
-                        ✏️
-                      </button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* ─  TYT Link Card  (AYT → TYT bağlantısı)                                */

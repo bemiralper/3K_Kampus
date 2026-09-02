@@ -156,7 +156,7 @@ export const examApi = {
       body: JSON.stringify({ section_id: sectionId }),
     }),
 
-  updateSection: (examId: number, sectionId: number, data: { name?: string; question_start?: number; question_end?: number; order?: number }) =>
+  updateSection: (examId: number, sectionId: number, data: { name?: string; question_start?: number; question_end?: number; order?: number; subject?: number | null }) =>
     request<ExamDetail>(`${BASE}/${examId}/update_section/`, {
       method: 'POST',
       body: JSON.stringify({ section_id: sectionId, ...data }),
@@ -966,8 +966,11 @@ const CURRICULUM_BASE = '/api/coaching/olcme-degerlendirme/curriculum';
 
 export const curriculumApi = {
   /** Ders listesi (özet) */
-  listSubjects: (examType?: string) => {
-    const qs = examType ? `?exam_type=${encodeURIComponent(examType)}` : '';
+  listSubjects: (examType?: string, band?: string) => {
+    const params = new URLSearchParams();
+    if (examType) params.set('exam_type', examType);
+    if (band) params.set('band', band);
+    const qs = params.toString() ? `?${params}` : '';
     return request<SubjectItem[]>(`${CURRICULUM_BASE}/subjects/${qs}`);
   },
 

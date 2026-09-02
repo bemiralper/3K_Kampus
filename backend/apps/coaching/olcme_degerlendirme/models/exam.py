@@ -41,6 +41,18 @@ class Exam(models.Model):
     exam_type = models.CharField(
         'Sınav Türü', max_length=20, choices=ExamType.choices,
     )
+    class CurriculumBand(models.TextChoices):
+        YKS = 'YKS', 'YKS (9–12)'
+        LGS = 'LGS', 'LGS (5–8)'
+
+    curriculum_band = models.CharField(
+        'Müfredat düzeyi',
+        max_length=8,
+        choices=CurriculumBand.choices,
+        blank=True,
+        default='',
+        help_text='YKS 9–12 veya LGS 5–8. TYT/AYT/LGS türünde otomatik kilitlenir.',
+    )
     status = models.CharField(
         'Durum', max_length=25, choices=Status.choices, default=Status.DRAFT,
     )

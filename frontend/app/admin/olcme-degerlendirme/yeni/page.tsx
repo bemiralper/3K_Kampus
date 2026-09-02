@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { examApi, puanAyarlariApi } from '../../../../components/olcme/api';
+import { curriculumApi, examApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import {
   EXAM_TYPES,
   BOOKLET_TYPES,
@@ -17,9 +17,27 @@ import type {
   SchedulePreference,
   SeatingMode,
   SessionCreateForm,
+  SubjectItem,
 } from '../../../../components/olcme/types';
+import {
+  BAND_LGS,
+  BAND_YKS,
+  bandIsLocked,
+  bandLabel,
+  resolveBand,
+} from '../../../../components/olcme/curriculum-band';
+import { matchSubjectId } from '../../../../components/olcme/SubjectPicker';
+import tree from '../../../../components/olcme/section-tree.module.css';
 import { groupSeated, previewSeating } from '../../../../components/olcme/roster/seating';
 import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
+import ManualSectionsEditor, { TemplatePreview } from '../../../../components/olcme/ManualSectionsEditor';
+import {
+  isManualSectionExamType,
+  rangesFromCounts,
+  templateToDrafts,
+  totalQuestionsFromDrafts,
+  type ManualSectionDraft,
+} from '../../../../components/olcme/manual-sections';
 import r from '../../../../components/olcme/roster/roster.module.css';
 import s from '../olcme.module.css';
 
@@ -83,6 +101,8 @@ export default function YeniSinavPage() {
   const [existingNames, setExistingNames]       = useState<string[]>([]);
 
   const [templates, setTemplates] = useState<TemplateMap>({});
+  const [manualSections, setManualSections] = useState<ManualSectionDraft[]>([]);
+  const [curriculumSubjects, setCurriculumSubjects] = useState<SubjectItem[]>([]);
   const [step, setStep] = useState(1);
   const [preview, setPreview] = useState<PreviewStudent[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -106,20 +126,90 @@ export default function YeniSinavPage() {
   }, []);
 
   const currentTemplate = form.exam_type ? templates[form.exam_type] : null;
+  const manualTemplate = isManualSectionExamType(form.exam_type);
 
-  /* Sınav türü seçilince süre şablondan gelir (TYT = 165 dk) */
+  /* Sınav türü seçilince süre şablondan gelir; konu tarama/kazanım/özelde şablon kapalı */
   useEffect(() => {
-    if (form.exam_type && templates[form.exam_type]) {
-      setForm(p => ({ ...p, duration_minutes: String(templates[form.exam_type as string].duration) }));
-    }
+    if (!form.exam_type) return;
+    const tpl = templates[form.exam_type];
+    setForm(p => ({
+      ...p,
+      duration_minutes: tpl ? String(tpl.duration) : p.duration_minutes,
+      apply_template: !isManualSectionExamType(form.exam_type),
+      curriculum_band: resolveBand(form.exam_type, p.curriculum_band),
+    }));
+    setManualSections([]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.exam_type, templates]);
+
+  const activeBand = resolveBand(form.exam_type, form.curriculum_band);
+
+  useEffect(() => {
+    if (!form.exam_type) {
+      setCurriculumSubjects([]);
+      return;
+    }
+    curriculumApi.listSubjects(undefined, activeBand)
+      .then(setCurriculumSubjects)
+      .catch(() => setCurriculumSubjects([]));
+  }, [form.exam_type, activeBand]);
+
+  useEffect(() => {
+    if (!curriculumSubjects.length) return;
+    const allowed = new Set(curriculumSubjects.map(item => item.id));
+    setManualSections(prev => {
+      let changed = false;
+      const nextId = (current: number | null, name: string) => {
+        if (current && allowed.has(current)) return current;
+        const matched = matchSubjectId(curriculumSubjects, name);
+        if (matched !== current) changed = true;
+        return matched;
+      };
+      const next = prev.map(row => {
+        const subject_id = nextId(row.subject_id, row.name);
+        const sub_sections = row.sub_sections.map(sub => {
+          const subId = nextId(sub.subject_id, sub.name);
+          return subId === sub.subject_id ? sub : { ...sub, subject_id: subId };
+        });
+        if (subject_id === row.subject_id && sub_sections.every((sub, i) => sub === row.sub_sections[i])) {
+          return row;
+        }
+        return { ...row, subject_id, sub_sections };
+      });
+      return changed ? next : prev;
+    });
+  }, [curriculumSubjects]);
 
   /* ── Helpers ─────────────────────────────────────────────────────────────── */
   const setField = useCallback(
     <K extends keyof ExamCreateForm>(key: K, value: ExamCreateForm[K]) =>
       setForm(p => ({ ...p, [key]: value })), [],
   );
+
+  const templatesReady = Object.keys(templates).length > 0;
+  const hasBuiltInTemplate = !!(currentTemplate && currentTemplate.sections.length > 0);
+  const editingTemplate = manualTemplate
+    || !form.apply_template
+    || (templatesReady && !!form.exam_type && !hasBuiltInTemplate);
+
+  const seedDrafts = (sections: TemplateSec[], subSections?: Record<string, TemplateSec[]>) =>
+    templateToDrafts(sections, subSections).map(row => ({
+      ...row,
+      subject_id: matchSubjectId(curriculumSubjects, row.name),
+      sub_sections: row.sub_sections.map(sub => ({
+        ...sub,
+        subject_id: matchSubjectId(curriculumSubjects, sub.name),
+      })),
+    }));
+
+  const startEditingTemplate = () => {
+    if (currentTemplate) setManualSections(seedDrafts(currentTemplate.sections, currentTemplate.sub_sections));
+    setField('apply_template', false);
+  };
+  const resetBuiltInTemplate = () => {
+    setManualSections([]);
+    setField('apply_template', true);
+  };
 
   const toggleSinif = (id: number) =>
     setForm(p => ({
@@ -178,6 +268,10 @@ export default function YeniSinavPage() {
 
     if (!form.name.trim()) errs.name = 'Sınav adı zorunludur.';
     if (!form.exam_type)   errs.exam_type = 'Sınav türü seçiniz.';
+    if ((isManualSectionExamType(form.exam_type) || !form.apply_template)
+      && rangesFromCounts(manualSections).length === 0) {
+      errs.sections = 'En az bir üst ders giriniz veya hazır şablona dönün.';
+    }
 
     if (form.duration_minutes && Number(form.duration_minutes) <= 0) {
       errs.duration_minutes = 'Süre 0’dan büyük olmalıdır.';
@@ -208,7 +302,7 @@ export default function YeniSinavPage() {
     });
 
     return errs;
-  }, [form, sessions]);
+  }, [form, sessions, manualSections]);
 
   useEffect(() => {
     if (touched) setFieldErrors(validate());
@@ -318,6 +412,8 @@ export default function YeniSinavPage() {
     try {
       const exam = await examApi.create({
         ...form,
+        apply_template: editingTemplate ? false : form.apply_template,
+        sections: editingTemplate ? rangesFromCounts(manualSections) : undefined,
         deneme_paketi: form.deneme_paketi_ids[0] ?? form.deneme_paketi,
         rooms: rooms.filter(r => r.name.trim()),
         manual_student_ids: manuals.map(m => m.student_id),
@@ -344,6 +440,13 @@ export default function YeniSinavPage() {
   const templateTotal = currentTemplate
     ? currentTemplate.sections.reduce((a, sec) => a + sec.question_end - sec.question_start + 1, 0)
     : 0;
+  const sectionCountLabel = editingTemplate
+    ? (rangesFromCounts(manualSections).length
+      ? `${rangesFromCounts(manualSections).length} / ${totalQuestionsFromDrafts(manualSections)}`
+      : '—')
+    : (form.apply_template && currentTemplate
+      ? `${currentTemplate.sections.length} / ${templateTotal}`
+      : '—');
 
   const err = (key: string) => (touched ? fieldErrors[key] : undefined);
 
@@ -377,7 +480,8 @@ export default function YeniSinavPage() {
             Yeni Sınav Oluştur
           </h1>
           <p className="hero-subtitle">
-            Sınav türünü seçin; bölümler, alt dersler ve süre şablondan otomatik gelir.
+            TYT, AYT ve LGS bölümleri şablondan gelir. Konu tarama, kazanım ve özel sınavlarda
+            ders ile soru sayısını bu adımda girersiniz; sonra Genel Bilgiler’den değiştirirsiniz.
           </p>
         </div>
         <button className="btn-hero" onClick={() => router.push('/admin/olcme-degerlendirme')}>
@@ -413,9 +517,9 @@ export default function YeniSinavPage() {
 
       <form onSubmit={handleSubmit} noValidate>
         {step === 1 && (
-        <div className={s.twoCol}>
+        <div className={s.createStack}>
 
-          {/* ═══ SOL KOLON ═══════════════════════════════════════════════════ */}
+          <div className={s.createTop}>
           <div className={s.flexCol}>
 
             {/* ─── Temel Bilgiler ──────────────────────────────────────── */}
@@ -495,7 +599,65 @@ export default function YeniSinavPage() {
                 </div>
               </div>
             </div>
+          </div>
 
+          <div className={s.createAside}>
+            <div className={s.summaryCard}>
+              <h3 className={s.summaryTitle}>Özet</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div className={s.summaryRow}>
+                  <span>Sınav Türü</span>
+                  <span className={s.summaryVal}>
+                    {form.exam_type ? EXAM_TYPES.find(t => t.value === form.exam_type)?.label : '—'}
+                  </span>
+                </div>
+                <div className={s.summaryRow}>
+                  <span>Bölüm / Soru</span>
+                  <span className={s.summaryVal}>{sectionCountLabel}</span>
+                </div>
+                <div className={s.summaryRow}>
+                  <span>Süre</span>
+                  <span className={s.summaryVal}>{form.duration_minutes || '—'} dk</span>
+                </div>
+                <div className={s.summaryRow}>
+                  <span>Sınav Tarihi</span>
+                  <span className={s.summaryVal}>
+                    {derivedExamDate ? fmtSessionDate(derivedExamDate) : 'Tarihsiz'}
+                  </span>
+                </div>
+                <div className={s.summaryRow}>
+                  <span>Oturum</span>
+                  <span className={s.summaryVal}>{sessions.length || '—'}</span>
+                </div>
+                <div className={s.summaryRow}>
+                  <span>Yanlış Düzeltme</span>
+                  <span className={s.summaryVal}>
+                    {form.wrong_answer_count === '0' ? 'Ceza Yok' : `${form.wrong_answer_count} → 1`}
+                  </span>
+                </div>
+                <div className={s.summaryRow}>
+                  <span>Puan Yılı</span>
+                  <span className={s.summaryVal}>
+                    {form.puan_yili ? `${form.puan_yili} YKS` : `Varsayılan (${kurumDefaultYear})`}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" onClick={goNext} className="btn-modern btn-primary"
+              style={{
+                width: '100%', justifyContent: 'center', padding: '14px 20px',
+                fontSize: 15,
+              }}>
+              Katılımcılara geç
+            </button>
+            <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
+              Sonraki adımlarda seviye, paket, salon ve oturma düzenini belirlersiniz.
+            </p>
+          </div>
+          </div>
+
+          <div className={s.flexCol}>
             {/* ─── Oturumlar ───────────────────────────────────────────── */}
             <div className="card-modern">
               <div className="card-modern-header">
@@ -667,144 +829,88 @@ export default function YeniSinavPage() {
 
           </div>
 
-          {/* ═══ SAĞ KOLON ═══════════════════════════════════════════════════ */}
-          <div className={s.sidebar}>
-
-            {/* Şablon Önizleme */}
-            <div className="card-modern">
-              <div className="card-modern-header">
-                <h3>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  Bölüm Şablonu
-                </h3>
-              </div>
-              <div className={s.cardBody}>
-                <label className={s.checkRow} style={{ marginBottom: 14 }}>
-                  <input type="checkbox" checked={form.apply_template}
-                    onChange={e => setField('apply_template', e.target.checked)} />
-                  Bölümleri otomatik oluştur
-                </label>
-
-                {!form.apply_template && (
-                  <p style={{ fontSize: 12, color: '#b45309', margin: '0 0 12px', lineHeight: 1.5 }}>
-                    Kapalıyken sınav bölümsüz oluşur; cevap anahtarı girmeden önce
-                    bölümleri elle eklemeniz gerekir.
-                  </p>
+          <div className="card-modern">
+            <div className="card-modern-header">
+              <h3>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Bölüm Şablonu
+              </h3>
+              <div className="card-modern-header-actions">
+                {hasBuiltInTemplate && !manualTemplate && !editingTemplate && (
+                  <button type="button" className="btn-modern btn-secondary"
+                    onClick={startEditingTemplate}
+                    style={{ padding: '6px 14px', fontSize: 12 }}>
+                    Şablonu düzenle
+                  </button>
                 )}
-
-                {currentTemplate && currentTemplate.sections.length > 0 ? (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 10, padding: '0 2px', textTransform: 'uppercase', letterSpacing: '.3px', fontWeight: 600 }}>
-                      <span>Toplam: {templateTotal} soru</span>
-                      <span>Süre: {currentTemplate.duration} dk</span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {currentTemplate.sections.map((sec, i) => {
-                        const subs = currentTemplate.sub_sections?.[sec.name];
-                        return (
-                          <div key={i}>
-                            <div style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              padding: '7px 12px', background: 'var(--bg-alt, #f0f4f9)', borderRadius: 8,
-                              border: '1px solid var(--border)', fontSize: 12.5,
-                            }}>
-                              <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{sec.name}</span>
-                              <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
-                                {sec.question_start}–{sec.question_end} ({sec.question_end - sec.question_start + 1})
-                              </span>
-                            </div>
-                            {subs && subs.map((sub, j) => (
-                              <div key={j} style={{
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                padding: '5px 12px 5px 28px', fontSize: 11.5, color: 'var(--text-secondary)',
-                                marginTop: 2,
-                              }}>
-                                <span>↳ {sub.name}</span>
-                                <span style={{ fontSize: 10.5 }}>
-                                  {sub.question_start}–{sub.question_end} ({sub.question_end - sub.question_start + 1})
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', margin: '12px 0 0', lineHeight: 1.5 }}>
-                      Alt dersler kazanım eşleştirmesi için müfredat derslerine otomatik bağlanır.
+                {hasBuiltInTemplate && !manualTemplate && editingTemplate && (
+                  <button type="button" className="btn-modern btn-secondary"
+                    onClick={resetBuiltInTemplate}
+                    style={{ padding: '6px 14px', fontSize: 12 }}>
+                    Hazır şablona dön
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className={s.cardBody}>
+              {form.exam_type && (
+                <div className={tree.bandRow}>
+                  <span style={{ fontSize: 12, color: '#64748b', fontWeight: 650 }}>Müfredat</span>
+                  {bandIsLocked(form.exam_type) ? (
+                    <span className={tree.bandBtnOn}>{bandLabel(activeBand)}</span>
+                  ) : (
+                    <>
+                      <button type="button" className={activeBand === BAND_YKS ? tree.bandBtnOn : tree.bandBtn}
+                        onClick={() => setField('curriculum_band', BAND_YKS)}>
+                        {bandLabel(BAND_YKS)}
+                      </button>
+                      <button type="button" className={activeBand === BAND_LGS ? tree.bandBtnOn : tree.bandBtn}
+                        onClick={() => setField('curriculum_band', BAND_LGS)}>
+                        {bandLabel(BAND_LGS)}
+                      </button>
+                    </>
+                  )}
+                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                    Ders seçici ve kazanımlar bu düzeye aittir; YKS ile LGS karışmaz.
+                  </span>
+                </div>
+              )}
+              {!form.exam_type ? (
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                  Sınav türü seçildiğinde bölümler burada görünecek.
+                </p>
+              ) : editingTemplate ? (
+                <>
+                  {hasBuiltInTemplate && !manualTemplate && (
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.55 }}>
+                      Hazır şablonu düzenliyorsunuz. Ders ekleyip çıkarabilir, müfredattan bağlayabilirsiniz.
+                      Cevap anahtarı, kazanım ve analiz bu derslere göre oluşur.
                     </p>
-                  </>
-                ) : (
-                  <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', margin: 0 }}>
-                    {form.exam_type
-                      ? 'Bu sınav türünde hazır bölüm yok; bölümleri sınav detayında elle ekleyeceksiniz.'
-                      : 'Sınav türü seçildiğinde bölümler burada görünecek.'}
+                  )}
+                  <ManualSectionsEditor
+                    drafts={manualSections}
+                    onChange={setManualSections}
+                    subjects={curriculumSubjects}
+                    error={err('sections')}
+                  />
+                </>
+              ) : currentTemplate && currentTemplate.sections.length > 0 ? (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.55 }}>
+                    Süre: {currentTemplate.duration} dk. Alt dersler kazanım eşleştirmesi için müfredat derslerine bağlanır.
+                    Ders eklemek veya çıkarmak için şablonu düzenleyin.
                   </p>
-                )}
-              </div>
+                  <TemplatePreview
+                    sections={currentTemplate.sections}
+                    subSections={currentTemplate.sub_sections}
+                  />
+                </>
+              ) : (
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                  Bu sınav türünde hazır bölüm yok; üst ders ekleyerek başlayın.
+                </p>
+              )}
             </div>
-
-            {/* Özet */}
-            <div className={s.summaryCard}>
-              <h3 className={s.summaryTitle}>Özet</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div className={s.summaryRow}>
-                  <span>Sınav Türü</span>
-                  <span className={s.summaryVal}>
-                    {form.exam_type ? EXAM_TYPES.find(t => t.value === form.exam_type)?.label : '—'}
-                  </span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Bölüm / Soru</span>
-                  <span className={s.summaryVal}>
-                    {form.apply_template && currentTemplate
-                      ? `${currentTemplate.sections.length} / ${templateTotal}`
-                      : '—'}
-                  </span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Süre</span>
-                  <span className={s.summaryVal}>{form.duration_minutes || '—'} dk</span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Sınav Tarihi</span>
-                  <span className={s.summaryVal}>
-                    {derivedExamDate ? fmtSessionDate(derivedExamDate) : 'Tarihsiz'}
-                  </span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Oturum</span>
-                  <span className={s.summaryVal}>{sessions.length || '—'}</span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Sınıf</span>
-                  <span className={s.summaryVal}>{form.sinif_ids.length || '—'}</span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Yanlış Düzeltme</span>
-                  <span className={s.summaryVal}>
-                    {form.wrong_answer_count === '0' ? 'Ceza Yok' : `${form.wrong_answer_count} → 1`}
-                  </span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Puan Yılı</span>
-                  <span className={s.summaryVal}>
-                    {form.puan_yili ? `${form.puan_yili} YKS` : `Varsayılan (${kurumDefaultYear})`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <button type="button" onClick={goNext} className="btn-modern btn-primary"
-              style={{
-                width: '100%', justifyContent: 'center', padding: '14px 20px',
-                fontSize: 15,
-              }}>
-              Katılımcılara geç
-            </button>
-
-            <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
-              Sonraki adımlarda seviye, paket, salon ve oturma düzenini belirlersiniz.
-            </p>
           </div>
         </div>
         )}
@@ -984,6 +1090,7 @@ export default function YeniSinavPage() {
             <h3 className={s.summaryTitle}>Kayıt özeti</h3>
             <div className={s.summaryRow}><span>Sınav</span><span className={s.summaryVal}>{form.name || '—'}</span></div>
             <div className={s.summaryRow}><span>Tür</span><span className={s.summaryVal}>{form.exam_type ? EXAM_TYPES.find(t => t.value === form.exam_type)?.label : '—'}</span></div>
+            <div className={s.summaryRow}><span>Ders / Soru</span><span className={s.summaryVal}>{sectionCountLabel}</span></div>
             <div className={s.summaryRow}><span>Katılımcı</span><span className={s.summaryVal}>{roster.length}</span></div>
             <div className={s.summaryRow}><span>Sınıf</span><span className={s.summaryVal}>{form.sinif_ids.length || '—'}</span></div>
             <div className={s.summaryRow}><span>Seviye</span><span className={s.summaryVal}>{form.sinif_seviyesi_ids.length || '—'}</span></div>

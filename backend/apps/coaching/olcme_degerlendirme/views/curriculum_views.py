@@ -188,9 +188,14 @@ def subject_list(request):
     """
     if request.method == 'GET':
         exam_type = request.query_params.get('exam_type', None)
+        band = (request.query_params.get('band') or '').strip().upper()
         qs = Subject.objects.all().order_by('order', 'name')
-        if exam_type:
+        if exam_type and not band:
             qs = qs.filter(exam_type_filter__in=['ALL', exam_type])
+        if band in ('YKS', 'LGS'):
+            from ..services.curriculum_band import subjects_for_band
+            allowed_ids = [s.id for s in subjects_for_band(band)]
+            qs = qs.filter(id__in=allowed_ids)
         serializer = SubjectListSerializer(qs, many=True)
         return Response(serializer.data)
 
@@ -820,6 +825,18 @@ def link_subject_to_section(request):
 
     subject = get_object_or_404(Subject, pk=subject_id)
     section = get_object_or_404(ExamSection, pk=section_id)
+
+    from ..services.curriculum_band import subject_allowed_for_exam
+    if not subject_allowed_for_exam(section.exam, subject):
+        return Response(
+            {
+                'error': (
+                    f'"{subject}" bu sınavın müfredat düzeyine uymaz. '
+                    'YKS (9–12) ve LGS (5–8) dersleri karışmaz.'
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     section.subject = subject
     section.save(update_fields=['subject'])

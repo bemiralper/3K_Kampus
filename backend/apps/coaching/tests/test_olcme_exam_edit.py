@@ -123,6 +123,125 @@ class OlcmeExamEditAPITest(TestCase):
 
     # ── Deneme alanları ─────────────────────────────────────────────────────
 
+    def test_create_konu_tarama_with_manual_sections(self):
+        """Konu tarama oluştururken ders + soru sayısı kalıcı bölümlere yazılmalı."""
+        res = self.client.post(
+            EXAMS_URL,
+            {
+                'name': 'Konu Tarama 1',
+                'exam_type': 'KONU_TARAMA',
+                'apply_template': False,
+                'sections': [
+                    {'name': 'Türkçe', 'question_count': 12},
+                    {'name': 'Matematik', 'question_count': 8},
+                ],
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 201, res.content[:400])
+        exam = Exam.objects.get(id=res.json()['id'])
+        rows = list(exam.sections.order_by('order').values_list(
+            'name', 'question_start', 'question_end',
+        ))
+        self.assertEqual(rows, [('Türkçe', 1, 12), ('Matematik', 13, 20)])
+
+    def test_create_konu_tarama_with_nested_sub_sections(self):
+        res = self.client.post(
+            EXAMS_URL,
+            {
+                'name': 'Konu Tarama Fen',
+                'exam_type': 'KONU_TARAMA',
+                'apply_template': False,
+                'sections': [{
+                    'name': 'Fen Bilimleri',
+                    'sub_sections': [
+                        {'name': 'Fizik', 'question_count': 7},
+                        {'name': 'Kimya', 'question_count': 7},
+                    ],
+                }],
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 201, res.content[:400])
+        exam = Exam.objects.get(id=res.json()['id'])
+        fen = exam.sections.get(name='Fen Bilimleri', is_sub_section=False)
+        self.assertEqual((fen.question_start, fen.question_end), (1, 14))
+        subs = list(fen.sub_sections.order_by('order').values_list(
+            'name', 'question_start', 'question_end',
+        ))
+        self.assertEqual(subs, [('Fizik', 1, 7), ('Kimya', 8, 14)])
+        fizik = exam.sections.get(name='Fizik')
+        self.assertIsNotNone(fizik.subject_id)
+        self.assertEqual(fizik.subject.name, 'Fizik')
+
+    def test_create_edited_tyt_template_keeps_custom_ranges(self):
+        res = self.client.post(
+            EXAMS_URL,
+            {
+                'name': 'TYT Kesilmiş',
+                'exam_type': 'YKS_TYT',
+                'apply_template': False,
+                'sections': [
+                    {'name': 'Türkçe', 'question_count': 40},
+                    {
+                        'name': 'Fen Bilimleri',
+                        'sub_sections': [
+                            {'name': 'Fizik', 'question_count': 7},
+                            {'name': 'Kimya', 'question_count': 7},
+                        ],
+                    },
+                ],
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 201, res.content[:400])
+        exam = Exam.objects.get(id=res.json()['id'])
+        mains = list(exam.sections.filter(is_sub_section=False).order_by('order'))
+        self.assertEqual([m.name for m in mains], ['Türkçe', 'Fen Bilimleri'])
+        self.assertEqual((mains[0].question_start, mains[0].question_end), (1, 40))
+        self.assertEqual((mains[1].question_start, mains[1].question_end), (41, 54))
+        fizik = exam.sections.get(name='Fizik', is_sub_section=True)
+        self.assertEqual((fizik.question_start, fizik.question_end), (41, 47))
+        self.assertIsNotNone(fizik.subject_id)
+
+    def test_add_section_appears_in_response(self):
+        """Prefetch önbelleği yeni üst dersi gizlememeli."""
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/add_section/',
+            {'name': 'Geometri', 'question_count': 20},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        names = [row['name'] for row in res.json()['sections'] if not row.get('is_sub_section')]
+        self.assertIn('Geometri', names)
+
+    def test_add_sub_section_under_parent(self):
+        parent = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/add_section/',
+            {'name': 'Fen Bilimleri', 'question_start': 1, 'question_end': 10},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(parent.status_code, 200, parent.content[:400])
+        parent_id = next(
+            row['id'] for row in parent.json()['sections'] if row['name'] == 'Fen Bilimleri'
+        )
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/add_section/',
+            {'name': 'Fizik', 'question_count': 6, 'parent_section': parent_id},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        fizik = next(row for row in res.json()['sections'] if row['name'] == 'Fizik')
+        self.assertTrue(fizik['is_sub_section'])
+        self.assertEqual(fizik['parent_section'], parent_id)
+        self.assertEqual((fizik['question_start'], fizik['question_end']), (1, 6))
+
     def test_deneme_fields_accept_null(self):
         """Deneme hizmeti/paketi temizlenebilmeli (SET_NULL alanlar)."""
         res = self._patch({'deneme_hizmeti': None, 'deneme_paketi': None})

@@ -123,6 +123,22 @@ function scoreLabel(score: number): string {
   return 'Eşleşme Yok';
 }
 
+function matchSubjectByName(tree: SubjectItem[], name: string): SubjectItem | null {
+  const needle = name.trim().toLocaleLowerCase('tr-TR');
+  if (!needle) return null;
+  return tree.find(s =>
+    [s.name, s.display_name, s.code].some(v => (v || '').toLocaleLowerCase('tr-TR') === needle),
+  ) ?? null;
+}
+
+function resolveSectionSubject(section: ExamSection, tree: SubjectItem[]): SubjectItem | null {
+  if (section.subject) {
+    const byId = tree.find(s => s.id === section.subject) ?? null;
+    if (byId) return byId;
+  }
+  return matchSubjectByName(tree, section.name);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  ANA BİLEŞEN                                                             */
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -136,6 +152,7 @@ export default function OutcomesTab({ exam }: Props) {
   const [saving, setSaving]           = useState(false);
   const [msg, setMsg]                 = useState('');
   const [answerKeys, setAnswerKeys]   = useState<AnswerKey[]>([]);
+  const [subjectsTree, setSubjectsTree] = useState<SubjectItem[]>([]);
   const [subSections, setSubSections] = useState<SubSectionInfo[]>([]);
   const [rows, setRows]               = useState<OutcomeRow[]>([]);
 
@@ -169,7 +186,8 @@ export default function OutcomesTab({ exam }: Props) {
       setAnswerKeys(keys);
 
       // 2) Kazanım ağacını yükle (sınav türüne göre filtrelenmiş)
-      const subjectsTree = await answerKeyApi.outcomes(exam.id);
+      const tree = await answerKeyApi.outcomes(exam.id);
+      setSubjectsTree(tree);
 
       // 3) Alt bölümlerin bağlı Subject'lerini bul
       //    Alt bölümü olan ana bölümler → alt bölümlerle temsil edilir
@@ -181,37 +199,21 @@ export default function OutcomesTab({ exam }: Props) {
         freshSubSections.map(s => s.parent_section).filter(Boolean)
       );
 
+      const bindSubject = (sec: ExamSection) => {
+        const subject = resolveSectionSubject(sec, tree);
+        const topics = subject?.topics ?? [];
+        return { subject, topics, outcomes: flattenOutcomes(topics) };
+      };
+
       // Önce alt bölümleri ekle
       for (const sub of freshSubSections) {
-        let subject: SubjectItem | null = null;
-        let topics: TopicItem[] = [];
-        let outcomes: OutcomeItem[] = [];
-
-        if (sub.subject) {
-          subject = subjectsTree.find(s => s.id === sub.subject) ?? null;
-          if (subject) {
-            topics = subject.topics ?? [];
-            outcomes = flattenOutcomes(topics);
-          }
-        }
-        ssInfos.push({ section: sub, subject, topics, outcomes });
+        ssInfos.push({ section: sub, ...bindSubject(sub) });
       }
 
       // Alt bölümü olmayan ana bölümleri de ekle
       for (const main of freshMainSections) {
         if (parentsWithChildren.has(main.id)) continue; // alt bölümü var, atla
-        let subject: SubjectItem | null = null;
-        let topics: TopicItem[] = [];
-        let outcomes: OutcomeItem[] = [];
-
-        if (main.subject) {
-          subject = subjectsTree.find(s => s.id === main.subject) ?? null;
-          if (subject) {
-            topics = subject.topics ?? [];
-            outcomes = flattenOutcomes(topics);
-          }
-        }
-        ssInfos.push({ section: main, subject, topics, outcomes });
+        ssInfos.push({ section: main, ...bindSubject(main) });
       }
 
       // Soru başlangıcına göre sırala
@@ -829,6 +831,7 @@ export default function OutcomesTab({ exam }: Props) {
       {pickerOpen && (
         <OutcomePickerModal
           section={pickerSection}
+          allSubjects={subjectsTree}
           search={pickerSearch}
           onSearch={setPickerSearch}
           onSelect={o => handleSetOutcome(pickerRowIdx, o)}
@@ -938,9 +941,10 @@ export default function OutcomesTab({ exam }: Props) {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function OutcomePickerModal({
-  section, search, onSearch, onSelect, onClose, currentOutcomeId, currentSubOutcomeId, questionNumber,
+  section, allSubjects, search, onSearch, onSelect, onClose, currentOutcomeId, currentSubOutcomeId, questionNumber,
 }: {
   section: SubSectionInfo | null;
+  allSubjects: SubjectItem[];
   search: string;
   onSearch: (s: string) => void;
   onSelect: (o: OutcomeItem) => void;
@@ -951,7 +955,14 @@ function OutcomePickerModal({
 }) {
   const q = search.trim();
 
-  const topics = section?.topics ?? [];
+  const topics = section?.subject
+    ? (section.topics ?? [])
+    : allSubjects.flatMap(subj =>
+      (subj.topics ?? []).map(topic => ({
+        ...topic,
+        name: `${subj.display_name || subj.name} · ${topic.name}`,
+      })),
+    );
 
   const filteredTopics = topics
     .map(topic => ({
@@ -997,10 +1008,10 @@ function OutcomePickerModal({
             autoFocus
           />
 
-          {!section?.subject ? (
+          {topics.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-secondary)' }}>
-              <p>⚠️ Bu bölüme müfredat dersi bağlanmamış.</p>
-              <p style={{ fontSize: 12 }}>Kazanım Yönetimi sayfasından ders bağlayabilirsiniz.</p>
+              <p>⚠️ Müfredatta kazanım bulunamadı.</p>
+              <p style={{ fontSize: 12 }}>Kazanım Yönetimi sayfasından ders ve kazanım ekleyebilirsiniz.</p>
             </div>
           ) : filteredTopics.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-secondary)' }}>
@@ -1008,12 +1019,19 @@ function OutcomePickerModal({
             </div>
           ) : (
             <>
-              {section.subject && (
+              {section?.subject ? (
                 <div style={{
                   padding: '8px 12px', borderRadius: 8, background: '#eff6ff',
                   color: '#1e40af', fontSize: 12, marginBottom: 10, fontWeight: 500,
                 }}>
                   📚 {section.subject.name}
+                </div>
+              ) : (
+                <div style={{
+                  padding: '8px 12px', borderRadius: 8, background: '#fffbeb',
+                  color: '#92400e', fontSize: 12, marginBottom: 10, fontWeight: 500,
+                }}>
+                  Bölüme müfredat dersi bağlanmamış. Listelenen kazanımlar bu sınavın düzeyine (YKS 9–12 veya LGS 5–8) aittir.
                 </div>
               )}
               {filteredTopics.map(topic => (

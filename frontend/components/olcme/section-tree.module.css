@@ -1,0 +1,254 @@
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 0 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 600;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  min-width: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) 108px 72px 40px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  min-width: 0;
+}
+
+.rowMain {
+  composes: row;
+  background: #f8fafc;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.rowSub {
+  composes: row;
+  background: #fff;
+  border-top: 1px solid #f1f5f9;
+  padding-left: 28px;
+}
+
+.rowForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px 14px 12px 28px;
+  background: #fcfdff;
+  border-top: 1px dashed #e2e8f0;
+  min-width: 0;
+}
+
+.badge {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 3px 8px;
+  text-align: center;
+}
+
+.badgeMain {
+  composes: badge;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badgeSub {
+  composes: badge;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.name {
+  min-width: 0;
+}
+
+.subjectSelect {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #fff;
+}
+
+.bandRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 12px;
+}
+
+.bandBtn {
+  appearance: none;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.bandBtnOn {
+  composes: bandBtn;
+  border-color: #1d4ed8;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.nameInput {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #fff;
+}
+
+.nameText {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.range {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.countLabel {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.countInput {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.iconBtn {
+  appearance: none;
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #dc2626;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.addBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 12px 0 0;
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.field label {
+  font-size: 11px;
+  font-weight: 650;
+  color: #64748b;
+}
+
+.fieldGrow {
+  composes: field;
+  flex: 1 1 200px;
+}
+
+.fieldSm {
+  composes: field;
+  width: 88px;
+}
+
+.hint {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.55;
+  max-width: 72ch;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--danger, #dc2626);
+}
+
+@media (max-width: 720px) {
+  .row,
+  .rowMain,
+  .rowSub {
+    grid-template-columns: 76px minmax(0, 1fr) 40px;
+    grid-template-areas:
+      "badge name del"
+      "badge range count";
+  }
+  .badgeMain, .badgeSub { grid-area: badge; }
+  .name { grid-area: name; }
+  .range { grid-area: range; text-align: left; }
+  .countInput, .countLabel { grid-area: count; }
+  .iconBtn { grid-area: del; }
+}

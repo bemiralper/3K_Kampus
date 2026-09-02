@@ -86,6 +86,7 @@ export interface ExamListItem {
   name: string;
   exam_type: ExamTypeValue;
   exam_type_display: string;
+  curriculum_band?: 'YKS' | 'LGS';
   status: ExamStatusValue;
   status_display: string;
   exam_date: string | null;
@@ -269,6 +270,7 @@ export type SeatingMode = 'sequential' | 'shuffle' | 'cross';
 export interface ExamCreateForm {
   name: string;
   exam_type: ExamTypeValue | '';
+  curriculum_band: 'YKS' | 'LGS';
   description: string;
   exam_date: string;
   result_publish_date: string;
@@ -290,6 +292,7 @@ export interface ExamCreateForm {
 export const EXAM_CREATE_FORM_DEFAULT: ExamCreateForm = {
   name:                        '',
   exam_type:                   '',
+  curriculum_band:             'YKS',
   description:                 '',
   exam_date:                   '',
   result_publish_date:         '',

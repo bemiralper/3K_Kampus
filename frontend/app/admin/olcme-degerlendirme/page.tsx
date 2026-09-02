@@ -563,7 +563,7 @@ export default function OlcmeListPage() {
             <>
               <h3 className={s.emptyTitle}>Henüz sınav yok</h3>
               <p className={s.emptyText}>
-                İlk sınavınızı oluşturarak başlayın. Bölümler sınav türüne göre otomatik gelir.
+                İlk sınavınızı oluşturarak başlayın. TYT/AYT/LGS bölümleri şablondan gelir; konu tarama, kazanım ve özelde dersleri siz yazarsınız.
               </p>
               <Link href="/admin/olcme-degerlendirme/yeni" className={`${s.rowBtn} ${s.rowBtnPrimary}`}>
                 <Icon name="plus" size={14} strokeWidth={2.5} />

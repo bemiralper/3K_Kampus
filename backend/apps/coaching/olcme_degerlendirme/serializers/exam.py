@@ -5,10 +5,12 @@ from django.db import transaction
 from rest_framework import serializers
 from ..models import Exam, ExamSection, ExamSessionModel
 from ..services.exam_templates import (
+    create_sections_from_payload,
     create_sections_from_template,
     get_default_duration,
 )
 from ..models.scoring_settings import MANAGED_PUAN_YILLARI
+from ..services.curriculum_band import normalize_band, resolved_band
 
 
 def _validate_puan_yili(value):
@@ -211,6 +213,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
         model = Exam
         fields = [
             'id', 'name', 'exam_type', 'exam_type_display',
+            'curriculum_band',
             'status', 'status_display', 'description',
             'is_active', 'is_locked', 'is_template',
             'kurum', 'sube', 'egitim_yili',
@@ -234,6 +237,11 @@ class ExamDetailSerializer(serializers.ModelSerializer):
     sinif_seviyesi_ids = serializers.SerializerMethodField()
     deneme_paketi_ids = serializers.SerializerMethodField()
     rooms = serializers.SerializerMethodField()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['curriculum_band'] = resolved_band(instance)
+        return data
 
     def get_linked_tyt_exam_name(self, obj):
         return obj.linked_tyt_exam.name if obj.linked_tyt_exam else None
@@ -262,11 +270,24 @@ class ExamDetailSerializer(serializers.ModelSerializer):
 #  CREATE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+class ExamSectionWriteSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100)
+    question_start = serializers.IntegerField(required=False, min_value=1)
+    question_end = serializers.IntegerField(required=False, min_value=1)
+    question_count = serializers.IntegerField(required=False, min_value=1)
+    order = serializers.IntegerField(required=False, min_value=0)
+    subject = serializers.IntegerField(required=False, allow_null=True)
+    sub_sections = serializers.ListField(
+        child=serializers.DictField(), required=False, default=list,
+    )
+
+
 class ExamCreateSerializer(serializers.ModelSerializer):
     apply_template = serializers.BooleanField(write_only=True, default=True)
     sinif_ids = serializers.ListField(
         child=serializers.IntegerField(), write_only=True, required=False,
     )
+    sections = ExamSectionWriteSerializer(many=True, write_only=True, required=False)
 
     class Meta:
         model = Exam
@@ -280,18 +301,28 @@ class ExamCreateSerializer(serializers.ModelSerializer):
             'puan_yili',
             'booklet_type', 'booklet_auto_detect',
             'apply_template',
+            'curriculum_band',
+            'sections',
         ]
         extra_kwargs = {
             'puan_yili': {'required': False, 'allow_null': True},
+            'curriculum_band': {'required': False, 'allow_blank': True},
         }
 
     def validate_puan_yili(self, value):
         return _validate_puan_yili(value)
 
+    def validate(self, attrs):
+        attrs['curriculum_band'] = normalize_band(
+            attrs.get('curriculum_band'), attrs.get('exam_type'),
+        )
+        return attrs
+
     @transaction.atomic
     def create(self, validated_data):
         apply_template = validated_data.pop('apply_template', True)
         sinif_ids = validated_data.pop('sinif_ids', [])
+        sections_payload = validated_data.pop('sections', None)
 
         request = self.context.get('request')
         if request:
@@ -321,8 +352,9 @@ class ExamCreateSerializer(serializers.ModelSerializer):
         if sinif_ids:
             exam.siniflar.set(sinif_ids)
 
-        # Şablon bölümleri
-        if apply_template:
+        if sections_payload:
+            create_sections_from_payload(exam, sections_payload)
+        elif apply_template:
             create_sections_from_template(exam)
 
         extra = {}
@@ -373,9 +405,11 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
             'sinif_ids',
             'sinif_seviyesi_ids', 'deneme_paketi_ids',
             'deneme_hizmeti', 'deneme_paketi',
+            'curriculum_band',
         ]
         extra_kwargs = {
             'puan_yili': {'required': False, 'allow_null': True},
+            'curriculum_band': {'required': False, 'allow_blank': True},
         }
 
     def validate_puan_yili(self, value):
@@ -392,6 +426,9 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {f: 'Sınav kilitli — bu alan değiştirilemez.'},
                     )
+        exam_type = attrs.get('exam_type') or (self.instance.exam_type if self.instance else None)
+        if 'curriculum_band' in attrs:
+            attrs['curriculum_band'] = normalize_band(attrs.get('curriculum_band'), exam_type)
         return attrs
 
     def update(self, instance, validated_data):

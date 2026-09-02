@@ -231,18 +231,23 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         exam, err = get_exam_or_response(request, exam_pk)
         if err:
             return err
-        exam_type = exam.exam_type
-
-        subjects = Subject.objects.all().order_by('order', 'name')
-        # Sınav türü filtresi
-        subjects = subjects.filter(
-            exam_type_filter__in=['ALL', exam_type],
+        from ..services.curriculum_band import (
+            resolved_band,
+            subject_matches_band,
+            topic_matches_band,
         )
+
+        band = resolved_band(exam)
+        subjects = Subject.objects.all().order_by('order', 'name')
 
         result = []
         for subj in subjects:
+            if not subject_matches_band(subj, band):
+                continue
             topics_data = []
             for topic in subj.topics.order_by('order'):
+                if not topic_matches_band(topic, band):
+                    continue
                 outcomes_data = []
                 for outcome in topic.outcomes.filter(is_active=True).order_by('order'):
                     sub_outcomes = list(

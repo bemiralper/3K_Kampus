@@ -9,6 +9,14 @@ Her sınav türü için:
 """
 from __future__ import annotations
 
+from rest_framework.serializers import ValidationError
+
+from .curriculum_band import (
+    BAND_LGS,
+    resolved_band,
+    subject_allowed_for_exam,
+    subjects_for_band,
+)
 from .okulizyon_import import SECTION_SUBJECT_MAP as _SECTION_SUBJECT_MAP
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -190,46 +198,65 @@ def _auto_link_subjects(exam, sections: list) -> None:
     Mantık:
     - Alt bölümler varsa → alt bölümlere bağla
     - Alt bölüm yoksa (LGS gibi) → ana bölümlere bağla
-    - Subject tablosunda eşleşen code varsa → onu kullan
-    - Yoksa → otomatik oluştur (get_or_create)
+    - Yalnız sınavın müfredat bandındaki (YKS 9–12 / LGS 5–8) dersler bağlanır
     """
     from ..models.curriculum import Subject
 
-    subject_map = _SECTION_SUBJECT_MAP.get(exam.exam_type, {})
+    band = resolved_band(exam)
+    subject_map = dict(_SECTION_SUBJECT_MAP.get(exam.exam_type, {}))
     if not subject_map:
-        return
+        wanted = {'LGS'} if band == BAND_LGS else {'YKS_TYT', 'YKS_AYT', 'DENEME'}
+        for exam_type, type_map in _SECTION_SUBJECT_MAP.items():
+            if exam_type in wanted:
+                subject_map.update(type_map)
+
+    def _name_key(value: str) -> str:
+        return (value or '').strip().casefold()
+
+    existing_by_name = {}
+    for subj in subjects_for_band(band):
+        for label in (subj.name, subj.display_name, subj.code):
+            key = _name_key(label)
+            if key and key not in existing_by_name:
+                existing_by_name[key] = subj
+
+    default_filter = 'LGS' if band == BAND_LGS else 'YKS_TYT'
 
     for section in sections:
-        # Zaten subject bağlıysa dokunma
         if section.subject_id:
             continue
 
         section_name = section.name
         mapping = subject_map.get(section_name)
-        if not mapping:
-            continue
 
-        code, display_name, exam_type_filter = mapping
-
-        # Alt bölüm varsa sadece alt bölümlere bağla
-        # Ana bölümlere bağlama (Temel Matematik ana bölümüne değil,
-        # Matematik alt bölümüne bağla)
         has_sub = section.is_sub_section is False and any(
             s.parent_section_id == section.id for s in sections if s.is_sub_section
         )
         if has_sub:
-            # Bu ana bölümün alt bölümleri var → ana bölüme subject bağlama
             continue
 
-        # Subject bul veya oluştur
-        subject, _created = Subject.objects.get_or_create(
-            code=code,
-            defaults={
-                'name': display_name,
-                'display_name': display_name,
-                'exam_type_filter': exam_type_filter,
-            },
-        )
+        subject = None
+        if mapping:
+            code, display_name, _legacy_filter = mapping
+            existing = Subject.objects.filter(code=code).first()
+            if existing and not subject_allowed_for_exam(exam, existing):
+                subject = existing_by_name.get(_name_key(section_name)) or existing_by_name.get(_name_key(display_name))
+            elif existing:
+                subject = existing
+            else:
+                subject, _created = Subject.objects.get_or_create(
+                    code=code,
+                    defaults={
+                        'name': display_name,
+                        'display_name': display_name,
+                        'exam_type_filter': default_filter,
+                    },
+                )
+        else:
+            subject = existing_by_name.get(_name_key(section_name))
+
+        if not subject or not subject_allowed_for_exam(exam, subject):
+            continue
 
         section.subject = subject
         section.save(update_fields=['subject'])
@@ -283,6 +310,109 @@ def create_sections_from_template(exam) -> list:
     # ── Müfredat dersi (Subject) otomatik bağlama ─────────────────────
     _auto_link_subjects(exam, created)
 
+    return created
+
+
+def _payload_int(raw, default=None):
+    try:
+        return int(raw) if raw not in (None, '') else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _resolve_payload_subject(exam, raw):
+    from ..models.curriculum import Subject
+
+    subject_id = _payload_int(raw.get('subject') if isinstance(raw, dict) else None)
+    if subject_id is None and isinstance(raw, dict):
+        subject_id = _payload_int(raw.get('subject_id'))
+    if subject_id is None:
+        return None
+    try:
+        subject = Subject.objects.get(pk=subject_id)
+    except Subject.DoesNotExist as exc:
+        raise ValidationError({'sections': f'Müfredat dersi bulunamadı ({subject_id}).'}) from exc
+    if not subject_allowed_for_exam(exam, subject):
+        raise ValidationError({
+            'sections': (
+                f'"{subject}" bu sınavın müfredat düzeyine uymaz. '
+                'YKS (9–12) ve LGS (5–8) dersleri karışmaz.'
+            ),
+        })
+    return subject
+
+
+def create_sections_from_payload(exam, rows: list) -> list:
+    """Üst ders + isteğe bağlı alt derslerden bölüm oluşturur (TYT/AYT hiyerarşisi)."""
+    from ..models.exam import ExamSection
+
+    created = []
+    cursor = 1
+    seen = set()
+    for i, raw in enumerate(rows or []):
+        name = str(raw.get('name') or '').strip()
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        order = _payload_int(raw.get('order'), i)
+        subs = raw.get('sub_sections') or raw.get('subs') or []
+        child_specs = []
+        for j, sub in enumerate(subs):
+            sub_name = str(sub.get('name') or '').strip()
+            if not sub_name:
+                continue
+            sub_start = _payload_int(sub.get('question_start'))
+            sub_end = _payload_int(sub.get('question_end'))
+            sub_count = _payload_int(sub.get('question_count'))
+            if sub_start is None or sub_end is None:
+                n = sub_count if sub_count and sub_count > 0 else 1
+                sub_start = cursor
+                sub_end = sub_start + n - 1
+            if sub_end < sub_start:
+                sub_end = sub_start
+            child_specs.append((
+                sub_name, sub_start, sub_end, _payload_int(sub.get('order'), j),
+                _resolve_payload_subject(exam, sub),
+            ))
+            cursor = sub_end + 1
+        if child_specs:
+            start = child_specs[0][1]
+            end = child_specs[-1][2]
+        else:
+            start = _payload_int(raw.get('question_start'))
+            end = _payload_int(raw.get('question_end'))
+            count = _payload_int(raw.get('question_count'))
+            if start is None or end is None:
+                n = count if count and count > 0 else 1
+                start = cursor
+                end = start + n - 1
+            if end < start:
+                end = start
+            cursor = end + 1
+        parent = ExamSection.objects.create(
+            exam=exam,
+            name=name,
+            question_start=start,
+            question_end=end,
+            order=order,
+            subject=_resolve_payload_subject(exam, raw),
+        )
+        created.append(parent)
+        for sub_name, sub_start, sub_end, sub_order, sub_subject in child_specs:
+            created.append(ExamSection.objects.create(
+                exam=exam,
+                name=sub_name,
+                question_start=sub_start,
+                question_end=sub_end,
+                order=sub_order,
+                is_sub_section=True,
+                parent_section=parent,
+                subject=sub_subject,
+            ))
+    _auto_link_subjects(exam, created)
     return created
 
 
