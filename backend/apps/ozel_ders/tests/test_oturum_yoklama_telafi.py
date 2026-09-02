@@ -431,3 +431,29 @@ class YoklamaTelafiTests(TestCase):
                 kurum_id=self.kurum.id,
                 sube_id=self.sube.id,
             )
+
+    def test_create_oturum_links_active_program(self):
+        from apps.ozel_ders.domain.models import BirebirOgrenciProgrami, ProgramDurumu
+
+        program = BirebirOgrenciProgrami.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            ogrenci=self.ogrenci,
+            baslangic_tarihi=date.today(),
+            durum=ProgramDurumu.AKTIF,
+        )
+        oturum, _ = oturum_service.create_oturum(
+            {
+                'session_date': date.today().isoformat(),
+                'start_time': '18:00',
+                'end_time': '19:00',
+                'ogrenci_id': self.ogrenci.id,
+                'ders_id': self.ders.id,
+                'ogretmen_id': self.ogretmen.id,
+                'egitim_yili_id': self.ey.id,
+            },
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+        self.assertEqual(oturum.program_id, program.id)

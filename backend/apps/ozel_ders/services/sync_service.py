@@ -226,13 +226,15 @@ def ensure_program_from_enrollment(
     paket_id: int,
     ogrenci_egitim_paketi_id: Optional[int] = None,
     baslangic: Optional[date] = None,
+    kurum_id: Optional[int] = None,
+    sube_id: Optional[int] = None,
     user=None,
 ) -> tuple[Optional[BirebirOgrenciProgrami], str]:
-    """Kayıt finalize sonrası çağrı — ogrenci modelinden kurum/şube alır."""
+    """Kayıt finalize sonrası çağrı — kayıt şubesi varsa onu, yoksa öğrenci şubesini kullanır."""
     return ensure_program_for_package(
         ogrenci_id=ogrenci.id if hasattr(ogrenci, 'id') else int(ogrenci),
-        kurum_id=getattr(ogrenci, 'kurum_id', None),
-        sube_id=getattr(ogrenci, 'sube_id', None),
+        kurum_id=kurum_id or getattr(ogrenci, 'kurum_id', None),
+        sube_id=sube_id or getattr(ogrenci, 'sube_id', None),
         egitim_yili_id=egitim_yili_id,
         paket_turu=paket_turu,
         paket_id=paket_id,
@@ -413,15 +415,28 @@ def sync_sube_programs(
     if not egitim_yili_id:
         raise OzelDersError('egitim_yili_id zorunlu.', 'egitim_yili_id')
 
+    from apps.ogrenci.domain.models import OgrenciKayit
+
+    kayit_ogrenci_ids = OgrenciKayit.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili_id=egitim_yili_id,
+        aktif_mi=True,
+        ogrenci__aktif_mi=True,
+    ).values_list('ogrenci_id', flat=True)
+
     packages = (
         OgrenciEgitimPaketi.objects.filter(
             aktif_mi=True,
             paket_turu__in=list(SYNCABLE_PAKET_TURLERI),
-            ogrenci__kurum_id=kurum_id,
-            ogrenci__sube_id=sube_id,
+        )
+        .filter(
+            Q(ogrenci_id__in=kayit_ogrenci_ids)
+            | Q(ogrenci__kurum_id=kurum_id, ogrenci__sube_id=sube_id)
         )
         .select_related('ogrenci')
         .order_by('id')
+        .distinct()
     )
 
     summary = {'created': 0, 'updated': 0, 'skipped': 0, 'noop': 0}

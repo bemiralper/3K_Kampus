@@ -358,7 +358,7 @@ class SozlesmeService:
         sozlesme = self.repo.create({
             'sozlesme_no': sozlesme_no,
             'ogrenci_id': data['ogrenci_id'],
-            'ogrenci_kayit_id': data.get('ogrenci_kayit_id'),
+            'ogrenci_kayit_id': self._resolve_ogrenci_kayit_id(data),
             'egitim_yili_id': data['egitim_yili_id'],
             'kurum_id': data['kurum_id'],
             'sube_id': data['sube_id'],
@@ -1073,6 +1073,28 @@ class SozlesmeService:
             taksit.tutar = yeni_tutar
             taksit.kalan_tutar = max(0, yeni_tutar - odenen)
             taksit.save(update_fields=['tutar', 'kalan_tutar'])
+
+    def _resolve_ogrenci_kayit_id(self, data):
+        """Sözleşmeyi aynı yıl/şube kaydına bağlar — cari/ödeme yokluğu öğrenciyi gizlemesin."""
+        kayit_id = data.get('ogrenci_kayit_id')
+        if kayit_id:
+            return kayit_id
+        ogrenci_id = data.get('ogrenci_id')
+        if not ogrenci_id:
+            return None
+        from apps.ogrenci.domain.models import OgrenciKayit
+        qs = OgrenciKayit.objects.filter(
+            ogrenci_id=ogrenci_id,
+            aktif_mi=True,
+        )
+        if data.get('kurum_id'):
+            qs = qs.filter(kurum_id=data['kurum_id'])
+        if data.get('sube_id'):
+            qs = qs.filter(sube_id=data['sube_id'])
+        if data.get('egitim_yili_id'):
+            qs = qs.filter(egitim_yili_id=data['egitim_yili_id'])
+        kayit = qs.order_by('-id').first()
+        return kayit.id if kayit else None
 
     # ─── SÖZLEŞME NO ÜRETİCİ ────────────
     def _generate_sozlesme_no(self, egitim_yili):

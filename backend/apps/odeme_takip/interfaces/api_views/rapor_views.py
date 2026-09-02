@@ -32,19 +32,24 @@ def _sozlesmesiz_kayit_qs(kurum_id, sube_id, egitim_yili_id):
 
     Pasif öğrenciler (Ogrenci.aktif_mi=False) dahil edilmez — sözleşmesi iptal
     edilip öğrenci pasife alınmışsa muhasebe dashboard'unda görünmemelidir.
+    Eğitim yılı yoksa öğrenci listesiyle aynı şekilde tüm yıllar dikkate alınır.
     """
     with_contract = Sozlesme.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
-        egitim_yili_id=egitim_yili_id,
-    ).exclude(durum=SozlesmeDurum.IPTAL).values_list('ogrenci_id', flat=True)
-    return OgrenciKayit.objects.filter(
+    ).exclude(durum=SozlesmeDurum.IPTAL)
+    kayit_qs = OgrenciKayit.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
-        egitim_yili_id=egitim_yili_id,
         aktif_mi=True,
         ogrenci__aktif_mi=True,
-    ).exclude(ogrenci_id__in=with_contract).select_related(
+    )
+    if egitim_yili_id:
+        with_contract = with_contract.filter(egitim_yili_id=egitim_yili_id)
+        kayit_qs = kayit_qs.filter(egitim_yili_id=egitim_yili_id)
+    return kayit_qs.exclude(
+        ogrenci_id__in=with_contract.values_list('ogrenci_id', flat=True),
+    ).select_related(
         'ogrenci', 'sinif', 'sinif_seviyesi',
     )
 
@@ -179,8 +184,9 @@ def sozlesmesiz_ogrenciler(request):
             | Q(ogrenci__tc_kimlik_no__icontains=q)
         )
 
+    total = qs.count()
     results = []
-    for kayit in qs[:200]:
+    for kayit in qs[:2000]:
         o = kayit.ogrenci
         results.append({
             'id': o.id,
@@ -195,7 +201,7 @@ def sozlesmesiz_ogrenciler(request):
             'kayit_id': kayit.id,
         })
 
-    return Response({'count': len(results), 'results': results})
+    return Response({'count': total, 'results': results})
 
 
 @api_view(['GET'])

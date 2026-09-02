@@ -274,6 +274,35 @@ def materialize_program(
         )
         if existing:
             if not existing.is_active:
+                if (
+                    existing.durum == OturumDurumu.PLANLANDI
+                    and existing.oturum_turu == OturumTuru.OZEL
+                ):
+                    hedef = _hedef_for(slot)
+                    sure = slot.resolved_sure_dk()
+                    if hedef and _used_for(slot) + sure > hedef:
+                        skipped_quota += 1
+                        continue
+                    existing.is_active = True
+                    existing.start_time = slot.baslangic
+                    existing.end_time = slot.bitis
+                    existing.ders_id = slot.ders_id
+                    existing.ogretmen_id = slot.ogretmen_id
+                    existing.oda_id = slot.oda_id
+                    existing.program_id = program.id
+                    existing.ogrenci_id = program.ogrenci_id
+                    existing.kurum_id = kurum_id
+                    existing.sube_id = sube_id
+                    existing.egitim_yili_id = program.egitim_yili_id
+                    existing.save(update_fields=[
+                        'is_active', 'start_time', 'end_time', 'ders_id', 'ogretmen_id',
+                        'oda_id', 'program_id', 'ogrenci_id', 'kurum_id', 'sube_id',
+                        'egitim_yili_id', 'updated_at',
+                    ])
+                    created += 1
+                    if hedef:
+                        used_by_ders[slot.ders_id] = _used_for(slot) + sure
+                    continue
                 skipped_existing += 1
                 continue
             today = timezone.localdate()

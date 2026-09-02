@@ -6,7 +6,7 @@ from apps.egitim_paketleri.models import OzelDers, PremiumPaket
 from apps.egitim_tanimlari.models import Ders
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
-from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi
+from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciKayit
 from apps.ozel_ders.domain.models import (
     BirebirHaftalikSlot,
     BirebirOgrenciProgrami,
@@ -236,5 +236,36 @@ class SyncServiceTests(TestCase):
                 paket_turu='ozel_ders',
                 paket_id=self.ozel_paket.id,
                 aktif_mi=True,
+            ).exists()
+        )
+
+    def test_sync_includes_student_by_kayit_sube(self):
+        other = Sube.objects.create(kurum=self.kurum, ad='Diğer', kod='ODD')
+        transferred = Ogrenci.objects.create(
+            kurum=self.kurum, sube=other, ad='Zeynep', soyad='Kaya', aktif_mi=True,
+        )
+        OgrenciKayit.objects.create(
+            ogrenci=transferred,
+            egitim_yili=self.ey,
+            kurum=self.kurum,
+            sube=self.sube,
+            aktif_mi=True,
+        )
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=transferred,
+            paket_turu='ozel_ders',
+            paket_id=self.ozel_paket.id,
+            paket_adi=self.ozel_paket.ad,
+            aktif_mi=True,
+        )
+        summary = sync_sube_programs(
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            egitim_yili_id=self.ey.id,
+        )
+        self.assertGreaterEqual(summary['created'], 1)
+        self.assertTrue(
+            BirebirOgrenciProgrami.objects.filter(
+                ogrenci=transferred, sube=self.sube, egitim_yili=self.ey,
             ).exists()
         )

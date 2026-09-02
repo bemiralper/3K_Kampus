@@ -721,6 +721,7 @@ def oturum_list_create(request):
                 ogretmen_id=_int_or_none(request.GET.get('ogretmen_id')),
                 ogrenci_id=_int_or_none(request.GET.get('ogrenci_id')),
                 program_id=_int_or_none(request.GET.get('program_id')),
+                egitim_yili_id=_int_or_none(request.GET.get('egitim_yili_id')),
             )
             return JsonResponse({'success': True, 'data': data})
 

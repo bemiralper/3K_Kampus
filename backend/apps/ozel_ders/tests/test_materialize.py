@@ -144,3 +144,28 @@ class MaterializeActiveProgramsTests(TestCase):
             BirebirDersOturumu.objects.filter(is_active=True, durum=OturumDurumu.PLANLANDI).count(),
             2,
         )
+
+    def test_inactive_planlandi_session_is_reactivated(self):
+        first = materialize_program(
+            self.program.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-08-10',
+            end_date='2026-08-16',
+        )
+        self.assertEqual(first['created'], 1)
+        oturum = BirebirDersOturumu.objects.get()
+        oturum.is_active = False
+        oturum.save(update_fields=['is_active'])
+
+        second = materialize_program(
+            self.program.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-08-10',
+            end_date='2026-08-16',
+        )
+        self.assertEqual(second['created'], 1)
+        oturum.refresh_from_db()
+        self.assertTrue(oturum.is_active)
+        self.assertEqual(BirebirDersOturumu.objects.filter(is_active=True).count(), 1)

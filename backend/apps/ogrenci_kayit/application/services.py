@@ -1,5 +1,9 @@
+import logging
+
 from django.db import transaction
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from apps.egitim_paketleri.models import (
     DavranisPaketi,
@@ -771,9 +775,14 @@ def submit_draft(draft: WizardDraft, user):
                         paket_id=paket.paket_id,
                         ogrenci_egitim_paketi_id=ep.id,
                         baslangic=getattr(enrollment, 'giris_tarihi', None),
+                        kurum_id=draft.kurum_id,
+                        sube_id=draft.sube_id,
                     )
                 except Exception:
-                    pass
+                    logger.exception(
+                        'Özel ders program senkronu başarısız (ogrenci=%s paket=%s)',
+                        getattr(ogrenci, 'id', None), paket.paket_id,
+                    )
 
             # Seçilen paket GrupDersi ise, dahil ek hizmet/deneme/yayın paketlerini otomatik ekle
             if paket_kod in ('grup_dersleri', 'grup_dersi'):
