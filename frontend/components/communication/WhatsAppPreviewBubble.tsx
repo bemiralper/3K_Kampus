@@ -1,6 +1,6 @@
 "use client";
 
-import { parseWhatsAppText, PreviewFontSize } from "./composer-utils";
+import { hasVisibleWhatsAppText, parseWhatsAppText, PreviewFontSize } from "./composer-utils";
 
 interface WhatsAppPreviewBubbleProps {
   text: string;
@@ -77,7 +77,7 @@ export default function WhatsAppPreviewBubble({
           style={previewColor ? { backgroundColor: previewColor } : undefined}
         >
           <p className={`comm-wa-bubble-text size-${fontSize}`}>
-            {text.trim() ? (
+            {hasVisibleWhatsAppText(text) ? (
               segments.map((seg, i) => renderSegment(seg, i))
             ) : (
               <span style={{ color: "#94a3b8", fontStyle: "italic" }}>

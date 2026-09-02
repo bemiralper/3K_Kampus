@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  hasVisibleWhatsAppText,
   parseWhatsAppPreviewLines,
   parseWhatsAppText,
   PreviewFontSize,
@@ -24,6 +25,8 @@ interface WhatsAppPhonePreviewProps {
   resolveVariables?: boolean;
   /** Ek önizleme değişkenleri (mesaj vb.) — kurum/şube canlı bağlamdan gelir. */
   previewContext?: PreviewSampleContext;
+  /** Meta gönderimle aynı: değişken değerlerindeki satır sonları tek satıra. Gövde \n korunur. */
+  normalizeParamValues?: boolean;
   className?: string;
 }
 
@@ -63,12 +66,13 @@ export default function WhatsAppPhonePreview({
   attachments = [],
   resolveVariables = true,
   previewContext,
+  normalizeParamValues = true,
   className = "",
 }: WhatsAppPhonePreviewProps) {
   const liveContext = useLivePreviewContext(previewContext);
   const headerName = kurumName?.trim() || liveContext.kurum_ad || "Kurum";
   const displayText = resolveVariables
-    ? resolvePreviewVariables(text, liveContext)
+    ? resolvePreviewVariables(text, liveContext, { normalizeParamValues })
     : text;
   const lines = parseWhatsAppPreviewLines(displayText);
   const time = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
@@ -91,13 +95,15 @@ export default function WhatsAppPhonePreview({
           style={previewColor ? { backgroundColor: previewColor } : undefined}
         >
           <p className={`comm-wa-bubble-text size-${fontSize}`}>
-            {displayText.trim() ? (
+            {hasVisibleWhatsAppText(displayText) ? (
               lines.map((line, i) => (
                 <span key={i} className={`wa-line wa-line-${line.block}`}>
                   {line.block === "bullet" || line.block === "number" ? (
                     <span className="wa-line-mark">{line.marker}</span>
                   ) : null}
-                  {line.segments.map((seg, j) => renderSegment(seg, j))}
+                  {line.segments.length
+                    ? line.segments.map((seg, j) => renderSegment(seg, j))
+                    : "\u00a0"}
                 </span>
               ))
             ) : (

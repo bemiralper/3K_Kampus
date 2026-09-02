@@ -1,5 +1,5 @@
 import { headerTypeOf } from "@/components/communication/MetaTemplateSelect";
-import { TEMPLATE_VARIABLES } from "@/components/communication/composer-utils";
+import { sanitizeTemplateParamText, TEMPLATE_VARIABLES } from "@/components/communication/composer-utils";
 import type { AudiencePersonType, WhatsAppMetaTemplateItem } from "@/lib/communication-api";
 
 export type CampaignAudience = "veli" | "ogrenci" | "personel" | "genel";
@@ -195,6 +195,11 @@ export function isAutoResolvedVariable(key: string, map?: Record<string, string>
   return AUTO_RESOLVED_VARIABLES.has(key) || AUTO_RESOLVED_VARIABLES.has(canonical);
 }
 
+/** Meta parameters[].text ile aynı normalizasyon. */
+export function sanitizeMetaTemplateParam(value: string): string {
+  return sanitizeTemplateParamText(value);
+}
+
 export function fillTemplateVariables(
   body: string,
   values: Record<string, string>,
@@ -203,7 +208,7 @@ export function fillTemplateVariables(
   const keys = templateVariableKeys(body);
   return body.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key: string) => {
     const canonical = canonicalCampaignVar(key, keys, map);
-    const value = (values[key] || values[canonical] || "").trim();
+    const value = sanitizeMetaTemplateParam(values[key] || values[canonical] || "");
     return value || match;
   });
 }

@@ -398,10 +398,20 @@ export function buildPreviewContext(
   return merged;
 }
 
+/** Meta parameters[].text — satır sonu / tab / ardışık boşluk tek satıra. Gövde metnine uygulanmaz. */
+export function sanitizeTemplateParamText(value: string): string {
+  return (value || "").replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").trim();
+}
+
+export function hasVisibleWhatsAppText(text: string): boolean {
+  return /[^\s\u00a0]/.test(text || "");
+}
+
 /** Replace {{token}} placeholders for live preview (send-time resolution is server-side). */
 export function resolvePreviewVariables(
   text: string,
   context?: PreviewSampleContext | null,
+  options?: { normalizeParamValues?: boolean },
 ): string {
   // context verilirse üzerine yazar (boş string dahil). Canlı kurum/şube için
   // useLivePreviewContext / buildPreviewContext kullanın.
@@ -410,6 +420,11 @@ export function resolvePreviewVariables(
     for (const [key, value] of Object.entries(context)) {
       if (value == null) continue;
       resolved[key] = String(value);
+    }
+  }
+  if (options?.normalizeParamValues) {
+    for (const key of Object.keys(resolved)) {
+      resolved[key] = sanitizeTemplateParamText(resolved[key]);
     }
   }
   return text.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>

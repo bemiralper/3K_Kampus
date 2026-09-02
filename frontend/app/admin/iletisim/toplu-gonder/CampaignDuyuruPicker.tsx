@@ -253,7 +253,10 @@ export default function CampaignDuyuruPicker({
                       placeholder={field.label}
                     />
                   )}
-                  <small>{field.canonical !== field.key ? `{{${field.key}}} → {{${field.canonical}}}` : `{{${field.key}}}`}</small>
+                  <small>
+                    {field.canonical !== field.key ? `{{${field.key}}} → {{${field.canonical}}}` : `{{${field.key}}}`}
+                    {field.long ? " · Değişken değerlerinde satır atlaması desteklenmez; çok satırlı içerikler gönderim sırasında tek satıra dönüştürülür." : ""}
+                  </small>
                 </label>
               );
             })}

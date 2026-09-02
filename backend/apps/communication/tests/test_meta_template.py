@@ -75,6 +75,11 @@ class MetaTemplateMapperTest(TestCase):
         body = next(c for c in components if c['type'] == 'BODY')
         examples = body['example']['body_text'][0]
         self.assertIn('Yarın saat 10.00’da deneme sınavı yapılacaktır.', examples)
+        self.assertIn('\n\n', body['text'])
+        self.assertEqual(
+            body['text'].count('\n\n'),
+            'Sayın {{veli_ad}},\n\n{{sube}} duyurusu:\n\n{{mesaj}}\n\nBilginize sunarız.'.count('\n\n'),
+        )
 
     def test_footer_variables_frozen_to_static_text(self):
         """Meta FOOTER parametre kabul etmez; değişken sabit metne çevrilmeli."""

@@ -8,7 +8,7 @@ import SendConfirmModal from "./SendConfirmModal";
 import SendOptionsBar from "./SendOptionsBar";
 import MetaTemplateSelect, { headerTypeOf } from "./MetaTemplateSelect";
 import WhatsAppPhonePreview from "./WhatsAppPhonePreview";
-import { ComposerState, plainTextFromComposer, TEMPLATE_VARIABLES } from "./composer-utils";
+import { ComposerState, plainTextFromComposer, sanitizeTemplateParamText, TEMPLATE_VARIABLES } from "./composer-utils";
 import {
   accountLabel,
   AUDIENCE_TYPE_LABELS,
@@ -143,7 +143,8 @@ function variableContextHint(body: string, key: string): string | null {
 function fillManualVariables(body: string, values: Record<string, string>): string {
   return body.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key: string) => {
     if (AUTO_RESOLVED_VARIABLES.has(key)) return match;
-    return values[key]?.trim() ? values[key] : match;
+    const value = sanitizeTemplateParamText(values[key] || "");
+    return value || match;
   });
 }
 
@@ -588,6 +589,9 @@ export default function BulkSendStudio({
                               placeholder={label}
                             />
                             {hint && <small>{hint}</small>}
+                            {(key === "mesaj" || key === "aciklama" || /^\d+$/.test(key)) && (
+                              <small>Değişken değerlerinde satır atlaması desteklenmez; çok satırlı içerikler gönderim sırasında tek satıra dönüştürülür.</small>
+                            )}
                           </label>
                         );
                       })}

@@ -17,6 +17,7 @@ import { useTextareaInsert } from "@/components/communication/useTextareaInsert"
 import { useSheetChrome } from "@/components/communication/useSheetChrome";
 import {
   createComposerState,
+  hasVisibleWhatsAppText,
   insertAtCursor,
   parseWhatsAppText,
   resolvePreviewVariables,
@@ -432,7 +433,7 @@ export default function MetaSablonlarClient() {
 
   const livePreviewContext = useLivePreviewContext();
   const previewText = useMemo(
-    () => resolvePreviewVariables(form.body_named || "", livePreviewContext),
+    () => resolvePreviewVariables(form.body_named || "", livePreviewContext, { normalizeParamValues: true }),
     [form.body_named, livePreviewContext],
   );
 
@@ -2182,7 +2183,7 @@ export default function MetaSablonlarClient() {
                           </div>
                         )}
                         <p className="sbx-bubble-text">
-                          {previewText.trim()
+                          {hasVisibleWhatsAppText(previewText)
                             ? previewSegments.map((seg, i) =>
                                 seg.type === "bold" ? (
                                   <strong key={i}>{seg.content}</strong>

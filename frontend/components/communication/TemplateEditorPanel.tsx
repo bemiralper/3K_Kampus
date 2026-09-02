@@ -8,6 +8,7 @@ import {
   createComposerState,
   plainTextFromComposer,
   ComposerState,
+  hasVisibleWhatsAppText,
   parseWhatsAppText,
   resolvePreviewVariables,
 } from "./composer-utils";
@@ -620,7 +621,7 @@ export default function TemplateEditorPanel({
               <div className="sbx-bubble">
                 {headerPreview ? <p className="sbx-bubble-header">{headerPreview}</p> : null}
                 <p className="sbx-bubble-text">
-                  {previewText.trim()
+                  {hasVisibleWhatsAppText(previewText)
                     ? previewSegments.map((seg, i) =>
                         seg.type === "bold" ? (
                           <strong key={i}>{seg.content}</strong>

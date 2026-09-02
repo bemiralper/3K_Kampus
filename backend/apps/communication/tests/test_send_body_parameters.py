@@ -13,6 +13,23 @@ class SendBodyParametersTest(SimpleTestCase):
         self.assertEqual(sanitize_template_param_text(None), '-')
         self.assertEqual(sanitize_template_param_text('  a\nb  '), 'a b')
 
+    def test_multiline_param_becomes_single_line(self):
+        self.assertEqual(
+            sanitize_template_param_text('Merhaba Ahmet,\n\nÖdevlerin hazır.\n\nİyi çalışmalar.'),
+            'Merhaba Ahmet, Ödevlerin hazır. İyi çalışmalar.',
+        )
+
+    def test_send_payload_normalizes_multiline_param_not_body(self):
+        """Meta'ya giden parameters[].text tek satır; gövde satırları payload'da yok."""
+        params = build_send_body_parameters(
+            {'1': 'mesaj'},
+            {'mesaj': 'Merhaba Ahmet,\n\nÖdevlerin hazır.\n\nİyi çalışmalar.'},
+            body_named='Değerli Velimiz,\n\n{{mesaj}}\n\n3K Kampüs',
+        )
+        self.assertEqual(len(params), 1)
+        self.assertEqual(params[0]['text'], 'Merhaba Ahmet, Ödevlerin hazır. İyi çalışmalar.')
+        self.assertNotIn('\n', params[0]['text'])
+
     def test_positional_from_map_and_body(self):
         params = build_send_body_parameters(
             {'1': 'ogrenci_ad', '2': 'hafta'},

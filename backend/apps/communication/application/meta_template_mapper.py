@@ -390,8 +390,11 @@ def build_meta_components(
 
 def sanitize_template_param_text(value: Any) -> str:
     """
-    Meta body/header text parametreleri boş veya satır sonu içeremez
-    (#100 Invalid parameter).
+    Gönderim parametresi (`components[].parameters[].text`).
+
+    Meta Cloud API #100 / 2494073: "Param text cannot have new-line/tab
+    characters or more than 4 consecutive spaces". Şablon GÖVDESİNDEKİ sabit
+    metin satır sonları bu fonksiyona girmez; yalnızca değişken değerleri.
     """
     text = '' if value is None else str(value)
     text = text.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
