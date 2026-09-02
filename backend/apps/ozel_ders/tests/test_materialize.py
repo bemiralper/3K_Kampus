@@ -145,6 +145,40 @@ class MaterializeActiveProgramsTests(TestCase):
             2,
         )
 
+    def test_quota_ignores_sessions_outside_slot_window(self):
+        """Aybüke senaryosu: yeni 1 saatlik pencere, eski planlı dersler kotayı yemez."""
+        old = materialize_program(
+            self.program.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-08-10',
+            end_date='2026-08-16',
+        )
+        self.assertEqual(old['created'], 1)
+        self.assertEqual(BirebirDersOturumu.objects.filter(is_active=True).count(), 1)
+
+        slot = self.program.slots.get()
+        # 2026-09-01 = Salı (gun=2)
+        slot.baslangic_tarihi = date(2026, 9, 1)
+        slot.bitis_tarihi = date(2026, 9, 1)
+        slot.hedef_dakika = 60
+        slot.save(update_fields=['baslangic_tarihi', 'bitis_tarihi', 'hedef_dakika'])
+
+        result = materialize_program(
+            self.program.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-09-01',
+            end_date='2026-09-08',
+        )
+        self.assertEqual(result['created'], 1)
+        self.assertEqual(result['skipped_quota'], 0)
+        dates = set(
+            BirebirDersOturumu.objects.filter(is_active=True).values_list('session_date', flat=True)
+        )
+        self.assertIn(date(2026, 8, 11), dates)
+        self.assertIn(date(2026, 9, 1), dates)
+
     def test_inactive_planlandi_session_is_reactivated(self):
         first = materialize_program(
             self.program.id,

@@ -76,14 +76,24 @@ class SozlesmeService:
             ):
                 return sozlesme.paket_turu
         kid = kalem.kalem_id
-        if GrupDersi.objects.filter(id=kid).exists():
-            return PaketTuru.GRUP_DERSI
-        if OzelDers.objects.filter(id=kid).exists():
-            return PaketTuru.OZEL_DERS
-        if PremiumPaket.objects.filter(id=kid).exists():
-            return PaketTuru.PREMIUM
-        if Deneme.objects.filter(id=kid).exists():
-            return PaketTuru.DENEME
+        ad = (getattr(kalem, 'kalem_adi', None) or '').strip()
+        catalogs = (
+            (GrupDersi, PaketTuru.GRUP_DERSI),
+            (OzelDers, PaketTuru.OZEL_DERS),
+            (PremiumPaket, PaketTuru.PREMIUM),
+            (Deneme, PaketTuru.DENEME),
+        )
+        if kid and ad:
+            for model, kind in catalogs:
+                if model.objects.filter(id=kid, ad__iexact=ad).exists():
+                    return kind
+        hits = [kind for model, kind in catalogs if kid and model.objects.filter(id=kid).exists()]
+        if len(hits) == 1:
+            return hits[0]
+        if ad:
+            for model, kind in catalogs:
+                if model.objects.filter(ad__iexact=ad).exists():
+                    return kind
         return None
 
     def _kalem_totals_extra(self, sozlesme, exclude_kalem=None):

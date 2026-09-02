@@ -288,6 +288,32 @@ def _ensure_ogrenci_egitim_paketi(
     return ep.id
 
 
+def _catalog_sync_kind(kalem) -> Optional[str]:
+    """Eski `paket` kalemini katalog adı + id ile çöz.
+
+    Canlıda aynı id birden fazla katalogda durur (Özel Ders 2 = AYT Matematik,
+    Grup 2 = Mezun Eşit Ağırlık). Sadece id'ye bakmak grup satırını özel ders
+    sanır veya tam tersi atlar; ad eşleşmesi şart.
+    """
+    from apps.egitim_paketleri.models import OzelDers, PremiumPaket
+
+    kid = getattr(kalem, 'kalem_id', None)
+    ad = (getattr(kalem, 'kalem_adi', None) or '').strip()
+    if not ad:
+        return None
+    if kid:
+        if OzelDers.objects.filter(pk=kid, ad__iexact=ad).exists():
+            return 'ozel_ders'
+        if PremiumPaket.objects.filter(pk=kid, ad__iexact=ad).exists():
+            return 'premium'
+        return None
+    if OzelDers.objects.filter(ad__iexact=ad).exists():
+        return 'ozel_ders'
+    if PremiumPaket.objects.filter(ad__iexact=ad).exists():
+        return 'premium'
+    return None
+
+
 def _kalem_sync_kind(kalem, sozlesme=None) -> Optional[str]:
     tur = getattr(kalem, 'kalem_turu', None)
     normalized = normalize_paket_turu(tur)
@@ -297,6 +323,9 @@ def _kalem_sync_kind(kalem, sozlesme=None) -> Optional[str]:
         root = normalize_paket_turu(getattr(sozlesme, 'paket_turu', None))
         if root in SYNCABLE_PAKET_TURLERI and getattr(sozlesme, 'paket_id', None) == getattr(kalem, 'kalem_id', None):
             return root
+        return _catalog_sync_kind(kalem)
+    if not normalized:
+        return _catalog_sync_kind(kalem)
     return None
 
 

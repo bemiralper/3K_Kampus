@@ -48,6 +48,37 @@ def resolve_ders_hedef_dakika(*, ogrenci_id: int, ders_id: int) -> Optional[int]
     return max(values) if values else None
 
 
+def resolve_ders_quota_window(
+    *,
+    ogrenci_id: int,
+    ders_id: int,
+) -> tuple[Optional[date], Optional[date]]:
+    """Hedef saatin geçerli olduğu tarih aralığı — pencere dışındaki eski dersler kotayı yemez."""
+    slots = BirebirHaftalikSlot.objects.filter(
+        aktif=True,
+        ders_id=ders_id,
+        program__ogrenci_id=ogrenci_id,
+        program__durum=ProgramDurumu.AKTIF,
+        hedef_dakika__isnull=False,
+        hedef_dakika__gt=0,
+    ).only('baslangic_tarihi', 'bitis_tarihi')
+    starts = [s.baslangic_tarihi for s in slots if s.baslangic_tarihi]
+    ends = [s.bitis_tarihi for s in slots if s.bitis_tarihi]
+    return (min(starts) if starts else None, max(ends) if ends else None)
+
+
+def _apply_quota_window(qs, *, ogrenci_id: int, ders_id: int, window_start=None, window_end=None):
+    if window_start is None and window_end is None:
+        window_start, window_end = resolve_ders_quota_window(
+            ogrenci_id=ogrenci_id, ders_id=ders_id,
+        )
+    if window_start:
+        qs = qs.filter(session_date__gte=window_start)
+    if window_end:
+        qs = qs.filter(session_date__lte=window_end)
+    return qs
+
+
 def consumed_quota_minutes(
     *,
     ogrenci_id: int,
@@ -64,6 +95,7 @@ def consumed_quota_minutes(
     )
     if kurum_id:
         qs = qs.filter(kurum_id=kurum_id)
+    qs = _apply_quota_window(qs, ogrenci_id=ogrenci_id, ders_id=ders_id)
     total = 0
     for o in qs.only('start_time', 'end_time'):
         total += o.duration_minutes()
@@ -115,6 +147,7 @@ def used_quota_minutes(
     )
     if kurum_id:
         qs = qs.filter(kurum_id=kurum_id)
+    qs = _apply_quota_window(qs, ogrenci_id=ogrenci_id, ders_id=ders_id)
     total = 0
     for o in qs.only('start_time', 'end_time'):
         total += o.duration_minutes()
