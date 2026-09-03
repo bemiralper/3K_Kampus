@@ -174,7 +174,7 @@ export default function TopluGonderClient({
   const defaultCrumbs = isCoach
     ? [{ label: "Koç Paneli", href: "/coach/dashboard" }, { label: "Toplu Gönderim" }]
     : mode === "muhasebe"
-      ? [{ label: "WhatsApp", href: "/muhasebe/iletisim/mesajlar" }, { label: "Toplu Gönderim" }]
+      ? [{ label: "WhatsApp", href: "/muhasebe/iletisim/sohbetler" }, { label: "Toplu Gönderim" }]
       : [{ label: "İletişim", href: "/admin/iletisim/panel" }, { label: "Toplu Gönderim" }];
 
   const pickedKeys = useMemo(
@@ -310,7 +310,11 @@ export default function TopluGonderClient({
                         type="button"
                         className="tg-chip"
                         title={item.hint}
-                        onClick={() => setQuery(applyQuickStart(item.person_types, item.add_field))}
+                        onClick={() =>
+                          setQuery(
+                            applyQuickStart(item.person_types, item.add_field, item.add_value),
+                          )
+                        }
                       >
                         {item.label}
                       </button>

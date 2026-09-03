@@ -198,28 +198,6 @@
   margin: 0 auto;
 }
 
-.muhasebe-shell:has(.comm-page--inbox) {
-  height: 100dvh;
-  max-height: 100dvh;
-  overflow: hidden;
-}
-
-.muhasebe-main:has(.comm-page--inbox) {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.muhasebe-content:has(.comm-page--inbox) {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  max-width: none;
-  padding: 10px 12px 0;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
 .muhasebe-nav-badge {
   margin-left: auto;
   min-width: 20px;

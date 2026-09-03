@@ -77,6 +77,21 @@ from apps.communication.interfaces.views.conversations import (
     ConversationListView,
     ConversationReadView,
 )
+from apps.communication.interfaces.views.chat_actions import (
+    ConversationDeleteView,
+    ConversationMessageContextView,
+    ConversationMessageSearchView,
+    ConversationMuteView,
+    ConversationPinView,
+    ConversationReadAllView,
+    ConversationUnreadView,
+    MessageDeleteView,
+    MessageForwardView,
+    MessagePinView,
+    MessageStarView,
+    StarredMessagesView,
+)
+from apps.communication.interfaces.views.chat_context import ConversationContextView
 from apps.communication.interfaces.views.conversation_actions import (
     ConversationClaimView,
     ConversationNoteDetailView,
@@ -314,6 +329,64 @@ urlpatterns = [
         name='conversation-tags',
     ),
     path('tags/', ConversationTagCatalogView.as_view(), name='tag-catalog'),
+    # --- Sohbetler ekranı (yeni arayüz) ---
+    path(
+        'conversations/<uuid:conversation_id>/pin/',
+        ConversationPinView.as_view(),
+        name='conversation-pin',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/mute/',
+        ConversationMuteView.as_view(),
+        name='conversation-mute',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/unread/',
+        ConversationUnreadView.as_view(),
+        name='conversation-unread',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/delete/',
+        ConversationDeleteView.as_view(),
+        name='conversation-delete',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/context/',
+        ConversationContextView.as_view(),
+        name='conversation-context',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/search/',
+        ConversationMessageSearchView.as_view(),
+        name='conversation-message-search',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/context/',
+        ConversationMessageContextView.as_view(),
+        name='conversation-message-context',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/star/',
+        MessageStarView.as_view(),
+        name='message-star',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/pin/',
+        MessagePinView.as_view(),
+        name='message-pin',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/delete/',
+        MessageDeleteView.as_view(),
+        name='message-delete',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/forward/',
+        MessageForwardView.as_view(),
+        name='message-forward',
+    ),
+    path('conversations/read-all/', ConversationReadAllView.as_view(), name='conversations-read-all'),
+    path('messages/starred/', StarredMessagesView.as_view(), name='messages-starred'),
     path('dashboard/', CommunicationDashboardView.as_view(), name='communication-dashboard'),
     path('routing-rules/', RoutingRuleListCreateView.as_view(), name='routing-rules'),
     path('routing-rules/<uuid:rule_id>/', RoutingRuleDetailView.as_view(), name='routing-rule-detail'),

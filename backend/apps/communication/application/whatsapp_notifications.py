@@ -120,10 +120,10 @@ def _inbox_url_for_user(user, conversation_id) -> str:
             and not getattr(user, 'is_superuser', False)
             and not user_has_any_permission(user, 'communication.manage')
         ):
-            return f'/coach/mesajlar?conversation={conversation_id}'
+            return f'/coach/sohbetler?conversation={conversation_id}'
     except Exception:
         logger.exception('whatsapp notify: inbox url resolve failed user=%s', getattr(user, 'id', None))
-    return f'/admin/iletisim/mesajlar?conversation={conversation_id}'
+    return f'/admin/iletisim/sohbetler?conversation={conversation_id}'
 
 
 def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
@@ -156,7 +156,7 @@ def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
         url = (
             _inbox_url_for_user(user, conversation.id)
             if user is not None
-            else f'/admin/iletisim/mesajlar?conversation={conversation.id}'
+            else f'/admin/iletisim/sohbetler?conversation={conversation.id}'
         )
         try:
             repo.create({

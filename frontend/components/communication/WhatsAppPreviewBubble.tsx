@@ -1,6 +1,11 @@
 "use client";
 
-import { hasVisibleWhatsAppText, parseWhatsAppText, PreviewFontSize } from "./composer-utils";
+import {
+  hasVisibleWhatsAppText,
+  parseWhatsAppPreviewLines,
+  parseWhatsAppText,
+  PreviewFontSize,
+} from "./composer-utils";
 
 interface WhatsAppPreviewBubbleProps {
   text: string;
@@ -63,7 +68,7 @@ export default function WhatsAppPreviewBubble({
   timestamp,
   className = "",
 }: WhatsAppPreviewBubbleProps) {
-  const segments = parseWhatsAppText(text);
+  const lines = parseWhatsAppPreviewLines(text);
   const displayTime =
     timestamp ||
     new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
@@ -78,7 +83,16 @@ export default function WhatsAppPreviewBubble({
         >
           <p className={`comm-wa-bubble-text size-${fontSize}`}>
             {hasVisibleWhatsAppText(text) ? (
-              segments.map((seg, i) => renderSegment(seg, i))
+              lines.map((line, i) => (
+                <span key={i} className={`wa-line wa-line-${line.block}`}>
+                  {line.block === "bullet" || line.block === "number" ? (
+                    <span className="wa-line-mark">{line.marker}</span>
+                  ) : null}
+                  {line.segments.length
+                    ? line.segments.map((seg, j) => renderSegment(seg, j))
+                    : "\u00a0"}
+                </span>
+              ))
             ) : (
               <span style={{ color: "#94a3b8", fontStyle: "italic" }}>
                 Mesajınız burada görünecek…

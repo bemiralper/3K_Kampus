@@ -198,7 +198,7 @@ export default function MessageComposer({
             disabled={disabled || loading}
             onClick={() => applyFormat("*")}
           >
-            B<span className="comm-toolbar-btn-label">Kalın</span>
+            B
           </button>
           <button
             type="button"
@@ -209,7 +209,7 @@ export default function MessageComposer({
             onClick={() => applyFormat("_")}
             style={{ fontStyle: "italic" }}
           >
-            I<span className="comm-toolbar-btn-label">İtalik</span>
+            I
           </button>
           <button
             type="button"
@@ -220,7 +220,7 @@ export default function MessageComposer({
             onClick={() => applyFormat("~")}
             style={{ textDecoration: "line-through" }}
           >
-            S<span className="comm-toolbar-btn-label">Üstü çizili</span>
+            S
           </button>
           <button
             type="button"
@@ -230,7 +230,7 @@ export default function MessageComposer({
             disabled={disabled || loading}
             onClick={() => applyFormat("```")}
           >
-            M<span className="comm-toolbar-btn-label">Mono</span>
+            M
           </button>
           <button
             type="button"
@@ -242,6 +242,11 @@ export default function MessageComposer({
           >
             {"</>"}
           </button>
+        </div>
+
+        <div className="comm-compose-toolbar-divider" aria-hidden="true" />
+
+        <div className="comm-compose-toolbar-group">
           <button
             type="button"
             className="comm-toolbar-btn"
@@ -272,7 +277,6 @@ export default function MessageComposer({
           >
             1.
           </button>
-          <FormatShortcutHelp />
         </div>
 
         <div className="comm-compose-toolbar-divider" aria-hidden="true" />
@@ -327,22 +331,11 @@ export default function MessageComposer({
               </ul>
             )}
           </div>
-
-          <button
-            type="button"
-            className="comm-toolbar-btn"
-            aria-label="Dosya ekle (yakında)"
-            title="Dosya ekleme yakında"
-            disabled
-          >
-            📎
-          </button>
         </div>
 
-        {!compact && (
-          <>
-            <div className="comm-compose-toolbar-divider" aria-hidden="true" />
-            <div className="comm-compose-toolbar-group">
+        <div className="comm-compose-toolbar-group comm-compose-toolbar-group--end">
+          {!compact && (
+            <>
               <select
                 className="comm-toolbar-btn"
                 aria-label="Önizleme yazı boyutu"
@@ -372,9 +365,10 @@ export default function MessageComposer({
                   </option>
                 ))}
               </select>
-            </div>
-          </>
-        )}
+            </>
+          )}
+          <FormatShortcutHelp />
+        </div>
       </div>
       )}
 

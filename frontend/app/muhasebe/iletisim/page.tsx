@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function MuhasebeIletisimPage() {
-  redirect("/muhasebe/iletisim/mesajlar");
+  redirect("/muhasebe/iletisim/sohbetler");
 }

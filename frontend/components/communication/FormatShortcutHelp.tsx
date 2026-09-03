@@ -37,7 +37,7 @@ export default function FormatShortcutHelp() {
         title="Biçim kısayolları"
         onClick={() => setOpen((v) => !v)}
       >
-        Kısayollar
+        ?
       </button>
       {open && (
         <div className="comm-shortcut-popover" role="dialog" aria-label="Biçim kısayolları">

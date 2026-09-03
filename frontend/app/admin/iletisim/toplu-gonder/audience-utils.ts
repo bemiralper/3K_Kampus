@@ -108,12 +108,15 @@ export function setTreeJoin(query: AudienceFilter, join: "and" | "or"): Audience
 export function applyQuickStart(
   personTypes: AudiencePersonType[],
   addField?: string,
+  addValue?: unknown[],
 ): AudienceFilter {
   const query = emptyAudienceQuery(personTypes);
   if (addField) {
     query.tree = {
       join: "or",
-      groups: [{ join: "and", filters: [{ field: addField, op: "in", value: [] }] }],
+      groups: [
+        { join: "and", filters: [{ field: addField, op: "in", value: addValue ?? [] }] },
+      ],
     };
   }
   return query;

@@ -395,7 +395,7 @@ class WhatsAppAppNotificationTest(TestCase):
         notify_inbound_whatsapp(conv, preview='Merhaba koç')
         notif = AppNotification.objects.filter(user_id=coach_user.id).order_by('-id').first()
         self.assertIsNotNone(notif)
-        self.assertIn('/coach/mesajlar?conversation=', notif.url)
+        self.assertIn('/coach/sohbetler?conversation=', notif.url)
 
 
 @override_settings(COMMUNICATION_TICKET_ROUTING=True)

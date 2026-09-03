@@ -380,21 +380,21 @@ def build_communication_dashboard(kurum_id: int, sube_id: int | None = None) -> 
             'key': 'sla',
             'tone': 'danger',
             'label': f'{sla_count} SLA ihlali',
-            'href': '/admin/iletisim/mesajlar?queue=needs_support',
+            'href': '/admin/iletisim/sohbetler?filter=awaiting_reply',
         })
     if unassigned_active:
         alerts.append({
             'key': 'unassigned',
             'tone': 'warn',
             'label': f'{unassigned_active} atamasız sohbet',
-            'href': '/admin/iletisim/mesajlar',
+            'href': '/admin/iletisim/sohbetler',
         })
     if unanswered:
         alerts.append({
             'key': 'unanswered',
             'tone': 'warn',
             'label': f'{unanswered} cevapsız sohbet',
-            'href': '/admin/iletisim/mesajlar',
+            'href': '/admin/iletisim/sohbetler',
         })
     if today_failed:
         alerts.append({

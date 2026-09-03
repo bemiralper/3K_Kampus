@@ -385,7 +385,7 @@ export default function KuyrukClient() {
                             </button>
                           )}
                           {item.conversation_id && (
-                            <Link href={`/admin/iletisim/mesajlar?conversation=${item.conversation_id}`} className="ipanel-link">
+                            <Link href={`/admin/iletisim/sohbetler?conversation=${item.conversation_id}`} className="ipanel-link">
                               Sohbet
                             </Link>
                           )}

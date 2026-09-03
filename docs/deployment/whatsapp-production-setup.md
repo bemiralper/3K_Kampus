@@ -396,5 +396,5 @@ Onay sonrası sistem bu isimleri otomatik tanır. Farklı bir ad kullanacaksanı
 | Zamanlanmış kampanya komutu | `backend/apps/communication/management/commands/process_scheduled_campaigns.py` |
 | Ödeme hatırlatma komutu | `backend/apps/communication/management/commands/send_payment_reminders.py` |
 | Celery tasks | `backend/apps/communication/tasks.py` |
-| Frontend inbox | `frontend/app/coach/mesajlar/` |
+| Frontend inbox | `frontend/app/coach/sohbetler/` |
 | Plan dokümanı | `docs/plans/whatsapp-communication-center.md` |

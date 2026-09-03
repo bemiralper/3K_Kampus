@@ -126,12 +126,18 @@ class ConversationListSerializer(serializers.ModelSerializer):
     session = serializers.SerializerMethodField()
     can_claim = serializers.SerializerMethodField()
     profil_foto = serializers.SerializerMethodField()
+    contact_kind = serializers.SerializerMethodField()
+    pinned_at = serializers.SerializerMethodField()
+    muted_until = serializers.SerializerMethodField()
+    is_pinned = serializers.SerializerMethodField()
+    is_muted = serializers.SerializerMethodField()
+    awaiting_reply = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
         fields = [
             'id', 'channel', 'channel_config_id', 'channel_config_name',
-            'contact_phone', 'contact_type', 'contact_name',
+            'contact_phone', 'contact_type', 'contact_kind', 'contact_name',
             'veli_ad', 'ogrenci_ad', 'ogrenci_adlari', 'kurum_ad', 'sube', 'profil_foto',
             'status', 'subject', 'department',
             'last_message_at', 'last_message_preview',
@@ -140,9 +146,50 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'claimed_by_user_id', 'claimed_by_name', 'claim_version',
             'first_unanswered_at', 'last_customer_message_at', 'last_reply_at',
             'needs_support_at', 'archived_at',
+            'pinned_at', 'muted_until', 'is_pinned', 'is_muted', 'awaiting_reply',
             'tags', 'sla', 'session', 'can_claim',
             'created_at',
         ]
+
+    def _user_state(self, obj) -> tuple:
+        return (self.context.get('_user_states') or {}).get(str(obj.id), (None, None))
+
+    def get_pinned_at(self, obj) -> str | None:
+        pinned = self._user_state(obj)[0]
+        return pinned.isoformat() if pinned else None
+
+    def get_muted_until(self, obj) -> str | None:
+        muted = self._user_state(obj)[1]
+        return muted.isoformat() if muted else None
+
+    def get_is_pinned(self, obj) -> bool:
+        return bool(self._user_state(obj)[0])
+
+    def get_is_muted(self, obj) -> bool:
+        from django.utils import timezone
+
+        muted = self._user_state(obj)[1]
+        return bool(muted and muted > timezone.now())
+
+    def get_awaiting_reply(self, obj) -> bool:
+        """Veli/öğrenci yazmış, kurum henüz cevaplamamış."""
+        if obj.status in ('REPLIED', 'ARCHIVED', 'CLOSED'):
+            return False
+        return bool(obj.first_unanswered_at)
+
+    def get_contact_kind(self, obj) -> str:
+        """Filtre grubu: ogrenci | veli | koc | ogretmen | diger."""
+        if obj.contact_type == 'OGRENCI':
+            return 'ogrenci'
+        if obj.contact_type == 'VELI':
+            return 'veli'
+        if obj.contact_type == 'PERSONEL':
+            identity = getattr(obj, 'contact_identity', None)
+            personel = getattr(identity, 'personel', None) if identity else None
+            if personel is not None and getattr(personel, 'coach_profile', None):
+                return 'koc'
+            return 'ogretmen'
+        return 'diger'
 
     def get_channel_config_name(self, obj) -> str:
         cfg = getattr(obj, 'channel_config', None)
@@ -318,15 +365,41 @@ class MessageSerializer(serializers.ModelSerializer):
     reactions = MessageReactionSerializer(many=True, read_only=True)
     reply_to = MessageReplyPreviewSerializer(read_only=True)
     failed_reason = serializers.SerializerMethodField()
+    is_starred = serializers.SerializerMethodField()
+    is_forwarded = serializers.SerializerMethodField()
+    is_pinned = serializers.SerializerMethodField()
+    sender_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
             'id', 'direction', 'message_type', 'body', 'status',
-            'provider_message_id', 'sender_user_id', 'source_module',
+            'provider_message_id', 'sender_user_id', 'sender_name', 'source_module',
             'source_ref_id', 'failed_reason', 'sent_at', 'delivered_at',
             'read_at', 'created_at', 'attachments', 'reactions', 'reply_to',
+            'is_starred', 'is_forwarded', 'is_pinned', 'pinned_at',
         ]
+
+    def get_is_pinned(self, obj) -> bool:
+        return bool(obj.pinned_at)
+
+    def get_is_starred(self, obj) -> bool:
+        user_id = self.context.get('_user_id')
+        if not user_id:
+            return False
+        try:
+            return any(u.id == user_id for u in obj.starred_by.all())
+        except Exception:
+            return False
+
+    def get_is_forwarded(self, obj) -> bool:
+        return bool(obj.forwarded_from_id)
+
+    def get_sender_name(self, obj) -> str:
+        user = getattr(obj, 'sender_user', None)
+        if not user:
+            return ''
+        return (user.get_full_name() or user.username or '').strip()
 
     def get_failed_reason(self, obj) -> str:
         from apps.communication.application.delivery_error import explain_delivery_failure

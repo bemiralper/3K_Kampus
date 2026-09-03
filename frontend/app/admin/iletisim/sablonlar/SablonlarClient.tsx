@@ -432,7 +432,7 @@ export default function SablonlarClient({
       breadcrumbs={
         portal === "muhasebe"
           ? [
-              { label: "WhatsApp", href: "/muhasebe/iletisim/mesajlar" },
+              { label: "WhatsApp", href: "/muhasebe/iletisim/sohbetler" },
               { label: "Şablonlar" },
             ]
           : [

@@ -97,7 +97,7 @@ export default function TemplatePickerDrawer({
         <div className="comm-drawer-filters comm-drawer-filters-v2">
           <input
             type="search"
-            className="comm-inbox-search comm-drawer-search"
+            className="comm-drawer-search"
             placeholder="Ara…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

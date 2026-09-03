@@ -16,6 +16,7 @@ from apps.communication.domain.enums import (
     ConversationStatus,
     MessageDirection,
     MessageStatus,
+    RecipientType,
     WebhookProcessingStatus,
 )
 from apps.communication.domain.models import (
@@ -223,7 +224,7 @@ class ConversationRepository:
         from django.utils import timezone as dj_tz
 
         qs = filter_conversations_by_sube(
-            Conversation.objects.filter(kurum_id=kurum_id),
+            Conversation.objects.filter(kurum_id=kurum_id, deleted_at__isnull=True),
             sube_id,
         )
         inbox = filters.get('inbox')
@@ -237,6 +238,8 @@ class ConversationRepository:
         unread = filters.get('unread')
         if unread:
             qs = qs.filter(unread_count_coach__gt=0)
+        if filters.get('read'):
+            qs = qs.filter(unread_count_coach=0)
         ogrenci_id = filters.get('ogrenci_id')
         if ogrenci_id:
             qs = qs.filter(
@@ -244,7 +247,7 @@ class ConversationRepository:
             )
         search = filters.get('search')
         if search:
-            qs = qs.filter(
+            criteria = (
                 Q(contact_phone__icontains=search)
                 | Q(subject__icontains=search)
                 | Q(contact_name__icontains=search)
@@ -253,12 +256,67 @@ class ConversationRepository:
                 | Q(veli__ad__icontains=search)
                 | Q(veli__soyad__icontains=search)
             )
+            if filters.get('search_messages'):
+                # Mesaj gövdesinde geçen sohbetler de listeye girsin (WhatsApp
+                # aramasındaki gibi). Join çoğaltmasın diye alt sorgu.
+                criteria |= Q(
+                    id__in=Message.objects.filter(
+                        conversation__kurum_id=kurum_id,
+                        deleted_at__isnull=True,
+                        body__icontains=search,
+                    ).values('conversation_id')[:2000]
+                )
+            qs = qs.filter(criteria)
         channel_config_id = filters.get('channel_config_id')
         if channel_config_id:
             qs = qs.filter(channel_config_id=channel_config_id)
         department = filters.get('department')
         if department:
             qs = qs.filter(department=department)
+
+        contact_kinds = filters.get('contact_kinds')
+        if contact_kinds:
+            kind_q = Q()
+            for kind in contact_kinds:
+                if kind == 'ogrenci':
+                    kind_q |= Q(contact_type=RecipientType.OGRENCI)
+                elif kind == 'veli':
+                    kind_q |= Q(contact_type=RecipientType.VELI)
+                elif kind == 'koc':
+                    kind_q |= Q(
+                        contact_type=RecipientType.PERSONEL,
+                        contact_identity__personel__coach_profile__isnull=False,
+                    )
+                elif kind == 'ogretmen':
+                    kind_q |= Q(
+                        contact_type=RecipientType.PERSONEL,
+                        contact_identity__personel__coach_profile__isnull=True,
+                    )
+                elif kind == 'diger':
+                    kind_q |= Q(contact_type=RecipientType.RAW_PHONE)
+            if kind_q:
+                qs = qs.filter(kind_q)
+
+        if filters.get('awaiting_reply'):
+            qs = qs.filter(first_unanswered_at__isnull=False).exclude(
+                status__in=[
+                    ConversationStatus.REPLIED,
+                    ConversationStatus.ARCHIVED,
+                    ConversationStatus.CLOSED,
+                ]
+            )
+
+        pinned_ids = filters.get('pinned_ids')
+        if pinned_ids is not None:
+            qs = qs.filter(id__in=pinned_ids)
+
+        since_hours = filters.get('since_hours')
+        if since_hours:
+            threshold = dj_tz.now() - timedelta(hours=int(since_hours))
+            qs = qs.filter(
+                Q(last_message_at__gte=threshold)
+                | Q(last_message_at__isnull=True, created_at__gte=threshold)
+            )
 
         period = filters.get('period')
         if period and period != 'all':
@@ -607,6 +665,65 @@ class ConversationRepository:
         log_conversation_event(conversation, ConversationEventType.UNARCHIVED)
 
     @staticmethod
+    def mark_unread(conversation: Conversation) -> None:
+        """Okundu işaretini geri al — kullanıcı sohbete dönmeyi hatırlasın."""
+        if conversation.unread_count_coach < 1:
+            conversation.unread_count_coach = 1
+        fields = ['unread_count_coach', 'updated_at']
+        if conversation.status == ConversationStatus.READ:
+            conversation.status = ConversationStatus.NEW
+            fields.append('status')
+        conversation.save(update_fields=fields)
+
+    @staticmethod
+    def soft_delete(conversation: Conversation, actor=None) -> None:
+        from apps.communication.application.conversation_events import log_conversation_event
+        from apps.communication.domain.enums import ConversationEventType
+
+        conversation.deleted_at = timezone.now()
+        conversation.deleted_by = actor if getattr(actor, 'pk', None) else None
+        conversation.status = ConversationStatus.CLOSED
+        conversation.save(update_fields=['deleted_at', 'deleted_by', 'status', 'updated_at'])
+        log_conversation_event(
+            conversation, ConversationEventType.ARCHIVED, actor=actor, meta={'deleted': True},
+        )
+
+    @staticmethod
+    def user_state(conversation, user):
+        from apps.communication.domain.models import ConversationUserState
+
+        state, _ = ConversationUserState.objects.get_or_create(
+            conversation=conversation, user=user,
+        )
+        return state
+
+    @staticmethod
+    def pinned_conversation_ids(user, kurum_id: int) -> list:
+        from apps.communication.domain.models import ConversationUserState
+
+        if not getattr(user, 'pk', None):
+            return []
+        return list(
+            ConversationUserState.objects.filter(
+                user=user,
+                pinned_at__isnull=False,
+                conversation__kurum_id=kurum_id,
+            ).values_list('conversation_id', flat=True)
+        )
+
+    @staticmethod
+    def user_state_map(user, conversation_ids) -> dict:
+        """{conversation_id: (pinned_at, muted_until)} — liste serileştirmesi için."""
+        from apps.communication.domain.models import ConversationUserState
+
+        if not getattr(user, 'pk', None) or not conversation_ids:
+            return {}
+        rows = ConversationUserState.objects.filter(
+            user=user, conversation_id__in=conversation_ids,
+        ).values_list('conversation_id', 'pinned_at', 'muted_until')
+        return {str(cid): (pinned, muted) for cid, pinned, muted in rows}
+
+    @staticmethod
     def unread_count_for_queryset(qs) -> int:
         from django.db.models import Sum
 
@@ -625,21 +742,74 @@ class MessageRepository:
             return None
         return Message.objects.filter(provider_message_id=provider_message_id).first()
 
+    THREAD_PREFETCH = (
+        'attachments',
+        'reactions',
+        'reactions__reacted_by',
+        'reply_to__attachments',
+        'starred_by',
+    )
+
+    @staticmethod
+    def visible(conversation_id):
+        """Sohbetteki silinmemiş mesajlar."""
+        return Message.objects.filter(
+            conversation_id=conversation_id, deleted_at__isnull=True,
+        )
+
     @staticmethod
     def list_by_conversation(conversation_id, *, limit: int = 50, before_id=None):
-        qs = Message.objects.filter(conversation_id=conversation_id).order_by('-created_at')
+        qs = MessageRepository.visible(conversation_id).order_by('-created_at')
         if before_id:
             qs = qs.filter(created_at__lt=Message.objects.filter(id=before_id).values('created_at')[:1])
-        return qs.select_related('reply_to').prefetch_related(
-            'attachments',
-            'reactions',
-            'reactions__reacted_by',
-            'reply_to__attachments',
+        return qs.select_related('reply_to', 'forwarded_from', 'sender_user').prefetch_related(
+            *MessageRepository.THREAD_PREFETCH,
         )[:limit]
 
     @staticmethod
+    def list_since(conversation_id, *, after_id, limit: int = 100):
+        """`after_id` sonrası gelen mesajlar — canlı thread güncellemesi."""
+        qs = MessageRepository.visible(conversation_id).filter(
+            created_at__gt=Message.objects.filter(id=after_id).values('created_at')[:1],
+        ).order_by('created_at')
+        return qs.select_related('reply_to', 'forwarded_from', 'sender_user').prefetch_related(
+            *MessageRepository.THREAD_PREFETCH,
+        )[:limit]
+
+    @staticmethod
+    def list_around(conversation_id, *, anchor_id, before: int = 25, after: int = 25):
+        """Bir mesajın etrafındaki pencere — arama sonucuna atlarken kullanılır."""
+        anchor_created = Message.objects.filter(id=anchor_id).values('created_at')[:1]
+        older = list(
+            MessageRepository.visible(conversation_id)
+            .filter(created_at__lt=anchor_created)
+            .order_by('-created_at')
+            .select_related('reply_to', 'forwarded_from', 'sender_user')
+            .prefetch_related(*MessageRepository.THREAD_PREFETCH)[:before]
+        )
+        newer_and_anchor = list(
+            MessageRepository.visible(conversation_id)
+            .filter(created_at__gte=anchor_created)
+            .order_by('created_at')
+            .select_related('reply_to', 'forwarded_from', 'sender_user')
+            .prefetch_related(*MessageRepository.THREAD_PREFETCH)[: after + 1]
+        )
+        older.reverse()
+        return older + newer_and_anchor
+
+    @staticmethod
+    def search_in_conversation(conversation_id, query: str, *, limit: int = 60):
+        """Sohbet içi metin araması — eskiden yeniye sıralı eşleşmeler."""
+        return list(
+            MessageRepository.visible(conversation_id)
+            .filter(body__icontains=query)
+            .order_by('created_at')
+            .values('id', 'body', 'direction', 'created_at')[:limit]
+        )
+
+    @staticmethod
     def count_by_conversation(conversation_id) -> int:
-        return Message.objects.filter(conversation_id=conversation_id).count()
+        return MessageRepository.visible(conversation_id).count()
 
 
 class MessageStatusEventRepository:

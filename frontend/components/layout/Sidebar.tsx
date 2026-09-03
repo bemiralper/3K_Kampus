@@ -165,7 +165,7 @@ interface MenuItem {
 }
 
 const ODEV_KONTROL_HREF = "/admin/odev/kontrol";
-const MESAJLAR_HREF = "/admin/iletisim/mesajlar";
+const MESAJLAR_HREF = "/admin/iletisim/sohbetler";
 
 const navItems: MenuItem[] = [
   {
@@ -321,7 +321,7 @@ const navItems: MenuItem[] = [
     emoji: "",
     icon: icons.message,
     children: [
-      { label: "Sohbetler", href: "/admin/iletisim/mesajlar" },
+      { label: "Sohbetler", href: "/admin/iletisim/sohbetler" },
       { label: "İletişim Paneli", href: "/admin/iletisim/panel" },
       { label: "Toplu Gönderim", href: "/admin/iletisim/toplu-gonder" },
       { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },

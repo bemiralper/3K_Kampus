@@ -152,7 +152,7 @@ export default function MetaTemplateSendDrawer({
         <div className="comm-drawer-filters comm-drawer-filters-v2">
           <input
             type="search"
-            className="comm-inbox-search comm-drawer-search"
+            className="comm-drawer-search"
             placeholder="Şablon ara…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

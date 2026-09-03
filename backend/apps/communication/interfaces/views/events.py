@@ -90,6 +90,7 @@ class CommunicationEventsStreamView(CommunicationAPIView):
             last_unread = -1
             last_conversations = -1
             last_fingerprint = ''
+            last_state: dict[str, str] = {}
             # Gunicorn sync worker --timeout (genelde 120s) dolmadan temiz kapanmalı.
             max_iter = int(getattr(settings, 'COMMUNICATION_SSE_MAX_ITERATIONS', 18) or 0)
             poll_sec = float(getattr(settings, 'COMMUNICATION_SSE_POLL_SECONDS', 5) or 5)
@@ -117,9 +118,8 @@ class CommunicationEventsStreamView(CommunicationAPIView):
                     agg = qs.order_by('-updated_at').values_list(
                         'id', 'claim_version', 'status', 'unread_count_coach',
                     )[:30]
-                    fingerprint = '|'.join(
-                        f'{i}:{cv}:{st}:{uc}' for i, cv, st, uc in agg
-                    )
+                    state = {str(i): f'{cv}:{st}:{uc}' for i, cv, st, uc in agg}
+                    fingerprint = '|'.join(f'{k}:{v}' for k, v in state.items())
 
                     if (
                         unread_count != last_unread
@@ -129,13 +129,23 @@ class CommunicationEventsStreamView(CommunicationAPIView):
                         event_name = 'conversation_updated'
                         if unread_count != last_unread or unread_conversations != last_conversations:
                             event_name = 'new_message'
+                        # Hangi sohbetlerin değiştiğini de bildir: yeni Sohbetler
+                        # ekranı yalnızca ilgili satırı ve açık thread'i tazeler,
+                        # tüm listeyi yeniden çekmez.
+                        changed = (
+                            [cid for cid, val in state.items() if last_state.get(cid) != val]
+                            if last_state
+                            else []
+                        )
                         yield _sse_event(event_name, {
                             'unread_count': unread_count,
                             'unread_conversations': unread_conversations,
+                            'conversation_ids': changed[:20],
                         })
                         last_unread = unread_count
                         last_conversations = unread_conversations
                         last_fingerprint = fingerprint
+                        last_state = state
                     else:
                         yield _sse_event('heartbeat', {'ok': True})
 

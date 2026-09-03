@@ -88,9 +88,15 @@ def _field(
 
 
 def _education_fields(kurum_id, sube_id, egitim_yili_id, allowed) -> list[dict]:
+    from apps.egitim_paketleri.models import EkHizmet
     from apps.egitim_tanimlari.models import SinifSeviyesi
     from apps.egitim_yili.domain.models import EgitimYili
-    from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciKayit
+    from apps.ogrenci.domain.models import (
+        Ogrenci,
+        OgrenciEgitimPaketi,
+        OgrenciEkHizmet,
+        OgrenciKayit,
+    )
     from apps.sinif.domain.models import Sinif
     from apps.sube.domain.models import Sube
 
@@ -134,6 +140,29 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, allowed) -> list[dict]:
         ))
     packets.sort(key=lambda x: x['label'])
 
+    # Ek hizmetler (kütüphane, koçluk …) — yalnızca en az bir aktif öğrenci
+    # kaydı olanlar listelenir, boş seçenek gösterilmesin.
+    hizmet_kayit_qs = OgrenciEkHizmet.objects.filter(
+        aktif_mi=True,
+        ogrenci__kurum_id=kurum_id,
+    )
+    if allowed is not None:
+        hizmet_kayit_qs = hizmet_kayit_qs.filter(ogrenci_id__in=allowed)
+    hizmet_ids = set(hizmet_kayit_qs.values_list('ek_hizmet_id', flat=True))
+
+    ek_hizmet_opts = []
+    turler_seen = set()
+    if hizmet_ids:
+        hizmet_qs = EkHizmet.objects.filter(id__in=hizmet_ids).order_by('hizmet_turu', 'ad')
+        for h in hizmet_qs:
+            ek_hizmet_opts.append(_opt(h.id, f'{h.get_hizmet_turu_display()} — {h.ad}'))
+            turler_seen.add(h.hizmet_turu)
+    ek_hizmet_turu_opts = [
+        _opt(code, label)
+        for code, label in EkHizmet.HIZMET_TURU_CHOICES
+        if code in turler_seen
+    ]
+
     kayit_opts = [_opt(code, label) for code, label in Ogrenci.KAYIT_TURU_CHOICES]
     giris_opts = [_opt(code, label) for code, label in OgrenciKayit.GIRIS_TURU_CHOICES]
 
@@ -152,6 +181,8 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, allowed) -> list[dict]:
             _opt(s.id, s.ad) for s in sinif_qs
         ]),
         _field('paket', 'Eğitim paketi', 'egitim', STUDENT_TYPES, packets),
+        _field('ek_hizmet_turu', 'Ek hizmet türü', 'egitim', STUDENT_TYPES, ek_hizmet_turu_opts),
+        _field('ek_hizmet_id', 'Ek hizmet', 'egitim', STUDENT_TYPES, ek_hizmet_opts),
         _field('kayit_turu', 'Kayıt türü', 'egitim', STUDENT_TYPES, kayit_opts),
         _field('giris_turu', 'Giriş türü', 'egitim', STUDENT_TYPES, giris_opts),
         _field('ogrenci_durum', 'Öğrenci durumu', 'egitim', STUDENT_TYPES, [
@@ -284,6 +315,22 @@ def _quick_starts(coach_scoped: bool) -> list[dict[str, Any]]:
             'person_types': ['veli'],
             'add_field': 'coach_id',
             'hint': 'Seçilen koçun öğrencilerinin velileri.',
+        },
+        {
+            'key': 'kutuphane_ogrenciler',
+            'label': 'Kütüphane öğrencileri',
+            'person_types': ['ogrenci'],
+            'add_field': 'ek_hizmet_turu',
+            'add_value': ['kutuphane'],
+            'hint': 'Aktif kütüphane ek hizmeti olan öğrenciler.',
+        },
+        {
+            'key': 'kutuphane_veliler',
+            'label': 'Kütüphane velileri',
+            'person_types': ['veli'],
+            'add_field': 'ek_hizmet_turu',
+            'add_value': ['kutuphane'],
+            'hint': 'Kütüphane hizmeti alan öğrencilerin velileri.',
         },
     ])
     return items

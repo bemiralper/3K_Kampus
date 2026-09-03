@@ -96,8 +96,6 @@ export default function RichMessageToolbar({
 
   const mediaTools: ToolDef[] = [
     { id: "attach", icon: "📎", label: "Dosya ekle", group: "media", action: () => onAttachClick?.() },
-    { id: "image", icon: "🖼", label: "Resim (aşağıdaki alan)", group: "media", action: () => {} },
-    { id: "pdf", icon: "📄", label: "PDF (aşağıdaki alan)", group: "media", action: () => {} },
     { id: "link", icon: "🔗", label: "Link ekle", group: "media", action: () => insertToken(" https://") },
   ];
 
@@ -141,16 +139,12 @@ export default function RichMessageToolbar({
                 aria-label={tool.label}
                 aria-expanded={tool.id === "emoji" ? showEmoji : undefined}
                 onClick={tool.action}
-                disabled={
-                  tool.id === "ai" && !aiEnabled
-                    ? true
-                    : !compact && (tool.id === "image" || tool.id === "pdf")
-                }
+                disabled={tool.id === "ai" && !aiEnabled}
               >
                 {tool.icon}
               </button>
             ))}
-            {group === "format" ? <FormatShortcutHelp /> : null}
+            {group === "extra" ? <FormatShortcutHelp /> : null}
           </div>
         ))}
       </div>

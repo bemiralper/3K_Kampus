@@ -53,7 +53,8 @@ ALL_PERSON_TYPES = (PERSON_OGRENCI, PERSON_VELI, PERSON_PERSONEL)
 STUDENT_FIELDS = frozenset({
     'kurum_id', 'sube_id', 'egitim_yili_id',
     'sinif_seviyesi_id', 'sinif_id',
-    'paket', 'kayit_turu', 'giris_turu',
+    'paket', 'ek_hizmet_id', 'ek_hizmet_turu',
+    'kayit_turu', 'giris_turu',
     'ogrenci_durum', 'cinsiyet',
     'coach_id', 'rehber_id', 'kocluk_durumu',
 })
@@ -69,6 +70,8 @@ FIELD_LABELS = {
     'sinif_seviyesi_id': 'Sınıf',
     'sinif_id': 'Sınıf şubesi',
     'paket': 'Eğitim paketi',
+    'ek_hizmet_id': 'Ek hizmet',
+    'ek_hizmet_turu': 'Ek hizmet türü',
     'kayit_turu': 'Kayıt türü',
     'giris_turu': 'Giriş türü',
     'ogrenci_durum': 'Öğrenci durumu',
@@ -507,7 +510,7 @@ class AudienceQueryService:
     @classmethod
     def _student_filter_q(cls, item: dict) -> Q | None:
         from apps.coaching.models import CoachStudentAssignment
-        from apps.ogrenci.domain.models import OgrenciEgitimPaketi
+        from apps.ogrenci.domain.models import OgrenciEgitimPaketi, OgrenciEkHizmet
 
         field_name = item.get('field')
         values = _values(item)
@@ -563,6 +566,16 @@ class AudienceQueryService:
                 q_obj |= Q(paket_turu=paket_turu, paket_id=paket_id, aktif_mi=True)
             ids = OgrenciEgitimPaketi.objects.filter(q_obj).values_list('ogrenci_id', flat=True)
             return Q(ogrenci_id__in=list(ids))
+        if field_name in ('ek_hizmet_id', 'ek_hizmet_turu'):
+            # Hizmeti "alan" öğrenci = aktif OgrenciEkHizmet kaydı. Pakete dahil
+            # gelen hizmetler de sayılır (dahil_mi filtresi yok); kütüphane modülü
+            # erişim kapısını aynı şekilde belirliyor.
+            qs = OgrenciEkHizmet.objects.filter(aktif_mi=True)
+            if field_name == 'ek_hizmet_id':
+                qs = qs.filter(ek_hizmet_id__in=_int_list(values))
+            else:
+                qs = qs.filter(ek_hizmet__hizmet_turu__in=[str(v) for v in values])
+            return Q(ogrenci_id__in=list(qs.values_list('ogrenci_id', flat=True)))
         return None
 
     @classmethod

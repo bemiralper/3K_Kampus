@@ -233,7 +233,17 @@ export interface ConversationListItem {
   session?: ConversationSessionInfo;
   can_claim?: boolean;
   created_at: string;
+  /** Sohbetler ekranı — kullanıcıya özel durum ve filtre alanları */
+  contact_kind?: ChatContactKind;
+  pinned_at?: string | null;
+  muted_until?: string | null;
+  is_pinned?: boolean;
+  is_muted?: boolean;
+  awaiting_reply?: boolean;
 }
+
+/** Sohbet listesi kişi grubu — filtre sekmeleriyle birebir eşleşir. */
+export type ChatContactKind = 'ogrenci' | 'veli' | 'koc' | 'ogretmen' | 'diger';
 
 const MESSAGE_STATUS_LABELS: Record<string, string> = {
   PENDING: "bekliyor",
@@ -292,17 +302,27 @@ export interface MessageItem {
   attachments?: MessageAttachmentItem[];
   reactions?: MessageReactionItem[];
   reply_to?: MessageReplyPreview | null;
+  sender_name?: string;
+  is_starred?: boolean;
+  is_forwarded?: boolean;
+  is_pinned?: boolean;
+  pinned_at?: string | null;
 }
 
 export interface ConversationsResponse {
   conversations: ConversationListItem[];
   total: number;
+  offset?: number;
+  has_more?: boolean;
 }
 
 export interface MessagesResponse {
   messages: MessageItem[];
   total: number;
   has_more: boolean;
+  incremental?: boolean;
+  /** Sohbette sabitlenmiş mesaj (varsa) — timeline üstünde şerit olarak gösterilir. */
+  pinned_message?: MessageItem | null;
 }
 
 export interface WhatsAppConfig {
@@ -625,13 +645,14 @@ export async function fetchNotificationSummary(): Promise<NotificationSummary> {
 
 export async function fetchConversationMessages(
   conversationId: string,
-  params?: { limit?: number; before?: string },
+  params?: { limit?: number; before?: string; after?: string },
 ): Promise<MessagesResponse> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const search = new URLSearchParams();
   if (kurumId) search.set('kurum_id', kurumId);
   if (params?.limit) search.set('limit', String(params.limit));
   if (params?.before) search.set('before', params.before);
+  if (params?.after) search.set('after', params.after);
   const qs = search.toString();
   return request<MessagesResponse>(
     `/conversations/${conversationId}/messages/${qs ? `?${qs}` : ''}`,
@@ -1572,9 +1593,9 @@ export function resolveInboxPortal(pathname: string): InboxPortal {
 }
 
 export function conversationInboxBase(portal: InboxPortal): string {
-  if (portal === 'admin') return '/admin/iletisim/mesajlar';
-  if (portal === 'muhasebe') return '/muhasebe/iletisim/mesajlar';
-  return '/coach/mesajlar';
+  if (portal === 'admin') return '/admin/iletisim/sohbetler';
+  if (portal === 'muhasebe') return '/muhasebe/iletisim/sohbetler';
+  return '/coach/sohbetler';
 }
 
 export function conversationTemplatesPath(portal: InboxPortal): string {
@@ -1728,6 +1749,8 @@ export interface AudienceQuickStart {
   label: string;
   person_types: AudiencePersonType[];
   add_field?: string;
+  /** Kısayolun `add_field` için önceden seçtiği değerler (ör. kütüphane). */
+  add_value?: unknown[];
   hint?: string;
 }
 
@@ -2666,3 +2689,271 @@ export async function uploadCampaignAttachment(file: File): Promise<CampaignAtta
 
 /** @deprecated Use uploadCampaignAttachment */
 export const uploadAttachment = uploadCampaignAttachment;
+
+// ───────────────────────────────────────────────────────────────
+// Sohbetler ekranı (yeni arayüz)
+// ───────────────────────────────────────────────────────────────
+
+export type ChatQuickFilter =
+  | 'all'
+  | 'unread'
+  | 'read'
+  | 'pinned'
+  | 'archived'
+  | 'awaiting_reply';
+
+const CHAT_QUICK_FILTERS: readonly ChatQuickFilter[] = [
+  'all',
+  'unread',
+  'read',
+  'pinned',
+  'archived',
+  'awaiting_reply',
+];
+
+/** `?filter=` derin bağlantısını doğrular; tanınmayan değer için null döner. */
+export function parseChatQuickFilter(raw: string | null | undefined): ChatQuickFilter | null {
+  if (!raw) return null;
+  return CHAT_QUICK_FILTERS.includes(raw as ChatQuickFilter) ? (raw as ChatQuickFilter) : null;
+}
+
+export type ChatTimeFilter = 'all' | '24h' | '7d' | '30d';
+
+export interface ChatListQuery {
+  /** Tek seçimli ana filtre */
+  quick?: ChatQuickFilter;
+  /** Çoklu seçim: öğrenci / veli / koç / öğretmen / diğer */
+  kinds?: ChatContactKind[];
+  time?: ChatTimeFilter;
+  search?: string;
+  /** Aramayı mesaj içeriğinde de çalıştır */
+  searchMessages?: boolean;
+  accountId?: string;
+  department?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchChatConversations(
+  query: ChatListQuery = {},
+): Promise<ConversationsResponse> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = new URLSearchParams();
+  if (kurumId) qs.set('kurum_id', kurumId);
+
+  switch (query.quick) {
+    case 'unread':
+      qs.set('unread', '1');
+      break;
+    case 'read':
+      qs.set('read', '1');
+      break;
+    case 'pinned':
+      qs.set('pinned', '1');
+      break;
+    case 'archived':
+      qs.set('archived', '1');
+      qs.set('inbox', 'archived');
+      break;
+    case 'awaiting_reply':
+      qs.set('awaiting_reply', '1');
+      break;
+    default:
+      break;
+  }
+
+  if (query.kinds?.length) qs.set('contact_kinds', query.kinds.join(','));
+  if (query.time && query.time !== 'all') qs.set('since', query.time);
+  if (query.search) {
+    qs.set('search', query.search);
+    if (query.searchMessages !== false) qs.set('search_messages', '1');
+  }
+  if (query.accountId) qs.set('channel_config_id', query.accountId);
+  if (query.department) qs.set('department', query.department);
+  qs.set('period', 'all');
+  qs.set('limit', String(query.limit ?? 30));
+  if (query.offset) qs.set('offset', String(query.offset));
+
+  return request<ConversationsResponse>(`/conversations/?${qs.toString()}`);
+}
+
+function chatMutation<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request<T>(path, {
+    method,
+    body: JSON.stringify({ kurum_id: kurumId, ...(body as object || {}) }),
+  });
+}
+
+export function pinConversation(
+  conversationId: string,
+  pin = true,
+): Promise<ConversationListItem> {
+  return chatMutation(`/conversations/${conversationId}/pin/`, 'PATCH', { pin });
+}
+
+export function muteConversation(
+  conversationId: string,
+  mute = true,
+  hours?: number,
+): Promise<ConversationListItem> {
+  return chatMutation(`/conversations/${conversationId}/mute/`, 'PATCH', { mute, hours });
+}
+
+export function markConversationUnread(
+  conversationId: string,
+): Promise<ConversationListItem> {
+  return chatMutation(`/conversations/${conversationId}/unread/`, 'PATCH');
+}
+
+export function deleteConversation(conversationId: string): Promise<{ ok: boolean }> {
+  return chatMutation(`/conversations/${conversationId}/delete/`, 'DELETE');
+}
+
+export function markAllConversationsRead(): Promise<{ ok: boolean; updated: number }> {
+  return chatMutation('/conversations/read-all/', 'POST');
+}
+
+export interface ChatMessageSearchHit {
+  id: string;
+  body: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  created_at: string;
+}
+
+export async function searchMessagesInConversation(
+  conversationId: string,
+  q: string,
+): Promise<{ results: ChatMessageSearchHit[]; total: number }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = new URLSearchParams({ q });
+  if (kurumId) qs.set('kurum_id', kurumId);
+  return request(`/conversations/${conversationId}/messages/search/?${qs.toString()}`);
+}
+
+export async function fetchMessageContext(
+  conversationId: string,
+  messageId: string,
+): Promise<{ messages: MessageItem[]; anchor_id: string; has_more: boolean }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/conversations/${conversationId}/messages/${messageId}/context/${qs}`);
+}
+
+export function starMessage(
+  conversationId: string,
+  messageId: string,
+  star = true,
+): Promise<MessageItem> {
+  return chatMutation(
+    `/conversations/${conversationId}/messages/${messageId}/star/`,
+    'PATCH',
+    { star },
+  );
+}
+
+export function pinMessage(
+  conversationId: string,
+  messageId: string,
+  pin = true,
+): Promise<MessageItem> {
+  return chatMutation(
+    `/conversations/${conversationId}/messages/${messageId}/pin/`,
+    'PATCH',
+    { pin },
+  );
+}
+
+export function deleteMessage(
+  conversationId: string,
+  messageId: string,
+): Promise<{ ok: boolean }> {
+  return chatMutation(
+    `/conversations/${conversationId}/messages/${messageId}/delete/`,
+    'DELETE',
+  );
+}
+
+export interface StarredMessageItem {
+  id: string;
+  conversation_id: string;
+  contact_name: string;
+  body: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  created_at: string | null;
+}
+
+export async function fetchStarredMessages(): Promise<{ messages: StarredMessageItem[] }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/messages/starred/${qs}`);
+}
+
+export interface ForwardResult {
+  results: Array<{
+    conversation_id: string;
+    ok: boolean;
+    error?: string | null;
+    session_expired?: boolean;
+  }>;
+  sent: number;
+  total: number;
+}
+
+export function forwardMessage(
+  conversationId: string,
+  messageId: string,
+  targetConversationIds: string[],
+): Promise<ForwardResult> {
+  return chatMutation(
+    `/conversations/${conversationId}/messages/${messageId}/forward/`,
+    'POST',
+    { conversation_ids: targetConversationIds },
+  );
+}
+
+export interface ChatContextStudent {
+  id: number;
+  ad_soyad: string;
+  profil_foto?: string | null;
+  telefon: string;
+  email: string;
+  aktif: boolean;
+  kayit_turu: string;
+  sinif: string;
+  sinif_seviyesi: string;
+  sube: string;
+  egitim_yili: string;
+  koc: string;
+  koc_id?: number | null;
+}
+
+export interface ChatContextParent {
+  id: number;
+  ad_soyad: string;
+  yakinlik: string;
+  telefon: string;
+  email: string;
+}
+
+export interface ChatContextData {
+  conversation_id: string;
+  contact: { name: string; phone: string; type: string };
+  ogrenci: ChatContextStudent | null;
+  veliler: ChatContextParent[];
+  sorumlu: {
+    claimed_by_id?: number | null;
+    claimed_by_name: string;
+    assigned_coach_id?: number | null;
+    assigned_coach_name: string;
+  };
+  kanal: { account_name: string; display_phone: string; department: string };
+}
+
+export async function fetchConversationContext(
+  conversationId: string,
+): Promise<ChatContextData> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/conversations/${conversationId}/context/${qs}`);
+}

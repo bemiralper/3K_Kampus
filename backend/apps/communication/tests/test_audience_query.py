@@ -9,10 +9,17 @@ from apps.coaching.models import CoachProfile, CoachStudentAssignment
 from apps.communication.application.audience_query import AudienceQueryService, empty_query
 from apps.communication.application.campaign_service import AudienceResolver
 from apps.communication.domain.models import SavedAudience
+from apps.egitim_paketleri.models import EkHizmet
 from apps.egitim_tanimlari.models import SinifSeviyesi
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
-from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciKayit, OgrenciVeli
+from apps.ogrenci.domain.models import (
+    Ogrenci,
+    OgrenciEgitimPaketi,
+    OgrenciEkHizmet,
+    OgrenciKayit,
+    OgrenciVeli,
+)
 from apps.personel.domain.models import Personel, PersonelGorevlendirme
 from apps.roller.models import Permission, Role, RolePermission, UserRole
 from apps.sinif.domain.models import Sinif
@@ -87,6 +94,34 @@ class AudienceQueryScenarioTest(TestCase):
         OgrenciEgitimPaketi.objects.create(
             ogrenci=self.s_11a, paket_turu='grup_dersi', paket_id=101,
             paket_adi='YKS Grup', aktif_mi=True,
+        )
+
+        # Ek hizmetler — kütüphane (iki öğrenci) ve koçluk (bir öğrenci).
+        self.hizmet_kutuphane = EkHizmet.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.year,
+            ad='Kütüphane Tam Gün', kod='KTP1', hizmet_turu='kutuphane',
+        )
+        self.hizmet_kocluk = EkHizmet.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.year,
+            ad='Birebir Koçluk', kod='KOC1', hizmet_turu='kocluk',
+        )
+        # 11-A: ayrı satın alma, 12-B: pakete dahil — ikisi de hizmeti "alıyor".
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.s_11a, ek_hizmet=self.hizmet_kutuphane,
+            egitim_yili=self.year, aktif_mi=True, dahil_mi=False,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.s_12b, ek_hizmet=self.hizmet_kutuphane,
+            egitim_yili=self.year, aktif_mi=True, dahil_mi=True,
+        )
+        # İptal edilmiş kayıt kitleye girmemeli.
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.s_11b, ek_hizmet=self.hizmet_kutuphane,
+            egitim_yili=self.year, aktif_mi=False,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.s_11b, ek_hizmet=self.hizmet_kocluk,
+            egitim_yili=self.year, aktif_mi=True,
         )
 
         self.ahmet = Personel.objects.create(
@@ -196,6 +231,59 @@ class AudienceQueryScenarioTest(TestCase):
     def test_scenario_8_package_students(self):
         result = self._resolve(_query(['ogrenci'], [_group(_f('paket', 'grup_dersi:101'))]))
         self.assertEqual(self._ids(result, 'ogrenci'), {self.s_11a.id})
+
+    def test_ek_hizmet_turu_kutuphane_students(self):
+        """Kütüphane hizmeti alan öğrenciler — pakete dahil olanlar da sayılır."""
+        result = self._resolve(_query(['ogrenci'], [_group(_f('ek_hizmet_turu', 'kutuphane'))]))
+        self.assertEqual(self._ids(result, 'ogrenci'), {self.s_11a.id, self.s_12b.id})
+
+    def test_ek_hizmet_turu_excludes_cancelled(self):
+        """aktif_mi=False kaydı olan öğrenci kütüphane kitlesine girmez."""
+        result = self._resolve(_query(['ogrenci'], [_group(_f('ek_hizmet_turu', 'kutuphane'))]))
+        self.assertNotIn(self.s_11b.id, self._ids(result, 'ogrenci'))
+
+    def test_ek_hizmet_id_specific_service(self):
+        result = self._resolve(
+            _query(['ogrenci'], [_group(_f('ek_hizmet_id', self.hizmet_kocluk.id))]),
+        )
+        self.assertEqual(self._ids(result, 'ogrenci'), {self.s_11b.id})
+
+    def test_ek_hizmet_turu_parents(self):
+        """Kütüphane öğrencilerinin velilerine gönderim."""
+        result = self._resolve(_query(['veli'], [_group(_f('ek_hizmet_turu', 'kutuphane'))]))
+        self.assertEqual(self._ids(result, 'veli'), {self.v_11a.id, self.v_12b.id})
+
+    def test_ek_hizmet_combines_with_other_filters(self):
+        """Ek hizmet filtresi diğer filtrelerle AND'lenebilmeli."""
+        result = self._resolve(_query(['ogrenci'], [_group(
+            _f('ek_hizmet_turu', 'kutuphane'),
+            _f('sinif_id', self.sinif_11a.id),
+        )]))
+        self.assertEqual(self._ids(result, 'ogrenci'), {self.s_11a.id})
+
+    def test_catalog_exposes_ek_hizmet_fields(self):
+        from apps.communication.application.audience_catalog import build_audience_catalog
+
+        catalog = build_audience_catalog(
+            self.kurum.id,
+            user=self.admin,
+            sube_id=self.sube.id,
+            egitim_yili_id=self.year.id,
+        )
+        fields = {f['key']: f for f in catalog['fields']}
+        self.assertIn('ek_hizmet_id', fields)
+        self.assertIn('ek_hizmet_turu', fields)
+        self.assertIn(
+            self.hizmet_kutuphane.id,
+            {o['value'] for o in fields['ek_hizmet_id']['options']},
+        )
+        self.assertIn(
+            'kutuphane',
+            {o['value'] for o in fields['ek_hizmet_turu']['options']},
+        )
+        quick = {q['key']: q for q in catalog['quick_starts']}
+        self.assertEqual(quick['kutuphane_ogrenciler']['add_field'], 'ek_hizmet_turu')
+        self.assertEqual(quick['kutuphane_ogrenciler']['add_value'], ['kutuphane'])
 
     def test_scenario_9_kayit_turu(self):
         result = self._resolve(_query(['ogrenci'], [_group(_f('kayit_turu', 'misafir'))]))

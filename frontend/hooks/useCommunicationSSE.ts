@@ -11,6 +11,8 @@ const SSE_RETRY_AFTER_FALLBACK_MS = 5 * 60_000;
 export interface CommunicationSSEPayload {
   unread_count?: number;
   unread_conversations?: number;
+  /** Bu turda değişen sohbetler — yalnızca ilgili satır/thread tazelenir. */
+  conversation_ids?: string[];
 }
 
 type UpdateListener = (data: CommunicationSSEPayload) => void;

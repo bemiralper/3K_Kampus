@@ -351,7 +351,7 @@ frontend/
     MessageStatusBadge.tsx
     AttachmentPreview.tsx
     MessagingFilters.tsx
-  app/coach/mesajlar/
+  app/coach/sohbetler/
     page.tsx
     MesajlarClient.tsx
   app/admin/iletisim/
@@ -366,8 +366,8 @@ frontend/
 
 | Route | Kullanıcı | Özellik |
 |-------|-----------|---------|
-| `/coach/mesajlar` | Koç | Inbox: Konuşmalar, Okunmamış, Cevap Bekleyen, Arşiv |
-| `/admin/iletisim/mesajlar` | Admin | Tüm konuşmalar + filtre/arama |
+| `/coach/sohbetler` | Koç | Inbox: Konuşmalar, Okunmamış, Cevap Bekleyen, Arşiv |
+| `/admin/iletisim/sohbetler` | Admin | Tüm konuşmalar + filtre/arama |
 | `/admin/iletisim/toplu-gonder` | Admin/Koç | Toplu gönderim + rapor |
 | `/admin/iletisim/ayarlar` | Admin | WABA yapılandırma |
 | `/coach/ogrenciler/[id]?tab=mesajlar` | Koç | Öğrenci mesaj geçmişi |
@@ -375,7 +375,7 @@ frontend/
 
 ### Nav güncellemeleri
 
-- [`coachNavItems.tsx`](frontend/components/coach/coachNavItems.tsx): `{ id: "mesajlar", href: "/coach/mesajlar", label: "Mesajlar" }`
+- [`coachNavItems.tsx`](frontend/components/coach/coachNavItems.tsx): `{ id: "sohbetler", href: "/coach/sohbetler", label: "Sohbetler" }`
 - [`Sidebar.tsx`](frontend/components/layout/Sidebar.tsx): "İletişim" grubu
 - [`route.ts`](frontend/app/api/[...path]/route.ts): `'communication'` → `API_PREFIXED_PATHS`
 
@@ -432,7 +432,7 @@ Normal `CommunicationService.send()` bu provider'ı **çağırmaz**.
 
 - [ ] Webhook: inbound messages
 - [ ] Phone → veli/öğrenci/koç eşleştirme
-- [ ] `/coach/mesajlar` Inbox UI
+- [ ] `/coach/sohbetler` Inbox UI
 - [ ] Coach notifications (polling)
 - [ ] Öğrenci/veli WhatsApp sekmeleri
 

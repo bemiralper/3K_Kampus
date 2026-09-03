@@ -299,7 +299,7 @@ backend/apps/communication/
 | Dosya | Açıklama |
 |-------|----------|
 | `lib/communication-api.ts` | API client |
-| `app/coach/mesajlar/` | Koç inbox placeholder |
+| `app/coach/sohbetler/` | Koç inbox placeholder |
 | `app/admin/iletisim/ayarlar/` | WABA config UI |
 | `coachNavItems.tsx`, `Sidebar.tsx` | Nav girişleri |
 | `app/api/[...path]/route.ts` | `communication` prefix |

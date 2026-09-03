@@ -54,22 +54,94 @@ def _parse_filters(request) -> dict:
     return filters
 
 
+def _serialize_one(conversation, request) -> dict:
+    """Tek sohbet — kullanıcıya özel sabitleme/susturma durumuyla birlikte."""
+    states = ConversationRepository.user_state_map(request.user, [conversation.id])
+    return ConversationListSerializer(
+        conversation, context={'request': request, '_user_states': states},
+    ).data
+
+
+def _parse_chat_filters(request, kurum_id) -> dict:
+    """Yeni Sohbetler ekranının ek filtreleri.
+
+    Eski inbox'ın parametreleri aynen çalışmaya devam eder; buradakiler
+    yalnızca gönderildiklerinde devreye girer.
+    """
+    extra: dict = {}
+    if request.query_params.get('read') in ('1', 'true', 'yes'):
+        extra['read'] = True
+    if request.query_params.get('awaiting_reply') in ('1', 'true', 'yes'):
+        extra['awaiting_reply'] = True
+    if request.query_params.get('search_messages') in ('1', 'true', 'yes'):
+        extra['search_messages'] = True
+
+    kinds = (request.query_params.get('contact_kinds') or '').strip()
+    if kinds:
+        allowed = {'ogrenci', 'veli', 'koc', 'ogretmen', 'diger'}
+        selected = [k for k in (p.strip() for p in kinds.split(',')) if k in allowed]
+        if selected:
+            extra['contact_kinds'] = selected
+
+    since = (request.query_params.get('since') or '').strip().lower()
+    if since in ('24h', '7d', '30d'):
+        extra['since_hours'] = {'24h': 24, '7d': 168, '30d': 720}[since]
+
+    if request.query_params.get('pinned') in ('1', 'true', 'yes'):
+        # Hiç sabitlenmiş sohbet yoksa boş sonuç dönsün diye imkânsız bir id
+        extra['pinned_ids'] = ConversationRepository.pinned_conversation_ids(
+            request.user, kurum_id,
+        ) or ['00000000-0000-0000-0000-000000000000']
+    return extra
+
+
 class ConversationListView(CommunicationAPIView):
+    """Sohbet listesi.
+
+    `limit` gönderilirse sayfalanır (`offset` ile). Parametre yoksa eski
+    inbox'ın beklediği gibi tüm sonuçlar döner.
+    """
+
+    MAX_LIMIT = 100
+
     def get(self, request):
         kurum_id, sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
 
         filters = _parse_filters(request)
+        filters.update(_parse_chat_filters(request, kurum_id))
         inbox = filters.get('inbox')
         qs = ConversationRepository.list_by_kurum_and_sube(kurum_id, sube_id, **filters)
         qs = filter_conversations_for_user(
             qs, request.user, inbox=inbox, kurum_id=kurum_id, sube_id=sube_id,
         )
-        serializer = ConversationListSerializer(qs, many=True, context={'request': request})
+
+        total = qs.count()
+        limit_param = request.query_params.get('limit')
+        page = qs
+        offset = 0
+        if limit_param:
+            try:
+                limit = max(1, min(int(limit_param), self.MAX_LIMIT))
+            except (TypeError, ValueError):
+                limit = 30
+            try:
+                offset = max(0, int(request.query_params.get('offset') or 0))
+            except (TypeError, ValueError):
+                offset = 0
+            page = qs[offset:offset + limit]
+
+        rows = list(page)
+        states = ConversationRepository.user_state_map(request.user, [c.id for c in rows])
+        serializer = ConversationListSerializer(
+            rows, many=True, context={'request': request, '_user_states': states},
+        )
         return Response({
             'conversations': serializer.data,
-            'total': qs.count(),
+            'total': total,
+            'offset': offset,
+            'has_more': bool(limit_param) and (offset + len(rows)) < total,
         })
 
 
@@ -117,7 +189,7 @@ class ConversationArchiveView(CommunicationAPIView):
             ConversationRepository.archive(conversation)
 
         conversation.refresh_from_db()
-        return Response(ConversationListSerializer(conversation).data)
+        return Response(_serialize_one(conversation, request))
 
 
 class ConversationReadView(CommunicationAPIView):
@@ -139,4 +211,4 @@ class ConversationReadView(CommunicationAPIView):
 
         ConversationRepository.mark_read(conversation)
         conversation.refresh_from_db()
-        return Response(ConversationListSerializer(conversation).data)
+        return Response(_serialize_one(conversation, request))

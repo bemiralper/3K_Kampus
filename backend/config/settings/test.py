@@ -8,15 +8,16 @@ DEBUG = True
 # `apps` namespace paketi nedeniyle keşif kökü backend/ olmalı (bkz. config/test_runner.py)
 TEST_RUNNER = 'config.test_runner.LmsTestRunner'
 
-# Test database
+# Test database — varsayılan native Homebrew kurulumu; Docker içinde koşarken
+# TEST_DB_* değişkenleriyle (ör. TEST_DB_HOST=db TEST_DB_USER=lms) yönlendirilir.
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'test_lms_db',
-        'USER': 'taner',
-        'PASSWORD': '',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.environ.get('TEST_DB_NAME', 'test_lms_db'),
+        'USER': os.environ.get('TEST_DB_USER', 'taner'),
+        'PASSWORD': os.environ.get('TEST_DB_PASSWORD', ''),
+        'HOST': os.environ.get('TEST_DB_HOST', 'localhost'),
+        'PORT': os.environ.get('TEST_DB_PORT', '5432'),
     }
 }
 
