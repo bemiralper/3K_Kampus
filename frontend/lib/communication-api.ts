@@ -1598,6 +1598,30 @@ export function conversationInboxBase(portal: InboxPortal): string {
   return '/coach/sohbetler';
 }
 
+/** Portal içi iletişim sayfa yolları — admin linkleri muhasebe kabuğuna sızmasın. */
+export function communicationPortalPaths(portal: InboxPortal) {
+  if (portal === 'muhasebe') {
+    return {
+      home: '/muhasebe/iletisim/sohbetler',
+      chats: '/muhasebe/iletisim/sohbetler',
+      templates: '/muhasebe/iletisim/sablonlar',
+      bulk: '/muhasebe/iletisim/toplu-gonder',
+      history: '/muhasebe/iletisim/kampanyalar',
+      campaign: (id: string) => `/muhasebe/iletisim/kampanyalar/${id}`,
+      queue: '/muhasebe/iletisim/kuyruk',
+    };
+  }
+  return {
+    home: '/admin/iletisim/panel',
+    chats: '/admin/iletisim/sohbetler',
+    templates: '/admin/iletisim/sablonlar',
+    bulk: '/admin/iletisim/toplu-gonder',
+    history: '/admin/iletisim/kampanyalar',
+    campaign: (id: string) => `/admin/iletisim/kampanyalar/${id}`,
+    queue: '/admin/iletisim/kuyruk',
+  };
+}
+
 export function conversationTemplatesPath(portal: InboxPortal): string {
   if (portal === 'muhasebe') return '/muhasebe/iletisim/sablonlar';
   return '/admin/iletisim/sablonlar';

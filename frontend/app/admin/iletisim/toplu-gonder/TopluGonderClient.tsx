@@ -65,7 +65,12 @@ export default function TopluGonderClient({
   campaignDetailPath,
 }: TopluGonderClientProps) {
   const isCoach = mode === "coach";
-  const detailPath = campaignDetailPath || ((id: string) => `/admin/iletisim/kampanyalar/${id}`);
+  const detailPath =
+    campaignDetailPath
+    || ((id: string) =>
+      mode === "muhasebe"
+        ? `/muhasebe/iletisim/kampanyalar/${id}`
+        : `/admin/iletisim/kampanyalar/${id}`);
   const [tab, setTab] = useState<"compose" | "history" | "saved">("compose");
   const [step, setStep] = useState(0);
   const [query, setQuery] = useState<AudienceFilter>(() => emptyAudienceQuery(isCoach ? ["ogrenci"] : []));

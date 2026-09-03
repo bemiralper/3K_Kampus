@@ -24,6 +24,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/muhasebe/iletisim/sohbetler": "WhatsApp",
   "/muhasebe/iletisim/sablonlar": "WhatsApp Şablonları",
   "/muhasebe/iletisim/toplu-gonder": "Toplu Gönderim",
+  "/muhasebe/iletisim/kampanyalar": "Gönderim Geçmişi",
+  "/muhasebe/iletisim/kuyruk": "Mesaj Kuyruğu",
   "/muhasebe/finans": "Finans",
   "/muhasebe/personel": "Personel",
   "/muhasebe/personel/gorevlendirmeler": "Görevlendirmeler",
@@ -51,6 +53,9 @@ function resolvePageTitle(pathname: string): string {
   if (pathname.startsWith("/muhasebe/odeme-takip/")) return "Sözleşme/Tahsilat";
   if (pathname.startsWith("/muhasebe/iletisim")) {
     if (pathname.includes("sablonlar")) return "WhatsApp · Şablonlar";
+    if (pathname.includes("toplu-gonder")) return "WhatsApp · Toplu Gönderim";
+    if (pathname.includes("kampanyalar")) return "WhatsApp · Gönderim Geçmişi";
+    if (pathname.includes("kuyruk")) return "WhatsApp · Mesaj Kuyruğu";
     return "WhatsApp";
   }
   if (pathname.startsWith("/muhasebe/kurum/")) {

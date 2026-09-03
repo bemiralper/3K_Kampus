@@ -113,11 +113,13 @@ class AudienceSearchView(CampaignBulkView):
 
         from apps.coaching.services.coach_access import get_coach_profile, is_resource_admin
 
+        from apps.communication.permissions import user_can_bulk_communicate
+
         if is_resource_admin(request.user) or user_has_any_permission(request.user, 'communication.manage'):
             allowed = None
         elif get_coach_profile(request.user) is not None:
             allowed = scoped_student_ids(request.user)
-        elif user_has_any_permission(request.user, 'communication.bulk'):
+        elif user_can_bulk_communicate(request.user):
             allowed = None
         else:
             allowed = scoped_student_ids(request.user)

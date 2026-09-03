@@ -482,9 +482,9 @@ class AudienceResolver:
     def _scope_student_ids(cls, user, kurum_id: int, filter_json: dict):
         if not user or not user.is_authenticated:
             return None
-        if is_resource_admin(user) or user_has_any_permission(
-            user, 'communication.manage', 'communication.bulk'
-        ):
+        from apps.communication.permissions import user_can_bulk_communicate
+
+        if is_resource_admin(user) or user_can_bulk_communicate(user):
             audience_type = filter_json.get('audience_type', '')
             if audience_type in ('coach_students', 'coach_parents'):
                 coach_id = filter_json.get('coach_id') or cls._coach_id_from_user(user)

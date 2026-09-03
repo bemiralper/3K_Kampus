@@ -43,6 +43,7 @@ class MuhasebePermissionTests(TestCase):
         self.assertIn('finans.manage', perms)
         self.assertIn('communication.read', perms)
         self.assertIn('communication.write', perms)
+        self.assertIn('communication.bulk', perms)
         self.assertIn('sinif.manage', perms)
         self.assertIn('egitim_tanimlari.manage', perms)
         self.assertIn('egitim_paketleri.manage', perms)
@@ -61,6 +62,23 @@ class MuhasebePermissionTests(TestCase):
         self.assertTrue(user_has_module_permission(self.muhasebe_user, 'ozel_ders', write=True))
         self.assertTrue(user_has_module_permission(self.muhasebe_user, 'sinif', write=True))
         self.assertTrue(user_has_permission(self.muhasebe_user, 'ozel_ders.hakedis_approve'))
+
+    def test_muhasebe_can_bulk_communicate_without_reseed(self):
+        """Seed öncesi canlı roller yalnızca finans.manage taşısa da kuyruk/kampanya açılır."""
+        from apps.communication.permissions import user_can_bulk_communicate
+        from apps.roller.models import Permission, RolePermission
+
+        self.assertTrue(user_can_bulk_communicate(self.muhasebe_user))
+
+        legacy = User.objects.create_user(username='muhasebe_legacy_bulk', password='x')
+        role, _ = Role.objects.get_or_create(
+            code='muhasebe_legacy_bulk',
+            defaults={'name': 'Muhasebe (eski)', 'level': 50, 'is_system_role': False},
+        )
+        finans = Permission.objects.get(code='finans.manage')
+        RolePermission.objects.get_or_create(role=role, permission=finans)
+        UserRole.objects.create(user=legacy, role=role)
+        self.assertTrue(user_can_bulk_communicate(legacy))
 
     def test_setup_roles_idempotent(self):
         ensure_default_roles()

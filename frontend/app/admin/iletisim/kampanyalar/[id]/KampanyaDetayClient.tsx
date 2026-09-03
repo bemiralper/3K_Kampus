@@ -11,10 +11,12 @@ import {
   CAMPAIGN_STATUS_LABELS,
   CampaignItem,
   cancelCampaign,
+  communicationPortalPaths,
   fetchCampaign,
   formatMessageStatus,
   processCampaignQueue,
   retryFailedCampaign,
+  type InboxPortal,
 } from "@/lib/communication-api";
 
 function StatBar({
@@ -105,9 +107,14 @@ function campaignMessageText(campaign: CampaignItem): string {
   return "";
 }
 
-export default function KampanyaDetayClient() {
+export default function KampanyaDetayClient({ portal = "admin" }: { portal?: InboxPortal }) {
   const params = useParams();
   const campaignId = params.id as string;
+  const paths = communicationPortalPaths(portal);
+  const historyCrumb = {
+    label: "Gönderim Geçmişi",
+    href: paths.history,
+  };
   const [campaign, setCampaign] = useState<CampaignItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -179,7 +186,7 @@ export default function KampanyaDetayClient() {
         icon="📊"
         breadcrumbs={[
           { label: "İletişim" },
-          { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
+          historyCrumb,
           { label: "Detay" },
         ]}
       >
@@ -194,7 +201,7 @@ export default function KampanyaDetayClient() {
         title="Gönderim bulunamadı"
         icon="📊"
         breadcrumbs={[
-          { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
+          historyCrumb,
           { label: "Detay" },
         ]}
       >
@@ -223,7 +230,7 @@ export default function KampanyaDetayClient() {
       icon="📊"
       breadcrumbs={[
         { label: "İletişim" },
-        { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
+        historyCrumb,
         { label: campaign.title || "Detay" },
       ]}
       actions={
