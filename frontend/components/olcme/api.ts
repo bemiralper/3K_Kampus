@@ -266,7 +266,7 @@ export const answerKeyApi = {
     ),
 
   /** Tekil soru güncelle */
-  updateItem: (examId: number, akId: number, data: { item_id: number; correct_answer?: string; outcome_id?: number | null; is_cancelled?: boolean; imported_outcome_text?: string }) =>
+  updateItem: (examId: number, akId: number, data: { item_id: number; correct_answer?: string; outcome_id?: number | null; sub_outcome_id?: number | null; is_cancelled?: boolean; imported_outcome_text?: string }) =>
     request<AnswerKeyItem>(
       `${BASE}/${examId}/answer-keys/${akId}/update-item/`,
       { method: 'PATCH', body: JSON.stringify(data) },
@@ -277,7 +277,7 @@ export const answerKeyApi = {
     request<SubjectItem[]>(`${BASE}/${examId}/answer-keys/outcomes/`),
 
   /** Toplu satır güncelle */
-  bulkUpdateItems: (examId: number, akId: number, items: { item_id: number; outcome_id?: number | null; imported_outcome_text?: string }[]) =>
+  bulkUpdateItems: (examId: number, akId: number, items: { item_id: number; outcome_id?: number | null; sub_outcome_id?: number | null; imported_outcome_text?: string }[]) =>
     request<{ updated: number }>(
       `${BASE}/${examId}/answer-keys/${akId}/bulk-update-items/`,
       { method: 'PATCH', body: JSON.stringify({ items }) },
@@ -296,6 +296,7 @@ export const answerKeyApi = {
         section_name: string;
         input_text: string;
         outcome_id: number | null;
+        sub_outcome_id?: number | null;
         outcome_code: string | null;
         outcome_text: string | null;
         topic_name: string | null;

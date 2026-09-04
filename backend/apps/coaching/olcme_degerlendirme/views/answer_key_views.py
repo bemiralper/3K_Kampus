@@ -77,6 +77,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             .prefetch_related(
                 'items__section',
                 'items__outcome',
+                'items__sub_outcome',
             )
             .order_by('booklet')
         )
@@ -143,6 +144,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                         correct_answer=row['correct_answer'],
                         is_cancelled=row.get('is_cancelled', False),
                         outcome_id=row.get('outcome_id'),
+                        sub_outcome_id=row.get('sub_outcome_id'),
                         imported_outcome_text=row.get('imported_outcome_text', ''),
                         b_question_number=b_q,
                     )
@@ -157,6 +159,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                             'correct_answer': row['correct_answer'],
                             'is_cancelled': row.get('is_cancelled', False),
                             'outcome_id': row.get('outcome_id'),
+                            'sub_outcome_id': row.get('sub_outcome_id'),
                             'original_question_number': q_num,
                             'section': section,
                         })
@@ -184,6 +187,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                             correct_answer=brow['correct_answer'],
                             is_cancelled=brow['is_cancelled'],
                             outcome_id=brow['outcome_id'],
+                            sub_outcome_id=brow.get('sub_outcome_id'),
                         )
         except Exception as e:
             logger.exception('bulk_import transaction error')
@@ -289,6 +293,16 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             item.correct_answer = request.data['correct_answer']
         if 'outcome_id' in request.data:
             item.outcome_id = request.data['outcome_id']
+            if request.data['outcome_id'] is None and 'sub_outcome_id' not in request.data:
+                item.sub_outcome_id = None
+        if 'sub_outcome_id' in request.data:
+            item.sub_outcome_id = request.data['sub_outcome_id']
+            if item.sub_outcome_id:
+                try:
+                    sub = SubOutcome.objects.get(pk=item.sub_outcome_id)
+                    item.outcome_id = sub.outcome_id
+                except SubOutcome.DoesNotExist:
+                    pass
         if 'is_cancelled' in request.data:
             item.is_cancelled = request.data['is_cancelled']
         if 'imported_outcome_text' in request.data:
@@ -317,6 +331,16 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     continue
                 if 'outcome_id' in row:
                     item.outcome_id = row['outcome_id']
+                    if row['outcome_id'] is None and 'sub_outcome_id' not in row:
+                        item.sub_outcome_id = None
+                if 'sub_outcome_id' in row:
+                    item.sub_outcome_id = row['sub_outcome_id']
+                    if item.sub_outcome_id:
+                        try:
+                            sub = SubOutcome.objects.get(pk=item.sub_outcome_id)
+                            item.outcome_id = sub.outcome_id
+                        except SubOutcome.DoesNotExist:
+                            pass
                 if 'imported_outcome_text' in row:
                     item.imported_outcome_text = row['imported_outcome_text'] or ''
                 item.save()
@@ -350,6 +374,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     'section_name': item.section.name if item.section else '',
                     'input_text': text,
                     'outcome_id': None,
+                    'sub_outcome_id': None,
                     'outcome_code': None,
                     'outcome_text': None,
                     'topic_name': None,
@@ -364,10 +389,12 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                 match = _match_single_text(text, subject) if subject else None
                 if match:
                     item.outcome_id = match['outcome_id']
+                    item.sub_outcome_id = match.get('sub_outcome_id')
                     item.imported_outcome_text = text
-                    item.save(update_fields=['outcome_id', 'imported_outcome_text'])
+                    item.save(update_fields=['outcome_id', 'sub_outcome_id', 'imported_outcome_text'])
                     row.update({
                         'outcome_id': match['outcome_id'],
+                        'sub_outcome_id': match.get('sub_outcome_id'),
                         'outcome_code': match.get('outcome_code'),
                         'outcome_text': match.get('outcome_text'),
                         'topic_name': match.get('topic_name'),
@@ -389,10 +416,12 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                         order=next_order,
                     )
                     item.outcome_id = outcome.id
+                    item.sub_outcome_id = None
                     item.imported_outcome_text = text
-                    item.save(update_fields=['outcome_id', 'imported_outcome_text'])
+                    item.save(update_fields=['outcome_id', 'sub_outcome_id', 'imported_outcome_text'])
                     row.update({
                         'outcome_id': outcome.id,
+                        'sub_outcome_id': None,
                         'outcome_code': outcome.code,
                         'outcome_text': outcome.text,
                         'topic_name': topic.name,

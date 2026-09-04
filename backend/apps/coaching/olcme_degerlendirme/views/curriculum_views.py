@@ -947,21 +947,30 @@ def _partial_keyword_score(input_keywords: set, target_keywords: set) -> float:
     return matches / max(len(input_keywords), len(target_keywords))
 
 
+_DOTTED_CODE_RE = re.compile(r'^\d+(?:\.\d+)+$')
+
+
+def _is_dotted_code(text: str) -> bool:
+    """MEB tarzı kod mu? örn. 10.3.1, 10.3.1.3"""
+    return bool(_DOTTED_CODE_RE.match((text or '').strip()))
+
+
 def _match_single_text(query: str, subject: Subject):
     """
     Tek bir metin girdisini Subject'in tüm konu/kazanım/alt kazanımlarıyla eşleştir.
     
     Arama sırası:
-      1. Outcome code ile tam eşleşme (en yüksek öncelik)
+      1. Outcome / SubOutcome code ile tam eşleşme (en yüksek öncelik)
       2. Alt kazanım text ile eşleşme
       3. Kazanım text ile eşleşme
       4. Konu başlığı ile eşleşme → konunun son kazanımını ata
     
     Birden fazla eşleşme → en yüksek skorlu, eşit skorda en son (order) kazanım.
+    Noktalı kod girilince (10.3.1.3) üst kod (10.3.1) prefix olarak eşlenmez.
     
-    Returns: dict { outcome_id, outcome_code, outcome_text, topic_name, match_score, match_type }
+    Returns: dict { outcome_id, sub_outcome_id, outcome_code, outcome_text, topic_name, match_score, match_type }
     """
-    query_stripped = query.strip()
+    query_stripped = query.strip().rstrip('.')
     if not query_stripped:
         return None
 
@@ -969,10 +978,11 @@ def _match_single_text(query: str, subject: Subject):
     query_norm = _normalize_turkish(query_stripped)
     query_kw = _extract_keywords(query_stripped)
     query_stems = _extract_stems(query_stripped)
+    query_is_code = _is_dotted_code(query_stripped)
 
     topics = Topic.objects.filter(subject=subject).order_by('order')
     
-    candidates = []  # [(score, order_key, outcome, match_type)]
+    candidates = []  # [(score, order_key, outcome, match_type, sub_or_none)]
     
     for topic in topics:
         topic_norm = _normalize_turkish(topic.name)
@@ -1016,19 +1026,20 @@ def _match_single_text(query: str, subject: Subject):
                 overlap = min(len(query_norm), len(topic_norm)) / max(len(query_norm), len(topic_norm))
                 topic_score = max(topic_score, int(overlap * 80))
         
-        if topic_score >= 30 and outcomes.exists():
+        if topic_score >= 30 and outcomes.exists() and not query_is_code:
             # Konu eşleşmesi → konunun SON kazanımını ata
             last_outcome = outcomes.last()
             candidates.append((
                 topic_score,
-                (topic.order, last_outcome.order),
+                (topic.order, last_outcome.order, 0),
                 last_outcome,
                 'topic',
+                None,
             ))
         
         # ── 2. Kazanım eşleşmesi ──
         for outcome in outcomes:
-            outcome_code_lower = outcome.code.lower()
+            outcome_code_lower = (outcome.code or '').lower()
             outcome_norm = _normalize_turkish(outcome.text)
             outcome_kw = _extract_keywords(outcome.text)
             
@@ -1036,16 +1047,21 @@ def _match_single_text(query: str, subject: Subject):
             match_type = 'outcome'
             
             # Code tam eşleşme
-            if query_lower == outcome_code_lower:
+            if outcome_code_lower and query_lower == outcome_code_lower:
                 out_score = 100
-            elif query_lower.replace('.', '') == outcome_code_lower.replace('.', ''):
+            elif outcome_code_lower and query_lower.replace('.', '') == outcome_code_lower.replace('.', ''):
                 out_score = 98
+            # Noktalı kod girildiyse üst kod prefix/substring ile eşlenmesin
+            elif query_is_code:
+                out_score = 0
             # Text tam eşleşme (normalize)
             elif query_norm == outcome_norm:
                 out_score = 95
             else:
-                # Code kısmi eşleşme
-                if outcome_code_lower in query_lower or query_lower in outcome_code_lower:
+                # Code kısmi eşleşme (yalnızca serbest metin)
+                if outcome_code_lower and (
+                    outcome_code_lower in query_lower or query_lower in outcome_code_lower
+                ):
                     out_score = max(out_score, 75)
                 
                 # Kelime bazlı eşleşme (tam + kök)
@@ -1076,25 +1092,28 @@ def _match_single_text(query: str, subject: Subject):
             if out_score >= 30:
                 candidates.append((
                     out_score,
-                    (topic.order, outcome.order),
+                    (topic.order, outcome.order, 0),
                     outcome,
                     match_type,
+                    None,
                 ))
             
             # ── 3. Alt kazanım eşleşmesi ──
             sub_outcomes = SubOutcome.objects.filter(outcome=outcome).order_by('order')
             for sub in sub_outcomes:
-                sub_code_lower = sub.code.lower()
+                sub_code_lower = (sub.code or '').lower()
                 sub_norm = _normalize_turkish(sub.text)
                 sub_kw = _extract_keywords(sub.text)
                 
                 sub_score = 0
                 
                 # Code tam eşleşme
-                if query_lower == sub_code_lower:
+                if sub_code_lower and query_lower == sub_code_lower:
                     sub_score = 100
-                elif query_lower.replace('.', '') == sub_code_lower.replace('.', ''):
+                elif sub_code_lower and query_lower.replace('.', '') == sub_code_lower.replace('.', ''):
                     sub_score = 98
+                elif query_is_code:
+                    sub_score = 0
                 # Text tam eşleşme
                 elif query_norm == sub_norm:
                     sub_score = 95
@@ -1125,12 +1144,12 @@ def _match_single_text(query: str, subject: Subject):
                         sub_score = max(sub_score, int(overlap * 80))
                 
                 if sub_score >= 30:
-                    # Alt kazanım eşleşmesi → üst outcome'a ata
                     candidates.append((
                         sub_score,
-                        (topic.order, outcome.order),
+                        (topic.order, outcome.order, sub.order),
                         outcome,
                         'sub_outcome',
+                        sub,
                     ))
     
     if not candidates:
@@ -1144,7 +1163,7 @@ def _match_single_text(query: str, subject: Subject):
         key=lambda c: (c[0], _type_priority.get(c[3], 0), c[1]),
         reverse=True,
     )
-    best_score, _, best_outcome, match_type = candidates[0]
+    best_score, _, best_outcome, match_type, best_sub = candidates[0]
     
     # Konu adını bul
     topic_name = ''
@@ -1155,8 +1174,9 @@ def _match_single_text(query: str, subject: Subject):
     
     return {
         'outcome_id': best_outcome.id,
-        'outcome_code': best_outcome.code,
-        'outcome_text': best_outcome.text,
+        'sub_outcome_id': best_sub.id if best_sub is not None else None,
+        'outcome_code': (best_sub.code if best_sub is not None else best_outcome.code) or '',
+        'outcome_text': (best_sub.text if best_sub is not None else best_outcome.text) or '',
         'topic_name': topic_name,
         'match_score': best_score,
         'match_type': match_type,  # 'topic' | 'outcome' | 'sub_outcome'
@@ -1212,6 +1232,7 @@ def match_outcomes(request, subject_pk):
             results.append({
                 'input_text': text_str,
                 'outcome_id': None,
+                'sub_outcome_id': None,
                 'outcome_code': None,
                 'outcome_text': None,
                 'topic_name': None,
@@ -1230,6 +1251,7 @@ def match_outcomes(request, subject_pk):
             results.append({
                 'input_text': text_str,
                 'outcome_id': None,
+                'sub_outcome_id': None,
                 'outcome_code': None,
                 'outcome_text': None,
                 'topic_name': None,
