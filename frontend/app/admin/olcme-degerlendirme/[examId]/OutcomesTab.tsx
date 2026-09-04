@@ -728,6 +728,7 @@ export default function OutcomesTab({ exam }: Props) {
                 {sg.subject && (
                   <span className={s.otSubjectBadge}>
                     🎯 {sg.subject.name}
+                    {sg.section.name === 'Felsefe (Seçmeli)' ? ' — aynı müfredat' : ''}
                   </span>
                 )}
                 <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)' }}>

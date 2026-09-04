@@ -955,6 +955,39 @@ def _is_dotted_code(text: str) -> bool:
     return bool(_DOTTED_CODE_RE.match((text or '').strip()))
 
 
+def _topic_display_name(name: str) -> str:
+    """'SHG21 · SAYILAR' / '9. sınıf · KÜMELER' → asıl konu başlığı."""
+    raw = (name or '').strip()
+    parts = re.split(r'\s*[·•|:]\s*', raw, maxsplit=1)
+    return (parts[-1] if parts else raw).strip()
+
+
+def _topic_affinity(query_norm: str, query_kw: set, query_stems: set, topic_name: str) -> int:
+    """
+    Aynı kazanım adı birden fazla konuda durunca (SHG21 vs 9. sınıf)
+    konu başlığına yakın olanı öne al.
+    """
+    display = _topic_display_name(topic_name)
+    topic_norm = _normalize_turkish(display)
+    if not query_norm or not topic_norm:
+        return 0
+    if query_norm == topic_norm:
+        return 40
+    if query_norm in topic_norm or topic_norm in query_norm:
+        return 25
+    topic_kw = _extract_keywords(display)
+    if query_kw and topic_kw:
+        common = query_kw & topic_kw
+        if common:
+            return 10 + int(20 * len(common) / max(len(query_kw), len(topic_kw)))
+    topic_stems = _extract_stems(display)
+    if query_stems and topic_stems:
+        common = query_stems & topic_stems
+        if common:
+            return 8 + int(15 * len(common) / max(len(query_stems), len(topic_stems)))
+    return 0
+
+
 def _match_single_text(query: str, subject: Subject):
     """
     Tek bir metin girdisini Subject'in tüm konu/kazanım/alt kazanımlarıyla eşleştir.
@@ -965,8 +998,9 @@ def _match_single_text(query: str, subject: Subject):
       3. Kazanım text ile eşleşme
       4. Konu başlığı ile eşleşme → konunun son kazanımını ata
     
-    Birden fazla eşleşme → en yüksek skorlu, eşit skorda en son (order) kazanım.
-    Noktalı kod girilince (10.3.1.3) üst kod (10.3.1) prefix olarak eşlenmez.
+    Birden fazla eşleşme → en yüksek skorlu; isim eşleşmesinde konu yakınlığı
+    skora eklenir. Noktalı kod girilince (10.3.1.3) konu bonusu uygulanmaz
+    ve üst kod (10.3.1) prefix olarak eşlenmez.
     
     Returns: dict { outcome_id, sub_outcome_id, outcome_code, outcome_text, topic_name, match_score, match_type }
     """
@@ -1090,6 +1124,10 @@ def _match_single_text(query: str, subject: Subject):
                     out_score = max(out_score, int(overlap * 80))
             
             if out_score >= 30:
+                if not query_is_code:
+                    out_score += _topic_affinity(
+                        query_norm, query_kw, query_stems, topic.name,
+                    )
                 candidates.append((
                     out_score,
                     (topic.order, outcome.order, 0),
@@ -1144,6 +1182,10 @@ def _match_single_text(query: str, subject: Subject):
                         sub_score = max(sub_score, int(overlap * 80))
                 
                 if sub_score >= 30:
+                    if not query_is_code:
+                        sub_score += _topic_affinity(
+                            query_norm, query_kw, query_stems, topic.name,
+                        )
                     candidates.append((
                         sub_score,
                         (topic.order, outcome.order, sub.order),
@@ -1178,7 +1220,7 @@ def _match_single_text(query: str, subject: Subject):
         'outcome_code': (best_sub.code if best_sub is not None else best_outcome.code) or '',
         'outcome_text': (best_sub.text if best_sub is not None else best_outcome.text) or '',
         'topic_name': topic_name,
-        'match_score': best_score,
+        'match_score': min(best_score, 100),
         'match_type': match_type,  # 'topic' | 'outcome' | 'sub_outcome'
     }
 

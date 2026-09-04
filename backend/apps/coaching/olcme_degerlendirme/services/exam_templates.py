@@ -275,6 +275,70 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
 }
 
 
+_SUBJECT_CODE_SUFFIXES = ('_TYT', '_AYT', '_LGS')
+
+
+def _resolve_curriculum_subject(code: str, display_name: str, exam_type_filter: str):
+    """
+    Müfredat dersini bul. Şablon kodu (FELSEFE_TYT) ile canlıdaki kısa kod
+    (FELSEFE) veya aynı isimli ders varsa onu kullan; yeni boş ders açma.
+    """
+    from ..models.curriculum import Subject
+
+    subject = Subject.objects.filter(code=code).first()
+    if subject:
+        return subject
+
+    aliases = [
+        code[: -len(suffix)]
+        for suffix in _SUBJECT_CODE_SUFFIXES
+        if code.endswith(suffix)
+    ]
+    if aliases:
+        subject = Subject.objects.filter(code__in=aliases).first()
+        if subject:
+            return subject
+
+    subject = (
+        Subject.objects.filter(name__iexact=display_name).first()
+        or Subject.objects.filter(display_name__iexact=display_name)
+        .exclude(display_name='')
+        .first()
+    )
+    if subject:
+        return subject
+
+    subject, _created = Subject.objects.get_or_create(
+        code=code,
+        defaults={
+            'name': display_name,
+            'display_name': display_name,
+            'exam_type_filter': exam_type_filter,
+        },
+    )
+    return subject
+
+
+def _felsefe_subject_for_exam(exam, sections: list):
+    """Felsefe (Seçmeli) ayrı ders değil; TYT Felsefe müfredatını paylaşır."""
+    for section in sections:
+        if section.name == 'Felsefe' and section.subject_id:
+            return section.subject
+
+    from ..models.exam import ExamSection
+
+    sibling = (
+        ExamSection.objects
+        .filter(exam=exam, name='Felsefe', subject__isnull=False)
+        .select_related('subject')
+        .first()
+    )
+    if sibling:
+        return sibling.subject
+
+    return _resolve_curriculum_subject('FELSEFE_TYT', 'Felsefe', 'YKS_TYT')
+
+
 def _auto_link_subjects(exam, sections: list) -> None:
     """
     Oluşturulan bölümlere müfredat derslerini (Subject) otomatik bağlar.
@@ -282,21 +346,28 @@ def _auto_link_subjects(exam, sections: list) -> None:
     Mantık:
     - Alt bölümler varsa → alt bölümlere bağla
     - Alt bölüm yoksa (LGS gibi) → ana bölümlere bağla
-    - Subject tablosunda eşleşen code varsa → onu kullan
+    - Subject tablosunda eşleşen code / isim varsa → onu kullan
+    - Felsefe (Seçmeli) her zaman Felsefe dersine bağlanır
     - Yoksa → otomatik oluştur (get_or_create)
     """
-    from ..models.curriculum import Subject
-
     subject_map = _SECTION_SUBJECT_MAP.get(exam.exam_type, {})
     if not subject_map:
         return
 
     for section in sections:
+        section_name = section.name
+
+        if section_name == OPTIONAL_PHILOSOPHY_NAME:
+            subject = _felsefe_subject_for_exam(exam, sections)
+            if section.subject_id != subject.id:
+                section.subject = subject
+                section.save(update_fields=['subject'])
+            continue
+
         # Zaten subject bağlıysa dokunma
         if section.subject_id:
             continue
 
-        section_name = section.name
         mapping = subject_map.get(section_name)
         if not mapping:
             continue
@@ -313,17 +384,9 @@ def _auto_link_subjects(exam, sections: list) -> None:
             # Bu ana bölümün alt bölümleri var → ana bölüme subject bağlama
             continue
 
-        # Subject bul veya oluştur
-        subject, _created = Subject.objects.get_or_create(
-            code=code,
-            defaults={
-                'name': display_name,
-                'display_name': display_name,
-                'exam_type_filter': exam_type_filter,
-            },
+        section.subject = _resolve_curriculum_subject(
+            code, display_name, exam_type_filter,
         )
-
-        section.subject = subject
         section.save(update_fields=['subject'])
 
 

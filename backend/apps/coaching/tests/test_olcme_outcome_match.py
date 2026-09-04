@@ -60,6 +60,62 @@ class SubOutcomeCodeMatchTest(TestCase):
         self.assertEqual(match['sub_outcome_id'], self.sub.id)
 
 
+class DuplicateOutcomeNamePrefersRelatedTopicTest(TestCase):
+    """Aynı isim iki konuda varsa konu başlığına yakın olan kazanım seçilmeli."""
+
+    def setUp(self):
+        self.subject = Subject.objects.create(code='MAT', name='Matematik')
+        self.shg = Topic.objects.create(
+            subject=self.subject, name='SHG21 · BÖLÜNEBİLME VE EBOB-EKOK', order=33,
+        )
+        self.meb = Topic.objects.create(
+            subject=self.subject, name='9. sınıf · DENKLEM VE EŞİTSİZLİKLER', order=79,
+        )
+        self.shg_out = Outcome.objects.create(
+            topic=self.shg, code='21.2.2', text='Bölünebilme Kuralları', order=1,
+        )
+        self.meb_out = Outcome.objects.create(
+            topic=self.meb, code='9.3.2', text='Bölünebilme Kuralları', order=1,
+        )
+        self.olasilik_shg = Topic.objects.create(
+            subject=self.subject, name='SHG21 · OLASILIK', order=42,
+        )
+        self.olasilik_meb = Topic.objects.create(
+            subject=self.subject, name='10. sınıf · SAYMA VE OLASILIK', order=88,
+        )
+        self.shg_olasilik = Outcome.objects.create(
+            topic=self.olasilik_shg, code='21.13.1',
+            text='Basit Olayların Olasılıkları', order=0,
+        )
+        self.meb_olasilik = Outcome.objects.create(
+            topic=self.olasilik_meb, code='10.1.2',
+            text='Basit Olayların Olasılıkları', order=0,
+        )
+
+    def test_bolunebilme_prefers_shg_topic_not_equations(self):
+        match = _match_single_text('Bölünebilme Kuralları', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['outcome_id'], self.shg_out.id)
+        self.assertEqual(match['outcome_code'], '21.2.2')
+
+    def test_olasilik_prefers_olasilik_topic(self):
+        match = _match_single_text('Basit Olayların Olasılıkları', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['outcome_id'], self.shg_olasilik.id)
+        self.assertEqual(match['outcome_code'], '21.13.1')
+
+    def test_dotted_code_still_picks_exact_outcome(self):
+        match = _match_single_text('9.3.2', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['outcome_id'], self.meb_out.id)
+        self.assertEqual(match['outcome_code'], '9.3.2')
+
+        match = _match_single_text('21.2.2', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['outcome_id'], self.shg_out.id)
+        self.assertEqual(match['outcome_code'], '21.2.2')
+
+
 class AnswerKeySubOutcomeDisplayTest(TestCase):
     def setUp(self):
         self.subject = Subject.objects.create(code='MAT', name='Matematik')
