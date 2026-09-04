@@ -22,6 +22,7 @@ from ..services.exam_templates import (
     create_sections_from_template,
     ensure_sub_sections,
     _auto_link_subjects,
+    sync_optional_philosophy_section,
 )
 from shared.context import get_secili_kurum_id, get_secili_egitim_yili_id
 from ..interfaces.sube_context import (
@@ -258,6 +259,18 @@ class ExamViewSet(viewsets.ModelViewSet):
             'data': ExamDetailSerializer(exam).data,
         })
 
+    @action(detail=True, methods=['post'], url_path='set_optional_philosophy')
+    def set_optional_philosophy(self, request, pk=None):
+        """TYT seçmeli felsefe bloğunu aç/kapat ve bölümleri senkronize et."""
+        exam = self.get_object()
+        include = request.data.get('include', True)
+        if isinstance(include, str):
+            include = include.lower() in ('1', 'true', 'yes', 'on')
+        exam.include_optional_philosophy = bool(include)
+        exam.save(update_fields=['include_optional_philosophy'])
+        sync_optional_philosophy_section(exam)
+        return Response(ExamDetailSerializer(exam).data)
+
     @action(detail=True, methods=['post'], url_path='link_subjects')
     def link_subjects_action(self, request, pk=None):
         """
@@ -266,6 +279,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         """
         exam = self.get_object()
         from ..models.exam import ExamSection
+        sync_optional_philosophy_section(exam)
         all_sections = list(ExamSection.objects.filter(exam=exam))
         _auto_link_subjects(exam, all_sections)
 
@@ -356,10 +370,12 @@ class ExamViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='templates')
     def templates(self, request):
         """Her sınav türü için şablon bilgisi (ana + alt bölümler dahil)."""
+        include_opt = request.query_params.get('include_optional_philosophy', 'true')
+        include_opt = str(include_opt).lower() in ('1', 'true', 'yes', 'on')
         data = {}
         for choice in Exam.ExamType.choices:
             key = choice[0]
-            sections = get_template_sections(key)
+            sections = get_template_sections(key, include_opt)
             sub_sections = get_template_sub_sections(key)
             data[key] = {
                 'label': choice[1],
@@ -569,6 +585,7 @@ class ExamViewSet(viewsets.ModelViewSet):
             puan_yili=original.puan_yili,
             booklet_type=original.booklet_type,
             booklet_auto_detect=original.booklet_auto_detect,
+            include_optional_philosophy=original.include_optional_philosophy,
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
             egitim_yili=original.egitim_yili,

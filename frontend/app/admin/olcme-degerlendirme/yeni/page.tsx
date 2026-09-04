@@ -55,7 +55,6 @@ export default function YeniSinavPage() {
 
   /* ── Veri yükleme ────────────────────────────────────────────────────────── */
   useEffect(() => {
-    examApi.templates().then(setTemplates).catch(() => {});
     examApi.siniflar().then(setSiniflar).catch(() => {});
     examApi.sinifSeviyeleri().then(setSinifSeviyeleri).catch(() => {});
     examApi.denemeHizmetleri().then(setDenemeHizmetleri).catch(() => {});
@@ -65,6 +64,10 @@ export default function YeniSinavPage() {
       setManagedYears(d.managed_years);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    examApi.templates(form.include_optional_philosophy).then(setTemplates).catch(() => {});
+  }, [form.include_optional_philosophy]);
 
   /* Sınav türü → süre otomatik */
   useEffect(() => {
@@ -540,6 +543,13 @@ export default function YeniSinavPage() {
                     onChange={e => setField('booklet_auto_detect', e.target.checked)} />
                   Kitapçık otomatik tespit
                 </label>
+                {(form.exam_type === 'YKS_TYT' || form.exam_type === 'DENEME') && (
+                  <label className={s.checkRow} style={{ marginTop: 10 }}>
+                    <input type="checkbox" checked={form.include_optional_philosophy}
+                      onChange={e => setField('include_optional_philosophy', e.target.checked)} />
+                    Felsefe (Seçmeli) dahil — 121–125
+                  </label>
+                )}
               </div>
             </div>
 

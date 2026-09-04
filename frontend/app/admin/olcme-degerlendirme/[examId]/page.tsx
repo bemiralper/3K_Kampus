@@ -442,6 +442,31 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   label="Puan yılı"
                   value={exam.puan_yili ? `${exam.puan_yili} YKS` : `Kurum varsayılanı (${kurumDefaultYear})`}
                 />
+                {(exam.exam_type === 'YKS_TYT' || exam.exam_type === 'DENEME') && (
+                  <div className={s.infoItem}>
+                    <span className={s.infoLabel}>Felsefe (Seçmeli)</span>
+                    <span className={s.infoValue}>
+                      <label className={s.checkRow} style={{ margin: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={exam.include_optional_philosophy !== false}
+                          onChange={async e => {
+                            const include = e.target.checked;
+                            if (!include && !confirm('Felsefe (Seçmeli) 121–125 soruları kaldırılsın mı?')) {
+                              e.target.checked = true;
+                              return;
+                            }
+                            try {
+                              const updated = await examApi.setOptionalPhilosophy(exam.id, include);
+                              onExamUpdate(updated);
+                            } catch { /* */ }
+                          }}
+                        />
+                        {exam.include_optional_philosophy !== false ? 'Dahil (121–125)' : 'Hariç'}
+                      </label>
+                    </span>
+                  </div>
+                )}
                 <InfoItem label="Sınav Tarihleri" value={sessionDateSummary(sessions)} />
                 <InfoItem label="Sınav Yayın Tarihi" value={fmtDateTime(exam.result_publish_date)} />
                 <InfoItem label="Cevap Anahtarı Yayın Tarihi" value={fmtDateTime(exam.answer_key_publish_date)} />
@@ -511,6 +536,21 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                     Kitapçık oto-algıla
                   </label>
                 </div>
+                {(exam.exam_type === 'YKS_TYT' || exam.exam_type === 'DENEME') && (
+                  <div className={s.formGroup}>
+                    <label style={{ visibility: 'hidden' }}>_</label>
+                    <label className={s.checkRow}>
+                      <input type="checkbox" checked={exam.include_optional_philosophy !== false}
+                        onChange={async e => {
+                          try {
+                            const updated = await examApi.setOptionalPhilosophy(exam.id, e.target.checked);
+                            onExamUpdate(updated);
+                          } catch { /* */ }
+                        }} />
+                      Felsefe (Seçmeli) dahil
+                    </label>
+                  </div>
+                )}
               </div>
             )}
           </div>

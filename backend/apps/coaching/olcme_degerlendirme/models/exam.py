@@ -111,6 +111,14 @@ class Exam(models.Model):
         blank=True,
         help_text='Boşsa kurum varsayılan puan yılı kullanılır.',
     )
+    include_optional_philosophy = models.BooleanField(
+        'Felsefe (Seçmeli)',
+        default=True,
+        help_text=(
+            'TYT’de Din Kültürü yerine / yanında gelen 5 soruluk seçmeli felsefe. '
+            'Varsayılan: dahil. Sözel puan hesaplamasında kullanılır.'
+        ),
+    )
 
     # ── KİTAPÇIK ─────────────────────────────────────────────────────────────
     booklet_type = models.CharField(

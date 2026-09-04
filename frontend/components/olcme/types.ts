@@ -116,6 +116,7 @@ export interface ExamDetail extends ExamListItem {
   per_section_penalty: boolean;
   score_coefficients: Record<string, unknown>;
   puan_yili: number | null;
+  include_optional_philosophy: boolean;
   booklet_type: string;
   booklet_type_display: string;
   booklet_auto_detect: boolean;
@@ -148,6 +149,7 @@ export interface ExamCreateForm {
   wrong_answer_count: string;
   per_section_penalty: boolean;
   puan_yili: number | null;
+  include_optional_philosophy: boolean;
   booklet_type: string;
   booklet_auto_detect: boolean;
   apply_template: boolean;
@@ -167,6 +169,7 @@ export const EXAM_CREATE_FORM_DEFAULT: ExamCreateForm = {
   wrong_answer_count:   '4',
   per_section_penalty:  true,
   puan_yili:            null,
+  include_optional_philosophy: true,
   booklet_type:         'NONE',
   booklet_auto_detect:  true,
   apply_template:       true,

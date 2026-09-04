@@ -6,6 +6,7 @@ from ..models import Exam, ExamSection, ExamSessionModel
 from ..services.exam_templates import (
     create_sections_from_template,
     get_default_duration,
+    sync_optional_philosophy_section,
 )
 from ..models.scoring_settings import MANAGED_PUAN_YILLARI
 
@@ -185,7 +186,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             'exam_date', 'duration_minutes',
             'result_publish_date', 'answer_key_publish_date',
             'wrong_answer_count', 'per_section_penalty', 'score_coefficients',
-            'puan_yili',
+            'puan_yili', 'include_optional_philosophy',
             'booklet_type', 'booklet_type_display', 'booklet_auto_detect',
             'linked_tyt_exam', 'linked_tyt_exam_name',
             'section_count', 'total_questions', 'session_count',
@@ -216,7 +217,7 @@ class ExamCreateSerializer(serializers.ModelSerializer):
             'sinif_ids',
             'deneme_hizmeti', 'deneme_paketi',
             'wrong_answer_count', 'per_section_penalty',
-            'puan_yili',
+            'puan_yili', 'include_optional_philosophy',
             'booklet_type', 'booklet_auto_detect',
             'apply_template',
         ]
@@ -282,7 +283,7 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
             'exam_date', 'duration_minutes',
             'result_publish_date', 'answer_key_publish_date',
             'wrong_answer_count', 'per_section_penalty', 'score_coefficients',
-            'puan_yili',
+            'puan_yili', 'include_optional_philosophy',
             'booklet_type', 'booklet_auto_detect',
             'linked_tyt_exam', 'is_active', 'is_template',
             'sinif_ids',
@@ -310,7 +311,10 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         sinif_ids = validated_data.pop('sinif_ids', None)
+        philosophy_changed = 'include_optional_philosophy' in validated_data
         instance = super().update(instance, validated_data)
         if sinif_ids is not None:
             instance.siniflar.set(sinif_ids)
+        if philosophy_changed:
+            sync_optional_philosophy_section(instance)
         return instance

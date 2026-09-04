@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { examApi, answerKeyApi, curriculumApi } from '../../../../components/olcme/api';
 import type {
   ExamDetail,
@@ -145,8 +145,13 @@ export default function OutcomesTab({ exam }: Props) {
 
   // Toplu kazanım yapıştırma modal
   const [bulkOpen, setBulkOpen]             = useState(false);
-  const [bulkSectionId, setBulkSectionId]   = useState<number | null>(null);
+  const [bulkSectionId, setBulkSectionId]   = useState<number | 'all' | null>(null);
   const [bulkText, setBulkText]             = useState('');
+  const [bulkCreateMissing, setBulkCreateMissing] = useState(true);
+  const [bulkProgress, setBulkProgress]     = useState<{ pct: number; label: string } | null>(null);
+  const [allSubjects, setAllSubjects]       = useState<SubjectItem[]>([]);
+  const [linkingSectionId, setLinkingSectionId] = useState<number | null>(null);
+  const autoLinkedRef = useRef(false);
 
   // Filtre
   const [filterSection, setFilterSection] = useState<number | null>(null);
@@ -156,6 +161,13 @@ export default function OutcomesTab({ exam }: Props) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      if (!autoLinkedRef.current) {
+        autoLinkedRef.current = true;
+        try { await examApi.linkSubjects(exam.id); } catch { /* */ }
+      }
+      try {
+        setAllSubjects(await curriculumApi.listSubjects());
+      } catch { /* */ }
       // 0) Güncel exam verisini çek (yeni oluşturulan alt bölümleri de görmek için)
       const freshExam = await examApi.detail(exam.id);
       const allSections: ExamSection[] = freshExam.sections ?? [];
@@ -338,49 +350,93 @@ export default function OutcomesTab({ exam }: Props) {
     setPickerOpen(true);
   }, [rows, subSections]);
 
+  const handleLinkSubject = useCallback(async (sectionId: number, subjectId: number) => {
+    setLinkingSectionId(sectionId);
+    try {
+      await curriculumApi.linkSection(subjectId, sectionId);
+      await fetchData();
+      setMsg('✅ Müfredat dersi bağlandı.');
+    } catch (err) {
+      setMsg('❌ Ders bağlanamadı: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+    } finally {
+      setLinkingSectionId(null);
+    }
+  }, [fetchData]);
+
   /* ── Toplu kazanım yapıştır (Backend Akıllı Eşleştirme) ─── */
   const handleBulkPaste = useCallback(async () => {
     if (!bulkSectionId || !bulkText.trim()) return;
 
-    const ssInfo = subSections.find(ss => ss.section.id === bulkSectionId);
-    if (!ssInfo || !ssInfo.subject) {
-      setMsg('⚠️ Bu bölüme ders bağlanmamış. Önce ders bağlayın.');
-      return;
-    }
-
     const lines = bulkText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const sectionRows = rows
-      .map((r, idx) => ({ row: r, idx }))
-      .filter(item => item.row.section_id === bulkSectionId);
-
-    if (sectionRows.length === 0) {
-      setMsg('⚠️ Bu bölümde soru bulunamadı.');
+    const primary = answerKeys.find(k => k.is_primary) ?? answerKeys[0];
+    if (!primary) {
+      setMsg('⚠️ Cevap anahtarı bulunamadı.');
       return;
     }
 
     setSaving(true);
-    setMsg('🔄 Backend eşleştirme yapılıyor...');
 
     try {
-      // Backend'e toplu eşleştirme isteği gönder
+      if (bulkSectionId === 'all') {
+        setBulkProgress({ pct: 15, label: 'Soru sırasına göre dağıtılıyor…' });
+        const ordered = [...rows].sort((a, b) => a.question_number - b.question_number);
+        const aligned = ordered.map((_, i) => lines[i] ?? '');
+        setBulkProgress({ pct: 45, label: `${aligned.length} kazanım eşleştiriliyor…` });
+        const result = await answerKeyApi.bulkAssignOutcomes(
+          exam.id, primary.id, aligned, bulkCreateMissing,
+        );
+        setBulkProgress({ pct: 90, label: 'Sonuçlar uygulanıyor…' });
+        await fetchData();
+        setBulkProgress({ pct: 100, label: 'Tamamlandı' });
+        setSaving(false);
+        setBulkOpen(false);
+        setBulkText('');
+        setBulkProgress(null);
+        const leftover = Math.max(0, lines.length - result.total);
+        const parts = [
+          result.matched ? `${result.matched} eşleşti` : '',
+          result.created ? `${result.created} yeni eklendi` : '',
+        ].filter(Boolean).join(', ');
+        setMsg(
+          `✅ ${result.total} soruya kazanım işlendi${parts ? ` (${parts})` : ''}`
+          + (leftover ? ` · ⚠️ ${leftover} satır fazla, yok sayıldı.` : '.'),
+        );
+        return;
+      }
+
+      const ssInfo = subSections.find(ss => ss.section.id === bulkSectionId);
+      if (!ssInfo || !ssInfo.subject) {
+        setSaving(false);
+        setMsg('⚠️ Bu bölüme ders bağlanmamış. Önce üstteki listeden müfredat dersi bağlayın.');
+        return;
+      }
+
+      const sectionRows = rows
+        .map((r, idx) => ({ row: r, idx }))
+        .filter(item => item.row.section_id === bulkSectionId);
+
+      if (sectionRows.length === 0) {
+        setSaving(false);
+        setMsg('⚠️ Bu bölümde soru bulunamadı.');
+        return;
+      }
+
+      setBulkProgress({ pct: 20, label: 'Eşleştirme yapılıyor…' });
       const { results } = await curriculumApi.matchOutcomes(ssInfo.subject.id, lines);
+      setBulkProgress({ pct: 60, label: 'Kazanımlar kaydediliyor…' });
 
       let matched = 0;
       let unmatched = 0;
       const newRows = [...rows];
-      const primary = answerKeys.find(k => k.is_primary) ?? answerKeys[0];
+      const updates: { item_id: number; outcome_id?: number | null; imported_outcome_text?: string }[] = [];
 
-      // Her satır için sonuçları uygula
       for (let i = 0; i < Math.min(results.length, sectionRows.length); i++) {
         const result: MatchResult = results[i];
         const { row, idx } = sectionRows[i];
-
-        // Orijinal yapıştırılan metni her zaman kaydet
         newRows[idx] = {
           ...newRows[idx],
           imported_outcome_text: result.input_text,
         };
-
         if (result.outcome_id) {
           newRows[idx] = {
             ...newRows[idx],
@@ -391,35 +447,29 @@ export default function OutcomesTab({ exam }: Props) {
             match_score: result.match_score,
           };
           matched++;
-
-          // API'ye kaydet
-          if (primary) {
-            try {
-              await answerKeyApi.updateItem(exam.id, primary.id, {
-                item_id: row.item_id,
-                outcome_id: result.outcome_id,
-                imported_outcome_text: result.input_text,
-              });
-            } catch { /* devam */ }
-          }
+          updates.push({
+            item_id: row.item_id,
+            outcome_id: result.outcome_id,
+            imported_outcome_text: result.input_text,
+          });
         } else {
           unmatched++;
-          // Eşleşmese de orijinal metni API'ye kaydet
-          if (primary) {
-            try {
-              await answerKeyApi.updateItem(exam.id, primary.id, {
-                item_id: row.item_id,
-                imported_outcome_text: result.input_text,
-              });
-            } catch { /* devam */ }
-          }
+          updates.push({
+            item_id: row.item_id,
+            imported_outcome_text: result.input_text,
+          });
         }
       }
 
+      if (updates.length) {
+        await answerKeyApi.bulkUpdateItems(exam.id, primary.id, updates);
+      }
       setRows(newRows);
+      setBulkProgress({ pct: 100, label: 'Tamamlandı' });
       setSaving(false);
       setBulkOpen(false);
       setBulkText('');
+      setBulkProgress(null);
 
       const matchTypes = results.filter(r => r.outcome_id).reduce((acc, r) => {
         const type = r.match_type === 'topic' ? '📂 Konu' : r.match_type === 'sub_outcome' ? '📎 Alt Kazanım' : '📋 Kazanım';
@@ -436,9 +486,10 @@ export default function OutcomesTab({ exam }: Props) {
     } catch (err) {
       console.error('Bulk match error:', err);
       setSaving(false);
+      setBulkProgress(null);
       setMsg('❌ Eşleştirme sırasında hata oluştu: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
     }
-  }, [bulkSectionId, bulkText, subSections, rows, answerKeys, exam.id]);
+  }, [bulkSectionId, bulkText, bulkCreateMissing, subSections, rows, answerKeys, exam.id, fetchData]);
 
   /* ── Tüm kazanımları temizle ─── */
   const handleClearAll = useCallback(async () => {
@@ -600,8 +651,9 @@ export default function OutcomesTab({ exam }: Props) {
               <button
                 className="btn-modern btn-primary"
                 onClick={() => {
-                  setBulkSectionId(sectionGroups[0]?.section.id ?? null);
+                  setBulkSectionId('all');
                   setBulkText('');
+                  setBulkProgress(null);
                   setBulkOpen(true);
                 }}
                 style={{ padding: '7px 14px', fontSize: 12 }}
@@ -684,10 +736,32 @@ export default function OutcomesTab({ exam }: Props) {
             {!sg.subject && (
               <div style={{
                 padding: '12px 22px', background: '#fffbeb', borderBottom: '1px solid #fde68a',
-                fontSize: 12, color: '#92400e',
+                fontSize: 12, color: '#92400e', display: 'flex', flexWrap: 'wrap',
+                gap: 10, alignItems: 'center',
               }}>
-                ⚠️ Bu alt derse henüz bir müfredat dersi bağlanmamış.
-                Kazanım Yönetimi sayfasından ders bağlantısı yapabilirsiniz.
+                <span>
+                  ⚠️ Bu alt derse henüz bir müfredat dersi bağlanmamış.
+                  Aşağıdan {sg.section.name} için kazanım ağacındaki dersi seçin.
+                </span>
+                <select
+                  disabled={linkingSectionId === sg.section.id}
+                  defaultValue=""
+                  onChange={e => {
+                    const id = Number(e.target.value);
+                    if (id) handleLinkSubject(sg.section.id, id);
+                  }}
+                  style={{
+                    padding: '6px 10px', fontSize: 12, borderRadius: 8,
+                    border: '1px solid #f59e0b', background: '#fff', minWidth: 200,
+                  }}
+                >
+                  <option value="">Müfredat dersi seç…</option>
+                  {allSubjects.map(sub => (
+                    <option key={sub.id} value={sub.id}>
+                      {sub.display_name || sub.name} {sub.exam_type_filter && sub.exam_type_filter !== 'ALL' ? `(${sub.exam_type_filter.replace('YKS_', '')})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 
@@ -848,15 +922,16 @@ export default function OutcomesTab({ exam }: Props) {
             </div>
             <div className={s.outcomeModalBody}>
               <div className={s.formGroup} style={{ marginBottom: 14 }}>
-                <label>Alt Ders / Bölüm</label>
+                <label>Kapsam</label>
                 <select
                   value={bulkSectionId ?? ''}
-                  onChange={e => setBulkSectionId(Number(e.target.value))}
+                  onChange={e => setBulkSectionId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                   style={{
                     padding: '9px 12px', fontSize: 13, borderRadius: 8,
                     border: '1px solid var(--border)', width: '100%',
                   }}
                 >
+                  <option value="all">Tüm Sınav — soru sırasına göre dağıt ({rows.length} soru)</option>
                   {sectionGroups.map(sg => (
                     <option key={sg.section.id} value={sg.section.id}>
                       {sg.section.name} ({rows.filter(r => r.section_id === sg.section.id).length} soru)
@@ -864,6 +939,21 @@ export default function OutcomesTab({ exam }: Props) {
                   ))}
                 </select>
               </div>
+
+              {bulkSectionId === 'all' && (
+                <div style={{
+                  padding: '10px 12px', borderRadius: 8, background: '#eff6ff',
+                  color: '#1e40af', fontSize: 12, marginBottom: 12, lineHeight: 1.55,
+                }}>
+                  İlk satır 1. soruya gider. Bölüm aralıklarına göre otomatik dağılır
+                  {sectionGroups.map(sg => (
+                    <div key={sg.section.id}>
+                      • Soru {sg.section.question_start}–{sg.section.question_end}: {sg.section.name}
+                      {sg.subject ? ` → ${sg.subject.name}` : ' (ders bağlı değil)'}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 10px' }}>
                 Her satıra bir kazanım kodu veya açıklaması yapıştırın. Soru numarası sırasıyla eşleştirilecektir.
@@ -887,11 +977,11 @@ export default function OutcomesTab({ exam }: Props) {
                 autoFocus
               />
 
-              {bulkSectionId && (() => {
+              {bulkSectionId && bulkSectionId !== 'all' && (() => {
                 const ssInfo = subSections.find(ss => ss.section.id === bulkSectionId);
                 if (!ssInfo?.subject) return (
                   <div style={{ padding: '8px 12px', borderRadius: 8, background: '#fef2f2', color: '#991b1b', fontSize: 12, marginTop: 8 }}>
-                    ⚠️ Bu bölüme henüz müfredat dersi bağlanmamış. Eşleştirme yapılamaz.
+                    ⚠️ Bu bölüme henüz müfredat dersi bağlanmamış. Önce ders bağlayın.
                   </div>
                 );
                 return (
@@ -901,9 +991,30 @@ export default function OutcomesTab({ exam }: Props) {
                 );
               })()}
 
+              <label className={s.checkRow} style={{ marginTop: 10, fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={bulkCreateMissing}
+                  onChange={e => setBulkCreateMissing(e.target.checked)}
+                />
+                Eşleşmeyenleri müfredata yeni kazanım olarak ekle
+              </label>
+
+              {bulkProgress && (
+                <div className={s.bulkProgressWrap}>
+                  <div className={s.bulkProgressMeta}>
+                    <span>{bulkProgress.label}</span>
+                    <span>%{bulkProgress.pct}</span>
+                  </div>
+                  <div className={s.bulkProgressTrack}>
+                    <div className={s.bulkProgressFill} style={{ width: `${bulkProgress.pct}%` }} />
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
                 <button className="btn-modern btn-secondary" onClick={() => setBulkOpen(false)}
-                  style={{ padding: '8px 18px', fontSize: 13 }}>
+                  style={{ padding: '8px 18px', fontSize: 13 }} disabled={saving}>
                   İptal
                 </button>
                 <button
@@ -912,7 +1023,7 @@ export default function OutcomesTab({ exam }: Props) {
                   disabled={saving || !bulkText.trim()}
                   style={{ padding: '8px 18px', fontSize: 13 }}
                 >
-                  {saving ? '⏳ Eşleştiriliyor…' : '🎯 Eşleştir ve Kaydet'}
+                  {saving ? '⏳ Yükleniyor…' : '🎯 Eşleştir ve Kaydet'}
                 </button>
               </div>
             </div>

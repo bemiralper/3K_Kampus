@@ -157,6 +157,20 @@ export const examApi = {
       { method: 'POST' },
     ),
 
+  /** Müfredat derslerini bölümlere otomatik bağla */
+  linkSubjects: (examId: number) =>
+    request<{ message: string; data: ExamDetail }>(
+      `${BASE}/${examId}/link_subjects/`,
+      { method: 'POST' },
+    ),
+
+  /** TYT Felsefe (Seçmeli) bloğunu aç/kapat */
+  setOptionalPhilosophy: (examId: number, include: boolean) =>
+    request<ExamDetail>(`${BASE}/${examId}/set_optional_philosophy/`, {
+      method: 'POST',
+      body: JSON.stringify({ include }),
+    }),
+
   /** Sınav durumunu güncelle */
   updateStatus: (examId: number, status: string) =>
     request<ExamDetail>(`${BASE}/${examId}/update_status/`, {
@@ -186,9 +200,9 @@ export const examApi = {
 
   // ── Şablon ────────────────────────────────────────────────────────────────
 
-  templates: () =>
+  templates: (includeOptionalPhilosophy = true) =>
     request<Record<string, { label: string; duration: number; sections: { name: string; question_start: number; question_end: number; question_count: number; order: number }[]; sub_sections?: Record<string, { name: string; question_start: number; question_end: number; question_count: number; order: number }[]> }>>(
-      `${BASE}/templates/`,
+      `${BASE}/templates/?include_optional_philosophy=${includeOptionalPhilosophy ? 'true' : 'false'}`,
     ),
 
   // ── Lookup ────────────────────────────────────────────────────────────────
@@ -261,6 +275,38 @@ export const answerKeyApi = {
   /** Kazanım ağacı (sınav türüne göre filtrelenmiş) */
   outcomes: (examId: number) =>
     request<SubjectItem[]>(`${BASE}/${examId}/answer-keys/outcomes/`),
+
+  /** Toplu satır güncelle */
+  bulkUpdateItems: (examId: number, akId: number, items: { item_id: number; outcome_id?: number | null; imported_outcome_text?: string }[]) =>
+    request<{ updated: number }>(
+      `${BASE}/${examId}/answer-keys/${akId}/bulk-update-items/`,
+      { method: 'PATCH', body: JSON.stringify({ items }) },
+    ),
+
+  /** Tüm sınav için sırayla toplu kazanım ata */
+  bulkAssignOutcomes: (examId: number, akId: number, texts: string[], createIfMissing = true) =>
+    request<{
+      matched: number;
+      created: number;
+      total: number;
+      results: {
+        item_id: number;
+        question_number: number;
+        section_id: number;
+        section_name: string;
+        input_text: string;
+        outcome_id: number | null;
+        outcome_code: string | null;
+        outcome_text: string | null;
+        topic_name: string | null;
+        match_score: number;
+        match_type: string | null;
+        created: boolean;
+      }[];
+    }>(
+      `${BASE}/${examId}/answer-keys/${akId}/bulk-assign-outcomes/`,
+      { method: 'POST', body: JSON.stringify({ texts, create_if_missing: createIfMissing }) },
+    ),
 };
 
 // ── Sonuç Yükleme (DAT Upload) API ─────────────────────────────────────────

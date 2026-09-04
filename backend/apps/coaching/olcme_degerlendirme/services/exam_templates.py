@@ -115,6 +115,22 @@ _SUB_SECTIONS: dict[str, dict[str, list[tuple]]] = {
     },
 }
 
+OPTIONAL_PHILOSOPHY_NAME = 'Felsefe (Seçmeli)'
+OPTIONAL_PHILOSOPHY_START = 121
+OPTIONAL_PHILOSOPHY_END = 125
+OPTIONAL_PHILOSOPHY_ORDER = 4
+OPTIONAL_PHILOSOPHY_EXAM_TYPES = ('YKS_TYT', 'DENEME')
+
+
+def _optional_philosophy_row() -> tuple:
+    return (
+        OPTIONAL_PHILOSOPHY_NAME,
+        OPTIONAL_PHILOSOPHY_START,
+        OPTIONAL_PHILOSOPHY_END,
+        OPTIONAL_PHILOSOPHY_ORDER,
+    )
+
+
 _DEFAULT_DURATIONS: dict[str, int] = {
     'YKS_TYT':     135,
     'YKS_AYT':     180,
@@ -131,9 +147,12 @@ _DEFAULT_DURATIONS: dict[str, int] = {
 #  PUBLIC API
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_template_sections(exam_type: str) -> list[dict]:
+def get_template_sections(exam_type: str, include_optional_philosophy: bool = True) -> list[dict]:
     """Sınav türüne göre şablon alan listesi döner."""
-    rows = _TEMPLATES.get(exam_type, [])
+    rows = list(_TEMPLATES.get(exam_type, []))
+    if include_optional_philosophy and exam_type in OPTIONAL_PHILOSOPHY_EXAM_TYPES:
+        if not any(r[0] == OPTIONAL_PHILOSOPHY_NAME for r in rows):
+            rows.append(_optional_philosophy_row())
     return [
         {
             'name': name,
@@ -187,6 +206,7 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
         'Tarih':          ('TARIH_TYT',      'Tarih',           'YKS_TYT'),
         'Coğrafya':       ('COGRAFYA_TYT',   'Coğrafya',        'YKS_TYT'),
         'Felsefe':        ('FELSEFE_TYT',    'Felsefe',         'YKS_TYT'),
+        OPTIONAL_PHILOSOPHY_NAME: ('FELSEFE_TYT', 'Felsefe',    'YKS_TYT'),
         'Din Kültürü':    ('DINKUL_TYT',     'Din Kültürü',     'YKS_TYT'),
         'Matematik':      ('MAT_TYT',        'Matematik',       'YKS_TYT'),
         'Geometri':       ('GEO_TYT',        'Geometri',        'YKS_TYT'),
@@ -221,6 +241,7 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
         'Tarih':          ('TARIH_TYT',      'Tarih',           'YKS_TYT'),
         'Coğrafya':       ('COGRAFYA_TYT',   'Coğrafya',        'YKS_TYT'),
         'Felsefe':        ('FELSEFE_TYT',    'Felsefe',         'YKS_TYT'),
+        OPTIONAL_PHILOSOPHY_NAME: ('FELSEFE_TYT', 'Felsefe',    'YKS_TYT'),
         'Din Kültürü':    ('DINKUL_TYT',     'Din Kültürü',     'YKS_TYT'),
         'Matematik':      ('MAT_TYT',        'Matematik',       'YKS_TYT'),
         'Geometri':       ('GEO_TYT',        'Geometri',        'YKS_TYT'),
@@ -294,7 +315,8 @@ def create_sections_from_template(exam) -> list:
     """
     from ..models.exam import ExamSection
 
-    template = get_template_sections(exam.exam_type)
+    include_opt = getattr(exam, 'include_optional_philosophy', True)
+    template = get_template_sections(exam.exam_type, include_opt)
     sub_template = get_template_sub_sections(exam.exam_type)
     created = []
 
@@ -385,6 +407,8 @@ def ensure_sub_sections(exam) -> list:
     # ── Subject taşıma + item yeniden eşleştirme ─────────────────────────
     _reassign_subjects_and_items(exam)
 
+    sync_optional_philosophy_section(exam)
+
     # ── Subject bağlı olmayan bölümlere otomatik Subject bağla ────────
     all_sections = list(
         ExamSection.objects.filter(exam=exam)
@@ -392,6 +416,34 @@ def ensure_sub_sections(exam) -> list:
     _auto_link_subjects(exam, all_sections)
 
     return created
+
+
+def sync_optional_philosophy_section(exam) -> None:
+    """TYT / Deneme için Felsefe (Seçmeli) ana bölümünü bayrağa göre ekler veya siler."""
+    from ..models.exam import ExamSection
+
+    if exam.exam_type not in OPTIONAL_PHILOSOPHY_EXAM_TYPES:
+        return
+
+    include = getattr(exam, 'include_optional_philosophy', True)
+    existing = ExamSection.objects.filter(
+        exam=exam,
+        name=OPTIONAL_PHILOSOPHY_NAME,
+        is_sub_section=False,
+    ).first()
+
+    if include and not existing:
+        section = ExamSection.objects.create(
+            exam=exam,
+            name=OPTIONAL_PHILOSOPHY_NAME,
+            question_start=OPTIONAL_PHILOSOPHY_START,
+            question_end=OPTIONAL_PHILOSOPHY_END,
+            order=OPTIONAL_PHILOSOPHY_ORDER,
+            is_sub_section=False,
+        )
+        _auto_link_subjects(exam, [section])
+    elif not include and existing:
+        existing.delete()
 
 
 def _reassign_subjects_and_items(exam):

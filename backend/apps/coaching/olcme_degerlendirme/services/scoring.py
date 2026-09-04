@@ -85,6 +85,8 @@ def _normalize_section_name(name: str, context: str = 'tyt') -> str:
         'Din Kültürü': 'DKAB',
         'Din Kültürü ve Ahlak Bilgisi': 'DKAB',
         'İlave Felsefe': 'DKAB',
+        'Felsefe (Seçmeli)': 'Felsefe Grubu',
+        'Felsefe Seçmeli': 'Felsefe Grubu',
     }
 
     if context == 'tyt':
@@ -202,12 +204,17 @@ def calculate_ayt_score(section_nets: dict, tyt_nets: dict = None, puan_turu: st
     # TYT alt bölüm netleri (Tarih, Coğrafya, Felsefe, Fizik, Kimya, Biyoloji vb.) KULLANILMAZ
     # çünkü bunların aynı isimli AYT katsayıları var ve çift sayıma neden olur.
     TYT_ANA_BOLUMLER = {'Türkçe', 'Sosyal Bilimler', 'Temel Matematik', 'Fen Bilimleri'}
+    TYT_SOZ_EXTRA = {'Felsefe Grubu'}
     if tyt_nets:
         for section_name, net in tyt_nets.items():
             net_val = float(net) if net else 0.0
             normalized = _normalize_section_name(section_name, context='tyt')
-            # Sadece 4 ana TYT bölümünü kabul et
             if normalized not in TYT_ANA_BOLUMLER:
+                if puan_turu == 'SOZ' and normalized in TYT_SOZ_EXTRA:
+                    k = coef.get(normalized, 0)
+                    if k > 0:
+                        tyt_toplam_net += net_val
+                        ham_puan += net_val * k
                 continue
             k = coef.get(normalized, 0)
             if k > 0:

@@ -253,20 +253,18 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                         'text': outcome.text,
                         'sub_outcomes': sub_outcomes,
                     })
-                if outcomes_data:
-                    topics_data.append({
-                        'id': topic.id,
-                        'code': topic.code,
-                        'name': topic.name,
-                        'outcomes': outcomes_data,
-                    })
-            if topics_data:
-                result.append({
-                    'id': subj.id,
-                    'code': subj.code,
-                    'name': str(subj),
-                    'topics': topics_data,
+                topics_data.append({
+                    'id': topic.id,
+                    'code': topic.code,
+                    'name': topic.name,
+                    'outcomes': outcomes_data,
                 })
+            result.append({
+                'id': subj.id,
+                'code': subj.code,
+                'name': str(subj),
+                'topics': topics_data,
+            })
 
         return Response(result)
 
@@ -298,6 +296,122 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         item.save()
 
         return Response(AnswerKeyItemSerializer(item).data)
+
+    @action(detail=True, methods=['patch'], url_path='bulk-update-items')
+    def bulk_update_items(self, request, exam_pk=None, pk=None):
+        answer_key = self.get_object()
+        payload = request.data.get('items', [])
+        if not isinstance(payload, list):
+            return Response({'error': 'items bir liste olmalıdır.'}, status=400)
+
+        item_ids = [row.get('item_id') for row in payload if row.get('item_id')]
+        items = {
+            item.id: item
+            for item in answer_key.items.filter(pk__in=item_ids)
+        }
+        updated = 0
+        with transaction.atomic():
+            for row in payload:
+                item = items.get(row.get('item_id'))
+                if not item:
+                    continue
+                if 'outcome_id' in row:
+                    item.outcome_id = row['outcome_id']
+                if 'imported_outcome_text' in row:
+                    item.imported_outcome_text = row['imported_outcome_text'] or ''
+                item.save()
+                updated += 1
+        return Response({'updated': updated})
+
+    @action(detail=True, methods=['post'], url_path='bulk-assign-outcomes')
+    def bulk_assign_outcomes(self, request, exam_pk=None, pk=None):
+        from ..views.curriculum_views import _match_single_text
+
+        answer_key = self.get_object()
+        texts = request.data.get('texts', [])
+        create_if_missing = bool(request.data.get('create_if_missing', True))
+        if not isinstance(texts, list):
+            return Response({'error': 'texts bir liste olmalıdır.'}, status=400)
+
+        items = list(answer_key.items.select_related('section', 'section__subject').order_by('question_number'))
+        if not items:
+            return Response({'error': 'Cevap anahtarında soru yok.'}, status=400)
+
+        results = []
+        created_count = 0
+        matched_count = 0
+        with transaction.atomic():
+            for idx, item in enumerate(items):
+                text = str(texts[idx]).strip() if idx < len(texts) and texts[idx] else ''
+                row = {
+                    'item_id': item.id,
+                    'question_number': item.question_number,
+                    'section_id': item.section_id,
+                    'section_name': item.section.name if item.section else '',
+                    'input_text': text,
+                    'outcome_id': None,
+                    'outcome_code': None,
+                    'outcome_text': None,
+                    'topic_name': None,
+                    'match_score': 0,
+                    'match_type': None,
+                    'created': False,
+                }
+                if not text:
+                    results.append(row)
+                    continue
+                subject = item.section.subject if item.section else None
+                match = _match_single_text(text, subject) if subject else None
+                if match:
+                    item.outcome_id = match['outcome_id']
+                    item.imported_outcome_text = text
+                    item.save(update_fields=['outcome_id', 'imported_outcome_text'])
+                    row.update({
+                        'outcome_id': match['outcome_id'],
+                        'outcome_code': match.get('outcome_code'),
+                        'outcome_text': match.get('outcome_text'),
+                        'topic_name': match.get('topic_name'),
+                        'match_score': match.get('match_score') or 0,
+                        'match_type': match.get('match_type'),
+                    })
+                    matched_count += 1
+                elif create_if_missing and subject:
+                    topic, _ = Topic.objects.get_or_create(
+                        subject=subject,
+                        name='Toplu Yükleme',
+                        defaults={'code': 'TOPLU', 'order': 999},
+                    )
+                    next_order = (topic.outcomes.count() or 0) + 1
+                    outcome = Outcome.objects.create(
+                        topic=topic,
+                        code=f'{subject.code}-{item.question_number}',
+                        text=text,
+                        order=next_order,
+                    )
+                    item.outcome_id = outcome.id
+                    item.imported_outcome_text = text
+                    item.save(update_fields=['outcome_id', 'imported_outcome_text'])
+                    row.update({
+                        'outcome_id': outcome.id,
+                        'outcome_code': outcome.code,
+                        'outcome_text': outcome.text,
+                        'topic_name': topic.name,
+                        'match_score': 100,
+                        'match_type': 'created',
+                        'created': True,
+                    })
+                    created_count += 1
+                else:
+                    item.imported_outcome_text = text
+                    item.save(update_fields=['imported_outcome_text'])
+                results.append(row)
+
+        return Response({
+            'matched': matched_count,
+            'created': created_count,
+            'total': len(items),
+            'results': results,
+        })
 
     # ── Yardımcı ─────────────────────────────────────────────────────────────
 

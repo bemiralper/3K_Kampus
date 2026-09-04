@@ -71,6 +71,12 @@ answer_key_outcomes = AnswerKeyViewSet.as_view({
 answer_key_update_item = AnswerKeyViewSet.as_view({
     'patch': 'update_item',
 })
+answer_key_bulk_update_items = AnswerKeyViewSet.as_view({
+    'patch': 'bulk_update_items',
+})
+answer_key_bulk_assign_outcomes = AnswerKeyViewSet.as_view({
+    'post': 'bulk_assign_outcomes',
+})
 
 urlpatterns = [
     # Mapping templates & toplu işlemler — router'dan ÖNCE tanımlanmalı!
@@ -93,6 +99,8 @@ urlpatterns = [
     path('exams/<int:exam_pk>/answer-keys/bulk-import/', answer_key_bulk_import, name='answer-key-bulk-import'),
     path('exams/<int:exam_pk>/answer-keys/outcomes/', answer_key_outcomes, name='answer-key-outcomes'),
     path('exams/<int:exam_pk>/answer-keys/<int:pk>/update-item/', answer_key_update_item, name='answer-key-update-item'),
+    path('exams/<int:exam_pk>/answer-keys/<int:pk>/bulk-update-items/', answer_key_bulk_update_items, name='answer-key-bulk-update-items'),
+    path('exams/<int:exam_pk>/answer-keys/<int:pk>/bulk-assign-outcomes/', answer_key_bulk_assign_outcomes, name='answer-key-bulk-assign-outcomes'),
 
     # Results / DAT upload
     path('exams/<int:exam_pk>/results/', list_results, name='result-list'),
