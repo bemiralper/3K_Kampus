@@ -547,7 +547,7 @@ export default function YeniSinavPage() {
                   <label className={s.checkRow} style={{ marginTop: 10 }}>
                     <input type="checkbox" checked={form.include_optional_philosophy}
                       onChange={e => setField('include_optional_philosophy', e.target.checked)} />
-                    Felsefe (Seçmeli) dahil — 121–125
+                    Felsefe (Seçmeli) dahil — Din Kültürü sonrası
                   </label>
                 )}
               </div>

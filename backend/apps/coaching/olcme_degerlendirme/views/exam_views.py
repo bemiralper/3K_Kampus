@@ -376,7 +376,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         for choice in Exam.ExamType.choices:
             key = choice[0]
             sections = get_template_sections(key, include_opt)
-            sub_sections = get_template_sub_sections(key)
+            sub_sections = get_template_sub_sections(key, include_opt)
             data[key] = {
                 'label': choice[1],
                 'duration': get_default_duration(key),

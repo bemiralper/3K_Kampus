@@ -30,7 +30,7 @@ export const AYT_ALAN_DERSLERI: Record<string, string[]> = {
     'Türk Dili ve Edebiyatı', 'Edebiyat', 'TDE',
     'Tarih-1', 'Tarih 1', 'Coğrafya-1', 'Coğrafya 1',
     'Tarih-2', 'Tarih 2', 'Coğrafya-2', 'Coğrafya 2',
-    'Felsefe Grubu', 'Felsefe', 'Din Kültürü', 'DKAB',
+    'Felsefe Grubu', 'Felsefe', 'Felsefe (Seçmeli)', 'Din Kültürü', 'DKAB',
   ],
   ESIT_AGIRLIK: [
     'Matematik',

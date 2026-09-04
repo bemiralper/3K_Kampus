@@ -116,19 +116,60 @@ _SUB_SECTIONS: dict[str, dict[str, list[tuple]]] = {
 }
 
 OPTIONAL_PHILOSOPHY_NAME = 'Felsefe (Seçmeli)'
-OPTIONAL_PHILOSOPHY_START = 121
-OPTIONAL_PHILOSOPHY_END = 125
-OPTIONAL_PHILOSOPHY_ORDER = 4
+OPTIONAL_PHILOSOPHY_COUNT = 5
+OPTIONAL_PHILOSOPHY_AFTER = 'Sosyal Bilimler'
 OPTIONAL_PHILOSOPHY_EXAM_TYPES = ('YKS_TYT', 'DENEME')
+_SHIFT_PARENTS = ('Temel Matematik', 'Fen Bilimleri')
 
 
-def _optional_philosophy_row() -> tuple:
-    return (
-        OPTIONAL_PHILOSOPHY_NAME,
-        OPTIONAL_PHILOSOPHY_START,
-        OPTIONAL_PHILOSOPHY_END,
-        OPTIONAL_PHILOSOPHY_ORDER,
-    )
+def _rows_to_dicts(rows: list[tuple]) -> list[dict]:
+    return [
+        {
+            'name': name,
+            'question_start': qs,
+            'question_end': qe,
+            'question_count': qe - qs + 1,
+            'order': order,
+        }
+        for name, qs, qe, order in rows
+    ]
+
+
+def _with_optional_philosophy(main_rows: list[tuple], sub_map: dict[str, list[tuple]]):
+    """
+    Seçmeli felsefeyi Din Kültürü'nün hemen ardına yerleştirir (61–65)
+    ve sonraki testleri +5 kaydırır. TYT 4'lü formül için ayrı ana bölümdür.
+    """
+    mains: list[tuple] = []
+    inserted = False
+    for name, qs, qe, order in main_rows:
+        if name == OPTIONAL_PHILOSOPHY_AFTER:
+            mains.append((name, qs, qe, order))
+            mains.append((
+                OPTIONAL_PHILOSOPHY_NAME,
+                qe + 1,
+                qe + OPTIONAL_PHILOSOPHY_COUNT,
+                order + 1,
+            ))
+            inserted = True
+        elif inserted:
+            mains.append((name, qs + OPTIONAL_PHILOSOPHY_COUNT, qe + OPTIONAL_PHILOSOPHY_COUNT, order + 1))
+        else:
+            mains.append((name, qs, qe, order))
+
+    if not inserted:
+        return main_rows, {k: list(v) for k, v in sub_map.items()}
+
+    shifted_subs: dict[str, list[tuple]] = {}
+    for parent, rows in sub_map.items():
+        if parent in _SHIFT_PARENTS:
+            shifted_subs[parent] = [
+                (n, s + OPTIONAL_PHILOSOPHY_COUNT, e + OPTIONAL_PHILOSOPHY_COUNT, o)
+                for n, s, e, o in rows
+            ]
+        else:
+            shifted_subs[parent] = list(rows)
+    return mains, shifted_subs
 
 
 _DEFAULT_DURATIONS: dict[str, int] = {
@@ -150,37 +191,19 @@ _DEFAULT_DURATIONS: dict[str, int] = {
 def get_template_sections(exam_type: str, include_optional_philosophy: bool = True) -> list[dict]:
     """Sınav türüne göre şablon alan listesi döner."""
     rows = list(_TEMPLATES.get(exam_type, []))
+    subs = {k: list(v) for k, v in _SUB_SECTIONS.get(exam_type, {}).items()}
     if include_optional_philosophy and exam_type in OPTIONAL_PHILOSOPHY_EXAM_TYPES:
-        if not any(r[0] == OPTIONAL_PHILOSOPHY_NAME for r in rows):
-            rows.append(_optional_philosophy_row())
-    return [
-        {
-            'name': name,
-            'question_start': qs,
-            'question_end': qe,
-            'question_count': qe - qs + 1,
-            'order': order,
-        }
-        for name, qs, qe, order in rows
-    ]
+        rows, _ = _with_optional_philosophy(rows, subs)
+    return _rows_to_dicts(rows)
 
 
-def get_template_sub_sections(exam_type: str) -> dict[str, list[dict]]:
+def get_template_sub_sections(exam_type: str, include_optional_philosophy: bool = True) -> dict[str, list[dict]]:
     """Sınav türüne göre ders listesi döner. {parent_name: [{...}]}"""
-    subs_def = _SUB_SECTIONS.get(exam_type, {})
-    result: dict[str, list[dict]] = {}
-    for parent_name, rows in subs_def.items():
-        result[parent_name] = [
-            {
-                'name': name,
-                'question_start': qs,
-                'question_end': qe,
-                'question_count': qe - qs + 1,
-                'order': order,
-            }
-            for name, qs, qe, order in rows
-        ]
-    return result
+    mains = list(_TEMPLATES.get(exam_type, []))
+    subs_def = {k: list(v) for k, v in _SUB_SECTIONS.get(exam_type, {}).items()}
+    if include_optional_philosophy and exam_type in OPTIONAL_PHILOSOPHY_EXAM_TYPES:
+        _, subs_def = _with_optional_philosophy(mains, subs_def)
+    return {parent: _rows_to_dicts(rows) for parent, rows in subs_def.items()}
 
 
 def get_default_duration(exam_type: str) -> int:
@@ -317,7 +340,7 @@ def create_sections_from_template(exam) -> list:
 
     include_opt = getattr(exam, 'include_optional_philosophy', True)
     template = get_template_sections(exam.exam_type, include_opt)
-    sub_template = get_template_sub_sections(exam.exam_type)
+    sub_template = get_template_sub_sections(exam.exam_type, include_opt)
     created = []
 
     # Ana bölümleri oluştur
@@ -370,7 +393,8 @@ def ensure_sub_sections(exam) -> list:
     """
     from ..models.exam import ExamSection
 
-    sub_template = _SUB_SECTIONS.get(exam.exam_type, {})
+    include_opt = getattr(exam, 'include_optional_philosophy', True)
+    sub_template = get_template_sub_sections(exam.exam_type, include_opt)
     if not sub_template:
         return []
 
@@ -391,14 +415,14 @@ def ensure_sub_sections(exam) -> list:
             continue
         for sub in subs:
             # Aynı isim + parent zaten varsa atla
-            if (sub[0], parent.id) in existing_subs:
+            if (sub['name'], parent.id) in existing_subs:
                 continue
             sub_section = ExamSection.objects.create(
                 exam=exam,
-                name=sub[0],
-                question_start=sub[1],
-                question_end=sub[2],
-                order=sub[3],
+                name=sub['name'],
+                question_start=sub['question_start'],
+                question_end=sub['question_end'],
+                order=sub['order'],
                 is_sub_section=True,
                 parent_section=parent,
             )
@@ -418,32 +442,165 @@ def ensure_sub_sections(exam) -> list:
     return created
 
 
-def sync_optional_philosophy_section(exam) -> None:
-    """TYT / Deneme için Felsefe (Seçmeli) ana bölümünü bayrağa göre ekler veya siler."""
+def _philosophy_layout(exam) -> str:
+    """Mevcut sınavın felsefe yerleşimi: after_dkab | trailing | none."""
     from ..models.exam import ExamSection
 
+    phil = ExamSection.objects.filter(
+        exam=exam, name=OPTIONAL_PHILOSOPHY_NAME, is_sub_section=False,
+    ).first()
+    if not phil:
+        return 'none'
+    if phil.question_start >= 121:
+        return 'trailing'
+    return 'after_dkab'
+
+
+def _remap_q_trailing_to_after_dkab(n: int) -> int:
+    if n <= 60:
+        return n
+    if 61 <= n <= 120:
+        return n + OPTIONAL_PHILOSOPHY_COUNT
+    if 121 <= n <= 125:
+        return n - 60
+    return n
+
+
+def _remap_q_insert_after_dkab(n: int) -> int:
+    if n <= 60:
+        return n
+    return n + OPTIONAL_PHILOSOPHY_COUNT
+
+
+def _remap_q_remove_after_dkab(n: int) -> int:
+    if n <= 60:
+        return n
+    if 61 <= n <= 65:
+        return None
+    if n >= 66:
+        return n - OPTIONAL_PHILOSOPHY_COUNT
+    return n
+
+
+def _remap_exam_question_numbers(exam, mapper) -> None:
+    """Cevap anahtarı ve öğrenci cevaplarındaki soru numaralarını dönüştürür."""
+    from ..models.answer_key import AnswerKeyItem
+    from ..models.result import StudentAnswer
+
+    items = list(AnswerKeyItem.objects.filter(answer_key__exam=exam))
+    if items:
+        for item in items:
+            item.question_number += 10000
+            if item.b_question_number and item.b_question_number >= 61:
+                item.b_question_number += 10000
+        AnswerKeyItem.objects.bulk_update(items, ['question_number', 'b_question_number'])
+
+        keep = []
+        drop_ids = []
+        for item in items:
+            new_q = mapper(item.question_number - 10000)
+            if new_q is None:
+                drop_ids.append(item.id)
+                continue
+            item.question_number = new_q
+            if item.b_question_number and item.b_question_number >= 10061:
+                mapped_b = mapper(item.b_question_number - 10000)
+                item.b_question_number = mapped_b
+            keep.append(item)
+        if drop_ids:
+            AnswerKeyItem.objects.filter(id__in=drop_ids).delete()
+        if keep:
+            AnswerKeyItem.objects.bulk_update(keep, ['question_number', 'b_question_number'])
+
+    answers = list(StudentAnswer.objects.filter(session__exam=exam))
+    for ans in answers:
+        def _map_json(data):
+            if not isinstance(data, dict):
+                return data
+            out = {}
+            for k, v in data.items():
+                try:
+                    nk = mapper(int(k))
+                except (TypeError, ValueError):
+                    out[k] = v
+                    continue
+                if nk is None:
+                    continue
+                out[str(nk)] = v
+            return out
+        ans.answers = _map_json(ans.answers)
+        ans.comparison = _map_json(ans.comparison)
+    if answers:
+        StudentAnswer.objects.bulk_update(answers, ['answers', 'comparison'])
+
+
+def _apply_template_ranges(exam, include: bool) -> None:
+    from ..models.exam import ExamSection
+
+    mains_tpl = {r['name']: r for r in get_template_sections(exam.exam_type, include)}
+    subs_tpl = get_template_sub_sections(exam.exam_type, include)
+    mains = {s.name: s for s in ExamSection.objects.filter(exam=exam, is_sub_section=False)}
+
+    for name, row in mains_tpl.items():
+        section = mains.get(name)
+        if section:
+            section.question_start = row['question_start']
+            section.question_end = row['question_end']
+            section.order = row['order']
+            section.save(update_fields=['question_start', 'question_end', 'order', 'question_count'])
+        elif name == OPTIONAL_PHILOSOPHY_NAME:
+            section = ExamSection.objects.create(
+                exam=exam,
+                name=row['name'],
+                question_start=row['question_start'],
+                question_end=row['question_end'],
+                order=row['order'],
+                is_sub_section=False,
+            )
+            _auto_link_subjects(exam, [section])
+            mains[name] = section
+
+    if not include:
+        extra = ExamSection.objects.filter(
+            exam=exam, name=OPTIONAL_PHILOSOPHY_NAME, is_sub_section=False,
+        )
+        extra.delete()
+
+    for parent_name, rows in subs_tpl.items():
+        parent = mains.get(parent_name)
+        if not parent:
+            continue
+        children = {
+            s.name: s
+            for s in ExamSection.objects.filter(exam=exam, is_sub_section=True, parent_section=parent)
+        }
+        for row in rows:
+            child = children.get(row['name'])
+            if not child:
+                continue
+            child.question_start = row['question_start']
+            child.question_end = row['question_end']
+            child.order = row['order']
+            child.save(update_fields=['question_start', 'question_end', 'order', 'question_count'])
+
+
+def sync_optional_philosophy_section(exam) -> None:
+    """TYT / Deneme felsefe bloğunu Din Kültürü sonrasına yerleştirir veya kaldırır."""
     if exam.exam_type not in OPTIONAL_PHILOSOPHY_EXAM_TYPES:
         return
 
     include = getattr(exam, 'include_optional_philosophy', True)
-    existing = ExamSection.objects.filter(
-        exam=exam,
-        name=OPTIONAL_PHILOSOPHY_NAME,
-        is_sub_section=False,
-    ).first()
+    current = _philosophy_layout(exam)
 
-    if include and not existing:
-        section = ExamSection.objects.create(
-            exam=exam,
-            name=OPTIONAL_PHILOSOPHY_NAME,
-            question_start=OPTIONAL_PHILOSOPHY_START,
-            question_end=OPTIONAL_PHILOSOPHY_END,
-            order=OPTIONAL_PHILOSOPHY_ORDER,
-            is_sub_section=False,
-        )
-        _auto_link_subjects(exam, [section])
-    elif not include and existing:
-        existing.delete()
+    if include and current == 'trailing':
+        _remap_exam_question_numbers(exam, _remap_q_trailing_to_after_dkab)
+    elif include and current == 'none':
+        _remap_exam_question_numbers(exam, _remap_q_insert_after_dkab)
+    elif not include and current == 'after_dkab':
+        _remap_exam_question_numbers(exam, _remap_q_remove_after_dkab)
+
+    _apply_template_ranges(exam, include)
+    _reassign_subjects_and_items(exam)
 
 
 def _reassign_subjects_and_items(exam):

@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
             name='include_optional_philosophy',
             field=models.BooleanField(
                 default=True,
-                help_text='TYT’de Din Kültürü yerine / yanında gelen 5 soruluk seçmeli felsefe. Varsayılan: dahil. Sözel puan hesaplamasında kullanılır.',
+                help_text='TYT’de Din Kültürü’nden hemen sonra gelen 5 soruluk seçmeli felsefe. Varsayılan: dahil. Sözel puan hesaplamasında kullanılır.',
                 verbose_name='Felsefe (Seçmeli)',
             ),
         ),

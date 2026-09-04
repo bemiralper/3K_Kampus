@@ -452,7 +452,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                           checked={exam.include_optional_philosophy !== false}
                           onChange={async e => {
                             const include = e.target.checked;
-                            if (!include && !confirm('Felsefe (Seçmeli) 121–125 soruları kaldırılsın mı?')) {
+                            if (!include && !confirm('Din Kültürü’nden sonraki Felsefe (Seçmeli) soruları kaldırılsın mı?')) {
                               e.target.checked = true;
                               return;
                             }
@@ -462,7 +462,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                             } catch { /* */ }
                           }}
                         />
-                        {exam.include_optional_philosophy !== false ? 'Dahil (121–125)' : 'Hariç'}
+                        {exam.include_optional_philosophy !== false ? 'Dahil (DKAB sonrası)' : 'Hariç'}
                       </label>
                     </span>
                   </div>
