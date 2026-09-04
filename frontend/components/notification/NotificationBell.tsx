@@ -65,7 +65,9 @@ function rewriteInboxUrl(url: string | null | undefined, portal: InboxPortal): s
     }
   })();
   if (!convId) return url;
-  if (!/\/(admin\/iletisim\/mesajlar|coach\/mesajlar|muhasebe\/iletisim\/mesajlar)/.test(url)) return url;
+  // Bildirim hangi portalın yolunu taşırsa taşısın, kullanıcı bulunduğu portalda kalsın.
+  const chatPath = /\/(admin\/iletisim|coach|muhasebe\/iletisim)\/(mesajlar|sohbetler)/;
+  if (!chatPath.test(url)) return url;
   return conversationInboxPath(convId, portal);
 }
 

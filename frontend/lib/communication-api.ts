@@ -2801,6 +2801,18 @@ export async function fetchChatConversations(
   return request<ConversationsResponse>(`/conversations/?${qs.toString()}`);
 }
 
+/**
+ * Tek sohbetin liste satırı — aktif filtreye uymayan ya da derin bağlantıyla
+ * gelen sohbet listede olmasa da açılabilsin diye.
+ */
+export async function fetchChatConversation(
+  conversationId: string,
+): Promise<ConversationListItem> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request<ConversationListItem>(`/conversations/${conversationId}/item/${qs}`);
+}
+
 function chatMutation<T>(path: string, method: string, body?: unknown): Promise<T> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request<T>(path, {

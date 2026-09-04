@@ -165,6 +165,33 @@ class ConversationDetailView(CommunicationAPIView):
         return Response(ConversationDetailSerializer(conversation).data)
 
 
+class ConversationItemView(CommunicationAPIView):
+    """Tek sohbetin liste satırı.
+
+    Sohbetler ekranı seçili sohbeti listeden okur; derin bağlantıyla gelen ya
+    da aktif filtreye (okunmamış, departman, sayfa) uymayan sohbet listede
+    olmayabilir. Bu uç nokta o satırı tek başına döndürür.
+    """
+
+    def get(self, request, conversation_id):
+        kurum_id, sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+
+        conversation = ConversationRepository.get_by_id(kurum_id, conversation_id, sube_id=sube_id)
+        if not conversation:
+            return Response({'error': 'Konuşma bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+        gate = assert_conversation_sube_access(request, kurum_id, conversation)
+        if gate:
+            return gate
+
+        if not user_can_access_conversation(request.user, conversation):
+            return Response({'error': 'Bu konuşmaya erişim yetkiniz yok.'}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response(_serialize_one(conversation, request))
+
+
 class ConversationArchiveView(CommunicationAPIView):
     def patch(self, request, conversation_id):
         kurum_id, sube_id, err = resolve_kurum_and_sube(request)

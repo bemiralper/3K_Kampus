@@ -412,6 +412,52 @@ class ConversationRepository:
         ).order_by('-last_message_at', '-updated_at').first()
 
     @staticmethod
+    def inbound_department(
+        kurum_id: int,
+        channel: str,
+        contact_phone: str,
+        *,
+        ogrenci_id=None,
+        veli_id=None,
+        channel_config=None,
+    ) -> str | None:
+        """Gelen mesaj hangi departmanın sohbetine düşmeli.
+
+        Aynı WhatsApp hattında koçluk ve muhasebe ayrı thread tutuyor. Kişi
+        muhasebenin gönderdiği mesaja cevap verdiğinde cevabın muhasebe
+        sohbetinde kalması gerekir; bu yüzden hattı belirleyen departman değil,
+        kişiyle en son konuşan sohbetin departmanı esas alınır. Hiç sohbet
+        yoksa hattın departmanına düşülür.
+        """
+        cfg_id = getattr(channel_config, 'id', None)
+        base = Conversation.objects.filter(
+            kurum_id=kurum_id,
+            channel=channel,
+            deleted_at__isnull=True,
+        )
+        if cfg_id:
+            base = base.filter(
+                Q(channel_config_id=cfg_id) | Q(channel_config_id__isnull=True)
+            )
+
+        candidates = []
+        if veli_id is not None:
+            candidates.append(base.filter(veli_id=veli_id))
+        elif ogrenci_id is not None:
+            candidates.append(base.filter(ogrenci_id=ogrenci_id, veli_id__isnull=True))
+        candidates.append(base.filter(_conversation_phone_q(contact_phone)))
+
+        for qs in candidates:
+            department = (
+                qs.order_by('-last_message_at', '-updated_at', '-created_at')
+                .values_list('department', flat=True)
+                .first()
+            )
+            if department:
+                return department
+        return getattr(channel_config, 'department', None)
+
+    @staticmethod
     def _pick_existing_conversation(
         qs,
         *,
@@ -586,6 +632,7 @@ class ConversationRepository:
         direction: str,
         channel_config=None,
         actor=None,
+        department: str | None = None,
     ) -> None:
         from django.conf import settings
 
@@ -608,6 +655,7 @@ class ConversationRepository:
                     conversation,
                     channel_config=channel_config or getattr(conversation, 'channel_config', None),
                     preview=preview,
+                    department=department,
                 )
             else:
                 if conversation.status == ConversationStatus.ARCHIVED:

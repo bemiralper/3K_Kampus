@@ -114,6 +114,7 @@ class ConversationRouter:
         *,
         channel_config=None,
         preview: str = '',
+        department: str | None = None,
     ) -> Conversation:
         now = timezone.now()
         update_fields: list[str] = []
@@ -167,9 +168,11 @@ class ConversationRouter:
         )
         resolved = resolve_rule_actions(rule, has_coach=has_coach) if rule else None
 
-        # Departman: kural override → WABA hesabı
+        # Departman: kural override → çağıranın çözdüğü departman → WABA hesabı
         if resolved and resolved.department:
             dept = resolved.department
+        elif department:
+            dept = department
         else:
             dept = _department_from_channel(conversation, channel_config)
         if conversation.department != dept:

@@ -14,6 +14,7 @@ import {
   claimConversation,
   deleteConversation,
   deleteMessage,
+  fetchChatConversation,
   fetchConversationContext,
   fetchTemplates,
   inboxPortalDepartment,
@@ -28,7 +29,7 @@ import {
   starMessage,
 } from "@/lib/communication-api";
 
-import { conversationTitle, messagePreview } from "./chat-utils";
+import { conversationTitle, messagePreview, sortConversations } from "./chat-utils";
 import { ChatComposer, QuickReply } from "./ChatComposer";
 import { ChatConfirmDialog, ConfirmState } from "./ChatDialog";
 import {
@@ -100,9 +101,62 @@ export function ChatWorkspace({
   const threadSearchRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
-  const selected = useMemo(
+  // Açık sohbet listeden bağımsız yaşar: okundu işaretlenince "Okunmamış"
+  // filtresinden düşebilir, derin bağlantıyla gelen sohbet ise ilk sayfada ya
+  // da portalın departmanında hiç olmayabilir. Her iki durumda da ekranda kalır.
+  const [detached, setDetached] = useState<ConversationListItem | null>(null);
+  const [detachedError, setDetachedError] = useState<string | null>(null);
+
+  const listSelected = useMemo(
     () => list.items.find((c) => c.id === selectedId) ?? null,
     [list.items, selectedId],
+  );
+  const selected = useMemo(
+    () => listSelected ?? (detached?.id === selectedId ? detached : null),
+    [listSelected, detached, selectedId],
+  );
+
+  useEffect(() => {
+    if (listSelected) {
+      setDetached(listSelected);
+      setDetachedError(null);
+    }
+  }, [listSelected]);
+
+  useEffect(() => {
+    if (!selectedId || listSelected || detached?.id === selectedId) return;
+    let cancelled = false;
+    fetchChatConversation(selectedId)
+      .then((conv) => {
+        if (cancelled) return;
+        setDetached(conv);
+        setDetachedError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setDetachedError(err instanceof Error ? err.message : "Sohbet açılamadı.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, listSelected, detached?.id]);
+
+  // Açık sohbet, filtre dışında kalsa bile listede görünür ve seçili kalır.
+  const sidebarItems = useMemo(
+    () =>
+      selected && !listSelected
+        ? sortConversations([selected, ...list.items])
+        : list.items,
+    [selected, listSelected, list.items],
+  );
+
+  /** Satırı hem listede hem de listeden düşmüş açık sohbette günceller. */
+  const applyConversation = useCallback(
+    (conv: ConversationListItem) => {
+      list.patchConversation(conv);
+      setDetached((prev) => (prev && prev.id === conv.id ? { ...prev, ...conv } : prev));
+    },
+    [list.patchConversation],
   );
 
   const showToast = useCallback((message: string) => {
@@ -152,9 +206,15 @@ export function ChatWorkspace({
       if (!touched || touched.length === 0 || touched.includes(selectedId)) {
         void thread.refreshTail();
         void thread.refreshStatuses();
+        // Listede olmayan sohbetin satırı (24 saat penceresi, başlık) da tazelensin.
+        if (!listSelected) {
+          void fetchChatConversation(selectedId)
+            .then(setDetached)
+            .catch(() => undefined);
+        }
       }
     },
-    [list, selectedId, thread],
+    [list, selectedId, thread, listSelected],
   );
 
   useCommunicationSSE({
@@ -192,9 +252,9 @@ export function ChatWorkspace({
   useEffect(() => {
     if (!selected || (selected.unread_count_coach || 0) === 0) return;
     void markConversationRead(selected.id)
-      .then(list.patchConversation)
+      .then(applyConversation)
       .catch(() => undefined);
-  }, [selected, list.patchConversation]);
+  }, [selected, applyConversation]);
 
   // ── Hazır cevaplar ──
   useEffect(() => {
@@ -277,6 +337,8 @@ export function ChatWorkspace({
   // ── Sohbet aksiyonları ──
   const selectConversation = useCallback((conv: ConversationListItem) => {
     setSelectedId(conv.id);
+    setDetached(conv);
+    setDetachedError(null);
     setMobilePane("thread");
   }, []);
 
@@ -284,26 +346,26 @@ export function ChatWorkspace({
     async (conv: ConversationListItem) => {
       try {
         const updated = await pinConversation(conv.id, !conv.is_pinned);
-        list.patchConversation(updated);
+        applyConversation(updated);
         showToast(updated.is_pinned ? "Sohbet sabitlendi." : "Sabitleme kaldırıldı.");
       } catch {
         showToast("İşlem tamamlanamadı.");
       }
     },
-    [list, showToast],
+    [applyConversation, showToast],
   );
 
   const toggleMute = useCallback(
     async (conv: ConversationListItem) => {
       try {
         const updated = await muteConversation(conv.id, !conv.is_muted);
-        list.patchConversation(updated);
+        applyConversation(updated);
         showToast(updated.is_muted ? "Bildirimler kapatıldı." : "Bildirimler açıldı.");
       } catch {
         showToast("İşlem tamamlanamadı.");
       }
     },
-    [list, showToast],
+    [applyConversation, showToast],
   );
 
   const toggleArchive = useCallback(
@@ -314,9 +376,12 @@ export function ChatWorkspace({
           const updated = await archiveConversation(conv.id, archiving);
           if (archiving && list.filters.quick !== "archived") {
             list.removeConversation(conv.id);
-            if (selectedId === conv.id) setSelectedId(null);
+            if (selectedId === conv.id) {
+              setSelectedId(null);
+              setDetached(null);
+            }
           } else {
-            list.patchConversation(updated);
+            applyConversation(updated);
           }
           showToast(archiving ? "Sohbet arşivlendi." : "Sohbet arşivden çıkarıldı.");
         } catch {
@@ -334,7 +399,7 @@ export function ChatWorkspace({
         void run();
       }
     },
-    [list, selectedId, showToast],
+    [applyConversation, list, selectedId, showToast],
   );
 
   const toggleRead = useCallback(
@@ -344,13 +409,16 @@ export function ChatWorkspace({
         const updated = unread
           ? await markConversationRead(conv.id)
           : await markConversationUnread(conv.id);
-        list.patchConversation(updated);
-        if (!unread && selectedId === conv.id) setSelectedId(null);
+        applyConversation(updated);
+        if (!unread && selectedId === conv.id) {
+          setSelectedId(null);
+          setDetached(null);
+        }
       } catch {
         showToast("İşlem tamamlanamadı.");
       }
     },
-    [list, selectedId, showToast],
+    [applyConversation, selectedId, showToast],
   );
 
   const removeConversation = useCallback(
@@ -366,6 +434,7 @@ export function ChatWorkspace({
               list.removeConversation(conv.id);
               if (selectedId === conv.id) {
                 setSelectedId(null);
+                setDetached(null);
                 setMobilePane("list");
               }
               showToast("Sohbet silindi.");
@@ -381,12 +450,12 @@ export function ChatWorkspace({
     if (!selected) return;
     try {
       const updated = await claimConversation(selected.id, selected.claim_version);
-      list.patchConversation(updated);
+      applyConversation(updated);
       showToast("Sohbeti üstlendiniz.");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Sohbet üstlenilemedi.");
     }
-  }, [selected, list, showToast]);
+  }, [selected, applyConversation, showToast]);
 
   const markAllRead = useCallback(() => {
     setConfirm({
@@ -497,11 +566,11 @@ export function ChatWorkspace({
         void toggleRead(selected);
         return;
       }
-      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && list.items.length) {
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && sidebarItems.length) {
         e.preventDefault();
-        const index = list.items.findIndex((c) => c.id === selectedId);
+        const index = sidebarItems.findIndex((c) => c.id === selectedId);
         const next = e.key === "ArrowDown" ? index + 1 : index - 1;
-        const target2 = list.items[Math.min(Math.max(0, next), list.items.length - 1)];
+        const target2 = sidebarItems[Math.min(Math.max(0, next), sidebarItems.length - 1)];
         if (target2) selectConversation(target2);
         return;
       }
@@ -512,7 +581,7 @@ export function ChatWorkspace({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, selected, list.items, searchOpen, infoOpen, toggleRead, selectConversation]);
+  }, [selectedId, selected, sidebarItems, searchOpen, infoOpen, toggleRead, selectConversation]);
 
   const composerDisabled = !selected;
 
@@ -530,7 +599,7 @@ export function ChatWorkspace({
 
       <div className="chat-panes">
         <ChatSidebar
-          items={list.items}
+          items={sidebarItems}
           selectedId={selectedId}
           loading={list.loading}
           loadingMore={list.loadingMore}
@@ -559,11 +628,22 @@ export function ChatWorkspace({
           {!selected ? (
             <div className="chat-placeholder">
               <div className="chat-placeholder-mark" aria-hidden="true" />
-              <p className="chat-placeholder-title">Sohbet seçilmedi</p>
-              <p className="chat-placeholder-text">
-                Soldaki listeden bir sohbet seçin ya da yeni bir sohbet başlatın. Arama için{" "}
-                <kbd>/</kbd>, yeni sohbet için <kbd>N</kbd> tuşunu kullanabilirsiniz.
-              </p>
+              {selectedId && detachedError ? (
+                <>
+                  <p className="chat-placeholder-title">Sohbet açılamadı</p>
+                  <p className="chat-placeholder-text">{detachedError}</p>
+                </>
+              ) : selectedId ? (
+                <p className="chat-placeholder-text">Sohbet açılıyor…</p>
+              ) : (
+                <>
+                  <p className="chat-placeholder-title">Sohbet seçilmedi</p>
+                  <p className="chat-placeholder-text">
+                    Soldaki listeden bir sohbet seçin ya da yeni bir sohbet başlatın. Arama için{" "}
+                    <kbd>/</kbd>, yeni sohbet için <kbd>N</kbd> tuşunu kullanabilirsiniz.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <>
@@ -704,7 +784,7 @@ export function ChatWorkspace({
         conversation={selected}
         onClose={() => setTransferOpen(false)}
         onTransferred={(conv, message) => {
-          list.patchConversation(conv);
+          applyConversation(conv);
           showToast(message);
         }}
       />

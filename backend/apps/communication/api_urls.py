@@ -74,6 +74,7 @@ from apps.communication.interfaces.views.meta_template_mgmt import (
 from apps.communication.interfaces.views.conversations import (
     ConversationArchiveView,
     ConversationDetailView,
+    ConversationItemView,
     ConversationListView,
     ConversationReadView,
 )
@@ -330,6 +331,11 @@ urlpatterns = [
     ),
     path('tags/', ConversationTagCatalogView.as_view(), name='tag-catalog'),
     # --- Sohbetler ekranı (yeni arayüz) ---
+    path(
+        'conversations/<uuid:conversation_id>/item/',
+        ConversationItemView.as_view(),
+        name='conversation-item',
+    ),
     path(
         'conversations/<uuid:conversation_id>/pin/',
         ConversationPinView.as_view(),

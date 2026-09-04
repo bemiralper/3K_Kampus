@@ -93,7 +93,44 @@ def _manage_user_ids(kurum_id: int) -> list[int]:
         return []
 
 
+def _outbound_sender_user_ids(conversation) -> list[int]:
+    """Bu sohbete mesaj göndermiş personel — cevabı en çok onlar bekliyor."""
+    try:
+        from apps.communication.domain.enums import MessageDirection
+        from apps.communication.domain.models import Message
+
+        rows = (
+            Message.objects.filter(
+                conversation_id=conversation.id,
+                direction=MessageDirection.OUTBOUND,
+                sender_user_id__isnull=False,
+            )
+            .values_list('sender_user_id', flat=True)
+            .distinct()[:10]
+        )
+        return [int(uid) for uid in rows if uid]
+    except Exception:
+        logger.exception('whatsapp notify: sender resolve failed')
+        return []
+
+
+def _can_see(user, conversation) -> bool:
+    """Sohbeti listesinde göremeyecek kişiye bildirim gönderme."""
+    try:
+        from apps.communication.application.coach_scope import user_can_see_department
+
+        return user_can_see_department(user, conversation.department)
+    except Exception:
+        logger.exception('whatsapp notify: department check failed')
+        return True
+
+
 def resolve_whatsapp_notify_user_ids(conversation) -> list[int]:
+    """Bildirim alıcıları — yalnızca sohbetin departmanını görebilenler.
+
+    Muhasebe sohbetine gelen cevap koça bildirilirse koç bildirimi görür ama
+    sohbeti açamaz; bu yüzden departman görünürlüğü burada da uygulanır.
+    """
     ids: set[int] = set()
     if conversation.claimed_by_user_id:
         ids.add(int(conversation.claimed_by_user_id))
@@ -101,26 +138,51 @@ def resolve_whatsapp_notify_user_ids(conversation) -> list[int]:
     if coach_uid:
         ids.add(coach_uid)
     ids.update(_assigned_coach_user_ids_for_student(conversation.ogrenci_id))
-    if not ids:
-        ids.update(_manage_user_ids(conversation.kurum_id))
-    return sorted(ids)
+    ids.update(_outbound_sender_user_ids(conversation))
+
+    if ids:
+        visible = {uid for uid, user in _load_users(ids).items() if _can_see(user, conversation)}
+        if visible:
+            return sorted(visible)
+
+    fallback = set(_manage_user_ids(conversation.kurum_id))
+    if not fallback:
+        return []
+    return sorted(
+        uid for uid, user in _load_users(fallback).items() if _can_see(user, conversation)
+    )
+
+
+def _load_users(user_ids) -> dict[int, object]:
+    try:
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        return {u.id: u for u in User.objects.filter(id__in=list(user_ids), is_active=True)}
+    except Exception:
+        logger.exception('whatsapp notify: user load failed')
+        return {}
 
 
 def _inbox_url_for_user(user, conversation_id) -> str:
     """
     Koç profili olan ve communication.manage olmayan kullanıcı → /coach/...
+    Muhasebe personeli (koç değil, yönetici değil) → /muhasebe/...
     Diğerleri → /admin/...
     """
     try:
         from apps.coaching.services.coach_access import get_coach_profile
+        from apps.communication.application.account_resolver import _is_accounting_staff
         from shared.permissions import user_has_any_permission
 
-        if (
-            get_coach_profile(user)
-            and not getattr(user, 'is_superuser', False)
-            and not user_has_any_permission(user, 'communication.manage')
+        if getattr(user, 'is_superuser', False) or user_has_any_permission(
+            user, 'communication.manage',
         ):
+            return f'/admin/iletisim/sohbetler?conversation={conversation_id}'
+        if get_coach_profile(user):
             return f'/coach/sohbetler?conversation={conversation_id}'
+        if _is_accounting_staff(user):
+            return f'/muhasebe/iletisim/sohbetler?conversation={conversation_id}'
     except Exception:
         logger.exception('whatsapp notify: inbox url resolve failed user=%s', getattr(user, 'id', None))
     return f'/admin/iletisim/sohbetler?conversation={conversation_id}'
