@@ -11,6 +11,7 @@ import type {
   OutcomeItem,
   MatchResult,
 } from '../../../../components/olcme/types';
+import { topicDisplayName } from '../../../../components/olcme/curriculum-band';
 import s from '../olcme.module.css';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -68,7 +69,7 @@ function flattenOutcomes(topics: TopicItem[]): OutcomeItem[] {
 /** Konu bilgisini outcome'dan bul */
 function findTopicForOutcome(topics: TopicItem[], outcomeId: number): string {
   for (const t of topics) {
-    if ((t.outcomes ?? []).some(o => o.id === outcomeId)) return t.name;
+    if ((t.outcomes ?? []).some(o => o.id === outcomeId)) return topicDisplayName(t.name);
   }
   return '';
 }
@@ -1137,7 +1138,7 @@ function OutcomePickerModal({
               )}
               {filteredTopics.map(topic => (
                 <div key={topic.id} className={s.outcomeGroup}>
-                  <div className={s.outcomeGroupTitle}>📖 {topic.name}</div>
+                  <div className={s.outcomeGroupTitle}>📖 {topicDisplayName(topic.name)}</div>
                   {topic.outcomes.map(o => {
                     const parentActive = o.id === currentOutcomeId && !currentSubOutcomeId;
                     return (

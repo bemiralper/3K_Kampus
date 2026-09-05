@@ -289,7 +289,8 @@ def _topic_block_label(item) -> str:
     if not label:
         label = item.display_outcome_text()
     if not label and item.outcome_id and getattr(item.outcome, 'topic_id', None):
-        label = item.outcome.topic.name or ''
+        from ..services.curriculum_band import topic_display_name
+        label = topic_display_name(item.outcome.topic.name or '')
     return label
 
 

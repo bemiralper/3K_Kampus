@@ -35,6 +35,15 @@ class CurriculumBandHelperTest(SimpleTestCase):
         self.assertEqual(grades_from_text('7.4.1', 'LGS Fen'), {7})
         self.assertEqual(grades_from_text('12.3', '11.2.1'), {11, 12})
         self.assertEqual(grades_from_text('2019 kazanım'), set())
+        self.assertEqual(grades_from_text('8. sınıf · SAYILAR'), {8})
+
+    def test_okulizyon_shg21_is_not_a_grade(self):
+        from apps.coaching.olcme_degerlendirme.services.curriculum_band import topic_display_name
+
+        self.assertEqual(grades_from_text('21.5', 'SHG21 · ÖZEL ÜÇGENLER'), set())
+        self.assertEqual(grades_from_text('21.2.5', '21.5.1'), set())
+        self.assertEqual(topic_display_name('SHG21 · DOĞRUDA VE ÜÇGENDE AÇILAR'), 'DOĞRUDA VE ÜÇGENDE AÇILAR')
+        self.assertEqual(topic_display_name('9. sınıf · KÜMELER'), 'KÜMELER')
 
 
 class CurriculumBandAPITest(TestCase):
@@ -230,6 +239,68 @@ class CurriculumBandAPITest(TestCase):
         self.assertNotIn('10.2', topic_codes(lgs.json()))
         self.assertNotIn('9.1', topic_codes(lgs.json()))
         self.assertIn('9.1', topic_codes(yks.json()))
+
+    def test_outcomes_keep_okulizyon_geometry_on_tyt(self):
+        geo = Subject.objects.create(
+            code='GEOMETRI_SHG', name='Geometri', exam_type_filter='ALL',
+        )
+        topic = Topic.objects.create(
+            subject=geo, code='21.5', name='SHG21 · ÖZEL ÜÇGENLER', order=0,
+        )
+        Outcome.objects.create(topic=topic, code='21.5.1', text='Özel üçgenleri tanır.', order=0)
+        exam = Exam.objects.create(
+            name='TYT Geometri', exam_type='YKS_TYT',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+        )
+        ExamSection.objects.create(
+            exam=exam, name='Geometri', order=1, question_start=41, question_end=50,
+            subject=geo,
+        )
+        res = self.client.get(
+            f'{EXAMS_URL}{exam.id}/answer-keys/outcomes/', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        subjects = {row['id']: row for row in res.json()}
+        self.assertIn(geo.id, subjects)
+        names = [t['name'] for t in subjects[geo.id]['topics']]
+        self.assertEqual(names, ['ÖZEL ÜÇGENLER'])
+        self.assertTrue(subject_matches_band(geo, BAND_YKS))
+        self.assertFalse(subject_matches_band(geo, BAND_LGS))
+        self.assertTrue(topic_matches_band(topic, BAND_YKS))
+        self.assertFalse(topic_matches_band(topic, BAND_LGS))
+
+    def test_mixed_turkce_shows_shg_topics_not_lgs_on_tyt(self):
+        turkce = Subject.objects.create(
+            code='TURKCE_MIX', name='Türkçe', exam_type_filter='ALL',
+        )
+        lgs_topic = Topic.objects.create(
+            subject=turkce, code='8.3', name='8. sınıf · OKUMA', order=0,
+        )
+        Outcome.objects.create(topic=lgs_topic, code='8.3.1', text='Okur.', order=0)
+        shg_topic = Topic.objects.create(
+            subject=turkce, code='21.1', name='SHG21 · SÖZCÜKTE ANLAM', order=1,
+        )
+        Outcome.objects.create(topic=shg_topic, code='21.1.1', text='Sözcük anlamını bilir.', order=0)
+        primary = Topic.objects.create(
+            subject=turkce, code='4.1', name='4. sınıf · DİNLEME', order=2,
+        )
+        Outcome.objects.create(topic=primary, code='4.1.1', text='Dinler.', order=0)
+
+        self.assertTrue(subject_matches_band(turkce, BAND_YKS))
+        self.assertTrue(subject_matches_band(turkce, BAND_LGS))
+
+        yks_exam = Exam.objects.create(
+            name='TYT Türkçe Mix', exam_type='YKS_TYT',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+        )
+        res = self.client.get(
+            f'{EXAMS_URL}{yks_exam.id}/answer-keys/outcomes/', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        subjects = {row['id']: row for row in res.json()}
+        self.assertIn(turkce.id, subjects)
+        names = [t['name'] for t in subjects[turkce.id]['topics']]
+        self.assertEqual(names, ['SÖZCÜKTE ANLAM'])
 
     def test_flexible_exam_can_switch_band(self):
         exam = Exam.objects.create(

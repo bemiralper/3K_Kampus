@@ -964,9 +964,8 @@ def _is_dotted_code(text: str) -> bool:
 
 def _topic_display_name(name: str) -> str:
     """'SHG21 · SAYILAR' / '9. sınıf · KÜMELER' → asıl konu başlığı."""
-    raw = (name or '').strip()
-    parts = re.split(r'\s*[·•|:]\s*', raw, maxsplit=1)
-    return (parts[-1] if parts else raw).strip()
+    from ..services.curriculum_band import topic_display_name
+    return topic_display_name(name)
 
 
 def _topic_affinity(query_norm: str, query_kw: set, query_stems: set, topic_name: str) -> int:

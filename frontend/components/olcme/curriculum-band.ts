@@ -23,3 +23,10 @@ export function resolveBand(examType: string | '', stored?: string | null): Curr
 export function bandLabel(band: CurriculumBand): string {
   return band === BAND_LGS ? 'LGS · 5–8' : 'YKS · 9–12';
 }
+
+/** 'SHG21 · SAYILAR' / '9. sınıf · KÜMELER' → asıl konu başlığı. */
+export function topicDisplayName(name: string): string {
+  const raw = (name || '').trim();
+  const parts = raw.split(/\s*[·•|:]\s*/);
+  return (parts[parts.length - 1] || raw).trim() || raw;
+}

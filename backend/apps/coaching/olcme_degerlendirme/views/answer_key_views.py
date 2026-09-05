@@ -240,15 +240,18 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             return err
 
         from ..services.curriculum_band import (
-            resolved_band, subject_matches_band, topic_matches_band,
+            resolved_band, subject_matches_band, topic_display_name, topic_matches_band,
         )
 
         band = resolved_band(exam)
+        linked_ids = set(
+            exam.sections.exclude(subject_id=None).values_list('subject_id', flat=True)
+        )
         subjects = Subject.objects.all().order_by('order', 'name')
 
         result = []
         for subj in subjects:
-            if not subject_matches_band(subj, band):
+            if not subject_matches_band(subj, band) and subj.id not in linked_ids:
                 continue
             topics_data = []
             for topic in subj.topics.order_by('order'):
@@ -271,7 +274,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                 topics_data.append({
                     'id': topic.id,
                     'code': topic.code,
-                    'name': topic.name,
+                    'name': topic_display_name(topic.name),
                     'outcomes': outcomes_data,
                 })
             result.append({
